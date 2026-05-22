@@ -1,0 +1,96 @@
+<div class="bg-zinc-950 text-zinc-100">
+  <.marketing_nav current={:docs} />
+
+  <section class="py-16 sm:py-24">
+    <div class="mx-auto max-w-3xl px-6 lg:px-8">
+      <p class="text-sm font-semibold text-indigo-400">Use cases / Cassandra</p>
+      <h1 class="mt-2 text-4xl font-bold tracking-tight text-zinc-50 md:text-5xl">
+        Letting an LLM run nodetool — safely
+      </h1>
+      <p class="mt-6 text-lg leading-8 text-zinc-400">
+        On a Cassandra cluster, "agent runs <code>nodetool repair</code>" is a
+        coin-flip between "you reduced inconsistency by 0.001%" and "you took
+        an extra disk offline for six hours". This page walks the boundary.
+      </p>
+
+      <h2 class="mt-12 text-2xl font-semibold text-zinc-50">What the pack declares</h2>
+      <p class="mt-3 text-sm leading-relaxed text-zinc-400">
+        The shipping <code>cassandra</code> pack (see
+        <a href="https://github.com/andrewdryga/emisar/tree/main/runner/examples/packs/cassandra" class="text-indigo-400 hover:text-indigo-300">examples/packs/cassandra</a>)
+        publishes three actions:
+      </p>
+      <ul class="mt-4 space-y-2 text-sm text-zinc-300">
+        <li>
+          <code class="font-mono text-indigo-300">cassandra.nodetool_status</code> — risk:
+          <code>low</code>, read-only, no approval. The model can call this freely to
+          triage cluster health.
+        </li>
+        <li>
+          <code class="font-mono text-indigo-300">cassandra.nodetool_repair</code> — risk:
+          <code>high</code>. Args restricted to an allowlist of keyspaces. Timeout 30m,
+          <code>max_concurrent: 1</code>, default policy requires one human approval.
+        </li>
+        <li>
+          <code class="font-mono text-indigo-300">cassandra.nodetool_compactionstats</code>
+          — read-only.
+        </li>
+      </ul>
+
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">Typical triage flow</h2>
+      <ol class="mt-4 space-y-3 text-sm text-zinc-300 list-decimal pl-6">
+        <li>Alert fires: read latency on <code>orders_ks</code> creeps up.</li>
+        <li>
+          Model: <code>nodetool_status</code>. Sees node 3 is DN (down). Calls
+          <code>nodetool_compactionstats</code> on its peers — pending compactions
+          piling up.
+        </li>
+        <li>
+          Model proposes <code>nodetool_repair orders_ks</code> on the surviving
+          replicas. Policy says <code>require_approval</code>. The model surfaces this
+          to the operator with the policy reason ("repair is high-risk; one approval
+          required") and the operator's seat ID.
+        </li>
+        <li>
+          Operator gets an email. One click → approve. The repair dispatches.
+          Output streams into the run detail page, hash-chained to audit.
+        </li>
+        <li>
+          If the repair runs longer than 30m, the runner SIGTERMs the process group
+          (catching the <code>nodetool</code> wrapper plus any subprocesses) and
+          escalates to SIGKILL after the per-action grace period.
+        </li>
+      </ol>
+
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">What the LLM cannot do</h2>
+      <ul class="mt-4 space-y-2 text-sm text-zinc-300">
+        <li>
+          Run <code>nodetool removenode</code>: not in the catalog. Request rejected
+          at the runner before exec.
+        </li>
+        <li>
+          Run <code>nodetool repair</code> against a keyspace not in the allowlist:
+          arg validation rejects it.
+        </li>
+        <li>
+          Bypass approval by claiming the action is "low risk": the runner publishes
+          the risk from the catalog, the policy engine evaluates against the
+          authoritative value, not what the caller passes.
+        </li>
+        <li>
+          Read <code>cassandra.yaml</code>: there's no
+          <code>cassandra.read_config</code> action. Read-actions for configuration
+          are a separate authoring decision.
+        </li>
+      </ul>
+
+      <p class="mt-10 text-sm text-zinc-400">
+        See <.link href="/docs/action-packs" class="text-indigo-400 hover:text-indigo-300">the action pack reference</.link>
+        for the YAML schema. To run the shipping Cassandra pack against your
+        cluster, drop it under <code class="font-mono text-xs">/etc/emisar/packs/</code>
+        and SIGHUP the runner.
+      </p>
+    </div>
+  </section>
+
+  <.marketing_footer />
+</div>

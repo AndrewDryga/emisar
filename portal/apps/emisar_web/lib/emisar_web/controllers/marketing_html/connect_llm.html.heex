@@ -1,0 +1,337 @@
+<div class="bg-zinc-950 text-zinc-100">
+  <.marketing_nav current={:docs} />
+
+  <section class="py-16 sm:py-24">
+    <div class="mx-auto max-w-3xl px-6 lg:px-8">
+      <p class="text-sm font-semibold text-indigo-400">Docs / Integration</p>
+      <h1 class="mt-2 text-4xl font-bold tracking-tight text-zinc-50 md:text-5xl">
+        Connect an LLM
+      </h1>
+      <p class="mt-6 text-lg leading-8 text-zinc-400">
+        emisar exposes your action catalog as an MCP-style HTTP tool API so
+        LLMs can call <em>exactly</em> the actions your team has declared —
+        nothing more. This page walks through the three things you need:
+        an API key, a tool list, and a tool call.
+      </p>
+
+      <div class="mt-12 space-y-12">
+        <%!-- ============================================================ --%>
+        <%!-- Step 1: API key                                              --%>
+        <%!-- ============================================================ --%>
+        <section>
+          <div class="flex items-center gap-3">
+            <span class="grid h-8 w-8 place-items-center rounded-full bg-indigo-500/20 text-sm font-semibold text-indigo-300">1</span>
+            <h2 class="text-2xl font-semibold tracking-tight text-zinc-50">Issue an API key</h2>
+          </div>
+
+          <p class="mt-4 text-base leading-relaxed text-zinc-400">
+            In the dashboard go to <code class="rounded bg-zinc-900 px-1.5 py-0.5 text-sm">Settings → API keys</code>
+            and click <strong>Issue an API key</strong>. Two things matter:
+          </p>
+
+          <ul class="mt-4 space-y-3 text-sm text-zinc-300">
+            <li class="flex gap-3">
+              <.icon name="hero-check" class="mt-0.5 h-4 w-4 flex-none text-indigo-400" />
+              <div>
+                <strong>Scopes</strong> — tick <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">actions:read</code>
+                and <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">actions:execute</code>.
+                Add <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">audit:read</code>
+                if the LLM should be able to read run history.
+              </div>
+            </li>
+            <li class="flex gap-3">
+              <.icon name="hero-check" class="mt-0.5 h-4 w-4 flex-none text-indigo-400" />
+              <div>
+                <strong>Allowed runners</strong> — leave empty to allow every
+                runner, or tick the specific runners the key may target. We
+                strongly recommend the explicit list for production keys.
+              </div>
+            </li>
+          </ul>
+
+          <p class="mt-4 text-sm text-zinc-400">
+            The dashboard reveals the raw key <em>once</em>. Copy it now and
+            store it in your secret manager.
+          </p>
+        </section>
+
+        <%!-- ============================================================ --%>
+        <%!-- Step 2: list tools                                           --%>
+        <%!-- ============================================================ --%>
+        <section>
+          <div class="flex items-center gap-3">
+            <span class="grid h-8 w-8 place-items-center rounded-full bg-indigo-500/20 text-sm font-semibold text-indigo-300">2</span>
+            <h2 class="text-2xl font-semibold tracking-tight text-zinc-50">List the tools</h2>
+          </div>
+
+          <p class="mt-4 text-base leading-relaxed text-zinc-400">
+            One GET away. The response is JSON; each tool has a name, a
+            human-readable description, and a JSON-schema-shaped
+            <code class="rounded bg-zinc-900 px-1.5 py-0.5 text-sm">inputSchema</code>
+            so the model can validate args locally before calling.
+          </p>
+
+          <div class="mt-4 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
+            <div class="border-b border-zinc-900 px-3 py-2 font-mono text-[11px] text-zinc-500">terminal</div>
+<pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300"><span class="text-zinc-500">$</span> curl https://app.emisar.com/api/mcp/tools \
+    -H <span class="text-emerald-300">"Authorization: Bearer $EMISAR_API_KEY"</span></pre>
+          </div>
+        </section>
+
+        <%!-- ============================================================ --%>
+        <%!-- Step 3: call a tool                                          --%>
+        <%!-- ============================================================ --%>
+        <section>
+          <div class="flex items-center gap-3">
+            <span class="grid h-8 w-8 place-items-center rounded-full bg-indigo-500/20 text-sm font-semibold text-indigo-300">3</span>
+            <h2 class="text-2xl font-semibold tracking-tight text-zinc-50">Call a tool</h2>
+          </div>
+
+          <p class="mt-4 text-base leading-relaxed text-zinc-400">
+            Pass <code class="rounded bg-zinc-900 px-1.5 py-0.5 text-sm">?wait=15s</code>
+            (max <code>60s</code>) to get the result inline, or omit it for fire-and-forget.
+          </p>
+
+          <div class="mt-4 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
+            <div class="border-b border-zinc-900 px-3 py-2 font-mono text-[11px] text-zinc-500">terminal</div>
+<pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300"><span class="text-zinc-500"># Synchronous: long-poll up to 15 seconds for the result.</span>
+<span class="text-zinc-500">$</span> curl -X POST <span class="text-emerald-300">"https://app.emisar.com/api/mcp/tools/linux.uptime?wait=15s"</span> \
+    -H <span class="text-emerald-300">"Authorization: Bearer $EMISAR_API_KEY"</span> \
+    -H <span class="text-emerald-300">"Content-Type: application/json"</span> \
+    -d <span class="text-emerald-300">'&#123;"args": &#123;&#125;&#125;'</span></pre>
+          </div>
+
+          <p class="mt-4 text-sm text-zinc-400">
+            The response includes the final
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">status</code>,
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">exit_code</code>,
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">stdout</code> (last 64 KiB),
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">stderr</code>,
+            and the
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">policy</code>
+            decision that allowed/gated the call. If the run needs approval,
+            the response is HTTP 202 with
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">status: "pending_approval"</code>
+            — the LLM can surface that to the user and poll
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">GET /api/mcp/runs/:id</code>
+            to wait for the operator decision.
+          </p>
+        </section>
+      </div>
+
+      <%!-- ============================================================ --%>
+      <%!-- Per-client setup                                             --%>
+      <%!-- ============================================================ --%>
+      <h2 class="mt-20 text-3xl font-bold tracking-tight text-zinc-50">Per-client setup</h2>
+      <p class="mt-3 text-sm text-zinc-400">
+        We ship a tiny stdio bridge — <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar-mcp</code> —
+        for clients that speak the MCP JSON-RPC protocol natively
+        (Claude Desktop, Claude Code, Cursor, Gemini CLI, Codex CLI). For
+        OpenAI tool calling and other HTTP-only clients, hit the JSON API
+        directly.
+      </p>
+
+      <%!-- Install the bridge --%>
+      <section class="mt-8">
+        <h3 class="text-xl font-semibold text-zinc-50">Install the bridge</h3>
+        <p class="mt-2 text-sm text-zinc-400">
+          The <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar-mcp</code>
+          binary runs on the same machine as your editor / chat client — your
+          laptop. It launches as a child process and proxies MCP JSON-RPC
+          requests to the emisar HTTP API. Two install paths:
+        </p>
+
+        <p class="mt-4 text-sm text-zinc-300">
+          <strong>Option 1 — from a GitHub release</strong> (recommended once tagged builds exist):
+        </p>
+        <div class="mt-2 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
+          <div class="border-b border-zinc-900 px-3 py-2 font-mono text-[11px] text-zinc-500">terminal</div>
+<pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300"><span class="text-zinc-500"># Pick the right OS/arch for your laptop (linux-amd64, linux-arm64,</span>
+<span class="text-zinc-500"># darwin-amd64, darwin-arm64). Each release tarball contains both</span>
+<span class="text-zinc-500"># `emisar` (the runner) and `emisar-mcp` (the bridge).</span>
+<span class="text-zinc-500">$</span> curl -sSL <span class="text-emerald-300">https://github.com/andrewdryga/emisar/releases/latest/download/emisar-vX.Y.Z-darwin-arm64.tar.gz</span> \
+    | tar -xz --strip-components=1 -C /tmp emisar-vX.Y.Z-darwin-arm64/emisar-mcp
+<span class="text-zinc-500">$</span> sudo install -m 0755 /tmp/emisar-mcp /usr/local/bin/emisar-mcp</pre>
+        </div>
+
+        <p class="mt-4 text-sm text-zinc-300">
+          <strong>Option 2 — <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">go install</code></strong>
+          (requires Go 1.26+; useful while we're pre-release):
+        </p>
+        <div class="mt-2 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
+          <div class="border-b border-zinc-900 px-3 py-2 font-mono text-[11px] text-zinc-500">terminal</div>
+<pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300"><span class="text-zinc-500">$</span> go install github.com/andrewdryga/emisar/mcp@latest
+<span class="text-zinc-500"># Binary lands in $(go env GOBIN) — usually ~/go/bin/emisar-mcp.</span>
+<span class="text-zinc-500"># If your client config below uses /usr/local/bin/emisar-mcp, adjust</span>
+<span class="text-zinc-500"># the path — or symlink it:</span>
+<span class="text-zinc-500">$</span> sudo ln -s ~/go/bin/emisar-mcp /usr/local/bin/emisar-mcp</pre>
+        </div>
+
+        <p class="mt-4 text-sm text-zinc-400">
+          Verify with <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar-mcp --help</code>
+          (it should print the JSON-RPC subset it implements and exit).
+          Note: this is the <em>only</em> binary you need on your laptop;
+          the <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar</code> runner
+          goes on the Linux hosts you manage, via <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">install.sh</code>.
+        </p>
+      </section>
+
+      <div class="mt-8 space-y-10">
+        <%!-- Claude Desktop --%>
+        <section>
+          <h3 class="text-xl font-semibold text-zinc-50">Claude Desktop</h3>
+          <p class="mt-2 text-sm text-zinc-400">
+            Install <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar-mcp</code>
+            (the stdio bridge — ships in our GitHub releases) and add this
+            to <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">~/Library/Application Support/Claude/claude_desktop_config.json</code>:
+          </p>
+          <div class="mt-3 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
+            <pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300">&#123;
+  "mcpServers": &#123;
+    "emisar": &#123;
+      "command": "/usr/local/bin/emisar-mcp",
+      "env": &#123;
+        "EMISAR_URL": "https://app.emisar.com",
+        "EMISAR_API_KEY": "emk-..."
+      &#125;
+    &#125;
+  &#125;
+&#125;</pre>
+          </div>
+          <p class="mt-3 text-sm text-zinc-400">
+            Restart Claude Desktop. Your action catalog appears under the
+            tool icon as "emisar".
+          </p>
+        </section>
+
+        <%!-- Cursor --%>
+        <section>
+          <h3 class="text-xl font-semibold text-zinc-50">Cursor</h3>
+          <p class="mt-2 text-sm text-zinc-400">
+            Same bridge. Cursor reads
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">~/.cursor/mcp.json</code>:
+          </p>
+          <div class="mt-3 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
+            <pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300">&#123;
+  "mcpServers": &#123;
+    "emisar": &#123;
+      "command": "emisar-mcp",
+      "env": &#123;
+        "EMISAR_URL": "https://app.emisar.com",
+        "EMISAR_API_KEY": "emk-..."
+      &#125;
+    &#125;
+  &#125;
+&#125;</pre>
+          </div>
+        </section>
+
+        <%!-- Claude Code (CLI) --%>
+        <section>
+          <h3 class="text-xl font-semibold text-zinc-50">Claude Code</h3>
+          <p class="mt-2 text-sm text-zinc-400">
+            One command registers the bridge with the Claude Code CLI
+            globally (user scope). It will be available in every project.
+          </p>
+          <div class="mt-3 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
+            <div class="border-b border-zinc-900 px-3 py-2 font-mono text-[11px] text-zinc-500">terminal</div>
+<pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300"><span class="text-zinc-500">$</span> claude mcp add emisar /usr/local/bin/emisar-mcp \
+    --scope user \
+    -e EMISAR_URL=https://app.emisar.com \
+    -e EMISAR_API_KEY=emk-...</pre>
+          </div>
+          <p class="mt-3 text-sm text-zinc-400">
+            Verify with <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">claude mcp list</code>.
+            Drop <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--scope user</code>
+            to register it only for the current project (writes to
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">.mcp.json</code>).
+          </p>
+        </section>
+
+        <%!-- Gemini CLI --%>
+        <section>
+          <h3 class="text-xl font-semibold text-zinc-50">Gemini CLI</h3>
+          <p class="mt-2 text-sm text-zinc-400">
+            Google's Gemini CLI reads
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">~/.gemini/settings.json</code>:
+          </p>
+          <div class="mt-3 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
+            <pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300">&#123;
+  "mcpServers": &#123;
+    "emisar": &#123;
+      "command": "/usr/local/bin/emisar-mcp",
+      "env": &#123;
+        "EMISAR_URL": "https://app.emisar.com",
+        "EMISAR_API_KEY": "emk-..."
+      &#125;
+    &#125;
+  &#125;
+&#125;</pre>
+          </div>
+          <p class="mt-3 text-sm text-zinc-400">
+            Inside a Gemini session, <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/mcp</code>
+            lists registered servers and their tools.
+          </p>
+        </section>
+
+        <%!-- ChatGPT Codex CLI --%>
+        <section>
+          <h3 class="text-xl font-semibold text-zinc-50">ChatGPT Codex CLI</h3>
+          <p class="mt-2 text-sm text-zinc-400">
+            OpenAI's Codex CLI reads
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">~/.codex/config.toml</code>.
+            Add a server block:
+          </p>
+          <div class="mt-3 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
+<pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300">[mcp_servers.emisar]
+command = "/usr/local/bin/emisar-mcp"
+env = &#123; EMISAR_URL = "https://app.emisar.com", EMISAR_API_KEY = "emk-..." &#125;</pre>
+          </div>
+          <p class="mt-3 text-sm text-zinc-400">
+            Restart Codex. Tools appear under the <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar</code> server.
+          </p>
+        </section>
+
+        <%!-- OpenAI tool calling --%>
+        <section>
+          <h3 class="text-xl font-semibold text-zinc-50">OpenAI tool calling</h3>
+          <p class="mt-2 text-sm text-zinc-400">
+            OpenAI doesn't speak MCP, so the integration is a small Python
+            shim: pull <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/api/mcp/tools</code>,
+            transform each <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">inputSchema</code>
+            into an OpenAI <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">functions[]</code>
+            entry, and when the model returns a function call, POST it to
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/api/mcp/tools/:name?wait=30s</code>.
+          </p>
+          <div class="mt-3 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
+            <pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300"><span class="text-zinc-500"># Roughly:</span>
+tools = requests.get(URL + "/api/mcp/tools", headers=auth).json()["tools"]
+functions = [&#123;"type": "function", "function": &#123;
+  "name": t["name"],
+  "description": t["description"],
+  "parameters": t["inputSchema"]&#125;&#125; for t in tools]
+
+resp = openai.responses.create(model="gpt-5", input=..., tools=functions)
+for call in resp.tool_calls:
+    r = requests.post(URL + f"/api/mcp/tools/&#123;call.name&#125;?wait=30s",
+                      headers=auth, json=&#123;"args": call.arguments&#125;)
+    feed_back_to_model(r.json())</pre>
+          </div>
+        </section>
+
+        <%!-- Generic HTTP --%>
+        <section>
+          <h3 class="text-xl font-semibold text-zinc-50">Generic HTTP / your own agent</h3>
+          <p class="mt-2 text-sm text-zinc-400">
+            Everything is just JSON. List tools, call a tool, poll the run
+            id. The
+            <.link href={~p"/docs"} class="text-indigo-400 hover:text-indigo-300">docs</.link>
+            have the full endpoint reference.
+          </p>
+        </section>
+      </div>
+    </div>
+  </section>
+
+  <.marketing_footer />
+</div>

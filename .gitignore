@@ -1,0 +1,36 @@
+# Build artifacts
+/bin/
+/dist/
+*.test
+*.out
+coverage.out
+
+# Stray dev binaries — `go build` from inside a module dir writes here
+# (named after the dir). Build the real ones via `make build`, which
+# puts them under /bin/.
+/runner/runner
+/mcp/mcp
+/emisar
+/emisar-mcp
+
+# Local runtime state from the example config
+/runner/examples/var/
+
+# Cross-compile output from `make build-all`
+emisar-*-linux-*
+emisar-*-darwin-*
+
+# Test JSONL logs that might be dropped if a test forgets to t.TempDir()
+events.jsonl
+events.jsonl.cursor
+events.jsonl.*
+
+# Editor noise
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+docs/

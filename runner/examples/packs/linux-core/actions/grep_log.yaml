@@ -1,0 +1,76 @@
+schema_version: 1
+
+id: linux.grep_log
+title: Grep a log file
+kind: exec
+risk: low
+
+description: >
+  Greps an extended regex (POSIX -E) against a log file under /var/log.
+  Read-only. Returns matching lines with line numbers (-n) up to
+  max_lines. Use to find recent occurrences of a specific identifier
+  (request ID, user ID, IP) or to spot error patterns without dumping
+  the whole file. Output is run through the runner's redactor before
+  it leaves the host.
+
+side_effects:
+  - Reads a log file under /var/log.
+  - Output may contain operational secrets — redactor scrubs known patterns.
+  - Does not modify anything.
+
+args:
+  - name: file
+    type: path
+    required: true
+    description: Absolute path to the log file. Must be under /var/log/.
+    validation:
+      allowed_prefixes:
+        - /var/log/
+
+  - name: pattern
+    type: string
+    required: true
+    description: Extended regex (POSIX ERE) pattern. Passed to grep -E.
+    validation:
+      # Bound pattern length — long patterns are usually mistakes or
+      # ReDoS attempts, not legitimate searches.
+      pattern: '^.{1,512}$'
+
+  - name: max_lines
+    type: integer
+    required: false
+    default: 200
+    description: Cap on returned matching lines (grep --max-count).
+    validation:
+      min: 1
+      max: 2000
+
+execution:
+  command:
+    binary: /bin/grep
+    argv:
+      - "-E"
+      - "-n"
+      - "--max-count={{ args.max_lines }}"
+      - "{{ args.pattern }}"
+      - "{{ args.file }}"
+  timeout: 30s
+  timeout_min: 1s
+  timeout_max: 5m
+  cwd: /
+
+output:
+  parser: text
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+
+examples:
+  - title: Recent 5xx in nginx access log
+    args:
+      file: /var/log/nginx/access.log
+      pattern: ' 5[0-9][0-9] '
+      max_lines: 100
+  - title: Find a request id
+    args:
+      file: /var/log/app/server.log
+      pattern: 'req_abc123'

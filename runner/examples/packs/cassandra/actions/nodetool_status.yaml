@@ -1,0 +1,58 @@
+schema_version: 1
+
+id: cassandra.nodetool_status
+title: Cassandra node ring status
+kind: exec
+risk: low
+
+description: >
+  Runs `nodetool status`. Read-only — does not change Cassandra state.
+  Use this before suggesting repair, cleanup, decommission, replacement,
+  or topology changes. If any node is DN/UJ/UL/UM, do not recommend repair
+  until the failure mode is understood.
+
+side_effects:
+  - Starts a short-lived JMX connection to the local Cassandra node.
+  - May fail if JMX auth is misconfigured.
+  - Does not modify Cassandra data or cluster state.
+
+args:
+  - name: host
+    type: string
+    required: false
+    default: "127.0.0.1"
+    description: JMX host for nodetool.
+    validation:
+      enum:
+        - "127.0.0.1"
+        - "localhost"
+
+  - name: port
+    type: integer
+    required: false
+    default: 7199
+    description: JMX port.
+    validation:
+      allowed:
+        - 7199
+
+execution:
+  command:
+    binary: /usr/bin/nodetool
+    argv:
+      - "-h"
+      - "{{ args.host }}"
+      - "-p"
+      - "{{ args.port }}"
+      - "status"
+  timeout: 30s
+  cwd: /
+
+output:
+  parser: text
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 65536
+
+examples:
+  - title: Check local Cassandra ring
+    args: {}

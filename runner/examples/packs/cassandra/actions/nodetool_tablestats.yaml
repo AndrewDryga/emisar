@@ -1,0 +1,46 @@
+schema_version: 1
+
+id: cassandra.nodetool_tablestats
+title: Cassandra table stats
+kind: exec
+risk: medium
+
+description: >
+  Runs `nodetool tablestats`, optionally scoped to a single keyspace.
+  Read-only. Output can be large for clusters with many tables. Use to
+  identify tables with large sstable counts or large on-disk size — repairs
+  on very large or tombstone-heavy tables are risky and worth surfacing
+  before a repair recommendation.
+
+side_effects:
+  - Starts a short-lived JMX connection.
+  - Output can be large for clusters with many tables.
+
+args:
+  - name: keyspace
+    type: string
+    required: false
+    description: Optional keyspace to scope to (omit for all keyspaces).
+    validation:
+      pattern: "^[a-zA-Z][a-zA-Z0-9_]{0,47}$"
+
+execution:
+  command:
+    binary: /usr/bin/nodetool
+    argv:
+      - "tablestats"
+      - "{{ args.keyspace }}"
+  timeout: 90s
+  timeout_min: 10s
+  timeout_max: 10m
+  cwd: /
+
+output:
+  parser: text
+  max_stdout_bytes: 4194304
+  max_stderr_bytes: 65536
+
+examples:
+  - title: Inspect a single keyspace
+    args:
+      keyspace: valorant_ks

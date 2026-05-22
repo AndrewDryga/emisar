@@ -1,0 +1,5 @@
+#!/bin/sh
+set -eu
+# Runs ecto migrations from inside a release. Exits non-zero on failure
+# so the orchestrator aborts the deploy.
+"$(dirname "$0")/emisar" eval 'Emisar.Release.migrate()'

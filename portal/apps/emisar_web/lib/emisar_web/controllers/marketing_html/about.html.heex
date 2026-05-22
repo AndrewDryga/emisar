@@ -1,0 +1,140 @@
+<%!-- ============================================================
+  About — mission, story, hiring
+============================================================ --%>
+
+<div class="bg-zinc-950 text-zinc-100">
+  <.marketing_nav current={:about} />
+
+  <%!-- Hero --%>
+  <section class="py-24 sm:py-32">
+    <div class="mx-auto max-w-4xl px-6 lg:px-8">
+      <p class="text-base font-semibold text-indigo-400">About</p>
+      <h1 class="mt-2 text-6xl font-bold tracking-tight text-zinc-50 md:text-7xl">
+        LLMs are useful.<br />Production isn't a playground.
+      </h1>
+      <p class="mt-8 max-w-2xl text-lg leading-8 text-zinc-400">
+        We're building the boring, defensible layer that lets AI agents help operate real
+        infrastructure — without becoming the next 3 a.m. incident.
+      </p>
+    </div>
+  </section>
+
+  <%!-- Why this exists --%>
+  <section class="border-y border-zinc-900 bg-zinc-950/40 py-24 sm:py-32">
+    <div class="mx-auto max-w-4xl px-6 lg:px-8">
+      <h2 class="text-base font-semibold text-indigo-400">Why this exists</h2>
+      <p class="mt-2 text-4xl font-bold tracking-tight text-zinc-50 sm:text-5xl">
+        Giving an LLM shell access is reckless. Giving it a catalog is sensible.
+      </p>
+      <div class="mt-8 space-y-6 text-lg leading-8 text-zinc-400">
+        <p>
+          The first wave of LLM-for-ops tools handed agents a terminal and hoped for the
+          best. That works on a personal laptop. It does not work on the cluster that
+          processes your customers' payments.
+        </p>
+        <p>
+          Every mature ops team eventually arrives at the same answer: a finite, versioned
+          catalog of operations. Runbooks. Playbooks. The well-trodden paths. Humans use
+          them. CI uses them. Our claim is simple — your LLMs should use them too, and
+          only those.
+        </p>
+        <p>
+          emisar is what we wished existed when our teams started letting AI agents touch
+          production. A versioned catalog. A policy engine. An audit trail your security
+          team accepts. Nothing more, nothing less.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <%!-- Values --%>
+  <section class="py-24 sm:py-32">
+    <div class="mx-auto max-w-7xl px-6 lg:px-8">
+      <div class="mx-auto max-w-2xl text-center">
+        <h2 class="text-base font-semibold text-indigo-400">What we believe</h2>
+        <p class="mt-2 text-4xl font-bold tracking-tight text-zinc-50 sm:text-5xl">
+          Our priors.
+        </p>
+      </div>
+      <div class="mx-auto mt-16 grid max-w-5xl grid-cols-1 gap-6 md:grid-cols-3">
+        <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8">
+          <.icon name="hero-shield-check" class="h-7 w-7 text-indigo-400" />
+          <h3 class="mt-4 text-lg font-semibold text-zinc-50">Least privilege, always</h3>
+          <p class="mt-2 text-sm text-zinc-400">
+            The LLM is the least-trusted participant. The policy engine is the source of
+            truth, not the model.
+          </p>
+        </div>
+        <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8">
+          <.icon name="hero-eye" class="h-7 w-7 text-indigo-400" />
+          <h3 class="mt-4 text-lg font-semibold text-zinc-50">Auditability is non-negotiable</h3>
+          <p class="mt-2 text-sm text-zinc-400">
+            If a thing happens in production, it needs a record. Tamper-evident, exportable,
+            replayable.
+          </p>
+        </div>
+        <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8">
+          <.icon name="hero-wrench-screwdriver" class="h-7 w-7 text-indigo-400" />
+          <h3 class="mt-4 text-lg font-semibold text-zinc-50">Boring is a feature</h3>
+          <p class="mt-2 text-sm text-zinc-400">
+            We pick the dull, defensible technology. Postgres. YAML. JSONL. Outbound TLS.
+            No clever distributed systems your oncall has to learn.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <%!-- Founder pitch --%>
+  <section class="border-y border-zinc-900 bg-zinc-950/40 py-24 sm:py-32">
+    <div class="mx-auto max-w-4xl px-6 lg:px-8">
+      <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-12">
+        <h2 class="text-3xl font-bold tracking-tight text-zinc-50">A note from the founder</h2>
+        <div class="mt-6 space-y-4 text-lg leading-8 text-zinc-400">
+          <p>
+            I spent a decade as an SRE and platform engineer. I've been paged at 3 a.m.
+            because someone — sometimes me — ran the wrong command on the wrong cluster.
+            I've also watched LLMs solve, in seconds, problems that used to take an oncall
+            an hour of greps and tails.
+          </p>
+          <p>
+            Both of those things are true. The job of emisar is to keep them true at the
+            same time: let the runner help, but never let it become the cause of the
+            next outage.
+          </p>
+          <p class="text-zinc-300">
+            If that resonates — try it free, or
+            <a href="mailto:hello@emisar.com" class="text-indigo-300 hover:text-indigo-200">email me</a>
+            with your war story. I read every message.
+          </p>
+        </div>
+        <p class="mt-8 text-sm text-zinc-500">— Andrew, founder</p>
+      </div>
+    </div>
+  </section>
+
+  <%!-- Hiring CTA --%>
+  <section class="py-24 sm:py-32">
+    <div class="mx-auto max-w-4xl px-6 lg:px-8">
+      <div class="rounded-3xl border border-indigo-500/30 bg-gradient-to-br from-indigo-600/20 via-zinc-950 to-zinc-950 p-12 text-center sm:p-16">
+        <h2 class="text-4xl font-bold tracking-tight text-zinc-50 sm:text-5xl">
+          We're hiring.
+        </h2>
+        <p class="mx-auto mt-6 max-w-xl text-lg leading-8 text-zinc-400">
+          Tiny team. Big problem. If you have battle scars from running production at scale
+          and opinions about how LLMs should (and shouldn't) touch it — we want to talk.
+        </p>
+        <div class="mt-10 flex items-center justify-center gap-6">
+          <a href="mailto:jobs@emisar.com" class="rounded-lg bg-indigo-500 px-6 py-3 text-sm font-semibold text-zinc-950 hover:bg-indigo-400">
+            Get in touch
+          </a>
+          <.link href={~p"/sign_up"} class="text-sm font-semibold text-zinc-100 hover:text-indigo-300">
+            Try emisar first <span aria-hidden="true">&rarr;</span>
+          </.link>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <.marketing_footer />
+</div>

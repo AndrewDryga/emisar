@@ -1,0 +1,86 @@
+<div class="bg-zinc-950 text-zinc-100">
+  <.marketing_nav current={:docs} />
+
+  <section class="py-16 sm:py-24">
+    <div class="mx-auto max-w-3xl px-6 lg:px-8">
+      <p class="text-sm font-semibold text-indigo-400">Use cases / Postgres</p>
+      <h1 class="mt-2 text-4xl font-bold tracking-tight text-zinc-50 md:text-5xl">
+        Postgres ops — read-only triage + one-approval kill
+      </h1>
+      <p class="mt-6 text-lg leading-8 text-zinc-400">
+        At 02:14 your replication lag spikes. A model with raw <code>psql</code>
+        access is either useful or terrifying. With a declared Postgres pack
+        it's both auditable and bounded.
+      </p>
+
+      <h2 class="mt-12 text-2xl font-semibold text-zinc-50">The pack</h2>
+      <ul class="mt-4 space-y-3 text-sm text-zinc-300">
+        <li>
+          <code class="font-mono text-indigo-300">pg.replication_lag</code> — risk:
+          <code>low</code>, read-only. Runs <code>SELECT pg_wal_lsn_diff(...)</code> via
+          a service-role connection and returns a numeric lag. The model can poll
+          it freely.
+        </li>
+        <li>
+          <code class="font-mono text-indigo-300">pg.slow_queries</code> — risk:
+          <code>low</code>. <code>SELECT pid, query_start, state, query FROM pg_stat_activity
+          WHERE query_start &lt; now() - interval '$arg&#123;min_age&#125;'</code>. Output
+          is JSON-parsed; queries past the redactor pass through with arguments
+          masked.
+        </li>
+        <li>
+          <code class="font-mono text-indigo-300">pg.kill_pid</code> — risk:
+          <code>high</code>. <code>SELECT pg_terminate_backend($1)</code>. Args: a
+          single integer PID. Policy default requires one approval.
+        </li>
+      </ul>
+
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">Worked example</h2>
+      <pre class="mt-3 overflow-x-auto rounded-lg border border-zinc-900 bg-black/60 p-4 font-mono text-xs leading-6 text-zinc-300"># LLM, via MCP:
+&#123;"tool":"pg.replication_lag", "args":&#123;&#125;&#125;
+→ &#123;"lag_bytes": 4_812_345_678&#125;
+
+&#123;"tool":"pg.slow_queries", "args":&#123;"min_age":"5m"&#125;&#125;
+→ [
+    &#123;"pid": 9871, "query_start": "02:09:00",
+     "query": "VACUUM FULL orders_archive_2018;"&#125;,
+    ...
+  ]
+
+&#123;"tool":"pg.kill_pid", "args":&#123;"pid":9871&#125;,
+ "reason":"Long VACUUM FULL blocking replication on read replica."&#125;
+→ 202 Accepted, status: pending_approval
+   policy: "kill_pid is high-risk; one approval required"
+   review: https://app.emisar.com/app/approvals/abc...</pre>
+      <p class="mt-3 text-sm text-zinc-400">
+        The model returned the URL to the human. The human looks at the run
+        context — the slow query, the runner, the reason — and approves with one
+        click. The kill fires, output captures the boolean
+        <code>pg_terminate_backend</code> result, replication starts catching up.
+      </p>
+
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">What stays out of bounds</h2>
+      <ul class="mt-4 space-y-2 text-sm text-zinc-300">
+        <li>
+          DDL: there is no <code>pg.alter_table</code>. If you want schema changes
+          driven by AI, that's a deliberate authoring choice, not a default.
+        </li>
+        <li>
+          Reading row data: <code>pg.slow_queries</code> returns the query <em>text</em>
+          but not result rows. Arguments in the text get redacted.
+        </li>
+        <li>
+          Raw SQL: there is no <code>pg.exec</code> action. Every action is a
+          parameterized query template owned by the pack.
+        </li>
+      </ul>
+
+      <p class="mt-8 text-sm text-zinc-400">
+        We'll ship the Postgres pack in a future release. The shape above is
+        what we're building from real on-call experience.
+      </p>
+    </div>
+  </section>
+
+  <.marketing_footer />
+</div>

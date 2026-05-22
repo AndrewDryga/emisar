@@ -1,0 +1,199 @@
+<%!-- ============================================================
+  Security & compliance
+============================================================ --%>
+
+<div class="bg-zinc-950 text-zinc-100">
+  <.marketing_nav current={:security} />
+
+  <%!-- Hero --%>
+  <section class="py-24 sm:py-32">
+    <div class="mx-auto max-w-4xl px-6 lg:px-8">
+      <p class="text-base font-semibold text-indigo-400">Security &amp; compliance</p>
+      <h1 class="mt-2 text-6xl font-bold tracking-tight text-zinc-50 md:text-7xl">
+        Built so your security team says yes.
+      </h1>
+      <p class="mt-8 max-w-2xl text-lg leading-8 text-zinc-400">
+        emisar exists because giving an LLM raw shell access is reckless. Every layer here
+        is designed so the LLM is the least-privileged participant in the system — and
+        every action is auditable.
+      </p>
+    </div>
+  </section>
+
+  <%!-- Trust boundary --%>
+  <section class="border-y border-zinc-900 bg-zinc-950/40 py-24 sm:py-32">
+    <div class="mx-auto max-w-7xl px-6 lg:px-8">
+      <div class="mx-auto max-w-2xl text-center">
+        <h2 class="text-base font-semibold text-indigo-400">Trust boundary</h2>
+        <p class="mt-2 text-4xl font-bold tracking-tight text-zinc-50 sm:text-5xl">
+          Who can do what, by design.
+        </p>
+        <p class="mt-6 text-lg leading-8 text-zinc-400">
+          The LLM is never trusted with privileged execution. It can only request actions
+          from a catalog your team has reviewed.
+        </p>
+      </div>
+
+      <div class="mx-auto mt-16 max-w-5xl rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8">
+        <pre class="overflow-x-auto font-mono text-xs leading-6 text-zinc-300">
+  ┌────────────┐   1. asks                       ┌──────────────────┐
+  │            │ ──────────────────────────────▶ │                  │
+  │    LLM     │                                 │   Control plane  │
+  │            │ ◀────────────────────────────── │                  │
+  └────────────┘   5. structured result          └──────────────────┘
+       △                                                  │
+       │                                                  │ 2. validate args
+       │                                                  │ 3. policy gate
+       │                                                  │ 4. enqueue
+       │                                                  ▼
+  ┌────────────┐                                  ┌──────────────────┐
+  │            │ ◀─── outbound WSS only ────────  │                  │
+  │  Operator  │                                  │ Runner on host    │
+  │  (human)   │ ───── approve / deny ──────────▶ │ (least privilege)│
+  └────────────┘                                  └──────────────────┘
+                                                          │
+                                                          ▼
+                                                  ┌──────────────────┐
+                                                  │  Append-only     │
+                                                  │  JSONL journal   │
+                                                  └──────────────────┘
+        </pre>
+      </div>
+
+      <div class="mx-auto mt-12 grid max-w-5xl grid-cols-1 gap-6 md:grid-cols-3">
+        <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-6">
+          <h3 class="text-sm font-semibold text-indigo-300">LLM</h3>
+          <p class="mt-2 text-sm text-zinc-400">Untrusted. Can only call catalog actions with declared args.</p>
+        </div>
+        <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-6">
+          <h3 class="text-sm font-semibold text-indigo-300">Control plane</h3>
+          <p class="mt-2 text-sm text-zinc-400">Validates, gates, routes, audits. Never executes shell itself.</p>
+        </div>
+        <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-6">
+          <h3 class="text-sm font-semibold text-indigo-300">Runner</h3>
+          <p class="mt-2 text-sm text-zinc-400">Runs as a non-root user with only the binaries your pack declares, by default (set via install.sh).</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <%!-- Data handling --%>
+  <section class="py-24 sm:py-32">
+    <div class="mx-auto max-w-7xl px-6 lg:px-8">
+      <div class="mx-auto max-w-2xl text-center">
+        <h2 class="text-base font-semibold text-indigo-400">Data handling</h2>
+        <p class="mt-2 text-4xl font-bold tracking-tight text-zinc-50 sm:text-5xl">
+          Boring, defensible defaults.
+        </p>
+      </div>
+
+      <div class="mx-auto mt-16 grid max-w-5xl grid-cols-1 gap-6 md:grid-cols-2">
+        <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8">
+          <div class="flex h-12 w-12 items-center justify-center rounded-lg bg-indigo-500/10 text-indigo-400">
+            <.icon name="hero-lock-closed" class="h-6 w-6" />
+          </div>
+          <h3 class="mt-6 text-xl font-semibold text-zinc-50">TLS-only transport</h3>
+          <p class="mt-3 text-sm leading-6 text-zinc-400">
+            Runners connect to the control plane over WSS (TLS 1.3). Authentication via
+            long-lived bearer tokens, revocable from the dashboard.
+          </p>
+        </div>
+        <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8">
+          <div class="flex h-12 w-12 items-center justify-center rounded-lg bg-indigo-500/10 text-indigo-400">
+            <.icon name="hero-arrow-up-on-square" class="h-6 w-6" />
+          </div>
+          <h3 class="mt-6 text-xl font-semibold text-zinc-50">No inbound connections to runners</h3>
+          <p class="mt-3 text-sm leading-6 text-zinc-400">
+            Runners are outbound-only. No ports to expose, no firewall holes, no NAT traversal.
+            Your hosts initiate every connection.
+          </p>
+        </div>
+        <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8">
+          <div class="flex h-12 w-12 items-center justify-center rounded-lg bg-indigo-500/10 text-indigo-400">
+            <.icon name="hero-document-text" class="h-6 w-6" />
+          </div>
+          <h3 class="mt-6 text-xl font-semibold text-zinc-50">Append-only audit journal</h3>
+          <p class="mt-3 text-sm leading-6 text-zinc-400">
+            Every action is recorded to an append-only JSONL audit on the host
+            (tamper-evidence on the roadmap), and never mutated after write.
+          </p>
+        </div>
+        <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8">
+          <div class="flex h-12 w-12 items-center justify-center rounded-lg bg-indigo-500/10 text-indigo-400">
+            <.icon name="hero-finger-print" class="h-6 w-6" />
+          </div>
+          <h3 class="mt-6 text-xl font-semibold text-zinc-50">Hash-pinned packs</h3>
+          <p class="mt-3 text-sm leading-6 text-zinc-400">
+            Action packs are content-addressed. The runner computes and advertises a SHA-256
+            of every loaded pack, so operators can see exactly what was reviewed.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <%!-- Org controls --%>
+  <section class="border-y border-zinc-900 bg-zinc-950/40 py-24 sm:py-32">
+    <div class="mx-auto max-w-7xl px-6 lg:px-8">
+      <div class="mx-auto max-w-2xl text-center">
+        <h2 class="text-base font-semibold text-indigo-400">Organizational controls</h2>
+        <p class="mt-2 text-4xl font-bold tracking-tight text-zinc-50 sm:text-5xl">
+          The knobs your IAM team expects.
+        </p>
+      </div>
+
+      <div class="mx-auto mt-16 grid max-w-5xl grid-cols-1 gap-6 md:grid-cols-3">
+        <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8">
+          <.icon name="hero-user-group" class="h-7 w-7 text-indigo-400" />
+          <h3 class="mt-4 text-lg font-semibold text-zinc-50">RBAC</h3>
+          <p class="mt-2 text-sm text-zinc-400">
+            Roles for owner, admin, operator, viewer. Per-action grants. No "god mode."
+          </p>
+        </div>
+        <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8">
+          <.icon name="hero-key" class="h-7 w-7 text-indigo-400" />
+          <h3 class="mt-4 text-lg font-semibold text-zinc-50">SSO (Enterprise)</h3>
+          <p class="mt-2 text-sm text-zinc-400">
+            Enterprise SSO &mdash; contact us.
+          </p>
+        </div>
+        <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8">
+          <.icon name="hero-shield-check" class="h-7 w-7 text-indigo-400" />
+          <h3 class="mt-4 text-lg font-semibold text-zinc-50">MFA</h3>
+          <p class="mt-2 text-sm text-zinc-400">
+            TOTP on every plan. Optional enforcement org-wide.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <%!-- Responsible disclosure --%>
+  <section class="py-24 sm:py-32">
+    <div class="mx-auto max-w-4xl px-6 lg:px-8">
+      <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-12">
+        <h2 class="text-4xl font-bold tracking-tight text-zinc-50">Responsible disclosure</h2>
+        <p class="mt-6 text-lg leading-8 text-zinc-400">
+          Found a security issue? We want to hear about it. Email
+          <a href="mailto:security@emisar.com" class="text-indigo-300 hover:text-indigo-200">security@emisar.com</a>
+          with a description and reproduction steps. We acknowledge within one business day
+          and credit reporters in our security advisories.
+        </p>
+        <p class="mt-4 text-sm text-zinc-500">
+          Full policy in
+          <a href="https://github.com/andrewdryga/emisar/blob/main/.github/SECURITY.md" class="text-indigo-300 hover:text-indigo-200">SECURITY.md</a>.
+        </p>
+        <div class="mt-8 flex items-center gap-6">
+          <a href="https://github.com/andrewdryga/emisar/blob/main/.github/SECURITY.md" class="rounded-lg bg-indigo-500 px-6 py-3 text-sm font-semibold text-zinc-950 hover:bg-indigo-400">
+            Read SECURITY.md
+          </a>
+          <a href="mailto:security@emisar.com" class="text-sm font-semibold text-zinc-100 hover:text-indigo-300">
+            Email security team <span aria-hidden="true">&rarr;</span>
+          </a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <.marketing_footer />
+</div>

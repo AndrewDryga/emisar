@@ -1,0 +1,74 @@
+<div class="bg-zinc-950 text-zinc-100">
+  <.marketing_nav current={:docs} />
+
+  <section class="py-16 sm:py-24">
+    <div class="mx-auto max-w-3xl px-6 lg:px-8">
+      <p class="text-sm font-semibold text-indigo-400">Docs / Quickstart</p>
+      <h1 class="mt-2 text-4xl font-bold tracking-tight text-zinc-50 md:text-5xl">Quickstart</h1>
+      <p class="mt-6 text-lg leading-8 text-zinc-400">
+        Five minutes to your first audited action. Install the runner on a
+        Linux host, mint an enrollment key, watch <code class="font-mono text-indigo-300">linux.uptime</code>
+        come back in your dashboard.
+      </p>
+
+      <h2 class="mt-12 text-2xl font-semibold text-zinc-50">1. Create your account</h2>
+      <p class="mt-3 text-sm leading-relaxed text-zinc-400">
+        Sign up at <.link href="/sign_up" class="text-indigo-400 hover:text-indigo-300">/sign_up</.link>.
+        Free tier supports up to 3 runners — no credit card.
+      </p>
+
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">2. Mint an enrollment key</h2>
+      <p class="mt-3 text-sm leading-relaxed text-zinc-400">
+        From the dashboard, hit <strong>Connect your first runner</strong>. We'll generate
+        an <code class="font-mono text-indigo-300">emkey-auth-…</code> key and a one-line
+        install command. The key is shown <em>once</em>; copy it now.
+      </p>
+      <div class="mt-3 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
+        <pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300"><span class="text-zinc-500">$</span> curl -sSL https://emisar.com/install.sh \
+    | sudo EMISAR_AUTH_KEY=emkey-auth-... EMISAR_URL=https://app.emisar.com bash</pre>
+      </div>
+      <p class="mt-3 text-sm text-zinc-400">
+        The leading space (when shown in the dashboard) keeps the key out of your
+        shell history if you have <code>HISTCONTROL=ignorespace</code> set.
+      </p>
+
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">3. The runner connects back</h2>
+      <p class="mt-3 text-sm leading-relaxed text-zinc-400">
+        The installer drops a systemd unit (<code class="font-mono">emisar.service</code>)
+        running as a dedicated <code class="font-mono">emisar</code> user. The runner dials
+        out to the control plane over outbound TLS, advertises its action catalog,
+        and waits for work. No inbound ports.
+      </p>
+      <p class="mt-3 text-sm text-zinc-400">
+        Refresh the dashboard. You should see your host under <strong>Runners online</strong>.
+      </p>
+
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">4. Run uptime</h2>
+      <p class="mt-3 text-sm leading-relaxed text-zinc-400">
+        From the runner's detail page, click <code>linux.uptime</code> → fill in a reason
+        (required — logged in audit) → <strong>Dispatch to runner</strong>. The output
+        streams back in real time. The default policy ships with
+        <code>linux.uptime</code> allowlisted because it's read-only, low-risk, and a
+        useful first signal.
+      </p>
+
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">5. Connect an LLM</h2>
+      <p class="mt-3 text-sm leading-relaxed text-zinc-400">
+        With one runner alive, you can wire a model.
+        <.link href="/docs/connect-an-llm" class="text-indigo-400 hover:text-indigo-300">/docs/connect-an-llm</.link>
+        walks through Claude Code, Cursor, Gemini, and Codex with prefilled config
+        for the API key you'll issue under Settings → API keys.
+      </p>
+
+      <div class="mt-12 rounded-xl border border-indigo-900/40 bg-indigo-950/20 p-5 text-sm text-zinc-300">
+        <strong class="text-zinc-100">Troubleshooting:</strong> if the runner doesn't show up,
+        check <code class="font-mono text-xs">journalctl -u emisar -f</code> on the host.
+        The most common cause is a stale enrollment key (single-use keys can only
+        be consumed once) or an outbound firewall blocking
+        <code class="font-mono">app.emisar.com:443</code>.
+      </div>
+    </div>
+  </section>
+
+  <.marketing_footer />
+</div>

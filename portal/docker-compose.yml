@@ -1,0 +1,24 @@
+version: "3.9"
+
+# Local dev stack: just Postgres. Run the Phoenix app with `mix phx.server`
+# on the host so code reload + breakpoints work.
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: emisar_dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - emisar_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  emisar_pg:

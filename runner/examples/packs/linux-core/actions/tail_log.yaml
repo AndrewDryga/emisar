@@ -1,0 +1,63 @@
+schema_version: 1
+
+id: linux.tail_log
+title: Tail a log file
+kind: exec
+risk: low
+
+description: >
+  Reads the last N lines of a log file under /var/log. Read-only. Use
+  to glance at the most recent activity for a service when triaging
+  an alert, before deciding whether to grep deeper or pull more
+  context. Output is run through the runner's redactor before it leaves
+  the host.
+
+side_effects:
+  - Reads a log file under /var/log.
+  - Output may contain operational secrets — redactor scrubs known patterns.
+  - Does not modify anything.
+
+args:
+  - name: file
+    type: path
+    required: true
+    description: Absolute path to the log file. Must be under /var/log/.
+    validation:
+      allowed_prefixes:
+        - /var/log/
+
+  - name: lines
+    type: integer
+    required: false
+    default: 200
+    description: Number of trailing lines to return (tail -n).
+    validation:
+      min: 1
+      max: 5000
+
+execution:
+  command:
+    binary: /usr/bin/tail
+    argv:
+      - "-n"
+      - "{{ args.lines }}"
+      - "{{ args.file }}"
+  timeout: 30s
+  timeout_min: 1s
+  timeout_max: 5m
+  cwd: /
+
+output:
+  parser: text
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+
+examples:
+  - title: Last 100 lines of nginx error log
+    args:
+      file: /var/log/nginx/error.log
+      lines: 100
+  - title: Last 500 lines of syslog
+    args:
+      file: /var/log/syslog
+      lines: 500

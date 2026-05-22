@@ -1,0 +1,35 @@
+schema_version: 1
+
+id: cassandra.nodetool_compactionstats
+title: Cassandra compaction statistics
+kind: exec
+risk: low
+
+description: >
+  Runs `nodetool compactionstats`. Pending compactions in the
+  dozens-to-hundreds indicate the node is behind. Triggering repair on a
+  node already behind on compactions usually makes things worse — wait for
+  the queue to drain before recommending repair.
+
+side_effects:
+  - Starts a short-lived JMX connection.
+  - Touches no files.
+
+args: []
+
+execution:
+  command:
+    binary: /usr/bin/nodetool
+    argv:
+      - "compactionstats"
+  timeout: 30s
+  cwd: /
+
+output:
+  parser: text
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 65536
+
+examples:
+  - title: Inspect compaction backlog
+    args: {}

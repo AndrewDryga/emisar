@@ -1,0 +1,88 @@
+schema_version: 1
+
+id: cassandra.nodetool_repair
+title: Cassandra repair
+kind: exec
+risk: high
+
+description: >
+  Wraps `nodetool repair`. The most dangerous "normal" operation — repair
+  reconciles data between replicas, can take hours, produces significant
+  cluster-wide load, may interact poorly with TTL/tombstone-heavy tables,
+  and can worsen latency on every replica it touches. Always inspect ring
+  status, compactions, disk, and logs first. Prefer mode=preview before a
+  real repair. Refuse to proceed if the ring has DN/UJ/UL/UM nodes.
+
+side_effects:
+  - Repair coordinates with replicas across the cluster.
+  - Generates significant network, CPU, and disk I/O.
+  - Schedules anti-compaction and validation tasks.
+  - Can run for minutes to hours depending on dataset size.
+  - May worsen latency on the local node and on replica nodes for the duration.
+
+args:
+  - name: keyspace
+    type: string
+    required: true
+    description: Keyspace to repair.
+    validation:
+      pattern: "^[a-zA-Z][a-zA-Z0-9_]{0,47}$"
+
+  - name: table
+    type: string
+    required: false
+    description: Optional single table to repair.
+    validation:
+      pattern: "^[a-zA-Z][a-zA-Z0-9_]{0,47}$"
+
+  - name: mode
+    type: string
+    required: false
+    default: preview
+    description: Repair mode.
+    validation:
+      enum:
+        - preview
+        - full
+        - incremental
+
+  - name: primary_range
+    type: boolean
+    required: false
+    default: true
+    description: Restrict to the primary token range (recommended).
+
+  - name: parallelism
+    type: string
+    required: false
+    default: sequential
+    description: Parallelism mode.
+    validation:
+      enum:
+        - sequential
+        - parallel
+        - dc_parallel
+
+execution:
+  command:
+    binary: /usr/bin/nodetool
+    argv:
+      - "repair"
+      - "{{ args.keyspace }}"
+  timeout: 6h
+  # Repair has anti-compaction + validation clean-up that benefits from
+  # extra grace between SIGTERM and SIGKILL on cancel. Default runner
+  # cancel_grace is 30s; bump to 5m for this action.
+  cancel_grace: 5m
+  cwd: /
+
+output:
+  parser: text
+  max_stdout_bytes: 4194304
+  max_stderr_bytes: 262144
+
+examples:
+  - title: Dry-run repair preview on one keyspace
+    args:
+      keyspace: valorant_ks
+      mode: preview

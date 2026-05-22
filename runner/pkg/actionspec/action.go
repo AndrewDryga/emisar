@@ -1,0 +1,298 @@
+package actionspec
+
+import "fmt"
+
+// SchemaVersion is the currently supported action schema version.
+const SchemaVersion = 1
+
+// Action is the YAML definition of an LLM-callable primitive capability.
+//
+// The on-disk schema is intentionally compact: title for UI labelling,
+// description for the long-form prose the LLM and humans both read,
+// side_effects for the scannable list, and the executable contract
+// (args + execution + output). Pack authors do not write multiple
+// near-duplicate prose fields.
+//
+// Loaders also stamp PackID, PackRoot, and SourcePath at load time; those
+// fields are not part of the on-disk schema.
+type Action struct {
+	SchemaVersion int      `yaml:"schema_version"`
+	ID            string   `yaml:"id"`
+	Title         string   `yaml:"title"`
+	Kind          Kind     `yaml:"kind"`
+	Risk          Risk     `yaml:"risk"`
+	Description   string   `yaml:"description"`
+	SideEffects   []string `yaml:"side_effects"`
+
+	Args      []Arg     `yaml:"args"`
+	Execution Execution `yaml:"execution"`
+	Output    Output    `yaml:"output"`
+	Examples  []Example `yaml:"examples,omitempty"`
+
+	PackID     string `yaml:"-"`
+	PackRoot   string `yaml:"-"`
+	SourcePath string `yaml:"-"`
+}
+
+// Execution describes how an action runs.
+//
+// For Kind == exec, Command must be set.
+// For Kind == script, Script must be set; Argv passes extra args to the script.
+type Execution struct {
+	Command *Command `yaml:"command,omitempty"`
+	Script  *Script  `yaml:"script,omitempty"`
+	Argv    []string `yaml:"argv,omitempty"`
+	Timeout Duration `yaml:"timeout"`
+	// TimeoutMin and TimeoutMax bound any cloud-supplied opts.timeout
+	// override. If unset, defaults to Timeout (no override allowed).
+	TimeoutMin Duration `yaml:"timeout_min,omitempty"`
+	TimeoutMax Duration `yaml:"timeout_max,omitempty"`
+	// CancelGrace overrides the runner-wide cancel_grace for this action.
+	// Used when SIGTERM needs more time than the default (e.g., Cassandra
+	// repair clean-up). Zero means "use the config default."
+	CancelGrace Duration          `yaml:"cancel_grace,omitempty"`
+	CWD         string            `yaml:"cwd,omitempty"`
+	Env         map[string]string `yaml:"env,omitempty"`
+	User        string            `yaml:"user,omitempty"`
+}
+
+// Command describes an exec invocation. Argv is rendered through the template
+// engine before exec.
+type Command struct {
+	Binary string   `yaml:"binary"`
+	Argv   []string `yaml:"argv"`
+}
+
+// Script describes a scripted invocation. Path is resolved relative to the
+// owning pack root and must not escape it.
+type Script struct {
+	Path        string `yaml:"path"`
+	Interpreter string `yaml:"interpreter"`
+}
+
+// Output configures parsing, size limits, and action-local redaction rules.
+//
+// MaxStdoutBytes/MaxStderrBytes are the defaults; *Min/*Max bound any
+// cloud-supplied opts override. If *Min/*Max are unset, no override allowed.
+type Output struct {
+	Parser            Parser          `yaml:"parser,omitempty"`
+	ParserRequired    bool            `yaml:"parser_required,omitempty"`
+	MaxStdoutBytes    int             `yaml:"max_stdout_bytes,omitempty"`
+	MaxStdoutBytesMin int             `yaml:"max_stdout_bytes_min,omitempty"`
+	MaxStdoutBytesMax int             `yaml:"max_stdout_bytes_max,omitempty"`
+	MaxStderrBytes    int             `yaml:"max_stderr_bytes,omitempty"`
+	MaxStderrBytesMin int             `yaml:"max_stderr_bytes_min,omitempty"`
+	MaxStderrBytesMax int             `yaml:"max_stderr_bytes_max,omitempty"`
+	Redact            []RedactionRule `yaml:"redact,omitempty"`
+}
+
+// RedactionRule is a redaction directive (regex or literal) attached to an
+// action or to global config.
+type RedactionRule struct {
+	Name        string `yaml:"name"`
+	Type        string `yaml:"type"`
+	Pattern     string `yaml:"pattern,omitempty"`
+	Literal     string `yaml:"literal,omitempty"`
+	Replacement string `yaml:"replacement,omitempty"`
+}
+
+// Example is a documented sample invocation.
+type Example struct {
+	Title string         `yaml:"title" json:"title"`
+	Args  map[string]any `yaml:"args" json:"args"`
+}
+
+// Validate checks that the action is internally consistent and ready to load.
+func (a *Action) Validate() error {
+	if a.SchemaVersion != SchemaVersion {
+		return fmt.Errorf("action %s: unsupported schema_version %d (want %d)", a.ID, a.SchemaVersion, SchemaVersion)
+	}
+	if a.ID == "" {
+		return fmt.Errorf("action: missing id")
+	}
+	if !validActionID(a.ID) {
+		return fmt.Errorf("action: invalid id %q (must match [a-z][a-z0-9._-]*\\.[a-z][a-z0-9_-]*)", a.ID)
+	}
+	if a.Title == "" {
+		return fmt.Errorf("action %s: missing title", a.ID)
+	}
+	if err := validateEnums(a.Kind, a.Risk, a.Output.Parser); err != nil {
+		return fmt.Errorf("action %s: %w", a.ID, err)
+	}
+	if a.Description == "" {
+		return fmt.Errorf("action %s: missing description", a.ID)
+	}
+	if len(a.SideEffects) == 0 {
+		return fmt.Errorf("action %s: missing side_effects", a.ID)
+	}
+	if a.Execution.Timeout <= 0 {
+		return fmt.Errorf("action %s: execution.timeout must be > 0", a.ID)
+	}
+	if err := validateTimeoutBounds(a); err != nil {
+		return err
+	}
+	if a.Output.MaxStdoutBytes <= 0 {
+		return fmt.Errorf("action %s: output.max_stdout_bytes must be > 0", a.ID)
+	}
+	if a.Output.MaxStderrBytes <= 0 {
+		return fmt.Errorf("action %s: output.max_stderr_bytes must be > 0", a.ID)
+	}
+	if err := validateOutputBounds(a); err != nil {
+		return err
+	}
+	switch a.Kind {
+	case KindExec:
+		if a.Execution.Command == nil {
+			return fmt.Errorf("action %s: exec kind requires execution.command", a.ID)
+		}
+		if a.Execution.Command.Binary == "" {
+			return fmt.Errorf("action %s: execution.command.binary required", a.ID)
+		}
+		if a.Execution.Script != nil {
+			return fmt.Errorf("action %s: exec kind must not set execution.script", a.ID)
+		}
+	case KindScript:
+		if a.Execution.Script == nil {
+			return fmt.Errorf("action %s: script kind requires execution.script", a.ID)
+		}
+		if a.Execution.Script.Path == "" {
+			return fmt.Errorf("action %s: execution.script.path required", a.ID)
+		}
+		if a.Execution.Command != nil {
+			return fmt.Errorf("action %s: script kind must not set execution.command", a.ID)
+		}
+	}
+	seen := make(map[string]struct{}, len(a.Args))
+	for i := range a.Args {
+		if err := a.Args[i].Validate(); err != nil {
+			return fmt.Errorf("action %s: %w", a.ID, err)
+		}
+		if _, dup := seen[a.Args[i].Name]; dup {
+			return fmt.Errorf("action %s: duplicate arg %q", a.ID, a.Args[i].Name)
+		}
+		seen[a.Args[i].Name] = struct{}{}
+	}
+	for _, rr := range a.Output.Redact {
+		if err := rr.Validate(); err != nil {
+			return fmt.Errorf("action %s: %w", a.ID, err)
+		}
+	}
+	return nil
+}
+
+func validateTimeoutBounds(a *Action) error {
+	t := a.Execution.Timeout
+	tMin := a.Execution.TimeoutMin
+	tMax := a.Execution.TimeoutMax
+	if tMin == 0 {
+		tMin = t
+	}
+	if tMax == 0 {
+		tMax = t
+	}
+	if tMin > tMax {
+		return fmt.Errorf("action %s: timeout_min > timeout_max", a.ID)
+	}
+	if t < tMin || t > tMax {
+		return fmt.Errorf("action %s: timeout default %s outside [%s, %s]", a.ID, t, tMin, tMax)
+	}
+	return nil
+}
+
+func validateOutputBounds(a *Action) error {
+	check := func(field string, def, lo, hi int) error {
+		if lo == 0 {
+			lo = def
+		}
+		if hi == 0 {
+			hi = def
+		}
+		if lo > hi {
+			return fmt.Errorf("action %s: %s_min > %s_max", a.ID, field, field)
+		}
+		if def < lo || def > hi {
+			return fmt.Errorf("action %s: %s default %d outside [%d, %d]", a.ID, field, def, lo, hi)
+		}
+		return nil
+	}
+	if err := check("max_stdout_bytes", a.Output.MaxStdoutBytes, a.Output.MaxStdoutBytesMin, a.Output.MaxStdoutBytesMax); err != nil {
+		return err
+	}
+	return check("max_stderr_bytes", a.Output.MaxStderrBytes, a.Output.MaxStderrBytesMin, a.Output.MaxStderrBytesMax)
+}
+
+// validActionID enforces the convention "<ns>.<name>" with optional extra
+// dot-separated namespaces (e.g. "myorg.cassandra.nodetool_status"). Each
+// segment matches [a-z][a-z0-9_-]*.
+func validActionID(id string) bool {
+	if id == "" || len(id) > 128 {
+		return false
+	}
+	segments := 0
+	start := 0
+	for i := 0; i <= len(id); i++ {
+		if i == len(id) || id[i] == '.' {
+			if i == start {
+				return false
+			}
+			seg := id[start:i]
+			if !validIDSegment(seg) {
+				return false
+			}
+			segments++
+			start = i + 1
+		}
+	}
+	return segments >= 2
+}
+
+func validIDSegment(s string) bool {
+	if s == "" {
+		return false
+	}
+	first := s[0]
+	if !(first >= 'a' && first <= 'z') {
+		return false
+	}
+	for i := 1; i < len(s); i++ {
+		c := s[i]
+		switch {
+		case c >= 'a' && c <= 'z':
+		case c >= '0' && c <= '9':
+		case c == '_' || c == '-':
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// Validate checks that a redaction rule has the fields required by its type.
+func (r RedactionRule) Validate() error {
+	if r.Name == "" {
+		return fmt.Errorf("redaction rule: missing name")
+	}
+	switch r.Type {
+	case "regex":
+		if r.Pattern == "" {
+			return fmt.Errorf("redaction rule %s: regex requires pattern", r.Name)
+		}
+	case "literal":
+		if r.Literal == "" {
+			return fmt.Errorf("redaction rule %s: literal requires literal", r.Name)
+		}
+	default:
+		return fmt.Errorf("redaction rule %s: invalid type %q", r.Name, r.Type)
+	}
+	return nil
+}
+
+// ArgByName returns a pointer to the arg with the given name, or nil.
+func (a *Action) ArgByName(name string) *Arg {
+	for i := range a.Args {
+		if a.Args[i].Name == name {
+			return &a.Args[i]
+		}
+	}
+	return nil
+}

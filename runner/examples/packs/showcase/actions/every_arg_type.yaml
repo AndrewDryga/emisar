@@ -1,0 +1,123 @@
+schema_version: 1
+
+# Demonstrates every supported arg type with its most-common validation.
+# The action body itself is a no-op echo — the point is the schema, not
+# what the binary does.
+
+id: showcase.every_arg_type
+title: One arg of every type
+kind: exec
+risk: low
+
+description: >
+  Reference action: one argument of every supported type with a
+  representative validation. Look here when you need to remember the YAML
+  shape for `string_array`, `integer_array`, `duration`, etc.
+
+side_effects:
+  - Runs /bin/echo with the rendered argv.
+  - Touches no files.
+
+args:
+  # string + enum
+  - name: mode
+    type: string
+    required: true
+    description: Discrete choice of mode.
+    validation:
+      enum: [fast, slow, balanced]
+
+  # string + pattern
+  - name: id_token
+    type: string
+    required: false
+    default: "abc123"
+    description: Free-form identifier matching a regex.
+    validation:
+      pattern: "^[a-z0-9_]{3,32}$"
+
+  # integer + allowed (closed set)
+  - name: port
+    type: integer
+    required: false
+    default: 8080
+    description: Listen port, restricted to a known set.
+    validation:
+      allowed: [80, 443, 8080, 8443]
+
+  # number + min/max
+  - name: ratio
+    type: number
+    required: false
+    default: 0.5
+    description: Fractional ratio between 0 and 1.
+    validation:
+      min: 0
+      max: 1
+
+  # boolean
+  - name: verbose
+    type: boolean
+    required: false
+    default: false
+    description: Toggle verbose output. Boolean args have no validation block.
+
+  # duration + max_duration
+  - name: window
+    type: duration
+    required: false
+    default: "5m"
+    description: Lookback window; capped at 1 hour.
+    validation:
+      min_duration: 1s
+      max_duration: 1h
+
+  # string_array + max_items
+  - name: tags
+    type: string_array
+    required: false
+    default: []
+    description: Free-form tag list. Use {{ args.tags }} in argv to expand.
+    validation:
+      max_items: 16
+
+  # integer_array
+  - name: ids
+    type: integer_array
+    required: false
+    default: []
+    description: List of numeric ids.
+    validation:
+      max_items: 32
+
+execution:
+  command:
+    binary: /bin/echo
+    argv:
+      - "mode={{ args.mode }}"
+      - "id_token={{ args.id_token }}"
+      - "port={{ args.port }}"
+      - "ratio={{ args.ratio }}"
+      - "verbose={{ args.verbose }}"
+      - "window={{ args.window }}"
+      - "--"
+      - "{{ args.tags }}"
+      - "--"
+      - "{{ args.ids }}"
+  timeout: 5s
+  cwd: /
+
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 1024
+
+examples:
+  - title: Minimal call (only the required arg)
+    args:
+      mode: fast
+  - title: Tags expand into multiple argv elements
+    args:
+      mode: balanced
+      tags: [red, green, blue]
+      ids: [1, 2, 3]

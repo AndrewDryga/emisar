@@ -1,0 +1,36 @@
+schema_version: 1
+
+id: cassandra.nodetool_tpstats
+title: Cassandra thread pool stats
+kind: exec
+risk: low
+
+description: >
+  Runs `nodetool tpstats` for active/pending/blocked counts per pool.
+  High pending or blocked counts on MutationStage, CompactionExecutor, or
+  ReadStage usually indicate ongoing pressure — investigate the cause
+  before recommending operations that add load (repair, large reads,
+  compaction tuning).
+
+side_effects:
+  - Starts a short-lived JMX connection.
+  - Touches no files.
+
+args: []
+
+execution:
+  command:
+    binary: /usr/bin/nodetool
+    argv:
+      - "tpstats"
+  timeout: 30s
+  cwd: /
+
+output:
+  parser: text
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 65536
+
+examples:
+  - title: Inspect thread pool pressure
+    args: {}

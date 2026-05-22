@@ -1,0 +1,23 @@
+schema_version: 1
+
+id: linux-core
+name: Linux core operations pack
+version: 0.2.0
+description: Safe, read-only Linux diagnostics plus narrow service control.
+vendor: emisar
+homepage: https://github.com/andrewdryga/emisar
+
+requires:
+  os:
+    - linux
+
+actions:
+  - actions/disk_usage.yaml
+  - actions/memory.yaml
+  - actions/uptime.yaml
+  - actions/journalctl.yaml
+  - actions/journalctl_grep.yaml
+  - actions/grep_log.yaml
+  - actions/tail_log.yaml
+  - actions/systemctl_status.yaml
+  - actions/systemctl_restart.yaml

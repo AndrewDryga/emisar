@@ -1,0 +1,71 @@
+schema_version: 1
+
+# Demonstrates the four path validation knobs: allowed_paths,
+# allowed_prefixes, denied_paths, denied_prefixes. Path args are cleaned
+# via filepath.Clean before validation, so "/var/log/../shadow" cannot
+# sneak past denied_prefixes.
+
+id: showcase.path_validation
+title: Read-only file inspection with path allowlist
+kind: exec
+risk: low
+
+description: >
+  Reference action for path-typed arguments. Demonstrates allowed
+  prefixes plus an explicit deny list. The combined effect: the caller
+  may inspect anything under /var/log or /tmp, except /var/log/secure
+  and anything under /tmp/private.
+
+side_effects:
+  - Reads file metadata via /usr/bin/stat.
+  - Does not read file contents.
+
+args:
+  - name: file
+    type: path
+    required: true
+    description: A path under /var/log or /tmp, excluding the denied set.
+    validation:
+      allowed_prefixes:
+        - /var/log
+        - /tmp
+      denied_paths:
+        - /var/log/secure
+      denied_prefixes:
+        - /tmp/private
+
+  - name: extras
+    type: string_array
+    required: false
+    default: []
+    description: >
+      Additional paths to inspect. Each element validates the same way as
+      `file` — but currently only the whole-array validators apply (no
+      per-element path validation; if you need it, accept a single path
+      arg per call instead).
+    validation:
+      max_items: 4
+
+execution:
+  command:
+    binary: /usr/bin/stat
+    argv:
+      - "{{ args.file }}"
+      - "{{ args.extras }}"
+  timeout: 5s
+  cwd: /
+
+output:
+  parser: text
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 4096
+
+examples:
+  - title: Inspect one allowlisted file
+    args:
+      file: /var/log/syslog
+  - title: Inspect a tmp file with extras
+    args:
+      file: /tmp/run.pid
+      extras:
+        - /tmp/run.lock

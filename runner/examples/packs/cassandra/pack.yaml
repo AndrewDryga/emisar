@@ -1,0 +1,22 @@
+schema_version: 1
+
+id: cassandra
+name: Cassandra operations pack
+version: 0.2.0
+description: Safe Cassandra inspection actions for LLM runners.
+vendor: emisar
+homepage: https://github.com/andrewdryga/emisar
+
+requires:
+  os:
+    - linux
+  binaries:
+    - nodetool
+
+actions:
+  - actions/nodetool_status.yaml
+  - actions/nodetool_tpstats.yaml
+  - actions/nodetool_compactionstats.yaml
+  - actions/nodetool_tablestats.yaml
+  - actions/nodetool_repair.yaml
+  - actions/analyze_disk_pressure.yaml

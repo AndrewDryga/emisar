@@ -1,0 +1,59 @@
+schema_version: 1
+
+# Demonstrates the opts envelope: timeout_min/max plus
+# max_stdout_bytes_min/max. A `run_action` from cloud may carry an
+# `opts` block; each field is clamped into the envelope at the runner
+# before execution. Fields the action doesn't declare a *_min/*_max for
+# cannot be overridden — the default wins.
+
+id: showcase.opts_envelope
+title: Demonstrate opts.timeout and opts.max_stdout_bytes clamping
+kind: exec
+risk: low
+
+description: >
+  Sleeps briefly and emits a fixed payload. The interesting bit is the
+  execution/output envelope: cloud-supplied opts.timeout is clamped to
+  [2s, 30s] regardless of what the LLM asked for, and stdout caps are
+  bounded between 1 KiB and 64 KiB.
+
+side_effects:
+  - Sleeps then emits a small payload.
+
+args:
+  - name: payload
+    type: string
+    required: false
+    default: "ok"
+    description: Free-form payload string echoed at end.
+    validation:
+      pattern: "^[a-zA-Z0-9_-]{1,64}$"
+
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "sleep 1; echo {{ args.payload }}"
+  # Cloud opts.timeout is clamped to [timeout_min, timeout_max]. The
+  # default still applies if cloud sends no opts.
+  timeout: 5s
+  timeout_min: 2s
+  timeout_max: 30s
+  # cancel_grace overrides the runner-wide default for this action only.
+  # When the cloud sends `cancel`, the runner SIGTERMs the process group,
+  # waits up to cancel_grace, then SIGKILLs.
+  cancel_grace: 10s
+  cwd: /
+
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stdout_bytes_min: 1024
+  max_stdout_bytes_max: 65536
+  max_stderr_bytes: 1024
+
+examples:
+  - title: Default opts
+    args:
+      payload: ok

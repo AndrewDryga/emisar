@@ -1,0 +1,75 @@
+<%!-- ============================================================
+  Changelog
+============================================================ --%>
+
+<div class="bg-zinc-950 text-zinc-100">
+  <.marketing_nav current={:changelog} />
+
+  <%!-- Hero --%>
+  <section class="py-24 sm:py-32">
+    <div class="mx-auto max-w-4xl px-6 lg:px-8">
+      <p class="text-base font-semibold text-indigo-400">Changelog</p>
+      <h1 class="mt-2 text-6xl font-bold tracking-tight text-zinc-50 md:text-7xl">
+        What's new
+      </h1>
+      <p class="mt-8 max-w-2xl text-lg leading-8 text-zinc-400">
+        Shipping notes from the emisar team. Subscribe via
+        <a href="https://github.com/andrewdryga/emisar/releases.atom" class="text-indigo-300 hover:text-indigo-200">RSS</a>
+        or watch the
+        <a href="https://github.com/andrewdryga/emisar" class="text-indigo-300 hover:text-indigo-200">GitHub repo</a>.
+      </p>
+    </div>
+  </section>
+
+  <%!-- Entries --%>
+  <section class="pb-24 sm:pb-32">
+    <div class="mx-auto max-w-4xl px-6 lg:px-8">
+      <div class="space-y-8">
+        <article class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8">
+          <div class="flex flex-wrap items-baseline justify-between gap-3">
+            <h2 class="text-2xl font-bold tracking-tight text-zinc-50">
+              v0.2.0
+            </h2>
+            <time class="text-sm text-zinc-500" datetime="2026-05-21">May 21, 2026</time>
+          </div>
+          <p class="mt-3 text-sm text-zinc-400">
+            Per-host action catalogs, content-addressed packs, dashboard online-status.
+          </p>
+        </article>
+
+        <article class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8">
+          <div class="flex flex-wrap items-baseline justify-between gap-3">
+            <h2 class="text-2xl font-bold tracking-tight text-zinc-50">
+              v0.1.5
+            </h2>
+            <time class="text-sm text-zinc-500" datetime="2026-04-03">April 3, 2026</time>
+          </div>
+          <p class="mt-3 text-sm text-zinc-400">
+            Pdeathsig zombie prevention, graceful SIGTERM grace, JSONL log rotation.
+          </p>
+        </article>
+
+        <article class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8">
+          <div class="flex flex-wrap items-baseline justify-between gap-3">
+            <h2 class="text-2xl font-bold tracking-tight text-zinc-50">
+              v0.1.0
+            </h2>
+            <time class="text-sm text-zinc-500" datetime="2026-02-18">February 18, 2026</time>
+          </div>
+          <p class="mt-3 text-sm text-zinc-400">
+            Initial public release. Runner binary, YAML action packs, argument validation,
+            policy engine, JSONL audit, example packs.
+          </p>
+        </article>
+      </div>
+
+      <div class="mt-16 text-center">
+        <a href="https://github.com/andrewdryga/emisar/releases" class="text-sm font-semibold text-indigo-300 hover:text-indigo-200">
+          See all releases on GitHub <span aria-hidden="true">&rarr;</span>
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <.marketing_footer />
+</div>

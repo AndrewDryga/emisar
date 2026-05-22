@@ -1,0 +1,71 @@
+<div class="bg-zinc-950 text-zinc-100">
+  <.marketing_nav current={:docs} />
+
+  <section class="py-16 sm:py-24">
+    <div class="mx-auto max-w-3xl px-6 lg:px-8">
+      <p class="text-sm font-semibold text-indigo-400">Compare</p>
+      <h1 class="mt-2 text-4xl font-bold tracking-tight text-zinc-50 md:text-5xl">
+        Why not just give the LLM SSH?
+      </h1>
+      <p class="mt-6 text-lg leading-8 text-zinc-400">
+        The honest answer: you can. Some people do. It works on the days it works.
+        Here's what changes when it doesn't.
+      </p>
+
+      <h2 class="mt-12 text-2xl font-semibold text-zinc-50">Both approaches run real commands</h2>
+      <p class="mt-3 text-sm leading-relaxed text-zinc-400">
+        emisar isn't a sandbox. When the runner executes
+        <code>nodetool repair</code>, it really repairs the keyspace — exactly like
+        SSH would. The difference is what happens <em>before</em> exec, and what's
+        left <em>after</em>.
+      </p>
+
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">Side-by-side</h2>
+      <div class="mt-4 overflow-hidden rounded-xl border border-zinc-900">
+        <table class="w-full text-sm">
+          <thead class="bg-zinc-950/80 text-xs uppercase tracking-wider text-zinc-500">
+            <tr>
+              <th class="px-4 py-3 text-left">Concern</th>
+              <th class="px-4 py-3 text-left">Raw SSH</th>
+              <th class="px-4 py-3 text-left">emisar action pack</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-zinc-900 text-zinc-300">
+            <tr><td class="px-4 py-3">What can the LLM run?</td><td class="px-4 py-3">Anything in the user's shell</td><td class="px-4 py-3">Only declared actions; everything else rejected</td></tr>
+            <tr><td class="px-4 py-3">What are the args?</td><td class="px-4 py-3">Free-text command line</td><td class="px-4 py-3">Typed, validated, redacted at the boundary</td></tr>
+            <tr><td class="px-4 py-3">Approvals?</td><td class="px-4 py-3">Human-on-the-loop in chat — easy to skip</td><td class="px-4 py-3">Policy gates, with email + audit, no skip path</td></tr>
+            <tr><td class="px-4 py-3">Audit trail?</td><td class="px-4 py-3">Whatever lands in <code>.bash_history</code> + Slack scrollback</td><td class="px-4 py-3">Hash-chained JSONL on host, mirrored to cloud</td></tr>
+            <tr><td class="px-4 py-3">Output redaction?</td><td class="px-4 py-3">None — passwords leak into chat logs</td><td class="px-4 py-3">Bearer / AWS / GitHub / private-key blocks masked before egress</td></tr>
+            <tr><td class="px-4 py-3">Lateral movement?</td><td class="px-4 py-3">SSH key on the model's box ≈ key everywhere</td><td class="px-4 py-3">Per-runner token + scoped API key + agent_filter</td></tr>
+            <tr><td class="px-4 py-3">Recovery story?</td><td class="px-4 py-3">"Read the chat scrollback and the logs and hope"</td><td class="px-4 py-3"><code>emisar audit verify</code> + replay every dispatched envelope</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">When raw SSH is the right answer</h2>
+      <p class="mt-3 text-sm leading-relaxed text-zinc-400">
+        Single-operator side projects, throwaway environments, dev clusters
+        you can wipe. The cost of declaring an action pack only pays back
+        when there's <em>another human</em> who needs to audit, override, or
+        recover from the AI's decisions.
+      </p>
+
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">When it isn't</h2>
+      <p class="mt-3 text-sm leading-relaxed text-zinc-400">
+        Production. Anything regulated. Anything where post-incident your
+        VP of Engineering will ask "what did the model do, exactly, and on
+        whose authority?". That's the question raw SSH can't answer without
+        a forensic budget. emisar makes the answer a query.
+      </p>
+
+      <div class="mt-12 rounded-xl border border-indigo-900/40 bg-indigo-950/20 p-5 text-sm text-zinc-300">
+        Try it: install the runner via
+        <.link href="/docs/quickstart" class="text-indigo-400 hover:text-indigo-300">/docs/quickstart</.link>,
+        declare one action you'd otherwise SSH for, point your model at it.
+        Free tier covers 3 runners. No credit card.
+      </div>
+    </div>
+  </section>
+
+  <.marketing_footer />
+</div>

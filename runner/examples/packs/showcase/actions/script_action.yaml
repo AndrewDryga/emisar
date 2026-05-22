@@ -1,0 +1,60 @@
+schema_version: 1
+
+# Demonstrates kind: script. The script file ships inside the pack at a
+# fixed path; the runner computes and journals its SHA-256 at load time.
+# Callers cannot supply or modify script content at run time.
+
+id: showcase.script_action
+title: Run a packaged shell script
+kind: script
+risk: low
+
+description: >
+  Calls a packaged shell script. The interpreter is explicit (/bin/bash),
+  the script path is resolved relative to the pack root, and the script's
+  SHA-256 is journaled with every invocation so tampering is detectable
+  after the fact.
+
+side_effects:
+  - Runs the bundled scripts/echo_args.sh.
+  - Writes nothing.
+
+args:
+  - name: message
+    type: string
+    required: true
+    description: A string passed to the script as --message.
+    validation:
+      pattern: "^[ -~]{1,80}$"
+
+  - name: repeat
+    type: integer
+    required: false
+    default: 1
+    description: Number of times to echo the message.
+    validation:
+      min: 1
+      max: 5
+
+execution:
+  script:
+    path: scripts/echo_args.sh
+    interpreter: /bin/bash
+  argv:
+    - "--message"
+    - "{{ args.message }}"
+    - "--repeat"
+    - "{{ args.repeat }}"
+  timeout: 5s
+  cwd: /
+
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 1024
+
+examples:
+  - title: Echo twice
+    args:
+      message: hello
+      repeat: 2

@@ -1,0 +1,97 @@
+schema_version: 1
+
+id: linux.journalctl_grep
+title: Grep recent systemd journal entries
+kind: exec
+risk: medium
+
+description: >
+  Like linux.journalctl, but filters entries to those matching a
+  regex (via journalctl --grep). Read-only. Use when you already know
+  the rough identifier or substring you're looking for (request ID,
+  hostname, IP, error string) and don't want to download a large
+  unfiltered journal slice. Output is run through the runner's
+  redactor before leaving the host.
+
+side_effects:
+  - Reads service logs which may contain operational secrets.
+  - Output is run through the runner's redactor before egress.
+  - Does not modify anything.
+
+args:
+  - name: unit
+    type: string
+    required: true
+    description: Systemd unit name to inspect.
+    validation:
+      enum:
+        - cassandra
+        - nginx
+        - postgresql
+        - docker
+
+  - name: grep
+    type: string
+    required: true
+    description: Regex pattern passed to journalctl --grep.
+    validation:
+      pattern: '^.{1,512}$'
+
+  - name: since
+    type: duration
+    required: false
+    default: "2h"
+    description: Look back at most this far.
+    validation:
+      max_duration: 24h
+
+  - name: priority
+    type: string
+    required: false
+    default: "warning"
+    description: Minimum priority level for entries.
+    validation:
+      enum:
+        - debug
+        - info
+        - notice
+        - warning
+        - err
+        - crit
+        - alert
+        - emerg
+
+execution:
+  command:
+    binary: /usr/bin/journalctl
+    argv:
+      - "-u"
+      - "{{ args.unit }}"
+      - "--since"
+      - "{{ args.since }} ago"
+      - "-p"
+      - "{{ args.priority }}"
+      - "--grep"
+      - "{{ args.grep }}"
+      - "--no-pager"
+  timeout: 30s
+  timeout_min: 5s
+  timeout_max: 5m
+  cwd: /
+
+output:
+  parser: text
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+
+examples:
+  - title: Cassandra journal entries mentioning compaction
+    args:
+      unit: cassandra
+      grep: 'compact'
+      since: "6h"
+  - title: Nginx 5xx in journal
+    args:
+      unit: nginx
+      grep: ' (5[0-9][0-9]) '
+      priority: notice

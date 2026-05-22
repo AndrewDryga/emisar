@@ -1,0 +1,129 @@
+<%!-- ============================================================
+  Docs index — entry cards into deeper docs
+============================================================ --%>
+
+<div class="bg-zinc-950 text-zinc-100">
+  <.marketing_nav current={:docs} />
+
+  <%!-- Hero --%>
+  <section class="py-24 sm:py-32">
+    <div class="mx-auto max-w-4xl px-6 lg:px-8">
+      <p class="text-base font-semibold text-indigo-400">Documentation</p>
+      <h1 class="mt-2 text-6xl font-bold tracking-tight text-zinc-50 md:text-7xl">
+        Docs
+      </h1>
+      <p class="mt-8 max-w-2xl text-lg leading-8 text-zinc-400">
+        Everything you need to install runners, author packs, and wire emisar into your
+        LLM stack. Full reference lives in the
+        <a href="https://github.com/andrewdryga/emisar" class="text-indigo-300 hover:text-indigo-200">GitHub repo</a>.
+      </p>
+    </div>
+  </section>
+
+  <%!-- Cards --%>
+  <section class="pb-24 sm:pb-32">
+    <div class="mx-auto max-w-7xl px-6 lg:px-8">
+      <div class="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+        <a href="https://github.com/andrewdryga/emisar#quick-start" class="group rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8 transition hover:border-indigo-500/50">
+          <div class="flex h-12 w-12 items-center justify-center rounded-lg bg-indigo-500/10 text-indigo-400">
+            <.icon name="hero-rocket-launch" class="h-6 w-6" />
+          </div>
+          <h2 class="mt-6 text-xl font-semibold text-zinc-50 group-hover:text-indigo-300">Quick start</h2>
+          <p class="mt-2 text-sm text-zinc-400">
+            Sign up, install an runner, run your first action in under five minutes.
+          </p>
+          <p class="mt-4 text-sm font-semibold text-indigo-300">
+            Read the guide <span aria-hidden="true">&rarr;</span>
+          </p>
+        </a>
+
+        <a href="https://github.com/andrewdryga/emisar/blob/main/docs/action-packs.md" class="group rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8 transition hover:border-indigo-500/50">
+          <div class="flex h-12 w-12 items-center justify-center rounded-lg bg-indigo-500/10 text-indigo-400">
+            <.icon name="hero-cube-transparent" class="h-6 w-6" />
+          </div>
+          <h2 class="mt-6 text-xl font-semibold text-zinc-50 group-hover:text-indigo-300">Pack authoring</h2>
+          <p class="mt-2 text-sm text-zinc-400">
+            Write action packs in YAML: declare args, timeouts, side effects, secrets.
+          </p>
+          <p class="mt-4 text-sm font-semibold text-indigo-300">
+            See the spec <span aria-hidden="true">&rarr;</span>
+          </p>
+        </a>
+
+        <a href="https://github.com/andrewdryga/emisar/blob/main/docs/wire-protocol.md" class="group rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8 transition hover:border-indigo-500/50">
+          <div class="flex h-12 w-12 items-center justify-center rounded-lg bg-indigo-500/10 text-indigo-400">
+            <.icon name="hero-bolt" class="h-6 w-6" />
+          </div>
+          <h2 class="mt-6 text-xl font-semibold text-zinc-50 group-hover:text-indigo-300">Wire protocol</h2>
+          <p class="mt-2 text-sm text-zinc-400">
+            The runner-to-control-plane WSS protocol: framing, events, error model.
+          </p>
+          <p class="mt-4 text-sm font-semibold text-indigo-300">
+            Read the protocol <span aria-hidden="true">&rarr;</span>
+          </p>
+        </a>
+
+        <a href="https://github.com/andrewdryga/emisar#mcp" class="group rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8 transition hover:border-indigo-500/50">
+          <div class="flex h-12 w-12 items-center justify-center rounded-lg bg-indigo-500/10 text-indigo-400">
+            <.icon name="hero-puzzle-piece" class="h-6 w-6" />
+          </div>
+          <h2 class="mt-6 text-xl font-semibold text-zinc-50 group-hover:text-indigo-300">MCP integration</h2>
+          <p class="mt-2 text-sm text-zinc-400">
+            Expose your catalog to Claude, Cursor, and any MCP-compatible client.
+          </p>
+          <p class="mt-4 text-sm font-semibold text-indigo-300">
+            Set up MCP <span aria-hidden="true">&rarr;</span>
+          </p>
+        </a>
+
+        <a href="https://github.com/andrewdryga/emisar#self-hosting" class="group rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8 transition hover:border-indigo-500/50">
+          <div class="flex h-12 w-12 items-center justify-center rounded-lg bg-indigo-500/10 text-indigo-400">
+            <.icon name="hero-server-stack" class="h-6 w-6" />
+          </div>
+          <h2 class="mt-6 text-xl font-semibold text-zinc-50 group-hover:text-indigo-300">Self-hosting</h2>
+          <p class="mt-2 text-sm text-zinc-400">
+            Run the control plane in your own VPC. Bring your own Postgres. Enterprise only.
+          </p>
+          <p class="mt-4 text-sm font-semibold text-indigo-300">
+            Deployment guide <span aria-hidden="true">&rarr;</span>
+          </p>
+        </a>
+
+        <a href="https://github.com/andrewdryga/emisar" class="group rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8 transition hover:border-indigo-500/50">
+          <div class="flex h-12 w-12 items-center justify-center rounded-lg bg-indigo-500/10 text-indigo-400">
+            <.icon name="hero-code-bracket" class="h-6 w-6" />
+          </div>
+          <h2 class="mt-6 text-xl font-semibold text-zinc-50 group-hover:text-indigo-300">GitHub repo</h2>
+          <p class="mt-2 text-sm text-zinc-400">
+            All the reference docs, example packs, and the runner source.
+          </p>
+          <p class="mt-4 text-sm font-semibold text-indigo-300">
+            Open on GitHub <span aria-hidden="true">&rarr;</span>
+          </p>
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <%!-- Help CTA --%>
+  <section class="border-t border-zinc-900 py-24 sm:py-32">
+    <div class="mx-auto max-w-4xl px-6 text-center lg:px-8">
+      <h2 class="text-4xl font-bold tracking-tight text-zinc-50 sm:text-5xl">
+        Stuck on something?
+      </h2>
+      <p class="mx-auto mt-6 max-w-xl text-lg leading-8 text-zinc-400">
+        Open an issue on GitHub or email us. We answer fast.
+      </p>
+      <div class="mt-10 flex items-center justify-center gap-6">
+        <a href="https://github.com/andrewdryga/emisar/issues" class="rounded-lg bg-indigo-500 px-6 py-3 text-sm font-semibold text-zinc-950 hover:bg-indigo-400">
+          Open an issue
+        </a>
+        <a href="mailto:support@emisar.com" class="text-sm font-semibold text-zinc-100 hover:text-indigo-300">
+          Email support <span aria-hidden="true">&rarr;</span>
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <.marketing_footer />
+</div>

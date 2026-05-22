@@ -1,0 +1,18 @@
+schema_version: 1
+
+id: showcase
+name: Showcase pack
+version: 0.2.0
+description: >
+  Synthetic pack that demonstrates every action-schema feature in one
+  place: all arg types, every validation, both parsers, both kinds, opts
+  envelope bounds, and per-action redaction rules. Not a production pack —
+  use it as a reference when authoring real ones.
+vendor: emisar
+
+actions:
+  - actions/every_arg_type.yaml
+  - actions/path_validation.yaml
+  - actions/json_output.yaml
+  - actions/opts_envelope.yaml
+  - actions/script_action.yaml

@@ -1,0 +1,37 @@
+schema_version: 1
+
+runner:
+  # Group is the cloud UI's auto-grouping key. Every runner with the same
+  # group is displayed together. Free-form labels go in the labels map.
+  group: cassandra-us-east1
+  labels:
+    region: us-east-1
+    role: cassandra
+    environment: dev
+
+cloud:
+  url: wss://cloud.example.com/runner/v1
+  auth_key_env: EMISAR_AUTH_KEY
+  token_path: ./var/lib/emisar/token
+  heartbeat_every: 30s
+  reconnect_min: 1s
+  reconnect_max: 60s
+
+paths:
+  data_dir: ./var/lib/emisar
+  work_dir: ./var/lib/emisar/work
+  packs:
+    - ./packs
+
+execution: {}
+
+events:
+  jsonl_path: ./var/log/emisar/events.jsonl
+  max_preview_bytes: 4096
+
+redaction:
+  rules:
+    - name: bearer-token
+      type: regex
+      pattern: "(?i)bearer\\s+[a-z0-9._\\-]{8,}"
+      replacement: "Bearer [REDACTED]"

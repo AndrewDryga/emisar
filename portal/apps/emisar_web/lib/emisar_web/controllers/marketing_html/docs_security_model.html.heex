@@ -1,0 +1,106 @@
+<div class="bg-zinc-950 text-zinc-100">
+  <.marketing_nav current={:docs} />
+
+  <section class="py-16 sm:py-24">
+    <div class="mx-auto max-w-3xl px-6 lg:px-8">
+      <p class="text-sm font-semibold text-indigo-400">Docs / Security</p>
+      <h1 class="mt-2 text-4xl font-bold tracking-tight text-zinc-50 md:text-5xl">Security model</h1>
+      <p class="mt-6 text-lg leading-8 text-zinc-400">
+        emisar is a curated allowlist with an audit envelope. It is not a sandbox.
+        Restarting Cassandra still restarts Cassandra. The value is in the
+        narrow attack surface and the audit trail — not in process isolation.
+      </p>
+
+      <h2 class="mt-12 text-2xl font-semibold text-zinc-50">The trust boundary</h2>
+      <ol class="mt-4 space-y-3 text-sm text-zinc-300 list-decimal pl-6">
+        <li>
+          <strong>Pre-approved actions only.</strong> The runner loads action YAMLs
+          at boot and refuses anything not in the catalog. A model that asks for
+          <code>rm -rf /</code> can't issue it — the request never reaches a shell.
+        </li>
+        <li>
+          <strong>Outbound-only network.</strong> Runners dial the control plane
+          over TLS. No inbound ports, no SSH bastion to compromise.
+        </li>
+        <li>
+          <strong>Bootstrap key + per-runner token.</strong> The enrollment key
+          (<code>emkey-auth-…</code>) is a one-time secret. The runner exchanges it
+          for a long-lived per-runner token (<code>rnrtok-…</code>) on first connect.
+          Single-use keys are atomically consumed: two concurrent registrations
+          can never both succeed.
+        </li>
+        <li>
+          <strong>Re-validation cloud-side and host-side.</strong> The control plane
+          validates args against the action's declared schema; the runner re-checks
+          the same schema before executing. A misbehaving cloud cannot smuggle an
+          undeclared argument past the runner.
+        </li>
+        <li>
+          <strong>Policy.</strong> Per-account rules match on action ID, risk, kind,
+          arg values. Decisions: <code>allow</code> / <code>require_approval</code> /
+          <code>deny</code>. The runner sees decisions only — it doesn't get to
+          reason about policy.
+        </li>
+        <li>
+          <strong>Approvals.</strong> When policy demands approval, the run is held
+          until an authorised teammate decides. Approvers are emailed; clicking the
+          link lands them on the request page.
+        </li>
+        <li>
+          <strong>Output redaction.</strong> Bearer tokens, AWS keys, GitHub tokens,
+          private-key blocks, and common <code>password=</code> /
+          <code>secret=</code> / <code>token=</code> assignments are masked
+          <em>before</em> the chunk leaves the runner. Per-action rules layer on top.
+        </li>
+        <li>
+          <strong>Limits.</strong> Every action has a timeout and stdout/stderr byte
+          ceiling. Cloud opts can lower these but not raise them above the action's
+          declared maximum.
+        </li>
+        <li>
+          <strong>Hash-chained audit.</strong> Every attempt — validation-failed,
+          executed, errored — produces a line in
+          <code>/var/log/emisar/events.jsonl</code>. Each entry carries
+          <code>prev_hash = sha256(prev_line)</code>. Tampering breaks the chain;
+          <code>emisar audit verify</code> detects it.
+        </li>
+        <li>
+          <strong>Setuid drop on Linux.</strong> Actions with <code>user:</code> set
+          drop to that uid/gid via <code>SysProcAttr.Credential</code> before exec.
+          A runner shipping under a privileged service account still runs the
+          declared action as the right user.
+        </li>
+      </ol>
+
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">What emisar is not</h2>
+      <ul class="mt-4 space-y-3 text-sm text-zinc-300">
+        <li>
+          <strong>Not a VM, container, or kernel sandbox.</strong> Process isolation
+          is the host's job (use systemd hardening, namespaces, SELinux, gVisor — we
+          recommend all of those).
+        </li>
+        <li>
+          <strong>Not an EDR.</strong> emisar doesn't detect malicious binaries,
+          lateral movement, or tampered packs at run time. It detects tampered
+          <em>audit logs</em> (via the hash chain) and refuses tampered packs at
+          load time (content-addressed hashes).
+        </li>
+        <li>
+          <strong>Not a replacement for OS-level access control.</strong> The
+          <code>user:</code> drop only works because the OS already permits it.
+        </li>
+      </ul>
+
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">Reporting</h2>
+      <p class="mt-3 text-sm leading-relaxed text-zinc-400">
+        Security issues: <a href="mailto:security@emisar.com" class="text-indigo-400 hover:text-indigo-300">security@emisar.com</a>.
+        We commit to a 72-hour acknowledgement window and will credit reporters
+        unless they request otherwise. See
+        <a href="https://github.com/andrewdryga/emisar/blob/main/.github/SECURITY.md" class="text-indigo-400 hover:text-indigo-300">SECURITY.md</a>
+        for the full policy.
+      </p>
+    </div>
+  </section>
+
+  <.marketing_footer />
+</div>

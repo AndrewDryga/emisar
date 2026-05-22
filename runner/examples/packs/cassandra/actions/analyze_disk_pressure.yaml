@@ -1,0 +1,45 @@
+schema_version: 1
+
+id: cassandra.analyze_disk_pressure
+title: Analyze Cassandra disk pressure
+kind: script
+risk: low
+
+description: >
+  Runs a packaged shell script that inspects filesystem usage of the
+  Cassandra data and commitlog directories. Read-only. Use as a first
+  step when disk pressure is suspected. Output is human-readable; do not
+  parse it.
+
+side_effects:
+  - Reads filesystem metadata (df, du counts).
+  - Does not modify Cassandra data or configuration.
+  - May create temporary files inside the runner's work directory.
+
+args:
+  - name: keyspace_filter
+    type: string
+    required: false
+    default: ""
+    description: Optional keyspace name to focus the analysis on.
+    validation:
+      pattern: "^[a-zA-Z0-9_.*-]{0,80}$"
+
+execution:
+  script:
+    path: scripts/analyze_disk_pressure.sh
+    interpreter: /bin/bash
+  argv:
+    - "--keyspace-filter"
+    - "{{ args.keyspace_filter }}"
+  timeout: 60s
+  cwd: /
+
+output:
+  parser: text
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 65536
+
+examples:
+  - title: Analyze without keyspace filter
+    args: {}

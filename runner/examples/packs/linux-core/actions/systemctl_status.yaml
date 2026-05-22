@@ -1,0 +1,47 @@
+schema_version: 1
+
+id: linux.systemctl_status
+title: Systemd unit status
+kind: exec
+risk: low
+
+description: >
+  Reports the current systemd unit status for a named service. Read-only.
+  Use to confirm whether a service is active before recommending diagnostic
+  or remediation actions.
+
+side_effects:
+  - Reads systemd state.
+  - Touches no files.
+
+args:
+  - name: unit
+    type: string
+    required: true
+    description: Systemd unit to query.
+    validation:
+      enum:
+        - cassandra
+        - nginx
+        - postgresql
+        - docker
+
+execution:
+  command:
+    binary: /bin/systemctl
+    argv:
+      - "status"
+      - "{{ args.unit }}"
+      - "--no-pager"
+  timeout: 10s
+  cwd: /
+
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+
+examples:
+  - title: Check Cassandra status
+    args:
+      unit: cassandra

@@ -1,0 +1,81 @@
+schema_version: 1
+
+id: linux.journalctl
+title: Recent systemd journal entries
+kind: exec
+risk: medium
+
+description: >
+  Reads recent systemd journal entries for a named unit, filtered by
+  priority and a time window. Use to triage service errors. Logs may
+  reveal sensitive identifiers, IPs, hostnames, or PII; treat output as
+  confidential. Do not echo verbatim to end users without consideration.
+
+side_effects:
+  - Reads service logs which may contain operational secrets.
+  - Output is run through the runner's redactor before leaving the host.
+  - Does not modify anything.
+
+args:
+  - name: unit
+    type: string
+    required: true
+    description: Systemd unit name to inspect.
+    validation:
+      enum:
+        - cassandra
+        - nginx
+        - postgresql
+        - docker
+
+  - name: since
+    type: duration
+    required: false
+    default: "2h"
+    description: Look back at most this far.
+    validation:
+      max_duration: 24h
+
+  - name: priority
+    type: string
+    required: false
+    default: "warning"
+    description: Minimum priority level for entries.
+    validation:
+      enum:
+        - debug
+        - info
+        - notice
+        - warning
+        - err
+        - crit
+        - alert
+        - emerg
+
+execution:
+  command:
+    binary: /usr/bin/journalctl
+    argv:
+      - "-u"
+      - "{{ args.unit }}"
+      - "--since"
+      - "{{ args.since }} ago"
+      - "-p"
+      - "{{ args.priority }}"
+      - "--no-pager"
+  timeout: 30s
+  timeout_min: 5s
+  timeout_max: 5m
+  cwd: /
+
+output:
+  parser: text
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+
+examples:
+  - title: Recent Cassandra warnings
+    args:
+      unit: cassandra
+      since: "1h"
+      priority: warning

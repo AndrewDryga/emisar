@@ -1,0 +1,83 @@
+name: Portal CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "portal/**"
+      - ".github/workflows/portal-ci.yml"
+  pull_request:
+    paths:
+      - "portal/**"
+      - ".github/workflows/portal-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-22.04
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: emisar_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    defaults:
+      run:
+        working-directory: portal
+
+    env:
+      MIX_ENV: test
+      DATABASE_URL: postgres://postgres:postgres@localhost/emisar_test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: erlef/setup-beam@v1
+        with:
+          elixir-version: "1.17.3"
+          otp-version: "27.1"
+
+      - name: Restore deps cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            portal/deps
+            portal/_build
+          key: ${{ runner.os }}-mix-${{ hashFiles('portal/mix.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-mix-
+
+      - name: Install hex + rebar
+        run: mix local.hex --force && mix local.rebar --force
+
+      - name: Fetch deps
+        run: mix deps.get
+
+      - name: Compile (warnings as errors)
+        run: mix compile --warnings-as-errors
+
+      - name: Format check
+        run: mix format --check-formatted
+
+      - name: Test (unit, no DB)
+        run: cd apps/emisar && mix test --exclude db
+
+      - name: Test (integration, with DB)
+        run: cd apps/emisar && mix test.ci
+
+      - name: Test (web app — gates LiveView + controller regressions)
+        run: mix test apps/emisar_web
+
+      - name: Docker build (release image)
+        run: docker build -f Dockerfile -t emisar/portal:ci .

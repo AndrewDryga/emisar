@@ -1,0 +1,39 @@
+schema_version: 1
+
+# Runner identity. ID is auto-generated from /etc/machine-id on first
+# run; you can override here if you want a stable name.
+runner:
+  group: "dev-docker"
+  labels:
+    env: dev
+    runtime: docker
+
+# Cloud transport. EMISAR_URL env var overrides this at runtime so the
+# same image can target different control planes.
+cloud:
+  url: "http://host.docker.internal:4000"
+  auth_key_env: "EMISAR_AUTH_KEY"
+  token_path: "/var/lib/emisar/token.json"
+  heartbeat_every: "30s"
+  reconnect_min: "1s"
+  reconnect_max: "30s"
+
+paths:
+  data_dir: "/var/lib/emisar"
+  work_dir: "/tmp/emisar"
+  packs:
+    - "/opt/emisar/packs/linux-core"
+    - "/opt/emisar/packs/showcase"
+
+execution:
+  inherit_env: ["PATH", "LANG", "LC_ALL", "TERM"]
+  cancel_grace: "30s"
+
+events:
+  jsonl_path: "/var/log/emisar/events.jsonl"
+  max_size_bytes: 104857600   # 100 MiB rotation
+  max_backups: 5
+
+redaction:
+  # Built-in defaults (AWS keys, JWT, bearer tokens) apply automatically.
+  rules: []

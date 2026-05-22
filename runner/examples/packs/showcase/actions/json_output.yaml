@@ -1,0 +1,56 @@
+schema_version: 1
+
+# Demonstrates `output.parser: json` plus per-action redaction rules.
+# When parser is "json", the runner parses stdout into a structured object
+# and returns it on the action result alongside the raw stdout. If
+# parsing fails, parser_error is set on the result; if `parser_required`
+# is true, the call's status becomes "failed".
+
+id: showcase.json_output
+title: Parse stdout as JSON, with action-local redaction
+kind: exec
+risk: low
+
+description: >
+  Demonstrates `parser: json` plus an extra regex redaction rule scoped
+  to this action. The rule sits *in front of* the global rules — useful
+  when an action emits a known secret shape that the global rules don't
+  cover.
+
+side_effects:
+  - Calls /bin/echo with a synthetic JSON payload.
+  - Does not modify state.
+
+args:
+  - name: name
+    type: string
+    required: true
+    description: Name to include in the synthetic payload.
+    validation:
+      pattern: "^[a-zA-Z0-9_-]{1,32}$"
+
+execution:
+  command:
+    binary: /bin/echo
+    # /bin/echo emits a one-line JSON payload that includes a fake
+    # session token to demonstrate the action-local redaction rule.
+    argv:
+      - '{"name":"{{ args.name }}","session_token":"sk_live_abcd1234","status":"ok"}'
+  timeout: 5s
+  cwd: /
+
+output:
+  parser: json
+  parser_required: true     # if stdout doesn't parse as JSON, fail.
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 1024
+  redact:
+    - name: sk_live_token
+      type: regex
+      pattern: 'sk_live_[A-Za-z0-9]+'
+      replacement: '[REDACTED_SK]'
+
+examples:
+  - title: Emit a parsed JSON object
+    args:
+      name: alice

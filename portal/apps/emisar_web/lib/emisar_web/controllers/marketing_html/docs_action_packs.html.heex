@@ -1,0 +1,125 @@
+<div class="bg-zinc-950 text-zinc-100">
+  <.marketing_nav current={:docs} />
+
+  <section class="py-16 sm:py-24">
+    <div class="mx-auto max-w-3xl px-6 lg:px-8">
+      <p class="text-sm font-semibold text-indigo-400">Docs / Action packs</p>
+      <h1 class="mt-2 text-4xl font-bold tracking-tight text-zinc-50 md:text-5xl">Action packs</h1>
+      <p class="mt-6 text-lg leading-8 text-zinc-400">
+        An action pack is a versioned, content-addressed directory of YAML
+        action declarations. The runner loads the pack at boot, advertises
+        every action to the control plane, and refuses anything not in this
+        catalog. This is the contract between your ops team and the LLM.
+      </p>
+
+      <h2 class="mt-12 text-2xl font-semibold text-zinc-50">Layout</h2>
+      <pre class="mt-3 overflow-x-auto rounded-lg border border-zinc-900 bg-black/60 p-4 font-mono text-xs leading-6 text-zinc-300">my-pack/
+  pack.yaml              # pack-level metadata
+  actions/
+    disk_usage.yaml      # one declared action per file
+    nodetool_repair.yaml</pre>
+
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">pack.yaml</h2>
+      <pre class="mt-3 overflow-x-auto rounded-lg border border-zinc-900 bg-black/60 p-4 font-mono text-xs leading-6 text-zinc-300">schema_version: 1
+id: cassandra
+name: Cassandra operations
+version: 0.4.0
+description: Cassandra triage + scoped repair
+vendor: acme
+homepage: https://github.com/acme/cassandra-pack
+allow_symlinks: false
+actions:
+  - actions/nodetool_status.yaml
+  - actions/nodetool_repair.yaml</pre>
+      <p class="mt-3 text-sm text-zinc-400">
+        <code>allow_symlinks</code> defaults to <code>false</code>: the loader rejects
+        symlinked action YAMLs and scripts unless you opt in. Together with the
+        pack hash (computed from every file's bytes), this prevents a tampered
+        pack from being silently accepted.
+      </p>
+
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">An action YAML</h2>
+      <pre class="mt-3 overflow-x-auto rounded-lg border border-zinc-900 bg-black/60 p-4 font-mono text-xs leading-6 text-zinc-300">schema_version: 1
+id: linux.grep_log
+title: Grep a log file
+kind: exec
+risk: low
+
+description: >
+  Greps an extended regex against a log file under /var/log.
+  Read-only. Returns matching lines with line numbers.
+side_effects:
+  - Reads a log file under /var/log.
+
+args:
+  - name: file
+    type: path
+    required: true
+    validation:
+      allowed_prefixes: ["/var/log/"]
+  - name: pattern
+    type: string
+    required: true
+    validation:
+      pattern: "^.&#123;1,512&#125;$"
+
+execution:
+  command:
+    binary: /bin/grep
+    argv: ["-E", "-n", "&#123;&#123; args.pattern &#125;&#125;", "&#123;&#123; args.file &#125;&#125;"]
+  timeout: 30s
+  user: root          # optional setuid drop on Linux
+
+output:
+  parser: text
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192</pre>
+
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">Field reference</h2>
+      <ul class="mt-4 space-y-3 text-sm text-zinc-300">
+        <li>
+          <strong>kind</strong> — <code>exec</code> (run a binary), <code>script</code> (run a
+          packaged shell script), or — coming — <code>http</code>.
+        </li>
+        <li>
+          <strong>risk</strong> — <code>low | medium | high</code>. The policy engine
+          matches against this, not what the caller claims.
+        </li>
+        <li>
+          <strong>args</strong> — every argument is declared. Types: <code>string</code>,
+          <code>integer</code>, <code>number</code>, <code>boolean</code>,
+          <code>duration</code>, <code>path</code>, <code>string_array</code>,
+          <code>integer_array</code>. Validation tightens the type: enum, regex
+          pattern, allowed_prefixes / denied_prefixes for paths, max_items for
+          arrays, min/max for numbers, max_duration for durations.
+        </li>
+        <li>
+          <strong>execution.user</strong> — Linux-only. Resolves the user via
+          <code>os/user.Lookup</code> and drops the child to its uid/gid via
+          SysProcAttr.Credential before exec.
+        </li>
+        <li>
+          <strong>output.parser</strong> — <code>text</code> (default), <code>json</code>, or
+          <code>json (parser_required: true)</code> to force the run to fail if stdout
+          isn't valid JSON.
+        </li>
+        <li>
+          <strong>output.max_*_bytes</strong> — stdout/stderr ceilings. The cloud
+          can lower these per-call via opts; it can't raise them past the
+          declared maximum.
+        </li>
+        <li>
+          <strong>redact</strong> — per-action redaction rules layered on top of the
+          built-in regexes (bearer, JWT, AWS keys, etc.).
+        </li>
+      </ul>
+
+      <p class="mt-8 text-sm text-zinc-400">
+        See <.link href="https://github.com/andrewdryga/emisar/tree/main/runner/examples/packs" class="text-indigo-400 hover:text-indigo-300">examples/packs</.link>
+        on GitHub for working linux-core, cassandra, and showcase packs.
+      </p>
+    </div>
+  </section>
+
+  <.marketing_footer />
+</div>

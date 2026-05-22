@@ -1,0 +1,33 @@
+schema_version: 1
+
+id: linux.uptime
+title: System uptime and load average
+kind: exec
+risk: low
+
+description: >
+  Reports system uptime and 1/5/15-minute load averages. Load averages
+  are dimensionless and machine-dependent; compare against CPU count
+  before interpreting them as "high".
+
+side_effects:
+  - Reads /proc/loadavg and /proc/uptime via the uptime utility.
+  - Touches no files.
+
+args: []
+
+execution:
+  command:
+    binary: /usr/bin/uptime
+    argv: []
+  timeout: 5s
+  cwd: /
+
+output:
+  parser: text
+  max_stdout_bytes: 2048
+  max_stderr_bytes: 2048
+
+examples:
+  - title: Get uptime and load
+    args: {}

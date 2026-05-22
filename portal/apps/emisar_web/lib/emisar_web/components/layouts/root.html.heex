@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full bg-zinc-950 text-zinc-100 [scrollbar-gutter:stable]">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="csrf-token" content={get_csrf_token()} />
+    <%!-- Robots: noindex on every /app/* and auth route via the
+          conn-level noindex assign; everything else indexable. --%>
+    <meta :if={assigns[:noindex]} name="robots" content="noindex, nofollow" />
+    <meta name="description" content={assigns[:meta_description] || "emisar — give AI tools approved infrastructure actions, not SSH. Pre-approved playbooks, fine-grained policy, full audit trail."} />
+    <link :if={assigns[:canonical_url]} rel="canonical" href={@canonical_url} />
+    <.live_title default="emisar — give AI tools approved infrastructure actions, not SSH" suffix=" · emisar">
+      {assigns[:page_title]}
+    </.live_title>
+
+    <%!-- Open Graph / Twitter Card --%>
+    <meta property="og:type" content={assigns[:og_type] || "website"} />
+    <meta property="og:title" content={assigns[:og_title] || assigns[:page_title] || "emisar"} />
+    <meta property="og:description" content={assigns[:og_description] || assigns[:meta_description] || "Give AI tools approved infrastructure actions, not SSH."} />
+    <meta :if={assigns[:og_image]} property="og:image" content={@og_image} />
+    <meta property="og:url" content={assigns[:canonical_url] || "https://emisar.com"} />
+    <meta property="og:site_name" content="emisar" />
+    <meta name="twitter:card" content={if assigns[:og_image], do: "summary_large_image", else: "summary"} />
+    <meta name="twitter:title" content={assigns[:og_title] || assigns[:page_title] || "emisar"} />
+    <meta name="twitter:description" content={assigns[:og_description] || assigns[:meta_description] || "Give AI tools approved infrastructure actions, not SSH."} />
+    <meta :if={assigns[:og_image]} name="twitter:image" content={@og_image} />
+
+    <%!-- JSON-LD: only emitted on routes that set @json_ld --%>
+    <%= if assigns[:json_ld] do %>
+      <script type="application/ld+json">{Phoenix.HTML.raw(@json_ld)}</script>
+    <% end %>
+
+    <link rel="preconnect" href="https://rsms.me/" />
+    <link rel="stylesheet" href="https://rsms.me/inter/inter.css" />
+    <link phx-track-static rel="stylesheet" href={~p"/assets/app.css"} />
+    <script defer phx-track-static type="text/javascript" src={~p"/assets/app.js"}>
+    </script>
+  </head>
+  <body class="h-full bg-zinc-950 text-zinc-100 antialiased">
+    {@inner_content}
+  </body>
+</html>

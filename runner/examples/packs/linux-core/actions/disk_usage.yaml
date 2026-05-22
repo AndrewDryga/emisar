@@ -1,0 +1,58 @@
+schema_version: 1
+
+id: linux.disk_usage
+title: Filesystem disk usage
+kind: exec
+risk: low
+
+description: >
+  Reports filesystem usage for the supplied paths using df. Read-only. Use
+  this to assess disk pressure before recommending cleanup, repair,
+  compaction tuning, or adding disk. If a filesystem is >85% full, surface
+  it but do not silently delete or truncate data — that's a separate,
+  approval-gated action.
+
+side_effects:
+  - Reads filesystem metadata via df.
+  - Touches no files.
+  - Does not mount, unmount, or modify anything.
+
+args:
+  - name: paths
+    type: string_array
+    required: false
+    default: ["/"]
+    description: One or more paths to inspect. Each path is passed to df -P -h.
+    validation:
+      max_items: 8
+      allowed_prefixes:
+        - /
+        - /var
+        - /tmp
+        - /home
+        - /usr
+        - /opt
+
+execution:
+  command:
+    binary: /bin/df
+    argv:
+      - "-P"
+      - "-h"
+      - "{{ args.paths }}"
+  timeout: 10s
+  cwd: /
+
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+
+examples:
+  - title: Check root filesystem usage
+    args: {}
+  - title: Check /var and /tmp
+    args:
+      paths:
+        - /var
+        - /tmp
