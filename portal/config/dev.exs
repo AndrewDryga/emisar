@@ -18,7 +18,7 @@ config :emisar, Emisar.Repo,
 # to bundle .js and .css sources.
 config :emisar_web, EmisarWeb.Endpoint,
   # Bind to all interfaces in dev so docker containers (e.g. the runner
-  # under `runner/docker/runner-run.sh`) can reach the control plane via
+  # under `runner/docker/run.sh`) can reach the control plane via
   # host.docker.internal:4000. Restrict to loopback if running on a
   # shared dev box.
   http: [ip: {0, 0, 0, 0}, port: 4000],

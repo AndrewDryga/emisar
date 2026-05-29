@@ -7,7 +7,7 @@
 # needing to install the binary on the host. Build context is the
 # runner module (runner/), so COPY paths are relative to that.
 #
-#   docker build -f runner/docker/runner.Dockerfile -t emisar/runner runner/
+#   docker build -f runner/docker/Dockerfile -t emisar/runner runner/
 #   docker run --rm \
 #     -e EMISAR_AUTH_KEY=emkey-auth-... \
 #     -e EMISAR_URL=http://host.docker.internal:4000 \
@@ -45,7 +45,7 @@ RUN apk add --no-cache ca-certificates tini bash coreutils \
 
 COPY --from=builder /out/emisar /usr/local/bin/emisar
 COPY --chown=emisar:emisar examples/packs /opt/emisar/packs
-COPY --chown=emisar:emisar docker/runner.config.yaml /etc/emisar/config.yaml
+COPY --chown=emisar:emisar docker/config.yaml /etc/emisar/config.yaml
 
 USER emisar
 WORKDIR /var/lib/emisar

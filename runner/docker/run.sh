@@ -3,7 +3,7 @@
 # Build and run the emisar runner in Docker, pointing at a Phoenix
 # control plane running on the host. Usage:
 #
-#   ./docker/runner-run.sh emkey-auth-...
+#   ./runner/docker/run.sh emkey-auth-...
 #
 # The container talks to the host via `host.docker.internal:4000`
 # (Docker Desktop on macOS/Windows provides this automatically; on
@@ -25,14 +25,15 @@ if [ -z "$AUTH_KEY" ]; then
   exit 1
 fi
 
-# Repo root, regardless of where the script is invoked from.
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# runner/ directory (this script's parent's parent), regardless of where
+# the script is invoked from. Used as the docker build context.
+RUNNER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 echo ">>> building $IMAGE"
 docker build \
-  -f "$ROOT/docker/runner.Dockerfile" \
+  -f "$RUNNER_DIR/docker/Dockerfile" \
   -t "$IMAGE" \
-  "$ROOT"
+  "$RUNNER_DIR"
 
 echo ">>> running $IMAGE"
 exec docker run --rm -it \

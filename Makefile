@@ -51,7 +51,7 @@ cover:
 # symlinks).
 .PHONY: test-linux
 test-linux:
-	docker build -f runner/Dockerfile.test -t emisar-test runner/
+	docker build -f runner/docker/Dockerfile.test -t emisar-test runner/
 	docker run --rm emisar-test
 
 .PHONY: vet
