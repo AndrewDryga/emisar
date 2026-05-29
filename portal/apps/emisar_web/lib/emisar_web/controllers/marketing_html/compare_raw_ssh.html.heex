@@ -36,7 +36,7 @@
             <tr><td class="px-4 py-3">Approvals?</td><td class="px-4 py-3">Human-on-the-loop in chat — easy to skip</td><td class="px-4 py-3">Policy gates, with email + audit, no skip path</td></tr>
             <tr><td class="px-4 py-3">Audit trail?</td><td class="px-4 py-3">Whatever lands in <code>.bash_history</code> + Slack scrollback</td><td class="px-4 py-3">Hash-chained JSONL on host, mirrored to cloud</td></tr>
             <tr><td class="px-4 py-3">Output redaction?</td><td class="px-4 py-3">None — passwords leak into chat logs</td><td class="px-4 py-3">Bearer / AWS / GitHub / private-key blocks masked before egress</td></tr>
-            <tr><td class="px-4 py-3">Lateral movement?</td><td class="px-4 py-3">SSH key on the model's box ≈ key everywhere</td><td class="px-4 py-3">Per-runner token + scoped API key + agent_filter</td></tr>
+            <tr><td class="px-4 py-3">Lateral movement?</td><td class="px-4 py-3">SSH key on the model's box ≈ key everywhere</td><td class="px-4 py-3">Per-runner token + scoped API key + runner_filter</td></tr>
             <tr><td class="px-4 py-3">Recovery story?</td><td class="px-4 py-3">"Read the chat scrollback and the logs and hope"</td><td class="px-4 py-3"><code>emisar audit verify</code> + replay every dispatched envelope</td></tr>
           </tbody>
         </table>

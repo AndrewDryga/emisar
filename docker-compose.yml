@@ -1,0 +1,167 @@
+# docker-compose.yml — local dev stack for testing the full emisar
+# topology end-to-end. Boots Postgres + the Phoenix control plane
+# + a one-shot DB seeder + three runners + the MCP bridge image.
+#
+# ╔════════════════════════════════════════════════════════════════╗
+# ║                                                                ║
+# ║   DEV ONLY — NOT PRODUCTION READY                              ║
+# ║                                                                ║
+# ║   Every secret in this file is a hardcoded, well-known string. ║
+# ║   That's deliberate: it lets `docker compose up` boot the full ║
+# ║   stack end-to-end with zero ceremony. Do NOT copy these       ║
+# ║   values to a real deployment.                                 ║
+# ║                                                                ║
+# ║   For production deploy: see docs/deploy.md.                   ║
+# ║                                                                ║
+# ╚════════════════════════════════════════════════════════════════╝
+#
+# Single command:
+#
+#   docker compose up
+#
+# Boots in the right order:
+#   db          starts, becomes healthy (pg_isready)
+#   portal      depends on db healthy; runs migrate + bin/server on
+#               its way up; becomes healthy on GET /healthz
+#   seeder      runs once after portal is healthy; inserts the demo
+#               account, default policy, sample runbook, and a fixed
+#               dev auth key matching what the runners present
+#   runner-*    depend on seeder succeeding; register against portal
+#
+# Sign in to http://localhost:4000 as demo@emisar.dev / Sleep-tight-1234.
+#
+# Drive the MCP bridge for an ad-hoc test (after issuing an API key in
+# the dashboard and editing it into the mcp service's env):
+#
+#   echo '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' \
+#     | docker compose run --rm -T mcp
+
+services:
+  # ----------------------------------------------------------------
+  # Postgres — the only stateful dependency
+  # ----------------------------------------------------------------
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: emisar_dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d emisar_dev"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  # ----------------------------------------------------------------
+  # Portal — Phoenix release (the cloud control plane)
+  # ----------------------------------------------------------------
+  portal:
+    build:
+      context: ./portal
+      dockerfile: Dockerfile
+    image: emisar/portal:dev
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: "ecto://postgres:postgres@db/emisar_dev"
+      # DEV-ONLY signing key. Generate a real one with `mix phx.gen.secret`
+      # before any non-local deployment.
+      SECRET_KEY_BASE: "zy7QplH6bzgWzgVDXSC8KxCprn+OQB7vWMRcQ+0iyJ2WlcQqg1AswEXqzcjHj8nu"
+      PHX_HOST: "localhost"
+      PORT: "4000"
+      # Speak plain HTTP for local. force_ssl in runtime.exs is gated
+      # on this knob — see config/runtime.exs.
+      FORCE_SSL: "false"
+    ports:
+      - "4000:4000"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:4000/healthz || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 15s
+    command: ["sh", "-c", "/app/bin/migrate && /app/bin/server"]
+
+  # ----------------------------------------------------------------
+  # Seeder — runs once, exits. Inserts the demo account, default
+  # policy, sample runbook, and an auth key whose SHA-256 matches the
+  # raw secret the runner services below present. Idempotent.
+  # ----------------------------------------------------------------
+  seeder:
+    image: emisar/portal:dev
+    depends_on:
+      portal:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: "ecto://postgres:postgres@db/emisar_dev"
+      SECRET_KEY_BASE: "zy7QplH6bzgWzgVDXSC8KxCprn+OQB7vWMRcQ+0iyJ2WlcQqg1AswEXqzcjHj8nu"
+      PHX_HOST: "localhost"
+      FORCE_SSL: "false"
+      # DEV-ONLY well-known auth key. Same value the runners use. The
+      # seed inserts a row with the SHA-256 of this raw string so the
+      # runners' /runner/register call resolves it.
+      EMISAR_DEV_FIXED_AUTH_KEY: "emkey-auth-dev-fixed-bootstrap-DO-NOT-USE-IN-PROD"
+    restart: "no"
+    command: ["/app/bin/emisar", "eval", "Emisar.Release.seed()"]
+
+  # ----------------------------------------------------------------
+  # Runners — three identical Go runners against the local portal
+  # ----------------------------------------------------------------
+  runner-1: &runner
+    build:
+      context: ./runner
+      dockerfile: docker/Dockerfile
+    image: emisar/runner:dev
+    depends_on:
+      seeder:
+        condition: service_completed_successfully
+    environment:
+      EMISAR_URL: "http://portal:4000"
+      EMISAR_AUTH_KEY: "emkey-auth-dev-fixed-bootstrap-DO-NOT-USE-IN-PROD"
+    volumes:
+      - runner_1_data:/var/lib/emisar
+    restart: unless-stopped
+
+  runner-2:
+    <<: *runner
+    volumes:
+      - runner_2_data:/var/lib/emisar
+
+  runner-3:
+    <<: *runner
+    volumes:
+      - runner_3_data:/var/lib/emisar
+
+  # ----------------------------------------------------------------
+  # MCP bridge — stdio JSON-RPC. Profile-gated so it doesn't auto-start
+  # on `docker compose up` (it would exit immediately without stdin).
+  # Use `docker compose run --rm -T mcp` to drive it.
+  #
+  # EMISAR_API_KEY is intentionally empty: you mint it from the
+  # dashboard's Settings → API keys page after first sign-in, then
+  # edit this file (or pass via `-e EMISAR_API_KEY=...` on the run
+  # command).
+  # ----------------------------------------------------------------
+  mcp:
+    build:
+      context: ./mcp
+      dockerfile: Dockerfile
+    image: emisar/mcp:dev
+    profiles: ["test"]
+    depends_on:
+      portal:
+        condition: service_healthy
+    environment:
+      EMISAR_URL: "http://portal:4000"
+      EMISAR_API_KEY: ""
+
+volumes:
+  pg_data:
+  runner_1_data:
+  runner_2_data:
+  runner_3_data:

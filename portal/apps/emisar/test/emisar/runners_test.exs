@@ -232,4 +232,135 @@ defmodule Emisar.RunnersTest do
       assert length(Runners.list_runners_for_account(account.id, status: "connected")) == 1
     end
   end
+
+  describe "create_auth_key_with_secret/4" do
+    test "inserts a key whose hash matches the supplied raw secret" do
+      account = account_fixture()
+      user = user_fixture()
+      raw = "emkey-auth-dev-fixed-bootstrap-DO-NOT-USE-IN-PROD"
+
+      assert {:ok, %AuthKey{} = key} =
+               Runners.create_auth_key_with_secret(raw, account.id, user.id, %{reusable: true})
+
+      assert key.key_prefix == String.slice(raw, 0, 27)
+      # And the lookup round-trips: presenting the raw secret resolves
+      # to the same record. This is what makes the docker-compose
+      # seeder + runner handoff work without an out-of-band copy step.
+      assert %AuthKey{id: id} = Runners.find_auth_key_by_secret(raw)
+      assert id == key.id
+    end
+  end
+
+  describe "mint_install_key/3" do
+    test "stores an auto_generated_at timestamp" do
+      account = account_fixture()
+      user = user_fixture()
+
+      assert {:ok, raw, %AuthKey{} = key} = Runners.mint_install_key(account.id, user.id)
+      assert String.starts_with?(raw, "emkey-auth-")
+      assert key.auto_generated_at != nil
+      assert is_nil(key.last_used_at)
+      assert AuthKey.auto_unused?(key)
+    end
+
+    test "auto-unused keys are hidden from list_auth_keys/1" do
+      account = account_fixture()
+      user = user_fixture()
+
+      {:ok, _, _} = Runners.mint_install_key(account.id, user.id)
+      {:ok, _, _} = Runners.mint_install_key(account.id, user.id)
+
+      # Both keys exist in DB; neither shows up in operator-facing list.
+      assert Repo.aggregate(AuthKey, :count) == 2
+      assert Runners.list_auth_keys(account.id) == []
+
+      # Manually-issued keys (no auto flag) still show.
+      {:ok, _, manual} = Runners.create_auth_key(account.id, user.id, %{reusable: true})
+      assert [%AuthKey{id: id}] = Runners.list_auth_keys(account.id)
+      assert id == manual.id
+    end
+
+    test "ring eviction caps the auto-unused set at the configured size" do
+      account = account_fixture()
+      user = user_fixture()
+
+      # Tiny cap so the test runs fast. Bypass grace by making it 0 so
+      # the eviction query trims the moment we exceed the cap.
+      for _ <- 1..5 do
+        {:ok, _, _} = Runners.mint_install_key(account.id, user.id, ring_cap: 3, eviction_grace_seconds: 0)
+      end
+
+      assert Repo.aggregate(AuthKey, :count) == 3
+    end
+
+    test "grace window protects fresh keys from eviction even past cap" do
+      account = account_fixture()
+      user = user_fixture()
+
+      # cap=2, but grace=60s means a burst of 5 mints in the same
+      # second all survive (none are older than the grace floor).
+      for _ <- 1..5 do
+        {:ok, _, _} = Runners.mint_install_key(account.id, user.id, ring_cap: 2, eviction_grace_seconds: 60)
+      end
+
+      assert Repo.aggregate(AuthKey, :count) == 5
+    end
+
+    test "does NOT touch other accounts' keys" do
+      account = account_fixture()
+      other = account_fixture()
+      user = user_fixture()
+
+      {:ok, _, other_key} = Runners.mint_install_key(other.id, user.id)
+
+      # Saturate this account's ring.
+      for _ <- 1..10 do
+        {:ok, _, _} = Runners.mint_install_key(account.id, user.id, ring_cap: 2, eviction_grace_seconds: 0)
+      end
+
+      # `other`'s key is untouched.
+      assert Repo.get(AuthKey, other_key.id) != nil
+    end
+  end
+
+  describe "register_via_auth_key/2 with auto-generated keys" do
+    test "promotes an auto-generated key to permanent on first use" do
+      account = account_fixture()
+      user = user_fixture()
+      {:ok, raw, key} = Runners.mint_install_key(account.id, user.id)
+      assert AuthKey.auto_unused?(key)
+
+      assert {:ok, %Runner{}, _, _} =
+               Runners.register_via_auth_key(raw, %{
+                 hostname: "demo-1",
+                 group: "demo",
+                 external_id: "ext-#{System.unique_integer([:positive])}"
+               })
+
+      # auto_generated_at cleared, last_used_at set, key now visible.
+      reloaded = Repo.get!(AuthKey, key.id)
+      assert is_nil(reloaded.auto_generated_at)
+      assert reloaded.last_used_at != nil
+      assert [%AuthKey{id: id}] = Runners.list_auth_keys(account.id)
+      assert id == key.id
+    end
+
+    test "emits an auth_key.bound audit event with auto: true" do
+      account = account_fixture()
+      user = user_fixture()
+      {:ok, raw, _key} = Runners.mint_install_key(account.id, user.id)
+
+      {:ok, _runner, _token, _raw_token} =
+        Runners.register_via_auth_key(raw, %{
+          hostname: "demo",
+          group: "demo",
+          external_id: "ext-#{System.unique_integer([:positive])}"
+        })
+
+      events = Emisar.Audit.list_events_for_account(account.id, limit: 50)
+      bound = Enum.find(events, &(&1.event_type == "auth_key.bound"))
+      assert bound != nil
+      assert bound.payload["auto"] == true
+    end
+  end
 end

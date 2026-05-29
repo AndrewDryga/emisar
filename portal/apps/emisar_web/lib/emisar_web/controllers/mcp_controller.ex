@@ -44,7 +44,7 @@ defmodule EmisarWeb.McpController do
         conn |> put_status(:bad_request) |> json(%{error: "runner_required"})
 
       not runner_allowed_by_key?(api_key, runner_id) ->
-        conn |> put_status(:forbidden) |> json(%{error: "agent_not_in_key_filter"})
+        conn |> put_status(:forbidden) |> json(%{error: "runner_not_in_key_filter"})
 
       true ->
         attrs = %{

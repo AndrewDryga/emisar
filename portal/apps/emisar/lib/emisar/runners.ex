@@ -115,6 +115,44 @@ defmodule Emisar.Runners do
   @token_prefix_size 12
   @key_secret_size 32
 
+  # Per-account ring cap for auto-generated, unused install keys.
+  # Dashboard mounts mint into the ring; when capacity is exceeded, the
+  # oldest auto-unused entry is evicted. See mint_install_key/3.
+  @install_ring_cap 42
+  # Keys minted within this window are protected from eviction even when
+  # the ring is full — a buffer for the brief gap between "user copied
+  # the command" and "runner POSTs to /runner/register".
+  @install_eviction_grace_seconds 60
+
+  @doc """
+  Persists an auth key with a caller-supplied raw secret. Used by the
+  dev seed to make local docker-compose bring-up self-contained: with a
+  deterministic, well-known dev key the runners can read the matching
+  value from .env.example without a "capture-from-stdout" bootstrap
+  script.
+
+  PRODUCTION CALLERS SHOULD NEVER REACH THIS. Hash-discipline is
+  preserved (the hash, not the raw, is what we persist), but a known
+  raw value defeats the whole point of randomized secrets. Use
+  `create_auth_key/3` everywhere except seeds.
+  """
+  def create_auth_key_with_secret(raw, account_id, user_id, attrs \\ %{})
+      when is_binary(raw) and byte_size(raw) >= @auth_key_prefix_size do
+    prefix = String.slice(raw, 0, @auth_key_prefix_size)
+    hash = :crypto.hash(:sha256, raw)
+
+    params =
+      attrs
+      |> Map.put(:account_id, account_id)
+      |> Map.put(:created_by_id, user_id)
+
+    %AuthKey{}
+    |> AuthKey.changeset(params)
+    |> Ecto.Changeset.put_change(:key_prefix, prefix)
+    |> Ecto.Changeset.put_change(:key_hash, hash)
+    |> Repo.insert()
+  end
+
   @doc """
   Generates a new auth key. Returns `{raw_key, persisted_struct}`; the
   raw key is the only point at which the secret is visible.
@@ -155,9 +193,108 @@ defmodule Emisar.Runners do
   def list_auth_keys(account_id) do
     from(k in AuthKey,
       where: k.account_id == ^account_id,
+      where: ^visible_keys_clause(),
       order_by: [desc: k.inserted_at]
     )
     |> Repo.all()
+  end
+
+  @doc """
+  Composable Ecto where clause that hides auto-generated, never-used
+  keys from operator-facing surfaces. Use anywhere we surface
+  user-visible lists (UI list, JSON API, audit references, badge
+  counts). Auto-generated keys that have been bound to a runner pass
+  the filter (last_used_at is set) and look like normal keys.
+
+  Compiled into a dynamic so callers can compose:
+
+      query |> where(^Runners.visible_keys_clause())
+  """
+  def visible_keys_clause do
+    dynamic(
+      [k],
+      is_nil(k.auto_generated_at) or not is_nil(k.last_used_at)
+    )
+  end
+
+  @doc """
+  Mints a fresh, single-use bootstrap auth key for the dashboard's
+  install command, marks it auto-generated (invisible in UI lists until
+  a runner uses it), and evicts the oldest auto-unused key beyond the
+  per-account ring cap of #{@install_ring_cap}. All in one transaction.
+
+  Returns `{:ok, raw_secret, key}`. No audit log on mint — auto-gen is
+  noise. Once a runner registers with the key, `consume_auth_key/1`
+  clears the auto flag and audit logs `auth_key.bound` with
+  `auto: true` metadata.
+
+  Eviction protects keys minted within the last
+  #{@install_eviction_grace_seconds} seconds so a user who just copied
+  the command can paste-and-install without their key being evicted by
+  someone else's concurrent dashboard mount.
+  """
+  def mint_install_key(account_id, user_id, opts \\ []) do
+    cap = opts[:ring_cap] || @install_ring_cap
+    grace_s = opts[:eviction_grace_seconds] || @install_eviction_grace_seconds
+
+    raw = generate_secret("emkey-auth-")
+    prefix = String.slice(raw, 0, @auth_key_prefix_size)
+    hash = :crypto.hash(:sha256, raw)
+    now = DateTime.utc_now() |> DateTime.truncate(:microsecond)
+
+    Repo.transaction(fn ->
+      # Insert the new key first so this account never momentarily has
+      # zero auto-unused keys (eviction-then-insert would race against
+      # concurrent dashboard mounts).
+      {:ok, key} =
+        %AuthKey{}
+        |> AuthKey.changeset(%{
+          account_id: account_id,
+          created_by_id: user_id,
+          description: "Dashboard install command",
+          reusable: false
+        })
+        |> Ecto.Changeset.put_change(:key_prefix, prefix)
+        |> Ecto.Changeset.put_change(:key_hash, hash)
+        |> Ecto.Changeset.put_change(:auto_generated_at, now)
+        |> Repo.insert()
+
+      evict_install_ring_overflow(account_id, cap, grace_s, now)
+
+      {raw, key}
+    end)
+    |> case do
+      {:ok, {raw, key}} -> {:ok, raw, key}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  # Trims the per-account ring back down to cap. Newest auto-unused keys
+  # are kept; oldest beyond cap are deleted. Keys minted within
+  # grace_seconds are protected from eviction even if they're past the
+  # cap boundary (the "I just copied this, don't pull the rug" buffer).
+  #
+  # Postgres-safe: DELETE WHERE id IN (subquery ORDER BY ... OFFSET cap).
+  # Vanilla DELETE doesn't take ORDER BY/OFFSET; the subquery does.
+  defp evict_install_ring_overflow(account_id, cap, grace_seconds, now) do
+    protected_floor = DateTime.add(now, -grace_seconds, :second)
+
+    keepers =
+      from k in AuthKey,
+        where: k.account_id == ^account_id,
+        where: not is_nil(k.auto_generated_at),
+        where: is_nil(k.last_used_at),
+        # Keep the newest `cap` outright AND anything inside the grace
+        # window. The union of those two sets survives.
+        order_by: [desc: k.auto_generated_at],
+        offset: ^cap,
+        select: k.id
+
+    from(k in AuthKey,
+      where: k.id in subquery(keepers),
+      where: k.auto_generated_at < ^protected_floor
+    )
+    |> Repo.delete_all()
   end
 
   def revoke_auth_key(%AuthKey{} = key, by_user_id) do
@@ -284,6 +421,7 @@ defmodule Emisar.Runners do
 
   def register_via_auth_key(%AuthKey{} = key, attrs) do
     account = Repo.get!(Emisar.Accounts.Account, key.account_id)
+    was_auto? = AuthKey.auto_unused?(key)
 
     case Emisar.Billing.check_limit(account, :runners) do
       :ok ->
@@ -291,10 +429,26 @@ defmodule Emisar.Runners do
           # Atomically claim a use of this auth key. The conditional
           # UPDATE only succeeds if the key is still in a usable state
           # AT the moment of the update — defeating the race where two
-          # concurrent registrations both see uses_count = 0.
+          # concurrent registrations both see uses_count = 0. Also
+          # clears auto_generated_at in the same statement so an
+          # auto-minted key becomes a normal visible key the moment a
+          # runner registers with it.
           case consume_auth_key(key) do
             :ok -> :ok
             {:error, reason} -> Repo.rollback(reason)
+          end
+
+          # Surface the auto→permanent promotion to operators looking
+          # at the audit log. The mint itself was deliberately silent
+          # (would flood the log with noise), so binding is where this
+          # key first becomes visible.
+          if was_auto? do
+            Emisar.Audit.log(key.account_id, "auth_key.bound",
+              actor_kind: "system",
+              subject_kind: "auth_key",
+              subject_id: key.id,
+              payload: %{prefix: key.key_prefix, auto: true}
+            )
           end
 
           external_id =
@@ -358,7 +512,14 @@ defmodule Emisar.Runners do
             (not k.reusable and k.uses_count == 0),
         update: [
           inc: [uses_count: 1],
-          set: [last_used_at: ^now, updated_at: ^now]
+          set: [
+            last_used_at: ^now,
+            updated_at: ^now,
+            # Promote auto-generated keys to permanent (visible). Safe
+            # for already-permanent keys: their auto_generated_at is
+            # already nil, so this is a no-op write.
+            auto_generated_at: nil
+          ]
         ]
 
     case Repo.update_all(query, []) do

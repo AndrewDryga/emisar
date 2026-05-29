@@ -24,20 +24,20 @@
   <section class="pb-24 sm:pb-32">
     <div class="mx-auto max-w-7xl px-6 lg:px-8">
       <div class="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
-        <a href="https://github.com/andrewdryga/emisar#quick-start" class="group rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8 transition hover:border-indigo-500/50">
+        <.link href={~p"/docs/quickstart"} class="group rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8 transition hover:border-indigo-500/50">
           <div class="flex h-12 w-12 items-center justify-center rounded-lg bg-indigo-500/10 text-indigo-400">
             <.icon name="hero-rocket-launch" class="h-6 w-6" />
           </div>
-          <h2 class="mt-6 text-xl font-semibold text-zinc-50 group-hover:text-indigo-300">Quick start</h2>
+          <h2 class="mt-6 text-xl font-semibold text-zinc-50 group-hover:text-indigo-300">Quickstart</h2>
           <p class="mt-2 text-sm text-zinc-400">
-            Sign up, install an runner, run your first action in under five minutes.
+            Sign up, install a runner, run your first action in under five minutes.
           </p>
           <p class="mt-4 text-sm font-semibold text-indigo-300">
             Read the guide <span aria-hidden="true">&rarr;</span>
           </p>
-        </a>
+        </.link>
 
-        <a href="https://github.com/andrewdryga/emisar/blob/main/docs/action-packs.md" class="group rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8 transition hover:border-indigo-500/50">
+        <.link href={~p"/docs/action-packs"} class="group rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8 transition hover:border-indigo-500/50">
           <div class="flex h-12 w-12 items-center justify-center rounded-lg bg-indigo-500/10 text-indigo-400">
             <.icon name="hero-cube-transparent" class="h-6 w-6" />
           </div>
@@ -48,7 +48,33 @@
           <p class="mt-4 text-sm font-semibold text-indigo-300">
             See the spec <span aria-hidden="true">&rarr;</span>
           </p>
-        </a>
+        </.link>
+
+        <.link href={~p"/docs/security-model"} class="group rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8 transition hover:border-indigo-500/50">
+          <div class="flex h-12 w-12 items-center justify-center rounded-lg bg-indigo-500/10 text-indigo-400">
+            <.icon name="hero-shield-check" class="h-6 w-6" />
+          </div>
+          <h2 class="mt-6 text-xl font-semibold text-zinc-50 group-hover:text-indigo-300">Security model</h2>
+          <p class="mt-2 text-sm text-zinc-400">
+            Trust boundary, hash-chained audit, redaction-before-egress, and what we're explicitly not.
+          </p>
+          <p class="mt-4 text-sm font-semibold text-indigo-300">
+            Read the model <span aria-hidden="true">&rarr;</span>
+          </p>
+        </.link>
+
+        <.link href={~p"/docs/connect-an-llm"} class="group rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8 transition hover:border-indigo-500/50">
+          <div class="flex h-12 w-12 items-center justify-center rounded-lg bg-indigo-500/10 text-indigo-400">
+            <.icon name="hero-puzzle-piece" class="h-6 w-6" />
+          </div>
+          <h2 class="mt-6 text-xl font-semibold text-zinc-50 group-hover:text-indigo-300">Connect an LLM</h2>
+          <p class="mt-2 text-sm text-zinc-400">
+            Wire emisar into Claude Code, Claude Desktop, Cursor, Gemini CLI, or Codex CLI.
+          </p>
+          <p class="mt-4 text-sm font-semibold text-indigo-300">
+            Set up MCP <span aria-hidden="true">&rarr;</span>
+          </p>
+        </.link>
 
         <a href="https://github.com/andrewdryga/emisar/blob/main/docs/wire-protocol.md" class="group rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8 transition hover:border-indigo-500/50">
           <div class="flex h-12 w-12 items-center justify-center rounded-lg bg-indigo-500/10 text-indigo-400">
@@ -59,24 +85,11 @@
             The runner-to-control-plane WSS protocol: framing, events, error model.
           </p>
           <p class="mt-4 text-sm font-semibold text-indigo-300">
-            Read the protocol <span aria-hidden="true">&rarr;</span>
+            Read on GitHub <span aria-hidden="true">&rarr;</span>
           </p>
         </a>
 
-        <a href="https://github.com/andrewdryga/emisar#mcp" class="group rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8 transition hover:border-indigo-500/50">
-          <div class="flex h-12 w-12 items-center justify-center rounded-lg bg-indigo-500/10 text-indigo-400">
-            <.icon name="hero-puzzle-piece" class="h-6 w-6" />
-          </div>
-          <h2 class="mt-6 text-xl font-semibold text-zinc-50 group-hover:text-indigo-300">MCP integration</h2>
-          <p class="mt-2 text-sm text-zinc-400">
-            Expose your catalog to Claude, Cursor, and any MCP-compatible client.
-          </p>
-          <p class="mt-4 text-sm font-semibold text-indigo-300">
-            Set up MCP <span aria-hidden="true">&rarr;</span>
-          </p>
-        </a>
-
-        <a href="https://github.com/andrewdryga/emisar#self-hosting" class="group rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8 transition hover:border-indigo-500/50">
+        <a href="https://github.com/andrewdryga/emisar/blob/main/docs/deploy.md" class="group rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8 transition hover:border-indigo-500/50">
           <div class="flex h-12 w-12 items-center justify-center rounded-lg bg-indigo-500/10 text-indigo-400">
             <.icon name="hero-server-stack" class="h-6 w-6" />
           </div>

@@ -810,7 +810,6 @@ defmodule EmisarWeb.CoreComponents do
         </header>
 
         <main class="flex-1 overflow-x-hidden p-4 sm:p-6">
-          <.flash_group flash={@flash} />
           {render_slot(@inner_block)}
         </main>
       </div>
@@ -1317,10 +1316,17 @@ defmodule EmisarWeb.CoreComponents do
     """
   end
 
+  # Version of the emisar_web app, read at compile time from mix.exs so
+  # the footer never drifts from the actual release. `vsn` comes back as
+  # a charlist; convert once at compile time.
+  @app_version Application.spec(:emisar_web, :vsn) |> to_string()
+
   @doc """
   Footer for marketing pages. Same on every page.
   """
   def marketing_footer(assigns) do
+    assigns = assign(assigns, :app_version, @app_version)
+
     ~H"""
     <footer class="border-t border-zinc-900 bg-zinc-950">
       <div class="mx-auto max-w-7xl px-6 py-16 lg:px-8">
@@ -1387,7 +1393,7 @@ defmodule EmisarWeb.CoreComponents do
 
         <div class="mt-12 flex items-center justify-between border-t border-zinc-900 pt-8 text-xs text-zinc-500">
           <span>© {Date.utc_today().year} emisar. All rights reserved.</span>
-          <span>v0.2.0 — built in Elixir</span>
+          <span>v{@app_version} — built in Elixir</span>
         </div>
       </div>
     </footer>

@@ -112,10 +112,11 @@
           <div class="flex h-12 w-12 items-center justify-center rounded-lg bg-indigo-500/10 text-indigo-400">
             <.icon name="hero-document-text" class="h-6 w-6" />
           </div>
-          <h3 class="mt-6 text-xl font-semibold text-zinc-50">Append-only audit journal</h3>
+          <h3 class="mt-6 text-xl font-semibold text-zinc-50">Hash-chained audit journal</h3>
           <p class="mt-3 text-sm leading-6 text-zinc-400">
-            Every action is recorded to an append-only JSONL audit on the host
-            (tamper-evidence on the roadmap), and never mutated after write.
+            Every action is recorded to an append-only JSONL audit on the host, with each
+            line carrying the SHA-256 of the previous entry. Any tampered or removed line is
+            detected by <code class="text-zinc-300">emisar audit verify</code>.
           </p>
         </div>
         <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8">

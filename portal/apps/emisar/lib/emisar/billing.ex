@@ -26,12 +26,11 @@ defmodule Emisar.Billing do
       name: "Team",
       monthly_price_cents: 2000,
       agents_limit: 100,
-      members_limit: 25,
+      members_limit: :unlimited,
       audit_retention_days: 90,
       features: [
         "Unlimited users",
         "90-day audit retention",
-        "polkit / sudo recipes",
         "Email support",
         "Stripe billing"
       ]

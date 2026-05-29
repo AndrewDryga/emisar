@@ -72,6 +72,7 @@ defmodule EmisarWeb.Router do
     get "/use-cases/postgres-ops", MarketingController, :usecase_postgres
     get "/compare/raw-ssh-for-ai", MarketingController, :compare_raw_ssh
     get "/sitemap.xml", SitemapController, :show
+    get "/install.sh", InstallController, :show
   end
 
   # -- Auth surface (only when signed-out) ----------------------------

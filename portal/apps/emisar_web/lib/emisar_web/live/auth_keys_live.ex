@@ -125,7 +125,7 @@ defmodule EmisarWeb.AuthKeysLive do
           secret={@new_secret}
           on_dismiss="dismiss_secret"
         >
-          Treat it like a password. Anyone with this key can register an runner
+          Treat it like a password. Anyone with this key can register a runner
           under <span class="font-semibold">{@current_account.name}</span>.
 
           <:install_command>
@@ -188,7 +188,7 @@ defmodule EmisarWeb.AuthKeysLive do
           <%= if @auth_keys == [] do %>
             <div class="mt-4">
               <.empty_state icon="hero-key" title="No auth keys yet">
-                No auth keys yet. Issue one to bootstrap an runner.
+                No auth keys yet. Issue one to bootstrap a runner.
               </.empty_state>
             </div>
           <% else %>

@@ -26,6 +26,14 @@ defmodule Emisar.Runners.AuthKey do
     field :last_used_at, :utc_datetime_usec
     field :revoked_at, :utc_datetime_usec
 
+    # Set when the dashboard auto-mints this key for the install command.
+    # Cleared the moment a runner successfully registers with it (at
+    # which point the key becomes permanent and visible in lists). While
+    # this is non-nil AND last_used_at is nil, the key is "tentative":
+    # invisible in UI, subject to ring eviction beyond the per-account
+    # cap. See Emisar.Runners.mint_install_key/3.
+    field :auto_generated_at, :utc_datetime_usec
+
     belongs_to :account, Emisar.Accounts.Account
     belongs_to :created_by, Emisar.Accounts.User
     belongs_to :revoked_by, Emisar.Accounts.User
@@ -53,6 +61,17 @@ defmodule Emisar.Runners.AuthKey do
       revoked_by_id: by_user_id
     )
   end
+
+  @doc """
+  True when the key is auto-generated AND has never been used.
+
+  Used by the UI visibility filter (hide these from auth-key lists) and
+  by the ring-eviction query (only auto-unused keys get evicted; once a
+  runner has registered with a key, it stays).
+  """
+  def auto_unused?(%__MODULE__{auto_generated_at: nil}), do: false
+  def auto_unused?(%__MODULE__{last_used_at: ts}) when not is_nil(ts), do: false
+  def auto_unused?(%__MODULE__{}), do: true
 
   @doc "Is this key currently presentable?"
   def usable?(%__MODULE__{} = key) do

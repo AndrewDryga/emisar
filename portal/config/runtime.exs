@@ -41,20 +41,36 @@ if config_env() == :prod do
 
   host = System.get_env("PHX_HOST") || "app.emisar.com"
 
-  config :emisar_web, EmisarWeb.Endpoint,
-    url: [host: host, port: 443, scheme: "https"],
+  # FORCE_SSL=false disables the HTTP→HTTPS redirect AND the
+  # secure-cookie pin. Required for local docker-compose dev (plain
+  # HTTP), and for production deployments behind a TLS-terminating
+  # proxy that already handles the redirect itself. Defaults to true.
+  force_ssl_enabled? = System.get_env("FORCE_SSL", "true") in ~w(true 1)
+  url_scheme = if force_ssl_enabled?, do: "https", else: "http"
+  url_port = if force_ssl_enabled?, do: 443, else: String.to_integer(System.get_env("PORT") || "4000")
+
+  endpoint_opts = [
+    url: [host: host, port: url_port, scheme: url_scheme],
     http: [
       ip: {0, 0, 0, 0, 0, 0, 0, 0},
       port: String.to_integer(System.get_env("PORT") || "4000")
     ],
     secret_key_base: secret_key_base,
-    server: true,
-    force_ssl: [hsts: true, host: nil]
+    server: true
+  ]
+
+  endpoint_opts =
+    if force_ssl_enabled?,
+      do: Keyword.put(endpoint_opts, :force_ssl, hsts: true, host: nil),
+      else: endpoint_opts
+
+  config :emisar_web, EmisarWeb.Endpoint, endpoint_opts
 
   # Force `secure: true` on the remember-me cookie + tighten the session
   # cookie. Combined with force_ssl above, browsers will never send the
-  # cookie over plain HTTP.
-  config :emisar_web, force_secure_cookies: true
+  # cookie over plain HTTP. Disabled when FORCE_SSL=false so local dev
+  # over http://localhost can still complete sign-in.
+  config :emisar_web, force_secure_cookies: force_ssl_enabled?
 
   config :emisar, :dns_cluster_query, System.get_env("DNS_CLUSTER_QUERY")
 

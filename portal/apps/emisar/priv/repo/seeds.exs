@@ -88,7 +88,7 @@ unless Enum.find(Runbooks.list_runbooks(account.id), &(&1.slug == "cassandra-rol
           %{
             "id" => "preflight",
             "action_id" => "cassandra.nodetool_status",
-            "agent_selector" => %{"group" => "cassandra-us-east1"}
+            "runner_selector" => %{"group" => "cassandra-us-east1"}
           },
           %{
             "id" => "assert_healthy",
@@ -98,7 +98,7 @@ unless Enum.find(Runbooks.list_runbooks(account.id), &(&1.slug == "cassandra-rol
           %{
             "id" => "repair",
             "action_id" => "cassandra.nodetool_repair",
-            "agent_selector" => %{"group" => "cassandra-us-east1"},
+            "runner_selector" => %{"group" => "cassandra-us-east1"},
             "args" => %{"keyspace" => "system_auth"}
           }
         ]
@@ -109,20 +109,42 @@ unless Enum.find(Runbooks.list_runbooks(account.id), &(&1.slug == "cassandra-rol
 end
 
 # -- A bootstrap auth key (only on first run) ------------------------
+#
+# If EMISAR_DEV_FIXED_AUTH_KEY is set in the environment (docker-compose
+# does this), the seed inserts a key with that exact secret so the
+# runner containers can read the same value from their EMISAR_AUTH_KEY
+# env and register without any "capture-from-stdout" bootstrap dance.
+#
+# In production seeds, the env var is not set → we mint a random secret
+# and print it once for the operator to copy. Hash-at-rest discipline
+# is preserved in both paths; only the raw value's origin differs.
 
 case Runners.list_auth_keys(account.id) do
   [] ->
-    {:ok, raw, _key} =
-      Runners.create_auth_key(account.id, user.id, %{
-        description: "Demo auth key",
-        group: "cassandra-us-east1",
-        reusable: true
-      })
+    case System.get_env("EMISAR_DEV_FIXED_AUTH_KEY") do
+      fixed when is_binary(fixed) and byte_size(fixed) >= 27 ->
+        {:ok, _key} =
+          Runners.create_auth_key_with_secret(fixed, account.id, user.id, %{
+            description: "Dev fixed auth key (docker-compose)",
+            group: "cassandra-us-east1",
+            reusable: true
+          })
 
-    IO.puts("")
-    IO.puts(IO.ANSI.green() <> "Bootstrap an runner:" <> IO.ANSI.reset())
-    IO.puts("  curl -sSL https://emisar.com/install.sh | sudo EMISAR_AUTH_KEY=#{raw} bash")
-    IO.puts("")
+        IO.puts(IO.ANSI.green() <> "✓ Seeded dev fixed auth key" <> IO.ANSI.reset())
+
+      _ ->
+        {:ok, raw, _key} =
+          Runners.create_auth_key(account.id, user.id, %{
+            description: "Demo auth key",
+            group: "cassandra-us-east1",
+            reusable: true
+          })
+
+        IO.puts("")
+        IO.puts(IO.ANSI.green() <> "Bootstrap a runner:" <> IO.ANSI.reset())
+        IO.puts("  curl -sSL https://emisar.com/install.sh | sudo EMISAR_AUTH_KEY=#{raw} bash")
+        IO.puts("")
+    end
 
     Audit.log(account.id, "auth_key.created",
       actor_kind: "system",

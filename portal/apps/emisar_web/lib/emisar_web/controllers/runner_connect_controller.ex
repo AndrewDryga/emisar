@@ -66,7 +66,7 @@ defmodule EmisarWeb.RunnerConnectController do
       {:error, :over_limit, plan, limit} ->
         conn
         |> put_status(:payment_required)
-        |> json(%{error: "agent_limit_exceeded", plan: plan, limit: limit})
+        |> json(%{error: "runner_limit_exceeded", plan: plan, limit: limit})
 
       {:error, reason} ->
         conn

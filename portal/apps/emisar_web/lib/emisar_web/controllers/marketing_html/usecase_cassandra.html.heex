@@ -17,22 +17,32 @@
       <p class="mt-3 text-sm leading-relaxed text-zinc-400">
         The shipping <code>cassandra</code> pack (see
         <a href="https://github.com/andrewdryga/emisar/tree/main/runner/examples/packs/cassandra" class="text-indigo-400 hover:text-indigo-300">examples/packs/cassandra</a>)
-        publishes three actions:
+        publishes six actions:
       </p>
       <ul class="mt-4 space-y-2 text-sm text-zinc-300">
         <li>
           <code class="font-mono text-indigo-300">cassandra.nodetool_status</code> — risk:
-          <code>low</code>, read-only, no approval. The model can call this freely to
-          triage cluster health.
+          <code>low</code>, read-only. Cluster topology and per-node up/down state.
+        </li>
+        <li>
+          <code class="font-mono text-indigo-300">cassandra.nodetool_compactionstats</code> — risk:
+          <code>low</code>, read-only. Pending and in-flight compactions per host.
+        </li>
+        <li>
+          <code class="font-mono text-indigo-300">cassandra.nodetool_tablestats</code> — risk:
+          <code>low</code>, read-only. Per-keyspace / per-table stats (read counts, bytes, latency).
+        </li>
+        <li>
+          <code class="font-mono text-indigo-300">cassandra.nodetool_tpstats</code> — risk:
+          <code>low</code>, read-only. Thread-pool queue depth — fastest signal for a saturated node.
+        </li>
+        <li>
+          <code class="font-mono text-indigo-300">cassandra.analyze_disk_pressure</code> — risk:
+          <code>low</code>, read-only. Shell pipeline summarising disk fill per data dir.
         </li>
         <li>
           <code class="font-mono text-indigo-300">cassandra.nodetool_repair</code> — risk:
-          <code>high</code>. Args restricted to an allowlist of keyspaces. Timeout 30m,
-          <code>max_concurrent: 1</code>, default policy requires one human approval.
-        </li>
-        <li>
-          <code class="font-mono text-indigo-300">cassandra.nodetool_compactionstats</code>
-          — read-only.
+          <code>high</code>. Args restricted to an allowlist of keyspaces. Long timeout, default policy requires one human approval.
         </li>
       </ul>
 
@@ -48,7 +58,7 @@
           Model proposes <code>nodetool_repair orders_ks</code> on the surviving
           replicas. Policy says <code>require_approval</code>. The model surfaces this
           to the operator with the policy reason ("repair is high-risk; one approval
-          required") and the operator's seat ID.
+          required") and the LLM-supplied <code>reason</code> for the run.
         </li>
         <li>
           Operator gets an email. One click → approve. The repair dispatches.

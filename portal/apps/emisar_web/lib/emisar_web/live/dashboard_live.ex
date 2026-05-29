@@ -4,33 +4,53 @@ defmodule EmisarWeb.DashboardLive do
   alias Emisar.{Runners, Approvals, Audit, Billing, Catalog, PubSub, Runs}
 
   def mount(_params, _session, socket) do
+    account_id = socket.assigns.current_account.id
+
     if connected?(socket) do
-      PubSub.subscribe_account_runs(socket.assigns.current_account.id)
-      PubSub.subscribe_account_runners(socket.assigns.current_account.id)
-      PubSub.subscribe_account_approvals(socket.assigns.current_account.id)
+      PubSub.subscribe_account_runs(account_id)
+      PubSub.subscribe_account_runners(account_id)
+      PubSub.subscribe_account_approvals(account_id)
     end
+
+    # Mint ONLY on the connected (live) mount, not the dead HTTP
+    # render. mount/3 runs twice per page load (Plug pass + WebSocket
+    # pass); minting in both would double the DB writes for no UX win.
+    # Dead render briefly shows "Generating your install command…";
+    # the live mount sub-second later replaces it with the real one.
+    #
+    # Mint runs in mount/3 (not load/1) so PubSub-triggered re-renders
+    # — a runner connecting, a run completing — don't churn extra
+    # install keys. Ring eviction in Runners.mint_install_key/3 caps
+    # unused autos at 42 per account regardless.
+    install_command =
+      if connected?(socket) do
+        maybe_mint_install_command(socket, account_id)
+      end
 
     {:ok,
      socket
-     |> assign(:bootstrap_secret, nil)
+     |> assign(:install_command, install_command)
      |> load()}
   end
 
-  def handle_event("bootstrap_first_agent", _params, socket) do
-    user_id = socket.assigns.current_user.id
-    account_id = socket.assigns.current_account.id
-    base_url = derive_base_url(socket)
+  # Only mints when the account has zero runners — that's the only path
+  # that surfaces the install command in the UI. Accounts with active
+  # runners never auto-mint; operators wanting an extra key go via
+  # Settings → Auth keys (explicit, audit-logged).
+  defp maybe_mint_install_command(socket, account_id) do
+    if Runners.list_runners_for_account(account_id) == [] do
+      user_id = socket.assigns.current_user.id
+      base = derive_base_url(socket)
 
-    case Runners.create_auth_key(account_id, user_id, %{
-           description: "First runner bootstrap (auto-generated)",
-           reusable: true
-         }) do
-      {:ok, raw, _key} ->
-        {:noreply,
-         assign(socket, bootstrap_secret: %{key: raw, install_url: base_url})}
+      case Runners.mint_install_key(account_id, user_id) do
+        {:ok, raw, _key} ->
+          # Leading space keeps the line out of shell history when
+          # HISTCONTROL=ignorespace (bash) or HIST_IGNORE_SPACE (zsh).
+          " curl -sSL #{base}/install.sh | sudo EMISAR_AUTH_KEY=#{raw} EMISAR_URL=#{base} bash"
 
-      {:error, _cs} ->
-        {:noreply, put_flash(socket, :error, "Could not generate the auth key.")}
+        {:error, _} ->
+          :mint_failed
+      end
     end
   end
 
@@ -81,7 +101,7 @@ defmodule EmisarWeb.DashboardLive do
       <:title>Dashboard</:title>
 
       <%= if @agents_total == 0 do %>
-        <.empty_state_first_agent bootstrap_secret={@bootstrap_secret} />
+        <.empty_state_first_agent install_command={@install_command} />
       <% else %>
         <.live_dashboard
           agents_connected={@agents_connected}
@@ -97,16 +117,13 @@ defmodule EmisarWeb.DashboardLive do
     """
   end
 
-  # First-time experience. Two states:
-  #
-  #   1. Before bootstrap: a single "Generate install command" button.
-  #      Mints a reusable auth key in-place and reveals the real
-  #      install one-liner pre-filled with the new secret.
-  #   2. After bootstrap: the actual command + "waiting for runner…"
-  #      indicator. This LV is subscribed to account-level runner
-  #      events, so when the runner connects, the page flips to the
-  #      populated dashboard automatically.
-  attr :bootstrap_secret, :any, required: true
+  # First-time experience. The install command is pre-rendered on mount
+  # (via Runners.mint_install_key) so there's no "generate" click step —
+  # operator copies and runs. While runners is empty, the LV is
+  # subscribed to account-level runner events; the moment the first
+  # runner registers and connects, the page flips to the populated
+  # dashboard automatically.
+  attr :install_command, :any, required: true
 
   defp empty_state_first_agent(assigns) do
     ~H"""
@@ -124,71 +141,35 @@ defmodule EmisarWeb.DashboardLive do
           </div>
         </div>
 
-        <%= if @bootstrap_secret == nil do %>
-          <div class="mt-8 space-y-4">
-            <p class="text-sm text-zinc-400">
-              We'll mint a reusable bootstrap auth key for this workspace and
-              show you the exact install command. The key never leaves this
-              browser tab unless you copy it.
-            </p>
-            <button
-              phx-click="bootstrap_first_agent"
-              class="inline-flex items-center gap-2 rounded-lg bg-indigo-500 px-4 py-2 text-sm font-semibold text-zinc-950 hover:bg-indigo-400"
-            >
-              Generate install command <.icon name="hero-arrow-right" class="h-4 w-4" />
-            </button>
-
-            <p class="text-xs text-zinc-500">
-              Prefer manual? Generate a key in
-              <.link navigate={~p"/app/settings/runners/auth-keys"} class="text-indigo-400 hover:text-indigo-300">
+        <%= cond do %>
+          <% is_binary(@install_command) -> %>
+            <.install_reveal install_command={@install_command} />
+          <% @install_command == :mint_failed -> %>
+            <div class="mt-8 rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-200/90">
+              We couldn't mint a bootstrap auth key just now. Open
+              <.link navigate={~p"/app/settings/runners/auth-keys"} class="font-semibold underline">
                 settings → auth keys
               </.link>
-              and follow the
-              <.link href={~p"/docs"} class="text-indigo-400 hover:text-indigo-300">install docs</.link>.
-            </p>
-          </div>
-        <% else %>
-          <.bootstrap_reveal secret={@bootstrap_secret} />
+              and create one manually, or refresh the dashboard to try again.
+            </div>
+          <% true -> %>
+            <div class="mt-8 flex items-center gap-3 rounded-lg border border-zinc-800 bg-zinc-950/60 p-4 text-sm text-zinc-400">
+              <span class="hero-arrow-path h-4 w-4 animate-spin"></span>
+              Generating your install command…
+            </div>
         <% end %>
       </div>
     </div>
     """
   end
 
-  attr :secret, :map, required: true
+  attr :install_command, :string, required: true
 
-  defp bootstrap_reveal(assigns) do
-    base = assigns.secret.install_url
-    # Leading space keeps the line out of shell history on shells configured
-    # with HISTCONTROL=ignorespace/ignoreboth (bash, Debian/Ubuntu default)
-    # or HIST_IGNORE_SPACE (zsh) — so the auth key isn't persisted to
-    # ~/.bash_history / ~/.zsh_history.
-    install =
-      " curl -sSL #{base}/install.sh | sudo EMISAR_AUTH_KEY=#{assigns.secret.key} EMISAR_URL=#{base} bash"
-
-    assigns = assign(assigns, :install_command, install)
-
+  defp install_reveal(assigns) do
     ~H"""
     <div class="mt-8 space-y-6">
-      <div class="rounded-lg bg-amber-500/10 p-4 ring-1 ring-amber-500/30">
-        <p class="text-xs text-amber-200/90">
-          Treat this key like a password. Anyone with it can register an
-          runner under your workspace. We won't show it again — copy it now.
-        </p>
-        <div class="mt-3 flex items-center gap-2 rounded-md bg-zinc-950/80 p-2 ring-1 ring-zinc-800">
-          <code class="flex-1 break-all font-mono text-xs text-zinc-100">{@secret.key}</code>
-          <button
-            type="button"
-            class="rounded bg-amber-500/20 px-2 py-1 text-xs font-semibold text-amber-100 hover:bg-amber-500/30"
-            onclick={"navigator.clipboard.writeText('#{@secret.key}')"}
-          >
-            Copy
-          </button>
-        </div>
-      </div>
-
       <div>
-        <div class="text-xs uppercase tracking-wider text-zinc-500">Run on any Linux host</div>
+        <div class="text-xs uppercase tracking-wider text-zinc-500">Run on any Linux or macOS host</div>
         <div class="mt-2 flex items-center gap-2 rounded-lg border border-zinc-800 bg-black/60 p-4 font-mono text-xs">
           <code class="flex-1 whitespace-pre-wrap break-all text-zinc-300">{@install_command}</code>
           <button
@@ -210,7 +191,7 @@ defmodule EmisarWeb.DashboardLive do
           <span class="relative inline-flex h-3 w-3 rounded-full bg-indigo-400"></span>
         </span>
         <div class="text-sm text-zinc-300">
-          Waiting for an runner to connect. This page will refresh automatically.
+          Waiting for a runner to connect. This page will refresh automatically.
         </div>
       </div>
 

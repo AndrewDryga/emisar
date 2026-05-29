@@ -53,18 +53,19 @@
           <span class="h-3 w-3 rounded-full bg-green-500/70"></span>
           <span class="ml-3 font-mono text-xs text-zinc-500">sre@prod-cassandra-01: ~</span>
         </div>
-<pre class="overflow-x-auto p-6 font-mono text-xs leading-6 text-zinc-300"><span class="text-zinc-500"># Install on a Linux host</span>
-<span class="text-indigo-400">$</span> curl -sSL https://emisar.com/install.sh | sudo EMISAR_KEY=ek_live_*** bash
-<span class="text-zinc-500">  --&gt; downloading emisar v0.2.0 ... <span class="text-emerald-400">ok</span></span>
-<span class="text-zinc-500">  --&gt; installing /usr/local/bin/emisar ... <span class="text-emerald-400">ok</span></span>
-<span class="text-zinc-500">  --&gt; enabling systemd unit emisar.service ... <span class="text-emerald-400">ok</span></span>
+<pre class="overflow-x-auto p-6 font-mono text-xs leading-6 text-zinc-300"><span class="text-zinc-500"># Install on a Linux or macOS host</span>
+<span class="text-indigo-400">$</span> curl -sSL https://emisar.com/install.sh | sudo EMISAR_AUTH_KEY=emkey-auth-*** bash
+<span class="text-indigo-400">[install]</span> <span class="text-zinc-400">downloading emisar-v0.2.0-linux-amd64.tar.gz</span>
+<span class="text-indigo-400">[install]</span> <span class="text-zinc-400">verifying checksum</span>
+<span class="text-indigo-400">[install]</span> <span class="text-zinc-400">creating system user emisar</span>
+<span class="text-indigo-400">[install]</span> <span class="text-zinc-400">writing default config to /etc/emisar/config.yaml</span>
+<span class="text-indigo-400">[install]</span> <span class="text-zinc-400">installing binary to /usr/local/bin/emisar</span>
+<span class="text-indigo-400">[install]</span> <span class="text-zinc-400">installed: emisar <span class="text-emerald-400">v0.2.0</span></span>
+<span class="text-indigo-400">[install]</span> <span class="text-zinc-400">copying example packs to /etc/emisar/packs</span>
+<span class="text-indigo-400">[install]</span> <span class="text-zinc-400">writing /etc/systemd/system/emisar.service</span>
+<span class="text-indigo-400">[install]</span> <span class="text-zinc-400">starting emisar.service</span>
 
-<span class="text-indigo-400">$</span> emisar status
-<span class="text-zinc-500">runner      </span> prod-cassandra-01    <span class="text-emerald-400">connected</span>     <span class="text-zinc-500">14ms RTT</span>
-<span class="text-zinc-500">pack       </span> cassandra@v0.2.0     <span class="text-emerald-400">loaded</span>        <span class="text-zinc-500">sha256:9f3a…</span>
-<span class="text-zinc-500">advertised </span> 6 actions           <span class="text-emerald-400">policy ok</span>
-<span class="text-zinc-500">audit      </span> /var/log/emisar.jsonl  <span class="text-emerald-400">append-only</span>
-<span class="text-zinc-500">last run   </span> nodetool.status      <span class="text-emerald-400">exit 0</span>      <span class="text-zinc-500">3m ago by claude-3.7-sonnet</span></pre>
+<span class="text-zinc-500">→ Open <span class="text-emerald-400">app.emisar.com/runners</span> — the host is online and advertising 6 actions.</span></pre>
       </div>
     </div>
   </section>
@@ -262,23 +263,22 @@
             outside the manifest. No more Slack-bot whack-a-mole.
           </p>
           <div class="mt-6 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
-            <div class="border-b border-zinc-900 px-3 py-2 font-mono text-[11px] text-zinc-500">packs/postgres/actions/vacuum.yaml</div>
+            <div class="border-b border-zinc-900 px-3 py-2 font-mono text-[11px] text-zinc-500">packs/linux-core/actions/systemctl_status.yaml</div>
 <pre class="p-3 font-mono text-[11px] leading-5 text-zinc-300"><span class="text-indigo-300">schema_version</span>: <span class="text-amber-300">1</span>
-<span class="text-indigo-300">id</span>: postgres.vacuum_table
-<span class="text-indigo-300">title</span>: <span class="text-emerald-300">"Vacuum a table"</span>
+<span class="text-indigo-300">id</span>: linux.systemctl_status
+<span class="text-indigo-300">title</span>: <span class="text-emerald-300">"Systemd unit status"</span>
 <span class="text-indigo-300">kind</span>: exec
-<span class="text-indigo-300">risk</span>: <span class="text-amber-300">medium</span>
+<span class="text-indigo-300">risk</span>: <span class="text-amber-300">low</span>
 <span class="text-indigo-300">args</span>:
-  - <span class="text-indigo-300">name</span>: table
+  - <span class="text-indigo-300">name</span>: unit
     <span class="text-indigo-300">type</span>: string
     <span class="text-indigo-300">required</span>: <span class="text-amber-300">true</span>
-  - <span class="text-indigo-300">name</span>: full
-    <span class="text-indigo-300">type</span>: boolean
-    <span class="text-indigo-300">default</span>: <span class="text-amber-300">false</span>
+    <span class="text-indigo-300">validation</span>:
+      <span class="text-indigo-300">enum</span>: [<span class="text-emerald-300">cassandra</span>, <span class="text-emerald-300">nginx</span>, <span class="text-emerald-300">postgresql</span>, <span class="text-emerald-300">docker</span>]
 <span class="text-indigo-300">execution</span>:
   <span class="text-indigo-300">command</span>:
-    <span class="text-indigo-300">binary</span>: /usr/bin/psql
-    <span class="text-indigo-300">argv</span>: [<span class="text-emerald-300">"-c"</span>, <span class="text-emerald-300">"VACUUM &#123;&#123; args.table &#125;&#125;"</span>]</pre>
+    <span class="text-indigo-300">binary</span>: /bin/systemctl
+    <span class="text-indigo-300">argv</span>: [<span class="text-emerald-300">"status"</span>, <span class="text-emerald-300">"&#123;&#123; args.unit &#125;&#125;"</span>, <span class="text-emerald-300">"--no-pager"</span>]</pre>
           </div>
         </div>
 
@@ -293,13 +293,15 @@
             cannot bypass the gate &mdash; it can only wait.
           </p>
           <div class="mt-6 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
-            <div class="border-b border-zinc-900 px-3 py-2 font-mono text-[11px] text-zinc-500">policy.yaml</div>
+            <div class="border-b border-zinc-900 px-3 py-2 font-mono text-[11px] text-zinc-500">default policy</div>
 <pre class="p-3 font-mono text-[11px] leading-5 text-zinc-300"><span class="text-emerald-400">allow</span>:
-  - <span class="text-indigo-300">match</span>: &#123;<span class="text-indigo-300">action</span>: <span class="text-emerald-300">"*.status"</span>&#125;
+  - <span class="text-indigo-300">name</span>: <span class="text-emerald-300">low-medium-ok</span>
+    <span class="text-indigo-300">max_risk</span>: medium
 <span class="text-amber-300">require_approval</span>:
-  - <span class="text-indigo-300">match</span>: &#123;<span class="text-indigo-300">risk</span>: high&#125;
-<span class="text-red-300">deny</span>:
-  - <span class="text-indigo-300">match</span>: &#123;<span class="text-indigo-300">action</span>: <span class="text-emerald-300">"*.drop_table"</span>&#125;</pre>
+  - <span class="text-indigo-300">name</span>: <span class="text-emerald-300">approve-high</span>
+    <span class="text-indigo-300">risk</span>: high
+    <span class="text-zinc-500"># Anything not matching above
+      is denied by default.</span></pre>
           </div>
         </div>
 
@@ -327,10 +329,10 @@
                 </tr>
               </thead>
               <tbody class="divide-y divide-zinc-900">
-                <tr><td class="px-3 py-2">14:02:18</td><td class="px-3 py-2 text-indigo-300">claude-3.7</td><td class="px-3 py-2">nodetool.status</td><td class="px-3 py-2"><span class="rounded bg-emerald-500/10 px-1.5 py-0.5 text-emerald-300">ok</span></td></tr>
-                <tr><td class="px-3 py-2">14:01:55</td><td class="px-3 py-2 text-indigo-300">gpt-5</td><td class="px-3 py-2">pg.slow_kill</td><td class="px-3 py-2"><span class="rounded bg-amber-500/10 px-1.5 py-0.5 text-amber-300">approval</span></td></tr>
-                <tr><td class="px-3 py-2">13:58:01</td><td class="px-3 py-2 text-indigo-300">claude-3.7</td><td class="px-3 py-2">k8s.describe</td><td class="px-3 py-2"><span class="rounded bg-emerald-500/10 px-1.5 py-0.5 text-emerald-300">ok</span></td></tr>
-                <tr><td class="px-3 py-2">13:52:44</td><td class="px-3 py-2 text-indigo-300">claude-3.7</td><td class="px-3 py-2">pg.drop_table</td><td class="px-3 py-2"><span class="rounded bg-red-500/10 px-1.5 py-0.5 text-red-300">denied</span></td></tr>
+                <tr><td class="px-3 py-2">14:02:18</td><td class="px-3 py-2 text-indigo-300">claude-3.7</td><td class="px-3 py-2">cassandra.nodetool_status</td><td class="px-3 py-2"><span class="rounded bg-emerald-500/10 px-1.5 py-0.5 text-emerald-300">ok</span></td></tr>
+                <tr><td class="px-3 py-2">14:01:55</td><td class="px-3 py-2 text-indigo-300">claude-3.7</td><td class="px-3 py-2">cassandra.nodetool_repair</td><td class="px-3 py-2"><span class="rounded bg-amber-500/10 px-1.5 py-0.5 text-amber-300">approval</span></td></tr>
+                <tr><td class="px-3 py-2">13:58:01</td><td class="px-3 py-2 text-indigo-300">claude-3.7</td><td class="px-3 py-2">linux.systemctl_status</td><td class="px-3 py-2"><span class="rounded bg-emerald-500/10 px-1.5 py-0.5 text-emerald-300">ok</span></td></tr>
+                <tr><td class="px-3 py-2">13:52:44</td><td class="px-3 py-2 text-indigo-300">claude-3.7</td><td class="px-3 py-2">linux.tail_log</td><td class="px-3 py-2"><span class="rounded bg-red-500/10 px-1.5 py-0.5 text-red-300">denied</span></td></tr>
               </tbody>
             </table>
           </div>
@@ -467,7 +469,7 @@
             <li class="flex gap-2"><.icon name="hero-check" class="h-4 w-4 flex-none text-indigo-400" /> 3 runners</li>
             <li class="flex gap-2"><.icon name="hero-check" class="h-4 w-4 flex-none text-indigo-400" /> 1 user</li>
             <li class="flex gap-2"><.icon name="hero-check" class="h-4 w-4 flex-none text-indigo-400" /> 7-day audit retention</li>
-            <li class="flex gap-2"><.icon name="hero-check" class="h-4 w-4 flex-none text-indigo-400" /> Community Discord</li>
+            <li class="flex gap-2"><.icon name="hero-check" class="h-4 w-4 flex-none text-indigo-400" /> Community support</li>
           </ul>
         </div>
         <div class="relative rounded-2xl border-2 border-indigo-500/60 bg-zinc-950/80 p-8 shadow-2xl shadow-indigo-950/40">
@@ -524,7 +526,7 @@
           {"Can the LLM run anything it wants?", "No. The runner only exposes actions declared in a content-addressed pack. Anything else is rejected at the runner before it touches your shell. The model literally cannot see undeclared commands."},
           {"Where do approvals happen?", "In the web UI today. The approver sees the actor, the arguments, the target host, and the policy rule that triggered the gate. One click to allow, one to deny."},
           {"What if my runner dies mid-run?", "Child processes are reaped with PR_SET_PDEATHSIG on Linux — no zombies, no orphans. The cloud reconciles run state on reconnect and marks orphaned runs as crashed in the audit log."},
-          {"Is this MCP-compatible?", "We expose an HTTP tool API in the MCP shape (tool listing + invocation with bearer auth). A Claude Desktop bridge that speaks the JSON-RPC MCP transport is in progress."},
+          {"Is this MCP-compatible?", "Yes. We expose an HTTP tool API in the MCP shape (tool listing + invocation with bearer auth), and we ship emisar-mcp — a tiny stdio bridge — for Claude Code, Claude Desktop, Cursor, Gemini CLI, and Codex CLI."},
           {"Can I self-host the control plane?", "Yes, on the Enterprise plan. Single Docker image plus a Postgres database — that's the entire dependency surface. Runs air-gapped, runs in your VPC, runs on a Pi if you really want."},
           {"What about secrets?", "The runner runs a redaction pipeline on every stdout/stderr stream before forwarding. Patterns are declared per-action; sane defaults catch AWS keys, JWTs, and bearer tokens. The cloud never sees raw secrets."}
         ] do %>
