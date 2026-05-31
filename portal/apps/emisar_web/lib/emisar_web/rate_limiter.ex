@@ -58,24 +58,34 @@ defmodule EmisarWeb.RateLimiter do
     ensure_table()
     now = System.monotonic_time(:millisecond)
 
-    case :ets.lookup(@table, key) do
-      [{^key, _count, started_at}] when now - started_at < window_ms ->
-        # Window still open. Atomically bump the count, capping at
-        # max + 1 so concurrent calls can't drift past the budget:
-        # the {Pos, Incr, Threshold, SetValue} form caps the result.
-        new_count =
-          :ets.update_counter(@table, key, {2, 1, max + 1, max + 1})
+    # Single atomic step: insert default `{key, 0, now}` if missing,
+    # then increment count at pos 2 capped at `max + 1`. This collapses
+    # the previous lookup → branch → insert/increment shape (which
+    # raced on cold-start: N concurrent callers could each observe the
+    # "no row" branch and all return :ok). Now exactly one caller's
+    # default lands and every other caller's increment runs against
+    # the same row.
+    new_count =
+      :ets.update_counter(@table, key, {2, 1, max + 1, max + 1}, {key, 0, now})
 
+    case :ets.lookup(@table, key) do
+      [{^key, _, started_at}] when now - started_at >= window_ms ->
+        # Window has aged out. Reset and treat this caller as the first
+        # of the new window. (There's still a small race here between
+        # racing window-resets, but the worst case is the cap holding
+        # for two windows instead of one — which is fine.)
+        :ets.insert(@table, {key, 1, now})
+        :ok
+
+      [{^key, _, started_at}] ->
         if new_count > max do
           {:error, :rate_limited, window_ms - (now - started_at)}
         else
           :ok
         end
 
-      _ ->
-        # Window expired or first hit. Insert (no-op if a concurrent
-        # caller already inserted) and treat as one use.
-        :ets.insert(@table, {key, 1, now})
+      [] ->
+        # update_counter just inserted; should be unreachable.
         :ok
     end
   end
@@ -91,10 +101,19 @@ defmodule EmisarWeb.RateLimiter do
   Falls back to "unknown" if the tuple isn't an IP (test sockets,
   unusual transports). Behind a fly proxy without a RemoteIp plug
   this returns the proxy IP — see `docs/operations.md` known gaps.
+
+  IPv4-mapped IPv6 addresses (`::ffff:1.2.3.4`, the form an IPv6
+  listener returns for IPv4 clients) are normalized to the plain
+  IPv4 form so a single client doesn't hash to two different buckets
+  depending on which socket family accepted the connection.
   """
   @spec ip_key(Plug.Conn.t()) :: String.t()
-  def ip_key(%Plug.Conn{remote_ip: ip}) when is_tuple(ip),
-    do: ip |> :inet_parse.ntoa() |> to_string()
+  def ip_key(%Plug.Conn{remote_ip: ip}) when is_tuple(ip) do
+    case ip |> :inet_parse.ntoa() |> to_string() do
+      "::ffff:" <> ip4 -> ip4
+      other -> other
+    end
+  end
 
   def ip_key(_), do: "unknown"
 end

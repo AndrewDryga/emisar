@@ -44,6 +44,10 @@ defmodule Emisar.MixProject do
       # Auth — password hashing and TOTP for MFA
       {:bcrypt_elixir, "~> 3.0"},
       {:nimble_totp, "~> 1.0"},
+      # Pure-Elixir QR encoder — used to render scannable TOTP QRs
+      # server-side as SVG so the profile MFA setup doesn't need a
+      # third-party JS lib or an external image service.
+      {:eqrcode, "~> 0.2"},
 
       # Outbound email + HTTP
       {:swoosh, "~> 1.16"},

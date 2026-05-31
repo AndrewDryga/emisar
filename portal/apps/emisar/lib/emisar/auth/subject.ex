@@ -1,0 +1,139 @@
+defmodule Emisar.Auth.Subject do
+  @moduledoc """
+  Authenticated caller carrier. Every public context function takes
+  one to scope reads and authorize mutations. Built once at the
+  boundary (UserAuth plug / LiveView mount, MCP controller plug,
+  runner socket connect, system worker) and passed through unchanged.
+
+  Fields:
+
+    * `account` — the active `%Accounts.Account{}` (nil for the
+      no-account anonymous case — rare; mostly for system bootstrap)
+    * `actor` — `%User{}`, `%ApiKey{}`, `%Runner{}`, or `:system`
+    * `role` — atom role identifier (`:owner | :admin | :operator |
+      :viewer | :api_client | :runner | :system`)
+    * `permissions` — `MapSet.t()` of `{module, action}` tuples; the
+      Authorizers build entries via `build/2`
+    * `context` — extra metadata stamped onto audit events: `ip`,
+      `user_agent`, `request_id`. Filled in by the boundary, read by
+      `Audit` via `put_request_metadata/1`.
+  """
+
+  alias Emisar.Accounts.{Account, Membership, User}
+
+  @type role :: :owner | :admin | :operator | :viewer | :api_client | :runner | :system
+  @type permission :: {module(), atom()}
+  @type actor ::
+          Emisar.Accounts.User.t()
+          | Emisar.ApiKeys.ApiKey.t()
+          | Emisar.Runners.Runner.t()
+          | :system
+
+  @type t :: %__MODULE__{
+          account: Account.t() | nil,
+          actor: actor() | nil,
+          role: role() | nil,
+          permissions: MapSet.t(),
+          context: map()
+        }
+
+  defstruct account: nil,
+            actor: nil,
+            role: nil,
+            permissions: MapSet.new(),
+            context: %{}
+
+  @doc "Build a subject from a `%User{}` + their `%Membership{}`."
+  def for_user(%User{} = user, %Account{} = account, %Membership{role: role}, context \\ %{}) do
+    role = role_atom(role)
+
+    %__MODULE__{
+      account: account,
+      actor: user,
+      role: role,
+      permissions: Emisar.Auth.Authorizer.permissions_for(role),
+      context: context
+    }
+  end
+
+  @doc "Build a subject for an API key call (MCP / programmatic)."
+  def for_api_key(api_key, %Account{} = account, context \\ %{}) do
+    %__MODULE__{
+      account: account,
+      actor: api_key,
+      role: :api_client,
+      permissions: Emisar.Auth.Authorizer.permissions_for(:api_client),
+      context: context
+    }
+  end
+
+  @doc "Build a subject for the runner WebSocket caller."
+  def for_runner(runner, %Account{} = account, context \\ %{}) do
+    %__MODULE__{
+      account: account,
+      actor: runner,
+      role: :runner,
+      permissions: Emisar.Auth.Authorizer.permissions_for(:runner),
+      context: context
+    }
+  end
+
+  @doc """
+  Subject for system-side callers (Oban workers, seeds, bootstrap).
+  Holds the union of every permission so internal code paths don't
+  need to know about scope details. `account` may be nil for
+  cross-account jobs.
+  """
+  def system(account \\ nil) do
+    %__MODULE__{
+      account: account,
+      actor: :system,
+      role: :system,
+      permissions: Emisar.Auth.Authorizer.permissions_for(:system),
+      context: %{}
+    }
+  end
+
+  defp role_atom("owner"), do: :owner
+  defp role_atom("admin"), do: :admin
+  defp role_atom("operator"), do: :operator
+  defp role_atom("viewer"), do: :viewer
+  defp role_atom(other) when is_atom(other), do: other
+  defp role_atom(_), do: :viewer
+
+  # -- Helpers used by every context's `ensure_X_in_subject_account` -
+
+  @doc """
+  String label for the subject's actor kind. Used by `Audit.log/3`
+  callers to stamp the `actor_kind` field consistently.
+  """
+  def actor_kind(%__MODULE__{actor: :system}), do: "system"
+  def actor_kind(%__MODULE__{actor: %User{}}), do: "user"
+  def actor_kind(%__MODULE__{actor: %Emisar.ApiKeys.ApiKey{}}), do: "api_key"
+  def actor_kind(%__MODULE__{actor: %Emisar.Runners.Runner{}}), do: "runner"
+
+  @doc """
+  The actor's id (nil for `:system` actors, which have no row).
+  """
+  def actor_id(%__MODULE__{actor: :system}), do: nil
+  def actor_id(%__MODULE__{actor: %{id: id}}), do: id
+
+  @doc """
+  True iff the subject can act on data scoped to `account_id`. System
+  actors always pass; user / api-key / runner subjects must match the
+  account on their `%Subject{}`.
+  """
+  def in_account?(%__MODULE__{actor: :system}, _account_id), do: true
+  def in_account?(%__MODULE__{account: %Account{id: id}}, id), do: true
+  def in_account?(_subject, _account_id), do: false
+
+  @doc """
+  `:ok` when `in_account?/2` would be true, `{:error, error_atom}`
+  otherwise. Defaults to `:not_found` so cross-account access leaks
+  no information about whether the row exists; pass `:unauthorized`
+  for paths where the operator already proved scope.
+  """
+  def ensure_in_account(subject, account_id, error_atom \\ :not_found) do
+    if in_account?(subject, account_id), do: :ok, else: {:error, error_atom}
+  end
+end

@@ -1,0 +1,120 @@
+defmodule Emisar.Runners.Runner.Changeset do
+  @moduledoc """
+  All changesets for `%Emisar.Runners.Runner{}`. The schema itself is
+  data-only — every transition (registration, manual create, advertised
+  state, connected, disconnected, heartbeat, disabled, deleted) lives
+  here as a single-purpose changeset.
+  """
+  use Emisar, :changeset
+  alias Emisar.Runners.Runner
+
+  # -- Bootstrap paths -------------------------------------------------
+
+  @doc "Inserted by the runner socket on first auth-key registration."
+  def register(attrs) do
+    %Runner{}
+    |> cast(ensure_external_id(attrs), [
+      :account_id,
+      :name,
+      :external_id,
+      :group,
+      :hostname,
+      :labels,
+      :runner_version,
+      :bootstrap_auth_key_id
+    ])
+    |> validate_required([:account_id, :name, :external_id, :group])
+    |> validate_length(:name, min: 1, max: 80)
+    |> validate_length(:group, min: 1, max: 80)
+    |> unique_constraint([:account_id, :external_id])
+    |> unique_constraint(:name, name: :runners_account_id_name_index)
+  end
+
+  @doc """
+  Manual operator-created runner from the dashboard / seeds / tests.
+  Auto-generates `external_id` when the caller didn't supply one, so
+  every runner row always has the stable id `apply_state` matches on
+  during reconnects.
+  """
+  def create(%Emisar.Accounts.Account{} = account, attrs) do
+    %Runner{}
+    |> cast(ensure_external_id(attrs), [:name, :external_id, :group, :labels])
+    |> put_change(:account_id, account.id)
+    |> validate_required([:name, :external_id, :group])
+    |> validate_length(:name, min: 1, max: 80)
+    |> unique_constraint([:account_id, :external_id])
+    |> unique_constraint(:name, name: :runners_account_id_name_index)
+  end
+
+  # Attribute-key-agnostic default: only fills `external_id` when the
+  # caller didn't pass one (string-key or atom-key). Idempotent.
+  defp ensure_external_id(attrs) do
+    cond do
+      is_binary(Map.get(attrs, :external_id)) and Map.get(attrs, :external_id) != "" ->
+        attrs
+
+      is_binary(Map.get(attrs, "external_id")) and Map.get(attrs, "external_id") != "" ->
+        attrs
+
+      is_map(attrs) ->
+        key = if Enum.any?(attrs, fn {k, _} -> is_atom(k) end), do: :external_id, else: "external_id"
+        Map.put(attrs, key, Ecto.UUID.generate())
+
+      true ->
+        attrs
+    end
+  end
+
+  # -- Lifecycle transitions ------------------------------------------
+
+  def update(%Runner{} = runner, attrs) do
+    runner
+    |> cast(attrs, [:name, :group, :labels])
+    |> validate_required([:name, :group])
+    |> validate_length(:name, min: 1, max: 80)
+    |> unique_constraint(:name, name: :runners_account_id_name_index)
+  end
+
+  @doc "Apply a runner_state advertisement (hostname, labels, version, packs)."
+  def apply_state(%Runner{} = runner, attrs) do
+    cast(runner, attrs, [:hostname, :labels, :runner_version, :packs, :external_id])
+  end
+
+  def connected(%Runner{} = runner) do
+    change(runner,
+      status: "connected",
+      last_connected_at: now(),
+      last_disconnect_reason: nil
+    )
+  end
+
+  def disconnected(%Runner{} = runner, reason \\ nil) do
+    change(runner,
+      status: "disconnected",
+      last_disconnected_at: now(),
+      last_disconnect_reason: reason
+    )
+  end
+
+  def heartbeat(%Runner{} = runner, action_load) do
+    # A fresh heartbeat is positive evidence the runner is alive. Flip
+    # status back to connected if anything (e.g. health sweep, transient
+    # socket close) marked it disconnected, but DON'T touch
+    # last_connected_at — that stays the original session start.
+    change(runner,
+      status: "connected",
+      last_heartbeat_at: now(),
+      action_load: action_load || runner.action_load
+    )
+  end
+
+  def disable(%Runner{} = runner) do
+    change(runner, status: "disabled", disabled_at: now())
+  end
+
+  def delete(%Runner{} = runner) do
+    change(runner, deleted_at: now())
+  end
+
+  defp now, do: DateTime.utc_now() |> DateTime.truncate(:microsecond)
+end

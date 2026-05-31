@@ -12,16 +12,16 @@ defmodule Emisar.RunsCrossAccountTest do
   alias Emisar.Runs
   alias Emisar.Runs.ActionRun
 
-  describe "dispatch/2 cross-account guard" do
-    test "rejects an runner_id that belongs to a different account" do
+  describe "dispatch_run/2 cross-account guard" do
+    test "rejects a runner_id that belongs to a different account" do
       account_a = account_fixture()
       account_b = account_fixture()
-      agent_b = runner_fixture(account_id: account_b.id)
+      runner_b = runner_fixture(account_id: account_b.id)
       _ = policy_fixture(account_id: account_a.id)
       user = user_fixture()
 
       attrs = %{
-        runner_id: agent_b.id,
+        runner_id: runner_b.id,
         action_id: "linux.uptime",
         args: %{},
         reason: "cross-account guard test",
@@ -29,7 +29,7 @@ defmodule Emisar.RunsCrossAccountTest do
         requested_by_id: user.id
       }
 
-      assert {:error, :runner_not_found} = Runs.dispatch(account_a.id, attrs)
+      assert {:error, :runner_not_found} = Runs.dispatch_run(attrs, Emisar.Auth.Subject.system(account_a))
     end
 
     test "rejects a missing runner_id" do
@@ -38,11 +38,11 @@ defmodule Emisar.RunsCrossAccountTest do
       user = user_fixture()
 
       assert {:error, :runner_required} =
-               Runs.dispatch(account.id, %{
+               Runs.dispatch_run(%{
                  action_id: "linux.uptime",
                  source: "operator",
                  requested_by_id: user.id
-               })
+               }, Emisar.Auth.Subject.system(account))
     end
 
     test "rejects a disabled runner (even within the same account)" do
@@ -50,21 +50,23 @@ defmodule Emisar.RunsCrossAccountTest do
       runner = runner_fixture(account_id: account.id)
       _ = policy_fixture(account_id: account.id)
       user = user_fixture()
+      _ = membership_fixture(account_id: account.id, user_id: user.id, role: "owner")
+      subject = subject_for(user, account, role: :owner)
 
-      {:ok, _disabled} = Emisar.Runners.disable_runner(runner)
+      {:ok, _disabled} = Emisar.Runners.disable_runner(runner, subject)
 
       assert {:error, :runner_not_found} =
-               Runs.dispatch(account.id, %{
+               Runs.dispatch_run(%{
                  runner_id: runner.id,
                  action_id: "linux.uptime",
                  reason: "disabled runner test",
                  source: "operator",
                  requested_by_id: user.id
-               })
+               }, Emisar.Auth.Subject.system(account))
     end
   end
 
-  describe "get_run_for_runner/2 — runner-scoped lookup" do
+  describe "fetch_run_by_request_id_for_runner/2 — runner-scoped lookup" do
     test "returns the run when the runner matches" do
       account = account_fixture()
       runner = runner_fixture(account_id: account.id)
@@ -77,24 +79,24 @@ defmodule Emisar.RunsCrossAccountTest do
           source: "operator"
         })
 
-      assert %ActionRun{id: id} = Runs.get_run_for_runner(runner.id, run.request_id)
+      assert {:ok, %ActionRun{id: id}} = Runs.fetch_run_by_request_id_for_runner(run.request_id, runner.id)
       assert id == run.id
     end
 
-    test "returns nil for an runner that didn't own the run" do
+    test "returns :not_found for a runner that didn't own the run" do
       account = account_fixture()
-      agent_a = runner_fixture(account_id: account.id)
-      agent_b = runner_fixture(account_id: account.id)
+      runner_a = runner_fixture(account_id: account.id)
+      runner_b = runner_fixture(account_id: account.id)
 
       {:ok, run} =
         Runs.create_run(%{
           account_id: account.id,
-          runner_id: agent_a.id,
+          runner_id: runner_a.id,
           action_id: "linux.uptime",
           source: "operator"
         })
 
-      assert is_nil(Runs.get_run_for_runner(agent_b.id, run.request_id))
+      assert {:error, :not_found} = Runs.fetch_run_by_request_id_for_runner(run.request_id, runner_b.id)
     end
   end
 end

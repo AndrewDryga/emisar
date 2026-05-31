@@ -1,7 +1,7 @@
 defmodule EmisarWeb.CachedBodyReader do
   @moduledoc """
   Custom body reader for `Plug.Parsers`. On webhook routes that need to
-  verify a signature over the *raw* request body (Stripe), we have to
+  verify a signature over the *raw* request body (Paddle), we have to
   stash the bytes before JSON parsing consumes them.
 
   For all other routes this is a no-op pass-through — the cached body
@@ -10,7 +10,7 @@ defmodule EmisarWeb.CachedBodyReader do
   path is in a small allow-list.
   """
 
-  @cache_paths ["/webhooks/stripe"]
+  @cache_paths ["/webhooks/paddle"]
 
   def read_body(conn, opts) do
     {:ok, body, conn} = Plug.Conn.read_body(conn, opts)

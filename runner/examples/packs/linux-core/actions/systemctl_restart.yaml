@@ -32,7 +32,7 @@ args:
 
 execution:
   command:
-    binary: /bin/systemctl
+    binary: /usr/bin/systemctl
     argv:
       - "restart"
       - "{{ args.unit }}"

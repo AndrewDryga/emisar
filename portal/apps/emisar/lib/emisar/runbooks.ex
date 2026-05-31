@@ -9,95 +9,144 @@ defmodule Emisar.Runbooks do
   on the roadmap.
   """
 
-  import Ecto.Query
-  alias Emisar.Repo
-  alias Emisar.Runbooks.Runbook
+  alias Emisar.{Auth, Repo}
+  alias Emisar.Auth.Subject
+  alias Emisar.Runbooks.{Authorizer, Runbook}
 
-  def list_runbooks(account_id) do
-    from(r in Runbook,
-      where: r.account_id == ^account_id and is_nil(r.archived_at),
-      order_by: [asc: r.title, desc: r.version]
-    )
-    |> Repo.all()
+  # -- Reads -----------------------------------------------------------
+
+  def list_runbooks(%Subject{} = subject, opts \\ []) do
+    with :ok <- Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_runbooks_permission()) do
+      Runbook.Query.not_deleted()
+      |> Runbook.Query.not_archived()
+      |> Runbook.Query.ordered_by_title_version()
+      |> Authorizer.for_subject(subject)
+      |> Repo.list(Runbook.Query, opts)
+    end
   end
 
-  def get_runbook(account_id, id) do
-    from(r in Runbook, where: r.account_id == ^account_id and r.id == ^id)
-    |> Repo.one()
+  def fetch_runbook_by_id(id, %Subject{} = subject) do
+    with :ok <- Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_runbooks_permission()),
+         true <- Repo.valid_uuid?(id) do
+      Runbook.Query.not_deleted()
+      |> Runbook.Query.by_id(id)
+      |> Authorizer.for_subject(subject)
+      |> Repo.fetch(Runbook.Query)
+    else
+      false -> {:error, :not_found}
+      other -> other
+    end
   end
 
-  def create_runbook(account_id, user_id, attrs) do
-    %Runbook{}
-    |> Runbook.changeset(
-      Map.merge(attrs, %{
-        account_id: account_id,
-        created_by_id: user_id,
-        version: 1
-      })
-    )
-    |> Repo.insert()
+  # -- Mutations -------------------------------------------------------
+
+  def create_runbook(attrs, %Subject{account: account} = subject) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.manage_runbooks_permission()
+           ) do
+      Runbook.Changeset.create(account.id, subject_user_id(subject), Map.put(attrs, :version, 1))
+      |> Repo.insert()
+    end
   end
 
-  def save_new_version(%Runbook{} = old, attrs, user_id) do
-    %Runbook{}
-    |> Runbook.changeset(
-      Map.merge(
-        %{
-          account_id: old.account_id,
-          name: old.name,
-          slug: old.slug,
-          title: old.title,
-          description: old.description,
-          version: old.version + 1,
-          status: old.status,
-          created_by_id: user_id
-        },
-        attrs
+  def save_new_version(%Runbook{} = old, attrs, %Subject{} = subject) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.manage_runbooks_permission()
+           ) do
+      Runbook.Changeset.create(
+        old.account_id,
+        subject_user_id(subject),
+        Map.merge(
+          %{
+            name: old.name,
+            slug: old.slug,
+            title: old.title,
+            description: old.description,
+            version: old.version + 1,
+            status: old.status
+          },
+          attrs
+        )
       )
-    )
-    |> Repo.insert()
+      |> Repo.insert()
+    end
   end
 
-  def publish(%Runbook{} = rb),
-    do: rb |> Ecto.Changeset.change(status: "published") |> Repo.update()
+  def publish(%Runbook{} = rb, %Subject{} = subject) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.manage_runbooks_permission()
+           ) do
+      Runbook.Query.not_deleted()
+      |> Runbook.Query.by_id(rb.id)
+      |> Authorizer.for_subject(subject)
+      |> Repo.fetch_and_update(Runbook.Query,
+        with: &Runbook.Changeset.update(&1, %{status: "published"})
+      )
+    end
+  end
 
-  def archive(%Runbook{} = rb),
-    do: rb |> Ecto.Changeset.change(archived_at: DateTime.utc_now() |> DateTime.truncate(:microsecond), status: "archived") |> Repo.update()
+  def archive(%Runbook{} = rb, %Subject{} = subject) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.manage_runbooks_permission()
+           ) do
+      Runbook.Query.not_deleted()
+      |> Runbook.Query.by_id(rb.id)
+      |> Authorizer.for_subject(subject)
+      |> Repo.fetch_and_update(Runbook.Query, with: &Runbook.Changeset.archive/1)
+    end
+  end
+
+  # System actors (Subject.system/1) carry `:system` as their actor and
+  # have no user id — leaving `created_by_id` nil is the right shape
+  # for seed-time / worker-time creation.
+  defp subject_user_id(%Subject{actor: %{id: id}}), do: id
+  defp subject_user_id(%Subject{actor: :system}), do: nil
+
+  # -- Expansion + dispatch (internal — called by Runs / executor) ----
 
   @doc """
   Expand a runbook into the ordered list of step descriptors that the
-  cloud's executor will dispatch. v0.1 returns the literal steps from
-  the definition; later versions can evaluate `when` conditions and
-  branch.
+  cloud's executor will dispatch.
   """
   def expand(%Runbook{definition: %{"steps" => steps}}) when is_list(steps), do: steps
   def expand(_), do: []
 
   @doc """
-  Dispatches the first step of `runbook` against `runner_id`. Subsequent
-  steps fire automatically from `dispatch_next_step/1` when each step's
-  run reaches a successful terminal state.
-
-  Returns `{:ok, first_run}` or `{:error, reason}` from the underlying
-  Runs.dispatch/2. Errors from later steps surface on the dashboard as
-  per-step failed runs.
+  Dispatch the first step of a runbook. Subsequent steps fire from
+  `dispatch_next_step/1` when each step's run reaches a successful
+  terminal state. Subject-gated like any other public mutation —
+  rejected if the actor can't dispatch_run on this account.
   """
-  def dispatch_runbook(%Runbook{} = runbook, runner_id, user_id, reason)
+  def dispatch_runbook(%Runbook{} = runbook, runner_id, reason, %Subject{} = subject)
       when is_binary(runner_id) and is_binary(reason) do
-    steps = expand(runbook)
-    if steps == [] do
-      {:error, :empty_runbook}
-    else
-      step = hd(steps)
-      dispatch_step(runbook, runner_id, user_id, reason, step, 0)
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Emisar.Runs.Authorizer.dispatch_run_permission()
+           ) do
+      steps = expand(runbook)
+
+      if steps == [] do
+        {:error, :empty_runbook}
+      else
+        step = hd(steps)
+        dispatch_step(runbook, runner_id, subject_user_id(subject), reason, step, 0, subject)
+      end
     end
   end
 
   @doc """
   Called from `Runs.mark_finished` whenever a run reaches a terminal
-  state. If the finished run belongs to a runbook AND it succeeded, we
-  dispatch the next step. A non-success result stops the runbook
-  (operators see the failed step on the runbook detail page).
+  state. On success → dispatch the next step. Non-success stops the
+  runbook (failed step is visible on the runbook detail page).
   """
   def dispatch_next_step(%Emisar.Runs.ActionRun{
         runbook_id: rb_id,
@@ -105,21 +154,34 @@ defmodule Emisar.Runbooks do
         status: "success"
       } = run)
       when is_binary(rb_id) and is_binary(step_id) do
-    case get_runbook(run.account_id, rb_id) do
+    case peek_runbook_by_account_id(run.account_id, rb_id) do
       %Runbook{} = runbook ->
         steps = expand(runbook)
 
         idx =
           steps
           |> Enum.with_index()
-          |> Enum.find_value(fn {step, i} -> if step_id?(step, i, step_id), do: i end)
+          |> Enum.find_value(fn {step, i} -> if step_id_for(step, i) == step_id, do: i end)
 
-        cond do
-          is_nil(idx) -> :noop
-          idx + 1 >= length(steps) -> :noop
-          true ->
-            next = Enum.at(steps, idx + 1)
-            dispatch_step(runbook, run.runner_id, run.requested_by_id, run.reason, next, idx + 1)
+        next_idx = if is_integer(idx), do: idx + 1
+
+        if next_idx && next_idx < length(steps) do
+          # System subject — the runbook engine continues the chain in
+          # the post-`mark_finished` callback, where no user is in
+          # scope; the original dispatch was already authorized.
+          system = Subject.system(%Emisar.Accounts.Account{id: run.account_id})
+
+          dispatch_step(
+            runbook,
+            run.runner_id,
+            run.requested_by_id,
+            run.reason,
+            Enum.at(steps, next_idx),
+            next_idx,
+            system
+          )
+        else
+          :noop
         end
 
       _ ->
@@ -129,25 +191,34 @@ defmodule Emisar.Runbooks do
 
   def dispatch_next_step(_), do: :noop
 
-  defp dispatch_step(runbook, runner_id, user_id, reason, step, idx) do
-    Emisar.Runs.dispatch(runbook.account_id, %{
-      runner_id: runner_id,
-      action_id: step["action"] || step["action_id"],
-      args: step["args"] || %{},
-      opts: step["opts"] || %{},
-      reason: "runbook: #{runbook.title} • step #{idx + 1}/#{length(expand(runbook))} — #{reason}",
-      source: "runbook",
-      requested_by_id: user_id,
-      runbook_id: runbook.id,
-      runbook_step_id: step_id_for(step, idx)
-    })
+  # Internal lookup (no Subject) for the runbook engine — `Runs`
+  # already authorized at dispatch time, this just continues that flow.
+  # Returns nil-or-struct because the caller is a continuation cb where
+  # "runbook went away mid-flight" is a meaningful state to no-op on.
+  defp peek_runbook_by_account_id(account_id, id) do
+    Runbook.Query.not_deleted()
+    |> Runbook.Query.by_account_id(account_id)
+    |> Runbook.Query.by_id(id)
+    |> Repo.peek()
   end
 
-  # Steps may declare an explicit `id:` in YAML or rely on positional
-  # numbering. Whichever form we persist on the run row at dispatch
-  # time, `dispatch_next_step` must reproduce the same string when
-  # looking the step up — otherwise the chain stops after step 1.
-  defp step_id_for(step, idx), do: step["id"] || "step_#{idx + 1}"
+  defp dispatch_step(runbook, runner_id, user_id, reason, step, idx, %Subject{} = subject) do
+    Emisar.Runs.dispatch_run(
+      %{
+        runner_id: runner_id,
+        action_id: step["action"] || step["action_id"],
+        args: step["args"] || %{},
+        opts: step["opts"] || %{},
+        reason:
+          "runbook: #{runbook.title} • step #{idx + 1}/#{length(expand(runbook))} — #{reason}",
+        source: "runbook",
+        requested_by_id: user_id,
+        runbook_id: runbook.id,
+        runbook_step_id: step_id_for(step, idx)
+      },
+      subject
+    )
+  end
 
-  defp step_id?(step, idx, id), do: step_id_for(step, idx) == id
+  defp step_id_for(step, idx), do: step["id"] || "step_#{idx + 1}"
 end

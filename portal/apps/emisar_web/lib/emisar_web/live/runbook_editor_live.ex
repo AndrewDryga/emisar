@@ -1,23 +1,21 @@
 defmodule EmisarWeb.RunbookEditorLive do
+  @moduledoc """
+  Visual runbook step builder. Two step shapes:
+
+    * action — `{id, action_id, runner_selector: {kind, value}, args:
+      [{key, value}, ...]}`
+    * assert — `{id, kind: "assert", expression}`
+
+  Steps reorder via Move up / Move down buttons (no JS hook needed).
+  Form state lives in `socket.assigns.steps` as a list of maps; saving
+  flattens it back to the JSON shape `Runbooks.engine` understands:
+  `%{"steps" => [...]}`.
+  """
   use EmisarWeb, :live_view
 
-  alias Emisar.Runbooks
+  alias Emisar.{Catalog, Runbooks}
   alias Emisar.Runbooks.Runbook
   alias EmisarWeb.Permissions
-
-  @example_steps [
-    %{
-      "id" => "step1",
-      "action_id" => "linux.uptime",
-      "agent_selector" => %{"group" => "cassandra-us-east1"},
-      "args" => %{}
-    },
-    %{
-      "id" => "step2",
-      "kind" => "assert",
-      "expression" => "step1.exit_code == 0"
-    }
-  ]
 
   def mount(params, _session, socket) do
     {:ok, apply_action(socket, socket.assigns.live_action, params)}
@@ -30,20 +28,14 @@ defmodule EmisarWeb.RunbookEditorLive do
     |> assign(:title, "")
     |> assign(:slug, "")
     |> assign(:description, "")
-    |> assign(:steps_json, Jason.encode!(@example_steps, pretty: true))
+    |> assign(:steps, [example_action_step()])
+    |> assign_catalog()
   end
 
   defp apply_action(socket, :edit, %{"id" => id}) do
-    account_id = socket.assigns.current_account.id
-
-    case Runbooks.get_runbook(account_id, id) do
-      nil ->
-        socket
-        |> put_flash(:error, "Runbook not found.")
-        |> push_navigate(to: ~p"/app/runbooks")
-
-      runbook ->
-        steps = get_in(runbook.definition || %{}, ["steps"]) || []
+    case Runbooks.fetch_runbook_by_id(id, socket.assigns.current_subject) do
+      {:ok, runbook} ->
+        raw_steps = get_in(runbook.definition || %{}, ["steps"]) || []
 
         socket
         |> assign(:page_title, "Edit runbook")
@@ -51,90 +43,183 @@ defmodule EmisarWeb.RunbookEditorLive do
         |> assign(:title, runbook.title || "")
         |> assign(:slug, runbook.slug || "")
         |> assign(:description, runbook.description || "")
-        |> assign(:steps_json, Jason.encode!(steps, pretty: true))
+        |> assign(:steps, Enum.map(raw_steps, &from_raw_step/1))
+        |> assign_catalog()
+
+      {:error, _} ->
+        socket
+        |> put_flash(:error, "Runbook not found.")
+        |> push_navigate(to: ~p"/app/runbooks")
     end
   end
 
-  def handle_event("validate", params, socket) do
+  defp assign_catalog(socket) do
+    {:ok, runner_actions, _} = Catalog.list_actions_for_account(socket.assigns.current_subject)
+
+    actions =
+      runner_actions |> Enum.map(& &1.action_id) |> Enum.uniq() |> Enum.sort()
+
+    # Build action_id → [arg_name, ...] for the rich arg picker. Same
+    # action may be on multiple runners; merge their advertised arg
+    # sets so the picker shows the union. (The pack catalog is the
+    # source of truth — runner advertisements are just our local
+    # mirror of it.)
+    args_by_action =
+      runner_actions
+      |> Enum.reduce(%{}, fn ra, acc ->
+        names =
+          ra.args_schema
+          |> Map.get("args", [])
+          |> Enum.map(&Map.get(&1, "name"))
+          |> Enum.reject(&is_nil/1)
+
+        Map.update(acc, ra.action_id, MapSet.new(names), &MapSet.union(&1, MapSet.new(names)))
+      end)
+      |> Map.new(fn {id, set} -> {id, set |> MapSet.to_list() |> Enum.sort()} end)
+
+    socket
+    |> assign(:catalog_actions, actions)
+    |> assign(:args_by_action, args_by_action)
+  end
+
+  # -- Events ---------------------------------------------------------
+
+  def handle_event("meta_change", params, socket) do
     {:noreply,
      socket
-     |> assign(:title, params["title"] || "")
-     |> assign(:slug, params["slug"] || "")
-     |> assign(:description, params["description"] || "")
-     |> assign(:steps_json, params["steps_json"] || socket.assigns.steps_json)}
+     |> assign(:title, params["title"] || socket.assigns.title)
+     |> assign(:slug, params["slug"] || socket.assigns.slug)
+     |> assign(:description, params["description"] || socket.assigns.description)}
   end
 
-  def handle_event("save", params, socket) do
-    Permissions.gated(socket, :manage_runbooks, fn s ->
-      save(s, params, publish?: false)
-    end)
+  def handle_event("step_change", %{"index" => idx} = params, socket) do
+    i = String.to_integer(idx)
+
+    # Form input is named `step_id` to avoid collision with the form
+    # element's HTML id — remap to the canonical "id" key here.
+    params =
+      params
+      |> Map.put("id", params["step_id"] || params["id"])
+      |> Map.take(~w(id action_id selector_kind selector_value expression))
+
+    steps =
+      List.update_at(socket.assigns.steps, i, fn step ->
+        Map.merge(step, params)
+      end)
+
+    {:noreply, assign(socket, :steps, steps)}
   end
 
-  def handle_event("publish", params, socket) do
-    Permissions.gated(socket, :manage_runbooks, fn s ->
-      save(s, params, publish?: true)
-    end)
+  def handle_event("add_action_step", _params, socket) do
+    {:noreply, assign(socket, :steps, socket.assigns.steps ++ [example_action_step()])}
   end
 
-  defp save(socket, params, publish?: publish?) do
-    title = params["title"] || ""
-    slug = (params["slug"] || "") |> derive_slug(title)
-    description = params["description"] || ""
-    steps_json = params["steps_json"] || "[]"
+  def handle_event("add_assert_step", _params, socket) do
+    {:noreply, assign(socket, :steps, socket.assigns.steps ++ [example_assert_step()])}
+  end
 
-    socket =
-      socket
-      |> assign(:title, title)
-      |> assign(:slug, slug)
-      |> assign(:description, description)
-      |> assign(:steps_json, steps_json)
+  def handle_event("remove_step", %{"index" => idx}, socket) do
+    i = String.to_integer(idx)
+    {:noreply, assign(socket, :steps, List.delete_at(socket.assigns.steps, i))}
+  end
 
-    with {:ok, steps} <- decode_steps(steps_json),
-         attrs <- base_attrs(title, slug, description, steps, publish?),
-         {:ok, runbook} <- persist(socket, attrs),
-         {:ok, runbook} <- maybe_publish(runbook, publish?: publish?) do
+  def handle_event("move_step", %{"index" => idx, "dir" => dir}, socket) do
+    i = String.to_integer(idx)
+    target = if dir == "up", do: i - 1, else: i + 1
+    steps = socket.assigns.steps
+
+    cond do
+      target < 0 or target >= length(steps) ->
+        {:noreply, socket}
+
+      true ->
+        step = Enum.at(steps, i)
+        steps = steps |> List.delete_at(i) |> List.insert_at(target, step)
+        {:noreply, assign(socket, :steps, steps)}
+    end
+  end
+
+  def handle_event("add_arg", %{"index" => idx}, socket) do
+    i = String.to_integer(idx)
+
+    steps =
+      List.update_at(socket.assigns.steps, i, fn step ->
+        args = step["args"] || []
+        Map.put(step, "args", args ++ [%{"key" => "", "value" => ""}])
+      end)
+
+    {:noreply, assign(socket, :steps, steps)}
+  end
+
+  def handle_event("remove_arg", %{"index" => idx, "arg" => arg_idx}, socket) do
+    i = String.to_integer(idx)
+    a = String.to_integer(arg_idx)
+
+    steps =
+      List.update_at(socket.assigns.steps, i, fn step ->
+        args = step["args"] || []
+        Map.put(step, "args", List.delete_at(args, a))
+      end)
+
+    {:noreply, assign(socket, :steps, steps)}
+  end
+
+  def handle_event("arg_change", %{"index" => idx, "arg" => arg_idx} = params, socket) do
+    i = String.to_integer(idx)
+    a = String.to_integer(arg_idx)
+
+    steps =
+      List.update_at(socket.assigns.steps, i, fn step ->
+        args = step["args"] || []
+        updated = List.update_at(args, a, &Map.merge(&1, Map.take(params, ~w(key value))))
+        Map.put(step, "args", updated)
+      end)
+
+    {:noreply, assign(socket, :steps, steps)}
+  end
+
+  def handle_event("save", _params, socket) do
+    Permissions.gated(socket, :manage_runbooks, fn s -> save(s, publish?: false) end)
+  end
+
+  def handle_event("publish", _params, socket) do
+    Permissions.gated(socket, :manage_runbooks, fn s -> save(s, publish?: true) end)
+  end
+
+  defp save(socket, publish?: publish?) do
+    slug = derive_slug(socket.assigns.slug, socket.assigns.title)
+
+    attrs = %{
+      "title" => socket.assigns.title,
+      "name" => socket.assigns.title,
+      "slug" => slug,
+      "description" => socket.assigns.description,
+      "definition" => %{"steps" => Enum.map(socket.assigns.steps, &to_raw_step/1)},
+      "status" => if(publish?, do: "published", else: "draft")
+    }
+
+    with {:ok, runbook} <- persist(socket, attrs),
+         {:ok, runbook} <- maybe_publish(runbook, publish?, socket) do
       {:noreply,
        socket
        |> put_flash(:info, success_message(runbook, publish?))
        |> push_navigate(to: ~p"/app/runbooks")}
     else
-      {:error, :invalid_json, msg} ->
-        {:noreply, put_flash(socket, :error, "Invalid steps JSON: #{msg}")}
-
       {:error, %Ecto.Changeset{} = cs} ->
         {:noreply, put_flash(socket, :error, "Could not save runbook: #{format_errors(cs)}")}
     end
   end
 
-  defp base_attrs(title, slug, description, steps, publish?) do
-    %{
-      "title" => title,
-      "name" => title,
-      "slug" => slug,
-      "description" => description,
-      "definition" => %{"steps" => steps},
-      "status" => if(publish?, do: "published", else: "draft")
-    }
-  end
+  defp persist(%{assigns: %{runbook: nil}} = socket, attrs),
+    do: Runbooks.create_runbook(attrs, socket.assigns.current_subject)
 
-  defp persist(%{assigns: %{runbook: nil}} = socket, attrs) do
-    Runbooks.create_runbook(
-      socket.assigns.current_account.id,
-      socket.assigns.current_user.id,
-      attrs
-    )
-  end
+  defp persist(%{assigns: %{runbook: %Runbook{} = rb}} = socket, attrs),
+    do: Runbooks.save_new_version(rb, attrs, socket.assigns.current_subject)
 
-  defp persist(%{assigns: %{runbook: %Runbook{status: "published"} = rb}} = socket, attrs) do
-    Runbooks.save_new_version(rb, attrs, socket.assigns.current_user.id)
-  end
+  defp maybe_publish(%Runbook{} = rb, true, socket),
+    do: Runbooks.publish(rb, socket.assigns.current_subject)
 
-  defp persist(%{assigns: %{runbook: %Runbook{} = rb}} = socket, attrs) do
-    Runbooks.save_new_version(rb, attrs, socket.assigns.current_user.id)
-  end
-
-  defp maybe_publish(%Runbook{} = rb, publish?: true), do: Runbooks.publish(rb)
-  defp maybe_publish(%Runbook{} = rb, publish?: false), do: {:ok, rb}
+  defp maybe_publish(%Runbook{} = rb, false, _socket), do: {:ok, rb}
 
   defp success_message(_, true), do: "Runbook published."
   defp success_message(%{version: v}, false) when v > 1, do: "Draft v#{v} saved."
@@ -156,19 +241,91 @@ defmodule EmisarWeb.RunbookEditorLive do
     |> String.slice(0, 79)
   end
 
-  defp decode_steps(json) do
-    case Jason.decode(json) do
-      {:ok, list} when is_list(list) -> {:ok, list}
-      {:ok, _} -> {:error, :invalid_json, "must be a JSON array of steps"}
-      {:error, %Jason.DecodeError{} = err} -> {:error, :invalid_json, Exception.message(err)}
-    end
-  end
-
   defp format_errors(%Ecto.Changeset{errors: errors}) do
     errors
     |> Enum.map(fn {field, {msg, _}} -> "#{field}: #{msg}" end)
     |> Enum.join("; ")
   end
+
+  # -- Step shape conversions ----------------------------------------
+
+  defp example_action_step,
+    do: %{
+      "id" => "step#{System.unique_integer([:positive])}",
+      "type" => "action",
+      "action_id" => "",
+      "selector_kind" => "group",
+      "selector_value" => "",
+      "args" => []
+    }
+
+  defp example_assert_step,
+    do: %{
+      "id" => "step#{System.unique_integer([:positive])}",
+      "type" => "assert",
+      "expression" => ""
+    }
+
+  # JSON → editor state
+  defp from_raw_step(%{"kind" => "assert"} = raw) do
+    %{
+      "id" => raw["id"] || "step",
+      "type" => "assert",
+      "expression" => raw["expression"] || ""
+    }
+  end
+
+  defp from_raw_step(raw) when is_map(raw) do
+    {kind, val} = selector_to_pair(raw["runner_selector"])
+
+    %{
+      "id" => raw["id"] || "step",
+      "type" => "action",
+      "action_id" => raw["action_id"] || "",
+      "selector_kind" => kind,
+      "selector_value" => val,
+      "args" => args_to_pairs(raw["args"] || %{})
+    }
+  end
+
+  defp selector_to_pair(%{"group" => g}) when is_binary(g), do: {"group", g}
+  defp selector_to_pair(%{"runner_id" => r}) when is_binary(r), do: {"runner_id", r}
+  defp selector_to_pair(_), do: {"group", ""}
+
+  defp args_to_pairs(%{} = m) do
+    Enum.map(m, fn {k, v} -> %{"key" => k, "value" => to_string(v)} end)
+  end
+
+  # Editor state → JSON
+  defp to_raw_step(%{"type" => "assert"} = step) do
+    %{
+      "id" => step["id"],
+      "kind" => "assert",
+      "expression" => step["expression"] || ""
+    }
+  end
+
+  defp to_raw_step(%{"type" => "action"} = step) do
+    %{
+      "id" => step["id"],
+      "action_id" => step["action_id"],
+      "runner_selector" => %{step["selector_kind"] => step["selector_value"]},
+      "args" => pairs_to_args(step["args"] || [])
+    }
+  end
+
+  defp pairs_to_args(pairs) do
+    pairs
+    |> Enum.reject(&(blank?(&1["key"])))
+    |> Enum.into(%{}, fn p -> {String.trim(p["key"]), p["value"] || ""} end)
+  end
+
+  defp blank?(nil), do: true
+  defp blank?(""), do: true
+  defp blank?(s) when is_binary(s), do: String.trim(s) == ""
+  defp blank?(_), do: false
+
+  # -- Render --------------------------------------------------------
 
   def render(assigns) do
     ~H"""
@@ -179,6 +336,7 @@ defmodule EmisarWeb.RunbookEditorLive do
       section={:runbooks}
     >
       <:title>
+        <.back_link navigate={~p"/app/runbooks"}>Runbooks</.back_link>
         <%= if @runbook do %>
           Edit runbook <span class="font-mono text-base text-zinc-400">{@runbook.slug}</span>
           <span class="ml-2 text-sm font-normal text-zinc-500">v{@runbook.version}</span>
@@ -195,49 +353,111 @@ defmodule EmisarWeb.RunbookEditorLive do
         </.link>
       </:actions>
 
-      <form
-        phx-change="validate"
-        phx-submit="save"
-        id="runbook-form"
-        class="grid grid-cols-1 gap-6 lg:grid-cols-3"
-      >
-        <.card class="lg:col-span-2">
-          <.section_header title="Steps" />
-          <p class="mt-1 text-xs text-zinc-500">
-            JSON array of step descriptors. Each step has an <code class="text-indigo-300">id</code>;
-            action steps add <code>action_id</code>, <code>agent_selector</code>, and
-            <code>args</code>; control steps use <code>kind</code>
-            (e.g. <code>assert</code>) with an <code>expression</code>.
-          </p>
+      <div class="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_320px]">
+        <section class="overflow-hidden rounded-xl border border-zinc-900 bg-zinc-950/40">
+          <header class="flex items-center justify-between border-b border-zinc-900 px-5 py-3">
+            <h2 class="text-sm font-semibold text-zinc-100">Steps</h2>
+            <div class="flex items-center gap-2">
+              <button
+                type="button"
+                phx-click="add_action_step"
+                class="inline-flex items-center gap-1.5 rounded-lg border border-zinc-800 px-2.5 py-1.5 text-xs font-medium text-zinc-300 hover:border-indigo-500 hover:text-indigo-300"
+              >
+                <.icon name="hero-plus" class="h-3.5 w-3.5" /> Action
+              </button>
+              <button
+                type="button"
+                phx-click="add_assert_step"
+                class="inline-flex items-center gap-1.5 rounded-lg border border-zinc-800 px-2.5 py-1.5 text-xs font-medium text-zinc-300 hover:border-indigo-500 hover:text-indigo-300"
+              >
+                <.icon name="hero-plus" class="h-3.5 w-3.5" /> Assert
+              </button>
+            </div>
+          </header>
 
-          <textarea
-            name="steps_json"
-            rows="22"
-            spellcheck="false"
-            class="mt-4 block w-full rounded-lg border-0 bg-zinc-900 px-3 py-2 font-mono text-xs text-zinc-100 ring-1 ring-zinc-800 focus:ring-indigo-500"
-          ><%= @steps_json %></textarea>
+          <div class="space-y-3 p-5">
+            <%!-- Brief explainer so the difference between the two
+                 step types is obvious before clicking either button.
+                 Collapsed; expanding shows a worked example. --%>
+            <details class="rounded-lg border border-zinc-800 bg-zinc-950/60 p-3 text-xs text-zinc-400 [&>summary]:cursor-pointer">
+              <summary class="flex items-center gap-2 text-zinc-300 hover:text-zinc-100">
+                <.icon name="hero-question-mark-circle" class="h-3.5 w-3.5 text-zinc-500" />
+                What's the difference between Action and Assert?
+              </summary>
+              <div class="mt-2 space-y-2 leading-relaxed">
+                <p>
+                  <strong class="text-indigo-300">Action</strong>
+                  runs a catalog action on a runner. The runbook halts immediately if it
+                  errors at the transport level; otherwise execution continues regardless
+                  of the action's exit code.
+                </p>
+                <p>
+                  <strong class="text-emerald-300">Assert</strong>
+                  doesn't touch any runner. It evaluates an expression against the output
+                  of previous steps. If the expression is false the runbook stops — use it
+                  to gate a destructive step on a pre-flight check passing.
+                </p>
+                <div class="mt-2 overflow-x-auto rounded bg-black/60 p-2 font-mono text-[11px] leading-5 text-zinc-300">
+                  <div>step1: action  cassandra.nodetool_status</div>
+                  <div>step2: assert  step1.exit_code == 0</div>
+                  <div>step3: action  cassandra.nodetool_repair</div>
+                </div>
+              </div>
+            </details>
 
-          <div class="mt-6 flex items-center justify-end gap-3">
-            <button
-              type="submit"
-              class="rounded-lg border border-zinc-800 px-4 py-2 text-sm font-medium text-zinc-200 hover:bg-zinc-900"
-              phx-disable-with="Saving..."
+            <div
+              :if={@steps == []}
+              class="rounded-lg border border-dashed border-zinc-800 p-8 text-center text-xs text-zinc-500"
             >
-              Save draft
-            </button>
-            <.button type="button" phx-click="publish" phx-disable-with="Publishing...">
-              Publish
-            </.button>
+              No steps. Add an action or assert step above to start.
+            </div>
+
+            <datalist id="catalog-actions">
+              <option :for={a <- @catalog_actions} value={a}></option>
+            </datalist>
+
+            <%!-- Per-action arg datalists. Each renders separately so
+                 the arg_editor input can target the right one via its
+                 `list=` attribute, and the dropdown only suggests args
+                 actually defined for that step's action. --%>
+            <%= for {action_id, arg_names} <- @args_by_action do %>
+              <datalist id={"args-#{datalist_id(action_id)}"}>
+                <option :for={name <- arg_names} value={name}></option>
+              </datalist>
+            <% end %>
+
+            <%= for {step, idx} <- Enum.with_index(@steps) do %>
+              <.step_card
+                step={step}
+                index={idx}
+                total={length(@steps)}
+                args_by_action={@args_by_action}
+              />
+            <% end %>
+
+            <div class="flex items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                phx-click="save"
+                class="rounded-lg border border-zinc-800 px-4 py-2 text-sm font-medium text-zinc-200 hover:bg-zinc-900"
+                phx-disable-with="Saving..."
+              >
+                Save draft
+              </button>
+              <.button type="button" phx-click="publish" phx-disable-with="Publishing...">
+                Publish
+              </.button>
+            </div>
           </div>
-        </.card>
+        </section>
 
-        <div class="space-y-6">
-          <.card>
-            <.section_header title="Metadata" />
+        <aside class="space-y-4">
+          <section class="rounded-xl border border-zinc-900 bg-zinc-950/40 p-5">
+            <h2 class="text-sm font-semibold text-zinc-100">Metadata</h2>
 
-            <div class="mt-4 space-y-4">
+            <form phx-change="meta_change" class="mt-4 space-y-4">
               <div>
-                <label class="block text-xs font-medium text-zinc-400" for="runbook_title">
+                <label class="block text-[10px] font-semibold uppercase tracking-wider text-zinc-500" for="runbook_title">
                   Title
                 </label>
                 <input
@@ -247,12 +467,12 @@ defmodule EmisarWeb.RunbookEditorLive do
                   value={@title}
                   required
                   placeholder="e.g. Cassandra: rolling repair"
-                  class="mt-1 block w-full rounded-lg border-0 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 ring-1 ring-zinc-800 focus:ring-indigo-500"
+                  class={input_class()}
                 />
               </div>
 
               <div>
-                <label class="block text-xs font-medium text-zinc-400" for="runbook_slug">
+                <label class="block text-[10px] font-semibold uppercase tracking-wider text-zinc-500" for="runbook_slug">
                   Slug
                 </label>
                 <input
@@ -260,16 +480,13 @@ defmodule EmisarWeb.RunbookEditorLive do
                   id="runbook_slug"
                   name="slug"
                   value={@slug}
-                  placeholder="auto-generated from title if blank"
-                  class="mt-1 block w-full rounded-lg border-0 bg-zinc-900 px-3 py-2 font-mono text-xs text-zinc-100 ring-1 ring-zinc-800 focus:ring-indigo-500"
+                  placeholder="auto from title"
+                  class={[input_class(), "font-mono text-xs"]}
                 />
-                <p class="mt-1 text-xs text-zinc-500">
-                  Lowercase, alphanumeric with dashes / underscores.
-                </p>
               </div>
 
               <div>
-                <label class="block text-xs font-medium text-zinc-400" for="runbook_description">
+                <label class="block text-[10px] font-semibold uppercase tracking-wider text-zinc-500" for="runbook_description">
                   Description
                 </label>
                 <textarea
@@ -277,27 +494,268 @@ defmodule EmisarWeb.RunbookEditorLive do
                   name="description"
                   rows="4"
                   placeholder="Optional human-readable summary."
-                  class="mt-1 block w-full rounded-lg border-0 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 ring-1 ring-zinc-800 focus:ring-indigo-500"
+                  class={input_class()}
                 ><%= @description %></textarea>
               </div>
-            </div>
-          </.card>
+            </form>
+          </section>
 
-          <%= if @runbook do %>
-            <.card>
-              <dl class="space-y-2 text-xs text-zinc-400">
-                <.kv label="Current version">v{@runbook.version}</.kv>
-                <.kv label="Status"><.status_badge status={@runbook.status} /></.kv>
-                <.kv label="Saving creates">v{@runbook.version + 1}</.kv>
-              </dl>
-              <p :if={@runbook.status == "published"} class="mt-4 text-xs text-zinc-500">
-                Published runbooks are immutable — saving creates a new draft version.
-              </p>
-            </.card>
-          <% end %>
-        </div>
-      </form>
+          <section :if={@runbook} class="rounded-xl border border-zinc-900 bg-zinc-950/40 p-5">
+            <h2 class="text-sm font-semibold text-zinc-100">Version</h2>
+            <dl class="mt-3 space-y-2 text-xs text-zinc-400">
+              <.kv label="Current">v{@runbook.version}</.kv>
+              <.kv label="Status"><.status_badge status={@runbook.status} /></.kv>
+              <.kv label="Saving creates">v{@runbook.version + 1}</.kv>
+            </dl>
+            <p :if={@runbook.status == "published"} class="mt-4 text-xs text-zinc-500 leading-relaxed">
+              Published runbooks are immutable — saving creates a new draft version.
+            </p>
+          </section>
+        </aside>
+      </div>
     </.dashboard_shell>
     """
+  end
+
+  attr :step, :map, required: true
+  attr :index, :integer, required: true
+  attr :total, :integer, required: true
+  attr :args_by_action, :map, required: true
+
+  defp step_card(assigns) do
+    ~H"""
+    <div class={["rounded-lg border bg-black/30 p-4", step_border(@step["type"])]}>
+      <div class="flex items-center justify-between gap-3">
+        <div class="flex items-center gap-2">
+          <span class={["rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider", step_badge(@step["type"])]}>
+            {@step["type"]}
+          </span>
+          <span class="font-mono text-xs text-zinc-500">#{@index + 1}</span>
+        </div>
+        <div class="flex items-center gap-1">
+          <button
+            type="button"
+            phx-click="move_step"
+            phx-value-index={@index}
+            phx-value-dir="up"
+            disabled={@index == 0}
+            class="rounded p-1 text-zinc-500 hover:text-zinc-200 disabled:opacity-30"
+            title="Move up"
+            aria-label="Move up"
+          >
+            <.icon name="hero-arrow-up" class="h-3.5 w-3.5" />
+          </button>
+          <button
+            type="button"
+            phx-click="move_step"
+            phx-value-index={@index}
+            phx-value-dir="down"
+            disabled={@index == @total - 1}
+            class="rounded p-1 text-zinc-500 hover:text-zinc-200 disabled:opacity-30"
+            title="Move down"
+            aria-label="Move down"
+          >
+            <.icon name="hero-arrow-down" class="h-3.5 w-3.5" />
+          </button>
+          <button
+            type="button"
+            phx-click="remove_step"
+            phx-value-index={@index}
+            data-confirm="Remove this step?"
+            class="rounded p-1 text-zinc-500 hover:text-rose-300"
+            title="Remove step"
+            aria-label="Remove step"
+          >
+            <.icon name="hero-trash" class="h-3.5 w-3.5" />
+          </button>
+        </div>
+      </div>
+
+      <form phx-change="step_change" class="mt-3 space-y-3">
+        <input type="hidden" name="index" value={@index} />
+
+        <div>
+          <label class="block text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+            Step ID
+          </label>
+          <input
+            type="text"
+            name="step_id"
+            value={@step["id"]}
+            placeholder="step1"
+            class={[input_class(), "font-mono text-xs"]}
+          />
+        </div>
+
+        <%= if @step["type"] == "action" do %>
+          <div>
+            <label class="block text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+              Action
+            </label>
+            <input
+              type="text"
+              name="action_id"
+              value={@step["action_id"]}
+              list="catalog-actions"
+              placeholder="linux.uptime"
+              class={[input_class(), "font-mono text-xs"]}
+            />
+          </div>
+
+          <div class="grid grid-cols-1 gap-2 sm:grid-cols-3">
+            <div class="sm:col-span-1">
+              <label class="block text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                Runner by
+              </label>
+              <select name="selector_kind" class={input_class()}>
+                <option value="group" selected={@step["selector_kind"] == "group"}>
+                  group
+                </option>
+                <option value="runner_id" selected={@step["selector_kind"] == "runner_id"}>
+                  runner id
+                </option>
+              </select>
+            </div>
+            <div class="sm:col-span-2">
+              <label class="block text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                Value
+              </label>
+              <input
+                type="text"
+                name="selector_value"
+                value={@step["selector_value"]}
+                placeholder={if(@step["selector_kind"] == "runner_id", do: "runner UUID", else: "e.g. cassandra-us-east1")}
+                class={input_class()}
+              />
+            </div>
+          </div>
+
+        <% else %>
+          <div>
+            <label class="block text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+              Assert expression
+            </label>
+            <input
+              type="text"
+              name="expression"
+              value={@step["expression"]}
+              placeholder="step1.exit_code == 0"
+              class={[input_class(), "font-mono text-xs"]}
+            />
+            <p class="mt-1 text-[11px] leading-relaxed text-zinc-500">
+              Halts the runbook if the expression is false. Reference prior step output
+              by id: <code class="font-mono text-zinc-300">step1.exit_code == 0</code>,
+              <code class="font-mono text-zinc-300">step1.stdout</code>, etc.
+              Use to gate destructive steps on a pre-flight check passing.
+            </p>
+          </div>
+        <% end %>
+      </form>
+
+      <%!-- Args live in a SIBLING form, not a nested one. Browsers
+           auto-close the outer <form> on encountering a nested
+           <form>, which would shred the layout for everything after
+           the first inner form. Keeping it sibling means each arg
+           row's phx-change "arg_change" routes correctly without
+           collateral on the step form. --%>
+      <.arg_editor
+        :if={@step["type"] == "action"}
+        index={@index}
+        args={@step["args"] || []}
+        action_id={@step["action_id"]}
+        known_args={Map.get(@args_by_action, @step["action_id"], [])}
+      />
+    </div>
+    """
+  end
+
+  attr :index, :integer, required: true
+  attr :args, :list, required: true
+  attr :action_id, :string, default: nil
+  attr :known_args, :list, default: []
+
+  defp arg_editor(assigns) do
+    ~H"""
+    <div class="mt-3">
+      <div class="flex items-center justify-between">
+        <div>
+          <label class="block text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+            Args
+          </label>
+          <p :if={@known_args != []} class="mt-0.5 text-[10px] text-zinc-500">
+            Known for <code class="font-mono text-zinc-400">{@action_id}</code>:
+            <%= for {n, i} <- Enum.with_index(@known_args) do %><span
+              :if={i > 0}>, </span><code class="font-mono text-zinc-300">{n}</code><% end %>
+          </p>
+        </div>
+        <button
+          type="button"
+          phx-click="add_arg"
+          phx-value-index={@index}
+          class="text-[11px] font-medium text-indigo-300 hover:text-indigo-200"
+        >
+          + Add
+        </button>
+      </div>
+      <p :if={@args == []} class="mt-1 text-[11px] text-zinc-500">
+        No args.
+      </p>
+      <div :if={@args != []} class="mt-2 space-y-1.5">
+        <%= for {arg, j} <- Enum.with_index(@args) do %>
+          <form phx-change="arg_change" class="grid grid-cols-[1fr_1fr_auto] items-center gap-1.5">
+            <input type="hidden" name="index" value={@index} />
+            <input type="hidden" name="arg" value={j} />
+            <input
+              type="text"
+              name="key"
+              value={arg["key"]}
+              placeholder="key"
+              list={"args-#{datalist_id(@action_id)}"}
+              class={[input_class(), "min-w-0 font-mono text-xs"]}
+            />
+            <input
+              type="text"
+              name="value"
+              value={arg["value"]}
+              placeholder="value"
+              class={[input_class(), "min-w-0 text-xs"]}
+            />
+            <button
+              type="button"
+              phx-click="remove_arg"
+              phx-value-index={@index}
+              phx-value-arg={j}
+              class="grid h-9 w-9 place-items-center rounded-lg border border-zinc-800 text-zinc-500 hover:border-rose-700 hover:text-rose-300"
+              title="Remove arg"
+              aria-label="Remove arg"
+            >
+              <.icon name="hero-trash" class="h-3.5 w-3.5" />
+            </button>
+          </form>
+        <% end %>
+      </div>
+    </div>
+    """
+  end
+
+  defp step_border("action"), do: "border-indigo-500/20"
+  defp step_border("assert"), do: "border-emerald-500/20"
+  defp step_border(_), do: "border-zinc-800"
+
+  defp step_badge("action"), do: "bg-indigo-500/15 text-indigo-300 ring-1 ring-indigo-500/30"
+  defp step_badge("assert"), do: "bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-500/30"
+  defp step_badge(_), do: "bg-zinc-800 text-zinc-300"
+
+  defp input_class do
+    "mt-1 block w-full rounded-lg border-0 bg-zinc-900 px-2 py-1.5 text-sm text-zinc-100 ring-1 ring-zinc-800 focus:ring-indigo-500"
+  end
+
+  # `<datalist id="...">` ids should be safe for HTML attributes. Action
+  # ids like `cassandra.nodetool_status` have dots; some browsers tolerate
+  # them in `list=` but it's brittle. Replace anything non-alphanumeric.
+  defp datalist_id(nil), do: "none"
+
+  defp datalist_id(action_id) when is_binary(action_id) do
+    String.replace(action_id, ~r/[^a-zA-Z0-9_-]/, "_")
   end
 end

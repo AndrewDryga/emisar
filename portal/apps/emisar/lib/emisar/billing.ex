@@ -1,23 +1,23 @@
 defmodule Emisar.Billing do
   @moduledoc """
-  Billing scaffold. Stripe is the source of truth; we mirror just
-  enough for plan enforcement without round-tripping per request.
-
-  This module is intentionally a placeholder. The Stripe HTTP calls
-  are stubbed via `Stripe` behaviour; real implementation lives
-  behind `Application.fetch_env!(:emisar, :stripe_client)`.
+  Plan + subscription glue. Paddle is the source of truth; we mirror
+  the subset (plan + status + period end) needed to enforce limits
+  without round-tripping per request. The Paddle HTTP layer is swappable
+  via `Application.fetch_env!(:emisar, :paddle_client)` — production
+  binds the live client, tests use the in-process stub.
   """
 
-  import Ecto.Query
-  alias Emisar.Repo
-  alias Emisar.Accounts.Account
-  alias Emisar.Billing.Subscription
+  alias Emisar.{Auth, Repo}
+  alias Emisar.Accounts.{Account, Membership}
+  alias Emisar.Auth.Subject
+  alias Emisar.Billing.{Authorizer, Subscription}
+  alias Emisar.Runners.Runner
 
   @plans %{
     "free" => %{
       name: "Free",
       monthly_price_cents: 0,
-      agents_limit: 3,
+      runners_limit: 3,
       members_limit: 1,
       audit_retention_days: 7,
       features: ["3 runners", "1 user", "7-day audit retention", "Community support"]
@@ -25,20 +25,19 @@ defmodule Emisar.Billing do
     "team" => %{
       name: "Team",
       monthly_price_cents: 2000,
-      agents_limit: 100,
+      runners_limit: 100,
       members_limit: :unlimited,
       audit_retention_days: 90,
       features: [
         "Unlimited users",
         "90-day audit retention",
-        "Email support",
-        "Stripe billing"
+        "Email support"
       ]
     },
     "enterprise" => %{
       name: "Enterprise",
       monthly_price_cents: nil,
-      agents_limit: :unlimited,
+      runners_limit: :unlimited,
       members_limit: :unlimited,
       audit_retention_days: 365,
       features: [
@@ -54,23 +53,38 @@ defmodule Emisar.Billing do
   def plans, do: @plans
   def plan(name) when is_binary(name), do: Map.get(@plans, name)
 
-  def get_subscription(account_id), do: Repo.get_by(Subscription, account_id: account_id)
+  # Internal nil-or-struct helper. Used by `upsert_subscription/2` and
+  # webhook event application. Not exposed to LiveView/MCP because
+  # there's no Subject path here.
+  defp peek_subscription_for_account(account_id) do
+    Subscription.Query.all()
+    |> Subscription.Query.by_account_id(account_id)
+    |> Repo.peek()
+  end
 
+  @doc false
+  # Internal write — called from webhook handlers + `Workers.BillingSync`
+  # which run on already-trusted server contexts. Subject-less because
+  # the Paddle webhook signature is the auth gate at the edge.
   def upsert_subscription(account_id, attrs) do
-    case get_subscription(account_id) do
+    case peek_subscription_for_account(account_id) do
       nil ->
-        %Subscription{}
-        |> Subscription.changeset(Map.put(attrs, :account_id, account_id))
+        Subscription.Changeset.upsert(Map.put(attrs, :account_id, account_id))
         |> Repo.insert()
 
       %Subscription{} = existing ->
-        existing |> Subscription.changeset(attrs) |> Repo.update()
+        existing |> Subscription.Changeset.upsert(attrs) |> Repo.update()
     end
   end
 
   @doc """
   Returns :ok if the account is within plan limits for `resource`.
   Returns `{:error, :over_limit, plan, limit}` otherwise.
+
+  Internal — called by `Runners.register_via_auth_key/2` on the
+  bootstrap path before any Subject exists, and by `Catalog`/admin
+  flows that already authorized upstream. The check itself is
+  account-scoped (the runner counting), not subject-scoped.
   """
   def check_limit(%Account{plan: plan_name} = account, resource) do
     plan = plan(plan_name)
@@ -85,93 +99,126 @@ defmodule Emisar.Billing do
     end
   end
 
-  defp limit_key(:runners), do: :agents_limit
+  defp limit_key(:runners), do: :runners_limit
   defp limit_key(:members), do: :members_limit
 
   defp current_count(%Account{id: account_id}, :runners) do
-    from(a in Emisar.Runners.Runner,
-      where: a.account_id == ^account_id and is_nil(a.disabled_at),
-      select: count(a.id)
-    )
-    |> Repo.one()
+    Runner.Query.all()
+    |> Runner.Query.not_disabled()
+    |> Runner.Query.by_account_id(account_id)
+    |> Repo.aggregate(:count, :id)
   end
 
   defp current_count(%Account{id: account_id}, :members) do
-    from(m in Emisar.Accounts.Membership,
-      where: m.account_id == ^account_id,
-      select: count(m.id)
-    )
-    |> Repo.one()
+    Membership.Query.all()
+    |> Membership.Query.by_account_id(account_id)
+    |> Repo.aggregate(:count, :id)
   end
 
   @doc """
-  Creates a Stripe Checkout Session for the chosen plan and returns
+  Creates a Paddle Checkout (Transaction) for the chosen plan and returns
   the URL the operator should be redirected to. Falls back to a stub
-  URL when no Stripe price ID is configured (dev/test).
+  URL when no Paddle price ID is configured (dev/test).
   """
-  def start_checkout(%Account{} = account, plan_name) when is_binary(plan_name) do
-    cond do
-      not Map.has_key?(@plans, plan_name) ->
-        {:error, :unknown_plan}
+  def start_checkout(%Account{} = account, plan_name, %Subject{} = subject)
+      when is_binary(plan_name) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.manage_billing_permission()
+           ),
+         :ok <- ensure_subject_owns_account(account, subject) do
+      cond do
+        not Map.has_key?(@plans, plan_name) ->
+          {:error, :unknown_plan}
 
-      is_nil(Application.get_env(:emisar, {:stripe_price_id, plan_name})) ->
-        {:ok, "/stripe-checkout-stub?plan=" <> plan_name}
+        is_nil(Application.get_env(:emisar, {:paddle_price_id, plan_name})) ->
+          {:ok, "/paddle-checkout-stub?plan=" <> plan_name}
 
-      true ->
-        with {:ok, cid, _account} <- ensure_stripe_customer(account),
-             price_id <- Application.fetch_env!(:emisar, {:stripe_price_id, plan_name}),
-             {:ok, %{"url" => url}} <-
-               Emisar.Billing.StripeClient.create_checkout_session(%{
-                 customer: cid,
-                 price_id: price_id,
-                 quantity: current_count(account, :runners),
-                 success_url: app_url("/app/settings/billing?status=success"),
-                 cancel_url: app_url("/app/settings/billing?status=cancelled")
-               }) do
-          {:ok, url}
-        end
+        true ->
+          with {:ok, cid, _account} <- ensure_paddle_customer(account),
+               price_id <- Application.fetch_env!(:emisar, {:paddle_price_id, plan_name}),
+               {:ok, %{"url" => url}} <-
+                 Emisar.Billing.PaddleClient.create_checkout_session(%{
+                   customer: cid,
+                   price_id: price_id,
+                   quantity: current_count(account, :runners),
+                   success_url: app_url("/app/settings/billing?status=success"),
+                   cancel_url: app_url("/app/settings/billing?status=cancelled")
+                 }) do
+            {:ok, url}
+          end
+      end
     end
   end
 
   @doc """
-  Ensures the account has a Stripe customer; returns the customer id.
+  Creates a Paddle Customer Portal session for the account's customer and
+  returns the hosted-portal URL. Operators land there to update their
+  payment method, download invoices, change plan, or cancel — no email
+  to support required.
+
+  Returns `{:error, :no_customer}` if the account has never been on a
+  paid plan (no `paddle_customer_id`). Returns a stub URL when no
+  Paddle key is configured (dev/test).
+  """
+  def open_billing_portal(%Account{} = account, %Subject{} = subject) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.manage_billing_permission()
+           ),
+         :ok <- ensure_subject_owns_account(account, subject) do
+      do_open_billing_portal(account)
+    end
+  end
+
+  defp do_open_billing_portal(%Account{paddle_customer_id: nil}), do: {:error, :no_customer}
+
+  defp do_open_billing_portal(%Account{paddle_customer_id: cid}) when is_binary(cid) do
+    return_url = app_url("/app/settings/billing")
+
+    if Application.get_env(:emisar, :paddle_api_key) do
+      case Emisar.Billing.PaddleClient.create_billing_portal_session(%{
+             customer: cid,
+             return_url: return_url
+           }) do
+        {:ok, %{"url" => url}} -> {:ok, url}
+        other -> other
+      end
+    else
+      # Stub path — no real Paddle configured. Send the operator back
+      # to billing with a query param so the LV can show a flash.
+      {:ok, return_url <> "?status=stub-portal"}
+    end
+  end
+
+  defp ensure_subject_owns_account(%Account{id: id}, %Subject{} = subject),
+    do: Subject.ensure_in_account(subject, id, :unauthorized)
+
+  @doc """
+  Ensures the account has a Paddle customer; returns the customer id.
   Idempotent — if the account already has one, just returns it.
   """
-  def ensure_stripe_customer(%Account{stripe_customer_id: cid} = account) when is_binary(cid),
+  def ensure_paddle_customer(%Account{paddle_customer_id: cid} = account) when is_binary(cid),
     do: {:ok, cid, account}
 
-  def ensure_stripe_customer(%Account{} = account) do
+  def ensure_paddle_customer(%Account{} = account) do
     with {:ok, %{"id" => cid}} <-
-           Emisar.Billing.StripeClient.create_customer(%{
+           Emisar.Billing.PaddleClient.create_customer(%{
              email: nil,
              name: account.name,
              account_id: account.id
            }),
-         {:ok, account} <- update_account_stripe_id(account, cid) do
+         {:ok, account} <- update_account_paddle_id(account, cid) do
       {:ok, cid, account}
     end
   end
 
   @doc """
-  Returns a URL to Stripe's customer portal so the operator can manage
-  payment methods, see invoices, cancel.
-  """
-  def billing_portal_url(%Account{stripe_customer_id: cid}) when is_binary(cid) do
-    case Emisar.Billing.StripeClient.create_billing_portal_session(%{
-           customer: cid,
-           return_url: app_url("/app/settings/billing")
-         }) do
-      {:ok, %{"url" => url}} -> {:ok, url}
-      err -> err
-    end
-  end
-
-  def billing_portal_url(_), do: {:error, :no_stripe_customer}
-
-  @doc """
   Atomically:
 
-    * inserts the Stripe event id into `stripe_processed_events` (unique
+    * inserts the Paddle event id into `paddle_processed_events` (unique
       primary key); if the row already exists, returns
       `{:duplicate, existing}` and does NOT re-apply,
     * calls `apply_webhook_event/1` inside the same transaction so we
@@ -194,7 +241,7 @@ defmodule Emisar.Billing do
           [:id, :event_type, :received_at]
         )
 
-      case Repo.insert(changeset, source: "stripe_processed_events", on_conflict: :nothing) do
+      case Repo.insert(changeset, source: "paddle_processed_events", on_conflict: :nothing) do
         {:ok, %{id: nil}} ->
           # on_conflict: :nothing returns a struct with id=nil when the
           # row already existed; treat as duplicate.
@@ -215,52 +262,60 @@ defmodule Emisar.Billing do
   end
 
   @doc """
-  Apply an incoming Stripe webhook event. Idempotent on `event["id"]`
+  Apply an incoming Paddle webhook event. Idempotent on `event["id"]`
   (deduped via `record_and_apply_event/3`).
   """
-  def apply_webhook_event(%{"type" => "customer.subscription.created", "data" => %{"object" => sub}}),
+  def apply_webhook_event(%{"event_type" => "subscription.created", "data" => sub}),
     do: upsert_from_subscription(sub)
 
-  def apply_webhook_event(%{"type" => "customer.subscription.updated", "data" => %{"object" => sub}}),
+  def apply_webhook_event(%{"event_type" => "subscription.updated", "data" => sub}),
     do: upsert_from_subscription(sub)
 
-  def apply_webhook_event(%{"type" => "customer.subscription.deleted", "data" => %{"object" => sub}}) do
-    case find_subscription_by_stripe_id(sub["id"]) do
+  def apply_webhook_event(%{"event_type" => "subscription.canceled", "data" => sub}) do
+    case peek_subscription_by_paddle_id(sub["id"]) do
       nil ->
         :ok
 
       %Subscription{} = s ->
-        Repo.update(Subscription.changeset(s, %{status: "canceled"}))
+        Repo.update(Subscription.Changeset.upsert(s, %{status: "canceled"}))
     end
   end
 
   def apply_webhook_event(_event), do: :ok
 
   defp upsert_from_subscription(sub) do
-    case find_account_by_stripe_customer(sub["customer"]) do
+    case peek_account_by_paddle_customer(sub["customer_id"]) do
       nil ->
         :ok
 
       %Account{id: account_id} ->
         attrs = %{
-          stripe_subscription_id: sub["id"],
+          paddle_subscription_id: sub["id"],
           status: sub["status"],
-          current_period_end: epoch_to_dt(sub["current_period_end"])
+          current_period_end: extract_next_billed_at(sub)
         }
 
         upsert_subscription(account_id, attrs)
     end
   end
 
-  defp find_account_by_stripe_customer(cid) when is_binary(cid),
-    do: Repo.get_by(Account, stripe_customer_id: cid)
+  defp peek_account_by_paddle_customer(cid) when is_binary(cid) do
+    Account.Query.all()
+    |> Account.Query.by_paddle_customer_id(cid)
+    |> Repo.peek()
+  end
 
-  defp find_subscription_by_stripe_id(id),
-    do: Repo.get_by(Subscription, stripe_subscription_id: id)
+  defp peek_account_by_paddle_customer(_), do: nil
 
-  defp update_account_stripe_id(account, cid) do
+  defp peek_subscription_by_paddle_id(id) do
+    Subscription.Query.all()
+    |> Subscription.Query.by_paddle_subscription_id(id)
+    |> Repo.peek()
+  end
+
+  defp update_account_paddle_id(account, cid) do
     account
-    |> Ecto.Changeset.change(stripe_customer_id: cid)
+    |> Ecto.Changeset.change(paddle_customer_id: cid)
     |> Repo.update()
   end
 
@@ -277,30 +332,88 @@ defmodule Emisar.Billing do
     base <> path
   end
 
-  defp epoch_to_dt(nil), do: nil
+  @doc """
+  Extracts the next billing time from a Paddle subscription payload.
+  Paddle returns ISO8601 strings (not epoch ints). The top-level field
+  is `next_billed_at`; some payloads put it under
+  `current_billing_period.ends_at` — handle both.
+  """
+  def extract_next_billed_at(%{"next_billed_at" => iso}) when is_binary(iso),
+    do: parse_iso8601(iso)
 
-  defp epoch_to_dt(secs) when is_integer(secs),
-    do: DateTime.from_unix!(secs) |> DateTime.truncate(:second)
+  def extract_next_billed_at(%{"current_billing_period" => %{"ends_at" => iso}})
+      when is_binary(iso),
+      do: parse_iso8601(iso)
+
+  def extract_next_billed_at(_), do: nil
+
+  defp parse_iso8601(iso) do
+    case DateTime.from_iso8601(iso) do
+      {:ok, dt, _offset} -> DateTime.truncate(dt, :microsecond)
+      _ -> nil
+    end
+  end
 
   @doc """
-  Pricing summary for an account at the current period:
-    %{plan: ..., runners: N, monthly_total_cents: ..., audit_retention_days: ...}
-  """
-  def billing_summary(%Account{} = account) do
-    plan_def = plan(account.plan) || plan("free")
-    agent_count = current_count(account, :runners)
+  Pricing + utilization summary for an account at the current period.
 
-    %{
-      plan: account.plan,
-      plan_name: plan_def.name,
-      agent_count: agent_count,
-      monthly_per_agent_cents: plan_def.monthly_price_cents,
-      monthly_total_cents:
-        case plan_def.monthly_price_cents do
-          nil -> nil
-          n -> n * agent_count
-        end,
-      audit_retention_days: plan_def.audit_retention_days
-    }
+  Includes the plan's runner / member ceilings so dashboards can warn
+  operators *before* they hit the wall (`X / 3` with a near-limit
+  badge), not after the next runner install fails with a 402 buried
+  in `journalctl`.
+  """
+  def billing_summary(%Account{} = account, %Subject{} = subject) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.view_billing_permission()
+           ),
+         :ok <- ensure_subject_owns_account(account, subject) do
+      plan_def = plan(account.plan) || plan("free")
+      runner_count = current_count(account, :runners)
+      member_count = current_count(account, :members)
+
+      {:ok,
+       %{
+         plan: account.plan,
+         plan_name: plan_def.name,
+         runner_count: runner_count,
+         runner_limit: plan_def.runners_limit,
+         member_count: member_count,
+         member_limit: plan_def.members_limit,
+         monthly_per_runner_cents: plan_def.monthly_price_cents,
+         monthly_total_cents:
+           case plan_def.monthly_price_cents do
+             nil -> nil
+             n -> n * runner_count
+           end,
+         audit_retention_days: plan_def.audit_retention_days
+       }}
+    end
   end
+
+  @doc """
+  Headroom on a `summary` resource: `:ok` (>1 slot free),
+  `:warning` (1 slot free), `:at_limit` (0 free), `:unlimited`.
+  Used by the UI to colour the runner/members usage tile.
+  """
+  def headroom(%{} = summary, :runners) do
+    headroom_for(summary.runner_count, summary.runner_limit)
+  end
+
+  def headroom(%{} = summary, :members) do
+    headroom_for(summary.member_count, summary.member_limit)
+  end
+
+  defp headroom_for(_used, :unlimited), do: :unlimited
+
+  defp headroom_for(used, limit) when is_integer(limit) do
+    cond do
+      used >= limit -> :at_limit
+      limit - used <= 1 -> :warning
+      true -> :ok
+    end
+  end
+
+  defp headroom_for(_used, _limit), do: :ok
 end

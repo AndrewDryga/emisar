@@ -2,7 +2,8 @@ defmodule EmisarWeb.RunnersLive do
   use EmisarWeb, :live_view
 
   alias Emisar.{Runners, PubSub}
-  alias EmisarWeb.RunnerPresence
+  alias Emisar.Runners.Runner
+  alias EmisarWeb.{LiveTable, RunnerPresence}
 
   def mount(_params, _session, socket) do
     account_id = socket.assigns.current_account.id
@@ -12,29 +13,55 @@ defmodule EmisarWeb.RunnersLive do
       Phoenix.PubSub.subscribe(Emisar.PubSub.Server, "presence:account:#{account_id}")
     end
 
-    {:ok,
-     socket
-     |> assign(:page_title, "Runners")
-     |> load()}
+    {:ok, assign(socket, :page_title, "Runners")}
   end
 
-  def handle_info({:runner_updated, _}, socket), do: {:noreply, load(socket)}
-  def handle_info({:runner_connected, _}, socket), do: {:noreply, load(socket)}
-  def handle_info({:runner_disconnected, _}, socket), do: {:noreply, load(socket)}
-  def handle_info(%{event: "presence_diff"}, socket), do: {:noreply, load(socket)}
+  def handle_params(params, _uri, socket) do
+    {:noreply, load(socket, params)}
+  end
+
+  def handle_info({:runner_updated, _}, socket), do: {:noreply, reload(socket)}
+  def handle_info({:runner_connected, _}, socket), do: {:noreply, reload(socket)}
+  def handle_info({:runner_disconnected, _}, socket), do: {:noreply, reload(socket)}
+  def handle_info(%{event: "presence_diff"}, socket), do: {:noreply, reload(socket)}
   def handle_info(_, socket), do: {:noreply, socket}
 
-  defp load(socket) do
+  # PubSub-driven refresh — re-run the current page/filter.
+  defp reload(socket), do: load(socket, socket.assigns[:filter_params] || %{})
+
+  defp load(socket, params) do
     account = socket.assigns.current_account
-    runners = Runners.list_runners_for_account(account.id)
-    groups = Runners.list_groups_for_account(account.id)
+    filters = Runner.Query.filters()
+    opts = LiveTable.params_to_opts(params, filters)
 
-    online = RunnerPresence.list_for_account(account.id)
+    # Filter by per-membership runner scopes (#238). Owners/admins
+    # rarely have scopes set; operators may. Groups list isn't
+    # scope-filtered: the "groups" sidebar header would lie about an
+    # empty group when the operator just can't see it, and that's
+    # confusing — let the list itself be the source of truth.
+    list_opts = Keyword.merge(opts, membership_id: socket.assigns.current_membership.id)
 
-    socket
-    |> assign(:runners, runners)
-    |> assign(:groups, groups)
-    |> assign(:online, online)
+    case Runners.list_runners_for_account(socket.assigns.current_subject, list_opts) do
+      {:ok, runners, meta} ->
+        groups =
+          case Runners.list_group_summaries(socket.assigns.current_subject) do
+            {:ok, list} -> list
+            _ -> []
+          end
+
+        online = RunnerPresence.list_for_account(account.id)
+
+        socket
+        |> assign(:runners, runners)
+        |> assign(:metadata, meta)
+        |> assign(:filter_params, params)
+        |> assign(:filters, filters)
+        |> assign(:groups, groups)
+        |> assign(:online, online)
+
+      {:error, _} ->
+        load(socket, %{})
+    end
   end
 
   def render(assigns) do
@@ -47,50 +74,101 @@ defmodule EmisarWeb.RunnersLive do
     >
       <:title>Runners</:title>
       <:actions>
-        <.link navigate={~p"/app/settings/runners/auth-keys"} class="rounded-lg bg-indigo-500 px-3 py-1.5 text-sm font-semibold text-zinc-950 hover:bg-indigo-400">
-          New auth key
+        <.link
+          navigate={~p"/app/runners/install"}
+          class="inline-flex items-center gap-1.5 rounded-lg bg-indigo-500 px-3 py-1.5 text-sm font-semibold text-zinc-950 hover:bg-indigo-400"
+        >
+          <.icon name="hero-plus" class="h-4 w-4" /> Add a runner
         </.link>
       </:actions>
 
-      <%= if @runners == [] do %>
+      <%= if @runners == [] && @metadata.count == 0 do %>
         <.empty_state icon="hero-cpu-chip" title="No runners yet">
-          Issue an auth key, then run the emisar installer on a host to bootstrap the runner.
-          <:cta navigate={~p"/app/settings/runners/auth-keys"}>Issue an auth key</:cta>
+          A runner is the emisar binary on one of your hosts. The install wizard mints a fresh
+          auth key and gives you a one-liner to paste on a Linux or macOS box.
+          <:cta navigate={~p"/app/runners/install"}>Open install wizard</:cta>
         </.empty_state>
       <% else %>
-        <div :for={{group, count} <- @groups} class="mb-6">
-          <h2 class="text-xs uppercase tracking-wider text-zinc-500">
-            {group} <span class="ml-1 text-zinc-700">({count})</span>
-          </h2>
-          <div class="mt-3">
-            <.list_table id={"runners-#{group}"} rows={filter_group(@runners, group)}>
-              <:col :let={runner} label="Runner">
-                <.link navigate={~p"/app/runners/#{runner.id}"} class="font-medium hover:text-indigo-300">
-                  {runner.name}
-                </.link>
-                <div class="text-xs text-zinc-500">{runner.hostname || runner.external_id}</div>
-              </:col>
-              <:col :let={runner} label="Status">
-                <.status_badge status={derived_status(runner, @online)} />
-              </:col>
-              <:col :let={runner} label="Version">
-                <span class="font-mono text-xs text-zinc-400">{runner.runner_version || "—"}</span>
-              </:col>
-              <:col :let={runner} label="Last heartbeat">
-                <span class="text-xs text-zinc-400">{relative_time(runner.last_heartbeat_at)}</span>
-              </:col>
-              <:col :let={runner} label="Load">
-                <span class="text-xs text-zinc-400">{runner.action_load} active</span>
-              </:col>
-            </.list_table>
+        <div class="space-y-4">
+          <%!-- Group sidebar shows whole-account totals; the runners
+               list below is paginated and may show fewer rows per
+               group than the count next to the header. That's
+               intentional — operators expect group counts to be
+               source-of-truth, not "what fits on this page". --%>
+          <div :for={{group, runners} <- group_visible(@runners)} class="mb-8">
+            <header class="mb-3 flex items-baseline gap-2">
+              <h2 class="text-sm font-semibold text-zinc-100">{group}</h2>
+              <span class="text-xs text-zinc-500">
+                {group_total(@groups, group)} {if group_total(@groups, group) == 1, do: "runner", else: "runners"} total
+              </span>
+            </header>
+
+            <div class="overflow-hidden rounded-xl border border-zinc-900 bg-zinc-950/40">
+              <ul class="divide-y divide-zinc-900">
+                <li
+                  :for={runner <- runners}
+                  class="px-5 py-3"
+                >
+                  <.link
+                    navigate={~p"/app/runners/#{runner.id}"}
+                    class="flex items-center gap-4 transition hover:opacity-90"
+                  >
+                    <%!-- Connection dot: green/pulsing when live, amber
+                         when known-but-disconnected, zinc when never
+                         seen. Clearer than reading a status badge first. --%>
+                    <.connection_dot status={derived_status(runner, @online)} />
+
+                    <div class="min-w-0 flex-1">
+                      <div class="flex items-center gap-2">
+                        <span class="truncate font-medium text-zinc-100">{runner.name}</span>
+                        <span :if={runner.runner_version} class="font-mono text-[11px] text-zinc-500">
+                          v{runner.runner_version}
+                        </span>
+                      </div>
+                      <div class="mt-0.5 truncate text-xs text-zinc-500">
+                        {runner.hostname || runner.external_id || "no host"} ·
+                        {heartbeat_label(runner, derived_status(runner, @online))}
+                      </div>
+                    </div>
+
+                    <div class="flex items-center gap-4 text-right">
+                      <div class="hidden text-xs text-zinc-400 sm:block">
+                        {runner.action_load} active
+                      </div>
+                      <.status_badge status={derived_status(runner, @online)} class="shrink-0" />
+                    </div>
+                  </.link>
+                </li>
+              </ul>
+            </div>
           </div>
+
+          <LiveTable.paginator
+            id="runners"
+            path={~p"/app/runners"}
+            metadata={@metadata}
+            filter_params={@filter_params}
+          />
         </div>
       <% end %>
     </.dashboard_shell>
     """
   end
 
-  defp filter_group(runners, group), do: Enum.filter(runners, &(&1.group == group))
+  # Visible (this-page) runners, grouped + sorted by group name so the
+  # render order matches the group sidebar.
+  defp group_visible(runners) do
+    runners
+    |> Enum.group_by(& &1.group)
+    |> Enum.sort_by(fn {group, _} -> group end)
+  end
+
+  defp group_total(groups, group) do
+    Enum.find_value(groups, 0, fn
+      {^group, n} -> n
+      _ -> nil
+    end)
+  end
 
   defp derived_status(runner, online) do
     cond do
@@ -99,4 +177,41 @@ defmodule EmisarWeb.RunnersLive do
     end
   end
 
+  attr :status, :string, required: true
+
+  defp connection_dot(%{status: "connected"} = assigns) do
+    ~H"""
+    <span class="relative grid h-3 w-3 flex-none place-items-center" title="Connected">
+      <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-500/40"></span>
+      <span class="relative h-2 w-2 rounded-full bg-emerald-400"></span>
+    </span>
+    """
+  end
+
+  defp connection_dot(%{status: "disabled"} = assigns) do
+    ~H"""
+    <span class="h-2.5 w-2.5 flex-none rounded-full bg-zinc-700" title="Disabled"></span>
+    """
+  end
+
+  defp connection_dot(assigns) do
+    ~H"""
+    <span class="h-2.5 w-2.5 flex-none rounded-full bg-zinc-600" title="Disconnected"></span>
+    """
+  end
+
+  # "Last heartbeat 3m ago" / "Connected 5s ago — waiting for first
+  # heartbeat" / "Never connected". Composes status + timestamps into
+  # one human line — clearer than a "—" with "(connected X ago)"
+  # tacked on the side.
+  defp heartbeat_label(%{last_heartbeat_at: %DateTime{} = ts}, _status),
+    do: "last heartbeat #{relative_time(ts)}"
+
+  defp heartbeat_label(%{last_connected_at: %DateTime{}}, "connected"),
+    do: "just connected — waiting for first heartbeat"
+
+  defp heartbeat_label(%{last_connected_at: %DateTime{} = ts}, _status),
+    do: "last seen #{relative_time(ts)}"
+
+  defp heartbeat_label(_, _), do: "never connected"
 end

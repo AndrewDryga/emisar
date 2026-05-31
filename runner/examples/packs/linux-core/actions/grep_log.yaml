@@ -40,7 +40,7 @@ args:
     type: integer
     required: false
     default: 200
-    description: Cap on returned matching lines (grep --max-count).
+    description: Cap on returned matching lines (grep -m).
     validation:
       min: 1
       max: 2000
@@ -48,10 +48,13 @@ args:
 execution:
   command:
     binary: /bin/grep
+    # -m N (short form) is accepted by both GNU and BusyBox grep; the
+    # long form --max-count= is GNU-only and breaks on Alpine hosts.
     argv:
       - "-E"
       - "-n"
-      - "--max-count={{ args.max_lines }}"
+      - "-m"
+      - "{{ args.max_lines }}"
       - "{{ args.pattern }}"
       - "{{ args.file }}"
   timeout: 30s

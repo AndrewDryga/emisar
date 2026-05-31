@@ -6,15 +6,14 @@ defmodule Emisar.Workers.AuditRetention do
   """
   use Oban.Worker, queue: :audit, max_attempts: 2
 
-  import Ecto.Query
   alias Emisar.Repo
   alias Emisar.Accounts.Account
-  alias Emisar.Billing
   alias Emisar.Audit.Event
+  alias Emisar.Billing
 
   @impl true
   def perform(%Oban.Job{}) do
-    Account
+    Account.Query.all()
     |> Repo.all()
     |> Enum.each(&prune_account/1)
 
@@ -27,10 +26,10 @@ defmodule Emisar.Workers.AuditRetention do
     cutoff = DateTime.utc_now() |> DateTime.add(-days * 86_400, :second)
 
     {n, _} =
-      Repo.delete_all(
-        from e in Event,
-          where: e.account_id == ^account.id and e.occurred_at < ^cutoff
-      )
+      Event.Query.all()
+      |> Event.Query.by_account_id(account.id)
+      |> Event.Query.occurred_before(cutoff)
+      |> Repo.delete_all()
 
     if n > 0 do
       require Logger

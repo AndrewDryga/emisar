@@ -273,13 +273,28 @@ func (e *Engine) Run(ctx context.Context, req Request) (*Result, error) {
 	combinedRedactor := e.combinedRedactor(act)
 
 	// If the caller wants streaming, set up an OnChunk that redacts
-	// line-by-line and forwards to OnProgress. We tally per-rule hits in
-	// the journal afterward via the final-result captured streams as well.
+	// line-by-line and forwards to OnProgress. We also accumulate the
+	// redacted bytes into local buffers so the post-run code (JSON
+	// parser, audit journal, run result) has the full output. Without
+	// the buffers, streaming mode silently produces empty stdout/stderr
+	// in the result, which then makes `parser: json` reliably fail.
 	streaming := req.OnProgress != nil
+	var (
+		stdoutBuf, stderrBuf strings.Builder
+		streamHits           []redact.Hit
+	)
+
 	if streaming {
 		plan.OnChunk = func(stream executor.Stream, data []byte) {
-			redacted, _ := combinedRedactor.Apply(string(data))
+			redacted, hs := combinedRedactor.Apply(string(data))
 			req.OnProgress(stream, []byte(redacted))
+			switch stream {
+			case executor.StreamStdout:
+				stdoutBuf.WriteString(redacted)
+			case executor.StreamStderr:
+				stderrBuf.WriteString(redacted)
+			}
+			streamHits = redact.MergeHits(streamHits, hs)
 		}
 	}
 
@@ -288,15 +303,16 @@ func (e *Engine) Run(ctx context.Context, req Request) (*Result, error) {
 		return e.emitExecError(ctx, req, act, cleanArgs, now, execErr)
 	}
 
-	// Redact captured output for the final journal entry. When streaming,
-	// captured is empty; we redact the previews (which we'll reconstruct
-	// from the streamed bytes if anyone cares — for now we just leave the
-	// preview empty in streaming mode).
 	var (
 		redactedStdout, redactedStderr string
 		hits                           []redact.Hit
 	)
-	if !streaming {
+
+	if streaming {
+		redactedStdout = stdoutBuf.String()
+		redactedStderr = stderrBuf.String()
+		hits = streamHits
+	} else {
 		var hs1, hs2 []redact.Hit
 		redactedStdout, hs1 = combinedRedactor.Apply(execRes.Stdout)
 		redactedStderr, hs2 = combinedRedactor.Apply(execRes.Stderr)

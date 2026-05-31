@@ -1,0 +1,6 @@
+Contact: mailto:security@emisar.dev
+Expires: 2027-12-31T23:59:59.000Z
+Preferred-Languages: en
+Canonical: https://emisar.dev/.well-known/security.txt
+Policy: https://github.com/andrewdryga/emisar/blob/main/.github/SECURITY.md
+Acknowledgments: https://emisar.dev/security

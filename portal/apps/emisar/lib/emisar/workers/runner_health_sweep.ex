@@ -6,10 +6,8 @@ defmodule Emisar.Workers.RunnerHealthSweep do
   """
   use Oban.Worker, queue: :default, max_attempts: 2
 
-  import Ecto.Query
-  alias Emisar.Repo
+  alias Emisar.{Repo, Runners}
   alias Emisar.Runners.Runner
-  alias Emisar.PubSub
 
   @stale_threshold_secs 180
 
@@ -17,19 +15,11 @@ defmodule Emisar.Workers.RunnerHealthSweep do
   def perform(%Oban.Job{}) do
     cutoff = DateTime.utc_now() |> DateTime.add(-@stale_threshold_secs, :second)
 
-    stale =
-      from(a in Runner,
-        where: a.status == "connected" and (is_nil(a.last_heartbeat_at) or a.last_heartbeat_at < ^cutoff)
-      )
-      |> Repo.all()
-
-    Enum.each(stale, fn runner ->
-      {:ok, updated} =
-        runner
-        |> Runner.disconnected_changeset("heartbeat timeout")
-        |> Repo.update()
-
-      PubSub.broadcast_runner(updated, :runner_disconnected)
+    Runner.Query.all()
+    |> Runner.Query.stale_connected(cutoff)
+    |> Repo.all()
+    |> Enum.each(fn runner ->
+      {:ok, _updated} = Runners.mark_disconnected(runner, "heartbeat timeout")
     end)
 
     :ok

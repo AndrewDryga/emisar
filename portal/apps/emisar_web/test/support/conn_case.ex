@@ -34,7 +34,7 @@ defmodule EmisarWeb.ConnCase do
   into the session and returning the conn.
   """
   def log_in_user(conn, user) do
-    token = Emisar.Auth.create_session_token(user)
+    token = Emisar.Auth.create_session_token!(user)
 
     conn
     |> Phoenix.ConnTest.init_test_session(%{})
@@ -72,5 +72,10 @@ defmodule EmisarWeb.ConnCase do
       )
 
     {log_in_user(conn, user), user, account}
+  end
+
+  @doc "Builds an owner `%Subject{}` for a user + account pair (test convenience)."
+  def owner_subject(user, account) do
+    Emisar.Fixtures.subject_for(user, account, role: :owner)
   end
 end

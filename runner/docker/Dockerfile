@@ -34,13 +34,24 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
     .
 
 # --- runner --------------------------------------------------------
+#
+# Debian (not Alpine) on purpose: real GNU coreutils, grep, stat,
+# procps `uptime`, and the standard /var/log directory layout — what
+# the linux-core action pack expects. Alpine ships BusyBox flavors of
+# all of these that handle long-form GNU flags differently (`grep
+# --max-count` vs `-m`, etc.). Sticks with debian:bookworm-slim to
+# share base layers with the portal image.
 
-FROM alpine:3.20
+FROM debian:bookworm-slim
 
-RUN apk add --no-cache ca-certificates tini bash coreutils \
-    && addgroup -S emisar \
-    && adduser -S -G emisar -h /var/lib/emisar emisar \
-    && mkdir -p /etc/emisar /var/lib/emisar /var/log/emisar /opt/emisar/packs \
+RUN apt-get update -y \
+    && apt-get install -y --no-install-recommends \
+        ca-certificates tini procps grep coreutils bash \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd -r emisar \
+    && useradd -r -g emisar -d /var/lib/emisar -s /sbin/nologin emisar \
+    && mkdir -p /etc/emisar /var/lib/emisar /var/log/emisar /opt/emisar/packs /var/log/nginx \
     && chown -R emisar:emisar /etc/emisar /var/lib/emisar /var/log/emisar /opt/emisar
 
 COPY --from=builder /out/emisar /usr/local/bin/emisar
@@ -51,5 +62,5 @@ USER emisar
 WORKDIR /var/lib/emisar
 
 # tini reaps zombies cleanly when child processes spawn under the runner.
-ENTRYPOINT ["/sbin/tini", "--"]
+ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["/usr/local/bin/emisar", "connect", "--config", "/etc/emisar/config.yaml"]

@@ -22,10 +22,80 @@ import {Socket} from "phoenix"
 import {LiveSocket} from "phoenix_live_view"
 import topbar from "../vendor/topbar"
 
+// `<time>` element formatter. The server renders a UTC fallback into
+// `textContent` (so non-JS users see something) and stamps the ISO
+// `datetime` + a `data-format` mode; this hook rewrites textContent to
+// the user's local timezone on mount/update.
+//
+//   <time
+//     phx-hook="LocalTime"
+//     id="when-<%= row.id %>"
+//     datetime="2026-05-30T18:59:00Z"
+//     data-format="absolute"
+//   >May 30, 18:59 UTC</time>
+//
+// `data-format`:
+//   - "absolute" → "May 30, 14:59 (your time)" / "May 30, 2027, 14:59"
+//   - "relative" → "3m ago" / "Jul 14"
+const LocalTime = {
+  mounted() { this.format() },
+  updated() { this.format() },
+
+  format() {
+    const iso = this.el.getAttribute("datetime")
+    if (!iso) return
+    const dt = new Date(iso)
+    if (isNaN(dt.getTime())) return
+
+    const mode = this.el.dataset.format || "absolute"
+    const now = new Date()
+    const sameYear = dt.getFullYear() === now.getFullYear()
+
+    if (mode === "relative") {
+      this.el.textContent = formatRelative(dt, now, sameYear)
+    } else {
+      this.el.textContent = formatAbsolute(dt, sameYear)
+    }
+
+    // Tooltip carries the full absolute local time on hover for the
+    // relative form, and the ISO source for the absolute form — so
+    // operators can always recover the exact value.
+    const tooltip = mode === "relative"
+      ? formatAbsolute(dt, sameYear)
+      : iso
+    this.el.setAttribute("title", tooltip)
+  }
+}
+
+function formatRelative(dt, now, sameYear) {
+  const diffMs = now - dt
+  const sec = Math.round(diffMs / 1000)
+  if (sec < 5) return "just now"
+  if (sec < 60) return `${sec}s ago`
+  const min = Math.round(sec / 60)
+  if (min < 60) return `${min}m ago`
+  const hr = Math.round(min / 60)
+  if (hr < 24) return `${hr}h ago`
+  const day = Math.round(hr / 24)
+  if (day < 7) return `${day}d ago`
+  // > 1w → switch to absolute short form
+  return formatAbsolute(dt, sameYear, /*short*/ true)
+}
+
+function formatAbsolute(dt, sameYear, short = false) {
+  const opts = short
+    ? { month: "short", day: "numeric" }
+    : sameYear
+      ? { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }
+      : { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }
+  return dt.toLocaleString(undefined, opts)
+}
+
 let csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
 let liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
-  params: {_csrf_token: csrfToken}
+  params: {_csrf_token: csrfToken},
+  hooks: { LocalTime }
 })
 
 // Show progress bar on live navigation and form submits

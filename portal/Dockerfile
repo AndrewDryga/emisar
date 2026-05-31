@@ -1,11 +1,20 @@
 # Multi-stage build for the emisar control plane.
 # Target: minimal runtime image with a release built from source.
+#
+# Build context is the REPO ROOT (not portal/) so we can also pull in
+# the canonical install.sh — InstallController embeds it at compile
+# time via @external_resource, resolved via a relative path that
+# bottoms out at /install.sh inside the build container.
+#
+# Invoked by docker-compose as `build: { context: ., dockerfile: portal/Dockerfile }`.
 
 ARG ELIXIR_VERSION=1.17.3
 ARG OTP_VERSION=27.1
-ARG DEBIAN_VERSION=bookworm-20241016-slim
+ARG DEBIAN_VERSION=bookworm-20260518-slim
 
 ARG BUILDER_IMAGE="hexpm/elixir:${ELIXIR_VERSION}-erlang-${OTP_VERSION}-debian-${DEBIAN_VERSION}"
+# The runtime base needs to match the builder's libc/ssl; use the same
+# debian snapshot so any compiled NIFs link against compatible libs.
 ARG RUNNER_IMAGE="debian:${DEBIAN_VERSION}"
 
 # --- Build stage ---------------------------------------------------
@@ -21,27 +30,32 @@ RUN mix local.hex --force && mix local.rebar --force
 
 ENV MIX_ENV="prod"
 
+# Place install.sh where InstallController's compile-time `Path.expand`
+# resolves to (six levels up from the controller's source dir =>
+# container root). Copying it early lets Docker layer-cache it.
+COPY install.sh /install.sh
+
 # Install deps first so docker layer-caches them.
-COPY mix.exs mix.lock ./
-COPY apps/emisar/mix.exs apps/emisar/mix.exs
-COPY apps/emisar_web/mix.exs apps/emisar_web/mix.exs
+COPY portal/mix.exs portal/mix.lock ./
+COPY portal/apps/emisar/mix.exs apps/emisar/mix.exs
+COPY portal/apps/emisar_web/mix.exs apps/emisar_web/mix.exs
 RUN mkdir -p config
-COPY config/config.exs config/${MIX_ENV}.exs config/
+COPY portal/config/config.exs portal/config/${MIX_ENV}.exs config/
 RUN mix deps.get --only $MIX_ENV
 RUN mix deps.compile
 
 # `apps` includes each app's own priv/ (migrations, assets, etc).
 # The umbrella root has no priv/ of its own, so a stray
 # `COPY priv priv` here would break the build.
-COPY apps apps
-COPY config/runtime.exs config/
+COPY portal/apps apps
+COPY portal/config/runtime.exs config/
 
 # Build assets (esbuild + tailwind)
 RUN mix assets.deploy
 
 # Compile + release
 RUN mix compile
-COPY rel rel
+COPY portal/rel rel
 RUN mix release
 
 # --- Runtime stage -------------------------------------------------

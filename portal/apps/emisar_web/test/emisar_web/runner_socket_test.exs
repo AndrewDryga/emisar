@@ -17,7 +17,8 @@ defmodule EmisarWeb.RunnerSocketTest do
           user
         )
 
-      {:ok, raw_key, _key} = Runners.create_auth_key(account.id, user.id, %{description: "test"})
+      subject = Emisar.Fixtures.subject_for(user, account, role: :owner)
+      {:ok, raw_key, _key} = Runners.create_auth_key(%{description: "test"}, subject)
       %{account: account, user: user, raw_key: raw_key}
     end
 

@@ -1,78 +1,122 @@
 defmodule Emisar.Approvals do
   @moduledoc """
-  Approval requests for runs that policy gated. An operator approves
-  or denies in the UI; on approve the run transitions to :sent and
-  Transport dispatches it.
+  Approval requests for runs that policy gated, plus the durable
+  "grants" that let identical follow-up calls bypass the gate for a
+  bounded window without re-prompting the operator.
+
+  Flow:
+
+    1. `Runs.dispatch_run` evaluates policy → `:require_approval`.
+    2. It calls `Approvals.peek_matching_grant/4` for the calling API
+       key. If a usable grant exists, dispatch fast-paths past
+       approval (and increments the grant's use count).
+    3. Otherwise `Approvals.create_request/3` files an approval row
+       and the LLM-facing endpoint returns `pending_approval` with a
+       run id for the LLM to poll on.
+    4. The operator decides in the UI. On approve, they pick a
+       duration (once / 1h / 24h / indefinite) and an arg-match scope
+       (exact / any) — those choices populate a new
+       `Approvals.Grant` so the LLM doesn't have to ask again next
+       time within that window.
   """
 
-  import Ecto.Query
-  alias Emisar.{Audit, PubSub, Repo, Runs}
-  alias Emisar.Approvals.Request
+  alias Emisar.{Audit, Auth, PubSub, Repo, Runs}
+  alias Emisar.Approvals.{Authorizer, Grant, Request}
+  alias Emisar.Auth.Subject
+  alias Emisar.Runs.ActionRun
 
-  def list_pending(account_id) do
-    from(r in Request,
-      where: r.account_id == ^account_id and r.status == "pending",
-      order_by: [asc: r.requested_at]
-    )
-    |> Repo.all()
+  def list_pending_approval_requests(%Subject{} = subject, opts \\ []) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.view_approvals_permission()
+           ) do
+      Request.Query.pending()
+      |> Request.Query.ordered_by_requested()
+      |> Authorizer.for_subject(subject)
+      |> Repo.list(Request.Query, opts)
+    end
   end
 
-  def list_for_account(account_id, opts \\ []) do
-    query =
-      from r in Request,
-        where: r.account_id == ^account_id,
-        order_by: [desc: r.requested_at],
-        limit: ^(opts[:limit] || 100)
+  def list_approval_requests_for_account(%Subject{} = subject, opts \\ []) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.view_approvals_permission()
+           ) do
+      {status, opts} = Keyword.pop(opts, :status)
+      {limit, opts} = Keyword.pop(opts, :limit, 100)
 
-    query =
-      if status = opts[:status] do
-        where(query, [r], r.status == ^status)
-      else
-        query
-      end
+      Request.Query.all()
+      |> Request.Query.ordered_by_recent()
+      |> apply_request_status_filter(status)
+      |> Authorizer.for_subject(subject)
+      |> Repo.list(Request.Query, Keyword.put_new(opts, :page, [limit: limit]))
+    end
+  end
 
-    Repo.all(query)
+  defp apply_request_status_filter(query, nil), do: query
+  defp apply_request_status_filter(query, status), do: Request.Query.by_status(query, status)
+
+  def fetch_approval_request_by_id(id, %Subject{} = subject, opts \\ []) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.view_approvals_permission()
+           ),
+         true <- Repo.valid_uuid?(id) do
+      Request.Query.all()
+      |> Request.Query.by_id(id)
+      |> Authorizer.for_subject(subject)
+      |> Repo.fetch(Request.Query, opts)
+    else
+      false -> {:error, :not_found}
+      other -> other
+    end
   end
 
   @doc """
-  Lists approved + denied + expired requests, newest first. Used by
-  the "decided" / history pane on the approvals page so a workspace
-  with > limit pending requests can still see decided ones — avoiding
-  the bug where you'd have to client-side-filter `list_for_account`
-  and lose decided rows past the 100-row cap.
-  """
-  def list_decided(account_id, opts \\ []) do
-    from(r in Request,
-      where: r.account_id == ^account_id and r.status in ["approved", "denied", "expired"],
-      order_by: [desc: r.decided_at, desc: r.requested_at],
-      limit: ^(opts[:limit] || 100)
-    )
-    |> Repo.all()
-  end
-
-  def get_request(account_id, id) do
-    from(r in Request, where: r.account_id == ^account_id and r.id == ^id)
-    |> Repo.one()
-  end
-
-  @doc """
-  Looks up the (single) approval request for a run, or nil. There is a
+  Looks up the (single) approval request for a run. There is a
   unique-by-design relationship: one run produces at most one approval
   request, since policy is evaluated once at dispatch time.
   """
-  def get_request_by_run(account_id, run_id) do
-    from(r in Request, where: r.account_id == ^account_id and r.run_id == ^run_id)
-    |> Repo.one()
+  def fetch_approval_request_by_run_id(run_id, %Subject{} = subject) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.view_approvals_permission()
+           ) do
+      Request.Query.all()
+      |> Request.Query.by_run_id(run_id)
+      |> Authorizer.for_subject(subject)
+      |> Repo.fetch(Request.Query)
+    end
   end
 
+  # Default window for a pending approval to sit before the
+  # ApprovalExpiry worker auto-rejects it. Anything past this is
+  # almost certainly an on-call who lost the page / left the company —
+  # an LLM agent should not be permitted to keep a high-risk action
+  # held open for days. Override per-account in the future via a
+  # policy setting.
+  @default_pending_ttl_hours 24
+
+  @doc """
+  Files an approval request for a gated run. Internal — called from
+  `Runs.dispatch_run` which has already authorized via its own Subject.
+  `requested_by_id` is whoever asked for the run (user, api_key, etc).
+  """
   def create_request(run, requested_by_id, reason \\ nil) do
+    now = DateTime.utc_now() |> DateTime.truncate(:microsecond)
+    expires_at = DateTime.add(now, @default_pending_ttl_hours * 60 * 60, :second)
+
     result =
-      %Request{}
-      |> Request.create_changeset(%{
+      Request.Changeset.create(%{
         account_id: run.account_id,
         run_id: run.id,
         requested_by_id: requested_by_id,
-        requested_at: DateTime.utc_now() |> DateTime.truncate(:microsecond),
+        requested_at: now,
+        expires_at: expires_at,
         reason: reason,
         context: %{
           runner_id: run.runner_id,
@@ -83,19 +127,40 @@ defmodule Emisar.Approvals do
       |> Repo.insert()
       |> tap_broadcast()
 
-    # Fan out emails to every member with :decide_approval. Done in a
-    # detached Task so a slow SMTP/Mailgun call never blocks the
-    # caller's `Runs.dispatch` path. A failed delivery is logged but
-    # doesn't roll back the request — the approval is still visible
-    # in the dashboard.
+    # Fan out emails to every member who can decide. In prod the email
+    # dispatch is detached so a slow SMTP/Mailgun call never blocks
+    # the caller's `Runs.dispatch_run` path. In tests it's synchronous so
+    # the sandbox connection isn't released while a background task
+    # is still querying the DB — `:notify_approvers_async?` flips this.
     with {:ok, req} <- result do
-      Task.start(fn -> notify_approvers(req, run, requested_by_id) end)
+      run_notify(fn -> notify_approvers(req, run, requested_by_id) end)
       {:ok, req}
     end
   end
 
+  defp run_notify(fun) do
+    if Application.get_env(:emisar, :notify_approvers_async?, true) do
+      Task.start(fun)
+    else
+      fun.()
+    end
+  end
+
   defp notify_approvers(%Request{} = req, run, requested_by_id) do
-    Emisar.Accounts.list_memberships_for_account(req.account_id)
+    # Preload runner so the email body can show the runner's name
+    # ("db-prod-01") instead of its UUID — approvers shouldn't need to
+    # context-switch into the app just to know what's being touched.
+    run = Repo.preload(run, :runner)
+
+    # System subject — this is a background fan-out; no user is asking
+    # for the list, we just need every member to email.
+    account = Emisar.Accounts.fetch_account_by_id!(req.account_id)
+    system = Subject.system(account)
+
+    {:ok, memberships, _meta} =
+      Emisar.Accounts.list_memberships_for_account(system, page: [limit: 100])
+
+    memberships
     |> Enum.filter(fn m ->
       # User has no `disabled_at`; account-level disable is separate
       # (Emisar.Accounts.Account.disabled_at). Membership-level disable
@@ -133,14 +198,98 @@ defmodule Emisar.Approvals do
     end)
   end
 
-  def approve(%Request{} = req, by_user_id, reason \\ nil) do
-    case claim_pending(req, :approved, by_user_id, reason) do
-      {:ok, decided} ->
-        result =
-          Repo.transaction(fn ->
-            run = Repo.get!(Emisar.Runs.ActionRun, req.run_id)
+  @doc """
+  Approve a pending request and dispatch the gated run.
 
-            Audit.log(req.account_id, "approval.approved",
+  `opts` is an optional keyword list that controls whether to mint a
+  durable `Grant` alongside the approval so future identical calls can
+  bypass the gate:
+
+    * `:duration` — `:once` (no grant), `:one_hour`, `:one_day`, or
+      `:indefinite`. Default: `:once`.
+    * `:scope`    — `:exact_args` (locks args fingerprint) or
+      `:any_args` (any args for this action). Default: `:exact_args`.
+  """
+  def approve_request(req, subject, reason \\ nil, opts \\ [])
+
+  def approve_request(%Request{} = req, %Subject{} = subject, reason, opts) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.decide_approval_permission()
+           ),
+         :ok <- ensure_request_in_subject_account(req, subject) do
+      by_user_id = actor_id(subject)
+
+      case claim_pending(req, :approved, by_user_id, reason) do
+        {:ok, decided} ->
+          result =
+            Repo.transaction(fn ->
+              run = fetch_run!(req.run_id)
+
+              grant_attrs = %{
+                duration: Keyword.get(opts, :duration, :once),
+                scope: Keyword.get(opts, :scope, :exact_args)
+              }
+
+              grant =
+                if grant_attrs.duration != :once and run.api_key_id do
+                  case create_grant(req, run, by_user_id, grant_attrs) do
+                    {:ok, g} -> g
+                    _ -> nil
+                  end
+                end
+
+              Audit.log(req.account_id, "approval.approved",
+                actor_kind: "user",
+                actor_id: by_user_id,
+                subject_kind: "approval_request",
+                subject_id: req.id,
+                payload: %{
+                  run_id: req.run_id,
+                  reason: reason,
+                  grant_id: grant && grant.id,
+                  grant_duration: grant && grant_attrs.duration,
+                  grant_scope: grant && grant_attrs.scope
+                }
+              )
+
+              {decided, run}
+            end)
+            |> tap_broadcast_tuple()
+
+          # Deliver to the runner AFTER the transaction commits so the
+          # PubSub broadcast can't fire before the DB state is durable.
+          # The transition to :sent happens inside
+          # Runs.dispatch_to_runner/1 → Runs.mark_sent/1.
+          with {:ok, {decided, run}} <- result,
+               :ok <- Runs.dispatch_to_runner(run) do
+            run = Repo.reload!(run)
+            {:ok, {decided, run}}
+          end
+
+        {:error, :already_decided} ->
+          {:error, :already_decided}
+      end
+    end
+  end
+
+  def deny_request(%Request{} = req, %Subject{} = subject, reason \\ nil) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.decide_approval_permission()
+           ),
+         :ok <- ensure_request_in_subject_account(req, subject) do
+      by_user_id = actor_id(subject)
+
+      case claim_pending(req, :denied, by_user_id, reason) do
+        {:ok, decided} ->
+          Repo.transaction(fn ->
+            run = fetch_run!(req.run_id)
+            {:ok, run} = Runs.mark_cancelled(run, denial_reason(reason))
+
+            Audit.log(req.account_id, "approval.denied",
               actor_kind: "user",
               actor_id: by_user_id,
               subject_kind: "approval_request",
@@ -152,43 +301,16 @@ defmodule Emisar.Approvals do
           end)
           |> tap_broadcast_tuple()
 
-        # Deliver to the runner AFTER the transaction commits so the PubSub
-        # broadcast can't fire before the DB state is durable. The transition
-        # to :sent happens inside Runs.dispatch_to_runner/1 → Runs.mark_sent/1.
-        with {:ok, {decided, run}} <- result,
-             :ok <- Runs.dispatch_to_runner(run) do
-          run = Repo.reload!(run)
-          {:ok, {decided, run}}
-        end
-
-      {:error, :already_decided} ->
-        {:error, :already_decided}
+        {:error, :already_decided} ->
+          {:error, :already_decided}
+      end
     end
   end
 
-  def deny(%Request{} = req, by_user_id, reason \\ nil) do
-    case claim_pending(req, :denied, by_user_id, reason) do
-      {:ok, decided} ->
-        Repo.transaction(fn ->
-          run = Repo.get!(Emisar.Runs.ActionRun, req.run_id)
-          {:ok, run} = Runs.mark_cancelled(run, "approval denied" <> if(reason, do: ": " <> reason, else: ""))
+  defp ensure_request_in_subject_account(%Request{account_id: account_id}, %Subject{} = subject),
+    do: Subject.ensure_in_account(subject, account_id)
 
-          Audit.log(req.account_id, "approval.denied",
-            actor_kind: "user",
-            actor_id: by_user_id,
-            subject_kind: "approval_request",
-            subject_id: req.id,
-            payload: %{run_id: req.run_id, reason: reason}
-          )
-
-          {decided, run}
-        end)
-        |> tap_broadcast_tuple()
-
-      {:error, :already_decided} ->
-        {:error, :already_decided}
-    end
-  end
+  defdelegate actor_id(subject), to: Subject
 
   # Atomically claim a pending approval request as decided. Two operators
   # clicking Approve at the same moment would both pass the LiveView's
@@ -196,28 +318,33 @@ defmodule Emisar.Approvals do
   # `WHERE status = 'pending'` evaluate true. The loser gets 0 rows
   # affected and we return `{:error, :already_decided}` so the caller
   # can flash a useful message rather than double-dispatching.
+  defp denial_reason(nil), do: "approval denied"
+  defp denial_reason(reason), do: "approval denied: " <> reason
+
   defp claim_pending(%Request{} = req, status, by_user_id, reason) do
     now = DateTime.utc_now() |> DateTime.truncate(:microsecond)
     status_str = to_string(status)
 
     {affected, _} =
-      from(r in Request,
-        where: r.id == ^req.id and r.status == "pending",
-        update: [
-          set: [
-            status: ^status_str,
-            decided_by_id: ^by_user_id,
-            decided_at: ^now,
-            decision_reason: ^reason
-          ]
-        ]
-      )
+      Request.Query.decide_pending(req.id, status_str, by_user_id, reason, now)
       |> Repo.update_all([])
 
     case affected do
-      1 -> {:ok, Repo.get!(Request, req.id)}
-      0 -> {:error, :already_decided}
+      1 ->
+        decided =
+          Request.Query.all() |> Request.Query.by_id(req.id) |> Repo.fetch!(Request.Query)
+
+        {:ok, decided}
+
+      0 ->
+        {:error, :already_decided}
     end
+  end
+
+  defp fetch_run!(run_id) do
+    ActionRun.Query.all()
+    |> ActionRun.Query.by_id(run_id)
+    |> Repo.fetch!(ActionRun.Query)
   end
 
   defp tap_broadcast({:ok, %Request{} = r} = result) do
@@ -233,4 +360,237 @@ defmodule Emisar.Approvals do
   end
 
   defp tap_broadcast_tuple(other), do: other
+
+  # -- Grants ---------------------------------------------------------
+
+  @doc """
+  Peek a usable grant for the given dispatch. Returns the grant, or
+  `nil` if none matches — `peek_*` per CLAUDE.md §1.1 convention for
+  nil-or-struct internal lookups.
+
+  Matching is api_key-scoped (a grant given to one key never silently
+  covers another). `runner_id` and `args_sha256` may each be either
+  exact-match or NULL-as-wildcard on the grant side. Expired/revoked/
+  fully-consumed grants are filtered out by `Grant.usable?/1` after
+  the SQL pass — the SQL pre-filter narrows the candidate set, and
+  `usable?/1` makes the final call.
+
+  Internal — called by `Runs.dispatch_run` on the require-approval branch
+  to fast-path past the gate.
+  """
+  def peek_matching_grant(api_key_id, action_id, runner_id, args_sha256)
+      when is_binary(api_key_id) and is_binary(action_id) do
+    now = DateTime.utc_now()
+
+    Grant.Query.candidates_for_dispatch(api_key_id, action_id, now)
+    |> Grant.Query.by_runner_or_wildcard(runner_id)
+    |> Grant.Query.by_args_sha_or_wildcard(args_sha256)
+    |> Repo.all()
+    |> Enum.find(&Grant.usable?(&1, now))
+  end
+
+  @doc """
+  Atomically increment uses_count + stamp last_used_at. Refuses to
+  exceed `max_uses` — returns `{:error, :exhausted}` so the caller
+  treats the grant as no-longer-matching (and the dispatch falls
+  through to the normal approval-request path).
+
+  Internal — used by `Runs.dispatch_run` on the grant fast-path.
+  """
+  def use_grant(%Grant{} = grant) do
+    now = DateTime.utc_now() |> DateTime.truncate(:microsecond)
+
+    query =
+      Grant.Query.consumable_by_id(grant.id, now)
+      |> Grant.Query.consume_one(now)
+
+    case Repo.update_all(query, []) do
+      {1, _} -> :ok
+      {0, _} -> {:error, :exhausted}
+    end
+  end
+
+  @doc """
+  Mint a grant from an approval decision. `attrs` are the operator's
+  choices:
+
+    * `:duration` — `:once`, `:one_hour`, `:one_day`, `:thirty_days`,
+      or `:ninety_days`. Every grant has an explicit re-confirm
+      horizon — there is intentionally no indefinite option (an
+      indefinite grant on an LLM-targeted action is a forgotten
+      security hole waiting to happen).
+    * `:scope`    — `:exact_args` keeps the args_sha256 lock from the
+      original call; `:any_args` widens to "any args for this action"
+
+  The originating request, runner, and api_key are pulled off the
+  approval `request` so the grant carries the same shape.
+
+  Internal — called from `approve_request/4` inside the same transaction that
+  marks the request decided.
+  """
+  def create_grant(%Request{} = request, %{} = run, granted_by_id, attrs) do
+    now = DateTime.utc_now() |> DateTime.truncate(:microsecond)
+    duration = attrs[:duration]
+
+    Grant.Changeset.create(%{
+      account_id: request.account_id,
+      api_key_id: run.api_key_id,
+      action_id: run.action_id,
+      runner_id: run.runner_id,
+      args_sha256: if(attrs[:scope] == :any_args, do: nil, else: run.args_sha256),
+      granted_by_id: granted_by_id,
+      granted_at: now,
+      expires_at: expires_at_for(duration, now),
+      max_uses: max_uses_for(duration, attrs[:max_uses]),
+      approval_request_id: request.id
+    })
+    |> Repo.insert()
+  end
+
+  defp expires_at_for(:once, _now), do: nil
+  defp expires_at_for(:one_hour, now), do: DateTime.add(now, 60 * 60, :second)
+  defp expires_at_for(:one_day, now), do: DateTime.add(now, 24 * 60 * 60, :second)
+  defp expires_at_for(:thirty_days, now), do: DateTime.add(now, 30 * 24 * 60 * 60, :second)
+  defp expires_at_for(:ninety_days, now), do: DateTime.add(now, 90 * 24 * 60 * 60, :second)
+  defp expires_at_for(_, _now), do: nil
+
+  # `:once` is hardcoded to a single use regardless of any operator-set
+  # cap (the duration alone already says "one shot"). For windowed
+  # durations the operator's max_uses wins; default is no cap (unlimited
+  # within the time window).
+  defp max_uses_for(:once, _), do: 1
+  defp max_uses_for(_, n) when is_integer(n) and n > 0, do: n
+  defp max_uses_for(_, _), do: nil
+
+  @doc "Operator-initiated kill switch on a grant."
+  def revoke_grant(%Grant{} = grant, %Subject{} = subject) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.manage_grants_permission()
+           ),
+         :ok <- ensure_grant_in_subject_account(grant, subject) do
+      grant |> Grant.Changeset.revoke(actor_id(subject)) |> Repo.update()
+    end
+  end
+
+  @doc """
+  Test-only: enumerate the grants that have been minted against an API
+  key. Production listings go through `list_grants_for_account/2` which
+  is Subject-gated and used by the Grants LV. Used here to verify
+  side-effects of `approve_request/4` in tests without rebuilding the operator
+  surface in test setup.
+  """
+  def list_grants_for_api_key(api_key_id, opts \\ []) do
+    Grant.Query.not_revoked()
+    |> Grant.Query.by_api_key_id(api_key_id)
+    |> Grant.Query.ordered_by_recent()
+    |> Repo.list(Grant.Query, opts)
+  end
+
+  @doc """
+  Lists active (un-revoked) grants for an account. `opts[:include_expired]`
+  defaults to false. Grants are returned with `api_key`, `runner`,
+  `granted_by` preloaded so the LV table can render labels without an
+  N+1.
+  """
+  def list_grants_for_account(%Subject{} = subject, opts \\ []) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.manage_grants_permission()
+           ) do
+      {include_expired, opts} = Keyword.pop(opts, :include_expired, false)
+
+      Grant.Query.not_revoked()
+      |> Grant.Query.ordered_by_recent()
+      |> maybe_filter_expired(include_expired)
+      |> Authorizer.for_subject(subject)
+      |> Repo.list(
+        Grant.Query,
+        Keyword.put_new(opts, :preload, [:api_key, :runner, :granted_by])
+      )
+    end
+  end
+
+  defp maybe_filter_expired(query, true), do: query
+  defp maybe_filter_expired(query, false), do: Grant.Query.not_expired(query)
+
+  def fetch_grant_by_id(id, %Subject{} = subject, opts \\ []) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.manage_grants_permission()
+           ),
+         true <- Repo.valid_uuid?(id) do
+      Grant.Query.all()
+      |> Grant.Query.by_id(id)
+      |> Authorizer.for_subject(subject)
+      |> Repo.fetch(
+        Grant.Query,
+        Keyword.put_new(opts, :preload, [:api_key, :runner, :granted_by, :revoked_by])
+      )
+    else
+      false -> {:error, :not_found}
+      other -> other
+    end
+  end
+
+  defp ensure_grant_in_subject_account(%Grant{account_id: account_id}, %Subject{} = subject),
+    do: Subject.ensure_in_account(subject, account_id)
+
+  # -- Expiry sweep ---------------------------------------------------
+
+  @doc """
+  Atomically transition every pending request whose `expires_at` has
+  passed into `"expired"`, cancel the underlying run, and write an
+  audit row per expiry. Returns the count expired. Idempotent — runs
+  via the `Emisar.Workers.ApprovalExpiry` cron every 5 minutes.
+
+  Internal sweep — runs from an Oban worker with no Subject.
+  """
+  def expire_overdue_requests(now \\ DateTime.utc_now()) do
+    now = DateTime.truncate(now, :microsecond)
+
+    expiring =
+      Request.Query.pending()
+      |> Request.Query.expired_at_before(now)
+      |> Repo.all()
+
+    Enum.each(expiring, &expire_one(&1, now))
+    length(expiring)
+  end
+
+  defp expire_one(%Request{} = req, now) do
+    Repo.transaction(fn ->
+      {affected, _} =
+        Request.Query.expire_pending(req.id, now)
+        |> Repo.update_all([])
+
+      if affected == 1 do
+        case ActionRun.Query.all() |> ActionRun.Query.by_id(req.run_id) |> Repo.peek() do
+          nil ->
+            :ok
+
+          %ActionRun{} = run ->
+            Runs.mark_cancelled(run, "approval expired without decision")
+        end
+
+        Audit.log(req.account_id, "approval.expired",
+          actor_kind: "system",
+          subject_kind: "approval_request",
+          subject_id: req.id,
+          payload: %{
+            run_id: req.run_id,
+            expires_at: req.expires_at
+          }
+        )
+
+        reloaded =
+          Request.Query.all() |> Request.Query.by_id(req.id) |> Repo.fetch!(Request.Query)
+
+        PubSub.broadcast_approval(reloaded)
+      end
+    end)
+  end
 end

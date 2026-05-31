@@ -1,0 +1,123 @@
+#!/bin/bash
+# Demo-only systemctl shim baked into the dev runner Docker image.
+# Real production hosts use the system's actual systemctl; this stub
+# only exists so the linux-core demo actions return realistic-looking
+# output inside the containerised runner where systemd isn't running.
+
+set -u
+
+cmd="${1:-}"
+shift || true
+
+# Strip --no-pager flags and similar from the unit position.
+unit=""
+for a in "$@"; do
+    case "$a" in
+        --*) ;;
+        -*)  ;;
+        *)   unit="$a"; break ;;
+    esac
+done
+
+now="$(date '+%a %Y-%m-%d %H:%M:%S UTC')"
+
+case "$cmd" in
+    status)
+        case "$unit" in
+            nginx)
+                cat <<EOF
+● nginx.service - A high performance web server and a reverse proxy server
+     Loaded: loaded (/lib/systemd/system/nginx.service; enabled; vendor preset: enabled)
+     Active: active (running) since $now; 7h 33min ago
+       Docs: man:nginx(8)
+   Main PID: 1234 (nginx)
+      Tasks: 5 (limit: 4915)
+     Memory: 12.4M
+        CPU: 1.728s
+     CGroup: /system.slice/nginx.service
+             ├─1234 nginx: master process /usr/sbin/nginx -g daemon on; master_process on;
+             ├─1247 nginx: worker process
+             ├─1248 nginx: worker process
+             ├─1249 nginx: worker process
+             └─1250 nginx: worker process
+
+$now dev-host systemd[1]: Starting nginx.service - A high performance web server and a reverse proxy server...
+$now dev-host nginx[1234]: nginx: the configuration file /etc/nginx/nginx.conf syntax is ok
+$now dev-host nginx[1234]: nginx: configuration file /etc/nginx/nginx.conf test is successful
+$now dev-host systemd[1]: Started nginx.service - A high performance web server and a reverse proxy server.
+EOF
+                exit 0
+                ;;
+            postgresql)
+                cat <<EOF
+● postgresql.service - PostgreSQL RDBMS
+     Loaded: loaded (/lib/systemd/system/postgresql.service; enabled; vendor preset: enabled)
+     Active: active (exited) since $now; 7h 33min ago
+   Main PID: 5678 (code=exited, status=0/SUCCESS)
+      Tasks: 0 (limit: 4915)
+     Memory: 0B
+        CPU: 0
+     CGroup: /system.slice/postgresql.service
+
+$now dev-host systemd[1]: Starting postgresql.service - PostgreSQL RDBMS...
+$now dev-host systemd[1]: Finished postgresql.service - PostgreSQL RDBMS.
+EOF
+                exit 0
+                ;;
+            cassandra)
+                cat <<EOF
+● cassandra.service - Cassandra distributed storage system
+     Loaded: loaded (/etc/systemd/system/cassandra.service; enabled; vendor preset: disabled)
+     Active: active (running) since $now; 7h 33min ago
+   Main PID: 9012 (java)
+      Tasks: 88 (limit: 4915)
+     Memory: 2.1G
+        CPU: 4min 12.847s
+     CGroup: /system.slice/cassandra.service
+             └─9012 /usr/bin/java -ea -da:net.openhft... org.apache.cassandra.service.CassandraDaemon
+
+$now dev-host cassandra[9012]: INFO  [main] Logging initialized.
+$now dev-host cassandra[9012]: INFO  [main] Node /10.0.5.12 state jump to NORMAL
+$now dev-host cassandra[9012]: INFO  [main] Startup complete. Bound to 7000 (gossip), 9042 (cql).
+EOF
+                exit 0
+                ;;
+            docker)
+                cat <<EOF
+● docker.service - Docker Application Container Engine
+     Loaded: loaded (/lib/systemd/system/docker.service; enabled; vendor preset: enabled)
+     Active: active (running) since $now; 7h 33min ago
+TriggeredBy: ● docker.socket
+       Docs: https://docs.docker.com
+   Main PID: 3456 (dockerd)
+      Tasks: 17
+     Memory: 165.3M
+        CPU: 1min 4.218s
+     CGroup: /system.slice/docker.service
+             └─3456 /usr/bin/dockerd -H fd:// --containerd=/run/containerd/containerd.sock
+
+$now dev-host dockerd[3456]: time="$now" level=info msg="API listen on /run/docker.sock"
+$now dev-host systemd[1]: Started docker.service - Docker Application Container Engine.
+EOF
+                exit 0
+                ;;
+            *)
+                echo "Unit $unit could not be found." >&2
+                exit 4
+                ;;
+        esac
+        ;;
+    restart)
+        # Simulate a service restart: 200ms-ish "stopping/starting", exit 0.
+        echo "Restarting ${unit}.service..."
+        sleep 0.2
+        echo "Stopped ${unit}.service."
+        sleep 0.1
+        echo "Started ${unit}.service."
+        exit 0
+        ;;
+    *)
+        echo "Demo systemctl shim: unsupported command '${cmd}'. Supported: status, restart." >&2
+        exit 1
+        ;;
+esac

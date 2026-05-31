@@ -5,22 +5,22 @@ defmodule EmisarWeb.RunDetailLive do
   alias EmisarWeb.Permissions
 
   def mount(%{"id" => id}, _session, socket) do
-    account_id = socket.assigns.current_account.id
+    subject = socket.assigns.current_subject
 
-    case Runs.get_run(account_id, id) do
-      nil ->
+    case Runs.fetch_run_by_id(id, subject) do
+      {:error, :not_found} ->
         {:ok,
          socket
          |> put_flash(:error, "Run not found.")
          |> push_navigate(to: ~p"/app/runs")}
 
-      run ->
+      {:ok, run} ->
         if connected?(socket) do
           PubSub.subscribe_run(run.id)
         end
 
-        events = Runs.list_events(run.id)
-        approval_request = lookup_approval(account_id, run)
+        {:ok, events, _meta} = Runs.list_events_for_run(run.id, subject, page: [limit: 500])
+        approval_request = lookup_approval(subject, run)
 
         {:ok,
          socket
@@ -31,13 +31,19 @@ defmodule EmisarWeb.RunDetailLive do
     end
   end
 
-  defp lookup_approval(_account_id, %{requires_approval: false}), do: nil
-  defp lookup_approval(account_id, run), do: Approvals.get_request_by_run(account_id, run.id)
+  defp lookup_approval(_subject, %{requires_approval: false}), do: nil
+
+  defp lookup_approval(subject, run) do
+    case Approvals.fetch_approval_request_by_run_id(run.id, subject) do
+      {:ok, req} -> req
+      {:error, :not_found} -> nil
+    end
+  end
 
   def handle_info({:run_updated, run}, socket) when run.id == socket.assigns.run.id do
     # If status flips to/from pending_approval, refresh the linked
     # approval row so the banner updates without a page reload.
-    approval_request = lookup_approval(socket.assigns.current_account.id, run)
+    approval_request = lookup_approval(socket.assigns.current_subject, run)
 
     {:noreply,
      socket
@@ -52,7 +58,7 @@ defmodule EmisarWeb.RunDetailLive do
 
   def handle_event("cancel", _params, socket) do
     Permissions.gated(socket, :cancel_run, fn s ->
-      case Runs.cancel(s.assigns.run, s.assigns.current_user.id, "operator cancelled") do
+      case Runs.cancel_run(s.assigns.run, s.assigns.current_subject, "operator cancelled") do
         {:ok, run} ->
           {:noreply, s |> assign(:run, run) |> put_flash(:info, "Cancel sent to runner.")}
 
@@ -71,118 +77,195 @@ defmodule EmisarWeb.RunDetailLive do
       section={:runs}
     >
       <:title>
+        <.back_link navigate={~p"/app/runs"}>Runs</.back_link>
         <span class="font-mono text-base">{@run.action_id}</span>
+        <span :if={@run.runner} class="ml-2 text-sm font-normal text-zinc-400">
+          on {runner_label(@run.runner)}
+        </span>
       </:title>
       <:actions>
         <.status_badge status={@run.status} />
-        <%= if @run.status in ["sent", "running", "pending"] and Permissions.can?(assigns, :cancel_run) do %>
-          <button
-            phx-click="cancel"
-            data-confirm="Cancel this run? The runner will SIGTERM then SIGKILL."
-            class="rounded-lg border border-rose-500/40 px-3 py-1.5 text-sm font-medium text-rose-200 hover:bg-rose-500/10"
-          >
-            Cancel run
-          </button>
-        <% end %>
+        <button
+          :if={@run.status in ["sent", "running", "pending"] and Permissions.can?(assigns, :cancel_run)}
+          phx-click="cancel"
+          data-confirm="Cancel this run? The runner will SIGTERM then SIGKILL."
+          class="rounded-lg border border-rose-500/40 px-3 py-1.5 text-sm font-medium text-rose-200 hover:bg-rose-500/10"
+        >
+          Cancel run
+        </button>
       </:actions>
 
-      <%= if @run.status == "pending_approval" and @approval_request do %>
-        <div class="mb-6 flex items-center justify-between gap-4 rounded-xl border border-amber-900/40 bg-amber-950/30 p-4">
+      <%!-- Single horizontal meta strip — runner, source, duration,
+           exit, when, request_id. Replaces the old Summary card +
+           Policy card grid that filled the space above the output. --%>
+      <.meta_strip cols={6}>
+        <.meta_field label="Runner">
+          <.link
+            navigate={~p"/app/runners/#{@run.runner_id}"}
+            class="truncate text-zinc-200 hover:text-indigo-300"
+          >
+            {runner_label(@run.runner)}
+          </.link>
+        </.meta_field>
+        <.meta_field label="Source">
+          <span class="capitalize text-zinc-200">{format_source(@run.source)}</span>
+        </.meta_field>
+        <.meta_field label="Duration">
+          <span class="text-zinc-200">{format_duration(@run.duration_ms)}</span>
+        </.meta_field>
+        <.meta_field label="Exit code">
+          <span class={[
+            "font-mono",
+            exit_code_class(@run.exit_code)
+          ]}>
+            {@run.exit_code || "—"}
+          </span>
+        </.meta_field>
+        <.meta_field label="Started">
+          <.local_time value={@run.inserted_at} class="text-zinc-200" />
+        </.meta_field>
+        <.meta_field label="Request ID">
+          <span class="truncate font-mono text-xs text-zinc-400">{@run.request_id}</span>
+        </.meta_field>
+      </.meta_strip>
+
+      <%!-- Approval banner — only when pending. Loud amber. --%>
+      <div
+        :if={@run.status == "pending_approval" and @approval_request}
+        class="mt-4 flex items-center justify-between gap-4 rounded-xl border border-amber-500/30 bg-amber-500/[0.06] p-4"
+      >
+        <div class="flex items-start gap-3">
+          <.icon name="hero-hand-raised" class="mt-0.5 h-5 w-5 flex-none text-amber-300" />
           <div>
             <div class="text-sm font-semibold text-amber-100">Waiting on approval</div>
             <p class="mt-1 text-xs text-amber-200/80">
               This run is held until an approver decides.
-              <%= if @run.policy_reason do %>
+              <span :if={@run.policy_reason}>
                 Policy: <span class="font-mono">{@run.policy_reason}</span>.
-              <% end %>
+              </span>
             </p>
           </div>
-          <.link
-            navigate={~p"/app/approvals/#{@approval_request.id}"}
-            class="shrink-0 rounded-lg border border-amber-500/40 px-3 py-1.5 text-sm font-medium text-amber-100 hover:bg-amber-500/10"
-          >
-            Review approval →
-          </.link>
         </div>
-      <% end %>
-
-      <%= if @run.reason && @run.reason != "" do %>
-        <.card class="mb-6">
-          <.section_header title="Reason" />
-          <p class="mt-3 whitespace-pre-wrap text-sm leading-relaxed text-zinc-200">{@run.reason}</p>
-        </.card>
-      <% end %>
-
-      <%= if @run.policy_decision do %>
-        <.card class="mb-6">
-          <.section_header title="Policy decision" />
-          <dl class="mt-4 grid grid-cols-1 gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
-            <.kv label="Decision">
-              <span class={[
-                "rounded px-1.5 py-0.5 font-mono text-xs",
-                policy_decision_class(@run.policy_decision)
-              ]}>{@run.policy_decision}</span>
-            </.kv>
-            <.kv label="Policy">
-              <span class="text-zinc-200">{policy_label(@run)}</span>
-            </.kv>
-            <.kv label="Matched rules">
-              <span class="font-mono text-xs text-zinc-300">{matched_rules_label(@run.matched_rules)}</span>
-            </.kv>
-          </dl>
-          <%= if @run.policy_reason && @run.policy_reason != "" do %>
-            <p class="mt-3 text-xs text-zinc-400">
-              <span class="text-zinc-500">Why:</span> {@run.policy_reason}
-            </p>
-          <% end %>
-        </.card>
-      <% end %>
-
-      <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        <.card>
-          <.section_header title="Summary" />
-          <dl class="mt-4 space-y-3 text-sm">
-            <.kv label="Request ID"><span class="font-mono text-xs">{@run.request_id}</span></.kv>
-            <.kv label="Runner">
-              <.link
-                navigate={~p"/app/runners/#{@run.runner_id}"}
-                class="text-sm text-indigo-300 hover:text-indigo-200"
-              >
-                {runner_label(@run.runner)}
-              </.link>
-            </.kv>
-            <.kv label="Source">{@run.source}</.kv>
-            <.kv label="Exit code">{@run.exit_code || "—"}</.kv>
-            <.kv label="Duration">{format_duration(@run.duration_ms)}</.kv>
-            <.kv label="Args SHA256"><span class="font-mono text-xs">{String.slice(@run.args_sha256 || "", 0, 16)}…</span></.kv>
-          </dl>
-        </.card>
-
-        <.card class="lg:col-span-2">
-          <.section_header title="Arguments" />
-          <pre class="mt-4 max-h-64 overflow-auto rounded-lg bg-black/40 p-4 font-mono text-xs text-zinc-300">{format_json(@run.args)}</pre>
-        </.card>
+        <.link
+          navigate={~p"/app/approvals/#{@approval_request.id}"}
+          class="shrink-0 rounded-lg bg-amber-500 px-3 py-1.5 text-sm font-semibold text-zinc-950 hover:bg-amber-400"
+        >
+          Review approval →
+        </.link>
       </div>
 
-      <.card class="mt-6">
-        <.section_header title="Output stream" />
-        <div class="mt-4 max-h-[60vh] overflow-auto rounded-lg bg-black/60 p-4 font-mono text-xs leading-relaxed text-zinc-300" id="run-output" phx-update="stream">
-          <div :for={{id, event} <- @streams.events} id={id} class={[
-            "whitespace-pre-wrap",
-            event.stream == "stderr" && "text-rose-300"
-          ]}>{event_chunk(event)}</div>
+      <%!-- Error banner — only when terminal-failed and we got a
+           message back. Loud rose. --%>
+      <div
+        :if={@run.error_message}
+        class="mt-4 rounded-xl border border-rose-500/30 bg-rose-500/[0.06] p-4"
+      >
+        <div class="flex items-start gap-3">
+          <.icon name="hero-exclamation-triangle" class="mt-0.5 h-5 w-5 flex-none text-rose-300" />
+          <div class="min-w-0">
+            <div class="text-sm font-semibold text-rose-100">Error</div>
+            <p class="mt-1 whitespace-pre-wrap text-sm text-rose-200/90">{@run.error_message}</p>
+          </div>
         </div>
-      </.card>
+      </div>
 
-      <%= if @run.error_message do %>
-        <div class="mt-6 rounded-xl border border-rose-900/40 bg-rose-950/30 p-6 text-rose-100">
-          <h3 class="text-sm font-semibold">Error</h3>
-          <p class="mt-2 text-sm">{@run.error_message}</p>
+      <%!-- Reason + Policy decision side-by-side. When both exist,
+           operators need both — operator's "why" + policy's "why
+           approval/why denied". --%>
+      <div
+        :if={(@run.reason && @run.reason != "") or @run.policy_decision}
+        class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2"
+      >
+        <section
+          :if={@run.reason && @run.reason != ""}
+          class="rounded-xl border border-zinc-900 bg-zinc-950/40 p-4"
+        >
+          <h3 class="text-xs font-semibold uppercase tracking-wider text-zinc-500">
+            Operator's reason
+          </h3>
+          <p class="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-zinc-200">
+            {@run.reason}
+          </p>
+        </section>
+
+        <section
+          :if={@run.policy_decision}
+          class="rounded-xl border border-zinc-900 bg-zinc-950/40 p-4"
+        >
+          <h3 class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-zinc-500">
+            Policy decision
+            <span class={[
+              "rounded px-1.5 py-0.5 font-mono text-[10px] normal-case",
+              policy_decision_class(@run.policy_decision)
+            ]}>{@run.policy_decision}</span>
+          </h3>
+          <p
+            :if={@run.policy_reason && @run.policy_reason != ""}
+            class="mt-2 text-sm leading-relaxed text-zinc-200"
+          >
+            {@run.policy_reason}
+          </p>
+          <div :if={matched_rules_label(@run.matched_rules) != "—"} class="mt-2 text-xs text-zinc-500">
+            Matched: <span class="font-mono text-zinc-400">{matched_rules_label(@run.matched_rules)}</span>
+          </div>
+        </section>
+      </div>
+
+      <%!-- Output stream — the main event. Full width, large, dark
+           terminal-style background. Stderr lines render in rose so
+           a failure jumps out. --%>
+      <section class="mt-6 overflow-hidden rounded-xl border border-zinc-900">
+        <header class="flex items-center justify-between border-b border-zinc-900 bg-zinc-950/60 px-4 py-2">
+          <h3 class="text-xs font-semibold uppercase tracking-wider text-zinc-400">
+            Output
+          </h3>
+          <span class="text-[11px] text-zinc-500">stderr in rose</span>
+        </header>
+        <div
+          id="run-output"
+          phx-update="stream"
+          class="max-h-[60vh] min-h-[24rem] overflow-auto bg-black p-4 font-mono text-xs leading-relaxed text-zinc-300"
+        >
+          <div
+            :for={{id, event} <- @streams.events}
+            id={id}
+            class={[
+              "whitespace-pre-wrap",
+              event.stream == "stderr" && "text-rose-300"
+            ]}
+          >{event_chunk(event)}</div>
         </div>
-      <% end %>
+      </section>
+
+      <%!-- Args + SHA at the bottom — secondary. Operators usually
+           know what they sent; the value is for "what exactly did the
+           LLM call this with?" diff comparison. --%>
+      <section
+        :if={@run.args && @run.args != %{}}
+        class="mt-6 overflow-hidden rounded-xl border border-zinc-900 bg-zinc-950/40"
+      >
+        <header class="flex items-center justify-between border-b border-zinc-900 px-4 py-2">
+          <h3 class="text-xs font-semibold uppercase tracking-wider text-zinc-400">Arguments</h3>
+          <span :if={@run.args_sha256} class="font-mono text-[11px] text-zinc-500">
+            sha256:{String.slice(@run.args_sha256, 0, 16)}…
+          </span>
+        </header>
+        <pre class="max-h-64 overflow-auto bg-black/40 p-4 font-mono text-xs text-zinc-300">{format_json(@run.args)}</pre>
+      </section>
     </.dashboard_shell>
     """
   end
+
+  defp format_source("operator"), do: "Operator"
+  defp format_source("mcp"), do: "MCP / LLM"
+  defp format_source("runbook"), do: "Runbook"
+  defp format_source("scheduled"), do: "Scheduled"
+  defp format_source(other) when is_binary(other), do: other
+  defp format_source(_), do: "—"
+
+  defp exit_code_class(0), do: "text-emerald-300"
+  defp exit_code_class(code) when is_integer(code), do: "text-rose-300"
+  defp exit_code_class(_), do: "text-zinc-500"
 
   defp format_json(nil), do: "{}"
   defp format_json(map), do: Jason.encode!(map, pretty: true)
@@ -195,15 +278,6 @@ defmodule EmisarWeb.RunDetailLive do
   defp policy_decision_class("require_approval"), do: "bg-amber-500/10 text-amber-300 ring-1 ring-amber-500/30"
   defp policy_decision_class("deny"), do: "bg-rose-500/10 text-rose-300 ring-1 ring-rose-500/30"
   defp policy_decision_class(_), do: "bg-zinc-700/40 text-zinc-300 ring-1 ring-zinc-700"
-
-  defp policy_label(%{policy_id: nil}), do: "—"
-
-  defp policy_label(%{policy_id: id, policy_version: ver}) when not is_nil(id) do
-    short = String.slice(id, 0, 8)
-    if ver, do: "#{short} v#{ver}", else: short
-  end
-
-  defp policy_label(_), do: "—"
 
   defp matched_rules_label(nil), do: "—"
   defp matched_rules_label([]), do: "—"

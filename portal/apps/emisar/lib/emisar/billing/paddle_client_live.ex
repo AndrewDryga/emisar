@@ -1,0 +1,163 @@
+defmodule Emisar.Billing.PaddleClient.Live do
+  @moduledoc """
+  Production Paddle wrapper. Uses Finch via `Emisar.Finch` for HTTPS;
+  signs requests with the configured `:paddle_api_key`.
+
+  Kept small on purpose: we touch exactly the endpoints used by
+  the rest of the app. Webhook signature verification uses Paddle's
+  HMAC-SHA256 scheme — header `paddle-signature: ts=<unix>;h1=<hex>`,
+  signed over `<ts>:<raw_body>`.
+  """
+
+  @behaviour Emisar.Billing.PaddleClient
+
+  @base "https://api.paddle.com"
+
+  @impl true
+  def create_customer(attrs) do
+    body = %{
+      "email" => attrs[:email],
+      "name" => attrs[:name],
+      "custom_data" => %{"account_id" => attrs[:account_id]}
+    }
+
+    with {:ok, %{"data" => %{"id" => id} = data}} <- post_json("/customers", body) do
+      {:ok, Map.put(data, "id", id)}
+    end
+  end
+
+  @impl true
+  def create_checkout_session(attrs) do
+    body = %{
+      "customer_id" => attrs[:customer],
+      "items" => [%{"price_id" => attrs[:price_id], "quantity" => attrs[:quantity] || 1}],
+      "checkout" => %{"url" => attrs[:success_url]}
+    }
+
+    with {:ok, %{"data" => %{"checkout" => %{"url" => url}} = data}} <-
+           post_json("/transactions", body) do
+      {:ok, Map.put(data, "url", url)}
+    end
+  end
+
+  @impl true
+  def create_billing_portal_session(attrs) do
+    with {:ok,
+          %{
+            "data" => %{
+              "urls" => %{"general" => %{"overview" => url}}
+            } = data
+          }} <-
+           post_json("/customers/#{attrs[:customer]}/portal-sessions", %{}) do
+      {:ok, Map.put(data, "url", url)}
+    end
+  end
+
+  @impl true
+  def retrieve_subscription(id) do
+    case get("/subscriptions/#{id}") do
+      {:ok, %{"data" => sub}} -> {:ok, sub}
+      other -> other
+    end
+  end
+
+  @impl true
+  def construct_webhook_event(payload, signature, secret) do
+    case verify_signature(payload, signature, secret) do
+      :ok ->
+        case Jason.decode(payload) do
+          {:ok, event} -> {:ok, event}
+          err -> err
+        end
+
+      err ->
+        err
+    end
+  end
+
+  # Paddle's recommended tolerance window. Webhooks delivered outside
+  # this window are rejected to prevent replay of captured payloads.
+  @tolerance_seconds 300
+
+  defp verify_signature(payload, signature_header, secret) do
+    parts =
+      signature_header
+      |> String.split(";")
+      |> Enum.map(&String.trim/1)
+      |> Enum.map(&String.split(&1, "=", parts: 2))
+      |> Enum.into(%{}, fn
+        [k, v] -> {k, v}
+        _ -> {nil, nil}
+      end)
+
+    with {:ok, timestamp_str} <- Map.fetch(parts, "ts"),
+         {:ok, expected} <- Map.fetch(parts, "h1"),
+         {timestamp, ""} <- Integer.parse(timestamp_str),
+         :ok <- check_timestamp(timestamp),
+         signed_payload <- "#{timestamp}:#{payload}",
+         computed <-
+           :crypto.mac(:hmac, :sha256, secret, signed_payload) |> Base.encode16(case: :lower),
+         true <- secure_compare(computed, expected) do
+      :ok
+    else
+      {:error, _} = err -> err
+      _ -> {:error, :signature_mismatch}
+    end
+  end
+
+  defp check_timestamp(ts) do
+    delta = abs(System.system_time(:second) - ts)
+
+    if delta > @tolerance_seconds do
+      {:error, :timestamp_too_old}
+    else
+      :ok
+    end
+  end
+
+  defp secure_compare(a, b) when is_binary(a) and is_binary(b) and byte_size(a) == byte_size(b),
+    do: :crypto.hash_equals(a, b)
+
+  defp secure_compare(_, _), do: false
+
+  defp post_json(path, params) do
+    body = Jason.encode!(params)
+    req = Finch.build(:post, @base <> path, headers(), body)
+
+    case Finch.request(req, Emisar.Finch) do
+      {:ok, %Finch.Response{status: status, body: resp_body}} when status in 200..299 ->
+        Jason.decode(resp_body)
+
+      {:ok, %Finch.Response{status: status, body: resp_body}} ->
+        {:error, {:http, status, resp_body}}
+
+      {:error, _} = err ->
+        err
+    end
+  end
+
+  defp get(path) do
+    req = Finch.build(:get, @base <> path, headers())
+
+    case Finch.request(req, Emisar.Finch) do
+      {:ok, %Finch.Response{status: status, body: body}} when status in 200..299 ->
+        Jason.decode(body)
+
+      {:ok, %Finch.Response{status: status, body: body}} ->
+        {:error, {:http, status, body}}
+
+      {:error, _} = err ->
+        err
+    end
+  end
+
+  defp headers do
+    api_key = Application.fetch_env!(:emisar, :paddle_api_key)
+
+    [
+      {"authorization", "Bearer " <> api_key},
+      {"content-type", "application/json"},
+      {"accept", "application/json"}
+    ]
+  end
+end

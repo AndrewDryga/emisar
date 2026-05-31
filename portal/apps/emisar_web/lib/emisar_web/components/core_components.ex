@@ -132,7 +132,11 @@ defmodule EmisarWeb.CoreComponents do
         {@title}
       </p>
       <p class="mt-1 text-sm leading-relaxed">{msg}</p>
-      <button type="button" class="absolute top-2 right-2 p-2 opacity-50 hover:opacity-100" aria-label={gettext("close")}>
+      <button
+        type="button"
+        class="absolute top-2 right-2 p-2 opacity-50 hover:opacity-100"
+        aria-label={gettext("close")}
+      >
         <.icon name="hero-x-mark-solid" class="h-4 w-4" />
       </button>
     </div>
@@ -152,29 +156,29 @@ defmodule EmisarWeb.CoreComponents do
   def flash_group(assigns) do
     ~H"""
     <div id={@id}>
-      <.flash kind={:info} title={gettext("Success!")} flash={@flash} />
-      <.flash kind={:error} title={gettext("Error!")} flash={@flash} />
+      <.flash kind={:info} title={gettext("Done")} flash={@flash} />
+      <.flash kind={:error} title={gettext("Something went wrong")} flash={@flash} />
       <.flash
         id="client-error"
         kind={:error}
-        title={gettext("We can't find the internet")}
+        title={gettext("Connection lost")}
         phx-disconnected={show(".phx-client-error #client-error")}
         phx-connected={hide("#client-error")}
         hidden
       >
-        {gettext("Attempting to reconnect")}
+        {gettext("Trying to reconnect…")}
         <.icon name="hero-arrow-path" class="ml-1 h-3 w-3 animate-spin" />
       </.flash>
 
       <.flash
         id="server-error"
         kind={:error}
-        title={gettext("Something went wrong!")}
+        title={gettext("Server didn't respond")}
         phx-disconnected={show(".phx-server-error #server-error")}
         phx-connected={hide("#server-error")}
         hidden
       >
-        {gettext("Hang in there while we get back on track")}
+        {gettext("Recovering…")}
         <.icon name="hero-arrow-path" class="ml-1 h-3 w-3 animate-spin" />
       </.flash>
     </div>
@@ -345,8 +349,10 @@ defmodule EmisarWeb.CoreComponents do
         name={@name}
         class={[
           "mt-2 block w-full rounded-lg border-0 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-100",
-          "ring-1 ring-inset ring-zinc-800 placeholder:text-zinc-600",
-          "focus:ring-2 focus:ring-inset focus:ring-indigo-500"
+          "ring-1 ring-inset placeholder:text-zinc-600",
+          "focus:ring-2 focus:ring-inset",
+          @errors == [] && "ring-zinc-800 focus:ring-indigo-500",
+          @errors != [] && "ring-rose-500/50 focus:ring-rose-500"
         ]}
         multiple={@multiple}
         {@rest}
@@ -683,14 +689,34 @@ defmodule EmisarWeb.CoreComponents do
     end
   end
 
+  # -- emisar-specific layout helpers -----------------------------------
+
   @doc """
-  Translates the errors for a field from a keyword list of errors.
+  Brand mark used across the marketing site, auth flows, onboarding,
+  and the in-app shell. The icon SVG already encodes the dark-theme
+  white + emerald palette, so it renders correctly on any zinc-950
+  background without tinting.
   """
-  def translate_errors(errors, field) when is_list(errors) do
-    for {^field, {msg, opts}} <- errors, do: translate_error({msg, opts})
+  attr :size, :atom, default: :md, values: [:sm, :md, :lg]
+  attr :wordmark, :boolean, default: true
+  attr :class, :string, default: nil
+
+  def brand(assigns) do
+    ~H"""
+    <span class={["inline-flex items-center gap-3", @class]}>
+      <img src={~p"/images/emisar-icon.svg"} alt="emisar" class={brand_icon_class(@size)} />
+      <span :if={@wordmark} class={brand_wordmark_class(@size)}>emisar</span>
+    </span>
+    """
   end
 
-  # -- emisar-specific layout helpers -----------------------------------
+  defp brand_icon_class(:sm), do: "h-7 w-7"
+  defp brand_icon_class(:md), do: "h-9 w-9"
+  defp brand_icon_class(:lg), do: "h-11 w-11"
+
+  defp brand_wordmark_class(:sm), do: "text-base font-bold tracking-tight"
+  defp brand_wordmark_class(:md), do: "text-xl font-bold tracking-tight"
+  defp brand_wordmark_class(:lg), do: "text-2xl font-bold tracking-tight"
 
   @doc """
   Two-column auth-flow layout: marketing copy on the left, form on the
@@ -703,20 +729,28 @@ defmodule EmisarWeb.CoreComponents do
     ~H"""
     <div class="grid min-h-screen grid-cols-1 lg:grid-cols-2">
       <div class="hidden bg-gradient-to-br from-indigo-950 via-zinc-950 to-zinc-950 p-12 lg:flex lg:flex-col lg:justify-between">
-        <a href="/" class="flex items-center gap-3 text-zinc-100">
-          <span class="grid h-9 w-9 place-items-center rounded-lg bg-indigo-500 text-zinc-950 font-black">e</span>
-          <span class="text-xl font-bold tracking-tight">emisar</span>
+        <a href="/" class="text-zinc-100">
+          <.brand size={:md} />
         </a>
 
         <div class="max-w-md">
-          <blockquote class="text-2xl font-medium leading-snug text-zinc-100">
-            “We swapped our brittle Slack-runbook setup for emisar in a weekend.
-            LLMs hit a versioned, audited, policy-gated catalog — and oncall finally
-            sleeps.”
-          </blockquote>
-          <p class="mt-4 text-sm text-zinc-400">
-            — Marek S., Staff SRE
+          <p class="text-2xl font-semibold leading-snug tracking-tight text-zinc-100">
+            Give AI tools approved infrastructure actions, not SSH.
           </p>
+          <ul class="mt-6 space-y-3 text-sm text-zinc-400">
+            <li class="flex items-start gap-2.5">
+              <.icon name="hero-check" class="mt-0.5 h-4 w-4 flex-none text-emerald-400" />
+              <span>Pre-approved playbooks instead of arbitrary shell</span>
+            </li>
+            <li class="flex items-start gap-2.5">
+              <.icon name="hero-check" class="mt-0.5 h-4 w-4 flex-none text-emerald-400" />
+              <span>Fine-grained policy with human approvals for risky ops</span>
+            </li>
+            <li class="flex items-start gap-2.5">
+              <.icon name="hero-check" class="mt-0.5 h-4 w-4 flex-none text-emerald-400" />
+              <span>Hash-chained audit trail of every action and decision</span>
+            </li>
+          </ul>
         </div>
 
         <p class="text-xs text-zinc-500">© {Date.utc_today().year} emisar</p>
@@ -724,9 +758,8 @@ defmodule EmisarWeb.CoreComponents do
 
       <div class="flex items-center justify-center p-6 lg:p-12">
         <div class="w-full max-w-md">
-          <.link href={~p"/"} class="mb-12 inline-flex items-center gap-3 lg:hidden">
-            <span class="grid h-9 w-9 place-items-center rounded-lg bg-indigo-500 text-zinc-950 font-black">e</span>
-            <span class="text-xl font-bold tracking-tight">emisar</span>
+          <.link href={~p"/"} class="mb-12 inline-block lg:hidden">
+            <.brand size={:md} />
           </.link>
 
           <h1 class="text-3xl font-bold tracking-tight text-zinc-50">{@title}</h1>
@@ -755,8 +788,11 @@ defmodule EmisarWeb.CoreComponents do
   def dashboard_shell(assigns) do
     ~H"""
     <div class="flex min-h-screen bg-zinc-950 text-zinc-100">
-      <%!-- Desktop sidebar (lg and up) --%>
-      <aside class="hidden w-64 flex-shrink-0 border-r border-zinc-900 bg-zinc-950/80 lg:flex lg:flex-col">
+      <%!-- Desktop sidebar (lg and up). `sticky top-0 h-screen` pins
+           it to the viewport so the bottom user-block (and sign-out
+           icon) stays reachable on tall pages instead of being pushed
+           off-screen by content height. --%>
+      <aside class="hidden w-64 flex-shrink-0 flex-col border-r border-zinc-900 bg-zinc-950/80 lg:sticky lg:top-0 lg:flex lg:h-screen">
         <.shell_brand current_account={@current_account} />
         <.shell_nav section={@section} />
         <.shell_user current_user={@current_user} />
@@ -768,13 +804,16 @@ defmodule EmisarWeb.CoreComponents do
         class="fixed inset-0 z-40 hidden lg:hidden"
         role="dialog"
         aria-modal="true"
-        phx-window-keydown={JS.hide(to: "#mobile-nav") |> JS.remove_class("overflow-hidden", to: "body")}
+        phx-window-keydown={
+          JS.hide(to: "#mobile-nav") |> JS.remove_class("overflow-hidden", to: "body")
+        }
         phx-key="escape"
       >
         <div
           class="absolute inset-0 bg-black/60"
           phx-click={JS.hide(to: "#mobile-nav") |> JS.remove_class("overflow-hidden", to: "body")}
-        ></div>
+        >
+        </div>
         <aside class="relative flex h-full w-72 max-w-[80vw] flex-col border-r border-zinc-900 bg-zinc-950 shadow-2xl">
           <div class="flex items-center justify-between border-b border-zinc-900 px-4 py-3">
             <.shell_brand current_account={@current_account} />
@@ -799,7 +838,10 @@ defmodule EmisarWeb.CoreComponents do
             type="button"
             aria-label="Open menu"
             class="-ml-1.5 rounded-md p-2 text-zinc-300 hover:bg-zinc-900 hover:text-zinc-100 lg:hidden"
-            phx-click={JS.show(to: "#mobile-nav", display: "block") |> JS.add_class("overflow-hidden", to: "body")}
+            phx-click={
+              JS.show(to: "#mobile-nav", display: "block")
+              |> JS.add_class("overflow-hidden", to: "body")
+            }
           >
             <.icon name="hero-bars-3" class="h-5 w-5" />
           </button>
@@ -823,13 +865,18 @@ defmodule EmisarWeb.CoreComponents do
 
   defp shell_brand(assigns) do
     ~H"""
-    <div class="flex h-16 items-center gap-3 px-2 lg:border-b lg:border-zinc-900 lg:px-6">
-      <span class="grid h-8 w-8 place-items-center rounded-lg bg-indigo-500 text-zinc-950 font-black">e</span>
+    <.link
+      navigate={~p"/app"}
+      phx-click={JS.hide(to: "#mobile-nav") |> JS.remove_class("overflow-hidden", to: "body")}
+      class="flex h-16 items-center gap-3 px-2 transition hover:bg-zinc-900/40 lg:border-b lg:border-zinc-900 lg:px-6"
+      aria-label="Go to dashboard"
+    >
+      <img src={~p"/images/emisar-icon.svg"} alt="" class="h-8 w-8 shrink-0" />
       <div class="min-w-0">
         <div class="truncate font-bold tracking-tight">emisar</div>
         <div class="truncate text-xs text-zinc-500">{@current_account.name}</div>
       </div>
-    </div>
+    </.link>
     """
   end
 
@@ -837,20 +884,100 @@ defmodule EmisarWeb.CoreComponents do
 
   defp shell_nav(assigns) do
     ~H"""
-    <nav class="flex-1 space-y-1 overflow-y-auto px-3 py-6 text-sm">
+    <nav class="flex-1 space-y-0.5 overflow-y-auto px-3 py-3 text-sm">
       <.nav_link to={~p"/app"} active={@section == :dashboard} icon="hero-home">Dashboard</.nav_link>
-      <.nav_link to={~p"/app/runners"} active={@section == :runners} icon="hero-cpu-chip">Runners</.nav_link>
+
+      <.nav_group label="Runners" />
+      <.nav_link to={~p"/app/runners"} active={@section == :runners} icon="hero-cpu-chip">
+        Runners
+      </.nav_link>
+      <.nav_link
+        to={~p"/app/settings/runners/auth-keys"}
+        active={@section == :auth_keys}
+        icon="hero-key"
+      >
+        Auth keys
+      </.nav_link>
+
+      <.nav_group label="Agents" />
+      <.nav_link
+        to={~p"/app/agents"}
+        active={@section == :agents}
+        icon="hero-sparkles"
+      >
+        Agents
+      </.nav_link>
+
+      <.nav_group label="Operations" />
       <.nav_link to={~p"/app/runs"} active={@section == :runs} icon="hero-bolt">Runs</.nav_link>
-      <.nav_link to={~p"/app/approvals"} active={@section == :approvals} icon="hero-shield-check">Approvals</.nav_link>
-      <.nav_link to={~p"/app/runbooks"} active={@section == :runbooks} icon="hero-book-open">Runbooks</.nav_link>
-      <.nav_link to={~p"/app/policies"} active={@section == :policies} icon="hero-document-text">Policies</.nav_link>
-      <.nav_link to={~p"/app/audit"} active={@section == :audit} icon="hero-list-bullet">Audit</.nav_link>
-      <div class="my-3 border-t border-zinc-900" />
-      <.nav_link to={~p"/app/settings/runners/auth-keys"} active={@section == :auth_keys} icon="hero-key">Auth keys</.nav_link>
-      <.nav_link to={~p"/app/settings/api-keys"} active={@section == :api_keys} icon="hero-finger-print">API keys</.nav_link>
-      <.nav_link to={~p"/app/settings/team"} active={@section == :team} icon="hero-user-group">Team</.nav_link>
-      <.nav_link to={~p"/app/settings/billing"} active={@section == :billing} icon="hero-credit-card">Billing</.nav_link>
+      <.nav_link to={~p"/app/approvals"} active={@section == :approvals} icon="hero-shield-check">
+        Approvals
+      </.nav_link>
+      <.nav_link to={~p"/app/runbooks"} active={@section == :runbooks} icon="hero-book-open">
+        Runbooks
+      </.nav_link>
+      <.nav_link to={~p"/app/policies"} active={@section == :policies} icon="hero-document-text">
+        Policy
+      </.nav_link>
+      <.nav_link to={~p"/app/audit"} active={@section == :audit} icon="hero-list-bullet">
+        Audit
+      </.nav_link>
+
+      <.nav_group label="Account" />
+      <.nav_link to={~p"/app/settings/profile"} active={@section == :profile} icon="hero-user-circle">
+        Profile
+      </.nav_link>
+      <.nav_link to={~p"/app/settings/team"} active={@section == :team} icon="hero-user-group">
+        Team
+      </.nav_link>
+      <.nav_link to={~p"/app/settings/billing"} active={@section == :billing} icon="hero-credit-card">
+        Billing
+      </.nav_link>
+
+      <.nav_group label="Resources" />
+      <.nav_link_external href={~p"/docs"} icon="hero-book-open">Docs</.nav_link_external>
+      <.nav_link_external href={~p"/changelog"} icon="hero-megaphone">Changelog</.nav_link_external>
+      <.nav_link_external
+        href={Application.get_env(:emisar_web, :status_page_url, "https://status.emisar.dev")}
+        icon="hero-signal"
+      >
+        Status
+      </.nav_link_external>
+      <.nav_link_external href="mailto:support@emisar.dev" icon="hero-lifebuoy">
+        Support
+      </.nav_link_external>
     </nav>
+    """
+  end
+
+  attr :href, :string, required: true
+  attr :icon, :string, required: true
+  slot :inner_block, required: true
+
+  defp nav_link_external(assigns) do
+    ~H"""
+    <.link
+      href={@href}
+      target="_blank"
+      rel="noopener noreferrer"
+      class="flex items-center gap-3 rounded-lg px-3 py-1.5 text-zinc-400 transition hover:bg-zinc-900 hover:text-zinc-100"
+    >
+      <.icon name={@icon} class="h-4 w-4" />
+      <span class="flex-1">{render_slot(@inner_block)}</span>
+      <.icon name="hero-arrow-top-right-on-square" class="h-3.5 w-3.5 text-zinc-600" />
+    </.link>
+    """
+  end
+
+  attr :label, :string, required: true
+
+  defp nav_group(assigns) do
+    ~H"""
+    <div class="pt-3 pb-1 first:pt-0">
+      <p class="px-3 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
+        {@label}
+      </p>
+    </div>
     """
   end
 
@@ -860,15 +987,28 @@ defmodule EmisarWeb.CoreComponents do
     ~H"""
     <div class="border-t border-zinc-900 p-4 text-sm">
       <div class="flex items-center gap-3">
-        <span class="grid h-8 w-8 place-items-center rounded-full bg-zinc-800 text-xs font-semibold uppercase">
-          {String.first(@current_user.full_name || @current_user.email)}
-        </span>
-        <div class="min-w-0 flex-1">
-          <div class="truncate font-medium">{@current_user.full_name || @current_user.email}</div>
-          <div class="truncate text-xs text-zinc-500">{@current_user.email}</div>
-        </div>
-        <.link href={~p"/sign_out"} method="delete" class="text-zinc-500 hover:text-zinc-200" title="Sign out">
-          <.icon name="hero-arrow-right-on-rectangle" class="h-5 w-5" />
+        <.link
+          navigate={~p"/app/settings/profile"}
+          phx-click={JS.hide(to: "#mobile-nav") |> JS.remove_class("overflow-hidden", to: "body")}
+          class="flex min-w-0 flex-1 items-center gap-3 rounded-lg p-1 -m-1 transition hover:bg-zinc-900"
+          aria-label="Open profile settings"
+        >
+          <span class="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-zinc-800 text-xs font-semibold uppercase">
+            {String.first(@current_user.full_name || @current_user.email)}
+          </span>
+          <div class="min-w-0 flex-1">
+            <div class="truncate font-medium">{@current_user.full_name || @current_user.email}</div>
+            <div class="truncate text-xs text-zinc-500">{@current_user.email}</div>
+          </div>
+        </.link>
+        <.link
+          href={~p"/sign_out"}
+          method="delete"
+          class="grid h-8 w-8 shrink-0 place-items-center rounded-md text-zinc-500 transition hover:bg-zinc-900 hover:text-zinc-200"
+          title="Sign out"
+          aria-label="Sign out"
+        >
+          <.icon name="hero-arrow-right-on-rectangle" class="h-4 w-4" />
         </.link>
       </div>
     </div>
@@ -886,7 +1026,7 @@ defmodule EmisarWeb.CoreComponents do
       navigate={@to}
       phx-click={JS.hide(to: "#mobile-nav") |> JS.remove_class("overflow-hidden", to: "body")}
       class={[
-        "flex items-center gap-3 rounded-lg px-3 py-2 transition",
+        "flex items-center gap-3 rounded-lg px-3 py-1.5 transition",
         @active && "bg-indigo-500/10 text-indigo-200",
         !@active && "text-zinc-400 hover:bg-zinc-900 hover:text-zinc-100"
       ]}
@@ -904,7 +1044,7 @@ defmodule EmisarWeb.CoreComponents do
   def status_badge(assigns) do
     ~H"""
     <span class={[
-      "inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset",
+      "inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset",
       status_classes(@status),
       @class
     ]}>
@@ -929,8 +1069,11 @@ defmodule EmisarWeb.CoreComponents do
   defp status_classes("cancelled"), do: "bg-zinc-500/10 text-zinc-400 ring-zinc-500/30"
   defp status_classes("denied"), do: "bg-rose-500/10 text-rose-300 ring-rose-500/30"
   defp status_classes("expired"), do: "bg-zinc-500/10 text-zinc-500 ring-zinc-500/30"
-  defp status_classes(s) when s in ["failed", "error", "validation_failed", "unknown_action", "timed_out"],
-    do: "bg-rose-500/10 text-rose-300 ring-rose-500/30"
+
+  defp status_classes(s)
+       when s in ["failed", "error", "validation_failed", "unknown_action", "timed_out"],
+       do: "bg-rose-500/10 text-rose-300 ring-rose-500/30"
+
   defp status_classes(_), do: "bg-zinc-500/10 text-zinc-300 ring-zinc-500/30"
 
   defp status_dot("success"), do: "bg-emerald-400"
@@ -947,7 +1090,11 @@ defmodule EmisarWeb.CoreComponents do
   defp status_dot("pending_approval"), do: "bg-amber-400 animate-pulse"
   defp status_dot("denied"), do: "bg-rose-400"
   defp status_dot("expired"), do: "bg-zinc-600"
-  defp status_dot(s) when s in ["failed", "error", "validation_failed", "unknown_action", "timed_out"], do: "bg-rose-400"
+
+  defp status_dot(s)
+       when s in ["failed", "error", "validation_failed", "unknown_action", "timed_out"],
+       do: "bg-rose-400"
+
   defp status_dot(_), do: "bg-zinc-500"
 
   defp format_status("awaiting_approval"), do: "awaiting approval"
@@ -984,31 +1131,6 @@ defmodule EmisarWeb.CoreComponents do
     """
   end
 
-  @doc """
-  Section header for a card: title on the left, optional link on the right.
-
-      <.section_header title="Recent runs" href={~p"/app/runs"} cta="See all" />
-      <.section_header title="Members" />
-  """
-  attr :title, :string, required: true
-  attr :href, :string, default: nil
-  attr :cta, :string, default: "View all"
-  attr :class, :string, default: nil
-  slot :inner_block
-
-  def section_header(assigns) do
-    ~H"""
-    <div class={["flex items-center justify-between", @class]}>
-      <h2 class="text-sm font-semibold text-zinc-100">{@title}</h2>
-      <%= if @href do %>
-        <.link navigate={@href} class="text-sm font-medium text-indigo-400 hover:text-indigo-300">
-          {@cta} →
-        </.link>
-      <% end %>
-      {render_slot(@inner_block)}
-    </div>
-    """
-  end
 
   @doc """
   Key-value row for detail panes:
@@ -1027,24 +1149,471 @@ defmodule EmisarWeb.CoreComponents do
     """
   end
 
+  @doc """
+  Single field cell used inside a horizontal meta strip on detail
+  pages (run, approval, runner). Tiny uppercase label above the
+  value; truncates on overflow so the strip stays the same height.
+
+      <.meta_strip>
+        <.meta_field label="Runner">acme-db-01</.meta_field>
+        <.meta_field label="Exit">0</.meta_field>
+      </.meta_strip>
+  """
+  attr :label, :string, required: true
+  slot :inner_block, required: true
+
+  def meta_field(assigns) do
+    ~H"""
+    <div class="min-w-0">
+      <div class="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">{@label}</div>
+      <div class="mt-0.5 truncate">{render_slot(@inner_block)}</div>
+    </div>
+    """
+  end
+
+  @doc """
+  Horizontal meta strip wrapper — the bordered rounded box that holds
+  `<.meta_field>` cells under page titles on detail pages. Pass `cols`
+  for an explicit column count at `lg+`; defaults to auto-fitting via
+  `sm:grid-cols-3`.
+
+      <.meta_strip cols={6}>
+        <.meta_field label="Runner">acme-db-01</.meta_field>
+        ...
+      </.meta_strip>
+  """
+  attr :cols, :integer, default: nil, values: [nil, 3, 4, 5, 6]
+  attr :class, :string, default: nil
+  slot :inner_block, required: true
+
+  def meta_strip(assigns) do
+    # Static lookup so Tailwind picks up every variant.
+    lg_cols =
+      %{
+        3 => "lg:grid-cols-3",
+        4 => "lg:grid-cols-4",
+        5 => "lg:grid-cols-5",
+        6 => "lg:grid-cols-6"
+      }[assigns.cols] || ""
+
+    assigns = assign(assigns, :lg_cols, lg_cols)
+
+    ~H"""
+    <div class={[
+      "grid grid-cols-2 gap-3 rounded-xl border border-zinc-900 bg-zinc-950/40 p-4 text-sm sm:grid-cols-3",
+      @lg_cols,
+      @class
+    ]}>
+      {render_slot(@inner_block)}
+    </div>
+    """
+  end
+
+  @doc """
+  Section container with a bordered + rounded shell, a header row
+  (title + optional count + optional actions slot), and an inner-block
+  for the body (usually a `<ul>`).
+
+      <.list_section title="Members" count={length(@memberships)}>
+        <:actions>
+          <button>Invite</button>
+        </:actions>
+        <ul class="divide-y divide-zinc-900">...</ul>
+      </.list_section>
+
+  Set `noun` for the singular/plural label suffix ("3 keys" / "1 key").
+  """
+  attr :title, :string, required: true
+  attr :count, :integer, default: nil
+  attr :noun, :string, default: nil
+  attr :class, :string, default: nil
+  slot :actions
+  slot :inner_block, required: true
+
+  def list_section(assigns) do
+    ~H"""
+    <section class={["overflow-hidden rounded-xl border border-zinc-900 bg-zinc-950/40", @class]}>
+      <header class="flex items-center justify-between border-b border-zinc-900 px-5 py-3">
+        <h2 class="text-sm font-semibold text-zinc-100">
+          {@title}
+          <span :if={is_integer(@count) and is_binary(@noun)} class="ml-1 text-xs font-normal text-zinc-500">
+            ({@count} {pluralize_noun(@count, @noun)})
+          </span>
+        </h2>
+        <div :if={@actions != []} class="flex items-center gap-2">
+          {render_slot(@actions)}
+        </div>
+      </header>
+      {render_slot(@inner_block)}
+    </section>
+    """
+  end
+
+  defp pluralize_noun(1, noun), do: noun
+  defp pluralize_noun(_, noun), do: noun <> "s"
+
+  @doc """
+  One `<li>` row for a list section, with the icon-disc + content
+  + actions layout used by AuthKeys, Agents, Grants, Runbooks, etc.
+
+      <.list_row icon="hero-key">
+        <:title>{key.name}</:title>
+        <:meta>{key.key_prefix}… · last used {last_used}</:meta>
+        <:actions>
+          <button>Revoke</button>
+        </:actions>
+      </.list_row>
+
+  `chips` slot renders inline pills next to the title.
+  """
+  attr :icon, :string, default: nil
+  attr :icon_tone, :atom, default: :zinc, values: [:zinc, :emerald, :amber, :rose, :indigo]
+  attr :class, :string, default: nil
+  slot :title, required: true
+  slot :chips
+  slot :meta
+  slot :actions
+
+  def list_row(assigns) do
+    ~H"""
+    <li class={["flex items-start gap-4 px-5 py-4", @class]}>
+      <span
+        :if={@icon}
+        class={["grid h-9 w-9 shrink-0 place-items-center rounded-lg", row_icon_class(@icon_tone)]}
+      >
+        <.icon name={@icon} class="h-4 w-4" />
+      </span>
+
+      <div class="min-w-0 flex-1">
+        <div class="flex flex-wrap items-center gap-2">
+          {render_slot(@title)}
+          {render_slot(@chips)}
+        </div>
+        <div :if={@meta != []} class="mt-1 truncate text-xs text-zinc-500">
+          {render_slot(@meta)}
+        </div>
+      </div>
+
+      <div :if={@actions != []} class="flex shrink-0 items-center gap-2">
+        {render_slot(@actions)}
+      </div>
+    </li>
+    """
+  end
+
+  defp row_icon_class(:emerald), do: "bg-emerald-500/15 text-emerald-300"
+  defp row_icon_class(:amber), do: "bg-amber-500/15 text-amber-300"
+  defp row_icon_class(:rose), do: "bg-rose-500/15 text-rose-300"
+  defp row_icon_class(:indigo), do: "bg-indigo-500/15 text-indigo-300"
+  defp row_icon_class(_zinc), do: "bg-zinc-900 text-zinc-400"
+
+  @doc """
+  Small inline chip — the rounded label that sits next to a row title
+  or inside a chips slot. Variants: `:default` (zinc), `:indigo`,
+  `:amber`, `:rose`, `:emerald`. With `mono`, renders monospace text.
+
+      <.chip>group: default</.chip>
+      <.chip tone={:rose}>Suspended</.chip>
+  """
+  attr :tone, :atom, default: :default,
+    values: [:default, :indigo, :amber, :rose, :emerald]
+
+  attr :mono, :boolean, default: false
+  slot :inner_block, required: true
+
+  def chip(assigns) do
+    ~H"""
+    <span class={[
+      "rounded px-1.5 py-0.5 text-[10px] font-medium",
+      chip_class(@tone),
+      @mono && "font-mono"
+    ]}>
+      {render_slot(@inner_block)}
+    </span>
+    """
+  end
+
+  defp chip_class(:indigo), do: "bg-indigo-500/15 text-indigo-200 ring-1 ring-indigo-500/30"
+  defp chip_class(:amber), do: "bg-amber-500/15 text-amber-200 ring-1 ring-amber-500/30"
+  defp chip_class(:rose), do: "bg-rose-500/15 text-rose-200 ring-1 ring-rose-500/30"
+  defp chip_class(:emerald), do: "bg-emerald-500/15 text-emerald-200 ring-1 ring-emerald-500/30"
+  defp chip_class(_default), do: "bg-zinc-800/80 text-zinc-300"
+
+  @doc """
+  Page-level content container — `mx-auto max-w-Nxl space-y-6`. Use
+  on every authenticated page so widths and vertical rhythm stay
+  consistent.
+
+      <.page_container>
+        ... sections ...
+      </.page_container>
+  """
+  attr :max, :string, default: "5xl",
+    values: ~w(2xl 3xl 4xl 5xl 6xl 7xl)
+
+  attr :class, :string, default: nil
+  slot :inner_block, required: true
+
+  def page_container(assigns) do
+    # Use a static map so Tailwind's purge picks up every class.
+    width =
+      %{
+        "2xl" => "max-w-2xl",
+        "3xl" => "max-w-3xl",
+        "4xl" => "max-w-4xl",
+        "5xl" => "max-w-5xl",
+        "6xl" => "max-w-6xl",
+        "7xl" => "max-w-7xl"
+      }[assigns.max]
+
+    assigns = assign(assigns, :width, width)
+
+    ~H"""
+    <div class={["mx-auto space-y-6", @width, @class]}>
+      {render_slot(@inner_block)}
+    </div>
+    """
+  end
+
+  @doc """
+  Inline "back" breadcrumb for detail pages. Renders as a small label
+  above the page title slot, so the operator always sees where they
+  came from without a separate breadcrumb trail.
+
+      <:title>
+        <.back_link navigate={~p"/app/runs"}>Runs</.back_link>
+        Run output
+      </:title>
+  """
+  attr :navigate, :string, required: true
+  slot :inner_block, required: true
+
+  def back_link(assigns) do
+    ~H"""
+    <span class="inline-flex items-center text-zinc-500"><.link
+        navigate={@navigate}
+        class="font-medium text-zinc-400 hover:text-zinc-200"
+      >{render_slot(@inner_block)}</.link><span class="mx-2 text-zinc-700" aria-hidden="true">/</span></span>
+    """
+  end
+
+  @doc """
+  Copy-to-clipboard code block. Renders the inner_block inside a
+  styled `<code>` with a "Copy" button that flips to "Copied" for
+  1.5s. The button grabs the visible text via DOM lookup (safer than
+  string-interpolating the value into a JS literal).
+
+      <.copy_code id="install-cmd">
+        {@install_command}
+      </.copy_code>
+
+  Optional `header` slot renders a label row above the code box
+  (e.g. file path, sha256 hint).
+  """
+  attr :id, :string, required: true
+  attr :class, :string, default: nil
+  slot :header
+  slot :inner_block, required: true
+
+  def copy_code(assigns) do
+    code_id = "copy-code-content-" <> assigns.id
+    assigns = assign(assigns, :code_id, code_id)
+
+    ~H"""
+    <div class={["overflow-hidden rounded-lg border border-zinc-800 bg-black/60", @class]}>
+      <div
+        :if={@header != []}
+        class="flex items-center justify-between gap-2 border-b border-zinc-800 px-4 py-2"
+      >
+        <div class="font-mono text-[11px] text-zinc-500">{render_slot(@header)}</div>
+      </div>
+      <div class="flex items-start gap-2 p-4">
+        <code
+          id={@code_id}
+          class="flex-1 whitespace-pre-wrap break-all font-mono text-xs text-zinc-200"
+        >{render_slot(@inner_block)}</code>
+        <button
+          type="button"
+          class="self-start rounded bg-zinc-800/80 px-2.5 py-1 text-xs font-medium text-zinc-200 hover:bg-zinc-700"
+          onclick={
+            "const el = document.getElementById('#{@code_id}');" <>
+              "navigator.clipboard.writeText(el.innerText.trim());" <>
+              "const orig = this.innerText; this.innerText = 'Copied';" <>
+              "setTimeout(() => { this.innerText = orig; }, 1500);"
+          }
+        >
+          Copy
+        </button>
+      </div>
+    </div>
+    """
+  end
+
+  @doc """
+  Danger-zone card — the bordered rose container with title + body +
+  destructive button used on detail pages (runner detail, team member
+  remove, etc.).
+
+      <.danger_zone title="Disable this runner" confirm="Disable? It can't reconnect.">
+        <:body>Removes from catalog and rejects future reconnects.</:body>
+        <:button phx-click="disable">Disable runner</:button>
+      </.danger_zone>
+  """
+  slot :body, required: true
+  slot :button, required: true
+  attr :title, :string, required: true
+
+  def danger_zone(assigns) do
+    ~H"""
+    <section class="flex items-start justify-between gap-4 rounded-xl border border-rose-900/40 bg-rose-950/20 p-5">
+      <div>
+        <h3 class="text-sm font-semibold text-rose-200">{@title}</h3>
+        <p class="mt-1 text-xs text-rose-300/70">{render_slot(@body)}</p>
+      </div>
+      <div class="shrink-0">{render_slot(@button)}</div>
+    </section>
+    """
+  end
+
   @doc ~S"""
   Statistic tile used on the dashboard.
 
-      <.stat label="Runners online" value={@agents_connected} hint={"of #{@total} total"} />
+      <.stat label="Runners online" value={@runners_connected} hint={"of #{@total} total"} />
   """
   attr :label, :string, required: true
   attr :value, :any, required: true
   attr :hint, :string, default: nil
+  attr :class, :string, default: nil
 
   def stat(assigns) do
     ~H"""
-    <.card>
+    <.card class={@class}>
       <div class="text-xs uppercase tracking-wider text-zinc-500">{@label}</div>
       <div class="mt-2 text-3xl font-semibold text-zinc-50">{@value}</div>
       <%= if @hint do %>
         <div class="mt-1 text-xs text-zinc-500">{@hint}</div>
       <% end %>
     </.card>
+    """
+  end
+
+  @doc """
+  Install-a-runner wizard. Rendered both on the dashboard's first-runner
+  empty state and on the standalone `/app/runners/install` page. Caller
+  pre-mints the install command and passes it as a string (or
+  `:mint_failed` to render the fallback).
+
+      <.install_wizard install_command={@install_command} />
+  """
+  attr :install_command, :any, required: true
+  attr :on_failure_path, :string, default: "/app/settings/runners/auth-keys"
+
+  def install_wizard(assigns) do
+    ~H"""
+    <div class="mx-auto max-w-3xl">
+      <div class="rounded-2xl border border-zinc-900 bg-gradient-to-b from-indigo-950/40 to-zinc-950/60 p-8 sm:p-10">
+        <header class="flex items-center gap-3">
+          <span class="grid h-10 w-10 place-items-center rounded-xl bg-indigo-500/20 text-indigo-300 ring-1 ring-indigo-500/40">
+            <.icon name="hero-rocket-launch" class="h-5 w-5" />
+          </span>
+          <div>
+            <h2 class="text-xl font-semibold text-zinc-50">Connect a runner</h2>
+            <p class="text-sm text-zinc-400">
+              Two minutes. Pick a Linux or macOS host, paste the one-liner.
+            </p>
+          </div>
+        </header>
+
+        <%= cond do %>
+          <% is_binary(@install_command) -> %>
+            <div class="mt-8 space-y-6">
+              <div>
+                <div class="text-xs uppercase tracking-wider text-zinc-500">
+                  Run on any Linux or macOS host
+                </div>
+                <div class="mt-2 flex items-center gap-2 rounded-lg border border-zinc-800 bg-black/60 p-4 font-mono text-xs">
+                  <code
+                    id="install-wizard-command"
+                    class="flex-1 whitespace-pre-wrap break-all text-zinc-300"
+                  >{@install_command}</code>
+                  <button
+                    type="button"
+                    class="self-start rounded bg-indigo-500/20 px-2 py-1 text-xs font-semibold text-indigo-200 hover:bg-indigo-500/30"
+                    onclick="
+                      const el = document.getElementById('install-wizard-command');
+                      navigator.clipboard.writeText(el.innerText.trim());
+                      const orig = this.innerText;
+                      this.innerText = 'Copied';
+                      setTimeout(() => { this.innerText = orig; }, 1500);
+                    "
+                  >
+                    Copy
+                  </button>
+                </div>
+                <p class="mt-2 text-xs text-zinc-500">
+                  Paste as-is — the leading space keeps the key out of your shell history.
+                </p>
+              </div>
+
+              <div class="flex items-center gap-3 rounded-lg border border-zinc-800 bg-zinc-950/60 p-4">
+                <span class="relative flex h-3 w-3">
+                  <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-indigo-500/50"></span>
+                  <span class="relative inline-flex h-3 w-3 rounded-full bg-indigo-400"></span>
+                </span>
+                <div class="text-sm text-zinc-300">
+                  Waiting for a runner to connect. This page will refresh automatically.
+                </div>
+              </div>
+
+              <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <.link
+                  href="https://github.com/andrewdryga/emisar/blob/main/docs/install.md"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="rounded-xl border border-zinc-800 bg-zinc-950/60 p-4 transition hover:bg-zinc-900/60"
+                >
+                  <div class="flex items-center gap-2 text-sm font-semibold text-zinc-200">
+                    <.icon name="hero-book-open" class="h-4 w-4 text-indigo-400" />
+                    Installation guide
+                    <.icon name="hero-arrow-top-right-on-square" class="ml-auto h-3.5 w-3.5 text-zinc-600" />
+                  </div>
+                  <p class="mt-1 text-xs text-zinc-500">
+                    Image-bake, cloud-init, manual install.
+                  </p>
+                </.link>
+                <.link
+                  navigate="/packs"
+                  class="rounded-xl border border-zinc-800 bg-zinc-950/60 p-4 transition hover:bg-zinc-900/60"
+                >
+                  <div class="flex items-center gap-2 text-sm font-semibold text-zinc-200">
+                    <.icon name="hero-cube-transparent" class="h-4 w-4 text-indigo-400" />
+                    Pack registry
+                    <.icon name="hero-arrow-right" class="ml-auto h-3.5 w-3.5 text-zinc-600" />
+                  </div>
+                  <p class="mt-1 text-xs text-zinc-500">
+                    Browse linux-core, cassandra, showcase. Install snippets included.
+                  </p>
+                </.link>
+              </div>
+            </div>
+
+          <% @install_command == :mint_failed -> %>
+            <div class="mt-8 rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-200/90">
+              We couldn't mint a bootstrap auth key just now. Open
+              <.link navigate={@on_failure_path} class="font-semibold underline">
+                settings → auth keys
+              </.link>
+              and create one manually, or refresh this page to try again.
+            </div>
+
+          <% true -> %>
+            <div class="mt-8 flex items-center gap-3 rounded-lg border border-zinc-800 bg-zinc-950/60 p-4 text-sm text-zinc-400">
+              <span class="hero-arrow-path h-4 w-4 animate-spin"></span>
+              Generating your install command…
+            </div>
+        <% end %>
+      </div>
+    </div>
     """
   end
 
@@ -1129,7 +1698,7 @@ defmodule EmisarWeb.CoreComponents do
         runner under your account.
 
         <:install_command>
-          curl -sSL https://emisar.com/install.sh | sudo EMISAR_AUTH_KEY={@new_secret} bash
+          curl -sSL https://emisar.dev/install.sh | sudo EMISAR_AUTH_KEY={@new_secret} bash
         </:install_command>
       </.secret_reveal>
   """
@@ -1150,12 +1719,26 @@ defmodule EmisarWeb.CoreComponents do
           <h2 class="text-sm font-semibold text-amber-100">{@title}</h2>
           <p class="mt-1 text-xs text-amber-200/80">{render_slot(@inner_block)}</p>
 
+          <%!-- Same copy pattern as the dashboard install reveal:
+               grab text from the visible `<code>` instead of
+               interpolating into a JS string literal (safer + escape-
+               proof), and flip the label to "Copied" for 1.5s as
+               visible click feedback. --%>
           <div class="mt-4 flex items-center gap-2 rounded-lg bg-zinc-950/80 p-3 ring-1 ring-zinc-800">
-            <code class="flex-1 break-all font-mono text-xs text-zinc-100">{@secret}</code>
+            <code
+              id="reveal-secret"
+              class="flex-1 break-all font-mono text-xs text-zinc-100"
+            >{@secret}</code>
             <button
               type="button"
               class="rounded bg-amber-500/20 px-2 py-1 text-xs font-semibold text-amber-100 hover:bg-amber-500/30"
-              onclick={"navigator.clipboard.writeText('#{@secret}')"}
+              onclick="
+                const el = document.getElementById('reveal-secret');
+                navigator.clipboard.writeText(el.innerText.trim());
+                const orig = this.innerText;
+                this.innerText = 'Copied';
+                setTimeout(() => { this.innerText = orig; }, 1500);
+              "
             >
               Copy
             </button>
@@ -1167,7 +1750,9 @@ defmodule EmisarWeb.CoreComponents do
                 {cmd[:label] || "Install on a host"}
               </h3>
               <div class="mt-2 flex items-center gap-2 rounded-lg bg-zinc-950/80 p-3 ring-1 ring-zinc-800">
-                <code class="flex-1 break-all font-mono text-xs text-zinc-300">{render_slot(cmd)}</code>
+                <code class="flex-1 break-all font-mono text-xs text-zinc-300">
+                  {render_slot(cmd)}
+                </code>
               </div>
             </div>
           <% end %>
@@ -1270,30 +1855,185 @@ defmodule EmisarWeb.CoreComponents do
       @sticky && "sticky top-0 z-50"
     ]}>
       <div class="mx-auto flex max-w-7xl items-center justify-between px-6 py-5 lg:px-8">
-        <.link href={~p"/"} class="flex items-center gap-3">
-          <span class="grid h-9 w-9 place-items-center rounded-lg bg-indigo-500 text-zinc-950 font-black">e</span>
-          <span class="text-xl font-bold tracking-tight">emisar</span>
+        <.link href={~p"/"}>
+          <.brand size={:md} />
         </.link>
+
+        <%!-- Desktop nav: visible md+ --%>
         <nav class="hidden items-center gap-8 md:flex">
-          <.marketing_nav_link href={~p"/pricing"} active={@current == :pricing}>Pricing</.marketing_nav_link>
-          <.marketing_nav_link href={~p"/security"} active={@current == :security}>Security</.marketing_nav_link>
+          <.marketing_nav_link href={~p"/packs"} active={@current == :packs}>
+            Packs
+          </.marketing_nav_link>
+          <.marketing_nav_link href={~p"/pricing"} active={@current == :pricing}>
+            Pricing
+          </.marketing_nav_link>
+          <.marketing_nav_link href={~p"/security"} active={@current == :security}>
+            Security
+          </.marketing_nav_link>
           <.marketing_nav_link href={~p"/docs"} active={@current == :docs}>Docs</.marketing_nav_link>
-          <.marketing_nav_link href={~p"/changelog"} active={@current == :changelog}>Changelog</.marketing_nav_link>
-          <.marketing_nav_link href={~p"/about"} active={@current == :about}>About</.marketing_nav_link>
+          <.marketing_nav_link href={~p"/changelog"} active={@current == :changelog}>
+            Changelog
+          </.marketing_nav_link>
+          <.marketing_nav_link href={~p"/about"} active={@current == :about}>
+            About
+          </.marketing_nav_link>
         </nav>
-        <div class="flex items-center gap-4">
-          <.link href={~p"/sign_in"} class="text-sm font-semibold text-zinc-100 hover:text-indigo-300">
+
+        <%!-- Desktop CTAs: visible md+ --%>
+        <div class="hidden items-center gap-4 md:flex">
+          <.link href={~p"/sign_in"} class="whitespace-nowrap text-sm font-semibold text-zinc-100 hover:text-indigo-300">
             Sign in
           </.link>
           <.link
             href={~p"/sign_up"}
-            class="rounded-lg bg-indigo-500 px-4 py-2 text-sm font-semibold text-zinc-950 hover:bg-indigo-400"
+            class="whitespace-nowrap rounded-lg bg-indigo-500 px-4 py-2 text-sm font-semibold text-zinc-950 hover:bg-indigo-400"
           >
             Start free
           </.link>
         </div>
+
+        <%!-- Mobile hamburger: visible < md. Toggles the drawer
+             below; uses the same JS dance as the in-app shell so
+             the body lock works the same. --%>
+        <button
+          type="button"
+          aria-label="Open menu"
+          class="-mr-1.5 rounded-md p-2 text-zinc-300 hover:bg-zinc-900 hover:text-zinc-100 md:hidden"
+          phx-click={
+            JS.show(to: "#marketing-mobile-nav", display: "block")
+            |> JS.add_class("overflow-hidden", to: "body")
+          }
+        >
+          <.icon name="hero-bars-3" class="h-5 w-5" />
+        </button>
+      </div>
+
+      <%!-- Mobile drawer — full screen overlay with primary nav
+           + auth CTAs. Closes on link tap or Escape. --%>
+      <div
+        id="marketing-mobile-nav"
+        class="fixed inset-0 z-50 hidden md:hidden"
+        role="dialog"
+        aria-modal="true"
+        phx-window-keydown={
+          JS.hide(to: "#marketing-mobile-nav")
+          |> JS.remove_class("overflow-hidden", to: "body")
+        }
+        phx-key="escape"
+      >
+        <div
+          class="absolute inset-0 bg-black/60"
+          phx-click={
+            JS.hide(to: "#marketing-mobile-nav")
+            |> JS.remove_class("overflow-hidden", to: "body")
+          }
+        >
+        </div>
+        <aside class="relative ml-auto flex h-full w-80 max-w-[85vw] flex-col bg-zinc-950 shadow-2xl">
+          <div class="flex items-center justify-between border-b border-zinc-900 px-5 py-4">
+            <.brand size={:sm} />
+            <button
+              type="button"
+              aria-label="Close menu"
+              class="rounded-md p-1.5 text-zinc-400 hover:bg-zinc-900 hover:text-zinc-100"
+              phx-click={
+                JS.hide(to: "#marketing-mobile-nav")
+                |> JS.remove_class("overflow-hidden", to: "body")
+              }
+            >
+              <.icon name="hero-x-mark" class="h-5 w-5" />
+            </button>
+          </div>
+
+          <nav class="flex-1 space-y-1 px-3 py-4 text-sm">
+            <.marketing_mobile_link href={~p"/packs"} active={@current == :packs}>
+              Packs
+            </.marketing_mobile_link>
+            <.marketing_mobile_link href={~p"/pricing"} active={@current == :pricing}>
+              Pricing
+            </.marketing_mobile_link>
+            <.marketing_mobile_link href={~p"/security"} active={@current == :security}>
+              Security
+            </.marketing_mobile_link>
+            <.marketing_mobile_link href={~p"/docs"} active={@current == :docs}>
+              Docs
+            </.marketing_mobile_link>
+            <.marketing_mobile_link href={~p"/changelog"} active={@current == :changelog}>
+              Changelog
+            </.marketing_mobile_link>
+            <.marketing_mobile_link href={~p"/about"} active={@current == :about}>
+              About
+            </.marketing_mobile_link>
+          </nav>
+
+          <div class="space-y-3 border-t border-zinc-900 p-5">
+            <.link
+              href={~p"/sign_up"}
+              class="block w-full whitespace-nowrap rounded-lg bg-indigo-500 px-4 py-2.5 text-center text-sm font-semibold text-zinc-950 hover:bg-indigo-400"
+            >
+              Start free
+            </.link>
+            <.link
+              href={~p"/sign_in"}
+              class="block w-full whitespace-nowrap rounded-lg border border-zinc-800 px-4 py-2.5 text-center text-sm font-semibold text-zinc-100 hover:bg-zinc-900"
+            >
+              Sign in
+            </.link>
+          </div>
+        </aside>
       </div>
     </header>
+    """
+  end
+
+  @doc """
+  Anchor for outbound links — opens in a new tab with the standard
+  `noopener noreferrer` rel pair so the new window can't navigate the
+  opener (window.opener tabnabbing). Renders the inner block followed
+  by a small arrow-top-right icon so the user sees they're leaving
+  the site before clicking. Optional `class` to override the default.
+
+      <.external_link href="https://github.com/...">GitHub repo</.external_link>
+      <.external_link href={url} class="text-indigo-300 hover:text-indigo-200">
+        SECURITY.md
+      </.external_link>
+  """
+  attr :href, :string, required: true
+  attr :class, :string, default: "text-indigo-300 hover:text-indigo-200"
+  attr :rest, :global
+  slot :inner_block, required: true
+
+  def external_link(assigns) do
+    ~H"""
+    <a
+      href={@href}
+      target="_blank"
+      rel="noopener noreferrer"
+      class={["inline-flex items-center gap-1", @class]}
+      {@rest}
+    >
+      {render_slot(@inner_block)}
+      <.icon name="hero-arrow-top-right-on-square" class="h-3 w-3 opacity-60" />
+    </a>
+    """
+  end
+
+  attr :href, :string, required: true
+  attr :active, :boolean, default: false
+  slot :inner_block, required: true
+
+  defp marketing_mobile_link(assigns) do
+    ~H"""
+    <.link
+      href={@href}
+      class={[
+        "block rounded-lg px-3 py-2.5 transition",
+        @active && "bg-indigo-500/10 text-indigo-200",
+        !@active && "text-zinc-300 hover:bg-zinc-900 hover:text-zinc-100"
+      ]}
+    >
+      {render_slot(@inner_block)}
+    </.link>
     """
   end
 
@@ -1306,12 +2046,19 @@ defmodule EmisarWeb.CoreComponents do
     <.link
       href={@href}
       class={[
-        "text-sm font-medium",
+        "relative text-sm font-medium transition",
         @active && "text-zinc-100",
         !@active && "text-zinc-400 hover:text-zinc-100"
       ]}
     >
       {render_slot(@inner_block)}
+      <%!-- Subtle indigo underline on the active page so the
+           current section is identifiable without reading the URL. --%>
+      <span
+        :if={@active}
+        class="absolute -bottom-1 left-0 right-0 h-0.5 rounded-full bg-indigo-400"
+        aria-hidden="true"
+      />
     </.link>
     """
   end
@@ -1332,9 +2079,8 @@ defmodule EmisarWeb.CoreComponents do
       <div class="mx-auto max-w-7xl px-6 py-16 lg:px-8">
         <div class="grid grid-cols-2 gap-12 md:grid-cols-5">
           <div class="col-span-2">
-            <.link href={~p"/"} class="flex items-center gap-3">
-              <span class="grid h-9 w-9 place-items-center rounded-lg bg-indigo-500 text-zinc-950 font-black">e</span>
-              <span class="text-xl font-bold tracking-tight">emisar</span>
+            <.link href={~p"/"}>
+              <.brand size={:md} />
             </.link>
             <p class="mt-4 max-w-xs text-sm text-zinc-500">
               Give AI tools approved infrastructure actions, not SSH.
@@ -1344,24 +2090,52 @@ defmodule EmisarWeb.CoreComponents do
           <div>
             <h4 class="text-xs font-semibold uppercase tracking-wider text-zinc-400">Product</h4>
             <ul class="mt-4 space-y-3 text-sm">
-              <li><.link href={~p"/pricing"} class="text-zinc-400 hover:text-zinc-100">Pricing</.link></li>
-              <li><.link href={~p"/security"} class="text-zinc-400 hover:text-zinc-100">Security</.link></li>
+              <li><.link href={~p"/packs"} class="text-zinc-400 hover:text-zinc-100">Packs</.link></li>
+              <li>
+                <.link href={~p"/pricing"} class="text-zinc-400 hover:text-zinc-100">Pricing</.link>
+              </li>
+              <li>
+                <.link href={~p"/security"} class="text-zinc-400 hover:text-zinc-100">Security</.link>
+              </li>
               <li><.link href={~p"/docs"} class="text-zinc-400 hover:text-zinc-100">Docs</.link></li>
-              <li><.link href={~p"/changelog"} class="text-zinc-400 hover:text-zinc-100">Changelog</.link></li>
+              <li>
+                <.link href={~p"/changelog"} class="text-zinc-400 hover:text-zinc-100">
+                  Changelog
+                </.link>
+              </li>
             </ul>
           </div>
 
           <div>
             <h4 class="text-xs font-semibold uppercase tracking-wider text-zinc-400">Company</h4>
             <ul class="mt-4 space-y-3 text-sm">
-              <li><.link href={~p"/about"} class="text-zinc-400 hover:text-zinc-100">About</.link></li>
               <li>
-                <a href="https://github.com/andrewdryga/emisar" class="text-zinc-400 hover:text-zinc-100">
-                  GitHub
+                <.link href={~p"/about"} class="text-zinc-400 hover:text-zinc-100">About</.link>
+              </li>
+              <li>
+                <a
+                  href="https://github.com/andrewdryga/emisar"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="inline-flex items-center gap-1 text-zinc-400 hover:text-zinc-100"
+                >
+                  GitHub <.icon name="hero-arrow-top-right-on-square" class="h-3 w-3 opacity-60" />
                 </a>
               </li>
               <li>
-                <a href="mailto:hello@emisar.com" class="text-zinc-400 hover:text-zinc-100">Contact</a>
+                <a
+                  href={Application.get_env(:emisar_web, :status_page_url, "https://status.emisar.dev")}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="inline-flex items-center gap-1 text-zinc-400 hover:text-zinc-100"
+                >
+                  Status <.icon name="hero-arrow-top-right-on-square" class="h-3 w-3 opacity-60" />
+                </a>
+              </li>
+              <li>
+                <a href="mailto:hello@emisar.dev" class="text-zinc-400 hover:text-zinc-100">
+                  Contact
+                </a>
               </li>
             </ul>
           </div>
@@ -1369,22 +2143,32 @@ defmodule EmisarWeb.CoreComponents do
           <div>
             <h4 class="text-xs font-semibold uppercase tracking-wider text-zinc-400">Legal</h4>
             <ul class="mt-4 space-y-3 text-sm">
-              <li><.link href={~p"/privacy"} class="text-zinc-400 hover:text-zinc-100">Privacy</.link></li>
-              <li><.link href={~p"/terms"} class="text-zinc-400 hover:text-zinc-100">Terms</.link></li>
+              <li>
+                <.link href={~p"/privacy"} class="text-zinc-400 hover:text-zinc-100">Privacy</.link>
+              </li>
+              <li>
+                <.link href={~p"/terms"} class="text-zinc-400 hover:text-zinc-100">Terms</.link>
+              </li>
               <li>
                 <a
                   href="https://github.com/andrewdryga/emisar/blob/main/.github/SECURITY.md"
-                  class="text-zinc-400 hover:text-zinc-100"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="inline-flex items-center gap-1 text-zinc-400 hover:text-zinc-100"
                 >
                   Security policy
+                  <.icon name="hero-arrow-top-right-on-square" class="h-3 w-3 opacity-60" />
                 </a>
               </li>
               <li>
                 <a
                   href="https://github.com/andrewdryga/emisar/blob/main/LICENSE.md"
-                  class="text-zinc-400 hover:text-zinc-100"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="inline-flex items-center gap-1 text-zinc-400 hover:text-zinc-100"
                 >
                   License
+                  <.icon name="hero-arrow-top-right-on-square" class="h-3 w-3 opacity-60" />
                 </a>
               </li>
             </ul>

@@ -21,6 +21,12 @@ defmodule EmisarWeb.MagicLinkLive do
             We sent a one-time login link to <span class="font-mono">{@sent_to}</span>.
             It expires in 15 minutes.
           </p>
+          <button
+            phx-click="reset_form"
+            class="mt-4 text-xs font-medium text-emerald-300 hover:text-emerald-100"
+          >
+            Use a different email →
+          </button>
         </div>
       <% else %>
         <p class="mb-6 text-sm text-zinc-400">
@@ -48,15 +54,26 @@ defmodule EmisarWeb.MagicLinkLive do
     """
   end
 
+  def handle_event("reset_form", _params, socket) do
+    {:noreply,
+     socket
+     |> assign(:sent_to, nil)
+     |> assign(:form, to_form(%{"email" => ""}, as: "user"))}
+  end
+
   def handle_event("send", %{"user" => %{"email" => email}}, socket) do
     # 3 magic-links per email per 10 min. Higher than sign-in because
     # mistyped emails are common; lower than nothing because
     # uncontrolled magic-link sending is an email-bombing primitive.
     case EmisarWeb.RateLimiter.check("magic_link:" <> String.downcase(email || ""), 3, 600_000) do
       :ok ->
-        if user = Accounts.get_user_by_email(email) do
-          token = Auth.issue_magic_link_token(user)
-          Mailers.UserNotifier.deliver_magic_link(user, token)
+        case Accounts.fetch_user_by_email(email) do
+          {:ok, user} ->
+            token = Auth.issue_magic_link_token!(user)
+            Mailers.UserNotifier.deliver_magic_link(user, token)
+
+          {:error, :not_found} ->
+            :ok
         end
 
         {:noreply, assign(socket, :sent_to, email)}

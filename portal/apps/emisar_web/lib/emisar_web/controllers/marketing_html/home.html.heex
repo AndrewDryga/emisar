@@ -32,16 +32,19 @@
           streamed, and recorded to an append-only audit log.
         </p>
         <div class="mt-10 flex flex-wrap items-center justify-center gap-4">
-          <.link href={~p"/sign_up"} class="inline-flex items-center gap-2 rounded-lg bg-indigo-500 px-5 py-2.5 text-sm font-semibold text-zinc-950 hover:bg-indigo-400">
+          <.link href={~p"/sign_up"} class="inline-flex items-center gap-2 whitespace-nowrap rounded-lg bg-indigo-500 px-5 py-2.5 text-sm font-semibold text-zinc-950 hover:bg-indigo-400">
             Start free
             <.icon name="hero-arrow-right" class="h-4 w-4" />
           </.link>
-          <.link href={~p"/security"} class="inline-flex items-center gap-2 rounded-lg bg-transparent px-5 py-2.5 text-sm font-semibold text-zinc-100 ring-1 ring-zinc-800 hover:ring-zinc-700">
+          <.link href={~p"/security"} class="inline-flex items-center gap-2 whitespace-nowrap rounded-lg bg-transparent px-5 py-2.5 text-sm font-semibold text-zinc-100 ring-1 ring-zinc-800 hover:ring-zinc-700">
             Read the security model
           </.link>
         </div>
         <p class="mt-6 text-xs text-zinc-500">
-          Free forever for 3 runners &middot; No credit card &middot; Read the quickstart
+          Free forever for 3 runners &middot; No credit card &middot;
+          <.link href={~p"/docs/quickstart"} class="text-zinc-400 underline-offset-2 hover:text-zinc-200 hover:underline">
+            Read the quickstart
+          </.link>
         </p>
       </div>
 
@@ -54,7 +57,7 @@
           <span class="ml-3 font-mono text-xs text-zinc-500">sre@prod-cassandra-01: ~</span>
         </div>
 <pre class="overflow-x-auto p-6 font-mono text-xs leading-6 text-zinc-300"><span class="text-zinc-500"># Install on a Linux or macOS host</span>
-<span class="text-indigo-400">$</span> curl -sSL https://emisar.com/install.sh | sudo EMISAR_AUTH_KEY=emkey-auth-*** bash
+<span class="text-indigo-400">$</span> curl -sSL https://emisar.dev/install.sh | sudo EMISAR_AUTH_KEY=emkey-auth-*** bash
 <span class="text-indigo-400">[install]</span> <span class="text-zinc-400">downloading emisar-v0.2.0-linux-amd64.tar.gz</span>
 <span class="text-indigo-400">[install]</span> <span class="text-zinc-400">verifying checksum</span>
 <span class="text-indigo-400">[install]</span> <span class="text-zinc-400">creating system user emisar</span>
@@ -65,7 +68,7 @@
 <span class="text-indigo-400">[install]</span> <span class="text-zinc-400">writing /etc/systemd/system/emisar.service</span>
 <span class="text-indigo-400">[install]</span> <span class="text-zinc-400">starting emisar.service</span>
 
-<span class="text-zinc-500">→ Open <span class="text-emerald-400">app.emisar.com/runners</span> — the host is online and advertising 6 actions.</span></pre>
+<span class="text-zinc-500">→ Open <span class="text-emerald-400">app.emisar.dev/runners</span> — the host is online and advertising 6 actions.</span></pre>
       </div>
     </div>
   </section>
@@ -318,7 +321,7 @@
             cloud dashboard for review.
           </p>
           <div class="mt-6 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
-            <div class="border-b border-zinc-900 px-3 py-2 font-mono text-[11px] text-zinc-500">app.emisar.com / audit</div>
+            <div class="border-b border-zinc-900 px-3 py-2 font-mono text-[11px] text-zinc-500">app.emisar.dev / audit</div>
             <table class="w-full font-mono text-[11px] text-zinc-300">
               <thead class="bg-zinc-950/80 text-zinc-500">
                 <tr>
@@ -432,18 +435,6 @@
     </div>
   </section>
 
-  <%!-- Customer stories placeholder --%>
-  <section class="py-24 sm:py-32">
-    <div class="mx-auto max-w-4xl px-6 lg:px-8">
-      <div class="rounded-3xl border border-zinc-900 bg-gradient-to-br from-indigo-500/5 via-zinc-950 to-zinc-950 p-10 text-center sm:p-14">
-        <.icon name="hero-chat-bubble-bottom-center-text" class="mx-auto h-8 w-8 text-indigo-400" />
-        <p class="mt-6 text-lg font-medium text-zinc-300">
-          Customer stories coming soon.
-        </p>
-      </div>
-    </div>
-  </section>
-
   <%!-- Pricing teaser --%>
   <section class="border-y border-zinc-900 bg-zinc-950/40 py-24 sm:py-32">
     <div class="mx-auto max-w-7xl px-6 lg:px-8">
@@ -484,7 +475,7 @@
             <li class="flex gap-2"><.icon name="hero-check" class="h-4 w-4 flex-none text-indigo-400" /> Up to 100 runners</li>
             <li class="flex gap-2"><.icon name="hero-check" class="h-4 w-4 flex-none text-indigo-400" /> Unlimited users</li>
             <li class="flex gap-2"><.icon name="hero-check" class="h-4 w-4 flex-none text-indigo-400" /> 90-day audit retention</li>
-            <li class="flex gap-2"><.icon name="hero-check" class="h-4 w-4 flex-none text-indigo-400" /> Stripe billing, email support</li>
+            <li class="flex gap-2"><.icon name="hero-check" class="h-4 w-4 flex-none text-indigo-400" /> Monthly invoices, email support</li>
           </ul>
         </div>
         <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8">
@@ -560,7 +551,7 @@
             <label for="cta-email" class="sr-only">Work email</label>
             <input type="email" name="email" id="cta-email" placeholder="you@company.com"
                    class="w-full rounded-lg border-0 bg-zinc-900/80 px-4 py-2.5 text-sm text-white ring-1 ring-zinc-800 placeholder:text-zinc-500 focus:ring-2 focus:ring-indigo-500" />
-            <button type="submit" class="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-indigo-500 px-5 py-2.5 text-sm font-semibold text-zinc-950 hover:bg-indigo-400 sm:w-auto">
+            <button type="submit" class="inline-flex w-full items-center justify-center gap-2 whitespace-nowrap rounded-lg bg-indigo-500 px-5 py-2.5 text-sm font-semibold text-zinc-950 hover:bg-indigo-400 sm:w-auto">
               Start free
               <.icon name="hero-arrow-right" class="h-4 w-4" />
             </button>

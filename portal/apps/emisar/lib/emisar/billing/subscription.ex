@@ -1,21 +1,15 @@
 defmodule Emisar.Billing.Subscription do
   @moduledoc """
-  Mirror of the Stripe subscription record for the account's current
-  plan. Stripe remains the source of truth; we mirror what we need for
-  in-app plan enforcement without round-tripping to Stripe per request.
+  Mirror of the Paddle subscription record for the account's current
+  plan. Paddle remains the source of truth; we mirror what we need for
+  in-app plan enforcement without round-tripping to Paddle per request.
   """
 
-  use Ecto.Schema
-  import Ecto.Changeset
-
-  @primary_key {:id, :binary_id, autogenerate: true}
-  @foreign_key_type :binary_id
-
-  @statuses ~w(trialing active past_due canceled unpaid incomplete incomplete_expired paused)
+  use Emisar, :schema
 
   schema "subscriptions" do
-    field :stripe_subscription_id, :string
-    field :stripe_price_id, :string
+    field :paddle_subscription_id, :string
+    field :paddle_price_id, :string
     field :plan, :string
     field :status, :string
     field :quantity, :integer, default: 1
@@ -26,21 +20,10 @@ defmodule Emisar.Billing.Subscription do
 
     belongs_to :account, Emisar.Accounts.Account
 
-    timestamps(type: :utc_datetime_usec)
+    timestamps()
   end
 
-  def changeset(sub, attrs) do
-    sub
-    |> cast(attrs, [
-      :account_id, :stripe_subscription_id, :stripe_price_id, :plan, :status,
-      :quantity, :current_period_start, :current_period_end, :cancel_at_period_end, :trial_end
-    ])
-    |> validate_required([:account_id, :plan, :status])
-    |> validate_inclusion(:status, @statuses)
-    |> unique_constraint(:account_id)
-  end
-
-  def statuses, do: @statuses
+  def statuses, do: Emisar.Billing.Subscription.Changeset.statuses()
 
   def active?(%__MODULE__{status: status}) when status in ["trialing", "active"], do: true
   def active?(_), do: false

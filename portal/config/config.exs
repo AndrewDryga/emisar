@@ -12,7 +12,7 @@ import Config
 # Configure Mix tasks and generators
 config :emisar,
   ecto_repos: [Emisar.Repo],
-  stripe_client: Emisar.Billing.StripeClient.Live
+  paddle_client: Emisar.Billing.PaddleClient.Live
 
 # Configures the mailer
 #
@@ -32,6 +32,7 @@ config :emisar, Oban,
      crontab: [
        {"@daily", Emisar.Workers.AuditRetention},
        {"*/5 * * * *", Emisar.Workers.RunnerHealthSweep},
+       {"*/5 * * * *", Emisar.Workers.ApprovalExpiry},
        {"0 * * * *", Emisar.Workers.BillingSync}
      ]}
   ],
@@ -84,6 +85,24 @@ config :tailwind,
 config :logger, :console,
   format: "$time $metadata[$level] $message\n",
   metadata: [:request_id]
+
+# Status-page URL surfaced as a "Status" link in the marketing footer
+# and the in-app sidebar. Default is the Better Stack hosted page
+# (configure the actual subdomain once Better Stack onboarding is done).
+# Overridable at boot via `STATUS_PAGE_URL` in runtime.exs.
+config :emisar_web, status_page_url: "https://status.emisar.dev"
+
+# Sentry — DSN baked in (it's a public-ish key with an event-rate-limit
+# quota, not a secret). Tagging each event with `config_env/0` means
+# dev errors don't pollute the production project's dashboard.
+# `runtime.exs` lets `SENTRY_DSN` override at boot for staging.
+config :sentry,
+  dsn:
+    "https://f3095640e074c473f52dbcc92f79201c@o4511481560498176.ingest.us.sentry.io/4511481561481216",
+  environment_name: config_env(),
+  enable_source_code_context: true,
+  root_source_code_paths: [File.cwd!()],
+  tags: %{app: "emisar"}
 
 # Use Jason for JSON parsing in Phoenix
 config :phoenix, :json_library, Jason

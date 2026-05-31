@@ -1,0 +1,175 @@
+defmodule Emisar.AuthorizationTest do
+  @moduledoc """
+  Critical-path coverage for the Subject + Authorizer gates. Every
+  refactored context should refuse `{:error, :unauthorized}` when a
+  subject lacks the relevant permission — without this, a regression
+  to "permissionless = full access" wouldn't show up in feature tests.
+  """
+  use Emisar.DataCase, async: true
+
+  import Emisar.Fixtures
+
+  alias Emisar.Accounts.Membership
+  alias Emisar.Auth.Subject
+
+  defp subject_with_role(account, role) do
+    user = user_fixture()
+
+    Subject.for_user(
+      user,
+      account,
+      %Membership{role: Atom.to_string(role), user_id: user.id, account_id: account.id}
+    )
+  end
+
+  describe "Audit reads" do
+    test "viewer can list events" do
+      account = account_fixture()
+      subject = subject_with_role(account, :viewer)
+      assert {:ok, _events, _meta} = Emisar.Audit.list_events(subject)
+    end
+
+    test "unauthorized subject is rejected" do
+      # Account-less subject with the empty permission set — emulates a
+      # caller from before login completes / from a misconfigured plug.
+      subject = %Subject{account: nil, role: nil, permissions: MapSet.new()}
+      assert {:error, :unauthorized} = Emisar.Audit.list_events(subject)
+      assert {:error, :unauthorized} = Emisar.Audit.list_events(subject, page: [limit: 5])
+    end
+
+    test "list_events scopes to the subject's account (cross-account isolation)" do
+      account_a = account_fixture()
+      account_b = account_fixture()
+
+      {:ok, _} = Emisar.Audit.log(account_a.id, "in.a", actor_kind: "system")
+      {:ok, _} = Emisar.Audit.log(account_b.id, "in.b", actor_kind: "system")
+
+      subject = subject_with_role(account_a, :viewer)
+
+      {:ok, events, _} = Emisar.Audit.list_events(subject)
+      assert Enum.all?(events, &(&1.account_id == account_a.id))
+      refute Enum.any?(events, &(&1.event_type == "in.b"))
+    end
+
+    test "fetch_event_by_id refuses an event from another account" do
+      account_a = account_fixture()
+      account_b = account_fixture()
+
+      {:ok, event_in_b} = Emisar.Audit.log(account_b.id, "secret.in.b", actor_kind: "system")
+
+      subject = subject_with_role(account_a, :viewer)
+      assert {:error, :not_found} = Emisar.Audit.fetch_event_by_id(event_in_b.id, subject)
+    end
+  end
+
+  describe "Policies" do
+    test "viewer can fetch the policy" do
+      account = account_fixture()
+      seed_policy_for(account)
+      subject = subject_with_role(account, :viewer)
+      assert {:ok, _policy} = Emisar.Policies.fetch_policy(subject)
+    end
+
+    test "viewer is rejected from update_rules" do
+      account = account_fixture()
+      policy = seed_policy_for(account)
+      subject = subject_with_role(account, :viewer)
+
+      assert {:error, :unauthorized} =
+               Emisar.Policies.update_rules(
+                 policy,
+                 %{"schema_version" => 2, "defaults" => %{}, "overrides" => []},
+                 subject
+               )
+    end
+
+    test "admin can update_rules" do
+      account = account_fixture()
+      policy = seed_policy_for(account)
+      subject = subject_with_role(account, :admin)
+
+      new_rules = %{
+        "schema_version" => 2,
+        "defaults" => %{"low" => "allow", "medium" => "allow", "high" => "deny", "critical" => "deny"},
+        "overrides" => []
+      }
+
+      assert {:ok, updated} = Emisar.Policies.update_rules(policy, new_rules, subject)
+
+      assert updated.rules == new_rules
+    end
+
+    test "fetch_policy from a foreign account returns :not_found, not :unauthorized" do
+      # The Authorizer's `for_subject` scopes by account, so a foreign
+      # policy is simply invisible — :not_found is the right shape
+      # (mirrors what an opaque-id-based attacker would see).
+      account_a = account_fixture()
+      account_b = account_fixture()
+      _ = seed_policy_for(account_b)
+
+      subject = subject_with_role(account_a, :owner)
+      # account_a never had a policy seeded → :not_found regardless.
+      assert {:error, :not_found} = Emisar.Policies.fetch_policy(subject)
+    end
+  end
+
+  describe "Runbooks" do
+    test "viewer can list runbooks" do
+      account = account_fixture()
+      subject = subject_with_role(account, :viewer)
+      assert {:ok, _list, _meta} = Emisar.Runbooks.list_runbooks(subject)
+    end
+
+    test "viewer is rejected from create_runbook" do
+      account = account_fixture()
+      subject = subject_with_role(account, :viewer)
+
+      assert {:error, :unauthorized} =
+               Emisar.Runbooks.create_runbook(
+                 %{
+                   "name" => "x",
+                   "slug" => "x",
+                   "title" => "X",
+                   "definition" => %{"steps" => []}
+                 },
+                 subject
+               )
+    end
+
+    test "admin can create_runbook" do
+      account = account_fixture()
+      subject = subject_with_role(account, :admin)
+
+      assert {:ok, _rb} =
+               Emisar.Runbooks.create_runbook(
+                 %{
+                   name: "smoke",
+                   slug: "smoke",
+                   title: "Smoke test",
+                   definition: %{"steps" => []}
+                 },
+                 subject
+               )
+    end
+  end
+
+  # -- helpers --------------------------------------------------------
+
+  defp seed_policy_for(account) do
+    user = user_fixture()
+
+    {:ok, _} =
+      Emisar.Policies.seed_policy(account.id, user.id, %{
+        "schema_version" => 2,
+        "defaults" => %{
+          "low" => "allow",
+          "medium" => "allow",
+          "high" => "require_approval",
+          "critical" => "deny"
+        },
+        "overrides" => []
+      })
+
+    Emisar.Policies.peek_policy_for_account(account.id)
+  end
+end

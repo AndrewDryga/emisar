@@ -5,13 +5,7 @@ defmodule Emisar.Approvals.Request do
   on approve the run transitions to `:sent` and cloud dispatches it.
   """
 
-  use Ecto.Schema
-  import Ecto.Changeset
-
-  @primary_key {:id, :binary_id, autogenerate: true}
-  @foreign_key_type :binary_id
-
-  @statuses ~w(pending approved denied expired)
+  use Emisar, :schema
 
   schema "approval_requests" do
     field :requested_at, :utc_datetime_usec
@@ -27,25 +21,8 @@ defmodule Emisar.Approvals.Request do
     belongs_to :requested_by, Emisar.Accounts.User
     belongs_to :decided_by, Emisar.Accounts.User
 
-    timestamps(type: :utc_datetime_usec)
+    timestamps()
   end
 
-  def create_changeset(req, attrs) do
-    req
-    |> cast(attrs, [:account_id, :run_id, :requested_by_id, :requested_at, :reason, :context, :expires_at])
-    |> validate_required([:account_id, :run_id, :requested_at])
-  end
-
-  def decide_changeset(req, status, decided_by_id, reason \\ nil) do
-    req
-    |> change(
-      status: to_string(status),
-      decided_by_id: decided_by_id,
-      decided_at: DateTime.utc_now() |> DateTime.truncate(:microsecond),
-      decision_reason: reason
-    )
-    |> validate_inclusion(:status, @statuses)
-  end
-
-  def statuses, do: @statuses
+  def statuses, do: Emisar.Approvals.Request.Changeset.statuses()
 end

@@ -1,70 +1,170 @@
 defmodule Emisar.Runs do
   @moduledoc """
-  Action run lifecycle. Cloud calls `dispatch/2` when an operator
+  Action run lifecycle. Cloud calls `dispatch_run/2` when an operator
   (or MCP, or a runbook step) wants to invoke an action; this module
   creates the run row, evaluates policy, hands the dispatch to the
   Transport for sending, and tracks progress + final result.
   """
 
-  import Ecto.Query
-  alias Emisar.{Audit, PubSub, Repo}
-  alias Emisar.Runs.{ActionRun, RunEvent}
+  alias Emisar.{Audit, Auth, PubSub, Repo}
+  alias Emisar.Auth.Subject
+  alias Emisar.Runs.{ActionRun, Authorizer, RunEvent}
+  alias Emisar.Runners.Runner
 
   # -- Listing / queries ------------------------------------------------
 
-  def list_runs_for_account(account_id, opts \\ []) do
-    query =
-      from r in ActionRun,
-        where: r.account_id == ^account_id,
-        order_by: [desc: r.inserted_at]
-
-    query =
-      query
-      |> maybe_filter_status(opts[:status])
-      |> maybe_filter_runner(opts[:runner_id])
-      |> maybe_filter_action(opts[:action_id])
-      |> maybe_limit(opts[:limit] || 100)
-
-    Repo.all(query)
+  @doc """
+  Paginated + filterable list for the Runs page. Returns
+  `{:ok, [run], %Paginator.Metadata{}}` — see `Emisar.Repo.list/3`.
+  Preloads the runner for each row so list templates can render names
+  without N+1 queries.
+  """
+  def list_runs(%Subject{} = subject, opts \\ []) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.view_runs_permission()
+           ) do
+      ActionRun.Query.all()
+      |> Authorizer.for_subject(subject)
+      |> Repo.list(ActionRun.Query, Keyword.put_new(opts, :preload, :runner))
+    end
   end
 
-  def list_recent_runs_for_agent(runner_id, limit \\ 50) do
-    from(r in ActionRun,
-      where: r.runner_id == ^runner_id,
-      order_by: [desc: r.inserted_at],
-      limit: ^limit
-    )
-    |> Repo.all()
+  @doc """
+  Paginated top-N most recent runs for the dashboard tile. Default
+  page size is 8 — the dashboard renders a short fixed list, not a
+  scrolling table. Returns `{:ok, [run], %Paginator.Metadata{}}` per
+  the context-function convention; runner is preloaded for label
+  rendering.
+  """
+  def list_recent_runs(%Subject{} = subject, opts \\ []) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.view_runs_permission()
+           ) do
+      limit = Keyword.get(opts, :limit, 8)
+      page = [limit: limit]
+
+      ActionRun.Query.all()
+      |> Authorizer.for_subject(subject)
+      |> Repo.list(ActionRun.Query, preload: [:runner], page: page)
+    end
   end
 
-  def get_run(account_id, id) do
-    from(r in ActionRun,
-      where: r.account_id == ^account_id and r.id == ^id,
-      preload: [:runner]
-    )
-    |> Repo.one()
+  @failed_statuses ~w[failed error timed_out]
+
+  @doc """
+  Paginated list of runs that ended in a non-success terminal status
+  within the last `hours` hours. Dashboard surfaces these at the top
+  so failures aren't lost in the recent-runs scroll. Returns
+  `{:ok, [run], %Paginator.Metadata{}}` with runner preloaded; default
+  window is 24 hours, default page size 5.
+  """
+  def list_recent_failures(%Subject{} = subject, opts \\ []) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.view_runs_permission()
+           ) do
+      hours = Keyword.get(opts, :hours, 24)
+      limit = Keyword.get(opts, :limit, 5)
+      cutoff = DateTime.utc_now() |> DateTime.add(-hours * 3600, :second)
+
+      ActionRun.Query.all()
+      |> ActionRun.Query.status_in(@failed_statuses)
+      |> ActionRun.Query.inserted_after(cutoff)
+      |> Authorizer.for_subject(subject)
+      |> Repo.list(ActionRun.Query, preload: [:runner], page: [limit: limit])
+    end
   end
 
-  def get_run_by_request_id(account_id, request_id) do
-    Repo.get_by(ActionRun, account_id: account_id, request_id: request_id)
+  @doc """
+  Rolled-up totals for the dashboard headline: total runs in window,
+  successes, failures (failed/error/timed_out). Pending/running rows
+  are excluded — only terminal outcomes count toward the success rate.
+  """
+  def fetch_run_stats(%Subject{} = subject, opts \\ []) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.view_runs_permission()
+           ) do
+      hours = Keyword.get(opts, :hours, 24)
+      cutoff = DateTime.utc_now() |> DateTime.add(-hours * 3600, :second)
+
+      rows =
+        ActionRun.Query.all()
+        |> ActionRun.Query.inserted_after(cutoff)
+        |> Authorizer.for_subject(subject)
+        |> Repo.all()
+
+      total = length(rows)
+      success = Enum.count(rows, &(&1.status == "success"))
+      failed = Enum.count(rows, &(&1.status in @failed_statuses))
+      terminal = success + failed
+
+      {:ok,
+       %{
+         window_hours: hours,
+         total: total,
+         success: success,
+         failed: failed,
+         success_rate:
+           if terminal > 0 do
+             round(success * 100 / terminal)
+           end
+       }}
+    end
+  end
+
+  @doc """
+  Paginated list of recent runs for a runner, scoped to the subject's
+  account. Caller can pass `page: [limit: n]` to control window size.
+  Returns `{:ok, [run], %Paginator.Metadata{}}`.
+  """
+  def list_recent_runs_for_runner(runner_id, %Subject{} = subject, opts \\ []) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.view_runs_permission()
+           ) do
+      ActionRun.Query.all()
+      |> ActionRun.Query.by_runner_id(runner_id)
+      |> Authorizer.for_subject(subject)
+      |> Repo.list(ActionRun.Query, opts)
+    end
+  end
+
+  def fetch_run_by_id(id, %Subject{} = subject, opts \\ []) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.view_runs_permission()
+           ),
+         true <- Repo.valid_uuid?(id) do
+      ActionRun.Query.all()
+      |> ActionRun.Query.by_id(id)
+      |> Authorizer.for_subject(subject)
+      |> Repo.fetch(ActionRun.Query, Keyword.put_new(opts, :preload, :runner))
+    else
+      false -> {:error, :not_found}
+      other -> other
+    end
   end
 
   @doc """
   Looks up a run by `request_id` AND `runner_id`. Used by the runner
-  socket so an runner can only see/mutate runs that were dispatched to
+  socket so a runner can only see/mutate runs that were dispatched to
   it — never another runner's runs, even within the same account.
   """
-  def get_run_for_runner(runner_id, request_id) do
-    Repo.get_by(ActionRun, runner_id: runner_id, request_id: request_id)
+  def fetch_run_by_request_id_for_runner(request_id, runner_id) do
+    ActionRun.Query.all()
+    |> ActionRun.Query.by_runner_id(runner_id)
+    |> ActionRun.Query.by_request_id(request_id)
+    |> Repo.fetch(ActionRun.Query)
   end
-
-  defp maybe_filter_status(q, nil), do: q
-  defp maybe_filter_status(q, status), do: where(q, [r], r.status == ^status)
-  defp maybe_filter_runner(q, nil), do: q
-  defp maybe_filter_runner(q, runner_id), do: where(q, [r], r.runner_id == ^runner_id)
-  defp maybe_filter_action(q, nil), do: q
-  defp maybe_filter_action(q, action_id), do: where(q, [r], r.action_id == ^action_id)
-  defp maybe_limit(q, n), do: limit(q, ^n)
 
   # -- Creation ---------------------------------------------------------
 
@@ -72,14 +172,16 @@ defmodule Emisar.Runs do
   Create a run row in :pending state. Caller is responsible for
   triggering the transport to deliver `run_action` once the row is
   persisted (see Emisar.Transport).
+
+  Internal — called by `dispatch_run/2` and tests. Tests can also call
+  this directly to seed runs without exercising policy + dispatch.
   """
   def create_run(attrs) do
-    request_id = attrs[:request_id] || attrs["request_id"] || generate_request_id()
+    request_id = attrs[:request_id] || generate_request_id()
     attrs = Map.put(attrs, :request_id, request_id)
     attrs = Map.put(attrs, :queued_at, DateTime.utc_now() |> DateTime.truncate(:microsecond))
 
-    %ActionRun{}
-    |> ActionRun.create_changeset(attrs)
+    ActionRun.Changeset.create(attrs)
     |> Repo.insert()
     |> tap_broadcast()
   end
@@ -94,18 +196,53 @@ defmodule Emisar.Runs do
       {:error, :denied_by_policy, reason}
       {:error, changeset}
   """
-  def dispatch(account_id, attrs) do
-    attrs = Map.put(attrs, :account_id, account_id)
-    runner_id = attrs[:runner_id] || attrs["runner_id"]
-    action_id = attrs[:action_id] || attrs["action_id"]
-    reason = attrs[:reason] || attrs["reason"]
+  def dispatch_run(attrs, %Subject{account: %{id: account_id}} = subject) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.dispatch_run_permission()
+           ) do
+      attrs = Map.put(attrs, :account_id, account_id)
+      runner_id = attrs[:runner_id]
+      action_id = attrs[:action_id]
+      reason = attrs[:reason]
+      membership_id = Map.get(attrs, :requested_by_membership_id)
 
-    with :ok <- require_runner(runner_id),
-         :ok <- require_action(action_id),
-         :ok <- require_reason(reason),
-         :ok <- runner_in_account(runner_id, account_id),
-         {:ok, action} <- fetch_advertised_action(account_id, runner_id, action_id) do
-      do_dispatch(account_id, attrs, action)
+      with :ok <- require_runner(runner_id),
+           :ok <- require_action(action_id),
+           :ok <- require_reason(reason),
+           :ok <- runner_in_account(runner_id, account_id),
+           :ok <- runner_in_membership_scope(runner_id, account_id, membership_id),
+           {:ok, action} <- fetch_advertised_action(runner_id, action_id, subject) do
+        attrs
+        |> Map.delete(:requested_by_membership_id)
+        |> Map.put(:args_sha256, args_sha256(attrs[:args]))
+        |> Map.put(:requires_approval, false)
+        |> evaluate_and_dispatch(account_id, action)
+      end
+    end
+  end
+
+  # Per-user runner ACLs (v1). If the caller is operator-driven and
+  # supplies `requested_by_membership_id`, the membership's runner
+  # scopes must include this runner. MCP/system paths pass nil and
+  # bypass — their own auth gate (api_key.runner_filter +
+  # runner_group_filter) is the relevant check there.
+  # `runner_in_account/2` runs first in the with chain, so the runner
+  # is guaranteed to belong to `account_id` by the time we get here.
+  defp runner_in_membership_scope(_runner_id, _account_id, nil), do: :ok
+
+  defp runner_in_membership_scope(runner_id, _account_id, membership_id) do
+    case Emisar.Accounts.runner_scopes_for_membership(membership_id) do
+      [] ->
+        :ok
+
+      scopes ->
+        with {:ok, runner} <- Emisar.Runners.peek_runner_by_id(runner_id) do
+          if Emisar.Accounts.runner_in_scope?(runner, scopes),
+            do: :ok,
+            else: {:error, :runner_out_of_scope}
+        end
     end
   end
 
@@ -136,83 +273,117 @@ defmodule Emisar.Runs do
   # Authoritative lookup. The runner has already advertised this action
   # via `Catalog.observe_state`; if the catalog row is missing the
   # action simply doesn't exist on that runner and we refuse to dispatch.
-  defp fetch_advertised_action(account_id, runner_id, action_id) do
-    case Emisar.Catalog.get_action(account_id, runner_id, action_id) do
-      nil -> {:error, :action_not_found}
-      action -> {:ok, action}
+  defp fetch_advertised_action(runner_id, action_id, %Subject{} = subject) do
+    case Emisar.Catalog.fetch_action_by_id(action_id, runner_id, subject) do
+      {:error, :not_found} -> {:error, :action_not_found}
+      {:ok, action} -> {:ok, action}
     end
   end
 
-  defp do_dispatch(account_id, attrs, action) do
-    args_sha =
-      :crypto.hash(:sha256, Jason.encode!(attrs[:args] || attrs["args"] || %{}))
-      |> Base.encode16(case: :lower)
-
-    # Inject catalog-authoritative risk and kind so a caller cannot
-    # spoof "low" to bypass a "high requires approval" rule.
-    eval_attrs =
-      attrs
-      |> Map.put(:risk, action.risk)
-      |> Map.put(:kind, action.kind)
-
-    attrs =
-      attrs
-      |> Map.put(:args_sha256, args_sha)
-      |> Map.put(:requires_approval, false)
+  # The policy sees catalog-authoritative risk + kind so a caller can't
+  # spoof "low" to bypass a `:require_approval` on `high`.
+  defp evaluate_and_dispatch(attrs, account_id, action) do
+    eval_attrs = Map.merge(attrs, %{risk: action.risk, kind: action.kind})
 
     case Emisar.Policies.evaluate_with_policy(account_id, eval_attrs) do
-      {:deny, matched, reason, policy} ->
-        # Store a denied run row for the audit trail so operators can
-        # see attempts even when they didn't reach the runner.
-        run_attrs =
-          attrs
-          |> Map.merge(policy_attrs(policy, "deny", reason, matched))
-          |> Map.put(:status, "denied")
+      {:deny, matched, reason, policy} -> dispatch_deny(attrs, policy, reason, matched)
+      {:allow, matched, reason, policy} -> dispatch_allow(attrs, policy, reason, matched)
+      {:require_approval, matched, reason, policy} -> dispatch_require_approval(attrs, policy, reason, matched)
+    end
+  end
 
-        {:ok, denied_run} = create_run(run_attrs)
-        log_policy_evaluated(denied_run, policy, "deny", reason, matched)
-        {:error, :denied_by_policy, reason}
+  # Store a denied row for the audit trail even though we never reach
+  # the runner — operators need to see attempts that policy rejected.
+  defp dispatch_deny(attrs, policy, reason, matched) do
+    run_attrs =
+      attrs
+      |> Map.merge(policy_attrs(policy, "deny", reason, matched))
+      |> Map.put(:status, "denied")
 
-      {:allow, matched, reason, policy} ->
-        attrs = Map.merge(attrs, policy_attrs(policy, "allow", reason, matched))
+    {:ok, denied} = create_run(run_attrs)
+    log_policy_evaluated(denied, policy, "deny", reason, matched)
+    {:error, :denied_by_policy, reason}
+  end
+
+  defp dispatch_allow(attrs, policy, reason, matched) do
+    attrs = Map.merge(attrs, policy_attrs(policy, "allow", reason, matched))
+
+    with {:ok, run} <- create_run(attrs),
+         :ok <- dispatch_to_runner(run) do
+      log_policy_evaluated(run, policy, "allow", reason, matched)
+      {:ok, :running, run}
+    end
+  end
+
+  # The grant fast-path lets an LLM keep working after a one-time human
+  # approval — `peek_matching_grant` returns nil unless the calling key
+  # has an unexpired, unrevoked grant whose (action, runner, args)
+  # shape covers this call. When matched we dispatch as if policy said
+  # `:allow`; the grant is named in the audit row so it's traceable
+  # back to the human who said yes.
+  defp dispatch_require_approval(attrs, policy, policy_reason, matched) do
+    case lookup_grant(attrs) do
+      {:matched, grant} ->
+        attrs = Map.merge(attrs, policy_attrs(policy, "allow", "matched approval grant", matched))
 
         with {:ok, run} <- create_run(attrs),
              :ok <- dispatch_to_runner(run) do
-          log_policy_evaluated(run, policy, "allow", reason, matched)
+          log_grant_used(run, grant, policy)
           {:ok, :running, run}
         end
 
-      {:require_approval, matched, policy_reason, policy} ->
+      :none ->
         attrs =
           attrs
           |> Map.merge(policy_attrs(policy, "require_approval", policy_reason, matched))
           |> Map.merge(%{status: "pending_approval", requires_approval: true})
 
-        # Pass the *operator's* reason (why they want to run it) to the
-        # approval request — not the policy reason (why approval is
-        # required). The policy reason is also on run.policy_reason for
-        # the approval reviewer to see separately.
-        operator_reason = attrs[:reason] || attrs["reason"]
-
+        # Operator's reason ("why I'm running this") goes to the approval
+        # request; the policy reason ("why approval is required") stays
+        # on run.policy_reason for the reviewer to see separately.
         with {:ok, run} <- create_run(attrs),
              {:ok, _req} <-
-               Emisar.Approvals.create_request(run, attrs[:requested_by_id], operator_reason) do
+               Emisar.Approvals.create_request(run, attrs[:requested_by_id], attrs[:reason]) do
           log_policy_evaluated(run, policy, "require_approval", policy_reason, matched)
           {:ok, :pending_approval, run}
         end
     end
   end
 
+  defp lookup_grant(%{api_key_id: api_key_id} = attrs) when is_binary(api_key_id) do
+    case Emisar.Approvals.peek_matching_grant(
+           api_key_id,
+           attrs[:action_id],
+           attrs[:runner_id],
+           attrs[:args_sha256]
+         ) do
+      %{} = grant ->
+        if Emisar.Approvals.use_grant(grant) == :ok, do: {:matched, grant}, else: :none
+
+      _ ->
+        :none
+    end
+  end
+
+  defp lookup_grant(_attrs), do: :none
+
+  defp args_sha256(args) do
+    :crypto.hash(:sha256, Jason.encode!(args || %{}))
+    |> Base.encode16(case: :lower)
+  end
+
   defp runner_belongs_to_account?(runner_id, account_id) do
-    Repo.exists?(
-      from a in Emisar.Runners.Runner,
-        where: a.id == ^runner_id and a.account_id == ^account_id and is_nil(a.disabled_at)
-    )
+    Runner.Query.all()
+    |> Runner.Query.not_disabled()
+    |> Runner.Query.by_id(runner_id)
+    |> Runner.Query.by_account_id(account_id)
+    |> Repo.exists?()
   end
 
   @doc """
   Re-emits the run_action envelope onto the runner's PubSub topic. Used
   both for fresh dispatches and for the approve→send transition.
+  Internal — called from `dispatch_run/2` and `Approvals.approve_request/4`.
   """
   def dispatch_to_runner(%ActionRun{} = run) do
     PubSub.deliver_to_runner(run.runner_id, %{
@@ -238,33 +409,52 @@ defmodule Emisar.Runs do
   Cloud-initiated cancellation. Marks the run as cancelling and tells
   the runner to terminate. Idempotent if the run is already terminal.
   """
-  def cancel(%ActionRun{status: status} = run, by_user_id, reason \\ nil) do
-    if ActionRun.terminal?(status) do
-      {:ok, run}
-    else
-      PubSub.deliver_to_runner(run.runner_id, %{
-        "type" => "cancel",
-        "request_id" => run.request_id,
-        "reason" => reason
-      })
+  def cancel_run(%ActionRun{status: status} = run, %Subject{} = subject, reason \\ nil) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.cancel_run_permission()
+           ),
+         :ok <- ensure_run_in_subject_account(run, subject) do
+      if ActionRun.terminal?(status) do
+        {:ok, run}
+      else
+        PubSub.deliver_to_runner(run.runner_id, %{
+          "type" => "cancel",
+          "request_id" => run.request_id,
+          "reason" => reason
+        })
 
-      Audit.log(run.account_id, "run.cancel_requested",
-        actor_kind: "user",
-        actor_id: by_user_id,
-        subject_kind: "run",
-        subject_id: run.id,
-        payload: %{from_status: status, reason: reason}
-      )
-
-      mark_cancelled(run, reason || "operator cancelled")
+        log_cancel_requested(run, subject, reason)
+        mark_cancelled(run, reason || "operator cancelled")
+      end
     end
   end
+
+  defp log_cancel_requested(%ActionRun{} = run, %Subject{} = subject, reason) do
+    Audit.log(run.account_id, "run.cancel_requested",
+      actor_kind: actor_kind(subject),
+      actor_id: actor_id(subject),
+      subject_kind: "run",
+      subject_id: run.id,
+      payload: %{from_status: run.status, reason: reason}
+    )
+  end
+
+  defp ensure_run_in_subject_account(%ActionRun{account_id: account_id}, %Subject{} = subject),
+    do: Subject.ensure_in_account(subject, account_id)
+
+  defdelegate actor_kind(subject), to: Subject
+  defdelegate actor_id(subject), to: Subject
 
   def generate_request_id do
     "req_" <> (:crypto.strong_rand_bytes(16) |> Base.url_encode64(padding: false))
   end
 
   # -- State transitions ----------------------------------------------
+  #
+  # These are called from inside `dispatch_run/2`, the runner socket
+  # process, and the runbook engine — all already-authorized paths.
 
   def mark_sent(%ActionRun{} = run) do
     transition(run, :sent, %{sent_at: now_utc()})
@@ -278,35 +468,21 @@ defmodule Emisar.Runs do
     transition(run, :cancelled, %{cancelled_at: now_utc(), finished_at: now_utc(), reason_text: reason})
   end
 
+  # Unknown / missing status from the runner is treated as "failed" so
+  # we still write a terminal row instead of leaving the run stuck.
+  @result_statuses %{
+    "success" => :success,
+    "failed" => :failed,
+    "error" => :error,
+    "validation_failed" => :validation_failed,
+    "unknown_action" => :unknown_action,
+    "cancelled" => :cancelled
+  }
+
   def mark_finished(%ActionRun{} = run, result_payload) do
-    status =
-      case result_payload["status"] do
-        "success" -> :success
-        "failed" -> :failed
-        "error" -> :error
-        "validation_failed" -> :validation_failed
-        "unknown_action" -> :unknown_action
-        "cancelled" -> :cancelled
-        _ -> :failed
-      end
+    status = Map.get(@result_statuses, result_payload["status"], :failed)
 
-    attrs = %{
-      finished_at: now_utc(),
-      exit_code: result_payload["exit_code"],
-      duration_ms: result_payload["duration_ms"],
-      timed_out: result_payload["timed_out"] || false,
-      stdout_sha256: result_payload["stdout_sha256"],
-      stderr_sha256: result_payload["stderr_sha256"],
-      stdout_bytes: result_payload["stdout_bytes"],
-      stderr_bytes: result_payload["stderr_bytes"],
-      event_id: result_payload["event_id"],
-      # The runner's `reason` on non-success results is the failure cause
-      # (e.g. validation message). It belongs in error_message, not in
-      # reason_text — which holds the operator's freeform reason.
-      error_message: result_payload["reason"]
-    }
-
-    case transition(run, status, attrs) do
+    case transition(run, status, result_attrs(result_payload)) do
       {:ok, finished} = ok ->
         # If this run was part of a runbook and succeeded, fire the
         # next step. Non-success stops the runbook and the failed step
@@ -319,27 +495,40 @@ defmodule Emisar.Runs do
     end
   end
 
-  def mark_error_envelope(%ActionRun{} = run, %{} = error) do
-    transition(run, :error, %{
+  defp result_attrs(payload) do
+    %{
       finished_at: now_utc(),
-      error_message: error["message"] || error["code"]
-    })
+      exit_code: payload["exit_code"],
+      duration_ms: payload["duration_ms"],
+      timed_out: payload["timed_out"] || false,
+      stdout_sha256: payload["stdout_sha256"],
+      stderr_sha256: payload["stderr_sha256"],
+      stdout_bytes: payload["stdout_bytes"],
+      stderr_bytes: payload["stderr_bytes"],
+      event_id: payload["event_id"],
+      # The runner's `reason` on non-success results is the failure cause
+      # (e.g. validation message). It belongs in error_message, not in
+      # reason_text — which holds the operator's freeform reason.
+      error_message: payload["reason"]
+    }
   end
 
   defp transition(%ActionRun{} = run, status, attrs) do
     run
-    |> ActionRun.transition_changeset(status, attrs)
+    |> ActionRun.Changeset.transition(status, attrs)
     |> Repo.update()
     |> tap_broadcast()
   end
 
   # -- Events (progress chunks) ----------------------------------------
+  #
+  # Called from the runner socket process — no Subject thread; the
+  # socket-level token check is the auth gate.
 
   def append_event(%ActionRun{} = run, attrs) do
     attrs = Map.put(attrs, :run_id, run.id) |> Map.put(:account_id, run.account_id)
 
-    %RunEvent{}
-    |> RunEvent.changeset(attrs)
+    RunEvent.Changeset.create(attrs)
     |> Repo.insert()
     |> case do
       {:ok, event} ->
@@ -356,7 +545,7 @@ defmodule Emisar.Runs do
   end
 
   def append_event(run_id, attrs) when is_binary(run_id) do
-    case Repo.get(ActionRun, run_id) do
+    case ActionRun.Query.all() |> ActionRun.Query.by_id(run_id) |> Repo.peek() do
       nil -> {:error, :unknown_run}
       %ActionRun{} = run -> append_event(run, attrs)
     end
@@ -364,28 +553,39 @@ defmodule Emisar.Runs do
 
   @doc """
   Translates an inbound `action_result` envelope into a state transition
-  on the matching ActionRun. Scoped by runner_id so an runner can only
+  on the matching ActionRun. Scoped by runner_id so a runner can only
   finalize runs that were dispatched to it. Returns
   `{:error, :unknown_request_id}` if no matching run exists.
+
+  Internal — called from the runner socket.
   """
   def finalize_from_result(runner_id, %{"request_id" => request_id} = result) do
-    case get_run_for_runner(runner_id, request_id) do
-      nil -> {:error, :unknown_request_id}
-      %ActionRun{} = run -> mark_finished(run, result)
+    case fetch_run_by_request_id_for_runner(request_id, runner_id) do
+      {:error, :not_found} -> {:error, :unknown_request_id}
+      {:ok, %ActionRun{} = run} -> mark_finished(run, result)
     end
   end
 
   def finalize_from_result(_runner_id, _msg),
     do: {:error, :missing_request_id}
 
-  def list_events(run_id, opts \\ []) do
-    limit = opts[:limit] || 500
-    from(e in RunEvent,
-      where: e.run_id == ^run_id,
-      order_by: e.seq,
-      limit: ^limit
-    )
-    |> Repo.all()
+  @doc """
+  Progress events for a run, ordered by `seq`. Returns
+  `{:ok, [event], %Paginator.Metadata{}}` per the standard `list_*`
+  contract; the run is fetched via `fetch_run_by_id/3` first so the
+  subject's account scope and permission gate apply.
+
+  Accepts the same `:filter`/`:page` opts as `Emisar.Repo.list/3`; the
+  caller may pass `page: [limit: n]` to bound the result for callers
+  (run-detail render, MCP /events) that want all events on one page.
+  """
+  def list_events_for_run(run_id, %Subject{} = subject, opts \\ []) do
+    with {:ok, _run} <- fetch_run_by_id(run_id, subject) do
+      RunEvent.Query.all()
+      |> RunEvent.Query.by_run_id(run_id)
+      |> RunEvent.Query.ordered_by_seq()
+      |> Repo.list(RunEvent.Query, opts)
+    end
   end
 
   # -- Helpers ----------------------------------------------------------
@@ -413,7 +613,6 @@ defmodule Emisar.Runs do
   defp policy_attrs(%Emisar.Policies.Policy{} = policy, decision, reason, matched) do
     %{
       policy_id: policy.id,
-      policy_version: policy.version,
       policy_decision: decision,
       policy_reason: reason,
       matched_rules: matched
@@ -432,11 +631,30 @@ defmodule Emisar.Runs do
       payload: %{
         run_id: run.id,
         policy_id: policy && policy.id,
-        policy_name: policy && policy.name,
-        policy_version: policy && policy.version,
         decision: decision,
         reason: reason,
         matched_rules: matched
+      }
+    )
+  end
+
+  # Emits an audit row when a run bypasses approval via a standing
+  # grant. The grant id + originating approval are in the payload so
+  # operators can trace "why did this fire without prompting?" back to
+  # the human who said yes.
+  defp log_grant_used(%ActionRun{} = run, grant, policy) do
+    Audit.log(run.account_id, "approval.grant_used",
+      actor_kind: "system",
+      subject_kind: "action_run",
+      subject_id: run.id,
+      subject_label: run.action_id,
+      payload: %{
+        run_id: run.id,
+        grant_id: grant.id,
+        approval_request_id: grant.approval_request_id,
+        policy_id: policy && policy.id,
+        uses_count: grant.uses_count + 1,
+        max_uses: grant.max_uses
       }
     )
   end

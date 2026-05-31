@@ -3,7 +3,8 @@ defmodule EmisarWeb.TeamLive do
 
   alias Emisar.{Accounts, Mailers}
   alias Emisar.Accounts.Membership
-  alias EmisarWeb.Permissions
+  alias EmisarWeb.{LiveTable, Permissions}
+  alias Phoenix.LiveView.JS
 
   @roles ~w(owner admin operator viewer)
 
@@ -12,8 +13,115 @@ defmodule EmisarWeb.TeamLive do
      socket
      |> assign(:page_title, "Team")
      |> assign(:roles, @roles)
-     |> assign_form(default_params())
-     |> load()}
+     |> assign(:editing_id, nil)
+     |> assign(:edit_form, nil)
+     |> assign(:scope_editing_id, nil)
+     |> assign_form(default_params())}
+  end
+
+  def handle_params(params, _uri, socket) do
+    {:noreply, load(socket, params)}
+  end
+
+  defp reload(socket), do: load(socket, socket.assigns[:filter_params] || %{})
+
+  def handle_event("start_edit", %{"membership_id" => id}, socket) do
+    case find_membership(socket, id) do
+      nil ->
+        {:noreply, socket}
+
+      %Membership{user: user} when not is_nil(user) ->
+        params = %{"full_name" => user.full_name || "", "email" => user.email}
+
+        {:noreply,
+         socket
+         |> assign(:editing_id, id)
+         |> assign(:edit_form, to_form(params, as: "user"))}
+    end
+  end
+
+  def handle_event("cancel_edit", _params, socket) do
+    {:noreply, socket |> assign(:editing_id, nil) |> assign(:edit_form, nil)}
+  end
+
+  def handle_event("start_scope_edit", %{"membership_id" => id}, socket) do
+    {:noreply, assign(socket, :scope_editing_id, id)}
+  end
+
+  def handle_event("cancel_scope_edit", _params, socket) do
+    {:noreply, assign(socket, :scope_editing_id, nil)}
+  end
+
+  def handle_event("toggle_require_mfa", _params, socket) do
+    value = not socket.assigns.current_account.require_mfa
+
+    cond do
+      socket.assigns.current_role != "owner" ->
+        {:noreply, put_flash(socket, :error, "Only the account owner can change this setting.")}
+
+      # Prevent owners from locking themselves out — if they don't have
+      # MFA enabled, they can't enforce it (since the enforcement gate
+      # would funnel them too).
+      value and is_nil(socket.assigns.current_user.mfa_enabled_at) ->
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           "Enable MFA on your own profile first — otherwise you'd lock yourself out."
+         )}
+
+      true ->
+        case Accounts.update_account_require_mfa(
+               socket.assigns.current_account,
+               value,
+               socket.assigns.current_subject
+             ) do
+          {:ok, account} ->
+            {:noreply,
+             socket
+             |> assign(:current_account, account)
+             |> put_flash(
+               :info,
+               if(value,
+                 do: "Account-wide MFA enforced. Members without MFA will be prompted on next sign-in.",
+                 else: "Account-wide MFA requirement turned off."
+               )
+             )}
+
+          {:error, :unauthorized} ->
+            {:noreply, put_flash(socket, :error, "Only the account owner can change this setting.")}
+
+          {:error, _} ->
+            {:noreply, put_flash(socket, :error, "Could not update MFA setting.")}
+        end
+    end
+  end
+
+  def handle_event("save_scopes", %{"membership_id" => id} = params, socket) do
+    with_membership(socket, id, fn m ->
+      groups = (params["groups"] || []) |> List.wrap()
+      runner_ids = (params["runners"] || []) |> List.wrap()
+
+      new_scopes =
+        Enum.map(groups, &{"group", &1}) ++ Enum.map(runner_ids, &{"runner", &1})
+
+      case Accounts.replace_runner_scopes(m, new_scopes, socket.assigns.current_subject) do
+        {:ok, :ok} -> {:ok, "Scope updated."}
+        {:error, reason} -> {:error, error_message(reason)}
+      end
+    end)
+    |> tap_clear_scope_edit()
+  end
+
+  def handle_event("save_edit", %{"membership_id" => id, "user" => params}, socket) do
+    with_membership(socket, id, fn m ->
+      case Accounts.update_user_as_admin(m, params, socket.assigns.current_subject) do
+        {:ok, _user} -> {:ok, "Member updated."}
+        {:error, %Ecto.Changeset{} = cs} -> {:error, "Couldn't update: #{format_cs_errors(cs)}"}
+        {:error, reason} -> {:error, error_message(reason)}
+      end
+    end)
+    |> tap_clear_edit()
   end
 
   def handle_event("validate", %{"invite" => params}, socket) do
@@ -21,78 +129,131 @@ defmodule EmisarWeb.TeamLive do
   end
 
   def handle_event("invite", %{"invite" => params}, socket) do
-    if can_manage?(socket) do
-      email = String.trim(params["email"] || "")
-      role = params["role"] || "operator"
+    email = String.trim(params["email"] || "")
+    role = params["role"] || "operator"
 
-      cond do
-        email == "" ->
-          {:noreply, put_flash(socket, :error, "Email is required.")}
+    cond do
+      not can_manage?(socket) ->
+        {:noreply, put_flash(socket, :error, "Only owners and admins can invite members.")}
 
-        role not in @roles ->
-          {:noreply, put_flash(socket, :error, "Unknown role.")}
+      email == "" ->
+        {:noreply, put_flash(socket, :error, "Email is required.")}
 
-        true ->
-          do_invite(socket, email, role)
-      end
-    else
-      {:noreply, put_flash(socket, :error, "Only owners and admins can invite members.")}
+      role not in @roles ->
+        {:noreply, put_flash(socket, :error, "Unknown role.")}
+
+      :else ->
+        do_invite(socket, email, role)
     end
   end
 
   def handle_event("change_role", %{"membership_id" => id, "role" => role}, socket) do
-    cond do
-      role not in @roles ->
-        {:noreply, put_flash(socket, :error, "Unknown role.")}
+    with true <- role in @roles,
+         %Membership{} = m <- find_membership(socket, id) do
+      case Accounts.update_membership_role(m, role, socket.assigns.current_subject) do
+        {:ok, _updated} ->
+          {:noreply, socket |> put_flash(:info, "Role updated.") |> reload()}
 
-      true ->
-        case Enum.find(socket.assigns.memberships, &(&1.id == id)) do
-          nil ->
-            {:noreply, socket}
-
-          %Membership{} = m ->
-            case Accounts.update_membership_role(m, role, socket.assigns.current_user.id) do
-              {:ok, _updated} ->
-                {:noreply, socket |> put_flash(:info, "Role updated.") |> load()}
-
-              {:error, reason} ->
-                {:noreply, put_flash(socket, :error, role_error_message(reason))}
-            end
-        end
+        {:error, reason} ->
+          {:noreply, put_flash(socket, :error, error_message(reason))}
+      end
+    else
+      false -> {:noreply, put_flash(socket, :error, "Unknown role.")}
+      nil -> {:noreply, socket}
     end
   end
 
   def handle_event("remove", %{"membership_id" => id}, socket) do
-    case Enum.find(socket.assigns.memberships, &(&1.id == id)) do
+    with_membership(socket, id, fn m ->
+      case Accounts.delete_membership(m, socket.assigns.current_subject) do
+        {:ok, _} -> {:ok, "Member removed."}
+        {:error, reason} -> {:error, error_message(reason)}
+      end
+    end)
+  end
+
+  def handle_event("suspend", %{"membership_id" => id}, socket) do
+    with_membership(socket, id, fn m ->
+      case Accounts.suspend_membership(m, socket.assigns.current_subject) do
+        {:ok, _} -> {:ok, "Access suspended."}
+        {:error, reason} -> {:error, error_message(reason)}
+      end
+    end)
+  end
+
+  def handle_event("reinstate", %{"membership_id" => id}, socket) do
+    with_membership(socket, id, fn m ->
+      case Accounts.reinstate_membership(m, socket.assigns.current_subject) do
+        {:ok, _} -> {:ok, "Access restored."}
+        {:error, reason} -> {:error, error_message(reason)}
+      end
+    end)
+  end
+
+  def handle_event("force_password_reset", %{"membership_id" => id}, socket) do
+    with_membership(socket, id, fn m ->
+      case Accounts.force_password_reset(m, socket.assigns.current_subject) do
+        :ok -> {:ok, "Password-reset email sent and sessions ended."}
+        {:error, reason} -> {:error, error_message(reason)}
+      end
+    end)
+  end
+
+  def handle_event("end_sessions", %{"membership_id" => id}, socket) do
+    with_membership(socket, id, fn m ->
+      case Accounts.end_all_sessions_for(m, socket.assigns.current_subject) do
+        :ok -> {:ok, "All sessions ended for that user."}
+        {:error, reason} -> {:error, error_message(reason)}
+      end
+    end)
+  end
+
+  defp find_membership(socket, id), do: Enum.find(socket.assigns.memberships, &(&1.id == id))
+
+  defp tap_clear_scope_edit({:noreply, %{assigns: %{flash: %{"info" => _}}} = socket}),
+    do: {:noreply, assign(socket, :scope_editing_id, nil)}
+
+  defp tap_clear_scope_edit(other), do: other
+
+  defp tap_clear_edit({:noreply, %{assigns: %{flash: %{"info" => _}}} = socket}),
+    do: {:noreply, socket |> assign(:editing_id, nil) |> assign(:edit_form, nil)}
+
+  defp tap_clear_edit(other), do: other
+
+  defp format_cs_errors(%Ecto.Changeset{errors: errors}) do
+    errors
+    |> Enum.map(fn {field, {msg, _}} -> "#{field} #{msg}" end)
+    |> Enum.join("; ")
+  end
+
+  # Repetitive plumbing: look up the membership, run `fun`, flash + reload.
+  defp with_membership(socket, id, fun) do
+    case find_membership(socket, id) do
       nil ->
         {:noreply, socket}
 
       %Membership{} = m ->
-        case Accounts.delete_membership(m, socket.assigns.current_user.id) do
-          {:ok, _} ->
-            {:noreply, socket |> put_flash(:info, "Member removed.") |> load()}
-
-          {:error, reason} ->
-            {:noreply, put_flash(socket, :error, role_error_message(reason))}
-
-          %Membership{} = _stale ->
-            {:noreply, socket |> put_flash(:info, "Member removed.") |> load()}
+        case fun.(m) do
+          {:ok, message} -> {:noreply, socket |> put_flash(:info, message) |> reload()}
+          {:error, message} -> {:noreply, put_flash(socket, :error, message)}
         end
     end
   end
 
-  defp role_error_message(:unauthorized), do: "Only owners and admins can change membership."
-  defp role_error_message(:owner_required), do: "Only an existing owner can grant or revoke owner."
-  defp role_error_message(:last_owner), do: "Can't remove or demote the last owner. Promote someone else first."
-  defp role_error_message(:cannot_self_promote), do: "Promote someone else first — you can't promote yourself."
-  defp role_error_message(%Ecto.Changeset{}), do: "Could not update role."
-  defp role_error_message(_), do: "Could not update role."
+  defp error_message(:unauthorized), do: "Only owners and admins can manage memberships."
+  defp error_message(:owner_required), do: "Only an existing owner can grant or revoke owner."
+  defp error_message(:last_owner), do: "Can't remove or demote the last owner. Promote someone else first."
+  defp error_message(:cannot_self_promote), do: "Promote someone else first — you can't promote yourself."
+  defp error_message(:cannot_modify_self), do: "You can't change your own membership from here. Use Profile."
+  defp error_message(:not_found), do: "User no longer exists."
+  defp error_message(%Ecto.Changeset{}), do: "Could not apply change."
+  defp error_message(_), do: "Could not apply change."
 
   defp do_invite(socket, email, role) do
     account = socket.assigns.current_account
     inviter = socket.assigns.current_user
 
-    case Accounts.invite_user_to_account(account.id, email, role, inviter.id) do
+    case Accounts.invite_user_to_account(email, role, socket.assigns.current_subject) do
       {:ok, %{user: user, invitation_token: token}} ->
         _ = Mailers.UserNotifier.deliver_account_invitation(user, inviter, account, token)
 
@@ -100,7 +261,7 @@ defmodule EmisarWeb.TeamLive do
          socket
          |> put_flash(:info, "Invited #{email}.")
          |> assign_form(default_params())
-         |> load()}
+         |> reload()}
 
       {:error, :already_member} ->
         {:noreply, put_flash(socket, :error, "#{email} is already a member.")}
@@ -110,12 +271,53 @@ defmodule EmisarWeb.TeamLive do
     end
   end
 
-  defp load(socket) do
-    memberships = Accounts.list_memberships_for_account(socket.assigns.current_account.id)
+  defp load(socket, params) do
+    opts = LiveTable.params_to_opts(params)
 
-    socket
-    |> assign(:memberships, memberships)
-    |> assign(:current_role, current_role(memberships, socket.assigns.current_user.id))
+    case Accounts.list_memberships_for_account(socket.assigns.current_subject, opts) do
+      {:ok, memberships, meta} ->
+        scopes_by_membership =
+          memberships
+          |> Enum.map(& &1.id)
+          |> Accounts.runner_scopes_for_membership_ids()
+
+        {:ok, runners, _} = Emisar.Runners.list_runners_for_account(socket.assigns.current_subject)
+        runners_by_id = Map.new(runners, &{&1.id, &1})
+        runner_groups = runners |> Enum.map(& &1.group) |> Enum.uniq() |> Enum.sort()
+
+        socket
+        |> assign(:memberships, memberships)
+        |> assign(:metadata, meta)
+        |> assign(:filter_params, params)
+        |> assign(:scopes_by_membership, scopes_by_membership)
+        |> assign(:runners_by_id, runners_by_id)
+        |> assign(:runner_groups, runner_groups)
+        |> assign(:current_role, current_role(memberships, socket.assigns.current_user.id))
+
+      {:error, _} ->
+        load(socket, %{})
+    end
+  end
+
+  defp mfa_enrolled_count(memberships) do
+    Enum.count(memberships, fn m -> m.user && m.user.mfa_enabled_at end)
+  end
+
+  # Render a scope chip's value — humanizes runner-uuids into names.
+  defp scope_label(%{scope_type: "group", scope_value: v}, _groups, _runners),
+    do: v
+
+  defp scope_label(%{scope_type: "runner", scope_value: id}, _groups, runners_by_id) do
+    case Map.get(runners_by_id, id) do
+      %{name: name} -> name
+      _ -> String.slice(id, 0, 8) <> "…"
+    end
+  end
+
+  defp scope_selected?(membership_id, scopes_by_membership, type, value) do
+    scopes_by_membership
+    |> Map.get(membership_id, [])
+    |> Enum.any?(fn s -> s.scope_type == type and s.scope_value == value end)
   end
 
   defp current_role(memberships, user_id) do
@@ -145,100 +347,435 @@ defmodule EmisarWeb.TeamLive do
       section={:team}
     >
       <:title>Team</:title>
+      <:actions :if={can_manage?(assigns)}>
+        <button
+          phx-click={show_invite()}
+          class="rounded-lg bg-indigo-500 px-3 py-1.5 text-sm font-semibold text-zinc-950 hover:bg-indigo-400"
+        >
+          Invite member
+        </button>
+      </:actions>
 
-      <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        <.card class="lg:col-span-1">
-          <.section_header title="Invite a teammate" />
-          <p class="mt-1 text-xs text-zinc-500">
-            They will receive an email with a link to join <span class="font-semibold">{@current_account.name}</span>.
-          </p>
+      <%!-- Single-column list. Each row is a member: avatar, name +
+           email, role pill, joined, "..." menu. Inline edit form
+           opens directly under the row instead of in a bolted-on
+           extra table column. --%>
+      <.page_container max="4xl">
+        <%!-- Security card — account-wide MFA toggle (owner-only) +
+             at-a-glance per-member MFA status. Lives at the top because
+             this is the highest-leverage account setting on the page;
+             everything below is per-member admin. --%>
+        <section class="rounded-xl border border-zinc-900 bg-zinc-950/40 p-5">
+          <div class="flex items-start justify-between gap-4">
+            <div class="min-w-0">
+              <h2 class="text-sm font-semibold text-zinc-100">Security</h2>
+              <p class="mt-1 text-xs text-zinc-500 leading-relaxed">
+                When enforced, members without 2FA are funneled to their profile to set it up
+                before they can use the rest of the app. Owners can't enable this until they've
+                enrolled themselves — prevents lock-outs.
+              </p>
+            </div>
 
-          <%= if can_manage?(assigns) do %>
-            <.simple_form for={@form} id="invite_form" phx-change="validate" phx-submit="invite">
-              <.input
-                field={@form[:email]}
-                type="email"
-                label="Email"
-                placeholder="teammate@company.com"
-                required
-              />
-              <.input
-                field={@form[:role]}
-                type="select"
-                label="Role"
-                options={Enum.map(@roles, &{String.capitalize(&1), &1})}
-              />
+            <%= cond do %>
+              <% @current_role == "owner" -> %>
+                <button
+                  type="button"
+                  phx-click="toggle_require_mfa"
+                  data-confirm={
+                    if @current_account.require_mfa,
+                      do: "Stop enforcing 2FA account-wide?",
+                      else: "Enforce 2FA for everyone on this account?"
+                  }
+                  class={[
+                    "shrink-0 rounded-lg px-3 py-1.5 text-xs font-semibold",
+                    if(@current_account.require_mfa,
+                      do: "border border-rose-500/40 text-rose-200 hover:bg-rose-500/10",
+                      else: "bg-indigo-500 text-zinc-950 hover:bg-indigo-400"
+                    )
+                  ]}
+                >
+                  {if @current_account.require_mfa, do: "Stop enforcing 2FA", else: "Enforce 2FA"}
+                </button>
 
-              <:actions>
-                <.button phx-disable-with="Sending..." class="w-full">
-                  Send invitation
-                </.button>
-              </:actions>
-            </.simple_form>
-          <% else %>
-            <p class="mt-4 rounded-lg bg-zinc-900/60 p-4 text-xs text-zinc-400">
-              Only owners and admins can invite new members. Your current role: {@current_role || "—"}.
-            </p>
-          <% end %>
-        </.card>
+              <% true -> %>
+                <span class="shrink-0 text-[11px] text-zinc-600">Owner-only</span>
+            <% end %>
+          </div>
 
-        <.card class="lg:col-span-2">
-          <.section_header title="Members" />
+          <%!-- Member status row — shows who's enrolled / not. When
+               require_mfa is on, the un-enrolled count gets a loud
+               amber chip so the owner sees follow-up at a glance. --%>
+          <div class="mt-4 flex flex-wrap items-center gap-2 text-xs">
+            <span class="text-zinc-400">
+              2FA enrolled: <strong class="text-zinc-100">{mfa_enrolled_count(@memberships)}</strong>
+              of <strong class="text-zinc-100">{length(@memberships)}</strong>
+            </span>
+            <%= if (n = length(@memberships) - mfa_enrolled_count(@memberships)) > 0 do %>
+              <.chip tone={if @current_account.require_mfa, do: :amber, else: :default}>
+                {n} without 2FA
+              </.chip>
+            <% else %>
+              <.chip tone={:emerald}>All members enrolled</.chip>
+            <% end %>
+            <%= if @current_account.require_mfa do %>
+              <.chip tone={:indigo}>Enforced</.chip>
+            <% end %>
+          </div>
+        </section>
 
-          <div class="mt-4">
-            <.list_table id="memberships" rows={@memberships}>
-              <:col :let={m} label="Member">
-                <div class="font-medium text-zinc-200">
-                  {(m.user && (m.user.full_name || m.user.email)) || "—"}
+        <%!-- Invite panel — collapsed by default; revealed by header
+             button. Avoids a permanent "fill out this form" sidebar
+             dominating the page when no invite is in flight. --%>
+        <div
+          :if={can_manage?(assigns)}
+          id="invite-panel"
+          class="hidden rounded-xl border border-zinc-900 bg-zinc-950/60 p-6"
+        >
+          <div class="flex items-start justify-between gap-3">
+            <div>
+              <h2 class="text-base font-semibold text-zinc-100">Invite a teammate</h2>
+              <p class="mt-1 text-sm text-zinc-500">
+                We'll email a join link for
+                <span class="font-medium text-zinc-300">{@current_account.name}</span>.
+              </p>
+            </div>
+            <button
+              type="button"
+              phx-click={hide_invite()}
+              class="rounded-md p-1 text-zinc-500 hover:bg-zinc-900 hover:text-zinc-200"
+              aria-label="Close invite panel"
+            >
+              <.icon name="hero-x-mark" class="h-4 w-4" />
+            </button>
+          </div>
+
+          <.simple_form
+            for={@form}
+            id="invite_form"
+            phx-change="validate"
+            phx-submit="invite"
+            class="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-[1fr_auto_auto] sm:items-end"
+          >
+            <.input
+              field={@form[:email]}
+              type="email"
+              label="Email"
+              placeholder="teammate@company.com"
+              required
+            />
+            <.input
+              field={@form[:role]}
+              type="select"
+              label="Role"
+              options={Enum.map(@roles, &{String.capitalize(&1), &1})}
+            />
+            <:actions>
+              <.button phx-disable-with="Sending...">Send invite</.button>
+            </:actions>
+          </.simple_form>
+        </div>
+
+        <%!-- Member list. Vertical, no table chrome — feels like a
+             roster, not a database table. Outer wrapper deliberately
+             NOT overflow-hidden so the per-row actions dropdown
+             (`<details>` popover) can escape its row instead of being
+             clipped by the rounded card. --%>
+        <div class="rounded-xl border border-zinc-900 bg-zinc-950/40">
+          <header class="rounded-t-xl border-b border-zinc-900 px-5 py-3">
+            <h2 class="text-sm font-semibold text-zinc-100">
+              {@metadata.count} {if @metadata.count == 1, do: "member", else: "members"}
+            </h2>
+          </header>
+
+          <ul class="divide-y divide-zinc-900">
+            <li
+              :for={m <- @memberships}
+              class="px-5 py-4"
+            >
+              <div class="flex items-center gap-4">
+                <%!-- Avatar: initial in a colored disc — same shape as
+                     the sidebar avatar, so the visual rhymes. --%>
+                <span class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-zinc-800 text-sm font-semibold uppercase text-zinc-300">
+                  {String.first((m.user && (m.user.full_name || m.user.email)) || "?")}
+                </span>
+
+                <div class="min-w-0 flex-1">
+                  <div class="flex items-center gap-2">
+                    <span class="truncate font-medium text-zinc-100">
+                      {(m.user && (m.user.full_name || m.user.email)) || "(unknown)"}
+                    </span>
+                    <span
+                      :if={Membership.disabled?(m)}
+                      class="rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium text-amber-200 ring-1 ring-amber-500/30"
+                    >
+                      Suspended
+                    </span>
+                    <span
+                      :if={m.user_id == @current_user.id}
+                      class="rounded bg-indigo-500/15 px-1.5 py-0.5 text-[10px] font-medium text-indigo-200 ring-1 ring-indigo-500/30"
+                    >
+                      You
+                    </span>
+                  </div>
+                  <div class="truncate text-xs text-zinc-500">
+                    {m.user && m.user.email} · joined {relative_time(m.inserted_at)}
+                  </div>
+                  <%!-- Per-user runner ACLs (#238): show what runners
+                       this member can reach. Empty = all (default).
+                       Group/runner scopes appear as inline chips. --%>
+                  <div class="mt-1 flex flex-wrap items-center gap-1">
+                    <%= case Map.get(@scopes_by_membership, m.id, []) do %>
+                      <% [] -> %>
+                        <span class="text-[10px] text-zinc-600">
+                          access: all runners
+                        </span>
+                      <% scopes -> %>
+                        <span class="text-[10px] uppercase tracking-wider text-zinc-600">
+                          scope:
+                        </span>
+                        <.chip :for={s <- scopes} tone={:indigo}>
+                          {s.scope_type}: {scope_label(s, @runner_groups, @runners_by_id)}
+                        </.chip>
+                    <% end %>
+                  </div>
                 </div>
-                <div class="text-xs text-zinc-500">{m.user && m.user.email}</div>
-              </:col>
-              <:col :let={m} label="Role">
-                <%= if can_manage?(assigns) and not self_owner?(m, @current_user.id) do %>
-                  <form phx-change="change_role" class="inline-flex">
+
+                <%= if can_manage?(assigns) and not self_owner?(m, @current_user.id) and not Membership.disabled?(m) do %>
+                  <form phx-change="change_role" class="shrink-0">
                     <input type="hidden" name="membership_id" value={m.id} />
                     <select
                       name="role"
                       class="rounded-lg border-0 bg-zinc-900 px-2 py-1 text-xs text-zinc-200 ring-1 ring-zinc-800 focus:ring-indigo-500"
                     >
-                      <option :for={r <- @roles} value={r} selected={m.role == r}>{String.capitalize(r)}</option>
+                      <option :for={r <- @roles} value={r} selected={m.role == r}>
+                        {String.capitalize(r)}
+                      </option>
                     </select>
                   </form>
                 <% else %>
-                  <span class="rounded bg-zinc-900 px-2 py-0.5 text-xs font-medium text-zinc-300 ring-1 ring-zinc-800">
+                  <span class="shrink-0 rounded-md bg-zinc-900 px-2 py-1 text-xs font-medium text-zinc-300 ring-1 ring-zinc-800">
                     {String.capitalize(m.role)}
                   </span>
                 <% end %>
-              </:col>
-              <:col :let={m} label="Joined">
-                <span class="text-xs text-zinc-400">{relative_time(m.inserted_at)}</span>
-              </:col>
-              <:action :let={m}>
-                <%= cond do %>
-                  <% m.user_id == @current_user.id and m.role == "owner" -> %>
-                    <span class="text-xs text-zinc-500">you</span>
-                  <% can_manage?(assigns) -> %>
+
+                <.member_actions
+                  membership={m}
+                  current_user_id={@current_user.id}
+                  can_manage?={can_manage?(assigns)}
+                />
+              </div>
+
+              <%!-- Edit form appears inline under the row. No bolted-
+                   on table column; just normal flow. --%>
+              <div :if={@editing_id == m.id and @edit_form} class="mt-4 rounded-lg border border-zinc-800 bg-zinc-900/40 p-4">
+                <.simple_form
+                  for={@edit_form}
+                  id={"edit-form-#{m.id}"}
+                  phx-submit="save_edit"
+                  class="grid grid-cols-1 gap-3 sm:grid-cols-2"
+                >
+                  <input type="hidden" name="membership_id" value={m.id} />
+                  <.input field={@edit_form[:full_name]} type="text" label="Full name" />
+                  <.input
+                    field={@edit_form[:email]}
+                    type="email"
+                    label="Email"
+                    autocomplete="off"
+                  />
+                  <:actions>
+                    <.button phx-disable-with="Saving...">Save</.button>
                     <button
-                      phx-click="remove"
-                      phx-value-membership_id={m.id}
-                      data-confirm={"Remove #{(m.user && m.user.email) || "this member"} from the team?"}
-                      class="rounded px-2 py-1 text-xs font-medium text-rose-300 ring-1 ring-rose-500/30 hover:bg-rose-500/10"
+                      type="button"
+                      phx-click="cancel_edit"
+                      class="text-sm font-medium text-zinc-400 hover:text-zinc-200"
                     >
-                      Remove
+                      Cancel
                     </button>
-                  <% true -> %>
-                    <span></span>
-                <% end %>
-              </:action>
-            </.list_table>
+                  </:actions>
+                </.simple_form>
+              </div>
+
+              <%!-- Inline scope editor — appears under the row when
+                   "Set runner scope" is clicked. Two HTML multi-selects
+                   (groups + individual runners). Empty selection on
+                   both = "all runners" default. --%>
+              <div
+                :if={@scope_editing_id == m.id}
+                class="mt-4 rounded-lg border border-zinc-800 bg-zinc-900/40 p-4"
+              >
+                <form phx-submit="save_scopes" class="space-y-4">
+                  <input type="hidden" name="membership_id" value={m.id} />
+                  <p class="text-xs text-zinc-400">
+                    Restrict this member to specific runner groups or individual runners. Leaving
+                    both empty grants access to <strong>all runners</strong> in the account.
+                  </p>
+
+                  <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <label class="block">
+                      <span class="text-xs font-medium uppercase tracking-wider text-zinc-400">
+                        Groups
+                      </span>
+                      <select
+                        name="groups[]"
+                        multiple
+                        size={min(max(length(@runner_groups), 3), 6)}
+                        class="mt-1 block w-full rounded-lg border-0 bg-zinc-900 px-2 py-2 text-sm text-zinc-200 ring-1 ring-zinc-800 focus:ring-indigo-500"
+                      >
+                        <option
+                          :for={g <- @runner_groups}
+                          value={g}
+                          selected={scope_selected?(m.id, @scopes_by_membership, "group", g)}
+                        >
+                          {g}
+                        </option>
+                      </select>
+                      <p class="mt-1 text-[10px] text-zinc-500">
+                        Cmd/Ctrl-click to select multiple.
+                      </p>
+                    </label>
+
+                    <label class="block">
+                      <span class="text-xs font-medium uppercase tracking-wider text-zinc-400">
+                        Individual runners
+                      </span>
+                      <select
+                        name="runners[]"
+                        multiple
+                        size={min(max(map_size(@runners_by_id), 3), 6)}
+                        class="mt-1 block w-full rounded-lg border-0 bg-zinc-900 px-2 py-2 text-sm text-zinc-200 ring-1 ring-zinc-800 focus:ring-indigo-500"
+                      >
+                        <option
+                          :for={{id, r} <- @runners_by_id}
+                          value={id}
+                          selected={scope_selected?(m.id, @scopes_by_membership, "runner", id)}
+                        >
+                          {r.name} <span :if={r.group}>({r.group})</span>
+                        </option>
+                      </select>
+                    </label>
+                  </div>
+
+                  <div class="flex items-center gap-3">
+                    <.button phx-disable-with="Saving...">Save scope</.button>
+                    <button
+                      type="button"
+                      phx-click="cancel_scope_edit"
+                      class="text-sm font-medium text-zinc-400 hover:text-zinc-200"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </li>
+          </ul>
+
+          <div :if={@metadata.previous_page_cursor || @metadata.next_page_cursor} class="border-t border-zinc-900 px-5 py-3">
+            <LiveTable.paginator
+              id="members"
+              path={~p"/app/settings/team"}
+              metadata={@metadata}
+              filter_params={@filter_params}
+            />
           </div>
-        </.card>
-      </div>
+        </div>
+
+        <p :if={not can_manage?(assigns)} class="text-xs text-zinc-500">
+          Only owners and admins can invite or manage members. Your role: {@current_role || "—"}.
+        </p>
+      </.page_container>
     </.dashboard_shell>
+    """
+  end
+
+  defp show_invite,
+    do: JS.show(to: "#invite-panel", transition: {"transition-all ease-out duration-150", "opacity-0", "opacity-100"})
+
+  defp hide_invite,
+    do: JS.hide(to: "#invite-panel", transition: {"transition-all ease-in duration-100", "opacity-100", "opacity-0"})
+
+  # Inline action menu for a single member row. Hidden for the actor's
+  # own row (use Profile) and short-circuited for non-managers.
+  attr :membership, :map, required: true
+  attr :current_user_id, :string, required: true
+  attr :can_manage?, :boolean, required: true
+
+  defp member_actions(assigns) do
+    ~H"""
+    <%= cond do %>
+      <% @membership.user_id == @current_user_id -> %>
+        <span class="text-xs text-zinc-500">you</span>
+      <% not @can_manage? -> %>
+        <span></span>
+      <% true -> %>
+        <details class="group relative inline-block text-left">
+          <summary class="cursor-pointer list-none rounded px-2 py-1 text-xs font-medium text-zinc-300 ring-1 ring-zinc-800 hover:bg-zinc-900 [&::-webkit-details-marker]:hidden [&::marker]:hidden">
+            Actions <span class="text-zinc-500 group-open:hidden">▾</span><span class="hidden text-zinc-500 group-open:inline">▴</span>
+          </summary>
+          <div class="absolute right-0 z-10 mt-2 w-56 rounded-lg border border-zinc-800 bg-zinc-950 p-1 text-xs shadow-xl">
+            <button
+              phx-click="start_edit"
+              phx-value-membership_id={@membership.id}
+              class="block w-full rounded px-3 py-2 text-left text-zinc-300 hover:bg-zinc-900"
+            >
+              Edit name / email
+            </button>
+            <button
+              phx-click="start_scope_edit"
+              phx-value-membership_id={@membership.id}
+              class="block w-full rounded px-3 py-2 text-left text-zinc-300 hover:bg-zinc-900"
+            >
+              Set runner scope
+            </button>
+            <%= if Emisar.Accounts.Membership.disabled?(@membership) do %>
+              <button
+                phx-click="reinstate"
+                phx-value-membership_id={@membership.id}
+                class="block w-full rounded px-3 py-2 text-left text-emerald-300 hover:bg-emerald-500/10"
+              >
+                Restore access
+              </button>
+            <% else %>
+              <button
+                phx-click="suspend"
+                phx-value-membership_id={@membership.id}
+                data-confirm="Suspend this member? They will be signed out and can't sign back in until restored."
+                class="block w-full rounded px-3 py-2 text-left text-amber-300 hover:bg-amber-500/10"
+              >
+                Suspend access
+              </button>
+            <% end %>
+            <button
+              phx-click="force_password_reset"
+              phx-value-membership_id={@membership.id}
+              data-confirm="Email them a password-reset link and sign out every session?"
+              class="block w-full rounded px-3 py-2 text-left text-zinc-300 hover:bg-zinc-900"
+            >
+              Force password reset
+            </button>
+            <button
+              phx-click="end_sessions"
+              phx-value-membership_id={@membership.id}
+              data-confirm="End every active session for this member?"
+              class="block w-full rounded px-3 py-2 text-left text-zinc-300 hover:bg-zinc-900"
+            >
+              End all sessions
+            </button>
+            <div class="my-1 border-t border-zinc-800"></div>
+            <button
+              phx-click="remove"
+              phx-value-membership_id={@membership.id}
+              data-confirm={"Remove #{(@membership.user && @membership.user.email) || "this member"} from the team?"}
+              class="block w-full rounded px-3 py-2 text-left text-rose-300 hover:bg-rose-500/10"
+            >
+              Remove from team
+            </button>
+          </div>
+        </details>
+    <% end %>
     """
   end
 
   defp self_owner?(%Membership{user_id: uid, role: "owner"}, user_id) when uid == user_id, do: true
   defp self_owner?(_, _), do: false
-
 end

@@ -308,6 +308,42 @@ output:
 	}
 }
 
+// Regression for a silent bug: when the caller requested streaming
+// (cloud-side dispatch ALWAYS does), the engine used to leave the
+// captured stdout empty after the run, then run `parser: json` on the
+// empty string. Empty isn't valid JSON, so every `parser_required: true`
+// action falsely reported `status: failed` even though the process
+// exited cleanly with valid JSON on its stream.
+func TestEngine_JSONParser_StreamingPath(t *testing.T) {
+	e, j, _ := setupEngineExtra(t, map[string]string{
+		"json_ok.yaml": jsonOkAction,
+	})
+	defer j.Close()
+
+	res, err := e.Run(context.Background(), Request{
+		ActionID: "t.json_ok",
+		Reason:   "test",
+		// Setting OnProgress flips the engine into streaming mode.
+		OnProgress: func(_ executor.Stream, _ []byte) {},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Status != StatusSuccess {
+		t.Fatalf("status=%s — streaming should not break the json parser. err=%q reason=%q",
+			res.Status, res.ParserError, res.Reason)
+	}
+	if res.ParserError != "" {
+		t.Fatalf("parser_error should be empty under streaming: %q", res.ParserError)
+	}
+	if _, ok := res.Output.(map[string]any); !ok {
+		t.Fatalf("expected parsed map output, got %T (%v)", res.Output, res.Output)
+	}
+	if res.Stdout == "" {
+		t.Fatal("stdout should be captured under streaming, not silently dropped")
+	}
+}
+
 func TestEngine_JSONParserError_RequiredFlipsStatus(t *testing.T) {
 	e, j, _ := setupEngineExtra(t, map[string]string{
 		"json_required.yaml": jsonRequiredAction,
@@ -348,8 +384,12 @@ func TestEngine_StreamingProgress(t *testing.T) {
 	if res.Status != StatusSuccess {
 		t.Fatalf("status=%s", res.Status)
 	}
-	if res.Stdout != "" {
-		t.Fatalf("streaming runs should not capture stdout, got %q", res.Stdout)
+	// Streaming runs MUST still capture redacted stdout in res — the
+	// post-run consumers (json parser, audit journal entry, MCP wait=
+	// result body) all rely on it. Old behavior of "leave it empty"
+	// silently broke `parser: json` on every cloud-dispatched call.
+	if !strings.Contains(res.Stdout, "stream") {
+		t.Fatalf("streaming runs must still capture stdout for the parser/audit; got %q", res.Stdout)
 	}
 	mu.Lock()
 	defer mu.Unlock()

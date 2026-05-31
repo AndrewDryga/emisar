@@ -1,0 +1,81 @@
+#!/bin/bash
+# Demo-only journalctl shim baked into the dev runner Docker image.
+# Real production hosts use systemd's actual journalctl; this stub
+# returns realistic-looking journal entries for the demo units so the
+# linux-core actions don't require a running systemd to demonstrate.
+#
+# Supports a minimal subset of flags the action YAMLs pass:
+#   -u <unit>
+#   --since <when>
+#   -p <priority>
+#   --grep <regex>
+#   --no-pager  (ignored — there's no pager)
+
+set -u
+
+unit=""
+since=""
+priority=""
+grep_re=""
+
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        -u)         unit="$2"; shift 2 ;;
+        --since)    since="$2"; shift 2 ;;
+        -p)         priority="$2"; shift 2 ;;
+        --grep)     grep_re="$2"; shift 2 ;;
+        --no-pager) shift ;;
+        *)          shift ;;
+    esac
+done
+
+if [ -z "$unit" ]; then
+    echo "-- No entries --"
+    exit 0
+fi
+
+ts() { date -d "$1 ago" '+%b %d %H:%M:%S' 2>/dev/null || date '+%b %d %H:%M:%S'; }
+host="dev-host"
+
+emit_lines() {
+    case "$unit" in
+        nginx)
+            printf '%s %s nginx[1234]: %s\n' "$(ts '15 min')"  "$host" "10.0.5.12 \"GET /healthz HTTP/1.1\" 200"
+            printf '%s %s nginx[1234]: %s\n' "$(ts '12 min')"  "$host" "10.0.5.13 \"GET /api/users HTTP/1.1\" 200"
+            printf '%s %s nginx[1234]: %s\n' "$(ts '8 min')"   "$host" "WARN client 198.51.100.7 sent invalid Host header"
+            printf '%s %s nginx[1234]: %s\n' "$(ts '5 min')"   "$host" "10.0.5.13 \"POST /api/login HTTP/1.1\" 500 32"
+            printf '%s %s nginx[1234]: %s\n' "$(ts '3 min')"   "$host" "10.0.5.17 \"GET /api/products HTTP/1.1\" 503"
+            ;;
+        postgresql)
+            printf '%s %s postgres[5678]: %s\n' "$(ts '20 min')" "$host" "LOG:  checkpoint complete: wrote 24 buffers (0.1%)"
+            printf '%s %s postgres[5678]: %s\n' "$(ts '12 min')" "$host" "WARNING:  autovacuum launcher started"
+            printf '%s %s postgres[5678]: %s\n' "$(ts '8 min')"  "$host" "ERROR:  relation \"users\" does not exist at character 15"
+            printf '%s %s postgres[5678]: %s\n' "$(ts '4 min')"  "$host" "LOG:  duration: 1342.831 ms  statement: SELECT * FROM orders WHERE created_at > now() - interval '7 days'"
+            ;;
+        cassandra)
+            printf '%s %s cassandra[9012]: %s\n' "$(ts '18 min')" "$host" "INFO  [CompactionExecutor:42] Compacting [...] for system_auth"
+            printf '%s %s cassandra[9012]: %s\n' "$(ts '14 min')" "$host" "WARN  [GossipStage:1] Gossip stage has 1 pending tasks"
+            printf '%s %s cassandra[9012]: %s\n' "$(ts '10 min')" "$host" "ERROR [Native-Transport-Requests-3] Unexpected exception: Read timeout"
+            printf '%s %s cassandra[9012]: %s\n' "$(ts '6 min')"  "$host" "INFO  [main] Repair session for keyspace system_auth completed in 4.2s"
+            ;;
+        docker)
+            printf '%s %s dockerd[3456]: %s\n' "$(ts '14 min')" "$host" "level=info msg=\"API listen on /run/docker.sock\""
+            printf '%s %s dockerd[3456]: %s\n' "$(ts '11 min')" "$host" "level=warning msg=\"container 0103417bc796 OOM event detected\""
+            printf '%s %s dockerd[3456]: %s\n' "$(ts '7 min')"  "$host" "level=error msg=\"failed to restart container 0103417bc796: address already in use\""
+            ;;
+        *)
+            echo "-- No entries --"
+            exit 0
+            ;;
+    esac
+}
+
+# Apply --grep filter (a regex pass) if provided.
+if [ -n "$grep_re" ]; then
+    emit_lines | grep -E "$grep_re" || {
+        echo "-- No entries --"
+        exit 0
+    }
+else
+    emit_lines
+fi

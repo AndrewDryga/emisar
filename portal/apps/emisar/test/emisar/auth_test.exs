@@ -8,44 +8,46 @@ defmodule Emisar.AuthTest do
 
   @password "a-password-of-some-length"
 
-  describe "get_user_by_email_and_password/2" do
+  describe "fetch_user_by_email_and_password/2" do
     test "returns the user with a correct password" do
       user = user_fixture(password: @password)
-      assert %User{id: id} = Auth.get_user_by_email_and_password(user.email, @password)
+      assert {:ok, %User{id: id}} = Auth.fetch_user_by_email_and_password(user.email, @password)
       assert id == user.id
     end
 
-    test "returns nil for the wrong password" do
+    test "returns :not_found for the wrong password" do
       user = user_fixture(password: @password)
-      refute Auth.get_user_by_email_and_password(user.email, "definitely-wrong")
+      assert {:error, :not_found} =
+               Auth.fetch_user_by_email_and_password(user.email, "definitely-wrong")
     end
 
-    test "returns nil for an unknown email" do
-      refute Auth.get_user_by_email_and_password("no-one@example.test", @password)
+    test "returns :not_found for an unknown email" do
+      assert {:error, :not_found} =
+               Auth.fetch_user_by_email_and_password("no-one@example.test", @password)
     end
   end
 
   describe "session tokens" do
     test "create + lookup round-trip" do
       user = user_fixture()
-      token = Auth.create_session_token(user)
+      token = Auth.create_session_token!(user)
       assert is_binary(token)
-      assert %User{id: id} = Auth.get_user_by_session_token(token)
+      assert {:ok, %User{id: id}} = Auth.fetch_user_by_session_token(token)
       assert id == user.id
     end
 
     test "delete_session_token invalidates the token" do
       user = user_fixture()
-      token = Auth.create_session_token(user)
+      token = Auth.create_session_token!(user)
       :ok = Auth.delete_session_token(token)
-      refute Auth.get_user_by_session_token(token)
+      assert {:error, :not_found} = Auth.fetch_user_by_session_token(token)
     end
   end
 
   describe "magic link" do
     test "issued token can be consumed once" do
       user = user_fixture()
-      raw = Auth.issue_magic_link_token(user)
+      raw = Auth.issue_magic_link_token!(user)
 
       assert {:ok, %User{id: id}} = Auth.consume_magic_link_token(raw)
       assert id == user.id
@@ -62,19 +64,19 @@ defmodule Emisar.AuthTest do
   describe "password reset" do
     test "reset_user_password swaps the hash and invalidates sessions" do
       user = user_fixture(password: @password)
-      session_token = Auth.create_session_token(user)
-      raw = Auth.issue_password_reset_token(user)
+      session_token = Auth.create_session_token!(user)
+      raw = Auth.issue_password_reset_token!(user)
       new_password = "brand-new-password-x"
 
       assert {:ok, %User{} = updated} = Auth.reset_user_password(raw, new_password)
       assert updated.id == user.id
 
       # New password works, old does not.
-      assert %User{} = Auth.get_user_by_email_and_password(user.email, new_password)
-      refute Auth.get_user_by_email_and_password(user.email, @password)
+      assert {:ok, %User{}} = Auth.fetch_user_by_email_and_password(user.email, new_password)
+      assert {:error, :not_found} = Auth.fetch_user_by_email_and_password(user.email, @password)
 
       # Existing session was nuked.
-      refute Auth.get_user_by_session_token(session_token)
+      assert {:error, :not_found} = Auth.fetch_user_by_session_token(session_token)
     end
 
     test "garbage token returns invalid_or_expired" do
@@ -87,7 +89,7 @@ defmodule Emisar.AuthTest do
       user = user_fixture(confirmed?: false)
       refute user.confirmed_at
 
-      raw = Auth.issue_confirmation_token(user)
+      raw = Auth.issue_confirmation_token!(user)
       assert {:ok, %User{confirmed_at: ts}} = Auth.confirm_user_by_token(raw)
       assert %DateTime{} = ts
     end

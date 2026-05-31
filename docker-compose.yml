@@ -46,8 +46,13 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: emisar_dev
-    ports:
-      - "5432:5432"
+    # No host port mapping by default — other containers reach this via
+    # the docker network as `db:5432`. Avoids collisions with system
+    # Postgres or another compose stack. If you need a `psql` shell on
+    # the host, use `docker compose exec db psql -U postgres emisar_dev`
+    # or temporarily uncomment the ports block below.
+    # ports:
+    #   - "54322:5432"
     volumes:
       - pg_data:/var/lib/postgresql/data
     healthcheck:
@@ -60,9 +65,12 @@ services:
   # Portal — Phoenix release (the cloud control plane)
   # ----------------------------------------------------------------
   portal:
+    # Build context is the REPO ROOT so install.sh (at the root) can be
+    # COPY-ed into the build container — InstallController embeds it at
+    # compile time via @external_resource.
     build:
-      context: ./portal
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: portal/Dockerfile
     image: emisar/portal:dev
     depends_on:
       db:
@@ -79,8 +87,10 @@ services:
       FORCE_SSL: "false"
     ports:
       - "4000:4000"
+    # `curl` is the only http client in the debian-slim runtime image —
+    # wget isn't installed and adding it would bloat the image.
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:4000/healthz || exit 1"]
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:4000/healthz || exit 1"]
       interval: 5s
       timeout: 3s
       retries: 12
@@ -112,11 +122,22 @@ services:
   # ----------------------------------------------------------------
   # Runners — three identical Go runners against the local portal
   # ----------------------------------------------------------------
+  # The runner derives its display name from the container hostname.
+  # Without `hostname:`, Docker uses the container id — `0103417bc796`
+  # is technically unique but looks like noise to an LLM picking a host
+  # to target. Naming them `runner-1` / `-2` / `-3` makes the inputSchema
+  # enum self-documenting on every tool descriptor.
+  # Fixture volumes are demo-only: realistic /var/log entries and
+  # stub systemctl / journalctl binaries so the linux-core actions
+  # produce believable output inside this stack (no systemd, no real
+  # nginx/postgres logs). The runner image itself stays
+  # production-pristine — only this compose file knows about them.
   runner-1: &runner
     build:
       context: ./runner
       dockerfile: docker/Dockerfile
     image: emisar/runner:dev
+    hostname: runner-1
     depends_on:
       seeder:
         condition: service_completed_successfully
@@ -125,17 +146,34 @@ services:
       EMISAR_AUTH_KEY: "emkey-auth-dev-fixed-bootstrap-DO-NOT-USE-IN-PROD"
     volumes:
       - runner_1_data:/var/lib/emisar
+      - ./dev/runner-fixtures/bin/systemctl:/usr/bin/systemctl:ro
+      - ./dev/runner-fixtures/bin/journalctl:/usr/bin/journalctl:ro
+      - ./dev/runner-fixtures/var-log/syslog:/var/log/syslog:ro
+      - ./dev/runner-fixtures/var-log/auth.log:/var/log/auth.log:ro
+      - ./dev/runner-fixtures/var-log/nginx:/var/log/nginx:ro
     restart: unless-stopped
 
   runner-2:
     <<: *runner
+    hostname: runner-2
     volumes:
       - runner_2_data:/var/lib/emisar
+      - ./dev/runner-fixtures/bin/systemctl:/usr/bin/systemctl:ro
+      - ./dev/runner-fixtures/bin/journalctl:/usr/bin/journalctl:ro
+      - ./dev/runner-fixtures/var-log/syslog:/var/log/syslog:ro
+      - ./dev/runner-fixtures/var-log/auth.log:/var/log/auth.log:ro
+      - ./dev/runner-fixtures/var-log/nginx:/var/log/nginx:ro
 
   runner-3:
     <<: *runner
+    hostname: runner-3
     volumes:
       - runner_3_data:/var/lib/emisar
+      - ./dev/runner-fixtures/bin/systemctl:/usr/bin/systemctl:ro
+      - ./dev/runner-fixtures/bin/journalctl:/usr/bin/journalctl:ro
+      - ./dev/runner-fixtures/var-log/syslog:/var/log/syslog:ro
+      - ./dev/runner-fixtures/var-log/auth.log:/var/log/auth.log:ro
+      - ./dev/runner-fixtures/var-log/nginx:/var/log/nginx:ro
 
   # ----------------------------------------------------------------
   # MCP bridge — stdio JSON-RPC. Profile-gated so it doesn't auto-start

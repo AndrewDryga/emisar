@@ -54,7 +54,12 @@ defmodule EmisarWeb.MixProject do
        compile: false,
        depth: 1},
       {:telemetry_metrics, "~> 1.0"},
+      {:telemetry_metrics_prometheus, "~> 1.1"},
       {:telemetry_poller, "~> 1.0"},
+      # Optional: error reporting via Sentry. Compiled out when
+      # SENTRY_DSN isn't set (init/0 short-circuits on no-DSN).
+      {:sentry, "~> 10.8"},
+      {:hackney, "~> 1.20"},
       {:gettext, "~> 0.26"},
       {:emisar, in_umbrella: true},
       {:jason, "~> 1.2"},

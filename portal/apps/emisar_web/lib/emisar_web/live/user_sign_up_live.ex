@@ -32,7 +32,14 @@ defmodule EmisarWeb.UserSignUpLive do
       >
         <.input field={@form[:full_name]} type="text" label="Your name" required />
         <.input field={@form[:email]} type="email" label="Work email" autocomplete="email" required />
-        <.input field={@form[:password]} type="password" label="Password" autocomplete="new-password" required />
+        <.input
+          field={@form[:password]}
+          type="password"
+          label="Password"
+          autocomplete="new-password"
+          minlength="12"
+          required
+        />
         <.input name="account_name" value={@account_name} type="text" label="Team or company name" required />
 
         <:actions>
@@ -91,7 +98,7 @@ defmodule EmisarWeb.UserSignUpLive do
                user
              ) do
           {:ok, _account} ->
-            token = Auth.issue_confirmation_token(user)
+            token = Auth.issue_confirmation_token!(user)
             Mailers.UserNotifier.deliver_confirmation_instructions(user, token) |> deliver_safe()
 
             {:noreply,

@@ -1,18 +1,11 @@
 defmodule Emisar.Catalog.RunnerAction do
   @moduledoc """
   An action advertised by a specific runner. We store the full
-  agent_state ActionDescriptor as JSON so the UI and MCP tool listings
+  runner_state ActionDescriptor as JSON so the UI and MCP tool listings
   can render exactly what the runner declared without secondary lookups.
   """
 
-  use Ecto.Schema
-  import Ecto.Changeset
-
-  @primary_key {:id, :binary_id, autogenerate: true}
-  @foreign_key_type :binary_id
-
-  @risks ~w(low medium high critical)
-  @kinds ~w(exec script)
+  use Emisar, :schema
 
   schema "runner_actions" do
     field :action_id, :string
@@ -32,22 +25,9 @@ defmodule Emisar.Catalog.RunnerAction do
     belongs_to :account, Emisar.Accounts.Account
     belongs_to :runner, Emisar.Runners.Runner
 
-    timestamps(type: :utc_datetime_usec)
+    timestamps()
   end
 
-  def changeset(action, attrs) do
-    action
-    |> cast(attrs, [
-      :account_id, :runner_id, :action_id, :pack_id, :title, :kind, :risk,
-      :description, :side_effects, :args_schema, :limits, :output, :examples,
-      :first_seen_at, :last_seen_at
-    ])
-    |> validate_required([:account_id, :runner_id, :action_id, :title, :kind, :risk])
-    |> validate_inclusion(:kind, @kinds)
-    |> validate_inclusion(:risk, @risks)
-    |> unique_constraint([:runner_id, :action_id])
-  end
-
-  def risks, do: @risks
-  def kinds, do: @kinds
+  def risks, do: Emisar.Catalog.RunnerAction.Changeset.risks()
+  def kinds, do: Emisar.Catalog.RunnerAction.Changeset.kinds()
 end

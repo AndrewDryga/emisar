@@ -1,0 +1,13 @@
+<svg width="2200" height="600" viewBox="0 0 2200 600" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="emisar logo">
+  <title>emisar logo</title>
+  <g id="emisar-icon" transform="translate(70 -210) scale(1)">
+    <path d="M352 218 L196 344 L196 680 L352 806" stroke="#FFFFFF" stroke-width="44" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M672 218 L828 344 L828 680 L672 806" stroke="#FFFFFF" stroke-width="44" stroke-linecap="round" stroke-linejoin="round"/>
+    <rect x="330" y="489" width="48" height="48" rx="11" fill="#36E6A5"/>
+    <rect x="430" y="489" width="48" height="48" rx="11" fill="#36E6A5"/>
+    <rect x="530" y="489" width="48" height="48" rx="11" fill="#36E6A5"/>
+    <path d="M632 513 H735" stroke="#36E6A5" stroke-width="44" stroke-linecap="round"/>
+    <path d="M690 430 L782 513 L690 596" stroke="#36E6A5" stroke-width="44" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <text x="980" y="396" fill="#FFFFFF" font-family="Inter, Geist, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="270" font-weight="800" letter-spacing="-10">emisar</text>
+</svg>

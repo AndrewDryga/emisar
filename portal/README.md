@@ -5,13 +5,13 @@ The cloud-side of [emisar](../README.md). Elixir/Phoenix umbrella that:
 - Authenticates and tracks runners over WebSocket (the wire protocol lives in `../docs/wire-protocol.md`).
 - Serves the operator UI (LiveView) for runners / runs / approvals / audit.
 - Exposes the MCP-shaped HTTP API for LLMs.
-- Handles billing (Stripe), policy evaluation, runbook expansion.
+- Handles billing (Paddle), policy evaluation, runbook expansion.
 
 ## Layout
 
 ```
 apps/
-  emisar/          domain — contexts, schemas, Oban workers, Stripe glue
+  emisar/          domain — contexts, schemas, Oban workers, Paddle glue
   emisar_web/      Phoenix endpoint — UI, controllers, runner socket
 config/            shared config + per-env overrides + runtime.exs
 priv/repo/         migrations + seeds

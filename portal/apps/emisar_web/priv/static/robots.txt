@@ -10,4 +10,4 @@ Disallow: /confirm/
 Disallow: /accept_invitation/
 Disallow: /api/
 
-Sitemap: https://emisar.com/sitemap.xml
+Sitemap: https://emisar.dev/sitemap.xml

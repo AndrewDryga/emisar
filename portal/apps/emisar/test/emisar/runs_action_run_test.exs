@@ -24,7 +24,7 @@ defmodule Emisar.Runs.ActionRunTest do
 
   describe "create_changeset/2" do
     test "requires account_id, runner_id, request_id, action_id" do
-      cs = ActionRun.create_changeset(%ActionRun{}, %{})
+      cs = ActionRun.Changeset.create(%{})
       refute cs.valid?
       errors = Keyword.keys(cs.errors)
       assert :account_id in errors
@@ -35,7 +35,7 @@ defmodule Emisar.Runs.ActionRunTest do
 
     test "rejects unknown source values" do
       cs =
-        ActionRun.create_changeset(%ActionRun{}, %{
+        ActionRun.Changeset.create(%{
           account_id: Ecto.UUID.generate(),
           runner_id: Ecto.UUID.generate(),
           request_id: "req_x",

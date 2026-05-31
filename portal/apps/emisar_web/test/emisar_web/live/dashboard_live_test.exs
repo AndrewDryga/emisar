@@ -8,9 +8,9 @@ defmodule EmisarWeb.DashboardLiveTest do
 
     test "renders the empty-state with a pre-minted install command for accounts with zero runners",
          %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, user, account} = register_and_log_in(conn)
       {:ok, _lv, html} = live(conn, ~p"/app")
-      assert html =~ "Connect your first runner"
+      assert html =~ "Connect a runner"
       # The install command is rendered inline — no click required.
       assert html =~ "curl -sSL"
       assert html =~ "EMISAR_AUTH_KEY=emkey-auth-"
@@ -21,19 +21,18 @@ defmodule EmisarWeb.DashboardLiveTest do
       all = Emisar.Repo.all(Emisar.Runners.AuthKey)
       assert length(all) == 1
       assert Emisar.Runners.AuthKey.auto_unused?(hd(all))
-      assert Emisar.Runners.list_auth_keys(account.id) == []
+      assert {:ok, [], _} = Emisar.Runners.list_auth_keys(owner_subject(user, account))
     end
 
     test "renders the populated dashboard once a runner exists", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
+      subject = owner_subject(user, account)
 
       {:ok, _agent} =
-        Emisar.Runners.create_runner(account.id, %{
+        Emisar.Runners.create_runner(%{
           "name" => "runner-1",
           "group" => "default"
-        })
-
-      _ = user
+        }, subject)
 
       {:ok, _lv, html} = live(conn, ~p"/app")
       assert html =~ "Runners online"

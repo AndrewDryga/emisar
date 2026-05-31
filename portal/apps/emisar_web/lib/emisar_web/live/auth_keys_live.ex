@@ -2,7 +2,8 @@ defmodule EmisarWeb.AuthKeysLive do
   use EmisarWeb, :live_view
 
   alias Emisar.Runners
-  alias EmisarWeb.Permissions
+  alias EmisarWeb.{LiveTable, Permissions, UrlHelpers}
+  alias Phoenix.LiveView.JS
 
   def mount(_params, _session, socket) do
     {:ok,
@@ -10,8 +11,20 @@ defmodule EmisarWeb.AuthKeysLive do
      |> assign(:page_title, "Auth keys")
      |> assign(:new_secret, nil)
      |> assign(:new_key, nil)
-     |> assign_form(default_params())
-     |> load()}
+     |> assign(:base_url, UrlHelpers.derive_base_url(socket))
+     |> assign(:billing, fetch_billing(socket))
+     |> assign_form(default_params())}
+  end
+
+  def handle_params(params, _uri, socket) do
+    {:noreply, load(socket, params)}
+  end
+
+  defp fetch_billing(socket) do
+    case Emisar.Billing.billing_summary(socket.assigns.current_account, socket.assigns.current_subject) do
+      {:ok, summary} -> summary
+      {:error, _} -> nil
+    end
   end
 
   def handle_event("validate", %{"auth_key" => params}, socket) do
@@ -34,9 +47,6 @@ defmodule EmisarWeb.AuthKeysLive do
   end
 
   defp do_create(socket, params) do
-    account_id = socket.assigns.current_account.id
-    user_id = socket.assigns.current_user.id
-
     attrs =
       %{}
       |> put_if_present(:description, params["description"])
@@ -44,7 +54,7 @@ defmodule EmisarWeb.AuthKeysLive do
       |> Map.put(:reusable, truthy?(params["reusable"]))
       |> put_expires(params["expires_at"])
 
-    case Runners.create_auth_key(account_id, user_id, attrs) do
+    case Runners.create_auth_key(attrs, socket.assigns.current_subject) do
       {:ok, raw, key} ->
         {:noreply,
          socket
@@ -52,35 +62,46 @@ defmodule EmisarWeb.AuthKeysLive do
          |> assign(:new_secret, raw)
          |> assign(:new_key, key)
          |> assign_form(default_params())
-         |> load()}
+         |> reload()}
 
       {:error, changeset} ->
         {:noreply,
          socket
-         |> put_flash(:error, "Could not create key: #{inspect(changeset.errors)}")}
+         |> put_flash(:error, "Could not create key: #{humanize_errors(changeset)}")}
     end
   end
 
   defp do_revoke(socket, id) do
-    account_id = socket.assigns.current_account.id
-    user_id = socket.assigns.current_user.id
-
     case Enum.find(socket.assigns.auth_keys, &(&1.id == id)) do
       nil ->
         {:noreply, socket}
 
       key ->
-        if key.account_id == account_id do
-          {:ok, _} = Runners.revoke_auth_key(key, user_id)
-          {:noreply, socket |> put_flash(:info, "Key revoked.") |> load()}
-        else
-          {:noreply, socket}
+        case Runners.revoke_auth_key(key, socket.assigns.current_subject) do
+          {:ok, _} -> {:noreply, socket |> put_flash(:info, "Key revoked.") |> reload()}
+          {:error, _} -> {:noreply, socket}
         end
     end
   end
 
-  defp load(socket) do
-    assign(socket, :auth_keys, Runners.list_auth_keys(socket.assigns.current_account.id))
+  # Re-runs the current load with whatever filter/page params are
+  # already on the URL — so a create or revoke doesn't bounce the
+  # operator back to page 1 or wipe their filter.
+  defp reload(socket), do: load(socket, socket.assigns[:filter_params] || %{})
+
+  defp load(socket, params) do
+    opts = LiveTable.params_to_opts(params)
+
+    case Runners.list_auth_keys(socket.assigns.current_subject, opts) do
+      {:ok, auth_keys, meta} ->
+        socket
+        |> assign(:auth_keys, auth_keys)
+        |> assign(:metadata, meta)
+        |> assign(:filter_params, params)
+
+      {:error, _} ->
+        load(socket, %{})
+    end
   end
 
   defp default_params do
@@ -117,10 +138,53 @@ defmodule EmisarWeb.AuthKeysLive do
       flash={@flash}
       section={:auth_keys}
     >
-      <:title>Runner auth keys</:title>
+      <:title>Auth keys</:title>
+      <:actions :if={Permissions.can?(assigns, :manage_auth_keys)}>
+        <button
+          phx-click={show_create()}
+          class="inline-flex items-center gap-1.5 rounded-lg bg-indigo-500 px-3 py-1.5 text-sm font-semibold text-zinc-950 hover:bg-indigo-400"
+        >
+          <.icon name="hero-plus" class="h-4 w-4" /> New key
+        </button>
+      </:actions>
 
-      <%= if @new_secret do %>
+      <.page_container max="5xl">
+        <%!-- Runner-cap warning: a key minted here is useless if the
+             runner that tries to use it bounces off a 402. --%>
+        <div
+          :if={Emisar.Billing.headroom(@billing, :runners) in [:warning, :at_limit]}
+          class={[
+            "flex items-start gap-3 rounded-xl border p-4 text-sm",
+            if(Emisar.Billing.headroom(@billing, :runners) == :at_limit,
+              do: "border-rose-500/40 bg-rose-500/10 text-rose-100",
+              else: "border-amber-500/40 bg-amber-500/10 text-amber-100"
+            )
+          ]}
+        >
+          <.icon name="hero-exclamation-triangle" class="mt-0.5 h-5 w-5 flex-none" />
+          <div class="flex-1">
+            <p class="font-semibold">
+              <%= if Emisar.Billing.headroom(@billing, :runners) == :at_limit do %>
+                At runner limit — new installs will fail.
+              <% else %>
+                One runner slot left on the {String.capitalize(@billing.plan)} plan.
+              <% end %>
+            </p>
+            <p class="mt-1 text-xs opacity-90">
+              {@billing.runner_count} of {@billing.runner_limit} runners in use.
+              Issuing a key doesn't reserve a slot — the runner only counts after it registers.
+            </p>
+          </div>
+          <.link
+            navigate={~p"/app/settings/billing"}
+            class="shrink-0 self-start rounded-lg bg-current/20 px-3 py-1.5 text-xs font-semibold hover:bg-current/30"
+          >
+            See plans →
+          </.link>
+        </div>
+
         <.secret_reveal
+          :if={@new_secret}
           title="Copy this auth key now — it will not be shown again."
           secret={@new_secret}
           on_dismiss="dismiss_secret"
@@ -129,113 +193,155 @@ defmodule EmisarWeb.AuthKeysLive do
           under <span class="font-semibold">{@current_account.name}</span>.
 
           <:install_command>
-            curl -sSL https://emisar.com/install.sh | sudo EMISAR_AUTH_KEY={@new_secret} bash
+             curl -sSL {@base_url}/install.sh | sudo EMISAR_AUTH_KEY={@new_secret} EMISAR_URL={@base_url} bash
           </:install_command>
         </.secret_reveal>
-      <% end %>
 
-      <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        <%= if Permissions.can?(assigns, :manage_auth_keys) do %>
-          <.card class="lg:col-span-1">
-            <.section_header title="Issue a new key" />
-            <p class="mt-1 text-xs text-zinc-500">
-              Reusable keys are best for stable fleets; single-use keys are right for autoscalers.
-            </p>
+        <%!-- Create panel — collapsed by default, opened by header
+             button. Avoids a permanent form panel competing with the
+             list when no key is being issued. --%>
+        <section
+          :if={Permissions.can?(assigns, :manage_auth_keys)}
+          id="create-panel"
+          class="hidden rounded-xl border border-zinc-900 bg-zinc-950/60 p-6"
+        >
+          <div class="flex items-start justify-between gap-3">
+            <div>
+              <h2 class="text-base font-semibold text-zinc-100">Issue a new auth key</h2>
+              <p class="mt-1 text-sm text-zinc-500">
+                Reusable keys suit stable fleets; single-use keys are right for autoscalers.
+              </p>
+            </div>
+            <button
+              type="button"
+              phx-click={hide_create()}
+              class="rounded-md p-1 text-zinc-500 hover:bg-zinc-900 hover:text-zinc-200"
+              aria-label="Close"
+            >
+              <.icon name="hero-x-mark" class="h-4 w-4" />
+            </button>
+          </div>
 
-            <.simple_form for={@form} id="auth_key_form" phx-change="validate" phx-submit="create">
-              <.input
-                field={@form[:description]}
-                type="text"
-                label="Description"
-                placeholder="prod web tier"
-              />
-              <.input
-                field={@form[:group]}
-                type="text"
-                label="Group"
-                placeholder="default"
-              />
+          <.simple_form
+            for={@form}
+            id="auth_key_form"
+            phx-change="validate"
+            phx-submit="create"
+            class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2"
+          >
+            <.input
+              field={@form[:description]}
+              type="text"
+              label="Description"
+              placeholder="prod web tier"
+            />
+            <.input
+              field={@form[:group]}
+              type="text"
+              label="Group"
+              placeholder="default"
+            />
+            <div class="sm:col-span-2 -mt-2 text-xs leading-relaxed text-zinc-500">
+              Group tags organize fleets (e.g.
+              <code class="text-zinc-400">cassandra-us-east1</code>,
+              <code class="text-zinc-400">edge-pop-fra</code>). Runners registered with this key
+              inherit it as their default — visible on the Runners page, and policies + API keys
+              can target a whole group instead of one runner at a time.
+            </div>
+            <.input
+              field={@form[:expires_at]}
+              type="datetime-local"
+              label="Expires at (UTC, optional)"
+            />
+            <div class="flex items-end pb-2">
               <.input
                 field={@form[:reusable]}
                 type="checkbox"
-                label="Reusable (allows many runners to register with this key)"
+                label="Reusable (many runners can register with this key)"
               />
-              <.input
-                field={@form[:expires_at]}
-                type="datetime-local"
-                label="Expires at (optional)"
-              />
+            </div>
+            <:actions>
+              <.button phx-disable-with="Creating...">Create key</.button>
+            </:actions>
+          </.simple_form>
+        </section>
 
-              <:actions>
-                <.button phx-disable-with="Creating..." class="w-full">
-                  Create auth key
-                </.button>
-              </:actions>
-            </.simple_form>
-          </.card>
-        <% else %>
-          <.card class="lg:col-span-1">
-            <.section_header title="Issue a new key" />
-            <p class="mt-4 rounded-lg bg-zinc-900/60 p-4 text-xs text-zinc-400">
-              Only owners and admins can issue auth keys.
-            </p>
-          </.card>
-        <% end %>
-
-        <.card class="lg:col-span-2">
-          <.section_header title="Current keys" />
-
+        <%!-- Key list — single column, two-line rows. Reusable / single-
+             use shows as a pill on the right. Created-by + last-used
+             sit in a compact meta line under the description. --%>
+        <.list_section title="Auth keys" count={@metadata.count} noun="key">
           <%= if @auth_keys == [] do %>
-            <div class="mt-4">
-              <.empty_state icon="hero-key" title="No auth keys yet">
-                No auth keys yet. Issue one to bootstrap a runner.
-              </.empty_state>
+            <div class="px-5 py-10 text-center text-sm text-zinc-500">
+              No keys yet. Click <span class="text-zinc-300">New key</span> to bootstrap a runner.
             </div>
           <% else %>
-            <div class="mt-4">
-              <.list_table id="auth-keys" rows={@auth_keys}>
-                <:col :let={key} label="Prefix">
-                  <span class="font-mono text-xs text-zinc-200">{key.key_prefix}…</span>
-                </:col>
-                <:col :let={key} label="Description">
-                  <span class="text-zinc-300">{key.description || "—"}</span>
-                </:col>
-                <:col :let={key} label="Group">
-                  <span class="text-zinc-400">{key.group || "default"}</span>
-                </:col>
-                <:col :let={key} label="Reusable">
-                  <.status_badge status={if key.reusable, do: "success", else: "pending"} />
-                </:col>
-                <:col :let={key} label="Uses">
-                  <span class="text-xs text-zinc-400">{key.uses_count}</span>
-                </:col>
-                <:col :let={key} label="Last used">
-                  <span class="text-xs text-zinc-400">{relative_time(key.last_used_at)}</span>
-                </:col>
-                <:action :let={key}>
-                  <%= cond do %>
-                    <% key.revoked_at -> %>
-                      <span class="text-xs text-zinc-500">revoked</span>
-                    <% Permissions.can?(assigns, :manage_auth_keys) -> %>
-                      <button
-                        phx-click="revoke"
-                        phx-value-id={key.id}
-                        data-confirm="Revoke this auth key? Existing runners are not affected; new registrations will fail."
-                        class="rounded px-2 py-1 text-xs font-medium text-rose-300 ring-1 ring-rose-500/30 hover:bg-rose-500/10"
-                      >
-                        Revoke
-                      </button>
-                    <% true -> %>
-                      <span></span>
-                  <% end %>
-                </:action>
-              </.list_table>
-            </div>
+            <ul class="divide-y divide-zinc-900">
+              <li :for={key <- @auth_keys} class="flex items-start gap-4 px-5 py-4">
+                <span class="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-zinc-900 text-zinc-400">
+                  <.icon name="hero-key" class="h-4 w-4" />
+                </span>
+
+                <div class="min-w-0 flex-1">
+                  <div class="flex flex-wrap items-center gap-2">
+                    <span class="truncate font-medium text-zinc-100">
+                      {key.description || "(no description)"}
+                    </span>
+                    <.chip>group: {key.group || "default"}</.chip>
+                    <.chip :if={key.reusable} tone={:emerald}>Reusable</.chip>
+                    <.chip :if={not key.reusable}>Single-use</.chip>
+                    <.chip :if={key.revoked_at} tone={:rose}>Revoked</.chip>
+                  </div>
+                  <div class="mt-1 truncate font-mono text-[11px] text-zinc-500">
+                    {key.key_prefix}… ·
+                    {key.uses_count} {if key.uses_count == 1, do: "use", else: "uses"} ·
+                    last used {format_last_used(key.last_used_at)}
+                    <span :if={key.created_by}>· by {key.created_by.email}</span>
+                  </div>
+                </div>
+
+                <%= cond do %>
+                  <% key.revoked_at -> %>
+                    <span></span>
+                  <% Permissions.can?(assigns, :manage_auth_keys) -> %>
+                    <button
+                      phx-click="revoke"
+                      phx-value-id={key.id}
+                      data-confirm="Revoke this auth key? Existing runners aren't affected; new registrations will fail."
+                      class="shrink-0 rounded-lg border border-rose-500/40 px-2.5 py-1 text-xs font-medium text-rose-200 hover:bg-rose-500/10"
+                    >
+                      Revoke
+                    </button>
+                  <% true -> %>
+                    <span></span>
+                <% end %>
+              </li>
+            </ul>
           <% end %>
-        </.card>
-      </div>
+        </.list_section>
+
+        <LiveTable.paginator
+          :if={@auth_keys != []}
+          id="auth-keys"
+          path={~p"/app/settings/runners/auth-keys"}
+          metadata={@metadata}
+          filter_params={@filter_params}
+        />
+
+        <p :if={not Permissions.can?(assigns, :manage_auth_keys)} class="text-xs text-zinc-500">
+          Only owners and admins can issue or revoke auth keys.
+        </p>
+      </.page_container>
     </.dashboard_shell>
     """
   end
+
+  defp format_last_used(nil), do: "never"
+  defp format_last_used(ts), do: relative_time(ts)
+
+  defp show_create,
+    do: JS.show(to: "#create-panel", transition: {"transition-all ease-out duration-150", "opacity-0", "opacity-100"})
+
+  defp hide_create,
+    do: JS.hide(to: "#create-panel", transition: {"transition-all ease-in duration-100", "opacity-100", "opacity-0"})
 
 end

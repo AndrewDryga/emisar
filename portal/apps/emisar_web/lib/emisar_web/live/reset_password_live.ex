@@ -53,7 +53,16 @@ defmodule EmisarWeb.ResetPasswordLive do
     <.auth_layout title="Reset your password">
       <%= if @sent_to do %>
         <div class="rounded-lg border border-emerald-700/40 bg-emerald-950/40 p-6 text-emerald-200">
-          <p>If <span class="font-mono">{@sent_to}</span> is registered, a reset link is on its way.</p>
+          <p>
+            If <span class="font-mono">{@sent_to}</span>
+            is registered, a reset link is on its way.
+          </p>
+          <button
+            phx-click="reset_form"
+            class="mt-4 text-xs font-medium text-emerald-300 hover:text-emerald-100"
+          >
+            Use a different email →
+          </button>
         </div>
       <% else %>
         <p class="mb-6 text-sm text-zinc-400">
@@ -77,13 +86,24 @@ defmodule EmisarWeb.ResetPasswordLive do
     """
   end
 
+  def handle_event("reset_form", _params, socket) do
+    {:noreply,
+     socket
+     |> assign(:sent_to, nil)
+     |> assign(:request_form, to_form(%{"email" => ""}, as: "user"))}
+  end
+
   def handle_event("request", %{"user" => %{"email" => email}}, socket) do
     # 3 reset requests per email per 10 min (same shape as magic-link).
     case EmisarWeb.RateLimiter.check("pw_reset:" <> String.downcase(email || ""), 3, 600_000) do
       :ok ->
-        if user = Accounts.get_user_by_email(email) do
-          token = Auth.issue_password_reset_token(user)
-          Mailers.UserNotifier.deliver_password_reset(user, token)
+        case Accounts.fetch_user_by_email(email) do
+          {:ok, user} ->
+            token = Auth.issue_password_reset_token!(user)
+            Mailers.UserNotifier.deliver_password_reset(user, token)
+
+          {:error, :not_found} ->
+            :ok
         end
 
         {:noreply, assign(socket, :sent_to, email)}

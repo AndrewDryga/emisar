@@ -31,31 +31,35 @@ defmodule Emisar.CatalogTest do
   describe "observe_state/2 — packs" do
     test "upserts pack_versions" do
       runner = runner_fixture()
+      account = Emisar.Accounts.fetch_account_by_id!(runner.account_id)
+      system = Emisar.Auth.Subject.system(account)
 
       payload =
         state_payload(packs: %{"linux-core" => %{"version" => "1.0", "hash" => "abc"}})
 
-      assert {:ok, _agent} = Catalog.observe_state(runner, payload)
+      assert {:ok, _runner} = Catalog.observe_state(runner, payload)
 
-      assert [%PackVersion{pack_id: "linux-core", version: "1.0", hash: "abc"}] =
-               Catalog.list_pack_versions(runner.account_id)
+      assert {:ok, [%PackVersion{pack_id: "linux-core", version: "1.0", hash: "abc"}], _meta} =
+               Catalog.list_pack_versions(system)
 
       # Idempotent — same payload should not duplicate.
-      assert {:ok, _agent} = Catalog.observe_state(runner, payload)
-      assert length(Catalog.list_pack_versions(runner.account_id)) == 1
+      assert {:ok, _runner} = Catalog.observe_state(runner, payload)
+      assert {:ok, [_], _meta} = Catalog.list_pack_versions(system)
     end
   end
 
   describe "observe_state/2 — actions" do
     test "upserts runner_actions" do
       runner = runner_fixture()
+      account = Emisar.Accounts.fetch_account_by_id!(runner.account_id)
+      system = Emisar.Auth.Subject.system(account)
 
       payload =
         state_payload(actions: [action("linux.uptime"), action("linux.df", risk: "medium")])
 
-      assert {:ok, _agent} = Catalog.observe_state(runner, payload)
+      assert {:ok, _runner} = Catalog.observe_state(runner, payload)
 
-      actions = Catalog.list_actions_for_agent(runner.id)
+      {:ok, actions, _} = Catalog.list_actions_for_runner(runner.id, system)
       assert length(actions) == 2
       assert Enum.any?(actions, &(&1.action_id == "linux.uptime" and &1.risk == "low"))
       assert Enum.any?(actions, &(&1.action_id == "linux.df" and &1.risk == "medium"))
@@ -63,15 +67,18 @@ defmodule Emisar.CatalogTest do
 
     test "prunes actions no longer advertised" do
       runner = runner_fixture()
+      account = Emisar.Accounts.fetch_account_by_id!(runner.account_id)
+      system = Emisar.Auth.Subject.system(account)
 
       _ =
         Catalog.observe_state(runner, state_payload(actions: [action("a"), action("b"), action("c")]))
 
-      assert length(Catalog.list_actions_for_agent(runner.id)) == 3
+      assert {:ok, actions, _} = Catalog.list_actions_for_runner(runner.id, system)
+      assert length(actions) == 3
 
       _ = Catalog.observe_state(runner, state_payload(actions: [action("a")]))
 
-      assert [%RunnerAction{action_id: "a"}] = Catalog.list_actions_for_agent(runner.id)
+      assert {:ok, [%RunnerAction{action_id: "a"}], _} = Catalog.list_actions_for_runner(runner.id, system)
     end
 
     test "updates the runner row's hostname/labels/version" do
@@ -93,13 +100,15 @@ defmodule Emisar.CatalogTest do
   describe "observe_state/2 — runner_id variant" do
     test "looks up the runner by id" do
       runner = runner_fixture()
+      account = Emisar.Accounts.fetch_account_by_id!(runner.account_id)
+      system = Emisar.Auth.Subject.system(account)
 
-      assert {:ok, _agent} = Catalog.observe_state(runner.id, state_payload(actions: [action("a")]))
-      assert [%RunnerAction{action_id: "a"}] = Catalog.list_actions_for_agent(runner.id)
+      assert {:ok, _runner} = Catalog.observe_state(runner.id, state_payload(actions: [action("a")]))
+      assert {:ok, [%RunnerAction{action_id: "a"}], _} = Catalog.list_actions_for_runner(runner.id, system)
     end
 
-    test "returns {:error, :unknown_agent} for an unknown id" do
-      assert {:error, :unknown_agent} = Catalog.observe_state(Ecto.UUID.generate(), %{})
+    test "returns {:error, :unknown_runner} for an unknown id" do
+      assert {:error, :unknown_runner} = Catalog.observe_state(Ecto.UUID.generate(), %{})
     end
   end
 end

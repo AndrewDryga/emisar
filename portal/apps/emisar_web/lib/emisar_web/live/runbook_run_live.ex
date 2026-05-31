@@ -5,17 +5,9 @@ defmodule EmisarWeb.RunbookRunLive do
   alias EmisarWeb.Permissions
 
   def mount(%{"id" => id}, _session, socket) do
-    account_id = socket.assigns.current_account.id
-
-    case Runbooks.get_runbook(account_id, id) do
-      nil ->
-        {:ok,
-         socket
-         |> put_flash(:error, "Runbook not found.")
-         |> push_navigate(to: ~p"/app/runbooks")}
-
-      runbook ->
-        runners = Runners.list_runners_for_account(account_id)
+    case Runbooks.fetch_runbook_by_id(id, socket.assigns.current_subject) do
+      {:ok, runbook} ->
+        {:ok, runners, _} = Runners.list_runners_for_account(socket.assigns.current_subject)
         steps = Runbooks.expand(runbook)
 
         {:ok,
@@ -26,11 +18,22 @@ defmodule EmisarWeb.RunbookRunLive do
          |> assign(:steps, steps)
          |> assign(:runner_id, default_runner_id(runners))
          |> assign(:reason, "")}
+
+      {:error, _} ->
+        {:ok,
+         socket
+         |> put_flash(:error, "Runbook not found.")
+         |> push_navigate(to: ~p"/app/runbooks")}
     end
   end
 
   defp default_runner_id([]), do: nil
   defp default_runner_id([%{id: id} | _]), do: id
+
+  defp format_reason(%Ecto.Changeset{} = cs), do: humanize_errors(cs)
+  defp format_reason(reason) when is_binary(reason), do: reason
+  defp format_reason(reason) when is_atom(reason), do: reason |> Atom.to_string() |> String.replace("_", " ")
+  defp format_reason(_), do: "unknown error"
 
   def handle_event("validate", params, socket) do
     {:noreply,
@@ -60,7 +63,7 @@ defmodule EmisarWeb.RunbookRunLive do
          |> put_flash(:error, "Reason is required — describe why you're running this runbook.")}
 
       true ->
-        case Runbooks.dispatch_runbook(socket.assigns.runbook, runner_id, socket.assigns.current_user.id, reason) do
+        case Runbooks.dispatch_runbook(socket.assigns.runbook, runner_id, reason, socket.assigns.current_subject) do
           {:ok, _status, first_run} ->
             {:noreply,
              socket
@@ -74,10 +77,10 @@ defmodule EmisarWeb.RunbookRunLive do
             {:noreply, put_flash(socket, :error, "Runbook has no steps to run.")}
 
           {:error, reason} ->
-            {:noreply, put_flash(socket, :error, "Could not start runbook: #{inspect(reason)}")}
+            {:noreply, put_flash(socket, :error, "Could not start runbook: #{format_reason(reason)}")}
 
-          other ->
-            {:noreply, put_flash(socket, :error, "Unexpected: #{inspect(other)}")}
+          _other ->
+            {:noreply, put_flash(socket, :error, "Could not start runbook. Try again.")}
         end
     end
   end
@@ -92,39 +95,62 @@ defmodule EmisarWeb.RunbookRunLive do
     >
       <:title>Run <span class="font-mono text-base">{@runbook.title}</span></:title>
 
-      <p class="-mt-4 mb-8 max-w-2xl text-sm text-zinc-400">
-        Dispatches step 1 against the selected runner. Each successive step
-        fires automatically when the previous step's run completes
-        successfully. A failed step stops the runbook — pick it up from the
-        run detail page.
-      </p>
+      <div class="mx-auto max-w-3xl space-y-6">
+        <%!-- How-it-works strip — short paragraph, replaces the
+             stranded `-mt-4` lead-in that fought the page padding. --%>
+        <p class="text-sm leading-relaxed text-zinc-400">
+          Step 1 dispatches against the selected runner; each successive step fires
+          when the previous step succeeds. A failed step stops the runbook — pick it
+          up from the run detail page.
+        </p>
 
-      <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        <.card class="lg:col-span-2">
-          <.section_header title="Plan" />
+        <%!-- Plan — ordered numbered list, terminal-y. Empty state
+             tells the operator to edit first instead of dispatching
+             nothing. --%>
+        <section class="overflow-hidden rounded-xl border border-zinc-900 bg-zinc-950/40">
+          <header class="flex items-center justify-between border-b border-zinc-900 px-5 py-3">
+            <h2 class="text-sm font-semibold text-zinc-100">Plan</h2>
+            <span class="text-xs text-zinc-500">
+              {length(@steps)} {if length(@steps) == 1, do: "step", else: "steps"}
+            </span>
+          </header>
+
           <%= if @steps == [] do %>
-            <p class="mt-4 text-sm text-zinc-400">This runbook has no steps. Edit it first.</p>
+            <div class="px-5 py-10 text-center text-sm text-zinc-500">
+              No steps defined.
+              <.link
+                navigate={~p"/app/runbooks/#{@runbook.id}/edit"}
+                class="text-indigo-400 hover:text-indigo-300"
+              >Edit the runbook</.link>
+              first.
+            </div>
           <% else %>
-            <ol class="mt-4 space-y-2">
-              <%= for {step, idx} <- Enum.with_index(@steps) do %>
-                <li class="flex items-start gap-3 rounded-lg border border-zinc-800 bg-black/30 p-3">
-                  <span class="grid h-6 w-6 flex-shrink-0 place-items-center rounded-full bg-zinc-800 text-xs font-semibold text-zinc-300">
-                    {idx + 1}
-                  </span>
-                  <div class="min-w-0 flex-1 text-sm">
-                    <div class="font-mono text-zinc-200">{step["action"] || step["action_id"] || "—"}</div>
-                    <%= if step["description"] do %>
-                      <p class="mt-1 text-xs text-zinc-400">{step["description"]}</p>
-                    <% end %>
+            <ol class="divide-y divide-zinc-900">
+              <li
+                :for={{step, idx} <- Enum.with_index(@steps)}
+                class="flex items-start gap-3 px-5 py-3"
+              >
+                <span class="grid h-6 w-6 flex-shrink-0 place-items-center rounded-full bg-zinc-800 text-xs font-semibold text-zinc-300">
+                  {idx + 1}
+                </span>
+                <div class="min-w-0 flex-1 text-sm">
+                  <div class="truncate font-mono text-zinc-200">
+                    {step["action"] || step["action_id"] || "—"}
                   </div>
-                </li>
-              <% end %>
+                  <p :if={step["description"]} class="mt-0.5 truncate text-xs text-zinc-500">
+                    {step["description"]}
+                  </p>
+                </div>
+              </li>
             </ol>
           <% end %>
-        </.card>
+        </section>
 
-        <.card>
-          <.section_header title="Dispatch" />
+        <%!-- Dispatch form — full width below the plan. Runner select
+             + reason textarea + big start button. --%>
+        <section class="rounded-xl border border-zinc-900 bg-zinc-950/40 p-5">
+          <h2 class="text-sm font-semibold text-zinc-100">Dispatch</h2>
+
           <form phx-change="validate" phx-submit="dispatch" class="mt-4 space-y-4">
             <div>
               <label class="block text-sm font-medium text-zinc-200">Runner</label>
@@ -160,7 +186,7 @@ defmodule EmisarWeb.RunbookRunLive do
               Start runbook
             </.button>
           </form>
-        </.card>
+        </section>
       </div>
     </.dashboard_shell>
     """

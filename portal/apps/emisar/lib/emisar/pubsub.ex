@@ -6,12 +6,11 @@ defmodule Emisar.PubSub do
 
   Topic shapes:
 
-    "account:<id>"                    — account-level (any change)
-    "account:<id>:runners"             — runner connect/disconnect/state
-    "account:<id>:runs"               — run create/transition
-    "account:<id>:approvals"          — approval requests / decisions
-    "run:<id>"                        — per-run events (progress chunks)
-    "runner:<id>"                      — per-runner transport messages
+    "account:<id>:runners"     — runner connect/disconnect/state
+    "account:<id>:runs"        — run create/transition
+    "account:<id>:approvals"   — approval requests / decisions
+    "run:<id>"                 — per-run events (progress chunks)
+    "runner:<id>"              — per-runner transport messages
   """
 
   alias Emisar.Runs.{ActionRun, RunEvent}
@@ -22,7 +21,6 @@ defmodule Emisar.PubSub do
 
   # -- Topics -----------------------------------------------------------
 
-  def topic_for_account(account_id), do: "account:#{account_id}"
   def topic_for_account_runners(account_id), do: "account:#{account_id}:runners"
   def topic_for_account_runs(account_id), do: "account:#{account_id}:runs"
   def topic_for_account_approvals(account_id), do: "account:#{account_id}:approvals"

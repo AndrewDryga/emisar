@@ -6,7 +6,7 @@ defmodule EmisarWeb.RunnerSocket do
 
     1. Authenticates the runner on `init/1` using the bearer token (or
        bootstrap auth key) presented in the `Authorization` header,
-       then ingests the runner's first `agent_state` message.
+       then ingests the runner's first `runner_state` message.
     2. Subscribes to `Emisar.PubSub.topic_for_runner/1` so the cloud can
        deliver `run_action`/`cancel`/`ack_result` messages to this
        socket by broadcasting onto that topic.
@@ -34,7 +34,15 @@ defmodule EmisarWeb.RunnerSocket do
   # -- WebSock callbacks ----------------------------------------------
 
   @impl true
-  def init(%{token: %Token{} = token, runner: %Runner{} = runner}) do
+  def init(%{token: %Token{} = token, runner: %Runner{} = runner} = upgrade) do
+    # Stash IP + UA from the HTTP upgrade on the socket process so
+    # every Audit.log call in init / terminate / handle_in carries
+    # them. The controller passed these in via `WebSockAdapter.upgrade`.
+    Audit.put_request_metadata(%{
+      ip_address: upgrade[:ip_address],
+      user_agent: upgrade[:user_agent]
+    })
+
     state = %{
       account_id: runner.account_id,
       runner_id: runner.id,
@@ -47,11 +55,21 @@ defmodule EmisarWeb.RunnerSocket do
     PubSub.subscribe_runner(runner.id)
     {:ok, _} = RunnerPresence.track_runner(self(), runner.account_id, runner.id)
 
+    # Flip status to "connected" the moment the WebSocket auth handshake
+    # succeeds. Previously the row stayed "pending" until the first
+    # `runner_state` envelope arrived — which made a row look offline in
+    # the operator UI even while Presence already showed it online, and
+    # gave a runner an indefinite stuck-at-pending window if catalog
+    # ingestion errored. Catalog observation stays a separate concern.
+    Runners.mark_connected(runner.id)
+
     Audit.log(runner.account_id, "runner.connected",
       actor_kind: "runner",
       actor_id: runner.id,
+      actor_label: runner.name,
       subject_kind: "runner",
       subject_id: runner.id,
+      subject_label: runner.name,
       payload: %{token_id: token.id}
     )
 
@@ -111,6 +129,14 @@ defmodule EmisarWeb.RunnerSocket do
     :ok
   end
 
+  # If `ip_key/1` returns the rate-limiter's "unknown" sentinel, treat
+  # it as no IP for audit so we don't pollute rows with the placeholder.
+  # (This helper is used by RunnerConnectController.)
+  @doc false
+  def normalize_ip("unknown"), do: nil
+  def normalize_ip(s) when is_binary(s), do: s
+  def normalize_ip(_), do: nil
+
   defp format_reason(:normal), do: "normal"
   defp format_reason({:shutdown, r}), do: "shutdown:#{inspect(r)}"
   defp format_reason(other), do: inspect(other)
@@ -119,8 +145,9 @@ defmodule EmisarWeb.RunnerSocket do
 
   defp handle_envelope("runner_state", msg, state) do
     case Catalog.observe_state(state.runner_id, msg) do
-      {:ok, _agent} ->
-        Runners.mark_connected(state.runner_id, msg)
+      {:ok, _runner} ->
+        # mark_connected already fired at socket init; this just refreshes
+        # the heartbeat-timeout watcher now that we have a catalog.
         reset_heartbeat_timeout(state)
         {:ok, refresh_heartbeat(state)}
 
@@ -210,9 +237,9 @@ defmodule EmisarWeb.RunnerSocket do
   defp fetch_run_id(request_id, state) do
     # Scoped by runner_id so a malicious runner in the same account can't
     # write progress chunks against another runner's run.
-    case Runs.get_run_for_runner(state.runner_id, request_id) do
-      nil -> :error
-      run -> {:ok, run.id}
+    case Runs.fetch_run_by_request_id_for_runner(request_id, state.runner_id) do
+      {:error, :not_found} -> :error
+      {:ok, run} -> {:ok, run.id}
     end
   end
 

@@ -3,346 +3,493 @@ defmodule Emisar.Runners do
   Runner lifecycle: registration, auth-key management, token mint/verify,
   state advertisement persistence, heartbeats, connection state.
 
-  This module is the cloud-side analogue of the runner's bootstrap
-  flow. An operator generates an auth key in the UI → drops it on a
-  VM → the runner presents it on first connect → we mint a per-runner
-  token and persist the registration.
+  Reads/writes go through `Runner.Query` + `Runner.Changeset` (and
+  similar per-entity modules under `Emisar.Runners.AuthKey`,
+  `Token`, `EventCursor`). The public surface takes `%Subject{}` and
+  routes through `Authorizer.for_subject/2`; the runner-socket-driven
+  state helpers (`apply_state`, `mark_connected`, `mark_disconnected`,
+  `record_heartbeat`, `mark_event_acked`, `event_acked?`) are internal
+  to the runner connection process and called with the runner
+  socket's own subject upstream.
   """
 
-  import Ecto.Query
-  alias Emisar.Repo
-  alias Emisar.Runners.{Runner, AuthKey, Token, EventCursor}
+  alias Emisar.{Audit, Auth, PubSub, Repo}
+  alias Emisar.Auth.Subject
+  alias Emisar.Runners.{Authorizer, AuthKey, EventCursor, Runner, Token}
 
-  # -- Listing / queries ------------------------------------------------
-
-  def list_runners_for_account(account_id, opts \\ []) do
-    query =
-      from a in Runner,
-        where: a.account_id == ^account_id,
-        order_by: [asc: a.group, asc: a.name]
-
-    query =
-      if group = opts[:group] do
-        where(query, [a], a.group == ^group)
-      else
-        query
-      end
-
-    query =
-      if status = opts[:status] do
-        where(query, [a], a.status == ^status)
-      else
-        query
-      end
-
-    Repo.all(query)
-  end
-
-  def list_groups_for_account(account_id) do
-    from(a in Runner,
-      where: a.account_id == ^account_id,
-      group_by: a.group,
-      select: {a.group, count(a.id)},
-      order_by: a.group
-    )
-    |> Repo.all()
-  end
-
-  def get_runner(account_id, id) do
-    from(a in Runner, where: a.account_id == ^account_id and a.id == ^id)
-    |> Repo.one()
-  end
-
-  def get_runner!(account_id, id),
-    do: get_runner(account_id, id) || raise(Ecto.NoResultsError, queryable: Runner)
-
-  def get_runner_by_external_id(account_id, external_id) when is_binary(external_id) do
-    Repo.get_by(Runner, account_id: account_id, external_id: external_id)
-  end
-
-  # -- Manual create (operator clicks "Add runner" in the UI) ------------
-
-  def create_runner(account_id, attrs) do
-    %Runner{}
-    |> Runner.manual_create_changeset(Map.merge(attrs, %{"account_id" => account_id}))
-    |> Repo.insert()
-  end
-
-  def update_runner(%Runner{} = runner, attrs) do
-    runner
-    |> Runner.manual_create_changeset(attrs)
-    |> Repo.update()
-  end
-
-  def disable_runner(%Runner{} = runner, by_user_id \\ nil) do
-    result =
-      runner
-      |> Ecto.Changeset.change(
-        disabled_at: DateTime.utc_now() |> DateTime.truncate(:microsecond),
-        status: "disabled"
-      )
-      |> Repo.update()
-
-    case result do
-      {:ok, disabled} ->
-        Emisar.Audit.log(disabled.account_id, "runner.disabled",
-          actor_kind: if(by_user_id, do: "user", else: "system"),
-          actor_id: by_user_id,
-          subject_kind: "runner",
-          subject_id: disabled.id,
-          subject_label: disabled.name
-        )
-
-        {:ok, disabled}
-
-      err ->
-        err
-    end
-  end
-
-  # -- Auth keys --------------------------------------------------------
-
-  # 11 chars for the literal "emkey-auth-" + 16 random chars => 27.
-  # The random portion has 16 chars * 6 bits/char (base64url) ≈ 96 bits
-  # of entropy in the prefix alone — well past the bar where prefix
-  # collisions on the unique index could be triggered by an adversary.
+  # 11 chars for "emkey-auth-" + 16 random chars => 27.
   @auth_key_prefix_size 27
-  # Per-runner tokens use a smaller prefix (7-char "rnrtok-" + 5 random).
-  # Security comes from the SHA-256 of the full secret; the prefix is
-  # only a lookup hint. Keep distinct from @auth_key_prefix_size so
-  # the auth-key bump doesn't invalidate tokens already minted to
-  # connected runners.
+  # 7 chars for "rnrtok-" + 5 random.
   @token_prefix_size 12
   @key_secret_size 32
 
   # Per-account ring cap for auto-generated, unused install keys.
-  # Dashboard mounts mint into the ring; when capacity is exceeded, the
-  # oldest auto-unused entry is evicted. See mint_install_key/3.
+  # Dashboard mounts mint into the ring; when capacity is exceeded the
+  # oldest auto-unused entry is evicted (see `mint_install_key/2`).
   @install_ring_cap 42
-  # Keys minted within this window are protected from eviction even when
-  # the ring is full — a buffer for the brief gap between "user copied
-  # the command" and "runner POSTs to /runner/register".
   @install_eviction_grace_seconds 60
 
-  @doc """
-  Persists an auth key with a caller-supplied raw secret. Used by the
-  dev seed to make local docker-compose bring-up self-contained: with a
-  deterministic, well-known dev key the runners can read the matching
-  value from .env.example without a "capture-from-stdout" bootstrap
-  script.
+  # -- Runners: reads --------------------------------------------------
 
-  PRODUCTION CALLERS SHOULD NEVER REACH THIS. Hash-discipline is
-  preserved (the hash, not the raw, is what we persist), but a known
-  raw value defeats the whole point of randomized secrets. Use
-  `create_auth_key/3` everywhere except seeds.
+  @doc """
+  Batch resolver returning `%{runner_id => runner_name}` for the
+  supplied ids. Used by list pages that have foreign-key references
+  to runners and want labels without N+1 lookups.
+
+  Label batches are intentionally subjectless — the caller has already
+  authorized a parent listing (with its own Subject) and is rendering
+  labels for ids it already trusts.
   """
+  def runner_labels_for_ids(ids) when is_list(ids) do
+    case Enum.reject(ids, &is_nil/1) |> Enum.uniq() do
+      [] ->
+        %{}
+
+      ids ->
+        Runner.Query.all()
+        |> Runner.Query.select_labels(ids, :name)
+        |> Repo.all()
+        |> Map.new()
+    end
+  end
+
+  @doc """
+  Flat list of all runners for an account. Used by the grouped
+  RunnersLive UI which sorts the rows client-side by group; no
+  pagination needed because real fleets are small (≪ 100 runners).
+  Use `list_runners_page/2` for paginated/filterable surfaces.
+
+  Returns `{:ok, [runner], %Paginator.Metadata{}}` per the
+  context-function convention. The `:membership_id` opt restricts the
+  result to runners the membership is allowed to see (post-DB filter;
+  empty scopes = all).
+  """
+  def list_runners_for_account(%Subject{} = subject, opts \\ []) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.view_runners_permission()
+           ) do
+      {membership_id, opts} = Keyword.pop(opts, :membership_id)
+      {group, opts} = Keyword.pop(opts, :group)
+      {status, opts} = Keyword.pop(opts, :status)
+
+      Runner.Query.not_deleted()
+      |> Runner.Query.ordered_by_group_name()
+      |> apply_runner_opts(group: group, status: status)
+      |> Authorizer.for_subject(subject)
+      |> Repo.list(Runner.Query, opts)
+      |> apply_scope_filter(membership_id)
+    end
+  end
+
+  # Per-user runner ACLs (v1 — uniform per-membership scope). When the
+  # caller passes `membership_id: id`, restrict the result to runners
+  # the membership is allowed to see (empty scopes = all). Defaults to
+  # no filter so MCP/system paths keep working unchanged.
+  defp apply_scope_filter({:ok, runners, metadata}, nil), do: {:ok, runners, metadata}
+
+  defp apply_scope_filter({:ok, runners, metadata}, membership_id) do
+    case Emisar.Accounts.runner_scopes_for_membership(membership_id) do
+      [] -> {:ok, runners, metadata}
+      scopes -> {:ok, Enum.filter(runners, &Emisar.Accounts.runner_in_scope?(&1, scopes)), metadata}
+    end
+  end
+
+  defp apply_scope_filter({:error, _} = err, _), do: err
+
+  defp apply_runner_opts(query, opts) do
+    Enum.reduce(opts, query, fn
+      {:group, group}, q when is_binary(group) -> Runner.Query.by_group(q, group)
+      {:status, status}, q when is_binary(status) -> Runner.Query.by_status(q, status)
+      _, q -> q
+    end)
+  end
+
+  @doc """
+  Paginated + filterable list. Returns `{:ok, [runner], metadata}`.
+  Wired through `Emisar.Repo.list/3` so the LiveTable component can
+  drive it from URL params.
+  """
+  def list_runners_page(%Subject{} = subject, opts \\ []) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.view_runners_permission()
+           ) do
+      Runner.Query.not_deleted()
+      |> Authorizer.for_subject(subject)
+      |> Repo.list(Runner.Query, opts)
+    end
+  end
+
+  @doc """
+  Group → count tuples for the RunnersLive sidebar. Returns
+  `{:ok, [{group, count}]} | {:error, :unauthorized}`. Small bounded
+  set (groups, not runners) — no pagination needed.
+  """
+  def list_group_summaries(%Subject{} = subject) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.view_runners_permission()
+           ) do
+      rows =
+        Runner.Query.not_deleted()
+        |> Authorizer.for_subject(subject)
+        |> Runner.Query.group_summary()
+        |> Repo.all()
+
+      {:ok, rows}
+    end
+  end
+
+  def fetch_runner_by_id(id, %Subject{} = subject, opts \\ []) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.view_runners_permission()
+           ),
+         true <- Repo.valid_uuid?(id) do
+      Runner.Query.not_deleted()
+      |> Runner.Query.by_id(id)
+      |> Authorizer.for_subject(subject)
+      |> Repo.fetch(Runner.Query, opts)
+    else
+      false -> {:error, :not_found}
+      other -> other
+    end
+  end
+
+  @doc "Internal lookup by id only — used by socket-driven state updates."
+  def peek_runner_by_id(id) do
+    if Repo.valid_uuid?(id) do
+      Runner.Query.not_deleted()
+      |> Runner.Query.by_id(id)
+      |> Repo.fetch(Runner.Query)
+    else
+      {:error, :not_found}
+    end
+  end
+
+  @doc """
+  Internal lookup by `external_id` scoped to an account. Used inside
+  `register_via_auth_key/2`; not exposed to LiveView/MCP — they don't
+  have an external_id at the auth boundary.
+  """
+  def fetch_runner_by_external_id_for_account(external_id, account_id) when is_binary(external_id) do
+    Runner.Query.not_deleted()
+    |> Runner.Query.by_account_id(account_id)
+    |> Runner.Query.by_external_id(external_id)
+    |> Repo.fetch(Runner.Query)
+  end
+
+  # -- Runners: mutations ----------------------------------------------
+
+  def create_runner(attrs, %Subject{account: account} = subject) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.manage_runners_permission()
+           ) do
+      %Emisar.Accounts.Account{id: account.id}
+      |> Runner.Changeset.create(attrs)
+      |> Repo.insert()
+    end
+  end
+
+  def update_runner(%Runner{} = runner, attrs, %Subject{} = subject) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.manage_runners_permission()
+           ),
+         :ok <- ensure_runner_in_subject_account(runner, subject) do
+      runner |> Runner.Changeset.update(attrs) |> Repo.update()
+    end
+  end
+
+  def disable_runner(%Runner{} = runner, %Subject{} = subject) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.manage_runners_permission()
+           ),
+         :ok <- ensure_runner_in_subject_account(runner, subject) do
+      case runner |> Runner.Changeset.disable() |> Repo.update() do
+        {:ok, disabled} = ok ->
+          Audit.log(disabled.account_id, "runner.disabled",
+            actor_kind: actor_kind(subject),
+            actor_id: actor_id(subject),
+            subject_kind: "runner",
+            subject_id: disabled.id,
+            subject_label: disabled.name
+          )
+
+          ok
+
+        err ->
+          err
+      end
+    end
+  end
+
+  @doc """
+  Soft-deletes a runner — sets `deleted_at`. The runner becomes
+  invisible from the default scope (`Query.not_deleted/1`) but
+  historical references (audit events, run rows) remain intact.
+  """
+  def delete_runner(%Runner{} = runner, %Subject{} = subject) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.manage_runners_permission()
+           ),
+         :ok <- ensure_runner_in_subject_account(runner, subject) do
+      case runner |> Runner.Changeset.delete() |> Repo.update() do
+        {:ok, deleted} = ok ->
+          Audit.log(deleted.account_id, "runner.deleted",
+            actor_kind: actor_kind(subject),
+            actor_id: actor_id(subject),
+            subject_kind: "runner",
+            subject_id: deleted.id,
+            subject_label: deleted.name
+          )
+
+          ok
+
+        err ->
+          err
+      end
+    end
+  end
+
+  defp ensure_runner_in_subject_account(%Runner{account_id: account_id}, %Subject{} = subject),
+    do: Subject.ensure_in_account(subject, account_id)
+
+  defdelegate actor_kind(subject), to: Subject
+  defdelegate actor_id(subject), to: Subject
+
+  # -- Runner socket-driven state updates ------------------------------
+  #
+  # These are called from the runner WebSocket process — the auth gate
+  # is the socket-level token check, and the calling process IS the
+  # runner. No Subject thread necessary; row id + account_id come off
+  # the runner struct itself.
+
+  def apply_state(%Runner{} = runner, %{} = payload) do
+    runner
+    |> Runner.Changeset.apply_state(%{
+      hostname: payload["hostname"] || runner.hostname,
+      labels: payload["labels"] || runner.labels,
+      runner_version: payload["version"] || runner.runner_version,
+      packs: payload["packs"] || runner.packs,
+      external_id: payload["runner_id"] || runner.external_id
+    })
+    |> Repo.update()
+  end
+
+  def mark_connected(%Runner{} = runner) do
+    runner
+    |> Runner.Changeset.connected()
+    |> Repo.update()
+    |> broadcast(:runner_connected)
+  end
+
+  def mark_connected(runner_id) when is_binary(runner_id) do
+    case peek_runner_by_id(runner_id) do
+      {:ok, runner} -> mark_connected(runner)
+      {:error, :not_found} = err -> err
+    end
+  end
+
+  def mark_disconnected(runner_or_id, reason \\ nil)
+
+  def mark_disconnected(%Runner{} = runner, reason) do
+    runner
+    |> Runner.Changeset.disconnected(reason)
+    |> Repo.update()
+    |> broadcast(:runner_disconnected)
+  end
+
+  def mark_disconnected(runner_id, reason) when is_binary(runner_id) do
+    case peek_runner_by_id(runner_id) do
+      {:ok, runner} -> mark_disconnected(runner, reason)
+      {:error, :not_found} = err -> err
+    end
+  end
+
+  def record_heartbeat(%Runner{} = runner, action_load),
+    do: runner |> Runner.Changeset.heartbeat(action_load) |> Repo.update()
+
+  def record_heartbeat(runner_id, action_load) when is_binary(runner_id) do
+    case peek_runner_by_id(runner_id) do
+      {:ok, runner} -> record_heartbeat(runner, action_load)
+      {:error, :not_found} = err -> err
+    end
+  end
+
+  # -- Auth keys -------------------------------------------------------
+
+  def list_auth_keys(%Subject{} = subject, opts \\ []) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.manage_auth_keys_permission()
+           ) do
+      AuthKey.Query.visible_to_operators()
+      |> AuthKey.Query.ordered_by_recent()
+      |> Authorizer.for_subject(subject)
+      |> Repo.list(AuthKey.Query, Keyword.put_new(opts, :preload, :created_by))
+    end
+  end
+
+  def create_auth_key(attrs, %Subject{account: account} = subject) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.manage_auth_keys_permission()
+           ) do
+      account_id = account.id
+      user_id = actor_id(subject)
+      {raw, prefix, hash} = mint_secret("emkey-auth-", @auth_key_prefix_size)
+      changeset = AuthKey.Changeset.create(account_id, user_id, prefix, hash, attrs)
+
+      case Repo.insert(changeset) do
+        {:ok, key} ->
+          Audit.log(account_id, "auth_key.created",
+            actor_kind: "user",
+            actor_id: user_id,
+            subject_kind: "auth_key",
+            subject_id: key.id,
+            payload: %{prefix: key.key_prefix, reusable: key.reusable, group: key.group}
+          )
+
+          {:ok, raw, key}
+
+        err ->
+          err
+      end
+    end
+  end
+
+  @doc false
+  # Seed/test helper that persists an auth key with a caller-supplied
+  # raw secret. Production paths MUST use `create_auth_key/2` so the
+  # secret is randomized server-side. A known raw value defeats the
+  # randomization that makes auth keys worth anything as credentials.
   def create_auth_key_with_secret(raw, account_id, user_id, attrs \\ %{})
       when is_binary(raw) and byte_size(raw) >= @auth_key_prefix_size do
     prefix = String.slice(raw, 0, @auth_key_prefix_size)
     hash = :crypto.hash(:sha256, raw)
 
-    params =
-      attrs
-      |> Map.put(:account_id, account_id)
-      |> Map.put(:created_by_id, user_id)
-
-    %AuthKey{}
-    |> AuthKey.changeset(params)
-    |> Ecto.Changeset.put_change(:key_prefix, prefix)
-    |> Ecto.Changeset.put_change(:key_hash, hash)
+    AuthKey.Changeset.create(account_id, user_id, prefix, hash, attrs)
     |> Repo.insert()
   end
 
   @doc """
-  Generates a new auth key. Returns `{raw_key, persisted_struct}`; the
-  raw key is the only point at which the secret is visible.
-  """
-  def create_auth_key(account_id, user_id, attrs \\ %{}) do
-    raw = generate_secret("emkey-auth-")
-    prefix = String.slice(raw, 0, @auth_key_prefix_size)
-    hash = :crypto.hash(:sha256, raw)
-
-    params =
-      attrs
-      |> Map.put(:account_id, account_id)
-      |> Map.put(:created_by_id, user_id)
-
-    changeset =
-      %AuthKey{}
-      |> AuthKey.changeset(params)
-      |> Ecto.Changeset.put_change(:key_prefix, prefix)
-      |> Ecto.Changeset.put_change(:key_hash, hash)
-
-    case Repo.insert(changeset) do
-      {:ok, key} ->
-        Emisar.Audit.log(account_id, "auth_key.created",
-          actor_kind: "user",
-          actor_id: user_id,
-          subject_kind: "auth_key",
-          subject_id: key.id,
-          payload: %{prefix: key.key_prefix, reusable: key.reusable, group: key.group}
-        )
-
-        {:ok, raw, key}
-
-      err ->
-        err
-    end
-  end
-
-  def list_auth_keys(account_id) do
-    from(k in AuthKey,
-      where: k.account_id == ^account_id,
-      where: ^visible_keys_clause(),
-      order_by: [desc: k.inserted_at]
-    )
-    |> Repo.all()
-  end
-
-  @doc """
-  Composable Ecto where clause that hides auto-generated, never-used
-  keys from operator-facing surfaces. Use anywhere we surface
-  user-visible lists (UI list, JSON API, audit references, badge
-  counts). Auto-generated keys that have been bound to a runner pass
-  the filter (last_used_at is set) and look like normal keys.
-
-  Compiled into a dynamic so callers can compose:
-
-      query |> where(^Runners.visible_keys_clause())
-  """
-  def visible_keys_clause do
-    dynamic(
-      [k],
-      is_nil(k.auto_generated_at) or not is_nil(k.last_used_at)
-    )
-  end
-
-  @doc """
   Mints a fresh, single-use bootstrap auth key for the dashboard's
-  install command, marks it auto-generated (invisible in UI lists until
-  a runner uses it), and evicts the oldest auto-unused key beyond the
-  per-account ring cap of #{@install_ring_cap}. All in one transaction.
+  install command, marks it auto-generated, and evicts the oldest
+  auto-unused key beyond the per-account ring cap of #{@install_ring_cap}.
 
   Returns `{:ok, raw_secret, key}`. No audit log on mint — auto-gen is
   noise. Once a runner registers with the key, `consume_auth_key/1`
-  clears the auto flag and audit logs `auth_key.bound` with
-  `auto: true` metadata.
-
-  Eviction protects keys minted within the last
-  #{@install_eviction_grace_seconds} seconds so a user who just copied
-  the command can paste-and-install without their key being evicted by
-  someone else's concurrent dashboard mount.
+  clears the auto flag and audit logs `auth_key.bound` with `auto: true`.
   """
-  def mint_install_key(account_id, user_id, opts \\ []) do
-    cap = opts[:ring_cap] || @install_ring_cap
-    grace_s = opts[:eviction_grace_seconds] || @install_eviction_grace_seconds
+  def mint_install_key(%Subject{account: account} = subject, opts \\ []) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.issue_install_key_permission()
+           ) do
+      account_id = account.id
+      user_id = actor_id(subject)
+      cap = opts[:ring_cap] || @install_ring_cap
+      grace_s = opts[:eviction_grace_seconds] || @install_eviction_grace_seconds
 
-    raw = generate_secret("emkey-auth-")
-    prefix = String.slice(raw, 0, @auth_key_prefix_size)
-    hash = :crypto.hash(:sha256, raw)
-    now = DateTime.utc_now() |> DateTime.truncate(:microsecond)
+      {raw, prefix, hash} = mint_secret("emkey-auth-", @auth_key_prefix_size)
 
-    Repo.transaction(fn ->
-      # Insert the new key first so this account never momentarily has
-      # zero auto-unused keys (eviction-then-insert would race against
-      # concurrent dashboard mounts).
-      {:ok, key} =
-        %AuthKey{}
-        |> AuthKey.changeset(%{
-          account_id: account_id,
-          created_by_id: user_id,
-          description: "Dashboard install command",
-          reusable: false
-        })
-        |> Ecto.Changeset.put_change(:key_prefix, prefix)
-        |> Ecto.Changeset.put_change(:key_hash, hash)
-        |> Ecto.Changeset.put_change(:auto_generated_at, now)
-        |> Repo.insert()
+      Repo.transaction(fn ->
+        # Insert first, then evict — so the account never momentarily has
+        # zero auto-unused keys (which would race against concurrent
+        # dashboard mounts).
+        {:ok, key} =
+          AuthKey.Changeset.mint_install(account_id, user_id, prefix, hash, %{})
+          |> Repo.insert()
 
-      evict_install_ring_overflow(account_id, cap, grace_s, now)
-
-      {raw, key}
-    end)
-    |> case do
-      {:ok, {raw, key}} -> {:ok, raw, key}
-      {:error, reason} -> {:error, reason}
+        evict_install_ring_overflow(account_id, cap, grace_s, key.auto_generated_at)
+        {raw, key}
+      end)
+      |> case do
+        {:ok, {raw, key}} -> {:ok, raw, key}
+        {:error, reason} -> {:error, reason}
+      end
     end
   end
 
-  # Trims the per-account ring back down to cap. Newest auto-unused keys
-  # are kept; oldest beyond cap are deleted. Keys minted within
-  # grace_seconds are protected from eviction even if they're past the
-  # cap boundary (the "I just copied this, don't pull the rug" buffer).
-  #
-  # Postgres-safe: DELETE WHERE id IN (subquery ORDER BY ... OFFSET cap).
-  # Vanilla DELETE doesn't take ORDER BY/OFFSET; the subquery does.
   defp evict_install_ring_overflow(account_id, cap, grace_seconds, now) do
     protected_floor = DateTime.add(now, -grace_seconds, :second)
 
-    keepers =
-      from k in AuthKey,
-        where: k.account_id == ^account_id,
-        where: not is_nil(k.auto_generated_at),
-        where: is_nil(k.last_used_at),
-        # Keep the newest `cap` outright AND anything inside the grace
-        # window. The union of those two sets survives.
-        order_by: [desc: k.auto_generated_at],
-        offset: ^cap,
-        select: k.id
-
-    from(k in AuthKey,
-      where: k.id in subquery(keepers),
-      where: k.auto_generated_at < ^protected_floor
-    )
+    AuthKey.Query.evictable_install_overflow(account_id, cap, protected_floor)
     |> Repo.delete_all()
   end
 
-  def revoke_auth_key(%AuthKey{} = key, by_user_id) do
-    case key |> AuthKey.revoke_changeset(by_user_id) |> Repo.update() do
-      {:ok, key} = ok ->
-        Emisar.Audit.log(key.account_id, "auth_key.revoked",
-          actor_kind: "user",
-          actor_id: by_user_id,
-          subject_kind: "auth_key",
-          subject_id: key.id,
-          payload: %{prefix: key.key_prefix}
-        )
+  def revoke_auth_key(%AuthKey{} = key, %Subject{} = subject) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.manage_auth_keys_permission()
+           ),
+         :ok <- ensure_auth_key_in_subject_account(key, subject) do
+      by_user_id = actor_id(subject)
 
-        ok
+      case key |> AuthKey.Changeset.revoke(by_user_id) |> Repo.update() do
+        {:ok, revoked} = ok ->
+          Audit.log(revoked.account_id, "auth_key.revoked",
+            actor_kind: "user",
+            actor_id: by_user_id,
+            subject_kind: "auth_key",
+            subject_id: revoked.id,
+            payload: %{prefix: revoked.key_prefix}
+          )
 
-      err ->
-        err
+          ok
+
+        err ->
+          err
+      end
     end
   end
+
+  defp ensure_auth_key_in_subject_account(%AuthKey{account_id: account_id}, %Subject{} = subject),
+    do: Subject.ensure_in_account(subject, account_id)
 
   @doc """
-  Looks up an auth key by the raw secret. Returns nil if no match or
-  the key is unusable (revoked/expired/single-use exhausted).
+  Peeks at the presented raw secret, resolving it to an `%AuthKey{}`.
+  Returns nil when there's no match or the key is unusable (revoked/
+  deleted/expired/single-use exhausted). Constant-time hash comparison.
+  `peek_*` per CLAUDE.md §1.1 — nil-or-struct credential lookup.
+
+  Internal — only called from the runner-register controller before
+  any Subject exists. The presented raw secret IS the auth.
   """
-  def find_auth_key_by_secret(raw) when is_binary(raw) do
-    cond do
-      String.length(raw) < 12 ->
-        nil
-
-      true ->
-        hash = :crypto.hash(:sha256, raw)
-
-        # Try the current prefix size first; fall back to the legacy
-        # 12-char prefix so keys minted before the prefix-size bump
-        # still verify. The hash check is constant-time and binds the
-        # full secret, so the fallback doesn't widen the attack surface.
-        find_by_prefix(raw, hash, @auth_key_prefix_size) ||
-          find_by_prefix(raw, hash, 12)
+  def peek_auth_key_by_secret(raw) when is_binary(raw) do
+    if String.length(raw) < @auth_key_prefix_size do
+      nil
+    else
+      hash = :crypto.hash(:sha256, raw)
+      peek_by_prefix(raw, hash, @auth_key_prefix_size)
     end
   end
 
-  defp find_by_prefix(raw, hash, size) do
+  defp peek_by_prefix(raw, hash, size) do
     if String.length(raw) < size do
       nil
     else
       prefix = String.slice(raw, 0, size)
 
-      with %AuthKey{} = key <- Repo.get_by(AuthKey, key_prefix: prefix),
+      with %AuthKey{} = key <-
+             AuthKey.Query.all() |> AuthKey.Query.by_key_prefix(prefix) |> Repo.peek(),
            true <- secure_compare(key.key_hash, hash),
            true <- AuthKey.usable?(key) do
         key
@@ -352,34 +499,27 @@ defmodule Emisar.Runners do
     end
   end
 
-  # -- Per-runner tokens -------------------------------------------------
+  # -- Per-runner tokens -----------------------------------------------
 
   @doc """
   Mints a long-lived per-runner token, persists the hash, returns
-  `{raw_token, token_record}`.
+  `{raw_token, token_record}`. Internal — only called from the
+  registration flow.
   """
   def mint_runner_token(%Runner{} = runner, issued_via_key_id \\ nil) do
-    raw = generate_secret("rnrtok-")
-    prefix = String.slice(raw, 0, @token_prefix_size)
-    hash = :crypto.hash(:sha256, raw)
+    {raw, prefix, hash} = mint_secret("rnrtok-", @token_prefix_size)
 
     {:ok, token} =
-      %Token{}
-      |> Token.changeset(%{
-        runner_id: runner.id,
-        token_prefix: prefix,
-        token_hash: hash,
-        issued_via_key_id: issued_via_key_id,
-        issued_at: DateTime.utc_now() |> DateTime.truncate(:microsecond)
-      })
+      Token.Changeset.create(runner.id, issued_via_key_id, prefix, hash)
       |> Repo.insert()
 
     {raw, token}
   end
 
   @doc """
-  Verifies a presented runner token. Returns {:ok, token, runner} or
-  {:error, :token_invalid}.
+  Verifies a presented runner token. Returns `{:ok, token, runner}` or
+  `{:error, :token_invalid}`. Internal — called from the runner socket
+  upgrade controller before any Subject exists.
   """
   def verify_runner_token(raw) when is_binary(raw) do
     if String.length(raw) < @token_prefix_size do
@@ -388,11 +528,13 @@ defmodule Emisar.Runners do
       prefix = String.slice(raw, 0, @token_prefix_size)
       hash = :crypto.hash(:sha256, raw)
 
-      with %Token{} = token <- Repo.get_by(Token, token_prefix: prefix),
+      with %Token{} = token <-
+             Token.Query.all() |> Token.Query.by_prefix(prefix) |> Repo.peek(),
            true <- secure_compare(token.token_hash, hash),
            true <- Token.usable?(token),
-           %Runner{disabled_at: nil} = runner <- Repo.get(Runner, token.runner_id) do
-        {:ok, _} = token |> Token.usage_changeset() |> Repo.update()
+           %Runner{disabled_at: nil, deleted_at: nil} = runner <-
+             Runner.Query.all() |> Runner.Query.by_id(token.runner_id) |> Repo.peek() do
+        {:ok, _} = token |> Token.Changeset.usage() |> Repo.update()
         {:ok, token, runner}
       else
         _ -> {:error, :token_invalid}
@@ -400,27 +542,29 @@ defmodule Emisar.Runners do
     end
   end
 
-  # -- Registration (auth_key -> runner + token exchange) ----------------
+  # -- Registration (auth_key -> runner + token exchange) --------------
 
   @doc """
-  Called when an runner presents a valid auth key on first connect.
+  Called when a runner presents a valid auth key on first connect.
   Creates the runner record (or returns the existing one for a reusable
   key registration) and mints a fresh per-runner token. Also enforces
   the account's runner-count plan limit.
 
-  Accepts either a raw key string or an `%AuthKey{}` struct. Returns
-  `{:ok, runner, token, raw_token}` on success or
+  Returns `{:ok, runner, token, raw_token}` on success or
   `{:error, reason}` / `{:error, :over_limit, plan, limit}`.
+
+  Internal — called from the runner-register controller with only the
+  raw secret in hand; the secret IS the auth, no Subject yet exists.
   """
   def register_via_auth_key(raw, attrs) when is_binary(raw) do
-    case find_auth_key_by_secret(raw) do
+    case peek_auth_key_by_secret(raw) do
       nil -> {:error, :auth_key_invalid}
       %AuthKey{} = key -> register_via_auth_key(key, attrs)
     end
   end
 
   def register_via_auth_key(%AuthKey{} = key, attrs) do
-    account = Repo.get!(Emisar.Accounts.Account, key.account_id)
+    account = Emisar.Accounts.fetch_account_by_id!(key.account_id)
     was_auto? = AuthKey.auto_unused?(key)
 
     case Emisar.Billing.check_limit(account, :runners) do
@@ -429,21 +573,17 @@ defmodule Emisar.Runners do
           # Atomically claim a use of this auth key. The conditional
           # UPDATE only succeeds if the key is still in a usable state
           # AT the moment of the update — defeating the race where two
-          # concurrent registrations both see uses_count = 0. Also
-          # clears auto_generated_at in the same statement so an
-          # auto-minted key becomes a normal visible key the moment a
-          # runner registers with it.
+          # concurrent registrations both see uses_count = 0.
           case consume_auth_key(key) do
             :ok -> :ok
             {:error, reason} -> Repo.rollback(reason)
           end
 
-          # Surface the auto→permanent promotion to operators looking
-          # at the audit log. The mint itself was deliberately silent
-          # (would flood the log with noise), so binding is where this
-          # key first becomes visible.
+          # Surface the auto→permanent promotion. The mint itself was
+          # deliberately silent (would flood the log with noise), so
+          # binding is where this key first becomes visible.
           if was_auto? do
-            Emisar.Audit.log(key.account_id, "auth_key.bound",
+            Audit.log(key.account_id, "auth_key.bound",
               actor_kind: "system",
               subject_kind: "auth_key",
               subject_id: key.id,
@@ -451,29 +591,25 @@ defmodule Emisar.Runners do
             )
           end
 
-          external_id =
-            attrs[:external_id] || attrs["external_id"] || Ecto.UUID.generate()
+          external_id = attrs[:external_id] || Ecto.UUID.generate()
 
           runner =
-            case get_runner_by_external_id(key.account_id, external_id) do
-              %Runner{} = existing ->
+            case fetch_runner_by_external_id_for_account(external_id, key.account_id) do
+              {:ok, %Runner{} = existing} ->
                 existing
 
-              nil ->
-                params = %{
-                  account_id: key.account_id,
-                  name: derive_name(attrs),
-                  external_id: external_id,
-                  group: attrs[:group] || attrs["group"] || key.group || "default",
-                  hostname: attrs[:hostname] || attrs["hostname"],
-                  labels: attrs[:labels] || attrs["labels"] || %{},
-                  runner_version: attrs[:runner_version] || attrs["version"],
-                  bootstrap_auth_key_id: key.id
-                }
-
+              {:error, :not_found} ->
                 {:ok, runner} =
-                  %Runner{}
-                  |> Runner.registration_changeset(params)
+                  Runner.Changeset.register(%{
+                    account_id: key.account_id,
+                    name: derive_name(attrs),
+                    external_id: external_id,
+                    group: attrs[:group] || key.group || "default",
+                    hostname: attrs[:hostname],
+                    labels: attrs[:labels] || %{},
+                    runner_version: attrs[:runner_version],
+                    bootstrap_auth_key_id: key.id
+                  })
                   |> Repo.insert()
 
                 runner
@@ -492,35 +628,15 @@ defmodule Emisar.Runners do
     end
   end
 
-  # consume_auth_key atomically charges one use against the key. The
-  # WHERE clause re-evaluates *every* usable? condition at SQL level so
-  # we can't TOCTOU between SELECT and UPDATE. Returns :ok on success or
-  # {:error, :auth_key_invalid} when the key is no longer usable.
+  # Atomically charge one use against `key`. The WHERE clause
+  # re-evaluates every `usable?` condition at SQL level so we can't
+  # TOCTOU between SELECT and UPDATE.
   defp consume_auth_key(%AuthKey{} = key) do
     now = DateTime.utc_now() |> DateTime.truncate(:microsecond)
 
     query =
-      from k in AuthKey,
-        where: k.id == ^key.id,
-        where: is_nil(k.revoked_at),
-        where: is_nil(k.expires_at) or k.expires_at > ^now,
-        # Single-use keys: uses_count must be 0 (and !reusable).
-        # Capped reusable keys: uses_count < max_uses.
-        # Unlimited reusable keys: no cap check.
-        where:
-          (k.reusable and (is_nil(k.max_uses) or k.uses_count < k.max_uses)) or
-            (not k.reusable and k.uses_count == 0),
-        update: [
-          inc: [uses_count: 1],
-          set: [
-            last_used_at: ^now,
-            updated_at: ^now,
-            # Promote auto-generated keys to permanent (visible). Safe
-            # for already-permanent keys: their auto_generated_at is
-            # already nil, so this is a no-op write.
-            auto_generated_at: nil
-          ]
-        ]
+      AuthKey.Query.consumable_by_id(key.id, now)
+      |> AuthKey.Query.consume_one(now)
 
     case Repo.update_all(query, []) do
       {1, _} -> :ok
@@ -529,120 +645,42 @@ defmodule Emisar.Runners do
   end
 
   defp derive_name(attrs) do
-    Map.get(attrs, :hostname) || Map.get(attrs, "hostname") ||
-      Map.get(attrs, :name) || Map.get(attrs, "name") ||
+    attrs[:hostname] || attrs[:name] ||
       "runner-#{Base.url_encode64(:crypto.strong_rand_bytes(4), padding: false)}"
   end
 
-  # -- State updates from agent_state advertisement --------------------
-
-  @doc """
-  Applies an agent_state payload to the runner's row: hostname, labels,
-  version, packs map. Side-effects (Catalog upserts) are the caller's
-  responsibility — this only updates the runner itself.
-  """
-  def apply_state(%Runner{} = runner, %{} = payload) do
-    attrs = %{
-      hostname: payload["hostname"] || runner.hostname,
-      labels: payload["labels"] || runner.labels,
-      runner_version: payload["version"] || runner.runner_version,
-      packs: payload["packs"] || runner.packs,
-      external_id: payload["runner_id"] || runner.external_id
-    }
-
-    runner
-    |> Runner.state_changeset(attrs)
-    |> Repo.update()
-  end
-
-  def mark_connected(agent_or_id, payload \\ %{})
-
-  def mark_connected(%Runner{} = runner, payload) do
-    runner
-    |> Runner.connected_changeset(payload)
-    |> Repo.update()
-    |> tap(fn
-      {:ok, runner} -> Emisar.PubSub.broadcast_runner(runner, :runner_connected)
-      _ -> :ok
-    end)
-  end
-
-  def mark_connected(runner_id, payload) when is_binary(runner_id) do
-    case Repo.get(Runner, runner_id) do
-      nil -> {:error, :not_found}
-      %Runner{} = runner -> mark_connected(runner, payload)
-    end
-  end
-
-  def mark_disconnected(agent_or_id, reason \\ nil)
-
-  def mark_disconnected(%Runner{} = runner, reason) do
-    runner
-    |> Runner.disconnected_changeset(reason)
-    |> Repo.update()
-    |> tap(fn
-      {:ok, runner} -> Emisar.PubSub.broadcast_runner(runner, :runner_disconnected)
-      _ -> :ok
-    end)
-  end
-
-  def mark_disconnected(runner_id, reason) when is_binary(runner_id) do
-    case Repo.get(Runner, runner_id) do
-      nil -> {:error, :not_found}
-      %Runner{} = runner -> mark_disconnected(runner, reason)
-    end
-  end
-
-  def record_heartbeat(%Runner{} = runner, action_load),
-    do: runner |> Runner.heartbeat_changeset(action_load) |> Repo.update()
-
-  def record_heartbeat(runner_id, action_load) when is_binary(runner_id) do
-    case Repo.get(Runner, runner_id) do
-      nil -> {:error, :not_found}
-      %Runner{} = runner -> record_heartbeat(runner, action_load)
-    end
-  end
-
-  # -- Event cursor (audit-upload outbox) -------------------------------
+  # -- Event cursor (audit-upload outbox) ------------------------------
+  #
+  # Internal — called only by the runner socket process. The runner
+  # is the authority on what its own cursor is.
 
   def mark_event_acked(runner_id, event_id) do
-    %EventCursor{}
-    |> EventCursor.changeset(%{
-      runner_id: runner_id,
-      event_id: event_id,
-      acked_at: DateTime.utc_now() |> DateTime.truncate(:microsecond)
-    })
+    EventCursor.Changeset.upsert(runner_id, event_id)
     |> Repo.insert(on_conflict: :nothing)
   end
 
   def event_acked?(runner_id, event_id) do
-    Repo.exists?(
-      from c in EventCursor, where: c.runner_id == ^runner_id and c.event_id == ^event_id
-    )
+    EventCursor.Query.all()
+    |> EventCursor.Query.by_runner_id(runner_id)
+    |> EventCursor.Query.by_event_id(event_id)
+    |> Repo.exists?()
   end
 
-  # -- Helpers ----------------------------------------------------------
+  # -- Helpers ---------------------------------------------------------
 
-  defp generate_secret(prefix) do
+  defp mint_secret(prefix, expected_prefix_size) do
     rand = :crypto.strong_rand_bytes(@key_secret_size) |> Base.url_encode64(padding: false)
-    prefix <> rand
+    raw = prefix <> rand
+    {raw, String.slice(raw, 0, expected_prefix_size), :crypto.hash(:sha256, raw)}
   end
 
-  # Constant-time binary compare (Plug.Crypto has one, but a tiny
-  # local helper saves the dep here in the domain app).
-  defp secure_compare(a, b) when is_binary(a) and is_binary(b) and byte_size(a) == byte_size(b) do
-    :crypto.hash_equals(a, b)
-  rescue
-    # Older OTPs without :crypto.hash_equals/2 — fall back to the
-    # constant-time loop.
-    _ ->
-      do_compare(a, b, 0) == 0
+  defdelegate secure_compare(a, b), to: Emisar.Crypto
+
+  # Wraps a Repo.update result, broadcasting on success.
+  defp broadcast({:ok, runner} = ok, event) do
+    PubSub.broadcast_runner(runner, event)
+    ok
   end
 
-  defp secure_compare(_, _), do: false
-
-  defp do_compare(<<a, ra::binary>>, <<b, rb::binary>>, acc),
-    do: do_compare(ra, rb, Bitwise.bor(acc, Bitwise.bxor(a, b)))
-
-  defp do_compare(<<>>, <<>>, acc), do: acc
+  defp broadcast(err, _event), do: err
 end

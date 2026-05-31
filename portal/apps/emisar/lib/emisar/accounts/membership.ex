@@ -4,11 +4,7 @@ defmodule Emisar.Accounts.Membership do
   an account has many users.
   """
 
-  use Ecto.Schema
-  import Ecto.Changeset
-
-  @primary_key {:id, :binary_id, autogenerate: true}
-  @foreign_key_type :binary_id
+  use Emisar, :schema
 
   @roles ~w(owner admin operator viewer)
 
@@ -16,21 +12,19 @@ defmodule Emisar.Accounts.Membership do
     field :role, :string, default: "operator"
     field :invitation_token, :string
     field :invitation_accepted_at, :utc_datetime_usec
+    field :disabled_at, :utc_datetime_usec
+    field :deleted_at, :utc_datetime_usec
 
     belongs_to :account, Emisar.Accounts.Account
     belongs_to :user, Emisar.Accounts.User
     belongs_to :invited_by, Emisar.Accounts.User
 
-    timestamps(type: :utc_datetime_usec)
+    timestamps()
   end
 
-  def changeset(membership, attrs) do
-    membership
-    |> cast(attrs, [:account_id, :user_id, :role, :invited_by_id, :invitation_token, :invitation_accepted_at])
-    |> validate_required([:account_id, :user_id, :role])
-    |> validate_inclusion(:role, @roles)
-    |> unique_constraint([:account_id, :user_id])
-  end
+  @doc "True when a member's access to this tenant has been suspended (`disabled_at` set)."
+  def disabled?(%__MODULE__{disabled_at: %DateTime{}}), do: true
+  def disabled?(%__MODULE__{}), do: false
 
   def roles, do: @roles
 

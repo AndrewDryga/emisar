@@ -15,7 +15,7 @@ defmodule EmisarWeb.MarketingController do
 
   plug :put_layout, html: {EmisarWeb.Layouts, :app}
 
-  @base "https://emisar.com"
+  @base "https://emisar.dev"
 
   # path | action | template | page_title | meta_description
   @pages [
@@ -45,7 +45,10 @@ defmodule EmisarWeb.MarketingController do
      "Pre-approved Postgres action pack: pg_replication_lag, list-slow-queries, kill-pid. Read-only triage actions go through with no approval; killing a query needs one click."},
     {"/compare/raw-ssh-for-ai", :compare_raw_ssh, :compare_raw_ssh,
      "Why not just give the LLM SSH? — honest comparison",
-     "Comparison: raw SSH-for-AI agents vs an emisar action pack. Both run real commands; the difference is whose recovery you're betting on."}
+     "Comparison: raw SSH-for-AI agents vs an emisar action pack. Both run real commands; the difference is whose recovery you're betting on."},
+    {"/docs/publishing-packs", :docs_publishing_packs, :docs_publishing_packs,
+     "Publishing an action pack",
+     "How to author and publish an emisar action pack: pack.yaml, action YAMLs, validation rules, version + hash, and PR workflow to land in the registry."}
   ]
 
   # The home page has bespoke JSON-LD; keep it as its own def. Every
@@ -103,6 +106,42 @@ defmodule EmisarWeb.MarketingController do
 
     def unquote(action)(conn, _params) do
       render(conn, unquote(template_atom), unquote(attrs_literal))
+    end
+  end
+
+  # -- Packs registry -------------------------------------------------
+  #
+  # `/packs` lists every published pack; `/packs/:id` is the per-pack
+  # detail page (description, actions, install snippet, source link).
+  # The registry data is hardcoded in `EmisarWeb.PacksRegistry`; future
+  # work may load from a remote manifest so third-party packs can list
+  # themselves without a code change.
+
+  def packs(conn, _params) do
+    render(conn, :packs,
+      packs: EmisarWeb.PacksRegistry.list(),
+      page_title: "Action packs registry",
+      meta_description:
+        "Browse the registry of action packs you can install on your emisar runner: linux-core, cassandra, showcase. Each pack ships a typed catalog of actions an LLM can call.",
+      canonical_url: @base <> "/packs"
+    )
+  end
+
+  def pack_detail(conn, %{"id" => id}) do
+    case EmisarWeb.PacksRegistry.get(id) do
+      nil ->
+        conn
+        |> Plug.Conn.put_status(:not_found)
+        |> put_view(html: EmisarWeb.ErrorHTML)
+        |> render(:"404")
+
+      pack ->
+        render(conn, :pack_detail,
+          pack: pack,
+          page_title: "#{pack.name} pack",
+          meta_description: pack.description,
+          canonical_url: @base <> "/packs/" <> pack.id
+        )
     end
   end
 end

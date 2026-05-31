@@ -28,4 +28,24 @@ defmodule EmisarWeb.MarketingTest do
     conn = get(conn, ~p"/healthz")
     assert json_response(conn, 200) == %{"status" => "ok"}
   end
+
+  describe "marketing nav" do
+    test "ships a hamburger button + drawer for mobile viewports", %{conn: conn} do
+      html = conn |> get(~p"/") |> html_response(200)
+
+      # Desktop nav is hidden on mobile (md:flex), so the drawer is
+      # the only way to reach the secondary links on a phone — make
+      # sure both the trigger and the drawer container are present.
+      assert html =~ ~s(id="marketing-mobile-nav")
+      assert html =~ "aria-label=\"Open menu\""
+      assert html =~ "aria-label=\"Close menu\""
+    end
+
+    test "renders the active-page indicator on the current section", %{conn: conn} do
+      # Pricing route should mark its own nav link active. The
+      # indicator is the rounded indigo underline span we added.
+      html = conn |> get(~p"/pricing") |> html_response(200)
+      assert html =~ "bg-indigo-400"
+    end
+  end
 end

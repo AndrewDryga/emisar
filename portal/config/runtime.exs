@@ -39,7 +39,7 @@ if config_env() == :prod do
     System.get_env("SECRET_KEY_BASE") ||
       raise "SECRET_KEY_BASE is missing (generate with: mix phx.gen.secret)"
 
-  host = System.get_env("PHX_HOST") || "app.emisar.com"
+  host = System.get_env("PHX_HOST") || "app.emisar.dev"
 
   # FORCE_SSL=false disables the HTTP→HTTPS redirect AND the
   # secure-cookie pin. Required for local docker-compose dev (plain
@@ -74,8 +74,20 @@ if config_env() == :prod do
 
   config :emisar, :dns_cluster_query, System.get_env("DNS_CLUSTER_QUERY")
 
-  # -- Mailer (Mailgun via Swoosh by default; falls back to SMTP) ----
+  if url = System.get_env("STATUS_PAGE_URL") do
+    config :emisar_web, status_page_url: url
+  end
+
+  # -- Mailer (Postmark by default; Mailgun and SMTP available as
+  # fallbacks if you swap providers later) --------------------------
   cond do
+    System.get_env("POSTMARK_API_TOKEN") ->
+      config :emisar, Emisar.Mailer,
+        adapter: Swoosh.Adapters.Postmark,
+        api_key: System.fetch_env!("POSTMARK_API_TOKEN")
+
+      config :swoosh, api_client: Swoosh.ApiClient.Finch, finch_name: Emisar.Finch
+
     System.get_env("MAILGUN_API_KEY") ->
       config :emisar, Emisar.Mailer,
         adapter: Swoosh.Adapters.Mailgun,
@@ -97,28 +109,38 @@ if config_env() == :prod do
       config :emisar, Emisar.Mailer, adapter: Swoosh.Adapters.Local
   end
 
-  # -- Stripe --------------------------------------------------------
-  if System.get_env("STRIPE_SECRET_KEY") do
-    config :emisar,
-      stripe_client: Emisar.Billing.StripeClient.Live,
-      stripe_secret_key: System.fetch_env!("STRIPE_SECRET_KEY"),
-      stripe_webhook_secret: System.fetch_env!("STRIPE_WEBHOOK_SECRET")
+  # -- Sentry --------------------------------------------------------
+  # Default DSN comes from config.exs so it works in every env. Allow
+  # SENTRY_DSN to override at boot for staging / sandbox projects.
+  if dsn = System.get_env("SENTRY_DSN") do
+    config :sentry,
+      dsn: dsn,
+      environment_name: System.get_env("SENTRY_ENVIRONMENT") || "production",
+      release: System.get_env("RELEASE_VSN")
+  end
 
-    if id = System.get_env("STRIPE_PRICE_ID_TEAM"),
-      do: config(:emisar, {:stripe_price_id, "team"}, id)
+  # -- Paddle --------------------------------------------------------
+  if System.get_env("PADDLE_API_KEY") do
+    config :emisar,
+      paddle_client: Emisar.Billing.PaddleClient.Live,
+      paddle_api_key: System.fetch_env!("PADDLE_API_KEY"),
+      paddle_webhook_secret: System.fetch_env!("PADDLE_WEBHOOK_SECRET")
+
+    if id = System.get_env("PADDLE_PRICE_ID_TEAM"),
+      do: config(:emisar, {:paddle_price_id, "team"}, id)
   else
-    config :emisar, stripe_client: Emisar.Billing.StripeClient.Stub
+    config :emisar, paddle_client: Emisar.Billing.PaddleClient.Stub
   end
 end
 
-# Always use the stub Stripe client in dev / test unless a real key was set.
+# Always use the stub Paddle client in dev / test unless a real key was set.
 if config_env() in [:dev, :test] do
-  if System.get_env("STRIPE_SECRET_KEY") do
+  if System.get_env("PADDLE_API_KEY") do
     config :emisar,
-      stripe_client: Emisar.Billing.StripeClient.Live,
-      stripe_secret_key: System.fetch_env!("STRIPE_SECRET_KEY"),
-      stripe_webhook_secret: System.get_env("STRIPE_WEBHOOK_SECRET") || "whsec_test"
+      paddle_client: Emisar.Billing.PaddleClient.Live,
+      paddle_api_key: System.fetch_env!("PADDLE_API_KEY"),
+      paddle_webhook_secret: System.get_env("PADDLE_WEBHOOK_SECRET") || "pdl_ntfset_test"
   else
-    config :emisar, stripe_client: Emisar.Billing.StripeClient.Stub
+    config :emisar, paddle_client: Emisar.Billing.PaddleClient.Stub
   end
 end

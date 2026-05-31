@@ -31,7 +31,7 @@ defmodule Emisar.RunsTest do
     end
   end
 
-  describe "dispatch/2" do
+  describe "dispatch_run/2" do
     test "allow policy returns {:ok, :running, run} and delivers to runner" do
       account = account_fixture()
       runner = runner_fixture(account_id: account.id)
@@ -41,12 +41,12 @@ defmodule Emisar.RunsTest do
       Emisar.PubSub.subscribe_runner(runner.id)
 
       assert {:ok, :running, %ActionRun{} = run} =
-               Runs.dispatch(account.id, base_attrs(account.id, runner.id))
+               Runs.dispatch_run(base_attrs(account.id, runner.id), Emisar.Auth.Subject.system(account))
 
       assert run.account_id == account.id
 
       # Cloud-to-runner envelope was delivered.
-      assert_receive {:cloud_to_runner, %{"type" => "run_action", "action_id" => "linux.uptime"}}
+      assert_receive {:cloud_to_runner, %{"type" => "run_action", "action_id" => "linux.uptime"}}, 500
     end
 
     test "rejects dispatch when the action is not advertised by the runner" do
@@ -55,7 +55,7 @@ defmodule Emisar.RunsTest do
       _ = policy_fixture(account_id: account.id)
 
       assert {:error, :action_not_found} =
-               Runs.dispatch(account.id, base_attrs(account.id, runner.id))
+               Runs.dispatch_run(base_attrs(account.id, runner.id), Emisar.Auth.Subject.system(account))
     end
 
     test "policy sees the catalog's risk, not what the caller passes" do
@@ -70,15 +70,20 @@ defmodule Emisar.RunsTest do
         policy_fixture(
           account_id: account.id,
           rules: %{
-            "allow" => [%{"name" => "low", "max_risk" => "medium"}],
-            "require_approval" => [%{"name" => "high-needs-approval", "risk" => "high"}],
-            "deny" => []
+            "schema_version" => 2,
+            "defaults" => %{
+              "low" => "allow",
+              "medium" => "allow",
+              "high" => "require_approval",
+              "critical" => "deny"
+            },
+            "overrides" => []
           }
         )
 
       # Caller spoofs `risk: "low"` — should be ignored.
       attrs = base_attrs(account.id, runner.id, %{risk: "low"})
-      assert {:ok, :pending_approval, _run} = Runs.dispatch(account.id, attrs)
+      assert {:ok, :pending_approval, _run} = Runs.dispatch_run(attrs, Emisar.Auth.Subject.system(account))
     end
 
     test "require_approval policy stores the run as pending + creates a request" do
@@ -90,43 +95,67 @@ defmodule Emisar.RunsTest do
         policy_fixture(
           account_id: account.id,
           rules: %{
-            "require_approval" => [%{"name" => "needs-approval", "action" => "*"}]
+            "schema_version" => 2,
+            "defaults" => %{
+              "low" => "allow",
+              "medium" => "allow",
+              "high" => "allow",
+              "critical" => "allow"
+            },
+            "overrides" => [
+              %{"name" => "needs-approval", "action" => "*", "decision" => "require_approval"}
+            ]
           }
         )
 
       requester = user_fixture()
 
       assert {:ok, :pending_approval, %ActionRun{status: "pending_approval"} = run} =
-               Runs.dispatch(
-                 account.id,
-                 base_attrs(account.id, runner.id, %{requested_by_id: requester.id})
+               Runs.dispatch_run(
+                 base_attrs(account.id, runner.id, %{requested_by_id: requester.id}),
+                 Emisar.Auth.Subject.system(account)
                )
 
-      assert [_req] = Approvals.list_pending(account.id)
-      assert Runs.get_run(account.id, run.id).status == "pending_approval"
+      system = Emisar.Auth.Subject.system(account)
+      assert {:ok, [_req], _} = Approvals.list_pending_approval_requests(system)
+      assert {:ok, %{status: "pending_approval"}} = Runs.fetch_run_by_id(run.id, system)
     end
 
-    test "deny policy returns an error and records the attempt for audit" do
+    test "policy with no matching allow rule denies and records the attempt for audit" do
       account = account_fixture()
       runner = runner_fixture(account_id: account.id)
       _ = action_fixture(runner: runner)
 
+      # Policy only allows cassandra.* actions; the dispatched
+      # `linux.uptime` doesn't match, so it falls through to the
+      # tier defaults — which are all `deny` here.
       _ =
         policy_fixture(
           account_id: account.id,
           rules: %{
-            "deny" => [%{"name" => "blocked", "action" => "*"}]
+            "schema_version" => 2,
+            "defaults" => %{
+              "low" => "deny",
+              "medium" => "deny",
+              "high" => "deny",
+              "critical" => "deny"
+            },
+            "overrides" => [
+              %{"name" => "cassandra-only", "action" => "cassandra.*", "decision" => "allow"}
+            ]
           }
         )
 
       assert {:error, :denied_by_policy, reason} =
-               Runs.dispatch(account.id, base_attrs(account.id, runner.id))
+               Runs.dispatch_run(base_attrs(account.id, runner.id), Emisar.Auth.Subject.system(account))
 
       assert is_binary(reason)
       # A denied run is recorded with status="denied" so operators can
       # see attempts in the audit log.
-      assert [%{status: "denied", policy_decision: "deny"}] =
-               Runs.list_runs_for_account(account.id)
+      system = Emisar.Auth.Subject.system(account)
+
+      assert {:ok, [%{status: "denied", policy_decision: "deny"}], _meta} =
+               Runs.list_recent_runs(system, limit: 50)
     end
   end
 
@@ -141,7 +170,7 @@ defmodule Emisar.RunsTest do
       assert {:ok, %RunEvent{seq: 1, kind: "progress"}} =
                Runs.append_event(run, %{seq: 1, kind: "progress", payload: %{"line" => "hi"}})
 
-      assert_receive {:run_event, %RunEvent{seq: 1}}
+      assert_receive {:run_event, %RunEvent{seq: 1}}, 500
     end
   end
 
@@ -171,25 +200,27 @@ defmodule Emisar.RunsTest do
                })
     end
 
-    test "an runner cannot finalize another runner's run in the same account" do
+    test "a runner cannot finalize another runner's run in the same account" do
       account = account_fixture()
-      agent_a = runner_fixture(account_id: account.id)
-      agent_b = runner_fixture(account_id: account.id)
-      {:ok, run} = Runs.create_run(base_attrs(account.id, agent_a.id))
+      runner_a = runner_fixture(account_id: account.id)
+      runner_b = runner_fixture(account_id: account.id)
+      {:ok, run} = Runs.create_run(base_attrs(account.id, runner_a.id))
 
       assert {:error, :unknown_request_id} =
-               Runs.finalize_from_result(agent_b.id, %{
+               Runs.finalize_from_result(runner_b.id, %{
                  "request_id" => run.request_id,
                  "status" => "success"
                })
     end
   end
 
-  describe "cancel/3" do
+  describe "cancel_run/3" do
     test "cancelling a terminal run is a no-op" do
       account = account_fixture()
       runner = runner_fixture(account_id: account.id)
       user = user_fixture()
+      _ = membership_fixture(account_id: account.id, user_id: user.id, role: "owner")
+      subject = subject_for(user, account, role: :owner)
       {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
 
       {:ok, finished} =
@@ -198,7 +229,7 @@ defmodule Emisar.RunsTest do
           "status" => "success"
         })
 
-      assert {:ok, ^finished} = Runs.cancel(finished, user.id, "no need")
+      assert {:ok, ^finished} = Runs.cancel_run(finished, subject, "no need")
     end
 
     test "cancelling a running run transitions to :cancelled + broadcasts" do
@@ -206,16 +237,18 @@ defmodule Emisar.RunsTest do
       runner = runner_fixture(account_id: account.id)
       _ = action_fixture(runner: runner)
       user = user_fixture()
+      _ = membership_fixture(account_id: account.id, user_id: user.id, role: "owner")
+      subject = subject_for(user, account, role: :owner)
       _ = policy_fixture(account_id: account.id)
 
-      {:ok, :running, run} = Runs.dispatch(account.id, base_attrs(account.id, runner.id))
+      {:ok, :running, run} = Runs.dispatch_run(base_attrs(account.id, runner.id), Emisar.Auth.Subject.system(account))
 
       Emisar.PubSub.subscribe_account_runs(account.id)
 
       assert {:ok, %ActionRun{status: "cancelled", cancelled_at: %DateTime{}}} =
-               Runs.cancel(run, user.id, "user pressed stop")
+               Runs.cancel_run(run, subject, "user pressed stop")
 
-      assert_receive {:run_updated, %ActionRun{status: "cancelled"}}
+      assert_receive {:run_updated, %ActionRun{status: "cancelled"}}, 500
     end
   end
 end

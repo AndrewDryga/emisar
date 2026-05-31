@@ -8,10 +8,12 @@
         Connect an LLM
       </h1>
       <p class="mt-6 text-lg leading-8 text-zinc-400">
-        emisar exposes your action catalog as an MCP-style HTTP tool API so
-        LLMs can call <em>exactly</em> the actions your team has declared —
-        nothing more. This page walks through the three things you need:
-        an API key, a tool list, and a tool call.
+        emisar exposes your runners and their action catalog as an
+        MCP-style HTTP tool API. LLMs discover hosts, see exactly which
+        actions each one advertises, and dispatch calls that flow through
+        the policy + audit pipeline. This page walks through the four
+        things you need: an API key, runner discovery, a tool list, and
+        a tool call.
       </p>
 
       <div class="mt-12 space-y-12">
@@ -56,49 +58,95 @@
         </section>
 
         <%!-- ============================================================ --%>
-        <%!-- Step 2: list tools                                           --%>
+        <%!-- Step 2: list runners                                          --%>
         <%!-- ============================================================ --%>
         <section>
           <div class="flex items-center gap-3">
             <span class="grid h-8 w-8 place-items-center rounded-full bg-indigo-500/20 text-sm font-semibold text-indigo-300">2</span>
-            <h2 class="text-2xl font-semibold tracking-tight text-zinc-50">List the tools</h2>
+            <h2 class="text-2xl font-semibold tracking-tight text-zinc-50">Discover runners</h2>
           </div>
 
           <p class="mt-4 text-base leading-relaxed text-zinc-400">
-            One GET away. The response is JSON; each tool has a name, a
-            human-readable description, and a JSON-schema-shaped
-            <code class="rounded bg-zinc-900 px-1.5 py-0.5 text-sm">inputSchema</code>
-            so the model can validate args locally before calling.
+            Each <em>runner</em> is one emisar host. The runner-list endpoint
+            returns the runners this key is allowed to reach, their
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">name</code>,
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">hostname</code>,
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">group</code>,
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">labels</code>,
+            connection status, and the actions each one advertises. LLMs use
+            it to map "the primary cassandra node" → a concrete runner name.
           </p>
 
           <div class="mt-4 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
             <div class="border-b border-zinc-900 px-3 py-2 font-mono text-[11px] text-zinc-500">terminal</div>
-<pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300"><span class="text-zinc-500">$</span> curl https://app.emisar.com/api/mcp/tools \
+<pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300"><span class="text-zinc-500">$</span> curl https://app.emisar.dev/api/mcp/runners \
     -H <span class="text-emerald-300">"Authorization: Bearer $EMISAR_API_KEY"</span></pre>
           </div>
         </section>
 
         <%!-- ============================================================ --%>
-        <%!-- Step 3: call a tool                                          --%>
+        <%!-- Step 3: list tools                                            --%>
         <%!-- ============================================================ --%>
         <section>
           <div class="flex items-center gap-3">
             <span class="grid h-8 w-8 place-items-center rounded-full bg-indigo-500/20 text-sm font-semibold text-indigo-300">3</span>
+            <h2 class="text-2xl font-semibold tracking-tight text-zinc-50">List the tools</h2>
+          </div>
+
+          <p class="mt-4 text-base leading-relaxed text-zinc-400">
+            One entry per distinct action. Each tool's
+            <code class="rounded bg-zinc-900 px-1.5 py-0.5 text-sm">inputSchema</code>
+            is a JSON Schema 2020-12 document with the action's own args
+            plus a required
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">reason</code>
+            and a
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">runner</code>
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">enum</code> —
+            the model picks one of the runners that advertises the action.
+            When exactly one runner advertises it, the
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">runner</code>
+            field is optional and defaults to that runner.
+          </p>
+
+          <div class="mt-4 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
+            <div class="border-b border-zinc-900 px-3 py-2 font-mono text-[11px] text-zinc-500">terminal</div>
+<pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300"><span class="text-zinc-500">$</span> curl https://app.emisar.dev/api/mcp/tools \
+    -H <span class="text-emerald-300">"Authorization: Bearer $EMISAR_API_KEY"</span></pre>
+          </div>
+        </section>
+
+        <%!-- ============================================================ --%>
+        <%!-- Step 4: call a tool                                           --%>
+        <%!-- ============================================================ --%>
+        <section>
+          <div class="flex items-center gap-3">
+            <span class="grid h-8 w-8 place-items-center rounded-full bg-indigo-500/20 text-sm font-semibold text-indigo-300">4</span>
             <h2 class="text-2xl font-semibold tracking-tight text-zinc-50">Call a tool</h2>
           </div>
 
           <p class="mt-4 text-base leading-relaxed text-zinc-400">
-            Pass <code class="rounded bg-zinc-900 px-1.5 py-0.5 text-sm">?wait=15s</code>
-            (max <code>60s</code>) to get the result inline, or omit it for fire-and-forget.
+            The body is flat: pass
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">runner</code>,
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">reason</code>,
+            and the action's args at the top level — exactly what
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">inputSchema</code>
+            advertises. Add
+            <code class="rounded bg-zinc-900 px-1.5 py-0.5 text-sm">?wait=15s</code>
+            (max <code>60s</code>) to get the result inline, or omit it for
+            fire-and-forget.
           </p>
 
           <div class="mt-4 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
             <div class="border-b border-zinc-900 px-3 py-2 font-mono text-[11px] text-zinc-500">terminal</div>
 <pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300"><span class="text-zinc-500"># Synchronous: long-poll up to 15 seconds for the result.</span>
-<span class="text-zinc-500">$</span> curl -X POST <span class="text-emerald-300">"https://app.emisar.com/api/mcp/tools/linux.uptime?wait=15s"</span> \
+<span class="text-zinc-500">$</span> curl -X POST <span class="text-emerald-300">"https://app.emisar.dev/api/mcp/tools/cassandra.nodetool_repair?wait=15s"</span> \
     -H <span class="text-emerald-300">"Authorization: Bearer $EMISAR_API_KEY"</span> \
     -H <span class="text-emerald-300">"Content-Type: application/json"</span> \
-    -d <span class="text-emerald-300">'&#123;"args": &#123;&#125;&#125;'</span></pre>
+    -d <span class="text-emerald-300">'&#123;
+          "runner": "db-prod-01",
+          "reason": "weekly rolling repair window",
+          "keyspace": "system_auth"
+        &#125;'</span></pre>
           </div>
 
           <p class="mt-4 text-sm text-zinc-400">
@@ -191,7 +239,7 @@
     "emisar": &#123;
       "command": "/usr/local/bin/emisar-mcp",
       "env": &#123;
-        "EMISAR_URL": "https://app.emisar.com",
+        "EMISAR_URL": "https://app.emisar.dev",
         "EMISAR_API_KEY": "emk-..."
       &#125;
     &#125;
@@ -217,7 +265,7 @@
     "emisar": &#123;
       "command": "emisar-mcp",
       "env": &#123;
-        "EMISAR_URL": "https://app.emisar.com",
+        "EMISAR_URL": "https://app.emisar.dev",
         "EMISAR_API_KEY": "emk-..."
       &#125;
     &#125;
@@ -237,7 +285,7 @@
             <div class="border-b border-zinc-900 px-3 py-2 font-mono text-[11px] text-zinc-500">terminal</div>
 <pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300"><span class="text-zinc-500">$</span> claude mcp add emisar /usr/local/bin/emisar-mcp \
     --scope user \
-    -e EMISAR_URL=https://app.emisar.com \
+    -e EMISAR_URL=https://app.emisar.dev \
     -e EMISAR_API_KEY=emk-...</pre>
           </div>
           <p class="mt-3 text-sm text-zinc-400">
@@ -261,7 +309,7 @@
     "emisar": &#123;
       "command": "/usr/local/bin/emisar-mcp",
       "env": &#123;
-        "EMISAR_URL": "https://app.emisar.com",
+        "EMISAR_URL": "https://app.emisar.dev",
         "EMISAR_API_KEY": "emk-..."
       &#125;
     &#125;
@@ -285,7 +333,7 @@
           <div class="mt-3 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
 <pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300">[mcp_servers.emisar]
 command = "/usr/local/bin/emisar-mcp"
-env = &#123; EMISAR_URL = "https://app.emisar.com", EMISAR_API_KEY = "emk-..." &#125;</pre>
+env = &#123; EMISAR_URL = "https://app.emisar.dev", EMISAR_API_KEY = "emk-..." &#125;</pre>
           </div>
           <p class="mt-3 text-sm text-zinc-400">
             Restart Codex. Tools appear under the <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar</code> server.
@@ -313,8 +361,9 @@ functions = [&#123;"type": "function", "function": &#123;
 
 resp = openai.responses.create(model="gpt-5", input=..., tools=functions)
 for call in resp.tool_calls:
+    <span class="text-zinc-500"># call.arguments is flat: &#123;runner, reason, ...action args&#125; per inputSchema</span>
     r = requests.post(URL + f"/api/mcp/tools/&#123;call.name&#125;?wait=30s",
-                      headers=auth, json=&#123;"args": call.arguments&#125;)
+                      headers=auth, json=call.arguments)
     feed_back_to_model(r.json())</pre>
           </div>
         </section>

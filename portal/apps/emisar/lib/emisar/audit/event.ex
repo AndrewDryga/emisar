@@ -5,11 +5,7 @@ defmodule Emisar.Audit.Event do
   per-run progress stream.
   """
 
-  use Ecto.Schema
-  import Ecto.Changeset
-
-  @primary_key {:id, :binary_id, autogenerate: true}
-  @foreign_key_type :binary_id
+  use Emisar, :schema
 
   schema "audit_events" do
     field :occurred_at, :utc_datetime_usec
@@ -25,20 +21,10 @@ defmodule Emisar.Audit.Event do
 
     field :ip_address, :string
     field :user_agent, :string
+    field :request_id, :string
     field :payload, :map, default: %{}
     field :inserted_at, :utc_datetime_usec, autogenerate: {DateTime, :utc_now, []}
 
     belongs_to :account, Emisar.Accounts.Account
-  end
-
-  def changeset(event, attrs) do
-    event
-    |> cast(attrs, [
-      :account_id, :occurred_at, :event_type,
-      :actor_kind, :actor_id, :actor_label,
-      :subject_kind, :subject_id, :subject_label,
-      :ip_address, :user_agent, :payload
-    ])
-    |> validate_required([:account_id, :occurred_at, :event_type])
   end
 end

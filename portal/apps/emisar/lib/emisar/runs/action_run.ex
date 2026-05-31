@@ -1,6 +1,6 @@
 defmodule Emisar.Runs.ActionRun do
   @moduledoc """
-  A single action invocation against an runner. State machine:
+  A single action invocation against a runner. State machine:
 
       pending -> sent -> running -> {success, failed, error,
                                      validation_failed, unknown_action,
@@ -9,17 +9,7 @@ defmodule Emisar.Runs.ActionRun do
   Or:    pending -> awaiting_approval -> sent -> ...
   """
 
-  use Ecto.Schema
-  import Ecto.Changeset
-
-  @primary_key {:id, :binary_id, autogenerate: true}
-  @foreign_key_type :binary_id
-
-  @statuses ~w(
-    pending awaiting_approval pending_approval denied sent running
-    success failed error validation_failed unknown_action cancelled timed_out
-  )
-  @sources ~w(operator runbook mcp scheduled)
+  use Emisar, :schema
 
   schema "action_runs" do
     field :request_id, :string
@@ -34,7 +24,6 @@ defmodule Emisar.Runs.ActionRun do
     field :args_sha256, :string
     field :opts, :map, default: %{}
 
-    field :policy_version, :integer
     field :policy_decision, :string
     field :policy_reason, :string
     field :matched_rules, {:array, :string}, default: []
@@ -68,40 +57,16 @@ defmodule Emisar.Runs.ActionRun do
 
     has_many :events, Emisar.Runs.RunEvent, foreign_key: :run_id
 
-    timestamps(type: :utc_datetime_usec)
+    timestamps()
   end
 
-  def create_changeset(run, attrs) do
-    run
-    |> cast(attrs, [
-      :account_id, :runner_id, :request_id, :action_id, :args, :args_sha256,
-      :opts, :reason, :source, :requested_by_id, :api_key_id, :runbook_id,
-      :runbook_step_id, :policy_id, :policy_version, :policy_decision,
-      :policy_reason, :matched_rules, :requires_approval, :status, :queued_at
-    ])
-    |> validate_required([:account_id, :runner_id, :request_id, :action_id, :source])
-    |> validate_inclusion(:source, @sources)
-    |> validate_inclusion(:status, @statuses)
-    |> unique_constraint([:account_id, :request_id])
-  end
-
-  def transition_changeset(run, status, attrs \\ %{}) do
-    run
-    |> cast(attrs, [
-      :sent_at, :started_at, :finished_at, :cancelled_at,
-      :exit_code, :duration_ms, :timed_out,
-      :stdout_sha256, :stderr_sha256, :stdout_bytes, :stderr_bytes,
-      :event_id, :reason_text, :error_message
-    ])
-    |> put_change(:status, to_string(status))
-    |> validate_inclusion(:status, @statuses)
-  end
-
-  def statuses, do: @statuses
+  def statuses, do: Emisar.Runs.ActionRun.Changeset.statuses()
+  def sources, do: Emisar.Runs.ActionRun.Changeset.sources()
 
   @doc "Is `status` a terminal state?"
   def terminal?(status) when is_binary(status),
-    do: status in ~w(success failed error validation_failed unknown_action cancelled timed_out)
+    do:
+      status in ~w(success failed error validation_failed unknown_action cancelled timed_out)
 
   def terminal?(_), do: false
 end

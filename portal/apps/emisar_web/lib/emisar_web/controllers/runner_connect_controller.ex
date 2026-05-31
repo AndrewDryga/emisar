@@ -7,7 +7,7 @@ defmodule EmisarWeb.RunnerConnectController do
       boot. Idempotent on `external_id`.
 
     * `GET  /runner/socket/websocket` — upgrades to the WebSock transport
-      after authenticating via `Authorization: Bearer <agent_token>`.
+      after authenticating via `Authorization: Bearer <runner_token>`.
   """
 
   use EmisarWeb, :controller
@@ -82,8 +82,18 @@ defmodule EmisarWeb.RunnerConnectController do
   def websocket(conn, _params) do
     with {:ok, raw} <- read_bearer(conn),
          {:ok, token, runner} <- Runners.verify_runner_token(raw) do
+      # Threaded into the socket process so its `Audit.log` calls (in
+      # init + terminate) can stash IP + UA on the new process's
+      # metadata. The conn's process won't outlive the upgrade.
+      state = %{
+        token: token,
+        runner: runner,
+        ip_address: ip_key(conn) |> RunnerSocket.normalize_ip(),
+        user_agent: get_req_header(conn, "user-agent") |> List.first()
+      }
+
       conn
-      |> WebSockAdapter.upgrade(RunnerSocket, %{token: token, runner: runner},
+      |> WebSockAdapter.upgrade(RunnerSocket, state,
         timeout: 60_000,
         max_frame_size: 1_048_576
       )

@@ -1,0 +1,161 @@
+<%!-- ============================================================
+  Pack detail — one published pack, all its actions, install snippet
+============================================================ --%>
+
+<div class="bg-zinc-950 text-zinc-100">
+  <.marketing_nav current={:packs} />
+
+  <section class="py-12 sm:py-16">
+    <div class="mx-auto max-w-4xl px-6 lg:px-8">
+      <%!-- Breadcrumb --%>
+      <nav class="text-xs text-zinc-500">
+        <.link navigate={~p"/packs"} class="hover:text-zinc-300">Packs</.link>
+        <span class="mx-1.5">/</span>
+        <span class="font-mono text-zinc-400">{@pack.id}</span>
+      </nav>
+
+      <%!-- Header --%>
+      <div class="mt-6 flex flex-wrap items-baseline justify-between gap-3">
+        <h1 class="text-3xl font-bold tracking-tight text-zinc-50 md:text-4xl">
+          {@pack.name}
+        </h1>
+        <span class="rounded-full bg-zinc-900 px-2.5 py-1 font-mono text-xs text-zinc-300">
+          v{@pack.version}
+        </span>
+      </div>
+
+      <p class="mt-4 text-lg leading-relaxed text-zinc-400">{@pack.description}</p>
+
+      <%!-- Meta strip: vendor, OS, requirements, source --%>
+      <div class="mt-6 grid grid-cols-2 gap-3 rounded-xl border border-zinc-900 bg-zinc-950/40 p-4 text-sm sm:grid-cols-4">
+        <.meta_field label="Pack ID">
+          <span class="truncate font-mono text-zinc-200">{@pack.id}</span>
+        </.meta_field>
+        <.meta_field label="Vendor">
+          <span class="truncate text-zinc-200">{@pack.vendor}</span>
+        </.meta_field>
+        <.meta_field label="OS">
+          <span class="truncate text-zinc-200">
+            {Enum.join(@pack.requires_os, ", ")}
+          </span>
+        </.meta_field>
+        <.meta_field label="Actions">
+          <span class="text-zinc-200">{length(@pack.actions)}</span>
+        </.meta_field>
+      </div>
+
+      <%!-- Required-binaries banner — only when present. Operators
+           need to confirm these are on the host first. --%>
+      <div
+        :if={@pack.requires_binaries != []}
+        class="mt-4 flex items-start gap-3 rounded-xl border border-amber-500/30 bg-amber-500/[0.04] p-4"
+      >
+        <.icon name="hero-information-circle" class="mt-0.5 h-5 w-5 flex-none text-amber-300" />
+        <div class="text-sm text-amber-100/90">
+          <strong class="text-amber-100">Required binaries:</strong>
+          <span class="font-mono">{Enum.join(@pack.requires_binaries, ", ")}</span>.
+          The runner refuses to advertise actions whose binaries are missing — install these
+          on the host before reloading the pack.
+        </div>
+      </div>
+
+      <%!-- Install snippet — copy-paste onto a runner host --%>
+      <section class="mt-10">
+        <h2 class="text-xl font-semibold text-zinc-50">Install</h2>
+        <p class="mt-2 text-sm text-zinc-400">
+          Drop the pack into the runner's <code class="rounded bg-zinc-900 px-1 py-0.5">/etc/emisar/packs</code>
+          directory and reload. The runner re-reads the catalog and advertises every action
+          in this pack to the cloud.
+        </p>
+        <div class="mt-3 overflow-hidden rounded-lg border border-zinc-800 bg-black/60">
+          <div class="flex items-center justify-between gap-2 border-b border-zinc-800 px-4 py-2">
+            <span class="font-mono text-[11px] text-zinc-500">on the runner host</span>
+            <button
+              type="button"
+              id={"copy-install-#{@pack.id}"}
+              class="rounded bg-zinc-800/80 px-2.5 py-1 text-xs font-medium text-zinc-200 hover:bg-zinc-700"
+              onclick={"const el = document.getElementById('install-snippet-#{@pack.id}'); navigator.clipboard.writeText(el.innerText.trim()); const orig = this.innerText; this.innerText = 'Copied'; setTimeout(() => { this.innerText = orig; }, 1500);"}
+            >
+              Copy
+            </button>
+          </div>
+          <pre
+            id={"install-snippet-#{@pack.id}"}
+            class="overflow-x-auto p-4 font-mono text-xs leading-relaxed text-zinc-200"
+          ><%= EmisarWeb.PacksRegistry.install_snippet(@pack) %></pre>
+        </div>
+      </section>
+
+      <%!-- Actions list — one row per action with link to source --%>
+      <section class="mt-12">
+        <div class="flex items-baseline justify-between gap-3">
+          <h2 class="text-xl font-semibold text-zinc-50">
+            Actions
+            <span class="ml-1 text-sm font-normal text-zinc-500">
+              {length(@pack.actions)} total
+            </span>
+          </h2>
+          <.external_link
+            href={EmisarWeb.PacksRegistry.source_url(@pack)}
+            class="text-xs text-zinc-500 hover:text-zinc-300"
+          >
+            View on GitHub
+          </.external_link>
+        </div>
+
+        <ul class="mt-4 overflow-hidden rounded-xl border border-zinc-900 bg-zinc-950/40">
+          <li
+            :for={action <- @pack.actions}
+            class="flex items-center gap-4 border-b border-zinc-900 px-5 py-4 last:border-b-0"
+          >
+            <span class="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-zinc-900 text-zinc-400">
+              <.icon name={action_icon(action.kind)} class="h-4 w-4" />
+            </span>
+
+            <div class="min-w-0 flex-1">
+              <div class="flex flex-wrap items-center gap-2">
+                <.external_link
+                  href={EmisarWeb.PacksRegistry.action_source_url(@pack, action)}
+                  class="truncate font-mono text-sm text-zinc-100 hover:text-indigo-300"
+                >
+                  {action.id}
+                </.external_link>
+                <span class="rounded bg-zinc-800/80 px-1.5 py-0.5 text-[10px] font-medium text-zinc-300">
+                  {action.kind}
+                </span>
+                <.risk_pill risk={action.risk} />
+              </div>
+              <p class="mt-0.5 truncate text-xs text-zinc-500">{action.title}</p>
+            </div>
+          </li>
+        </ul>
+      </section>
+
+      <%!-- Footer CTAs --%>
+      <div class="mt-12 flex flex-wrap items-center justify-between gap-3 border-t border-zinc-900 pt-6 text-sm">
+        <.link
+          navigate={~p"/packs"}
+          class="text-zinc-400 hover:text-zinc-200"
+        >
+          ← Back to registry
+        </.link>
+        <div class="flex items-center gap-3">
+          <.external_link
+            href={@pack.homepage || EmisarWeb.PacksRegistry.source_url(@pack)}
+            class="text-zinc-400 hover:text-zinc-200"
+          >
+            Pack homepage
+          </.external_link>
+          <.link
+            navigate={~p"/docs/publishing-packs"}
+            class="font-semibold text-indigo-300 hover:text-indigo-200"
+          >
+            Publish your own →
+          </.link>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <.marketing_footer />
+</div>

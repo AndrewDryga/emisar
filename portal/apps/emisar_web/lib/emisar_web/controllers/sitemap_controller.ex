@@ -5,7 +5,7 @@ defmodule EmisarWeb.SitemapController do
   """
   use EmisarWeb, :controller
 
-  @base "https://emisar.com"
+  @base "https://emisar.dev"
 
   @paths [
     "/",
@@ -17,8 +17,10 @@ defmodule EmisarWeb.SitemapController do
     "/docs",
     "/docs/quickstart",
     "/docs/action-packs",
+    "/docs/publishing-packs",
     "/docs/security-model",
     "/docs/connect-an-llm",
+    "/packs",
     "/use-cases/cassandra-ops",
     "/use-cases/postgres-ops",
     "/compare/raw-ssh-for-ai"
@@ -27,8 +29,13 @@ defmodule EmisarWeb.SitemapController do
   def show(conn, _params) do
     today = Date.utc_today() |> Date.to_iso8601()
 
+    # Static marketing routes + a synthesized entry per published pack
+    # (so /packs/linux-core etc. show up in search engines without
+    # having to hand-maintain a list here).
+    pack_paths = Enum.map(EmisarWeb.PacksRegistry.list(), &"/packs/#{&1.id}")
+
     urls =
-      Enum.map(@paths, fn path ->
+      Enum.map(@paths ++ pack_paths, fn path ->
         """
           <url>
             <loc>#{@base}#{path}</loc>

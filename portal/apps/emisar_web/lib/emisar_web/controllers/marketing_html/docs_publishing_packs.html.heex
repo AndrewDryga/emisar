@@ -1,0 +1,203 @@
+<%!-- ============================================================
+  Docs / Publishing an action pack — author + PR workflow
+============================================================ --%>
+
+<div class="bg-zinc-950 text-zinc-100">
+  <.marketing_nav current={:docs} />
+
+  <section class="py-16 sm:py-24">
+    <div class="mx-auto max-w-3xl px-6 lg:px-8">
+      <p class="text-sm font-semibold text-indigo-400">Docs / Publishing</p>
+      <h1 class="mt-2 text-4xl font-bold tracking-tight text-zinc-50 md:text-5xl">
+        Publishing an action pack
+      </h1>
+      <p class="mt-6 text-lg leading-8 text-zinc-400">
+        A pack is a directory of YAML. No SDK, no compiler, no signing keys. Author it
+        locally, test against a runner you control, then open a PR to land it in the
+        public <.link navigate={~p"/packs"} class="text-indigo-300 hover:text-indigo-200">registry</.link>.
+      </p>
+
+      <%!-- Steps --%>
+      <ol class="mt-12 space-y-8">
+        <li class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-6">
+          <header class="flex items-center gap-3">
+            <span class="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-indigo-500/20 font-mono text-sm font-bold text-indigo-300 ring-1 ring-indigo-500/30">
+              1
+            </span>
+            <h2 class="text-xl font-semibold text-zinc-50">Lay out the pack directory</h2>
+          </header>
+          <p class="mt-4 text-sm leading-relaxed text-zinc-400">
+            Every pack lives under <code class="rounded bg-zinc-900 px-1 py-0.5">runner/examples/packs/&lt;pack-id&gt;/</code>
+            with a top-level <code>pack.yaml</code> manifest and a per-action YAML in
+            <code>actions/</code>. Optional <code>scripts/</code> holds packaged shell scripts for
+            <code>kind: script</code> actions.
+          </p>
+          <pre class="mt-4 overflow-x-auto rounded-lg border border-zinc-800 bg-black/60 p-4 font-mono text-xs leading-6 text-zinc-300">my-pack/
+  pack.yaml                    # pack manifest (see step 2)
+  actions/
+    do_thing.yaml              # one declared action per file
+    do_other_thing.yaml
+  scripts/                     # only when you have script actions
+    do_thing.sh</pre>
+        </li>
+
+        <li class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-6">
+          <header class="flex items-center gap-3">
+            <span class="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-indigo-500/20 font-mono text-sm font-bold text-indigo-300 ring-1 ring-indigo-500/30">
+              2
+            </span>
+            <h2 class="text-xl font-semibold text-zinc-50">Write pack.yaml</h2>
+          </header>
+          <p class="mt-4 text-sm leading-relaxed text-zinc-400">
+            The manifest declares pack-level metadata + which action YAMLs to load.
+            <code>id</code> is the pack slug (used in the registry URL and install path).
+          </p>
+          <pre class="mt-4 overflow-x-auto rounded-lg border border-zinc-800 bg-black/60 p-4 font-mono text-xs leading-6 text-zinc-300">schema_version: 1
+id: my-pack
+name: My ops pack
+version: 0.1.0
+description: Short one-line summary shown in the registry.
+vendor: acme
+homepage: https://github.com/acme/my-pack
+
+requires:
+  os: [linux]
+  binaries: [my-cli]      # optional — refused if missing on the host
+
+actions:
+  - actions/do_thing.yaml
+  - actions/do_other_thing.yaml</pre>
+        </li>
+
+        <li class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-6">
+          <header class="flex items-center gap-3">
+            <span class="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-indigo-500/20 font-mono text-sm font-bold text-indigo-300 ring-1 ring-indigo-500/30">
+              3
+            </span>
+            <h2 class="text-xl font-semibold text-zinc-50">Declare each action</h2>
+          </header>
+          <p class="mt-4 text-sm leading-relaxed text-zinc-400">
+            One YAML per action — the runner refuses anything not in the catalog, so this
+            file is the contract between your ops team and the LLM. See the full
+            <.link navigate={~p"/docs/action-packs"} class="text-indigo-300 hover:text-indigo-200">
+              YAML schema reference
+            </.link>
+            for every field.
+          </p>
+          <pre class="mt-4 overflow-x-auto rounded-lg border border-zinc-800 bg-black/60 p-4 font-mono text-xs leading-6 text-zinc-300">schema_version: 1
+id: my.do_thing
+title: Do the thing
+kind: exec
+risk: low
+
+description: >
+  One-paragraph human description. Shown verbatim to the LLM —
+  write it like a doc string, not a comment.
+
+side_effects:
+  - Reads /var/log/myapp/*.
+  - Touches nothing.
+
+args:
+  - name: file
+    type: path
+    required: true
+    validation:
+      allowed_prefixes: ["/var/log/myapp/"]
+
+execution:
+  command:
+    binary: /bin/cat
+    argv: ["&#123;&#123; args.file &#125;&#125;"]
+  timeout: 10s
+
+output:
+  parser: text
+  max_stdout_bytes: 65536</pre>
+        </li>
+
+        <li class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-6">
+          <header class="flex items-center gap-3">
+            <span class="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-indigo-500/20 font-mono text-sm font-bold text-indigo-300 ring-1 ring-indigo-500/30">
+              4
+            </span>
+            <h2 class="text-xl font-semibold text-zinc-50">Test against your runner</h2>
+          </header>
+          <p class="mt-4 text-sm leading-relaxed text-zinc-400">
+            Drop the directory into your runner's <code>/etc/emisar/packs</code> and reload.
+            The runner journals every action's SHA-256 at load — diff against your local copy
+            to confirm it picked up the version you intended.
+          </p>
+          <pre class="mt-4 overflow-x-auto rounded-lg border border-zinc-800 bg-black/60 p-4 font-mono text-xs leading-6 text-zinc-300"># on the runner host
+sudo cp -r my-pack /etc/emisar/packs/
+sudo systemctl reload emisar
+sudo journalctl -u emisar -n 50 --no-pager | grep my-pack</pre>
+          <p class="mt-4 text-sm text-zinc-400">
+            In the cloud dashboard, open
+            <span class="font-mono text-zinc-300">/app/runners/&lt;runner&gt;</span>
+            and verify your actions appear under
+            <strong class="text-zinc-200">Advertised actions</strong>.
+            Click <strong class="text-zinc-200">Run</strong> on one to confirm dispatch end-to-end.
+          </p>
+        </li>
+
+        <li class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-6">
+          <header class="flex items-center gap-3">
+            <span class="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-indigo-500/20 font-mono text-sm font-bold text-indigo-300 ring-1 ring-indigo-500/30">
+              5
+            </span>
+            <h2 class="text-xl font-semibold text-zinc-50">Submit to the registry</h2>
+          </header>
+          <p class="mt-4 text-sm leading-relaxed text-zinc-400">
+            Open a PR against the
+            <.external_link
+              href="https://github.com/andrewdryga/emisar"
+              class="text-indigo-300 hover:text-indigo-200"
+            >main repo</.external_link>
+            adding your pack under <code class="rounded bg-zinc-900 px-1 py-0.5">runner/examples/packs/</code>
+            and an entry in <code class="rounded bg-zinc-900 px-1 py-0.5">apps/emisar_web/lib/emisar_web/packs_registry.ex</code>.
+            We review for:
+          </p>
+          <ul class="mt-3 space-y-2 pl-5 text-sm text-zinc-400">
+            <li class="list-disc">
+              <strong class="text-zinc-200">Tight argument validation</strong> — no free-form
+              shell strings, paths use <code>allowed_prefixes</code>, enums declare <code>values</code>.
+            </li>
+            <li class="list-disc">
+              <strong class="text-zinc-200">Honest <code>side_effects</code></strong> — every
+              file/network/process side effect listed. The LLM reads these.
+            </li>
+            <li class="list-disc">
+              <strong class="text-zinc-200">Correct <code>risk</code> level</strong> — destructive
+              actions (restart, delete, repair) are <code>high</code> or <code>critical</code>.
+            </li>
+            <li class="list-disc">
+              <strong class="text-zinc-200">Resolvable binaries</strong> — declare what
+              the runner needs on the host under <code>requires.binaries</code>.
+            </li>
+          </ul>
+        </li>
+      </ol>
+
+      <%!-- Next steps --%>
+      <div class="mt-16 flex flex-wrap items-center justify-between gap-3 border-t border-zinc-900 pt-8 text-sm">
+        <.link navigate={~p"/packs"} class="text-zinc-400 hover:text-zinc-200">
+          ← Back to registry
+        </.link>
+        <div class="flex items-center gap-4">
+          <.link navigate={~p"/docs/action-packs"} class="text-indigo-300 hover:text-indigo-200">
+            Full YAML reference
+          </.link>
+          <.external_link
+            href="https://github.com/andrewdryga/emisar/tree/main/runner/examples/packs"
+            class="text-zinc-400 hover:text-zinc-200"
+          >
+            Browse on GitHub
+          </.external_link>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <.marketing_footer />
+</div>

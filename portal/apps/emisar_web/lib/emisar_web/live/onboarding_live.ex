@@ -17,9 +17,8 @@ defmodule EmisarWeb.OnboardingLive do
   def render(assigns) do
     ~H"""
     <div class="mx-auto flex min-h-screen max-w-2xl flex-col items-center justify-center px-6 py-12">
-      <div class="mb-10 flex items-center gap-3">
-        <span class="grid h-9 w-9 place-items-center rounded-lg bg-indigo-500 text-zinc-950 font-black">e</span>
-        <span class="text-xl font-bold tracking-tight">emisar</span>
+      <div class="mb-10">
+        <.brand size={:md} />
       </div>
 
       <h1 class="text-3xl font-bold tracking-tight">Set up your workspace</h1>

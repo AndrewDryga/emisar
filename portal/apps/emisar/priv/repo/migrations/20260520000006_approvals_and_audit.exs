@@ -50,6 +50,10 @@ defmodule Emisar.Repo.Migrations.ApprovalsAndAudit do
 
       add :ip_address, :string
       add :user_agent, :string
+      # Per-request id from Plug.RequestId — lets ops correlate an
+      # audit row with the HTTP request that produced it in upstream
+      # access logs.
+      add :request_id, :string
 
       # Free-form structured payload — varies per event_type.
       add :payload, :map, null: false, default: %{}

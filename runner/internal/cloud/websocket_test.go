@@ -254,9 +254,9 @@ func TestWebsocketDialerDerivesWSScheme(t *testing.T) {
 		in, want string
 	}{
 		{"http://localhost:4000", "ws://localhost:4000/runner/socket/websocket"},
-		{"https://app.emisar.com", "wss://app.emisar.com/runner/socket/websocket"},
-		{"https://app.emisar.com/", "wss://app.emisar.com/runner/socket/websocket"},
-		{"wss://app.emisar.com", "wss://app.emisar.com/runner/socket/websocket"},
+		{"https://app.emisar.dev", "wss://app.emisar.dev/runner/socket/websocket"},
+		{"https://app.emisar.dev/", "wss://app.emisar.dev/runner/socket/websocket"},
+		{"wss://app.emisar.dev", "wss://app.emisar.dev/runner/socket/websocket"},
 	}
 
 	for _, c := range cases {

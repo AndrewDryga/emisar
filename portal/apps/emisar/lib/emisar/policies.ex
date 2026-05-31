@@ -1,202 +1,290 @@
 defmodule Emisar.Policies do
   @moduledoc """
-  Policy CRUD + evaluation. Cloud evaluates policy *before* sending
-  `run_action`; if the decision is `allow`, the run goes to the
-  transport. If `require_approval`, it goes to the approval queue.
-  If `deny`, the run is short-circuited and the caller sees a
-  policy_denied error.
+  Single policy per account. Two-layer model:
+
+    * **risk-tier defaults** — one decision per catalog risk tier
+      (`low`/`medium`/`high`/`critical`).
+    * **per-action overrides** — ordered list of `{action_glob,
+      decision}` pairs that win over the defaults when they match.
+      First matching override wins; falls through to the tier default.
+
+  Decisions: `:allow` → runner; `:require_approval` → approval queue;
+  `:deny` → blocked. No "allow" rules need to be enumerated — the
+  defaults are the policy.
+
+  Stored as JSON in `policies.rules`:
+
+      %{
+        "schema_version" => 2,
+        "defaults" => %{"low" => "allow", "medium" => "allow",
+                        "high" => "require_approval",
+                        "critical" => "deny"},
+        "overrides" => [
+          %{"name" => "allow-cassandra-read", "action" => "cassandra.read_*",
+            "decision" => "allow"},
+          %{"name" => "block-drop", "action" => "*.drop_*",
+            "decision" => "deny"}
+        ]
+      }
   """
 
-  import Ecto.Query
-  alias Emisar.Repo
-  alias Emisar.Policies.Policy
+  alias Emisar.{Audit, Auth, Repo}
+  alias Emisar.Auth.Subject
+  alias Emisar.Policies.{Authorizer, Policy}
 
-  # -- CRUD -------------------------------------------------------------
+  @risk_tiers ~w(low medium high critical)
+  @decisions ~w(allow require_approval deny)
 
-  def list_policies(account_id) do
-    from(p in Policy,
-      where: p.account_id == ^account_id and is_nil(p.archived_at),
-      order_by: [desc: p.is_default, asc: p.name, desc: p.version]
-    )
-    |> Repo.all()
-  end
+  # Conservative default for a fresh account: low+medium auto-run,
+  # high needs approval, critical is blocked outright.
+  @default_rules %{
+    "schema_version" => 2,
+    "defaults" => %{
+      "low" => "allow",
+      "medium" => "allow",
+      "high" => "require_approval",
+      "critical" => "deny"
+    },
+    "overrides" => []
+  }
 
-  def get_policy(account_id, id) do
-    from(p in Policy, where: p.account_id == ^account_id and p.id == ^id)
-    |> Repo.one()
-  end
+  def default_rules, do: @default_rules
+  def risk_tiers, do: @risk_tiers
+  def decisions, do: @decisions
 
-  def get_default_policy(account_id) do
-    from(p in Policy,
-      where: p.account_id == ^account_id and p.is_default and is_nil(p.archived_at),
-      order_by: [desc: p.version],
-      limit: 1
-    )
-    |> Repo.one()
-  end
+  # -- Subject-gated CRUD ---------------------------------------------
 
-  def create_policy(account_id, attrs, user_id) do
-    %Policy{}
-    |> Policy.changeset(
-      Map.merge(attrs, %{
-        account_id: account_id,
-        created_by_id: user_id,
-        version: 1
-      })
-    )
-    |> Repo.insert()
-  end
-
-  def save_new_version(%Policy{} = old, attrs, user_id) do
-    attrs =
-      Map.merge(
-        %{
-          account_id: old.account_id,
-          name: old.name,
-          description: old.description,
-          version: old.version + 1,
-          is_default: old.is_default,
-          created_by_id: user_id
-        },
-        attrs
-      )
-
-    %Policy{} |> Policy.changeset(attrs) |> Repo.insert()
-  end
-
-  def archive_policy(%Policy{} = policy) do
-    policy
-    |> Ecto.Changeset.change(archived_at: DateTime.utc_now() |> DateTime.truncate(:microsecond))
-    |> Repo.update()
-  end
-
-  # -- Evaluation -------------------------------------------------------
-
-  @doc """
-  Evaluate a policy for a candidate action call.
-
-  Returns `{decision, matched_rules, reason}` where decision is one of
-  `:allow`, `:require_approval`, `:deny`.
-  """
-  def evaluate(%Policy{} = policy, %{} = subject, %{} = args) do
-    rules = policy.rules || %{}
-    deny_hit = match_first(rules["deny"] || [], subject, args)
-    approval_hits = match_all(rules["require_approval"] || [], subject, args)
-    allow_hits = match_all(rules["allow"] || [], subject, args)
-
-    cond do
-      deny_hit != nil ->
-        {:deny, [rule_name(deny_hit)], "matched deny rule #{rule_name(deny_hit)}"}
-
-      approval_hits != [] ->
-        {:require_approval, Enum.map(approval_hits, &rule_name/1), "requires approval"}
-
-      allow_hits != [] ->
-        {:allow, Enum.map(allow_hits, &rule_name/1), "matched allow rule"}
-
-      true ->
-        {:deny, [], "no matching allow rule"}
+  def fetch_policy(%Subject{} = subject) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_policies_permission()) do
+      Policy.Query.not_deleted()
+      |> Authorizer.for_subject(subject)
+      |> Repo.fetch(Policy.Query)
     end
   end
 
-  # Default-deny when no policy exists. Workspaces always get a seeded
-  # default policy on creation; if a workspace somehow has zero
-  # policies, refuse to dispatch rather than silently allowing.
-  def evaluate(nil, _subject, _args),
-    do: {:deny, [], "no policy configured for this account"}
+  @doc """
+  Subject-gated save: updates the account's policy rules if one exists,
+  or seeds the account's first policy if none does. The LiveView form
+  uses this so the same save button works on first save and edit alike.
+  """
+  def save_rules(rules, %Subject{account: %{id: account_id}, actor: %{id: user_id}} = subject) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.manage_policies_permission()
+           ) do
+      case peek_policy_for_account(account_id) do
+        nil ->
+          Policy.Changeset.create(%{
+            account_id: account_id,
+            updated_by_id: user_id,
+            rules: rules
+          })
+          |> Repo.insert()
+
+        %Policy{} = policy ->
+          update_rules(policy, rules, subject)
+      end
+    end
+  end
+
+  def update_rules(%Policy{} = policy, rules, %Subject{actor: %{id: user_id}} = subject) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.manage_policies_permission()
+           ) do
+      Policy.Query.not_deleted()
+      |> Policy.Query.by_id(policy.id)
+      |> Authorizer.for_subject(subject)
+      |> Repo.fetch_and_update(Policy.Query,
+        with: &Policy.Changeset.update(&1, %{rules: rules, updated_by_id: user_id}),
+        # arity-2 callback receives the changeset alongside the updated
+        # struct — `changeset.data.rules` is the pre-update snapshot,
+        # `updated.rules` is the post-update state. Diff captures both
+        # so an operator reading the audit detail can answer "what
+        # changed?" without spelunking through prior audit rows.
+        after_commit: fn updated, changeset ->
+          before_rules = changeset.data.rules || @default_rules
+          after_rules = updated.rules || @default_rules
+
+          Audit.log(updated.account_id, "policy.updated",
+            actor_kind: "user",
+            actor_id: user_id,
+            subject_kind: "policy",
+            subject_id: updated.id,
+            payload: %{
+              before: before_rules,
+              after: after_rules,
+              changes: diff_rules(before_rules, after_rules)
+            }
+          )
+
+          :ok
+        end
+      )
+    end
+  end
+
+  # -- Internal helpers (no Subject needed) ---------------------------
 
   @doc """
-  Account-scoped convenience that looks up the default policy and
-  extracts subject metadata from the dispatch attrs.
+  Internal account-bootstrap helper called from `Accounts.create_account_with_owner/2`
+  + seeds + test fixtures. The owner-of-the-new-account is the only one
+  who can hit this path; the LV-facing save uses `save_rules/2` and
+  goes through the Subject pipeline.
   """
-  def evaluate(account_id, attrs) when is_binary(account_id) do
-    policy = get_default_policy(account_id)
-
-    subject = %{
-      "action_id" => attrs[:action_id] || attrs["action_id"],
-      "risk" => attrs[:risk] || attrs["risk"] || "low",
-      "kind" => attrs[:kind] || attrs["kind"] || "exec"
-    }
-
-    args = attrs[:args] || attrs["args"] || %{}
-    evaluate(policy, subject, args)
+  def seed_policy(account_id, user_id, rules \\ @default_rules) do
+    Policy.Changeset.create(%{account_id: account_id, updated_by_id: user_id, rules: rules})
+    |> Repo.insert(on_conflict: :nothing)
   end
 
   @doc """
-  Same as `evaluate/2`, but additionally returns the policy struct that
-  produced the decision so callers can attach `policy_id` and
-  `policy_version` to the run. Returns
-  `{decision, matched_rules, reason, policy_or_nil}`.
+  Internal default-deny lookup. Returns the policy or `nil` — `nil` is
+  the meaningful "no policy configured" signal that `evaluate/3`
+  consumes to default-deny every dispatch. Use `fetch_policy/1` (Subject-
+  threaded) from LiveView / controllers / MCP — this helper is the
+  pre-Subject dispatch fast path.
   """
-  def evaluate_with_policy(account_id, attrs) when is_binary(account_id) do
-    policy = get_default_policy(account_id)
+  def peek_policy_for_account(account_id) do
+    Policy.Query.not_deleted()
+    |> Policy.Query.by_account_id(account_id)
+    |> Repo.peek()
+  end
 
-    subject = %{
-      "action_id" => attrs[:action_id] || attrs["action_id"],
-      "risk" => attrs[:risk] || attrs["risk"] || "low",
-      "kind" => attrs[:kind] || attrs["kind"] || "exec"
+  # -- Evaluation -----------------------------------------------------
+
+  @doc """
+  Evaluate the policy for a candidate action. `match_ctx` carries the
+  runtime properties (`action_id`, `risk`). Returns
+  `{decision, matched_rules, reason}`.
+  """
+  def evaluate(nil, _match_ctx, _args),
+    do: {:deny, [], "no policy configured for this account"}
+
+  def evaluate(%Policy{rules: rules}, %{} = match_ctx, _args) do
+    rules = rules || @default_rules
+    action_id = match_ctx["action_id"] || ""
+    risk = match_ctx["risk"] || "low"
+
+    case find_override(rules["overrides"] || [], action_id) do
+      nil ->
+        decision = default_for_tier(rules["defaults"] || %{}, risk)
+        {atomize(decision), [], "tier default for #{risk}: #{decision}"}
+
+      %{"decision" => d} = ov ->
+        {atomize(d), [rule_name(ov)], "matched override: #{rule_name(ov)}"}
+    end
+  end
+
+  defp find_override(overrides, action_id) when is_list(overrides),
+    do: Enum.find(overrides, &override_matches?(&1, action_id))
+
+  defp override_matches?(%{"action" => pattern}, action_id)
+       when is_binary(pattern) and pattern != "",
+       do: glob_match?(pattern, action_id)
+
+  defp override_matches?(_, _), do: false
+
+  defp default_for_tier(defaults, tier) when is_map(defaults) do
+    case Map.get(defaults, tier) do
+      d when d in @decisions -> d
+      _ -> "deny"
+    end
+  end
+
+  defp atomize("allow"), do: :allow
+  defp atomize("require_approval"), do: :require_approval
+  defp atomize("deny"), do: :deny
+  defp atomize(_), do: :deny
+
+  def evaluate_with_policy(account_id, attrs) when is_binary(account_id) do
+    policy = peek_policy_for_account(account_id)
+
+    match_ctx = %{
+      "action_id" => attrs[:action_id],
+      "risk" => attrs[:risk] || "low",
+      "kind" => attrs[:kind] || "exec"
     }
 
-    args = attrs[:args] || attrs["args"] || %{}
-    {decision, matched, reason} = evaluate(policy, subject, args)
+    {decision, matched, reason} = evaluate(policy, match_ctx, attrs[:args] || %{})
     {decision, matched, reason, policy}
   end
 
-  defp match_first(rules, subject, args) do
-    Enum.find(rules, &match_rule?(&1, subject, args))
-  end
-
-  defp match_all(rules, subject, args) do
-    Enum.filter(rules, &match_rule?(&1, subject, args))
-  end
-
-  defp match_rule?(rule, subject, args) do
-    matches_action_glob?(rule, subject) and
-      matches_risk?(rule, subject) and
-      matches_kind?(rule, subject) and
-      matches_args?(rule, args)
-  end
-
-  defp matches_action_glob?(%{"action" => pattern}, %{"action_id" => id})
-       when is_binary(pattern) and is_binary(id),
-       do: glob_match?(pattern, id)
-
-  defp matches_action_glob?(_, _), do: true
-
-  defp matches_risk?(%{"max_risk" => max}, %{"risk" => actual})
-       when is_binary(max) and is_binary(actual),
-       do: risk_rank(actual) <= risk_rank(max)
-
-  defp matches_risk?(%{"risk" => required}, %{"risk" => actual})
-       when is_binary(required) and is_binary(actual),
-       do: required == actual
-
-  defp matches_risk?(_, _), do: true
-
-  defp matches_kind?(%{"kind" => required}, %{"kind" => actual})
-       when is_binary(required) and is_binary(actual),
-       do: required == actual
-
-  defp matches_kind?(_, _), do: true
-
-  defp matches_args?(%{"args" => conditions}, args) when is_map(conditions) do
-    Enum.all?(conditions, fn {name, cond} -> arg_matches?(cond, Map.get(args, name)) end)
-  end
-
-  defp matches_args?(_, _), do: true
-
-  defp arg_matches?(%{"equals" => want}, got), do: want == got
-  defp arg_matches?(%{"in" => list}, got) when is_list(list), do: got in list
-  defp arg_matches?(_, _), do: true
-
-  defp risk_rank("low"), do: 0
-  defp risk_rank("medium"), do: 1
-  defp risk_rank("high"), do: 2
-  defp risk_rank("critical"), do: 3
-  defp risk_rank(_), do: 4
-
-  defp rule_name(%{"name" => name}) when is_binary(name), do: name
+  defp rule_name(%{"name" => name}) when is_binary(name) and name != "", do: name
+  defp rule_name(%{"action" => a}) when is_binary(a), do: a
   defp rule_name(_), do: "unnamed"
+
+  # -- Audit diff ----------------------------------------------------
+
+  @doc false
+  def diff_rules(before_rules, after_rules) do
+    before_rules = before_rules || @default_rules
+    after_rules = after_rules || @default_rules
+
+    %{
+      "defaults" => diff_defaults(before_rules["defaults"] || %{}, after_rules["defaults"] || %{}),
+      "overrides" =>
+        diff_overrides(before_rules["overrides"] || [], after_rules["overrides"] || [])
+    }
+  end
+
+  # Per-tier diff: %{"high" => %{"from" => "allow", "to" => "require_approval"}, ...}.
+  # Tiers that didn't change are omitted so the audit detail can
+  # highlight only what moved.
+  defp diff_defaults(before_d, after_d) do
+    @risk_tiers
+    |> Enum.flat_map(fn tier ->
+      b = before_d[tier]
+      a = after_d[tier]
+
+      if b == a do
+        []
+      else
+        [{tier, %{"from" => b, "to" => a}}]
+      end
+    end)
+    |> Enum.into(%{})
+  end
+
+  # Overrides are keyed by `action` for diffing — an override with the
+  # same action glob in both lists is the "same" override even if
+  # name or decision changed. Yields `%{added: [...], removed: [...],
+  # changed: [%{"action" => "x", "from" => %{...}, "to" => %{...}}]}`.
+  defp diff_overrides(before_list, after_list) do
+    before_map = Map.new(before_list, &{&1["action"], &1})
+    after_map = Map.new(after_list, &{&1["action"], &1})
+
+    before_keys = MapSet.new(Map.keys(before_map))
+    after_keys = MapSet.new(Map.keys(after_map))
+
+    added =
+      after_keys
+      |> MapSet.difference(before_keys)
+      |> Enum.map(&after_map[&1])
+
+    removed =
+      before_keys
+      |> MapSet.difference(after_keys)
+      |> Enum.map(&before_map[&1])
+
+    changed =
+      before_keys
+      |> MapSet.intersection(after_keys)
+      |> Enum.flat_map(fn action ->
+        b = before_map[action]
+        a = after_map[action]
+
+        if b == a do
+          []
+        else
+          [%{"action" => action, "from" => b, "to" => a}]
+        end
+      end)
+
+    %{"added" => added, "removed" => removed, "changed" => changed}
+  end
 
   defp glob_match?(pattern, str) do
     if String.contains?(pattern, "*") do

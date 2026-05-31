@@ -6,11 +6,7 @@ defmodule Emisar.Catalog.PackVersion do
   different hashes = somebody hand-edited a pack on a host.
   """
 
-  use Ecto.Schema
-  import Ecto.Changeset
-
-  @primary_key {:id, :binary_id, autogenerate: true}
-  @foreign_key_type :binary_id
+  use Emisar, :schema
 
   schema "pack_versions" do
     field :pack_id, :string
@@ -21,13 +17,6 @@ defmodule Emisar.Catalog.PackVersion do
 
     belongs_to :account, Emisar.Accounts.Account
 
-    timestamps(type: :utc_datetime_usec)
-  end
-
-  def changeset(pack, attrs) do
-    pack
-    |> cast(attrs, [:account_id, :pack_id, :version, :hash, :first_seen_at, :last_seen_at])
-    |> validate_required([:account_id, :pack_id, :version, :first_seen_at, :last_seen_at])
-    |> unique_constraint([:account_id, :pack_id, :version, :hash])
+    timestamps()
   end
 end

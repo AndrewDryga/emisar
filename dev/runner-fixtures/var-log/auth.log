@@ -1,0 +1,9 @@
+May 30 00:58:25 dev-host sshd[3001]: Accepted publickey for deploy from 10.0.5.12 port 53192 ssh2: ED25519 SHA256:abc123def456
+May 30 00:58:25 dev-host sshd[3001]: pam_unix(sshd:session): session opened for user deploy by (uid=0)
+May 30 00:58:26 dev-host sudo: deploy : TTY=pts/0 ; PWD=/home/deploy ; USER=root ; COMMAND=/usr/bin/systemctl status nginx
+May 30 00:58:30 dev-host sudo: pam_unix(sudo:session): session opened for user root by deploy(uid=1000)
+May 30 00:59:01 dev-host sshd[3050]: Failed password for invalid user admin from 198.51.100.7 port 41234 ssh2
+May 30 00:59:03 dev-host sshd[3050]: Failed password for invalid user admin from 198.51.100.7 port 41234 ssh2
+May 30 00:59:05 dev-host sshd[3050]: Disconnected from invalid user admin 198.51.100.7 port 41234 [preauth]
+May 30 00:59:30 dev-host sshd[3100]: Accepted publickey for oncall from 10.0.5.8 port 60012 ssh2: ED25519 SHA256:xyz789
+May 30 00:59:45 dev-host sudo: oncall : TTY=pts/1 ; PWD=/home/oncall ; USER=root ; COMMAND=/usr/bin/journalctl -u nginx --since=1h

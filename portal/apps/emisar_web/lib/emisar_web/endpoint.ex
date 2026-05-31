@@ -14,9 +14,13 @@ defmodule EmisarWeb.Endpoint do
     http_only: true
   ]
 
+  # `:peer_data` + `:user_agent` are surfaced so the LiveView audit
+  # `on_mount` hook (EmisarWeb.UserAuth.on_mount(:audit_meta, …)) can
+  # stash IP + UA on the LV process. Without these, mounts behind LV
+  # land with no conn-equivalent metadata.
   socket "/live", Phoenix.LiveView.Socket,
-    websocket: [connect_info: [session: @session_options]],
-    longpoll: [connect_info: [session: @session_options]]
+    websocket: [connect_info: [:peer_data, :user_agent, session: @session_options]],
+    longpoll: [connect_info: [:peer_data, :user_agent, session: @session_options]]
 
   # Serve at "/" the static files from "priv/static" directory.
   #
@@ -44,8 +48,8 @@ defmodule EmisarWeb.Endpoint do
   plug Plug.RequestId
   plug Plug.Telemetry, event_prefix: [:phoenix, :endpoint]
 
-  # We use a custom body_reader so the Stripe webhook controller can
-  # verify HMAC-SHA256 signatures against the exact bytes Stripe signed.
+  # We use a custom body_reader so the Paddle webhook controller can
+  # verify HMAC-SHA256 signatures against the exact bytes Paddle signed.
   # `Plug.Parsers` consumes the body before our controller runs, and
   # `read_body/2` only returns the unparsed bytes once.
   plug Plug.Parsers,

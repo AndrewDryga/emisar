@@ -38,8 +38,8 @@ defmodule EmisarWeb.UserSessionController do
   end
 
   defp do_create(conn, email, password, user_params) do
-    case Auth.get_user_by_email_and_password(email, password) do
-      %Emisar.Accounts.User{} = user ->
+    case Auth.fetch_user_by_email_and_password(email, password) do
+      {:ok, user} ->
         cond do
           Auth.mfa_required?(user) and is_nil(user_params["otp"]) ->
             conn
@@ -56,7 +56,7 @@ defmodule EmisarWeb.UserSessionController do
             UserAuth.log_in_user(conn, user, user_params)
         end
 
-      nil ->
+      {:error, :not_found} ->
         conn
         |> put_flash(:error, "That email and password don't match anything.")
         |> put_flash(:email, String.slice(email, 0, 160))

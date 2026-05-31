@@ -14,29 +14,54 @@ defmodule Emisar.Auth do
 
   # -- Password sign in -------------------------------------------------
 
-  def get_user_by_email_and_password(email, password)
+  @doc """
+  Looks up a user by email and verifies the password. Returns
+  `{:ok, user}` on a match or `{:error, :not_found}` for unknown email
+  / wrong password. Pre-auth boundary — no Subject.
+  """
+  def fetch_user_by_email_and_password(email, password)
       when is_binary(email) and is_binary(password) do
-    user = Accounts.get_user_by_email(email)
+    user =
+      case Accounts.fetch_user_by_email(email) do
+        {:ok, u} -> u
+        {:error, :not_found} -> nil
+      end
 
+    # `valid_password?(nil, _)` falls through to Bcrypt.no_user_verify/0
+    # so timing is constant whether or not the email matched a row.
     if User.valid_password?(user, password) do
-      user
+      {:ok, user}
     else
-      nil
+      {:error, :not_found}
     end
   end
 
   # -- Session tokens ---------------------------------------------------
 
-  @doc "Returns {raw_token, persisted_struct}."
-  def create_session_token(%User{} = user) do
-    {token, struct} = UserToken.build_session_token(user)
+  @doc """
+  Mint a session token and persist it. Returns the raw token for the
+  cookie. `metadata` (optional) carries `ip_address` + `user_agent`
+  captured from the inbound request so the Profile page can show
+  per-session device info; missing keys are tolerated.
+  """
+  def create_session_token!(%User{} = user, metadata \\ %{}) do
+    {token, struct} = UserToken.build_session_token(user, metadata)
     Repo.insert!(struct)
     token
   end
 
-  def get_user_by_session_token(token) when is_binary(token) do
+  @doc """
+  Looks up the user behind a session token. Returns `{:ok, user}` on
+  a hit or `{:error, :not_found}` for expired / unknown / non-binary
+  tokens. Pre-auth boundary — no Subject.
+  """
+  def fetch_user_by_session_token(token) when is_binary(token) do
     {:ok, query} = UserToken.verify_session_token_query(token)
-    Repo.one(query)
+
+    case Repo.one(query) do
+      nil -> {:error, :not_found}
+      %User{} = user -> {:ok, user}
+    end
   end
 
   def delete_session_token(token) when is_binary(token) do
@@ -45,14 +70,65 @@ defmodule Emisar.Auth do
   end
 
   def delete_all_session_tokens(%User{} = user) do
-    Repo.delete_all(UserToken.by_user_and_contexts_query(user, ["session"]))
+    UserToken.Query.by_user_id(user.id)
+    |> UserToken.Query.by_contexts(["session"])
+    |> Repo.delete_all()
+
     :ok
+  end
+
+  @doc """
+  All active sessions for a user, newest first. The raw token is never
+  surfaced — only the row id (for revocation) and inserted_at (display).
+  Returns `{:ok, [token], %Paginator.Metadata{}}` per the context-
+  function convention.
+  """
+  def list_sessions_for_user(%User{} = user, opts \\ []) do
+    UserToken.Query.by_user_id(user.id)
+    |> UserToken.Query.by_context("session")
+    |> Repo.list(UserToken.Query, opts)
+  end
+
+  @doc """
+  Revoke one specific session by id, scoped to the owning user so a
+  malicious id from one user can't kill another's session.
+  Returns :ok | {:error, :not_found}.
+  """
+  def revoke_session(%User{} = user, token_id) do
+    if Repo.valid_uuid?(token_id) do
+      case Repo.delete_all(UserToken.session_by_id_for_user_query(user, token_id)) do
+        {1, _} -> :ok
+        {0, _} -> {:error, :not_found}
+      end
+    else
+      {:error, :not_found}
+    end
+  end
+
+  @doc """
+  Revoke every session except the one carrying `keep_token` (the
+  caller's current cookie). Used by Profile's "sign out everywhere
+  else". Pass `nil` to revoke every session including the current one.
+  """
+  def revoke_other_sessions!(%User{} = user, keep_token) when is_binary(keep_token) do
+    keep_digest = :crypto.hash(:sha256, keep_token)
+    {n, _} = Repo.delete_all(UserToken.other_sessions_for_user_query(user, keep_digest))
+    n
+  end
+
+  def revoke_other_sessions!(%User{} = user, nil) do
+    {n, _} =
+      UserToken.Query.by_user_id(user.id)
+      |> UserToken.Query.by_contexts(["session"])
+      |> Repo.delete_all()
+
+    n
   end
 
   # -- Magic link -------------------------------------------------------
 
   @doc "Issues a magic-link token. Returns the raw token to email."
-  def issue_magic_link_token(%User{} = user) do
+  def issue_magic_link_token!(%User{} = user) do
     {raw, struct} = UserToken.build_hashed_token(user, "magic_link", user.email)
     Repo.insert!(struct)
     raw
@@ -76,7 +152,7 @@ defmodule Emisar.Auth do
 
   # -- Password reset ---------------------------------------------------
 
-  def issue_password_reset_token(%User{} = user) do
+  def issue_password_reset_token!(%User{} = user) do
     {raw, struct} = UserToken.build_hashed_token(user, "reset_password", user.email)
     Repo.insert!(struct)
     raw
@@ -93,12 +169,15 @@ defmodule Emisar.Auth do
             Repo.transaction(fn ->
               {:ok, updated} =
                 user
-                |> User.password_changeset(%{password: password})
+                |> User.Changeset.password(%{password: password})
                 |> Repo.update()
 
               Repo.delete!(token)
               # Invalidate all sessions so the reset acts like a logout.
-              Repo.delete_all(UserToken.by_user_and_contexts_query(user, ["session"]))
+              UserToken.Query.by_user_id(user.id)
+              |> UserToken.Query.by_contexts(["session"])
+              |> Repo.delete_all()
+
               updated
             end)
         end
@@ -110,7 +189,7 @@ defmodule Emisar.Auth do
 
   # -- Email confirmation ----------------------------------------------
 
-  def issue_confirmation_token(%User{} = user) do
+  def issue_confirmation_token!(%User{} = user) do
     {raw, struct} = UserToken.build_hashed_token(user, "confirm", user.email)
     Repo.insert!(struct)
     raw
@@ -148,7 +227,7 @@ defmodule Emisar.Auth do
   def enable_mfa(%User{} = user, secret, otp) when is_binary(secret) and is_binary(otp) do
     if NimbleTOTP.valid?(secret, otp) do
       user
-      |> User.mfa_changeset(secret, DateTime.utc_now() |> DateTime.truncate(:microsecond))
+      |> User.Changeset.mfa(secret, DateTime.utc_now() |> DateTime.truncate(:microsecond))
       |> Repo.update()
     else
       {:error, :invalid_otp}
@@ -157,7 +236,7 @@ defmodule Emisar.Auth do
 
   def disable_mfa(%User{} = user) do
     user
-    |> User.mfa_changeset(nil, nil)
+    |> User.Changeset.mfa(nil, nil)
     |> Repo.update()
   end
 

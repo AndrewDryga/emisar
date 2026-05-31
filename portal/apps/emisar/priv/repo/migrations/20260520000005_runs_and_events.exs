@@ -3,18 +3,19 @@ defmodule Emisar.Repo.Migrations.RunsAndEvents do
 
   def change do
     # An action run is one outstanding invocation against a specific
-    # agent. It begins life as :pending (cloud has decided to invoke
+    # runner. It begins life as :pending (cloud has decided to invoke
     # but hasn't sent the run_action over the wire yet), then moves
     # through :sent -> :running -> terminal status (:success, :failed,
     # :validation_failed, :unknown_action, :error, :cancelled).
     create table(:action_runs, primary_key: false) do
       add :id, :binary_id, primary_key: true
       add :account_id, references(:accounts, type: :binary_id, on_delete: :delete_all), null: false
-      add :agent_id, references(:agents, type: :binary_id, on_delete: :delete_all), null: false
+      add :runner_id, references(:runners, type: :binary_id, on_delete: :delete_all), null: false
 
       # request_id is the wire protocol's correlation key. Globally
-      # unique within an account; passed to agent as run_action.request_id
-      # and echoed back on action_progress + action_result.
+      # unique within an account; passed to the runner as
+      # run_action.request_id and echoed back on action_progress +
+      # action_result.
       add :request_id, :string, null: false
 
       # What's being run.
@@ -37,7 +38,6 @@ defmodule Emisar.Repo.Migrations.RunsAndEvents do
 
       # Policy decision snapshot.
       add :policy_id, references(:policies, type: :binary_id, on_delete: :nilify_all)
-      add :policy_version, :integer
       add :policy_decision, :string
       add :policy_reason, :string
       add :matched_rules, {:array, :string}, null: false, default: []
@@ -72,12 +72,12 @@ defmodule Emisar.Repo.Migrations.RunsAndEvents do
 
     create unique_index(:action_runs, [:account_id, :request_id])
     create index(:action_runs, [:account_id, :status])
-    create index(:action_runs, [:agent_id, :status])
+    create index(:action_runs, [:runner_id, :status])
     create index(:action_runs, [:account_id, :action_id])
     create index(:action_runs, [:runbook_id])
     create index(:action_runs, [:requested_by_id])
 
-    # Streamed progress chunks + agent-emitted state transitions.
+    # Streamed progress chunks + runner-emitted state transitions.
     # Many rows per run; we cap retention via Oban job.
     create table(:action_run_events, primary_key: false) do
       add :id, :binary_id, primary_key: true

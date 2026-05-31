@@ -6,16 +6,22 @@ defmodule Emisar.ApiKeysTest do
   alias Emisar.{ApiKeys, Repo}
   alias Emisar.ApiKeys.ApiKey
 
-  describe "create_key/3" do
+  defp owner_subject_pair do
+    user = user_fixture()
+    account = account_fixture()
+    _ = membership_fixture(account_id: account.id, user_id: user.id, role: "owner")
+    {user, account, subject_for(user, account, role: :owner)}
+  end
+
+  describe "create_key/2" do
     test "returns raw + persisted key" do
-      account = account_fixture()
-      user = user_fixture()
+      {user, account, subject} = owner_subject_pair()
 
       assert {:ok, raw, %ApiKey{} = key} =
-               ApiKeys.create_key(account.id, user.id, %{
+               ApiKeys.create_key(%{
                  name: "ci",
                  scopes: ["actions:read"]
-               })
+               }, subject)
 
       assert String.starts_with?(raw, "emk-")
       assert key.account_id == account.id
@@ -25,50 +31,49 @@ defmodule Emisar.ApiKeysTest do
     end
 
     test "rejects unknown scopes" do
-      account = account_fixture()
-      user = user_fixture()
+      {_user, _account, subject} = owner_subject_pair()
 
       assert {:error, cs} =
-               ApiKeys.create_key(account.id, user.id, %{
+               ApiKeys.create_key(%{
                  name: "bad",
                  scopes: ["actions:nuclear-launch"]
-               })
+               }, subject)
 
       assert "has an invalid entry" in errors_on(cs).scopes
     end
   end
 
-  describe "find_by_secret/1" do
+  describe "peek_api_key_by_secret/1" do
     test "returns the key for a valid raw secret + bumps last_used_at" do
       {raw, key} = api_key_fixture()
       refute key.last_used_at
 
-      assert %ApiKey{id: id, last_used_at: ts} = ApiKeys.find_by_secret(raw)
+      assert %ApiKey{id: id, last_used_at: ts} = ApiKeys.peek_api_key_by_secret(raw)
       assert id == key.id
       assert %DateTime{} = ts
     end
 
     test "returns nil for garbage" do
-      refute ApiKeys.find_by_secret("not-a-key")
-      refute ApiKeys.find_by_secret("")
+      refute ApiKeys.peek_api_key_by_secret("not-a-key")
+      refute ApiKeys.peek_api_key_by_secret("")
     end
 
     test "returns nil after the key is revoked" do
-      {raw, key} = api_key_fixture()
-      user = user_fixture()
-      {:ok, _} = ApiKeys.revoke(key, user.id)
+      {_user, account, subject} = owner_subject_pair()
+      {raw, key} = api_key_fixture(account_id: account.id)
+      {:ok, _} = ApiKeys.revoke_api_key(key, subject)
 
-      refute ApiKeys.find_by_secret(raw)
+      refute ApiKeys.peek_api_key_by_secret(raw)
     end
   end
 
-  describe "revoke/2" do
+  describe "revoke_api_key/2" do
     test "marks revoked_at" do
-      {_raw, key} = api_key_fixture()
-      user = user_fixture()
+      {user, account, subject} = owner_subject_pair()
+      {_raw, key} = api_key_fixture(account_id: account.id)
 
       assert {:ok, %ApiKey{revoked_at: %DateTime{}, revoked_by_id: id}} =
-               ApiKeys.revoke(key, user.id)
+               ApiKeys.revoke_api_key(key, subject)
 
       assert id == user.id
       assert Repo.reload!(key).revoked_at
