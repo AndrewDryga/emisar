@@ -36,10 +36,16 @@
           undeclared argument past the runner.
         </li>
         <li>
-          <strong>Policy.</strong> Per-account rules match on action ID, risk, kind,
-          arg values. Decisions: <code>allow</code> / <code>require_approval</code> /
-          <code>deny</code>. The runner sees decisions only — it doesn't get to
-          reason about policy.
+          <strong>Policy.</strong> Two-layer per-account model: a default
+          decision per risk tier (<code>low</code> / <code>medium</code> /
+          <code>high</code> / <code>critical</code>), plus ordered per-action
+          overrides that glob-match on action ID. First matching override
+          wins; otherwise the tier default applies. Decisions:
+          <code>allow</code> / <code>require_approval</code> / <code>deny</code>.
+          Higher-risk tiers are forced to be at least as restrictive as
+          lower-risk ones — you can't allow <code>cassandra.drain</code>
+          while requiring approval for <code>cassandra.nodetool_status</code>.
+          The runner sees the decision only; it doesn't reason about policy.
         </li>
         <li>
           <strong>Approvals.</strong> When policy demands approval, the run is held
@@ -58,17 +64,35 @@
           declared maximum.
         </li>
         <li>
-          <strong>Hash-chained audit.</strong> Every attempt — validation-failed,
-          executed, errored — produces a line in
-          <code>/var/log/emisar/events.jsonl</code>. Each entry carries
-          <code>prev_hash = sha256(prev_line)</code>. Tampering breaks the chain;
-          <code>emisar audit verify</code> detects it.
+          <strong>Hash-chained audit, two tiers.</strong> Cloud-side, every mutation
+          — dispatch, approval, runner state change, policy edit, sign-in —
+          appends a row to the account's <code>audit_events</code> table with
+          <code>prev_hash = sha256(prev_row)</code>. The chain ships out as
+          NDJSON over <code>GET /api/audit</code>, gated on an
+          <code>audit:read</code>-scoped API key minted from the audit page.
+          Point any SIEM that speaks HTTP at it. Runner-side, every action
+          attempt writes a JSONL line to <code>/var/log/emisar/events.jsonl</code>
+          with the same prev-hash construction — that's the host-side
+          forensics copy. <code>emisar audit verify</code> detects tampering
+          on either side.
         </li>
         <li>
           <strong>Setuid drop on Linux.</strong> Actions with <code>user:</code> set
           drop to that uid/gid via <code>SysProcAttr.Credential</code> before exec.
           A runner shipping under a privileged service account still runs the
           declared action as the right user.
+        </li>
+        <li>
+          <strong>Local action admission (defense-in-depth).</strong> The
+          runner config supports an
+          <code>admission.allow</code> / <code>admission.deny</code> list of
+          glob patterns over action ids
+          (e.g. <code>cassandra.*</code>, <code>*.repair</code>). Blocked
+          actions are hidden from the catalog this runner advertises to cloud
+          AND refused at execution time, so even a compromised portal cannot
+          push something the host operator did not sanction. Refusals land in
+          the JSONL audit log as
+          <code>action_blocked_by_admission</code> events for SIEM alerting.
         </li>
       </ol>
 

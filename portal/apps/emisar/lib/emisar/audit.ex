@@ -53,8 +53,41 @@ defmodule Emisar.Audit do
     :ok
   end
 
-  @doc "Returns the current process's audit request metadata (or %{} if unset)."
-  def get_request_metadata, do: Process.get(@meta_key, %{})
+  @doc """
+  Returns the audit request metadata visible to the current process. Looks
+  in the local dict first, then walks `$callers` (the chain Task and
+  Task.Supervisor stamp so spawned tasks inherit context). The first
+  non-empty entry wins, matching how Logger / Phoenix propagate metadata
+  across async fan-outs.
+  """
+  def get_request_metadata do
+    case Process.get(@meta_key) do
+      %{} = local when map_size(local) > 0 ->
+        local
+
+      _ ->
+        # Tasks spawned via Task / Task.Supervisor inherit the parent's
+        # pid in `:"$callers"` — newest first. Walk it until we find a
+        # caller that has audit metadata set, otherwise return %{}.
+        walk_caller_metadata(Process.get(:"$callers", []))
+    end
+  end
+
+  defp walk_caller_metadata([]), do: %{}
+
+  defp walk_caller_metadata([pid | rest]) do
+    case Process.info(pid, :dictionary) do
+      {:dictionary, dict} ->
+        case Keyword.get(dict, @meta_key) do
+          %{} = meta when map_size(meta) > 0 -> meta
+          _ -> walk_caller_metadata(rest)
+        end
+
+      # Caller exited between spawn and lookup — skip and try the next.
+      _ ->
+        walk_caller_metadata(rest)
+    end
+  end
 
   @doc "Wipes any audit metadata set for the current process."
   def clear_request_metadata, do: Process.delete(@meta_key)
@@ -65,22 +98,82 @@ defmodule Emisar.Audit do
   Append an audit event. Called by sibling contexts inside their
   already-authorized mutation paths — `actor_kind` / `actor_id` are
   derived from the caller's `%Subject{}`.
+
+  Use `changeset/3` instead when the audit row needs to commit
+  atomically with a parent mutation (an `Ecto.Multi.insert/3` step).
+  `log/3` is for fire-and-forget standalone events that have no parent
+  transaction — sign-out, failed sign-in, runner heartbeat, etc.
   """
   def log(account_id, event_type, attrs \\ %{}) do
+    Repo.insert(changeset(account_id, event_type, attrs))
+  end
+
+  @doc """
+  Build the audit-event changeset without inserting it. Use inside an
+  `Ecto.Multi` so the audit row commits or rolls back together with
+  the parent mutation:
+
+      Multi.new()
+      |> Multi.update(:policy, Policy.Changeset.update(policy, attrs))
+      |> Multi.insert(:audit, fn %{policy: p} ->
+        Audit.changeset(p.account_id, "policy.updated",
+          actor_id: subject.actor.id, subject_id: p.id)
+      end)
+      |> Repo.transact(after_commit: fn _ -> PubSub.broadcast(...) end)
+
+  Field merge order is identical to `log/3`: base < process metadata
+  < explicit attrs.
+  """
+  def changeset(account_id, event_type, attrs \\ %{}) do
     base = %{
       account_id: account_id,
       event_type: to_string(event_type),
       occurred_at: DateTime.utc_now() |> DateTime.truncate(:microsecond)
     }
 
-    # base < process metadata < explicit attrs.
     merged =
       base
       |> Map.merge(get_request_metadata())
       |> Map.merge(normalize(attrs))
 
     Event.Changeset.create(merged)
-    |> Repo.insert()
+  end
+
+  @doc """
+  Audit-log a user-scoped security event (sign-in, MFA, password
+  change, profile edit). The user might not have a direct `account_id`
+  in hand — most auth flows operate pre-Subject — so we look up the
+  user's primary membership and stamp the event onto that account.
+
+  Multi-account users only get the event on their primary membership
+  in v0.1; widening to fan-out across every membership is a future
+  call once we see whether it's needed.
+
+  Silently no-ops when the user has no active membership (brand-new
+  signup mid-account-creation, fully-suspended user) — the parent
+  action either already audited, or there's no admin yet who could
+  read it.
+
+  `attrs` accepts the same shape as `log/3` and overrides the defaults
+  (`actor_kind: "user", actor_id: user.id, subject_kind: "user",
+   subject_id: user.id, subject_label: user.email`).
+  """
+  def log_for_user(%Emisar.Accounts.User{} = user, event_type, attrs \\ %{}) do
+    case Emisar.Accounts.fetch_membership_for_session(user, nil) do
+      {:ok, membership} ->
+        defaults = %{
+          actor_kind: "user",
+          actor_id: user.id,
+          subject_kind: "user",
+          subject_id: user.id,
+          subject_label: user.email
+        }
+
+        log(membership.account_id, event_type, Map.merge(defaults, normalize(attrs)))
+
+      {:error, :not_found} ->
+        :ok
+    end
   end
 
   @doc """
@@ -88,7 +181,16 @@ defmodule Emisar.Audit do
   by `Runs.transition/3` so every run state change leaves a trace.
   """
   def log_run_event(%ActionRun{} = run) do
-    log(run.account_id, "action_run.#{run.status}",
+    Repo.insert(run_event_changeset(run))
+  end
+
+  @doc """
+  Build the audit-event changeset for a run state transition. Use
+  inside an `Ecto.Multi` so the audit row commits together with the
+  parent `run` update — see `Runs.transition/3`.
+  """
+  def run_event_changeset(%ActionRun{} = run) do
+    changeset(run.account_id, "action_run.#{run.status}",
       subject_kind: "action_run",
       subject_id: run.id,
       subject_label: run.action_id,
@@ -144,6 +246,80 @@ defmodule Emisar.Audit do
   end
 
   @doc """
+  SIEM export — cursor-paginated forward sweep of every event the
+  subject can see, sorted ascending by `(occurred_at, id)`. This is the
+  deterministic shape SIEMs need: they checkpoint the last `(occurred_at,
+  id)` they've ingested and ask for everything strictly after.
+
+  Why a separate function from `list_events/2`:
+
+    * Forward (oldest-first) ordering — SIEMs replay history once then
+      poll forward; the LV's reverse order would force them to discover
+      new rows by binary-searching the timeline.
+    * Hard upper bound on the page size — keeps an aggressive consumer
+      from issuing a billion-row scan that would page the audit table
+      out of buffer pool.
+    * No `%Paginator.Metadata{}` count round-trip — SIEM ingestors don't
+      need totals and computing them on every poll kills the index.
+
+  Options:
+
+    * `:since` — `%DateTime{}` lower bound for the first page (inclusive)
+    * `:after` — `{%DateTime{}, id}` cursor (strict `>`), takes precedence
+      over `:since`
+    * `:event_types` — list of event_type strings to include (empty list
+      = all types)
+    * `:limit` — page size, default #{100}, hard-capped at #{1_000}
+
+  Returns `{:ok, events}` — a plain list of `%Audit.Event{}` rows in
+  ascending order. The controller projects to NDJSON; the context just
+  hands back rows.
+  """
+  @default_export_limit 100
+  @max_export_limit 1_000
+
+  def list_for_export(%Subject{} = subject, opts \\ []) do
+    with :ok <- Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_audit_permission()) do
+      types = Keyword.get(opts, :event_types, [])
+      limit = clamp_export_limit(Keyword.get(opts, :limit, @default_export_limit))
+
+      events =
+        Event.Query.all()
+        |> Authorizer.for_subject(subject)
+        |> apply_export_cursor(opts)
+        |> Event.Query.by_event_types(types)
+        |> Event.Query.ordered_for_export()
+        |> Event.Query.limit_to(limit)
+        |> Repo.all()
+
+      {:ok, events}
+    end
+  end
+
+  @doc "Public — the controller uses this to ack-clamp a user-supplied `limit` param."
+  def max_export_limit, do: @max_export_limit
+  @doc "Public — the controller uses this for the default page size."
+  def default_export_limit, do: @default_export_limit
+
+  defp clamp_export_limit(n) when is_integer(n) and n > 0,
+    do: min(n, @max_export_limit)
+
+  defp clamp_export_limit(_), do: @default_export_limit
+
+  defp apply_export_cursor(query, opts) do
+    case Keyword.get(opts, :after) do
+      {%DateTime{} = ts, id} when is_binary(id) ->
+        Event.Query.occurred_strictly_after(query, ts, id)
+
+      _ ->
+        case Keyword.get(opts, :since) do
+          %DateTime{} = ts -> Event.Query.occurred_at_or_after(query, ts)
+          _ -> query
+        end
+    end
+  end
+
+  @doc """
   Fetch a single event scoped to the subject's account. Returns
   `{:ok, event} | {:error, :not_found}`.
   """
@@ -186,7 +362,8 @@ defmodule Emisar.Audit do
       "action_run" =>
         fetch_labels(Emisar.Runs.ActionRun.Query, ids_by_kind, "action_run", :action_id),
       "approval_request" =>
-        fetch_labels(Emisar.Approvals.Request.Query, ids_by_kind, "approval_request", :id)
+        fetch_labels(Emisar.Approvals.Request.Query, ids_by_kind, "approval_request", :id),
+      "runbook" => fetch_labels(Emisar.Runbooks.Runbook.Query, ids_by_kind, "runbook", :title)
     }
   end
 

@@ -17,6 +17,11 @@ defmodule Emisar.Runs.ActionRun do
     field :runbook_step_id, :string
 
     field :api_key_id, Ecto.UUID
+    # MCP / API caller supplies `Idempotency-Key`; a duplicate
+    # `(api_key_id, idempotency_key)` returns the original run row
+    # instead of dispatching a fresh one. Nil when the caller didn't
+    # send the header (UI / runbook paths).
+    field :idempotency_key, :string
     field :source, :string, default: "operator"
     field :reason, :string
 
@@ -26,6 +31,10 @@ defmodule Emisar.Runs.ActionRun do
 
     field :policy_decision, :string
     field :policy_reason, :string
+    # Snapshot of `policies.vsn` at decision time. Lets us answer "this
+    # run was approved under policy v5" without joining + trusting the
+    # live policy row (which may have been edited since).
+    field :policy_version, :integer
     field :matched_rules, {:array, :string}, default: []
 
     field :requires_approval, :boolean, default: false

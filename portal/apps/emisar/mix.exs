@@ -36,7 +36,6 @@ defmodule Emisar.MixProject do
       # Persistence
       {:ecto_sql, "~> 3.11"},
       {:postgrex, ">= 0.0.0"},
-      {:ecto_psql_extras, "~> 0.7"},
 
       # Background jobs (delivery retries, audit ingestion, etc.)
       {:oban, "~> 2.18"},
@@ -55,8 +54,7 @@ defmodule Emisar.MixProject do
       {:gen_smtp, "~> 1.2"},
 
       # Misc primitives
-      {:jason, "~> 1.4"},
-      {:ymlr, "~> 5.1"}
+      {:jason, "~> 1.4"}
     ]
   end
 

@@ -13,11 +13,7 @@ defmodule Emisar.Accounts.Authorizer do
   def manage_own_account_permission, do: build(Account, :manage_own)
   def view_own_account_permission, do: build(Account, :view_own)
   def manage_team_permission, do: build(Membership, :manage_team)
-  # Held by owners only — required to grant/revoke the owner role and
-  # to modify a membership that already has the owner role.
-  def manage_owners_permission, do: build(Membership, :manage_owners)
   def invite_member_permission, do: build(Membership, :invite)
-  def delete_account_permission, do: build(Account, :delete)
   def edit_own_profile_permission, do: build(User, :edit_self)
   # Held by owners only — required to flip account-wide security knobs
   # (require_mfa, etc.).
@@ -29,10 +25,8 @@ defmodule Emisar.Accounts.Authorizer do
       manage_own_account_permission(),
       view_own_account_permission(),
       manage_team_permission(),
-      manage_owners_permission(),
       invite_member_permission(),
       manage_security_settings_permission(),
-      delete_account_permission(),
       edit_own_profile_permission()
     ]
 
@@ -56,10 +50,8 @@ defmodule Emisar.Accounts.Authorizer do
       manage_own_account_permission(),
       view_own_account_permission(),
       manage_team_permission(),
-      manage_owners_permission(),
       invite_member_permission(),
       manage_security_settings_permission(),
-      delete_account_permission(),
       edit_own_profile_permission()
     ]
 

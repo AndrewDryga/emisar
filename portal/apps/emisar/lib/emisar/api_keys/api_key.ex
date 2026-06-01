@@ -34,6 +34,12 @@ defmodule Emisar.ApiKeys.ApiKey do
     belongs_to :account, Emisar.Accounts.Account
     belongs_to :created_by, Emisar.Accounts.User
     belongs_to :revoked_by, Emisar.Accounts.User
+    # Membership of the user who minted this key. MCP dispatch resolves
+    # this membership's per-user runner scope at call-time so revoking
+    # the operator's scope shrinks every key they ever issued. Nilable —
+    # the FK is `on_delete: :nilify_all` so a removed-and-rejoined
+    # operator's old keys outlive the membership row.
+    belongs_to :created_by_membership, Emisar.Accounts.Membership
 
     timestamps()
   end

@@ -41,7 +41,8 @@ defmodule EmisarWeb.MixProject do
       {:phoenix_html, "~> 4.1"},
       {:phoenix_live_reload, "~> 1.2", only: :dev},
       {:phoenix_live_view, "~> 1.0"},
-      {:floki, ">= 0.30.0", only: :test},
+      # Phoenix.LiveViewTest's HTML parser. Floki was the previous one
+      # and is no longer used (LV 1.0+ uses LazyHTML exclusively).
       {:lazy_html, ">= 0.1.0", only: :test},
       {:phoenix_live_dashboard, "~> 0.8.3"},
       {:esbuild, "~> 0.8", runtime: Mix.env() == :dev},
@@ -64,8 +65,7 @@ defmodule EmisarWeb.MixProject do
       {:emisar, in_umbrella: true},
       {:jason, "~> 1.2"},
       {:bandit, "~> 1.5"},
-      {:websock_adapter, "~> 0.5"},
-      {:plug_crypto, "~> 2.0"}
+      {:websock_adapter, "~> 0.5"}
     ]
   end
 

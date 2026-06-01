@@ -139,9 +139,10 @@ defmodule EmisarWeb.BillingLive do
 
   def render(assigns) do
     ~H"""
-    <.dashboard_shell
+    <.dashboard_shell pending_approvals_count={@pending_approvals_count}
       current_user={@current_user}
       current_account={@current_account}
+      switchable_accounts={@switchable_accounts}
       flash={@flash}
       section={:billing}
     >
@@ -166,6 +167,33 @@ defmodule EmisarWeb.BillingLive do
                 <span class="text-sm text-zinc-500">·</span>
                 <span class="text-sm text-zinc-400">
                   {@summary.audit_retention_days}d audit retention
+                </span>
+              </div>
+              <%!-- Subscription cycle notes — only rendered when the
+                   underlying Paddle subscription has the matching state.
+                   Cancel-at-period-end is the loud case (you keep your
+                   plan until the date, then revert to free); trial_end
+                   shows during trial; current_period_end always shows
+                   on a paid plan so the operator knows "next charge
+                   on …". --%>
+              <div class="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                <span
+                  :if={@summary.cancel_at_period_end == true and @summary.current_period_end}
+                  class="rounded bg-amber-500/15 px-2 py-0.5 font-medium text-amber-200 ring-1 ring-amber-500/30"
+                >
+                  Cancels on <.local_time value={@summary.current_period_end} class="inline" />
+                </span>
+                <span
+                  :if={@summary.trial_end}
+                  class="rounded bg-indigo-500/15 px-2 py-0.5 font-medium text-indigo-200 ring-1 ring-indigo-500/30"
+                >
+                  Trial ends <.local_time value={@summary.trial_end} class="inline" />
+                </span>
+                <span
+                  :if={@summary.current_period_end && @summary.cancel_at_period_end != true}
+                  class="text-zinc-500"
+                >
+                  Next charge <.local_time value={@summary.current_period_end} class="inline" />
                 </span>
               </div>
             </div>

@@ -31,8 +31,6 @@ defmodule EmisarWeb.Permissions do
   # owner-only
   defp allow?("owner", :manage_billing), do: true
   defp allow?("owner", :manage_subscription), do: true
-  defp allow?("owner", :delete_account), do: true
-  defp allow?("owner", :transfer_ownership), do: true
 
   # admin+
   defp allow?(role, :manage_team) when role in ~w(owner admin), do: true
@@ -41,7 +39,6 @@ defmodule EmisarWeb.Permissions do
   defp allow?(role, :manage_policies) when role in ~w(owner admin), do: true
   defp allow?(role, :manage_runbooks) when role in ~w(owner admin), do: true
   defp allow?(role, :manage_runners) when role in ~w(owner admin), do: true
-  defp allow?(role, :revoke_session) when role in ~w(owner admin), do: true
 
   # operator+
   defp allow?(role, :dispatch_run) when role in ~w(owner admin operator), do: true
@@ -81,7 +78,6 @@ defmodule EmisarWeb.Permissions do
 
   defp denial_message(:manage_billing), do: "Only owners can manage billing."
   defp denial_message(:manage_subscription), do: "Only owners can change the subscription."
-  defp denial_message(:delete_account), do: "Only owners can delete the account."
   defp denial_message(:manage_team), do: "Only owners and admins can manage the team."
   defp denial_message(:manage_auth_keys), do: "Only owners and admins can manage auth keys."
   defp denial_message(:manage_api_keys), do: "Only owners and admins can manage API keys."

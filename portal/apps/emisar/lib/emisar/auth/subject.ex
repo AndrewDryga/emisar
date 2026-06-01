@@ -33,6 +33,7 @@ defmodule Emisar.Auth.Subject do
           account: Account.t() | nil,
           actor: actor() | nil,
           role: role() | nil,
+          membership_id: binary() | nil,
           permissions: MapSet.t(),
           context: map()
         }
@@ -40,17 +41,19 @@ defmodule Emisar.Auth.Subject do
   defstruct account: nil,
             actor: nil,
             role: nil,
+            membership_id: nil,
             permissions: MapSet.new(),
             context: %{}
 
   @doc "Build a subject from a `%User{}` + their `%Membership{}`."
-  def for_user(%User{} = user, %Account{} = account, %Membership{role: role}, context \\ %{}) do
-    role = role_atom(role)
+  def for_user(%User{} = user, %Account{} = account, %Membership{} = membership, context \\ %{}) do
+    role = role_atom(membership.role)
 
     %__MODULE__{
       account: account,
       actor: user,
       role: role,
+      membership_id: membership.id,
       permissions: Emisar.Auth.Authorizer.permissions_for(role),
       context: context
     }
@@ -62,6 +65,10 @@ defmodule Emisar.Auth.Subject do
       account: account,
       actor: api_key,
       role: :api_client,
+      # Keys mint-time-bound their creator's membership — MCP dispatch
+      # uses this to apply per-user runner ACLs at call-time, so revoking
+      # a user's runner scope immediately shrinks every key they minted.
+      membership_id: Map.get(api_key, :created_by_membership_id),
       permissions: Emisar.Auth.Authorizer.permissions_for(:api_client),
       context: context
     }

@@ -12,7 +12,16 @@ import Config
 # Configure Mix tasks and generators
 config :emisar,
   ecto_repos: [Emisar.Repo],
-  paddle_client: Emisar.Billing.PaddleClient.Live
+  paddle_client: Emisar.Billing.PaddleClient.Live,
+  # Web-side handler `Emisar.Auth` calls when it needs to disconnect
+  # active LiveView sockets (the broadcast struct itself lives in the
+  # `phoenix` package, which emisar deliberately doesn't depend on).
+  session_disconnect_handler: EmisarWeb.SessionDisconnector,
+  # Supervised Task fan-out for cross-app background work (currently
+  # approval email blasts). Lives in the web app's supervision tree so
+  # SIGTERM gracefully drains in-flight tasks instead of dropping them
+  # on the floor. Resolved by name at call-time; nil-safe.
+  task_supervisor: EmisarWeb.TaskSupervisor
 
 # Configures the mailer
 #
@@ -33,6 +42,9 @@ config :emisar, Oban,
        {"@daily", Emisar.Workers.AuditRetention},
        {"*/5 * * * *", Emisar.Workers.RunnerHealthSweep},
        {"*/5 * * * *", Emisar.Workers.ApprovalExpiry},
+       # Every minute — picks up runs that have been pending/sent past
+       # the 2-min grace window and forces them to a terminal state.
+       {"* * * * *", Emisar.Workers.RunDispatchTimeout},
        {"0 * * * *", Emisar.Workers.BillingSync}
      ]}
   ],
@@ -92,20 +104,39 @@ config :logger, :console,
 # Overridable at boot via `STATUS_PAGE_URL` in runtime.exs.
 config :emisar_web, status_page_url: "https://status.emisar.dev"
 
-# Sentry — DSN baked in (it's a public-ish key with an event-rate-limit
-# quota, not a secret). Tagging each event with `config_env/0` means
-# dev errors don't pollute the production project's dashboard.
-# `runtime.exs` lets `SENTRY_DSN` override at boot for staging.
+# Sentry — DSN is opt-in via `SENTRY_DSN` env var (wired in
+# `runtime.exs`). Leaving it unset disables uploads — the client
+# short-circuits before any HTTP call. The default is intentionally
+# nil so a fork / self-host can't accidentally ship errors to the
+# upstream project's Sentry bucket.
 config :sentry,
-  dsn:
-    "https://f3095640e074c473f52dbcc92f79201c@o4511481560498176.ingest.us.sentry.io/4511481561481216",
+  dsn: nil,
   environment_name: config_env(),
   enable_source_code_context: true,
   root_source_code_paths: [File.cwd!()],
   tags: %{app: "emisar"}
 
+# Mailer "From" address. Self-hosters override these with
+# `MAILER_FROM_EMAIL` / `MAILER_FROM_NAME` in `runtime.exs`. Defaults
+# match the emisar-hosted brand.
+config :emisar,
+  mailer_from_email: "no-reply@emisar.dev",
+  mailer_from_name: "emisar"
+
 # Use Jason for JSON parsing in Phoenix
 config :phoenix, :json_library, Jason
+
+# Filter secrets from Phoenix's request-param logging line. The default
+# only filters "password" — everything else (bearer tokens, OTPs,
+# magic-link tokens, raw API keys, auth keys, paddle webhook bodies)
+# would otherwise land in Logger / Sentry / log shipper as plaintext.
+# `:discard` drops the value entirely; `:keep` would mask but keep
+# matches in the line — discard is the safer default for credentials.
+config :phoenix, :filter_parameters,
+       {:discard,
+        ~w(password current_password password_confirmation token raw_token
+           secret api_key auth_key bearer authorization mfa otp recovery_code
+           webhook_signature)}
 
 # Import environment specific config. This must remain at the bottom
 # of this file so it overrides the configuration defined above.

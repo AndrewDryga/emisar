@@ -6,20 +6,18 @@ defmodule Emisar.Policies.Authorizer do
 
   def manage_policies_permission, do: build(Policy, :manage)
   def view_policies_permission, do: build(Policy, :view)
-  def evaluate_policy_permission, do: build(Policy, :evaluate)
 
   @impl Emisar.Auth.Authorizer
   def list_permissions_for_role(role) when role in [:owner, :admin],
-    do: [manage_policies_permission(), view_policies_permission(), evaluate_policy_permission()]
+    do: [manage_policies_permission(), view_policies_permission()]
 
   def list_permissions_for_role(role) when role in [:operator, :viewer],
-    do: [view_policies_permission(), evaluate_policy_permission()]
+    do: [view_policies_permission()]
 
-  def list_permissions_for_role(:api_client),
-    do: [evaluate_policy_permission()]
+  def list_permissions_for_role(:api_client), do: []
 
   def list_permissions_for_role(:system),
-    do: [manage_policies_permission(), view_policies_permission(), evaluate_policy_permission()]
+    do: [manage_policies_permission(), view_policies_permission()]
 
   def list_permissions_for_role(_), do: []
 

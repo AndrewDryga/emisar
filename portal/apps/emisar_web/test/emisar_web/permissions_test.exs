@@ -13,7 +13,6 @@ defmodule EmisarWeb.PermissionsTest do
   @matrix [
     {:manage_billing, ["owner"]},
     {:manage_subscription, ["owner"]},
-    {:delete_account, ["owner"]},
     {:manage_team, ["owner", "admin"]},
     {:manage_auth_keys, ["owner", "admin"]},
     {:manage_api_keys, ["owner", "admin"]},

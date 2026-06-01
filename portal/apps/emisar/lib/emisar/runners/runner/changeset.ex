@@ -77,7 +77,12 @@ defmodule Emisar.Runners.Runner.Changeset do
 
   @doc "Apply a runner_state advertisement (hostname, labels, version, packs)."
   def apply_state(%Runner{} = runner, attrs) do
-    cast(runner, attrs, [:hostname, :labels, :runner_version, :packs, :external_id])
+    # external_id is set at create / register time and is the stable
+    # match key for reconnects — never overwrite it from a runner_state
+    # payload (the runner may serialize it as JSON null on the wire,
+    # which Ecto's cast would write through as nil and trip the
+    # NOT NULL constraint).
+    cast(runner, attrs, [:hostname, :labels, :runner_version, :packs])
   end
 
   def connected(%Runner{} = runner) do

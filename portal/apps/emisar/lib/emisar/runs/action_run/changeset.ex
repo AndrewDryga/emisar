@@ -10,9 +10,9 @@ defmodule Emisar.Runs.ActionRun.Changeset do
 
   @create_fields ~w[
     account_id runner_id request_id action_id args args_sha256
-    opts reason source requested_by_id api_key_id runbook_id
-    runbook_step_id policy_id policy_decision policy_reason
-    matched_rules requires_approval status queued_at
+    opts reason source requested_by_id api_key_id idempotency_key
+    runbook_id runbook_step_id policy_id policy_version policy_decision
+    policy_reason matched_rules requires_approval status queued_at
   ]a
 
   @transition_fields ~w[
@@ -29,6 +29,9 @@ defmodule Emisar.Runs.ActionRun.Changeset do
     |> validate_inclusion(:source, @sources)
     |> validate_inclusion(:status, @statuses)
     |> unique_constraint([:account_id, :request_id])
+    |> unique_constraint([:api_key_id, :idempotency_key],
+      name: :action_runs_api_key_idempotency_key_index
+    )
   end
 
   def transition(%ActionRun{} = run, status, attrs \\ %{}) do

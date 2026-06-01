@@ -7,8 +7,6 @@ defmodule EmisarWeb.Application do
 
   @impl true
   def start(_type, _args) do
-    :ok = EmisarWeb.RateLimiter.init()
-
     # Attach Sentry's :logger handler exactly once at boot. It's a
     # no-op when SENTRY_DSN isn't configured — Sentry.Client short-
     # circuits the upload. Wrapped so we don't crash a release if the
@@ -22,7 +20,18 @@ defmodule EmisarWeb.Application do
       # supervised shutdown (currently: the MCP long-poll test's
       # mid-poll DB flip, future async dispatch jobs).
       {Task.Supervisor, name: EmisarWeb.TaskSupervisor},
-      EmisarWeb.Endpoint
+      EmisarWeb.Endpoint,
+      # Sits AFTER the Endpoint so on SIGTERM it terminates first
+      # (`:one_for_one` shuts down in reverse-start order). Its
+      # `terminate/2` broadcasts `:runner_socket_drain` on PubSub so
+      # every connected runner socket can flush its outbound queue and
+      # send a shutdown envelope before the Endpoint closes the
+      # transports underneath them.
+      %{
+        id: EmisarWeb.RunnerSocketDrain,
+        start: {EmisarWeb.RunnerSocketDrain, :start_link, [[]]},
+        shutdown: 5_000
+      }
     ]
 
     # See https://hexdocs.pm/elixir/Supervisor.html

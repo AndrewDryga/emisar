@@ -28,6 +28,20 @@ defmodule Emisar.ApiKeys.ApiKey.Query do
     do: where(q, [api_keys: k], k.key_prefix == ^prefix)
 
   @doc """
+  Restricts to keys that carry the given scope. Uses Postgres array
+  containment so the index on `scopes` (if added later) covers it.
+  """
+  def with_scope(q \\ all(), scope) when is_binary(scope),
+    do: where(q, [api_keys: k], fragment("? = ANY(?)", ^scope, k.scopes))
+
+  @doc """
+  Restricts to keys that do NOT carry the given scope. Used to keep
+  audit-export tokens (audit:read) out of the LLM-bridge agents list.
+  """
+  def without_scope(q \\ all(), scope) when is_binary(scope),
+    do: where(q, [api_keys: k], fragment("NOT (? = ANY(?))", ^scope, k.scopes))
+
+  @doc """
   Auto-generated keys that no LLM has ever authenticated with — the
   pool that ring eviction draws from.
   """

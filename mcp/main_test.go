@@ -1,6 +1,9 @@
 package main
 
 import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 )
@@ -202,6 +205,84 @@ func TestIsFailureStatus(t *testing.T) {
 		if isFailureStatus(s) {
 			t.Errorf("expected %q to NOT count as failure", s)
 		}
+	}
+}
+
+// -- Layer 1: per-call idempotency key derivation --------------------
+//
+// The bridge mints an Idempotency-Key per JSON-RPC call so a transport
+// retry collapses to one run at the cloud. These pin the contract:
+// stable for a (session, id) pair, distinct across ids, absent for
+// notifications, and quote-normalized so numeric and string ids agree.
+
+func TestIdempotencyKey_StableForSameID(t *testing.T) {
+	b := &bridge{sessionID: "deadbeef"}
+	if got, want := b.idempotencyKey(json.RawMessage("1")), "deadbeef:1"; got != want {
+		t.Fatalf("key = %q, want %q", got, want)
+	}
+	if a, c := b.idempotencyKey(json.RawMessage("1")), b.idempotencyKey(json.RawMessage("1")); a != c {
+		t.Errorf("same id should yield same key: %q vs %q", a, c)
+	}
+}
+
+func TestIdempotencyKey_DiffersByID(t *testing.T) {
+	b := &bridge{sessionID: "deadbeef"}
+	if a, c := b.idempotencyKey(json.RawMessage("1")), b.idempotencyKey(json.RawMessage("2")); a == c {
+		t.Errorf("distinct ids must not collide: both %q", a)
+	}
+}
+
+func TestIdempotencyKey_EmptyForNotification(t *testing.T) {
+	b := &bridge{sessionID: "deadbeef"}
+	if got := b.idempotencyKey(json.RawMessage("")); got != "" {
+		t.Errorf("missing id should yield empty key, got %q", got)
+	}
+	if got := b.idempotencyKey(json.RawMessage("null")); got != "" {
+		t.Errorf("null id should yield empty key, got %q", got)
+	}
+}
+
+func TestIdempotencyKey_NormalizesStringID(t *testing.T) {
+	b := &bridge{sessionID: "s"}
+	if got := b.idempotencyKey(json.RawMessage(`"7"`)); got != "s:7" {
+		t.Errorf("string id should strip quotes: got %q, want %q", got, "s:7")
+	}
+}
+
+func TestNewSessionID_UniquePerProcess(t *testing.T) {
+	if newSessionID() == newSessionID() {
+		t.Error("two session ids collided — nonce isn't random")
+	}
+}
+
+// callTool must put the derived key on the wire as Idempotency-Key so
+// the cloud's dedup index can see it. A blank key must NOT set the
+// header at all (so the cloud treats it as a fresh, un-keyed dispatch).
+func TestCallTool_SendsIdempotencyHeader(t *testing.T) {
+	var gotKey string
+	var hadHeader bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotKey = r.Header.Get("Idempotency-Key")
+		_, hadHeader = r.Header["Idempotency-Key"]
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = w.Write([]byte(`{"runs":[{"status":"success","exit_code":0,"stdout":"ok"}]}`))
+	}))
+	defer srv.Close()
+
+	b := &bridge{baseURL: srv.URL, apiKey: "k", userAgent: "ua", http: srv.Client(), sessionID: "sess"}
+
+	if _, err := b.callTool("linux.uptime", map[string]any{"reason": "t"}, "sess:7"); err != nil {
+		t.Fatalf("callTool: %v", err)
+	}
+	if gotKey != "sess:7" {
+		t.Errorf("Idempotency-Key = %q, want %q", gotKey, "sess:7")
+	}
+
+	if _, err := b.callTool("linux.uptime", map[string]any{"reason": "t"}, ""); err != nil {
+		t.Fatalf("callTool (no key): %v", err)
+	}
+	if hadHeader {
+		t.Error("empty key must not set the Idempotency-Key header at all")
 	}
 }
 

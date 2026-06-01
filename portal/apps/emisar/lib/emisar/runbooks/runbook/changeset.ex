@@ -2,7 +2,7 @@ defmodule Emisar.Runbooks.Runbook.Changeset do
   use Emisar, :changeset
   alias Emisar.Runbooks.Runbook
 
-  @statuses ~w(draft published archived)
+  @statuses ~w(draft published)
   @fields ~w[name slug title description status definition version]a
 
   def create(account_id, user_id, attrs) do
@@ -16,9 +16,6 @@ defmodule Emisar.Runbooks.Runbook.Changeset do
   def update(%Runbook{} = runbook, attrs) do
     runbook |> cast(attrs, @fields) |> changeset()
   end
-
-  def archive(%Runbook{} = runbook),
-    do: change(runbook, status: "archived", archived_at: now())
 
   def delete(%Runbook{} = runbook),
     do: change(runbook, deleted_at: now())

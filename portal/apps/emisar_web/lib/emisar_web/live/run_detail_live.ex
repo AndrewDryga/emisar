@@ -70,9 +70,10 @@ defmodule EmisarWeb.RunDetailLive do
 
   def render(assigns) do
     ~H"""
-    <.dashboard_shell
+    <.dashboard_shell pending_approvals_count={@pending_approvals_count}
       current_user={@current_user}
       current_account={@current_account}
+      switchable_accounts={@switchable_accounts}
       flash={@flash}
       section={:runs}
     >
@@ -84,7 +85,6 @@ defmodule EmisarWeb.RunDetailLive do
         </span>
       </:title>
       <:actions>
-        <.status_badge status={@run.status} />
         <button
           :if={@run.status in ["sent", "running", "pending"] and Permissions.can?(assigns, :cancel_run)}
           phx-click="cancel"
@@ -95,10 +95,15 @@ defmodule EmisarWeb.RunDetailLive do
         </button>
       </:actions>
 
-      <%!-- Single horizontal meta strip — runner, source, duration,
-           exit, when, request_id. Replaces the old Summary card +
-           Policy card grid that filled the space above the output. --%>
+      <%!-- Single horizontal meta strip — status leads (so a glance
+           tells you the run state without hunting the top-right
+           corner), then runner, source, duration, exit, when. Request
+           ID used to live in the last cell — it was low-signal debug
+           trace; status earns the slot. --%>
       <.meta_strip cols={6}>
+        <.meta_field label="Status">
+          <.status_badge status={@run.status} />
+        </.meta_field>
         <.meta_field label="Runner">
           <.link
             navigate={~p"/app/runners/#{@run.runner_id}"}
@@ -124,14 +129,14 @@ defmodule EmisarWeb.RunDetailLive do
         <.meta_field label="Started">
           <.local_time value={@run.inserted_at} class="text-zinc-200" />
         </.meta_field>
-        <.meta_field label="Request ID">
-          <span class="truncate font-mono text-xs text-zinc-400">{@run.request_id}</span>
-        </.meta_field>
       </.meta_strip>
 
-      <%!-- Approval banner — only when pending. Loud amber. --%>
+      <%!-- Approval banner — fires for both flavors of "needs human"
+           status (`pending_approval` is what dispatch_run writes;
+           `awaiting_approval` lingers from older code paths + seeds).
+           Loud amber + a one-click jump to the approval page. --%>
       <div
-        :if={@run.status == "pending_approval" and @approval_request}
+        :if={@run.status in ["pending_approval", "awaiting_approval"] and @approval_request}
         class="mt-4 flex items-center justify-between gap-4 rounded-xl border border-amber-500/30 bg-amber-500/[0.06] p-4"
       >
         <div class="flex items-start gap-3">
@@ -140,9 +145,7 @@ defmodule EmisarWeb.RunDetailLive do
             <div class="text-sm font-semibold text-amber-100">Waiting on approval</div>
             <p class="mt-1 text-xs text-amber-200/80">
               This run is held until an approver decides.
-              <span :if={@run.policy_reason}>
-                Policy: <span class="font-mono">{@run.policy_reason}</span>.
-              </span>
+              <span :if={@run.policy_reason}>Policy: {@run.policy_reason}.</span>
             </p>
           </div>
         </div>
@@ -169,52 +172,79 @@ defmodule EmisarWeb.RunDetailLive do
         </div>
       </div>
 
-      <%!-- Reason + Policy decision side-by-side. When both exist,
-           operators need both — operator's "why" + policy's "why
-           approval/why denied". --%>
-      <div
-        :if={(@run.reason && @run.reason != "") or @run.policy_decision}
-        class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2"
+      <%!-- Operator's reason. Single column — the policy decision
+           used to live next to it but became a redundant side panel
+           (chip echoed the decision, reason text repeated it). Policy
+           is now an inline strip below when it carries signal. --%>
+      <section
+        :if={@run.reason && @run.reason != ""}
+        class="mt-4 rounded-xl border border-zinc-900 bg-zinc-950/40 p-4"
       >
-        <section
-          :if={@run.reason && @run.reason != ""}
-          class="rounded-xl border border-zinc-900 bg-zinc-950/40 p-4"
-        >
-          <h3 class="text-xs font-semibold uppercase tracking-wider text-zinc-500">
-            Operator's reason
-          </h3>
-          <p class="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-zinc-200">
-            {@run.reason}
-          </p>
-        </section>
+        <h3 class="text-xs font-semibold uppercase tracking-wider text-zinc-500">
+          Operator's reason
+        </h3>
+        <p class="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-zinc-200">
+          {@run.reason}
+        </p>
+      </section>
 
-        <section
-          :if={@run.policy_decision}
-          class="rounded-xl border border-zinc-900 bg-zinc-950/40 p-4"
-        >
-          <h3 class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-zinc-500">
-            Policy decision
-            <span class={[
-              "rounded px-1.5 py-0.5 font-mono text-[10px] normal-case",
-              policy_decision_class(@run.policy_decision)
-            ]}>{@run.policy_decision}</span>
-          </h3>
-          <p
-            :if={@run.policy_reason && @run.policy_reason != ""}
-            class="mt-2 text-sm leading-relaxed text-zinc-200"
-          >
-            {@run.policy_reason}
-          </p>
-          <div :if={matched_rules_label(@run.matched_rules) != "—"} class="mt-2 text-xs text-zinc-500">
-            Matched: <span class="font-mono text-zinc-400">{matched_rules_label(@run.matched_rules)}</span>
-          </div>
-        </section>
+      <%!-- Policy decision strip — single horizontal line. Hidden for
+           `allow` (the boring default the run wouldn't exist without).
+           For `require_approval`/`deny`, shows the chip + reason +
+           matched rules inline so there's no duplicated decision and
+           no whole-section visual weight for what's effectively one
+           data point. --%>
+      <div
+        :if={show_policy?(@run)}
+        class="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border border-zinc-900 bg-zinc-950/40 px-4 py-2.5 text-sm"
+      >
+        <span class="text-xs font-semibold uppercase tracking-wider text-zinc-500">
+          Policy
+        </span>
+        <span class={[
+          "rounded px-1.5 py-0.5 font-mono text-[10px]",
+          policy_decision_class(@run.policy_decision)
+        ]}>{@run.policy_decision}</span>
+        <span
+          :if={@run.policy_reason && @run.policy_reason != ""}
+          class="text-zinc-300"
+        >{@run.policy_reason}</span>
+        <span :if={matched_rules_label(@run.matched_rules) != "—"} class="text-xs text-zinc-500">
+          · Matched <span class="font-mono text-zinc-400">{matched_rules_label(@run.matched_rules)}</span>
+        </span>
+        <span :if={is_integer(@run.policy_version)} class="text-xs text-zinc-500">
+          · Policy <span class="font-mono text-zinc-400">v{@run.policy_version}</span>
+        </span>
       </div>
+
+      <%!-- Arguments before output. Operators read the page top→down:
+           "what was called → what came back". Putting args first
+           groups all the input context (reason, policy, args) above
+           the result, so the operator doesn't have to scroll past a
+           tall output panel to recall what was actually invoked. --%>
+      <section
+        :if={@run.args && @run.args != %{}}
+        class="mt-6 overflow-hidden rounded-xl border border-zinc-900 bg-zinc-950/40"
+      >
+        <header class="flex items-center justify-between border-b border-zinc-900 px-4 py-2">
+          <h3 class="text-xs font-semibold uppercase tracking-wider text-zinc-400">Arguments</h3>
+          <span :if={@run.args_sha256} class="font-mono text-[11px] text-zinc-500">
+            sha256:{String.slice(@run.args_sha256, 0, 16)}…
+          </span>
+        </header>
+        <pre class="max-h-64 overflow-auto bg-black/40 p-4 font-mono text-xs text-zinc-300">{format_json(@run.args)}</pre>
+      </section>
 
       <%!-- Output stream — the main event. Full width, large, dark
            terminal-style background. Stderr lines render in rose so
-           a failure jumps out. --%>
-      <section class="mt-6 overflow-hidden rounded-xl border border-zinc-900">
+           a failure jumps out. Hidden entirely for statuses where
+           the panel would just be blank (cancelled, denied, anything
+           still awaiting approval) — saves the operator from staring
+           at an empty terminal. --%>
+      <section
+        :if={show_output?(@run)}
+        class="mt-6 overflow-hidden rounded-xl border border-zinc-900"
+      >
         <header class="flex items-center justify-between border-b border-zinc-900 bg-zinc-950/60 px-4 py-2">
           <h3 class="text-xs font-semibold uppercase tracking-wider text-zinc-400">
             Output
@@ -235,22 +265,6 @@ defmodule EmisarWeb.RunDetailLive do
             ]}
           >{event_chunk(event)}</div>
         </div>
-      </section>
-
-      <%!-- Args + SHA at the bottom — secondary. Operators usually
-           know what they sent; the value is for "what exactly did the
-           LLM call this with?" diff comparison. --%>
-      <section
-        :if={@run.args && @run.args != %{}}
-        class="mt-6 overflow-hidden rounded-xl border border-zinc-900 bg-zinc-950/40"
-      >
-        <header class="flex items-center justify-between border-b border-zinc-900 px-4 py-2">
-          <h3 class="text-xs font-semibold uppercase tracking-wider text-zinc-400">Arguments</h3>
-          <span :if={@run.args_sha256} class="font-mono text-[11px] text-zinc-500">
-            sha256:{String.slice(@run.args_sha256, 0, 16)}…
-          </span>
-        </header>
-        <pre class="max-h-64 overflow-auto bg-black/40 p-4 font-mono text-xs text-zinc-300">{format_json(@run.args)}</pre>
       </section>
     </.dashboard_shell>
     """
@@ -273,6 +287,26 @@ defmodule EmisarWeb.RunDetailLive do
   defp runner_label(%Emisar.Runners.Runner{name: name}) when is_binary(name) and name != "", do: name
   defp runner_label(%Emisar.Runners.Runner{hostname: host}) when is_binary(host) and host != "", do: host
   defp runner_label(_), do: "Unknown runner"
+
+  # `allow` is the implicit happy path — if the run dispatched at all
+  # we already know policy let it through. Showing the strip just
+  # adds visual noise to every list-of-runs detail page. Surface it
+  # only when policy actually intervened (held for approval, denied)
+  # or when policy somehow recorded a non-allow without a status flip.
+  defp show_policy?(%{policy_decision: nil}), do: false
+  defp show_policy?(%{policy_decision: "allow"}), do: false
+  defp show_policy?(%{policy_decision: _}), do: true
+
+  # No point staring at a black terminal for a run that never made it
+  # to the runner. Cancelled / denied / still-awaiting-approval runs
+  # don't produce output; surfacing the panel just signals "broken".
+  # Everything else (sent / running / success / failed / errored) gets
+  # the panel — empty is fine because chunks stream in via PubSub.
+  defp show_output?(%{status: status})
+       when status in ["cancelled", "denied", "pending_approval", "awaiting_approval", "pending"],
+       do: false
+
+  defp show_output?(_), do: true
 
   defp policy_decision_class("allow"), do: "bg-emerald-500/10 text-emerald-300 ring-1 ring-emerald-500/30"
   defp policy_decision_class("require_approval"), do: "bg-amber-500/10 text-amber-300 ring-1 ring-amber-500/30"

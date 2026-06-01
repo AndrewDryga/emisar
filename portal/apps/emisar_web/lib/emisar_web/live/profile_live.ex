@@ -13,6 +13,7 @@ defmodule EmisarWeb.ProfileLive do
      |> assign(:mfa_secret, nil)
      |> assign(:mfa_uri, nil)
      |> assign(:mfa_qr_svg, nil)
+     |> assign(:mfa_recovery_codes, nil)
      |> assign(:current_session_token, session["user_token"])
      |> assign_profile_form(user)
      |> assign_email_form(user)
@@ -80,13 +81,42 @@ defmodule EmisarWeb.ProfileLive do
 
   def handle_event("change_password", %{"password" => params}, socket) do
     user = socket.assigns.current_user
+    subject = socket.assigns.current_subject
+    current_token = socket.assigns.current_session_token
 
-    case change_password(user, params) do
-      :ok ->
-        {:noreply, socket |> put_flash(:info, "Password updated.") |> assign_password_form()}
+    current = params["current_password"] || ""
+    new = params["password"] || ""
+    confirm = params["password_confirmation"] || ""
 
-      {:error, message} ->
-        {:noreply, put_flash(socket, :error, message)}
+    cond do
+      new != confirm ->
+        {:noreply, put_flash(socket, :error, "New passwords don't match.")}
+
+      true ->
+        case Accounts.change_user_password(user, current, new, subject) do
+          {:ok, _updated} ->
+            # A successful password change blows the old credential — log out
+            # every other device immediately, both at the DB layer (cookie no
+            # longer resolves) and over PubSub (open LV tabs hard-disconnect).
+            if is_binary(current_token) do
+              _ = Auth.revoke_and_disconnect_other_sessions!(user, current_token)
+            end
+
+            {:noreply,
+             socket
+             |> put_flash(:info, "Password updated. Other devices were signed out.")
+             |> assign_password_form()
+             |> load_sessions()}
+
+          {:error, :invalid_current_password} ->
+            {:noreply, put_flash(socket, :error, "Current password is incorrect.")}
+
+          {:error, :password_too_short} ->
+            {:noreply, put_flash(socket, :error, "Use at least 12 characters.")}
+
+          {:error, _cs} ->
+            {:noreply, put_flash(socket, :error, "Could not update password.")}
+        end
     end
   end
 
@@ -105,7 +135,7 @@ defmodule EmisarWeb.ProfileLive do
   def handle_event("revoke_other_sessions", _params, socket) do
     user = socket.assigns.current_user
     keep = socket.assigns.current_session_token
-    n = Auth.revoke_other_sessions!(user, keep)
+    n = Auth.revoke_and_disconnect_other_sessions!(user, keep)
 
     msg =
       case n do
@@ -152,12 +182,13 @@ defmodule EmisarWeb.ProfileLive do
 
       true ->
         case Auth.enable_mfa(user, secret, otp) do
-          {:ok, updated} ->
+          {:ok, updated, recovery_codes} ->
             {:noreply,
              socket
-             |> put_flash(:info, "MFA enabled.")
+             |> put_flash(:info, "MFA enabled. Copy your recovery codes below — they'll only be shown once.")
              |> assign(:current_user, updated)
              |> assign(:mfa_enabled?, true)
+             |> assign(:mfa_recovery_codes, recovery_codes)
              |> assign(:mfa_secret, nil)
              |> assign(:mfa_uri, nil)
              |> assign(:mfa_qr_svg, nil)}
@@ -171,6 +202,27 @@ defmodule EmisarWeb.ProfileLive do
     end
   end
 
+  def handle_event("regenerate_recovery_codes", _params, socket) do
+    case Auth.regenerate_mfa_recovery_codes(socket.assigns.current_user) do
+      {:ok, updated, codes} ->
+        {:noreply,
+         socket
+         |> put_flash(:info, "New recovery codes generated. Old codes are now invalid.")
+         |> assign(:current_user, updated)
+         |> assign(:mfa_recovery_codes, codes)}
+
+      {:error, :mfa_not_enabled} ->
+        {:noreply, put_flash(socket, :error, "Enable MFA first.")}
+
+      {:error, _cs} ->
+        {:noreply, put_flash(socket, :error, "Could not generate recovery codes.")}
+    end
+  end
+
+  def handle_event("dismiss_recovery_codes", _params, socket) do
+    {:noreply, assign(socket, :mfa_recovery_codes, nil)}
+  end
+
   def handle_event("disable_mfa", _params, socket) do
     case Auth.disable_mfa(socket.assigns.current_user) do
       {:ok, updated} ->
@@ -178,43 +230,13 @@ defmodule EmisarWeb.ProfileLive do
          socket
          |> put_flash(:info, "MFA disabled.")
          |> assign(:current_user, updated)
-         |> assign(:mfa_enabled?, false)}
+         |> assign(:mfa_enabled?, false)
+         |> assign(:mfa_recovery_codes, nil)}
 
       {:error, _cs} ->
         {:noreply, put_flash(socket, :error, "Could not disable MFA.")}
     end
   end
-
-  defp change_password(user, params) do
-    current = params["current_password"] || ""
-    new = params["password"] || ""
-    confirm = params["password_confirmation"] || ""
-
-    with :ok <- verify_current_password(user, current),
-         :ok <- verify_passwords_match(new, confirm),
-         :ok <- verify_password_length(new) do
-      user
-      |> Emisar.Accounts.User.Changeset.password(%{password: new})
-      |> Emisar.Repo.update()
-      |> case do
-        {:ok, _} -> :ok
-        {:error, _cs} -> {:error, "Could not update password."}
-      end
-    end
-  end
-
-  defp verify_current_password(user, current) do
-    case Auth.fetch_user_by_email_and_password(user.email, current) do
-      {:error, :not_found} -> {:error, "Current password is incorrect."}
-      _ -> :ok
-    end
-  end
-
-  defp verify_passwords_match(new, new), do: :ok
-  defp verify_passwords_match(_, _), do: {:error, "New passwords don't match."}
-
-  defp verify_password_length(new) when byte_size(new) >= 12, do: :ok
-  defp verify_password_length(_), do: {:error, "Use at least 12 characters."}
 
   defp mfa_enabled?(%{mfa_enabled_at: nil}), do: false
   defp mfa_enabled?(%{mfa_enabled_at: %DateTime{}}), do: true
@@ -307,9 +329,10 @@ defmodule EmisarWeb.ProfileLive do
 
   def render(assigns) do
     ~H"""
-    <.dashboard_shell
+    <.dashboard_shell pending_approvals_count={@pending_approvals_count}
       current_user={@current_user}
       current_account={@current_account}
+      switchable_accounts={@switchable_accounts}
       flash={@flash}
       section={:profile}
     >
@@ -417,18 +440,85 @@ defmodule EmisarWeb.ProfileLive do
           </:meta>
 
           <%= cond do %>
+            <% @mfa_recovery_codes -> %>
+              <%!-- One-shot reveal — codes are only shown right after
+                   enable / regenerate. The card forces an explicit
+                   "I saved them" before the user can close. --%>
+              <div class="rounded-xl border border-amber-500/40 bg-amber-500/[0.06] p-4">
+                <h3 class="text-sm font-semibold text-amber-100">Save your recovery codes</h3>
+                <p class="mt-1 text-xs text-amber-200/90">
+                  Each code works once if you can't reach your authenticator. Store them in a
+                  password manager — we can't show them again.
+                </p>
+
+                <%!-- Single-column list of full-width, monospace, high-
+                     contrast cells. Each cell is itself a copy-to-
+                     clipboard button so a user can grab one code without
+                     selecting text. The hidden <code id> below holds the
+                     newline-joined block for the "Copy all" button. --%>
+                <ul class="mt-3 space-y-1.5">
+                  <li :for={code <- @mfa_recovery_codes}>
+                    <button
+                      type="button"
+                      id={"mfa-code-#{code}"}
+                      phx-hook="CopyToClipboard"
+                      data-clipboard-text={code}
+                      data-clipboard-copied="Copied!"
+                      data-clipboard-restore={code}
+                      class="block w-full select-all rounded-md border border-amber-500/40 bg-black/60 px-3 py-2 text-left font-mono text-sm tracking-wide text-amber-50 hover:border-amber-400 hover:bg-black/80"
+                      title="Click to copy this code"
+                    >{code}</button>
+                  </li>
+                </ul>
+
+                <code
+                  id="mfa-recovery-codes-blob"
+                  class="hidden"
+                >{Enum.join(@mfa_recovery_codes, "\n")}</code>
+
+                <div class="mt-4 flex flex-wrap items-center gap-3">
+                  <button
+                    type="button"
+                    id="copy-recovery-codes"
+                    phx-hook="CopyToClipboard"
+                    data-clipboard-target="#mfa-recovery-codes-blob"
+                    data-clipboard-copied="Copied!"
+                    data-clipboard-restore="Copy all"
+                    class="rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-semibold text-amber-950 hover:bg-amber-400"
+                  >
+                    Copy all
+                  </button>
+                  <button
+                    type="button"
+                    phx-click="dismiss_recovery_codes"
+                    data-confirm="Got them stored somewhere safe?"
+                    class="rounded-lg border border-zinc-700 px-3 py-1.5 text-xs font-medium text-zinc-300 hover:bg-zinc-900"
+                  >
+                    I've saved them
+                  </button>
+                </div>
+              </div>
             <% @mfa_enabled? -> %>
               <p class="text-sm text-zinc-300">
                 You're protected by a second factor. Disabling means a stolen password is enough
                 to sign in.
               </p>
-              <button
-                phx-click="disable_mfa"
-                data-confirm="Disable MFA on your account?"
-                class="mt-4 rounded-lg border border-rose-500/40 px-3 py-1.5 text-sm font-medium text-rose-200 hover:bg-rose-500/10"
-              >
-                Disable MFA
-              </button>
+              <div class="mt-4 flex flex-wrap items-center gap-3">
+                <button
+                  phx-click="regenerate_recovery_codes"
+                  data-confirm="Generate a new set of recovery codes? Old codes will stop working."
+                  class="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm font-medium text-zinc-200 hover:bg-zinc-900"
+                >
+                  Regenerate recovery codes
+                </button>
+                <button
+                  phx-click="disable_mfa"
+                  data-confirm="Disable MFA on your account?"
+                  class="rounded-lg border border-rose-500/40 px-3 py-1.5 text-sm font-medium text-rose-200 hover:bg-rose-500/10"
+                >
+                  Disable MFA
+                </button>
+              </div>
             <% @mfa_uri -> %>
               <div class="grid grid-cols-1 gap-6 sm:grid-cols-[auto_1fr]">
                 <div class="flex flex-col items-center gap-2">

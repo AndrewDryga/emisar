@@ -40,7 +40,16 @@ defmodule Emisar.Fixtures do
   @doc "Subject for a fresh user + account pair as the account owner."
   def owner_subject_fixture(account_attrs \\ %{}) do
     user = user_fixture()
-    {:ok, account} = Accounts.create_account_with_owner(Map.new(account_attrs), user)
+
+    base = %{
+      name: unique_account_name(),
+      slug: unique_slug(),
+      plan: "free"
+    }
+
+    {:ok, account} =
+      Accounts.create_account_with_owner(Map.merge(base, Map.new(account_attrs)), user)
+
     subject = subject_for(user, account, role: :owner)
     {user, account, subject}
   end

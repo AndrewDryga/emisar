@@ -62,26 +62,15 @@ defmodule EmisarWeb.MagicLinkLive do
   end
 
   def handle_event("send", %{"user" => %{"email" => email}}, socket) do
-    # 3 magic-links per email per 10 min. Higher than sign-in because
-    # mistyped emails are common; lower than nothing because
-    # uncontrolled magic-link sending is an email-bombing primitive.
-    case EmisarWeb.RateLimiter.check("magic_link:" <> String.downcase(email || ""), 3, 600_000) do
-      :ok ->
-        case Accounts.fetch_user_by_email(email) do
-          {:ok, user} ->
-            token = Auth.issue_magic_link_token!(user)
-            Mailers.UserNotifier.deliver_magic_link(user, token)
+    case Accounts.fetch_user_by_email(email) do
+      {:ok, user} ->
+        token = Auth.issue_magic_link_token!(user)
+        Mailers.UserNotifier.deliver_magic_link(user, token)
 
-          {:error, :not_found} ->
-            :ok
-        end
-
-        {:noreply, assign(socket, :sent_to, email)}
-
-      {:error, :rate_limited, _ms} ->
-        # Same UX as success (don't leak whether email is throttled vs
-        # delivered). The user sees the same "check your inbox" screen.
-        {:noreply, assign(socket, :sent_to, email)}
+      {:error, :not_found} ->
+        :ok
     end
+
+    {:noreply, assign(socket, :sent_to, email)}
   end
 end

@@ -372,6 +372,7 @@ defmodule Emisar.Billing do
       plan_def = plan(account.plan) || plan("free")
       runner_count = current_count(account, :runners)
       member_count = current_count(account, :members)
+      subscription = peek_subscription_for_account(account.id)
 
       {:ok,
        %{
@@ -387,7 +388,13 @@ defmodule Emisar.Billing do
              nil -> nil
              n -> n * runner_count
            end,
-         audit_retention_days: plan_def.audit_retention_days
+         audit_retention_days: plan_def.audit_retention_days,
+         # Subscription state mirrored from Paddle webhooks. nil when
+         # the account is on a free plan and has never subscribed.
+         subscription_status: subscription && subscription.status,
+         current_period_end: subscription && subscription.current_period_end,
+         cancel_at_period_end: subscription && subscription.cancel_at_period_end,
+         trial_end: subscription && subscription.trial_end
        }}
     end
   end

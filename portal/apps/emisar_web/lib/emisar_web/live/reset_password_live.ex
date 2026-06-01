@@ -94,24 +94,16 @@ defmodule EmisarWeb.ResetPasswordLive do
   end
 
   def handle_event("request", %{"user" => %{"email" => email}}, socket) do
-    # 3 reset requests per email per 10 min (same shape as magic-link).
-    case EmisarWeb.RateLimiter.check("pw_reset:" <> String.downcase(email || ""), 3, 600_000) do
-      :ok ->
-        case Accounts.fetch_user_by_email(email) do
-          {:ok, user} ->
-            token = Auth.issue_password_reset_token!(user)
-            Mailers.UserNotifier.deliver_password_reset(user, token)
+    case Accounts.fetch_user_by_email(email) do
+      {:ok, user} ->
+        token = Auth.issue_password_reset_token!(user)
+        Mailers.UserNotifier.deliver_password_reset(user, token)
 
-          {:error, :not_found} ->
-            :ok
-        end
-
-        {:noreply, assign(socket, :sent_to, email)}
-
-      {:error, :rate_limited, _ms} ->
-        # Same UX as success — don't leak that the address is throttled.
-        {:noreply, assign(socket, :sent_to, email)}
+      {:error, :not_found} ->
+        :ok
     end
+
+    {:noreply, assign(socket, :sent_to, email)}
   end
 
   def handle_event("reset", %{"user" => %{"password" => password, "password_confirmation" => confirmation}}, socket) do

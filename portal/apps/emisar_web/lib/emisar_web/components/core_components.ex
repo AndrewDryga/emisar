@@ -775,10 +775,19 @@ defmodule EmisarWeb.CoreComponents do
   @doc """
   Shell for authenticated product pages: sidebar + topbar + main.
   Expects @current_user, @current_account in assigns.
+  `:pending_approvals_count` is set by the `:track_pending_approvals`
+  on_mount hook (UserAuth) — defaults to 0 so the shell still renders
+  in test contexts that haven't gone through the hook.
+  `:switchable_accounts` is the full list of accounts the user can
+  pick from (including the current one); defaults to a list with just
+  the current account so the shell still renders without the on_mount
+  hook in unit tests.
   """
   attr :current_user, :map, required: true
   attr :current_account, :map, required: true
+  attr :switchable_accounts, :list, default: nil
   attr :section, :atom, default: :dashboard
+  attr :pending_approvals_count, :integer, default: 0
   attr :flash, :map, default: %{}
 
   slot :inner_block, required: true
@@ -793,8 +802,11 @@ defmodule EmisarWeb.CoreComponents do
            icon) stays reachable on tall pages instead of being pushed
            off-screen by content height. --%>
       <aside class="hidden w-64 flex-shrink-0 flex-col border-r border-zinc-900 bg-zinc-950/80 lg:sticky lg:top-0 lg:flex lg:h-screen">
-        <.shell_brand current_account={@current_account} />
-        <.shell_nav section={@section} />
+        <.shell_brand
+          current_account={@current_account}
+          switchable_accounts={@switchable_accounts || [@current_account]}
+        />
+        <.shell_nav section={@section} pending_approvals_count={@pending_approvals_count} />
         <.shell_user current_user={@current_user} />
       </aside>
 
@@ -816,7 +828,10 @@ defmodule EmisarWeb.CoreComponents do
         </div>
         <aside class="relative flex h-full w-72 max-w-[80vw] flex-col border-r border-zinc-900 bg-zinc-950 shadow-2xl">
           <div class="flex items-center justify-between border-b border-zinc-900 px-4 py-3">
-            <.shell_brand current_account={@current_account} />
+            <.shell_brand
+              current_account={@current_account}
+              switchable_accounts={@switchable_accounts || [@current_account]}
+            />
             <button
               type="button"
               aria-label="Close menu"
@@ -826,7 +841,7 @@ defmodule EmisarWeb.CoreComponents do
               <.icon name="hero-x-mark" class="h-5 w-5" />
             </button>
           </div>
-          <.shell_nav section={@section} />
+          <.shell_nav section={@section} pending_approvals_count={@pending_approvals_count} />
           <.shell_user current_user={@current_user} />
         </aside>
       </div>
@@ -862,25 +877,77 @@ defmodule EmisarWeb.CoreComponents do
   # -- shell sub-components (shared between desktop + mobile) ----------
 
   attr :current_account, :map, required: true
+  attr :switchable_accounts, :list, required: true
 
   defp shell_brand(assigns) do
+    others =
+      Enum.reject(assigns.switchable_accounts, &(&1.id == assigns.current_account.id))
+
+    assigns = assign(assigns, :other_accounts, others)
+
     ~H"""
-    <.link
-      navigate={~p"/app"}
-      phx-click={JS.hide(to: "#mobile-nav") |> JS.remove_class("overflow-hidden", to: "body")}
-      class="flex h-16 items-center gap-3 px-2 transition hover:bg-zinc-900/40 lg:border-b lg:border-zinc-900 lg:px-6"
-      aria-label="Go to dashboard"
-    >
-      <img src={~p"/images/emisar-icon.svg"} alt="" class="h-8 w-8 shrink-0" />
-      <div class="min-w-0">
-        <div class="truncate font-bold tracking-tight">emisar</div>
-        <div class="truncate text-xs text-zinc-500">{@current_account.name}</div>
+    <details class="group relative border-b border-zinc-900">
+      <summary class="flex h-16 cursor-pointer list-none items-center gap-3 px-2 transition hover:bg-zinc-900/40 lg:px-6">
+        <img src={~p"/images/emisar-icon.svg"} alt="" class="h-8 w-8 shrink-0" />
+        <div class="min-w-0 flex-1">
+          <div class="truncate font-bold tracking-tight">emisar</div>
+          <div class="truncate text-xs text-zinc-500">{@current_account.name}</div>
+        </div>
+        <.icon
+          name="hero-chevron-up-down"
+          class="h-4 w-4 shrink-0 text-zinc-500 transition group-open:text-zinc-300"
+        />
+      </summary>
+
+      <div class="absolute left-2 right-2 top-full z-30 mt-1 overflow-hidden rounded-lg border border-zinc-800 bg-zinc-950 shadow-2xl lg:left-4 lg:right-4">
+        <div class="border-b border-zinc-900 px-3 py-2">
+          <p class="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
+            Switch workspace
+          </p>
+        </div>
+
+        <ul class="max-h-[60vh] overflow-y-auto py-1">
+          <li>
+            <div class="flex items-center gap-2 px-3 py-2 text-sm">
+              <.icon name="hero-check" class="h-4 w-4 shrink-0 text-emerald-400" />
+              <span class="truncate font-medium">{@current_account.name}</span>
+            </div>
+          </li>
+          <%= for account <- @other_accounts do %>
+            <li>
+              <form action={~p"/app/accounts/switch"} method="post" class="contents">
+                <input type="hidden" name="_csrf_token" value={Phoenix.Controller.get_csrf_token()} />
+                <input type="hidden" name="account_id" value={account.id} />
+                <button
+                  type="submit"
+                  class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-zinc-200 transition hover:bg-zinc-900"
+                >
+                  <span class="grid h-4 w-4 shrink-0 place-items-center rounded-sm bg-zinc-800 text-[10px] font-semibold uppercase text-zinc-400">
+                    {String.first(account.name)}
+                  </span>
+                  <span class="truncate">{account.name}</span>
+                </button>
+              </form>
+            </li>
+          <% end %>
+        </ul>
+
+        <div class="border-t border-zinc-900 p-1">
+          <.link
+            navigate={~p"/onboarding"}
+            class="flex items-center gap-2 rounded-md px-3 py-2 text-sm text-zinc-300 transition hover:bg-zinc-900 hover:text-zinc-100"
+          >
+            <.icon name="hero-plus" class="h-4 w-4 shrink-0" />
+            <span>Create new workspace</span>
+          </.link>
+        </div>
       </div>
-    </.link>
+    </details>
     """
   end
 
   attr :section, :atom, required: true
+  attr :pending_approvals_count, :integer, default: 0
 
   defp shell_nav(assigns) do
     ~H"""
@@ -910,7 +977,12 @@ defmodule EmisarWeb.CoreComponents do
 
       <.nav_group label="Operations" />
       <.nav_link to={~p"/app/runs"} active={@section == :runs} icon="hero-bolt">Runs</.nav_link>
-      <.nav_link to={~p"/app/approvals"} active={@section == :approvals} icon="hero-shield-check">
+      <.nav_link
+        to={~p"/app/approvals"}
+        active={@section == :approvals}
+        icon="hero-shield-check"
+        badge={@pending_approvals_count}
+      >
         Approvals
       </.nav_link>
       <.nav_link to={~p"/app/runbooks"} active={@section == :runbooks} icon="hero-book-open">
@@ -918,6 +990,9 @@ defmodule EmisarWeb.CoreComponents do
       </.nav_link>
       <.nav_link to={~p"/app/policies"} active={@section == :policies} icon="hero-document-text">
         Policy
+      </.nav_link>
+      <.nav_link to={~p"/app/packs"} active={@section == :packs} icon="hero-cube">
+        Packs
       </.nav_link>
       <.nav_link to={~p"/app/audit"} active={@section == :audit} icon="hero-list-bullet">
         Audit
@@ -1018,6 +1093,14 @@ defmodule EmisarWeb.CoreComponents do
   attr :to, :string, required: true
   attr :active, :boolean, default: false
   attr :icon, :string, required: true
+
+  attr :badge, :any,
+    default: nil,
+    doc:
+      "Optional notification count rendered as a pill on the right edge. `nil` / `0` / `false` " <>
+        "hide the badge; positive integers render as e.g. `3`; values ≥ 100 render as `99+` so " <>
+        "the pill never overflows the rail."
+
   slot :inner_block, required: true
 
   def nav_link(assigns) do
@@ -1032,10 +1115,22 @@ defmodule EmisarWeb.CoreComponents do
       ]}
     >
       <.icon name={@icon} class="h-4 w-4" />
-      <span>{render_slot(@inner_block)}</span>
+      <span class="flex-1">{render_slot(@inner_block)}</span>
+      <span
+        :if={badge_visible?(@badge)}
+        class="rounded-full bg-amber-500/20 px-2 py-0.5 text-[10px] font-semibold leading-none text-amber-200 ring-1 ring-inset ring-amber-500/30"
+      >
+        {badge_label(@badge)}
+      </span>
     </.link>
     """
   end
+
+  defp badge_visible?(n) when is_integer(n) and n > 0, do: true
+  defp badge_visible?(_), do: false
+
+  defp badge_label(n) when is_integer(n) and n >= 100, do: "99+"
+  defp badge_label(n) when is_integer(n), do: Integer.to_string(n)
 
   @doc "Coloured pill for run/runner status."
   attr :status, :string, required: true
@@ -1063,7 +1158,6 @@ defmodule EmisarWeb.CoreComponents do
   defp status_classes("draft"), do: "bg-zinc-500/10 text-zinc-300 ring-zinc-500/30"
   defp status_classes("pending"), do: "bg-zinc-500/10 text-zinc-300 ring-zinc-500/30"
   defp status_classes("disconnected"), do: "bg-zinc-500/10 text-zinc-400 ring-zinc-500/30"
-  defp status_classes("archived"), do: "bg-zinc-500/10 text-zinc-500 ring-zinc-500/30"
   defp status_classes("awaiting_approval"), do: "bg-amber-500/10 text-amber-300 ring-amber-500/30"
   defp status_classes("pending_approval"), do: "bg-amber-500/10 text-amber-300 ring-amber-500/30"
   defp status_classes("cancelled"), do: "bg-zinc-500/10 text-zinc-400 ring-zinc-500/30"
@@ -1085,7 +1179,6 @@ defmodule EmisarWeb.CoreComponents do
   defp status_dot("draft"), do: "bg-zinc-500"
   defp status_dot("pending"), do: "bg-zinc-500"
   defp status_dot("disconnected"), do: "bg-zinc-600"
-  defp status_dot("archived"), do: "bg-zinc-600"
   defp status_dot("awaiting_approval"), do: "bg-amber-400 animate-pulse"
   defp status_dot("pending_approval"), do: "bg-amber-400 animate-pulse"
   defp status_dot("denied"), do: "bg-rose-400"

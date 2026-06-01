@@ -35,7 +35,11 @@ defmodule EmisarWeb.PoliciesLive do
   # -- Events ---------------------------------------------------------
 
   def handle_event("form_change", %{"policy" => params}, socket) do
-    defaults = merge_defaults(socket.assigns.defaults, params["defaults"] || %{})
+    defaults =
+      socket.assigns.defaults
+      |> merge_defaults(params["defaults"] || %{})
+      |> enforce_monotonic_defaults()
+
     overrides = merge_overrides(socket.assigns.overrides, params["overrides"] || [])
     {:noreply, socket |> assign(:defaults, defaults) |> assign(:overrides, overrides)}
   end
@@ -110,6 +114,32 @@ defmodule EmisarWeb.PoliciesLive do
     end)
   end
 
+  # Walk left-to-right, lifting any tier that's more permissive than
+  # its predecessor up to the predecessor's level. Means a change to
+  # `low=deny` instantly bumps medium/high/critical to deny too — the
+  # operator never sees a transient invalid state on the page.
+  defp enforce_monotonic_defaults(defaults) do
+    @tiers
+    |> Enum.reduce({defaults, 0}, fn tier, {acc, floor_rank} ->
+      val = acc[tier]
+      cur_rank = Policies.decision_rank(val)
+
+      {new_val, new_rank} =
+        if cur_rank < floor_rank do
+          {decision_at_rank(floor_rank), floor_rank}
+        else
+          {val, cur_rank}
+        end
+
+      {Map.put(acc, tier, new_val), new_rank}
+    end)
+    |> elem(0)
+  end
+
+  defp decision_at_rank(0), do: "allow"
+  defp decision_at_rank(1), do: "require_approval"
+  defp decision_at_rank(2), do: "deny"
+
   defp merge_overrides(state, form) do
     form_list = normalize_indexed(form)
 
@@ -170,9 +200,10 @@ defmodule EmisarWeb.PoliciesLive do
 
   def render(assigns) do
     ~H"""
-    <.dashboard_shell
+    <.dashboard_shell pending_approvals_count={@pending_approvals_count}
       current_user={@current_user}
       current_account={@current_account}
+      switchable_accounts={@switchable_accounts}
       flash={@flash}
       section={:policies}
     >
@@ -194,14 +225,11 @@ defmodule EmisarWeb.PoliciesLive do
 
         <form id="policy-form" phx-change="form_change" phx-submit="save" class="space-y-6">
           <section class="rounded-xl border border-zinc-900 bg-zinc-950/40 p-5">
-            <header class="flex items-start gap-2">
-              <span class="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-indigo-400"></span>
-              <div>
-                <h2 class="text-base font-semibold text-zinc-100">Risk-tier defaults</h2>
-                <p class="mt-0.5 text-xs text-zinc-500">
-                  The default decision for any action in this tier. Overrides below win when they match.
-                </p>
-              </div>
+            <header>
+              <h2 class="text-base font-semibold text-zinc-100">Risk-tier defaults</h2>
+              <p class="mt-0.5 text-xs text-zinc-500">
+                The default decision for any action in this tier. Overrides below win when they match.
+              </p>
             </header>
 
             <div class="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -209,22 +237,28 @@ defmodule EmisarWeb.PoliciesLive do
                 <.tier_card
                   tier={tier}
                   value={@defaults[tier]}
+                  floor_rank={tier_floor_rank(@defaults, tier)}
                   can_manage={Permissions.can?(assigns, :manage_policies)}
                 />
               <% end %>
             </div>
+
+            <p class="mt-3 text-xs leading-relaxed text-zinc-500">
+              Higher-risk tiers can't be more permissive than lower ones.
+              Setting <strong class="text-zinc-300">low</strong>
+              to <em>Deny</em>
+              forces the rest to <em>Deny</em>
+              too — there's no scenario where blocking a safe action while letting a critical one through makes sense.
+            </p>
           </section>
 
           <section class="rounded-xl border border-zinc-900 bg-zinc-950/40 p-5">
             <header class="flex items-start justify-between gap-4">
-              <div class="flex items-start gap-2">
-                <span class="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-amber-400"></span>
-                <div>
-                  <h2 class="text-base font-semibold text-zinc-100">Per-action overrides</h2>
-                  <p class="mt-0.5 text-xs text-zinc-500">
-                    First match wins. Action supports wildcards (e.g. <code class="font-mono text-zinc-300">cassandra.*</code>).
-                  </p>
-                </div>
+              <div>
+                <h2 class="text-base font-semibold text-zinc-100">Per-action overrides</h2>
+                <p class="mt-0.5 text-xs text-zinc-500">
+                  First match wins. Action supports wildcards (e.g. <code class="font-mono text-zinc-300">cassandra.*</code>).
+                </p>
               </div>
               <button
                 :if={Permissions.can?(assigns, :manage_policies)}
@@ -261,6 +295,7 @@ defmodule EmisarWeb.PoliciesLive do
 
   attr :tier, :string, required: true
   attr :value, :string, required: true
+  attr :floor_rank, :integer, required: true
   attr :can_manage, :boolean, required: true
 
   defp tier_card(assigns) do
@@ -275,8 +310,17 @@ defmodule EmisarWeb.PoliciesLive do
         class="mt-2 block w-full rounded-lg border-0 bg-zinc-900 px-2 py-1.5 text-sm text-zinc-100 ring-1 ring-zinc-800 focus:ring-indigo-500 disabled:opacity-50"
         disabled={!@can_manage}
       >
+        <%!-- Options ranked below the floor are disabled — they'd
+             make this tier more permissive than a lower-risk tier,
+             which the server rejects too. Disabled options stay
+             visible so the operator understands why they can't pick
+             them, instead of silently hiding the choices. --%>
         <%= for {label, val} <- decision_options() do %>
-          <option value={val} selected={@value == val}>{label}</option>
+          <option
+            value={val}
+            selected={@value == val}
+            disabled={Policies.decision_rank(val) < @floor_rank}
+          >{label}</option>
         <% end %>
       </select>
     </label>
@@ -286,6 +330,16 @@ defmodule EmisarWeb.PoliciesLive do
   defp decision_options do
     [{"Allow", "allow"}, {"Require approval", "require_approval"}, {"Deny", "deny"}]
   end
+
+  # The rank below which a tier's decision can't drop. For `low` it's 0
+  # (anything goes); for any other tier it's the rank of the
+  # immediately-lower tier. Walking left-to-right because the LV's
+  # state has already been monotonized in `enforce_monotonic_defaults`,
+  # so we can read the lower tier's value directly.
+  defp tier_floor_rank(_defaults, "low"), do: 0
+  defp tier_floor_rank(defaults, "medium"), do: Policies.decision_rank(defaults["low"])
+  defp tier_floor_rank(defaults, "high"), do: Policies.decision_rank(defaults["medium"])
+  defp tier_floor_rank(defaults, "critical"), do: Policies.decision_rank(defaults["high"])
 
   defp tier_border("low"), do: "border-emerald-500/20"
   defp tier_border("medium"), do: "border-sky-500/20"

@@ -66,9 +66,10 @@ defmodule EmisarWeb.RunnersLive do
 
   def render(assigns) do
     ~H"""
-    <.dashboard_shell
+    <.dashboard_shell pending_approvals_count={@pending_approvals_count}
       current_user={@current_user}
       current_account={@current_account}
+      switchable_accounts={@switchable_accounts}
       flash={@flash}
       section={:runners}
     >
@@ -89,79 +90,74 @@ defmodule EmisarWeb.RunnersLive do
           <:cta navigate={~p"/app/runners/install"}>Open install wizard</:cta>
         </.empty_state>
       <% else %>
-        <div class="space-y-4">
-          <%!-- Group sidebar shows whole-account totals; the runners
-               list below is paginated and may show fewer rows per
-               group than the count next to the header. That's
-               intentional — operators expect group counts to be
-               source-of-truth, not "what fits on this page". --%>
-          <div :for={{group, runners} <- group_visible(@runners)} class="mb-8">
-            <header class="mb-3 flex items-baseline gap-2">
-              <h2 class="text-sm font-semibold text-zinc-100">{group}</h2>
-              <span class="text-xs text-zinc-500">
-                {group_total(@groups, group)} {if group_total(@groups, group) == 1, do: "runner", else: "runners"} total
+        <%!-- Group sidebar shows whole-account totals; the runners
+             list below is paginated and may show fewer rows per
+             group than the count next to the header. That's
+             intentional — operators expect group counts to be
+             source-of-truth, not "what fits on this page". --%>
+        <LiveTable.live_table
+          layout={:cards}
+          id="runners"
+          path={~p"/app/runners"}
+          rows={sort_by_group(@runners)}
+          metadata={@metadata}
+          filter_params={@filter_params}
+          group_by={fn runner -> runner.group || "(no group)" end}
+        >
+          <:group_header :let={group_label}>
+            <li class="border-b border-zinc-900 bg-zinc-950/60 px-5 py-2 flex items-baseline gap-2">
+              <h2 class="text-xs font-semibold uppercase tracking-wider text-zinc-200">{group_label}</h2>
+              <span class="text-[11px] text-zinc-500">
+                {group_total(@groups, group_label)} {if group_total(@groups, group_label) == 1, do: "runner", else: "runners"} total
               </span>
-            </header>
+            </li>
+          </:group_header>
 
-            <div class="overflow-hidden rounded-xl border border-zinc-900 bg-zinc-950/40">
-              <ul class="divide-y divide-zinc-900">
-                <li
-                  :for={runner <- runners}
-                  class="px-5 py-3"
-                >
-                  <.link
-                    navigate={~p"/app/runners/#{runner.id}"}
-                    class="flex items-center gap-4 transition hover:opacity-90"
-                  >
-                    <%!-- Connection dot: green/pulsing when live, amber
-                         when known-but-disconnected, zinc when never
-                         seen. Clearer than reading a status badge first. --%>
-                    <.connection_dot status={derived_status(runner, @online)} />
+          <:item :let={runner}>
+            <li class="px-5 py-3">
+              <.link
+                navigate={~p"/app/runners/#{runner.id}"}
+                class="flex items-center gap-4 transition hover:opacity-90"
+              >
+                <%!-- Connection dot: green/pulsing when live, amber
+                     when known-but-disconnected, zinc when never
+                     seen. Clearer than reading a status badge first. --%>
+                <.connection_dot status={derived_status(runner, @online)} />
 
-                    <div class="min-w-0 flex-1">
-                      <div class="flex items-center gap-2">
-                        <span class="truncate font-medium text-zinc-100">{runner.name}</span>
-                        <span :if={runner.runner_version} class="font-mono text-[11px] text-zinc-500">
-                          v{runner.runner_version}
-                        </span>
-                      </div>
-                      <div class="mt-0.5 truncate text-xs text-zinc-500">
-                        {runner.hostname || runner.external_id || "no host"} ·
-                        {heartbeat_label(runner, derived_status(runner, @online))}
-                      </div>
-                    </div>
+                <div class="min-w-0 flex-1">
+                  <div class="flex items-center gap-2">
+                    <span class="truncate font-medium text-zinc-100">{runner.name}</span>
+                    <span :if={runner.runner_version} class="font-mono text-[11px] text-zinc-500">
+                      v{runner.runner_version}
+                    </span>
+                  </div>
+                  <div class="mt-0.5 truncate text-xs text-zinc-500">
+                    {runner.hostname || runner.external_id || "no host"} ·
+                    {heartbeat_label(runner, derived_status(runner, @online))}
+                  </div>
+                </div>
 
-                    <div class="flex items-center gap-4 text-right">
-                      <div class="hidden text-xs text-zinc-400 sm:block">
-                        {runner.action_load} active
-                      </div>
-                      <.status_badge status={derived_status(runner, @online)} class="shrink-0" />
-                    </div>
-                  </.link>
-                </li>
-              </ul>
-            </div>
-          </div>
-
-          <LiveTable.paginator
-            id="runners"
-            path={~p"/app/runners"}
-            metadata={@metadata}
-            filter_params={@filter_params}
-          />
-        </div>
+                <div class="flex items-center gap-4 text-right">
+                  <div class="hidden text-xs text-zinc-400 sm:block">
+                    {runner.action_load} active
+                  </div>
+                  <.status_badge status={derived_status(runner, @online)} class="shrink-0" />
+                </div>
+              </.link>
+            </li>
+          </:item>
+        </LiveTable.live_table>
       <% end %>
     </.dashboard_shell>
     """
   end
 
   # Visible (this-page) runners, grouped + sorted by group name so the
-  # render order matches the group sidebar.
-  defp group_visible(runners) do
-    runners
-    |> Enum.group_by(& &1.group)
-    |> Enum.sort_by(fn {group, _} -> group end)
-  end
+  # Pre-sort the page's runners by group so `<.live_table group_by={…}>`
+  # walks them in stable order and emits one `:group_header` per group.
+  # Within a group the natural ordering from the context (recently active
+  # first) is preserved.
+  defp sort_by_group(runners), do: Enum.sort_by(runners, &(&1.group || ""))
 
   defp group_total(groups, group) do
     Enum.find_value(groups, 0, fn

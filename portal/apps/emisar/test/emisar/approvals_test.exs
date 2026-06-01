@@ -91,6 +91,54 @@ defmodule Emisar.ApprovalsTest do
     end
   end
 
+  describe "count_pending_approval_requests/1" do
+    test "returns the count of pending rows (decided rows excluded)" do
+      {account, run1} = run_fixture()
+      {_, run2} = run_fixture(account: account)
+      {_, run3} = run_fixture(account: account)
+      subject = operator_subject(account)
+
+      {:ok, _} = Approvals.create_request(run1, user_fixture().id, nil)
+      {:ok, _} = Approvals.create_request(run2, user_fixture().id, nil)
+      {:ok, to_deny} = Approvals.create_request(run3, user_fixture().id, nil)
+      {:ok, _} = Approvals.deny_request(to_deny, subject, "no")
+
+      assert Approvals.count_pending_approval_requests(subject) == 2
+    end
+
+    test "returns 0 when there are no pending requests" do
+      {account, _} = run_fixture()
+      assert Approvals.count_pending_approval_requests(operator_subject(account)) == 0
+    end
+
+    test "is scoped to the subject's account (cross-account isolation)" do
+      {account_a, run_a} = run_fixture()
+      {account_b, _} = run_fixture()
+      {:ok, _} = Approvals.create_request(run_a, user_fixture().id, nil)
+
+      # Account B has zero requests; the helper must not leak A's count.
+      assert Approvals.count_pending_approval_requests(operator_subject(account_a)) == 1
+      assert Approvals.count_pending_approval_requests(operator_subject(account_b)) == 0
+    end
+
+    test "returns 0 without raising when the subject lacks view permission" do
+      # Contract: `count_*` is safe to call from the sidebar — never
+      # raises, returns 0 for unauthorized callers so the badge silently
+      # disappears rather than crashing the LV mount.
+      {account, _} = run_fixture()
+
+      # A `Subject.system/0` actor has every permission, so to test the
+      # rejection branch we craft an empty-permissions subject directly.
+      no_perms = %Emisar.Auth.Subject{
+        account: account,
+        role: :viewer,
+        permissions: MapSet.new()
+      }
+
+      assert Approvals.count_pending_approval_requests(no_perms) == 0
+    end
+  end
+
   # -- Grants ---------------------------------------------------------
 
   defp insert_grant(account, key, opts) do
@@ -175,6 +223,31 @@ defmodule Emisar.ApprovalsTest do
       {:ok, _} = Approvals.revoke_grant(g, subject)
 
       assert Approvals.peek_matching_grant(key.id, "x", nil, "sha") == nil
+    end
+
+    test "revoke_grant writes an `approval.grant_revoked` audit row" do
+      # The audit log used to live in the LV handler. Moving it into the
+      # context means the row lands on every code path (LV, future
+      # scripts, tasks) — pin it with a context-level test.
+      account = account_fixture()
+      user = user_fixture()
+      _ = membership_fixture(account_id: account.id, user_id: user.id, role: "owner")
+      subject = subject_for(user, account, role: :owner)
+      {_, key} = api_key_fixture(account_id: account.id, created_by_id: user.id)
+
+      g = insert_grant(account, key, action_id: "act.revoke-audit", granted_by_id: user.id)
+      assert {:ok, _} = Approvals.revoke_grant(g, subject)
+
+      {:ok, events, _} = Emisar.Audit.list_events(subject)
+      audit = Enum.find(events, &(&1.event_type == "approval.grant_revoked"))
+
+      assert audit, "expected an approval.grant_revoked audit row"
+      assert audit.subject_kind == "approval_grant"
+      assert audit.subject_id == g.id
+      assert audit.actor_kind == "user"
+      assert audit.actor_id == user.id
+      assert audit.payload["action_id"] == "act.revoke-audit"
+      assert audit.payload["api_key_id"] == key.id
     end
 
     test "a different API key's grant doesn't leak" do

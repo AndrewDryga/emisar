@@ -12,10 +12,6 @@ defmodule Emisar.Accounts.Account do
     field :slug, :string
     field :plan, :string, default: "free"
     field :paddle_customer_id, :string
-    field :trial_ends_at, :utc_datetime
-    field :status, :string, default: "active"
-    field :settings, :map, default: %{}
-    field :disabled_at, :utc_datetime
     field :require_mfa, :boolean, default: false
     field :deleted_at, :utc_datetime_usec
 

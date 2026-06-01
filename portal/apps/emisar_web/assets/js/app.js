@@ -91,11 +91,72 @@ function formatAbsolute(dt, sameYear, short = false) {
   return dt.toLocaleString(undefined, opts)
 }
 
+// CSP forbids inline `onclick` handlers, so any copy-to-clipboard
+// button has to go through a hook. Reads its source from either
+// `data-clipboard-text` (literal text) or `data-clipboard-target`
+// (#id of an element whose textContent we copy). Briefly swaps the
+// button's label to "Copied" so the operator gets visible feedback.
+const CopyToClipboard = {
+  mounted() {
+    this.handler = (e) => {
+      e.preventDefault()
+      const text = this.resolveText()
+      if (text == null) return
+      this.copy(text)
+    }
+    this.el.addEventListener("click", this.handler)
+  },
+  destroyed() {
+    if (this.handler) this.el.removeEventListener("click", this.handler)
+  },
+  resolveText() {
+    if (this.el.dataset.clipboardText != null) {
+      return this.el.dataset.clipboardText
+    }
+    const sel = this.el.dataset.clipboardTarget
+    if (!sel) return null
+    const target = document.querySelector(sel)
+    return target ? target.textContent.trim() : null
+  },
+  async copy(text) {
+    let ok = false
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text)
+        ok = true
+      }
+    } catch (_e) { /* fall through to textarea fallback */ }
+
+    if (!ok) {
+      // execCommand fallback for non-secure contexts (dev over plain http,
+      // some embedded webviews). Mount off-screen so it never flashes.
+      const ta = document.createElement("textarea")
+      ta.value = text
+      ta.setAttribute("readonly", "")
+      ta.style.position = "fixed"
+      ta.style.top = "-1000px"
+      document.body.appendChild(ta)
+      ta.select()
+      try { ok = document.execCommand("copy") } catch (_e) { ok = false }
+      document.body.removeChild(ta)
+    }
+
+    if (ok) this.flashCopied()
+  },
+  flashCopied() {
+    const original = this.el.innerText
+    const restore = this.el.dataset.clipboardRestore || original
+    this.el.innerText = this.el.dataset.clipboardCopied || "Copied"
+    if (this._timer) clearTimeout(this._timer)
+    this._timer = setTimeout(() => { this.el.innerText = restore }, 1500)
+  }
+}
+
 let csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
 let liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
   params: {_csrf_token: csrfToken},
-  hooks: { LocalTime }
+  hooks: { LocalTime, CopyToClipboard }
 })
 
 // Show progress bar on live navigation and form submits

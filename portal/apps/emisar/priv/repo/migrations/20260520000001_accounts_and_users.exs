@@ -16,10 +16,6 @@ defmodule Emisar.Repo.Migrations.AccountsAndUsers do
       add :slug, :citext, null: false
       add :plan, :string, null: false, default: "free"
       add :paddle_customer_id, :string
-      add :trial_ends_at, :utc_datetime
-      add :status, :string, null: false, default: "active"
-      add :settings, :map, null: false, default: %{}
-      add :disabled_at, :utc_datetime
       add :require_mfa, :boolean, null: false, default: false
       timestamps(type: :utc_datetime_usec)
     end

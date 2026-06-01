@@ -15,6 +15,7 @@ defmodule Emisar.ApiKeys do
   #{@quick_ring_cap} unused entries per account.
   """
 
+  alias Ecto.Multi
   alias Emisar.{Audit, Auth, Repo}
   alias Emisar.ApiKeys.{ApiKey, Authorizer}
   alias Emisar.Auth.Subject
@@ -31,9 +32,11 @@ defmodule Emisar.ApiKeys do
   # -- Reads -----------------------------------------------------------
 
   @doc """
-  Lists keys visible to operators — hides auto-generated, never-used
-  ones. `:created_by` is preloaded so the UI can render the creator's
-  email without an N+1.
+  Lists MCP / LLM-bridge keys for the Agents page — hides
+  auto-generated never-used ones AND hides audit-export tokens
+  (`audit:read`). Audit-export tokens live on the audit page; mixing
+  them in here confused operators looking for the LLM keys.
+  `:created_by` is preloaded.
   """
   def list_api_keys_for_account(%Subject{} = subject, opts \\ []) do
     with :ok <-
@@ -42,6 +45,27 @@ defmodule Emisar.ApiKeys do
              Authorizer.view_api_keys_permission()
            ) do
       ApiKey.Query.visible_to_operators()
+      |> ApiKey.Query.without_scope("audit:read")
+      |> ApiKey.Query.ordered_by_recent()
+      |> Authorizer.for_subject(subject)
+      |> Repo.list(ApiKey.Query, Keyword.put_new(opts, :preload, :created_by))
+    end
+  end
+
+  @doc """
+  Lists audit-export tokens (`audit:read`) for the audit page. Same
+  visibility rules + creator preload as the agents list, but scoped
+  to the SIEM-export bucket only so the audit page renders just the
+  keys that actually hit `/api/audit`.
+  """
+  def list_audit_export_keys_for_account(%Subject{} = subject, opts \\ []) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.view_api_keys_permission()
+           ) do
+      ApiKey.Query.visible_to_operators()
+      |> ApiKey.Query.with_scope("audit:read")
       |> ApiKey.Query.ordered_by_recent()
       |> Authorizer.for_subject(subject)
       |> Repo.list(ApiKey.Query, Keyword.put_new(opts, :preload, :created_by))
@@ -74,27 +98,36 @@ defmodule Emisar.ApiKeys do
              Authorizer.manage_api_keys_permission()
            ) do
       account_id = account.id
-      user_id = actor_id(subject)
+      user_id = Subject.actor_id(subject)
+      membership_id = subject.membership_id
       {raw, prefix, hash} = mint_secret()
-      changeset = ApiKey.Changeset.create(account_id, user_id, prefix, hash, attrs)
 
-      case Repo.insert(changeset) do
-        {:ok, key} ->
-          Audit.log(account_id, "api_key.created",
-            actor_kind: "user",
-            actor_id: user_id,
-            subject_kind: "api_key",
-            subject_id: key.id,
-            subject_label: key.name,
-            payload: %{prefix: key.key_prefix, scopes: key.scopes}
-          )
+      changeset =
+        ApiKey.Changeset.create(account_id, user_id, membership_id, prefix, hash, attrs)
 
-          {:ok, raw, key}
-
-        err ->
-          err
+      Multi.new()
+      |> Multi.insert(:key, changeset)
+      |> Multi.insert(:audit, fn %{key: key} ->
+        Audit.changeset(account_id, "api_key.created",
+          actor_kind: "user",
+          actor_id: user_id,
+          subject_kind: "api_key",
+          subject_id: key.id,
+          subject_label: key.name,
+          payload: %{prefix: key.key_prefix, scopes: key.scopes}
+        )
+      end)
+      |> Repo.commit_multi(after_commit: &broadcast_api_key_change(&1, "api_key.created"))
+      |> case do
+        {:ok, %{key: key}} -> {:ok, raw, key}
+        {:error, reason} -> {:error, reason}
       end
     end
+  end
+
+  defp broadcast_api_key_change(%{key: key}, event_type) do
+    Emisar.PubSub.broadcast_account_list(key.account_id, :api_key, event_type, key.id)
+    :ok
   end
 
   @doc """
@@ -118,16 +151,23 @@ defmodule Emisar.ApiKeys do
              Authorizer.issue_quick_key_permission()
            ) do
       account_id = account.id
-      user_id = actor_id(subject)
+      user_id = Subject.actor_id(subject)
+      membership_id = subject.membership_id
       cap = opts[:ring_cap] || @quick_ring_cap
       grace_s = opts[:eviction_grace_seconds] || @quick_eviction_grace_seconds
       name = opts[:name] || "Quick connect (auto)"
+      runner_filter = opts[:runner_filter] || []
+      runner_group_filter = opts[:runner_group_filter] || []
 
       {raw, prefix, hash} = mint_secret()
 
       Repo.transaction(fn ->
         {:ok, key} =
-          ApiKey.Changeset.mint_quick(account_id, user_id, prefix, hash, %{name: name})
+          ApiKey.Changeset.mint_quick(account_id, user_id, membership_id, prefix, hash, %{
+            name: name,
+            runner_filter: runner_filter,
+            runner_group_filter: runner_group_filter
+          })
           |> Repo.insert()
 
         evict_quick_ring_overflow(account_id, cap, grace_s, key.auto_generated_at)
@@ -153,32 +193,28 @@ defmodule Emisar.ApiKeys do
              subject,
              Authorizer.manage_api_keys_permission()
            ),
-         :ok <- ensure_key_in_subject_account(key, subject) do
-      by_user_id = actor_id(subject)
+         :ok <- Subject.ensure_in_account(subject, key.account_id) do
+      by_user_id = Subject.actor_id(subject)
 
-      case key |> ApiKey.Changeset.revoke(by_user_id) |> Repo.update() do
-        {:ok, revoked} = ok ->
-          Audit.log(revoked.account_id, "api_key.revoked",
-            actor_kind: "user",
-            actor_id: by_user_id,
-            subject_kind: "api_key",
-            subject_id: revoked.id,
-            subject_label: revoked.name,
-            payload: %{prefix: revoked.key_prefix}
-          )
-
-          ok
-
-        err ->
-          err
+      Multi.new()
+      |> Multi.update(:key, ApiKey.Changeset.revoke(key, by_user_id))
+      |> Multi.insert(:audit, fn %{key: revoked} ->
+        Audit.changeset(revoked.account_id, "api_key.revoked",
+          actor_kind: "user",
+          actor_id: by_user_id,
+          subject_kind: "api_key",
+          subject_id: revoked.id,
+          subject_label: revoked.name,
+          payload: %{prefix: revoked.key_prefix}
+        )
+      end)
+      |> Repo.commit_multi(after_commit: &broadcast_api_key_change(&1, "api_key.revoked"))
+      |> case do
+        {:ok, %{key: revoked}} -> {:ok, revoked}
+        {:error, reason} -> {:error, reason}
       end
     end
   end
-
-  defp ensure_key_in_subject_account(%ApiKey{account_id: account_id}, %Subject{} = subject),
-    do: Subject.ensure_in_account(subject, account_id)
-
-  defdelegate actor_id(subject), to: Subject
 
   @doc """
   Peeks at the presented bearer token, resolving it to an `%ApiKey{}`.
@@ -202,19 +238,30 @@ defmodule Emisar.ApiKeys do
            true <- secure_compare(key.key_hash, hash),
            true <- ApiKey.usable?(key) do
         was_auto? = ApiKey.auto_unused?(key)
-        updated = Repo.update!(ApiKey.Changeset.usage(key))
 
-        if was_auto? do
-          Audit.log(updated.account_id, "api_key.bound",
-            actor_kind: "system",
-            subject_kind: "api_key",
-            subject_id: updated.id,
-            subject_label: updated.name,
-            payload: %{prefix: updated.key_prefix, auto: true}
-          )
+        multi =
+          Multi.new()
+          |> Multi.update(:key, ApiKey.Changeset.usage(key))
+
+        multi =
+          if was_auto? do
+            Multi.insert(multi, :audit, fn %{key: updated} ->
+              Audit.changeset(updated.account_id, "api_key.bound",
+                actor_kind: "system",
+                subject_kind: "api_key",
+                subject_id: updated.id,
+                subject_label: updated.name,
+                payload: %{prefix: updated.key_prefix, auto: true}
+              )
+            end)
+          else
+            multi
+          end
+
+        case Repo.commit_multi(multi) do
+          {:ok, %{key: updated}} -> updated
+          {:error, _} -> nil
         end
-
-        updated
       else
         _ -> nil
       end

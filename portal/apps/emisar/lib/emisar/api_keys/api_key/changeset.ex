@@ -2,9 +2,12 @@ defmodule Emisar.ApiKeys.ApiKey.Changeset do
   use Emisar, :changeset
   alias Emisar.ApiKeys.ApiKey
 
-  @valid_scopes ~w(actions:read actions:execute runbooks:execute audit:read)
+  # `runbooks:execute` used to live here but the MCP API never grew
+  # a runbook-dispatch endpoint, so a key minted with only that scope
+  # silently couldn't do anything. Drop until we ship the endpoint.
+  @valid_scopes ~w(actions:read actions:execute audit:read)
 
-  def create(account_id, user_id, prefix, hash, attrs) do
+  def create(account_id, user_id, membership_id, prefix, hash, attrs) do
     %ApiKey{}
     |> cast(attrs, [
       :name,
@@ -16,6 +19,7 @@ defmodule Emisar.ApiKeys.ApiKey.Changeset do
     ])
     |> put_change(:account_id, account_id)
     |> put_change(:created_by_id, user_id)
+    |> put_change(:created_by_membership_id, membership_id)
     |> put_change(:key_prefix, prefix)
     |> put_change(:key_hash, hash)
     |> validate_required([:account_id, :name, :scopes])
@@ -23,12 +27,13 @@ defmodule Emisar.ApiKeys.ApiKey.Changeset do
     |> validate_subset(:scopes, @valid_scopes)
   end
 
-  def mint_quick(account_id, user_id, prefix, hash, attrs \\ %{}) do
+  def mint_quick(account_id, user_id, membership_id, prefix, hash, attrs \\ %{}) do
     %ApiKey{}
-    |> cast(attrs, [:name])
+    |> cast(attrs, [:name, :runner_filter, :runner_group_filter])
     |> put_default_value(:name, "Quick connect (auto)")
     |> put_change(:account_id, account_id)
     |> put_change(:created_by_id, user_id)
+    |> put_change(:created_by_membership_id, membership_id)
     |> put_change(:key_prefix, prefix)
     |> put_change(:key_hash, hash)
     |> put_change(:scopes, ["actions:read", "actions:execute"])

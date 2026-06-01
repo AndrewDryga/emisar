@@ -10,6 +10,7 @@ defmodule EmisarWeb.AuditDetailLive do
   use EmisarWeb, :live_view
 
   alias Emisar.Audit
+  alias EmisarWeb.AuditSummary
 
   def mount(%{"id" => id}, _session, socket) do
     case Audit.fetch_event_by_id(id, socket.assigns.current_subject) do
@@ -32,9 +33,10 @@ defmodule EmisarWeb.AuditDetailLive do
 
   def render(assigns) do
     ~H"""
-    <.dashboard_shell
+    <.dashboard_shell pending_approvals_count={@pending_approvals_count}
       current_user={@current_user}
       current_account={@current_account}
+      switchable_accounts={@switchable_accounts}
       flash={@flash}
       section={:audit}
     >
@@ -43,15 +45,6 @@ defmodule EmisarWeb.AuditDetailLive do
         <span class="font-semibold">{format_event_type(@event.event_type)}</span>
         <span class="ml-2 font-mono text-xs font-normal text-zinc-500">{@event.event_type}</span>
       </:title>
-      <:actions>
-        <.link
-          navigate={~p"/app/audit"}
-          class="inline-flex items-center gap-1.5 rounded-lg border border-zinc-800 px-3 py-1.5 text-sm font-medium text-zinc-300 hover:bg-zinc-900"
-        >
-          <.icon name="hero-arrow-left" class="h-4 w-4" /> Audit log
-        </.link>
-      </:actions>
-
       <% posture = parse_client_posture(@event.user_agent) %>
 
       <%!-- Meta strip — consistent with run / approval / runner
@@ -77,7 +70,9 @@ defmodule EmisarWeb.AuditDetailLive do
 
       <%!-- Actor → Subject row. The arrow makes the relationship
            visual ("user X acted ON runner Y") instead of forcing
-           the reader to mentally pair two separate cards. --%>
+           the reader to mentally pair two separate cards. The
+           User-Agent rides on the actor card — it describes the
+           actor's device, not the event in general. --%>
       <div class="mt-4 flex flex-col items-stretch gap-3 sm:flex-row sm:items-center">
         <.entity_card
           role="Actor"
@@ -85,6 +80,7 @@ defmodule EmisarWeb.AuditDetailLive do
           id={@event.actor_id}
           label={@event.actor_label}
           refs={@refs}
+          user_agent={@event.user_agent}
         />
         <div class="hidden flex-none items-center sm:flex">
           <.icon name="hero-arrow-right" class="h-5 w-5 text-zinc-700" />
@@ -97,6 +93,28 @@ defmodule EmisarWeb.AuditDetailLive do
           refs={@refs}
         />
       </div>
+
+      <%!-- At-a-glance summary chips — the "interesting fact" pulled
+           from the payload (via, role from→to, count, etc.). Used to
+           live in the breadcrumb but operators couldn't scan it
+           there; this row lets it breathe and stays out of the
+           page-title chrome. Hidden when the event type has no
+           special summary (most do not). --%>
+      <section
+        :if={AuditSummary.summary_pairs(@event) != []}
+        class="mt-4 flex flex-wrap items-center gap-2 rounded-xl border border-zinc-900 bg-zinc-950/40 px-4 py-3"
+      >
+        <span class="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
+          Summary
+        </span>
+        <span
+          :for={pair <- AuditSummary.summary_pairs(@event)}
+          class="inline-flex items-center gap-1 rounded-md bg-zinc-900/80 px-2 py-0.5 text-xs ring-1 ring-zinc-800"
+        >
+          <span class="font-mono text-zinc-500">{elem(pair, 0)}:</span>
+          <span class="text-zinc-200">{elem(pair, 1)}</span>
+        </span>
+      </section>
 
       <%!-- Policy-update diff — special-case rendering for the one
            event type where the payload diff is the whole reason
@@ -116,12 +134,6 @@ defmodule EmisarWeb.AuditDetailLive do
         </header>
         <pre class="max-h-[60vh] overflow-auto bg-black p-4 font-mono text-xs leading-relaxed text-zinc-300">{pretty_payload(@event.payload)}</pre>
       </section>
-
-      <%!-- Raw User-Agent at the very bottom — debugging-only, not
-           an at-a-glance fact. --%>
-      <p :if={@event.user_agent} class="mt-4 break-all text-[11px] text-zinc-500">
-        <span class="text-zinc-400">User-Agent:</span> {@event.user_agent}
-      </p>
     </.dashboard_shell>
     """
   end
@@ -229,11 +241,14 @@ defmodule EmisarWeb.AuditDetailLive do
   # Actor/Subject card — name (linked when possible) up top with a
   # subdued role label, ID underneath. Side-by-side with an arrow
   # between them so the reader sees "this acted on that" at a glance.
+  # The Actor card optionally renders the User-Agent (the actor's
+  # device); the Subject card doesn't take one.
   attr :role, :string, required: true
   attr :kind, :string, default: nil
   attr :id, :any, default: nil
   attr :label, :string, default: nil
   attr :refs, :map, default: %{}
+  attr :user_agent, :string, default: nil
 
   defp entity_card(%{kind: nil} = assigns) do
     ~H"""
@@ -252,9 +267,76 @@ defmodule EmisarWeb.AuditDetailLive do
         <EmisarWeb.AuditLive.ref kind={@kind} id={@id} label={@label} refs={@refs} />
       </div>
       <p :if={@id} class="mt-1 break-all font-mono text-[10px] text-zinc-500">{@id}</p>
+      <%!-- Device line — what they were using when they did this.
+           Browser/OS for human users, "MCP bridge" for LLM clients,
+           raw UA token for everything else. The full UA string is
+           one click away via the `title=` tooltip. --%>
+      <p
+        :if={@user_agent}
+        class="mt-2 flex items-center gap-1.5 truncate text-[11px] text-zinc-500"
+        title={@user_agent}
+      >
+        <.icon name={device_icon(@user_agent)} class="h-3 w-3 shrink-0 text-zinc-600" />
+        <span class="truncate">{device_label(@user_agent)}</span>
+      </p>
     </div>
     """
   end
+
+  # Compact device label for the UA — same parser shape as ProfileLive's
+  # session list, so the audit page and the profile page agree about
+  # "what does this string mean." Strips the verbose Mozilla/AppleWebKit
+  # cruft into something a reader can scan.
+  defp device_label(ua) when is_binary(ua) do
+    browser =
+      cond do
+        ua =~ ~r/Edg\//i -> "Edge"
+        ua =~ ~r/Chrome\//i -> "Chrome"
+        ua =~ ~r/Firefox\//i -> "Firefox"
+        ua =~ ~r/Safari\//i and not (ua =~ ~r/Chrome\//i) -> "Safari"
+        ua =~ ~r/^Go-http-client/i -> "Runner (Go)"
+        true -> nil
+      end
+
+    os =
+      cond do
+        ua =~ ~r/Mac OS X/i -> "Mac"
+        ua =~ ~r/Windows/i -> "Windows"
+        ua =~ ~r/iPhone|iPad|iOS/i -> "iOS"
+        ua =~ ~r/Android/i -> "Android"
+        ua =~ ~r/Linux/i -> "Linux"
+        true -> nil
+      end
+
+    case {browser, os} do
+      {nil, nil} -> short_ua(ua)
+      {b, nil} -> b
+      {nil, o} -> o
+      {b, o} -> "#{b} on #{o}"
+    end
+  end
+
+  defp device_label(_), do: nil
+
+  # Last-resort: the first whitespace-delimited token, so a missing UA
+  # parser doesn't print a 200-char Mozilla string into the card.
+  defp short_ua(ua) do
+    case Regex.run(~r{^([^\s]+)}, ua) do
+      [_, token] -> token
+      _ -> "Unknown device"
+    end
+  end
+
+  defp device_icon(ua) when is_binary(ua) do
+    cond do
+      ua =~ ~r/iPhone|iPad|Android/i -> "hero-device-phone-mobile"
+      ua =~ ~r/Mozilla|WebKit/i -> "hero-computer-desktop"
+      ua =~ ~r/^Go-http-client/i -> "hero-server"
+      true -> "hero-globe-alt"
+    end
+  end
+
+  defp device_icon(_), do: "hero-globe-alt"
 
   # Pulls structured device-posture fields out of the MCP bridge's
   # User-Agent. The bridge stamps a parens-delimited posture:

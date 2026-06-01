@@ -18,27 +18,6 @@ defmodule EmisarWeb.RunnerConnectController do
   # -- Token exchange -------------------------------------------------
 
   def register(conn, params) do
-    # 30 registrations per IP per minute. High enough that a real
-    # autoscaler bringing up a fleet of nodes won't trip; low enough
-    # that an attacker scripting key-guesses against /runner/register
-    # is bottlenecked.
-    ip = ip_key(conn)
-
-    case EmisarWeb.RateLimiter.check("runner_register:" <> ip, 30, 60_000) do
-      {:error, :rate_limited, _ms} ->
-        require Logger
-        Logger.warning("runner_register.throttled", ip: ip)
-
-        conn
-        |> put_status(:too_many_requests)
-        |> json(%{error: "rate_limited"})
-
-      :ok ->
-        do_register(conn, params)
-    end
-  end
-
-  defp do_register(conn, params) do
     with {:ok, auth_key} <- read_bearer(conn),
          {:ok, runner, token, raw_token} <-
            Runners.register_via_auth_key(auth_key, %{
@@ -75,8 +54,6 @@ defmodule EmisarWeb.RunnerConnectController do
     end
   end
 
-  defp ip_key(conn), do: EmisarWeb.RateLimiter.ip_key(conn)
-
   # -- WebSocket upgrade ----------------------------------------------
 
   def websocket(conn, _params) do
@@ -88,7 +65,7 @@ defmodule EmisarWeb.RunnerConnectController do
       state = %{
         token: token,
         runner: runner,
-        ip_address: ip_key(conn) |> RunnerSocket.normalize_ip(),
+        ip_address: conn |> ip_string() |> RunnerSocket.normalize_ip(),
         user_agent: get_req_header(conn, "user-agent") |> List.first()
       }
 
@@ -113,6 +90,14 @@ defmodule EmisarWeb.RunnerConnectController do
   end
 
   # -- Helpers --------------------------------------------------------
+
+  # Stringify `conn.remote_ip` for audit metadata. Falls back to
+  # "unknown" if the tuple isn't an IP (test sockets, unusual
+  # transports); `RunnerSocket.normalize_ip/1` strips that sentinel.
+  defp ip_string(%Plug.Conn{remote_ip: ip}) when is_tuple(ip),
+    do: ip |> :inet_parse.ntoa() |> to_string()
+
+  defp ip_string(_), do: "unknown"
 
   defp read_bearer(conn) do
     case get_req_header(conn, "authorization") do

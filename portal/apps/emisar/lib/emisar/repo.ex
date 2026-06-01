@@ -67,19 +67,26 @@ defmodule Emisar.Repo do
 
   @type after_commit :: (term() -> :ok) | (term(), Ecto.Changeset.t() -> :ok)
   @type changeset_fun :: (term() -> Ecto.Changeset.t())
+  @type audit_fun :: (term() -> Ecto.Changeset.t() | nil)
 
   @doc """
   Locks the row matched by `queryable` with `FOR NO KEY UPDATE`, runs
   the supplied changeset function inside a transaction, then invokes
   any `after_commit` callbacks once committed. This is the standard
-  mutation pattern: read-locked fetch → changeset → audit/broadcast
-  as a post-commit side effect.
+  mutation pattern: read-locked fetch → changeset → optional audit
+  insert (in-transaction) → broadcast (after commit).
 
   Options:
 
     * `:with` — `(schema -> changeset)` (required)
+    * `:audit` — `(schema -> Ecto.Changeset.t() | nil)` — when set,
+      the returned audit changeset is inserted in the SAME transaction
+      as the update, so the audit row is atomic with the parent
+      mutation. Return `nil` to skip audit for this call.
     * `:after_commit` — callback or list of callbacks; each receives
-      `(schema)` or `(schema, changeset)` and must return `:ok`
+      `(schema)` or `(schema, changeset)` and must return `:ok`.
+      Fires only after the DB transaction commits — use for broadcasts
+      and other side effects that should NOT happen on rollback.
     * `:filter` — `Emisar.Repo.Filter.filters()` to constrain the lookup
     * `:preload` — Ecto preloads applied after the update
   """
@@ -92,6 +99,7 @@ defmodule Emisar.Repo do
     {preload, opts} = Keyword.pop(opts, :preload, [])
     {filter, opts} = Keyword.pop(opts, :filter, [])
     {after_commit, opts} = Keyword.pop(opts, :after_commit, [])
+    {audit_fun, opts} = Keyword.pop(opts, :audit)
     {changeset_fun, repo_opts} = Keyword.pop!(opts, :with)
 
     queryable = Ecto.Query.lock(queryable, "FOR NO KEY UPDATE")
@@ -101,7 +109,16 @@ defmodule Emisar.Repo do
         if schema = __MODULE__.one(queryable, repo_opts) do
           case changeset_fun.(schema) do
             %Ecto.Changeset{} = cs ->
-              {update(cs, mode: :savepoint), cs}
+              case update(cs, mode: :savepoint) do
+                {:ok, updated} = ok ->
+                  case maybe_insert_audit(audit_fun, updated) do
+                    :ok -> {ok, cs}
+                    {:error, reason} -> rollback({:audit_failed, reason})
+                  end
+
+                err ->
+                  {err, cs}
+              end
 
             reason ->
               {:error, reason}
@@ -129,6 +146,19 @@ defmodule Emisar.Repo do
     end
   end
 
+  defp maybe_insert_audit(nil, _schema), do: :ok
+
+  defp maybe_insert_audit(audit_fun, schema) when is_function(audit_fun, 1) do
+    case audit_fun.(schema) do
+      nil -> :ok
+      %Ecto.Changeset{} = audit_cs ->
+        case insert(audit_cs, mode: :savepoint) do
+          {:ok, _} -> :ok
+          {:error, reason} -> {:error, reason}
+        end
+    end
+  end
+
   defp execute_after_commit(schema, changeset, after_commit) do
     after_commit
     |> List.wrap()
@@ -137,6 +167,88 @@ defmodule Emisar.Repo do
       cb when is_function(cb, 2) -> :ok = cb.(schema, changeset)
     end)
   end
+
+  @doc """
+  Runs `multi` inside a transaction and, on success, fires any
+  `:after_commit` callbacks with the multi's `changes` map. This is
+  the canonical way to commit a parent mutation together with its
+  audit row(s) atomically while keeping broadcasts as a post-commit
+  side effect (only fire if the DB actually committed).
+
+  Returns `{:ok, changes}` on success, `{:error, reason}` if any
+  `Multi.run/3` step returned `{:error, reason}`, or `{:error,
+  changeset}` if a changeset step failed — callers can dispatch on
+  the failure shape.
+
+  Example:
+
+      Multi.new()
+      |> Multi.update(:policy, Policy.Changeset.update(policy, attrs))
+      |> Multi.insert(:audit, fn %{policy: p} ->
+        Audit.changeset(p.account_id, "policy.updated",
+          actor_id: subject.actor.id, subject_id: p.id, payload: %{...})
+      end)
+      |> Repo.commit_multi(after_commit: fn %{policy: p} ->
+        PubSub.broadcast_policy(p)
+      end)
+
+  Options:
+
+    * `:after_commit` — callback `(changes_map -> :ok)` or a list of
+      them, fired once the transaction commits
+    * other options forwarded to `transaction/2`
+  """
+  @spec commit_multi(Ecto.Multi.t(), keyword()) ::
+          {:ok, map()}
+          | {:error, Ecto.Changeset.t()}
+          | {:error, term()}
+  def commit_multi(multi, opts \\ []) do
+    {after_commit, repo_opts} = Keyword.pop(opts, :after_commit, [])
+
+    case transaction(multi, repo_opts) do
+      {:ok, changes} ->
+        :ok = fan_out_audit_events(changes)
+        :ok = execute_changes_after_commit(changes, after_commit)
+        {:ok, changes}
+
+      {:error, _failed_op, %Ecto.Changeset{} = cs, _changes} ->
+        {:error, cs}
+
+      {:error, _failed_op, reason, _changes} ->
+        {:error, reason}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp execute_changes_after_commit(changes, after_commit) do
+    after_commit
+    |> List.wrap()
+    |> Enum.each(fn cb when is_function(cb, 1) -> :ok = cb.(changes) end)
+  end
+
+  # Every Multi that includes an audit-event step (via `Audit.changeset`
+  # or `Audit.Multi.log`) auto-broadcasts each row to the account-wide
+  # `:audit` topic once the transaction commits. AuditLive subscribes
+  # there and reloads, so the live audit log stays current without each
+  # context having to remember to broadcast.
+  #
+  # Tolerates the case where Audit isn't compiled (test-only) by routing
+  # through `Code.ensure_loaded?` — keeps the data app's startup honest.
+  defp fan_out_audit_events(changes) when is_map(changes) do
+    if Code.ensure_loaded?(Emisar.PubSub) and
+         Code.ensure_loaded?(Emisar.Audit.Event) do
+      Enum.each(changes, fn
+        {_step, %Emisar.Audit.Event{} = ev} -> Emisar.PubSub.broadcast_audit_event(ev)
+        _ -> :ok
+      end)
+    end
+
+    :ok
+  end
+
+  defp fan_out_audit_events(_), do: :ok
 
   @doc """
   Paginated list with cursor metadata. Options:

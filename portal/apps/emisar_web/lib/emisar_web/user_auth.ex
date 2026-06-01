@@ -67,14 +67,22 @@ defmodule EmisarWeb.UserAuth do
   end
 
   defp put_token_in_session(conn, token) do
+    # `live_socket_id` is derived from the digest (NOT the raw token)
+    # so the server can re-derive the per-session disconnect topic
+    # without the cookie value — see `Emisar.Auth.live_socket_topic/1`.
+    # If we keyed on the raw token, `Auth.disconnect_and_revoke_all_sessions`
+    # couldn't broadcast to a session whose cookie it doesn't hold.
     conn
     |> put_session(:user_token, token)
-    |> put_session(:live_socket_id, "users_sessions:#{Base.url_encode64(token)}")
+    |> put_session(:live_socket_id, Auth.live_socket_topic(:crypto.hash(:sha256, token)))
   end
 
   @doc "Sign-out: invalidate the session token and clear the cookie."
   def log_out_user(conn) do
     user_token = get_session(conn, :user_token)
+    # Audit-log the sign-out BEFORE deleting the token — the user lookup
+    # is via the token, so dropping it first would lose the actor id.
+    if user = conn.assigns[:current_user], do: Auth.record_sign_out(user)
     user_token && Auth.delete_session_token(user_token)
 
     if live_socket_id = get_session(conn, :live_socket_id) do
@@ -149,8 +157,9 @@ defmodule EmisarWeb.UserAuth do
 
   defp assign_current_account(conn) do
     user = conn.assigns.current_user
+    requested_account_id = get_session(conn, :current_account_id)
 
-    case Accounts.fetch_primary_membership_for_user(user) do
+    case Accounts.fetch_membership_for_session(user, requested_account_id) do
       {:error, :not_found} ->
         cond do
           Accounts.all_memberships_suspended?(user) ->
@@ -171,9 +180,39 @@ defmodule EmisarWeb.UserAuth do
         context = conn_context(conn)
 
         conn
+        |> maybe_refresh_account_session(membership.account_id, requested_account_id)
         |> assign(:current_account, membership.account)
         |> assign(:current_membership, membership)
         |> assign(:current_subject, Subject.for_user(user, membership.account, membership, context))
+    end
+  end
+
+  # If the session asked for an account the user can no longer reach
+  # (suspended, deleted) `fetch_membership_for_session/2` falls back to
+  # their primary. Overwrite the session value so subsequent requests
+  # don't keep re-resolving against the dead pointer.
+  defp maybe_refresh_account_session(conn, resolved_id, requested_id)
+       when resolved_id == requested_id,
+       do: conn
+
+  defp maybe_refresh_account_session(conn, resolved_id, _requested_id),
+    do: put_session(conn, :current_account_id, resolved_id)
+
+  @doc """
+  Public API for the switch-account controller: validates the user has
+  a non-suspended membership on `account_id` and pins it in the session.
+  Returns `{:ok, conn}` with the new session value, or `{:error, :not_found}`
+  when the user has no access to that account.
+  """
+  def switch_account(conn, account_id) when is_binary(account_id) do
+    user = conn.assigns.current_user
+
+    case Accounts.fetch_membership_for_session(user, account_id) do
+      {:ok, %{account_id: ^account_id} = membership} ->
+        {:ok, put_session(conn, :current_account_id, account_id), membership}
+
+      _ ->
+        {:error, :not_found}
     end
   end
 
@@ -234,7 +273,7 @@ defmodule EmisarWeb.UserAuth do
     socket = mount_current_user(session, socket)
 
     if socket.assigns.current_user do
-      {:cont, mount_current_account(socket)}
+      {:cont, mount_current_account(socket, session)}
     else
       socket =
         socket
@@ -302,6 +341,52 @@ defmodule EmisarWeb.UserAuth do
     {:cont, socket}
   end
 
+  # Tracks the account's pending-approval count so the sidebar badge
+  # stays live across every authenticated LV without each one having
+  # to re-implement the subscribe/handle_info dance.
+  #
+  # First connect computes the count + subscribes to the account's
+  # approvals topic; an `attach_hook` then refreshes whenever a request
+  # is created or decided. The hook returns `{:cont, ...}` so it never
+  # competes with the host LV's own `handle_info/2` clauses — they both
+  # see the message, the badge stays current, and the host's own
+  # reaction (e.g. reload the approvals table) keeps working.
+  def on_mount(:track_pending_approvals, _params, _session, socket) do
+    socket =
+      socket
+      |> Phoenix.Component.assign_new(:pending_approvals_count, fn ->
+        approval_count_for(socket.assigns[:current_subject])
+      end)
+
+    if Phoenix.LiveView.connected?(socket) and socket.assigns[:current_account] do
+      Emisar.PubSub.subscribe_account_approvals(socket.assigns.current_account.id)
+
+      {:cont,
+       Phoenix.LiveView.attach_hook(
+         socket,
+         :refresh_pending_approvals,
+         :handle_info,
+         &refresh_pending_approvals/2
+       )}
+    else
+      {:cont, socket}
+    end
+  end
+
+  defp refresh_pending_approvals({:approval_updated, _}, socket) do
+    {:cont,
+     Phoenix.Component.assign(
+       socket,
+       :pending_approvals_count,
+       approval_count_for(socket.assigns[:current_subject])
+     )}
+  end
+
+  defp refresh_pending_approvals(_msg, socket), do: {:cont, socket}
+
+  defp approval_count_for(nil), do: 0
+  defp approval_count_for(subject), do: Emisar.Approvals.count_pending_approval_requests(subject)
+
   defp format_peer_ip(%{address: ip}) when is_tuple(ip),
     do: ip |> :inet_parse.ntoa() |> to_string()
 
@@ -318,23 +403,26 @@ defmodule EmisarWeb.UserAuth do
     end)
   end
 
-  defp mount_current_account(socket) do
+  defp mount_current_account(socket, session) do
     # Resolve everything in one shot so assign_new closures don't race
     # against the outer pipe's socket reference (assign_new captures
     # the socket at definition time, not at evaluation time).
-    {account, membership, subject} =
+    requested_id = session["current_account_id"]
+
+    {account, membership, subject, switchable} =
       case socket.assigns[:current_user] do
         nil ->
-          {nil, nil, nil}
+          {nil, nil, nil, []}
 
         user ->
-          case Accounts.fetch_primary_membership_for_user(user) do
+          case Accounts.fetch_membership_for_session(user, requested_id) do
             {:error, :not_found} ->
-              {nil, nil, nil}
+              {nil, nil, nil, []}
 
             {:ok, membership} ->
               {membership.account, membership,
-               Subject.for_user(user, membership.account, membership, %{})}
+               Subject.for_user(user, membership.account, membership, %{}),
+               load_switchable_accounts(user)}
           end
       end
 
@@ -342,5 +430,16 @@ defmodule EmisarWeb.UserAuth do
     |> Phoenix.Component.assign_new(:current_account, fn -> account end)
     |> Phoenix.Component.assign_new(:current_membership, fn -> membership end)
     |> Phoenix.Component.assign_new(:current_subject, fn -> subject end)
+    |> Phoenix.Component.assign_new(:switchable_accounts, fn -> switchable end)
+  end
+
+  # All non-suspended accounts the user can mount. Used by the sidebar
+  # account switcher; cheap (one indexed lookup) so it's fine to fetch
+  # on every LV mount.
+  defp load_switchable_accounts(user) do
+    case Accounts.list_accounts_for_user(user, page_size: 100) do
+      {:ok, accounts, _meta} -> accounts
+      _ -> []
+    end
   end
 end

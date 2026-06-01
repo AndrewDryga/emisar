@@ -1,11 +1,17 @@
 defmodule EmisarWeb.AuthKeysLive do
   use EmisarWeb, :live_view
 
-  alias Emisar.Runners
+  alias Emisar.{PubSub, Runners}
   alias EmisarWeb.{LiveTable, Permissions, UrlHelpers}
   alias Phoenix.LiveView.JS
 
   def mount(_params, _session, socket) do
+    # Subscribe to the per-account auth-keys topic so another operator's
+    # create / revoke (or an auto-bind from a runner registration) reflows
+    # this list without the viewer having to refresh.
+    if connected?(socket),
+      do: PubSub.subscribe_account_auth_keys(socket.assigns.current_account.id)
+
     {:ok,
      socket
      |> assign(:page_title, "Auth keys")
@@ -19,6 +25,9 @@ defmodule EmisarWeb.AuthKeysLive do
   def handle_params(params, _uri, socket) do
     {:noreply, load(socket, params)}
   end
+
+  def handle_info({:list_changed, :auth_key, _event_type, _id}, socket),
+    do: {:noreply, load(socket, socket.assigns[:filter_params] || %{})}
 
   defp fetch_billing(socket) do
     case Emisar.Billing.billing_summary(socket.assigns.current_account, socket.assigns.current_subject) do
@@ -53,6 +62,7 @@ defmodule EmisarWeb.AuthKeysLive do
       |> put_if_present(:group, params["group"])
       |> Map.put(:reusable, truthy?(params["reusable"]))
       |> put_expires(params["expires_at"])
+      |> put_max_uses(params["max_uses"])
 
     case Runners.create_auth_key(attrs, socket.assigns.current_subject) do
       {:ok, raw, key} ->
@@ -105,7 +115,25 @@ defmodule EmisarWeb.AuthKeysLive do
   end
 
   defp default_params do
-    %{"description" => "", "group" => "default", "reusable" => "false", "expires_at" => ""}
+    %{
+      "description" => "",
+      "group" => "default",
+      "reusable" => "false",
+      "expires_at" => "",
+      "max_uses" => ""
+    }
+  end
+
+  # Only set max_uses when reusable AND a positive integer was typed —
+  # single-use keys ignore it (they self-cap at 1 via the schema), and
+  # an empty string means "unlimited within the reusable window".
+  defp put_max_uses(map, value) when value in [nil, ""], do: map
+
+  defp put_max_uses(map, value) when is_binary(value) do
+    case Integer.parse(value) do
+      {n, ""} when n > 0 -> Map.put(map, :max_uses, n)
+      _ -> map
+    end
   end
 
   defp assign_form(socket, params) do
@@ -132,9 +160,10 @@ defmodule EmisarWeb.AuthKeysLive do
 
   def render(assigns) do
     ~H"""
-    <.dashboard_shell
+    <.dashboard_shell pending_approvals_count={@pending_approvals_count}
       current_user={@current_user}
       current_account={@current_account}
+      switchable_accounts={@switchable_accounts}
       flash={@flash}
       section={:auth_keys}
     >
@@ -260,23 +289,40 @@ defmodule EmisarWeb.AuthKeysLive do
                 label="Reusable (many runners can register with this key)"
               />
             </div>
+            <.input
+              field={@form[:max_uses]}
+              type="number"
+              min="1"
+              label="Max uses (reusable keys only)"
+              placeholder="unlimited"
+            />
+            <div class="sm:col-span-2 -mt-2 text-xs leading-relaxed text-zinc-500">
+              Caps how many runners can register with a reusable key before it
+              auto-revokes. Leave blank for unlimited. Ignored when the key is
+              single-use.
+            </div>
             <:actions>
               <.button phx-disable-with="Creating...">Create key</.button>
             </:actions>
           </.simple_form>
         </section>
 
-        <%!-- Key list — single column, two-line rows. Reusable / single-
-             use shows as a pill on the right. Created-by + last-used
-             sit in a compact meta line under the description. --%>
+        <%!-- Key list — uses the LiveTable :cards shell so paginator,
+             empty state, and (future) filter form all match the rest
+             of the portal. The list_section wrapper supplies the title
+             bar + count chip; LiveTable owns everything below it. --%>
         <.list_section title="Auth keys" count={@metadata.count} noun="key">
-          <%= if @auth_keys == [] do %>
-            <div class="px-5 py-10 text-center text-sm text-zinc-500">
-              No keys yet. Click <span class="text-zinc-300">New key</span> to bootstrap a runner.
-            </div>
-          <% else %>
-            <ul class="divide-y divide-zinc-900">
-              <li :for={key <- @auth_keys} class="flex items-start gap-4 px-5 py-4">
+          <LiveTable.live_table
+            layout={:cards}
+            id="auth-keys"
+            path={~p"/app/settings/runners/auth-keys"}
+            rows={@auth_keys}
+            metadata={@metadata}
+            filter_params={@filter_params}
+            class="rounded-none border-0"
+          >
+            <:item :let={key}>
+              <li class="flex items-start gap-4 px-5 py-4">
                 <span class="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-zinc-900 text-zinc-400">
                   <.icon name="hero-key" class="h-4 w-4" />
                 </span>
@@ -294,38 +340,27 @@ defmodule EmisarWeb.AuthKeysLive do
                   <div class="mt-1 truncate font-mono text-[11px] text-zinc-500">
                     {key.key_prefix}… ·
                     {key.uses_count} {if key.uses_count == 1, do: "use", else: "uses"} ·
-                    last used {format_last_used(key.last_used_at)}
+                    last used {last_used(key.last_used_at)}
                     <span :if={key.created_by}>· by {key.created_by.email}</span>
                   </div>
                 </div>
 
-                <%= cond do %>
-                  <% key.revoked_at -> %>
-                    <span></span>
-                  <% Permissions.can?(assigns, :manage_auth_keys) -> %>
-                    <button
-                      phx-click="revoke"
-                      phx-value-id={key.id}
-                      data-confirm="Revoke this auth key? Existing runners aren't affected; new registrations will fail."
-                      class="shrink-0 rounded-lg border border-rose-500/40 px-2.5 py-1 text-xs font-medium text-rose-200 hover:bg-rose-500/10"
-                    >
-                      Revoke
-                    </button>
-                  <% true -> %>
-                    <span></span>
-                <% end %>
+                <button
+                  :if={is_nil(key.revoked_at) and Permissions.can?(assigns, :manage_auth_keys)}
+                  phx-click="revoke"
+                  phx-value-id={key.id}
+                  data-confirm="Revoke this auth key? Existing runners aren't affected; new registrations will fail."
+                  class="shrink-0 rounded-lg border border-rose-500/40 px-2.5 py-1 text-xs font-medium text-rose-200 hover:bg-rose-500/10"
+                >
+                  Revoke
+                </button>
               </li>
-            </ul>
-          <% end %>
+            </:item>
+            <:empty>
+              No keys yet. Click <span class="text-zinc-300">New key</span> to bootstrap a runner.
+            </:empty>
+          </LiveTable.live_table>
         </.list_section>
-
-        <LiveTable.paginator
-          :if={@auth_keys != []}
-          id="auth-keys"
-          path={~p"/app/settings/runners/auth-keys"}
-          metadata={@metadata}
-          filter_params={@filter_params}
-        />
 
         <p :if={not Permissions.can?(assigns, :manage_auth_keys)} class="text-xs text-zinc-500">
           Only owners and admins can issue or revoke auth keys.
@@ -334,9 +369,6 @@ defmodule EmisarWeb.AuthKeysLive do
     </.dashboard_shell>
     """
   end
-
-  defp format_last_used(nil), do: "never"
-  defp format_last_used(ts), do: relative_time(ts)
 
   defp show_create,
     do: JS.show(to: "#create-panel", transition: {"transition-all ease-out duration-150", "opacity-0", "opacity-100"})

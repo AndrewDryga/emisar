@@ -42,8 +42,9 @@ defmodule Emisar.Accounts.Membership.Query do
   def latest(q), do: limit(q, 1)
 
   @doc """
-  Restrict to memberships whose account is not disabled. Used by the
-  account picker so a user can't pick a disabled tenant.
+  Restrict to memberships whose account is not soft-deleted. Used by
+  the account picker so a user can't pick a tenant that's been
+  deleted out from under them.
   """
   def for_active_account(q) do
     q
@@ -51,7 +52,7 @@ defmodule Emisar.Accounts.Membership.Query do
       on: a.id == m.account_id,
       as: :accounts
     )
-    |> where([accounts: a], is_nil(a.disabled_at))
+    |> where([accounts: a], is_nil(a.deleted_at))
   end
 
   # -- Pagination + preloads -------------------------------------------

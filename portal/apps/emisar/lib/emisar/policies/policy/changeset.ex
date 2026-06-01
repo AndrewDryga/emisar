@@ -19,6 +19,19 @@ defmodule Emisar.Policies.Policy.Changeset do
     |> cast(attrs, [:rules, :updated_by_id])
     |> validate_required([:rules])
     |> validate_rules()
+    |> maybe_bump_vsn(policy)
+  end
+
+  # Bump the version whenever the rules map actually changes. Pure
+  # cast (no rule change) shouldn't increment — protects against
+  # touching `updated_by_id` alone bumping the audit-correlation
+  # number without an actual decision-affecting edit.
+  defp maybe_bump_vsn(changeset, %Policy{vsn: current, rules: existing_rules}) do
+    case get_change(changeset, :rules) do
+      nil -> changeset
+      ^existing_rules -> changeset
+      _new_rules -> put_change(changeset, :vsn, (current || 1) + 1)
+    end
   end
 
   def delete(%Policy{} = policy) do
@@ -60,11 +73,33 @@ defmodule Emisar.Policies.Policy.Changeset do
     cond do
       bad_tiers != [] -> {:error, "unknown risk tiers: #{inspect(bad_tiers)}"}
       bad_values != [] -> {:error, "unknown decisions: #{inspect(bad_values)}"}
-      true -> :ok
+      true -> check_tier_monotonicity(defaults)
     end
   end
 
   defp check_defaults(_), do: {:error, "defaults must be a JSON object"}
+
+  # Each tier in [low, medium, high, critical] must be at least as
+  # restrictive as the one before it (rank: allow < require_approval
+  # < deny). Lets us write `cassandra.drain` policies that can't
+  # accidentally be more permissive than `cassandra.nodetool_status`.
+  defp check_tier_monotonicity(defaults) do
+    @valid_tiers
+    |> Enum.map(&Map.get(defaults, &1))
+    |> Enum.reject(&is_nil/1)
+    |> Enum.map(&Emisar.Policies.decision_rank/1)
+    |> Enum.chunk_every(2, 1, :discard)
+    |> Enum.find(fn [a, b] -> a > b end)
+    |> case do
+      nil ->
+        :ok
+
+      _violation ->
+        {:error,
+         "higher-risk tiers must be at least as restrictive as lower-risk tiers " <>
+           "(e.g. you can't set high=allow when medium=require_approval)"}
+    end
+  end
 
   defp check_overrides(nil), do: :ok
 

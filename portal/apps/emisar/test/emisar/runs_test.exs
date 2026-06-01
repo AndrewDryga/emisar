@@ -29,6 +29,69 @@ defmodule Emisar.RunsTest do
       assert String.starts_with?(run.request_id, "req_")
       assert %DateTime{} = run.queued_at
     end
+
+    test "second insert with same (api_key_id, idempotency_key) returns {:replay, original}" do
+      # Closes the TOCTOU race in dispatch_run: the pre-flight peek is a
+      # best-effort optimization; the unique index `(api_key_id,
+      # idempotency_key)` is the actual correctness guarantee. When two
+      # racing callers both miss the peek and try to insert, one wins
+      # the index and the other gets back the winner's row instead of a
+      # confusing constraint changeset.
+      account = account_fixture()
+      runner = runner_fixture(account_id: account.id)
+      {_raw, key} = api_key_fixture(account_id: account.id)
+
+      attrs =
+        base_attrs(account.id, runner.id, %{
+          source: "mcp",
+          api_key_id: key.id,
+          idempotency_key: "idem-#{System.unique_integer([:positive])}"
+        })
+
+      assert {:ok, %ActionRun{} = original} = Runs.create_run(attrs)
+      assert {:replay, %ActionRun{id: replayed_id}} = Runs.create_run(attrs)
+
+      assert replayed_id == original.id
+    end
+
+    test "a different idempotency_key on the same api_key inserts a second row" do
+      # Sanity-check the unique index isn't overreaching: same key, new
+      # idempotency_key → new row, not a replay.
+      account = account_fixture()
+      runner = runner_fixture(account_id: account.id)
+      {_raw, key} = api_key_fixture(account_id: account.id)
+
+      attrs1 =
+        base_attrs(account.id, runner.id, %{
+          source: "mcp",
+          api_key_id: key.id,
+          idempotency_key: "idem-a"
+        })
+
+      attrs2 = %{attrs1 | source: "mcp"} |> Map.put(:idempotency_key, "idem-b")
+
+      assert {:ok, %ActionRun{id: a_id}} = Runs.create_run(attrs1)
+      assert {:ok, %ActionRun{id: b_id}} = Runs.create_run(attrs2)
+
+      refute a_id == b_id
+    end
+
+    test "two calls with nil idempotency_key never replay (null != null in unique index)" do
+      # Without an Idempotency-Key the unique constraint is partial
+      # (`where idempotency_key IS NOT NULL`), so two non-MCP calls don't
+      # accidentally collide. Run_id is the only uniqueness gate, and
+      # `Runs.generate_request_id/0` produces UUIDs so collisions are
+      # essentially impossible.
+      account = account_fixture()
+      runner = runner_fixture(account_id: account.id)
+
+      attrs = base_attrs(account.id, runner.id)
+
+      assert {:ok, %ActionRun{id: a_id}} = Runs.create_run(attrs)
+      assert {:ok, %ActionRun{id: b_id}} = Runs.create_run(attrs)
+
+      refute a_id == b_id
+    end
   end
 
   describe "dispatch_run/2" do
@@ -157,6 +220,19 @@ defmodule Emisar.RunsTest do
       assert {:ok, [%{status: "denied", policy_decision: "deny"}], _meta} =
                Runs.list_recent_runs(system, limit: 50)
     end
+
+    test "stamps policy_version on the dispatched run so audit can correlate vN edits" do
+      account = account_fixture()
+      runner = runner_fixture(account_id: account.id)
+      _ = action_fixture(runner: runner, action_id: "linux.uptime", risk: "low")
+      policy = policy_fixture(account_id: account.id)
+
+      assert {:ok, :running, %ActionRun{} = run} =
+               Runs.dispatch_run(base_attrs(account.id, runner.id), Emisar.Auth.Subject.system(account))
+
+      assert run.policy_id == policy.id
+      assert run.policy_version == policy.vsn
+    end
   end
 
   describe "append_event/2" do
@@ -248,7 +324,79 @@ defmodule Emisar.RunsTest do
       assert {:ok, %ActionRun{status: "cancelled", cancelled_at: %DateTime{}}} =
                Runs.cancel_run(run, subject, "user pressed stop")
 
-      assert_receive {:run_updated, %ActionRun{status: "cancelled"}}, 500
+      # Payload contract: runner is preloaded so subscribers (e.g.
+      # RunDetailLive's meta strip) can render `runner.name` without
+      # tripping over `%Ecto.Association.NotLoaded{}`.
+      assert_receive {:run_updated,
+                      %ActionRun{status: "cancelled", runner: %Emisar.Runners.Runner{}}},
+                     500
+    end
+  end
+
+  describe "RunDispatchTimeout sweep" do
+    test "list_stale_dispatches/1 returns only pending/sent runs older than the cutoff" do
+      account = account_fixture()
+      runner = runner_fixture(account_id: account.id)
+      _ = action_fixture(runner: runner)
+      _ = policy_fixture(account_id: account.id)
+
+      {:ok, :running, fresh} =
+        Runs.dispatch_run(base_attrs(account.id, runner.id), Emisar.Auth.Subject.system(account))
+
+      # Backdate one run so it's past the cutoff.
+      stale_inserted_at = DateTime.utc_now() |> DateTime.add(-5 * 60, :second)
+
+      stale =
+        fresh
+        |> Ecto.Changeset.change(queued_at: stale_inserted_at, status: "sent")
+        |> Repo.update!()
+
+      cutoff = DateTime.utc_now() |> DateTime.add(-2 * 60, :second)
+      assert [stale_row] = Runs.list_stale_dispatches(cutoff)
+      assert stale_row.id == stale.id
+    end
+
+    test "mark_runner_unreachable/2 transitions to :error with the provided message" do
+      account = account_fixture()
+      runner = runner_fixture(account_id: account.id)
+      _ = action_fixture(runner: runner)
+      _ = policy_fixture(account_id: account.id)
+
+      {:ok, :running, run} =
+        Runs.dispatch_run(base_attrs(account.id, runner.id), Emisar.Auth.Subject.system(account))
+
+      assert {:ok, %ActionRun{status: "error", error_message: msg, finished_at: %DateTime{}}} =
+               Runs.mark_runner_unreachable(run, "runner was disconnected")
+
+      assert msg =~ "disconnected"
+    end
+
+    test "worker only touches stale runs whose runner is offline" do
+      account = account_fixture()
+      runner = runner_fixture(account_id: account.id)
+      _ = action_fixture(runner: runner)
+      _ = policy_fixture(account_id: account.id)
+
+      {:ok, :running, run} =
+        Runs.dispatch_run(base_attrs(account.id, runner.id), Emisar.Auth.Subject.system(account))
+
+      # Backdate + flip to sent so it's a sweep candidate.
+      stale_at = DateTime.utc_now() |> DateTime.add(-5 * 60, :second)
+
+      run
+      |> Ecto.Changeset.change(queued_at: stale_at, status: "sent")
+      |> Repo.update!()
+
+      # And mark the runner disconnected so the sweeper times it out.
+      runner
+      |> Ecto.Changeset.change(status: "disconnected")
+      |> Repo.update!()
+
+      assert :ok = Emisar.Workers.RunDispatchTimeout.perform(%Oban.Job{args: %{}})
+
+      reloaded = Repo.get!(ActionRun, run.id)
+      assert reloaded.status == "error"
+      assert reloaded.error_message =~ "disconnected"
     end
   end
 end

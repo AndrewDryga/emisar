@@ -23,30 +23,44 @@
         <section>
           <div class="flex items-center gap-3">
             <span class="grid h-8 w-8 place-items-center rounded-full bg-indigo-500/20 text-sm font-semibold text-indigo-300">1</span>
-            <h2 class="text-2xl font-semibold tracking-tight text-zinc-50">Issue an API key</h2>
+            <h2 class="text-2xl font-semibold tracking-tight text-zinc-50">Pick a client → get a key</h2>
           </div>
 
           <p class="mt-4 text-base leading-relaxed text-zinc-400">
-            In the dashboard go to <code class="rounded bg-zinc-900 px-1.5 py-0.5 text-sm">Settings → API keys</code>
-            and click <strong>Issue an API key</strong>. Two things matter:
+            In the dashboard sidebar, click
+            <code class="rounded bg-zinc-900 px-1.5 py-0.5 text-sm">Agents</code>.
+            Pick your LLM client from the tab strip (Claude Code, Claude Desktop,
+            Cursor, Gemini CLI, Codex CLI) and we mint a key named after the
+            client + drop a prefilled snippet you can paste straight into the
+            client's config. Quick keys are scoped to
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">actions:read</code>
+            +
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">actions:execute</code>
+            — the standard MCP shape — and target every runner.
+          </p>
+
+          <p class="mt-4 text-base leading-relaxed text-zinc-400">
+            Want a tighter scope? Pick the
+            <code class="rounded bg-zinc-900 px-1.5 py-0.5 text-sm">Custom</code>
+            tab. Same scopes, but you can restrict which runners or groups
+            the key may target. Two things matter on the form:
           </p>
 
           <ul class="mt-4 space-y-3 text-sm text-zinc-300">
             <li class="flex gap-3">
               <.icon name="hero-check" class="mt-0.5 h-4 w-4 flex-none text-indigo-400" />
               <div>
-                <strong>Scopes</strong> — tick <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">actions:read</code>
-                and <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">actions:execute</code>.
-                Add <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">audit:read</code>
-                if the LLM should be able to read run history.
+                <strong>Name + description</strong> — what shows up in the
+                Agents list and on every audit row.
               </div>
             </li>
             <li class="flex gap-3">
               <.icon name="hero-check" class="mt-0.5 h-4 w-4 flex-none text-indigo-400" />
               <div>
-                <strong>Allowed runners</strong> — leave empty to allow every
-                runner, or tick the specific runners the key may target. We
-                strongly recommend the explicit list for production keys.
+                <strong>Allowed runners</strong> — collapsed by default
+                (all runners). Expand "Restrict to specific runners or
+                groups" and tick the ones this key may target. We strongly
+                recommend the explicit list for production keys.
               </div>
             </li>
           </ul>

@@ -41,7 +41,6 @@ defmodule Emisar.Repo.Migrations.PoliciesAndRunbooks do
       add :definition, :map, null: false
 
       add :created_by_id, references(:users, type: :binary_id, on_delete: :nilify_all)
-      add :archived_at, :utc_datetime_usec
       timestamps(type: :utc_datetime_usec)
     end
 

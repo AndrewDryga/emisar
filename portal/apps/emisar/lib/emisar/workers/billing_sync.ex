@@ -6,6 +6,8 @@ defmodule Emisar.Workers.BillingSync do
   """
   use Oban.Worker, queue: :billing, max_attempts: 3
 
+  require Logger
+
   alias Emisar.{Billing, Repo}
   alias Emisar.Billing.{PaddleClient, Subscription}
 
@@ -28,7 +30,18 @@ defmodule Emisar.Workers.BillingSync do
           current_period_end: Billing.extract_next_billed_at(sub)
         })
 
-      {:error, _reason} ->
+      {:error, reason} ->
+        # Don't fail the whole sweep — a single bad subscription must
+        # not block the rest — but surface every failure to Logger so
+        # a permanent Paddle credential revocation (or one tenant whose
+        # subscription was deleted out from under us) doesn't go
+        # invisible. Sentry's Logger backend picks this up automatically.
+        Logger.warning("billing_sync.retrieve_failed",
+          paddle_subscription_id: sid,
+          account_id: account_id,
+          error: inspect(reason)
+        )
+
         :ok
     end
   end

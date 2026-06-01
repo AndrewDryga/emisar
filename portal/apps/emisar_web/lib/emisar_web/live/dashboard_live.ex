@@ -2,7 +2,6 @@ defmodule EmisarWeb.DashboardLive do
   use EmisarWeb, :live_view
 
   alias Emisar.{ApiKeys, Runners, Approvals, Billing, Catalog, PubSub, Runs}
-  alias EmisarWeb.UrlHelpers
 
   def mount(_params, _session, socket) do
     account_id = socket.assigns.current_account.id
@@ -13,51 +12,7 @@ defmodule EmisarWeb.DashboardLive do
       PubSub.subscribe_account_approvals(account_id)
     end
 
-    # Mint ONLY on the connected (live) mount, not the dead HTTP
-    # render. mount/3 runs twice per page load (Plug pass + WebSocket
-    # pass); minting in both would double the DB writes for no UX win.
-    # Dead render briefly shows "Generating your install command…";
-    # the live mount sub-second later replaces it with the real one.
-    #
-    # Mint runs in mount/3 (not load/1) so PubSub-triggered re-renders
-    # — a runner connecting, a run completing — don't churn extra
-    # install keys. Ring eviction in Runners.mint_install_key/3 caps
-    # unused autos at 42 per account regardless.
-    install_command =
-      if connected?(socket) do
-        maybe_mint_install_command(socket)
-      end
-
-    {:ok,
-     socket
-     |> assign(:install_command, install_command)
-     |> load()}
-  end
-
-  # Only mints when the account has zero runners — that's the only path
-  # that surfaces the install command in the UI. Accounts with active
-  # runners never auto-mint; operators wanting an extra key go via
-  # Settings → Auth keys (explicit, audit-logged).
-  defp maybe_mint_install_command(socket) do
-    subject = socket.assigns.current_subject
-
-    case Runners.list_runners_for_account(subject) do
-      {:ok, [], _} ->
-        base = UrlHelpers.derive_base_url(socket)
-
-        case Runners.mint_install_key(subject) do
-          {:ok, raw, _key} ->
-            # Leading space keeps the line out of shell history when
-            # HISTCONTROL=ignorespace (bash) or HIST_IGNORE_SPACE (zsh).
-            " curl -sSL #{base}/install.sh | sudo EMISAR_AUTH_KEY=#{raw} EMISAR_URL=#{base} bash"
-
-          {:error, _} ->
-            :mint_failed
-        end
-
-      _ ->
-        nil
-    end
+    {:ok, load(socket)}
   end
 
   def handle_info({_event, _struct}, socket), do: {:noreply, load(socket)}
@@ -69,6 +24,7 @@ defmodule EmisarWeb.DashboardLive do
     {:ok, actions, _} = Catalog.list_actions_for_account(subject)
     {:ok, pending, _} = Approvals.list_pending_approval_requests(subject)
     {:ok, api_keys, _} = ApiKeys.list_api_keys_for_account(subject)
+    memberships = list_memberships(subject)
 
     socket
     |> assign(:page_title, "Dashboard")
@@ -81,6 +37,32 @@ defmodule EmisarWeb.DashboardLive do
     |> assign(:pending_approvals, pending)
     |> assign(:has_llm_connected?, api_keys != [])
     |> assign(:billing, unwrap_ok(Billing.billing_summary(account, subject)))
+    |> assign(:team_mfa, team_mfa_stats(memberships, account))
+  end
+
+  defp list_memberships(subject) do
+    case Emisar.Accounts.list_memberships_for_account(subject) do
+      {:ok, list, _} -> list
+      _ -> []
+    end
+  end
+
+  # Tile data for the team-security stat. Team size + how many have
+  # enrolled MFA + whether the account *requires* MFA. The combination
+  # decides the tile's tone (rose when required-but-missing, amber
+  # when optional-but-missing, emerald when fully enrolled).
+  defp team_mfa_stats(memberships, account) do
+    enrolled =
+      Enum.count(memberships, fn m ->
+        m.user && m.user.mfa_enabled_at
+      end)
+
+    %{
+      total: length(memberships),
+      enrolled: enrolled,
+      missing: length(memberships) - enrolled,
+      required?: account.require_mfa
+    }
   end
 
   defp unwrap_ok({:ok, value}), do: value
@@ -88,46 +70,84 @@ defmodule EmisarWeb.DashboardLive do
 
   def render(assigns) do
     ~H"""
-    <.dashboard_shell
+    <.dashboard_shell pending_approvals_count={@pending_approvals_count}
       current_user={@current_user}
       current_account={@current_account}
+      switchable_accounts={@switchable_accounts}
       flash={@flash}
       section={:dashboard}
     >
       <:title>Dashboard</:title>
 
-      <%= if @runners_total == 0 do %>
-        <.empty_state_first_runner install_command={@install_command} />
-      <% else %>
-        <.live_dashboard
-          runners_connected={@runners_connected}
-          runners_total={@runners_total}
-          actions_count={@actions_count}
-          pending_approvals={@pending_approvals}
-          recent_runs={@recent_runs}
-          recent_failures={@recent_failures}
-          run_stats={@run_stats}
-          has_llm_connected?={@has_llm_connected?}
-          billing={@billing}
-        />
-      <% end %>
+      <.live_dashboard
+        runners_total={@runners_total}
+        runners_connected={@runners_connected}
+        actions_count={@actions_count}
+        pending_approvals={@pending_approvals}
+        recent_runs={@recent_runs}
+        recent_failures={@recent_failures}
+        run_stats={@run_stats}
+        has_llm_connected?={@has_llm_connected?}
+        billing={@billing}
+        team_mfa={@team_mfa}
+      />
     </.dashboard_shell>
     """
   end
 
-  # First-time experience. The install command is pre-rendered on mount
-  # (via Runners.mint_install_key) so there's no "generate" click step —
-  # operator copies and runs. While runners is empty, the LV is
-  # subscribed to account-level runner events; the moment the first
-  # runner registers and connects, the page flips to the populated
-  # dashboard automatically.
-  # Reuses the shared `<.install_wizard>` so the empty-state dashboard
-  # and `/app/runners/install` show the exact same widget.
-  attr :install_command, :any, required: true
+  # Onboarding checklist. Each card disappears the moment its
+  # condition is met — "no runners" goes away when the first runner
+  # registers, "no LLM" goes away when the first API key gets minted.
+  # When both are done, the whole block hides; the dashboard goes
+  # straight to stats. Same single-line-tile shape as the original
+  # bottom-of-page LLM nag — just hoisted to the top so a fresh
+  # account sees the next step instead of "0 runners, 0 runs".
 
-  defp empty_state_first_runner(assigns) do
+  attr :runners_total, :integer, required: true
+  attr :has_llm_connected?, :boolean, required: true
+
+  defp onboarding_checklist(assigns) do
     ~H"""
-    <.install_wizard install_command={@install_command} />
+    <div
+      :if={@runners_total == 0 or not @has_llm_connected?}
+      class="mb-6 grid grid-cols-1 gap-3 lg:grid-cols-2"
+    >
+      <.onboarding_card
+        :if={@runners_total == 0}
+        href={~p"/app/runners/install"}
+        icon="hero-cpu-chip"
+        title="Connect a runner"
+        body="Install the agent on a server you want to operate — one curl one-liner. The dashboard tracks the rest from heartbeat onwards."
+      />
+      <.onboarding_card
+        :if={not @has_llm_connected?}
+        href={~p"/app/agents"}
+        icon="hero-bolt"
+        title="Connect an LLM"
+        body="Pick a client (Claude Code, Cursor, Gemini, Codex) and we'll mint the API key and drop a prefilled snippet you can paste straight in."
+      />
+    </div>
+    """
+  end
+
+  attr :href, :string, required: true
+  attr :icon, :string, required: true
+  attr :title, :string, required: true
+  attr :body, :string, required: true
+
+  defp onboarding_card(assigns) do
+    ~H"""
+    <.link
+      navigate={@href}
+      class="flex items-center gap-3 rounded-xl border border-indigo-900/40 bg-indigo-950/20 p-4 transition hover:border-indigo-700/60 hover:bg-indigo-950/40"
+    >
+      <.icon name={@icon} class="h-5 w-5 flex-none text-indigo-400" />
+      <div class="flex-1">
+        <div class="text-sm font-semibold text-zinc-100">{@title}</div>
+        <p class="mt-0.5 text-xs text-zinc-400">{@body}</p>
+      </div>
+      <.icon name="hero-arrow-right" class="h-4 w-4 flex-none text-indigo-400" />
+    </.link>
     """
   end
 
@@ -149,19 +169,30 @@ defmodule EmisarWeb.DashboardLive do
   attr :run_stats, :map, required: true
   attr :has_llm_connected?, :boolean, required: true
   attr :billing, :map, required: true
+  attr :team_mfa, :map, required: true
 
   defp live_dashboard(assigns) do
     ~H"""
+    <.onboarding_checklist
+      runners_total={@runners_total}
+      has_llm_connected?={@has_llm_connected?}
+    />
+
     <.plan_limit_banner :if={runner_headroom_warn?(@billing)} billing={@billing} />
     <.runners_offline_banner
       :if={@runners_total > 0 and @runners_connected == 0}
       runners_total={@runners_total}
     />
 
+    <%!-- Three tiles, never four. Plan info used to live in the third
+         slot but billing is rarely operational. Team-MFA posture is —
+         it tells the operator at a glance "is the people-attack
+         surface tight?" and links straight to the team page where
+         they'd fix it. --%>
     <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
       <.runners_stat connected={@runners_connected} total={@runners_total} />
       <.runs_stat stats={@run_stats} />
-      <.plan_usage_stat billing={@billing} />
+      <.team_security_stat team_mfa={@team_mfa} />
     </div>
 
     <%!-- Attention rail. Two columns. Collapses to a single muted line
@@ -225,24 +256,6 @@ defmodule EmisarWeb.DashboardLive do
         </ul>
       </.attention_panel>
     </div>
-
-    <%!-- Connect-an-LLM CTA. Only when the operator hasn't yet — once
-         they have an API key, this nag goes away forever. --%>
-    <.link
-      :if={not @has_llm_connected?}
-      navigate={~p"/app/agents"}
-      class="mt-6 flex items-center gap-3 rounded-xl border border-indigo-900/40 bg-indigo-950/20 p-4 transition hover:border-indigo-700/60 hover:bg-indigo-950/40"
-    >
-      <.icon name="hero-bolt" class="h-5 w-5 flex-none text-indigo-400" />
-      <div class="flex-1">
-        <div class="text-sm font-semibold text-zinc-100">Connect an LLM</div>
-        <p class="mt-0.5 text-xs text-zinc-400">
-          Pick a client (Claude Code, Cursor, Gemini, Codex) and we'll mint the API key and
-          drop a prefilled snippet you can paste straight in.
-        </p>
-      </div>
-      <.icon name="hero-arrow-right" class="h-4 w-4 flex-none text-indigo-400" />
-    </.link>
 
     <%!-- Recent runs — full width, no parallel "activity" mirror at
          the bottom (that just duplicated the audit page). --%>
@@ -435,49 +448,62 @@ defmodule EmisarWeb.DashboardLive do
     """
   end
 
-  # -- Plan-usage stat + warning banner -------------------------------
+  # -- Team-security stat (replaces the old plan tile) ---------------
+  #
+  # The third tile reports "how locked-down is your team", not "what
+  # plan are you on". Three tones:
+  #
+  #   * rose  — account enforces MFA AND someone hasn't enrolled.
+  #             They literally can't sign in until they fix it.
+  #   * amber — MFA is optional but at least one teammate hasn't
+  #             enrolled. Soft nudge.
+  #   * emerald — every member is enrolled. Quiet "you're good".
+  #
+  # Always links to the team page where the operator can chase the
+  # missing enrollments.
 
-  attr :billing, :map, required: true
+  attr :team_mfa, :map, required: true
 
-  defp plan_usage_stat(assigns) do
-    headroom = Emisar.Billing.headroom(assigns.billing, :runners)
-    assigns = assign(assigns, :headroom, headroom)
+  defp team_security_stat(assigns) do
+    tone =
+      cond do
+        assigns.team_mfa.total == 0 -> :zinc
+        assigns.team_mfa.missing == 0 -> :emerald
+        assigns.team_mfa.required? -> :rose
+        true -> :amber
+      end
+
+    assigns = assign(assigns, :tone, tone)
 
     ~H"""
-    <%= cond do %>
-      <% @headroom == :unlimited -> %>
-        <.stat
-          label="Plan"
-          value={String.capitalize(@billing.plan)}
-          hint={"Unlimited runners · #{@billing.audit_retention_days}d audit"}
-        />
-      <% @headroom == :at_limit -> %>
-        <.link navigate={~p"/app/settings/billing"} class="block">
-          <.stat
-            label="Plan — at limit"
-            value={"#{@billing.runner_count} / #{@billing.runner_limit}"}
-            hint="Runners used. Upgrade to add more →"
-            class="ring-1 ring-rose-500/40"
-          />
-        </.link>
-      <% @headroom == :warning -> %>
-        <.link navigate={~p"/app/settings/billing"} class="block">
-          <.stat
-            label="Plan — near limit"
-            value={"#{@billing.runner_count} / #{@billing.runner_limit}"}
-            hint="Runners used. Upgrade for more →"
-            class="ring-1 ring-amber-500/40"
-          />
-        </.link>
-      <% true -> %>
-        <.stat
-          label="Plan"
-          value={String.capitalize(@billing.plan)}
-          hint={"#{@billing.runner_count} of #{@billing.runner_limit} runners · #{@billing.audit_retention_days}d audit"}
-        />
-    <% end %>
+    <.link navigate={~p"/app/settings/team"} class="block">
+      <.stat
+        label={stat_label(@tone, @team_mfa)}
+        value={"#{@team_mfa.enrolled} / #{@team_mfa.total}"}
+        hint={stat_hint(@tone, @team_mfa)}
+        class={stat_ring(@tone)}
+      />
+    </.link>
     """
   end
+
+  defp stat_label(_, _), do: "Team 2FA"
+
+  defp stat_hint(:emerald, m),
+    do: "All #{m.total} members enrolled."
+
+  defp stat_hint(:rose, m),
+    do: "#{m.missing} can't sign in until enrolled →"
+
+  defp stat_hint(:amber, m),
+    do: "#{m.missing} #{if m.missing == 1, do: "member hasn't", else: "members haven't"} enrolled →"
+
+  defp stat_hint(:zinc, _),
+    do: "No teammates yet."
+
+  defp stat_ring(:rose), do: "ring-1 ring-rose-500/40"
+  defp stat_ring(:amber), do: "ring-1 ring-amber-500/30"
+  defp stat_ring(_), do: nil
 
   attr :billing, :map, required: true
 

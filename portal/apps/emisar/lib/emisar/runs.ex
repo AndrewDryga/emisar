@@ -6,6 +6,7 @@ defmodule Emisar.Runs do
   Transport for sending, and tracks progress + final result.
   """
 
+  alias Ecto.Multi
   alias Emisar.{Audit, Auth, PubSub, Repo}
   alias Emisar.Auth.Subject
   alias Emisar.Runs.{ActionRun, Authorizer, RunEvent}
@@ -173,6 +174,13 @@ defmodule Emisar.Runs do
   triggering the transport to deliver `run_action` once the row is
   persisted (see Emisar.Transport).
 
+  Returns `{:ok, run}` on a fresh insert, `{:replay, run}` when this
+  call lost the race to a concurrent caller that already inserted with
+  the same `(api_key_id, idempotency_key)` pair (the unique index is
+  the actual correctness guarantee — the pre-flight peek in
+  `dispatch_run/2` just spares us the work in the common case), or
+  `{:error, changeset}` for any other validation failure.
+
   Internal — called by `dispatch_run/2` and tests. Tests can also call
   this directly to seed runs without exercising policy + dispatch.
   """
@@ -181,9 +189,46 @@ defmodule Emisar.Runs do
     attrs = Map.put(attrs, :request_id, request_id)
     attrs = Map.put(attrs, :queued_at, DateTime.utc_now() |> DateTime.truncate(:microsecond))
 
-    ActionRun.Changeset.create(attrs)
-    |> Repo.insert()
-    |> tap_broadcast()
+    result =
+      Multi.new()
+      |> Multi.insert(:run, ActionRun.Changeset.create(attrs))
+      |> Multi.insert(:audit, fn %{run: run} -> Audit.run_event_changeset(run) end)
+      |> Repo.commit_multi(after_commit: fn %{run: run} -> PubSub.broadcast_run(run) end)
+
+    case result do
+      {:ok, %{run: run}} ->
+        {:ok, run}
+
+      {:error, %Ecto.Changeset{errors: errors} = cs} ->
+        if idempotency_conflict?(errors) do
+          # The winning concurrent insert created the row; re-fetch and
+          # report the replay so the caller can return the original
+          # outcome instead of bubbling a confusing constraint error.
+          case peek_idempotent_run(attrs) do
+            {:replay, run} -> {:replay, run}
+            # Theoretical race: the conflicting row was deleted between
+            # the failed insert and our re-fetch. Fall through to the
+            # original error so the caller doesn't silently swallow it.
+            :none -> {:error, cs}
+          end
+        else
+          {:error, cs}
+        end
+    end
+  end
+
+  # Matches the `unique_constraint([:api_key_id, :idempotency_key], …)`
+  # in `ActionRun.Changeset.create/1`. Other unique-index hits
+  # (`request_id`, etc.) are NOT idempotency replays and should still
+  # propagate as changeset errors.
+  defp idempotency_conflict?(errors) do
+    Enum.any?(errors, fn
+      {:api_key_id, {_, opts}} ->
+        Keyword.get(opts, :constraint_name) == "action_runs_api_key_idempotency_key_index"
+
+      _ ->
+        false
+    end)
   end
 
   @doc """
@@ -208,7 +253,8 @@ defmodule Emisar.Runs do
       reason = attrs[:reason]
       membership_id = Map.get(attrs, :requested_by_membership_id)
 
-      with :ok <- require_runner(runner_id),
+      with :none <- peek_idempotent_run(attrs),
+           :ok <- require_runner(runner_id),
            :ok <- require_action(action_id),
            :ok <- require_reason(reason),
            :ok <- runner_in_account(runner_id, account_id),
@@ -219,9 +265,50 @@ defmodule Emisar.Runs do
         |> Map.put(:args_sha256, args_sha256(attrs[:args]))
         |> Map.put(:requires_approval, false)
         |> evaluate_and_dispatch(account_id, action)
+      else
+        {:replay, run} -> replay_outcome(run)
+        other -> other
       end
     end
   end
+
+  # If the caller supplied an Idempotency-Key on this api_key, an earlier
+  # call that won the unique-index race owns the run. We re-shape the
+  # cached row into the same `{:ok, status_atom, run}` tuple the live
+  # dispatch path would return, so MCP responses are byte-identical
+  # whether the caller retried or made a fresh call.
+  defp peek_idempotent_run(%{api_key_id: api_key_id, idempotency_key: key})
+       when is_binary(api_key_id) and is_binary(key) and key != "" do
+    case ActionRun.Query.all()
+         |> ActionRun.Query.by_api_key_id(api_key_id)
+         |> ActionRun.Query.by_idempotency_key(key)
+         |> Repo.peek() do
+      nil -> :none
+      %ActionRun{} = run -> {:replay, run}
+    end
+  end
+
+  defp peek_idempotent_run(_attrs), do: :none
+
+  # Re-shapes a cached run into the same outcome tuple the original
+  # dispatch call returned, so a retried-after-the-fact request gets a
+  # byte-identical response. Cases:
+  #
+  #   * `denied` — policy already rejected; return the deny tuple so MCP
+  #     renders it as `denied_by_policy` rather than as a running run.
+  #   * `pending_approval` / `awaiting_approval` — block on the same
+  #     approval; `wait_for_run` is still the right tool.
+  #   * anything else (sent, running, terminal) — the run exists and the
+  #     LLM can long-poll via `/runs/:id?wait=…` for the final state.
+  defp replay_outcome(%ActionRun{status: "denied", policy_reason: reason} = _run),
+    do: {:error, :denied_by_policy, reason || "policy denied this call"}
+
+  defp replay_outcome(%ActionRun{status: status} = run)
+       when status in ["pending_approval", "awaiting_approval"],
+       do: {:ok, :pending_approval, run}
+
+  defp replay_outcome(%ActionRun{} = run),
+    do: {:ok, :running, run}
 
   # Per-user runner ACLs (v1). If the caller is operator-driven and
   # supplies `requested_by_membership_id`, the membership's runner
@@ -300,18 +387,39 @@ defmodule Emisar.Runs do
       |> Map.merge(policy_attrs(policy, "deny", reason, matched))
       |> Map.put(:status, "denied")
 
-    {:ok, denied} = create_run(run_attrs)
-    log_policy_evaluated(denied, policy, "deny", reason, matched)
-    {:error, :denied_by_policy, reason}
+    case create_run(run_attrs) do
+      {:ok, denied} ->
+        log_policy_evaluated(denied, policy, "deny", reason, matched)
+        {:error, :denied_by_policy, reason}
+
+      {:replay, run} ->
+        # Concurrent retry under the same Idempotency-Key — the original
+        # already logged the deny; surface its outcome verbatim.
+        replay_outcome(run)
+
+      {:error, cs} ->
+        {:error, cs}
+    end
   end
 
   defp dispatch_allow(attrs, policy, reason, matched) do
     attrs = Map.merge(attrs, policy_attrs(policy, "allow", reason, matched))
 
-    with {:ok, run} <- create_run(attrs),
-         :ok <- dispatch_to_runner(run) do
-      log_policy_evaluated(run, policy, "allow", reason, matched)
-      {:ok, :running, run}
+    case create_run(attrs) do
+      {:ok, run} ->
+        with :ok <- dispatch_to_runner(run) do
+          log_policy_evaluated(run, policy, "allow", reason, matched)
+          {:ok, :running, run}
+        end
+
+      {:replay, run} ->
+        # Original already pushed the run_action envelope to the runner;
+        # re-pushing would duplicate-execute, so skip dispatch + just
+        # echo the existing row's outcome.
+        replay_outcome(run)
+
+      {:error, cs} ->
+        {:error, cs}
     end
   end
 
@@ -326,10 +434,18 @@ defmodule Emisar.Runs do
       {:matched, grant} ->
         attrs = Map.merge(attrs, policy_attrs(policy, "allow", "matched approval grant", matched))
 
-        with {:ok, run} <- create_run(attrs),
-             :ok <- dispatch_to_runner(run) do
-          log_grant_used(run, grant, policy)
-          {:ok, :running, run}
+        case create_run(attrs) do
+          {:ok, run} ->
+            with :ok <- dispatch_to_runner(run) do
+              log_grant_used(run, grant, policy)
+              {:ok, :running, run}
+            end
+
+          {:replay, run} ->
+            replay_outcome(run)
+
+          {:error, cs} ->
+            {:error, cs}
         end
 
       :none ->
@@ -341,11 +457,19 @@ defmodule Emisar.Runs do
         # Operator's reason ("why I'm running this") goes to the approval
         # request; the policy reason ("why approval is required") stays
         # on run.policy_reason for the reviewer to see separately.
-        with {:ok, run} <- create_run(attrs),
-             {:ok, _req} <-
-               Emisar.Approvals.create_request(run, attrs[:requested_by_id], attrs[:reason]) do
-          log_policy_evaluated(run, policy, "require_approval", policy_reason, matched)
-          {:ok, :pending_approval, run}
+        case create_run(attrs) do
+          {:ok, run} ->
+            with {:ok, _req} <-
+                   Emisar.Approvals.create_request(run, attrs[:requested_by_id], attrs[:reason]) do
+              log_policy_evaluated(run, policy, "require_approval", policy_reason, matched)
+              {:ok, :pending_approval, run}
+            end
+
+          {:replay, run} ->
+            replay_outcome(run)
+
+          {:error, cs} ->
+            {:error, cs}
         end
     end
   end
@@ -378,6 +502,20 @@ defmodule Emisar.Runs do
     |> Runner.Query.by_id(runner_id)
     |> Runner.Query.by_account_id(account_id)
     |> Repo.exists?()
+  end
+
+  @doc """
+  Internal — used by `Emisar.Workers.RunDispatchTimeout` to find runs
+  that have been sitting in `pending` / `sent` longer than the
+  dispatch threshold. Returns a plain list (no pagination); the worker
+  iterates and decides per-run whether to time it out based on the
+  runner's current state.
+  """
+  def list_stale_dispatches(cutoff) when is_struct(cutoff, DateTime) do
+    ActionRun.Query.all()
+    |> ActionRun.Query.status_in(["pending", "sent"])
+    |> ActionRun.Query.queued_before(cutoff)
+    |> Repo.all()
   end
 
   @doc """
@@ -415,7 +553,7 @@ defmodule Emisar.Runs do
              subject,
              Authorizer.cancel_run_permission()
            ),
-         :ok <- ensure_run_in_subject_account(run, subject) do
+         :ok <- Subject.ensure_in_account(subject, run.account_id) do
       if ActionRun.terminal?(status) do
         {:ok, run}
       else
@@ -433,19 +571,13 @@ defmodule Emisar.Runs do
 
   defp log_cancel_requested(%ActionRun{} = run, %Subject{} = subject, reason) do
     Audit.log(run.account_id, "run.cancel_requested",
-      actor_kind: actor_kind(subject),
-      actor_id: actor_id(subject),
+      actor_kind: Subject.actor_kind(subject),
+      actor_id: Subject.actor_id(subject),
       subject_kind: "run",
       subject_id: run.id,
       payload: %{from_status: run.status, reason: reason}
     )
   end
-
-  defp ensure_run_in_subject_account(%ActionRun{account_id: account_id}, %Subject{} = subject),
-    do: Subject.ensure_in_account(subject, account_id)
-
-  defdelegate actor_kind(subject), to: Subject
-  defdelegate actor_id(subject), to: Subject
 
   def generate_request_id do
     "req_" <> (:crypto.strong_rand_bytes(16) |> Base.url_encode64(padding: false))
@@ -466,6 +598,17 @@ defmodule Emisar.Runs do
 
   def mark_cancelled(%ActionRun{} = run, reason \\ nil) do
     transition(run, :cancelled, %{cancelled_at: now_utc(), finished_at: now_utc(), reason_text: reason})
+  end
+
+  @doc """
+  Internal — called by `Emisar.Workers.RunDispatchTimeout` when a run
+  has been sitting in `pending` / `sent` longer than the dispatch
+  threshold and the target runner is offline. Flips the run to
+  `:error` with an explanatory `error_message` so the operator sees
+  *something* instead of a row stuck in "sent" forever.
+  """
+  def mark_runner_unreachable(%ActionRun{} = run, reason) when is_binary(reason) do
+    transition(run, :error, %{finished_at: now_utc(), error_message: reason})
   end
 
   # Unknown / missing status from the runner is treated as "failed" so
@@ -514,10 +657,14 @@ defmodule Emisar.Runs do
   end
 
   defp transition(%ActionRun{} = run, status, attrs) do
-    run
-    |> ActionRun.Changeset.transition(status, attrs)
-    |> Repo.update()
-    |> tap_broadcast()
+    Multi.new()
+    |> Multi.update(:run, ActionRun.Changeset.transition(run, status, attrs))
+    |> Multi.insert(:audit, fn %{run: run} -> Audit.run_event_changeset(run) end)
+    |> Repo.commit_multi(after_commit: fn %{run: run} -> PubSub.broadcast_run(run) end)
+    |> case do
+      {:ok, %{run: run}} -> {:ok, run}
+      {:error, _} = err -> err
+    end
   end
 
   # -- Events (progress chunks) ----------------------------------------
@@ -592,14 +739,6 @@ defmodule Emisar.Runs do
 
   defp now_utc, do: DateTime.utc_now() |> DateTime.truncate(:microsecond)
 
-  defp tap_broadcast({:ok, %ActionRun{} = run} = result) do
-    PubSub.broadcast_run(run)
-    Audit.log_run_event(run)
-    result
-  end
-
-  defp tap_broadcast(other), do: other
-
   # Common policy-decision fields stamped on every dispatched run. The
   # caller may add :status / :requires_approval on top via Map.merge.
   defp policy_attrs(nil, decision, reason, matched) do
@@ -613,6 +752,7 @@ defmodule Emisar.Runs do
   defp policy_attrs(%Emisar.Policies.Policy{} = policy, decision, reason, matched) do
     %{
       policy_id: policy.id,
+      policy_version: policy.vsn,
       policy_decision: decision,
       policy_reason: reason,
       matched_rules: matched
@@ -621,7 +761,10 @@ defmodule Emisar.Runs do
 
   # Emits an audit row for every policy evaluation tied to a run, so
   # operators can answer "what was the policy state when this fired?"
-  # by querying the audit trail by run_id.
+  # by querying the audit trail by run_id. Includes `policy_version`
+  # — the vsn snapshot at decision time, so a later edit to the
+  # policy doesn't lose the trail of "this decision was made under
+  # policy v5".
   defp log_policy_evaluated(%ActionRun{} = run, policy, decision, reason, matched) do
     Audit.log(run.account_id, "policy.evaluated",
       actor_kind: "system",
@@ -631,6 +774,7 @@ defmodule Emisar.Runs do
       payload: %{
         run_id: run.id,
         policy_id: policy && policy.id,
+        policy_version: policy && policy.vsn,
         decision: decision,
         reason: reason,
         matched_rules: matched

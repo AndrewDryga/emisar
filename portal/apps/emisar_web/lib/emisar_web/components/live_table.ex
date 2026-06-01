@@ -45,17 +45,100 @@ defmodule EmisarWeb.LiveTable do
   attr :metadata, :any, required: true, doc: "%Paginator.Metadata{} from Repo.list/3"
   attr :filter_params, :map, default: %{}, doc: "params currently driving the filter form"
   attr :filters, :list, default: [], doc: "list of %Filter{} from the entity's Query module"
-  attr :row_id, :any, default: nil
-  attr :row_click, :any, default: nil
+
+  attr :prefix, :string, default: "",
+    doc: "URL-param prefix for the embedded paginator. Use when a page hosts multiple paginated lists (e.g. approvals: pending_/grants_/decided_) so each list's prev/next cursors don't collide"
+
+  attr :layout, :atom, default: :table, values: [:table, :cards],
+    doc: "`:table` renders `<table>` with `:col` slots (data dense); `:cards` renders `<ul>/<li>` with the `:item` slot (operator-friendly card rows)"
+
+  attr :overflow, :atom, default: :hidden, values: [:hidden, :visible],
+    doc: "`:cards` only. Set `:visible` when the rendered rows include floating popovers / dropdowns that need to escape the rounded card boundary (TeamLive's per-row <details> popover)"
+
+  attr :wrapper_class, :string, default: nil,
+    doc: "`:cards` only. Replaces the default `<ul>` class entirely. Use for visually distinct lists that share the LiveTable shell but break the divide-y card pattern (ApprovalsLive pending — gapped attention cards)"
+
+  attr :group_by, :any, default: nil,
+    doc: "`:cards` only. `fn row -> group_label end`. When set, rows are scanned in order and a group-header `<li>` is inserted before the first row of each new label. The `:group_header` slot renders the divider; falls back to a plain text header"
+
+  attr :row_id, :any, default: nil, doc: "fn row -> dom id end"
+  attr :row_click, :any, default: nil, doc: "fn row -> JS command end — applied to <tr> in :table mode, <li> in :cards mode"
   attr :class, :string, default: nil
 
-  slot :col, required: true do
+  slot :col, doc: "`:table` layout column. Required when `layout == :table`." do
     attr :label, :string
     attr :class, :string
   end
 
+  slot :item, doc: "`:cards` layout row body — receives `row`. Required when `layout == :cards`."
+
+  slot :group_header, doc: "`:cards` + `:group_by` only — receives the group label, renders the divider"
+
   slot :empty
-  slot :action, doc: "right-side actions for each row"
+  slot :action, doc: "right-side actions for each row (`:table` only — for `:cards`, render them inside `:item`)"
+
+  def live_table(%{layout: :cards} = assigns) do
+    assigns =
+      assigns
+      |> assign(:grouped_rows, group_rows(assigns.rows, assigns.group_by))
+      |> assign_new(:resolved_wrapper_class, fn ->
+        assigns.wrapper_class || default_cards_wrapper_class(assigns.overflow)
+      end)
+
+    ~H"""
+    <div class="space-y-4">
+      <.filter_form
+        :if={@filters != []}
+        id={"#{@id}-filter"}
+        path={@path}
+        filters={@filters}
+        params={@filter_params}
+      />
+
+      <%= if Enum.empty?(@rows) do %>
+        <div id={"#{@id}-empty"} class="rounded-xl border border-zinc-900 bg-zinc-950/40 px-5 py-10 text-center text-sm text-zinc-500">
+          {render_slot(@empty) || "Nothing to show."}
+        </div>
+      <% else %>
+        <ul id={@id} class={[@resolved_wrapper_class, @class]}>
+          <%= for {group_label, rows} <- @grouped_rows do %>
+            <%= if group_label != nil do %>
+              <%= if @group_header != [] do %>
+                {render_slot(@group_header, group_label)}
+              <% else %>
+                <li class="bg-zinc-950/60 px-5 py-2 text-xs font-semibold uppercase tracking-wider text-zinc-400">
+                  {group_label}
+                </li>
+              <% end %>
+            <% end %>
+            <%= for row <- rows do %>
+              {render_slot(@item, row)}
+            <% end %>
+          <% end %>
+        </ul>
+
+        <%!-- Padded footer wrapper so the paginator chrome doesn't
+             touch the wrapping section's left/right border. Without
+             this, "N total" hugs the rounded edge of any outer
+             list_section. The bottom inner border keeps a soft seam
+             between the card list and the footer when the table is
+             nested inside a list_section. --%>
+        <div
+          :if={@metadata.previous_page_cursor || @metadata.next_page_cursor || (@metadata.count || 0) > 0}
+          class="border-t border-zinc-900 px-5 py-3"
+        >
+          <.paginator
+            id={@id}
+            path={@path}
+            metadata={@metadata}
+            filter_params={@filter_params}
+            prefix={@prefix}
+          />
+        </div>
+      <% end %>
+    </div>
+    """
+  end
 
   def live_table(assigns) do
     ~H"""
@@ -103,10 +186,34 @@ defmodule EmisarWeb.LiveTable do
           </table>
         </div>
 
-        <.paginator id={@id} path={@path} metadata={@metadata} filter_params={@filter_params} />
+        <.paginator
+          id={@id}
+          path={@path}
+          metadata={@metadata}
+          filter_params={@filter_params}
+          prefix={@prefix}
+        />
       <% end %>
     </div>
     """
+  end
+
+  defp default_cards_wrapper_class(:visible),
+    do: "divide-y divide-zinc-900 rounded-xl border border-zinc-900 bg-zinc-950/40"
+
+  defp default_cards_wrapper_class(_),
+    do: "divide-y divide-zinc-900 overflow-hidden rounded-xl border border-zinc-900 bg-zinc-950/40"
+
+  # When `:group_by` is set, walk the rows preserving order and bucket
+  # them by label — returns `[{label, [row, …]}, …]`. Without group_by
+  # the whole list comes back as a single nil-label bucket so the
+  # render path doesn't need to special-case "no grouping".
+  defp group_rows(rows, nil), do: [{nil, rows}]
+
+  defp group_rows(rows, group_by) when is_function(group_by, 1) do
+    rows
+    |> Enum.chunk_by(group_by)
+    |> Enum.map(fn chunk -> {group_by.(hd(chunk)), chunk} end)
   end
 
   # -- Filter form ----------------------------------------------------

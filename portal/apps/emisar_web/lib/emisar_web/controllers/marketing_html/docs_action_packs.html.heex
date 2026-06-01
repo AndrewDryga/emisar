@@ -73,7 +73,19 @@ execution:
 output:
   parser: text
   max_stdout_bytes: 524288
-  max_stderr_bytes: 8192</pre>
+  max_stderr_bytes: 8192
+
+# Optional. Rendered on the dispatch form so operators (and LLMs)
+# see realistic invocations before they fill the args themselves.
+examples:
+  - title: Search syslog for sshd auth failures
+    args:
+      file: /var/log/syslog
+      pattern: "sshd.*Failed password"
+  - title: Tail nginx access for 5xx
+    args:
+      file: /var/log/nginx/access.log
+      pattern: " 5\\d\\d "</pre>
 
       <h2 class="mt-10 text-2xl font-semibold text-zinc-50">Field reference</h2>
       <ul class="mt-4 space-y-3 text-sm text-zinc-300">
@@ -82,8 +94,10 @@ output:
           packaged shell script), or — coming — <code>http</code>.
         </li>
         <li>
-          <strong>risk</strong> — <code>low | medium | high</code>. The policy engine
-          matches against this, not what the caller claims.
+          <strong>risk</strong> — <code>low | medium | high | critical</code>.
+          The policy engine assigns a default decision per tier; higher
+          tiers must be at least as restrictive as lower tiers. The runner
+          declares risk in the pack; the caller can't override it.
         </li>
         <li>
           <strong>args</strong> — every argument is declared. Types: <code>string</code>,
@@ -112,12 +126,32 @@ output:
           <strong>redact</strong> — per-action redaction rules layered on top of the
           built-in regexes (bearer, JWT, AWS keys, etc.).
         </li>
+        <li>
+          <strong>examples</strong> — optional list of
+          <code>&#123;title, args&#125;</code>
+          entries. Each one renders as a clickable hint on the dispatch
+          form, so operators and LLMs see realistic invocations before
+          they type. Examples don't validate any tighter than the
+          declared argument schema — they're documentation, not policy.
+        </li>
       </ul>
+
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">Drift detection</h2>
+      <p class="mt-3 text-sm text-zinc-300">
+        Once a pack is installed on at least one runner, the
+        <.link navigate={~p"/app/packs"} class="text-indigo-400 hover:text-indigo-300">
+          in-app Packs page
+        </.link>
+        groups every observed <code>(pack_id, version, hash)</code> in your
+        account. Two runners on the same pack version with different hashes
+        means somebody hand-edited a pack on a host — the page flags it as
+        drift. Re-deploy from the canonical source to clear it.
+      </p>
 
       <p class="mt-8 text-sm text-zinc-400">
         Browse working packs in the
         <.link navigate={~p"/packs"} class="text-indigo-400 hover:text-indigo-300">
-          registry
+          public registry
         </.link>
         (linux-core, cassandra, showcase) — each shows every action it declares and an
         install snippet you can paste on a runner host. Want to ship your own?

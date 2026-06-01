@@ -8,7 +8,7 @@ defmodule Emisar.RunnerScopesTest do
   describe "Accounts.replace_runner_scopes/2 + runner_scopes_for_membership/1" do
     test "empty list = all-runners default" do
       {_account, _user, subject} = account_with_owner()
-      {:ok, membership} = Accounts.fetch_primary_membership_for_user(subject.actor)
+      {:ok, membership} = Accounts.fetch_membership_for_session(subject.actor, nil)
 
       assert {:ok, :ok} = Accounts.replace_runner_scopes(membership, [], subject)
       assert Accounts.runner_scopes_for_membership(membership.id) == []
@@ -16,7 +16,7 @@ defmodule Emisar.RunnerScopesTest do
 
     test "replaces the full set atomically" do
       {_account, _user, subject} = account_with_owner()
-      {:ok, membership} = Accounts.fetch_primary_membership_for_user(subject.actor)
+      {:ok, membership} = Accounts.fetch_membership_for_session(subject.actor, nil)
 
       assert {:ok, :ok} =
                Accounts.replace_runner_scopes(membership, [
@@ -39,7 +39,7 @@ defmodule Emisar.RunnerScopesTest do
 
     test "rejects invalid scope_type via the changeset" do
       {_account, _user, subject} = account_with_owner()
-      {:ok, membership} = Accounts.fetch_primary_membership_for_user(subject.actor)
+      {:ok, membership} = Accounts.fetch_membership_for_session(subject.actor, nil)
 
       assert {:error, %Ecto.Changeset{}} =
                Accounts.replace_runner_scopes(membership, [{"bogus", "x"}], subject)
@@ -49,7 +49,7 @@ defmodule Emisar.RunnerScopesTest do
   describe "Runners.list_runners_for_account/2 with :membership_id" do
     test "no scopes = sees everything" do
       {account, user, subject} = account_with_owner()
-      {:ok, membership} = Accounts.fetch_primary_membership_for_user(user)
+      {:ok, membership} = Accounts.fetch_membership_for_session(user, nil)
       a = runner_fixture(account_id: account.id, name: "a", group: "dba")
       _b = runner_fixture(account_id: account.id, name: "b", group: "app")
 
@@ -64,7 +64,7 @@ defmodule Emisar.RunnerScopesTest do
 
     test "group scope restricts to only that group" do
       {account, user, subject} = account_with_owner()
-      {:ok, membership} = Accounts.fetch_primary_membership_for_user(user)
+      {:ok, membership} = Accounts.fetch_membership_for_session(user, nil)
       _a = runner_fixture(account_id: account.id, name: "dba1", group: "dba")
       _b = runner_fixture(account_id: account.id, name: "dba2", group: "dba")
       _c = runner_fixture(account_id: account.id, name: "app1", group: "app")
@@ -82,7 +82,7 @@ defmodule Emisar.RunnerScopesTest do
 
     test "runner-id scope additively unions with group scope" do
       {account, user, subject} = account_with_owner()
-      {:ok, membership} = Accounts.fetch_primary_membership_for_user(user)
+      {:ok, membership} = Accounts.fetch_membership_for_session(user, nil)
       dba = runner_fixture(account_id: account.id, name: "dba1", group: "dba")
       edge = runner_fixture(account_id: account.id, name: "edge1", group: "edge")
       _other = runner_fixture(account_id: account.id, name: "other", group: "misc")
@@ -106,7 +106,7 @@ defmodule Emisar.RunnerScopesTest do
   describe "Runs.dispatch_run/2 with :requested_by_membership_id" do
     test "rejects out-of-scope runner" do
       {account, user, subject} = account_with_owner()
-      {:ok, membership} = Accounts.fetch_primary_membership_for_user(user)
+      {:ok, membership} = Accounts.fetch_membership_for_session(user, nil)
       _runner_in = runner_fixture(account_id: account.id, name: "in", group: "dba")
       runner_out = runner_fixture(account_id: account.id, name: "out", group: "app")
 
@@ -143,7 +143,7 @@ defmodule Emisar.RunnerScopesTest do
   describe "runner_scopes_for_membership_ids/1" do
     test "groups scopes by membership_id for batch rendering" do
       {_account, user_a, subject} = account_with_owner()
-      {:ok, m_a} = Accounts.fetch_primary_membership_for_user(user_a)
+      {:ok, m_a} = Accounts.fetch_membership_for_session(user_a, nil)
 
       email_b = "b-#{System.unique_integer()}@example.com"
       {:ok, %{membership: m_b}} =

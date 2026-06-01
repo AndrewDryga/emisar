@@ -63,7 +63,7 @@ defmodule Emisar.PoliciesTest do
                  %{}
                )
 
-      assert reason =~ "matched override"
+      assert reason =~ "Override:"
 
       assert {:allow, [], _} =
                Policies.evaluate(
@@ -128,6 +128,80 @@ defmodule Emisar.PoliciesTest do
                  %{"action_id" => "x", "risk" => "low"},
                  %{}
                )
+    end
+  end
+
+  describe "tier-monotonicity validation" do
+    alias Emisar.Policies.Policy.Changeset, as: PolicyChangeset
+
+    test "monotonic defaults pass validation" do
+      rules = %{
+        "schema_version" => 2,
+        "defaults" => %{
+          "low" => "allow",
+          "medium" => "require_approval",
+          "high" => "require_approval",
+          "critical" => "deny"
+        },
+        "overrides" => []
+      }
+
+      cs =
+        PolicyChangeset.create(%{
+          account_id: Ecto.UUID.generate(),
+          rules: rules
+        })
+
+      assert cs.valid?
+    end
+
+    test "rejects a higher tier that's more permissive than a lower tier" do
+      rules = %{
+        "schema_version" => 2,
+        # medium=require_approval but high=allow → high is more
+        # permissive than medium. Should be rejected.
+        "defaults" => %{
+          "low" => "allow",
+          "medium" => "require_approval",
+          "high" => "allow"
+        },
+        "overrides" => []
+      }
+
+      cs =
+        PolicyChangeset.create(%{
+          account_id: Ecto.UUID.generate(),
+          rules: rules
+        })
+
+      refute cs.valid?
+      assert {"higher-risk tiers must be at least as restrictive" <> _, []} = cs.errors[:rules]
+    end
+
+    test "rejects critical=require_approval when high=deny" do
+      rules = %{
+        "schema_version" => 2,
+        "defaults" => %{
+          "low" => "allow",
+          "medium" => "allow",
+          "high" => "deny",
+          "critical" => "require_approval"
+        },
+        "overrides" => []
+      }
+
+      cs =
+        PolicyChangeset.create(%{
+          account_id: Ecto.UUID.generate(),
+          rules: rules
+        })
+
+      refute cs.valid?
+    end
+
+    test "Policies.decision_rank/1 orders allow < require_approval < deny" do
+      assert Policies.decision_rank("allow") < Policies.decision_rank("require_approval")
+      assert Policies.decision_rank("require_approval") < Policies.decision_rank("deny")
     end
   end
 end

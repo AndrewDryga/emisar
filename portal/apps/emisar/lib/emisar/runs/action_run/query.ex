@@ -18,6 +18,12 @@ defmodule Emisar.Runs.ActionRun.Query do
   def by_request_id(q, request_id),
     do: where(q, [runs: r], r.request_id == ^request_id)
 
+  def by_api_key_id(q, api_key_id),
+    do: where(q, [runs: r], r.api_key_id == ^api_key_id)
+
+  def by_idempotency_key(q, key),
+    do: where(q, [runs: r], r.idempotency_key == ^key)
+
   def by_status(q, status),
     do: where(q, [runs: r], r.status == ^status)
 
@@ -26,6 +32,9 @@ defmodule Emisar.Runs.ActionRun.Query do
 
   def inserted_after(q, %DateTime{} = ts),
     do: where(q, [runs: r], r.inserted_at >= ^ts)
+
+  def queued_before(q, %DateTime{} = ts),
+    do: where(q, [runs: r], r.queued_at < ^ts)
 
   def by_action_id(q, action_id),
     do: where(q, [runs: r], r.action_id == ^action_id)

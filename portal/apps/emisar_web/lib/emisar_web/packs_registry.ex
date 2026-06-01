@@ -232,6 +232,143 @@ defmodule EmisarWeb.PacksRegistry do
             risk: "low"
           }
         ]
+      },
+      %Pack{
+        id: "postgres",
+        name: "Postgres operations",
+        version: "0.1.0",
+        description:
+          "Read-only Postgres diagnostics plus narrow operator actions for cancelling queries, freeing idle-in-transaction backends, and reloading config. Authenticates via PG* env vars on the runner host.",
+        vendor: "emisar",
+        homepage: @repo_url,
+        requires_os: ["linux"],
+        requires_binaries: ["psql"],
+        actions: [
+          %Action{id: "postgres.cancel_query", title: "Cancel a running query", kind: "exec", risk: "high"},
+          %Action{id: "postgres.connections", title: "Postgres connection summary", kind: "exec", risk: "low"},
+          %Action{id: "postgres.kill_idle", title: "Terminate idle-in-transaction backends", kind: "exec", risk: "high"},
+          %Action{id: "postgres.locks", title: "Blocking lock graph", kind: "exec", risk: "low"},
+          %Action{id: "postgres.reload_conf", title: "Reload postgresql.conf", kind: "exec", risk: "high"},
+          %Action{id: "postgres.replication_lag", title: "Replication lag (primary view)", kind: "exec", risk: "low"},
+          %Action{id: "postgres.slow_queries", title: "Top slow queries from pg_stat_statements", kind: "exec", risk: "low"},
+          %Action{id: "postgres.table_sizes", title: "Top tables by total size", kind: "exec", risk: "low"},
+          %Action{id: "postgres.uptime", title: "Postgres uptime and version", kind: "exec", risk: "low"},
+          %Action{id: "postgres.vacuum_status", title: "Autovacuum + bloat snapshot", kind: "exec", risk: "low"}
+        ]
+      },
+      %Pack{
+        id: "redis",
+        name: "Redis operations",
+        version: "0.1.0",
+        description:
+          "Read-only Redis diagnostics plus narrow operator actions for evicting clients and flushing cache databases. Authenticates via REDISCLI_AUTH on the runner host.",
+        vendor: "emisar",
+        homepage: @repo_url,
+        requires_os: ["linux"],
+        requires_binaries: ["redis-cli"],
+        actions: [
+          %Action{id: "redis.client_kill", title: "CLIENT KILL", kind: "exec", risk: "high"},
+          %Action{id: "redis.client_list", title: "CLIENT LIST", kind: "exec", risk: "low"},
+          %Action{id: "redis.command_stats", title: "INFO commandstats", kind: "exec", risk: "low"},
+          %Action{id: "redis.config_get", title: "CONFIG GET", kind: "exec", risk: "low"},
+          %Action{id: "redis.dbsize", title: "DBSIZE", kind: "exec", risk: "low"},
+          %Action{id: "redis.flush_db", title: "FLUSHDB (single database)", kind: "exec", risk: "critical"},
+          %Action{id: "redis.info", title: "Redis INFO section", kind: "exec", risk: "low"},
+          %Action{id: "redis.latency", title: "LATENCY LATEST + HISTORY", kind: "exec", risk: "low"},
+          %Action{id: "redis.memory_stats", title: "MEMORY STATS", kind: "exec", risk: "low"},
+          %Action{id: "redis.slowlog", title: "SLOWLOG GET", kind: "exec", risk: "low"}
+        ]
+      },
+      %Pack{
+        id: "debian",
+        name: "Debian / Ubuntu package operations",
+        version: "0.1.0",
+        description:
+          "Operator pack for Debian/Ubuntu hosts. Read-only inventory and patching diagnostics, plus narrow apt install/remove actions for a single named package.",
+        vendor: "emisar",
+        homepage: @repo_url,
+        requires_os: ["linux"],
+        requires_binaries: ["apt-get", "dpkg"],
+        actions: [
+          %Action{id: "debian.apt_autoremove", title: "apt autoremove", kind: "exec", risk: "high"},
+          %Action{id: "debian.apt_install", title: "apt install (one package)", kind: "exec", risk: "high"},
+          %Action{id: "debian.apt_remove", title: "apt remove (one package)", kind: "exec", risk: "high"},
+          %Action{id: "debian.apt_security_check", title: "Pending security upgrades", kind: "exec", risk: "low"},
+          %Action{id: "debian.apt_update", title: "apt-get update", kind: "exec", risk: "medium"},
+          %Action{id: "debian.apt_upgradable", title: "List upgradable packages", kind: "exec", risk: "low"},
+          %Action{id: "debian.dpkg_changes", title: "Recent dpkg installs/removes", kind: "exec", risk: "low"},
+          %Action{id: "debian.dpkg_status", title: "dpkg package status", kind: "exec", risk: "low"},
+          %Action{id: "debian.kernel_info", title: "Kernel + uptime + reboot-required", kind: "exec", risk: "low"}
+        ]
+      },
+      %Pack{
+        id: "debugging",
+        name: "Linux debugging toolkit",
+        version: "0.1.0",
+        description:
+          "General-purpose Linux diagnostic actions: process and memory tops, vmstat/iostat snapshots, socket inventories, per-PID inspection, and network reachability checks. All read-only.",
+        vendor: "emisar",
+        homepage: @repo_url,
+        requires_os: ["linux"],
+        requires_binaries: ["ps", "ss"],
+        actions: [
+          %Action{id: "debugging.disk_free", title: "df + mounts", kind: "exec", risk: "low"},
+          %Action{id: "debugging.dmesg_tail", title: "Recent kernel messages", kind: "exec", risk: "low"},
+          %Action{id: "debugging.iostat", title: "iostat per-device sample", kind: "exec", risk: "low"},
+          %Action{id: "debugging.loadavg", title: "Load + memory + uptime snapshot", kind: "exec", risk: "low"},
+          %Action{id: "debugging.lsof_port", title: "Who owns a TCP port?", kind: "exec", risk: "low"},
+          %Action{id: "debugging.mem_top", title: "Top processes by RSS", kind: "exec", risk: "low"},
+          %Action{id: "debugging.netstat_connections", title: "Established connection summary", kind: "exec", risk: "low"},
+          %Action{id: "debugging.netstat_listen", title: "Listening sockets", kind: "exec", risk: "low"},
+          %Action{id: "debugging.pid_cwd", title: "Process cwd + exe", kind: "exec", risk: "low"},
+          %Action{id: "debugging.pid_environ", title: "Process environment", kind: "exec", risk: "low"},
+          %Action{id: "debugging.pid_fds", title: "Process open file descriptors", kind: "exec", risk: "low"},
+          %Action{id: "debugging.ping_host", title: "Ping a host", kind: "exec", risk: "low"},
+          %Action{id: "debugging.processes_top", title: "Top processes by CPU", kind: "exec", risk: "low"},
+          %Action{id: "debugging.tcp_summary", title: "TCP state counts", kind: "exec", risk: "low"},
+          %Action{id: "debugging.vmstat", title: "vmstat sample", kind: "exec", risk: "low"}
+        ]
+      },
+      %Pack{
+        id: "nginx",
+        name: "Nginx operations",
+        version: "0.1.0",
+        description:
+          "Operator pack for nginx. Read-only status + access-log analysis, plus narrow operator actions (test_config, reload) for the safe edits. Full restart is intentionally not included — use systemd for that.",
+        vendor: "emisar",
+        homepage: @repo_url,
+        requires_os: ["linux"],
+        requires_binaries: ["nginx"],
+        actions: [
+          %Action{id: "nginx.access_top_clients", title: "Top client IPs from access log", kind: "exec", risk: "low"},
+          %Action{id: "nginx.access_top_urls", title: "Top URLs from access log", kind: "exec", risk: "low"},
+          %Action{id: "nginx.active_version", title: "Active nginx version + build", kind: "exec", risk: "low"},
+          %Action{id: "nginx.error_tail", title: "Tail nginx error log", kind: "exec", risk: "low"},
+          %Action{id: "nginx.reload", title: "nginx reload", kind: "exec", risk: "high"},
+          %Action{id: "nginx.status", title: "Nginx stub_status", kind: "exec", risk: "low"},
+          %Action{id: "nginx.test_config", title: "nginx -t", kind: "exec", risk: "low"}
+        ]
+      },
+      %Pack{
+        id: "docker",
+        name: "Docker operations",
+        version: "0.1.0",
+        description:
+          "Operator pack for Docker hosts. Read-only inventory and per-container introspection, plus narrow mutators (restart, system prune). The runner uid must be in the docker group.",
+        vendor: "emisar",
+        homepage: @repo_url,
+        requires_os: ["linux"],
+        requires_binaries: ["docker"],
+        actions: [
+          %Action{id: "docker.images", title: "docker images", kind: "exec", risk: "low"},
+          %Action{id: "docker.inspect", title: "docker inspect (one container)", kind: "exec", risk: "low"},
+          %Action{id: "docker.logs", title: "docker logs (last N lines)", kind: "exec", risk: "low"},
+          %Action{id: "docker.ps", title: "docker ps -a", kind: "exec", risk: "low"},
+          %Action{id: "docker.restart", title: "docker restart (one container)", kind: "exec", risk: "high"},
+          %Action{id: "docker.stats", title: "docker stats (one shot)", kind: "exec", risk: "low"},
+          %Action{id: "docker.system_df", title: "docker system df", kind: "exec", risk: "low"},
+          %Action{id: "docker.system_prune", title: "docker system prune", kind: "exec", risk: "high"}
+        ]
       }
     ]
   end

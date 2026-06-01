@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/andrewdryga/emisar/runner/internal/admission"
 	"github.com/andrewdryga/emisar/runner/internal/packs"
 )
 
@@ -89,6 +90,47 @@ func TestStateBuilder_AdvertisesActionsAndPacks(t *testing.T) {
 	}
 	if pi, ok := msg.Packs["t"]; !ok || pi.Hash == "" {
 		t.Fatalf("pack info missing or no hash: %+v", msg.Packs)
+	}
+}
+
+func TestStateBuilder_AdmissionDenylistHidesAction(t *testing.T) {
+	reg := setupRegistry(t)
+	pol, err := admission.New(nil, []string{"t.echo"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b := &StateBuilder{
+		AgentID:     "agt_test",
+		Version:     "0.2.0",
+		GetRegistry: func() *packs.Registry { return reg },
+		Admission:   pol,
+	}
+	msg := b.Build()
+	if len(msg.Actions) != 0 {
+		t.Fatalf("expected denied action to be hidden, got %d actions", len(msg.Actions))
+	}
+	// The pack itself still advertises (for hash tracking) — the
+	// filter is per-action, not per-pack.
+	if _, ok := msg.Packs["t"]; !ok {
+		t.Fatalf("pack should still advertise even when all its actions are blocked")
+	}
+}
+
+func TestStateBuilder_AdmissionAllowlistKeepsMatching(t *testing.T) {
+	reg := setupRegistry(t)
+	pol, err := admission.New([]string{"t.*"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b := &StateBuilder{
+		AgentID:     "agt_test",
+		Version:     "0.2.0",
+		GetRegistry: func() *packs.Registry { return reg },
+		Admission:   pol,
+	}
+	msg := b.Build()
+	if len(msg.Actions) != 1 || msg.Actions[0].ID != "t.echo" {
+		t.Fatalf("expected t.echo to survive allowlist, got %+v", msg.Actions)
 	}
 }
 

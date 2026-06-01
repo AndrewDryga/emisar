@@ -14,6 +14,12 @@ defmodule Emisar.Accounts.User do
     field :confirmed_at, :utc_datetime_usec
     field :mfa_secret, :binary, redact: true
     field :mfa_enabled_at, :utc_datetime_usec
+    # Most-recent TOTP step counter the user authenticated with;
+    # `verify_mfa/2` refuses replays inside the same 30s window.
+    field :mfa_last_used_at, :utc_datetime_usec
+    # Backup codes stored as `:crypto.hash(:sha256, raw)` so a DB leak
+    # doesn't surface the codes themselves. Consumed on use.
+    field :mfa_recovery_codes, {:array, :binary}, default: [], redact: true
     field :last_sign_in_at, :utc_datetime_usec
     field :is_admin, :boolean, default: false
     field :deleted_at, :utc_datetime_usec

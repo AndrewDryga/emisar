@@ -1,7 +1,12 @@
 defmodule EmisarWeb.OnboardingLive do
   @moduledoc """
-  First-time setup flow. Shown when a user has no membership yet:
-  pick an org name → create account on Free plan → land in dashboard.
+  Workspace creation flow. Shown when a user has no membership yet
+  (first-run signup) AND from the in-app workspace switcher ("Create
+  new workspace"). After the workspace is created we trigger a real
+  POST to `AccountSwitchController` so the next-request session gets
+  pinned to the new tenant — otherwise the previous session-pinned
+  account would persist and the user would land back in the old
+  workspace after the redirect.
   """
   use EmisarWeb, :live_view
 
@@ -11,6 +16,8 @@ defmodule EmisarWeb.OnboardingLive do
     {:ok,
      socket
      |> assign(:page_title, "Set up your workspace")
+     |> assign(:trigger_submit, false)
+     |> assign(:created_account_id, "")
      |> assign(:form, to_form(%{"name" => "", "plan" => "free"}, as: "account"))}
   end
 
@@ -27,7 +34,14 @@ defmodule EmisarWeb.OnboardingLive do
       </p>
 
       <.card class="mt-10 w-full" padding="p-8">
-        <.simple_form for={@form} id="onboarding_form" phx-submit="create">
+        <.simple_form
+          for={@form}
+          id="onboarding_form"
+          phx-submit="create"
+          phx-trigger-action={@trigger_submit}
+          action={~p"/app/accounts/switch"}
+          method="post"
+        >
           <.input
             field={@form[:name]}
             type="text"
@@ -35,6 +49,7 @@ defmodule EmisarWeb.OnboardingLive do
             placeholder="Acme Corp"
             required
           />
+          <input type="hidden" name="account_id" value={@created_account_id} />
 
           <:actions>
             <.button class="w-full" phx-disable-with="Creating...">
@@ -58,8 +73,15 @@ defmodule EmisarWeb.OnboardingLive do
            %{name: name, slug: Accounts.suggest_unique_slug(name), plan: "free"},
            user
          ) do
-      {:ok, _account} ->
-        {:noreply, push_navigate(socket, to: ~p"/app")}
+      {:ok, account} ->
+        # `trigger_submit: true` fires the form's `action=` POST in the
+        # next browser tick — `AccountSwitchController` validates the
+        # just-created membership and pins it in the session before the
+        # redirect to /app.
+        {:noreply,
+         socket
+         |> assign(:created_account_id, account.id)
+         |> assign(:trigger_submit, true)}
 
       {:error, _changeset} ->
         {:noreply, put_flash(socket, :error, "Unable to create. Try a different name.")}

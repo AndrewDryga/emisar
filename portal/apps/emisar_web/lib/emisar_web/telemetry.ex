@@ -28,7 +28,10 @@ defmodule EmisarWeb.Telemetry do
   # In :dev the metrics are still useful for local Grafana — set the
   # env var or leave the 9091 default.
   defp reporter_children do
-    if Application.get_env(:emisar_web, :enable_prometheus_exporter, Mix.env() != :test) do
+    # Defaults to on; `config/test.exs` flips it off because the in-process
+    # Cowboy port collides with anything else trying to use 9091. `Mix.env/0`
+    # isn't available in a release, so the default value can't reference it.
+    if Application.get_env(:emisar_web, :enable_prometheus_exporter, true) do
       port = String.to_integer(System.get_env("METRICS_PORT") || "9091")
       [{TelemetryMetricsPrometheus, metrics: metrics(), port: port}]
     else

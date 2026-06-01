@@ -72,11 +72,23 @@ defmodule EmisarWeb.RunnerDetailLive do
     end)
   end
 
+  def handle_event("delete", _params, socket) do
+    Permissions.gated(socket, :manage_runners, fn s ->
+      {:ok, _runner} = Runners.delete_runner(s.assigns.runner, s.assigns.current_subject)
+
+      {:noreply,
+       s
+       |> put_flash(:info, "Runner deleted. The host can re-register on next connect.")
+       |> push_navigate(to: ~p"/app/runners")}
+    end)
+  end
+
   def render(assigns) do
     ~H"""
-    <.dashboard_shell
+    <.dashboard_shell pending_approvals_count={@pending_approvals_count}
       current_user={@current_user}
       current_account={@current_account}
+      switchable_accounts={@switchable_accounts}
       flash={@flash}
       section={:runners}
     >
@@ -84,15 +96,15 @@ defmodule EmisarWeb.RunnerDetailLive do
         <.back_link navigate={~p"/app/runners"}>Runners</.back_link>
         {@runner.name}
       </:title>
-      <:actions>
-        <.status_badge status={@runner.status} />
-      </:actions>
-
       <%!-- Connection meta strip — same shape as RunDetail /
-           ApprovalDetail. Six facts an operator wants at a glance:
-           hostname, version, group, external id, last heartbeat,
-           active actions. --%>
+           ApprovalDetail. Status leads so the connection state is the
+           first thing the eye lands on; everything else (hostname,
+           version, group, etc.) sits beside it for context. External
+           ID dropped — it's debug-trace, not at-a-glance signal. --%>
       <.meta_strip cols={6}>
+        <.meta_field label="Status">
+          <.status_badge status={@runner.status} />
+        </.meta_field>
         <.meta_field label="Hostname">
           <span class="truncate text-zinc-200">{@runner.hostname || "—"}</span>
         </.meta_field>
@@ -102,11 +114,6 @@ defmodule EmisarWeb.RunnerDetailLive do
         <.meta_field label="Group">
           <span class="truncate text-zinc-200">{@runner.group}</span>
         </.meta_field>
-        <.meta_field label="External ID">
-          <span class="truncate font-mono text-xs text-zinc-400">
-            {@runner.external_id || "—"}
-          </span>
-        </.meta_field>
         <.meta_field label="Last heartbeat">
           <span class="text-zinc-200">{heartbeat_label(@runner)}</span>
         </.meta_field>
@@ -114,6 +121,32 @@ defmodule EmisarWeb.RunnerDetailLive do
           <span class="text-zinc-200">{@runner.action_load}</span>
         </.meta_field>
       </.meta_strip>
+
+      <%!-- Labels + last-disconnect reason. Both are written to the DB
+           and previously invisible. Labels show only when set;
+           disconnect reason shows only when the runner is actually
+           disconnected (otherwise it's just historical noise from the
+           last drop). --%>
+      <div
+        :if={runner_labels(@runner) != [] or disconnect_note?(@runner)}
+        class="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-zinc-900 bg-zinc-950/40 px-4 py-2.5 text-sm"
+      >
+        <div :if={runner_labels(@runner) != []} class="flex flex-wrap items-center gap-1.5">
+          <span class="text-xs font-semibold uppercase tracking-wider text-zinc-500">Labels</span>
+          <span
+            :for={{k, v} <- runner_labels(@runner)}
+            class="rounded bg-zinc-900 px-1.5 py-0.5 font-mono text-[11px] text-zinc-300"
+          >
+            {k}={v}
+          </span>
+        </div>
+        <div :if={disconnect_note?(@runner)} class="flex items-center gap-1.5 text-rose-300/90">
+          <.icon name="hero-bolt-slash" class="h-3.5 w-3.5" />
+          <span class="text-xs">
+            Disconnect reason: <span class="font-mono">{@runner.last_disconnect_reason}</span>
+          </span>
+        </div>
+      </div>
 
       <div class="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
         <%!-- Recent runs in a sidebar — operator scanning a runner is
@@ -136,20 +169,7 @@ defmodule EmisarWeb.RunnerDetailLive do
             <ul class="divide-y divide-zinc-900">
               <li :for={action <- @actions} class="flex items-center gap-4 px-5 py-3">
                 <div class="min-w-0 flex-1">
-                  <div class="flex items-center gap-2">
-                    <span class="truncate font-mono text-sm text-zinc-100">{action.action_id}</span>
-                    <%!-- "Mutates state" indicator: any non-empty
-                         side_effects list means this action is not
-                         read-only. Yellow dot with tooltip — operators
-                         scan the list and immediately know which rows
-                         are merely-observe vs. actually-change-things. --%>
-                    <span
-                      :if={action.side_effects && action.side_effects != []}
-                      title={"Side effects: " <> Enum.join(action.side_effects, ", ")}
-                      class="inline-flex h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400"
-                    >
-                    </span>
-                  </div>
+                  <span class="truncate font-mono text-sm text-zinc-100">{action.action_id}</span>
                   <div :if={action.title} class="truncate text-xs text-zinc-500">
                     {action.title}
                   </div>
@@ -218,7 +238,9 @@ defmodule EmisarWeb.RunnerDetailLive do
 
       <%!-- Danger zone — destructive actions live in their own
            visually-distinct card so they can't be mistaken for the
-           regular content above. --%>
+           regular content above. Disable is the soft "stop" — Delete
+           only appears once the runner is already disabled (two-step
+           commit prevents a misclick from wiping a live runner). --%>
       <div
         :if={@runner.status != "disabled" and Permissions.can?(assigns, :manage_runners)}
         class="mt-6"
@@ -238,21 +260,56 @@ defmodule EmisarWeb.RunnerDetailLive do
           </:button>
         </.danger_zone>
       </div>
+
+      <div
+        :if={@runner.status == "disabled" and Permissions.can?(assigns, :manage_runners)}
+        class="mt-6"
+      >
+        <.danger_zone title="Delete this runner">
+          <:body>
+            Removes the runner row from your account. The host can re-register on its
+            next connect (it will appear as a fresh runner with new tokens), which is
+            the intended path when you want to recover from a wedged state or
+            re-bootstrap a host. Run history and audit events are preserved.
+          </:body>
+          <:button>
+            <button
+              phx-click="delete"
+              data-confirm="Delete this runner row? The host can re-register on next connect."
+              class="rounded-lg border border-rose-500/40 px-3 py-1.5 text-sm font-medium text-rose-200 hover:bg-rose-500/10"
+            >
+              Delete runner
+            </button>
+          </:button>
+        </.danger_zone>
+      </div>
     </.dashboard_shell>
     """
   end
 
 
-  # Runner heartbeat is sent every 30s by the Go client. Between
-  # initial WebSocket handshake (status flips to "connected" via
-  # `runner_socket init/1`) and the first heartbeat tick, the column
-  # is legitimately nil — show the connect time + a clear hint
-  # instead of a bare em-dash, which reads as "broken".
+  # Runner heartbeat is sent every 30s by the Go client. The WebSocket
+  # connect itself is the first liveness signal — between handshake
+  # and the first explicit heartbeat tick, `last_heartbeat_at` is
+  # legitimately nil. Treat the connect time as a heartbeat so the
+  # UI doesn't read "connected 23s ago … waiting for first heartbeat",
+  # which is self-contradictory.
   defp heartbeat_label(%{last_heartbeat_at: %DateTime{} = ts}), do: relative_time(ts)
 
-  defp heartbeat_label(%{last_connected_at: %DateTime{} = ts}) do
-    "connected #{relative_time(ts)} · waiting for first heartbeat"
-  end
+  defp heartbeat_label(%{last_connected_at: %DateTime{} = ts}), do: relative_time(ts)
 
   defp heartbeat_label(_), do: "—"
+
+  # Labels are stored as a `:map` so the keys are strings and the order
+  # is non-deterministic. Sort for stable rendering.
+  defp runner_labels(%{labels: labels}) when is_map(labels) and labels != %{},
+    do: labels |> Enum.sort_by(fn {k, _} -> k end)
+
+  defp runner_labels(_), do: []
+
+  defp disconnect_note?(%{status: status, last_disconnect_reason: r})
+       when status in ["disconnected", "disabled"] and is_binary(r) and r != "",
+       do: true
+
+  defp disconnect_note?(_), do: false
 end

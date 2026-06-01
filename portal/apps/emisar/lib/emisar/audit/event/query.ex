@@ -5,15 +5,19 @@ defmodule Emisar.Audit.Event.Query do
 
   # Event types the audit log fires automatically as a byproduct of
   # normal traffic — one per dispatch (`policy.evaluated`) or per run
-  # state transition (`action_run.*`). They're indispensable for
-  # postmortem reconstruction but they bury the operator-facing events
-  # (auth-key minted, member invited, approval decided) in the default
-  # listing. The "Hide noisy events" filter excludes this set.
+  # state transition (`action_run.*`) or per runner socket reconnect
+  # (`runner.connected`/`runner.disconnected`, which fires on every
+  # network blip). They're indispensable for postmortem reconstruction
+  # but they bury the operator-facing events (auth-key minted, member
+  # invited, approval decided) in the default listing. The "Hide noisy
+  # events" filter excludes this set.
   @noisy_event_types ~w[
     policy.evaluated
     action_run.pending
     action_run.sent
     action_run.running
+    runner.connected
+    runner.disconnected
   ]
 
   def noisy_event_types, do: @noisy_event_types
@@ -22,6 +26,10 @@ defmodule Emisar.Audit.Event.Query do
   # filter dropdown so operators pick from a list instead of typing an
   # exact machine code from memory.
   @known_event_types [
+    {"account.created", "Account created"},
+    {"account.updated", "Account updated"},
+    {"account.require_mfa_set", "MFA enforcement toggled"},
+    {"runner.registered", "Runner registered"},
     {"runner.connected", "Runner connected"},
     {"runner.disconnected", "Runner disconnected"},
     {"runner.disabled", "Runner disabled"},
@@ -33,13 +41,43 @@ defmodule Emisar.Audit.Event.Query do
     {"api_key.created", "API key created"},
     {"api_key.revoked", "API key revoked"},
     {"api_key.bound", "API key first use"},
+    {"user.signed_up", "User signed up"},
+    {"user.signed_in", "User signed in"},
+    {"user.signed_out", "User signed out"},
+    {"user.sign_in_failed", "Sign-in failed"},
     {"user.invited", "User invited"},
+    {"user.invitation_accepted", "User accepted invitation"},
+    {"user.email_confirmed", "Email confirmed"},
+    {"user.email_changed", "Email changed"},
+    {"user.email_change_failed", "Email change failed"},
+    {"user.profile_updated", "Profile updated"},
+    {"user.updated_by_admin", "Profile edited by admin"},
+    {"user.password_changed", "Password changed"},
+    {"user.password_change_failed", "Password change failed"},
+    {"user.password_reset_requested", "Password reset requested"},
+    {"user.password_reset_completed", "Password reset completed"},
     {"user.password_reset_forced", "Password reset forced"},
-    {"user.sessions_revoked", "User sessions revoked"},
+    {"user.magic_link_issued", "Magic link issued"},
+    {"user.mfa_enabled", "MFA enabled"},
+    {"user.mfa_disabled", "MFA disabled"},
+    {"user.mfa_failed", "MFA failed"},
+    {"user.mfa_recovery_code_used", "MFA recovery code used"},
+    {"user.mfa_recovery_codes_regenerated", "MFA recovery codes regenerated"},
+    {"user.session_revoked", "Session revoked"},
+    {"user.other_sessions_revoked", "Other sessions revoked"},
+    {"user.sessions_revoked", "Sessions revoked by admin"},
+    {"membership.role_changed", "Role changed"},
+    {"membership.removed", "Member removed"},
     {"membership.suspended", "Member suspended"},
     {"membership.reinstated", "Member reinstated"},
+    {"membership.invitation_accepted", "Invitation accepted"},
+    {"membership.runner_scopes_changed", "Runner scopes changed"},
     {"policy.updated", "Policy updated"},
     {"policy.evaluated", "Policy evaluated"},
+    {"runbook.created", "Runbook created"},
+    {"runbook.updated", "Runbook updated"},
+    {"runbook.published", "Runbook published"},
+    {"runbook.dispatched", "Runbook dispatched"},
     {"approval.approved", "Approval granted"},
     {"approval.denied", "Approval denied"},
     {"approval.expired", "Approval expired"},
@@ -64,8 +102,15 @@ defmodule Emisar.Audit.Event.Query do
   # becomes 7 small groups operators can scan instead of reading top
   # to bottom. The Filter UI renders these as <optgroup>s.
   @grouped_event_types [
+    {"Account",
+     [
+       {"account.created", "Created"},
+       {"account.updated", "Updated"},
+       {"account.require_mfa_set", "MFA enforcement toggled"}
+     ]},
     {"Runner",
      [
+       {"runner.registered", "Registered"},
        {"runner.connected", "Connected"},
        {"runner.disconnected", "Disconnected"},
        {"runner.disabled", "Disabled"},
@@ -84,18 +129,57 @@ defmodule Emisar.Audit.Event.Query do
        {"api_key.revoked", "Revoked"},
        {"api_key.bound", "First use"}
      ]},
-    {"User / team",
+    {"Sign-in",
+     [
+       {"user.signed_up", "Signed up"},
+       {"user.signed_in", "Signed in"},
+       {"user.signed_out", "Signed out"},
+       {"user.sign_in_failed", "Sign-in failed"},
+       {"user.magic_link_issued", "Magic link issued"},
+       {"user.email_confirmed", "Email confirmed"}
+     ]},
+    {"Account security",
+     [
+       {"user.password_changed", "Password changed"},
+       {"user.password_change_failed", "Password change failed"},
+       {"user.password_reset_requested", "Password reset requested"},
+       {"user.password_reset_completed", "Password reset completed"},
+       {"user.password_reset_forced", "Password reset forced"},
+       {"user.email_changed", "Email changed"},
+       {"user.email_change_failed", "Email change failed"},
+       {"user.profile_updated", "Profile updated"},
+       {"user.updated_by_admin", "Profile edited by admin"},
+       {"user.mfa_enabled", "MFA enabled"},
+       {"user.mfa_disabled", "MFA disabled"},
+       {"user.mfa_failed", "MFA failed"},
+       {"user.mfa_recovery_code_used", "MFA recovery code used"},
+       {"user.mfa_recovery_codes_regenerated", "MFA recovery codes regenerated"},
+       {"user.session_revoked", "Session revoked"},
+       {"user.other_sessions_revoked", "Other sessions revoked"},
+       {"user.sessions_revoked", "Sessions revoked by admin"}
+     ]},
+    {"Team",
      [
        {"user.invited", "Invited"},
-       {"user.password_reset_forced", "Password reset forced"},
-       {"user.sessions_revoked", "Sessions revoked"},
-       {"membership.suspended", "Suspended"},
-       {"membership.reinstated", "Reinstated"}
+       {"user.invitation_accepted", "Invitation accepted"},
+       {"membership.invitation_accepted", "Invitation accepted (existing user)"},
+       {"membership.role_changed", "Role changed"},
+       {"membership.removed", "Member removed"},
+       {"membership.suspended", "Member suspended"},
+       {"membership.reinstated", "Member reinstated"},
+       {"membership.runner_scopes_changed", "Runner scopes changed"}
      ]},
     {"Policy",
      [
        {"policy.updated", "Updated"},
        {"policy.evaluated", "Evaluated"}
+     ]},
+    {"Runbook",
+     [
+       {"runbook.created", "Created"},
+       {"runbook.updated", "Updated (new version)"},
+       {"runbook.published", "Published"},
+       {"runbook.dispatched", "Dispatched"}
      ]},
     {"Approval",
      [
@@ -153,6 +237,40 @@ defmodule Emisar.Audit.Event.Query do
   def ordered_by_recent(q \\ all()),
     do: order_by(q, [events: e], desc: e.occurred_at)
 
+  # Stable forward order for SIEM export — `(occurred_at, id)` ascending
+  # so consumers can poll with a cursor without ever skipping or
+  # re-reading rows. UUID v7 ids are time-sortable, which keeps the
+  # tie-break identical to the time order for same-microsecond inserts.
+  def ordered_for_export(q \\ all()),
+    do: order_by(q, [events: e], asc: e.occurred_at, asc: e.id)
+
+  # Cursor for the export endpoint — accepts the (occurred_at, id) of
+  # the last row the consumer has already received and returns rows
+  # STRICTLY AFTER that point. Composite-keyset semantics: skip exact
+  # ties on the timestamp by also comparing id.
+  def occurred_strictly_after(q, %DateTime{} = ts, id) when is_binary(id) do
+    where(
+      q,
+      [events: e],
+      e.occurred_at > ^ts or (e.occurred_at == ^ts and e.id > ^id)
+    )
+  end
+
+  # Variant for the first page — no id tie-break, just the time bound.
+  def occurred_at_or_after(q, %DateTime{} = ts),
+    do: where(q, [events: e], e.occurred_at >= ^ts)
+
+  # IN-list filter for the export `event_type[]` param.
+  def by_event_types(q, types) when is_list(types) and types != [],
+    do: where(q, [events: e], e.event_type in ^types)
+
+  def by_event_types(q, _), do: q
+
+  # Hard-cap; the controller validates the user-supplied limit against
+  # @max_export_limit and passes it through, so this stays a one-liner.
+  def limit_to(q, n) when is_integer(n) and n > 0,
+    do: limit(q, ^n)
+
   # -- Pagination / filters --------------------------------------------
 
   @impl Emisar.Repo.Query
@@ -186,11 +304,16 @@ defmodule Emisar.Audit.Event.Query do
         title: "Subject",
         type: {:list, :string},
         values: [
+          {"user", "User"},
+          {"account", "Account"},
           {"runner", "Runner"},
           {"api_key", "API key"},
           {"auth_key", "Auth key"},
           {"action_run", "Action run"},
-          {"approval_request", "Approval"}
+          {"approval_request", "Approval"},
+          {"approval_grant", "Standing grant"},
+          {"runbook", "Runbook"},
+          {"policy", "Policy"}
         ],
         fun: fn q, kinds -> {q, dynamic([events: e], e.subject_kind in ^kinds)} end
       },

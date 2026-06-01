@@ -113,7 +113,14 @@ execution:
 
 output:
   parser: text
-  max_stdout_bytes: 65536</pre>
+  max_stdout_bytes: 65536
+
+# Optional. Renders on the dispatch form so operators (and LLMs)
+# see a real invocation before they fill in args.
+examples:
+  - title: Tail myapp's error log
+    args:
+      file: /var/log/myapp/error.log</pre>
         </li>
 
         <li class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-6">

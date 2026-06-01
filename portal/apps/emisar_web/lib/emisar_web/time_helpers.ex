@@ -80,6 +80,14 @@ defmodule EmisarWeb.TimeHelpers do
   def format_duration(ms), do: "#{div(ms, 60_000)}m"
 
   @doc """
+  Common "last used X ago" formatter. nil → "never" (the column the LV
+  expects when a key/runner has never been touched); a timestamp gets
+  the standard `relative_time/2` rendering.
+  """
+  def last_used(nil), do: "never"
+  def last_used(ts), do: relative_time(ts)
+
+  @doc """
   Humanizes an Ecto.Changeset (or a list of `{field, {msg, opts}}` errors)
   into a readable string for flash messages. Replaces ad-hoc
   `inspect(changeset.errors)` which leaks raw Elixir syntax to the user
@@ -117,47 +125,18 @@ defmodule EmisarWeb.TimeHelpers do
   def format_event_type(nil), do: "—"
 
   def format_event_type(t) when is_binary(t) do
-    case event_type_label(t) do
+    case Map.get(event_type_labels(), t) do
       nil -> humanize_event(t)
       label -> label
     end
   end
 
-  defp event_type_label("runner.connected"), do: "Runner connected"
-  defp event_type_label("runner.disconnected"), do: "Runner disconnected"
-  defp event_type_label("runner.disabled"), do: "Runner disabled"
-  defp event_type_label("runner.deleted"), do: "Runner deleted"
-  defp event_type_label("runner.error"), do: "Runner error"
-  defp event_type_label("auth_key.created"), do: "Auth key created"
-  defp event_type_label("auth_key.revoked"), do: "Auth key revoked"
-  defp event_type_label("auth_key.bound"), do: "Auth key bound to runner"
-  defp event_type_label("api_key.created"), do: "API key created"
-  defp event_type_label("api_key.revoked"), do: "API key revoked"
-  defp event_type_label("api_key.bound"), do: "API key first use"
-  defp event_type_label("user.invited"), do: "User invited"
-  defp event_type_label("user.password_reset_forced"), do: "Password reset forced"
-  defp event_type_label("user.sessions_revoked"), do: "User sessions revoked"
-  defp event_type_label("membership.suspended"), do: "Member suspended"
-  defp event_type_label("membership.reinstated"), do: "Member reinstated"
-  defp event_type_label("policy.updated"), do: "Policy updated"
-  defp event_type_label("policy.evaluated"), do: "Policy evaluated"
-  defp event_type_label("approval.approved"), do: "Approval granted"
-  defp event_type_label("approval.denied"), do: "Approval denied"
-  defp event_type_label("approval.expired"), do: "Approval expired"
-  defp event_type_label("approval.grant_used"), do: "Standing grant used"
-  defp event_type_label("approval.grant_revoked"), do: "Standing grant revoked"
-  defp event_type_label("run.cancel_requested"), do: "Run cancel requested"
-  defp event_type_label("action_run.pending"), do: "Run queued"
-  defp event_type_label("action_run.sent"), do: "Run sent to runner"
-  defp event_type_label("action_run.running"), do: "Run started"
-  defp event_type_label("action_run.success"), do: "Run succeeded"
-  defp event_type_label("action_run.failed"), do: "Run failed"
-  defp event_type_label("action_run.error"), do: "Run errored"
-  defp event_type_label("action_run.cancelled"), do: "Run cancelled"
-  defp event_type_label("action_run.timed_out"), do: "Run timed out"
-  defp event_type_label("action_run.denied"), do: "Run denied by policy"
-  defp event_type_label("action_run.pending_approval"), do: "Run awaiting approval"
-  defp event_type_label(_), do: nil
+  # Compile-time map keyed off the Audit.Event.Query whitelist — the
+  # single source of truth for known event types. Adding a new event
+  # type only requires editing one list (Query.@known_event_types) and
+  # the human-facing label here is derived automatically.
+  @event_type_labels Emisar.Audit.Event.Query.known_event_type_values() |> Map.new()
+  defp event_type_labels, do: @event_type_labels
 
   defp humanize_event(t) do
     t

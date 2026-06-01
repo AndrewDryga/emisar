@@ -14,7 +14,6 @@ defmodule Emisar.Runbooks.Runbook do
     field :version, :integer, default: 1
     field :status, :string, default: "draft"
     field :definition, :map
-    field :archived_at, :utc_datetime_usec
     field :deleted_at, :utc_datetime_usec
 
     belongs_to :account, Emisar.Accounts.Account

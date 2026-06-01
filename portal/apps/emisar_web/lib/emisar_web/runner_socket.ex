@@ -53,6 +53,14 @@ defmodule EmisarWeb.RunnerSocket do
     }
 
     PubSub.subscribe_runner(runner.id)
+
+    # Drain coordinator broadcasts here on SIGTERM so this process can
+    # gracefully push a shutdown envelope to the runner before the
+    # Endpoint tears the transport down. PubSub server name comes from
+    # `config :emisar_web, EmisarWeb.Endpoint, pubsub_server:` — keep
+    # it in sync with `Emisar.PubSub.@pubsub`.
+    Phoenix.PubSub.subscribe(Emisar.PubSub.Server, EmisarWeb.RunnerSocketDrain.drain_topic())
+
     {:ok, _} = RunnerPresence.track_runner(self(), runner.account_id, runner.id)
 
     # Flip status to "connected" the moment the WebSocket auth handshake
@@ -109,6 +117,28 @@ defmodule EmisarWeb.RunnerSocket do
     {:stop, :normal, state}
   end
 
+  # Sent by `EmisarWeb.RunnerSocketDrain.terminate/2` on SIGTERM. Push
+  # a `shutdown` envelope so the runner can resync after reconnect (its
+  # outbound queue is per-connection — stale messages after the cloud
+  # restart would be replayed against new state otherwise), then stop
+  # normally. The drain GenServer sleeps briefly afterward so this
+  # frame is on the wire before the Endpoint closes the transport.
+  def handle_info(:runner_socket_drain, state) do
+    shutdown = %{
+      type: "shutdown",
+      protocol_version: @protocol_version,
+      reason: "cloud_shutdown",
+      message: "Cloud is shutting down. Reconnect to resync."
+    }
+
+    # Schedule the stop AFTER the frame is queued so WebSock pushes the
+    # shutdown envelope before the transport teardown.
+    send(self(), :stop_after_drain)
+    {:push, {:text, Jason.encode!(shutdown)}, state}
+  end
+
+  def handle_info(:stop_after_drain, state), do: {:stop, :normal, state}
+
   def handle_info(other, state) do
     Logger.debug("runner_socket #{state.runner_id} unhandled message: #{inspect(other)}")
     {:ok, state}
@@ -129,17 +159,29 @@ defmodule EmisarWeb.RunnerSocket do
     :ok
   end
 
-  # If `ip_key/1` returns the rate-limiter's "unknown" sentinel, treat
-  # it as no IP for audit so we don't pollute rows with the placeholder.
-  # (This helper is used by RunnerConnectController.)
+  # Strip the "unknown" sentinel that `RunnerConnectController.ip_string/1`
+  # emits when `conn.remote_ip` isn't a real IP tuple, so we don't pollute
+  # audit rows with the placeholder.
   @doc false
   def normalize_ip("unknown"), do: nil
   def normalize_ip(s) when is_binary(s), do: s
   def normalize_ip(_), do: nil
 
+  # `last_disconnect_reason` is varchar(255) — Bandit's terminate reason
+  # for an abnormal close can be a giant tuple (full protocol error +
+  # stacktrace + Plug.Conn), so trim to fit the column. The first 240
+  # bytes are the actionable bit (atom + module + line); the rest is
+  # noise we already have via Sentry / Logger.
+  @reason_limit 240
+
   defp format_reason(:normal), do: "normal"
-  defp format_reason({:shutdown, r}), do: "shutdown:#{inspect(r)}"
-  defp format_reason(other), do: inspect(other)
+  defp format_reason({:shutdown, r}), do: truncate_reason("shutdown:#{inspect(r)}")
+  defp format_reason(other), do: truncate_reason(inspect(other))
+
+  defp truncate_reason(s) when byte_size(s) <= @reason_limit, do: s
+
+  defp truncate_reason(s),
+    do: binary_part(s, 0, @reason_limit) <> "…"
 
   # -- Envelope dispatch ----------------------------------------------
 

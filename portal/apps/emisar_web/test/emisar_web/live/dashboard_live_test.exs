@@ -6,22 +6,21 @@ defmodule EmisarWeb.DashboardLiveTest do
       assert {:error, {:redirect, %{to: "/sign_in"}}} = live(conn, ~p"/app")
     end
 
-    test "renders the empty-state with a pre-minted install command for accounts with zero runners",
+    test "fresh accounts see the onboarding wizard with both checklist cards",
          %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
+      {conn, _user, _account} = register_and_log_in(conn)
       {:ok, _lv, html} = live(conn, ~p"/app")
-      assert html =~ "Connect a runner"
-      # The install command is rendered inline — no click required.
-      assert html =~ "curl -sSL"
-      assert html =~ "EMISAR_AUTH_KEY=emkey-auth-"
 
-      # Mint dropped exactly one auto-generated key into the ring, and
-      # because it's auto-unused it stays hidden from operator-facing
-      # lists.
-      all = Emisar.Repo.all(Emisar.Runners.AuthKey)
-      assert length(all) == 1
-      assert Emisar.Runners.AuthKey.auto_unused?(hd(all))
-      assert {:ok, [], _} = Emisar.Runners.list_auth_keys(owner_subject(user, account))
+      # Two onboarding cards — runner + LLM — sit at the top of the
+      # dashboard as a wizard checklist. The runner card links to
+      # /app/runners/install where the actual install command lives.
+      assert html =~ "Connect a runner"
+      assert html =~ "Connect an LLM"
+
+      # No auto-minted install key — the dashboard doesn't mint
+      # anymore. The runners/install page mints when the operator
+      # navigates into it.
+      assert Emisar.Repo.all(Emisar.Runners.AuthKey) == []
     end
 
     test "renders the populated dashboard once a runner exists", %{conn: conn} do
@@ -37,7 +36,11 @@ defmodule EmisarWeb.DashboardLiveTest do
       {:ok, _lv, html} = live(conn, ~p"/app")
       assert html =~ "Runners online"
       assert html =~ "Recent runs"
-      refute html =~ "Connect your first runner"
+      # The runner-onboarding card disappears once a runner exists.
+      refute html =~ "Connect a runner"
+      # LLM onboarding card still shows — no API key was minted in
+      # this test.
+      assert html =~ "Connect an LLM"
     end
   end
 end

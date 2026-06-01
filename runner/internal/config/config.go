@@ -16,10 +16,11 @@ const SchemaVersion = 1
 type Config struct {
 	SchemaVersion int `yaml:"schema_version"`
 
-	Runner     Runner     `yaml:"runner"`
+	Runner    Runner    `yaml:"runner"`
 	Cloud     Cloud     `yaml:"cloud"`
 	Paths     Paths     `yaml:"paths"`
 	Execution Execution `yaml:"execution"`
+	Admission Admission `yaml:"admission,omitempty"`
 	Events    Events    `yaml:"events"`
 	Redaction Redaction `yaml:"redaction"`
 }
@@ -61,6 +62,24 @@ type Execution struct {
 	// is cancelled (via cloud `cancel` or by the action's own timeout).
 	// Defaults to 30s.
 	CancelGrace actionspec.Duration `yaml:"cancel_grace,omitempty"`
+}
+
+// Admission is the local action allowlist / denylist. Defense-in-depth
+// on top of cloud policy: a compromised control plane can ask the
+// runner to execute any action, but admission decides what this host
+// will actually permit. Both lists accept shell-style globs over action
+// ids (e.g. `cassandra.*`, `*.restart`).
+//
+//   - Empty allow + empty deny → admit everything (default).
+//   - Non-empty allow → action id MUST match at least one allow entry.
+//   - Non-empty deny → action id MUST NOT match any deny entry.
+//   - Both → allow gate first, then deny gate.
+//
+// Blocked actions are also hidden from the catalog this runner
+// advertises to cloud, so they don't appear in the portal at all.
+type Admission struct {
+	Allow []string `yaml:"allow,omitempty"`
+	Deny  []string `yaml:"deny,omitempty"`
 }
 
 // Events configures the local JSONL journal and ack cursor.

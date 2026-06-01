@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/andrewdryga/emisar/runner/internal/admission"
 	"github.com/andrewdryga/emisar/runner/internal/audit"
 	"github.com/andrewdryga/emisar/runner/internal/executor"
 	"github.com/andrewdryga/emisar/runner/internal/packs"
@@ -122,6 +123,83 @@ func TestEngine_UnknownAction(t *testing.T) {
 	}
 	if res.Status != StatusUnknownAction {
 		t.Fatalf("status=%s", res.Status)
+	}
+}
+
+func TestEngine_AdmissionDenylistBlocks(t *testing.T) {
+	e, j, _ := setupEngine(t)
+	defer j.Close()
+	pol, err := admission.New(nil, []string{"t.echo"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.Admission = pol
+
+	res, err := e.Run(context.Background(), Request{
+		ActionID: "t.echo",
+		Args:     map[string]any{"msg": "hi"},
+		Reason:   "test",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Status != StatusBlockedByAdmission {
+		t.Fatalf("expected blocked, got status=%s reason=%s", res.Status, res.Reason)
+	}
+	if !strings.Contains(res.Reason, "denylist") {
+		t.Fatalf("expected denylist reason, got %q", res.Reason)
+	}
+	if res.EventID == "" {
+		t.Fatal("expected an event id on the blocked result")
+	}
+}
+
+func TestEngine_AdmissionAllowlistGate(t *testing.T) {
+	e, j, _ := setupEngine(t)
+	defer j.Close()
+	// Allowlist that doesn't include t.echo.
+	pol, err := admission.New([]string{"linux.*"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.Admission = pol
+
+	res, err := e.Run(context.Background(), Request{
+		ActionID: "t.echo",
+		Args:     map[string]any{"msg": "hi"},
+		Reason:   "test",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Status != StatusBlockedByAdmission {
+		t.Fatalf("expected blocked, got status=%s", res.Status)
+	}
+	if !strings.Contains(res.Reason, "allowlist") {
+		t.Fatalf("expected allowlist reason, got %q", res.Reason)
+	}
+}
+
+func TestEngine_AdmissionPassesThrough(t *testing.T) {
+	e, j, _ := setupEngine(t)
+	defer j.Close()
+	// Allowlist that DOES include t.echo.
+	pol, err := admission.New([]string{"t.*"}, []string{"t.dangerous"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.Admission = pol
+
+	res, err := e.Run(context.Background(), Request{
+		ActionID: "t.echo",
+		Args:     map[string]any{"msg": "hi"},
+		Reason:   "test",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Status != StatusSuccess {
+		t.Fatalf("expected success, got status=%s reason=%s", res.Status, res.Reason)
 	}
 }
 

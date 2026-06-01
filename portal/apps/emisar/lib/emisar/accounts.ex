@@ -7,7 +7,8 @@ defmodule Emisar.Accounts do
   account; this context owns the slug-based lookups and signup flow.
   """
 
-  alias Emisar.{Auth, Repo}
+  alias Ecto.Multi
+  alias Emisar.{Audit, Auth, Repo}
   alias Emisar.Accounts.{Account, Authorizer, Membership, User}
   alias Emisar.Auth.Subject
 
@@ -51,7 +52,6 @@ defmodule Emisar.Accounts do
   """
   def list_accounts_for_user(%User{id: user_id}, opts \\ []) do
     Account.Query.not_deleted()
-    |> Account.Query.not_disabled()
     |> Account.Query.with_active_member(user_id)
     |> Account.Query.ordered_by_name()
     |> Repo.list(Account.Query, opts)
@@ -64,19 +64,44 @@ defmodule Emisar.Accounts do
 
   @doc """
   Creates an account with the given user as `:owner`. Wrapped in a
-  transaction so a half-created account is impossible.
+  transaction so a half-created account is impossible. Audit-logs both
+  `user.signed_up` (the new user) and `account.created` (the new
+  tenant) — together they form the "this person stood up a new team"
+  trace operators need for billing/abuse review.
   """
   def create_account_with_owner(account_attrs, %User{} = user) do
-    Repo.transaction(fn ->
-      with {:ok, account} <- create_account(account_attrs),
-           {:ok, _membership} <-
-             create_membership(%{account_id: account.id, user_id: user.id, role: "owner"}),
-           {:ok, _policy} <- seed_default_policy(account.id, user.id) do
-        account
-      else
-        {:error, changeset} -> Repo.rollback(changeset)
-      end
+    Multi.new()
+    |> Multi.insert(:account, Account.Changeset.create(account_attrs))
+    |> Multi.insert(:membership, fn %{account: account} ->
+      Membership.Changeset.create(%{account_id: account.id, user_id: user.id, role: "owner"})
     end)
+    |> Multi.run(:policy, fn _repo, %{account: account} ->
+      seed_default_policy(account.id, user.id)
+    end)
+    |> Multi.insert(:account_created, fn %{account: account} ->
+      Audit.changeset(account.id, "account.created",
+        actor_kind: "user",
+        actor_id: user.id,
+        subject_kind: "account",
+        subject_id: account.id,
+        subject_label: account.name,
+        payload: %{plan: account.plan, slug: account.slug}
+      )
+    end)
+    |> Multi.insert(:user_signed_up, fn %{account: account} ->
+      Audit.changeset(account.id, "user.signed_up",
+        actor_kind: "user",
+        actor_id: user.id,
+        subject_kind: "user",
+        subject_id: user.id,
+        subject_label: user.email
+      )
+    end)
+    |> Repo.commit_multi()
+    |> case do
+      {:ok, %{account: account}} -> {:ok, account}
+      {:error, reason} -> {:error, reason}
+    end
   end
 
   # Workspace gets the v2 conservative default policy on creation.
@@ -93,9 +118,24 @@ defmodule Emisar.Accounts do
              Authorizer.manage_own_account_permission()
            ),
          :ok <- ensure_subject_owns_account(subject, account) do
-      account
-      |> Account.Changeset.update(attrs)
-      |> Repo.update()
+      Multi.new()
+      |> Multi.update(:account, Account.Changeset.update(account, attrs))
+      |> Multi.insert(:audit, fn %{account: updated} ->
+        Audit.changeset(updated.id, "account.updated",
+          actor_kind: "user",
+          actor_id: subject.actor.id,
+          subject_kind: "account",
+          subject_id: updated.id,
+          subject_label: updated.name,
+          payload: %{name: updated.name, slug: updated.slug}
+        )
+      end)
+      |> Repo.commit_multi()
+      |> case do
+        {:ok, %{account: updated}} -> {:ok, updated}
+        {:error, %Ecto.Changeset{} = cs} -> {:error, cs}
+        {:error, other} -> {:error, other}
+      end
     end
   end
 
@@ -119,21 +159,21 @@ defmodule Emisar.Accounts do
              Authorizer.manage_security_settings_permission()
            ),
          :ok <- ensure_subject_owns_account(subject, account) do
-      result =
-        account
-        |> Account.Changeset.update_security(%{require_mfa: value})
-        |> Repo.update()
-
-      with {:ok, updated} <- result do
-        Emisar.Audit.log(account.id, "account.require_mfa_set",
+      Multi.new()
+      |> Multi.update(:account, Account.Changeset.update_security(account, %{require_mfa: value}))
+      |> Multi.insert(:audit, fn %{account: updated} ->
+        Audit.changeset(updated.id, "account.require_mfa_set",
           actor_kind: "user",
           actor_id: subject.actor.id,
           subject_kind: "account",
-          subject_id: account.id,
+          subject_id: updated.id,
           payload: %{require_mfa: value}
         )
-
-        {:ok, updated}
+      end)
+      |> Repo.commit_multi()
+      |> case do
+        {:ok, %{account: updated}} -> {:ok, updated}
+        {:error, reason} -> {:error, reason}
       end
     end
   end
@@ -209,23 +249,46 @@ defmodule Emisar.Accounts do
   end
 
   @doc """
-  The user's "current" account context for the UI. v0.1 just picks the
-  most recently-joined non-disabled membership; later we can persist a
-  preferred account in the user's profile.
+  Resolve the membership to mount as the user's active tenant for this
+  request. If `account_id` is given and the user has a non-suspended
+  membership on that (non-deleted) account, return it. Otherwise fall
+  back to the most recently-joined non-suspended membership — the
+  default for first sign-in or after a stale session value is cleared.
 
-  Pre-Subject lookup — called from `UserAuth.mount_current_account`
-  to decide which tenant Subject to construct in the first place.
-  Returns `{:ok, membership} | {:error, :not_found}`.
+  Returns `{:ok, membership} | {:error, :not_found}`. Pre-Subject —
+  called from `UserAuth` before there's a Subject to authorize with.
   """
-  def fetch_primary_membership_for_user(%User{id: user_id}) do
-    Membership.Query.all()
-    |> Membership.Query.by_user_id(user_id)
-    |> Membership.Query.not_disabled()
-    |> Membership.Query.for_active_account()
-    |> Membership.Query.ordered_by_recent()
-    |> Membership.Query.latest()
-    |> Repo.fetch(Membership.Query, preload: [:account, :user])
+  def fetch_membership_for_session(%User{id: user_id}, account_id) do
+    case maybe_fetch_session_membership(user_id, account_id) do
+      {:ok, membership} ->
+        {:ok, membership}
+
+      {:error, :not_found} ->
+        Membership.Query.all()
+        |> Membership.Query.by_user_id(user_id)
+        |> Membership.Query.not_disabled()
+        |> Membership.Query.for_active_account()
+        |> Membership.Query.ordered_by_recent()
+        |> Membership.Query.latest()
+        |> Repo.fetch(Membership.Query, preload: [:account, :user])
+    end
   end
+
+  defp maybe_fetch_session_membership(_user_id, nil), do: {:error, :not_found}
+
+  defp maybe_fetch_session_membership(user_id, account_id) when is_binary(account_id) do
+    if Repo.valid_uuid?(account_id) do
+      Membership.Query.all()
+      |> Membership.Query.by_account_and_user(account_id, user_id)
+      |> Membership.Query.not_disabled()
+      |> Membership.Query.for_active_account()
+      |> Repo.fetch(Membership.Query, preload: [:account, :user])
+    else
+      {:error, :not_found}
+    end
+  end
+
+  defp maybe_fetch_session_membership(_, _), do: {:error, :not_found}
 
   @doc """
   True iff every membership the user holds is suspended (and they have
@@ -261,8 +324,28 @@ defmodule Emisar.Accounts do
            Auth.Authorizer.ensure_has_permissions(subject, Authorizer.manage_team_permission()),
          :ok <- ensure_subject_in_account(subject, target.account_id),
          :ok <- ensure_role_change_allowed(target, new_role, subject) do
-      target |> Membership.Changeset.update(%{role: new_role}) |> Repo.update()
+      Multi.new()
+      |> Multi.update(:membership, Membership.Changeset.update(target, %{role: new_role}))
+      |> Multi.insert(:audit, fn _ ->
+        Audit.changeset(target.account_id, "membership.role_changed",
+          actor_kind: "user",
+          actor_id: subject.actor.id,
+          subject_kind: "user",
+          subject_id: target.user_id,
+          payload: %{from: target.role, to: new_role}
+        )
+      end)
+      |> Repo.commit_multi(after_commit: &broadcast_team_change(&1, "membership.role_changed"))
+      |> case do
+        {:ok, %{membership: m}} -> {:ok, m}
+        {:error, reason} -> {:error, reason}
+      end
     end
+  end
+
+  defp broadcast_team_change(%{membership: m}, event_type) do
+    Emisar.PubSub.broadcast_account_list(m.account_id, :team, event_type, m.user_id)
+    :ok
   end
 
   defp ensure_role_change_allowed(%Membership{} = target, new_role, %Subject{} = subject) do
@@ -304,7 +387,7 @@ defmodule Emisar.Accounts do
     * The last owner cannot be suspended.
     * Operator/viewer can't call this at all.
 
-  Suspended memberships are skipped by `fetch_primary_membership_for_user/1`
+  Suspended memberships are skipped by `fetch_membership_for_session/2`
   so the user can't reach the product even if their session cookie is
   still valid; the `UserAuth` plug also kills the live session on detect.
   """
@@ -313,34 +396,51 @@ defmodule Emisar.Accounts do
            Auth.Authorizer.ensure_has_permissions(subject, Authorizer.manage_team_permission()),
          :ok <- ensure_subject_in_account(subject, target.account_id),
          :ok <- ensure_can_modify_membership(target, subject),
-         :ok <- ensure_not_last_owner_change(target, "suspended"),
-         {:ok, updated} <- target |> Membership.Changeset.suspend() |> Repo.update() do
-      # Kill every active session for the suspended user so they can't
-      # keep using the product on an open tab. If the user lookup fails
-      # the membership row is orphaned — log loudly so the operator can
-      # investigate; the suspend itself is already committed.
-      case fetch_user_by_id(target.user_id) do
-        {:ok, user} ->
-          Emisar.Auth.delete_all_session_tokens(user)
-
-        {:error, reason} ->
-          require Logger
-
-          Logger.warning("suspend_membership_user_missing",
-            user_id: target.user_id,
-            membership_id: target.id,
-            reason: inspect(reason)
-          )
-      end
-
-      Emisar.Audit.log(target.account_id, "membership.suspended",
-        actor_kind: "user",
-        actor_id: subject.actor.id,
-        subject_kind: "user",
-        subject_id: target.user_id
+         :ok <- ensure_not_last_owner_change(target, "suspended") do
+      Multi.new()
+      |> Multi.update(:membership, Membership.Changeset.suspend(target))
+      |> Multi.insert(:audit, fn _ ->
+        Audit.changeset(target.account_id, "membership.suspended",
+          actor_kind: "user",
+          actor_id: subject.actor.id,
+          subject_kind: "user",
+          subject_id: target.user_id
+        )
+      end)
+      |> Repo.commit_multi(
+        after_commit: [
+          # Broadcast first so the team-page LV refreshes the row before
+          # we kill the user's sessions — keeps the visual ordering sane.
+          &broadcast_team_change(&1, "membership.suspended"),
+          # Session kill is a side effect — broadcast PubSub disconnects
+          # only after the suspension actually commits. Otherwise a rolled-
+          # back update would still kick the user out of every tab.
+          fn _ -> disconnect_user_sessions(target) end
+        ]
       )
+      |> case do
+        {:ok, %{membership: m}} -> {:ok, m}
+        {:error, reason} -> {:error, reason}
+      end
+    end
+  end
 
-      {:ok, updated}
+  defp disconnect_user_sessions(%Membership{} = target) do
+    case fetch_user_by_id(target.user_id) do
+      {:ok, user} ->
+        Emisar.Auth.disconnect_and_revoke_all_sessions(user)
+        :ok
+
+      {:error, reason} ->
+        require Logger
+
+        Logger.warning("suspend_membership_user_missing",
+          user_id: target.user_id,
+          membership_id: target.id,
+          reason: inspect(reason)
+        )
+
+        :ok
     end
   end
 
@@ -349,16 +449,22 @@ defmodule Emisar.Accounts do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(subject, Authorizer.manage_team_permission()),
          :ok <- ensure_subject_in_account(subject, target.account_id),
-         :ok <- ensure_can_modify_membership(target, subject),
-         {:ok, updated} <- target |> Membership.Changeset.reinstate() |> Repo.update() do
-      Emisar.Audit.log(target.account_id, "membership.reinstated",
-        actor_kind: "user",
-        actor_id: subject.actor.id,
-        subject_kind: "user",
-        subject_id: target.user_id
-      )
-
-      {:ok, updated}
+         :ok <- ensure_can_modify_membership(target, subject) do
+      Multi.new()
+      |> Multi.update(:membership, Membership.Changeset.reinstate(target))
+      |> Multi.insert(:audit, fn _ ->
+        Audit.changeset(target.account_id, "membership.reinstated",
+          actor_kind: "user",
+          actor_id: subject.actor.id,
+          subject_kind: "user",
+          subject_id: target.user_id
+        )
+      end)
+      |> Repo.commit_multi(after_commit: &broadcast_team_change(&1, "membership.reinstated"))
+      |> case do
+        {:ok, %{membership: m}} -> {:ok, m}
+        {:error, reason} -> {:error, reason}
+      end
     end
   end
 
@@ -378,41 +484,59 @@ defmodule Emisar.Accounts do
          :ok <- ensure_subject_in_account(subject, target.account_id),
          :ok <- ensure_can_modify_membership(target, subject),
          {:ok, user} <- fetch_user_by_id(target.user_id) do
-      # Drop all live sessions AND null out the existing password hash
-      # so the old credential stops working immediately, not whenever
-      # the user happens to click the email link. `valid_password?/2`
+      # Null out password hash + audit atomically. `valid_password?/2`
       # guards on `is_binary(hashed_password)` — nil falls through to
-      # the timing-safe placeholder branch and returns false.
-      :ok = Emisar.Auth.delete_all_session_tokens(user)
-
-      {:ok, _user} =
-        user
-        |> Ecto.Changeset.change(%{hashed_password: nil})
-        |> Repo.update()
-
-      token = Emisar.Auth.issue_password_reset_token!(user)
-      _ = Emisar.Mailers.UserNotifier.deliver_password_reset(user, token)
-
-      Emisar.Audit.log(target.account_id, "user.password_reset_forced",
-        actor_kind: "user",
-        actor_id: subject.actor.id,
-        subject_kind: "user",
-        subject_id: user.id,
-        subject_label: user.email
+      # the timing-safe placeholder branch and returns false, so the
+      # old credential stops working the moment this commits.
+      Multi.new()
+      |> Multi.update(:user, Ecto.Changeset.change(user, %{hashed_password: nil}))
+      |> Multi.insert(:audit, fn _ ->
+        Audit.changeset(target.account_id, "user.password_reset_forced",
+          actor_kind: "user",
+          actor_id: subject.actor.id,
+          subject_kind: "user",
+          subject_id: user.id,
+          subject_label: user.email
+        )
+      end)
+      |> Repo.commit_multi(
+        # Sending the reset email + broadcasting disconnects are side
+        # effects that must NOT happen if the password-null update
+        # rolled back. We pass `audit: false` to the token mint so it
+        # doesn't ALSO emit a `user.password_reset_requested` row — that
+        # row would attribute the action to the TARGET user as actor,
+        # not the admin who triggered it. The `user.password_reset_forced`
+        # event above is the canonical record of this action with the
+        # correct actor → subject pair (admin → target).
+        after_commit: fn %{user: user} ->
+          :ok = Emisar.Auth.disconnect_and_revoke_all_sessions(user)
+          token = Emisar.Auth.issue_password_reset_token!(user, audit: false)
+          _ = Emisar.Mailers.UserNotifier.deliver_password_reset(user, token)
+          :ok
+        end
       )
-
-      :ok
+      |> case do
+        {:ok, _} -> :ok
+        {:error, reason} -> {:error, reason}
+      end
     end
   end
 
   @doc """
   Admin-triggered profile edit for another member. Lets owners/admins
-  fix a teammate's typoed email or set their display name from the
-  team page, without making the teammate sign in to do it themselves.
+  set or fix a teammate's display name from the team page without
+  making the teammate sign in to do it themselves.
+
+  **Deliberately not allowed: email changes.** Letting an admin rewrite
+  a teammate's sign-in email would be an account-takeover-as-feature
+  (rewrite email → trigger password reset → read the link from the
+  attacker's inbox). The teammate has to change their own email via
+  Profile + current-password challenge. Same applies to password —
+  that path is `force_password_reset/2`.
 
   Same authorization shape as the rest of `ensure_can_modify_membership`:
-  caller must be owner/admin, can't edit self via this path (use Profile),
-  admins can't edit owners.
+  caller must be owner/admin, can't edit self via this path (use
+  Profile), admins can't edit owners.
 
   Audit-logged as `user.updated_by_admin` so the change is traceable.
   """
@@ -423,37 +547,30 @@ defmodule Emisar.Accounts do
          :ok <- ensure_subject_in_account(subject, target.account_id),
          :ok <- ensure_can_modify_membership(target, subject),
          {:ok, user} <- fetch_user_by_id(target.user_id) do
-      # Whitelist the fields admins are allowed to overwrite on a
-      # teammate. No password reset here — that path is
-      # `force_password_reset/2` and emails the user a magic link
-      # instead of letting the admin pick the password.
+      # Whitelist: full_name only. Email is intentionally absent — see
+      # moduledoc. Adding fields here = adding admin-driven mutation
+      # surface; treat every entry as security-reviewed.
       whitelisted =
         attrs
         |> Map.new(fn {k, v} -> {to_string(k), v} end)
-        |> Map.take(["full_name", "email"])
+        |> Map.take(["full_name"])
 
-      changeset =
-        user
-        |> User.Changeset.registration(whitelisted, hash_password: false)
-
-      case Repo.update(changeset) do
-        {:ok, updated} ->
-          Emisar.Audit.log(target.account_id, "user.updated_by_admin",
-            actor_kind: "user",
-            actor_id: subject.actor.id,
-            subject_kind: "user",
-            subject_id: updated.id,
-            subject_label: updated.email,
-            payload: %{
-              full_name: updated.full_name,
-              email: updated.email
-            }
-          )
-
-          {:ok, updated}
-
-        {:error, changeset} ->
-          {:error, changeset}
+      Multi.new()
+      |> Multi.update(:user, User.Changeset.registration(user, whitelisted, hash_password: false))
+      |> Multi.insert(:audit, fn %{user: updated} ->
+        Audit.changeset(target.account_id, "user.updated_by_admin",
+          actor_kind: "user",
+          actor_id: subject.actor.id,
+          subject_kind: "user",
+          subject_id: updated.id,
+          subject_label: updated.email,
+          payload: %{full_name: updated.full_name}
+        )
+      end)
+      |> Repo.commit_multi()
+      |> case do
+        {:ok, %{user: updated}} -> {:ok, updated}
+        {:error, reason} -> {:error, reason}
       end
     end
   end
@@ -469,17 +586,32 @@ defmodule Emisar.Accounts do
          :ok <- ensure_subject_in_account(subject, target.account_id),
          :ok <- ensure_can_modify_membership(target, subject),
          {:ok, user} <- fetch_user_by_id(target.user_id) do
-      :ok = Emisar.Auth.delete_all_session_tokens(user)
-
-      Emisar.Audit.log(target.account_id, "user.sessions_revoked",
-        actor_kind: "user",
-        actor_id: subject.actor.id,
-        subject_kind: "user",
-        subject_id: user.id,
-        subject_label: user.email
+      # The DB-side delete of session tokens is the source of truth — bundle
+      # it with the audit row so we never end up with "tokens deleted but no
+      # audit" or vice versa. The PubSub disconnect broadcast is a side
+      # effect that fires only after the rows actually commit.
+      Multi.new()
+      |> Multi.delete_all(:tokens, Auth.UserToken.Query.by_user_id(user.id)
+                                   |> Auth.UserToken.Query.by_contexts(["session"]))
+      |> Multi.insert(:audit, fn _ ->
+        Audit.changeset(target.account_id, "user.sessions_revoked",
+          actor_kind: "user",
+          actor_id: subject.actor.id,
+          subject_kind: "user",
+          subject_id: user.id,
+          subject_label: user.email
+        )
+      end)
+      |> Repo.commit_multi(
+        after_commit: fn _ ->
+          Emisar.Auth.broadcast_disconnect_for_user(user)
+          :ok
+        end
       )
-
-      :ok
+      |> case do
+        {:ok, _} -> :ok
+        {:error, reason} -> {:error, reason}
+      end
     end
   end
 
@@ -531,7 +663,22 @@ defmodule Emisar.Accounts do
            Auth.Authorizer.ensure_has_permissions(subject, Authorizer.manage_team_permission()),
          :ok <- ensure_subject_in_account(subject, target.account_id),
          :ok <- ensure_delete_membership_allowed(target, subject) do
-      Repo.delete(target)
+      Multi.new()
+      |> Multi.delete(:membership, target)
+      |> Multi.insert(:audit, fn _ ->
+        Audit.changeset(target.account_id, "membership.removed",
+          actor_kind: "user",
+          actor_id: subject.actor.id,
+          subject_kind: "user",
+          subject_id: target.user_id,
+          payload: %{role: target.role}
+        )
+      end)
+      |> Repo.commit_multi(after_commit: &broadcast_team_change(&1, "membership.removed"))
+      |> case do
+        {:ok, %{membership: deleted}} -> {:ok, deleted}
+        {:error, reason} -> {:error, reason}
+      end
     end
   end
 
@@ -666,9 +813,25 @@ defmodule Emisar.Accounts do
   def mark_invitation_accepted(%Membership{} = membership) do
     now = DateTime.utc_now() |> DateTime.truncate(:microsecond)
 
-    membership
-    |> Ecto.Changeset.change(invitation_token: nil, invitation_accepted_at: now)
-    |> Repo.update()
+    Multi.new()
+    |> Multi.update(
+      :membership,
+      Ecto.Changeset.change(membership, invitation_token: nil, invitation_accepted_at: now)
+    )
+    |> Multi.insert(:audit, fn _ ->
+      Audit.changeset(membership.account_id, "membership.invitation_accepted",
+        actor_kind: "user",
+        actor_id: membership.user_id,
+        subject_kind: "user",
+        subject_id: membership.user_id,
+        payload: %{role: membership.role}
+      )
+    end)
+    |> Repo.commit_multi()
+    |> case do
+      {:ok, %{membership: m}} -> {:ok, m}
+      {:error, reason} -> {:error, reason}
+    end
   end
 
   @doc """
@@ -679,24 +842,30 @@ defmodule Emisar.Accounts do
   Wrapped in a transaction so a half-accepted state is impossible.
   """
   def accept_invitation(%Membership{} = membership, %{} = user_attrs) do
-    Repo.transaction(fn ->
-      with {:ok, user} <-
-             fetch_user_by_id!(membership.user_id)
-             |> User.Changeset.registration(user_attrs)
-             |> Repo.update(),
-           {:ok, user} <- confirm_user(user),
-           {:ok, membership} <-
-             membership
-             |> Ecto.Changeset.change(
-               invitation_token: nil,
-               invitation_accepted_at: DateTime.utc_now() |> DateTime.truncate(:microsecond)
-             )
-             |> Repo.update() do
-        %{user: user, membership: membership}
-      else
-        {:error, reason} -> Repo.rollback(reason)
-      end
+    now = DateTime.utc_now() |> DateTime.truncate(:microsecond)
+
+    Multi.new()
+    |> Multi.update(:user, User.Changeset.registration(fetch_user_by_id!(membership.user_id), user_attrs))
+    |> Multi.update(:confirmed_user, fn %{user: u} -> User.Changeset.confirm(u) end)
+    |> Multi.update(
+      :membership,
+      Ecto.Changeset.change(membership, invitation_token: nil, invitation_accepted_at: now)
+    )
+    |> Multi.insert(:audit, fn %{confirmed_user: user, membership: m} ->
+      Audit.changeset(m.account_id, "user.invitation_accepted",
+        actor_kind: "user",
+        actor_id: user.id,
+        subject_kind: "user",
+        subject_id: user.id,
+        subject_label: user.email,
+        payload: %{role: m.role}
+      )
     end)
+    |> Repo.commit_multi()
+    |> case do
+      {:ok, %{confirmed_user: user, membership: m}} -> {:ok, %{user: user, membership: m}}
+      {:error, reason} -> {:error, reason}
+    end
   end
 
   # -- Users ------------------------------------------------------------
@@ -759,20 +928,33 @@ defmodule Emisar.Accounts do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(subject, Authorizer.manage_team_permission()),
          :ok <- ensure_subject_in_account(subject, membership.account_id) do
-      Repo.transaction(fn ->
-        UserRunnerScope.Query.by_membership_id(membership_id)
-        |> Repo.delete_all()
+      multi =
+        Multi.new()
+        |> Multi.delete_all(:cleared, UserRunnerScope.Query.by_membership_id(membership_id))
 
-        Enum.each(new_scopes, fn {type, value} ->
-          case UserRunnerScope.Changeset.create(membership_id, type, value)
-               |> Repo.insert() do
-            {:ok, _} -> :ok
-            {:error, changeset} -> Repo.rollback(changeset)
-          end
+      multi =
+        Enum.reduce(Enum.with_index(new_scopes), multi, fn {{type, value}, i}, acc ->
+          Multi.insert(acc, {:scope, i}, UserRunnerScope.Changeset.create(membership_id, type, value))
         end)
 
-        :ok
+      multi
+      |> Multi.insert(:audit, fn _ ->
+        Audit.changeset(membership.account_id, "membership.runner_scopes_changed",
+          actor_kind: "user",
+          actor_id: subject.actor.id,
+          subject_kind: "user",
+          subject_id: membership.user_id,
+          payload: %{
+            scope_count: length(new_scopes),
+            scopes: Enum.map(new_scopes, fn {type, value} -> %{type: type, value: value} end)
+          }
+        )
       end)
+      |> Repo.commit_multi()
+      |> case do
+        {:ok, _changes} -> {:ok, :ok}
+        {:error, reason} -> {:error, reason}
+      end
     end
   end
 
@@ -847,7 +1029,16 @@ defmodule Emisar.Accounts do
   """
   def update_user_profile(%User{} = user, attrs, %Subject{} = subject) do
     with :ok <- ensure_subject_is_user(subject, user) do
-      user |> User.Changeset.profile(attrs) |> Repo.update()
+      Multi.new()
+      |> Multi.update(:user, User.Changeset.profile(user, attrs))
+      |> Audit.Multi.log_for_user(:audit, user, "user.profile_updated",
+        payload_fn: fn %{user: updated} -> %{full_name: updated.full_name} end
+      )
+      |> Repo.commit_multi()
+      |> case do
+        {:ok, %{user: updated}} -> {:ok, updated}
+        {:error, reason} -> {:error, reason}
+      end
     end
   end
 
@@ -856,17 +1047,82 @@ defmodule Emisar.Accounts do
   password. Returns `{:ok, user} | {:error, :invalid_current_password}
   | {:error, %Ecto.Changeset{}}`. Subject must match the user being
   edited — the current-password check is the proof-of-control gate.
+
+  Audits success (`user.email_changed`) with both addresses for traceability,
+  and failed-password attempts (`user.email_change_failed`) since wrong-password
+  on the email-change form is a credential probe worth seeing.
   """
   def update_user_email(%User{} = user, new_email, current_password, %Subject{} = subject)
       when is_binary(new_email) and is_binary(current_password) do
     with :ok <- ensure_subject_is_user(subject, user) do
       if User.valid_password?(user, current_password) do
-        user
-        |> User.Changeset.email(%{email: new_email})
-        |> Repo.update()
+        Multi.new()
+        |> Multi.update(:user, User.Changeset.email(user, %{email: new_email}))
+        |> Audit.Multi.log_for_user(:audit, user, "user.email_changed",
+          payload_fn: fn %{user: updated} -> %{from: user.email, to: updated.email} end
+        )
+        |> Repo.commit_multi()
+        |> case do
+          {:ok, %{user: updated}} -> {:ok, updated}
+          {:error, reason} -> {:error, reason}
+        end
       else
+        # Failed-credential probe — audit it standalone since there's no
+        # parent mutation to bundle with.
+        Audit.log_for_user(user, "user.email_change_failed",
+          payload: %{reason: "invalid_current_password"}
+        )
+
         {:error, :invalid_current_password}
       end
+    end
+  end
+
+  @doc """
+  Change the caller's own sign-in password after verifying the current
+  one. Returns `{:ok, user} | {:error, :invalid_current_password}
+  | {:error, :passwords_must_match} | {:error, :password_too_short}
+  | {:error, %Ecto.Changeset{}}`.
+
+  Audits success (`user.password_changed`) and audit-records bad
+  current-password attempts (`user.password_change_failed`) — wrong
+  current-password on this form is a real-credential probe worth seeing.
+
+  The caller is responsible for revoking other sessions after success —
+  a successful password change implies "the old credential is blown",
+  so every other device should sign out. Subject must match the user.
+  """
+  @password_min_length 12
+
+  def change_user_password(%User{} = user, current_password, new_password, %Subject{} = subject)
+      when is_binary(current_password) and is_binary(new_password) do
+    with :ok <- ensure_subject_is_user(subject, user),
+         :ok <- ensure_password_length(new_password),
+         :ok <- ensure_current_password(user, current_password) do
+      Multi.new()
+      |> Multi.update(:user, User.Changeset.password(user, %{password: new_password}))
+      |> Audit.Multi.log_for_user(:audit, user, "user.password_changed")
+      |> Repo.commit_multi()
+      |> case do
+        {:ok, %{user: updated}} -> {:ok, updated}
+        {:error, reason} -> {:error, reason}
+      end
+    end
+  end
+
+  defp ensure_password_length(p) when byte_size(p) >= @password_min_length, do: :ok
+  defp ensure_password_length(_), do: {:error, :password_too_short}
+
+  defp ensure_current_password(%User{} = user, current) do
+    if User.valid_password?(user, current) do
+      :ok
+    else
+      # Pre-mutation probe — no parent transaction to bundle with.
+      Audit.log_for_user(user, "user.password_change_failed",
+        payload: %{reason: "invalid_current_password"}
+      )
+
+      {:error, :invalid_current_password}
     end
   end
 

@@ -7,36 +7,28 @@ defmodule Emisar.Approvals.Authorizer do
   def decide_approval_permission, do: build(Request, :decide)
   def view_approvals_permission, do: build(Request, :view)
   def manage_grants_permission, do: build(Grant, :manage)
-  def file_approval_permission, do: build(Request, :file)
 
   @impl Emisar.Auth.Authorizer
   def list_permissions_for_role(role) when role in [:owner, :admin],
     do: [
       decide_approval_permission(),
       view_approvals_permission(),
-      manage_grants_permission(),
-      file_approval_permission()
+      manage_grants_permission()
     ]
 
   def list_permissions_for_role(:operator),
-    do: [
-      decide_approval_permission(),
-      view_approvals_permission(),
-      file_approval_permission()
-    ]
+    do: [decide_approval_permission(), view_approvals_permission()]
 
   def list_permissions_for_role(:viewer),
     do: [view_approvals_permission()]
 
-  def list_permissions_for_role(:api_client),
-    do: [file_approval_permission()]
+  def list_permissions_for_role(:api_client), do: []
 
   def list_permissions_for_role(:system),
     do: [
       decide_approval_permission(),
       view_approvals_permission(),
-      manage_grants_permission(),
-      file_approval_permission()
+      manage_grants_permission()
     ]
 
   def list_permissions_for_role(_), do: []

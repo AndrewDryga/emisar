@@ -85,6 +85,9 @@ services:
       # Speak plain HTTP for local. force_ssl in runtime.exs is gated
       # on this knob — see config/runtime.exs.
       FORCE_SSL: "false"
+      # Use the Paddle stub client locally — prod runtime.exs refuses to
+      # boot without PADDLE_API_KEY unless this is set.
+      EMISAR_DISABLE_BILLING: "1"
     ports:
       - "4000:4000"
     # `curl` is the only http client in the debian-slim runtime image —
@@ -112,6 +115,7 @@ services:
       SECRET_KEY_BASE: "zy7QplH6bzgWzgVDXSC8KxCprn+OQB7vWMRcQ+0iyJ2WlcQqg1AswEXqzcjHj8nu"
       PHX_HOST: "localhost"
       FORCE_SSL: "false"
+      EMISAR_DISABLE_BILLING: "1"
       # DEV-ONLY well-known auth key. Same value the runners use. The
       # seed inserts a row with the SHA-256 of this raw string so the
       # runners' /runner/register call resolves it.

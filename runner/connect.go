@@ -74,6 +74,7 @@ env var can be unset after the first successful connect.`,
 				Group:       rt.cfg.Runner.Group,
 				Labels:      rt.cfg.Runner.Labels,
 				GetRegistry: rt.engine.Registry,
+				Admission:   rt.admission,
 			}
 			client := cloud.NewClient(dialer, cloud.Options{
 				StateBuilder:   builder,

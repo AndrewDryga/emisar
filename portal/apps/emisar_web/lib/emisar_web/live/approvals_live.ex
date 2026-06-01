@@ -36,26 +36,16 @@ defmodule EmisarWeb.ApprovalsLive do
 
   def handle_event("revoke_grant", %{"id" => id}, socket) do
     Permissions.gated(socket, :decide_approval, fn s ->
-      account_id = s.assigns.current_account.id
-
       case Approvals.fetch_grant_by_id(id, s.assigns.current_subject) do
         {:error, :not_found} ->
           {:noreply, put_flash(s, :error, "Grant not found.")}
 
         {:ok, grant} ->
+          # Audit logging lives inside `Approvals.revoke_grant/2` so the
+          # transaction is atomic and other callers (future scripts /
+          # tasks) can't accidentally skip it.
           case Approvals.revoke_grant(grant, s.assigns.current_subject) do
             {:ok, _} ->
-              Emisar.Audit.log(account_id, "approval.grant_revoked",
-                actor_kind: "user",
-                actor_id: s.assigns.current_user.id,
-                subject_kind: "approval_grant",
-                subject_id: grant.id,
-                payload: %{
-                  action_id: grant.action_id,
-                  api_key_id: grant.api_key_id
-                }
-              )
-
               {:noreply,
                s
                |> put_flash(:info, "Grant revoked. New calls will require fresh approval.")
@@ -152,17 +142,15 @@ defmodule EmisarWeb.ApprovalsLive do
   defp expires_label(%{expires_at: nil}), do: "no expiry"
   defp expires_label(%{expires_at: ts}), do: "expires #{relative_time(ts)}"
 
-  defp format_last_used(nil), do: "never"
-  defp format_last_used(ts), do: relative_time(ts)
-
   defp pluralize(1, word), do: word
   defp pluralize(_, word), do: word <> "s"
 
   def render(assigns) do
     ~H"""
-    <.dashboard_shell
+    <.dashboard_shell pending_approvals_count={@pending_approvals_count}
       current_user={@current_user}
       current_account={@current_account}
+      switchable_accounts={@switchable_accounts}
       flash={@flash}
       section={:approvals}
     >
@@ -181,13 +169,18 @@ defmodule EmisarWeb.ApprovalsLive do
             </span>
           </header>
 
-          <%= if @pending == [] && @pending_metadata.count == 0 do %>
-            <div class="rounded-xl border border-zinc-900 bg-zinc-950/40 px-5 py-10 text-center text-sm text-zinc-500">
-              Nothing waiting. Approvals appear here when a policy gates a run.
-            </div>
-          <% else %>
-            <ul class="space-y-2">
-              <li :for={req <- @pending}>
+          <LiveTable.live_table
+            layout={:cards}
+            id="pending"
+            path={~p"/app/approvals"}
+            prefix="pending_"
+            rows={@pending}
+            metadata={@pending_metadata}
+            filter_params={@filter_params}
+            wrapper_class="space-y-2"
+          >
+            <:item :let={req}>
+              <li>
                 <.link
                   navigate={~p"/app/approvals/#{req.id}"}
                   class="block rounded-xl border border-amber-500/30 bg-amber-500/[0.04] p-4 transition hover:border-amber-500/50 hover:bg-amber-500/[0.07]"
@@ -211,16 +204,11 @@ defmodule EmisarWeb.ApprovalsLive do
                   </p>
                 </.link>
               </li>
-            </ul>
-
-            <LiveTable.paginator
-              id="pending"
-              path={~p"/app/approvals"}
-              prefix="pending_"
-              metadata={@pending_metadata}
-              filter_params={@filter_params}
-            />
-          <% end %>
+            </:item>
+            <:empty>
+              Nothing waiting. Approvals appear here when a policy gates a run.
+            </:empty>
+          </LiveTable.live_table>
         </section>
 
         <%!-- 2. STANDING GRANTS --%>
@@ -240,14 +228,17 @@ defmodule EmisarWeb.ApprovalsLive do
             </p>
           </header>
 
-          <%= if @grants == [] && @grants_metadata.count == 0 do %>
-            <div class="rounded-xl border border-zinc-900 bg-zinc-950/40 px-5 py-8 text-center text-sm text-zinc-500">
-              No active grants. They appear when an operator approves a run with a duration
-              other than "just this call".
-            </div>
-          <% else %>
-            <ul class="divide-y divide-zinc-900 overflow-hidden rounded-xl border border-zinc-900 bg-zinc-950/40">
-              <li :for={g <- @grants} class="flex items-start gap-4 px-5 py-3">
+          <LiveTable.live_table
+            layout={:cards}
+            id="grants"
+            path={~p"/app/approvals"}
+            prefix="grants_"
+            rows={@grants}
+            metadata={@grants_metadata}
+            filter_params={@filter_params}
+          >
+            <:item :let={g}>
+              <li class="flex items-start gap-4 px-5 py-3">
                 <span class="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-zinc-900 text-zinc-400">
                   <.icon name="hero-key" class="h-3.5 w-3.5" />
                 </span>
@@ -267,7 +258,7 @@ defmodule EmisarWeb.ApprovalsLive do
                   </div>
 
                   <div class="mt-0.5 text-xs text-zinc-500">
-                    {expires_label(g)} · last used {format_last_used(g.last_used_at)}
+                    {expires_label(g)} · last used {last_used(g.last_used_at)}
                   </div>
                 </div>
 
@@ -281,16 +272,12 @@ defmodule EmisarWeb.ApprovalsLive do
                   Revoke
                 </button>
               </li>
-            </ul>
-
-            <LiveTable.paginator
-              id="grants"
-              path={~p"/app/approvals"}
-              prefix="grants_"
-              metadata={@grants_metadata}
-              filter_params={@filter_params}
-            />
-          <% end %>
+            </:item>
+            <:empty>
+              No active grants. They appear when an operator approves a run with a duration
+              other than "just this call".
+            </:empty>
+          </LiveTable.live_table>
         </section>
 
         <%!-- 3. RECENT DECISIONS --%>
@@ -299,13 +286,17 @@ defmodule EmisarWeb.ApprovalsLive do
             <h2 class="text-sm font-semibold text-zinc-100">Recent decisions</h2>
           </header>
 
-          <%= if @decided == [] && @decided_metadata.count == 0 do %>
-            <div class="rounded-xl border border-zinc-900 bg-zinc-950/40 px-5 py-8 text-center text-sm text-zinc-500">
-              Decided approvals will be listed here.
-            </div>
-          <% else %>
-            <ul class="divide-y divide-zinc-900 overflow-hidden rounded-xl border border-zinc-900 bg-zinc-950/40">
-              <li :for={req <- @decided}>
+          <LiveTable.live_table
+            layout={:cards}
+            id="decided"
+            path={~p"/app/approvals"}
+            prefix="decided_"
+            rows={@decided}
+            metadata={@decided_metadata}
+            filter_params={@filter_params}
+          >
+            <:item :let={req}>
+              <li>
                 <.link
                   navigate={~p"/app/approvals/#{req.id}"}
                   class="flex items-center justify-between gap-3 px-4 py-3 text-sm transition hover:bg-zinc-900/40"
@@ -329,16 +320,11 @@ defmodule EmisarWeb.ApprovalsLive do
                   </div>
                 </.link>
               </li>
-            </ul>
-
-            <LiveTable.paginator
-              id="decided"
-              path={~p"/app/approvals"}
-              prefix="decided_"
-              metadata={@decided_metadata}
-              filter_params={@filter_params}
-            />
-          <% end %>
+            </:item>
+            <:empty>
+              Decided approvals will be listed here.
+            </:empty>
+          </LiveTable.live_table>
         </section>
       </.page_container>
     </.dashboard_shell>

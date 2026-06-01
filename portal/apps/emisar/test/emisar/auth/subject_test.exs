@@ -26,7 +26,7 @@ defmodule Emisar.Auth.SubjectTest do
       # An owner-specific permission held by no other role.
       assert MapSet.member?(
                subject.permissions,
-               Emisar.Accounts.Authorizer.delete_account_permission()
+               Emisar.Accounts.Authorizer.manage_security_settings_permission()
              )
     end
 
@@ -71,16 +71,10 @@ defmodule Emisar.Auth.SubjectTest do
       assert subject.role == :system
       assert subject.account == nil
 
-      # A system subject must include any permission an owner has,
-      # plus the runner-callable permissions (connect_runner, etc.).
+      # A system subject must include any permission an owner has.
       assert MapSet.subset?(
                Emisar.Auth.Authorizer.permissions_for(:owner),
                subject.permissions
-             )
-
-      assert MapSet.member?(
-               subject.permissions,
-               Emisar.Runners.Authorizer.connect_runner_permission()
              )
     end
 
@@ -114,7 +108,7 @@ defmodule Emisar.Auth.SubjectTest do
       assert :ok =
                Emisar.Auth.Authorizer.ensure_has_permissions(
                  subject,
-                 Emisar.Accounts.Authorizer.delete_account_permission()
+                 Emisar.Accounts.Authorizer.manage_security_settings_permission()
                )
     end
 
@@ -128,7 +122,7 @@ defmodule Emisar.Auth.SubjectTest do
       assert {:error, :unauthorized} =
                Emisar.Auth.Authorizer.ensure_has_permissions(
                  subject,
-                 Emisar.Accounts.Authorizer.delete_account_permission()
+                 Emisar.Accounts.Authorizer.manage_security_settings_permission()
                )
     end
 
@@ -156,7 +150,7 @@ defmodule Emisar.Auth.SubjectTest do
         Subject.for_user(user, account, %Membership{role: "viewer", user_id: user.id, account_id: account.id})
 
       perms = [
-        Emisar.Accounts.Authorizer.delete_account_permission(),
+        Emisar.Accounts.Authorizer.manage_security_settings_permission(),
         Emisar.Accounts.Authorizer.manage_team_permission()
       ]
 

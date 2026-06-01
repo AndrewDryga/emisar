@@ -23,7 +23,7 @@ defmodule EmisarWeb.TeamLiveTest do
     test "renders the read-only banner instead of the form", %{conn: conn} do
       {conn, user, _account} = register_and_log_in(conn, %{account: %{name: "ViewerOrg"}})
 
-      {:ok, m} = Emisar.Accounts.fetch_primary_membership_for_user(user)
+      {:ok, m} = Emisar.Accounts.fetch_membership_for_session(user, nil)
       _ = Emisar.Fixtures.force_membership_role(m, "viewer")
 
       {:ok, _lv, html} = live(conn, ~p"/app/settings/team")

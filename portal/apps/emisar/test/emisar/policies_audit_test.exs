@@ -35,7 +35,7 @@ defmodule Emisar.PoliciesAuditTest do
         ]
       }
 
-      {:ok, _updated} = Policies.update_rules(policy, new_rules, subject)
+      {:ok, updated} = Policies.update_rules(policy, new_rules, subject)
 
       {:ok, [event], _} =
         Audit.list_events(Subject.system(account), filter: [event_type: ["policy.updated"]])
@@ -44,6 +44,12 @@ defmodule Emisar.PoliciesAuditTest do
       assert is_map(event.payload)
       assert event.payload["before"]["schema_version"] == 2
       assert event.payload["after"]["defaults"]["medium"] == "require_approval"
+      # vsn bumps on every rule mutation so operators can correlate
+      # specific runs back to "the policy that was active when this
+      # decision was made".
+      assert event.payload["from_version"] == policy.vsn
+      assert event.payload["to_version"] == policy.vsn + 1
+      assert updated.vsn == policy.vsn + 1
     end
 
     test "diff identifies tier flips", %{subject: subject, account: account, policy: policy} do

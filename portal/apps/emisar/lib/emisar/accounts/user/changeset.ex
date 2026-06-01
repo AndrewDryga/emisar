@@ -34,8 +34,29 @@ defmodule Emisar.Accounts.User.Changeset do
   def sign_in(%User{} = user),
     do: change(user, last_sign_in_at: now())
 
-  def mfa(%User{} = user, secret, enabled_at),
-    do: change(user, mfa_secret: secret, mfa_enabled_at: enabled_at)
+  @doc """
+  Toggle MFA. `secret`/`enabled_at` both non-nil → enable; both nil →
+  disable. `recovery_codes` is the digest list (hashed at the caller),
+  refreshed every time we re-enable so old codes don't survive a
+  toggle. `mfa_last_used_at` is wiped on enable so the replay guard
+  starts clean.
+  """
+  def mfa(%User{} = user, secret, enabled_at, recovery_codes \\ []) do
+    change(user,
+      mfa_secret: secret,
+      mfa_enabled_at: enabled_at,
+      mfa_recovery_codes: recovery_codes,
+      mfa_last_used_at: nil
+    )
+  end
+
+  @doc "Stamp the timestamp of the most recent successful TOTP — used by Auth's replay guard."
+  def mfa_consumed(%User{} = user, at),
+    do: change(user, mfa_last_used_at: at)
+
+  @doc "Persist the remaining recovery codes after one is consumed."
+  def mfa_recovery_codes(%User{} = user, codes) when is_list(codes),
+    do: change(user, mfa_recovery_codes: codes)
 
   def delete(%User{} = user), do: change(user, deleted_at: now())
 

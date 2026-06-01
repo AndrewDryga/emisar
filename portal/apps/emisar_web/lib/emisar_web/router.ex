@@ -106,11 +106,14 @@ defmodule EmisarWeb.Router do
   scope "/app", EmisarWeb do
     pipe_through [:browser, :noindex, :require_authenticated_user]
 
+    post "/accounts/switch", AccountSwitchController, :switch
+
     live_session :authenticated,
       on_mount: [
         {EmisarWeb.UserAuth, :ensure_authenticated},
         {EmisarWeb.UserAuth, :ensure_mfa_compliant},
-        {EmisarWeb.UserAuth, :audit_meta}
+        {EmisarWeb.UserAuth, :audit_meta},
+        {EmisarWeb.UserAuth, :track_pending_approvals}
       ] do
       live "/", DashboardLive, :index
 
@@ -131,6 +134,8 @@ defmodule EmisarWeb.Router do
       live "/runbooks/:id/run", RunbookRunLive, :new
 
       live "/policies", PoliciesLive, :index
+
+      live "/packs", PacksLive, :index
 
       live "/audit", AuditLive, :index
       live "/audit/:id", AuditDetailLive, :show
@@ -180,6 +185,11 @@ defmodule EmisarWeb.Router do
       post "/tools/:action_id", McpController, :run_tool
       get "/runs/:id", McpController, :get_run
     end
+
+    # SIEM-shaped audit export — cursor-paginated NDJSON over the same
+    # API-key auth as MCP, but gated on the `audit:read` scope so log
+    # shipping can be granted independently of tool-execution rights.
+    get "/audit", AuditExportController, :index
   end
 
   # -- Paddle webhook -------------------------------------------------
@@ -193,11 +203,18 @@ defmodule EmisarWeb.Router do
 
   import Phoenix.LiveDashboard.Router
 
+  # Exposing `ecto_repos` turns on the built-in Ecto page (queries /
+  # slowest queries / pool stats) on top of the Phoenix process /
+  # request / memory views. `ecto_psql_extras_options` is honored when
+  # the optional `ecto_psql_extras` dep is installed; ignored otherwise.
   if Application.compile_env(:emisar_web, :dev_routes) do
     scope "/dev" do
       pipe_through :browser
 
-      live_dashboard "/dashboard", metrics: EmisarWeb.Telemetry
+      live_dashboard "/dashboard",
+        metrics: EmisarWeb.Telemetry,
+        ecto_repos: [Emisar.Repo]
+
       forward "/mailbox", Plug.Swoosh.MailboxPreview
     end
   end
@@ -211,6 +228,7 @@ defmodule EmisarWeb.Router do
 
     live_dashboard "/live",
       metrics: EmisarWeb.Telemetry,
+      ecto_repos: [Emisar.Repo],
       live_session_name: :admin_dashboard
   end
 end

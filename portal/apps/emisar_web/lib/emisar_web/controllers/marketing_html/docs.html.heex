@@ -41,12 +41,27 @@
           <div class="flex h-12 w-12 items-center justify-center rounded-lg bg-indigo-500/10 text-indigo-400">
             <.icon name="hero-cube-transparent" class="h-6 w-6" />
           </div>
-          <h2 class="mt-6 text-xl font-semibold text-zinc-50 group-hover:text-indigo-300">Pack authoring</h2>
+          <h2 class="mt-6 text-xl font-semibold text-zinc-50 group-hover:text-indigo-300">Pack reference</h2>
           <p class="mt-2 text-sm text-zinc-400">
-            Write action packs in YAML: declare args, timeouts, side effects, secrets.
+            Action YAML reference: declared args + validation, limits, redaction,
+            side-effects, dispatch-form examples.
           </p>
           <p class="mt-4 text-sm font-semibold text-indigo-300">
             See the spec <span aria-hidden="true">&rarr;</span>
+          </p>
+        </.link>
+
+        <.link href={~p"/docs/publishing-packs"} class="group rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8 transition hover:border-indigo-500/50">
+          <div class="flex h-12 w-12 items-center justify-center rounded-lg bg-indigo-500/10 text-indigo-400">
+            <.icon name="hero-arrow-up-tray" class="h-6 w-6" />
+          </div>
+          <h2 class="mt-6 text-xl font-semibold text-zinc-50 group-hover:text-indigo-300">Publishing packs</h2>
+          <p class="mt-2 text-sm text-zinc-400">
+            Walkthrough: structure a pack, test it against your runner, open a PR
+            for the public registry.
+          </p>
+          <p class="mt-4 text-sm font-semibold text-indigo-300">
+            Author + publish <span aria-hidden="true">&rarr;</span>
           </p>
         </.link>
 

@@ -22,6 +22,7 @@ func stateCmd() *cobra.Command {
 				Group:       rt.cfg.Runner.Group,
 				Labels:      rt.cfg.Runner.Labels,
 				GetRegistry: rt.engine.Registry,
+				Admission:   rt.admission,
 			}
 			return printJSON(b.Build())
 		},

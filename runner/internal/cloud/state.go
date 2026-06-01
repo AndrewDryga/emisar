@@ -3,6 +3,7 @@ package cloud
 import (
 	"os"
 
+	"github.com/andrewdryga/emisar/runner/internal/admission"
 	"github.com/andrewdryga/emisar/runner/internal/packs"
 	"github.com/andrewdryga/emisar/runner/pkg/actionspec"
 )
@@ -17,6 +18,13 @@ type StateBuilder struct {
 	Group       string
 	Labels      map[string]string
 	GetRegistry func() *packs.Registry
+	// Admission, if set, filters the advertised action list — any
+	// action rejected by the host operator's allow/deny policy is
+	// hidden from the cloud catalog entirely. The engine ALSO enforces
+	// admission at run time, so a compromised portal trying to dispatch
+	// a hidden id still gets a hard refusal; this filter just keeps
+	// the UI honest.
+	Admission *admission.Policy
 }
 
 // Build snapshots the current registry into a wire-shaped state
@@ -52,6 +60,9 @@ func (b *StateBuilder) Build() RunnerStateMsg {
 		msg.Packs[p.ID] = info
 	}
 	for _, a := range reg.Actions() {
+		if ok, _ := b.Admission.Admit(a.ID); !ok {
+			continue
+		}
 		msg.Actions = append(msg.Actions, descriptorFor(a))
 	}
 	return msg

@@ -48,7 +48,7 @@ defmodule Emisar.MfaEnforcementTest do
       {:ok, user} = Accounts.register_user(%{email: email, password: "Hunter222-original", full_name: "T"})
       {:ok, user} = Accounts.confirm_user(user)
       {:ok, _} = Accounts.invite_user_to_account(email, "operator", owner_subject)
-      {:ok, m} = Accounts.fetch_primary_membership_for_user(user)
+      {:ok, m} = Accounts.fetch_membership_for_session(user, nil)
 
       # Verify old password works pre-reset.
       assert User.valid_password?(user, "Hunter222-original")

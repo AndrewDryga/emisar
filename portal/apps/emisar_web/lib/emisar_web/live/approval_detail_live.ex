@@ -110,20 +110,30 @@ defmodule EmisarWeb.ApprovalDetailLive do
   defp parse_scope("any_args"), do: :any_args
   defp parse_scope(_), do: :exact_args
 
-  defp approval_flash(duration: :once, scope: _),
-    do: "Approved for this call only."
+  # Extract values via Keyword.fetch so the function doesn't depend on
+  # the exact pair-count of `opts` — a previous shape mismatched the
+  # caller's 3-key opts (`duration`, `scope`, `max_uses`) and crashed
+  # the LV on every approve click.
+  defp approval_flash(opts) do
+    scope = Keyword.fetch!(opts, :scope)
 
-  defp approval_flash(duration: :one_hour, scope: scope),
-    do: "Approved. Standing grant active for the next hour (#{scope_label(scope)})."
+    case Keyword.fetch!(opts, :duration) do
+      :once ->
+        "Approved for this call only."
 
-  defp approval_flash(duration: :one_day, scope: scope),
-    do: "Approved. Standing grant active for the next 24 hours (#{scope_label(scope)})."
+      :one_hour ->
+        "Approved. Standing grant active for the next hour (#{scope_label(scope)})."
 
-  defp approval_flash(duration: :thirty_days, scope: scope),
-    do: "Approved. Standing grant active for the next 30 days (#{scope_label(scope)}). Revoke from the agents page."
+      :one_day ->
+        "Approved. Standing grant active for the next 24 hours (#{scope_label(scope)})."
 
-  defp approval_flash(duration: :ninety_days, scope: scope),
-    do: "Approved. Standing grant active for the next 90 days (#{scope_label(scope)}). Revoke from the agents page."
+      :thirty_days ->
+        "Approved. Standing grant active for the next 30 days (#{scope_label(scope)}). Revoke from the agents page."
+
+      :ninety_days ->
+        "Approved. Standing grant active for the next 90 days (#{scope_label(scope)}). Revoke from the agents page."
+    end
+  end
 
   defp scope_label(:any_args), do: "any arguments"
   defp scope_label(_), do: "same arguments only"
@@ -146,9 +156,10 @@ defmodule EmisarWeb.ApprovalDetailLive do
 
   def render(assigns) do
     ~H"""
-    <.dashboard_shell
+    <.dashboard_shell pending_approvals_count={@pending_approvals_count}
       current_user={@current_user}
       current_account={@current_account}
+      switchable_accounts={@switchable_accounts}
       flash={@flash}
       section={:approvals}
     >
@@ -157,14 +168,13 @@ defmodule EmisarWeb.ApprovalDetailLive do
         Approval ·
         <span class="font-mono text-base">{@request.context["action_id"] || "—"}</span>
       </:title>
-      <:actions>
-        <.status_badge status={@request.status} />
-      </:actions>
-
-      <%!-- Meta strip: at-a-glance facts. Action, runner, requester,
-           when. Same shape as RunDetailLive — consistent across the
-           approval/run pair. --%>
-      <.meta_strip cols={4}>
+      <%!-- Meta strip: at-a-glance facts. Status leads — same pattern
+           as RunDetail / RunnerDetail — then action, runner,
+           requester, when. --%>
+      <.meta_strip cols={5}>
+        <.meta_field label="Status">
+          <.status_badge status={@request.status} />
+        </.meta_field>
         <.meta_field label="Action">
           <span class="truncate font-mono text-zinc-200">
             {@request.context["action_id"] || "—"}

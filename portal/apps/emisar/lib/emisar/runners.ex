@@ -13,6 +13,7 @@ defmodule Emisar.Runners do
   socket's own subject upstream.
   """
 
+  alias Ecto.Multi
   alias Emisar.{Audit, Auth, PubSub, Repo}
   alias Emisar.Auth.Subject
   alias Emisar.Runners.{Authorizer, AuthKey, EventCursor, Runner, Token}
@@ -107,23 +108,6 @@ defmodule Emisar.Runners do
   end
 
   @doc """
-  Paginated + filterable list. Returns `{:ok, [runner], metadata}`.
-  Wired through `Emisar.Repo.list/3` so the LiveTable component can
-  drive it from URL params.
-  """
-  def list_runners_page(%Subject{} = subject, opts \\ []) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.view_runners_permission()
-           ) do
-      Runner.Query.not_deleted()
-      |> Authorizer.for_subject(subject)
-      |> Repo.list(Runner.Query, opts)
-    end
-  end
-
-  @doc """
   Group → count tuples for the RunnersLive sidebar. Returns
   `{:ok, [{group, count}]} | {:error, :unauthorized}`. Small bounded
   set (groups, not runners) — no pagination needed.
@@ -204,7 +188,7 @@ defmodule Emisar.Runners do
              subject,
              Authorizer.manage_runners_permission()
            ),
-         :ok <- ensure_runner_in_subject_account(runner, subject) do
+         :ok <- Subject.ensure_in_account(subject, runner.account_id) do
       runner |> Runner.Changeset.update(attrs) |> Repo.update()
     end
   end
@@ -215,21 +199,22 @@ defmodule Emisar.Runners do
              subject,
              Authorizer.manage_runners_permission()
            ),
-         :ok <- ensure_runner_in_subject_account(runner, subject) do
-      case runner |> Runner.Changeset.disable() |> Repo.update() do
-        {:ok, disabled} = ok ->
-          Audit.log(disabled.account_id, "runner.disabled",
-            actor_kind: actor_kind(subject),
-            actor_id: actor_id(subject),
-            subject_kind: "runner",
-            subject_id: disabled.id,
-            subject_label: disabled.name
-          )
-
-          ok
-
-        err ->
-          err
+         :ok <- Subject.ensure_in_account(subject, runner.account_id) do
+      Multi.new()
+      |> Multi.update(:runner, Runner.Changeset.disable(runner))
+      |> Multi.insert(:audit, fn %{runner: disabled} ->
+        Audit.changeset(disabled.account_id, "runner.disabled",
+          actor_kind: Subject.actor_kind(subject),
+          actor_id: Subject.actor_id(subject),
+          subject_kind: "runner",
+          subject_id: disabled.id,
+          subject_label: disabled.name
+        )
+      end)
+      |> Repo.commit_multi()
+      |> case do
+        {:ok, %{runner: disabled}} -> {:ok, disabled}
+        {:error, reason} -> {:error, reason}
       end
     end
   end
@@ -245,30 +230,25 @@ defmodule Emisar.Runners do
              subject,
              Authorizer.manage_runners_permission()
            ),
-         :ok <- ensure_runner_in_subject_account(runner, subject) do
-      case runner |> Runner.Changeset.delete() |> Repo.update() do
-        {:ok, deleted} = ok ->
-          Audit.log(deleted.account_id, "runner.deleted",
-            actor_kind: actor_kind(subject),
-            actor_id: actor_id(subject),
-            subject_kind: "runner",
-            subject_id: deleted.id,
-            subject_label: deleted.name
-          )
-
-          ok
-
-        err ->
-          err
+         :ok <- Subject.ensure_in_account(subject, runner.account_id) do
+      Multi.new()
+      |> Multi.update(:runner, Runner.Changeset.delete(runner))
+      |> Multi.insert(:audit, fn %{runner: deleted} ->
+        Audit.changeset(deleted.account_id, "runner.deleted",
+          actor_kind: Subject.actor_kind(subject),
+          actor_id: Subject.actor_id(subject),
+          subject_kind: "runner",
+          subject_id: deleted.id,
+          subject_label: deleted.name
+        )
+      end)
+      |> Repo.commit_multi()
+      |> case do
+        {:ok, %{runner: deleted}} -> {:ok, deleted}
+        {:error, reason} -> {:error, reason}
       end
     end
   end
-
-  defp ensure_runner_in_subject_account(%Runner{account_id: account_id}, %Subject{} = subject),
-    do: Subject.ensure_in_account(subject, account_id)
-
-  defdelegate actor_kind(subject), to: Subject
-  defdelegate actor_id(subject), to: Subject
 
   # -- Runner socket-driven state updates ------------------------------
   #
@@ -351,26 +331,31 @@ defmodule Emisar.Runners do
              Authorizer.manage_auth_keys_permission()
            ) do
       account_id = account.id
-      user_id = actor_id(subject)
+      user_id = Subject.actor_id(subject)
       {raw, prefix, hash} = mint_secret("emkey-auth-", @auth_key_prefix_size)
-      changeset = AuthKey.Changeset.create(account_id, user_id, prefix, hash, attrs)
 
-      case Repo.insert(changeset) do
-        {:ok, key} ->
-          Audit.log(account_id, "auth_key.created",
-            actor_kind: "user",
-            actor_id: user_id,
-            subject_kind: "auth_key",
-            subject_id: key.id,
-            payload: %{prefix: key.key_prefix, reusable: key.reusable, group: key.group}
-          )
-
-          {:ok, raw, key}
-
-        err ->
-          err
+      Multi.new()
+      |> Multi.insert(:key, AuthKey.Changeset.create(account_id, user_id, prefix, hash, attrs))
+      |> Multi.insert(:audit, fn %{key: key} ->
+        Audit.changeset(account_id, "auth_key.created",
+          actor_kind: "user",
+          actor_id: user_id,
+          subject_kind: "auth_key",
+          subject_id: key.id,
+          payload: %{prefix: key.key_prefix, reusable: key.reusable, group: key.group}
+        )
+      end)
+      |> Repo.commit_multi(after_commit: &broadcast_auth_key_change(&1, "auth_key.created"))
+      |> case do
+        {:ok, %{key: key}} -> {:ok, raw, key}
+        {:error, reason} -> {:error, reason}
       end
     end
+  end
+
+  defp broadcast_auth_key_change(%{key: key}, event_type) do
+    Emisar.PubSub.broadcast_account_list(key.account_id, :auth_key, event_type, key.id)
+    :ok
   end
 
   @doc false
@@ -403,7 +388,7 @@ defmodule Emisar.Runners do
              Authorizer.issue_install_key_permission()
            ) do
       account_id = account.id
-      user_id = actor_id(subject)
+      user_id = Subject.actor_id(subject)
       cap = opts[:ring_cap] || @install_ring_cap
       grace_s = opts[:eviction_grace_seconds] || @install_eviction_grace_seconds
 
@@ -440,29 +425,30 @@ defmodule Emisar.Runners do
              subject,
              Authorizer.manage_auth_keys_permission()
            ),
-         :ok <- ensure_auth_key_in_subject_account(key, subject) do
-      by_user_id = actor_id(subject)
+         :ok <- Subject.ensure_in_account(subject, key.account_id) do
+      by_user_id = Subject.actor_id(subject)
 
-      case key |> AuthKey.Changeset.revoke(by_user_id) |> Repo.update() do
-        {:ok, revoked} = ok ->
-          Audit.log(revoked.account_id, "auth_key.revoked",
+      result =
+        Multi.new()
+        |> Multi.update(:key, AuthKey.Changeset.revoke(key, by_user_id))
+        |> Multi.insert(:audit, fn %{key: revoked} ->
+          Audit.changeset(revoked.account_id, "auth_key.revoked",
             actor_kind: "user",
             actor_id: by_user_id,
             subject_kind: "auth_key",
             subject_id: revoked.id,
             payload: %{prefix: revoked.key_prefix}
           )
+        end)
+        |> Repo.commit_multi(after_commit: &broadcast_auth_key_change(&1, "auth_key.revoked"))
 
-          ok
-
-        err ->
+      case result do
+        {:ok, %{key: revoked}} -> {:ok, revoked}
+        {:error, _} = err ->
           err
       end
     end
   end
-
-  defp ensure_auth_key_in_subject_account(%AuthKey{account_id: account_id}, %Subject{} = subject),
-    do: Subject.ensure_in_account(subject, account_id)
 
   @doc """
   Peeks at the presented raw secret, resolving it to an `%AuthKey{}`.
@@ -593,10 +579,10 @@ defmodule Emisar.Runners do
 
           external_id = attrs[:external_id] || Ecto.UUID.generate()
 
-          runner =
+          {runner, fresh?} =
             case fetch_runner_by_external_id_for_account(external_id, key.account_id) do
               {:ok, %Runner{} = existing} ->
-                existing
+                {existing, false}
 
               {:error, :not_found} ->
                 {:ok, runner} =
@@ -612,8 +598,25 @@ defmodule Emisar.Runners do
                   })
                   |> Repo.insert()
 
-                runner
+                {runner, true}
             end
+
+          if fresh? do
+            Audit.log(runner.account_id, "runner.registered",
+              actor_kind: "runner",
+              actor_id: runner.id,
+              actor_label: runner.name,
+              subject_kind: "runner",
+              subject_id: runner.id,
+              subject_label: runner.name,
+              payload: %{
+                external_id: runner.external_id,
+                group: runner.group,
+                hostname: runner.hostname,
+                auth_key_id: key.id
+              }
+            )
+          end
 
           {raw_token, token} = mint_runner_token(runner, key.id)
           {runner, token, raw_token}

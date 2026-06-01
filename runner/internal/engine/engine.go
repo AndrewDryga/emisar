@@ -19,6 +19,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/andrewdryga/emisar/runner/internal/admission"
 	"github.com/andrewdryga/emisar/runner/internal/audit"
 	"github.com/andrewdryga/emisar/runner/internal/executor"
 	"github.com/andrewdryga/emisar/runner/internal/expressions"
@@ -37,6 +38,12 @@ const (
 	StatusError            Status = "error"
 	StatusValidationFailed Status = "validation_failed"
 	StatusUnknownAction    Status = "unknown_action"
+	// StatusBlockedByAdmission is returned when the runner's local
+	// allow/deny config refuses the action. Distinct from
+	// `unknown_action` (the cloud asked for something the registry
+	// doesn't know) — admission is "I know what this is, and the host
+	// operator has decided this runner will not execute it."
+	StatusBlockedByAdmission Status = "blocked_by_admission"
 )
 
 // Opts are the cloud-supplied per-call overrides. Each is clamped against
@@ -101,6 +108,10 @@ type Engine struct {
 	// engine construction so SIGHUP can pick up new packs from the same
 	// places we boot-loaded from.
 	PackDirs []string
+	// Admission is the runner-local allow/deny policy. Defense-in-depth
+	// on top of cloud policy: every Run call passes through Admit before
+	// the registry lookup. Nil means "admit everything" (default).
+	Admission *admission.Policy
 	// Logger is used for journal-write failures and other operational
 	// signals. Defaults to slog.Default.
 	Logger *slog.Logger
@@ -115,6 +126,7 @@ type Config struct {
 	PreviewBytes int
 	CancelGrace  time.Duration
 	PackDirs     []string
+	Admission    *admission.Policy
 	Logger       *slog.Logger
 }
 
@@ -134,6 +146,7 @@ func New(cfg Config) *Engine {
 		PreviewBytes: cfg.PreviewBytes,
 		CancelGrace:  cfg.CancelGrace,
 		PackDirs:     cfg.PackDirs,
+		Admission:    cfg.Admission,
 		Logger:       cfg.Logger,
 	}
 	e.registry.Store(cfg.Registry)
@@ -196,6 +209,24 @@ func (e *Engine) Run(ctx context.Context, req Request) (*Result, error) {
 			EventID:  journaled.EventID,
 			ActionID: req.ActionID,
 			Reason:   "reason required",
+		}, nil
+	}
+
+	// Admission check — defense in depth. The control plane already
+	// decided this action should run; the host operator's local
+	// allow/deny config gets the final word. A reject here is recorded
+	// in the JSONL journal so a compromised-portal attack leaves a
+	// tamper-evident host-side trail.
+	if ok, reason := e.Admission.Admit(req.ActionID); !ok {
+		ev := e.baseEvent(req, audit.EventActionBlockedByAdmission, now)
+		ev.ActionID = req.ActionID
+		ev.Error = reason
+		journaled := e.journal(ctx, ev)
+		return &Result{
+			Status:   StatusBlockedByAdmission,
+			EventID:  journaled.EventID,
+			ActionID: req.ActionID,
+			Reason:   reason,
 		}, nil
 	}
 

@@ -6,23 +6,22 @@ defmodule Emisar.Runbooks.Authorizer do
 
   def manage_runbooks_permission, do: build(Runbook, :manage)
   def view_runbooks_permission, do: build(Runbook, :view)
-  def execute_runbook_permission, do: build(Runbook, :execute)
 
   @impl Emisar.Auth.Authorizer
   def list_permissions_for_role(role) when role in [:owner, :admin],
-    do: [manage_runbooks_permission(), view_runbooks_permission(), execute_runbook_permission()]
+    do: [manage_runbooks_permission(), view_runbooks_permission()]
 
   def list_permissions_for_role(:operator),
-    do: [view_runbooks_permission(), execute_runbook_permission()]
+    do: [view_runbooks_permission()]
 
   def list_permissions_for_role(:viewer),
     do: [view_runbooks_permission()]
 
   def list_permissions_for_role(:api_client),
-    do: [view_runbooks_permission(), execute_runbook_permission()]
+    do: [view_runbooks_permission()]
 
   def list_permissions_for_role(:system),
-    do: [manage_runbooks_permission(), view_runbooks_permission(), execute_runbook_permission()]
+    do: [manage_runbooks_permission(), view_runbooks_permission()]
 
   def list_permissions_for_role(_), do: []
 

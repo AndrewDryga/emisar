@@ -5,7 +5,6 @@ defmodule Emisar.Catalog.Authorizer do
   alias Emisar.Catalog.{PackVersion, RunnerAction}
 
   def view_catalog_permission, do: build(RunnerAction, :view)
-  def write_catalog_permission, do: build(RunnerAction, :write)
 
   @impl Emisar.Auth.Authorizer
   def list_permissions_for_role(role) when role in [:owner, :admin, :operator, :viewer],
@@ -15,10 +14,10 @@ defmodule Emisar.Catalog.Authorizer do
     do: [view_catalog_permission()]
 
   def list_permissions_for_role(:runner),
-    do: [view_catalog_permission(), write_catalog_permission()]
+    do: [view_catalog_permission()]
 
   def list_permissions_for_role(:system),
-    do: [view_catalog_permission(), write_catalog_permission()]
+    do: [view_catalog_permission()]
 
   def list_permissions_for_role(_), do: []
 

@@ -3,8 +3,7 @@ defmodule Emisar.Accounts.Account.Changeset do
   alias Emisar.Accounts.Account
 
   @plans ~w(free team enterprise)
-  @statuses ~w(active suspended deleted)
-  @fields ~w[name slug plan paddle_customer_id trial_ends_at status settings]a
+  @fields ~w[name slug plan paddle_customer_id]a
 
   def create(attrs) do
     %Account{}
@@ -27,7 +26,6 @@ defmodule Emisar.Accounts.Account.Changeset do
   def delete(%Account{} = account), do: change(account, deleted_at: now())
 
   def plans, do: @plans
-  def statuses, do: @statuses
 
   defp changeset(cs) do
     cs
@@ -37,7 +35,6 @@ defmodule Emisar.Accounts.Account.Changeset do
       message: "must be lowercase letters/numbers/hyphens, start with a letter, 3-64 chars"
     )
     |> validate_inclusion(:plan, @plans)
-    |> validate_inclusion(:status, @statuses)
     |> unique_constraint(:slug)
   end
 

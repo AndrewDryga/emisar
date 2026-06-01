@@ -10,7 +10,13 @@ defmodule Emisar.Mailers.UserNotifier do
   alias Emisar.Accounts.User
   alias Emisar.Mailer
 
-  @from {"emisar", "no-reply@emisar.dev"}
+  # Resolved at call-time (not compile-time) so `runtime.exs` env-var
+  # overrides take effect without a recompile. Falls back to the
+  # `config.exs` defaults for fork / dev environments.
+  defp from do
+    {Application.get_env(:emisar, :mailer_from_name, "emisar"),
+     Application.get_env(:emisar, :mailer_from_email, "no-reply@emisar.dev")}
+  end
 
   def deliver_confirmation_instructions(%User{} = user, token) do
     url = url_for("/confirm/#{token}")
@@ -142,7 +148,7 @@ defmodule Emisar.Mailers.UserNotifier do
   defp deliver(to, subject, body) do
     new()
     |> to(to)
-    |> from(@from)
+    |> from(from())
     |> subject(subject)
     |> text_body(body)
     |> Mailer.deliver()

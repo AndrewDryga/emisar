@@ -21,10 +21,12 @@ defmodule Emisar.Release do
   end
 
   def seed do
-    load_app()
-    {:ok, _, _} = Ecto.Migrator.with_repo(Emisar.Repo, fn _repo ->
-      Code.eval_file(Application.app_dir(@app, "priv/repo/seeds.exs"))
-    end)
+    # Start the whole application so seeds can call business contexts
+    # that need PubSub / Oban / etc. — `with_repo` only starts the Repo,
+    # which is enough for migrations but not for seeds that exercise
+    # the dispatch path (`Runs.create_run` broadcasts on `Emisar.PubSub`).
+    {:ok, _} = Application.ensure_all_started(@app)
+    Code.eval_file(Application.app_dir(@app, "priv/repo/seeds.exs"))
   end
 
   defp repos do

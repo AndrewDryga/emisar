@@ -113,9 +113,10 @@ defmodule EmisarWeb.RunNewLive do
 
   def render(assigns) do
     ~H"""
-    <.dashboard_shell
+    <.dashboard_shell pending_approvals_count={@pending_approvals_count}
       current_user={@current_user}
       current_account={@current_account}
+      switchable_accounts={@switchable_accounts}
       flash={@flash}
       section={:runs}
     >
@@ -137,6 +138,25 @@ defmodule EmisarWeb.RunNewLive do
         <section :if={@action.description && @action.description != ""} class="rounded-xl border border-zinc-900 bg-zinc-950/40 p-5">
           <h2 :if={@action.title} class="text-sm font-semibold text-zinc-100">{@action.title}</h2>
           <p class="mt-1 text-sm leading-relaxed text-zinc-400">{@action.description}</p>
+
+          <%!-- Pack-provided examples — short canonical invocations
+               with sample args. Big UX win when an operator has the
+               form open and is wondering "what does a real call look
+               like?". Only renders when the pack ships examples. --%>
+          <div :if={action_examples(@action) != []} class="mt-4 space-y-2">
+            <div class="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+              Examples
+            </div>
+            <ul class="space-y-2">
+              <li
+                :for={ex <- action_examples(@action)}
+                class="rounded-lg border border-zinc-900 bg-black/40 p-3"
+              >
+                <div :if={ex["description"]} class="text-xs text-zinc-400">{ex["description"]}</div>
+                <pre class="mt-1 overflow-x-auto font-mono text-[11px] leading-5 text-zinc-200"><%= example_args_json(ex) %></pre>
+              </li>
+            </ul>
+          </div>
         </section>
 
         <.meta_strip cols={3}>
@@ -349,4 +369,16 @@ defmodule EmisarWeb.RunNewLive do
     |> Enum.map(&String.trim/1)
     |> Enum.reject(&(&1 == ""))
   end
+
+  # `examples` is a packspec field — list of `{description, args}` maps.
+  # Defensive: any shape that isn't a list is a no-op render.
+  defp action_examples(%{examples: list}) when is_list(list), do: list
+  defp action_examples(_), do: []
+
+  # Pretty-print the example args. Keep it compact — these go in a
+  # tight info card, not a sprawling pre.
+  defp example_args_json(%{"args" => args}) when is_map(args),
+    do: Jason.encode!(args, pretty: true)
+
+  defp example_args_json(_), do: "{}"
 end

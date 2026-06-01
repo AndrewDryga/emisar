@@ -6,10 +6,12 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       {conn, _user, _account} = register_and_log_in(conn)
       {:ok, lv, html} = live(conn, ~p"/app/runbooks/new")
 
-      # Top-level shape: step cards + add buttons.
+      # Top-level shape: step list with add button. Each step is an
+      # action dispatch — the assert step type used to exist in the UI
+      # but had no backing executor and was ripped out.
       assert html =~ "Steps"
-      assert html =~ "Action"
-      assert html =~ "Assert"
+      assert html =~ "Add step"
+      refute html =~ "Assert"
       refute html =~ "steps_json"
 
       # Adding a step inserts another card.

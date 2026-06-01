@@ -2,6 +2,31 @@ import Config
 
 # config/runtime.exs runs every boot, including releases. Put env-driven
 # secrets here so the container can be rebuilt without leaking values.
+#
+# Required prod env vars (boot raises if missing):
+#   DATABASE_URL           — ecto://user:pass@host/db
+#   SECRET_KEY_BASE        — `mix phx.gen.secret`
+#   PADDLE_API_KEY         — OR set EMISAR_DISABLE_BILLING=1 to use stub
+#   PADDLE_WEBHOOK_SECRET  — required when PADDLE_API_KEY is set
+#
+# Optional prod env vars:
+#   PHX_HOST               — public hostname (defaults to app.emisar.dev)
+#   PORT                   — HTTP port (default 4000)
+#   FORCE_SSL              — "false" disables HTTPS redirect + secure cookies (default true)
+#   POOL_SIZE              — Ecto pool size (default 10)
+#   ECTO_IPV6              — "1" / "true" to dial Postgres over IPv6
+#   DATABASE_SSL           — "1" / "true" to require TLS to Postgres
+#   DNS_CLUSTER_QUERY      — libcluster DNS query for multi-node deploys
+#   POSTMARK_API_TOKEN     — mailer adapter (Postmark)
+#   MAILGUN_API_KEY        — mailer adapter (Mailgun); requires MAILGUN_DOMAIN
+#   SMTP_HOST              — mailer adapter (SMTP); use SMTP_USERNAME/PASSWORD/PORT
+#   MAILER_FROM_EMAIL      — override the "From" address (default no-reply@emisar.dev)
+#   MAILER_FROM_NAME       — override the "From" display name (default emisar)
+#   SENTRY_DSN             — enables error uploads when set
+#   SENTRY_ENVIRONMENT     — Sentry env tag (default "production")
+#   STATUS_PAGE_URL        — status-page URL surfaced in nav + footer
+#   PADDLE_PRICE_ID_TEAM   — Paddle price id for the Team plan
+#   RELEASE_VSN            — used in Sentry's `release` field
 
 if config_env() == :prod do
   # Logger metadata captured per call (runner_id, request_id,
@@ -106,12 +131,18 @@ if config_env() == :prod do
         tls: :always
 
     true ->
-      config :emisar, Emisar.Mailer, adapter: Swoosh.Adapters.Local
+      # No mail provider configured — log every send instead of crashing
+      # at delivery. `Swoosh.Adapters.Local` needs a Memory storage
+      # GenServer that only exists in dev; the Logger adapter is process-
+      # free, ideal for staging/disabled-mail prod builds.
+      config :emisar, Emisar.Mailer, adapter: Swoosh.Adapters.Logger
   end
 
   # -- Sentry --------------------------------------------------------
-  # Default DSN comes from config.exs so it works in every env. Allow
-  # SENTRY_DSN to override at boot for staging / sandbox projects.
+  # Sentry DSN is opt-in via env. Leaving it unset disables uploads
+  # (the client short-circuits before any HTTP call). config.exs
+  # ships a nil default so a fork never accidentally posts errors to
+  # the upstream project's bucket.
   if dsn = System.get_env("SENTRY_DSN") do
     config :sentry,
       dsn: dsn,
@@ -119,17 +150,41 @@ if config_env() == :prod do
       release: System.get_env("RELEASE_VSN")
   end
 
-  # -- Paddle --------------------------------------------------------
-  if System.get_env("PADDLE_API_KEY") do
-    config :emisar,
-      paddle_client: Emisar.Billing.PaddleClient.Live,
-      paddle_api_key: System.fetch_env!("PADDLE_API_KEY"),
-      paddle_webhook_secret: System.fetch_env!("PADDLE_WEBHOOK_SECRET")
+  # -- Mailer From -----------------------------------------------------
+  # `MAILER_FROM_EMAIL` / `MAILER_FROM_NAME` let self-hosters use their
+  # own domain without forking. Skipping either falls back to the
+  # config.exs default.
+  if email = System.get_env("MAILER_FROM_EMAIL"),
+    do: config(:emisar, :mailer_from_email, email)
 
-    if id = System.get_env("PADDLE_PRICE_ID_TEAM"),
-      do: config(:emisar, {:paddle_price_id, "team"}, id)
-  else
-    config :emisar, paddle_client: Emisar.Billing.PaddleClient.Stub
+  if name = System.get_env("MAILER_FROM_NAME"),
+    do: config(:emisar, :mailer_from_name, name)
+
+  # -- Paddle --------------------------------------------------------
+  # Production is loud about Paddle config so we never silently fall
+  # through to the stub client (billing would appear to work but no
+  # revenue events would land). To run a prod build with billing
+  # disabled (e.g. an internal staging tier), set
+  # `EMISAR_DISABLE_BILLING=1` — that's the only way to skip Paddle.
+  cond do
+    System.get_env("PADDLE_API_KEY") ->
+      config :emisar,
+        paddle_client: Emisar.Billing.PaddleClient.Live,
+        paddle_api_key: System.fetch_env!("PADDLE_API_KEY"),
+        paddle_webhook_secret: System.fetch_env!("PADDLE_WEBHOOK_SECRET")
+
+      if id = System.get_env("PADDLE_PRICE_ID_TEAM"),
+        do: config(:emisar, {:paddle_price_id, "team"}, id)
+
+    System.get_env("EMISAR_DISABLE_BILLING") in ~w(true 1) ->
+      config :emisar, paddle_client: Emisar.Billing.PaddleClient.Stub
+
+    true ->
+      raise """
+      PADDLE_API_KEY is missing in production. Set it (along with
+      PADDLE_WEBHOOK_SECRET and PADDLE_PRICE_ID_TEAM) to enable billing,
+      or set EMISAR_DISABLE_BILLING=1 to ship with the stub client.
+      """
   end
 end
 

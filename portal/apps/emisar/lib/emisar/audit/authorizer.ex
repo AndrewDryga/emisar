@@ -5,20 +5,22 @@ defmodule Emisar.Audit.Authorizer do
   alias Emisar.Audit.Event
 
   def view_audit_permission, do: build(Event, :view)
-  def write_audit_permission, do: build(Event, :write)
 
   @impl Emisar.Auth.Authorizer
   def list_permissions_for_role(role) when role in [:owner, :admin, :operator, :viewer],
-    do: [view_audit_permission(), write_audit_permission()]
+    do: [view_audit_permission()]
 
+  # API clients can view audit when their key carries the `audit:read`
+  # scope; the controller is responsible for the scope gate. The role-
+  # level permission only opens the door — the per-key `scopes` array
+  # decides whether THIS key gets through it.
   def list_permissions_for_role(:api_client),
-    do: [write_audit_permission()]
+    do: [view_audit_permission()]
 
-  def list_permissions_for_role(:runner),
-    do: [write_audit_permission()]
+  def list_permissions_for_role(:runner), do: []
 
   def list_permissions_for_role(:system),
-    do: [view_audit_permission(), write_audit_permission()]
+    do: [view_audit_permission()]
 
   def list_permissions_for_role(_), do: []
 

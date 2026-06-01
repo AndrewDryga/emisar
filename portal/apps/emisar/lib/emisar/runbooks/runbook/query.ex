@@ -7,9 +7,6 @@ defmodule Emisar.Runbooks.Runbook.Query do
   def not_deleted(q \\ all()),
     do: where(q, [runbooks: r], is_nil(r.deleted_at))
 
-  def not_archived(q \\ not_deleted()),
-    do: where(q, [runbooks: r], is_nil(r.archived_at))
-
   def by_id(q, id),
     do: where(q, [runbooks: r], r.id == ^id)
 
@@ -25,4 +22,13 @@ defmodule Emisar.Runbooks.Runbook.Query do
   @impl Emisar.Repo.Query
   def cursor_fields,
     do: [{:runbooks, :asc, :title}, {:runbooks, :desc, :version}, {:runbooks, :asc, :id}]
+
+  # Label-batcher for `Audit.resolve_references/1`. The query module
+  # already knows the named binding, so audit-side resolution can stay
+  # Repo-only without poking at the schema.
+  def select_labels(q, ids, field) do
+    q
+    |> where([runbooks: r], r.id in ^ids)
+    |> select([runbooks: r], {r.id, field(r, ^field)})
+  end
 end

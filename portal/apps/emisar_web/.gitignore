@@ -31,6 +31,13 @@ emisar_web-*.tar
 # Ignore digested assets cache.
 /priv/static/cache_manifest.json
 
+# `mix phx.digest` (run by `mix assets.deploy`) fingerprints every file
+# under priv/static/ — it writes a `name-<32-hex-md5>.ext` copy next to
+# every source and a `.gz` compressed variant of both. All build output;
+# never check in.
+/priv/static/**/*-????????????????????????????????.*
+/priv/static/**/*.gz
+
 # In case you use Node.js/npm, you want to ignore these.
 npm-debug.log
 /assets/node_modules/

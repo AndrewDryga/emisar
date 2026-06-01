@@ -20,6 +20,7 @@ defmodule Emisar.Approvals do
        time within that window.
   """
 
+  alias Ecto.Multi
   alias Emisar.{Audit, Auth, PubSub, Repo, Runs}
   alias Emisar.Approvals.{Authorizer, Grant, Request}
   alias Emisar.Auth.Subject
@@ -35,6 +36,27 @@ defmodule Emisar.Approvals do
       |> Request.Query.ordered_by_requested()
       |> Authorizer.for_subject(subject)
       |> Repo.list(Request.Query, opts)
+    end
+  end
+
+  @doc """
+  Cheap COUNT(*) for the sidebar / dashboard badge — same Subject gate +
+  account scoping as `list_pending_approval_requests/2`, but skips the
+  pagination + preload work. Returns `0` if the caller lacks permission
+  (badge silently disappears rather than erroring).
+  """
+  def count_pending_approval_requests(%Subject{} = subject) do
+    case Auth.Authorizer.ensure_has_permissions(
+           subject,
+           Authorizer.view_approvals_permission()
+         ) do
+      :ok ->
+        Request.Query.pending()
+        |> Authorizer.for_subject(subject)
+        |> Repo.aggregate(:count)
+
+      _ ->
+        0
     end
   end
 
@@ -101,6 +123,14 @@ defmodule Emisar.Approvals do
   # policy setting.
   @default_pending_ttl_hours 24
 
+  # Grant duration windows in seconds. Named constants make the
+  # `expires_at_for/2` table read at a glance and let other modules
+  # share the same numbers if needed later.
+  @one_hour_seconds 60 * 60
+  @one_day_seconds 24 * @one_hour_seconds
+  @thirty_days_seconds 30 * @one_day_seconds
+  @ninety_days_seconds 90 * @one_day_seconds
+
   @doc """
   Files an approval request for a gated run. Internal — called from
   `Runs.dispatch_run` which has already authorized via its own Subject.
@@ -108,7 +138,7 @@ defmodule Emisar.Approvals do
   """
   def create_request(run, requested_by_id, reason \\ nil) do
     now = DateTime.utc_now() |> DateTime.truncate(:microsecond)
-    expires_at = DateTime.add(now, @default_pending_ttl_hours * 60 * 60, :second)
+    expires_at = DateTime.add(now, @default_pending_ttl_hours * @one_hour_seconds, :second)
 
     result =
       Request.Changeset.create(%{
@@ -138,13 +168,28 @@ defmodule Emisar.Approvals do
     end
   end
 
+  # Two modes:
+  #
+  #   * Sync (tests): `notify_approvers_async?: false` runs the closure
+  #     inline so the test stays inside its sandbox checkout.
+  #   * Async (dev/prod): hands the closure to a supervised Task so
+  #     SIGTERM drains in-flight email blasts. The supervisor lives in
+  #     the web app's tree; if it's missing in async mode that's a real
+  #     configuration bug — `Task.Supervisor.start_child` raises and
+  #     surfaces it instead of silently orphaning the task.
   defp run_notify(fun) do
     if Application.get_env(:emisar, :notify_approvers_async?, true) do
-      Task.start(fun)
+      sup = Application.fetch_env!(:emisar, :task_supervisor)
+      Task.Supervisor.start_child(sup, fun)
     else
       fun.()
     end
   end
+
+  # Per-page batch size — large enough to cap page count (accounts top
+  # out in the hundreds of admins in practice) but small enough that one
+  # batch isn't a memory hazard if a future plan removes the cap entirely.
+  @notify_page_size 200
 
   defp notify_approvers(%Request{} = req, run, requested_by_id) do
     # Preload runner so the email body can show the runner's name
@@ -157,45 +202,58 @@ defmodule Emisar.Approvals do
     account = Emisar.Accounts.fetch_account_by_id!(req.account_id)
     system = Subject.system(account)
 
-    {:ok, memberships, _meta} =
-      Emisar.Accounts.list_memberships_for_account(system, page: [limit: 100])
+    notify_approvers_pages(system, req, run, requested_by_id, nil)
+  end
+
+  # Cursor-walk the membership pages so accounts with >100 admins still
+  # get full coverage — earlier code capped at a single 100-row page,
+  # silently skipping everyone after.
+  defp notify_approvers_pages(system, req, run, requested_by_id, cursor) do
+    page_opts =
+      [limit: @notify_page_size]
+      |> then(fn opts -> if cursor, do: Keyword.put(opts, :cursor, cursor), else: opts end)
+
+    {:ok, memberships, %{next_page_cursor: next}} =
+      Emisar.Accounts.list_memberships_for_account(system, page: page_opts)
 
     memberships
     |> Enum.filter(fn m ->
-      # User has no `disabled_at`; account-level disable is separate
-      # (Emisar.Accounts.Account.disabled_at). Membership-level disable
-      # is also captured by filtering on role here — viewers can't
-      # decide, so don't get pinged.
+      # Viewers can't decide so don't get pinged; the user who triggered
+      # the request is excluded since they already saw it in the UI.
       m.role in ~w(owner admin operator) and m.user_id != requested_by_id
     end)
-    |> Enum.each(fn m ->
-      require Logger
+    |> Enum.each(&deliver_approval_email(&1, req, run))
 
-      try do
-        # Mailer.deliver returns {:ok, _} on success and {:error, reason}
-        # on transport failure (Mailgun 5xx, SMTP timeout). It DOES NOT
-        # raise on non-success — a bare `try` would silently drop
-        # delivery errors. Pattern-match and log non-success explicitly.
-        case Emisar.Mailers.UserNotifier.deliver_approval_request(m.user, req, run) do
-          {:ok, _} ->
-            :ok
+    if next, do: notify_approvers_pages(system, req, run, requested_by_id, next), else: :ok
+  end
 
-          {:error, reason} ->
-            Logger.warning("approval_email_failed",
-              user_id: m.user_id,
-              req_id: req.id,
-              error: inspect(reason)
-            )
-        end
-      rescue
-        err ->
-          Logger.warning("approval_email_crashed",
+  defp deliver_approval_email(m, req, run) do
+    require Logger
+
+    try do
+      # Mailer.deliver returns {:ok, _} on success and {:error, reason}
+      # on transport failure (Mailgun 5xx, SMTP timeout). It DOES NOT
+      # raise on non-success — a bare `try` would silently drop
+      # delivery errors. Pattern-match and log non-success explicitly.
+      case Emisar.Mailers.UserNotifier.deliver_approval_request(m.user, req, run) do
+        {:ok, _} ->
+          :ok
+
+        {:error, reason} ->
+          Logger.warning("approval_email_failed",
             user_id: m.user_id,
             req_id: req.id,
-            error: inspect(err)
+            error: inspect(reason)
           )
       end
-    end)
+    rescue
+      err ->
+        Logger.warning("approval_email_crashed",
+          user_id: m.user_id,
+          req_id: req.id,
+          error: inspect(err)
+        )
+    end
   end
 
   @doc """
@@ -218,8 +276,8 @@ defmodule Emisar.Approvals do
              subject,
              Authorizer.decide_approval_permission()
            ),
-         :ok <- ensure_request_in_subject_account(req, subject) do
-      by_user_id = actor_id(subject)
+         :ok <- Subject.ensure_in_account(subject, req.account_id) do
+      by_user_id = Subject.actor_id(subject)
 
       case claim_pending(req, :approved, by_user_id, reason) do
         {:ok, decided} ->
@@ -280,8 +338,8 @@ defmodule Emisar.Approvals do
              subject,
              Authorizer.decide_approval_permission()
            ),
-         :ok <- ensure_request_in_subject_account(req, subject) do
-      by_user_id = actor_id(subject)
+         :ok <- Subject.ensure_in_account(subject, req.account_id) do
+      by_user_id = Subject.actor_id(subject)
 
       case claim_pending(req, :denied, by_user_id, reason) do
         {:ok, decided} ->
@@ -306,11 +364,6 @@ defmodule Emisar.Approvals do
       end
     end
   end
-
-  defp ensure_request_in_subject_account(%Request{account_id: account_id}, %Subject{} = subject),
-    do: Subject.ensure_in_account(subject, account_id)
-
-  defdelegate actor_id(subject), to: Subject
 
   # Atomically claim a pending approval request as decided. Two operators
   # clicking Approve at the same moment would both pass the LiveView's
@@ -448,10 +501,10 @@ defmodule Emisar.Approvals do
   end
 
   defp expires_at_for(:once, _now), do: nil
-  defp expires_at_for(:one_hour, now), do: DateTime.add(now, 60 * 60, :second)
-  defp expires_at_for(:one_day, now), do: DateTime.add(now, 24 * 60 * 60, :second)
-  defp expires_at_for(:thirty_days, now), do: DateTime.add(now, 30 * 24 * 60 * 60, :second)
-  defp expires_at_for(:ninety_days, now), do: DateTime.add(now, 90 * 24 * 60 * 60, :second)
+  defp expires_at_for(:one_hour, now), do: DateTime.add(now, @one_hour_seconds, :second)
+  defp expires_at_for(:one_day, now), do: DateTime.add(now, @one_day_seconds, :second)
+  defp expires_at_for(:thirty_days, now), do: DateTime.add(now, @thirty_days_seconds, :second)
+  defp expires_at_for(:ninety_days, now), do: DateTime.add(now, @ninety_days_seconds, :second)
   defp expires_at_for(_, _now), do: nil
 
   # `:once` is hardcoded to a single use regardless of any operator-set
@@ -469,8 +522,23 @@ defmodule Emisar.Approvals do
              subject,
              Authorizer.manage_grants_permission()
            ),
-         :ok <- ensure_grant_in_subject_account(grant, subject) do
-      grant |> Grant.Changeset.revoke(actor_id(subject)) |> Repo.update()
+         :ok <- Subject.ensure_in_account(subject, grant.account_id) do
+      Multi.new()
+      |> Multi.update(:grant, Grant.Changeset.revoke(grant, Subject.actor_id(subject)))
+      |> Multi.insert(:audit, fn %{grant: revoked} ->
+        Audit.changeset(grant.account_id, "approval.grant_revoked",
+          actor_kind: "user",
+          actor_id: Subject.actor_id(subject),
+          subject_kind: "approval_grant",
+          subject_id: revoked.id,
+          payload: %{action_id: revoked.action_id, api_key_id: revoked.api_key_id}
+        )
+      end)
+      |> Repo.commit_multi()
+      |> case do
+        {:ok, %{grant: revoked}} -> {:ok, revoked}
+        {:error, reason} -> {:error, reason}
+      end
     end
   end
 
@@ -535,9 +603,6 @@ defmodule Emisar.Approvals do
       other -> other
     end
   end
-
-  defp ensure_grant_in_subject_account(%Grant{account_id: account_id}, %Subject{} = subject),
-    do: Subject.ensure_in_account(subject, account_id)
 
   # -- Expiry sweep ---------------------------------------------------
 

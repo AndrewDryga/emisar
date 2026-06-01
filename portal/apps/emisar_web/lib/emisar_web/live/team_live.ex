@@ -1,7 +1,7 @@
 defmodule EmisarWeb.TeamLive do
   use EmisarWeb, :live_view
 
-  alias Emisar.{Accounts, Mailers}
+  alias Emisar.{Accounts, Mailers, PubSub}
   alias Emisar.Accounts.Membership
   alias EmisarWeb.{LiveTable, Permissions}
   alias Phoenix.LiveView.JS
@@ -9,6 +9,9 @@ defmodule EmisarWeb.TeamLive do
   @roles ~w(owner admin operator viewer)
 
   def mount(_params, _session, socket) do
+    if connected?(socket),
+      do: PubSub.subscribe_account_team(socket.assigns.current_account.id)
+
     {:ok,
      socket
      |> assign(:page_title, "Team")
@@ -23,6 +26,9 @@ defmodule EmisarWeb.TeamLive do
     {:noreply, load(socket, params)}
   end
 
+  def handle_info({:list_changed, :team, _event_type, _id}, socket),
+    do: {:noreply, reload(socket)}
+
   defp reload(socket), do: load(socket, socket.assigns[:filter_params] || %{})
 
   def handle_event("start_edit", %{"membership_id" => id}, socket) do
@@ -31,7 +37,7 @@ defmodule EmisarWeb.TeamLive do
         {:noreply, socket}
 
       %Membership{user: user} when not is_nil(user) ->
-        params = %{"full_name" => user.full_name || "", "email" => user.email}
+        params = %{"full_name" => user.full_name || ""}
 
         {:noreply,
          socket
@@ -117,7 +123,7 @@ defmodule EmisarWeb.TeamLive do
     with_membership(socket, id, fn m ->
       case Accounts.update_user_as_admin(m, params, socket.assigns.current_subject) do
         {:ok, _user} -> {:ok, "Member updated."}
-        {:error, %Ecto.Changeset{} = cs} -> {:error, "Couldn't update: #{format_cs_errors(cs)}"}
+        {:error, %Ecto.Changeset{} = cs} -> {:error, "Couldn't update: #{humanize_errors(cs)}"}
         {:error, reason} -> {:error, error_message(reason)}
       end
     end)
@@ -219,12 +225,6 @@ defmodule EmisarWeb.TeamLive do
     do: {:noreply, socket |> assign(:editing_id, nil) |> assign(:edit_form, nil)}
 
   defp tap_clear_edit(other), do: other
-
-  defp format_cs_errors(%Ecto.Changeset{errors: errors}) do
-    errors
-    |> Enum.map(fn {field, {msg, _}} -> "#{field} #{msg}" end)
-    |> Enum.join("; ")
-  end
 
   # Repetitive plumbing: look up the membership, run `fun`, flash + reload.
   defp with_membership(socket, id, fun) do
@@ -340,9 +340,10 @@ defmodule EmisarWeb.TeamLive do
 
   def render(assigns) do
     ~H"""
-    <.dashboard_shell
+    <.dashboard_shell pending_approvals_count={@pending_approvals_count}
       current_user={@current_user}
       current_account={@current_account}
+      switchable_accounts={@switchable_accounts}
       flash={@flash}
       section={:team}
     >
@@ -475,23 +476,28 @@ defmodule EmisarWeb.TeamLive do
           </.simple_form>
         </div>
 
-        <%!-- Member list. Vertical, no table chrome — feels like a
-             roster, not a database table. Outer wrapper deliberately
-             NOT overflow-hidden so the per-row actions dropdown
-             (`<details>` popover) can escape its row instead of being
-             clipped by the rounded card. --%>
-        <div class="rounded-xl border border-zinc-900 bg-zinc-950/40">
-          <header class="rounded-t-xl border-b border-zinc-900 px-5 py-3">
-            <h2 class="text-sm font-semibold text-zinc-100">
-              {@metadata.count} {if @metadata.count == 1, do: "member", else: "members"}
-            </h2>
-          </header>
+        <%!-- Member list — uses LiveTable :cards with overflow={:visible}
+             so the per-row `<details>` action dropdown can escape the
+             rounded card boundary instead of being clipped. Inline edit
+             and scope-edit forms render INSIDE the :item slot below the
+             top-line content, keeping the natural flow per row. --%>
+        <header class="mb-3 flex items-baseline gap-2">
+          <h2 class="text-sm font-semibold text-zinc-100">
+            {@metadata.count} {if @metadata.count == 1, do: "member", else: "members"}
+          </h2>
+        </header>
 
-          <ul class="divide-y divide-zinc-900">
-            <li
-              :for={m <- @memberships}
-              class="px-5 py-4"
-            >
+        <LiveTable.live_table
+          layout={:cards}
+          id="members"
+          path={~p"/app/settings/team"}
+          rows={@memberships}
+          metadata={@metadata}
+          filter_params={@filter_params}
+          overflow={:visible}
+        >
+          <:item :let={m}>
+            <li class="px-5 py-4">
               <div class="flex items-center gap-4">
                 <%!-- Avatar: initial in a colored disc — same shape as
                      the sidebar avatar, so the visual rhymes. --%>
@@ -510,6 +516,24 @@ defmodule EmisarWeb.TeamLive do
                     >
                       Suspended
                     </span>
+                    <%!-- Unconfirmed = signed up but never clicked the
+                         email confirmation link. Useful signal when an
+                         admin is wondering why a member can't sign in. --%>
+                    <span
+                      :if={m.user && is_nil(m.user.confirmed_at)}
+                      class="rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium text-amber-200 ring-1 ring-amber-500/30"
+                      title="This user signed up but hasn't confirmed their email."
+                    >
+                      Unconfirmed
+                    </span>
+                    <%!-- MFA status. Three states worth distinguishing:
+                         (1) enrolled — quiet emerald check, the happy
+                         default; (2) not enrolled, account doesn't
+                         enforce — neutral grey "No 2FA" hint; (3) not
+                         enrolled AND the account requires MFA — LOUD
+                         rose, because that user can't sign in right
+                         now and an admin should chase them. --%>
+                    <.mfa_badge user={m.user} require_mfa?={@current_account.require_mfa} />
                     <span
                       :if={m.user_id == @current_user.id}
                       class="rounded bg-indigo-500/15 px-1.5 py-0.5 text-[10px] font-medium text-indigo-200 ring-1 ring-indigo-500/30"
@@ -518,7 +542,7 @@ defmodule EmisarWeb.TeamLive do
                     </span>
                   </div>
                   <div class="truncate text-xs text-zinc-500">
-                    {m.user && m.user.email} · joined {relative_time(m.inserted_at)}
+                    {m.user && m.user.email} · joined {relative_time(m.inserted_at)} · {sign_in_label(m.user)}
                   </div>
                   <%!-- Per-user runner ACLs (#238): show what runners
                        this member can reach. Empty = all (default).
@@ -572,16 +596,15 @@ defmodule EmisarWeb.TeamLive do
                   for={@edit_form}
                   id={"edit-form-#{m.id}"}
                   phx-submit="save_edit"
-                  class="grid grid-cols-1 gap-3 sm:grid-cols-2"
+                  class="space-y-3"
                 >
                   <input type="hidden" name="membership_id" value={m.id} />
                   <.input field={@edit_form[:full_name]} type="text" label="Full name" />
-                  <.input
-                    field={@edit_form[:email]}
-                    type="email"
-                    label="Email"
-                    autocomplete="off"
-                  />
+                  <p class="text-xs text-zinc-500">
+                    Only display name can be changed from here. Members
+                    update their own sign-in email (with a current-
+                    password check) on their Profile page.
+                  </p>
                   <:actions>
                     <.button phx-disable-with="Saving...">Save</.button>
                     <button
@@ -668,17 +691,11 @@ defmodule EmisarWeb.TeamLive do
                 </form>
               </div>
             </li>
-          </ul>
-
-          <div :if={@metadata.previous_page_cursor || @metadata.next_page_cursor} class="border-t border-zinc-900 px-5 py-3">
-            <LiveTable.paginator
-              id="members"
-              path={~p"/app/settings/team"}
-              metadata={@metadata}
-              filter_params={@filter_params}
-            />
-          </div>
-        </div>
+          </:item>
+          <:empty>
+            No team members yet.
+          </:empty>
+        </LiveTable.live_table>
 
         <p :if={not can_manage?(assigns)} class="text-xs text-zinc-500">
           Only owners and admins can invite or manage members. Your role: {@current_role || "—"}.
@@ -695,6 +712,42 @@ defmodule EmisarWeb.TeamLive do
     do: JS.hide(to: "#invite-panel", transition: {"transition-all ease-in duration-100", "opacity-100", "opacity-0"})
 
   # Inline action menu for a single member row. Hidden for the actor's
+  attr :user, :map, default: nil
+  attr :require_mfa?, :boolean, required: true
+
+  defp mfa_badge(%{user: %{mfa_enabled_at: %DateTime{}}} = assigns) do
+    ~H"""
+    <span
+      class="inline-flex items-center gap-1 rounded bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-medium text-emerald-200 ring-1 ring-emerald-500/30"
+      title="Two-factor authentication is enrolled."
+    >
+      <.icon name="hero-shield-check" class="h-3 w-3" /> 2FA
+    </span>
+    """
+  end
+
+  defp mfa_badge(%{require_mfa?: true} = assigns) do
+    ~H"""
+    <span
+      class="inline-flex items-center gap-1 rounded bg-rose-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-rose-200 ring-1 ring-rose-500/40"
+      title="Account requires 2FA but this user hasn't enrolled. They can't sign in until they do."
+    >
+      <.icon name="hero-shield-exclamation" class="h-3 w-3" /> 2FA required
+    </span>
+    """
+  end
+
+  defp mfa_badge(assigns) do
+    ~H"""
+    <span
+      class="inline-flex items-center gap-1 rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] font-medium text-zinc-400 ring-1 ring-zinc-700"
+      title="No two-factor authentication enrolled."
+    >
+      No 2FA
+    </span>
+    """
+  end
+
   # own row (use Profile) and short-circuited for non-managers.
   attr :membership, :map, required: true
   attr :current_user_id, :string, required: true
@@ -718,7 +771,7 @@ defmodule EmisarWeb.TeamLive do
               phx-value-membership_id={@membership.id}
               class="block w-full rounded px-3 py-2 text-left text-zinc-300 hover:bg-zinc-900"
             >
-              Edit name / email
+              Edit name
             </button>
             <button
               phx-click="start_scope_edit"
@@ -778,4 +831,15 @@ defmodule EmisarWeb.TeamLive do
 
   defp self_owner?(%Membership{user_id: uid, role: "owner"}, user_id) when uid == user_id, do: true
   defp self_owner?(_, _), do: false
+
+  # Two cases worth surfacing to admins: "active in the last 90 days"
+  # is a no-op (don't clutter the row), "never signed in" hints at a
+  # pending invite, and a stale last-sign-in flags a candidate for
+  # cleanup. Long-form so it reads in the row's secondary line.
+  defp sign_in_label(%{last_sign_in_at: nil}), do: "never signed in"
+
+  defp sign_in_label(%{last_sign_in_at: %DateTime{} = ts}),
+    do: "last sign-in #{relative_time(ts)}"
+
+  defp sign_in_label(_), do: "—"
 end

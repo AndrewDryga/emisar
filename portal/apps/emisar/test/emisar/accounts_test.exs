@@ -75,8 +75,8 @@ defmodule Emisar.AccountsTest do
     end
   end
 
-  describe "fetch_primary_membership_for_user/1" do
-    test "returns the most-recent non-disabled membership" do
+  describe "fetch_membership_for_session/2" do
+    test "with no account_id, returns the most-recent non-disabled membership" do
       user = user_fixture()
       a1 = account_fixture()
       a2 = account_fixture()
@@ -84,14 +84,57 @@ defmodule Emisar.AccountsTest do
       m2 = membership_fixture(account_id: a2.id, user_id: user.id)
 
       assert {:ok, %Membership{id: id, account: %Account{}, user: %User{}}} =
-               Accounts.fetch_primary_membership_for_user(user)
+               Accounts.fetch_membership_for_session(user, nil)
 
       assert id == m2.id
     end
 
+    test "with a matching account_id, returns that specific membership even if older" do
+      user = user_fixture()
+      a1 = account_fixture()
+      a2 = account_fixture()
+      m1 = membership_fixture(account_id: a1.id, user_id: user.id)
+      _ = membership_fixture(account_id: a2.id, user_id: user.id)
+
+      assert {:ok, %Membership{id: id, account: %Account{} = a}} =
+               Accounts.fetch_membership_for_session(user, a1.id)
+
+      assert id == m1.id
+      assert a.id == a1.id
+    end
+
+    test "with a stale or unknown account_id, falls back to the primary" do
+      user = user_fixture()
+      a1 = account_fixture()
+      _ = membership_fixture(account_id: a1.id, user_id: user.id)
+
+      assert {:ok, %Membership{account_id: returned_account_id}} =
+               Accounts.fetch_membership_for_session(user, Ecto.UUID.generate())
+
+      assert returned_account_id == a1.id
+    end
+
+    test "with a suspended membership on the requested account, falls back" do
+      user = user_fixture()
+      a1 = account_fixture()
+      _ = membership_fixture(account_id: a1.id, user_id: user.id)
+
+      {_owner_user, a2, owner_subject} = owner_subject_fixture()
+
+      m2 =
+        membership_fixture(account_id: a2.id, user_id: user.id, role: "operator")
+
+      assert {:ok, _} = Accounts.suspend_membership(m2, owner_subject)
+
+      assert {:ok, %Membership{account_id: returned_account_id}} =
+               Accounts.fetch_membership_for_session(user, a2.id)
+
+      refute returned_account_id == a2.id
+    end
+
     test "returns :not_found for a user with no memberships" do
       assert {:error, :not_found} =
-               Accounts.fetch_primary_membership_for_user(user_fixture())
+               Accounts.fetch_membership_for_session(user_fixture(), nil)
     end
   end
 
@@ -300,15 +343,15 @@ defmodule Emisar.AccountsTest do
       _ = owner
     end
 
-    test "suspended membership is excluded from fetch_primary_membership_for_user/1", %{
+    test "suspended membership is excluded from fetch_membership_for_session/2", %{
       target: target,
       owner_subject: owner_subject
     } do
       target_user = Emisar.Repo.preload(target, :user).user
-      assert {:ok, %Membership{}} = Accounts.fetch_primary_membership_for_user(target_user)
+      assert {:ok, %Membership{}} = Accounts.fetch_membership_for_session(target_user, nil)
 
       assert {:ok, _} = Accounts.suspend_membership(target, owner_subject)
-      assert {:error, :not_found} = Accounts.fetch_primary_membership_for_user(target_user)
+      assert {:error, :not_found} = Accounts.fetch_membership_for_session(target_user, nil)
       assert Accounts.all_memberships_suspended?(target_user)
     end
   end

@@ -9,7 +9,7 @@ defmodule EmisarWeb.Plugs.AuditContext do
   matching LiveView entry point is `EmisarWeb.UserAuth.on_mount(:audit_meta, …)`.
 
   Behind a proxy without `Plug.RemoteIp` configured, this records the
-  proxy IP — same caveat as `EmisarWeb.RateLimiter.ip_key/1`.
+  proxy IP rather than the originating client IP.
   """
 
   @behaviour Plug

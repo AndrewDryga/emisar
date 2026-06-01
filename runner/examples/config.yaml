@@ -25,6 +25,29 @@ paths:
 
 execution: {}
 
+# Admission is the runner-local allow/deny for action ids. The cloud
+# already decides which actions are safe; this is defense-in-depth on
+# the host side. If the portal is compromised, a malicious dispatch
+# still has to clear this list before the runner will execute. Both
+# lists use shell-style globs over action ids.
+#
+# Behavior:
+#   - Both empty (the default) → admit every action the registry knows.
+#   - allow non-empty → action MUST match at least one allow pattern.
+#   - deny non-empty → action MUST NOT match any deny pattern.
+#   - When both are set, allow is checked first, then deny.
+#
+# Blocked actions are also hidden from the catalog this runner
+# advertises to cloud, so they won't appear in the portal at all.
+#
+# admission:
+#   allow:
+#     - "linux.*"            # everything from the linux-core pack
+#     - "postgres.uptime"    # one specific high-trust action
+#   deny:
+#     - "*.repair"           # no matter the pack, never repair
+#     - "linux.systemctl_restart"
+
 events:
   jsonl_path: ./var/log/emisar/events.jsonl
   max_preview_bytes: 4096

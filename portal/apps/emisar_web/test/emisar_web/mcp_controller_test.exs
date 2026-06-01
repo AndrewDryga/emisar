@@ -349,6 +349,34 @@ defmodule EmisarWeb.McpControllerTest do
       assert "visible.action" in names
       refute "hidden.action" in names
     end
+
+    test "every tool exposes an optional `idempotency_key` property the LLM can set", %{
+      conn: conn,
+      account: account,
+      user: user
+    } do
+      # Layer 2 contract: the inputSchema advertises an idempotency_key
+      # property so an LLM that recognises it can opt into at-most-once
+      # retry semantics. It must NOT be in `required` — the common case
+      # is to omit it and let the bridge's per-call header (Layer 1)
+      # handle transport retries invisibly.
+      runner = make_runner!(account, name: "lone-runner")
+      advertise_action!(runner, action_id: "linux.uptime")
+      raw = make_api_key!(account, user)
+
+      body =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> get(~p"/api/mcp/tools")
+        |> json_response(200)
+
+      [tool] = body["tools"]
+      idem = tool["inputSchema"]["properties"]["idempotency_key"]
+
+      assert idem["type"] == "string"
+      assert is_binary(idem["description"]) and idem["description"] != ""
+      refute "idempotency_key" in tool["inputSchema"]["required"]
+    end
   end
 
   describe "POST /api/mcp/tools/:action_id" do
@@ -573,6 +601,279 @@ defmodule EmisarWeb.McpControllerTest do
 
       assert body["error"] == "missing_scope"
     end
+
+    test "runner_not_found error includes actionable message", %{conn: conn, account: account, user: user} do
+      raw = make_api_key!(account, user)
+
+      body =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> post(~p"/api/mcp/tools/linux.uptime", %{
+          "runners" => ["nonexistent-host"],
+          "reason" => "x"
+        })
+        |> json_response(404)
+
+      assert body["error"] == "runner_not_found"
+      assert body["runner"] == "nonexistent-host"
+      assert body["message"] =~ "GET /api/mcp/runners"
+    end
+
+    test "runner_not_allowed includes specific reason + message", %{conn: conn, account: account, user: user} do
+      # Two runners; only the first is in the key's filter.
+      in_filter = make_runner!(account, name: "in-filter")
+      out = make_runner!(account, name: "out-of-filter")
+      advertise_action!(in_filter, action_id: "linux.uptime")
+      advertise_action!(out, action_id: "linux.uptime")
+      raw = make_api_key!(account, user, runner_filter: [in_filter.id])
+
+      body =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> post(~p"/api/mcp/tools/linux.uptime", %{
+          "runners" => ["out-of-filter"],
+          "reason" => "x"
+        })
+        |> json_response(403)
+
+      assert body["error"] == "runner_not_in_key_filter"
+      assert body["reason"] =~ "runner_filter"
+      assert body["message"] =~ "API key"
+    end
+
+    test "action_not_found distinguished from no_runner_in_scope", %{conn: conn, account: account, user: user} do
+      # Truly missing action_id (nobody advertises it) → action_not_found 404.
+      # The shared setup already gave us a runner advertising linux.uptime.
+      raw = make_api_key!(account, user)
+
+      body =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> post(~p"/api/mcp/tools/totally.unknown", %{"reason" => "x"})
+        |> json_response(404)
+
+      assert body["error"] == "action_not_found"
+      assert body["action_id"] == "totally.unknown"
+      assert body["message"] =~ "/tools"
+    end
+
+    test "no_runner_in_scope: action exists but filter blocks every runner", %{conn: conn, account: account, user: user} do
+      # Action exists on a runner that the key's filter excludes — should
+      # land as `no_runner_in_scope` (403), not `action_not_found` (404).
+      blocked = make_runner!(account, name: "blocked")
+      visible = make_runner!(account, name: "visible")
+      advertise_action!(blocked, action_id: "secret.action")
+      advertise_action!(visible, action_id: "different.action")
+      raw = make_api_key!(account, user, runner_filter: [visible.id])
+
+      body =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> post(~p"/api/mcp/tools/secret.action", %{"reason" => "x"})
+        |> json_response(403)
+
+      assert body["error"] == "no_runner_in_scope"
+      assert body["message"] =~ "API key"
+    end
+
+    test "dispatch to offline runner queues + surfaces warning", %{conn: conn, account: account, user: user} do
+      # Mark the runner as disconnected, then dispatch — should still
+      # succeed (run is queued), but include warning fields so the LLM
+      # can tell the user.
+      runner = make_runner!(account, name: "offline-host")
+      advertise_action!(runner, action_id: "linux.uptime")
+
+      {:ok, _} = Runners.mark_disconnected(runner, "test-disconnect")
+
+      raw = make_api_key!(account, user)
+
+      body =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> post(~p"/api/mcp/tools/linux.uptime", %{
+          "runners" => ["offline-host"],
+          "reason" => "x"
+        })
+        |> json_response(202)
+
+      assert [run] = body["runs"]
+      assert run["warning"] == "runner_offline"
+      assert run["warning_message"] =~ "offline-host"
+    end
+
+    test "Idempotency-Key header — same key replays the original run (Layer 1)", %{
+      account: account,
+      user: user,
+      runner: runner
+    } do
+      raw = make_api_key!(account, user)
+      key = "idem-#{unique()}"
+
+      first = dispatch_with_idempotency(raw, runner, "first call", header: key)
+
+      # Build a fresh conn — Phoenix.ConnTest reuses the same conn across
+      # piped requests, so a second `post` on the same conn would replay
+      # against the same connection state, which isn't what callers do.
+      second = dispatch_with_idempotency(raw, runner, "retried call", header: key)
+
+      assert run_id_of(hd(first["runs"])) == run_id_of(hd(second["runs"]))
+    end
+
+    test "idempotency_key tool arg — same value replays (Layer 2, LLM-controlled)", %{
+      account: account,
+      user: user,
+      runner: runner
+    } do
+      raw = make_api_key!(account, user)
+      key = "model-retry-#{unique()}"
+
+      first = dispatch_with_idempotency(raw, runner, "first", body: key)
+      second = dispatch_with_idempotency(raw, runner, "second", body: key)
+
+      assert run_id_of(hd(first["runs"])) == run_id_of(hd(second["runs"]))
+    end
+
+    test "body `idempotency_key` wins over `Idempotency-Key` header", %{
+      account: account,
+      user: user,
+      runner: runner
+    } do
+      # Same body key + different header on each call: if body wins
+      # (it should — the LLM's retry intent beats the bridge's
+      # transport key) both calls map to the same run.
+      raw = make_api_key!(account, user)
+      body_key = "body-wins-#{unique()}"
+
+      first =
+        dispatch_with_idempotency(raw, runner, "first",
+          body: body_key,
+          header: "header-a-#{unique()}"
+        )
+
+      second =
+        dispatch_with_idempotency(raw, runner, "second",
+          body: body_key,
+          header: "header-b-#{unique()}"
+        )
+
+      assert run_id_of(hd(first["runs"])) == run_id_of(hd(second["runs"]))
+    end
+
+    test "idempotency_key never leaks into the run's recorded args", %{
+      conn: conn,
+      account: account,
+      user: user
+    } do
+      runner = make_runner!(account, name: "args-leak-host")
+      # Action takes one real arg so we can distinguish it from the
+      # control field in the stored args map.
+      advertise_action!(runner,
+        action_id: "linux.touch",
+        args_schema: %{
+          "args" => [%{"name" => "path", "type" => "string", "required" => true}]
+        }
+      )
+
+      raw = make_api_key!(account, user)
+
+      body =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> post(~p"/api/mcp/tools/linux.touch", %{
+          "runners" => [runner.name],
+          "reason" => "x",
+          "path" => "/tmp/marker",
+          "idempotency_key" => "should-not-leak-#{unique()}"
+        })
+        |> json_response(202)
+
+      [run_entry] = body["runs"]
+      run_id = run_id_of(run_entry)
+
+      {:ok, run} =
+        Emisar.Runs.fetch_run_by_id(run_id, Emisar.Auth.Subject.system(account))
+
+      assert run.args == %{"path" => "/tmp/marker"}
+      refute Map.has_key?(run.args, "idempotency_key")
+    end
+
+    test "blank / whitespace / over-long idempotency_key degrades to no-key (no replay)", %{
+      account: account,
+      user: user,
+      runner: runner
+    } do
+      # `sanitize_idempotency_key/1` filters these so a chatty / buggy
+      # client can't fill the unique index with garbage or accidentally
+      # request replay semantics by sending an empty string. Each call
+      # below has to dispatch a FRESH run, even though the body field is
+      # technically present.
+      raw = make_api_key!(account, user)
+
+      for {label, key} <- [
+            {"empty string", ""},
+            {"whitespace only", "   "},
+            {"over the 200-char cap", String.duplicate("x", 201)}
+          ] do
+        first = dispatch_with_idempotency(raw, runner, "first #{label}", body: key)
+        second = dispatch_with_idempotency(raw, runner, "second #{label}", body: key)
+
+        # Two distinct runs — sanitisation rejected the key on BOTH
+        # calls, so neither side hit the replay path.
+        refute run_id_of(hd(first["runs"])) == run_id_of(hd(second["runs"])),
+               "expected fresh dispatches for #{label}, got the same run twice"
+      end
+    end
+
+    test "fan-out: one key + N runners produces N rows; same retry replays them all", %{
+      conn: conn,
+      account: account,
+      user: user
+    } do
+      # `per_runner_idempotency_key/3` suffixes the caller's key with the
+      # runner id so each runner's row claims a distinct slot in the
+      # `(api_key_id, idempotency_key)` unique index. A retry with the
+      # same runner set + same base key replays each row individually.
+      r1 = make_runner!(account, name: "fanout-a")
+      r2 = make_runner!(account, name: "fanout-b")
+      advertise_action!(r1, action_id: "shared.act")
+      advertise_action!(r2, action_id: "shared.act")
+      raw = make_api_key!(account, user)
+      key = "fanout-#{unique()}"
+
+      first =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> post(~p"/api/mcp/tools/shared.act", %{
+          "runners" => ["fanout-a", "fanout-b"],
+          "reason" => "x",
+          "idempotency_key" => key
+        })
+        |> json_response(202)
+
+      second =
+        Phoenix.ConnTest.build_conn()
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> post(~p"/api/mcp/tools/shared.act", %{
+          "runners" => ["fanout-a", "fanout-b"],
+          "reason" => "x",
+          "idempotency_key" => key
+        })
+        |> json_response(202)
+
+      ids_by_runner = fn body ->
+        body["runs"]
+        |> Enum.map(&{&1["runner"], run_id_of(&1)})
+        |> Map.new()
+      end
+
+      first_ids = ids_by_runner.(first)
+      second_ids = ids_by_runner.(second)
+
+      # Distinct run rows per runner...
+      refute first_ids["fanout-a"] == first_ids["fanout-b"]
+      # ...and each runner's row replays on retry instead of inserting a duplicate.
+      assert first_ids == second_ids
+    end
   end
 
   describe "GET /api/mcp/runs/:id (wait_for_run polling)" do
@@ -765,6 +1066,42 @@ defmodule EmisarWeb.McpControllerTest do
 
       assert body["error"] == "invalid_wait"
     end
+  end
+
+  # POST /tools/:id responses use different shapes per status. Running
+  # runs land in the full payload (`id` field); pending-approval / error
+  # entries use `run_id`. Tests don't care which — they just want the
+  # row identifier — so unify both via this helper.
+  defp run_id_of(%{"id" => id}) when is_binary(id), do: id
+  defp run_id_of(%{"run_id" => id}) when is_binary(id), do: id
+
+  # Issue a single `linux.uptime` dispatch with the supplied idempotency
+  # key(s). `:header` sets the HTTP `Idempotency-Key` header (Layer 1);
+  # `:body` sets the in-args `idempotency_key` (Layer 2). Each call uses
+  # a fresh conn so we exercise the same code path real callers do —
+  # the controller mints/reads the key per request, not per pipe.
+  defp dispatch_with_idempotency(raw, runner, reason, opts) do
+    params = %{"runners" => [runner.name], "reason" => reason}
+
+    params =
+      case Keyword.get(opts, :body) do
+        nil -> params
+        key -> Map.put(params, "idempotency_key", key)
+      end
+
+    conn =
+      Phoenix.ConnTest.build_conn()
+      |> put_req_header("authorization", "Bearer " <> raw)
+
+    conn =
+      case Keyword.get(opts, :header) do
+        nil -> conn
+        key -> put_req_header(conn, "idempotency-key", key)
+      end
+
+    conn
+    |> post(~p"/api/mcp/tools/linux.uptime", params)
+    |> json_response(202)
   end
 
   defp pick_key(account, raw) do

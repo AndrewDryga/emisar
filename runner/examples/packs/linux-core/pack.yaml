@@ -2,8 +2,12 @@ schema_version: 1
 
 id: linux-core
 name: Linux core operations pack
-version: 0.2.0
-description: Safe, read-only Linux diagnostics plus narrow service control.
+version: 0.3.0
+description: >
+  Read-only Linux diagnostics plus narrow service control. Disk, mem,
+  uptime, journalctl, log grep + tail, users/auth introspection, cron
+  audit, network state, kernel info, and systemctl control. The
+  front-line pack every Linux host gets.
 vendor: emisar
 homepage: https://github.com/andrewdryga/emisar
 
@@ -12,12 +16,45 @@ requires:
     - linux
 
 actions:
+  # Filesystem & storage
   - actions/disk_usage.yaml
+  - actions/mount_status.yaml
+  - actions/inode_usage.yaml
+  - actions/disk_smart.yaml
+  - actions/lvm_status.yaml
+  - actions/mdadm_status.yaml
+  # System info
+  - actions/cpu_info.yaml
   - actions/memory.yaml
+  - actions/memory_detailed.yaml
   - actions/uptime.yaml
+  - actions/os_release.yaml
+  - actions/kernel_modules.yaml
+  - actions/hardware_summary.yaml
+  # Logs
   - actions/journalctl.yaml
   - actions/journalctl_grep.yaml
   - actions/grep_log.yaml
   - actions/tail_log.yaml
+  # Users & auth
+  - actions/who_now.yaml
+  - actions/last_logins.yaml
+  - actions/failed_logins.yaml
+  - actions/sudoers_dump.yaml
+  # Cron
+  - actions/crontab_all.yaml
+  - actions/cron_recent.yaml
+  # Network state
+  - actions/network_interfaces.yaml
+  - actions/network_routes.yaml
+  - actions/arp_neighbors.yaml
+  # Systemd
   - actions/systemctl_status.yaml
+  - actions/systemctl_start.yaml
+  - actions/systemctl_stop.yaml
   - actions/systemctl_restart.yaml
+  - actions/systemctl_reload.yaml
+  - actions/systemctl_enable.yaml
+  - actions/systemctl_disable.yaml
+  # Host
+  - actions/reboot_host.yaml

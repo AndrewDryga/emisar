@@ -1,22 +1,24 @@
 defmodule Emisar.Runs.Authorizer do
   @moduledoc """
-  Authorization for action runs + per-run progress events.
+  Authorization for action runs.
 
     * `dispatch_run_permission` — allowed to invoke `Runs.dispatch_run/2`.
     * `cancel_run_permission` — allowed to cancel a queued/running run.
     * `view_runs_permission` — allowed to read run rows.
-    * `report_run_progress_permission` — held by the runner socket to
-      append progress events and final results to runs belonging to it.
+
+  Runner-side progress event writes (`Runs.append_event/2`,
+  `Runs.finalize_from_result/2`) are internal helpers called from the
+  runner socket process; they don't subject-flow so there's no
+  dedicated permission for them.
   """
   use Emisar.Auth.Authorizer
 
-  alias Emisar.Runs.{ActionRun, RunEvent}
+  alias Emisar.Runs.ActionRun
   alias Emisar.Runners.Runner
 
   def dispatch_run_permission, do: build(ActionRun, :dispatch)
   def cancel_run_permission, do: build(ActionRun, :cancel)
   def view_runs_permission, do: build(ActionRun, :view)
-  def report_run_progress_permission, do: build(RunEvent, :report)
 
   @impl Emisar.Auth.Authorizer
   def list_permissions_for_role(role) when role in [:owner, :admin],
@@ -36,14 +38,13 @@ defmodule Emisar.Runs.Authorizer do
     do: [dispatch_run_permission(), view_runs_permission()]
 
   def list_permissions_for_role(:runner),
-    do: [report_run_progress_permission(), view_runs_permission()]
+    do: [view_runs_permission()]
 
   def list_permissions_for_role(:system),
     do: [
       dispatch_run_permission(),
       cancel_run_permission(),
-      view_runs_permission(),
-      report_run_progress_permission()
+      view_runs_permission()
     ]
 
   def list_permissions_for_role(_), do: []

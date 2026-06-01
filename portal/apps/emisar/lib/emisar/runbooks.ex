@@ -2,14 +2,14 @@ defmodule Emisar.Runbooks do
   @moduledoc """
   Cloud-side runbooks: CRUD + expansion to action runs. A runbook is
   a workflow definition; expanding it produces an ordered sequence of
-  `run_action` dispatches, with assert/when/note steps evaluated
-  cloud-side.
+  `run_action` dispatches, one per step.
 
-  v0.1 expansion is straight-line sequential — branching support is
-  on the roadmap.
+  v0.1 expansion is straight-line sequential — branching, conditional
+  steps, and inline assertions are on the roadmap.
   """
 
-  alias Emisar.{Auth, Repo}
+  alias Ecto.Multi
+  alias Emisar.{Audit, Auth, Repo}
   alias Emisar.Auth.Subject
   alias Emisar.Runbooks.{Authorizer, Runbook}
 
@@ -18,7 +18,6 @@ defmodule Emisar.Runbooks do
   def list_runbooks(%Subject{} = subject, opts \\ []) do
     with :ok <- Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_runbooks_permission()) do
       Runbook.Query.not_deleted()
-      |> Runbook.Query.not_archived()
       |> Runbook.Query.ordered_by_title_version()
       |> Authorizer.for_subject(subject)
       |> Repo.list(Runbook.Query, opts)
@@ -46,9 +45,34 @@ defmodule Emisar.Runbooks do
              subject,
              Authorizer.manage_runbooks_permission()
            ) do
-      Runbook.Changeset.create(account.id, subject_user_id(subject), Map.put(attrs, :version, 1))
-      |> Repo.insert()
+      user_id = subject_user_id(subject)
+
+      Multi.new()
+      |> Multi.insert(
+        :runbook,
+        Runbook.Changeset.create(account.id, user_id, Map.put(attrs, :version, 1))
+      )
+      |> Multi.insert(:audit, fn %{runbook: rb} ->
+        Audit.changeset(rb.account_id, "runbook.created",
+          actor_kind: "user",
+          actor_id: user_id,
+          subject_kind: "runbook",
+          subject_id: rb.id,
+          subject_label: rb.title || rb.name,
+          payload: %{name: rb.name, title: rb.title, version: rb.version}
+        )
+      end)
+      |> Repo.commit_multi(after_commit: &broadcast_runbook_change(&1, "runbook.created"))
+      |> case do
+        {:ok, %{runbook: rb}} -> {:ok, rb}
+        {:error, reason} -> {:error, reason}
+      end
     end
+  end
+
+  defp broadcast_runbook_change(%{runbook: rb}, event_type) do
+    Emisar.PubSub.broadcast_account_list(rb.account_id, :runbook, event_type, rb.id)
+    :ok
   end
 
   def save_new_version(%Runbook{} = old, attrs, %Subject{} = subject) do
@@ -57,22 +81,39 @@ defmodule Emisar.Runbooks do
              subject,
              Authorizer.manage_runbooks_permission()
            ) do
-      Runbook.Changeset.create(
-        old.account_id,
-        subject_user_id(subject),
+      user_id = subject_user_id(subject)
+
+      next =
         Map.merge(
           %{
             name: old.name,
             slug: old.slug,
             title: old.title,
             description: old.description,
+            definition: old.definition,
             version: old.version + 1,
             status: old.status
           },
           attrs
         )
-      )
-      |> Repo.insert()
+
+      Multi.new()
+      |> Multi.insert(:runbook, Runbook.Changeset.create(old.account_id, user_id, next))
+      |> Multi.insert(:audit, fn %{runbook: rb} ->
+        Audit.changeset(rb.account_id, "runbook.updated",
+          actor_kind: "user",
+          actor_id: user_id,
+          subject_kind: "runbook",
+          subject_id: rb.id,
+          subject_label: rb.title || rb.name,
+          payload: %{name: rb.name, title: rb.title, from_version: old.version, to_version: rb.version}
+        )
+      end)
+      |> Repo.commit_multi(after_commit: &broadcast_runbook_change(&1, "runbook.updated"))
+      |> case do
+        {:ok, %{runbook: rb}} -> {:ok, rb}
+        {:error, reason} -> {:error, reason}
+      end
     end
   end
 
@@ -82,25 +123,27 @@ defmodule Emisar.Runbooks do
              subject,
              Authorizer.manage_runbooks_permission()
            ) do
+      user_id = subject_user_id(subject)
+
       Runbook.Query.not_deleted()
       |> Runbook.Query.by_id(rb.id)
       |> Authorizer.for_subject(subject)
       |> Repo.fetch_and_update(Runbook.Query,
-        with: &Runbook.Changeset.update(&1, %{status: "published"})
+        with: &Runbook.Changeset.update(&1, %{status: "published"}),
+        audit: fn published ->
+          Audit.changeset(published.account_id, "runbook.published",
+            actor_kind: "user",
+            actor_id: user_id,
+            subject_kind: "runbook",
+            subject_id: published.id,
+            subject_label: published.title || published.name,
+            payload: %{name: published.name, version: published.version}
+          )
+        end,
+        after_commit: fn published ->
+          broadcast_runbook_change(%{runbook: published}, "runbook.published")
+        end
       )
-    end
-  end
-
-  def archive(%Runbook{} = rb, %Subject{} = subject) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.manage_runbooks_permission()
-           ) do
-      Runbook.Query.not_deleted()
-      |> Runbook.Query.by_id(rb.id)
-      |> Authorizer.for_subject(subject)
-      |> Repo.fetch_and_update(Runbook.Query, with: &Runbook.Changeset.archive/1)
     end
   end
 
@@ -213,6 +256,11 @@ defmodule Emisar.Runbooks do
           "runbook: #{runbook.title} • step #{idx + 1}/#{length(expand(runbook))} — #{reason}",
         source: "runbook",
         requested_by_id: user_id,
+        # The operator's membership at dispatch time — `Runs.dispatch_run`
+        # rejects if the runner falls outside this membership's runner
+        # scope. nil on continuation (Subject.system) bypasses the check
+        # because the originating dispatch already validated scope.
+        requested_by_membership_id: subject.membership_id,
         runbook_id: runbook.id,
         runbook_step_id: step_id_for(step, idx)
       },

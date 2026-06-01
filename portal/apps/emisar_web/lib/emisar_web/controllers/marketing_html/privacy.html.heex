@@ -94,17 +94,22 @@
 
         <h2>5. Your rights</h2>
         <p>
-          You can export every piece of data associated with your account at any time —
-          audit events as JSONL, packs as YAML, configuration as JSON. The export button
-          lives in your account settings; there is no waiting period and no human in the
-          loop.
+          You can export your data at any time. Audit events stream out of the
+          <code>/api/audit</code>
+          endpoint as NDJSON for any SIEM that speaks HTTP, using any API key with
+          the <code>audit:read</code> scope. For a full account snapshot (audit +
+          packs + configuration), email
+          <a href="mailto:support@emisar.dev">support@emisar.dev</a>
+          and we'll generate it within one business day. We're working on a one-click
+          export in the dashboard.
         </p>
         <p>
-          You can delete your account at any time. Deletion removes your data from the
-          primary database within 24 hours and from encrypted backups within 30 days
-          (after which the backups themselves expire). Email
+          You can delete your account at any time. Email
           <a href="mailto:support@emisar.dev">support@emisar.dev</a>
-          if you need a deletion certificate or a copy of the data before deletion.
+          and deletion removes your data from the primary database within 24 hours
+          and from encrypted backups within 30 days (after which the backups
+          themselves expire). Ask for a deletion certificate or a copy of the
+          data first if you need one.
         </p>
         <p>
           If you are in the EU, UK, or California you have additional rights under GDPR

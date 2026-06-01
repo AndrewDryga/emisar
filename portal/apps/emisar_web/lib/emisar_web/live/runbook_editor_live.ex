@@ -1,15 +1,11 @@
 defmodule EmisarWeb.RunbookEditorLive do
   @moduledoc """
-  Visual runbook step builder. Two step shapes:
-
-    * action — `{id, action_id, runner_selector: {kind, value}, args:
-      [{key, value}, ...]}`
-    * assert — `{id, kind: "assert", expression}`
-
-  Steps reorder via Move up / Move down buttons (no JS hook needed).
-  Form state lives in `socket.assigns.steps` as a list of maps; saving
-  flattens it back to the JSON shape `Runbooks.engine` understands:
-  `%{"steps" => [...]}`.
+  Visual runbook step builder. Each step is one action dispatch:
+  `{id, action_id, runner_selector: {kind, value}, args: [{key, value},
+  ...]}`. Steps reorder via Move up / Move down buttons (no JS hook
+  needed). Form state lives in `socket.assigns.steps` as a list of
+  maps; saving flattens it back to the JSON shape `Runbooks.engine`
+  understands: `%{"steps" => [...]}`.
   """
   use EmisarWeb, :live_view
 
@@ -100,7 +96,7 @@ defmodule EmisarWeb.RunbookEditorLive do
     params =
       params
       |> Map.put("id", params["step_id"] || params["id"])
-      |> Map.take(~w(id action_id selector_kind selector_value expression))
+      |> Map.take(~w(id action_id selector_kind selector_value))
 
     steps =
       List.update_at(socket.assigns.steps, i, fn step ->
@@ -112,10 +108,6 @@ defmodule EmisarWeb.RunbookEditorLive do
 
   def handle_event("add_action_step", _params, socket) do
     {:noreply, assign(socket, :steps, socket.assigns.steps ++ [example_action_step()])}
-  end
-
-  def handle_event("add_assert_step", _params, socket) do
-    {:noreply, assign(socket, :steps, socket.assigns.steps ++ [example_assert_step()])}
   end
 
   def handle_event("remove_step", %{"index" => idx}, socket) do
@@ -259,22 +251,7 @@ defmodule EmisarWeb.RunbookEditorLive do
       "args" => []
     }
 
-  defp example_assert_step,
-    do: %{
-      "id" => "step#{System.unique_integer([:positive])}",
-      "type" => "assert",
-      "expression" => ""
-    }
-
   # JSON → editor state
-  defp from_raw_step(%{"kind" => "assert"} = raw) do
-    %{
-      "id" => raw["id"] || "step",
-      "type" => "assert",
-      "expression" => raw["expression"] || ""
-    }
-  end
-
   defp from_raw_step(raw) when is_map(raw) do
     {kind, val} = selector_to_pair(raw["runner_selector"])
 
@@ -297,14 +274,6 @@ defmodule EmisarWeb.RunbookEditorLive do
   end
 
   # Editor state → JSON
-  defp to_raw_step(%{"type" => "assert"} = step) do
-    %{
-      "id" => step["id"],
-      "kind" => "assert",
-      "expression" => step["expression"] || ""
-    }
-  end
-
   defp to_raw_step(%{"type" => "action"} = step) do
     %{
       "id" => step["id"],
@@ -329,9 +298,10 @@ defmodule EmisarWeb.RunbookEditorLive do
 
   def render(assigns) do
     ~H"""
-    <.dashboard_shell
+    <.dashboard_shell pending_approvals_count={@pending_approvals_count}
       current_user={@current_user}
       current_account={@current_account}
+      switchable_accounts={@switchable_accounts}
       flash={@flash}
       section={:runbooks}
     >
@@ -357,59 +327,21 @@ defmodule EmisarWeb.RunbookEditorLive do
         <section class="overflow-hidden rounded-xl border border-zinc-900 bg-zinc-950/40">
           <header class="flex items-center justify-between border-b border-zinc-900 px-5 py-3">
             <h2 class="text-sm font-semibold text-zinc-100">Steps</h2>
-            <div class="flex items-center gap-2">
-              <button
-                type="button"
-                phx-click="add_action_step"
-                class="inline-flex items-center gap-1.5 rounded-lg border border-zinc-800 px-2.5 py-1.5 text-xs font-medium text-zinc-300 hover:border-indigo-500 hover:text-indigo-300"
-              >
-                <.icon name="hero-plus" class="h-3.5 w-3.5" /> Action
-              </button>
-              <button
-                type="button"
-                phx-click="add_assert_step"
-                class="inline-flex items-center gap-1.5 rounded-lg border border-zinc-800 px-2.5 py-1.5 text-xs font-medium text-zinc-300 hover:border-indigo-500 hover:text-indigo-300"
-              >
-                <.icon name="hero-plus" class="h-3.5 w-3.5" /> Assert
-              </button>
-            </div>
+            <button
+              type="button"
+              phx-click="add_action_step"
+              class="inline-flex items-center gap-1.5 rounded-lg border border-zinc-800 px-2.5 py-1.5 text-xs font-medium text-zinc-300 hover:border-indigo-500 hover:text-indigo-300"
+            >
+              <.icon name="hero-plus" class="h-3.5 w-3.5" /> Add step
+            </button>
           </header>
 
           <div class="space-y-3 p-5">
-            <%!-- Brief explainer so the difference between the two
-                 step types is obvious before clicking either button.
-                 Collapsed; expanding shows a worked example. --%>
-            <details class="rounded-lg border border-zinc-800 bg-zinc-950/60 p-3 text-xs text-zinc-400 [&>summary]:cursor-pointer">
-              <summary class="flex items-center gap-2 text-zinc-300 hover:text-zinc-100">
-                <.icon name="hero-question-mark-circle" class="h-3.5 w-3.5 text-zinc-500" />
-                What's the difference between Action and Assert?
-              </summary>
-              <div class="mt-2 space-y-2 leading-relaxed">
-                <p>
-                  <strong class="text-indigo-300">Action</strong>
-                  runs a catalog action on a runner. The runbook halts immediately if it
-                  errors at the transport level; otherwise execution continues regardless
-                  of the action's exit code.
-                </p>
-                <p>
-                  <strong class="text-emerald-300">Assert</strong>
-                  doesn't touch any runner. It evaluates an expression against the output
-                  of previous steps. If the expression is false the runbook stops — use it
-                  to gate a destructive step on a pre-flight check passing.
-                </p>
-                <div class="mt-2 overflow-x-auto rounded bg-black/60 p-2 font-mono text-[11px] leading-5 text-zinc-300">
-                  <div>step1: action  cassandra.nodetool_status</div>
-                  <div>step2: assert  step1.exit_code == 0</div>
-                  <div>step3: action  cassandra.nodetool_repair</div>
-                </div>
-              </div>
-            </details>
-
             <div
               :if={@steps == []}
               class="rounded-lg border border-dashed border-zinc-800 p-8 text-center text-xs text-zinc-500"
             >
-              No steps. Add an action or assert step above to start.
+              No steps. Add an action step above to start.
             </div>
 
             <datalist id="catalog-actions">
@@ -524,14 +456,9 @@ defmodule EmisarWeb.RunbookEditorLive do
 
   defp step_card(assigns) do
     ~H"""
-    <div class={["rounded-lg border bg-black/30 p-4", step_border(@step["type"])]}>
+    <div class="rounded-lg border border-zinc-800 bg-black/30 p-4">
       <div class="flex items-center justify-between gap-3">
-        <div class="flex items-center gap-2">
-          <span class={["rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider", step_badge(@step["type"])]}>
-            {@step["type"]}
-          </span>
-          <span class="font-mono text-xs text-zinc-500">#{@index + 1}</span>
-        </div>
+        <span class="font-mono text-xs text-zinc-500">Step #{@index + 1}</span>
         <div class="flex items-center gap-1">
           <button
             type="button"
@@ -587,69 +514,47 @@ defmodule EmisarWeb.RunbookEditorLive do
           />
         </div>
 
-        <%= if @step["type"] == "action" do %>
-          <div>
+        <div>
+          <label class="block text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+            Action
+          </label>
+          <input
+            type="text"
+            name="action_id"
+            value={@step["action_id"]}
+            list="catalog-actions"
+            placeholder="linux.uptime"
+            class={[input_class(), "font-mono text-xs"]}
+          />
+        </div>
+
+        <div class="grid grid-cols-1 gap-2 sm:grid-cols-3">
+          <div class="sm:col-span-1">
             <label class="block text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
-              Action
+              Runner by
+            </label>
+            <select name="selector_kind" class={input_class()}>
+              <option value="group" selected={@step["selector_kind"] == "group"}>
+                group
+              </option>
+              <option value="runner_id" selected={@step["selector_kind"] == "runner_id"}>
+                runner id
+              </option>
+            </select>
+          </div>
+          <div class="sm:col-span-2">
+            <label class="block text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+              Value
             </label>
             <input
               type="text"
-              name="action_id"
-              value={@step["action_id"]}
-              list="catalog-actions"
-              placeholder="linux.uptime"
-              class={[input_class(), "font-mono text-xs"]}
+              name="selector_value"
+              value={@step["selector_value"]}
+              placeholder={if(@step["selector_kind"] == "runner_id", do: "runner UUID", else: "e.g. cassandra-us-east1")}
+              class={input_class()}
             />
           </div>
-
-          <div class="grid grid-cols-1 gap-2 sm:grid-cols-3">
-            <div class="sm:col-span-1">
-              <label class="block text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
-                Runner by
-              </label>
-              <select name="selector_kind" class={input_class()}>
-                <option value="group" selected={@step["selector_kind"] == "group"}>
-                  group
-                </option>
-                <option value="runner_id" selected={@step["selector_kind"] == "runner_id"}>
-                  runner id
-                </option>
-              </select>
-            </div>
-            <div class="sm:col-span-2">
-              <label class="block text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
-                Value
-              </label>
-              <input
-                type="text"
-                name="selector_value"
-                value={@step["selector_value"]}
-                placeholder={if(@step["selector_kind"] == "runner_id", do: "runner UUID", else: "e.g. cassandra-us-east1")}
-                class={input_class()}
-              />
-            </div>
-          </div>
-
-        <% else %>
-          <div>
-            <label class="block text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
-              Assert expression
-            </label>
-            <input
-              type="text"
-              name="expression"
-              value={@step["expression"]}
-              placeholder="step1.exit_code == 0"
-              class={[input_class(), "font-mono text-xs"]}
-            />
-            <p class="mt-1 text-[11px] leading-relaxed text-zinc-500">
-              Halts the runbook if the expression is false. Reference prior step output
-              by id: <code class="font-mono text-zinc-300">step1.exit_code == 0</code>,
-              <code class="font-mono text-zinc-300">step1.stdout</code>, etc.
-              Use to gate destructive steps on a pre-flight check passing.
-            </p>
-          </div>
-        <% end %>
+        </div>
       </form>
 
       <%!-- Args live in a SIBLING form, not a nested one. Browsers
@@ -659,7 +564,6 @@ defmodule EmisarWeb.RunbookEditorLive do
            row's phx-change "arg_change" routes correctly without
            collateral on the step form. --%>
       <.arg_editor
-        :if={@step["type"] == "action"}
         index={@index}
         args={@step["args"] || []}
         action_id={@step["action_id"]}
@@ -737,14 +641,6 @@ defmodule EmisarWeb.RunbookEditorLive do
     </div>
     """
   end
-
-  defp step_border("action"), do: "border-indigo-500/20"
-  defp step_border("assert"), do: "border-emerald-500/20"
-  defp step_border(_), do: "border-zinc-800"
-
-  defp step_badge("action"), do: "bg-indigo-500/15 text-indigo-300 ring-1 ring-indigo-500/30"
-  defp step_badge("assert"), do: "bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-500/30"
-  defp step_badge(_), do: "bg-zinc-800 text-zinc-300"
 
   defp input_class do
     "mt-1 block w-full rounded-lg border-0 bg-zinc-900 px-2 py-1.5 text-sm text-zinc-100 ring-1 ring-zinc-800 focus:ring-indigo-500"

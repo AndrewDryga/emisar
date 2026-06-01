@@ -25,6 +25,8 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -97,6 +99,7 @@ func main() {
 		apiKey:    apiKey,
 		userAgent: buildUserAgent(),
 		http:      &http.Client{Timeout: httpTimeout},
+		sessionID: newSessionID(),
 	}
 
 	if err := srv.serve(os.Stdin, os.Stdout); err != nil && !errors.Is(err, io.EOF) {
@@ -131,6 +134,30 @@ type bridge struct {
 	apiKey    string
 	userAgent string
 	http      *http.Client
+
+	// sessionID namespaces this process's idempotency keys. See
+	// newSessionID + idempotencyKey for why it's needed.
+	sessionID string
+}
+
+// newSessionID returns a random hex nonce that namespaces the
+// idempotency keys this process mints. The per-call key is derived from
+// (sessionID, JSON-RPC request id): a client that re-sends the SAME
+// request id within this process collapses to one run at the cloud,
+// while distinct ids — or a different process — never collide. The
+// nonce is what stops two unrelated sessions, each starting their
+// JSON-RPC ids at 1, from aliasing one another's runs. (A retry that
+// also restarts the bridge gets a fresh nonce and dispatches a new run
+// — the safe direction.)
+func newSessionID() string {
+	var b [8]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		// crypto/rand should never fail; if it does, fall back to a
+		// fixed marker. We lose per-process uniqueness but still
+		// namespace away from raw request ids.
+		return "nosession"
+	}
+	return hex.EncodeToString(b[:])
 }
 
 // buildUserAgent stamps every cloud request with structured client +
@@ -214,7 +241,7 @@ func (b *bridge) handle(req rpcReq) *rpcResp {
 		if err := json.Unmarshal(req.Params, &p); err != nil {
 			return errorResp(req.ID, -32602, "invalid params", err.Error())
 		}
-		result, err := b.callTool(p.Name, p.Arguments)
+		result, err := b.callTool(p.Name, p.Arguments, b.idempotencyKey(req.ID))
 		if err != nil {
 			return errorResp(req.ID, -32603, "tools/call failed", err.Error())
 		}
@@ -304,7 +331,23 @@ func waitForRunTool() map[string]any {
 	}
 }
 
-func (b *bridge) callTool(name string, args map[string]any) (map[string]any, error) {
+// idempotencyKey derives the per-call Idempotency-Key sent to the
+// cloud (Layer 1: transport-retry protection). It's stable for a given
+// (session, JSON-RPC id) so a resend of the same request collapses to
+// one run; it's empty for notifications (no id) where there's nothing
+// to retry against. The cloud treats this header as the dedup token
+// unless the LLM set an explicit `idempotency_key` arg (Layer 2), which
+// takes precedence server-side.
+func (b *bridge) idempotencyKey(id json.RawMessage) string {
+	if len(id) == 0 || string(id) == "null" {
+		return ""
+	}
+	// JSON-RPC ids are numbers or strings; strip surrounding quotes so
+	// id 7 and id "7" don't produce visually-different keys.
+	return b.sessionID + ":" + strings.Trim(string(id), `"`)
+}
+
+func (b *bridge) callTool(name string, args map[string]any, idemKey string) (map[string]any, error) {
 	if name == "" {
 		return nil, errors.New("missing tool name")
 	}
@@ -328,7 +371,7 @@ func (b *bridge) callTool(name string, args map[string]any) (map[string]any, err
 	// splits known top-level keys from action args. We don't pre-wrap.
 	payload, _ := json.Marshal(args)
 
-	status, body, err := b.postRaw("/api/mcp/tools/"+name+"?wait=60s", payload)
+	status, body, err := b.postRaw("/api/mcp/tools/"+name+"?wait=60s", payload, idemKey)
 	if err != nil {
 		return nil, err
 	}
@@ -673,7 +716,7 @@ func (b *bridge) postJSON(path string, body []byte, out any) error {
 // raising on 4xx/5xx. Used by tool invocations so the bridge can
 // reshape 4xx into an MCP tool result (isError=true) instead of an
 // opaque JSON-RPC error — gives the LLM the body it needs to retry.
-func (b *bridge) postRaw(path string, body []byte) (int, []byte, error) {
+func (b *bridge) postRaw(path string, body []byte, idemKey string) (int, []byte, error) {
 	req, err := http.NewRequest(http.MethodPost, b.baseURL+path, bytes.NewReader(body))
 	if err != nil {
 		return 0, nil, err
@@ -681,6 +724,9 @@ func (b *bridge) postRaw(path string, body []byte) (int, []byte, error) {
 	req.Header.Set("Authorization", "Bearer "+b.apiKey)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", b.userAgent)
+	if idemKey != "" {
+		req.Header.Set("Idempotency-Key", idemKey)
+	}
 
 	resp, err := b.http.Do(req)
 	if err != nil {

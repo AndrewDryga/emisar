@@ -52,6 +52,17 @@ defmodule Emisar.Policies do
   def risk_tiers, do: @risk_tiers
   def decisions, do: @decisions
 
+  @doc """
+  Decisions sit on a permissiveness ladder: allow < require_approval <
+  deny. Higher rank = more restrictive. Used both by the changeset
+  (to enforce that risk tiers are monotonically restrictive) and by
+  the LV (to disable options that would violate the rule).
+  """
+  def decision_rank("allow"), do: 0
+  def decision_rank("require_approval"), do: 1
+  def decision_rank("deny"), do: 2
+  def decision_rank(_), do: 0
+
   # -- Subject-gated CRUD ---------------------------------------------
 
   def fetch_policy(%Subject{} = subject) do
@@ -95,21 +106,21 @@ defmodule Emisar.Policies do
              subject,
              Authorizer.manage_policies_permission()
            ) do
+      # `audit:` runs inside the same DB transaction as the update, so a
+      # downstream constraint failure rolls back both the policy mutation
+      # and its audit row together. The audit changeset closes over the
+      # changeset's `data.rules` (pre-update snapshot) and the updated
+      # struct's `rules` (post-update) so the diff captures both.
       Policy.Query.not_deleted()
       |> Policy.Query.by_id(policy.id)
       |> Authorizer.for_subject(subject)
       |> Repo.fetch_and_update(Policy.Query,
         with: &Policy.Changeset.update(&1, %{rules: rules, updated_by_id: user_id}),
-        # arity-2 callback receives the changeset alongside the updated
-        # struct — `changeset.data.rules` is the pre-update snapshot,
-        # `updated.rules` is the post-update state. Diff captures both
-        # so an operator reading the audit detail can answer "what
-        # changed?" without spelunking through prior audit rows.
-        after_commit: fn updated, changeset ->
-          before_rules = changeset.data.rules || @default_rules
+        audit: fn updated ->
+          before_rules = policy.rules || @default_rules
           after_rules = updated.rules || @default_rules
 
-          Audit.log(updated.account_id, "policy.updated",
+          Audit.changeset(updated.account_id, "policy.updated",
             actor_kind: "user",
             actor_id: user_id,
             subject_kind: "policy",
@@ -117,11 +128,11 @@ defmodule Emisar.Policies do
             payload: %{
               before: before_rules,
               after: after_rules,
+              from_version: policy.vsn,
+              to_version: updated.vsn,
               changes: diff_rules(before_rules, after_rules)
             }
           )
-
-          :ok
         end
       )
     end
@@ -171,10 +182,13 @@ defmodule Emisar.Policies do
     case find_override(rules["overrides"] || [], action_id) do
       nil ->
         decision = default_for_tier(rules["defaults"] || %{}, risk)
-        {atomize(decision), [], "tier default for #{risk}: #{decision}"}
+        # The decision is stored separately on the run row and rendered
+        # as its own chip; the reason should explain WHY without
+        # echoing the verdict.
+        {atomize(decision), [], "Default for #{risk}-risk actions"}
 
       %{"decision" => d} = ov ->
-        {atomize(d), [rule_name(ov)], "matched override: #{rule_name(ov)}"}
+        {atomize(d), [rule_name(ov)], "Override: #{rule_name(ov)}"}
     end
   end
 

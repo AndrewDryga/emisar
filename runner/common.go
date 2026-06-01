@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/andrewdryga/emisar/runner/internal/admission"
 	"github.com/andrewdryga/emisar/runner/internal/audit"
 	"github.com/andrewdryga/emisar/runner/internal/config"
 	"github.com/andrewdryga/emisar/runner/internal/engine"
@@ -17,10 +18,11 @@ import (
 
 // runtime is the live in-memory wiring of one emisar process.
 type runtime struct {
-	cfg     *config.Config
-	journal *audit.Journal
-	cursor  *audit.Cursor
-	engine  *engine.Engine
+	cfg       *config.Config
+	journal   *audit.Journal
+	cursor    *audit.Cursor
+	engine    *engine.Engine
+	admission *admission.Policy
 }
 
 // registry returns the current pack registry from the engine. After a
@@ -74,6 +76,11 @@ func boot() (*runtime, error) {
 		exec.InheritEnv = cfg.Execution.InheritEnv
 	}
 
+	admit, err := admission.New(cfg.Admission.Allow, cfg.Admission.Deny)
+	if err != nil {
+		return nil, fmt.Errorf("admission: %w", err)
+	}
+
 	eng := engine.New(engine.Config{
 		Registry:     registry,
 		Executor:     exec,
@@ -82,13 +89,15 @@ func boot() (*runtime, error) {
 		PreviewBytes: cfg.Events.MaxPreviewBytes,
 		CancelGrace:  cfg.Execution.CancelGrace.Std(),
 		PackDirs:     packDirs,
+		Admission:    admit,
 	})
 
 	return &runtime{
-		cfg:     cfg,
-		journal: journal,
-		cursor:  cursor,
-		engine:  eng,
+		cfg:       cfg,
+		journal:   journal,
+		cursor:    cursor,
+		engine:    eng,
+		admission: admit,
 	}, nil
 }
 

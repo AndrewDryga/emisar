@@ -5,8 +5,6 @@ defmodule Emisar.Runners.Authorizer do
 
     * `manage_*` gates mutations and admin-only listings.
     * `view_runners_permission` gates read-only operator/viewer surfaces.
-    * `connect_runner_permission` is for the runner socket boundary —
-      held by `Runner` actors and `:system`.
   """
   use Emisar.Auth.Authorizer
 
@@ -18,8 +16,6 @@ defmodule Emisar.Runners.Authorizer do
   def view_runners_permission, do: build(Runner, :view)
   def issue_install_key_permission, do: build(AuthKey, :issue_install)
   def manage_auth_keys_permission, do: build(AuthKey, :manage)
-  def manage_runner_tokens_permission, do: build(Token, :manage)
-  def connect_runner_permission, do: build(EventCursor, :connect)
 
   @impl Emisar.Auth.Authorizer
   def list_permissions_for_role(role) when role in [:owner, :admin],
@@ -27,8 +23,7 @@ defmodule Emisar.Runners.Authorizer do
       manage_runners_permission(),
       view_runners_permission(),
       manage_auth_keys_permission(),
-      issue_install_key_permission(),
-      manage_runner_tokens_permission()
+      issue_install_key_permission()
     ]
 
   def list_permissions_for_role(:operator),
@@ -40,17 +35,14 @@ defmodule Emisar.Runners.Authorizer do
   def list_permissions_for_role(:api_client),
     do: [view_runners_permission()]
 
-  def list_permissions_for_role(:runner),
-    do: [connect_runner_permission()]
+  def list_permissions_for_role(:runner), do: []
 
   def list_permissions_for_role(:system),
     do: [
       manage_runners_permission(),
       view_runners_permission(),
       manage_auth_keys_permission(),
-      issue_install_key_permission(),
-      manage_runner_tokens_permission(),
-      connect_runner_permission()
+      issue_install_key_permission()
     ]
 
   def list_permissions_for_role(_), do: []
