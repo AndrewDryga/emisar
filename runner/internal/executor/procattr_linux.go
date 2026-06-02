@@ -4,8 +4,8 @@ package executor
 
 import (
 	"fmt"
-	"os/user"
 	"os/exec"
+	"os/user"
 	"strconv"
 	"syscall"
 )

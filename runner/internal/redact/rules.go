@@ -79,8 +79,8 @@ func DefaultRules() []actionspec.RedactionRule {
 			Replacement: "[REDACTED_JWT]",
 		},
 		{
-			Name:        "emisar-token",
-			Type:        "regex",
+			Name: "emisar-token",
+			Type: "regex",
 			// Three emisar token classes:
 			//   emk-     — operator API keys (MCP / programmatic)
 			//   rnrtok-   — per-runner tokens minted at registration

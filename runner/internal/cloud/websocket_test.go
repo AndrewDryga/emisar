@@ -60,7 +60,7 @@ func newFakeCloud(t *testing.T) (*fakeCloud, *httptest.Server) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"runner_id":   "agt_test_001",
+			"runner_id":  "agt_test_001",
 			"token":      fc.mintedToken,
 			"account_id": "acct_test",
 		})
@@ -158,7 +158,7 @@ func TestWebsocketDialerReusesCachedToken(t *testing.T) {
 
 	// Pre-seed the token file.
 	cached, _ := json.Marshal(map[string]string{
-		"token":    fc.mintedToken,
+		"token":     fc.mintedToken,
 		"runner_id": "agt_cached_007",
 	})
 	if err := os.WriteFile(tokenPath, cached, 0o600); err != nil {
@@ -222,7 +222,7 @@ func TestWebsocketDialer401OnUpgradeDropsCachedToken(t *testing.T) {
 	tokenPath := filepath.Join(dir, "token.json")
 
 	cached, _ := json.Marshal(map[string]string{
-		"token":    "stale-token",
+		"token":     "stale-token",
 		"runner_id": "agt_cached",
 	})
 	_ = os.WriteFile(tokenPath, cached, 0o600)

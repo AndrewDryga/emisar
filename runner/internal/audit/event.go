@@ -15,11 +15,11 @@ import (
 type EventType string
 
 const (
-	EventValidationFailed         EventType = "validation_failed"
-	EventExecutionStarted         EventType = "execution_started"
-	EventExecutionCompleted       EventType = "execution_completed"
-	EventExecutionFailed          EventType = "execution_failed"
-	EventActionCancelled          EventType = "action_cancelled"
+	EventValidationFailed   EventType = "validation_failed"
+	EventExecutionStarted   EventType = "execution_started"
+	EventExecutionCompleted EventType = "execution_completed"
+	EventExecutionFailed    EventType = "execution_failed"
+	EventActionCancelled    EventType = "action_cancelled"
 	// EventActionBlockedByAdmission fires when the runner's local
 	// allow/deny config refuses an action the cloud asked to run.
 	// Separate event type so SIEM rules can alert on it directly —

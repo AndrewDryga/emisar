@@ -30,7 +30,7 @@ const (
 	MsgAckResult MessageType = "ack_result"
 
 	// Runner -> Cloud
-	MsgRunnerState     MessageType = "runner_state"
+	MsgRunnerState    MessageType = "runner_state"
 	MsgActionProgress MessageType = "action_progress"
 	MsgActionResult   MessageType = "action_result"
 	MsgHeartbeat      MessageType = "heartbeat"
