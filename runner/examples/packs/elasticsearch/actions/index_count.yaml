@@ -1,0 +1,31 @@
+schema_version: 1
+id: es.index_count
+title: GET /<index>/_count
+kind: exec
+risk: low
+description: Returns the document count for one index.
+side_effects:
+  - One GET request.
+  - Read-only.
+args:
+  - name: index
+    type: string
+    required: true
+    description: Index name.
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{1,255}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "curl -sS -u \"$ELASTIC_USER:$ELASTIC_PASSWORD\" \"$ELASTIC_URL/{{ args.index }}/_count?pretty\""
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Doc count
+    args:
+      index: "logs-2026-06-01"

@@ -1,0 +1,27 @@
+schema_version: 1
+id: zfs.start_scrub
+title: zpool scrub <pool>
+kind: exec
+risk: high
+description: Starts a scrub on one pool. Re-reads every block and verifies checksums.
+side_effects:
+  - Heavy disk read load for hours-to-days.
+  - Pool stays online; IO latency increases.
+args:
+  - name: pool
+    type: string
+    required: true
+    description: Pool name.
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{1,64}$"
+execution:
+  command: {binary: zpool, argv: ["scrub", "{{ args.pool }}"]}
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Start scrub
+    args:
+      pool: "tank"

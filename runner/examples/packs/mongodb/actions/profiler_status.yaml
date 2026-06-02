@@ -1,0 +1,31 @@
+schema_version: 1
+id: mongo.profiler_status
+title: db.getProfilingStatus()
+kind: exec
+risk: low
+description: Profiler level + slow-op threshold for one database.
+side_effects:
+  - One profile command.
+  - Read-only.
+args:
+  - name: database
+    type: string
+    required: true
+    description: Database name.
+    validation:
+      pattern: "^[a-zA-Z0-9_\\-]{1,63}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "mongosh \"$MONGO_URI\" '--quiet' '--eval' \"JSON.stringify(db.getSiblingDB('{{ args.database }}').getProfilingStatus())\""
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Profiler level
+    args:
+      database: "production"

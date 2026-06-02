@@ -1,0 +1,41 @@
+schema_version: 1
+id: zfs.snapshot_destroy
+title: zfs destroy <pool>/<dataset>@<snap>
+kind: exec
+risk: high
+description: >
+  Delete one ZFS snapshot. Reclaims the snapshot-exclusive blocks
+  immediately. Irreversible. Confirm the snapshot is not the only
+  thing protecting against a recent ransomware/oops event before
+  destroying.
+side_effects:
+  - Snapshot deleted.
+  - Blocks unique to the snapshot freed.
+  - Restore from this snapshot no longer possible.
+args:
+  - name: dataset
+    type: string
+    required: true
+    description: Full dataset path.
+    validation:
+      pattern: "^[a-zA-Z0-9_/.\\-]{1,128}$"
+  - name: snap
+    type: string
+    required: true
+    description: Snapshot name (after the @).
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-:]{1,64}$"
+execution:
+  command:
+    binary: /usr/sbin/zfs
+    argv: ["destroy", "{{ args.dataset }}@{{ args.snap }}"]
+  timeout: 120s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Drop an old snapshot
+    args:
+      dataset: "tank/home"
+      snap: "auto-2026-05-01"

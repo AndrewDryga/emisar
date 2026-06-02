@@ -1,0 +1,31 @@
+schema_version: 1
+id: postfix.postsuper_release
+title: postsuper -H <qid>
+kind: exec
+risk: medium
+description: >
+  Release one held message back to active. Postfix will attempt
+  delivery on the next queue scan.
+side_effects:
+  - Message moved from hold to active.
+  - Delivery attempted on next tick.
+args:
+  - name: qid
+    type: string
+    required: true
+    description: Queue ID.
+    validation:
+      pattern: "^[A-F0-9]{8,20}$"
+execution:
+  command:
+    binary: /usr/sbin/postsuper
+    argv: ["-H", "{{ args.qid }}"]
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Release a held message
+    args:
+      qid: "3ABCDEF12345"

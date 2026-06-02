@@ -1,0 +1,18 @@
+schema_version: 1
+id: podman.stats
+title: podman stats --no-stream
+kind: exec
+risk: low
+description: One-shot CPU/mem/net/io stats for all containers.
+side_effects: ["One CLI call.", "Read-only."]
+args: []
+execution:
+  command: {binary: /usr/bin/podman, argv: ["stats", "--no-stream", "--format", "json"]}
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: Stats snapshot
+    args: {}

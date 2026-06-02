@@ -1,0 +1,33 @@
+schema_version: 1
+id: mysql.slow_queries
+title: Top slow query digests
+kind: exec
+risk: low
+description: >
+  Reads performance_schema.events_statements_summary_by_digest — top N statement fingerprints by mean execution time. Requires performance_schema enabled.
+side_effects:
+  - One SELECT against performance_schema.
+  - Read-only.
+args:
+  - name: limit
+    type: integer
+    required: false
+    default: 20
+    description: How many digests.
+    validation:
+      min: 1
+      max: 200
+execution:
+  command:
+    binary: /usr/bin/mysql
+    argv:
+      - "-e"
+      - "SELECT COUNT_STAR AS calls, ROUND(AVG_TIMER_WAIT/1e9, 2) AS avg_ms, ROUND(SUM_TIMER_WAIT/1e9, 2) AS total_ms, LEFT(DIGEST_TEXT, 200) AS query FROM performance_schema.events_statements_summary_by_digest WHERE DIGEST_TEXT IS NOT NULL ORDER BY AVG_TIMER_WAIT DESC LIMIT {{ args.limit }};"
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 131072
+  max_stderr_bytes: 8192
+examples:
+  - title: Top 20 slow queries
+    args: {}

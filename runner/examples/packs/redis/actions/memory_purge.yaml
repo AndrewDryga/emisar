@@ -1,0 +1,27 @@
+schema_version: 1
+id: redis.memory_purge
+title: MEMORY PURGE
+kind: exec
+risk: medium
+description: >
+  Asks jemalloc to release unused memory back to the OS. Use after
+  a large eviction or DEL spike when RSS hasn't dropped despite
+  used_memory falling. Brief allocator pause possible.
+side_effects:
+  - Brief allocator pause.
+  - RSS may drop afterwards.
+  - Does not affect keys.
+args: []
+execution:
+  command:
+    binary: /usr/bin/redis-cli
+    argv: ["MEMORY", "PURGE"]
+  timeout: 60s
+cancel_grace: 10s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Release jemalloc-cached memory
+    args: {}

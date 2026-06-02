@@ -1,0 +1,35 @@
+schema_version: 1
+
+id: linux.network_interfaces
+title: Network interfaces
+kind: exec
+risk: low
+
+description: >
+  `ip -j addr show` JSON. Returns every interface with its addresses,
+  state, MAC, MTU. Use to confirm an interface is up with the right
+  IP. Read-only.
+
+side_effects:
+  - One ip invocation.
+  - Read-only.
+
+args: []
+
+execution:
+  command:
+    binary: /sbin/ip
+    argv:
+      - "-j"
+      - "addr"
+      - "show"
+  timeout: 5s
+
+output:
+  parser: json
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+
+examples:
+  - title: All interfaces (JSON)
+    args: {}

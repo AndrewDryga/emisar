@@ -1,0 +1,29 @@
+schema_version: 1
+id: systemd.unit_unmask
+title: systemctl unmask <unit>
+kind: exec
+risk: medium
+description: Undo `mask` for one unit. The unit can be started again.
+side_effects:
+  - Unit no longer masked.
+  - Unit not started — explicit start still needed.
+args:
+  - name: unit
+    type: string
+    required: true
+    description: Unit name.
+    validation:
+      pattern: "^[a-zA-Z0-9@_\\-.]{1,128}$"
+execution:
+  command:
+    binary: /usr/bin/systemctl
+    argv: ["unmask", "{{ args.unit }}"]
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Unmask a unit
+    args:
+      unit: "snapd.service"

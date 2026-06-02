@@ -1,0 +1,22 @@
+schema_version: 1
+id: time.timedatectl
+title: timedatectl status
+kind: exec
+risk: low
+description: 'Current time, timezone, NTP-active state, RTC sync state.'
+side_effects:
+  - One systemd-timesyncd query.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /usr/bin/timedatectl
+    argv: ["status"]
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Time + sync state
+    args: {}

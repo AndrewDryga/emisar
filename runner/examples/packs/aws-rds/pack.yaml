@@ -1,0 +1,24 @@
+schema_version: 1
+id: aws-rds
+name: AWS RDS operations
+version: 0.1.0
+description: >
+  RDS instance + cluster inventory, parameter groups, snapshots, plus
+  narrow operator actions (reboot, create-snapshot). Auth via AWS_PROFILE.
+  Does NOT include delete-instance/delete-cluster.
+vendor: emisar
+homepage: https://github.com/andrewdryga/emisar
+
+requires:
+  os: [linux]
+  binaries: [aws]
+
+actions:
+  - actions/list_instances.yaml
+  - actions/describe_instance.yaml
+  - actions/list_clusters.yaml
+  - actions/describe_cluster.yaml
+  - actions/list_snapshots.yaml
+  - actions/parameter_groups.yaml
+  - actions/create_snapshot.yaml
+  - actions/reboot_instance.yaml

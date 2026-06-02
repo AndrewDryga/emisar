@@ -1,0 +1,24 @@
+schema_version: 1
+id: kafka.reassign_status
+title: Partition reassignment status
+kind: exec
+risk: low
+description: Status of any in-flight partition reassignments.
+side_effects:
+  - One admin request.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "kafka-reassign-partitions.sh '--bootstrap-server' \"$KAFKA_BOOTSTRAP\" '--list'"
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 32768
+  max_stderr_bytes: 8192
+examples:
+  - title: Reassignments in flight
+    args: {}

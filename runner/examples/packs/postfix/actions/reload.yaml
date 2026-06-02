@@ -1,0 +1,24 @@
+schema_version: 1
+id: postfix.reload
+title: postfix reload
+kind: exec
+risk: medium
+description: >
+  Tell Postfix to re-read main.cf and master.cf. Existing deliveries
+  finish on the old config; new ones use the new. No downtime.
+side_effects:
+  - Config re-read.
+  - In-flight deliveries unaffected.
+args: []
+execution:
+  command:
+    binary: /usr/sbin/postfix
+    argv: ["reload"]
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Reload config
+    args: {}

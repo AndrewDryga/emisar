@@ -1,0 +1,29 @@
+schema_version: 1
+id: net.dig_reverse
+title: dig -x (reverse DNS)
+kind: exec
+risk: low
+description: '`dig -x <ip>` — reverse PTR lookup for an IPv4 or IPv6 address.'
+side_effects:
+  - One DNS query.
+  - Read-only.
+args:
+  - name: ip
+    type: string
+    required: true
+    description: IPv4 or IPv6 address.
+    validation:
+      pattern: "^[0-9a-fA-F.:]{1,45}$"
+execution:
+  command:
+    binary: /usr/bin/dig
+    argv: ["-x", "{{ args.ip }}"]
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 8192
+examples:
+  - title: PTR for 8.8.8.8
+    args:
+      ip: "8.8.8.8"

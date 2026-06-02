@@ -1,0 +1,33 @@
+schema_version: 1
+id: net.ipinfo_lookup
+title: ipinfo (geo + ASN for an IP)
+kind: exec
+risk: low
+description: Looks up an IP at ipinfo.io. Returns city/region/country/org/asn. Outbound HTTP to ipinfo.io required.
+side_effects:
+  - One HTTPS query to ipinfo.io.
+  - Read-only.
+args:
+  - name: ip
+    type: string
+    required: true
+    description: IPv4 or IPv6.
+    validation:
+      pattern: "^[0-9a-fA-F.:]{1,45}$"
+execution:
+  command:
+    binary: /usr/bin/curl
+    argv:
+      - "-sfL"
+      - "--max-time"
+      - "10"
+      - "https://ipinfo.io/{{ args.ip }}/json"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Lookup 1.1.1.1
+    args:
+      ip: "1.1.1.1"

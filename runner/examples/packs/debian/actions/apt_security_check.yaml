@@ -1,0 +1,35 @@
+schema_version: 1
+
+id: debian.apt_security_check
+title: Pending security upgrades
+kind: exec
+risk: low
+
+description: >
+  Lists upgradable packages whose origin matches the security archive
+  (`-security`). Read-only. Use as a one-shot patch-posture check.
+  Requires `unattended-upgrades` or at minimum the security source
+  enabled in /etc/apt/sources.list.
+
+side_effects:
+  - Reads /var/lib/apt/lists.
+  - Briefly takes a shared apt lock.
+
+args: []
+
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "apt list --upgradable 2>/dev/null | grep -E '\\-security|security\\.(debian|ubuntu)' || echo 'no pending security upgrades'"
+  timeout: 60s
+
+output:
+  parser: text
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 16384
+
+examples:
+  - title: Are there security patches pending?
+    args: {}

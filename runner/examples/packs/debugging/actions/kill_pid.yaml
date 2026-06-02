@@ -1,0 +1,53 @@
+schema_version: 1
+id: debugging.kill_pid
+title: kill -<signal> <pid>
+kind: exec
+risk: high
+description: >
+  Send a signal to one process by PID. SIGTERM is the polite default
+  — the process gets a chance to flush state. SIGKILL is unrecoverable
+  — use only when SIGTERM is ignored. Watch for PID reuse: confirm
+  the target via `pid_status` first.
+side_effects:
+  - Signal delivered.
+  - SIGTERM, SIGINT, SIGHUP allow cleanup.
+  - SIGKILL terminates immediately; open files closed by kernel; pid may be reused.
+args:
+  - name: pid
+    type: integer
+    required: true
+    description: Process ID.
+    validation:
+      min: 2
+      max: 4194304
+  - name: signal
+    type: string
+    required: false
+    default: SIGTERM
+    description: Signal name.
+    validation:
+      enum:
+        - SIGTERM
+        - SIGINT
+        - SIGHUP
+        - SIGKILL
+        - SIGUSR1
+        - SIGUSR2
+        - SIGQUIT
+execution:
+  command:
+    binary: /bin/kill
+    argv: ["-s", "{{ args.signal }}", "{{ args.pid }}"]
+  timeout: 10s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Graceful term
+    args:
+      pid: 12345
+  - title: Force kill
+    args:
+      pid: 12345
+      signal: SIGKILL

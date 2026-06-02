@@ -1,0 +1,44 @@
+schema_version: 1
+id: gh.pr_view
+title: gh pr view
+kind: exec
+risk: low
+description: Details for one PR — title, body, status, reviews, checks.
+side_effects:
+  - One API call.
+  - Read-only.
+args:
+  - name: repo
+    type: string
+    required: true
+    description: 'Repo in owner/name form.'
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{1,40}/[a-zA-Z0-9_.\\-]{1,100}$"
+  - name: pr
+    type: integer
+    required: true
+    description: PR number.
+    validation:
+      min: 1
+      max: 9999999
+execution:
+  command:
+    binary: gh
+    argv:
+      - "pr"
+      - "view"
+      - "{{ args.pr }}"
+      - "--repo"
+      - "{{ args.repo }}"
+      - "--json"
+      - "number,title,body,state,author,createdAt,mergedAt,reviewDecision,statusCheckRollup"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: One PR
+    args:
+      repo: "andrewdryga/emisar"
+      pr: 1

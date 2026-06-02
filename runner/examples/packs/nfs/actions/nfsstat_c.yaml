@@ -1,0 +1,18 @@
+schema_version: 1
+id: nfs.nfsstat_c
+title: nfsstat -c (client)
+kind: exec
+risk: low
+description: Client-side RPC + NFS op counts.
+side_effects: ["One nfsstat call.", "Read-only."]
+args: []
+execution:
+  command: {binary: /usr/sbin/nfsstat, argv: ["-c"]}
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Client stats
+    args: {}

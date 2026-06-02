@@ -1,0 +1,20 @@
+schema_version: 1
+id: rds.list_instances
+title: aws rds describe-db-instances
+kind: exec
+risk: low
+description: All RDS instances with class, engine, status.
+side_effects: ["One API call.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: aws
+    argv: ["rds", "describe-db-instances", "--output", "json"]
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 4194304
+  max_stderr_bytes: 8192
+examples:
+  - title: All instances
+    args: {}

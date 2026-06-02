@@ -1,0 +1,79 @@
+schema_version: 1
+
+id: consul
+name: HashiCorp Consul operations
+version: 0.2.0
+description: >
+  Deep Consul ops — agent self/metrics/host introspection, operator
+  raft + autopilot + reload, catalog (services + nodes + datacenters),
+  health (passing/warning/critical) with force-pass/fail/warn check
+  mutators, KV (get/list/recursive), ACL tokens/policies/roles, Connect
+  mesh (CA roots, intentions), sessions, prepared queries, snapshots
+  (save/inspect/restore), and narrow operator actions (deregister,
+  maintenance, raft remove-peer). Auth via CONSUL_HTTP_ADDR +
+  CONSUL_HTTP_TOKEN env vars.
+vendor: emisar
+homepage: https://github.com/andrewdryga/emisar
+
+requires:
+  os:
+    - linux
+  binaries:
+    - consul
+    - curl
+
+actions:
+  # Agent / cluster
+  - actions/members.yaml
+  - actions/leader.yaml
+  - actions/raft_peers.yaml
+  - actions/agent_self.yaml
+  - actions/agent_metrics.yaml
+  - actions/agent_host_info.yaml
+  - actions/autopilot_state.yaml
+  - actions/raft_remove_peer.yaml
+  - actions/reload.yaml
+  # Catalog
+  - actions/list_services.yaml
+  - actions/catalog_service.yaml
+  - actions/list_nodes.yaml
+  - actions/node_services.yaml
+  - actions/catalog_datacenters.yaml
+  # Services / health
+  - actions/service_health.yaml
+  - actions/service_passing_only.yaml
+  - actions/agent_services.yaml
+  - actions/agent_checks.yaml
+  - actions/node_health.yaml
+  - actions/list_checks_critical.yaml
+  - actions/list_checks_warning.yaml
+  - actions/force_check_pass.yaml
+  - actions/force_check_fail.yaml
+  - actions/force_check_warn.yaml
+  # KV
+  - actions/kv_list.yaml
+  - actions/kv_get.yaml
+  - actions/kv_get_recursive.yaml
+  # ACL
+  - actions/list_acl_tokens.yaml
+  - actions/list_acl_policies.yaml
+  - actions/list_acl_roles.yaml
+  - actions/acl_token_self.yaml
+  # Connect / mesh
+  - actions/connect_ca_roots.yaml
+  - actions/connect_ca_configuration.yaml
+  - actions/intentions_list.yaml
+  - actions/intentions_match.yaml
+  # Sessions
+  - actions/list_sessions.yaml
+  - actions/destroy_session.yaml
+  # Snapshots
+  - actions/snapshot_save.yaml
+  - actions/snapshot_inspect.yaml
+  - actions/snapshot_restore.yaml
+  # Prepared queries
+  - actions/prepared_queries_list.yaml
+  # Operator-tier (mutators)
+  - actions/node_maintenance.yaml
+  - actions/service_maintenance.yaml
+  - actions/deregister_service.yaml

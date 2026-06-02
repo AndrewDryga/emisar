@@ -1,0 +1,39 @@
+schema_version: 1
+id: rmq.close_connection
+title: rabbitmqctl close_connection
+kind: exec
+risk: high
+description: Forcibly closes one AMQP connection. Whatever client owned it must reconnect.
+side_effects:
+  - Connection is dropped with the given reason.
+  - In-flight unacked messages on its channels go back to the queue.
+args:
+  - name: pid
+    type: string
+    required: true
+    description: Connection PID (from list_connections).
+    validation:
+      pattern: "^<[0-9.]+>$"
+  - name: reason
+    type: string
+    required: false
+    default: "Closed by operator"
+    description: Reason string.
+    validation:
+      pattern: "^.{1,255}$"
+execution:
+  command:
+    binary: rabbitmqctl
+    argv:
+      - "close_connection"
+      - "{{ args.pid }}"
+      - "{{ args.reason }}"
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Drop a stuck conn
+    args:
+      pid: "<rabbit@host.1.123.0>"

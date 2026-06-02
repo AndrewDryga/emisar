@@ -1,0 +1,29 @@
+schema_version: 1
+id: cassandra.cqlsh_describe_keyspace
+title: cqlsh -e "DESCRIBE KEYSPACE <ks>"
+kind: exec
+risk: low
+description: Full DDL for one keyspace (tables, types, indexes, materialized views).
+side_effects: ["One CQL query.", "Read-only."]
+args:
+  - name: keyspace
+    type: string
+    required: true
+    description: Keyspace.
+    validation:
+      pattern: "^[a-zA-Z][a-zA-Z0-9_]{0,47}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "cqlsh -e 'DESCRIBE KEYSPACE {{ args.keyspace }};' \"${CQLSH_HOST:-127.0.0.1}\" \"${CQLSH_PORT:-9042}\""
+  timeout: 60s
+output:
+  parser: text
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: One keyspace DDL
+    args:
+      keyspace: "my_ks"

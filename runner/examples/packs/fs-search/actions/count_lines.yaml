@@ -1,0 +1,31 @@
+schema_version: 1
+id: fs.count_lines
+title: wc -l <file>
+kind: exec
+risk: low
+description: Line count of one file.
+side_effects:
+  - One read of the file.
+  - Read-only.
+args:
+  - name: path
+    type: string
+    required: true
+    description: File path.
+    validation:
+      pattern: "^/[a-zA-Z0-9_./\\-]{0,512}$"
+execution:
+  command:
+    binary: /usr/bin/wc
+    argv:
+      - "-l"
+      - "{{ args.path }}"
+  timeout: 60s
+output:
+  parser: text
+  max_stdout_bytes: 1024
+  max_stderr_bytes: 8192
+examples:
+  - title: Line count of syslog
+    args:
+      path: "/var/log/syslog"

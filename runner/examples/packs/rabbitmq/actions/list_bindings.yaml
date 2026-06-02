@@ -1,0 +1,23 @@
+schema_version: 1
+id: rmq.list_bindings
+title: rabbitmqctl list_bindings
+kind: exec
+risk: low
+description: All bindings between exchanges and queues.
+side_effects:
+  - One CLI call.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: rabbitmqctl
+    argv:
+      - "list_bindings"
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 131072
+  max_stderr_bytes: 8192
+examples:
+  - title: Bindings
+    args: {}

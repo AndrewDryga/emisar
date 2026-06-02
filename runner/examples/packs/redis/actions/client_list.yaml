@@ -1,0 +1,35 @@
+schema_version: 1
+
+id: redis.client_list
+title: CLIENT LIST
+kind: exec
+risk: low
+
+description: >
+  Returns every connected client with id, addr, name, age, idle, db,
+  sub, psub, multi, qbuf, obl, oll, omem, cmd, fd. Use to find the
+  client holding a long subscription, a runaway pipeline (large omem),
+  or to identify candidate connections for CLIENT KILL.
+
+side_effects:
+  - Issues one CLIENT LIST command.
+  - No keys read or written.
+
+args: []
+
+execution:
+  command:
+    binary: /usr/bin/redis-cli
+    argv:
+      - "CLIENT"
+      - "LIST"
+  timeout: 15s
+
+output:
+  parser: text
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+
+examples:
+  - title: List all connected clients
+    args: {}

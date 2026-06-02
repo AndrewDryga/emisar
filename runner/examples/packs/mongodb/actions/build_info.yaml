@@ -1,0 +1,24 @@
+schema_version: 1
+id: mongo.build_info
+title: buildInfo
+kind: exec
+risk: low
+description: Server version + build flags.
+side_effects:
+  - One buildInfo command.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "mongosh \"$MONGO_URI\" '--quiet' '--eval' 'JSON.stringify(db.adminCommand({buildInfo:1}))'"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Build info
+    args: {}

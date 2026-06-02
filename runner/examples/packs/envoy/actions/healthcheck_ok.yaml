@@ -1,0 +1,31 @@
+schema_version: 1
+id: envoy.healthcheck_ok
+title: POST /healthcheck/ok
+kind: exec
+risk: medium
+description: >
+  Mark Envoy healthy again. Reverses healthcheck_fail. Load balancer
+  starts sending traffic again on the next health check.
+side_effects:
+  - Envoy reports healthy on /healthcheck.
+  - Upstream LB begins routing traffic back.
+args:
+  - name: admin
+    type: string
+    required: false
+    default: "http://localhost:9901"
+    description: Envoy admin URL.
+    validation:
+      pattern: "^https?://[a-zA-Z0-9._:\\-]{1,253}(:[0-9]{1,5})?$"
+execution:
+  command:
+    binary: /usr/bin/curl
+    argv: ["-sSfX", "POST", "{{ args.admin }}/healthcheck/ok"]
+  timeout: 10s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Return instance to rotation
+    args: {}

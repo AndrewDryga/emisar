@@ -1,0 +1,25 @@
+schema_version: 1
+
+id: time-sync
+name: Time sync diagnostics
+version: 0.1.0
+description: >
+  Clock-sync state: chrony tracking + sources, NTP peer status, current
+  time, drift estimate, timezone, plus fix actions (chronyc makestep,
+  enable/disable NTP). Use when a host's clock is drifting (a common
+  cause of TLS / auth / log-correlation bugs).
+vendor: emisar
+homepage: https://github.com/andrewdryga/emisar
+
+requires:
+  os:
+    - linux
+
+actions:
+  - actions/timedatectl.yaml
+  - actions/chrony_tracking.yaml
+  - actions/chrony_sources.yaml
+  - actions/ntpq_peers.yaml
+  - actions/date_now.yaml
+  - actions/chronyc_makestep.yaml
+  - actions/timedatectl_set_ntp.yaml

@@ -1,0 +1,44 @@
+schema_version: 1
+
+id: nginx.status
+title: Nginx stub_status
+kind: exec
+risk: low
+
+description: >
+  Fetches the nginx stub_status endpoint over localhost. Returns
+  active connections, total requests, reading/writing/waiting counts.
+  Requires `stub_status on;` in a location block reachable from
+  127.0.0.1. Read-only.
+
+side_effects:
+  - One curl to localhost.
+  - Read-only.
+
+args:
+  - name: url
+    type: string
+    required: false
+    default: "http://127.0.0.1/nginx_status"
+    description: stub_status URL on the runner host.
+    validation:
+      pattern: "^https?://[a-zA-Z0-9.:/_\\-]+$"
+
+execution:
+  command:
+    binary: /usr/bin/curl
+    argv:
+      - "-fsS"
+      - "--max-time"
+      - "5"
+      - "{{ args.url }}"
+  timeout: 10s
+
+output:
+  parser: text
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 8192
+
+examples:
+  - title: Stub_status from default URL
+    args: {}

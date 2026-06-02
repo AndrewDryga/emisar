@@ -1,0 +1,33 @@
+schema_version: 1
+
+id: debugging.netstat_listen
+title: Listening sockets
+kind: exec
+risk: low
+
+description: >
+  Returns TCP and UDP listening sockets with the owning process
+  (`ss -tulnp`). Use to confirm whether an expected daemon is actually
+  bound and on which interfaces. Read-only.
+
+side_effects:
+  - One ss invocation.
+  - Read-only.
+
+args: []
+
+execution:
+  command:
+    binary: /usr/bin/ss
+    argv:
+      - "-tulnp"
+  timeout: 10s
+
+output:
+  parser: text
+  max_stdout_bytes: 131072
+  max_stderr_bytes: 8192
+
+examples:
+  - title: What's listening on this host?
+    args: {}

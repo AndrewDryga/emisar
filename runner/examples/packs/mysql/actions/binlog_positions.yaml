@@ -1,0 +1,24 @@
+schema_version: 1
+id: mysql.binlog_positions
+title: Binary log files
+kind: exec
+risk: low
+description: '`SHOW BINARY LOGS` — every binlog file with its size. Use to plan binlog disk pressure.'
+side_effects:
+  - One SHOW BINARY LOGS.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /usr/bin/mysql
+    argv:
+      - "-e"
+      - "SHOW BINARY LOGS"
+  timeout: 10s
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Binlogs
+    args: {}

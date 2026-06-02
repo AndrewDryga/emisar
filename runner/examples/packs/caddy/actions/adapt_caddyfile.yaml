@@ -1,0 +1,27 @@
+schema_version: 1
+id: caddy.adapt_caddyfile
+title: caddy adapt --config <file>
+kind: exec
+risk: low
+description: Converts a Caddyfile to JSON config without loading it.
+side_effects: ["One forked process.", "Read-only."]
+args:
+  - name: file
+    type: string
+    required: false
+    default: "/etc/caddy/Caddyfile"
+    description: Caddyfile path.
+    validation:
+      pattern: "^/[a-zA-Z0-9_./\\-]{1,512}$"
+execution:
+  command:
+    binary: /usr/bin/caddy
+    argv: ["adapt", "--config", "{{ args.file }}", "--pretty"]
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 2097152
+  max_stderr_bytes: 16384
+examples:
+  - title: Adapt the default Caddyfile
+    args: {}

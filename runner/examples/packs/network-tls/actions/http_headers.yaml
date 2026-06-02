@@ -1,0 +1,33 @@
+schema_version: 1
+id: net.http_headers
+title: HTTP response headers (curl -I)
+kind: exec
+risk: low
+description: Dumps response headers from a URL, following redirects. Use to confirm cache-control / hsts / set-cookie / cors setup.
+side_effects:
+  - One curl HEAD request.
+  - Read-only.
+args:
+  - name: url
+    type: string
+    required: true
+    description: URL.
+    validation:
+      pattern: "^https?://[a-zA-Z0-9.:/_\\-?=&%+]{1,512}$"
+execution:
+  command:
+    binary: /usr/bin/curl
+    argv:
+      - "-sIL"
+      - "--max-time"
+      - "10"
+      - "{{ args.url }}"
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Headers for example.com
+    args:
+      url: "https://example.com/"

@@ -1,0 +1,25 @@
+schema_version: 1
+id: f2b.jail_status
+title: fail2ban-client status <jail>
+kind: exec
+risk: low
+description: One jail's filter + actions + currently banned counts.
+side_effects: ["One fail2ban call.", "Read-only."]
+args:
+  - name: jail
+    type: string
+    required: true
+    description: Jail name.
+    validation:
+      pattern: "^[a-zA-Z0-9_\\-]{1,64}$"
+execution:
+  command: {binary: /usr/bin/fail2ban-client, argv: ["status", "{{ args.jail }}"]}
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: sshd jail
+    args:
+      jail: "sshd"

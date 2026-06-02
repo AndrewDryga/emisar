@@ -1,0 +1,37 @@
+schema_version: 1
+
+id: postgres.replication_lag
+title: Replication lag (primary view)
+kind: exec
+risk: low
+
+description: >
+  Reports replication slot health from the primary's perspective.
+  Surfaces sent/write/flush/replay LSNs plus the lag in bytes per
+  replica. Run on the primary. Read-only. A lag >10 MB or a stalled
+  flush_lsn is the usual signal that a downstream replica is in
+  trouble.
+
+side_effects:
+  - One SELECT against pg_stat_replication.
+  - No locks held.
+
+args: []
+
+execution:
+  command:
+    binary: /usr/bin/psql
+    argv:
+      - "-XAt"
+      - "-c"
+      - "SELECT application_name, client_addr, state, sync_state, pg_wal_lsn_diff(pg_current_wal_lsn(), sent_lsn) AS sent_lag, pg_wal_lsn_diff(pg_current_wal_lsn(), replay_lsn) AS replay_lag FROM pg_stat_replication ORDER BY application_name;"
+  timeout: 10s
+
+output:
+  parser: text
+  max_stdout_bytes: 32768
+  max_stderr_bytes: 8192
+
+examples:
+  - title: How far behind are my replicas?
+    args: {}

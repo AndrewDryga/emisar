@@ -1,0 +1,45 @@
+schema_version: 1
+id: gh.pr_merge
+title: gh pr merge <num> --<method>
+kind: exec
+risk: high
+description: >
+  Merge an open PR. Squash, merge-commit, or rebase. Branch protection
+  rules still apply — required checks/approvals must be satisfied or
+  the merge is rejected. Use --auto in the GH UI for "merge when ready"
+  instead; this action commits NOW.
+side_effects:
+  - PR merged into the base branch.
+  - main/master CI pipeline likely triggers.
+  - PR branch may be auto-deleted depending on repo settings.
+args:
+  - name: pr
+    type: integer
+    required: true
+    description: PR number.
+    validation:
+      min: 1
+      max: 9999999
+  - name: method
+    type: string
+    required: false
+    default: squash
+    description: Merge method.
+    validation:
+      enum:
+        - squash
+        - merge
+        - rebase
+execution:
+  command:
+    binary: /usr/bin/gh
+    argv: ["pr", "merge", "{{ args.pr }}", "--{{ args.method }}"]
+  timeout: 60s
+output:
+  parser: text
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 16384
+examples:
+  - title: Squash-merge PR 1234
+    args:
+      pr: 1234

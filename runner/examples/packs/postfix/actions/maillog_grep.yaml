@@ -1,0 +1,31 @@
+schema_version: 1
+id: postfix.maillog_grep
+title: grep mail.log for queue-id / address
+kind: exec
+risk: low
+description: All mail-log entries matching a string.
+side_effects: ["One file read.", "Read-only."]
+args:
+  - name: pattern
+    type: string
+    required: true
+    description: Literal match.
+    validation:
+      pattern: "^[a-zA-Z0-9_.@\\-]{1,128}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "grep -F \"$P\" /var/log/mail.log 2>/dev/null | head -2000 || grep -F \"$P\" /var/log/maillog | head -2000"
+  env:
+    P: "{{ args.pattern }}"
+  timeout: 60s
+output:
+  parser: text
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: Trace one recipient
+    args:
+      pattern: "user@example.com"

@@ -1,0 +1,36 @@
+defaults:
+  env: {}
+cases:
+- action: httpd.access_top_clients
+  args: {}
+  expect_exit: 0
+- action: httpd.access_top_urls
+  args: {}
+  expect_exit: 0
+- action: httpd.error_tail
+  args: {}
+  expect_exit: 0
+- action: httpd.graceful_reload
+  args: {}
+  expect_exit: 0
+- action: httpd.graceful_stop
+  args: {}
+  expect_exit:
+  - 0
+  - 1
+  skip: mutator skipped by default (critical)
+- action: httpd.modules
+  args: {}
+  expect_exit: 0
+- action: httpd.status
+  args: {}
+  expect_exit: 0
+- action: httpd.test_config
+  args: {}
+  expect_exit: 0
+- action: httpd.version
+  args: {}
+  expect_exit: 0
+- action: httpd.vhosts
+  args: {}
+  expect_exit: 0

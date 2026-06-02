@@ -1,0 +1,22 @@
+schema_version: 1
+id: nomad.node_eligibility_show
+title: Nodes with eligibility != eligible
+kind: exec
+risk: low
+description: Nodes that are ineligible for new allocations (drained or manually disabled).
+side_effects: ["One API call.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "nomad node status -json | grep -E '\"Name\"|\"SchedulingEligibility\"|\"Drain\"' | head -200"
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Ineligible nodes
+    args: {}

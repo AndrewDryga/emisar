@@ -1,0 +1,31 @@
+schema_version: 1
+id: es.index_stats
+title: GET /<index>/_stats
+kind: exec
+risk: low
+description: Index-level stats — docs, store, indexing/search rates, fielddata.
+side_effects:
+  - One GET request.
+  - Read-only.
+args:
+  - name: index
+    type: string
+    required: true
+    description: Index name.
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{1,255}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "curl -sS -u \"$ELASTIC_USER:$ELASTIC_PASSWORD\" \"$ELASTIC_URL/{{ args.index }}/_stats?pretty\""
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 131072
+  max_stderr_bytes: 8192
+examples:
+  - title: Stats for one index
+    args:
+      index: "logs-2026-06-01"

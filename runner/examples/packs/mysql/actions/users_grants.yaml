@@ -1,0 +1,24 @@
+schema_version: 1
+id: mysql.users_grants
+title: List users + grants summary
+kind: exec
+risk: low
+description: User + host pairs from mysql.user. Doesn't dump grants (volume) — use for audit "who has accounts?"
+side_effects:
+  - One SELECT mysql.user.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /usr/bin/mysql
+    argv:
+      - "-e"
+      - "SELECT user, host, plugin, account_locked, password_last_changed FROM mysql.user ORDER BY user, host"
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: All users
+    args: {}

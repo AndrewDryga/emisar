@@ -1,0 +1,29 @@
+schema_version: 1
+id: postfix.delete_qid
+title: postsuper -d <queue-id>
+kind: exec
+risk: critical
+description: Deletes one queued message. Permanent — message is lost.
+side_effects:
+  - Message is removed from the queue.
+  - Sender is NOT notified.
+args:
+  - name: queue_id
+    type: string
+    required: true
+    description: Queue ID.
+    validation:
+      pattern: "^[A-F0-9]{6,20}$"
+execution:
+  command:
+    binary: /usr/sbin/postsuper
+    argv: ["-d", "{{ args.queue_id }}"]
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Drop one stuck message
+    args:
+      queue_id: "3F7A8C001234"

@@ -1,0 +1,33 @@
+schema_version: 1
+id: consul.deregister_service
+title: consul services deregister
+kind: exec
+risk: high
+description: Removes one service registration from this agent.
+side_effects:
+  - Service immediately disappears from discovery on this node.
+  - Other nodes' registrations are unaffected.
+args:
+  - name: service_id
+    type: string
+    required: true
+    description: Service ID (not name).
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-:]{1,128}$"
+execution:
+  command:
+    binary: consul
+    argv:
+      - "services"
+      - "deregister"
+      - "-id"
+      - "{{ args.service_id }}"
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Drop one
+    args:
+      service_id: "api-1"

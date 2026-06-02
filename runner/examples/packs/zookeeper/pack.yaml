@@ -1,0 +1,24 @@
+schema_version: 1
+id: zookeeper
+name: ZooKeeper operations
+version: 0.1.0
+description: >
+  Cluster + 4lw command + watch + session introspection. Read-only. Set
+  ZK_SERVERS env var (host:port,host:port,…). All four-letter words need
+  to be in zoo.cfg's `4lw.commands.whitelist`.
+vendor: emisar
+homepage: https://github.com/andrewdryga/emisar
+
+requires:
+  os: [linux]
+  binaries: [nc]
+
+actions:
+  - actions/srvr.yaml
+  - actions/stat.yaml
+  - actions/conf.yaml
+  - actions/cons.yaml
+  - actions/wchs.yaml
+  - actions/ruok.yaml
+  - actions/mntr.yaml
+  - actions/envi.yaml

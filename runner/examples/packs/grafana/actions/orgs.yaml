@@ -1,0 +1,22 @@
+schema_version: 1
+id: grafana.orgs
+title: GET /api/orgs
+kind: exec
+risk: low
+description: All orgs (multi-tenant view).
+side_effects: ["One API call.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "curl -sS -H \"Authorization: Bearer $GRAFANA_TOKEN\" \"$GRAFANA_URL/api/orgs\""
+  timeout: 15s
+output:
+  parser: json
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Orgs
+    args: {}

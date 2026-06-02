@@ -1,0 +1,35 @@
+schema_version: 1
+id: jvm.jcmd_gc_run
+title: jcmd <pid> GC.run
+kind: exec
+risk: medium
+description: >
+  Trigger a full GC. Use to compare heap usage before/after, or to
+  force collection ahead of a heap dump for cleaner output. Causes
+  a pause whose length depends on heap size + collector tuning.
+side_effects:
+  - Full GC runs.
+  - Pause of seconds on large heaps.
+  - Latency spike during the pause.
+args:
+  - name: pid
+    type: integer
+    required: true
+    description: JVM PID.
+    validation:
+      min: 2
+      max: 4194304
+execution:
+  command:
+    binary: /usr/bin/jcmd
+    argv: ["{{ args.pid }}", "GC.run"]
+  timeout: 60s
+cancel_grace: 30s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Force GC on a JVM
+    args:
+      pid: 12345

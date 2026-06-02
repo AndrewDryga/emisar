@@ -1,0 +1,40 @@
+schema_version: 1
+
+id: java-jvm
+name: JVM introspection
+version: 0.1.0
+description: >
+  JVM diagnostics via jcmd/jstack/jmap/jstat/JFR. Requires runner uid
+  to match the JVM process owner (or CAP_SYS_PTRACE) — actions return
+  a permission error cleanly when uid doesn't match.
+vendor: emisar
+homepage: https://github.com/andrewdryga/emisar
+
+requires:
+  os:
+    - linux
+  binaries:
+    - jcmd
+
+actions:
+  # VM info (jcmd VM.*)
+  - actions/vm_flags.yaml
+  - actions/vm_uptime.yaml
+  - actions/vm_system_properties.yaml
+  - actions/perfdata.yaml
+  # Threads
+  - actions/jstack.yaml
+  - actions/jstack_blocked.yaml
+  - actions/thread_count.yaml
+  # Heap (jmap)
+  - actions/jmap_heap_summary.yaml
+  - actions/jmap_histo_live.yaml
+  - actions/heap_dump.yaml
+  # GC (jstat + jcmd)
+  - actions/jstat_gc.yaml
+  - actions/jstat_class.yaml
+  - actions/jcmd_gc_run.yaml
+  # JFR
+  - actions/jfr_start.yaml
+  - actions/jfr_dump.yaml
+  - actions/jfr_stop.yaml

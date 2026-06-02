@@ -1,0 +1,24 @@
+schema_version: 1
+id: httpd.status
+title: mod_status snapshot
+kind: exec
+risk: low
+description: Snapshot of mod_status (requires mod_status enabled). Set HTTPD_STATUS_URL env var.
+side_effects:
+  - One HTTP GET to mod_status.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "curl -sS \"${HTTPD_STATUS_URL:-http://127.0.0.1/server-status?auto}\""
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 32768
+  max_stderr_bytes: 8192
+examples:
+  - title: Status
+    args: {}

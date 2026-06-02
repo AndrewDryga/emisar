@@ -1,0 +1,24 @@
+schema_version: 1
+id: tf.providers
+title: terraform providers
+kind: exec
+risk: low
+description: All providers declared in the workspace + their constraints.
+side_effects:
+  - Forks terraform.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "cd \"$TF_DIR\" && terraform providers"
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Providers
+    args: {}

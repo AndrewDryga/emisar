@@ -1,0 +1,27 @@
+schema_version: 1
+id: nomad.node_drain_done
+title: nomad node drain -disable
+kind: exec
+risk: medium
+description: Disables drain on one node. The node becomes eligible again (assuming eligibility wasn't separately disabled).
+side_effects:
+  - Drain mode disabled.
+  - Node may immediately receive new allocations.
+args:
+  - name: node_id
+    type: string
+    required: true
+    description: Node ID or prefix.
+    validation:
+      pattern: "^[a-fA-F0-9\\-]{4,36}$"
+execution:
+  command: {binary: /usr/bin/nomad, argv: ["node", "drain", "-disable", "-yes", "{{ args.node_id }}"]}
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: End drain
+    args:
+      node_id: "abc12345"

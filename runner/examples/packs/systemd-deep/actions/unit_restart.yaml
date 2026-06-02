@@ -1,0 +1,35 @@
+schema_version: 1
+id: systemd.unit_restart
+title: systemctl restart <unit>
+kind: exec
+risk: high
+description: >
+  Stop then start one unit. The service is unavailable during the
+  gap (typically <1s for healthy services, much longer if it has
+  a long shutdown). Workload-bearing units mean a real outage —
+  prefer reload when supported.
+side_effects:
+  - Service stopped then started.
+  - In-flight requests/connections terminated mid-restart.
+  - PID changes; any reverse-proxy or supervisor must re-resolve.
+args:
+  - name: unit
+    type: string
+    required: true
+    description: Unit name (e.g., nginx.service).
+    validation:
+      pattern: "^[a-zA-Z0-9@_\\-.]{1,128}$"
+execution:
+  command:
+    binary: /usr/bin/systemctl
+    argv: ["restart", "{{ args.unit }}"]
+  timeout: 120s
+cancel_grace: 30s
+output:
+  parser: text
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 8192
+examples:
+  - title: Restart nginx
+    args:
+      unit: "nginx.service"

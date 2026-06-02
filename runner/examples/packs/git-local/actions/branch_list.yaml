@@ -1,0 +1,24 @@
+schema_version: 1
+id: git.branch_list
+title: git branch -av
+kind: exec
+risk: low
+description: All branches (local + remote-tracking) with last commit.
+side_effects:
+  - One git branch.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "cd \"$GIT_REPO\" && git branch -av"
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 131072
+  max_stderr_bytes: 8192
+examples:
+  - title: All branches
+    args: {}

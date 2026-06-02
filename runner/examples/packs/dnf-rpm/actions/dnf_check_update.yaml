@@ -1,0 +1,18 @@
+schema_version: 1
+id: rpm.dnf_check_update
+title: dnf check-update
+kind: exec
+risk: low
+description: Available updates. Exits 100 if updates available — non-zero IS the success signal.
+side_effects: ["Refreshes metadata cache from configured repos.", "Read-only — no install."]
+args: []
+execution:
+  command: {binary: /usr/bin/dnf, argv: ["check-update"]}
+  timeout: 5m
+output:
+  parser: text
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: Updates
+    args: {}

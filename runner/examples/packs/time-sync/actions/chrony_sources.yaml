@@ -1,0 +1,22 @@
+schema_version: 1
+id: time.chrony_sources
+title: chronyc sources -v
+kind: exec
+risk: low
+description: NTP sources + reach + stratum + offset.
+side_effects:
+  - One chrony query.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /usr/bin/chronyc
+    argv: ["sources", "-v"]
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Chrony sources
+    args: {}

@@ -1,0 +1,32 @@
+schema_version: 1
+id: wg.quick_down
+title: wg-quick down <iface>
+kind: exec
+risk: high
+description: >
+  Tear down a WireGuard interface. All active sessions through it
+  drop. PostDown rules run (typically cleaning up routes/firewall).
+side_effects:
+  - Interface destroyed.
+  - All tunnel sessions terminated.
+  - Routing + firewall rules cleaned up by PostDown.
+args:
+  - name: iface
+    type: string
+    required: true
+    description: Interface name.
+    validation:
+      pattern: "^[a-zA-Z0-9_\\-]{1,15}$"
+execution:
+  command:
+    binary: /usr/bin/wg-quick
+    argv: ["down", "{{ args.iface }}"]
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 8192
+examples:
+  - title: Tear down wg0
+    args:
+      iface: "wg0"

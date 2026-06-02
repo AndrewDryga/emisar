@@ -1,0 +1,46 @@
+schema_version: 1
+id: iam.delete_access_key
+title: aws iam delete-access-key
+kind: exec
+risk: critical
+description: >
+  Permanently delete an IAM access key. Irreversible. Use after
+  rotation when the old key is no longer needed. Prefer
+  deactivate_access_key for incident response (it's reversible).
+side_effects:
+  - Access key permanently gone.
+  - Any service still using it gets a hard auth error.
+  - Cannot be recovered.
+args:
+  - name: user_name
+    type: string
+    required: true
+    description: IAM user name.
+    validation:
+      pattern: "^[a-zA-Z0-9_+=,.@\\-]{1,128}$"
+  - name: access_key_id
+    type: string
+    required: true
+    description: Access key ID.
+    validation:
+      pattern: "^[A-Z0-9]{16,128}$"
+execution:
+  command:
+    binary: /usr/local/bin/aws
+    argv:
+      - "iam"
+      - "delete-access-key"
+      - "--user-name"
+      - "{{ args.user_name }}"
+      - "--access-key-id"
+      - "{{ args.access_key_id }}"
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Delete rotated key
+    args:
+      user_name: "ci-bot"
+      access_key_id: "AKIAEXAMPLEOLDKEYID00"

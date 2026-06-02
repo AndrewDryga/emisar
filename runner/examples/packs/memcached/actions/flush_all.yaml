@@ -1,0 +1,24 @@
+schema_version: 1
+id: mc.flush_all
+title: flush_all
+kind: exec
+risk: critical
+description: Invalidates every key. Cold cache → origin load spike.
+side_effects:
+  - Every key becomes invalid immediately.
+  - First miss hits origin for every cached value.
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "printf 'flush_all\\nquit\\n' | nc -w 5 \"${MEMCACHED_HOST:-127.0.0.1}\" \"${MEMCACHED_PORT:-11211}\""
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 1024
+  max_stderr_bytes: 8192
+examples:
+  - title: Flush all
+    args: {}

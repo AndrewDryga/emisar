@@ -1,0 +1,25 @@
+schema_version: 1
+id: redis.config_resetstat
+title: CONFIG RESETSTAT
+kind: exec
+risk: low
+description: >
+  Reset INFO stats counters (commandstats, keyspace hits/misses,
+  evictions, etc.). Does NOT change keyspace data. Use to start a
+  fresh measurement window.
+side_effects:
+  - INFO counters zero.
+  - No keys read or written.
+args: []
+execution:
+  command:
+    binary: /usr/bin/redis-cli
+    argv: ["CONFIG", "RESETSTAT"]
+  timeout: 5s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Reset stats
+    args: {}

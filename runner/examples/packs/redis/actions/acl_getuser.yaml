@@ -1,0 +1,31 @@
+schema_version: 1
+id: redis.acl_getuser
+title: ACL GETUSER
+kind: exec
+risk: low
+description: >
+  Full rule listing for one ACL user — categories, commands, key
+  patterns, channel patterns, flags. Read-only.
+side_effects:
+  - One ACL GETUSER command.
+  - Read-only.
+args:
+  - name: username
+    type: string
+    required: true
+    description: ACL username.
+    validation:
+      pattern: "^[A-Za-z0-9_\\-]{1,64}$"
+execution:
+  command:
+    binary: /usr/bin/redis-cli
+    argv: ["ACL", "GETUSER", "{{ args.username }}"]
+  timeout: 10s
+output:
+  parser: text
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Inspect "metrics" user
+    args:
+      username: "metrics"

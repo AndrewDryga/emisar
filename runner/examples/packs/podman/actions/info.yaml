@@ -1,0 +1,18 @@
+schema_version: 1
+id: podman.info
+title: podman info
+kind: exec
+risk: low
+description: System + storage + network info.
+side_effects: ["One CLI call.", "Read-only."]
+args: []
+execution:
+  command: {binary: /usr/bin/podman, argv: ["info", "--format", "json"]}
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+examples:
+  - title: System info
+    args: {}

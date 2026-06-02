@@ -1,0 +1,25 @@
+schema_version: 1
+id: wg.showconf
+title: wg showconf <iface>
+kind: exec
+risk: low
+description: Effective config for one interface (peer pubkeys + allowed-ips).
+side_effects: ["One netlink query.", "Read-only — private keys may be in the output; rely on audit redaction."]
+args:
+  - name: interface
+    type: string
+    required: true
+    description: Interface name.
+    validation:
+      pattern: "^[a-zA-Z0-9_\\-]{1,15}$"
+execution:
+  command: {binary: /usr/bin/wg, argv: ["showconf", "{{ args.interface }}"]}
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: wg0 config
+    args:
+      interface: "wg0"

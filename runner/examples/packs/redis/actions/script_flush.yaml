@@ -1,0 +1,34 @@
+schema_version: 1
+id: redis.script_flush
+title: SCRIPT FLUSH
+kind: exec
+risk: medium
+description: >
+  Drop all cached EVAL scripts (server-side Lua). Clients using
+  EVAL repopulate naturally; clients using EVALSHA hit NOSCRIPT
+  until they re-cache.
+side_effects:
+  - Script cache cleared.
+  - Brief NOSCRIPT errors expected on EVALSHA callers.
+args:
+  - name: mode
+    type: string
+    required: false
+    default: ASYNC
+    description: SYNC (block) or ASYNC (return immediately).
+    validation:
+      enum:
+        - SYNC
+        - ASYNC
+execution:
+  command:
+    binary: /usr/bin/redis-cli
+    argv: ["SCRIPT", "FLUSH", "{{ args.mode }}"]
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Async script flush
+    args: {}

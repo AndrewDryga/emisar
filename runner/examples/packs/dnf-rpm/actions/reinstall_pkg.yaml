@@ -1,0 +1,33 @@
+schema_version: 1
+id: dnf.reinstall_pkg
+title: dnf reinstall -y <pkg>
+kind: exec
+risk: medium
+description: >
+  Reinstall one package to fix a corrupted on-disk state (missing
+  files, bad checksums). Same version, same config.
+side_effects:
+  - Package files restored from the repo.
+  - Marked config files (rpmnoreplace) preserved.
+  - Service may restart if scriptlets do that.
+args:
+  - name: pkg
+    type: string
+    required: true
+    description: Package name.
+    validation:
+      pattern: "^[a-zA-Z0-9_+.\\-]{1,128}$"
+execution:
+  command:
+    binary: /usr/bin/dnf
+    argv: ["reinstall", "-y", "{{ args.pkg }}"]
+  timeout: 600s
+cancel_grace: 60s
+output:
+  parser: text
+  max_stdout_bytes: 131072
+  max_stderr_bytes: 16384
+examples:
+  - title: Repair a package
+    args:
+      pkg: "httpd"

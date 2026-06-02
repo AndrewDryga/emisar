@@ -1,0 +1,35 @@
+schema_version: 1
+id: ssl.cert_fingerprint
+title: openssl x509 -fingerprint -sha256
+kind: exec
+risk: low
+description: SHA-256 fingerprint of the cert. Use for pinning checks.
+side_effects:
+  - One file read.
+  - Read-only.
+args:
+  - name: path
+    type: string
+    required: true
+    description: Cert file.
+    validation:
+      pattern: "^/[a-zA-Z0-9_./\\-]{1,512}$"
+execution:
+  command:
+    binary: /usr/bin/openssl
+    argv:
+      - "x509"
+      - "-in"
+      - "{{ args.path }}"
+      - "-noout"
+      - "-fingerprint"
+      - "-sha256"
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 1024
+  max_stderr_bytes: 8192
+examples:
+  - title: SHA-256 of cert
+    args:
+      path: "/etc/ssl/certs/server.crt"

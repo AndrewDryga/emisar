@@ -1,0 +1,25 @@
+schema_version: 1
+id: consul.snapshot_inspect
+title: consul snapshot inspect <path>
+kind: exec
+risk: low
+description: Summary of one snapshot file — size, index, KV count, ACL count.
+side_effects: ["Reads one snapshot file.", "Read-only."]
+args:
+  - name: path
+    type: string
+    required: true
+    description: Snapshot file.
+    validation:
+      pattern: "^/[a-zA-Z0-9_./\\-]{1,512}\\.snap$"
+execution:
+  command: {binary: /usr/bin/consul, argv: ["snapshot", "inspect", "{{ args.path }}"]}
+  timeout: 60s
+output:
+  parser: text
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Inspect a backup
+    args:
+      path: "/var/backups/consul-pre-migration.snap"

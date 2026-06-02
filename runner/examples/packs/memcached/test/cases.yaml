@@ -1,0 +1,29 @@
+defaults:
+  env:
+    MC_HOST: memcached
+    MC_PORT: '11211'
+cases:
+- action: mc.flush_all
+  args: {}
+  expect_exit:
+  - 0
+  - 1
+  skip: mutator skipped by default (critical)
+- action: mc.stats
+  args: {}
+  expect_exit: 0
+- action: mc.stats_items
+  args: {}
+  expect_exit: 0
+- action: mc.stats_settings
+  args: {}
+  expect_exit: 0
+- action: mc.stats_sizes
+  args: {}
+  expect_exit: 0
+- action: mc.stats_slabs
+  args: {}
+  expect_exit: 0
+- action: mc.version
+  args: {}
+  expect_exit: 0

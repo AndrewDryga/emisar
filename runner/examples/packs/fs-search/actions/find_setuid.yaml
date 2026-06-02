@@ -1,0 +1,41 @@
+schema_version: 1
+id: fs.find_setuid
+title: setuid + setgid files
+kind: exec
+risk: low
+description: Files with setuid or setgid bits. Audit for privilege escalation surface.
+side_effects:
+  - One file-system traversal.
+  - Read-only.
+args:
+  - name: path
+    type: string
+    required: false
+    default: "/"
+    description: Root path.
+    validation:
+      pattern: "^/[a-zA-Z0-9_./\\-]{0,512}$"
+execution:
+  command:
+    binary: /usr/bin/find
+    argv:
+      - "{{ args.path }}"
+      - "-xdev"
+      - "-type"
+      - "f"
+      - "("
+      - "-perm"
+      - "-4000"
+      - "-o"
+      - "-perm"
+      - "-2000"
+      - ")"
+      - "-print"
+  timeout: 5m
+output:
+  parser: text
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: setuid/setgid binaries
+    args: {}

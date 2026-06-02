@@ -1,0 +1,42 @@
+schema_version: 1
+
+id: linux.systemctl_stop
+title: Stop a systemd unit
+kind: exec
+risk: high
+
+description: >
+  `systemctl stop <unit>`. Brings a unit down. Sends SIGTERM, waits
+  for TimeoutStopSec, then SIGKILL. In-flight requests on the
+  service are dropped unless the unit handles graceful drain.
+
+side_effects:
+  - SIGTERMs (then SIGKILLs) the unit's processes.
+  - Triggers ExecStop/ExecStopPost hooks.
+
+args:
+  - name: unit
+    type: string
+    required: true
+    description: Systemd unit name (e.g. nginx.service).
+    validation:
+      pattern: "^[a-zA-Z0-9@:_.\\-]{1,128}$"
+
+execution:
+  command:
+    binary: /bin/systemctl
+    argv:
+      - "stop"
+      - "--no-block"
+      - "{{ args.unit }}"
+  timeout: 90s
+
+output:
+  parser: text
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 8192
+
+examples:
+  - title: Stop nginx
+    args:
+      unit: nginx.service

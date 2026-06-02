@@ -1,0 +1,22 @@
+schema_version: 1
+id: consul.catalog_datacenters
+title: GET /v1/catalog/datacenters
+kind: exec
+risk: low
+description: All WAN-federated datacenters known to this server.
+side_effects: ["One API call.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "curl -sS -H \"X-Consul-Token: $CONSUL_HTTP_TOKEN\" \"$CONSUL_HTTP_ADDR/v1/catalog/datacenters\""
+  timeout: 15s
+output:
+  parser: json
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Federated DCs
+    args: {}

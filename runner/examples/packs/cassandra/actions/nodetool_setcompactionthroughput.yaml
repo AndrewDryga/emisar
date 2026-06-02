@@ -1,0 +1,28 @@
+schema_version: 1
+id: cassandra.nodetool_setcompactionthroughput
+title: nodetool setcompactionthroughput <MB/s>
+kind: exec
+risk: medium
+description: 'Sets max compaction throughput. 0 = unlimited (use carefully).'
+side_effects:
+  - In-flight + future compactions throttled to the new cap.
+  - Lower values reduce IO pressure but grow SSTable count.
+args:
+  - name: mb_per_sec
+    type: integer
+    required: true
+    description: 'MB/s; 0 = unlimited.'
+    validation:
+      min: 0
+      max: 10000
+execution:
+  command: {binary: /usr/bin/nodetool, argv: ["setcompactionthroughput", "{{ args.mb_per_sec }}"]}
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Throttle to 16 MB/s
+    args:
+      mb_per_sec: 16

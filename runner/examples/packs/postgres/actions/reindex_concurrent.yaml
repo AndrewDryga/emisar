@@ -1,0 +1,41 @@
+schema_version: 1
+id: postgres.reindex_concurrent
+title: REINDEX INDEX CONCURRENTLY <schema>.<index>
+kind: exec
+risk: high
+description: 'Rebuilds one index without blocking writes. Slower than plain REINDEX but no AccessExclusiveLock.'
+side_effects:
+  - New copy of the index is built alongside.
+  - Old index dropped at end; brief lock at swap.
+  - On failure, an _ccnew suffix index may be left behind.
+args:
+  - name: schema
+    type: string
+    required: true
+    description: Schema name.
+    validation:
+      pattern: "^[a-zA-Z_][a-zA-Z0-9_]{0,62}$"
+  - name: index
+    type: string
+    required: true
+    description: Index name.
+    validation:
+      pattern: "^[a-zA-Z_][a-zA-Z0-9_]{0,62}$"
+execution:
+  command:
+    binary: /usr/bin/psql
+    argv:
+      - "-XAt"
+      - "-c"
+      - "REINDEX INDEX CONCURRENTLY {{ args.schema }}.{{ args.index }};"
+  timeout: 4h
+cancel_grace: 5m
+output:
+  parser: text
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Rebuild bloated index
+    args:
+      schema: "public"
+      index: "orders_user_id_idx"

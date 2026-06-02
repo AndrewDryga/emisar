@@ -1,0 +1,24 @@
+schema_version: 1
+id: httpd.graceful_stop
+title: apachectl graceful-stop
+kind: exec
+risk: critical
+description: Drains in-flight requests then shuts down. Apache will NOT come back automatically; use systemd to restart.
+side_effects:
+  - Apache stops accepting new connections.
+  - In-flight requests are allowed to complete.
+  - Workers exit; supervisor must restart to bring back online.
+args: []
+execution:
+  command:
+    binary: apachectl
+    argv:
+      - "graceful-stop"
+  timeout: 60s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Drain + stop
+    args: {}

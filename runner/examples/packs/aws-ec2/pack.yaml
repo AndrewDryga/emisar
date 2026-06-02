@@ -1,0 +1,27 @@
+schema_version: 1
+id: aws-ec2
+name: AWS EC2 operations
+version: 0.1.0
+description: >
+  EC2 instance inventory + state introspection plus narrow mutators
+  (stop, start, reboot, terminate). Auth via AWS_PROFILE + AWS_REGION
+  on the runner host.
+vendor: emisar
+homepage: https://github.com/andrewdryga/emisar
+
+requires:
+  os: [linux]
+  binaries: [aws]
+
+actions:
+  - actions/describe_instances.yaml
+  - actions/describe_instance_one.yaml
+  - actions/describe_security_groups.yaml
+  - actions/describe_volumes.yaml
+  - actions/describe_subnets.yaml
+  - actions/instance_status.yaml
+  - actions/console_output.yaml
+  - actions/stop_instance.yaml
+  - actions/start_instance.yaml
+  - actions/reboot_instance.yaml
+  - actions/terminate_instance.yaml

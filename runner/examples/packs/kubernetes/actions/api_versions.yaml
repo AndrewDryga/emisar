@@ -1,0 +1,33 @@
+schema_version: 1
+id: kubernetes.api_versions
+title: kubectl api-versions
+kind: exec
+risk: low
+description: Lists API versions available on the cluster — useful for "does this k8s version support …?" checks.
+side_effects:
+  - One kubectl api-versions invocation.
+  - Read-only.
+args:
+  - name: context
+    type: string
+    required: false
+    default: ""
+    description: kubeconfig context.
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{0,128}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "kubectl ${KCTX:+--context=$KCTX} api-versions"
+  timeout: 15s
+  env:
+    KCTX: "{{ args.context }}"
+output:
+  parser: text
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: API versions
+    args: {}

@@ -1,0 +1,32 @@
+schema_version: 1
+id: git.reflog
+title: git reflog -n <N>
+kind: exec
+risk: low
+description: Local HEAD-movement history. Use to find recent rebases / resets.
+side_effects:
+  - One git reflog.
+  - Read-only.
+args:
+  - name: count
+    type: integer
+    required: false
+    default: 30
+    description: Entries.
+    validation:
+      min: 1
+      max: 500
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "cd \"$GIT_REPO\" && git reflog -n {{ args.count }}"
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 131072
+  max_stderr_bytes: 8192
+examples:
+  - title: Last 30 HEAD moves
+    args: {}

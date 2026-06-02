@@ -1,0 +1,25 @@
+schema_version: 1
+id: vault.cubbyhole_list
+title: vault list cubbyhole
+kind: exec
+risk: low
+description: Lists the runner token's own cubbyhole (each token sees only its own).
+side_effects:
+  - One cubbyhole/ request.
+  - Read-only — values not returned, only keys.
+args: []
+execution:
+  command:
+    binary: vault
+    argv:
+      - "list"
+      - "-format=json"
+      - "cubbyhole/"
+  timeout: 15s
+output:
+  parser: json
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Cubbyhole keys
+    args: {}

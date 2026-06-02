@@ -1,0 +1,37 @@
+schema_version: 1
+
+id: network-tls
+name: Network + TLS diagnostics
+version: 0.1.0
+description: >
+  DNS lookups, reachability probes, TLS certificate inspection, and
+  HTTP timing tests. All read-only. Use for "is X reachable?" and
+  "what's the cert expiry on Y?" questions.
+vendor: emisar
+homepage: https://github.com/andrewdryga/emisar
+
+requires:
+  os:
+    - linux
+  binaries:
+    - curl
+    - dig
+    - mtr
+    - openssl
+    - ping
+    - whois
+
+actions:
+  - actions/dig_record.yaml
+  - actions/dig_trace.yaml
+  - actions/dig_dnssec.yaml
+  - actions/dig_reverse.yaml
+  - actions/traceroute_mtr.yaml
+  - actions/ping_extended.yaml
+  - actions/http_probe.yaml
+  - actions/http_headers.yaml
+  - actions/tls_cert_expiry.yaml
+  - actions/tls_chain_dump.yaml
+  - actions/tls_protocol_check.yaml
+  - actions/whois_summary.yaml
+  - actions/ipinfo_lookup.yaml

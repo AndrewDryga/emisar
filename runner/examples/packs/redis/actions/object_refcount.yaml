@@ -1,0 +1,32 @@
+schema_version: 1
+id: redis.object_refcount
+title: OBJECT REFCOUNT key
+kind: exec
+risk: low
+description: >
+  Reference count for a value. Shared integers report INT_MAX;
+  every other value reports 1. Use to confirm the shared-integer
+  optimization is hitting (or not).
+side_effects:
+  - One OBJECT REFCOUNT command.
+  - Read-only metadata.
+args:
+  - name: key
+    type: string
+    required: true
+    description: Key name.
+    validation:
+      pattern: "^[A-Za-z0-9_:.\\-{}@#/=+]{1,512}$"
+execution:
+  command:
+    binary: /usr/bin/redis-cli
+    argv: ["OBJECT", "REFCOUNT", "{{ args.key }}"]
+  timeout: 5s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Refcount of a counter
+    args:
+      key: "stats:requests"

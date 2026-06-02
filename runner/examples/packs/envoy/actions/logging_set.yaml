@@ -1,0 +1,31 @@
+schema_version: 1
+id: envoy.logging_set
+title: POST /logging?level=<level>
+kind: exec
+risk: medium
+description: Sets all components to one log level. Use "debug" for triage, then revert to "info".
+side_effects:
+  - All components switch to the new level.
+  - Log volume can spike at debug/trace.
+args:
+  - name: level
+    type: string
+    required: true
+    description: Log level.
+    validation:
+      enum: ["trace", "debug", "info", "warning", "error", "critical", "off"]
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "curl -sS -XPOST \"${ENVOY_ADMIN:-http://127.0.0.1:9901}/logging?level={{ args.level }}\""
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Set debug
+    args:
+      level: "debug"

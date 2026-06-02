@@ -1,0 +1,29 @@
+schema_version: 1
+id: cassandra.nodetool_removenode
+title: nodetool removenode <host-id>
+kind: exec
+risk: critical
+description: Removes a down node from the cluster and streams its data from other replicas. Preferred over assassinate when there's quorum.
+side_effects:
+  - Other replicas stream the dead node's data to their successors.
+  - Heavy network + disk during stream.
+  - Token range reassigned permanently.
+args:
+  - name: host_id
+    type: string
+    required: true
+    description: Host ID UUID (from nodetool status).
+    validation:
+      pattern: "^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$"
+execution:
+  command: {binary: /usr/bin/nodetool, argv: ["removenode", "{{ args.host_id }}"]}
+  timeout: 24h
+cancel_grace: 10m
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Remove a down node
+    args:
+      host_id: "abc12345-1234-5678-9abc-def012345678"

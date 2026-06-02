@@ -1,0 +1,24 @@
+schema_version: 1
+id: kafka.list_groups
+title: List consumer groups
+kind: exec
+risk: low
+description: All consumer groups in the cluster.
+side_effects:
+  - One coordinator request per broker.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "kafka-consumer-groups.sh '--bootstrap-server' \"$KAFKA_BOOTSTRAP\" '--list'"
+  timeout: 60s
+output:
+  parser: text
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: All consumer groups
+    args: {}

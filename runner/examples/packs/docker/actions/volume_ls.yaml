@@ -1,0 +1,22 @@
+schema_version: 1
+id: docker.volume_ls
+title: docker volume ls
+kind: exec
+risk: low
+description: Lists all named docker volumes. Read-only.
+side_effects:
+  - One docker volume ls invocation.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /usr/bin/docker
+    argv: ["volume", "ls"]
+  timeout: 10s
+output:
+  parser: text
+  max_stdout_bytes: 131072
+  max_stderr_bytes: 8192
+examples:
+  - title: All volumes
+    args: {}

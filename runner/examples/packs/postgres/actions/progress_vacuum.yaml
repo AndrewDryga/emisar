@@ -1,0 +1,23 @@
+schema_version: 1
+id: postgres.progress_vacuum
+title: pg_stat_progress_vacuum
+kind: exec
+risk: low
+description: In-flight VACUUMs with phase + heap_blks_scanned.
+side_effects: ["One SELECT.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /usr/bin/psql
+    argv:
+      - "-XAt"
+      - "-c"
+      - "SELECT pid, datname, p.relid::regclass AS table, phase, heap_blks_total, heap_blks_scanned, heap_blks_vacuumed, num_dead_tuples FROM pg_stat_progress_vacuum p;"
+  timeout: 10s
+output:
+  parser: text
+  max_stdout_bytes: 32768
+  max_stderr_bytes: 8192
+examples:
+  - title: Live VACUUMs
+    args: {}

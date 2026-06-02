@@ -1,0 +1,36 @@
+schema_version: 1
+
+id: vault
+name: HashiCorp Vault operations
+version: 0.1.0
+description: >
+  Vault status, seal state, auth/audit/secret backends, mount listing,
+  token & lease introspection, plus operator surface for incident
+  response: revoke lease, revoke leases by prefix, operator step-down,
+  emergency seal. Auth via VAULT_ADDR + VAULT_TOKEN on the runner host.
+  Does NOT include unseal — that requires quorum and shouldn't be
+  automated through a runner.
+vendor: emisar
+homepage: https://github.com/andrewdryga/emisar
+
+requires:
+  os:
+    - linux
+  binaries:
+    - vault
+
+actions:
+  - actions/status.yaml
+  - actions/seal_status.yaml
+  - actions/list_mounts.yaml
+  - actions/list_auth.yaml
+  - actions/list_audit.yaml
+  - actions/list_policies.yaml
+  - actions/read_policy.yaml
+  - actions/leases_count.yaml
+  - actions/token_lookup_self.yaml
+  - actions/cubbyhole_list.yaml
+  - actions/revoke_lease.yaml
+  - actions/lease_revoke_prefix.yaml
+  - actions/operator_step_down.yaml
+  - actions/operator_seal.yaml

@@ -1,0 +1,38 @@
+schema_version: 1
+id: systemd.reset_failed
+title: systemctl reset-failed [unit]
+kind: exec
+risk: low
+description: >
+  Clear the "failed" state from units that crashed. Required before
+  start-limit thresholds reset and the unit can be auto-restarted.
+  Without a unit name, resets every failed unit.
+side_effects:
+  - Failed-state flag cleared.
+  - Start-limit counter reset.
+  - Unit not started — explicit start still needed if desired.
+args:
+  - name: unit
+    type: string
+    required: false
+    default: ""
+    description: Unit name (empty for all failed units).
+    validation:
+      pattern: "^[a-zA-Z0-9@_\\-.]{0,128}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "/usr/bin/systemctl reset-failed {{ args.unit }}"
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Reset all failed
+    args: {}
+  - title: Reset one unit
+    args:
+      unit: "myapp.service"

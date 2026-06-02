@@ -1,0 +1,31 @@
+schema_version: 1
+id: pm2.restart
+title: pm2 restart <name>
+kind: exec
+risk: high
+description: Hard-restarts one process (kill + spawn). Drops in-flight requests.
+side_effects:
+  - Process is killed and respawned.
+  - Open sockets close; in-flight requests drop.
+args:
+  - name: name
+    type: string
+    required: true
+    description: Process name or id.
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{1,64}$"
+execution:
+  command:
+    binary: pm2
+    argv:
+      - "restart"
+      - "{{ args.name }}"
+  timeout: 60s
+output:
+  parser: text
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Restart one
+    args:
+      name: "api"

@@ -1,0 +1,33 @@
+schema_version: 1
+id: kubernetes.events_recent
+title: Recent cluster events
+kind: exec
+risk: low
+description: Last 50 events across all namespaces, sorted by last timestamp.
+side_effects:
+  - One kubectl get events invocation.
+  - Read-only.
+args:
+  - name: context
+    type: string
+    required: false
+    default: ""
+    description: kubeconfig context.
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{0,128}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "kubectl ${KCTX:+--context=$KCTX} get events -A --sort-by=.lastTimestamp | tail -50"
+  timeout: 30s
+  env:
+    KCTX: "{{ args.context }}"
+output:
+  parser: text
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 16384
+examples:
+  - title: Recent events
+    args: {}

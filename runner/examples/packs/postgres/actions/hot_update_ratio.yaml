@@ -1,0 +1,23 @@
+schema_version: 1
+id: postgres.hot_update_ratio
+title: HOT update ratio per table
+kind: exec
+risk: low
+description: 'HOT updates avoid index work and bloat. Low ratio on a hot table = missing fillfactor tuning or wrong index.'
+side_effects: ["One SELECT.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /usr/bin/psql
+    argv:
+      - "-XAt"
+      - "-c"
+      - "SELECT schemaname || '.' || relname AS table, n_tup_upd, n_tup_hot_upd, ROUND(100.0 * n_tup_hot_upd / NULLIF(n_tup_upd, 0), 2) AS hot_pct FROM pg_stat_user_tables WHERE n_tup_upd > 10000 ORDER BY n_tup_upd DESC LIMIT 30;"
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 32768
+  max_stderr_bytes: 8192
+examples:
+  - title: HOT update ratios
+    args: {}

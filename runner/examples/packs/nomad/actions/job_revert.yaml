@@ -1,0 +1,37 @@
+schema_version: 1
+id: nomad.job_revert
+title: nomad job revert <id> <version>
+kind: exec
+risk: high
+description: Reverts a job to a prior version. Equivalent to re-submitting that version.
+side_effects:
+  - Job spec replaced with the prior version.
+  - Triggers a rolling update (per the new/old spec's update stanza).
+args:
+  - name: job
+    type: string
+    required: true
+    description: Job ID.
+    validation:
+      pattern: "^[a-zA-Z0-9_\\-]{1,128}$"
+  - name: version
+    type: integer
+    required: true
+    description: Version number to revert to.
+    validation:
+      min: 0
+      max: 1000000
+execution:
+  command:
+    binary: /usr/bin/nomad
+    argv: ["job", "revert", "{{ args.job }}", "{{ args.version }}"]
+  timeout: 60s
+output:
+  parser: text
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 8192
+examples:
+  - title: Roll back one version
+    args:
+      job: "api"
+      version: 7

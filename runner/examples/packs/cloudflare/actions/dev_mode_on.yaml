@@ -1,0 +1,31 @@
+schema_version: 1
+id: cf.dev_mode_on
+title: PATCH /zones/<id>/settings/development_mode
+kind: exec
+risk: high
+description: Enables development mode for 3 hours — bypasses caching for this zone.
+side_effects:
+  - Cache is bypassed for 3 hours (auto-expires).
+  - Origin gets every request.
+args:
+  - name: zone_id
+    type: string
+    required: true
+    description: Zone ID.
+    validation:
+      pattern: "^[a-f0-9]{32}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "curl -sS -XPATCH \"https://api.cloudflare.com/client/v4/zones/{{ args.zone_id }}/settings/development_mode\" -H \"Authorization: Bearer $CF_API_TOKEN\" -H \"Content-Type: application/json\" -d '{\"value\":\"on\"}'"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Dev mode on
+    args:
+      zone_id: "abc123def456abc123def456abc123de"

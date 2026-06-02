@@ -1,0 +1,51 @@
+schema_version: 1
+
+id: mysql
+name: MySQL / MariaDB operations
+version: 0.1.0
+description: >
+  Read-only MySQL diagnostics plus narrow operator actions for killing
+  queries, flushing logs, and analyzing tables. Authenticates via
+  ~/.my.cnf or MYSQL_PWD env var on the runner host — never via
+  per-call credentials over the wire.
+vendor: emisar
+homepage: https://github.com/andrewdryga/emisar
+
+requires:
+  os:
+    - linux
+  binaries:
+    - mysql
+
+actions:
+  # Server state
+  - actions/uptime.yaml
+  - actions/status.yaml
+  - actions/variables.yaml
+  - actions/engines.yaml
+  # Live activity
+  - actions/processlist.yaml
+  - actions/connections_summary.yaml
+  - actions/innodb_status.yaml
+  - actions/slow_queries.yaml
+  - actions/lock_waits.yaml
+  - actions/open_tables.yaml
+  # Storage / tables
+  - actions/db_sizes.yaml
+  - actions/table_sizes.yaml
+  - actions/table_io_summary.yaml
+  - actions/index_unused.yaml
+  # Replication
+  - actions/replica_status.yaml
+  - actions/master_status.yaml
+  - actions/binlog_positions.yaml
+  - actions/gtid_executed.yaml
+  # ACL
+  - actions/users_grants.yaml
+  # Mutators
+  - actions/kill_query.yaml
+  - actions/kill_connection.yaml
+  - actions/flush_logs.yaml
+  - actions/flush_status.yaml
+  - actions/analyze_table.yaml
+  - actions/optimize_table.yaml

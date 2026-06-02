@@ -1,0 +1,24 @@
+schema_version: 1
+id: es.cat_nodes
+title: GET /_cat/nodes
+kind: exec
+risk: low
+description: Per-node heap, RAM, CPU, load, role. Read-only.
+side_effects:
+  - One GET request.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "curl -sS -u \"$ELASTIC_USER:$ELASTIC_PASSWORD\" \"$ELASTIC_URL/_cat/nodes?v\""
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: All nodes
+    args: {}

@@ -1,0 +1,22 @@
+schema_version: 1
+id: py.pip_check
+title: $PY_VENV/bin/pip check
+kind: exec
+risk: low
+description: Dependency conflicts. Empty output means clean.
+side_effects: ["One pip check call.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "\"${PY_VENV:-/opt/app/venv}/bin/pip\" check"
+  timeout: 60s
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Dep conflicts
+    args: {}

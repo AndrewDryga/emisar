@@ -1,0 +1,23 @@
+schema_version: 1
+id: pm2.node_version
+title: node --version
+kind: exec
+risk: low
+description: Node.js runtime version (system default).
+side_effects:
+  - Forks node.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: node
+    argv:
+      - "--version"
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 1024
+  max_stderr_bytes: 8192
+examples:
+  - title: Node version
+    args: {}

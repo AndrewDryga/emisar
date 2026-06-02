@@ -1,0 +1,24 @@
+schema_version: 1
+id: time.date_now
+title: date -u
+kind: exec
+risk: low
+description: UTC + local time + day-of-week. Compare against the requester's clock to spot drift.
+side_effects:
+  - One date call.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "date -u '+%Y-%m-%dT%H:%M:%SZ utc'; date '+%Y-%m-%dT%H:%M:%S%z local %A'"
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 1024
+  max_stderr_bytes: 8192
+examples:
+  - title: Now
+    args: {}

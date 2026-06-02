@@ -1,0 +1,24 @@
+schema_version: 1
+id: prom.runtime_info
+title: GET /api/v1/status/runtimeinfo
+kind: exec
+risk: low
+description: Uptime, last config reload, chunk count, WAL corrected/unprocessed.
+side_effects:
+  - One GET request.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "curl -sS \"$PROM_URL/api/v1/status/runtimeinfo\""
+  timeout: 15s
+output:
+  parser: json
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 8192
+examples:
+  - title: Runtime info
+    args: {}

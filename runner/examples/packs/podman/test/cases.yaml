@@ -1,0 +1,44 @@
+defaults:
+  env: {}
+cases:
+- action: podman.images
+  args: {}
+  expect_exit: 0
+- action: podman.info
+  args: {}
+  expect_exit: 0
+- action: podman.inspect
+  args:
+    container: web
+  expect_exit: 0
+- action: podman.kill
+  args:
+    container: web
+  skip: mutator skipped by default (high); set --include=podman.kill to run
+- action: podman.logs
+  args:
+    container: web
+  expect_exit: 0
+- action: podman.ps
+  args: {}
+  expect_exit: 0
+- action: podman.restart
+  args:
+    container: web
+  skip: mutator skipped by default (high); set --include=podman.restart to run
+- action: podman.stats
+  args: {}
+  expect_exit: 0
+- action: podman.stop
+  args:
+    container: web
+  skip: mutator skipped by default (high); set --include=podman.stop to run
+- action: podman.system_df
+  args: {}
+  expect_exit: 0
+- action: podman.system_prune
+  args: {}
+  skip: mutator skipped by default (high); set --include=podman.system_prune to run
+- action: podman.version
+  args: {}
+  expect_exit: 0

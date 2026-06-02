@@ -1,0 +1,32 @@
+schema_version: 1
+id: bind.rndc_reload
+title: rndc reload [zone]
+kind: exec
+risk: high
+description: Reloads named config (or one zone). Validates first if zone specified.
+side_effects:
+  - Brief lock on the zone(s) being reloaded.
+  - Invalid config aborts the reload; old data stays in place.
+args:
+  - name: zone
+    type: string
+    required: false
+    default: ""
+    description: Specific zone (empty = full config + all zones).
+    validation:
+      pattern: "^[a-zA-Z0-9.\\-]{0,253}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "if [ -z \"{{ args.zone }}\" ]; then rndc reload; else rndc reload \"{{ args.zone }}\"; fi"
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Reload one zone
+    args:
+      zone: "example.com"

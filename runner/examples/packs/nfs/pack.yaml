@@ -1,0 +1,26 @@
+schema_version: 1
+
+id: nfs
+name: NFS server + client
+version: 0.1.0
+description: >
+  Inspect a host's NFS exports, mounted shares, RPC state, active client
+  connections. Plus one narrow operator action (exportfs -r). Read-only
+  except the re-export.
+vendor: emisar
+homepage: https://github.com/andrewdryga/emisar
+
+requires:
+  os:
+    - linux
+
+actions:
+  - actions/exportfs_v.yaml
+  - actions/showmount_e.yaml
+  - actions/nfsstat_s.yaml
+  - actions/nfsstat_c.yaml
+  - actions/rpcinfo_p.yaml
+  - actions/cat_etab.yaml
+  - actions/nfs_mounts.yaml
+  - actions/exportfs_r.yaml
+  - actions/exportfs_unexport_path.yaml

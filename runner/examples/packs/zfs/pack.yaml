@@ -1,0 +1,30 @@
+schema_version: 1
+id: zfs
+name: ZFS pool + dataset operations
+version: 0.1.0
+description: >
+  Pool status, dataset inventory, snapshot listing, scrub status, ARC
+  stats, plus operator surface for storage incident response: scrub
+  start/stop, clear pool errors, take/destroy snapshots, dataset
+  rollback.
+vendor: emisar
+homepage: https://github.com/andrewdryga/emisar
+
+requires:
+  os: [linux]
+  binaries: [zpool, zfs]
+
+actions:
+  - actions/pool_list.yaml
+  - actions/pool_status.yaml
+  - actions/pool_iostat.yaml
+  - actions/dataset_list.yaml
+  - actions/snapshot_list.yaml
+  - actions/properties.yaml
+  - actions/arc_stats.yaml
+  - actions/start_scrub.yaml
+  - actions/take_snapshot.yaml
+  - actions/scrub_stop.yaml
+  - actions/clear_pool_errors.yaml
+  - actions/snapshot_destroy.yaml
+  - actions/dataset_rollback.yaml

@@ -1,0 +1,24 @@
+schema_version: 1
+id: cloud-init.analyze_dump
+title: cloud-init analyze dump
+kind: exec
+risk: low
+description: >
+  Raw event records from cloud-init.log as JSON. Useful for downstream
+  tooling that wants structured timing data.
+side_effects:
+  - One CLI call.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /usr/bin/cloud-init
+    argv: ["analyze", "dump"]
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: Raw boot events JSON
+    args: {}

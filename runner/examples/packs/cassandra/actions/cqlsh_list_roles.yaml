@@ -1,0 +1,22 @@
+schema_version: 1
+id: cassandra.cqlsh_list_roles
+title: cqlsh -e "LIST ROLES"
+kind: exec
+risk: low
+description: All roles + their grants (requires CassandraAuthorizer/Authenticator).
+side_effects: ["One CQL query.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "cqlsh -e 'LIST ROLES;' \"${CQLSH_HOST:-127.0.0.1}\" \"${CQLSH_PORT:-9042}\""
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Roles
+    args: {}

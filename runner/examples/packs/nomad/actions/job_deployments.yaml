@@ -1,0 +1,25 @@
+schema_version: 1
+id: nomad.job_deployments
+title: nomad job deployments <id>
+kind: exec
+risk: low
+description: Deployment history for one job (rolling updates, canary, blue-green).
+side_effects: ["One API call.", "Read-only."]
+args:
+  - name: job
+    type: string
+    required: true
+    description: Job ID.
+    validation:
+      pattern: "^[a-zA-Z0-9_\\-]{1,128}$"
+execution:
+  command: {binary: /usr/bin/nomad, argv: ["job", "deployments", "-verbose", "{{ args.job }}"]}
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 131072
+  max_stderr_bytes: 8192
+examples:
+  - title: Deployments
+    args:
+      job: "api"

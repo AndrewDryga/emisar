@@ -1,0 +1,23 @@
+schema_version: 1
+id: pm2.monit_snapshot
+title: pm2 monit (one snapshot)
+kind: exec
+risk: low
+description: One-shot CPU + memory snapshot for every process.
+side_effects:
+  - One PM2 IPC call.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: pm2
+    argv:
+      - "prettylist"
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: Monit snapshot
+    args: {}

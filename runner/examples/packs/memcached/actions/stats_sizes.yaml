@@ -1,0 +1,22 @@
+schema_version: 1
+id: mc.stats_sizes
+title: stats sizes
+kind: exec
+risk: low
+description: 'Histogram of item sizes. WARNING: scans all items — can be slow on busy servers.'
+side_effects: ["Scans every item — high latency hit on busy servers.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "printf 'stats sizes\\nquit\\n' | nc -w 30 \"${MEMCACHED_HOST:-127.0.0.1}\" \"${MEMCACHED_PORT:-11211}\""
+  timeout: 60s
+output:
+  parser: text
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Size histogram
+    args: {}

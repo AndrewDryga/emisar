@@ -1,0 +1,33 @@
+schema_version: 1
+id: envoy.healthcheck_fail
+title: POST /healthcheck/fail
+kind: exec
+risk: high
+description: >
+  Mark Envoy unhealthy via its admin API. External health checks
+  see failure; load balancer pulls this instance out of rotation.
+  Use during planned maintenance to drain traffic before a restart.
+side_effects:
+  - Envoy reports unhealthy on /healthcheck.
+  - Upstream LB removes this instance from rotation.
+  - Existing connections continue until they close.
+args:
+  - name: admin
+    type: string
+    required: false
+    default: "http://localhost:9901"
+    description: Envoy admin URL.
+    validation:
+      pattern: "^https?://[a-zA-Z0-9._:\\-]{1,253}(:[0-9]{1,5})?$"
+execution:
+  command:
+    binary: /usr/bin/curl
+    argv: ["-sSfX", "POST", "{{ args.admin }}/healthcheck/fail"]
+  timeout: 10s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Take instance out of rotation
+    args: {}

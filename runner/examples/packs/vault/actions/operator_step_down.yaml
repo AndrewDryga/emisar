@@ -1,0 +1,25 @@
+schema_version: 1
+id: vault.operator_step_down
+title: vault operator step-down
+kind: exec
+risk: critical
+description: >
+  Forces the active node to step down. A standby will take over within seconds. Use this to force a failover or to drain a node before maintenance.
+side_effects:
+  - Brief unavailability during leader election (~1-5 seconds).
+  - In-flight requests on the stepping-down node fail.
+args: []
+execution:
+  command:
+    binary: vault
+    argv:
+      - "operator"
+      - "step-down"
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Force failover
+    args: {}

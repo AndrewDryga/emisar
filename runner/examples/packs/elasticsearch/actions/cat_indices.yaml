@@ -1,0 +1,24 @@
+schema_version: 1
+id: es.cat_indices
+title: GET /_cat/indices
+kind: exec
+risk: low
+description: Every index with its primary count, doc count, store size. Sorted by size descending.
+side_effects:
+  - One GET request.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "curl -sS -u \"$ELASTIC_USER:$ELASTIC_PASSWORD\" \"$ELASTIC_URL/_cat/indices?v&s=store.size:desc\""
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: All indices
+    args: {}

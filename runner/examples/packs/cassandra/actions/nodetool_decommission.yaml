@@ -1,0 +1,23 @@
+schema_version: 1
+id: cassandra.nodetool_decommission
+title: nodetool decommission
+kind: exec
+risk: critical
+description: Streams this node's data to other replicas, then leaves the ring. NOT reversible without re-bootstrapping.
+side_effects:
+  - All data streams to remaining replicas.
+  - Heavy network + disk on this and peer nodes.
+  - Node leaves the ring; tokens are reassigned.
+  - Can take many hours on big datasets.
+args: []
+execution:
+  command: {binary: /usr/bin/nodetool, argv: ["decommission"]}
+  timeout: 24h
+cancel_grace: 10m
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Remove this node
+    args: {}

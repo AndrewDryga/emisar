@@ -1,0 +1,22 @@
+schema_version: 1
+id: ce.mtd_by_service
+title: Month-to-date cost by service
+kind: exec
+risk: low
+description: 'Unblended cost from the 1st of this month until today, grouped by service.'
+side_effects: ["One Cost Explorer call.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "START=$(date -u +%Y-%m-01); END=$(date -u +%Y-%m-%d); aws ce get-cost-and-usage --time-period Start=$START,End=$END --granularity MONTHLY --metrics UnblendedCost --group-by Type=DIMENSION,Key=SERVICE --output json"
+  timeout: 60s
+output:
+  parser: json
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: MTD by service
+    args: {}

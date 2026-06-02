@@ -1,0 +1,27 @@
+schema_version: 1
+id: nomad.alloc_stop
+title: nomad alloc stop <id>
+kind: exec
+risk: high
+description: Stops one allocation. The scheduler reschedules it (per the job's reschedule stanza).
+side_effects:
+  - Allocation is stopped + replaced.
+  - Brief unavailability for the running container.
+args:
+  - name: alloc_id
+    type: string
+    required: true
+    description: Allocation ID.
+    validation:
+      pattern: "^[a-fA-F0-9\\-]{4,36}$"
+execution:
+  command: {binary: /usr/bin/nomad, argv: ["alloc", "stop", "{{ args.alloc_id }}"]}
+  timeout: 60s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Force-reschedule
+    args:
+      alloc_id: "abc12345"

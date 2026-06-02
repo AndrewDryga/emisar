@@ -1,0 +1,60 @@
+schema_version: 1
+
+id: debugging
+name: Linux debugging toolkit
+version: 0.2.0
+description: >
+  General-purpose Linux diagnostics + low-level remediation: process
+  and memory tops, vmstat/iostat snapshots, socket inventories,
+  per-PID inspection, kernel-state checks, network reachability, plus
+  fix-it actions (drop_caches, kill_pid by signal, sysctl_set).
+  Use as the first-touch pack when something is wrong.
+vendor: emisar
+homepage: https://github.com/andrewdryga/emisar
+
+requires:
+  os:
+    - linux
+  binaries:
+    - ps
+    - ss
+
+actions:
+  # Process tops
+  - actions/processes_top.yaml
+  - actions/mem_top.yaml
+  # System samples
+  - actions/vmstat.yaml
+  - actions/iostat.yaml
+  - actions/sar_recent.yaml
+  - actions/loadavg.yaml
+  - actions/disk_free.yaml
+  # Network state
+  - actions/netstat_listen.yaml
+  - actions/netstat_connections.yaml
+  - actions/lsof_port.yaml
+  - actions/tcp_summary.yaml
+  - actions/tcp_retrans_top.yaml
+  - actions/socket_summary.yaml
+  - actions/top_open_files.yaml
+  # Per-PID introspection
+  - actions/pid_environ.yaml
+  - actions/pid_cwd.yaml
+  - actions/pid_fds.yaml
+  - actions/pid_status.yaml
+  - actions/pid_stack.yaml
+  - actions/pid_threads.yaml
+  - actions/pid_limits.yaml
+  - actions/pid_io.yaml
+  # Kernel state
+  - actions/dmesg_tail.yaml
+  - actions/dmesg_oom.yaml
+  - actions/kernel_taint.yaml
+  - actions/slabtop.yaml
+  - actions/swap_status.yaml
+  # Reachability
+  - actions/ping_host.yaml
+  # Mutators
+  - actions/drop_caches.yaml
+  - actions/kill_pid.yaml
+  - actions/sysctl_set.yaml

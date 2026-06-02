@@ -1,0 +1,31 @@
+schema_version: 1
+id: tf.state_show
+title: terraform state show <address>
+kind: exec
+risk: low
+description: Attributes of one resource in state. May contain secrets — relies on audit redaction.
+side_effects:
+  - Reads state file.
+  - Read-only — output may contain sensitive attributes; rely on redaction.
+args:
+  - name: address
+    type: string
+    required: true
+    description: Resource address (e.g. 'aws_instance.api').
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-\\[\\]\"']{1,256}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "cd \"$TF_DIR\" && terraform state show '{{ args.address }}'"
+  timeout: 60s
+output:
+  parser: text
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: One resource
+    args:
+      address: "aws_instance.api"

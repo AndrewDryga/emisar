@@ -1,0 +1,28 @@
+schema_version: 1
+id: minio
+name: MinIO operations
+version: 0.1.0
+description: >
+  Cluster + bucket + user introspection plus operator surface (user
+  enable/disable, bucket heal, cluster service restart). Talks to mc
+  CLI configured via MC_HOST_<alias> env var on the runner host.
+vendor: emisar
+homepage: https://github.com/andrewdryga/emisar
+
+requires:
+  os: [linux]
+  binaries: [mc]
+
+actions:
+  - actions/admin_info.yaml
+  - actions/admin_top_locks.yaml
+  - actions/ls_buckets.yaml
+  - actions/bucket_stat.yaml
+  - actions/list_users.yaml
+  - actions/list_policies.yaml
+  - actions/heal_summary.yaml
+  - actions/user_enable.yaml
+  - actions/user_disable.yaml
+  - actions/admin_trace.yaml
+  - actions/heal_bucket.yaml
+  - actions/service_restart.yaml

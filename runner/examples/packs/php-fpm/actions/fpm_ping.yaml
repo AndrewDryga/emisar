@@ -1,0 +1,22 @@
+schema_version: 1
+id: phpfpm.fpm_ping
+title: GET /ping (FPM)
+kind: exec
+risk: low
+description: FPM ping endpoint (returns 'pong' if responsive).
+side_effects: ["One HTTP GET.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "curl -sS \"${PHP_FPM_PING_URL:-http://127.0.0.1/fpm-ping}\""
+  timeout: 10s
+output:
+  parser: text
+  max_stdout_bytes: 1024
+  max_stderr_bytes: 8192
+examples:
+  - title: Ping
+    args: {}

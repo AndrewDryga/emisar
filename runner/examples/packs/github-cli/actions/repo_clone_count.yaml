@@ -1,0 +1,31 @@
+schema_version: 1
+id: gh.repo_clone_count
+title: gh api repos/<repo>/traffic/clones
+kind: exec
+risk: low
+description: Last-14-day clone counts (requires push access on the repo).
+side_effects:
+  - One API call.
+  - Read-only.
+args:
+  - name: repo
+    type: string
+    required: true
+    description: 'Repo in owner/name form.'
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{1,40}/[a-zA-Z0-9_.\\-]{1,100}$"
+execution:
+  command:
+    binary: gh
+    argv:
+      - "api"
+      - "repos/{{ args.repo }}/traffic/clones"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Clone traffic
+    args:
+      repo: "andrewdryga/emisar"

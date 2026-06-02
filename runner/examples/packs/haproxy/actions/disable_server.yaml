@@ -1,0 +1,38 @@
+schema_version: 1
+id: haproxy.disable_server
+title: disable server <backend>/<server>
+kind: exec
+risk: high
+description: Stops sending new traffic to one backend server (in-flight requests continue).
+side_effects:
+  - Server is marked MAINT — no new traffic.
+  - Existing requests finish.
+args:
+  - name: backend
+    type: string
+    required: true
+    description: Backend name.
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{1,64}$"
+  - name: server
+    type: string
+    required: true
+    description: Server name within the backend.
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{1,64}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "echo 'disable server {{ args.backend }}/{{ args.server }}' | socat - \"$HAPROXY_SOCK\""
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Drain api/srv1
+    args:
+      backend: "api"
+      server: "srv1"

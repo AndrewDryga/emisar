@@ -1,0 +1,25 @@
+schema_version: 1
+id: nomad.alloc_status
+title: nomad alloc status <id>
+kind: exec
+risk: low
+description: One allocation's full state — task states, restarts, last events.
+side_effects: ["One API call.", "Read-only."]
+args:
+  - name: alloc_id
+    type: string
+    required: true
+    description: Allocation ID or prefix.
+    validation:
+      pattern: "^[a-fA-F0-9\\-]{4,36}$"
+execution:
+  command: {binary: /usr/bin/nomad, argv: ["alloc", "status", "-verbose", "{{ args.alloc_id }}"]}
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: One alloc
+    args:
+      alloc_id: "abc12345"

@@ -65,7 +65,11 @@ defmodule EmisarWeb.MixProject do
       {:emisar, in_umbrella: true},
       {:jason, "~> 1.2"},
       {:bandit, "~> 1.5"},
-      {:websock_adapter, "~> 0.5"}
+      {:websock_adapter, "~> 0.5"},
+      # Used only at compile time by EmisarWeb.PacksRegistry to load the
+      # pack catalog from YAML files. The parsed data is baked into the
+      # module, so the lib is not needed at runtime.
+      {:yaml_elixir, "~> 2.11", runtime: false}
     ]
   end
 

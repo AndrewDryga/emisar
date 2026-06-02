@@ -1,0 +1,18 @@
+schema_version: 1
+id: cassandra.nodetool_getconcurrentcompactors
+title: nodetool getconcurrentcompactors
+kind: exec
+risk: low
+description: Current concurrent_compactors setting.
+side_effects: ["One JMX call.", "Read-only."]
+args: []
+execution:
+  command: {binary: /usr/bin/nodetool, argv: ["getconcurrentcompactors"]}
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 1024
+  max_stderr_bytes: 8192
+examples:
+  - title: Concurrent compactors
+    args: {}

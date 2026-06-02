@@ -1,0 +1,49 @@
+schema_version: 1
+id: net.tls_cert_expiry
+title: TLS cert expiry probe
+kind: exec
+risk: low
+description: >
+  Connects to host:port with SNI and dumps cert subject, issuer, notBefore, notAfter. Use for "when does this cert expire?" alerts.
+side_effects:
+  - One openssl s_client connection.
+  - Read-only.
+args:
+  - name: host
+    type: string
+    required: true
+    description: Host to probe.
+    validation:
+      pattern: "^[a-zA-Z0-9.\\-]{1,253}$"
+  - name: port
+    type: integer
+    required: false
+    default: 443
+    description: Port.
+    validation:
+      min: 1
+      max: 65535
+  - name: sni
+    type: string
+    required: false
+    default: ""
+    description: SNI override (default = host).
+    validation:
+      pattern: "^[a-zA-Z0-9.\\-]{0,253}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "openssl s_client -connect {{ args.host }}:{{ args.port }} -servername ${SNI:-{{ args.host }}} </dev/null 2>/dev/null | openssl x509 -noout -dates -subject -issuer"
+  timeout: 30s
+  env:
+    SNI: "{{ args.sni }}"
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Cert for example.com
+    args:
+      host: "example.com"

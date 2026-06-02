@@ -1,0 +1,30 @@
+schema_version: 1
+id: jvm.jstat_gc
+title: jstat -gc (10 samples)
+kind: exec
+risk: low
+description: 'Ten 1-second samples of GC stats. Surfaces young + old GC time, survivor sizes, metaspace usage. Use to spot a GC storm.'
+side_effects:
+  - One jstat invocation lasting ~10s.
+  - Read-only.
+args:
+  - name: pid
+    type: integer
+    required: true
+    description: JVM PID.
+    validation:
+      min: 1
+      max: 4194304
+execution:
+  command:
+    binary: /usr/bin/jstat
+    argv: ["-gc", "{{ args.pid }}", "1s", "10"]
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: 10-second GC trace
+    args:
+      pid: 4321

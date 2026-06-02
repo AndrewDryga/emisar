@@ -1,0 +1,54 @@
+schema_version: 1
+
+id: docker.restart
+title: docker restart (one container)
+kind: exec
+risk: high
+
+description: >
+  Restarts one container. Sends SIGTERM, waits for the configured
+  stop-timeout, then SIGKILL, then re-starts. In-flight requests are
+  dropped; the container's restart policy still applies after this
+  call. Container name is pattern-restricted.
+
+side_effects:
+  - SIGTERM (then SIGKILL) is sent to the container.
+  - In-flight requests on that container are dropped.
+  - Container restarts and re-runs its entrypoint.
+
+args:
+  - name: container
+    type: string
+    required: true
+    description: Container name or ID.
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{1,128}$"
+
+  - name: timeout
+    type: integer
+    required: false
+    default: 10
+    description: Seconds to wait between SIGTERM and SIGKILL.
+    validation:
+      min: 1
+      max: 600
+
+execution:
+  command:
+    binary: /usr/bin/docker
+    argv:
+      - "restart"
+      - "-t"
+      - "{{ args.timeout }}"
+      - "{{ args.container }}"
+  timeout: 15m
+
+output:
+  parser: text
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 16384
+
+examples:
+  - title: Restart "api" with 10s grace
+    args:
+      container: api

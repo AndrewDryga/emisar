@@ -1,0 +1,24 @@
+schema_version: 1
+id: mongo.db_list
+title: listDatabases
+kind: exec
+risk: low
+description: All databases with size + empty flag.
+side_effects:
+  - One listDatabases command.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "mongosh \"$MONGO_URI\" '--quiet' '--eval' 'JSON.stringify(db.adminCommand({listDatabases:1}))'"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: All databases
+    args: {}

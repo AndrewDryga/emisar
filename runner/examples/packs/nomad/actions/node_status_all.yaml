@@ -1,0 +1,18 @@
+schema_version: 1
+id: nomad.node_status_all
+title: nomad node status
+kind: exec
+risk: low
+description: All clients (nodes) with status, datacenter, drain state, eligibility.
+side_effects: ["One API call.", "Read-only."]
+args: []
+execution:
+  command: {binary: /usr/bin/nomad, argv: ["node", "status", "-verbose"]}
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: Cluster nodes
+    args: {}

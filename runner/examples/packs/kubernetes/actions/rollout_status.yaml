@@ -1,0 +1,54 @@
+schema_version: 1
+id: kubernetes.rollout_status
+title: kubectl rollout status
+kind: exec
+risk: low
+description: Reports the rollout progress of a deployment / statefulset / daemonset. Bounded with --watch=false so it returns immediately.
+side_effects:
+  - One kubectl rollout status invocation.
+  - Read-only.
+args:
+  - name: namespace
+    type: string
+    required: true
+    description: Namespace.
+    validation:
+      pattern: "^[a-z0-9][a-z0-9\\-]{0,62}$"
+  - name: kind
+    type: string
+    required: false
+    default: deployment
+    description: Resource kind.
+    validation:
+      enum: [deployment, statefulset, daemonset]
+  - name: name
+    type: string
+    required: true
+    description: Resource name.
+    validation:
+      pattern: "^[a-z0-9][a-z0-9.\\-]{0,253}$"
+  - name: context
+    type: string
+    required: false
+    default: ""
+    description: kubeconfig context.
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{0,128}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "kubectl ${KCTX:+--context=$KCTX} -n {{ args.namespace }} rollout status {{ args.kind }}/{{ args.name }} --watch=false"
+  timeout: 30s
+  env:
+    KCTX: "{{ args.context }}"
+output:
+  parser: text
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 8192
+examples:
+  - title: Status of one deployment
+    args:
+      namespace: default
+      name: api

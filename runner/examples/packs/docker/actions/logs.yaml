@@ -1,0 +1,52 @@
+schema_version: 1
+
+id: docker.logs
+title: docker logs (last N lines)
+kind: exec
+risk: low
+
+description: >
+  Returns the last N log lines for one container. Container name is
+  pattern-restricted to alnum + "_-.". Read-only. Output passes
+  through the runner's redaction pipeline.
+
+side_effects:
+  - One docker logs invocation.
+  - Read-only.
+
+args:
+  - name: container
+    type: string
+    required: true
+    description: Container name or ID.
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{1,128}$"
+
+  - name: lines
+    type: integer
+    required: false
+    default: 200
+    description: How many tail lines.
+    validation:
+      min: 1
+      max: 10000
+
+execution:
+  command:
+    binary: /usr/bin/docker
+    argv:
+      - "logs"
+      - "--tail"
+      - "{{ args.lines }}"
+      - "{{ args.container }}"
+  timeout: 30s
+
+output:
+  parser: text
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 65536
+
+examples:
+  - title: Last 200 lines from "api"
+    args:
+      container: api

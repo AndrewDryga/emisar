@@ -1,0 +1,158 @@
+defaults:
+  env: {}
+cases:
+- action: linux.arp_neighbors
+  args: {}
+  expect_exit: 0
+- action: linux.cpu_info
+  args: {}
+  expect_exit: 0
+- action: linux.cron_recent
+  args: {}
+  expect_exit: 0
+- action: linux.crontab_all
+  args: {}
+  expect_exit: 0
+- action: linux.disk_smart
+  args:
+    device: sda
+  expect_exit: 0
+- action: linux.disk_usage
+  args: {}
+  expect_exit: 0
+- action: linux.failed_logins
+  args: {}
+  expect_exit:
+  - 0
+  - 1
+  skip: mutator skipped by default (medium)
+- action: linux.grep_log
+  args:
+    file: /var/log/nginx/access.log
+    pattern: ' 5[0-9][0-9] '
+    max_lines: 100
+  expect_exit: 0
+- action: linux.hardware_summary
+  args: {}
+  expect_exit: 0
+- action: linux.inode_usage
+  args: {}
+  expect_exit: 0
+- action: linux.journalctl
+  args:
+    unit: cassandra
+    since: 1h
+    priority: warning
+  expect_exit:
+  - 0
+  - 1
+  skip: mutator skipped by default (medium)
+- action: linux.journalctl_grep
+  args:
+    unit: cassandra
+    grep: compact
+    since: 6h
+  expect_exit:
+  - 0
+  - 1
+  skip: mutator skipped by default (medium)
+- action: linux.kernel_modules
+  args: {}
+  expect_exit: 0
+- action: linux.last_logins
+  args: {}
+  expect_exit: 0
+- action: linux.lvm_status
+  args: {}
+  expect_exit: 0
+- action: linux.mdadm_status
+  args: {}
+  expect_exit: 0
+- action: linux.memory
+  args: {}
+  expect_exit: 0
+- action: linux.memory_detailed
+  args: {}
+  expect_exit: 0
+- action: linux.mount_status
+  args: {}
+  expect_exit: 0
+- action: linux.network_interfaces
+  args: {}
+  expect_exit: 0
+- action: linux.network_routes
+  args: {}
+  expect_exit: 0
+- action: linux.os_release
+  args: {}
+  expect_exit: 0
+- action: linux.reboot_host
+  args:
+    reason: "kernel upgrade to 5.15.140 \u2014 pending /var/run/reboot-required"
+  expect_exit:
+  - 0
+  - 1
+  skip: mutator skipped by default (critical)
+- action: linux.sudoers_dump
+  args: {}
+  expect_exit:
+  - 0
+  - 1
+  skip: mutator skipped by default (medium)
+- action: linux.systemctl_disable
+  args:
+    unit: nginx.service
+  expect_exit:
+  - 0
+  - 1
+  skip: mutator skipped by default (medium)
+- action: linux.systemctl_enable
+  args:
+    unit: nginx.service
+  expect_exit:
+  - 0
+  - 1
+  skip: mutator skipped by default (medium)
+- action: linux.systemctl_reload
+  args:
+    unit: nginx.service
+  expect_exit:
+  - 0
+  - 1
+  skip: mutator skipped by default (medium)
+- action: linux.systemctl_restart
+  args:
+    unit: nginx
+  expect_exit:
+  - 0
+  - 1
+  skip: mutator skipped by default (high)
+- action: linux.systemctl_start
+  args:
+    unit: nginx.service
+  expect_exit:
+  - 0
+  - 1
+  skip: mutator skipped by default (high)
+- action: linux.systemctl_status
+  args:
+    unit: cassandra
+  expect_exit: 0
+- action: linux.systemctl_stop
+  args:
+    unit: nginx.service
+  expect_exit:
+  - 0
+  - 1
+  skip: mutator skipped by default (high)
+- action: linux.tail_log
+  args:
+    file: /var/log/nginx/error.log
+    lines: 100
+  expect_exit: 0
+- action: linux.uptime
+  args: {}
+  expect_exit: 0
+- action: linux.who_now
+  args: {}
+  expect_exit: 0

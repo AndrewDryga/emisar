@@ -1,0 +1,18 @@
+schema_version: 1
+id: f2b.version
+title: fail2ban-client version
+kind: exec
+risk: low
+description: Daemon version.
+side_effects: ["One fail2ban call.", "Read-only."]
+args: []
+execution:
+  command: {binary: /usr/bin/fail2ban-client, argv: ["version"]}
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 1024
+  max_stderr_bytes: 8192
+examples:
+  - title: Version
+    args: {}

@@ -1,0 +1,42 @@
+schema_version: 1
+id: envoy.drain_listeners
+title: POST /drain_listeners
+kind: exec
+risk: high
+description: >
+  Mark all listeners as draining. Existing connections close on
+  their own as requests complete; no new connections accepted on
+  drained listeners. Use during a planned restart to drain traffic
+  before flipping a load balancer.
+side_effects:
+  - All listeners stop accepting new connections.
+  - Existing connections drain over the configured grace.
+  - Health checks may fail externally during drain.
+args:
+  - name: admin
+    type: string
+    required: false
+    default: "http://localhost:9901"
+    description: Envoy admin URL.
+    validation:
+      pattern: "^https?://[a-zA-Z0-9._:\\-]{1,253}(:[0-9]{1,5})?$"
+  - name: inboundonly
+    type: boolean
+    required: false
+    default: false
+    description: Drain only inbound listeners.
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "if [ '{{ args.inboundonly }}' = 'true' ]; then /usr/bin/curl -sSfX POST '{{ args.admin }}/drain_listeners?inboundonly'; else /usr/bin/curl -sSfX POST '{{ args.admin }}/drain_listeners'; fi"
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Drain inbound listeners
+    args:
+      inboundonly: true

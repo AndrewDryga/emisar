@@ -1,0 +1,49 @@
+schema_version: 1
+
+id: debian.apt_install
+title: apt install (one package)
+kind: exec
+risk: high
+
+description: >
+  Installs ONE named package non-interactively. Args are restricted to
+  one package — multi-package installs and arbitrary apt flags are
+  intentionally not supported. Verify with `dpkg_status` afterward.
+  Holds the apt lock for the duration; concurrent dpkg/apt operations
+  will queue.
+
+side_effects:
+  - Holds the apt lock.
+  - Downloads from configured sources.
+  - Modifies /var/lib/dpkg.
+  - Triggers postinst scripts.
+
+args:
+  - name: package
+    type: string
+    required: true
+    description: Binary package name.
+    validation:
+      pattern: "^[a-z0-9][a-z0-9.+\\-]{0,62}$"
+
+execution:
+  command:
+    binary: /usr/bin/apt-get
+    argv:
+      - "install"
+      - "-y"
+      - "--no-install-recommends"
+      - "{{ args.package }}"
+  timeout: 10m
+  env:
+    DEBIAN_FRONTEND: noninteractive
+
+output:
+  parser: text
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 262144
+
+examples:
+  - title: Install fail2ban
+    args:
+      package: fail2ban

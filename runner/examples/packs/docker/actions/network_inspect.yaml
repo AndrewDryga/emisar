@@ -1,0 +1,33 @@
+schema_version: 1
+id: docker.network_inspect
+title: docker network inspect
+kind: exec
+risk: low
+description: >
+  Returns the JSON inspect document for one network — subnet, gateway, containers attached, driver options. Read-only.
+side_effects:
+  - One docker network inspect invocation.
+  - Read-only.
+args:
+  - name: name
+    type: string
+    required: true
+    description: Network name.
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{1,128}$"
+execution:
+  command:
+    binary: /usr/bin/docker
+    argv:
+      - "network"
+      - "inspect"
+      - "{{ args.name }}"
+  timeout: 10s
+output:
+  parser: json
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Inspect the default bridge
+    args:
+      name: bridge

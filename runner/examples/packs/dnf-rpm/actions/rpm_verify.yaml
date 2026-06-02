@@ -1,0 +1,18 @@
+schema_version: 1
+id: rpm.rpm_verify
+title: rpm -Va (verify all)
+kind: exec
+risk: low
+description: Verifies every installed file's checksum / size / perms against the rpm. Lists only mismatches.
+side_effects: ["Reads every package's files for verification — IO-heavy.", "Read-only."]
+args: []
+execution:
+  command: {binary: /usr/bin/rpm, argv: ["-Va"]}
+  timeout: 30m
+output:
+  parser: text
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: Verify all
+    args: {}

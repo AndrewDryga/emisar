@@ -1,0 +1,18 @@
+schema_version: 1
+id: postfix.mailq
+title: mailq (current queue)
+kind: exec
+risk: low
+description: Postfix mail queue — pending, deferred, hold counts.
+side_effects: ["One mailq call.", "Read-only."]
+args: []
+execution:
+  command: {binary: /usr/bin/mailq, argv: []}
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: Queue snapshot
+    args: {}

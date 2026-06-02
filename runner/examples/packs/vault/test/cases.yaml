@@ -1,0 +1,51 @@
+defaults:
+  env:
+    VAULT_ADDR: http://vault:8200
+    VAULT_TOKEN: test-root-token
+cases:
+- action: vault.cubbyhole_list
+  args: {}
+  expect_exit: 0
+- action: vault.lease_revoke_prefix
+  args:
+    prefix: database/creds/
+  skip: mutator skipped by default (high); set --include=vault.lease_revoke_prefix to run
+- action: vault.leases_count
+  args:
+    prefix: aws/creds/readonly
+  expect_exit: 0
+- action: vault.list_audit
+  args: {}
+  expect_exit: 0
+- action: vault.list_auth
+  args: {}
+  expect_exit: 0
+- action: vault.list_mounts
+  args: {}
+  expect_exit: 0
+- action: vault.list_policies
+  args: {}
+  expect_exit: 0
+- action: vault.operator_seal
+  args: {}
+  skip: mutator skipped by default (critical); set --include=vault.operator_seal to run
+- action: vault.operator_step_down
+  args: {}
+  skip: mutator skipped by default (critical); set --include=vault.operator_step_down to run
+- action: vault.read_policy
+  args:
+    name: default
+  expect_exit: 0
+- action: vault.revoke_lease
+  args:
+    lease_id: aws/creds/readonly/abc123
+  skip: mutator skipped by default (high); set --include=vault.revoke_lease to run
+- action: vault.seal_status
+  args: {}
+  expect_exit: 0
+- action: vault.status
+  args: {}
+  expect_exit: 0
+- action: vault.token_lookup_self
+  args: {}
+  expect_exit: 0

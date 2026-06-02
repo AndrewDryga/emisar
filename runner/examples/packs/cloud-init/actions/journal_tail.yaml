@@ -1,0 +1,44 @@
+schema_version: 1
+id: cloud-init.journal_tail
+title: journalctl -u cloud-init -n <lines>
+kind: exec
+risk: low
+description: >
+  systemd journal entries for the four cloud-init units (cloud-init,
+  cloud-init-local, cloud-config, cloud-final). Use when boot failed
+  before /var/log/cloud-init.log was even written.
+side_effects:
+  - Reads the systemd journal.
+  - Read-only.
+args:
+  - name: lines
+    type: integer
+    required: false
+    default: 200
+    description: Number of trailing lines.
+    validation:
+      min: 1
+      max: 10000
+execution:
+  command:
+    binary: /bin/journalctl
+    argv:
+      - "-u"
+      - "cloud-init"
+      - "-u"
+      - "cloud-init-local"
+      - "-u"
+      - "cloud-config"
+      - "-u"
+      - "cloud-final"
+      - "-n"
+      - "{{ args.lines }}"
+      - "--no-pager"
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: Last 200 journal lines
+    args: {}

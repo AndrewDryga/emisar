@@ -1,0 +1,31 @@
+schema_version: 1
+id: git.show_commit
+title: git show <ref>
+kind: exec
+risk: low
+description: Commit message + diff for one commit ref.
+side_effects:
+  - One git show.
+  - Read-only.
+args:
+  - name: ref
+    type: string
+    required: true
+    description: 'Commit ref (SHA, tag, HEAD~N).'
+    validation:
+      pattern: "^[a-zA-Z0-9_.~^/\\-]{1,128}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "cd \"$GIT_REPO\" && git show {{ args.ref }}"
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 2097152
+  max_stderr_bytes: 8192
+examples:
+  - title: Show HEAD
+    args:
+      ref: "HEAD"

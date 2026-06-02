@@ -1,0 +1,46 @@
+schema_version: 1
+id: iam.detach_user_policy
+title: aws iam detach-user-policy
+kind: exec
+risk: high
+description: >
+  Detach one managed policy from one user. Use to remove overly
+  broad permissions during an incident. The policy itself is not
+  modified; just the attachment.
+side_effects:
+  - User loses the permissions that policy granted.
+  - In-flight requests using those permissions begin failing.
+  - Reversible by re-attaching.
+args:
+  - name: user_name
+    type: string
+    required: true
+    description: IAM user name.
+    validation:
+      pattern: "^[a-zA-Z0-9_+=,.@\\-]{1,128}$"
+  - name: policy_arn
+    type: string
+    required: true
+    description: Policy ARN.
+    validation:
+      pattern: "^arn:aws[a-zA-Z\\-]*:iam::[0-9]{12}:policy/[a-zA-Z0-9+=,.@\\-_/]{1,128}$"
+execution:
+  command:
+    binary: /usr/local/bin/aws
+    argv:
+      - "iam"
+      - "detach-user-policy"
+      - "--user-name"
+      - "{{ args.user_name }}"
+      - "--policy-arn"
+      - "{{ args.policy_arn }}"
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Detach AdministratorAccess
+    args:
+      user_name: "intern"
+      policy_arn: "arn:aws:iam::aws:policy/AdministratorAccess"

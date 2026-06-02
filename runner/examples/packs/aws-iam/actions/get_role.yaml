@@ -1,0 +1,27 @@
+schema_version: 1
+id: iam.get_role
+title: aws iam get-role
+kind: exec
+risk: low
+description: One IAM role's details + trust policy.
+side_effects: ["One API call.", "Read-only."]
+args:
+  - name: role
+    type: string
+    required: true
+    description: Role name.
+    validation:
+      pattern: "^[a-zA-Z0-9_+=,.@\\-]{1,64}$"
+execution:
+  command:
+    binary: aws
+    argv: ["iam", "get-role", "--role-name", "{{ args.role }}", "--output", "json"]
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: One role
+    args:
+      role: "lambda-execution"

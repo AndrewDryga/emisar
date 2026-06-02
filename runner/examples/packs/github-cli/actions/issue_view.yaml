@@ -1,0 +1,45 @@
+schema_version: 1
+id: gh.issue_view
+title: gh issue view
+kind: exec
+risk: low
+description: Details + comments for one issue.
+side_effects:
+  - One API call.
+  - Read-only.
+args:
+  - name: repo
+    type: string
+    required: true
+    description: 'Repo in owner/name form.'
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{1,40}/[a-zA-Z0-9_.\\-]{1,100}$"
+  - name: issue
+    type: integer
+    required: true
+    description: Issue number.
+    validation:
+      min: 1
+      max: 9999999
+execution:
+  command:
+    binary: gh
+    argv:
+      - "issue"
+      - "view"
+      - "{{ args.issue }}"
+      - "--repo"
+      - "{{ args.repo }}"
+      - "--comments"
+      - "--json"
+      - "number,title,body,state,author,labels,comments,createdAt"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: One issue
+    args:
+      repo: "andrewdryga/emisar"
+      issue: 1

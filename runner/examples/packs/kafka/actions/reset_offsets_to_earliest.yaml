@@ -1,0 +1,39 @@
+schema_version: 1
+id: kafka.reset_offsets_to_earliest
+title: Reset group offsets to earliest
+kind: exec
+risk: critical
+description: >
+  Rewinds a consumer group's offsets to the start of every partition. Causes a full replay — can be hours to days of duplicate processing.
+side_effects:
+  - Consumer group must be stopped first; this command fails if still active.
+  - Group will re-process every message in the topic from the beginning.
+args:
+  - name: group
+    type: string
+    required: true
+    description: Consumer group ID.
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{1,255}$"
+  - name: topic
+    type: string
+    required: true
+    description: Topic to reset.
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{1,249}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "kafka-consumer-groups.sh '--bootstrap-server' \"$KAFKA_BOOTSTRAP\" '--group' '{{ args.group }}' '--topic' '{{ args.topic }}' '--reset-offsets' '--to-earliest' '--execute'"
+  timeout: 5m
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Replay topic from start
+    args:
+      group: "order-processor"
+      topic: "orders"

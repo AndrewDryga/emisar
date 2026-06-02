@@ -1,0 +1,24 @@
+schema_version: 1
+id: mongo.shard_status
+title: sh.status()
+kind: exec
+risk: low
+description: Sharded cluster summary — shards, databases, chunk distribution.
+side_effects:
+  - Reads sharding metadata.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "mongosh \"$MONGO_URI\" '--quiet' '--eval' 'sh.status(true)'"
+  timeout: 60s
+output:
+  parser: text
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: Shard cluster status
+    args: {}

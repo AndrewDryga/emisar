@@ -1,0 +1,30 @@
+schema_version: 1
+id: systemd.unit_start
+title: systemctl start <unit>
+kind: exec
+risk: medium
+description: >
+  Start one unit. If already running, no-op. Use after a stop or
+  reset_failed to bring a service back.
+side_effects:
+  - Service started.
+args:
+  - name: unit
+    type: string
+    required: true
+    description: Unit name.
+    validation:
+      pattern: "^[a-zA-Z0-9@_\\-.]{1,128}$"
+execution:
+  command:
+    binary: /usr/bin/systemctl
+    argv: ["start", "{{ args.unit }}"]
+  timeout: 120s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Start a unit
+    args:
+      unit: "nginx.service"

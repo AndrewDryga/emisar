@@ -1,0 +1,33 @@
+schema_version: 1
+id: forensics.strace_summary
+title: strace -c -p <pid> (5 seconds)
+kind: exec
+risk: high
+description: >
+  Attach strace in counting mode for 5 seconds — outputs a syscall-frequency table. Slows target less than -y mode but still significant.
+side_effects:
+  - Target process runs ~3-10x slower during the window.
+  - Requires CAP_SYS_PTRACE or matching uid.
+args:
+  - name: pid
+    type: integer
+    required: true
+    description: PID.
+    validation:
+      min: 1
+      max: 4194304
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "timeout 5 strace -c -p {{ args.pid }} 2>&1 || true"
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 32768
+  max_stderr_bytes: 8192
+examples:
+  - title: Syscall frequency for PID
+    args:
+      pid: 1234

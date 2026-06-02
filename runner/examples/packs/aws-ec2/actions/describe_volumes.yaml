@@ -1,0 +1,22 @@
+schema_version: 1
+id: ec2.describe_volumes
+title: aws ec2 describe-volumes
+kind: exec
+risk: low
+description: All EBS volumes with size + state + attachment.
+side_effects:
+  - One API call.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: aws
+    argv: ["ec2", "describe-volumes", "--output", "json"]
+  timeout: 60s
+output:
+  parser: json
+  max_stdout_bytes: 4194304
+  max_stderr_bytes: 8192
+examples:
+  - title: All volumes
+    args: {}

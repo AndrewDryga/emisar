@@ -1,0 +1,23 @@
+schema_version: 1
+id: postgres.dead_tuples_top
+title: Top tables by dead-tuple ratio
+kind: exec
+risk: low
+description: 'Tables where n_dead_tup / (n_live_tup + n_dead_tup) is high. Bloat suspects.'
+side_effects: ["One SELECT.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /usr/bin/psql
+    argv:
+      - "-XAt"
+      - "-c"
+      - "SELECT schemaname || '.' || relname AS table, n_live_tup, n_dead_tup, ROUND(100.0 * n_dead_tup / NULLIF(n_live_tup + n_dead_tup, 0), 2) AS dead_pct, last_vacuum, last_autovacuum FROM pg_stat_user_tables WHERE n_live_tup + n_dead_tup > 10000 ORDER BY n_dead_tup DESC LIMIT 30;"
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 32768
+  max_stderr_bytes: 8192
+examples:
+  - title: Bloat suspects
+    args: {}

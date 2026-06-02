@@ -1,0 +1,25 @@
+schema_version: 1
+id: cloud-init.collect_logs
+title: cloud-init collect-logs
+kind: exec
+risk: medium
+description: >
+  Bundle /var/log/cloud-init* + journals + config into a tarball
+  under /tmp/cloud-init.tar.gz. Use when you need to share state with
+  cloud-init upstream or attach to a support ticket.
+side_effects:
+  - Writes /tmp/cloud-init.tar.gz (overwrites if present).
+  - May briefly stress disk + tar throughput.
+args: []
+execution:
+  command:
+    binary: /usr/bin/cloud-init
+    argv: ["collect-logs"]
+  timeout: 120s
+output:
+  parser: text
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Collect support bundle
+    args: {}

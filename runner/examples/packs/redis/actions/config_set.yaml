@@ -1,0 +1,41 @@
+schema_version: 1
+id: redis.config_set
+title: CONFIG SET
+kind: exec
+risk: high
+description: >
+  Change one runtime config parameter. Effects are immediate and
+  may include eviction policy, persistence mode, replication
+  behavior. Combine with config_rewrite to persist. Value pattern is
+  restricted to safe characters.
+side_effects:
+  - Runtime behavior changes immediately.
+  - Some parameters affect persistence, replication, eviction.
+  - Not persisted across restart without CONFIG REWRITE.
+args:
+  - name: parameter
+    type: string
+    required: true
+    description: Config parameter name.
+    validation:
+      pattern: "^[a-zA-Z0-9_\\-]{1,64}$"
+  - name: value
+    type: string
+    required: true
+    description: New value (limited charset).
+    validation:
+      pattern: "^[a-zA-Z0-9_\\-./ %:]{1,256}$"
+execution:
+  command:
+    binary: /usr/bin/redis-cli
+    argv: ["CONFIG", "SET", "{{ args.parameter }}", "{{ args.value }}"]
+  timeout: 10s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Raise maxmemory
+    args:
+      parameter: "maxmemory"
+      value: "4gb"

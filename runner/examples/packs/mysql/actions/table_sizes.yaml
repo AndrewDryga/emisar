@@ -1,0 +1,32 @@
+schema_version: 1
+id: mysql.table_sizes
+title: Top tables by total size
+kind: exec
+risk: low
+description: Top N tables ordered by (data + index) size in bytes. Read-only.
+side_effects:
+  - One SELECT against information_schema.tables.
+  - Read-only.
+args:
+  - name: limit
+    type: integer
+    required: false
+    default: 30
+    description: How many.
+    validation:
+      min: 1
+      max: 500
+execution:
+  command:
+    binary: /usr/bin/mysql
+    argv:
+      - "-e"
+      - "SELECT table_schema, table_name, table_rows, ROUND(data_length/1024/1024, 2) AS data_mb, ROUND(index_length/1024/1024, 2) AS idx_mb, ROUND((data_length+index_length)/1024/1024, 2) AS total_mb FROM information_schema.tables WHERE table_schema NOT IN ('mysql','information_schema','performance_schema','sys') ORDER BY data_length+index_length DESC LIMIT {{ args.limit }};"
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 131072
+  max_stderr_bytes: 8192
+examples:
+  - title: Biggest tables
+    args: {}

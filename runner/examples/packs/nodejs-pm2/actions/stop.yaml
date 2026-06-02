@@ -1,0 +1,31 @@
+schema_version: 1
+id: pm2.stop
+title: pm2 stop <name>
+kind: exec
+risk: high
+description: Stops one process (PM2 won't auto-restart until you `start`/`restart`).
+side_effects:
+  - Process is stopped.
+  - PM2 marks it `stopped`; it will not auto-respawn.
+args:
+  - name: name
+    type: string
+    required: true
+    description: Process name or id.
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{1,64}$"
+execution:
+  command:
+    binary: pm2
+    argv:
+      - "stop"
+      - "{{ args.name }}"
+  timeout: 60s
+output:
+  parser: text
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Stop one
+    args:
+      name: "api"

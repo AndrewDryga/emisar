@@ -1,0 +1,39 @@
+schema_version: 1
+id: kafka.reset_offsets_to_latest
+title: Reset group offsets to latest (skip all)
+kind: exec
+risk: critical
+description: >
+  Fast-forwards a consumer group past every existing message — they will NOT be processed. Data loss for that consumer.
+side_effects:
+  - Consumer group must be stopped first; this command fails if still active.
+  - All unconsumed messages will be skipped.
+args:
+  - name: group
+    type: string
+    required: true
+    description: Consumer group ID.
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{1,255}$"
+  - name: topic
+    type: string
+    required: true
+    description: Topic to fast-forward.
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{1,249}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "kafka-consumer-groups.sh '--bootstrap-server' \"$KAFKA_BOOTSTRAP\" '--group' '{{ args.group }}' '--topic' '{{ args.topic }}' '--reset-offsets' '--to-latest' '--execute'"
+  timeout: 5m
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Skip backlog
+    args:
+      group: "order-processor"
+      topic: "orders"

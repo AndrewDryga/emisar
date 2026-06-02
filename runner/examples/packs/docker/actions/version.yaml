@@ -1,0 +1,22 @@
+schema_version: 1
+id: docker.version
+title: docker version
+kind: exec
+risk: low
+description: Returns client + server version, API version, build info. Read-only.
+side_effects:
+  - One docker version invocation.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /usr/bin/docker
+    argv: ["version"]
+  timeout: 5s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 4096
+examples:
+  - title: Version
+    args: {}

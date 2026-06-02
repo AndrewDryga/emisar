@@ -1,0 +1,27 @@
+schema_version: 1
+id: iam.list_attached_user_policies
+title: aws iam list-attached-user-policies
+kind: exec
+risk: low
+description: Policies attached to one IAM user.
+side_effects: ["One API call.", "Read-only."]
+args:
+  - name: user
+    type: string
+    required: true
+    description: Username.
+    validation:
+      pattern: "^[a-zA-Z0-9_+=,.@\\-]{1,64}$"
+execution:
+  command:
+    binary: aws
+    argv: ["iam", "list-attached-user-policies", "--user-name", "{{ args.user }}", "--output", "json"]
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 32768
+  max_stderr_bytes: 8192
+examples:
+  - title: Attached policies
+    args:
+      user: "alice"

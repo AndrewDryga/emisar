@@ -1,0 +1,24 @@
+schema_version: 1
+id: haproxy.show_map
+title: show map
+kind: exec
+risk: low
+description: All loaded `map` files (the lookup tables HAProxy uses for routing).
+side_effects:
+  - One admin socket command.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "echo 'show map' | socat - \"$HAPROXY_SOCK\""
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 32768
+  max_stderr_bytes: 8192
+examples:
+  - title: Maps
+    args: {}

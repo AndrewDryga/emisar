@@ -1,0 +1,22 @@
+schema_version: 1
+id: consul.list_acl_tokens
+title: consul acl token list
+kind: exec
+risk: low
+description: List ACL tokens (descriptions + accessor IDs only, not secrets).
+side_effects:
+  - One ACL request.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: consul
+    argv: ["acl", "token", "list"]
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: ACL tokens
+    args: {}

@@ -1,0 +1,18 @@
+schema_version: 1
+id: cassandra.nodetool_compactionhistory
+title: nodetool compactionhistory
+kind: exec
+risk: low
+description: Last few compactions with bytes-in/out, duration, and dropped tombstones.
+side_effects: ["One JMX call.", "Read-only."]
+args: []
+execution:
+  command: {binary: /usr/bin/nodetool, argv: ["compactionhistory"]}
+  timeout: 60s
+output:
+  parser: text
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: Recent compactions
+    args: {}

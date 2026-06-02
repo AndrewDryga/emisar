@@ -1,0 +1,28 @@
+schema_version: 1
+id: cassandra.nodetool_assassinate
+title: nodetool assassinate <address>
+kind: exec
+risk: critical
+description: 'Forcibly removes a dead node from gossip without streaming data. ONLY use when the node is permanently gone AND removenode failed. Risks: orphaned data, hint bleed, token misownership.'
+side_effects:
+  - Node entry purged from gossip.
+  - No data streaming — data that was on the node is gone.
+  - Other replicas eventually catch up via repair.
+args:
+  - name: address
+    type: string
+    required: true
+    description: IP address of the dead node.
+    validation:
+      pattern: "^[0-9]{1,3}(\\.[0-9]{1,3}){3}$"
+execution:
+  command: {binary: /usr/bin/nodetool, argv: ["assassinate", "{{ args.address }}"]}
+  timeout: 5m
+output:
+  parser: text
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 8192
+examples:
+  - title: Remove permanently dead node
+    args:
+      address: "10.0.0.42"

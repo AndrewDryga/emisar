@@ -1,0 +1,34 @@
+schema_version: 1
+id: cassandra.nodetool_rebuild
+title: nodetool rebuild [source_dc]
+kind: exec
+risk: high
+description: 'Re-bootstraps a node by streaming from another DC (or any DC if unspecified). Use after expanding into a new DC.'
+side_effects:
+  - Heavy streaming workload.
+  - Existing data on this node is NOT removed first.
+  - Best run on a node that has empty data dirs.
+args:
+  - name: source_dc
+    type: string
+    required: false
+    default: ""
+    description: Source DC name (empty = any).
+    validation:
+      pattern: "^[a-zA-Z0-9_\\-]{0,128}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "if [ -n '{{ args.source_dc }}' ]; then nodetool rebuild {{ args.source_dc }}; else nodetool rebuild; fi"
+  timeout: 24h
+cancel_grace: 10m
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Rebuild from us-east
+    args:
+      source_dc: "us-east"

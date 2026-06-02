@@ -1,0 +1,31 @@
+schema_version: 1
+id: cf.firewall_rules
+title: GET /zones/<id>/firewall/rules
+kind: exec
+risk: low
+description: All zone firewall rules.
+side_effects:
+  - One API request.
+  - Read-only.
+args:
+  - name: zone_id
+    type: string
+    required: true
+    description: Zone ID.
+    validation:
+      pattern: "^[a-f0-9]{32}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "curl -sS \"https://api.cloudflare.com/client/v4/zones/{{ args.zone_id }}/firewall/rules\" -H \"Authorization: Bearer $CF_API_TOKEN\""
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: Firewall rules
+    args:
+      zone_id: "abc123def456abc123def456abc123de"

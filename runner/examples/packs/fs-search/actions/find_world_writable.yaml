@@ -1,0 +1,36 @@
+schema_version: 1
+id: fs.find_world_writable
+title: World-writable files
+kind: exec
+risk: low
+description: 'Files with the "world-writable" bit set under one path. Security audit.'
+side_effects:
+  - One file-system traversal.
+  - Read-only.
+args:
+  - name: path
+    type: string
+    required: true
+    description: Root path.
+    validation:
+      pattern: "^/[a-zA-Z0-9_./\\-]{0,512}$"
+execution:
+  command:
+    binary: /usr/bin/find
+    argv:
+      - "{{ args.path }}"
+      - "-xdev"
+      - "-type"
+      - "f"
+      - "-perm"
+      - "-0002"
+      - "-print"
+  timeout: 120s
+output:
+  parser: text
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: World-writable under /opt
+    args:
+      path: "/opt"

@@ -1,0 +1,33 @@
+schema_version: 1
+id: prom.query_instant
+title: GET /api/v1/query
+kind: exec
+risk: low
+description: Instant PromQL query. Use to answer 'what's X right now?'.
+side_effects:
+  - One PromQL query.
+  - Read-only.
+args:
+  - name: query
+    type: string
+    required: true
+    description: PromQL expression.
+    validation:
+      pattern: "^.{1,2048}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "curl -sS -G --data-urlencode \"query=$Q\" \"$PROM_URL/api/v1/query\""
+  env:
+    Q: "{{ args.query }}"
+  timeout: 60s
+output:
+  parser: json
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: Up status
+    args:
+      query: "up"

@@ -1,0 +1,22 @@
+schema_version: 1
+id: caddy.config_dump
+title: GET /config (current config)
+kind: exec
+risk: low
+description: Currently-loaded Caddy configuration as JSON.
+side_effects: ["One admin GET.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "curl -sS \"${CADDY_ADMIN:-http://127.0.0.1:2019}/config/\""
+  timeout: 15s
+output:
+  parser: json
+  max_stdout_bytes: 4194304
+  max_stderr_bytes: 8192
+examples:
+  - title: Live config
+    args: {}

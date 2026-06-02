@@ -1,0 +1,33 @@
+schema_version: 1
+
+id: docker.stats
+title: docker stats (one shot)
+kind: exec
+risk: low
+
+description: >
+  Captures one frame of `docker stats` (CPU%, mem usage/limit, net I/O,
+  block I/O, PIDs) for every running container. Read-only.
+
+side_effects:
+  - One docker stats invocation.
+  - Read-only.
+
+args: []
+
+execution:
+  command:
+    binary: /usr/bin/docker
+    argv:
+      - "stats"
+      - "--no-stream"
+  timeout: 30s
+
+output:
+  parser: text
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 16384
+
+examples:
+  - title: One stats snapshot
+    args: {}

@@ -1,0 +1,33 @@
+schema_version: 1
+id: ch.system_sync_replica
+title: SYSTEM SYNC REPLICA <table>
+kind: exec
+risk: medium
+description: >
+  Wait for the local replica to catch up with all peers. Returns
+  when in sync. Use to confirm replication caught up before doing
+  reads from this replica.
+side_effects:
+  - Blocks until sync complete.
+  - Replication I/O while catching up.
+args:
+  - name: table
+    type: string
+    required: true
+    description: Database.table (qualified).
+    validation:
+      pattern: "^[a-zA-Z0-9_]{1,64}\\.[a-zA-Z0-9_]{1,128}$"
+execution:
+  command:
+    binary: /usr/bin/clickhouse-client
+    argv: ["--query", "SYSTEM SYNC REPLICA {{ args.table }}"]
+  timeout: 600s
+cancel_grace: 30s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Wait for replica catch-up
+    args:
+      table: "analytics.events"

@@ -1,0 +1,24 @@
+schema_version: 1
+id: tf.show_json
+title: terraform show -json
+kind: exec
+risk: low
+description: Current state as JSON. Useful to programmatically query state.
+side_effects:
+  - Reads state file.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "cd \"$TF_DIR\" && terraform show -json"
+  timeout: 60s
+output:
+  parser: json
+  max_stdout_bytes: 4194304
+  max_stderr_bytes: 8192
+examples:
+  - title: State JSON
+    args: {}

@@ -1,0 +1,37 @@
+schema_version: 1
+id: cf.purge_url
+title: POST /zones/<id>/purge_cache (single URL)
+kind: exec
+risk: high
+description: Purges cache for one URL. Safe — only affects that URL's cached variants.
+side_effects:
+  - Next request for that URL is a cache miss; hits origin.
+args:
+  - name: zone_id
+    type: string
+    required: true
+    description: Zone ID.
+    validation:
+      pattern: "^[a-f0-9]{32}$"
+  - name: url
+    type: string
+    required: true
+    description: Absolute URL to purge.
+    validation:
+      pattern: "^https://[a-zA-Z0-9.\\-/]{1,512}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "curl -sS -XPOST \"https://api.cloudflare.com/client/v4/zones/{{ args.zone_id }}/purge_cache\" -H \"Authorization: Bearer $CF_API_TOKEN\" -H \"Content-Type: application/json\" -d '{\"files\":[\"{{ args.url }}\"]}'"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Purge one URL
+    args:
+      zone_id: "abc123def456abc123def456abc123de"
+      url: "https://example.com/style.css"

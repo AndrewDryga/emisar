@@ -1,0 +1,24 @@
+schema_version: 1
+id: ch.reload_config
+title: SYSTEM RELOAD CONFIG
+kind: exec
+risk: medium
+description: Re-reads config.xml + users.xml without restarting.
+side_effects:
+  - Config + user definitions reloaded.
+  - Open sessions unaffected.
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "clickhouse-client --host \"${CH_HOST:-localhost}\" --user \"${CH_USER:-default}\" --password \"$CH_PASSWORD\" --query \"SYSTEM RELOAD CONFIG\""
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Reload config
+    args: {}

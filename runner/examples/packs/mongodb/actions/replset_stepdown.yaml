@@ -1,0 +1,36 @@
+schema_version: 1
+id: mongo.replset_stepdown
+title: rs.stepDown(<seconds>)
+kind: exec
+risk: critical
+description: >
+  Force the current primary to step down. Replica set elects a new
+  primary; ~5–15s of write unavailability is typical. Use during
+  planned failover when one secondary is known healthier.
+side_effects:
+  - Current primary becomes secondary.
+  - Write unavailability until election finishes.
+  - Connected drivers reconnect to the new primary.
+  - Primary refuses primary status for the specified period.
+args:
+  - name: seconds
+    type: integer
+    required: false
+    default: 60
+    description: How long the stepped-down node refuses primary.
+    validation:
+      min: 5
+      max: 3600
+execution:
+  command:
+    binary: /usr/bin/mongosh
+    argv: ["--quiet", "--eval", "rs.stepDown({{ args.seconds }})"]
+  timeout: 60s
+cancel_grace: 15s
+output:
+  parser: text
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 8192
+examples:
+  - title: Step down for 1 minute
+    args: {}

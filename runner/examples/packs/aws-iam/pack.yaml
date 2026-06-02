@@ -1,0 +1,28 @@
+schema_version: 1
+id: aws-iam
+name: AWS IAM operations
+version: 0.1.0
+description: >
+  IAM introspection — users, roles, policies, attached policies, access
+  keys — plus incident-response mutators: deactivate access key,
+  delete access key, detach user policy. Auth via AWS_PROFILE. Routine
+  IAM changes belong in IaC; these actions are for emergency lockout.
+vendor: emisar
+homepage: https://github.com/andrewdryga/emisar
+
+requires:
+  os: [linux]
+  binaries: [aws]
+
+actions:
+  - actions/list_users.yaml
+  - actions/list_roles.yaml
+  - actions/list_policies.yaml
+  - actions/get_user.yaml
+  - actions/get_role.yaml
+  - actions/list_attached_user_policies.yaml
+  - actions/list_access_keys.yaml
+  - actions/last_used_access_key.yaml
+  - actions/deactivate_access_key.yaml
+  - actions/delete_access_key.yaml
+  - actions/detach_user_policy.yaml

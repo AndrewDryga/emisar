@@ -1,0 +1,29 @@
+schema_version: 1
+id: time.timedatectl_set_ntp
+title: timedatectl set-ntp <bool>
+kind: exec
+risk: medium
+description: >
+  Enable or disable NTP synchronization. Disabling is rare —
+  primarily for offline testing.
+side_effects:
+  - Enables/disables the NTP client.
+  - When disabled, the clock will drift.
+args:
+  - name: enabled
+    type: boolean
+    required: true
+    description: Enable (true) or disable (false) NTP.
+execution:
+  command:
+    binary: /usr/bin/timedatectl
+    argv: ["set-ntp", "{{ args.enabled }}"]
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Enable NTP
+    args:
+      enabled: true

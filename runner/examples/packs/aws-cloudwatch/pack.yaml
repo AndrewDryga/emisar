@@ -1,0 +1,22 @@
+schema_version: 1
+id: aws-cloudwatch
+name: AWS CloudWatch operations
+version: 0.1.0
+description: >
+  Metric + alarm + log group + log stream + log query introspection.
+  Read-only. Auth via AWS_PROFILE.
+vendor: emisar
+homepage: https://github.com/andrewdryga/emisar
+
+requires:
+  os: [linux]
+  binaries: [aws]
+
+actions:
+  - actions/describe_alarms.yaml
+  - actions/alarms_in_alarm.yaml
+  - actions/list_metrics.yaml
+  - actions/get_metric_statistics.yaml
+  - actions/log_groups.yaml
+  - actions/log_streams.yaml
+  - actions/log_tail.yaml

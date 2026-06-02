@@ -1,0 +1,22 @@
+schema_version: 1
+id: ec2.describe_security_groups
+title: aws ec2 describe-security-groups
+kind: exec
+risk: low
+description: All SGs with ingress/egress rules.
+side_effects:
+  - One API call.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: aws
+    argv: ["ec2", "describe-security-groups", "--output", "json"]
+  timeout: 60s
+output:
+  parser: json
+  max_stdout_bytes: 4194304
+  max_stderr_bytes: 8192
+examples:
+  - title: All SGs
+    args: {}

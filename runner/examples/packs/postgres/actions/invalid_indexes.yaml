@@ -1,0 +1,23 @@
+schema_version: 1
+id: postgres.invalid_indexes
+title: Invalid indexes (indisvalid = false)
+kind: exec
+risk: low
+description: Indexes from failed CREATE INDEX CONCURRENTLY — present but not used by the planner.
+side_effects: ["One SELECT.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /usr/bin/psql
+    argv:
+      - "-XAt"
+      - "-c"
+      - "SELECT n.nspname || '.' || c.relname AS index, t.relname AS table, pg_size_pretty(pg_relation_size(c.oid)) AS size FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid JOIN pg_class t ON t.oid = i.indrelid JOIN pg_namespace n ON n.oid = c.relnamespace WHERE NOT i.indisvalid;"
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Broken indexes
+    args: {}

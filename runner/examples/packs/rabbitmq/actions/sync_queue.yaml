@@ -1,0 +1,41 @@
+schema_version: 1
+id: rmq.sync_queue
+title: rabbitmqctl sync_queue
+kind: exec
+risk: medium
+description: >
+  Force a mirrored classic queue to sync with its master. Producers
+  and consumers continue to operate; the sync runs in the background.
+  Use when an unsynced mirror is blocking a master failover.
+side_effects:
+  - Mirror catches up with the master.
+  - I/O bandwidth used by sync.
+  - Producers/consumers unaffected (small latency hit possible).
+args:
+  - name: queue
+    type: string
+    required: true
+    description: Queue name.
+    validation:
+      pattern: "^[a-zA-Z0-9_:.\\-/]{1,256}$"
+  - name: vhost
+    type: string
+    required: false
+    default: "/"
+    description: Virtual host.
+    validation:
+      pattern: "^[a-zA-Z0-9_:.\\-/]{1,128}$"
+execution:
+  command:
+    binary: /usr/sbin/rabbitmqctl
+    argv: ["sync_queue", "--vhost", "{{ args.vhost }}", "{{ args.queue }}"]
+  timeout: 300s
+cancel_grace: 30s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Sync orders queue
+    args:
+      queue: "orders"

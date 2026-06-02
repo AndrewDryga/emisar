@@ -1,0 +1,25 @@
+schema_version: 1
+id: podman.inspect
+title: podman inspect <id>
+kind: exec
+risk: low
+description: Full container details for one ID/name.
+side_effects: ["One CLI call.", "Read-only."]
+args:
+  - name: container
+    type: string
+    required: true
+    description: Container ID or name.
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{1,64}$"
+execution:
+  command: {binary: /usr/bin/podman, argv: ["inspect", "{{ args.container }}"]}
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: One container
+    args:
+      container: "web"

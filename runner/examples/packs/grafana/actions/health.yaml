@@ -1,0 +1,22 @@
+schema_version: 1
+id: grafana.health
+title: GET /api/health
+kind: exec
+risk: low
+description: Liveness + DB-ok state.
+side_effects: ["One API call.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "curl -sS -H \"Authorization: Bearer $GRAFANA_TOKEN\" \"$GRAFANA_URL/api/health\""
+  timeout: 15s
+output:
+  parser: json
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Health
+    args: {}

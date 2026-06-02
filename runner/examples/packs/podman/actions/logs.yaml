@@ -1,0 +1,35 @@
+schema_version: 1
+id: podman.logs
+title: podman logs <id> --tail <N>
+kind: exec
+risk: low
+description: Last N log lines.
+side_effects: ["One CLI call.", "Read-only."]
+args:
+  - name: container
+    type: string
+    required: true
+    description: Container ID or name.
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{1,64}$"
+  - name: tail
+    type: integer
+    required: false
+    default: 200
+    description: Lines.
+    validation:
+      min: 1
+      max: 10000
+execution:
+  command:
+    binary: /usr/bin/podman
+    argv: ["logs", "--tail", "{{ args.tail }}", "{{ args.container }}"]
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 2097152
+  max_stderr_bytes: 8192
+examples:
+  - title: Last 200
+    args:
+      container: "web"

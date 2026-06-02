@@ -1,0 +1,22 @@
+schema_version: 1
+id: time.ntpq_peers
+title: ntpq -pn
+kind: exec
+risk: low
+description: NTP peer table (for systems still using ntpd rather than chrony).
+side_effects:
+  - One ntpq query.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /usr/bin/ntpq
+    argv: ["-pn"]
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 8192
+examples:
+  - title: ntpd peers
+    args: {}

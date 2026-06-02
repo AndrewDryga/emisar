@@ -1,0 +1,25 @@
+schema_version: 1
+id: consul.kv_get_recursive
+title: consul kv get -recurse <prefix>
+kind: exec
+risk: low
+description: All keys + values under a prefix.
+side_effects: ["One KV request.", "Read-only — values may include secrets; rely on audit redaction."]
+args:
+  - name: prefix
+    type: string
+    required: true
+    description: Key prefix.
+    validation:
+      pattern: "^[a-zA-Z0-9_./\\-]{1,256}$"
+execution:
+  command: {binary: /usr/bin/consul, argv: ["kv", "get", "-recurse", "{{ args.prefix }}"]}
+  timeout: 60s
+output:
+  parser: text
+  max_stdout_bytes: 4194304
+  max_stderr_bytes: 8192
+examples:
+  - title: Recursive under config/
+    args:
+      prefix: "config/"

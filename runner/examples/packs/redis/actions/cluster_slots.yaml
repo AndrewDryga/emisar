@@ -1,0 +1,25 @@
+schema_version: 1
+id: redis.cluster_slots
+title: CLUSTER SLOTS
+kind: exec
+risk: low
+description: >
+  Slot-range → master/replica mapping. Use to confirm a given hash
+  slot is owned by the expected shard and to see replica addresses
+  for read traffic.
+side_effects:
+  - One CLUSTER SLOTS command.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /usr/bin/redis-cli
+    argv: ["CLUSTER", "SLOTS"]
+  timeout: 10s
+output:
+  parser: text
+  max_stdout_bytes: 131072
+  max_stderr_bytes: 8192
+examples:
+  - title: Slot ownership map
+    args: {}

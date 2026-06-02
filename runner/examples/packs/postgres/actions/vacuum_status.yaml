@@ -1,0 +1,51 @@
+schema_version: 1
+
+id: postgres.vacuum_status
+title: Autovacuum + bloat snapshot
+kind: exec
+risk: low
+
+description: >
+  Returns last-vacuum/last-autovacuum timestamps and dead-tuple counts
+  for the top N tables in one schema, ordered by dead tuples. Use to
+  decide whether to run VACUUM manually or tune autovacuum. Read-only.
+
+side_effects:
+  - One SELECT against pg_stat_user_tables.
+  - No locks held.
+
+args:
+  - name: schema
+    type: string
+    required: false
+    default: public
+    description: Schema to inspect.
+    validation:
+      pattern: "^[a-zA-Z_][a-zA-Z0-9_]{0,62}$"
+
+  - name: limit
+    type: integer
+    required: false
+    default: 20
+    description: How many tables to return.
+    validation:
+      min: 1
+      max: 200
+
+execution:
+  command:
+    binary: /usr/bin/psql
+    argv:
+      - "-XAt"
+      - "-c"
+      - "SELECT schemaname, relname, n_live_tup, n_dead_tup, round(100 * n_dead_tup::numeric / NULLIF(n_live_tup + n_dead_tup, 0), 2) AS dead_pct, last_vacuum, last_autovacuum FROM pg_stat_user_tables WHERE schemaname = '{{ args.schema }}' ORDER BY n_dead_tup DESC LIMIT {{ args.limit }};"
+  timeout: 30s
+
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+
+examples:
+  - title: Find tables with the most dead rows
+    args: {}

@@ -1,0 +1,18 @@
+schema_version: 1
+id: nomad.agent_info
+title: nomad agent-info
+kind: exec
+risk: low
+description: Per-agent stats — runtime, raft, serf, vault, consul subsystems.
+side_effects: ["One API call.", "Read-only."]
+args: []
+execution:
+  command: {binary: /usr/bin/nomad, argv: ["agent-info"]}
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Agent info
+    args: {}

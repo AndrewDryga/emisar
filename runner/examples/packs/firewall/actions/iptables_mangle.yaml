@@ -1,0 +1,22 @@
+schema_version: 1
+id: fw.iptables_mangle
+title: iptables -L -nv (mangle table)
+kind: exec
+risk: low
+description: All mangle-table rules — QoS marks, TTL tweaks.
+side_effects:
+  - One netfilter query.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /usr/sbin/iptables
+    argv: ["-L", "-nv", "--line-numbers", "-t", "mangle"]
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 131072
+  max_stderr_bytes: 8192
+examples:
+  - title: Mangle rules
+    args: {}

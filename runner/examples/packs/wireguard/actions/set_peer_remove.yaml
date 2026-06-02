@@ -1,0 +1,40 @@
+schema_version: 1
+id: wg.set_peer_remove
+title: wg set <iface> peer <pubkey> remove
+kind: exec
+risk: high
+description: >
+  Remove one peer from a running WireGuard interface. Its tunnel
+  sessions drop. The peer can no longer connect until added back
+  (or the config file is reloaded).
+side_effects:
+  - Peer removed from runtime state.
+  - That peer's traffic stops flowing.
+  - Change is runtime-only; iface config file unchanged.
+args:
+  - name: iface
+    type: string
+    required: true
+    description: Interface name.
+    validation:
+      pattern: "^[a-zA-Z0-9_\\-]{1,15}$"
+  - name: pubkey
+    type: string
+    required: true
+    description: Peer's base64 public key.
+    validation:
+      pattern: "^[A-Za-z0-9+/]{43}=$"
+execution:
+  command:
+    binary: /usr/bin/wg
+    argv: ["set", "{{ args.iface }}", "peer", "{{ args.pubkey }}", "remove"]
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Kick a peer
+    args:
+      iface: "wg0"
+      pubkey: "abcDEF1234567890abcDEF1234567890abcDEF1234="

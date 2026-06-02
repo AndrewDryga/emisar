@@ -1,0 +1,241 @@
+defaults:
+  env:
+    NOMAD_ADDR: http://nomad:4646
+cases:
+- action: nomad.acl_policies
+  args: {}
+  expect_exit: 0
+- action: nomad.acl_token_self
+  args: {}
+  expect_exit: 0
+- action: nomad.agent_force_leave
+  args:
+    node_name: nomad-server-3
+  expect_exit:
+  - 0
+  - 1
+  skip: mutator skipped by default (high)
+- action: nomad.agent_info
+  args: {}
+  expect_exit: 0
+- action: nomad.agent_members
+  args: {}
+  expect_exit: 0
+- action: nomad.agent_self
+  args: {}
+  expect_exit: 0
+- action: nomad.alloc_logs
+  args:
+    alloc_id: abc12345
+    task: web
+  expect_exit: 0
+- action: nomad.alloc_logs_stderr
+  args:
+    alloc_id: abc12345
+    task: web
+  expect_exit: 0
+- action: nomad.alloc_restart
+  args:
+    alloc_id: abc12345
+    task: web
+  expect_exit:
+  - 0
+  - 1
+  skip: mutator skipped by default (high)
+- action: nomad.alloc_signal
+  args:
+    alloc_id: abc12345
+    signal: HUP
+    task: web
+  expect_exit:
+  - 0
+  - 1
+  skip: mutator skipped by default (high)
+- action: nomad.alloc_stats
+  args:
+    alloc_id: abc12345
+  expect_exit: 0
+- action: nomad.alloc_status
+  args:
+    alloc_id: abc12345
+  expect_exit: 0
+- action: nomad.alloc_stop
+  args:
+    alloc_id: abc12345
+  expect_exit:
+  - 0
+  - 1
+  skip: mutator skipped by default (high)
+- action: nomad.csi_volume_list
+  args: {}
+  expect_exit: 0
+- action: nomad.csi_volume_status
+  args:
+    volume_id: data-volume-1
+  expect_exit: 0
+- action: nomad.deployment_status
+  args:
+    deployment_id: abc12345
+  expect_exit: 0
+- action: nomad.eval_list
+  args: {}
+  expect_exit: 0
+- action: nomad.eval_status
+  args:
+    eval_id: abc12345
+  expect_exit: 0
+- action: nomad.host_volume_list
+  args: {}
+  expect_exit: 0
+- action: nomad.job_allocations
+  args:
+    job: api
+  expect_exit: 0
+- action: nomad.job_deployments
+  args:
+    job: api
+  expect_exit: 0
+- action: nomad.job_dispatch
+  args:
+    job: batch-processor
+    meta_kv: input=/tmp/data,priority=high
+  expect_exit:
+  - 0
+  - 1
+  skip: mutator skipped by default (high)
+- action: nomad.job_evaluations
+  args:
+    job: api
+  expect_exit: 0
+- action: nomad.job_history
+  args:
+    job: api
+  expect_exit: 0
+- action: nomad.job_inspect
+  args:
+    job: api
+  expect_exit: 0
+- action: nomad.job_periodic_force
+  args:
+    job: nightly-backup
+  expect_exit:
+  - 0
+  - 1
+  skip: mutator skipped by default (medium)
+- action: nomad.job_promote
+  args:
+    job: api
+  expect_exit:
+  - 0
+  - 1
+  skip: mutator skipped by default (high)
+- action: nomad.job_revert
+  args:
+    job: api
+    version: 7
+  expect_exit:
+  - 0
+  - 1
+  skip: mutator skipped by default (high)
+- action: nomad.job_scale
+  args:
+    job: api
+    group: web
+    count: 10
+  expect_exit:
+  - 0
+  - 1
+  skip: mutator skipped by default (medium)
+- action: nomad.job_status_all
+  args: {}
+  expect_exit: 0
+- action: nomad.job_status_one
+  args:
+    job: api
+  expect_exit: 0
+- action: nomad.job_stop
+  args:
+    job: api
+  expect_exit:
+  - 0
+  - 1
+  skip: mutator skipped by default (high)
+- action: nomad.leader
+  args: {}
+  expect_exit: 0
+- action: nomad.namespace_list
+  args: {}
+  expect_exit: 0
+- action: nomad.node_drain
+  args:
+    node_id: abc12345
+  expect_exit:
+  - 0
+  - 1
+  skip: mutator skipped by default (high)
+- action: nomad.node_drain_done
+  args:
+    node_id: abc12345
+  expect_exit:
+  - 0
+  - 1
+  skip: mutator skipped by default (medium)
+- action: nomad.node_eligibility_disable
+  args:
+    node_id: abc12345
+  expect_exit:
+  - 0
+  - 1
+  skip: mutator skipped by default (high)
+- action: nomad.node_eligibility_enable
+  args:
+    node_id: abc12345
+  expect_exit:
+  - 0
+  - 1
+  skip: mutator skipped by default (medium)
+- action: nomad.node_eligibility_show
+  args: {}
+  expect_exit: 0
+- action: nomad.node_purge
+  args:
+    node_id: deadbeef
+  expect_exit:
+  - 0
+  - 1
+  skip: mutator skipped by default (critical)
+- action: nomad.node_status_all
+  args: {}
+  expect_exit: 0
+- action: nomad.node_status_one
+  args:
+    node_id: abc12345
+  expect_exit: 0
+- action: nomad.operator_autopilot_get_config
+  args: {}
+  expect_exit: 0
+- action: nomad.operator_autopilot_state
+  args: {}
+  expect_exit: 0
+- action: nomad.operator_raft_list_peers
+  args: {}
+  expect_exit: 0
+- action: nomad.operator_raft_remove_peer
+  args:
+    address: 10.0.0.5:4647
+  expect_exit:
+  - 0
+  - 1
+  skip: mutator skipped by default (critical)
+- action: nomad.quota_list
+  args: {}
+  expect_exit: 0
+- action: nomad.server_members
+  args: {}
+  expect_exit: 0
+- action: nomad.system_gc
+  args: {}
+  expect_exit:
+  - 0
+  - 1
+  skip: mutator skipped by default (medium)

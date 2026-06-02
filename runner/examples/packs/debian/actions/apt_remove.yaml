@@ -1,0 +1,46 @@
+schema_version: 1
+
+id: debian.apt_remove
+title: apt remove (one package)
+kind: exec
+risk: high
+
+description: >
+  Removes ONE named package non-interactively. Config files are kept
+  (apt remove, not purge). For data-bearing packages this still drops
+  the binaries — confirm via `dpkg_status` first that you are not
+  removing a service still in use. Holds the apt lock.
+
+side_effects:
+  - Holds the apt lock.
+  - Removes binaries from /usr.
+  - Triggers prerm/postrm scripts.
+
+args:
+  - name: package
+    type: string
+    required: true
+    description: Binary package name.
+    validation:
+      pattern: "^[a-z0-9][a-z0-9.+\\-]{0,62}$"
+
+execution:
+  command:
+    binary: /usr/bin/apt-get
+    argv:
+      - "remove"
+      - "-y"
+      - "{{ args.package }}"
+  timeout: 10m
+  env:
+    DEBIAN_FRONTEND: noninteractive
+
+output:
+  parser: text
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 131072
+
+examples:
+  - title: Remove obsolete ftp client
+    args:
+      package: ftp

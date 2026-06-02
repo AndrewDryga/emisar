@@ -1,0 +1,20 @@
+schema_version: 1
+id: nfs.exportfs_r
+title: exportfs -r
+kind: exec
+risk: high
+description: Re-export everything in /etc/exports. New mounts work; established clients may stall briefly.
+side_effects:
+  - Existing exports table is re-synced from /etc/exports.
+  - Brief stall possible on existing NFS clients.
+args: []
+execution:
+  command: {binary: /usr/sbin/exportfs, argv: ["-r"]}
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Re-export
+    args: {}

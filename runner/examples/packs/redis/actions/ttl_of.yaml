@@ -1,0 +1,31 @@
+schema_version: 1
+id: redis.ttl_of
+title: TTL key
+kind: exec
+risk: low
+description: >
+  Seconds until the key expires. -2 means missing, -1 means no
+  expiry set. Use before any expiry-related troubleshooting.
+side_effects:
+  - One TTL command.
+  - Read-only metadata.
+args:
+  - name: key
+    type: string
+    required: true
+    description: Key name.
+    validation:
+      pattern: "^[A-Za-z0-9_:.\\-{}@#/=+]{1,512}$"
+execution:
+  command:
+    binary: /usr/bin/redis-cli
+    argv: ["TTL", "{{ args.key }}"]
+  timeout: 5s
+output:
+  parser: text
+  max_stdout_bytes: 1024
+  max_stderr_bytes: 8192
+examples:
+  - title: TTL of a session
+    args:
+      key: "session:abc123"

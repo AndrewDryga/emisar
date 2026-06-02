@@ -1,0 +1,34 @@
+schema_version: 1
+
+id: linux.crontab_all
+title: All user crontabs + system cron dirs
+kind: exec
+risk: low
+
+description: >
+  Dumps every per-user crontab AND the system cron dirs (/etc/crontab,
+  /etc/cron.d/, /etc/cron.{hourly,daily,weekly,monthly}/). Use to
+  answer "what's scheduled on this host?" Read-only.
+
+side_effects:
+  - Iterates user crontabs + reads /etc/cron.*.
+  - Requires root.
+
+args: []
+
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "for u in $(getent passwd | awk -F: '$7 !~ /nologin|false/ {print $1}'); do echo \"--- crontab -u $u ---\"; crontab -l -u \"$u\" 2>/dev/null; done; echo '--- /etc/crontab ---'; cat /etc/crontab 2>/dev/null; echo '--- /etc/cron.d/ ---'; ls -la /etc/cron.d/ 2>/dev/null; for d in hourly daily weekly monthly; do echo \"--- /etc/cron.$d/ ---\"; ls -la \"/etc/cron.$d/\" 2>/dev/null; done"
+  timeout: 15s
+
+output:
+  parser: text
+  max_stdout_bytes: 131072
+  max_stderr_bytes: 16384
+
+examples:
+  - title: Every scheduled job on this host
+    args: {}

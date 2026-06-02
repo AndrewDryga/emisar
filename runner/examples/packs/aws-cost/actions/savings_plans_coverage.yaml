@@ -1,0 +1,22 @@
+schema_version: 1
+id: ce.savings_plans_coverage
+title: Savings Plans coverage (last month)
+kind: exec
+risk: low
+description: 'What fraction of eligible compute spend was covered by Savings Plans / RI last month.'
+side_effects: ["One Cost Explorer call.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "END=$(date -u +%Y-%m-01); START=$(date -u -d 'last month 1st' +%Y-%m-01 2>/dev/null || date -u -v-1m -v1d +%Y-%m-01); aws ce get-savings-plans-coverage --time-period Start=$START,End=$END --granularity MONTHLY --output json"
+  timeout: 60s
+output:
+  parser: json
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: SP coverage
+    args: {}

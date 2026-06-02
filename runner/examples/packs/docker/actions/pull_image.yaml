@@ -1,0 +1,32 @@
+schema_version: 1
+id: docker.pull_image
+title: docker pull
+kind: exec
+risk: medium
+description: >
+  Pulls one image from its configured registry. Network + disk intensive; image-ref restricted to safe characters. Idempotent — re-pulling an existing tag re-checks the digest.
+side_effects:
+  - Outbound HTTPS to the registry.
+  - Writes layers to /var/lib/docker.
+args:
+  - name: image
+    type: string
+    required: true
+    description: Image ref (name:tag).
+    validation:
+      pattern: "^[a-zA-Z0-9_./@:\\-]{1,256}$"
+execution:
+  command:
+    binary: /usr/bin/docker
+    argv:
+      - "pull"
+      - "{{ args.image }}"
+  timeout: 10m
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 65536
+examples:
+  - title: Pull nginx:latest
+    args:
+      image: "nginx:latest"

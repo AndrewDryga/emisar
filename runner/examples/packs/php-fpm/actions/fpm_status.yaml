@@ -1,0 +1,22 @@
+schema_version: 1
+id: phpfpm.fpm_status
+title: GET /status (FPM)
+kind: exec
+risk: low
+description: FPM pool summary — active processes, idle, max children, listen queue.
+side_effects: ["One HTTP GET.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "curl -sS \"${PHP_FPM_STATUS_URL:-http://127.0.0.1/fpm-status}\""
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Pool status
+    args: {}

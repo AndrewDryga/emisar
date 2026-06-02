@@ -1,0 +1,23 @@
+schema_version: 1
+id: postgres.database_stats
+title: pg_stat_database
+kind: exec
+risk: low
+description: 'Per-DB: commits/rollbacks, blks_read/hit, deadlocks, conflicts, temp file usage.'
+side_effects: ["One SELECT.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /usr/bin/psql
+    argv:
+      - "-XAt"
+      - "-c"
+      - "SELECT datname, xact_commit, xact_rollback, blks_read, blks_hit, ROUND(100.0 * blks_hit / NULLIF(blks_hit + blks_read, 0), 2) AS cache_hit_pct, tup_returned, tup_fetched, tup_inserted, tup_updated, tup_deleted, deadlocks, conflicts, temp_files, pg_size_pretty(temp_bytes) AS temp_size FROM pg_stat_database WHERE datname IS NOT NULL ORDER BY (blks_read + blks_hit) DESC LIMIT 30;"
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Per-DB stats
+    args: {}

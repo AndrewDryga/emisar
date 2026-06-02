@@ -1,0 +1,24 @@
+schema_version: 1
+id: kafka.under_replicated
+title: Under-replicated partitions
+kind: exec
+risk: low
+description: 'Topics + partitions with ISR < replication factor. The canonical "is replication healthy?" check.'
+side_effects:
+  - One metadata request.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "kafka-topics.sh '--bootstrap-server' \"$KAFKA_BOOTSTRAP\" '--describe' '--under-replicated-partitions'"
+  timeout: 60s
+output:
+  parser: text
+  max_stdout_bytes: 131072
+  max_stderr_bytes: 8192
+examples:
+  - title: URP across cluster
+    args: {}

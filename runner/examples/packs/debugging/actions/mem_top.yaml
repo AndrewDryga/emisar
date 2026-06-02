@@ -1,0 +1,43 @@
+schema_version: 1
+
+id: debugging.mem_top
+title: Top processes by RSS
+kind: exec
+risk: low
+
+description: >
+  Returns the top N processes sorted by resident-set size (RSS). Use
+  when /proc/meminfo or `free` shows pressure and you need the
+  offender. RSS does not double-count shared pages, so a "leak"
+  candidate showing high RSS is worth investigating.
+
+side_effects:
+  - One ps invocation.
+  - Read-only.
+
+args:
+  - name: limit
+    type: integer
+    required: false
+    default: 25
+    description: How many processes to return.
+    validation:
+      min: 1
+      max: 500
+
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "ps -eo pid,user,rss,vsz,pcpu,pmem,etime,comm --sort=-rss | head -n {{ args.limit }}"
+  timeout: 10s
+
+output:
+  parser: text
+  max_stdout_bytes: 131072
+  max_stderr_bytes: 8192
+
+examples:
+  - title: Top 25 memory hogs
+    args: {}

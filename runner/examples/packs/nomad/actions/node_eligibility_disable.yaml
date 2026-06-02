@@ -1,0 +1,27 @@
+schema_version: 1
+id: nomad.node_eligibility_disable
+title: nomad node eligibility -disable
+kind: exec
+risk: high
+description: Marks one node ineligible for new allocations. Existing allocations are not migrated.
+side_effects:
+  - Node refuses new allocations.
+  - Existing allocations stay running.
+args:
+  - name: node_id
+    type: string
+    required: true
+    description: Node ID or prefix.
+    validation:
+      pattern: "^[a-fA-F0-9\\-]{4,36}$"
+execution:
+  command: {binary: /usr/bin/nomad, argv: ["node", "eligibility", "-disable", "{{ args.node_id }}"]}
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Cordon one
+    args:
+      node_id: "abc12345"

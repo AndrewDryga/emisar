@@ -1,0 +1,89 @@
+defaults:
+  env:
+    MONGO_URI: mongodb://root:testpass@mongodb:27017/?authSource=admin
+cases:
+- action: mongo.balancer_status
+  args: {}
+  expect_exit: 0
+- action: mongo.build_info
+  args: {}
+  expect_exit: 0
+- action: mongo.collection_list
+  args:
+    database: production
+  expect_exit: 0
+- action: mongo.collection_stats
+  args:
+    database: production
+    collection: users
+  expect_exit: 0
+- action: mongo.compact_collection
+  args:
+    db_name: analytics
+    collection: events
+  skip: mutator skipped by default (high); set --include=mongo.compact_collection to run
+- action: mongo.connections
+  args: {}
+  expect_exit: 0
+- action: mongo.current_op
+  args: {}
+  expect_exit: 0
+- action: mongo.db_list
+  args: {}
+  expect_exit: 0
+- action: mongo.db_stats
+  args:
+    database: production
+  expect_exit: 0
+- action: mongo.drop_index
+  args:
+    db_name: shop
+    collection: orders
+    index_name: user_1_status_1
+  skip: mutator skipped by default (high); set --include=mongo.drop_index to run
+- action: mongo.explain_query
+  args:
+    database: production
+    collection: users
+    filter_json: '{"status":"active"}'
+  expect_exit: 0
+- action: mongo.get_parameter
+  args: {}
+  expect_exit: 0
+- action: mongo.host_info
+  args: {}
+  expect_exit: 0
+- action: mongo.index_stats
+  args:
+    database: production
+    collection: users
+  expect_exit: 0
+- action: mongo.kill_op
+  args:
+    opid: 1234
+  expect_exit: 0
+- action: mongo.oplog_size
+  args: {}
+  expect_exit: 0
+- action: mongo.profiler_status
+  args:
+    database: production
+  expect_exit: 0
+- action: mongo.replset_config
+  args: {}
+  expect_exit: 0
+- action: mongo.replset_status
+  args: {}
+  expect_exit: 0
+- action: mongo.replset_stepdown
+  args: {}
+  skip: mutator skipped by default (critical); set --include=mongo.replset_stepdown to run
+- action: mongo.server_status
+  args: {}
+  expect_exit: 0
+- action: mongo.shard_status
+  args: {}
+  expect_exit: 0
+- action: mongo.top
+  args: {}
+  expect_exit: 0

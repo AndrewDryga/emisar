@@ -1,0 +1,27 @@
+schema_version: 1
+id: nomad.job_promote
+title: nomad job promote <id>
+kind: exec
+risk: high
+description: Promotes a canary deployment — replaces the rest of the allocations with the new version.
+side_effects:
+  - Old allocations are gradually replaced per the update stanza.
+  - In-flight requests on replaced allocs may drop (subject to shutdown_delay).
+args:
+  - name: job
+    type: string
+    required: true
+    description: Job ID with an in-progress canary.
+    validation:
+      pattern: "^[a-zA-Z0-9_\\-]{1,128}$"
+execution:
+  command: {binary: /usr/bin/nomad, argv: ["job", "promote", "{{ args.job }}"]}
+  timeout: 60s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Promote canary
+    args:
+      job: "api"

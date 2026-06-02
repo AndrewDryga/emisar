@@ -1,0 +1,18 @@
+schema_version: 1
+id: consul.list_acl_policies
+title: consul acl policy list
+kind: exec
+risk: low
+description: All ACL policies.
+side_effects: ["One ACL request.", "Read-only."]
+args: []
+execution:
+  command: {binary: /usr/bin/consul, argv: ["acl", "policy", "list"]}
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 131072
+  max_stderr_bytes: 8192
+examples:
+  - title: ACL policies
+    args: {}

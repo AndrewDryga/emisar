@@ -1,0 +1,24 @@
+schema_version: 1
+id: nginx.upstream_list
+title: List configured upstream blocks
+kind: exec
+risk: low
+description: Greps `nginx -T` for `upstream` + `server` directives inside upstream blocks. Read-only.
+side_effects:
+  - One nginx -T invocation.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "nginx -T 2>/dev/null | awk '/upstream /{p=1; print; next} p && /\\}/{p=0; print; next} p'"
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: All upstreams
+    args: {}

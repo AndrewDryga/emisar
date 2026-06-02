@@ -1,0 +1,20 @@
+schema_version: 1
+id: cassandra.nodetool_invalidatekeycache
+title: nodetool invalidatekeycache
+kind: exec
+risk: medium
+description: Drops the key cache. Reads pay cold-cache cost until it warms.
+side_effects:
+  - Key cache cleared.
+  - Next reads must do bloom-filter + summary + index lookups.
+args: []
+execution:
+  command: {binary: /usr/bin/nodetool, argv: ["invalidatekeycache"]}
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Drop key cache
+    args: {}

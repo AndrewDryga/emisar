@@ -1,0 +1,24 @@
+schema_version: 1
+id: mysql.processlist
+title: SHOW FULL PROCESSLIST
+kind: exec
+risk: low
+description: Every active connection with its current command, state, and full query. The first stop for "what is the DB doing?"
+side_effects:
+  - One SHOW PROCESSLIST.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /usr/bin/mysql
+    argv:
+      - "-e"
+      - "SHOW FULL PROCESSLIST"
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: Active connections
+    args: {}

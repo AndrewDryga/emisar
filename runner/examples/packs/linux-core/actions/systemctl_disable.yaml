@@ -1,0 +1,41 @@
+schema_version: 1
+
+id: linux.systemctl_disable
+title: Disable a systemd unit at boot
+kind: exec
+risk: medium
+
+description: >
+  `systemctl disable <unit>`. Removes the boot symlinks. Does NOT
+  stop the unit now — pair with `linux.systemctl_stop` for that.
+  Persistent change across reboots.
+
+side_effects:
+  - Removes symlinks under /etc/systemd/system/.
+  - Idempotent.
+
+args:
+  - name: unit
+    type: string
+    required: true
+    description: Systemd unit name.
+    validation:
+      pattern: "^[a-zA-Z0-9@:_.\\-]{1,128}$"
+
+execution:
+  command:
+    binary: /bin/systemctl
+    argv:
+      - "disable"
+      - "{{ args.unit }}"
+  timeout: 15s
+
+output:
+  parser: text
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 8192
+
+examples:
+  - title: Disable nginx at boot
+    args:
+      unit: nginx.service

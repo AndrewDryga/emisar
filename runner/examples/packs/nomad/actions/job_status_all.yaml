@@ -1,0 +1,18 @@
+schema_version: 1
+id: nomad.job_status_all
+title: nomad job status (all)
+kind: exec
+risk: low
+description: All jobs with type, priority, status, submit time.
+side_effects: ["One API call.", "Read-only."]
+args: []
+execution:
+  command: {binary: /usr/bin/nomad, argv: ["job", "status"]}
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: All jobs
+    args: {}

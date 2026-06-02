@@ -1,0 +1,24 @@
+schema_version: 1
+id: es.cat_recovery
+title: GET /_cat/recovery
+kind: exec
+risk: low
+description: Active shard recoveries (peer, snapshot). Use to monitor rebalance progress.
+side_effects:
+  - One GET request.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "curl -sS -u \"$ELASTIC_USER:$ELASTIC_PASSWORD\" \"$ELASTIC_URL/_cat/recovery?active_only=true&v\""
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 131072
+  max_stderr_bytes: 8192
+examples:
+  - title: Active recoveries
+    args: {}

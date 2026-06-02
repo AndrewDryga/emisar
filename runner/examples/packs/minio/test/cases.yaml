@@ -1,0 +1,59 @@
+defaults:
+  env:
+    MC_HOST_local: http://minio_admin:testpass@minio:9000
+cases:
+- action: minio.admin_info
+  args:
+    alias: minio
+  expect_exit: 0
+- action: minio.admin_top_locks
+  args:
+    alias: minio
+  expect_exit: 0
+- action: minio.admin_trace
+  args:
+    alias: minio
+  expect_exit: 0
+- action: minio.bucket_stat
+  args:
+    alias: minio
+    bucket: backups
+  expect_exit: 0
+- action: minio.heal_bucket
+  args:
+    alias: prod
+    bucket: photos
+  skip: mutator skipped by default (high); set --include=minio.heal_bucket to run
+- action: minio.heal_summary
+  args:
+    alias: minio
+  expect_exit:
+  - 0
+  - 1
+  skip: mutator skipped by default (medium)
+- action: minio.list_policies
+  args:
+    alias: minio
+  expect_exit: 0
+- action: minio.list_users
+  args:
+    alias: minio
+  expect_exit: 0
+- action: minio.ls_buckets
+  args:
+    alias: minio
+  expect_exit: 0
+- action: minio.service_restart
+  args:
+    alias: prod
+  skip: mutator skipped by default (high); set --include=minio.service_restart to run
+- action: minio.user_disable
+  args:
+    alias: minio
+    user: alice
+  skip: mutator skipped by default (high); set --include=minio.user_disable to run
+- action: minio.user_enable
+  args:
+    alias: minio
+    user: alice
+  skip: mutator skipped by default (high); set --include=minio.user_enable to run

@@ -1,0 +1,31 @@
+schema_version: 1
+id: ssl.find_certs
+title: find *.pem *.crt *.cer under <path>
+kind: exec
+risk: low
+description: Lists certificate-like files under one path.
+side_effects:
+  - One file-system traversal.
+  - Read-only.
+args:
+  - name: path
+    type: string
+    required: false
+    default: "/etc/ssl"
+    description: Root path.
+    validation:
+      pattern: "^/[a-zA-Z0-9_./\\-]{0,512}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "find {{ args.path }} -xdev -type f \\( -name '*.pem' -o -name '*.crt' -o -name '*.cer' \\) -print 2>/dev/null | head -500"
+  timeout: 60s
+output:
+  parser: text
+  max_stdout_bytes: 131072
+  max_stderr_bytes: 8192
+examples:
+  - title: Cert files under /etc/ssl
+    args: {}

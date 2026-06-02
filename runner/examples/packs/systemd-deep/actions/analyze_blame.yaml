@@ -1,0 +1,24 @@
+schema_version: 1
+id: systemd.analyze_blame
+title: systemd-analyze blame
+kind: exec
+risk: low
+description: 'Top 30 units sorted by how long they took to start. Use to find a slow boot.'
+side_effects:
+  - One systemd-analyze invocation.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "systemd-analyze blame | head -30"
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Slowest 30 units
+    args: {}

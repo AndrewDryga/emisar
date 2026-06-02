@@ -1,0 +1,23 @@
+schema_version: 1
+id: pm2.list
+title: pm2 list
+kind: exec
+risk: low
+description: All processes managed by PM2 with status, uptime, restarts, CPU/mem.
+side_effects:
+  - One PM2 IPC call.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: pm2
+    argv:
+      - "list"
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 131072
+  max_stderr_bytes: 8192
+examples:
+  - title: All PM2 processes
+    args: {}

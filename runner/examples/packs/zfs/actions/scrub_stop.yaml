@@ -1,0 +1,32 @@
+schema_version: 1
+id: zfs.scrub_stop
+title: zpool scrub -s <pool>
+kind: exec
+risk: medium
+description: >
+  Stop an in-progress scrub. Use when scrub is impacting workload
+  and the verification can wait for a maintenance window.
+side_effects:
+  - Scrub stops.
+  - Progress lost; next scrub starts from zero.
+  - Any checksum errors found so far remain in the counters.
+args:
+  - name: pool
+    type: string
+    required: true
+    description: Pool name.
+    validation:
+      pattern: "^[a-zA-Z0-9_\\-]{1,64}$"
+execution:
+  command:
+    binary: /usr/sbin/zpool
+    argv: ["scrub", "-s", "{{ args.pool }}"]
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Cancel scrub on tank
+    args:
+      pool: "tank"

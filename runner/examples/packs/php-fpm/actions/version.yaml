@@ -1,0 +1,18 @@
+schema_version: 1
+id: phpfpm.version
+title: php -v
+kind: exec
+risk: low
+description: PHP version + SAPI + Zend Engine version.
+side_effects: ["One forked process.", "Read-only."]
+args: []
+execution:
+  command: {binary: /usr/bin/php, argv: ["-v"]}
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Version
+    args: {}

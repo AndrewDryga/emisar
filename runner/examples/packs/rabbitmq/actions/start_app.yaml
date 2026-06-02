@@ -1,0 +1,24 @@
+schema_version: 1
+id: rmq.start_app
+title: rabbitmqctl start_app
+kind: exec
+risk: medium
+description: >
+  Start the RabbitMQ application within an already-running node.
+  Companion to stop_app, used during cluster joins/leaves.
+side_effects:
+  - RabbitMQ app accepts client connections again.
+  - Queues and exchanges from disk become available.
+args: []
+execution:
+  command:
+    binary: /usr/sbin/rabbitmqctl
+    argv: ["start_app"]
+  timeout: 60s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Start the app
+    args: {}

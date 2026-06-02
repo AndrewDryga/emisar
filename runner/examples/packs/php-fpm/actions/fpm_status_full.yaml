@@ -1,0 +1,22 @@
+schema_version: 1
+id: phpfpm.fpm_status_full
+title: GET /status?full (FPM per-process)
+kind: exec
+risk: low
+description: 'Per-process detail: pid, state, last request URI, current memory peak.'
+side_effects: ["One HTTP GET.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "curl -sS \"${PHP_FPM_STATUS_URL:-http://127.0.0.1/fpm-status}?full\""
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: Per-process
+    args: {}

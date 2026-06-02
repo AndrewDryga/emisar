@@ -1,0 +1,35 @@
+schema_version: 1
+id: zfs.take_snapshot
+title: zfs snapshot <dataset>@<name>
+kind: exec
+risk: medium
+description: Takes an atomic snapshot of one dataset. Copy-on-write, instant.
+side_effects:
+  - Snapshot is created; consumes increasing space as live dataset diverges.
+args:
+  - name: dataset
+    type: string
+    required: true
+    description: Source dataset.
+    validation:
+      pattern: "^[a-zA-Z0-9_./\\-]{1,128}$"
+  - name: name
+    type: string
+    required: true
+    description: Snapshot name (no @).
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{1,64}$"
+execution:
+  command:
+    binary: zfs
+    argv: ["snapshot", "{{ args.dataset }}@{{ args.name }}"]
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Manual snapshot
+    args:
+      dataset: "tank/data"
+      name: "pre-migration-2026-06-01"

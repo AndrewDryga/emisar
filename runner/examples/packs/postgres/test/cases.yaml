@@ -1,0 +1,182 @@
+defaults:
+  env:
+    PGHOST: postgres
+    PGUSER: postgres
+    PGPASSWORD: testpass
+    PGDATABASE: testdb
+cases:
+- action: postgres.activity_detail
+  args: {}
+  expect_exit: 0
+- action: postgres.activity_states
+  args: {}
+  expect_exit: 0
+- action: postgres.analyze_table
+  args:
+    schema: public
+    table: orders
+  expect_exit: 0
+- action: postgres.backend_holding_xmin
+  args: {}
+  expect_exit: 0
+- action: postgres.bgwriter_stats
+  args: {}
+  expect_exit: 0
+- action: postgres.cancel_query
+  args:
+    pid: 12345
+  expect_exit:
+  - 0
+  - 1
+  skip: mutator skipped by default (high)
+- action: postgres.connections
+  args: {}
+  expect_exit: 0
+- action: postgres.database_stats
+  args: {}
+  expect_exit: 0
+- action: postgres.db_sizes
+  args: {}
+  expect_exit: 0
+- action: postgres.dead_tuples_top
+  args: {}
+  expect_exit: 0
+- action: postgres.duplicate_indexes
+  args: {}
+  expect_exit: 0
+- action: postgres.explain_analyze
+  args:
+    query: SELECT count(*) FROM pg_stat_activity
+  expect_exit:
+  - 0
+  - 1
+  skip: mutator skipped by default (medium)
+- action: postgres.explain_query
+  args:
+    query: SELECT count(*) FROM pg_stat_activity
+  expect_exit: 0
+- action: postgres.extensions_installed
+  args: {}
+  expect_exit: 0
+- action: postgres.hot_update_ratio
+  args: {}
+  expect_exit: 0
+- action: postgres.idle_in_transaction
+  args: {}
+  expect_exit: 0
+- action: postgres.index_sizes
+  args: {}
+  expect_exit: 0
+- action: postgres.invalid_indexes
+  args: {}
+  expect_exit: 0
+- action: postgres.is_in_recovery
+  args: {}
+  expect_exit: 0
+- action: postgres.kill_idle
+  args: {}
+  expect_exit:
+  - 0
+  - 1
+  skip: mutator skipped by default (high)
+- action: postgres.largest_tables_full
+  args: {}
+  expect_exit: 0
+- action: postgres.last_vacuum_per_table
+  args: {}
+  expect_exit: 0
+- action: postgres.lock_blocking_chains
+  args: {}
+  expect_exit: 0
+- action: postgres.locks
+  args: {}
+  expect_exit: 0
+- action: postgres.longest_running_queries
+  args: {}
+  expect_exit: 0
+- action: postgres.pg_hba_rules
+  args: {}
+  expect_exit: 0
+- action: postgres.pg_stat_statements_reset
+  args: {}
+  expect_exit:
+  - 0
+  - 1
+  skip: mutator skipped by default (medium)
+- action: postgres.pg_stat_statements_top
+  args: {}
+  expect_exit: 0
+- action: postgres.progress_create_index
+  args: {}
+  expect_exit: 0
+- action: postgres.progress_vacuum
+  args: {}
+  expect_exit: 0
+- action: postgres.reindex_concurrent
+  args:
+    schema: public
+    index: orders_user_id_idx
+  expect_exit:
+  - 0
+  - 1
+  skip: mutator skipped by default (high)
+- action: postgres.reload_conf
+  args: {}
+  expect_exit:
+  - 0
+  - 1
+  skip: mutator skipped by default (high)
+- action: postgres.replication_lag
+  args: {}
+  expect_exit: 0
+- action: postgres.replication_slots
+  args: {}
+  expect_exit: 0
+- action: postgres.seq_scan_offenders
+  args: {}
+  expect_exit: 0
+- action: postgres.settings_non_default
+  args: {}
+  expect_exit: 0
+- action: postgres.slow_queries
+  args: {}
+  expect_exit: 0
+- action: postgres.ssl_connections
+  args: {}
+  expect_exit: 0
+- action: postgres.table_io
+  args: {}
+  expect_exit: 0
+- action: postgres.table_sizes
+  args: {}
+  expect_exit: 0
+- action: postgres.terminate_backend
+  args:
+    pid: 12345
+  expect_exit:
+  - 0
+  - 1
+  skip: mutator skipped by default (high)
+- action: postgres.unused_indexes
+  args: {}
+  expect_exit: 0
+- action: postgres.uptime
+  args: {}
+  expect_exit: 0
+- action: postgres.vacuum_status
+  args: {}
+  expect_exit: 0
+- action: postgres.vacuum_table
+  args:
+    schema: public
+    table: orders
+  expect_exit: 0
+- action: postgres.wal_archive_status
+  args: {}
+  expect_exit: 0
+- action: postgres.wal_status
+  args: {}
+  expect_exit: 0
+- action: postgres.xid_wraparound_proximity
+  args: {}
+  expect_exit: 0

@@ -1,0 +1,27 @@
+schema_version: 1
+id: cloud-init.init
+title: cloud-init init
+kind: exec
+risk: high
+description: >
+  Run the (non-local) init stage — fetch user-data + vendor-data,
+  merge cloud-config, populate /var/lib/cloud/instance/. Without
+  `cloud-init clean` first, an unchanged instance-id is a no-op.
+side_effects:
+  - Datasource is re-fetched.
+  - user-data / vendor-data files refreshed.
+  - Subsequent stages (config, final) NOT re-run unless invoked.
+args: []
+execution:
+  command:
+    binary: /usr/bin/cloud-init
+    argv: ["init"]
+  timeout: 300s
+cancel_grace: 30s
+output:
+  parser: text
+  max_stdout_bytes: 131072
+  max_stderr_bytes: 16384
+examples:
+  - title: Re-run init stage
+    args: {}

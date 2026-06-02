@@ -1,0 +1,25 @@
+schema_version: 1
+id: vault.list_policies
+title: vault policy list
+kind: exec
+risk: low
+description: All policy names.
+side_effects:
+  - One sys/policy request.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: vault
+    argv:
+      - "policy"
+      - "list"
+      - "-format=json"
+  timeout: 15s
+output:
+  parser: json
+  max_stdout_bytes: 32768
+  max_stderr_bytes: 8192
+examples:
+  - title: Policies
+    args: {}

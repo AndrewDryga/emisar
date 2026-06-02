@@ -1,0 +1,27 @@
+schema_version: 1
+id: podman.restart
+title: podman restart <id>
+kind: exec
+risk: high
+description: Restart one container. Drops in-flight requests.
+side_effects:
+  - Container is stopped (SIGTERM, then SIGKILL) then started.
+  - In-flight connections drop.
+args:
+  - name: container
+    type: string
+    required: true
+    description: Container ID or name.
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{1,64}$"
+execution:
+  command: {binary: /usr/bin/podman, argv: ["restart", "{{ args.container }}"]}
+  timeout: 2m
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Restart one
+    args:
+      container: "web"

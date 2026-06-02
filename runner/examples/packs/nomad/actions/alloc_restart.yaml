@@ -1,0 +1,39 @@
+schema_version: 1
+id: nomad.alloc_restart
+title: nomad alloc restart <id> [task]
+kind: exec
+risk: high
+description: Restarts one task (or all tasks if not specified) in one allocation.
+side_effects:
+  - Task(s) receive SIGTERM then SIGKILL after kill_timeout.
+  - In-flight requests drop unless shutdown_delay is set.
+args:
+  - name: alloc_id
+    type: string
+    required: true
+    description: Allocation ID.
+    validation:
+      pattern: "^[a-fA-F0-9\\-]{4,36}$"
+  - name: task
+    type: string
+    required: false
+    default: ""
+    description: Specific task (empty = all tasks).
+    validation:
+      pattern: "^[a-zA-Z0-9_\\-]{0,128}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "if [ -n \"{{ args.task }}\" ]; then nomad alloc restart -task {{ args.task }} {{ args.alloc_id }}; else nomad alloc restart {{ args.alloc_id }}; fi"
+  timeout: 60s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Restart one task
+    args:
+      alloc_id: "abc12345"
+      task: "web"

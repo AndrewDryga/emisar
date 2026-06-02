@@ -1,0 +1,24 @@
+schema_version: 1
+id: ch.system_flush_logs
+title: SYSTEM FLUSH LOGS
+kind: exec
+risk: low
+description: >
+  Force write buffered system.*log tables to disk. Use before
+  querying very recent activity from query_log, part_log, etc.
+side_effects:
+  - One write to each *_log table.
+  - Brief I/O spike.
+args: []
+execution:
+  command:
+    binary: /usr/bin/clickhouse-client
+    argv: ["--query", "SYSTEM FLUSH LOGS"]
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Flush log tables
+    args: {}

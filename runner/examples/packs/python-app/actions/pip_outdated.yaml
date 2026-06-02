@@ -1,0 +1,24 @@
+schema_version: 1
+id: py.pip_outdated
+title: $PY_VENV/bin/pip list --outdated
+kind: exec
+risk: low
+description: Packages with newer versions available.
+side_effects:
+  - Queries PyPI (or configured index) for latest versions.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "\"${PY_VENV:-/opt/app/venv}/bin/pip\" list --outdated --format=json"
+  timeout: 5m
+output:
+  parser: json
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: Outdated
+    args: {}

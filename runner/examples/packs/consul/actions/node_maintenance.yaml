@@ -1,0 +1,33 @@
+schema_version: 1
+id: consul.node_maintenance
+title: consul maint -enable
+kind: exec
+risk: high
+description: Enables maintenance mode on this agent's node. Health checks fail until disabled.
+side_effects:
+  - All node service health checks report critical.
+  - Service discovery routes traffic away from this node.
+args:
+  - name: reason
+    type: string
+    required: false
+    default: "operator action"
+    description: Reason recorded in the health check.
+    validation:
+      pattern: "^.{1,255}$"
+execution:
+  command:
+    binary: consul
+    argv:
+      - "maint"
+      - "-enable"
+      - "-reason"
+      - "{{ args.reason }}"
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Drain node
+    args: {}

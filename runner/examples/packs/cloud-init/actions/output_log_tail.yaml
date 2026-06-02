@@ -1,0 +1,33 @@
+schema_version: 1
+id: cloud-init.output_log_tail
+title: tail /var/log/cloud-init-output.log
+kind: exec
+risk: low
+description: >
+  Captured stdout/stderr from every command cloud-init ran during boot
+  (`runcmd`, `bootcmd`, package install, etc.). Where to look when a
+  shell command in cloud-config silently failed.
+side_effects:
+  - Reads one log file.
+  - Read-only.
+args:
+  - name: lines
+    type: integer
+    required: false
+    default: 200
+    description: Number of trailing lines.
+    validation:
+      min: 1
+      max: 10000
+execution:
+  command:
+    binary: /usr/bin/tail
+    argv: ["-n", "{{ args.lines }}", "/var/log/cloud-init-output.log"]
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 4096
+examples:
+  - title: Last 200 lines of command output
+    args: {}

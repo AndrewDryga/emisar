@@ -1,0 +1,24 @@
+schema_version: 1
+id: mysql.gtid_executed
+title: GTID executed set
+kind: exec
+risk: low
+description: '`SELECT @@GLOBAL.gtid_executed` — every GTID this server has applied. Use to compare primary vs replica progress.'
+side_effects:
+  - One SELECT.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /usr/bin/mysql
+    argv:
+      - "-NBe"
+      - "SELECT @@GLOBAL.gtid_executed"
+  timeout: 10s
+output:
+  parser: text
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: GTID set
+    args: {}

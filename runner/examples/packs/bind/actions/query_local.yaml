@@ -1,0 +1,34 @@
+schema_version: 1
+id: bind.query_local
+title: dig @localhost <name> <type>
+kind: exec
+risk: low
+description: Resolve one name against the local named.
+side_effects: ["One DNS query.", "Read-only."]
+args:
+  - name: name
+    type: string
+    required: true
+    description: Name to query.
+    validation:
+      pattern: "^[a-zA-Z0-9.\\-_]{1,253}$"
+  - name: type
+    type: string
+    required: false
+    default: "A"
+    description: Record type.
+    validation:
+      enum: ["A", "AAAA", "MX", "NS", "TXT", "CNAME", "SOA", "PTR", "SRV", "CAA", "ANY"]
+execution:
+  command:
+    binary: /usr/bin/dig
+    argv: ["@127.0.0.1", "{{ args.name }}", "{{ args.type }}", "+short"]
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 32768
+  max_stderr_bytes: 8192
+examples:
+  - title: Local lookup
+    args:
+      name: "example.com"

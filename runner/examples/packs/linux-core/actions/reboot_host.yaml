@@ -1,0 +1,45 @@
+schema_version: 1
+
+id: linux.reboot_host
+title: Schedule a host reboot
+kind: exec
+risk: critical
+
+description: >
+  Schedules a reboot via `shutdown -r +1` — one-minute warning to
+  give in-flight connections a chance to drain. Sends a wall message
+  with the operator-supplied reason. Cannot be undone except by
+  `shutdown -c` BEFORE the minute elapses; once the kernel begins
+  shutdown the host is going down regardless.
+
+side_effects:
+  - Wall message broadcast to all logged-in users.
+  - One-minute timer set; kernel shutdown begins after.
+  - Every running service stops; all open connections drop.
+
+args:
+  - name: reason
+    type: string
+    required: true
+    description: Why this reboot is happening (logged + broadcast).
+    validation:
+      pattern: "^[a-zA-Z0-9 .,_:;/\\-]{4,200}$"
+
+execution:
+  command:
+    binary: /sbin/shutdown
+    argv:
+      - "-r"
+      - "+1"
+      - "emisar-initiated reboot: {{ args.reason }}"
+  timeout: 30s
+
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 4096
+
+examples:
+  - title: Reboot for kernel upgrade
+    args:
+      reason: "kernel upgrade to 5.15.140 — pending /var/run/reboot-required"

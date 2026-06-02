@@ -1,0 +1,39 @@
+schema_version: 1
+
+id: linux.hardware_summary
+title: Hardware + BIOS summary via dmidecode
+kind: exec
+risk: low
+
+description: >
+  `dmidecode` system + bios + chassis sections. Vendor, model,
+  serial, BIOS version, manufacturing date. Required root (read-only
+  on SMBIOS). Useful when correlating hardware-class to OS-class
+  incidents.
+
+side_effects:
+  - One dmidecode invocation.
+  - Read-only.
+
+args: []
+
+execution:
+  command:
+    binary: /usr/sbin/dmidecode
+    argv:
+      - "-t"
+      - "system"
+      - "-t"
+      - "bios"
+      - "-t"
+      - "chassis"
+  timeout: 10s
+
+output:
+  parser: text
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+
+examples:
+  - title: System + BIOS + chassis
+    args: {}

@@ -1,0 +1,41 @@
+schema_version: 1
+
+id: postgres.reload_conf
+title: Reload postgresql.conf
+kind: exec
+risk: high
+
+description: >
+  Calls `pg_reload_conf()`. Re-reads the server config without
+  restarting. Picks up changes to settings whose context is `sighup`
+  (logging, autovacuum, work_mem, etc.); does NOT pick up settings
+  marked `postmaster` (shared_buffers, listen_addresses) — those still
+  require a restart. Safe in steady state but considered high-risk
+  because a malformed config can break logging or reset connection
+  limits.
+
+side_effects:
+  - Server re-reads postgresql.conf and pg_hba.conf.
+  - Active sessions keep their old settings until they reconnect for
+    `user`-context settings; sighup-context settings apply immediately.
+  - A malformed config logs a warning and keeps the previous values.
+
+args: []
+
+execution:
+  command:
+    binary: /usr/bin/psql
+    argv:
+      - "-XAt"
+      - "-c"
+      - "SELECT pg_reload_conf();"
+  timeout: 10s
+
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+
+examples:
+  - title: Reload after editing postgresql.conf
+    args: {}

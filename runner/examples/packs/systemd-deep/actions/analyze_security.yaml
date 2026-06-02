@@ -1,0 +1,29 @@
+schema_version: 1
+id: systemd.analyze_security
+title: systemd-analyze security
+kind: exec
+risk: low
+description: 'Scores one unit by its sandboxing posture — NoNewPrivileges, ProtectSystem, CapabilityBoundingSet, etc. Use to audit "how locked down is this service?"'
+side_effects:
+  - One systemd-analyze invocation.
+  - Read-only.
+args:
+  - name: unit
+    type: string
+    required: true
+    description: Unit to audit.
+    validation:
+      pattern: "^[a-zA-Z0-9@:_.\\-]{1,128}$"
+execution:
+  command:
+    binary: /bin/systemd-analyze
+    argv: ["security", "{{ args.unit }}"]
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Audit nginx sandboxing
+    args:
+      unit: nginx.service

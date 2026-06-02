@@ -1,0 +1,22 @@
+schema_version: 1
+id: ce.mtd_by_account
+title: Month-to-date cost by linked account
+kind: exec
+risk: low
+description: MTD cost grouped by linked account ID (org master account view).
+side_effects: ["One Cost Explorer call.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "START=$(date -u +%Y-%m-01); END=$(date -u +%Y-%m-%d); aws ce get-cost-and-usage --time-period Start=$START,End=$END --granularity MONTHLY --metrics UnblendedCost --group-by Type=DIMENSION,Key=LINKED_ACCOUNT --output json"
+  timeout: 60s
+output:
+  parser: json
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+examples:
+  - title: MTD by linked account
+    args: {}

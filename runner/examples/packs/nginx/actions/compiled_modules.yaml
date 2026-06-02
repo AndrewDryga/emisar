@@ -1,0 +1,24 @@
+schema_version: 1
+id: nginx.compiled_modules
+title: Compiled-in nginx modules
+kind: exec
+risk: low
+description: Parses `nginx -V` to list `--with-*` and `--add-module` flags. Use to confirm a needed module (http_v2, realip, brotli) is present.
+side_effects:
+  - One nginx -V invocation.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "nginx -V 2>&1 | tr ' ' '\\n' | grep -E '^--(with|add)'"
+  timeout: 10s
+output:
+  parser: text
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 4096
+examples:
+  - title: Module list
+    args: {}

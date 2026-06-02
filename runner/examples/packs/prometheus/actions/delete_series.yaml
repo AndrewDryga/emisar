@@ -1,0 +1,44 @@
+schema_version: 1
+id: prom.delete_series
+title: POST /api/v1/admin/tsdb/delete_series
+kind: exec
+risk: high
+description: >
+  Mark series matching the matcher as deleted (tombstoned). Series
+  no longer return from queries. Run clean_tombstones afterwards to
+  actually reclaim disk. Use to remove cardinality-explosion mistakes
+  or accidentally-recorded secrets. Match pattern is restricted to
+  safe label-selector characters.
+side_effects:
+  - Matching series tombstoned (logical delete).
+  - Queries no longer return them.
+  - Disk only reclaimed after clean_tombstones.
+args:
+  - name: target
+    type: string
+    required: false
+    default: "http://localhost:9090"
+    description: Prometheus base URL.
+    validation:
+      pattern: "^https?://[a-zA-Z0-9._:\\-]{1,253}(:[0-9]{1,5})?$"
+  - name: matcher
+    type: string
+    required: true
+    description: Label matcher (URL-encoded if it contains special chars).
+    validation:
+      pattern: "^[a-zA-Z0-9_={}\",.:!~=\\-/%* ]{1,512}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "/usr/bin/curl -sSfX POST -g --data-urlencode 'match[]={{ args.matcher }}' '{{ args.target }}/api/v1/admin/tsdb/delete_series'"
+  timeout: 60s
+output:
+  parser: text
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Delete a cardinality mistake
+    args:
+      matcher: '{__name__="bad_metric"}'

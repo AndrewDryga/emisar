@@ -1,0 +1,60 @@
+schema_version: 1
+
+id: redis.client_kill
+title: CLIENT KILL
+kind: exec
+risk: high
+
+description: >
+  Disconnects one client by addr or by id. Use to evict a stuck client
+  with a runaway output buffer, an abandoned subscriber, or a client
+  exceeding the slowlog. Confirm the target via `client_list` first —
+  killing the wrong client can disrupt a critical caller.
+
+side_effects:
+  - Forcibly closes the target connection.
+  - In-flight commands on that connection are not replied to.
+  - The client must reconnect.
+
+args:
+  - name: target
+    type: string
+    required: true
+    description: "ID like \"42\" or addr like \"10.0.0.5:53212\"."
+    validation:
+      pattern: "^[0-9a-fA-F.:]{1,64}$"
+
+  - name: mode
+    type: string
+    required: false
+    default: ADDR
+    description: Whether `target` is an ADDR or an ID.
+    validation:
+      enum:
+        - ADDR
+        - ID
+
+execution:
+  command:
+    binary: /usr/bin/redis-cli
+    argv:
+      - "CLIENT"
+      - "KILL"
+      - "{{ args.mode }}"
+      - "{{ args.target }}"
+  timeout: 10s
+
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+
+examples:
+  - title: Kill client by addr
+    args:
+      target: "10.0.0.5:53212"
+      mode: ADDR
+  - title: Kill client by id
+    args:
+      target: "42"
+      mode: ID

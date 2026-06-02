@@ -1,0 +1,25 @@
+schema_version: 1
+id: aws-s3
+name: AWS S3 operations
+version: 0.1.0
+description: >
+  Read-only S3 introspection — bucket inventory, per-bucket
+  versioning/policy/encryption/lifecycle, object listing + metadata.
+  Excludes every mutator (no put-bucket-*, no delete-*). Object-level
+  changes belong in IaC. Auth via AWS_PROFILE.
+vendor: emisar
+homepage: https://github.com/andrewdryga/emisar
+
+requires:
+  os: [linux]
+  binaries: [aws]
+
+actions:
+  - actions/list_buckets.yaml
+  - actions/bucket_location.yaml
+  - actions/bucket_versioning.yaml
+  - actions/bucket_policy.yaml
+  - actions/bucket_lifecycle.yaml
+  - actions/bucket_encryption.yaml
+  - actions/list_objects.yaml
+  - actions/object_metadata.yaml

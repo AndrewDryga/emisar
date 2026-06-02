@@ -1,0 +1,24 @@
+schema_version: 1
+id: prom.build_info
+title: GET /api/v1/status/buildinfo
+kind: exec
+risk: low
+description: Prometheus version + build details.
+side_effects:
+  - One GET request.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "curl -sS \"$PROM_URL/api/v1/status/buildinfo\""
+  timeout: 15s
+output:
+  parser: json
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 8192
+examples:
+  - title: Build info
+    args: {}

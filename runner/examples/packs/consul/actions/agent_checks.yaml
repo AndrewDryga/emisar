@@ -1,0 +1,22 @@
+schema_version: 1
+id: consul.agent_checks
+title: GET /v1/agent/checks
+kind: exec
+risk: low
+description: Checks registered with the local agent + their current status.
+side_effects: ["One API call.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "curl -sS -H \"X-Consul-Token: $CONSUL_HTTP_TOKEN\" \"$CONSUL_HTTP_ADDR/v1/agent/checks\""
+  timeout: 15s
+output:
+  parser: json
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: Local checks
+    args: {}

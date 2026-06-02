@@ -1,0 +1,24 @@
+schema_version: 1
+id: mysql.uptime
+title: Uptime + version
+kind: exec
+risk: low
+description: Returns SELECT VERSION() and uptime from SHOW STATUS. Read-only.
+side_effects:
+  - Two SELECTs.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /usr/bin/mysql
+    argv:
+      - "-NBe"
+      - "SELECT VERSION(); SHOW STATUS LIKE 'Uptime';"
+  timeout: 10s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Liveness + version
+    args: {}

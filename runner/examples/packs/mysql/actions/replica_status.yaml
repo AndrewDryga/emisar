@@ -1,0 +1,25 @@
+schema_version: 1
+id: mysql.replica_status
+title: SHOW REPLICA STATUS
+kind: exec
+risk: low
+description: >
+  Reads SHOW REPLICA STATUS (or SHOW SLAVE STATUS on old versions). Surfaces lag, last error, IO and SQL thread state, and binlog position. Returns 'not a replica' cleanly when this is a primary.
+side_effects:
+  - One SHOW REPLICA STATUS.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "mysql -e 'SHOW REPLICA STATUS\\G' 2>/dev/null || mysql -e 'SHOW SLAVE STATUS\\G' 2>/dev/null"
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 32768
+  max_stderr_bytes: 8192
+examples:
+  - title: Replica state
+    args: {}

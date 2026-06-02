@@ -1,0 +1,30 @@
+schema_version: 1
+id: ec2.terminate_instance
+title: aws ec2 terminate-instances
+kind: exec
+risk: critical
+description: Permanently destroys one instance + its ephemeral storage. Cannot be undone.
+side_effects:
+  - Instance is shutdown then DELETED.
+  - All non-EBS storage (instance store) is lost.
+  - EBS volumes with DeleteOnTermination=true are deleted too.
+args:
+  - name: instance_id
+    type: string
+    required: true
+    description: Instance ID.
+    validation:
+      pattern: "^i-[0-9a-f]{8,17}$"
+execution:
+  command:
+    binary: aws
+    argv: ["ec2", "terminate-instances", "--instance-ids", "{{ args.instance_id }}", "--output", "json"]
+  timeout: 60s
+output:
+  parser: json
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 8192
+examples:
+  - title: Terminate one
+    args:
+      instance_id: "i-0123456789abcdef0"

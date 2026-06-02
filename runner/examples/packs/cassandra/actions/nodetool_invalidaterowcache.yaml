@@ -1,0 +1,18 @@
+schema_version: 1
+id: cassandra.nodetool_invalidaterowcache
+title: nodetool invalidaterowcache
+kind: exec
+risk: medium
+description: Drops the row cache.
+side_effects: ["Row cache cleared.", "Next reads pay cold-cache cost."]
+args: []
+execution:
+  command: {binary: /usr/bin/nodetool, argv: ["invalidaterowcache"]}
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Drop row cache
+    args: {}

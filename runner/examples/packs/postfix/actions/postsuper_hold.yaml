@@ -1,0 +1,32 @@
+schema_version: 1
+id: postfix.postsuper_hold
+title: postsuper -h <qid>
+kind: exec
+risk: medium
+description: >
+  Move one message into the hold queue. The message is not delivered
+  until released with postsuper_release. Used when a message needs to
+  be inspected without redelivering on every queue tick.
+side_effects:
+  - Message moved to hold queue.
+  - No delivery attempts until released.
+args:
+  - name: qid
+    type: string
+    required: true
+    description: Queue ID.
+    validation:
+      pattern: "^[A-F0-9]{8,20}$"
+execution:
+  command:
+    binary: /usr/sbin/postsuper
+    argv: ["-h", "{{ args.qid }}"]
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Hold a message
+    args:
+      qid: "3ABCDEF12345"

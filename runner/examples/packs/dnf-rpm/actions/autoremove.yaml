@@ -1,0 +1,28 @@
+schema_version: 1
+id: dnf.autoremove
+title: dnf autoremove -y
+kind: exec
+risk: medium
+description: >
+  Remove packages installed as dependencies that are no longer
+  required by any installed package. Useful for /var/cache cleanup
+  after a large rollback. Read the dry-run before approving (the
+  list can be long).
+side_effects:
+  - Multiple packages removed.
+  - Disk reclaimed.
+  - Dependency mistakes can be ugly — review the action output.
+args: []
+execution:
+  command:
+    binary: /usr/bin/dnf
+    argv: ["autoremove", "-y"]
+  timeout: 600s
+cancel_grace: 60s
+output:
+  parser: text
+  max_stdout_bytes: 131072
+  max_stderr_bytes: 16384
+examples:
+  - title: Reclaim disk
+    args: {}

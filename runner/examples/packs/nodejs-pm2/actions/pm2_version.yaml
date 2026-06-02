@@ -1,0 +1,23 @@
+schema_version: 1
+id: pm2.pm2_version
+title: pm2 -v
+kind: exec
+risk: low
+description: PM2 daemon version.
+side_effects:
+  - One PM2 IPC call.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: pm2
+    argv:
+      - "-v"
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 1024
+  max_stderr_bytes: 8192
+examples:
+  - title: PM2 version
+    args: {}

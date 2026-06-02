@@ -1,0 +1,34 @@
+schema_version: 1
+
+id: nginx.active_version
+title: Active nginx version + build
+kind: exec
+risk: low
+
+description: >
+  Runs `nginx -V` and returns the version + compile-time flags. Use to
+  confirm which modules are compiled in (e.g. ngx_http_v2,
+  ngx_http_realip) before recommending a config that depends on one.
+  Read-only.
+
+side_effects:
+  - One nginx -V invocation.
+  - Read-only.
+
+args: []
+
+execution:
+  command:
+    binary: /usr/sbin/nginx
+    argv:
+      - "-V"
+  timeout: 10s
+
+output:
+  parser: text
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 16384
+
+examples:
+  - title: nginx -V
+    args: {}

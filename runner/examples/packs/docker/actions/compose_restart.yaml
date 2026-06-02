@@ -1,0 +1,42 @@
+schema_version: 1
+id: docker.compose_restart
+title: docker compose restart (one service)
+kind: exec
+risk: high
+description: >
+  Restarts ONE service in a compose project. SIGTERM with the configured stop_grace_period, then SIGKILL, then start. In-flight requests are dropped.
+side_effects:
+  - SIGTERM (then SIGKILL) the service's containers.
+  - Containers restart and re-run their entrypoint.
+args:
+  - name: file
+    type: string
+    required: true
+    description: Path to docker-compose.yml.
+    validation:
+      pattern: "^/[A-Za-z0-9._/-]{1,256}$"
+  - name: service
+    type: string
+    required: true
+    description: Service name.
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{1,64}$"
+execution:
+  command:
+    binary: /usr/bin/docker
+    argv:
+      - "compose"
+      - "-f"
+      - "{{ args.file }}"
+      - "restart"
+      - "{{ args.service }}"
+  timeout: 5m
+output:
+  parser: text
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 16384
+examples:
+  - title: Restart the "api" service
+    args:
+      file: "/opt/stack/docker-compose.yml"
+      service: api

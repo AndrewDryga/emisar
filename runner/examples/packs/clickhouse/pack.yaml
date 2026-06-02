@@ -1,0 +1,44 @@
+schema_version: 1
+
+id: clickhouse
+name: ClickHouse analytics DB
+version: 0.1.0
+description: >
+  ClickHouse server + table introspection plus narrow mutators
+  (OPTIMIZE, KILL QUERY, SYSTEM RELOAD CONFIG). Auth via CH_HOST +
+  CH_USER + CH_PASSWORD env vars on the runner host. Uses clickhouse-client
+  with --query to keep arg surface minimal.
+vendor: emisar
+homepage: https://github.com/andrewdryga/emisar
+
+requires:
+  os:
+    - linux
+  binaries:
+    - clickhouse-client
+
+actions:
+  # Server state
+  - actions/uptime.yaml
+  - actions/system_metrics.yaml
+  - actions/system_events.yaml
+  - actions/disks.yaml
+  - actions/dictionaries.yaml
+  # Live queries
+  - actions/processes.yaml
+  - actions/slow_queries.yaml
+  # Replication / merges / mutations
+  - actions/replicas_status.yaml
+  - actions/merge_queue.yaml
+  - actions/mutation_queue.yaml
+  # Tables / parts
+  - actions/parts_summary.yaml
+  - actions/table_sizes.yaml
+  # Mutators
+  - actions/kill_query.yaml
+  - actions/optimize_table.yaml
+  - actions/reload_config.yaml
+  - actions/system_drop_replica.yaml
+  - actions/system_restart_replica.yaml
+  - actions/system_sync_replica.yaml
+  - actions/system_flush_logs.yaml

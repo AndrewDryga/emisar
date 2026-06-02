@@ -1,0 +1,22 @@
+schema_version: 1
+id: ch.table_sizes
+title: system.tables uncompressed sizes
+kind: exec
+risk: low
+description: Top 50 tables by uncompressed size.
+side_effects: ["One SELECT.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "clickhouse-client --host \"${CH_HOST:-localhost}\" --user \"${CH_USER:-default}\" --password \"$CH_PASSWORD\" --query \"SELECT database, name, total_rows, total_bytes, total_bytes_uncompressed FROM system.tables WHERE NOT is_temporary AND engine NOT LIKE 'View%' ORDER BY total_bytes_uncompressed DESC LIMIT 50 FORMAT JSONEachRow\""
+  timeout: 60s
+output:
+  parser: text
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: Table sizes
+    args: {}

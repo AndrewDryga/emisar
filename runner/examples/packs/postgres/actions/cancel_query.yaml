@@ -1,0 +1,46 @@
+schema_version: 1
+
+id: postgres.cancel_query
+title: Cancel a running query
+kind: exec
+risk: high
+
+description: >
+  Sends SIGINT to one backend via `pg_cancel_backend(pid)`. The query
+  aborts but the connection survives. Use to clear a stuck SELECT or a
+  blocker surfaced by `postgres.locks`. If cancel doesn't take effect
+  within seconds the backend is likely stuck in a kernel call — escalate
+  to `kill_idle` (terminate) only as a last resort.
+
+side_effects:
+  - The target backend's current query is cancelled with an ERROR.
+  - The client connection stays open and the transaction is rolled back.
+  - Does not affect other sessions.
+
+args:
+  - name: pid
+    type: integer
+    required: true
+    description: Backend PID to cancel (see pg_stat_activity).
+    validation:
+      min: 1
+      max: 4194304
+
+execution:
+  command:
+    binary: /usr/bin/psql
+    argv:
+      - "-XAt"
+      - "-c"
+      - "SELECT pg_cancel_backend({{ args.pid }});"
+  timeout: 10s
+
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+
+examples:
+  - title: Cancel backend 12345
+    args:
+      pid: 12345

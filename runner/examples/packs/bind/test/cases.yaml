@@ -1,0 +1,44 @@
+defaults:
+  env: {}
+cases:
+- action: bind.named_checkconf
+  args: {}
+  expect_exit: 0
+- action: bind.named_checkzone
+  args:
+    zone: example.com
+    file: /etc/bind/db.example.com
+  expect_exit: 0
+- action: bind.query_local
+  args:
+    name: example.com
+  expect_exit: 0
+- action: bind.rndc_flush
+  args: {}
+  skip: mutator skipped by default (medium); set --include=bind.rndc_flush to run
+- action: bind.rndc_freeze
+  args:
+    zone: example.com
+  skip: mutator skipped by default (medium); set --include=bind.rndc_freeze to run
+- action: bind.rndc_reload
+  args:
+    zone: example.com
+  skip: mutator skipped by default (high); set --include=bind.rndc_reload to run
+- action: bind.rndc_stats
+  args: {}
+  expect_exit: 0
+- action: bind.rndc_status
+  args: {}
+  expect_exit: 0
+- action: bind.rndc_thaw
+  args:
+    zone: example.com
+  skip: mutator skipped by default (medium); set --include=bind.rndc_thaw to run
+- action: bind.zone_dump
+  args:
+    zone: example.com
+  expect_exit: 0
+- action: bind.zone_serial
+  args:
+    zone: example.com
+  expect_exit: 0

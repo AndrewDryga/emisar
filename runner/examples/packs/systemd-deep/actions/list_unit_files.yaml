@@ -1,0 +1,22 @@
+schema_version: 1
+id: systemd.list_unit_files
+title: List installed unit files
+kind: exec
+risk: low
+description: '`systemctl list-unit-files --type=service` — every service file on disk with its enabled/disabled state.'
+side_effects:
+  - One systemctl invocation.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /bin/systemctl
+    argv: ["list-unit-files", "--type=service", "--no-pager", "--no-legend"]
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: All unit files + enable state
+    args: {}

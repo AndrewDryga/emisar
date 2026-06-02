@@ -1,0 +1,25 @@
+schema_version: 1
+id: mysql.lock_waits
+title: Lock-wait graph
+kind: exec
+risk: low
+description: >
+  Joins performance_schema.data_lock_waits with data_locks to show who is blocking whom. Use before a kill_query — you want the blocker, not the victim.
+side_effects:
+  - One SELECT against performance_schema.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /usr/bin/mysql
+    argv:
+      - "-e"
+      - "SELECT r.trx_id AS waiting_trx, r.trx_mysql_thread_id AS waiting_thread, r.trx_query AS waiting_query, b.trx_id AS blocking_trx, b.trx_mysql_thread_id AS blocking_thread, b.trx_query AS blocking_query FROM performance_schema.data_lock_waits w JOIN information_schema.innodb_trx r ON w.REQUESTING_ENGINE_TRANSACTION_ID = r.trx_id JOIN information_schema.innodb_trx b ON w.BLOCKING_ENGINE_TRANSACTION_ID = b.trx_id;"
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Blocking transactions
+    args: {}

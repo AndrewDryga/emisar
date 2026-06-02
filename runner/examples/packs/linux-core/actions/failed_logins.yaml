@@ -1,0 +1,44 @@
+schema_version: 1
+
+id: linux.failed_logins
+title: Recent failed login attempts
+kind: exec
+risk: medium
+
+description: >
+  Last N failed logins from /var/log/btmp via `lastb`. Surfaces
+  username, terminal, source IP. High-signal for "is this host being
+  brute-forced?" Read-only but flagged medium-risk: the IPs and
+  usernames are sensitive PII.
+
+side_effects:
+  - One lastb invocation.
+  - Reads /var/log/btmp (root usually).
+
+args:
+  - name: count
+    type: integer
+    required: false
+    default: 50
+    description: How many failed attempts to return.
+    validation:
+      min: 1
+      max: 500
+
+execution:
+  command:
+    binary: /usr/bin/lastb
+    argv:
+      - "-F"
+      - "-n"
+      - "{{ args.count }}"
+  timeout: 10s
+
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+
+examples:
+  - title: Last 50 failed login attempts
+    args: {}

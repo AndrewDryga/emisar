@@ -1,0 +1,57 @@
+schema_version: 1
+
+id: postgres.slow_queries
+title: Top slow queries from pg_stat_statements
+kind: exec
+risk: low
+
+description: >
+  Returns the top N query fingerprints by mean execution time from
+  pg_stat_statements. Requires the extension to be loaded
+  (shared_preload_libraries = 'pg_stat_statements'); errors out
+  cleanly if it isn't. Read-only.
+
+side_effects:
+  - One SELECT against pg_stat_statements.
+  - No locks held.
+
+args:
+  - name: limit
+    type: integer
+    required: false
+    default: 20
+    description: How many query fingerprints to return.
+    validation:
+      min: 1
+      max: 200
+
+  - name: min_calls
+    type: integer
+    required: false
+    default: 10
+    description: Skip query fingerprints with fewer than N total calls (filters one-off DDL noise).
+    validation:
+      min: 1
+      max: 100000
+
+execution:
+  command:
+    binary: /usr/bin/psql
+    argv:
+      - "-XAt"
+      - "-c"
+      - "SELECT calls, round(mean_exec_time::numeric, 2) AS mean_ms, round(total_exec_time::numeric, 2) AS total_ms, left(query, 200) AS query FROM pg_stat_statements WHERE calls >= {{ args.min_calls }} ORDER BY mean_exec_time DESC LIMIT {{ args.limit }};"
+  timeout: 15s
+
+output:
+  parser: text
+  max_stdout_bytes: 131072
+  max_stderr_bytes: 8192
+
+examples:
+  - title: Top 20 slow queries (default)
+    args: {}
+  - title: Top 50 with at least 100 calls
+    args:
+      limit: 50
+      min_calls: 100

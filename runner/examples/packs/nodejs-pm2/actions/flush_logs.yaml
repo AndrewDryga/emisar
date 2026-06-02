@@ -1,0 +1,31 @@
+schema_version: 1
+id: pm2.flush_logs
+title: pm2 flush <name>
+kind: exec
+risk: medium
+description: Empties PM2 log files for one process. Existing log content is lost.
+side_effects:
+  - Truncates the stdout + stderr log files for the named process.
+  - Log file inodes are reused; tailers may need to re-open.
+args:
+  - name: name
+    type: string
+    required: true
+    description: Process name or id.
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{1,64}$"
+execution:
+  command:
+    binary: pm2
+    argv:
+      - "flush"
+      - "{{ args.name }}"
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 8192
+examples:
+  - title: Empty logs
+    args:
+      name: "api"

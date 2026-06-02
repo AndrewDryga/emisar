@@ -1,0 +1,34 @@
+schema_version: 1
+id: postgres.terminate_backend
+title: pg_terminate_backend(pid)
+kind: exec
+risk: high
+description: Hard-disconnects one backend (SIGTERM). Use when pg_cancel_backend isn't enough (e.g., idle in transaction with a long held lock).
+side_effects:
+  - Targeted backend's connection is severed.
+  - Open transactions roll back.
+  - Held locks are released.
+args:
+  - name: pid
+    type: integer
+    required: true
+    description: Backend PID.
+    validation:
+      min: 1
+      max: 4194304
+execution:
+  command:
+    binary: /usr/bin/psql
+    argv:
+      - "-XAt"
+      - "-c"
+      - "SELECT pg_terminate_backend({{ args.pid }});"
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 256
+  max_stderr_bytes: 8192
+examples:
+  - title: Kill one backend
+    args:
+      pid: 12345

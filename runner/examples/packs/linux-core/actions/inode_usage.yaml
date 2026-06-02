@@ -1,0 +1,34 @@
+schema_version: 1
+
+id: linux.inode_usage
+title: Inode usage per filesystem
+kind: exec
+risk: low
+
+description: >
+  Shows inode usage per filesystem (`df -i`). A "disk full" report
+  that doesn't match `df -h` is almost always inode exhaustion —
+  this surfaces it directly. Read-only.
+
+side_effects:
+  - One df invocation.
+  - Read-only.
+
+args: []
+
+execution:
+  command:
+    binary: /usr/bin/df
+    argv:
+      - "-i"
+      - "-h"
+  timeout: 10s
+
+output:
+  parser: text
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+
+examples:
+  - title: Inode usage snapshot
+    args: {}

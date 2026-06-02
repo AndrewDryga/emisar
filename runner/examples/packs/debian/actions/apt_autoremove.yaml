@@ -1,0 +1,39 @@
+schema_version: 1
+
+id: debian.apt_autoremove
+title: apt autoremove
+kind: exec
+risk: high
+
+description: >
+  Drops packages that were installed as dependencies and are no longer
+  required. Run after a series of removes. Considered high-risk
+  because old kernels and headers are exactly the things autoremove
+  cleans up — verify the running kernel is not on the removal list
+  before approving.
+
+side_effects:
+  - Holds the apt lock.
+  - Removes possibly many packages, including old kernels.
+  - Triggers prerm/postrm scripts.
+
+args: []
+
+execution:
+  command:
+    binary: /usr/bin/apt-get
+    argv:
+      - "autoremove"
+      - "-y"
+  timeout: 10m
+  env:
+    DEBIAN_FRONTEND: noninteractive
+
+output:
+  parser: text
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 262144
+
+examples:
+  - title: Clean up orphaned deps
+    args: {}

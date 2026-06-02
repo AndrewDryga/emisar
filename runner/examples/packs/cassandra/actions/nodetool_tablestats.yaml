@@ -3,7 +3,7 @@ schema_version: 1
 id: cassandra.nodetool_tablestats
 title: Cassandra table stats
 kind: exec
-risk: medium
+risk: low
 
 description: >
   Runs `nodetool tablestats`, optionally scoped to a single keyspace.

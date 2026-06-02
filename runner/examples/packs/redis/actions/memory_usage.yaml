@@ -1,0 +1,32 @@
+schema_version: 1
+id: redis.memory_usage
+title: MEMORY USAGE key
+kind: exec
+risk: low
+description: >
+  Bytes used by a single key (estimate, including value and internal
+  overhead). Use to find a known big-value culprit before a deletion
+  conversation.
+side_effects:
+  - One MEMORY USAGE command.
+  - Reads metadata but not the value.
+args:
+  - name: key
+    type: string
+    required: true
+    description: Key name.
+    validation:
+      pattern: "^[A-Za-z0-9_:.\\-{}@#/=+]{1,512}$"
+execution:
+  command:
+    binary: /usr/bin/redis-cli
+    argv: ["MEMORY", "USAGE", "{{ args.key }}"]
+  timeout: 10s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Size of a session key
+    args:
+      key: "session:abc123"

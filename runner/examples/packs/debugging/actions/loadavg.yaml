@@ -1,0 +1,34 @@
+schema_version: 1
+
+id: debugging.loadavg
+title: Load + memory + uptime snapshot
+kind: exec
+risk: low
+
+description: >
+  Reads /proc/loadavg, /proc/meminfo, and /proc/uptime to produce a
+  one-shot system snapshot. Cheap. Use as the very first check when
+  triaging a host alert.
+
+side_effects:
+  - Three /proc reads.
+  - Read-only.
+
+args: []
+
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "cat /proc/loadavg; echo; head -n 8 /proc/meminfo; echo; cat /proc/uptime"
+  timeout: 5s
+
+output:
+  parser: text
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 4096
+
+examples:
+  - title: Quick system snapshot
+    args: {}

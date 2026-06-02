@@ -1,0 +1,24 @@
+schema_version: 1
+id: kafka.broker_api_versions
+title: Broker API versions
+kind: exec
+risk: low
+description: API protocol versions supported by each broker. Useful to confirm rolling upgrade.
+side_effects:
+  - One metadata request.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "kafka-broker-api-versions.sh '--bootstrap-server' \"$KAFKA_BOOTSTRAP\""
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 131072
+  max_stderr_bytes: 8192
+examples:
+  - title: Broker API versions
+    args: {}

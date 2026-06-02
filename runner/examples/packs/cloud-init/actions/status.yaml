@@ -1,0 +1,25 @@
+schema_version: 1
+id: cloud-init.status
+title: cloud-init status
+kind: exec
+risk: low
+description: >
+  Current overall cloud-init state — `running`, `done`, `error`,
+  `disabled`, or `not run`. Use as the first answer to "did boot
+  finish?".
+side_effects:
+  - One CLI call.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /usr/bin/cloud-init
+    argv: ["status"]
+  timeout: 10s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 4096
+examples:
+  - title: Current status
+    args: {}

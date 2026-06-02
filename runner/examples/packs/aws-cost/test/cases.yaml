@@ -1,0 +1,18 @@
+defaults:
+  env: {}
+cases:
+- action: ce.forecast_current_month
+  args: {}
+  expect_exit: 0
+- action: ce.last_7d_daily
+  args: {}
+  expect_exit: 0
+- action: ce.mtd_by_account
+  args: {}
+  expect_exit: 0
+- action: ce.mtd_by_service
+  args: {}
+  expect_exit: 0
+- action: ce.savings_plans_coverage
+  args: {}
+  expect_exit: 0

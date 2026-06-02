@@ -1,0 +1,55 @@
+schema_version: 1
+
+id: postgres.table_sizes
+title: Top tables by total size
+kind: exec
+risk: low
+
+description: >
+  Returns the top N tables by total size (heap + indexes + toast) for
+  one schema. Use to find the table that's dominating disk before
+  recommending vacuum, archive, or partitioning. Read-only.
+
+side_effects:
+  - One SELECT against pg_class + pg_namespace.
+  - No locks held.
+
+args:
+  - name: schema
+    type: string
+    required: false
+    default: public
+    description: Schema to inspect.
+    validation:
+      pattern: "^[a-zA-Z_][a-zA-Z0-9_]{0,62}$"
+
+  - name: limit
+    type: integer
+    required: false
+    default: 20
+    description: How many tables to return.
+    validation:
+      min: 1
+      max: 200
+
+execution:
+  command:
+    binary: /usr/bin/psql
+    argv:
+      - "-XAt"
+      - "-c"
+      - "SELECT n.nspname AS schema, c.relname AS table, pg_size_pretty(pg_total_relation_size(c.oid)) AS total, pg_size_pretty(pg_relation_size(c.oid)) AS heap, pg_size_pretty(pg_indexes_size(c.oid)) AS indexes FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE c.relkind = 'r' AND n.nspname = '{{ args.schema }}' ORDER BY pg_total_relation_size(c.oid) DESC LIMIT {{ args.limit }};"
+  timeout: 30s
+
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+
+examples:
+  - title: 20 biggest tables in public
+    args: {}
+  - title: 50 biggest tables in app schema
+    args:
+      schema: app
+      limit: 50

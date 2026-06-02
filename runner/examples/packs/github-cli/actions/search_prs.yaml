@@ -1,0 +1,36 @@
+schema_version: 1
+id: gh.search_prs
+title: gh search prs
+kind: exec
+risk: low
+description: Search PRs across all of GitHub by query.
+side_effects:
+  - One API call.
+  - Read-only.
+args:
+  - name: query
+    type: string
+    required: true
+    description: 'GitHub search syntax (e.g. "repo:owner/name author:foo state:open").'
+    validation:
+      pattern: "^.{1,512}$"
+execution:
+  command:
+    binary: gh
+    argv:
+      - "search"
+      - "prs"
+      - "{{ args.query }}"
+      - "--limit"
+      - "100"
+      - "--json"
+      - "number,title,repository,author,state,createdAt,updatedAt"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: My open PRs
+    args:
+      query: "author:@me state:open"

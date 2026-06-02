@@ -1,0 +1,31 @@
+schema_version: 1
+id: redis.pubsub_channels
+title: PUBSUB CHANNELS
+kind: exec
+risk: low
+description: >
+  Active pub/sub channels matching the optional pattern. Useful to
+  see which event streams a service is producing.
+side_effects:
+  - One PUBSUB CHANNELS command.
+  - Read-only.
+args:
+  - name: pattern
+    type: string
+    required: false
+    default: "*"
+    description: Glob pattern.
+    validation:
+      pattern: "^[A-Za-z0-9_:.\\-*?{}@#/=+]{1,256}$"
+execution:
+  command:
+    binary: /usr/bin/redis-cli
+    argv: ["PUBSUB", "CHANNELS", "{{ args.pattern }}"]
+  timeout: 10s
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: All active channels
+    args: {}

@@ -1,0 +1,34 @@
+schema_version: 1
+id: ssl.cert_text
+title: openssl x509 -text -noout
+kind: exec
+risk: low
+description: Human-readable dump of one x509 certificate.
+side_effects:
+  - One file read.
+  - Read-only.
+args:
+  - name: path
+    type: string
+    required: true
+    description: Cert file.
+    validation:
+      pattern: "^/[a-zA-Z0-9_./\\-]{1,512}$"
+execution:
+  command:
+    binary: /usr/bin/openssl
+    argv:
+      - "x509"
+      - "-in"
+      - "{{ args.path }}"
+      - "-text"
+      - "-noout"
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Inspect cert
+    args:
+      path: "/etc/ssl/certs/server.crt"

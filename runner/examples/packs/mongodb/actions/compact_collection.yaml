@@ -1,0 +1,46 @@
+schema_version: 1
+id: mongo.compact_collection
+title: db.runCommand({compact:"<coll>"})
+kind: exec
+risk: high
+description: >
+  Compact one collection on the connected node. Reclaims disk for
+  WiredTiger after large deletes. BLOCKS reads/writes on the
+  collection during compaction. Run during a low-traffic window;
+  prefer running on a secondary first.
+side_effects:
+  - Collection's reads/writes blocked until compaction finishes.
+  - Disk usage drops.
+  - Other collections unaffected.
+args:
+  - name: db_name
+    type: string
+    required: true
+    description: Database name.
+    validation:
+      pattern: "^[a-zA-Z0-9_\\-]{1,64}$"
+  - name: collection
+    type: string
+    required: true
+    description: Collection name.
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{1,128}$"
+execution:
+  command:
+    binary: /usr/bin/mongosh
+    argv:
+      - "--quiet"
+      - "{{ args.db_name }}"
+      - "--eval"
+      - "db.runCommand({compact: '{{ args.collection }}'})"
+  timeout: 1800s
+cancel_grace: 60s
+output:
+  parser: text
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 8192
+examples:
+  - title: Compact after a large delete
+    args:
+      db_name: "analytics"
+      collection: "events"

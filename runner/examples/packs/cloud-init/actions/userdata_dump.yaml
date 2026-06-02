@@ -1,0 +1,26 @@
+schema_version: 1
+id: cloud-init.userdata_dump
+title: cat /var/lib/cloud/instance/user-data.txt
+kind: exec
+risk: low
+description: >
+  Raw user-data as cloud-init received it (after MIME decoding, before
+  cloud-config merging). Compare against what you set in the launch
+  config to confirm delivery.
+side_effects:
+  - Reads one file.
+  - May expose secrets baked into user-data — the runner redacts via
+    its configured redaction rules.
+args: []
+execution:
+  command:
+    binary: /bin/cat
+    argv: ["/var/lib/cloud/instance/user-data.txt"]
+  timeout: 5s
+output:
+  parser: text
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 4096
+examples:
+  - title: Raw user-data
+    args: {}

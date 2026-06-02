@@ -1,0 +1,23 @@
+schema_version: 1
+id: cassandra.nodetool_drain
+title: nodetool drain
+kind: exec
+risk: critical
+description: Stops accepting writes, flushes memtables, persists commit log positions. Node is unusable until restart.
+side_effects:
+  - Node stops accepting writes immediately.
+  - All memtables flushed.
+  - Native + Thrift transports closed.
+  - Only restart restores the node.
+args: []
+execution:
+  command: {binary: /usr/bin/nodetool, argv: ["drain"]}
+  timeout: 1h
+cancel_grace: 5m
+output:
+  parser: text
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Drain before restart
+    args: {}

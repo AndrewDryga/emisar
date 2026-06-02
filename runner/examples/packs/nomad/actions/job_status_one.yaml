@@ -1,0 +1,25 @@
+schema_version: 1
+id: nomad.job_status_one
+title: nomad job status <id>
+kind: exec
+risk: low
+description: One job's full status — task groups, allocations, deployment.
+side_effects: ["One API call.", "Read-only."]
+args:
+  - name: job
+    type: string
+    required: true
+    description: Job ID.
+    validation:
+      pattern: "^[a-zA-Z0-9_\\-]{1,128}$"
+execution:
+  command: {binary: /usr/bin/nomad, argv: ["job", "status", "-verbose", "{{ args.job }}"]}
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: One job
+    args:
+      job: "api"

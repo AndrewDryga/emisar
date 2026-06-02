@@ -1,0 +1,34 @@
+schema_version: 1
+
+id: debugging.dmesg_oom
+title: OOM-kill events from dmesg
+kind: exec
+risk: low
+
+description: >
+  Filters dmesg for OOM-killer events. Returns the kernel log lines
+  showing process id, name, RSS, and OOM score for every killed
+  process. The "why did mysqld vanish?" answer. Read-only.
+
+side_effects:
+  - One dmesg invocation.
+  - Read-only.
+
+args: []
+
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "dmesg -T | grep -i -E 'oom|killed process|out of memory' | tail -30"
+  timeout: 15s
+
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+
+examples:
+  - title: Recent OOM kills
+    args: {}

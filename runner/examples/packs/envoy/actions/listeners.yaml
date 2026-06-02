@@ -1,0 +1,22 @@
+schema_version: 1
+id: envoy.listeners
+title: GET /listeners
+kind: exec
+risk: low
+description: All active listeners with bind address.
+side_effects: ["One admin GET.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "curl -sS \"${ENVOY_ADMIN:-http://127.0.0.1:9901}/listeners\""
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: Listeners
+    args: {}

@@ -1,0 +1,24 @@
+schema_version: 1
+id: systemd.watchdog_status
+title: Watchdog status across units
+kind: exec
+risk: low
+description: 'Lists every unit with a non-zero WatchdogUSec property — services that have systemd-level watchdog supervision.'
+side_effects:
+  - Iterates systemctl show across all units.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "systemctl list-units --type=service --no-legend --no-pager | awk '{print $1}' | while read u; do v=$(systemctl show \"$u\" -p WatchdogUSec --value 2>/dev/null); [ -n \"$v\" ] && [ \"$v\" != \"0\" ] && echo \"$u: $v\"; done"
+  timeout: 60s
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 16384
+examples:
+  - title: Units with watchdog
+    args: {}

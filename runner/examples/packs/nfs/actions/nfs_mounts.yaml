@@ -1,0 +1,22 @@
+schema_version: 1
+id: nfs.nfs_mounts
+title: NFS mounts on this host
+kind: exec
+risk: low
+description: All NFS-typed mounts currently visible.
+side_effects: ["One mount table read.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "mount -t nfs,nfs4 -l"
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: NFS mounts
+    args: {}

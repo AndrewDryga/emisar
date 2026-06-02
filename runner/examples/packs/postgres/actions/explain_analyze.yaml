@@ -1,0 +1,34 @@
+schema_version: 1
+id: postgres.explain_analyze
+title: EXPLAIN ANALYZE (FORMAT JSON) <query>
+kind: exec
+risk: medium
+description: >
+  Runs EXPLAIN ANALYZE. The query IS executed (with timing). Use ONLY on read-only queries — pattern-limits to SELECT/WITH but does not guarantee no side effects on functions called.
+side_effects:
+  - Query is executed with timing instrumentation.
+  - Slower than EXPLAIN-only.
+  - If the query has volatile functions, those side effects happen.
+args:
+  - name: query
+    type: string
+    required: true
+    description: SELECT or WITH statement.
+    validation:
+      pattern: "^(SELECT|select|WITH|with)[^;]{1,8000}$"
+execution:
+  command:
+    binary: /usr/bin/psql
+    argv:
+      - "-XAt"
+      - "-c"
+      - "EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) {{ args.query }}"
+  timeout: 5m
+output:
+  parser: json
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: Analyze count query
+    args:
+      query: "SELECT count(*) FROM pg_stat_activity"

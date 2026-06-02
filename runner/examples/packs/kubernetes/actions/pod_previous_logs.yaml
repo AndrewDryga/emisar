@@ -1,0 +1,64 @@
+schema_version: 1
+id: kubernetes.pod_previous_logs
+title: Tail PREVIOUS container logs (crash debug)
+kind: exec
+risk: low
+description: >
+  `kubectl logs --previous` — logs from the previously crashed container instance. The go-to action for CrashLoopBackOff: the current container has nothing yet, the crashed one explains why.
+side_effects:
+  - One kubectl logs invocation with --previous.
+  - Read-only.
+args:
+  - name: namespace
+    type: string
+    required: true
+    description: Namespace.
+    validation:
+      pattern: "^[a-z0-9][a-z0-9\\-]{0,62}$"
+  - name: name
+    type: string
+    required: true
+    description: Pod name.
+    validation:
+      pattern: "^[a-z0-9][a-z0-9.\\-]{0,253}$"
+  - name: container
+    type: string
+    required: false
+    default: ""
+    description: Container name (empty = default).
+    validation:
+      pattern: "^[a-z0-9][a-z0-9\\-]{0,62}$|^$"
+  - name: lines
+    type: integer
+    required: false
+    default: 200
+    description: How many tail lines.
+    validation:
+      min: 1
+      max: 10000
+  - name: context
+    type: string
+    required: false
+    default: ""
+    description: kubeconfig context.
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{0,128}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "kubectl ${KCTX:+--context=$KCTX} -n {{ args.namespace }} logs {{ args.name }} ${CONT:+-c $CONT} --previous --tail={{ args.lines }}"
+  timeout: 30s
+  env:
+    KCTX: "{{ args.context }}"
+    CONT: "{{ args.container }}"
+output:
+  parser: text
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 16384
+examples:
+  - title: Last logs from a crashed container
+    args:
+      namespace: default
+      name: api-7d4f8c5b8c-x2nzp

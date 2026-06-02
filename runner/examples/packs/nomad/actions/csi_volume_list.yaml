@@ -1,0 +1,18 @@
+schema_version: 1
+id: nomad.csi_volume_list
+title: nomad volume status
+kind: exec
+risk: low
+description: All registered CSI volumes with claim count + state.
+side_effects: ["One API call.", "Read-only."]
+args: []
+execution:
+  command: {binary: /usr/bin/nomad, argv: ["volume", "status"]}
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 131072
+  max_stderr_bytes: 8192
+examples:
+  - title: CSI volumes
+    args: {}

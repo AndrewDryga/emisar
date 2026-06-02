@@ -1,0 +1,18 @@
+schema_version: 1
+id: zfs.snapshot_list
+title: zfs list -t snapshot
+kind: exec
+risk: low
+description: All snapshots with used + refer + creation.
+side_effects: ["Reads snapshot metadata.", "Read-only."]
+args: []
+execution:
+  command: {binary: zfs, argv: ["list", "-t", "snapshot", "-Hp"]}
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: Snapshots
+    args: {}

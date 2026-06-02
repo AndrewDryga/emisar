@@ -1,0 +1,40 @@
+schema_version: 1
+id: f2b.banip
+title: fail2ban-client set <jail> banip <ip>
+kind: exec
+risk: high
+description: >
+  Add an IP to a jail's banlist manually. Use during an active
+  attack when log-based detection is too slow. Banned IPs hit the
+  configured action (typically iptables DROP).
+side_effects:
+  - IP banned via the jail's configured action.
+  - Existing connections from that IP may be dropped immediately.
+  - Ban duration follows the jail's bantime setting.
+args:
+  - name: jail
+    type: string
+    required: true
+    description: Jail name.
+    validation:
+      pattern: "^[a-zA-Z0-9_\\-]{1,64}$"
+  - name: ip
+    type: string
+    required: true
+    description: IP address or CIDR.
+    validation:
+      pattern: "^[0-9a-fA-F:.\\/]{1,43}$"
+execution:
+  command:
+    binary: /usr/bin/fail2ban-client
+    argv: ["set", "{{ args.jail }}", "banip", "{{ args.ip }}"]
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Ban an IP from the sshd jail
+    args:
+      jail: "sshd"
+      ip: "203.0.113.42"

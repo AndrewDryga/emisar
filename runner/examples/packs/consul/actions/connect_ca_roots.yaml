@@ -1,0 +1,22 @@
+schema_version: 1
+id: consul.connect_ca_roots
+title: GET /v1/connect/ca/roots
+kind: exec
+risk: low
+description: Currently-trusted root CAs for Connect mesh TLS.
+side_effects: ["One API call.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "curl -sS -H \"X-Consul-Token: $CONSUL_HTTP_TOKEN\" \"$CONSUL_HTTP_ADDR/v1/connect/ca/roots\""
+  timeout: 15s
+output:
+  parser: json
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+examples:
+  - title: CA roots
+    args: {}

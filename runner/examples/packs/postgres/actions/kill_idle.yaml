@@ -1,0 +1,50 @@
+schema_version: 1
+
+id: postgres.kill_idle
+title: Terminate idle-in-transaction backends
+kind: exec
+risk: high
+
+description: >
+  Calls `pg_terminate_backend(pid)` on every backend that has been in
+  `idle in transaction` state longer than `older_than_seconds`. Frees up
+  the locks they're holding. Application code on the killed connections
+  will see "server closed the connection unexpectedly" and reconnect —
+  any in-flight transaction rolls back. Always check the count via
+  `postgres.connections` first. Do not run during normal traffic.
+
+side_effects:
+  - SIGTERMs every matching backend.
+  - In-flight transactions on those connections roll back.
+  - Clients see a closed connection and must reconnect.
+
+args:
+  - name: older_than_seconds
+    type: integer
+    required: false
+    default: 600
+    description: Only terminate idle-in-transaction backends older than this (default 10 min).
+    validation:
+      min: 60
+      max: 86400
+
+execution:
+  command:
+    binary: /usr/bin/psql
+    argv:
+      - "-XAt"
+      - "-c"
+      - "SELECT pid, usename, application_name, pg_terminate_backend(pid) FROM pg_stat_activity WHERE state = 'idle in transaction' AND state_change < now() - interval '{{ args.older_than_seconds }} seconds';"
+  timeout: 30s
+
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+
+examples:
+  - title: Kill anything idle-in-transaction > 10 min
+    args: {}
+  - title: Aggressive — anything > 60 s
+    args:
+      older_than_seconds: 60

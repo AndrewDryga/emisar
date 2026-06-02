@@ -1,0 +1,30 @@
+schema_version: 1
+id: jvm.vm_system_properties
+title: jcmd VM.system_properties
+kind: exec
+risk: low
+description: 'Dumps every -Dkey=value system property the JVM was started with. Use to confirm config overrides took effect.'
+side_effects:
+  - One jcmd call.
+  - Read-only.
+args:
+  - name: pid
+    type: integer
+    required: true
+    description: JVM PID.
+    validation:
+      min: 1
+      max: 4194304
+execution:
+  command:
+    binary: /usr/bin/jcmd
+    argv: ["{{ args.pid }}", "VM.system_properties"]
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: System properties
+    args:
+      pid: 4321

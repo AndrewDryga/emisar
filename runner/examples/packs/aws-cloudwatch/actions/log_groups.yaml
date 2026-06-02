@@ -1,0 +1,20 @@
+schema_version: 1
+id: cw.log_groups
+title: aws logs describe-log-groups
+kind: exec
+risk: low
+description: All CloudWatch log groups.
+side_effects: ["One API call.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: aws
+    argv: ["logs", "describe-log-groups", "--output", "json"]
+  timeout: 60s
+output:
+  parser: json
+  max_stdout_bytes: 4194304
+  max_stderr_bytes: 8192
+examples:
+  - title: Log groups
+    args: {}

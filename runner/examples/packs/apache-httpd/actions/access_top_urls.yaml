@@ -1,0 +1,32 @@
+schema_version: 1
+id: httpd.access_top_urls
+title: Top URLs from access log
+kind: exec
+risk: low
+description: Tally of request URLs from the last N access log lines.
+side_effects:
+  - One file read.
+  - Read-only.
+args:
+  - name: lines
+    type: integer
+    required: false
+    default: 100000
+    description: How many access-log lines to read.
+    validation:
+      min: 100
+      max: 1000000
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "tail -n {{ args.lines }} \"${HTTPD_ACCESS_LOG:-/var/log/apache2/access.log}\" | awk '{print $7}' | sort | uniq -c | sort -rn | head -50"
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 32768
+  max_stderr_bytes: 8192
+examples:
+  - title: Top URLs
+    args: {}

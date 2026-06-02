@@ -1,0 +1,54 @@
+schema_version: 1
+
+id: debugging.ping_host
+title: Ping a host
+kind: exec
+risk: low
+
+description: >
+  Sends N ICMP echo requests to a target. Use to confirm L3
+  reachability when a higher-layer probe (TCP/HTTP) fails. Target is
+  pattern-restricted to safe hostname/IPv4 characters to prevent
+  argument injection.
+
+side_effects:
+  - One ping process running for ~N seconds.
+  - Outgoing ICMP to the target.
+
+args:
+  - name: host
+    type: string
+    required: true
+    description: Hostname or IPv4 address.
+    validation:
+      pattern: "^[a-zA-Z0-9.\\-]{1,253}$"
+
+  - name: count
+    type: integer
+    required: false
+    default: 4
+    description: Number of echo requests.
+    validation:
+      min: 1
+      max: 20
+
+execution:
+  command:
+    binary: /bin/ping
+    argv:
+      - "-c"
+      - "{{ args.count }}"
+      - "-w"
+      - "10"
+      - "{{ args.host }}"
+  timeout: 30s
+
+output:
+  parser: text
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+
+examples:
+  - title: Ping 1.1.1.1 four times
+    args:
+      host: "1.1.1.1"

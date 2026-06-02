@@ -1,0 +1,44 @@
+schema_version: 1
+
+id: github-cli
+name: GitHub CLI operations
+version: 0.1.0
+description: >
+  GitHub introspection — PRs, issues, repos, workflow runs, releases,
+  commit checks, search — plus operator actions: merge PR, close PR,
+  rerun workflow, dispatch workflow. Authenticates via the runner host's
+  `gh auth status` token (i.e. ~/.config/gh).
+vendor: emisar
+homepage: https://github.com/andrewdryga/emisar
+
+requires:
+  os:
+    - linux
+  binaries:
+    - gh
+
+actions:
+  # Auth + repo
+  - actions/auth_status.yaml
+  - actions/repo_view.yaml
+  - actions/repo_clone_count.yaml
+  - actions/branch_list.yaml
+  - actions/release_list.yaml
+  # Pull requests
+  - actions/pr_list.yaml
+  - actions/pr_view.yaml
+  - actions/pr_checks.yaml
+  - actions/search_prs.yaml
+  # Issues
+  - actions/issue_list.yaml
+  - actions/issue_view.yaml
+  # Workflows
+  - actions/workflow_list.yaml
+  - actions/workflow_run_list.yaml
+  - actions/workflow_run_view.yaml
+  - actions/workflow_run_logs.yaml
+  # Mutators
+  - actions/pr_merge.yaml
+  - actions/pr_close.yaml
+  - actions/workflow_rerun.yaml
+  - actions/workflow_dispatch.yaml

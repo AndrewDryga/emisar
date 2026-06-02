@@ -1,0 +1,49 @@
+schema_version: 1
+id: iam.deactivate_access_key
+title: aws iam update-access-key --status Inactive
+kind: exec
+risk: critical
+description: >
+  Disable an IAM access key. ALL API calls using this key fail
+  immediately. Use during an incident when a key is suspected
+  compromised — it stops blast radius before rotation completes.
+  Reversible by setting status back to Active.
+side_effects:
+  - All API calls with this key fail immediately.
+  - Services using the key see auth errors until rotated.
+  - Reversible (delete is not).
+args:
+  - name: user_name
+    type: string
+    required: true
+    description: IAM user name.
+    validation:
+      pattern: "^[a-zA-Z0-9_+=,.@\\-]{1,128}$"
+  - name: access_key_id
+    type: string
+    required: true
+    description: Access key ID (e.g., AKIA...).
+    validation:
+      pattern: "^[A-Z0-9]{16,128}$"
+execution:
+  command:
+    binary: /usr/local/bin/aws
+    argv:
+      - "iam"
+      - "update-access-key"
+      - "--user-name"
+      - "{{ args.user_name }}"
+      - "--access-key-id"
+      - "{{ args.access_key_id }}"
+      - "--status"
+      - "Inactive"
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Disable a leaked key
+    args:
+      user_name: "ci-bot"
+      access_key_id: "AKIAEXAMPLE0000000000"

@@ -1,0 +1,23 @@
+schema_version: 1
+id: postgres.seq_scan_offenders
+title: Tables with high seq-scan ratio
+kind: exec
+risk: low
+description: 'Tables where seq_scan / (seq_scan + idx_scan) > 50% AND seq_tup_read > 100k. Candidates for missing indexes.'
+side_effects: ["One SELECT.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /usr/bin/psql
+    argv:
+      - "-XAt"
+      - "-c"
+      - "SELECT schemaname || '.' || relname AS table, seq_scan, idx_scan, seq_tup_read, idx_tup_fetch, ROUND(100.0 * seq_scan / NULLIF(seq_scan + idx_scan, 0), 2) AS seq_scan_pct, n_live_tup FROM pg_stat_user_tables WHERE seq_scan + idx_scan > 0 AND seq_tup_read > 100000 ORDER BY seq_tup_read DESC LIMIT 30;"
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 32768
+  max_stderr_bytes: 8192
+examples:
+  - title: Seq scan offenders
+    args: {}

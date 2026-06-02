@@ -1,0 +1,46 @@
+schema_version: 1
+id: redis.cluster_failover
+title: CLUSTER FAILOVER
+kind: exec
+risk: critical
+description: >
+  Promotes the connected REPLICA to master. Default mode (empty)
+  waits for replication parity — the only safe choice during a
+  planned failover. FORCE skips parity (use only when master is
+  suspected dead). TAKEOVER bypasses cluster consensus entirely
+  (split-brain recovery). Run while connected to a REPLICA, not a
+  master.
+side_effects:
+  - The connected replica becomes master.
+  - The previous master becomes a replica.
+  - Brief slot-ownership flip; some commands may transiently fail.
+  - Other replicas reconfigure to follow the new master.
+args:
+  - name: mode
+    type: string
+    required: false
+    default: ""
+    description: Empty (safe), FORCE, or TAKEOVER.
+    validation:
+      enum:
+        - ""
+        - FORCE
+        - TAKEOVER
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "/usr/bin/redis-cli CLUSTER FAILOVER {{ args.mode }}"
+  timeout: 60s
+cancel_grace: 30s
+output:
+  parser: text
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 8192
+examples:
+  - title: Safe failover from replica
+    args: {}
+  - title: Force failover (master suspected dead)
+    args:
+      mode: FORCE

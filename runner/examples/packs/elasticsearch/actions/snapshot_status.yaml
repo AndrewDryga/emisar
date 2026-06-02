@@ -1,0 +1,38 @@
+schema_version: 1
+id: es.snapshot_status
+title: GET /_snapshot/<repo>/<snap>/_status
+kind: exec
+risk: low
+description: Returns the in-progress (or completed) status of one snapshot.
+side_effects:
+  - One GET request.
+  - Read-only.
+args:
+  - name: repository
+    type: string
+    required: true
+    description: Repository.
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{1,128}$"
+  - name: snapshot
+    type: string
+    required: true
+    description: Snapshot name.
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{1,128}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "curl -sS -u \"$ELASTIC_USER:$ELASTIC_PASSWORD\" \"$ELASTIC_URL/_snapshot/{{ args.repository }}/{{ args.snapshot }}/_status?pretty\""
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Snapshot status
+    args:
+      repository: "s3-backup"
+      snapshot: "daily-2026-06-01"

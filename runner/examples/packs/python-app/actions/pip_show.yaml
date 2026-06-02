@@ -1,0 +1,29 @@
+schema_version: 1
+id: py.pip_show
+title: $PY_VENV/bin/pip show <pkg>
+kind: exec
+risk: low
+description: Details for one package (version, deps, location).
+side_effects: ["One pip show call.", "Read-only."]
+args:
+  - name: package
+    type: string
+    required: true
+    description: Package name.
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{1,128}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "\"${PY_VENV:-/opt/app/venv}/bin/pip\" show {{ args.package }}"
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: One package
+    args:
+      package: "django"

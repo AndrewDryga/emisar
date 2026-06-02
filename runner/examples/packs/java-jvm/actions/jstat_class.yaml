@@ -1,0 +1,30 @@
+schema_version: 1
+id: jvm.jstat_class
+title: jstat -class
+kind: exec
+risk: low
+description: Class-loader stats — loaded class count and bytes. Use to spot a class-loading leak.
+side_effects:
+  - One jstat invocation.
+  - Read-only.
+args:
+  - name: pid
+    type: integer
+    required: true
+    description: JVM PID.
+    validation:
+      min: 1
+      max: 4194304
+execution:
+  command:
+    binary: /usr/bin/jstat
+    argv: ["-class", "{{ args.pid }}"]
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Class-load stats
+    args:
+      pid: 4321

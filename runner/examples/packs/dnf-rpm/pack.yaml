@@ -1,0 +1,36 @@
+schema_version: 1
+
+id: dnf-rpm
+name: RHEL/Fedora package ops
+version: 0.1.0
+description: >
+  Counterpart to the `debian` pack for RHEL/CentOS/Fedora/Alma/Rocky:
+  rpm inventory, dnf check-update, narrow install/remove actions for a
+  single named package. Equivalent risk model to the apt counterpart.
+vendor: emisar
+homepage: https://github.com/andrewdryga/emisar
+
+requires:
+  os:
+    - linux
+  binaries:
+    - rpm
+    - dnf
+
+actions:
+  # rpm inventory
+  - actions/rpm_qa.yaml
+  - actions/rpm_qi.yaml
+  - actions/rpm_ql.yaml
+  - actions/rpm_verify.yaml
+  # dnf inventory
+  - actions/dnf_check_update.yaml
+  - actions/dnf_history.yaml
+  - actions/dnf_repolist.yaml
+  # dnf mutators
+  - actions/dnf_install.yaml
+  - actions/dnf_remove.yaml
+  - actions/dnf_clean_metadata.yaml
+  - actions/upgrade_pkg.yaml
+  - actions/reinstall_pkg.yaml
+  - actions/autoremove.yaml

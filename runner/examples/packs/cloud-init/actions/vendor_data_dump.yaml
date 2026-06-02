@@ -1,0 +1,25 @@
+schema_version: 1
+id: cloud-init.vendor_data_dump
+title: cat /var/lib/cloud/instance/vendor-data.txt
+kind: exec
+risk: low
+description: >
+  Vendor-data the cloud provider injected (AWS / GCE / Azure provider
+  defaults that ran before user-data). Useful when "why is X installed
+  that I didn't ask for?" leads back to a vendor module.
+side_effects:
+  - Reads one file.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /bin/cat
+    argv: ["/var/lib/cloud/instance/vendor-data.txt"]
+  timeout: 5s
+output:
+  parser: text
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 4096
+examples:
+  - title: Vendor-data
+    args: {}

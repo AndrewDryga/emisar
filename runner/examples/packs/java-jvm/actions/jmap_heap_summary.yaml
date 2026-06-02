@@ -1,0 +1,30 @@
+schema_version: 1
+id: jvm.jmap_heap_summary
+title: jmap -heap
+kind: exec
+risk: low
+description: Heap geometry — used/free/committed per generation (Eden, Survivor, Old, Metaspace).
+side_effects:
+  - One jmap invocation.
+  - Read-only.
+args:
+  - name: pid
+    type: integer
+    required: true
+    description: JVM PID.
+    validation:
+      min: 1
+      max: 4194304
+execution:
+  command:
+    binary: /usr/bin/jmap
+    argv: ["-heap", "{{ args.pid }}"]
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 32768
+  max_stderr_bytes: 8192
+examples:
+  - title: Heap layout
+    args:
+      pid: 4321

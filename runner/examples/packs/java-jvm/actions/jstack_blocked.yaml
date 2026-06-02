@@ -1,0 +1,32 @@
+schema_version: 1
+id: jvm.jstack_blocked
+title: jstack filtered to BLOCKED threads
+kind: exec
+risk: low
+description: Runs jstack and filters output to threads in BLOCKED state plus their lock owners. Use to find deadlocks fast.
+side_effects:
+  - One jstack invocation.
+  - Read-only.
+args:
+  - name: pid
+    type: integer
+    required: true
+    description: JVM PID.
+    validation:
+      min: 1
+      max: 4194304
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "jstack -l {{ args.pid }} | awk '/^\"/ {hdr=$0; next} /java.lang.Thread.State: BLOCKED/ {print hdr; print; flag=1; next} flag && /^$/ {flag=0; next} flag {print}'"
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 16384
+examples:
+  - title: Find blocked threads
+    args:
+      pid: 4321

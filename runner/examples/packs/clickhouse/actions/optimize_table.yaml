@@ -1,0 +1,38 @@
+schema_version: 1
+id: ch.optimize_table
+title: OPTIMIZE TABLE FINAL
+kind: exec
+risk: high
+description: Forces merge of all parts into one. Heavy disk + CPU.
+side_effects:
+  - Background merge runs synchronously; can take minutes-to-hours on large tables.
+  - Temporary doubling of disk space during the merge.
+args:
+  - name: database
+    type: string
+    required: true
+    description: Database.
+    validation:
+      pattern: "^[a-zA-Z0-9_\\-]{1,128}$"
+  - name: table
+    type: string
+    required: true
+    description: Table.
+    validation:
+      pattern: "^[a-zA-Z0-9_\\-]{1,128}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "clickhouse-client --host \"${CH_HOST:-localhost}\" --user \"${CH_USER:-default}\" --password \"$CH_PASSWORD\" --query \"OPTIMIZE TABLE {{ args.database }}.{{ args.table }} FINAL\""
+  timeout: 1h
+output:
+  parser: text
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Optimize table
+    args:
+      database: "default"
+      table: "events"

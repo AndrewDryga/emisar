@@ -1,0 +1,24 @@
+schema_version: 1
+id: redis.acl_list
+title: ACL LIST
+kind: exec
+risk: low
+description: >
+  All ACL users and their rules. Read-only. Use to audit access
+  before changing a key namespace.
+side_effects:
+  - One ACL LIST command.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /usr/bin/redis-cli
+    argv: ["ACL", "LIST"]
+  timeout: 10s
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: All ACL users
+    args: {}

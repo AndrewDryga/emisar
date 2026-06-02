@@ -1,0 +1,43 @@
+schema_version: 1
+
+id: linux.systemctl_start
+title: Start a systemd unit
+kind: exec
+risk: high
+
+description: >
+  `systemctl start <unit>`. Brings a unit up. The unit name is
+  pattern-restricted to safe systemd unit naming. Combine with
+  `linux.systemctl_status` afterward to confirm the unit reached
+  active state.
+
+side_effects:
+  - Starts the unit (and any required dependencies).
+  - Triggers ExecStartPre/Post hooks declared in the unit.
+
+args:
+  - name: unit
+    type: string
+    required: true
+    description: Systemd unit name (e.g. nginx.service).
+    validation:
+      pattern: "^[a-zA-Z0-9@:_.\\-]{1,128}$"
+
+execution:
+  command:
+    binary: /bin/systemctl
+    argv:
+      - "start"
+      - "--no-block"
+      - "{{ args.unit }}"
+  timeout: 60s
+
+output:
+  parser: text
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 8192
+
+examples:
+  - title: Start nginx
+    args:
+      unit: nginx.service

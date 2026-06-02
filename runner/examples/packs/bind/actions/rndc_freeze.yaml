@@ -1,0 +1,27 @@
+schema_version: 1
+id: bind.rndc_freeze
+title: rndc freeze <zone>
+kind: exec
+risk: medium
+description: Freeze a zone (suspend dynamic updates) — used before editing zone file by hand.
+side_effects: ["Dynamic-update writes paused for the zone.", "Reverse with rndc thaw."]
+args:
+  - name: zone
+    type: string
+    required: true
+    description: Zone name.
+    validation:
+      pattern: "^[a-zA-Z0-9.\\-]{1,253}$"
+execution:
+  command:
+    binary: /usr/sbin/rndc
+    argv: ["freeze", "{{ args.zone }}"]
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Freeze before edit
+    args:
+      zone: "example.com"

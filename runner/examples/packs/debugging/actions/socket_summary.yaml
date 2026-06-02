@@ -1,0 +1,33 @@
+schema_version: 1
+
+id: debugging.socket_summary
+title: Socket counts by family + state
+kind: exec
+risk: low
+
+description: >
+  `ss -s` — aggregate counts: TCP/UDP/raw/frag, timewait, by state.
+  Cheaper than the per-connection enumeration. Use as a one-shot
+  "are we close to a port-tuple exhaustion?" check.
+
+side_effects:
+  - One ss invocation.
+  - Read-only.
+
+args: []
+
+execution:
+  command:
+    binary: /usr/bin/ss
+    argv:
+      - "-s"
+  timeout: 5s
+
+output:
+  parser: text
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 4096
+
+examples:
+  - title: Socket summary
+    args: {}

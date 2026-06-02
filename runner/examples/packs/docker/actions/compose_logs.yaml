@@ -1,0 +1,51 @@
+schema_version: 1
+id: docker.compose_logs
+title: docker compose logs (last N lines)
+kind: exec
+risk: low
+description: Returns the last N lines of logs for one service in a compose project. Read-only.
+side_effects:
+  - One docker compose logs invocation.
+  - Read-only.
+args:
+  - name: file
+    type: string
+    required: true
+    description: Path to docker-compose.yml.
+    validation:
+      pattern: "^/[A-Za-z0-9._/-]{1,256}$"
+  - name: service
+    type: string
+    required: true
+    description: Service name from the compose file.
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{1,64}$"
+  - name: lines
+    type: integer
+    required: false
+    default: 200
+    description: How many tail lines.
+    validation:
+      min: 1
+      max: 5000
+execution:
+  command:
+    binary: /usr/bin/docker
+    argv:
+      - "compose"
+      - "-f"
+      - "{{ args.file }}"
+      - "logs"
+      - "--tail"
+      - "{{ args.lines }}"
+      - "{{ args.service }}"
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 16384
+examples:
+  - title: Last 200 lines of "api" logs
+    args:
+      file: "/opt/stack/docker-compose.yml"
+      service: api

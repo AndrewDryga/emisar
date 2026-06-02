@@ -1,0 +1,62 @@
+schema_version: 1
+id: kubernetes.set_image
+title: Set deployment container image
+kind: exec
+risk: high
+description: >
+  Updates one container's image in a deployment — triggers a rolling update. Container name and image ref are pattern-restricted.
+side_effects:
+  - Updates the deployment spec.
+  - Triggers a rolling update; pods replaced one-by-one.
+args:
+  - name: namespace
+    type: string
+    required: true
+    description: Namespace.
+    validation:
+      pattern: "^[a-z0-9][a-z0-9\\-]{0,62}$"
+  - name: name
+    type: string
+    required: true
+    description: Deployment name.
+    validation:
+      pattern: "^[a-z0-9][a-z0-9.\\-]{0,253}$"
+  - name: container
+    type: string
+    required: true
+    description: Container name (from the pod spec).
+    validation:
+      pattern: "^[a-z0-9][a-z0-9\\-]{0,62}$"
+  - name: image
+    type: string
+    required: true
+    description: Image ref (repository:tag).
+    validation:
+      pattern: "^[a-zA-Z0-9_./@:\\-]{1,256}$"
+  - name: context
+    type: string
+    required: false
+    default: ""
+    description: kubeconfig context.
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{0,128}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "kubectl ${KCTX:+--context=$KCTX} -n {{ args.namespace }} set image deploy/{{ args.name }} {{ args.container }}={{ args.image }}"
+  timeout: 30s
+  env:
+    KCTX: "{{ args.context }}"
+output:
+  parser: text
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 8192
+examples:
+  - title: Update api to a new image
+    args:
+      namespace: default
+      name: api
+      container: api
+      image: "ghcr.io/example/api:v1.42.0"

@@ -1,0 +1,38 @@
+schema_version: 1
+id: mysql.analyze_table
+title: ANALYZE TABLE
+kind: exec
+risk: medium
+description: Refreshes the optimizer statistics for one table. Per-table only; cannot wildcard.
+side_effects:
+  - Briefly holds a read lock on the table.
+  - Refreshes index cardinality stats.
+args:
+  - name: database
+    type: string
+    required: true
+    description: Database.
+    validation:
+      pattern: "^[a-zA-Z_][a-zA-Z0-9_]{0,63}$"
+  - name: table
+    type: string
+    required: true
+    description: Table name.
+    validation:
+      pattern: "^[a-zA-Z_][a-zA-Z0-9_]{0,63}$"
+execution:
+  command:
+    binary: /usr/bin/mysql
+    argv:
+      - "-e"
+      - "ANALYZE TABLE `{{ args.database }}`.`{{ args.table }}`"
+  timeout: 5m
+output:
+  parser: text
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 8192
+examples:
+  - title: Refresh stats for orders
+    args:
+      database: app
+      table: orders

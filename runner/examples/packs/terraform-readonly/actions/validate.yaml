@@ -1,0 +1,24 @@
+schema_version: 1
+id: tf.validate
+title: terraform validate
+kind: exec
+risk: low
+description: Validates the workspace's HCL files. No state read or write.
+side_effects:
+  - Forks terraform.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "cd \"$TF_DIR\" && terraform validate"
+  timeout: 60s
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Validate
+    args: {}

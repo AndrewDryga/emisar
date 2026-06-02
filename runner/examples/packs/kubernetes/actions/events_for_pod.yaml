@@ -1,0 +1,47 @@
+schema_version: 1
+id: kubernetes.events_for_pod
+title: Events for one pod
+kind: exec
+risk: low
+description: Field-selected events that reference one pod.
+side_effects:
+  - One kubectl get events invocation.
+  - Read-only.
+args:
+  - name: namespace
+    type: string
+    required: true
+    description: Namespace.
+    validation:
+      pattern: "^[a-z0-9][a-z0-9\\-]{0,62}$"
+  - name: name
+    type: string
+    required: true
+    description: Pod name.
+    validation:
+      pattern: "^[a-z0-9][a-z0-9.\\-]{0,253}$"
+  - name: context
+    type: string
+    required: false
+    default: ""
+    description: kubeconfig context.
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{0,128}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "kubectl ${KCTX:+--context=$KCTX} -n {{ args.namespace }} get events --field-selector involvedObject.kind=Pod,involvedObject.name={{ args.name }}"
+  timeout: 30s
+  env:
+    KCTX: "{{ args.context }}"
+output:
+  parser: text
+  max_stdout_bytes: 131072
+  max_stderr_bytes: 8192
+examples:
+  - title: Events for one pod
+    args:
+      namespace: default
+      name: api-7d4f8c5b8c-x2nzp

@@ -1,0 +1,40 @@
+schema_version: 1
+id: cassandra.nodetool_flush
+title: nodetool flush [ks] [table]
+kind: exec
+risk: high
+description: 'Forces memtable → SSTable flush. Without args: all keyspaces. Brief IO spike + writeahead replay simplification.'
+side_effects:
+  - Memtables for the targeted scope are flushed to disk.
+  - Brief IO spike.
+  - Commit log may be marked clean for the affected segments.
+args:
+  - name: keyspace
+    type: string
+    required: false
+    default: ""
+    description: Optional keyspace.
+    validation:
+      pattern: "^[a-zA-Z][a-zA-Z0-9_]{0,47}$|^$"
+  - name: table
+    type: string
+    required: false
+    default: ""
+    description: Optional table (requires keyspace).
+    validation:
+      pattern: "^[a-zA-Z][a-zA-Z0-9_]{0,47}$|^$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "if [ -n '{{ args.table }}' ]; then nodetool flush {{ args.keyspace }} {{ args.table }}; elif [ -n '{{ args.keyspace }}' ]; then nodetool flush {{ args.keyspace }}; else nodetool flush; fi"
+  timeout: 30m
+output:
+  parser: text
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Flush one keyspace
+    args:
+      keyspace: "my_ks"

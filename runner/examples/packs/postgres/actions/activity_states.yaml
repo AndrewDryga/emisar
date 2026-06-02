@@ -1,0 +1,23 @@
+schema_version: 1
+id: postgres.activity_states
+title: Backend counts by state
+kind: exec
+risk: low
+description: 'Quick "how many idle / active / idle-in-transaction" health snapshot.'
+side_effects: ["One SELECT.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /usr/bin/psql
+    argv:
+      - "-XAt"
+      - "-c"
+      - "SELECT state, count(*) AS n FROM pg_stat_activity GROUP BY state ORDER BY n DESC;"
+  timeout: 10s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: State counts
+    args: {}

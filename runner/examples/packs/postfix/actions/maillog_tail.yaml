@@ -1,0 +1,30 @@
+schema_version: 1
+id: postfix.maillog_tail
+title: tail mail.log
+kind: exec
+risk: low
+description: Last N lines of the mail log.
+side_effects: ["One file read.", "Read-only."]
+args:
+  - name: lines
+    type: integer
+    required: false
+    default: 200
+    description: Lines.
+    validation:
+      min: 1
+      max: 10000
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "tail -n {{ args.lines }} /var/log/mail.log 2>/dev/null || tail -n {{ args.lines }} /var/log/maillog"
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: Last 200
+    args: {}

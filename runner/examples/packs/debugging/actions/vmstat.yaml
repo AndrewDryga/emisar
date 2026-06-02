@@ -1,0 +1,43 @@
+schema_version: 1
+
+id: debugging.vmstat
+title: vmstat sample
+kind: exec
+risk: low
+
+description: >
+  Runs `vmstat 1 N` to capture N one-second samples. Shows run/block
+  queues, free memory, swap pressure, context switches, and per-CPU
+  user/system/iowait. Use to spot a CPU-bound vs IO-bound vs
+  context-switch-storm problem.
+
+side_effects:
+  - One vmstat invocation lasting N seconds.
+  - Read-only.
+
+args:
+  - name: samples
+    type: integer
+    required: false
+    default: 5
+    description: How many one-second samples to collect.
+    validation:
+      min: 2
+      max: 60
+
+execution:
+  command:
+    binary: /usr/bin/vmstat
+    argv:
+      - "1"
+      - "{{ args.samples }}"
+  timeout: 90s
+
+output:
+  parser: text
+  max_stdout_bytes: 32768
+  max_stderr_bytes: 8192
+
+examples:
+  - title: 5-second snapshot
+    args: {}

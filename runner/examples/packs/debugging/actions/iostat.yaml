@@ -1,0 +1,45 @@
+schema_version: 1
+
+id: debugging.iostat
+title: iostat per-device sample
+kind: exec
+risk: low
+
+description: >
+  Runs `iostat -xz 1 N` to capture N one-second samples of extended
+  per-device statistics. Surfaces await, %util, queue depth. Use to
+  prove or disprove "the disk is slow" before chasing application
+  code.
+
+side_effects:
+  - One iostat invocation lasting N seconds.
+  - Read-only.
+  - Requires sysstat package.
+
+args:
+  - name: samples
+    type: integer
+    required: false
+    default: 5
+    description: How many one-second samples to collect.
+    validation:
+      min: 2
+      max: 60
+
+execution:
+  command:
+    binary: /usr/bin/iostat
+    argv:
+      - "-xz"
+      - "1"
+      - "{{ args.samples }}"
+  timeout: 90s
+
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+
+examples:
+  - title: 5-second device-stats snapshot
+    args: {}

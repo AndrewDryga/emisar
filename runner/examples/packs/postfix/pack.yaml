@@ -1,0 +1,32 @@
+schema_version: 1
+
+id: postfix
+name: Postfix mail server
+version: 0.1.0
+description: >
+  Queue inspection, config dump, log tailing, plus narrow operator
+  actions (flush, requeue, delete-by-queue-id). All queue mutators are
+  high-risk and audited. Postfix uid must own the runner OR runner must
+  be in the postdrop group.
+vendor: emisar
+homepage: https://github.com/andrewdryga/emisar
+
+requires:
+  os:
+    - linux
+
+actions:
+  - actions/mailq.yaml
+  - actions/qshape.yaml
+  - actions/queue_counts.yaml
+  - actions/postconf.yaml
+  - actions/postcat_qid.yaml
+  - actions/maillog_tail.yaml
+  - actions/maillog_grep.yaml
+  - actions/flush_queue.yaml
+  - actions/delete_qid.yaml
+  - actions/check_config.yaml
+  - actions/reload.yaml
+  - actions/postsuper_hold.yaml
+  - actions/postsuper_release.yaml
+  - actions/postsuper_requeue.yaml

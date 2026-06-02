@@ -1,0 +1,38 @@
+schema_version: 1
+id: nomad.node_drain
+title: nomad node drain -enable
+kind: exec
+risk: high
+description: Enables drain mode on one node. Allocations migrate; new ones are blocked.
+side_effects:
+  - Node stops accepting new allocations.
+  - Existing allocations are migrated according to job spec (Migrate stanza).
+  - May take minutes to complete depending on workload.
+args:
+  - name: node_id
+    type: string
+    required: true
+    description: Node ID or prefix.
+    validation:
+      pattern: "^[a-fA-F0-9\\-]{4,36}$"
+  - name: deadline
+    type: string
+    required: false
+    default: "1h"
+    description: Force-eject after this duration if migration hasn't completed.
+    validation:
+      pattern: "^[0-9]{1,4}[smh]$"
+execution:
+  command:
+    binary: /usr/bin/nomad
+    argv: ["node", "drain", "-enable", "-deadline", "{{ args.deadline }}", "-yes", "{{ args.node_id }}"]
+  timeout: 2h
+cancel_grace: 5m
+output:
+  parser: text
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Drain one client
+    args:
+      node_id: "abc12345"

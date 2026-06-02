@@ -1,0 +1,25 @@
+schema_version: 1
+id: vault.list_audit
+title: vault audit list
+kind: exec
+risk: low
+description: Enabled audit devices.
+side_effects:
+  - One sys/audit request.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: vault
+    argv:
+      - "audit"
+      - "list"
+      - "-format=json"
+  timeout: 15s
+output:
+  parser: json
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Audit devices
+    args: {}

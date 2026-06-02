@@ -1,0 +1,52 @@
+schema_version: 1
+
+id: docker
+name: Docker operations pack
+version: 0.2.0
+description: >
+  Operator pack for Docker hosts: read-only inventory and per-container
+  introspection, plus narrow mutators (restart, stop, kill, prune).
+  Includes docker-compose support. The runner uid must be in the
+  docker group; this pack does NOT escalate.
+vendor: emisar
+homepage: https://github.com/andrewdryga/emisar
+
+requires:
+  os:
+    - linux
+  binaries:
+    - docker
+
+actions:
+  # Discovery
+  - actions/ps.yaml
+  - actions/info.yaml
+  - actions/version.yaml
+  - actions/events_tail.yaml
+  - actions/container_top.yaml
+  - actions/stats.yaml
+  # Images
+  - actions/images.yaml
+  - actions/image_inspect.yaml
+  - actions/image_history.yaml
+  - actions/pull_image.yaml
+  # Per-container
+  - actions/inspect.yaml
+  - actions/logs.yaml
+  # Volumes
+  - actions/volume_ls.yaml
+  - actions/volume_inspect.yaml
+  - actions/volume_prune.yaml
+  # Networks
+  - actions/network_ls.yaml
+  - actions/network_inspect.yaml
+  # Compose
+  - actions/compose_ps.yaml
+  - actions/compose_logs.yaml
+  - actions/compose_restart.yaml
+  # System & mutators
+  - actions/system_df.yaml
+  - actions/system_prune.yaml
+  - actions/restart.yaml
+  - actions/stop.yaml
+  - actions/kill.yaml

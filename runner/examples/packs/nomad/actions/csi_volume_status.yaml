@@ -1,0 +1,25 @@
+schema_version: 1
+id: nomad.csi_volume_status
+title: nomad volume status <id>
+kind: exec
+risk: low
+description: One CSI volume's full state — claims, allocations using it, plugin status.
+side_effects: ["One API call.", "Read-only."]
+args:
+  - name: volume_id
+    type: string
+    required: true
+    description: Volume ID.
+    validation:
+      pattern: "^[a-zA-Z0-9_\\-]{1,128}$"
+execution:
+  command: {binary: /usr/bin/nomad, argv: ["volume", "status", "{{ args.volume_id }}"]}
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: One volume
+    args:
+      volume_id: "data-volume-1"

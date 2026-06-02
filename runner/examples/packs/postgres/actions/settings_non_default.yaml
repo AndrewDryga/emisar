@@ -1,0 +1,23 @@
+schema_version: 1
+id: postgres.settings_non_default
+title: pg_settings (non-default)
+kind: exec
+risk: low
+description: Settings the operator has changed from the compiled defaults.
+side_effects: ["One SELECT.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /usr/bin/psql
+    argv:
+      - "-XAt"
+      - "-c"
+      - "SELECT name, setting, unit, source, sourcefile, sourceline FROM pg_settings WHERE source NOT IN ('default', 'override') ORDER BY name;"
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 131072
+  max_stderr_bytes: 8192
+examples:
+  - title: Non-default settings
+    args: {}

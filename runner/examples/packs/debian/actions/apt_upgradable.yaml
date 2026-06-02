@@ -1,0 +1,34 @@
+schema_version: 1
+
+id: debian.apt_upgradable
+title: List upgradable packages
+kind: exec
+risk: low
+
+description: >
+  Lists packages that have an upgrade available based on the current
+  apt index. Read-only — does NOT refresh the index. Pair with
+  `apt_update` if you suspect the cache is stale.
+
+side_effects:
+  - Reads /var/lib/apt/lists.
+  - Briefly takes a shared apt lock.
+
+args: []
+
+execution:
+  command:
+    binary: /usr/bin/apt
+    argv:
+      - "list"
+      - "--upgradable"
+  timeout: 60s
+
+output:
+  parser: text
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 16384
+
+examples:
+  - title: What needs upgrading?
+    args: {}

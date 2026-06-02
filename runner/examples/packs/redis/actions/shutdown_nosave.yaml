@@ -1,0 +1,28 @@
+schema_version: 1
+id: redis.shutdown_nosave
+title: SHUTDOWN NOSAVE
+kind: exec
+risk: critical
+description: >
+  Stop the Redis process without writing an RDB. Any data not
+  already persisted is LOST. Used only for cache-only nodes or
+  during recovery from a corrupted state. Process exit means the
+  host's systemd/supervisor will then restart it (or not).
+side_effects:
+  - Redis exits immediately.
+  - In-memory data not yet persisted is lost.
+  - Replicas detect disconnect and stop receiving updates.
+  - Supervisor restart depends on host config.
+args: []
+execution:
+  command:
+    binary: /usr/bin/redis-cli
+    argv: ["SHUTDOWN", "NOSAVE"]
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Hard stop (cache-only host)
+    args: {}

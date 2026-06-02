@@ -1,0 +1,30 @@
+schema_version: 1
+id: jvm.jfr_stop
+title: Stop active JFR recording
+kind: exec
+risk: low
+description: Stops the "emisar" recording and finalizes the .jfr file.
+side_effects:
+  - Stops the recording.
+  - Finalizes /tmp/<pid>-emisar.jfr.
+args:
+  - name: pid
+    type: integer
+    required: true
+    description: JVM PID.
+    validation:
+      min: 1
+      max: 4194304
+execution:
+  command:
+    binary: /usr/bin/jcmd
+    argv: ["{{ args.pid }}", "JFR.stop", "name=emisar"]
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: End the recording
+    args:
+      pid: 4321

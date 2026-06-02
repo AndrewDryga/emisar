@@ -1,0 +1,24 @@
+schema_version: 1
+id: prom.rules
+title: GET /api/v1/rules
+kind: exec
+risk: low
+description: All loaded recording + alerting rules with last evaluation result.
+side_effects:
+  - One GET request.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "curl -sS \"$PROM_URL/api/v1/rules\""
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: Rules
+    args: {}

@@ -1,0 +1,40 @@
+schema_version: 1
+id: fs.find_large_files
+title: Files larger than N MB
+kind: exec
+risk: low
+description: Top files by size under one path. Use to find disk-pressure culprits.
+side_effects:
+  - One file-system traversal.
+  - Read-only.
+args:
+  - name: path
+    type: string
+    required: true
+    description: Root path.
+    validation:
+      pattern: "^/[a-zA-Z0-9_./\\-]{0,512}$"
+  - name: min_mb
+    type: integer
+    required: false
+    default: 100
+    description: Minimum size in MB.
+    validation:
+      min: 1
+      max: 1000000
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "find {{ args.path }} -xdev -type f -size +{{ args.min_mb }}M -printf '%s %p\\n' 2>/dev/null | sort -rn | head -50"
+  timeout: 2m
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Files >500MB under /var
+    args:
+      path: "/var"
+      min_mb: 500

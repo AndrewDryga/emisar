@@ -1,0 +1,49 @@
+schema_version: 1
+id: redis.scan
+title: SCAN cursor MATCH COUNT
+kind: exec
+risk: low
+description: >
+  One SCAN page. Returns next-cursor + up to COUNT keys matching
+  MATCH. Safe for prod — never blocks. Use to enumerate a hot
+  namespace without KEYS.
+side_effects:
+  - One SCAN command.
+  - Read-only metadata; values are not fetched.
+args:
+  - name: cursor
+    type: string
+    required: false
+    default: "0"
+    description: Cursor (start with "0").
+    validation:
+      pattern: "^[0-9]{1,20}$"
+  - name: match
+    type: string
+    required: false
+    default: "*"
+    description: Glob pattern.
+    validation:
+      pattern: "^[A-Za-z0-9_:.\\-*?{}@#/=+]{1,256}$"
+  - name: count
+    type: integer
+    required: false
+    default: 100
+    description: Server hint for batch size.
+    validation:
+      min: 1
+      max: 10000
+execution:
+  command:
+    binary: /usr/bin/redis-cli
+    argv: ["SCAN", "{{ args.cursor }}", "MATCH", "{{ args.match }}", "COUNT", "{{ args.count }}"]
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: First page of session keys
+    args:
+      match: "session:*"
+      count: 200

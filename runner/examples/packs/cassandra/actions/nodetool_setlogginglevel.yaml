@@ -1,0 +1,34 @@
+schema_version: 1
+id: cassandra.nodetool_setlogginglevel
+title: nodetool setlogginglevel <logger> <level>
+kind: exec
+risk: medium
+description: 'Sets one logger''s level. Use empty logger to reset all to the configured defaults.'
+side_effects:
+  - Logger level changes immediately.
+  - DEBUG/TRACE levels can dramatically increase log volume.
+args:
+  - name: logger
+    type: string
+    required: true
+    description: 'Logger name (e.g. org.apache.cassandra.db, or "root").'
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{1,128}$"
+  - name: level
+    type: string
+    required: true
+    description: Level.
+    validation:
+      enum: ["TRACE", "DEBUG", "INFO", "WARN", "ERROR", "OFF"]
+execution:
+  command: {binary: /usr/bin/nodetool, argv: ["setlogginglevel", "{{ args.logger }}", "{{ args.level }}"]}
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Set DB layer to DEBUG
+    args:
+      logger: "org.apache.cassandra.db"
+      level: "DEBUG"

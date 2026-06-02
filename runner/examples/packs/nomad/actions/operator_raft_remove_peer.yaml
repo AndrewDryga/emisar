@@ -1,0 +1,28 @@
+schema_version: 1
+id: nomad.operator_raft_remove_peer
+title: nomad operator raft remove-peer
+kind: exec
+risk: critical
+description: Forcibly removes a server from Raft. Use ONLY when a server is permanently gone and autopilot hasn't cleaned it up.
+side_effects:
+  - Raft membership changes immediately.
+  - Quorum size adjusts.
+  - Wrong target = lost quorum / split brain.
+args:
+  - name: address
+    type: string
+    required: true
+    description: Raft address (host:port).
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{1,128}:[0-9]{1,5}$"
+execution:
+  command: {binary: /usr/bin/nomad, argv: ["operator", "raft", "remove-peer", "-peer-address", "{{ args.address }}"]}
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Remove dead server
+    args:
+      address: "10.0.0.5:4647"

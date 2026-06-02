@@ -1,0 +1,24 @@
+schema_version: 1
+id: cloud-init.analyze_blame
+title: cloud-init analyze blame
+kind: exec
+risk: low
+description: >
+  Modules ranked by duration. The single fastest answer to "why did
+  cloud-init take 90 seconds?" — the slow module is at the top.
+side_effects:
+  - One CLI call.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /usr/bin/cloud-init
+    argv: ["analyze", "blame"]
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Slowest modules
+    args: {}

@@ -1,0 +1,22 @@
+schema_version: 1
+id: envoy.certs
+title: GET /certs
+kind: exec
+risk: low
+description: Active TLS certs known to Envoy — subjects, expiry, days remaining.
+side_effects: ["One admin GET.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "curl -sS \"${ENVOY_ADMIN:-http://127.0.0.1:9901}/certs\""
+  timeout: 15s
+output:
+  parser: json
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+examples:
+  - title: Certs
+    args: {}

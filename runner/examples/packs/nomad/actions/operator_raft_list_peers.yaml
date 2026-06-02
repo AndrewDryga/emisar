@@ -1,0 +1,18 @@
+schema_version: 1
+id: nomad.operator_raft_list_peers
+title: nomad operator raft list-peers
+kind: exec
+risk: low
+description: 'Raft peer state — voter status, suffrage, address.'
+side_effects: ["One API call.", "Read-only."]
+args: []
+execution:
+  command: {binary: /usr/bin/nomad, argv: ["operator", "raft", "list-peers"]}
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Raft peers
+    args: {}

@@ -1,0 +1,22 @@
+schema_version: 1
+id: envoy.config_dump
+title: GET /config_dump
+kind: exec
+risk: low
+description: Full xDS config — bootstrap, clusters, routes, listeners.
+side_effects: ["One admin GET.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "curl -sS \"${ENVOY_ADMIN:-http://127.0.0.1:9901}/config_dump?include_eds=true\""
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 16777216
+  max_stderr_bytes: 8192
+examples:
+  - title: Full config
+    args: {}

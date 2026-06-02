@@ -1,0 +1,31 @@
+schema_version: 1
+id: mysql.status
+title: SHOW GLOBAL STATUS (filtered)
+kind: exec
+risk: low
+description: Global counters filtered by glob pattern. Default returns connection + thread counters.
+side_effects:
+  - One SHOW GLOBAL STATUS.
+  - Read-only.
+args:
+  - name: pattern
+    type: string
+    required: false
+    default: "Threads_%"
+    description: SHOW STATUS LIKE pattern.
+    validation:
+      pattern: "^[a-zA-Z0-9_%]{1,64}$"
+execution:
+  command:
+    binary: /usr/bin/mysql
+    argv:
+      - "-e"
+      - "SHOW GLOBAL STATUS LIKE '{{ args.pattern }}'"
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Thread counters
+    args: {}

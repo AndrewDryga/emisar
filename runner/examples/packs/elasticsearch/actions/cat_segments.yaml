@@ -1,0 +1,24 @@
+schema_version: 1
+id: es.cat_segments
+title: GET /_cat/segments
+kind: exec
+risk: low
+description: Per-segment doc + bytes counts. Use to plan a force_merge.
+side_effects:
+  - One GET request.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "curl -sS -u \"$ELASTIC_USER:$ELASTIC_PASSWORD\" \"$ELASTIC_URL/_cat/segments?v\""
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: Segments
+    args: {}

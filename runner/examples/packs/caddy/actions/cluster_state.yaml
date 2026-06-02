@@ -1,0 +1,22 @@
+schema_version: 1
+id: caddy.cluster_state
+title: GET /reverse_proxy (handler tree)
+kind: exec
+risk: low
+description: All loaded reverse-proxy handler trees with current state.
+side_effects: ["One admin GET.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "curl -sS \"${CADDY_ADMIN:-http://127.0.0.1:2019}/reverse_proxy\""
+  timeout: 15s
+output:
+  parser: json
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: Handler trees
+    args: {}

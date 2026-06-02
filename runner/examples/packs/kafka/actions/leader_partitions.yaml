@@ -1,0 +1,24 @@
+schema_version: 1
+id: kafka.leader_partitions
+title: Partition leaders by broker
+kind: exec
+risk: low
+description: Counts partitions where each broker is leader. Uneven distribution → preferred-leader election.
+side_effects:
+  - One metadata request.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "kafka-topics.sh --bootstrap-server \"$KAFKA_BOOTSTRAP\" --describe | awk '/Leader/ {match($0,/Leader: [0-9]+/); if (RSTART) print substr($0,RSTART+8,RLENGTH-8)}' | sort | uniq -c"
+  timeout: 60s
+output:
+  parser: text
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 8192
+examples:
+  - title: Leader distribution
+    args: {}

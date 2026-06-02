@@ -1,0 +1,44 @@
+schema_version: 1
+id: postgres.vacuum_table
+title: VACUUM <schema>.<table>
+kind: exec
+risk: high
+description: 'Reclaims dead-tuple space in one table. Non-blocking (ShareUpdateExclusiveLock). Use VACUUM ANALYZE if planner stats are also stale.'
+side_effects:
+  - IO-heavy proportional to table size.
+  - DML continues during the vacuum.
+  - Does NOT shrink the table file — for that, use VACUUM FULL (not exposed here; rebuilds the table with AccessExclusiveLock).
+args:
+  - name: schema
+    type: string
+    required: true
+    description: Schema name.
+    validation:
+      pattern: "^[a-zA-Z_][a-zA-Z0-9_]{0,62}$"
+  - name: table
+    type: string
+    required: true
+    description: Table name.
+    validation:
+      pattern: "^[a-zA-Z_][a-zA-Z0-9_]{0,62}$"
+  - name: analyze
+    type: boolean
+    required: false
+    default: true
+    description: Also run ANALYZE.
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "if [ \"{{ args.analyze }}\" = \"true\" ]; then psql -XAt -c \"VACUUM (VERBOSE, ANALYZE) {{ args.schema }}.{{ args.table }};\"; else psql -XAt -c \"VACUUM (VERBOSE) {{ args.schema }}.{{ args.table }};\"; fi"
+  timeout: 2h
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: VACUUM ANALYZE one table
+    args:
+      schema: "public"
+      table: "orders"

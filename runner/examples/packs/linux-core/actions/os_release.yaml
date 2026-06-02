@@ -1,0 +1,34 @@
+schema_version: 1
+
+id: linux.os_release
+title: Distro + kernel identity
+kind: exec
+risk: low
+
+description: >
+  Returns /etc/os-release plus `uname -a`. Identifies the
+  distribution, version, codename, and kernel. Use as a first sanity
+  check before recommending distro-specific commands. Read-only.
+
+side_effects:
+  - Two file/utility reads.
+  - Read-only.
+
+args: []
+
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "cat /etc/os-release; echo; uname -a"
+  timeout: 5s
+
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 4096
+
+examples:
+  - title: Distro + kernel
+    args: {}

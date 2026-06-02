@@ -1,0 +1,40 @@
+schema_version: 1
+
+id: debian.dpkg_status
+title: dpkg package status
+kind: exec
+risk: low
+
+description: >
+  Returns the dpkg status (installed version, architecture, depends,
+  maintainer) for one named package. Read-only. The package name is
+  pattern-restricted to safe Debian package syntax.
+
+side_effects:
+  - Reads /var/lib/dpkg/status.
+
+args:
+  - name: package
+    type: string
+    required: true
+    description: Binary package name.
+    validation:
+      pattern: "^[a-z0-9][a-z0-9.+\\-]{0,62}$"
+
+execution:
+  command:
+    binary: /usr/bin/dpkg
+    argv:
+      - "-s"
+      - "{{ args.package }}"
+  timeout: 15s
+
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+
+examples:
+  - title: Is openssl installed and what version?
+    args:
+      package: openssl

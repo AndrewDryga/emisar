@@ -1,0 +1,27 @@
+schema_version: 1
+id: rds.describe_cluster
+title: aws rds describe-db-clusters --db-cluster-identifier
+kind: exec
+risk: low
+description: One Aurora cluster's full details + members.
+side_effects: ["One API call.", "Read-only."]
+args:
+  - name: cluster
+    type: string
+    required: true
+    description: Cluster identifier.
+    validation:
+      pattern: "^[a-zA-Z][a-zA-Z0-9\\-]{0,62}$"
+execution:
+  command:
+    binary: aws
+    argv: ["rds", "describe-db-clusters", "--db-cluster-identifier", "{{ args.cluster }}", "--output", "json"]
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+examples:
+  - title: One cluster
+    args:
+      cluster: "prod-aurora"

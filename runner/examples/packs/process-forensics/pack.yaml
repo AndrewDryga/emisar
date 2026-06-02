@@ -1,0 +1,29 @@
+schema_version: 1
+
+id: process-forensics
+name: Process forensics
+version: 0.1.0
+description: >
+  Deep per-process diagnostics for "why is this process stuck / slow /
+  leaking?" — strace (HIGH RISK; slows the target), pid memory maps,
+  per-thread state, /proc walking, gdb backtrace, full lsof, syscall
+  summary. Read-only — but strace and gdb attach via ptrace and WILL
+  slow the target.
+vendor: emisar
+homepage: https://github.com/andrewdryga/emisar
+
+requires:
+  os:
+    - linux
+
+actions:
+  - actions/pid_maps.yaml
+  - actions/pid_smaps_summary.yaml
+  - actions/pid_threads_state.yaml
+  - actions/pid_open_files.yaml
+  - actions/pid_status.yaml
+  - actions/pid_io.yaml
+  - actions/pid_syscall.yaml
+  - actions/strace_pid_short.yaml
+  - actions/gdb_backtrace.yaml
+  - actions/strace_summary.yaml

@@ -1,0 +1,28 @@
+schema_version: 1
+id: rmq.list_queues
+title: rabbitmqctl list_queues
+kind: exec
+risk: low
+description: 'All queues with name, messages_ready, messages_unacknowledged, consumers, memory. The canonical "is anything backing up?" check.'
+side_effects:
+  - One CLI call.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: rabbitmqctl
+    argv:
+      - "list_queues"
+      - "name"
+      - "messages_ready"
+      - "messages_unacknowledged"
+      - "consumers"
+      - "memory"
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: Queue stats
+    args: {}

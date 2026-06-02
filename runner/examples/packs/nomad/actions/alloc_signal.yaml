@@ -1,0 +1,46 @@
+schema_version: 1
+id: nomad.alloc_signal
+title: nomad alloc signal -s <signal> <id> [task]
+kind: exec
+risk: high
+description: 'Send a UNIX signal to one task (or all tasks). Common uses: SIGHUP to reload config, SIGUSR1 for app-specific behavior.'
+side_effects:
+  - Targeted task(s) receive the signal.
+  - Effect depends on the application's signal handling.
+args:
+  - name: alloc_id
+    type: string
+    required: true
+    description: Allocation ID.
+    validation:
+      pattern: "^[a-fA-F0-9\\-]{4,36}$"
+  - name: signal
+    type: string
+    required: true
+    description: 'Signal name (HUP, USR1, USR2, etc).'
+    validation:
+      enum: ["HUP", "USR1", "USR2", "INT", "TERM", "QUIT"]
+  - name: task
+    type: string
+    required: false
+    default: ""
+    description: Specific task (empty = all).
+    validation:
+      pattern: "^[a-zA-Z0-9_\\-]{0,128}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "if [ -n \"{{ args.task }}\" ]; then nomad alloc signal -s {{ args.signal }} -task {{ args.task }} {{ args.alloc_id }}; else nomad alloc signal -s {{ args.signal }} {{ args.alloc_id }}; fi"
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: SIGHUP to reload
+    args:
+      alloc_id: "abc12345"
+      signal: "HUP"
+      task: "web"

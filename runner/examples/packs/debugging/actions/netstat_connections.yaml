@@ -1,0 +1,42 @@
+schema_version: 1
+
+id: debugging.netstat_connections
+title: Established connection summary
+kind: exec
+risk: low
+
+description: >
+  Returns counts of TCP connections grouped by remote peer + state.
+  Useful for spotting connection storms (single host) or TIME_WAIT
+  pressure. Read-only.
+
+side_effects:
+  - One ss invocation.
+  - Read-only.
+
+args:
+  - name: limit
+    type: integer
+    required: false
+    default: 30
+    description: How many peer/state groups to return.
+    validation:
+      min: 1
+      max: 500
+
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "ss -ant | awk 'NR>1 {print $1, $5}' | sed 's/:[0-9]*$//' | sort | uniq -c | sort -nr | head -n {{ args.limit }}"
+  timeout: 15s
+
+output:
+  parser: text
+  max_stdout_bytes: 131072
+  max_stderr_bytes: 8192
+
+examples:
+  - title: Top 30 peer/state buckets
+    args: {}

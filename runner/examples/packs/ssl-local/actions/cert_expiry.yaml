@@ -1,0 +1,37 @@
+schema_version: 1
+id: ssl.cert_expiry
+title: openssl x509 -enddate -subject
+kind: exec
+risk: low
+description: Cert expiry date + subject. Quick way to answer "is this about to expire?".
+side_effects:
+  - One file read.
+  - Read-only.
+args:
+  - name: path
+    type: string
+    required: true
+    description: Cert file.
+    validation:
+      pattern: "^/[a-zA-Z0-9_./\\-]{1,512}$"
+execution:
+  command:
+    binary: /usr/bin/openssl
+    argv:
+      - "x509"
+      - "-in"
+      - "{{ args.path }}"
+      - "-noout"
+      - "-subject"
+      - "-issuer"
+      - "-startdate"
+      - "-enddate"
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Expiry of one cert
+    args:
+      path: "/etc/ssl/certs/server.crt"

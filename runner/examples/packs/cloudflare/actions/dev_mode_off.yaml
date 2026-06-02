@@ -1,0 +1,30 @@
+schema_version: 1
+id: cf.dev_mode_off
+title: PATCH /zones/<id>/settings/development_mode (off)
+kind: exec
+risk: medium
+description: Ends development mode early. Cache resumes normal behavior immediately.
+side_effects:
+  - Cache resumes serving from edge — origin load drops back to normal.
+args:
+  - name: zone_id
+    type: string
+    required: true
+    description: Zone ID.
+    validation:
+      pattern: "^[a-f0-9]{32}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "curl -sS -XPATCH \"https://api.cloudflare.com/client/v4/zones/{{ args.zone_id }}/settings/development_mode\" -H \"Authorization: Bearer $CF_API_TOKEN\" -H \"Content-Type: application/json\" -d '{\"value\":\"off\"}'"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Dev mode off
+    args:
+      zone_id: "abc123def456abc123def456abc123de"

@@ -1,0 +1,22 @@
+schema_version: 1
+id: fw.iptables_filter
+title: iptables -L -nv (filter table)
+kind: exec
+risk: low
+description: All filter-table rules with packet + byte counters.
+side_effects:
+  - One netfilter query.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /usr/sbin/iptables
+    argv: ["-L", "-nv", "--line-numbers", "-t", "filter"]
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: Filter rules
+    args: {}

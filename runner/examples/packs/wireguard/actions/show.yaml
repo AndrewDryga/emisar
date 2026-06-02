@@ -1,0 +1,18 @@
+schema_version: 1
+id: wg.show
+title: wg show
+kind: exec
+risk: low
+description: All interfaces with peers + endpoints + last-handshake.
+side_effects: ["One netlink query.", "Read-only."]
+args: []
+execution:
+  command: {binary: /usr/bin/wg, argv: ["show"]}
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: All interfaces
+    args: {}

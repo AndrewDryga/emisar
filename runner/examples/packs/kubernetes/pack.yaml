@@ -1,0 +1,57 @@
+schema_version: 1
+
+id: kubernetes
+name: Kubernetes operations pack
+version: 0.1.0
+description: >
+  Operator pack for Kubernetes clusters: discovery (pods, nodes,
+  services, deployments), deep introspection (describe, logs, events),
+  rollouts (status, history, restart, undo), and narrow node/pod
+  mutators (cordon, drain, delete). Cluster targeting via KUBECONFIG
+  env var on the runner host; context selectable per call.
+vendor: emisar
+homepage: https://github.com/andrewdryga/emisar
+
+requires:
+  os:
+    - linux
+  binaries:
+    - kubectl
+
+actions:
+  # Discovery
+  - actions/pods_list.yaml
+  - actions/pods_problem.yaml
+  - actions/pods_top.yaml
+  - actions/nodes_list.yaml
+  - actions/nodes_top.yaml
+  - actions/services_list.yaml
+  - actions/ingresses_list.yaml
+  - actions/deployments_list.yaml
+  - actions/statefulsets_list.yaml
+  - actions/daemonsets_list.yaml
+  - actions/pvcs_list.yaml
+  - actions/namespaces.yaml
+  # Deep introspection
+  - actions/pod_describe.yaml
+  - actions/pod_logs.yaml
+  - actions/pod_previous_logs.yaml
+  - actions/events_recent.yaml
+  - actions/events_for_pod.yaml
+  - actions/node_describe.yaml
+  - actions/get_yaml.yaml
+  # Rollouts
+  - actions/rollout_status.yaml
+  - actions/rollout_history.yaml
+  - actions/rollout_restart.yaml
+  - actions/rollout_undo.yaml
+  # Mutators
+  - actions/scale_deployment.yaml
+  - actions/set_image.yaml
+  - actions/cordon.yaml
+  - actions/uncordon.yaml
+  - actions/drain.yaml
+  - actions/delete_pod.yaml
+  # Cluster
+  - actions/cluster_info.yaml
+  - actions/api_versions.yaml

@@ -1,0 +1,29 @@
+schema_version: 1
+id: grafana.datasource_health
+title: GET /api/datasources/uid/<uid>/health
+kind: exec
+risk: low
+description: Health probe for one datasource (tests connectivity).
+side_effects: ["One API call that probes the downstream datasource.", "Read-only."]
+args:
+  - name: uid
+    type: string
+    required: true
+    description: Datasource UID.
+    validation:
+      pattern: "^[a-zA-Z0-9_\\-]{1,64}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "curl -sS -H \"Authorization: Bearer $GRAFANA_TOKEN\" \"$GRAFANA_URL/api/datasources/uid/{{ args.uid }}/health\""
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Health
+    args:
+      uid: "PBFA97CFB590B2093"

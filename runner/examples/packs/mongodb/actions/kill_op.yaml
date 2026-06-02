@@ -1,0 +1,32 @@
+schema_version: 1
+id: mongo.kill_op
+title: db.killOp(opid)
+kind: exec
+risk: high
+description: Kills one in-flight operation by opid.
+side_effects:
+  - The targeted operation is interrupted.
+  - Connection holding the op may receive an error.
+args:
+  - name: opid
+    type: integer
+    required: true
+    description: Op ID from currentOp.
+    validation:
+      min: 1
+      max: 9223372036854775807
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "mongosh \"$MONGO_URI\" '--quiet' '--eval' 'JSON.stringify(db.killOp({{ args.opid }}))'"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Kill op 1234
+    args:
+      opid: 1234

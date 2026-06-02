@@ -1,0 +1,33 @@
+schema_version: 1
+
+id: debugging.disk_free
+title: df + mounts
+kind: exec
+risk: low
+
+description: >
+  Returns `df -hT` output. Filesystem type, size, used, avail, and
+  mountpoint for every mounted filesystem. Use as the first check
+  when a write fails with ENOSPC or when /var/log has gone dark.
+
+side_effects:
+  - One df invocation.
+  - Read-only.
+
+args: []
+
+execution:
+  command:
+    binary: /usr/bin/df
+    argv:
+      - "-hT"
+  timeout: 10s
+
+output:
+  parser: text
+  max_stdout_bytes: 32768
+  max_stderr_bytes: 8192
+
+examples:
+  - title: Filesystem usage snapshot
+    args: {}

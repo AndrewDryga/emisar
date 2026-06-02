@@ -1,0 +1,24 @@
+schema_version: 1
+id: redis.randomkey
+title: RANDOMKEY
+kind: exec
+risk: low
+description: >
+  Returns a random key from the current database (or nil if empty).
+  Useful for sampling key shapes.
+side_effects:
+  - One RANDOMKEY command.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /usr/bin/redis-cli
+    argv: ["RANDOMKEY"]
+  timeout: 5s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Sample one key
+    args: {}

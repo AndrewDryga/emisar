@@ -1,0 +1,31 @@
+schema_version: 1
+id: git.blame_file
+title: git blame -- <path>
+kind: exec
+risk: low
+description: 'Per-line authorship for one file. Path is relative to repo root.'
+side_effects:
+  - One git blame.
+  - Read-only.
+args:
+  - name: path
+    type: string
+    required: true
+    description: Path relative to repo root.
+    validation:
+      pattern: "^[a-zA-Z0-9_./\\-]{1,512}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "cd \"$GIT_REPO\" && git blame -- {{ args.path }}"
+  timeout: 60s
+output:
+  parser: text
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: Blame config/runtime.exs
+    args:
+      path: "config/runtime.exs"

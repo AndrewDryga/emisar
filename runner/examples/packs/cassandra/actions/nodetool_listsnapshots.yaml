@@ -1,0 +1,18 @@
+schema_version: 1
+id: cassandra.nodetool_listsnapshots
+title: nodetool listsnapshots
+kind: exec
+risk: low
+description: All snapshots on this node with size + creation timestamp.
+side_effects: ["Reads disk metadata.", "Read-only."]
+args: []
+execution:
+  command: {binary: /usr/bin/nodetool, argv: ["listsnapshots"]}
+  timeout: 60s
+output:
+  parser: text
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: All snapshots
+    args: {}

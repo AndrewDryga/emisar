@@ -1,0 +1,22 @@
+schema_version: 1
+id: docker.network_ls
+title: docker network ls
+kind: exec
+risk: low
+description: Lists all docker networks with driver + scope. Read-only.
+side_effects:
+  - One docker network ls invocation.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /usr/bin/docker
+    argv: ["network", "ls"]
+  timeout: 10s
+output:
+  parser: text
+  max_stdout_bytes: 32768
+  max_stderr_bytes: 8192
+examples:
+  - title: All networks
+    args: {}

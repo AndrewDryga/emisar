@@ -1,0 +1,33 @@
+schema_version: 1
+id: ch.kill_query
+title: KILL QUERY WHERE query_id = '<id>'
+kind: exec
+risk: high
+description: Cancels one running query by ID.
+side_effects:
+  - Targeted query is terminated.
+  - Client receives a cancellation error.
+args:
+  - name: query_id
+    type: string
+    required: true
+    description: Query ID (from system.processes).
+    validation:
+      pattern: "^[a-zA-Z0-9\\-]{1,64}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "clickhouse-client --host \"${CH_HOST:-localhost}\" --user \"${CH_USER:-default}\" --password \"$CH_PASSWORD\" --query \"KILL QUERY WHERE query_id = '$Q' SYNC\""
+  env:
+    Q: "{{ args.query_id }}"
+  timeout: 60s
+output:
+  parser: text
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 8192
+examples:
+  - title: Cancel one query
+    args:
+      query_id: "abc123-def4-5678"

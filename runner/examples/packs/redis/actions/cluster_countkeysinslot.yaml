@@ -1,0 +1,33 @@
+schema_version: 1
+id: redis.cluster_countkeysinslot
+title: CLUSTER COUNTKEYSINSLOT
+kind: exec
+risk: low
+description: >
+  Number of keys mapped to a single hash slot. Use when a slot
+  appears hot in monitoring to size the blast radius of a migration
+  or to verify a tagged keyspace is collocated.
+side_effects:
+  - One CLUSTER COUNTKEYSINSLOT command.
+  - Read-only.
+args:
+  - name: slot
+    type: integer
+    required: true
+    description: "Hash slot (0–16383)."
+    validation:
+      min: 0
+      max: 16383
+execution:
+  command:
+    binary: /usr/bin/redis-cli
+    argv: ["CLUSTER", "COUNTKEYSINSLOT", "{{ args.slot }}"]
+  timeout: 10s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Key count in slot 5000
+    args:
+      slot: 5000

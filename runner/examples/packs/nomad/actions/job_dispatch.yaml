@@ -1,0 +1,39 @@
+schema_version: 1
+id: nomad.job_dispatch
+title: nomad job dispatch <id>
+kind: exec
+risk: high
+description: Dispatches a parameterized job with optional meta variables.
+side_effects:
+  - A new dispatched job instance is created and scheduled.
+  - Counts toward job history.
+args:
+  - name: job
+    type: string
+    required: true
+    description: Parameterized job ID.
+    validation:
+      pattern: "^[a-zA-Z0-9_\\-]{1,128}$"
+  - name: meta_kv
+    type: string
+    required: false
+    default: ""
+    description: "Optional meta as 'k=v,k2=v2' (no spaces around =)."
+    validation:
+      pattern: "^([a-zA-Z0-9_]{1,64}=[a-zA-Z0-9_./\\-]{0,256}(,[a-zA-Z0-9_]{1,64}=[a-zA-Z0-9_./\\-]{0,256})*)?$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "M=''; if [ -n '{{ args.meta_kv }}' ]; then for kv in $(echo '{{ args.meta_kv }}' | tr ',' ' '); do M=\"$M -meta $kv\"; done; fi; nomad job dispatch $M {{ args.job }}"
+  timeout: 60s
+output:
+  parser: text
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Dispatch with meta
+    args:
+      job: "batch-processor"
+      meta_kv: "input=/tmp/data,priority=high"

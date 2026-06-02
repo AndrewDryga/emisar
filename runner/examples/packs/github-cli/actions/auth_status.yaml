@@ -1,0 +1,24 @@
+schema_version: 1
+id: gh.auth_status
+title: gh auth status
+kind: exec
+risk: low
+description: Which GitHub account the runner's `gh` is signed in as + token scopes.
+side_effects:
+  - One API call to /user.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: gh
+    argv:
+      - "auth"
+      - "status"
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 8192
+examples:
+  - title: Who am I?
+    args: {}

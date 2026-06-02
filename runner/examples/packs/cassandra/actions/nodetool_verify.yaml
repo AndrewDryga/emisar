@@ -1,0 +1,39 @@
+schema_version: 1
+id: cassandra.nodetool_verify
+title: nodetool verify [ks] [table]
+kind: exec
+risk: medium
+description: Verifies SSTable checksums for one (or all) tables. Detects on-disk corruption.
+side_effects:
+  - Reads every SSTable for the targeted scope.
+  - IO-heavy; CPU light.
+args:
+  - name: keyspace
+    type: string
+    required: false
+    default: ""
+    description: Optional keyspace (empty = all).
+    validation:
+      pattern: "^[a-zA-Z][a-zA-Z0-9_]{0,47}$|^$"
+  - name: table
+    type: string
+    required: false
+    default: ""
+    description: Optional table.
+    validation:
+      pattern: "^[a-zA-Z][a-zA-Z0-9_]{0,47}$|^$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "if [ -n '{{ args.table }}' ]; then nodetool verify {{ args.keyspace }} {{ args.table }}; elif [ -n '{{ args.keyspace }}' ]; then nodetool verify {{ args.keyspace }}; else nodetool verify; fi"
+  timeout: 6h
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Verify one ks
+    args:
+      keyspace: "my_ks"

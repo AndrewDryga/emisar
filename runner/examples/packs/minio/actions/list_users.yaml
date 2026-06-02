@@ -1,0 +1,27 @@
+schema_version: 1
+id: minio.list_users
+title: mc admin user list
+kind: exec
+risk: low
+description: All IAM users + their status + attached policies.
+side_effects: ["One admin call.", "Read-only."]
+args:
+  - name: alias
+    type: string
+    required: true
+    description: mc alias.
+    validation:
+      pattern: "^[a-zA-Z0-9_\\-]{1,64}$"
+execution:
+  command:
+    binary: mc
+    argv: ["admin", "user", "list", "{{ args.alias }}", "--json"]
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 131072
+  max_stderr_bytes: 8192
+examples:
+  - title: Users
+    args:
+      alias: "minio"

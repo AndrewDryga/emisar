@@ -1,0 +1,33 @@
+schema_version: 1
+id: dnf.upgrade_pkg
+title: dnf upgrade -y <pkg>
+kind: exec
+risk: high
+description: >
+  Upgrade one named package to the latest available version. Use
+  for CVE remediation. Other packages untouched.
+side_effects:
+  - One package upgraded.
+  - Service backed by the package may restart (depending on the package).
+  - System briefly inconsistent until upgrade completes.
+args:
+  - name: pkg
+    type: string
+    required: true
+    description: Package name.
+    validation:
+      pattern: "^[a-zA-Z0-9_+.\\-]{1,128}$"
+execution:
+  command:
+    binary: /usr/bin/dnf
+    argv: ["upgrade", "-y", "{{ args.pkg }}"]
+  timeout: 600s
+cancel_grace: 60s
+output:
+  parser: text
+  max_stdout_bytes: 131072
+  max_stderr_bytes: 16384
+examples:
+  - title: Upgrade openssl
+    args:
+      pkg: "openssl"

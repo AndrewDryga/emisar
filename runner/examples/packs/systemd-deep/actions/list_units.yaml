@@ -1,0 +1,22 @@
+schema_version: 1
+id: systemd.list_units
+title: List all systemd units
+kind: exec
+risk: low
+description: '`systemctl list-units --type=service --all` — every service known to systemd, active or inactive.'
+side_effects:
+  - One systemctl invocation.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /bin/systemctl
+    argv: ["list-units", "--type=service", "--all", "--no-pager", "--no-legend"]
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: All services
+    args: {}

@@ -1,0 +1,28 @@
+schema_version: 1
+id: postfix.qshape
+title: qshape (queue by domain x age)
+kind: exec
+risk: low
+description: Bucketed queue counts by destination + age.
+side_effects: ["One qshape call.", "Read-only."]
+args:
+  - name: queue
+    type: string
+    required: false
+    default: "deferred"
+    description: Queue name.
+    validation:
+      enum: ["incoming", "active", "deferred", "hold"]
+execution:
+  command:
+    binary: /usr/sbin/qshape
+    argv: ["{{ args.queue }}"]
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Deferred shape
+    args:
+      queue: "deferred"

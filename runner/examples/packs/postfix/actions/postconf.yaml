@@ -1,0 +1,18 @@
+schema_version: 1
+id: postfix.postconf
+title: postconf -n
+kind: exec
+risk: low
+description: Non-default Postfix config.
+side_effects: ["One postconf call.", "Read-only."]
+args: []
+execution:
+  command: {binary: /usr/sbin/postconf, argv: ["-n"]}
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Effective config
+    args: {}

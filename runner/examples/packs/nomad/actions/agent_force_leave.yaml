@@ -1,0 +1,27 @@
+schema_version: 1
+id: nomad.agent_force_leave
+title: nomad server force-leave <node>
+kind: exec
+risk: high
+description: Forces a server out of the gossip pool. Use when a dead server can't leave on its own.
+side_effects:
+  - The named server is marked left in serf.
+  - Raft membership unaffected — use operator raft remove-peer for that.
+args:
+  - name: node_name
+    type: string
+    required: true
+    description: Server node name.
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{1,128}$"
+execution:
+  command: {binary: /usr/bin/nomad, argv: ["server", "force-leave", "{{ args.node_name }}"]}
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Force one server out
+    args:
+      node_name: "nomad-server-3"

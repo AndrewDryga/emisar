@@ -1,0 +1,18 @@
+schema_version: 1
+id: py.python_version_system
+title: python3 --version (system)
+kind: exec
+risk: low
+description: System python interpreter version.
+side_effects: ["One forked process.", "Read-only."]
+args: []
+execution:
+  command: {binary: /usr/bin/python3, argv: ["--version"]}
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 1024
+  max_stderr_bytes: 8192
+examples:
+  - title: System python
+    args: {}

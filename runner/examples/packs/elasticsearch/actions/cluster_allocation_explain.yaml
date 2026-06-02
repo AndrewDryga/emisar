@@ -1,0 +1,24 @@
+schema_version: 1
+id: es.cluster_allocation_explain
+title: POST /_cluster/allocation/explain
+kind: exec
+risk: low
+description: 'Explains why an unassigned shard hasn''t been placed. The canonical "why is my cluster yellow?" answer.'
+side_effects:
+  - One POST request.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "curl -sS -u \"$ELASTIC_USER:$ELASTIC_PASSWORD\" -XGET \"$ELASTIC_URL/_cluster/allocation/explain?pretty\""
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 32768
+  max_stderr_bytes: 8192
+examples:
+  - title: Why is a shard unassigned?
+    args: {}

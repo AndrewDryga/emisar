@@ -1,0 +1,22 @@
+schema_version: 1
+id: envoy.runtime
+title: GET /runtime
+kind: exec
+risk: low
+description: Runtime overrides (feature flags + numeric overrides).
+side_effects: ["One admin GET.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "curl -sS \"${ENVOY_ADMIN:-http://127.0.0.1:9901}/runtime\""
+  timeout: 15s
+output:
+  parser: json
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Runtime overrides
+    args: {}

@@ -1,0 +1,24 @@
+schema_version: 1
+id: cloud-init.analyze_show
+title: cloud-init analyze show
+kind: exec
+risk: low
+description: >
+  Per-stage timing for the most recent boot — when each stage started,
+  duration, and which records contributed. Read-only.
+side_effects:
+  - One CLI call.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /usr/bin/cloud-init
+    argv: ["analyze", "show"]
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 131072
+  max_stderr_bytes: 8192
+examples:
+  - title: Boot timeline
+    args: {}

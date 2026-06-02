@@ -1,0 +1,34 @@
+schema_version: 1
+
+id: debian.kernel_info
+title: Kernel + uptime + reboot-required
+kind: exec
+risk: low
+
+description: >
+  Returns kernel version (`uname -a`), uptime, and whether the host
+  has /var/run/reboot-required (set by some packages — most often
+  after a libc or kernel upgrade). Read-only. Use to plan a reboot
+  window.
+
+side_effects:
+  - One uname call, one uptime call, stat on /var/run/reboot-required.
+
+args: []
+
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "uname -a; uptime; if [ -f /var/run/reboot-required ]; then echo 'reboot-required: yes'; cat /var/run/reboot-required.pkgs 2>/dev/null || true; else echo 'reboot-required: no'; fi"
+  timeout: 10s
+
+output:
+  parser: text
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+
+examples:
+  - title: Kernel + reboot posture
+    args: {}

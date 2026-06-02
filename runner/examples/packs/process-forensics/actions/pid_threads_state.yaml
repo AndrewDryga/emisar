@@ -1,0 +1,32 @@
+schema_version: 1
+id: forensics.pid_threads_state
+title: Per-thread state for one PID
+kind: exec
+risk: low
+description: Tabulates each thread's state (R/S/D/Z) from /proc/PID/task/*/status.
+side_effects:
+  - Reads /proc/PID/task/.
+  - Read-only.
+args:
+  - name: pid
+    type: integer
+    required: true
+    description: PID.
+    validation:
+      min: 1
+      max: 4194304
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "for f in /proc/{{ args.pid }}/task/*/status; do tid=$(basename $(dirname $f)); awk -v tid=$tid '/^State:/ {print tid, $2, $3}' $f; done | sort -k2"
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: Per-thread state of PID 1
+    args:
+      pid: 1

@@ -1,0 +1,34 @@
+schema_version: 1
+id: gh.repo_view
+title: gh repo view
+kind: exec
+risk: low
+description: Repo summary — description, stars, default branch, latest release.
+side_effects:
+  - One API call.
+  - Read-only.
+args:
+  - name: repo
+    type: string
+    required: true
+    description: 'Repo in owner/name form.'
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{1,40}/[a-zA-Z0-9_.\\-]{1,100}$"
+execution:
+  command:
+    binary: gh
+    argv:
+      - "repo"
+      - "view"
+      - "{{ args.repo }}"
+      - "--json"
+      - "name,description,defaultBranchRef,stargazerCount,forkCount,latestRelease,isArchived,isPrivate"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 32768
+  max_stderr_bytes: 8192
+examples:
+  - title: Repo summary
+    args:
+      repo: "andrewdryga/emisar"

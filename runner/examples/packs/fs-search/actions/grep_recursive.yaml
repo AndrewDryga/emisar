@@ -1,0 +1,40 @@
+schema_version: 1
+id: fs.grep_recursive
+title: grep -rE <pattern> <path>
+kind: exec
+risk: low
+description: Recursive grep under one path. Bounded to 500 matches.
+side_effects:
+  - Recursive file-system traversal + read of matched files.
+  - Read-only.
+args:
+  - name: path
+    type: string
+    required: true
+    description: Root path.
+    validation:
+      pattern: "^/[a-zA-Z0-9_./\\-]{0,512}$"
+  - name: pattern
+    type: string
+    required: true
+    description: Regex.
+    validation:
+      pattern: "^[^'\"`$;|&<>]{1,256}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "grep -rEnH --no-messages -m 500 \"$P\" \"{{ args.path }}\""
+  env:
+    P: "{{ args.pattern }}"
+  timeout: 5m
+output:
+  parser: text
+  max_stdout_bytes: 2097152
+  max_stderr_bytes: 8192
+examples:
+  - title: Find calls to deprecated API
+    args:
+      path: "/opt/app/src"
+      pattern: "deprecated_call"

@@ -1,0 +1,22 @@
+schema_version: 1
+id: ce.forecast_current_month
+title: Forecast current-month spend
+kind: exec
+risk: low
+description: AWS-projected total spend for the current month based on usage so far.
+side_effects: ["One Cost Explorer call.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "START=$(date -u +%Y-%m-%d); END=$(date -u -d 'first day of next month' +%Y-%m-%d 2>/dev/null || date -u -v+1m -v1d +%Y-%m-%d); aws ce get-cost-forecast --time-period Start=$START,End=$END --metric UNBLENDED_COST --granularity MONTHLY --output json"
+  timeout: 60s
+output:
+  parser: json
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: This month forecast
+    args: {}

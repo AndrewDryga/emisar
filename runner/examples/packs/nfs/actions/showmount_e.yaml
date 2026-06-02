@@ -1,0 +1,18 @@
+schema_version: 1
+id: nfs.showmount_e
+title: showmount -e
+kind: exec
+risk: low
+description: Exports as seen via rpcbind (what NFS clients discover).
+side_effects: ["One rpcbind query.", "Read-only."]
+args: []
+execution:
+  command: {binary: /usr/sbin/showmount, argv: ["-e", "127.0.0.1"]}
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Discoverable exports
+    args: {}

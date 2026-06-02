@@ -1,0 +1,22 @@
+schema_version: 1
+id: py.sys_path
+title: python -c 'import sys; print(sys.path)'
+kind: exec
+risk: low
+description: Effective sys.path for the venv interpreter.
+side_effects: ["One forked python process.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "\"${PY_VENV:-/opt/app/venv}/bin/python\" -c 'import sys; [print(p) for p in sys.path]'"
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: sys.path
+    args: {}

@@ -1,0 +1,45 @@
+defaults:
+  env: {}
+cases:
+- action: debian.apt_autoremove
+  args: {}
+  expect_exit:
+  - 0
+  - 1
+  skip: mutator skipped by default (high)
+- action: debian.apt_install
+  args:
+    package: fail2ban
+  expect_exit:
+  - 0
+  - 1
+  skip: mutator skipped by default (high)
+- action: debian.apt_remove
+  args:
+    package: ftp
+  expect_exit:
+  - 0
+  - 1
+  skip: mutator skipped by default (high)
+- action: debian.apt_security_check
+  args: {}
+  expect_exit: 0
+- action: debian.apt_update
+  args: {}
+  expect_exit:
+  - 0
+  - 1
+  skip: mutator skipped by default (medium)
+- action: debian.apt_upgradable
+  args: {}
+  expect_exit: 0
+- action: debian.dpkg_changes
+  args: {}
+  expect_exit: 0
+- action: debian.dpkg_status
+  args:
+    package: openssl
+  expect_exit: 0
+- action: debian.kernel_info
+  args: {}
+  expect_exit: 0

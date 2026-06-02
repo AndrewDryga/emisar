@@ -1,0 +1,34 @@
+schema_version: 1
+id: ch.system_restart_replica
+title: SYSTEM RESTART REPLICA <table>
+kind: exec
+risk: high
+description: >
+  Reinitialize the local replication state for one table. Useful
+  when the replica is stuck or its ZooKeeper state diverged. Heavy —
+  may re-fetch many parts.
+side_effects:
+  - Local replica state reset.
+  - May trigger large data re-fetch from peers.
+  - Brief replication lag during recovery.
+args:
+  - name: table
+    type: string
+    required: true
+    description: Database.table (qualified).
+    validation:
+      pattern: "^[a-zA-Z0-9_]{1,64}\\.[a-zA-Z0-9_]{1,128}$"
+execution:
+  command:
+    binary: /usr/bin/clickhouse-client
+    argv: ["--query", "SYSTEM RESTART REPLICA {{ args.table }}"]
+  timeout: 600s
+cancel_grace: 30s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Restart a stuck replica
+    args:
+      table: "analytics.events"

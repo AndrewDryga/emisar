@@ -1,0 +1,24 @@
+schema_version: 1
+id: es.pending_tasks
+title: GET /_cluster/pending_tasks
+kind: exec
+risk: low
+description: Pending master tasks. A growing queue here means the master can't keep up.
+side_effects:
+  - One GET request.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "curl -sS -u \"$ELASTIC_USER:$ELASTIC_PASSWORD\" \"$ELASTIC_URL/_cluster/pending_tasks?pretty\""
+  timeout: 15s
+output:
+  parser: json
+  max_stdout_bytes: 32768
+  max_stderr_bytes: 8192
+examples:
+  - title: Pending master tasks
+    args: {}

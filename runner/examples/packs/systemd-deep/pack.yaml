@@ -1,0 +1,45 @@
+schema_version: 1
+
+id: systemd-deep
+name: Systemd deep introspection pack
+version: 0.1.0
+description: >
+  Deeper systemd state than linux-core: failed units, list-units,
+  timers, cgroup tree, journal disk usage, systemd-analyze for boot
+  diagnosis, plus full operator surface (daemon-reload, start/stop/
+  restart/reload, kill -s signal, mask/unmask, reset-failed) for
+  remediating runtime issues.
+vendor: emisar
+homepage: https://github.com/andrewdryga/emisar
+
+requires:
+  os:
+    - linux
+  binaries:
+    - systemctl
+
+actions:
+  - actions/failed_units.yaml
+  - actions/list_units.yaml
+  - actions/list_unit_files.yaml
+  - actions/timers.yaml
+  - actions/sockets.yaml
+  - actions/cgroup_tree.yaml
+  - actions/cgroup_top.yaml
+  - actions/boot_errors.yaml
+  - actions/analyze_blame.yaml
+  - actions/analyze_critical_chain.yaml
+  - actions/analyze_security.yaml
+  - actions/journal_disk_usage.yaml
+  - actions/unit_show.yaml
+  - actions/watchdog_status.yaml
+  - actions/vacuum_journal.yaml
+  - actions/daemon_reload.yaml
+  - actions/unit_start.yaml
+  - actions/unit_stop.yaml
+  - actions/unit_restart.yaml
+  - actions/unit_reload.yaml
+  - actions/unit_kill.yaml
+  - actions/unit_mask.yaml
+  - actions/unit_unmask.yaml
+  - actions/reset_failed.yaml

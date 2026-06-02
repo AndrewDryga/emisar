@@ -1,0 +1,22 @@
+schema_version: 1
+id: ch.disks
+title: SELECT * FROM system.disks
+kind: exec
+risk: low
+description: Configured disks with free/used bytes + paths.
+side_effects: ["One SELECT.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "clickhouse-client --host \"${CH_HOST:-localhost}\" --user \"${CH_USER:-default}\" --password \"$CH_PASSWORD\" --query \"SELECT name, path, free_space, total_space, type FROM system.disks FORMAT JSONEachRow\""
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Disk usage
+    args: {}

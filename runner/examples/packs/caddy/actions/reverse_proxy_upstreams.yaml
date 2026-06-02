@@ -1,0 +1,22 @@
+schema_version: 1
+id: caddy.reverse_proxy_upstreams
+title: GET /reverse_proxy/upstreams
+kind: exec
+risk: low
+description: All reverse-proxy upstreams with current health.
+side_effects: ["One admin GET.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "curl -sS \"${CADDY_ADMIN:-http://127.0.0.1:2019}/reverse_proxy/upstreams\""
+  timeout: 15s
+output:
+  parser: json
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+examples:
+  - title: Upstream health
+    args: {}

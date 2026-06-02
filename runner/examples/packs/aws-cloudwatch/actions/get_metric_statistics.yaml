@@ -1,0 +1,36 @@
+schema_version: 1
+id: cw.get_metric_statistics
+title: aws cloudwatch get-metric-statistics (last 1h)
+kind: exec
+risk: low
+description: 1-hour Average + Max for one metric. Use for quick health snapshots.
+side_effects: ["One API call.", "Read-only."]
+args:
+  - name: namespace
+    type: string
+    required: true
+    description: Namespace.
+    validation:
+      pattern: "^[a-zA-Z0-9_./\\-]{1,255}$"
+  - name: metric
+    type: string
+    required: true
+    description: Metric name.
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{1,255}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "END=$(date -u +%Y-%m-%dT%H:%M:%SZ); START=$(date -u -d '1 hour ago' +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -v-1H +%Y-%m-%dT%H:%M:%SZ); aws cloudwatch get-metric-statistics --namespace '{{ args.namespace }}' --metric-name '{{ args.metric }}' --start-time $START --end-time $END --period 300 --statistics Average Maximum --output json"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 131072
+  max_stderr_bytes: 8192
+examples:
+  - title: CPU last 1h
+    args:
+      namespace: "AWS/EC2"
+      metric: "CPUUtilization"

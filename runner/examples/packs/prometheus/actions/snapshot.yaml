@@ -1,0 +1,41 @@
+schema_version: 1
+id: prom.snapshot
+title: POST /api/v1/admin/tsdb/snapshot
+kind: exec
+risk: medium
+description: >
+  Trigger an on-disk snapshot of the TSDB into data/snapshots/.
+  Requires --web.enable-admin-api. Used before risky upgrades or
+  for offline diff. Uses hardlinks initially — no extra disk until
+  blocks rotate.
+side_effects:
+  - New snapshot directory under data/snapshots/.
+  - Brief I/O spike.
+  - Disk usage grows as blocks change over time.
+args:
+  - name: target
+    type: string
+    required: false
+    default: "http://localhost:9090"
+    description: Prometheus base URL.
+    validation:
+      pattern: "^https?://[a-zA-Z0-9._:\\-]{1,253}(:[0-9]{1,5})?$"
+  - name: skip_head
+    type: boolean
+    required: false
+    default: false
+    description: Skip the in-memory head block (faster, less complete).
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "/usr/bin/curl -sSfX POST '{{ args.target }}/api/v1/admin/tsdb/snapshot?skip_head={{ args.skip_head }}'"
+  timeout: 60s
+output:
+  parser: json
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Full snapshot
+    args: {}

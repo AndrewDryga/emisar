@@ -1,0 +1,24 @@
+schema_version: 1
+id: tf.output
+title: terraform output -json
+kind: exec
+risk: low
+description: Output values from the workspace's state.
+side_effects:
+  - Reads state file.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "cd \"$TF_DIR\" && terraform output -json"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: Outputs
+    args: {}

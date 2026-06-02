@@ -1,0 +1,39 @@
+schema_version: 1
+id: mysql.optimize_table
+title: OPTIMIZE TABLE
+kind: exec
+risk: high
+description: >
+  Rebuilds the table to reclaim space and re-sort the clustered index. **Holds an exclusive lock for the duration** on non-InnoDB engines; InnoDB tables get an online ALTER. Per-table only.
+side_effects:
+  - May briefly lock the table (engine-dependent).
+  - Reclaims data + index disk space.
+args:
+  - name: database
+    type: string
+    required: true
+    description: Database.
+    validation:
+      pattern: "^[a-zA-Z_][a-zA-Z0-9_]{0,63}$"
+  - name: table
+    type: string
+    required: true
+    description: Table.
+    validation:
+      pattern: "^[a-zA-Z_][a-zA-Z0-9_]{0,63}$"
+execution:
+  command:
+    binary: /usr/bin/mysql
+    argv:
+      - "-e"
+      - "OPTIMIZE TABLE `{{ args.database }}`.`{{ args.table }}`"
+  timeout: 1h
+output:
+  parser: text
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 16384
+examples:
+  - title: Reclaim space on orders
+    args:
+      database: app
+      table: orders

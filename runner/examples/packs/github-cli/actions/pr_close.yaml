@@ -1,0 +1,33 @@
+schema_version: 1
+id: gh.pr_close
+title: gh pr close <num>
+kind: exec
+risk: medium
+description: >
+  Close one PR without merging. Use for stale or abandoned PRs.
+  Reopenable via the UI or `gh pr reopen`.
+side_effects:
+  - PR state set to closed.
+  - PR branch unchanged.
+  - Notifications fire.
+args:
+  - name: pr
+    type: integer
+    required: true
+    description: PR number.
+    validation:
+      min: 1
+      max: 9999999
+execution:
+  command:
+    binary: /usr/bin/gh
+    argv: ["pr", "close", "{{ args.pr }}"]
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Close a stale PR
+    args:
+      pr: 1234

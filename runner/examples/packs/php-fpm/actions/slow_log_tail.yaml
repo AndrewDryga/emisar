@@ -1,0 +1,30 @@
+schema_version: 1
+id: phpfpm.slow_log_tail
+title: tail FPM slow_log
+kind: exec
+risk: low
+description: Last N lines of the FPM slow log (PHP backtraces for slow requests).
+side_effects: ["One file read.", "Read-only."]
+args:
+  - name: lines
+    type: integer
+    required: false
+    default: 500
+    description: Lines.
+    validation:
+      min: 1
+      max: 10000
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "tail -n {{ args.lines }} \"${PHP_FPM_SLOW_LOG:-/var/log/php-fpm/slow.log}\""
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 2097152
+  max_stderr_bytes: 8192
+examples:
+  - title: Slow trace
+    args: {}

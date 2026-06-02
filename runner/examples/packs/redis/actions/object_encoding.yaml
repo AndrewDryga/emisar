@@ -1,0 +1,32 @@
+schema_version: 1
+id: redis.object_encoding
+title: OBJECT ENCODING key
+kind: exec
+risk: low
+description: >
+  Internal encoding of one value (ziplist, hashtable, intset,
+  listpack, quicklist, embstr, raw, skiplist). Use to confirm a
+  structure is in its compact form before tuning size limits.
+side_effects:
+  - One OBJECT ENCODING command.
+  - Read-only metadata.
+args:
+  - name: key
+    type: string
+    required: true
+    description: Key name.
+    validation:
+      pattern: "^[A-Za-z0-9_:.\\-{}@#/=+]{1,512}$"
+execution:
+  command:
+    binary: /usr/bin/redis-cli
+    argv: ["OBJECT", "ENCODING", "{{ args.key }}"]
+  timeout: 5s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Encoding of a hash
+    args:
+      key: "user:42"

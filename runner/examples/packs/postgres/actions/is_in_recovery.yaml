@@ -1,0 +1,23 @@
+schema_version: 1
+id: postgres.is_in_recovery
+title: pg_is_in_recovery()
+kind: exec
+risk: low
+description: Boolean — true if this instance is a replica.
+side_effects: ["One SELECT.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /usr/bin/psql
+    argv:
+      - "-XAt"
+      - "-c"
+      - "SELECT pg_is_in_recovery();"
+  timeout: 10s
+output:
+  parser: text
+  max_stdout_bytes: 256
+  max_stderr_bytes: 8192
+examples:
+  - title: Recovery?
+    args: {}

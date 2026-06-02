@@ -1,0 +1,31 @@
+schema_version: 1
+
+id: firewall
+name: Firewall and netfilter
+version: 0.1.0
+description: >
+  iptables, nftables, conntrack, and traffic-control inspection plus
+  narrow operator actions for incident response (block IP, unblock IP,
+  flush chain). Rule edits are not persisted across iptables service
+  reload — use IaC for permanent rules.
+vendor: emisar
+homepage: https://github.com/andrewdryga/emisar
+
+requires:
+  os:
+    - linux
+  binaries:
+    - iptables
+
+actions:
+  - actions/iptables_filter.yaml
+  - actions/iptables_nat.yaml
+  - actions/iptables_mangle.yaml
+  - actions/nft_list_ruleset.yaml
+  - actions/conntrack_count.yaml
+  - actions/conntrack_list.yaml
+  - actions/tc_qdisc_show.yaml
+  - actions/ip_rule_show.yaml
+  - actions/iptables_block_ip.yaml
+  - actions/iptables_unblock_ip.yaml
+  - actions/iptables_flush_chain.yaml

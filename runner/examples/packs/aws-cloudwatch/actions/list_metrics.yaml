@@ -1,0 +1,27 @@
+schema_version: 1
+id: cw.list_metrics
+title: aws cloudwatch list-metrics --namespace
+kind: exec
+risk: low
+description: All metrics in one namespace.
+side_effects: ["One API call.", "Read-only."]
+args:
+  - name: namespace
+    type: string
+    required: true
+    description: e.g. AWS/EC2, AWS/RDS, custom/app.
+    validation:
+      pattern: "^[a-zA-Z0-9_./\\-]{1,255}$"
+execution:
+  command:
+    binary: aws
+    argv: ["cloudwatch", "list-metrics", "--namespace", "{{ args.namespace }}", "--output", "json"]
+  timeout: 60s
+output:
+  parser: json
+  max_stdout_bytes: 4194304
+  max_stderr_bytes: 8192
+examples:
+  - title: EC2 metrics
+    args:
+      namespace: "AWS/EC2"

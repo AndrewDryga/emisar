@@ -1,0 +1,34 @@
+schema_version: 1
+id: nginx.connections_now
+title: Active connections (stub_status)
+kind: exec
+risk: low
+description: >
+  Hits the stub_status endpoint to get active/reading/writing/waiting counts. Cheaper than `nginx.status` (less parsing). Requires `stub_status on;` enabled.
+side_effects:
+  - One curl to localhost.
+  - Read-only.
+args:
+  - name: url
+    type: string
+    required: false
+    default: "http://127.0.0.1/nginx_status"
+    description: stub_status URL.
+    validation:
+      pattern: "^https?://[a-zA-Z0-9.:/_\\-]+$"
+execution:
+  command:
+    binary: /usr/bin/curl
+    argv:
+      - "-fsS"
+      - "--max-time"
+      - "5"
+      - "{{ args.url }}"
+  timeout: 10s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 4096
+examples:
+  - title: Live conn counts
+    args: {}

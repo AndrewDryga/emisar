@@ -1,0 +1,59 @@
+schema_version: 1
+
+id: redis.flush_db
+title: FLUSHDB (single database)
+kind: exec
+risk: critical
+
+description: >
+  Deletes every key in one logical database. Irreversible. Use only on
+  caches and only when you know there is no replication consumer that
+  treats an empty DB as a fault. ASYNC mode returns immediately and
+  drops the data in a background thread; SYNC blocks until done.
+  Never use against production user data — this exists for cache
+  resets and dev environments.
+
+side_effects:
+  - All keys in the selected database are deleted.
+  - Replicas FLUSHDB in turn.
+  - No way to recover except by restore.
+
+args:
+  - name: db
+    type: integer
+    required: true
+    description: Database index to flush.
+    validation:
+      min: 0
+      max: 15
+
+  - name: mode
+    type: string
+    required: false
+    default: ASYNC
+    description: Run synchronously or async.
+    validation:
+      enum:
+        - SYNC
+        - ASYNC
+
+execution:
+  command:
+    binary: /usr/bin/redis-cli
+    argv:
+      - "-n"
+      - "{{ args.db }}"
+      - "FLUSHDB"
+      - "{{ args.mode }}"
+  timeout: 30s
+
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+
+examples:
+  - title: Async flush of cache DB 2
+    args:
+      db: 2
+      mode: ASYNC

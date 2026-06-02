@@ -1,0 +1,35 @@
+schema_version: 1
+
+id: debugging.tcp_summary
+title: TCP state counts
+kind: exec
+risk: low
+
+description: >
+  Returns the count of TCP sockets in each state (ESTAB, TIME-WAIT,
+  CLOSE-WAIT, FIN-WAIT-*, SYN-*). High CLOSE-WAIT usually means the
+  application isn't close()ing; high TIME-WAIT means short-lived
+  client connections. Read-only.
+
+side_effects:
+  - One ss invocation.
+  - Read-only.
+
+args: []
+
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "ss -ant | awk 'NR>1 {print $1}' | sort | uniq -c | sort -nr"
+  timeout: 15s
+
+output:
+  parser: text
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+
+examples:
+  - title: TCP states at a glance
+    args: {}

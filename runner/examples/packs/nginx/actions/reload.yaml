@@ -1,0 +1,36 @@
+schema_version: 1
+
+id: nginx.reload
+title: nginx reload
+kind: exec
+risk: high
+
+description: >
+  Sends SIGHUP to the master process. Master parses the new config,
+  spawns new workers, gracefully drains old workers. If the new config
+  is invalid the master logs the error and keeps the old workers —
+  the request is non-fatal. ALWAYS run `nginx.test_config` first.
+
+side_effects:
+  - Master spawns new workers.
+  - Old workers drain in-flight requests then exit.
+  - Listen-socket changes (new ports, removed ports) take effect.
+
+args: []
+
+execution:
+  command:
+    binary: /usr/sbin/nginx
+    argv:
+      - "-s"
+      - "reload"
+  timeout: 30s
+
+output:
+  parser: text
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 16384
+
+examples:
+  - title: Reload config after editing
+    args: {}

@@ -1,0 +1,23 @@
+schema_version: 1
+id: postgres.largest_tables_full
+title: Largest tables with vacuum/dead-tuple info
+kind: exec
+risk: low
+description: Top 50 tables by size with live + dead tuple counts and last vacuum timestamps.
+side_effects: ["One SELECT joining pg_stat_user_tables.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /usr/bin/psql
+    argv:
+      - "-XAt"
+      - "-c"
+      - "SELECT schemaname || '.' || relname AS table, pg_size_pretty(pg_total_relation_size(relid)) AS total_size, pg_size_pretty(pg_relation_size(relid)) AS table_size, n_live_tup, n_dead_tup, last_vacuum, last_autovacuum, last_analyze, last_autoanalyze FROM pg_stat_user_tables ORDER BY pg_total_relation_size(relid) DESC LIMIT 50;"
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 131072
+  max_stderr_bytes: 8192
+examples:
+  - title: Top tables
+    args: {}

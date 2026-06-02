@@ -1,0 +1,49 @@
+schema_version: 1
+id: nginx.slow_requests
+title: Slowest requests (last N lines)
+kind: exec
+risk: low
+description: >
+  Top N requests sorted by `$request_time`. Requires a log_format that includes `$request_time` as a specific column; default assumes column 11. Read-only.
+side_effects:
+  - Reads /var/log/nginx/access.log.
+  - Read-only.
+args:
+  - name: lines
+    type: integer
+    required: false
+    default: 100000
+    description: How many tail lines to scan.
+    validation:
+      min: 1000
+      max: 1000000
+  - name: limit
+    type: integer
+    required: false
+    default: 30
+    description: Top-N slowest to return.
+    validation:
+      min: 1
+      max: 200
+  - name: column
+    type: integer
+    required: false
+    default: 11
+    description: Column number containing $request_time.
+    validation:
+      min: 1
+      max: 50
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "tail -n {{ args.lines }} /var/log/nginx/access.log | awk -v c={{ args.column }} '{print $c, $0}' | sort -rn | head -n {{ args.limit }}"
+  timeout: 60s
+output:
+  parser: text
+  max_stdout_bytes: 131072
+  max_stderr_bytes: 16384
+examples:
+  - title: 30 slowest requests
+    args: {}

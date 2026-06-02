@@ -1,0 +1,35 @@
+schema_version: 1
+
+id: prometheus
+name: Prometheus operations
+version: 0.1.0
+description: >
+  Server status, target health, alertmanager linkage, instant + range
+  queries, rule listing, TSDB stats, plus admin-API actions for
+  remediation: reload config, take snapshot, clean tombstones, delete
+  series. Admin endpoints require --web.enable-admin-api +
+  --web.enable-lifecycle.
+vendor: emisar
+homepage: https://github.com/andrewdryga/emisar
+
+requires:
+  os:
+    - linux
+  binaries:
+    - curl
+
+actions:
+  - actions/build_info.yaml
+  - actions/runtime_info.yaml
+  - actions/flags.yaml
+  - actions/targets.yaml
+  - actions/alertmanagers.yaml
+  - actions/rules.yaml
+  - actions/alerts.yaml
+  - actions/tsdb_stats.yaml
+  - actions/query_instant.yaml
+  - actions/query_range.yaml
+  - actions/reload_config.yaml
+  - actions/snapshot.yaml
+  - actions/clean_tombstones.yaml
+  - actions/delete_series.yaml

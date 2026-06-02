@@ -1,0 +1,32 @@
+schema_version: 1
+id: docker.container_top
+title: docker top (processes inside a container)
+kind: exec
+risk: low
+description: >
+  Lists processes running inside one container (via `docker top`). Use when the container's CPU is hot but you don't know which child process is the offender. Read-only.
+side_effects:
+  - One docker top invocation.
+  - Read-only.
+args:
+  - name: container
+    type: string
+    required: true
+    description: Container name or ID.
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{1,128}$"
+execution:
+  command:
+    binary: /usr/bin/docker
+    argv:
+      - "top"
+      - "{{ args.container }}"
+  timeout: 10s
+output:
+  parser: text
+  max_stdout_bytes: 32768
+  max_stderr_bytes: 8192
+examples:
+  - title: Processes inside "api"
+    args:
+      container: api

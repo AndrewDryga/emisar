@@ -1,0 +1,35 @@
+schema_version: 1
+
+id: debugging.slabtop
+title: Kernel slab cache top consumers
+kind: exec
+risk: low
+
+description: >
+  `slabtop -o -s c | head -40` — top 40 kernel slab caches by cache
+  size. Use when /proc/meminfo shows high `Slab` but no userland
+  process accounts for the memory. dentry / inode pressure is the
+  usual answer.
+
+side_effects:
+  - One slabtop invocation.
+  - Read-only.
+
+args: []
+
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "slabtop -o -s c | head -40"
+  timeout: 15s
+
+output:
+  parser: text
+  max_stdout_bytes: 32768
+  max_stderr_bytes: 8192
+
+examples:
+  - title: Top kernel slab caches
+    args: {}

@@ -1,0 +1,35 @@
+schema_version: 1
+id: fw.iptables_flush_chain
+title: iptables -F <chain>
+kind: exec
+risk: critical
+description: >
+  Flush all rules from a single chain. ALL rules in that chain are
+  removed; default policy still applies. INPUT/FORWARD with a DROP
+  default plus a flushed chain means ALL traffic is dropped — only
+  use during planned firewall rebuilds with console access ready.
+side_effects:
+  - All rules in the named chain removed.
+  - If default policy is DROP, traffic immediately blocked.
+  - Not persistent — undone by iptables service reload from saved rules.
+args:
+  - name: chain
+    type: string
+    required: true
+    description: Chain name (INPUT, OUTPUT, FORWARD, or a custom chain).
+    validation:
+      pattern: "^[A-Z][A-Z0-9_\\-]{0,31}$"
+execution:
+  command:
+    binary: /usr/sbin/iptables
+    argv: ["-F", "{{ args.chain }}"]
+  timeout: 15s
+cancel_grace: 5s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Flush a custom rate-limit chain
+    args:
+      chain: "RATELIMIT"

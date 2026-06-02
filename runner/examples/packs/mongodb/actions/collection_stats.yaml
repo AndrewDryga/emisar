@@ -1,0 +1,38 @@
+schema_version: 1
+id: mongo.collection_stats
+title: db.<coll>.stats()
+kind: exec
+risk: low
+description: Per-collection totals — count, size, storage, indexes.
+side_effects:
+  - One collStats command.
+  - Read-only.
+args:
+  - name: database
+    type: string
+    required: true
+    description: Database name.
+    validation:
+      pattern: "^[a-zA-Z0-9_\\-]{1,63}$"
+  - name: collection
+    type: string
+    required: true
+    description: Collection name.
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{1,120}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "mongosh \"$MONGO_URI\" '--quiet' '--eval' \"JSON.stringify(db.getSiblingDB('{{ args.database }}').getCollection('{{ args.collection }}').stats())\""
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: One collection
+    args:
+      database: "production"
+      collection: "users"

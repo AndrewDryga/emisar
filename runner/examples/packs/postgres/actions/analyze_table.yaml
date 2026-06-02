@@ -1,0 +1,40 @@
+schema_version: 1
+id: postgres.analyze_table
+title: ANALYZE <schema>.<table>
+kind: exec
+risk: medium
+description: Refreshes planner statistics for one table.
+side_effects:
+  - Reads sample rows from the table.
+  - Updates pg_class/pg_statistic.
+  - No locks beyond ShareUpdateExclusiveLock (DML continues).
+args:
+  - name: schema
+    type: string
+    required: true
+    description: Schema name.
+    validation:
+      pattern: "^[a-zA-Z_][a-zA-Z0-9_]{0,62}$"
+  - name: table
+    type: string
+    required: true
+    description: Table name.
+    validation:
+      pattern: "^[a-zA-Z_][a-zA-Z0-9_]{0,62}$"
+execution:
+  command:
+    binary: /usr/bin/psql
+    argv:
+      - "-XAt"
+      - "-c"
+      - "ANALYZE VERBOSE {{ args.schema }}.{{ args.table }};"
+  timeout: 30m
+output:
+  parser: text
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Refresh stats
+    args:
+      schema: "public"
+      table: "orders"

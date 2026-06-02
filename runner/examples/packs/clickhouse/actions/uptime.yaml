@@ -1,0 +1,22 @@
+schema_version: 1
+id: ch.uptime
+title: SELECT version, uptime
+kind: exec
+risk: low
+description: Server version + uptime.
+side_effects: ["One SELECT.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "clickhouse-client --host \"${CH_HOST:-localhost}\" --user \"${CH_USER:-default}\" --password \"$CH_PASSWORD\" --query \"SELECT version(), uptime() FORMAT TabSeparatedWithNames\""
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Uptime
+    args: {}

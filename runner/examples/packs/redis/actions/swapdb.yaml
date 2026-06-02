@@ -1,0 +1,42 @@
+schema_version: 1
+id: redis.swapdb
+title: SWAPDB
+kind: exec
+risk: high
+description: >
+  Atomically swap the contents of two logical databases. Clients
+  connected to db i now see db j and vice versa. Used for
+  blue/green cache rebuilds. Wrong indices flip live traffic to a
+  stale dataset.
+side_effects:
+  - Two databases exchange visible contents atomically.
+  - Connected clients immediately see the swapped dataset.
+args:
+  - name: i
+    type: integer
+    required: true
+    description: First database index.
+    validation:
+      min: 0
+      max: 15
+  - name: j
+    type: integer
+    required: true
+    description: Second database index.
+    validation:
+      min: 0
+      max: 15
+execution:
+  command:
+    binary: /usr/bin/redis-cli
+    argv: ["SWAPDB", "{{ args.i }}", "{{ args.j }}"]
+  timeout: 10s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Swap into rebuild slot
+    args:
+      i: 0
+      j: 1

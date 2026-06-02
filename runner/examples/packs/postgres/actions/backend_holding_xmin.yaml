@@ -1,0 +1,23 @@
+schema_version: 1
+id: postgres.backend_holding_xmin
+title: Backend holding the oldest xmin
+kind: exec
+risk: low
+description: Backend whose snapshot is preventing vacuum from cleaning dead tuples cluster-wide.
+side_effects: ["One SELECT.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /usr/bin/psql
+    argv:
+      - "-XAt"
+      - "-c"
+      - "SELECT pid, usename, application_name, state, backend_xmin, EXTRACT(EPOCH FROM (now()-xact_start))::int AS xact_age_sec, substring(query, 1, 300) AS query FROM pg_stat_activity WHERE backend_xmin IS NOT NULL ORDER BY backend_xmin::text::bigint ASC LIMIT 5;"
+  timeout: 10s
+output:
+  parser: text
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 8192
+examples:
+  - title: Vacuum's enemy
+    args: {}

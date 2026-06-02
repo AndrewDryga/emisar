@@ -1,0 +1,32 @@
+schema_version: 1
+id: fs.ls_long
+title: ls -la <path>
+kind: exec
+risk: low
+description: Long-format directory listing.
+side_effects:
+  - One directory read.
+  - Read-only.
+args:
+  - name: path
+    type: string
+    required: true
+    description: Directory.
+    validation:
+      pattern: "^/[a-zA-Z0-9_./\\-]{0,512}$"
+execution:
+  command:
+    binary: /bin/ls
+    argv:
+      - "-la"
+      - "--time-style=long-iso"
+      - "{{ args.path }}"
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: ls /etc
+    args:
+      path: "/etc"

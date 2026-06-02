@@ -1,0 +1,25 @@
+schema_version: 1
+id: vault.seal_status
+title: vault operator seal-status
+kind: exec
+risk: low
+description: Sealed/unsealed state + threshold + progress.
+side_effects:
+  - One sys/seal-status request.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: vault
+    argv:
+      - "operator"
+      - "seal-status"
+      - "-format=json"
+  timeout: 15s
+output:
+  parser: json
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 8192
+examples:
+  - title: Seal status
+    args: {}

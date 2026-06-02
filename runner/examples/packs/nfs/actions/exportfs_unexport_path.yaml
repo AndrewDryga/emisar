@@ -1,0 +1,40 @@
+schema_version: 1
+id: nfs.exportfs_unexport_path
+title: exportfs -u <client>:<path>
+kind: exec
+risk: high
+description: >
+  Stop exporting one path to one client. Active mounts on that
+  client start failing operations. Use to evict a misbehaving
+  client without restarting the NFS server.
+side_effects:
+  - Named client can no longer mount the path.
+  - Active mounts return ESTALE for new operations.
+  - Other clients unaffected.
+args:
+  - name: client
+    type: string
+    required: true
+    description: Client hostname, IP, or CIDR.
+    validation:
+      pattern: "^[a-zA-Z0-9._:\\-/]{1,128}$"
+  - name: path
+    type: string
+    required: true
+    description: Export path.
+    validation:
+      pattern: "^/[a-zA-Z0-9_./\\-]{1,512}$"
+execution:
+  command:
+    binary: /usr/sbin/exportfs
+    argv: ["-u", "{{ args.client }}:{{ args.path }}"]
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Evict a noisy client
+    args:
+      client: "10.1.2.3"
+      path: "/exports/data"

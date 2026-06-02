@@ -1,0 +1,41 @@
+schema_version: 1
+
+id: linux.systemctl_enable
+title: Enable a systemd unit at boot
+kind: exec
+risk: medium
+
+description: >
+  `systemctl enable <unit>`. Creates the symlinks so the unit starts
+  at boot. Does NOT start it now — pair with `linux.systemctl_start`
+  for that. Persistent change across reboots.
+
+side_effects:
+  - Creates symlinks under /etc/systemd/system/.
+  - Idempotent — re-running on an already-enabled unit is a no-op.
+
+args:
+  - name: unit
+    type: string
+    required: true
+    description: Systemd unit name.
+    validation:
+      pattern: "^[a-zA-Z0-9@:_.\\-]{1,128}$"
+
+execution:
+  command:
+    binary: /bin/systemctl
+    argv:
+      - "enable"
+      - "{{ args.unit }}"
+  timeout: 15s
+
+output:
+  parser: text
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 8192
+
+examples:
+  - title: Enable nginx at boot
+    args:
+      unit: nginx.service

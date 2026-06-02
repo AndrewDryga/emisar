@@ -1,0 +1,18 @@
+schema_version: 1
+id: podman.images
+title: podman images
+kind: exec
+risk: low
+description: All local images.
+side_effects: ["One CLI call.", "Read-only."]
+args: []
+execution:
+  command: {binary: /usr/bin/podman, argv: ["images", "--format", "json"]}
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: All images
+    args: {}

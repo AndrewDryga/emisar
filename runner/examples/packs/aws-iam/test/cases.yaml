@@ -1,0 +1,47 @@
+defaults:
+  env: {}
+cases:
+- action: iam.deactivate_access_key
+  args:
+    user_name: ci-bot
+    access_key_id: AKIAEXAMPLE0000000000
+  skip: mutator skipped by default (critical); set --include=iam.deactivate_access_key to run
+- action: iam.delete_access_key
+  args:
+    user_name: ci-bot
+    access_key_id: AKIAEXAMPLEOLDKEYID00
+  skip: mutator skipped by default (critical); set --include=iam.delete_access_key to run
+- action: iam.detach_user_policy
+  args:
+    user_name: intern
+    policy_arn: arn:aws:iam::aws:policy/AdministratorAccess
+  skip: mutator skipped by default (high); set --include=iam.detach_user_policy to run
+- action: iam.get_role
+  args:
+    role: lambda-execution
+  expect_exit: 0
+- action: iam.get_user
+  args:
+    user: alice
+  expect_exit: 0
+- action: iam.last_used_access_key
+  args:
+    access_key_id: AKIAIOSFODNN7EXAMPLE
+  expect_exit: 0
+- action: iam.list_access_keys
+  args:
+    user: alice
+  expect_exit: 0
+- action: iam.list_attached_user_policies
+  args:
+    user: alice
+  expect_exit: 0
+- action: iam.list_policies
+  args: {}
+  expect_exit: 0
+- action: iam.list_roles
+  args: {}
+  expect_exit: 0
+- action: iam.list_users
+  args: {}
+  expect_exit: 0

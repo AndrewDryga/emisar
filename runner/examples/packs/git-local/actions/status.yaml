@@ -1,0 +1,24 @@
+schema_version: 1
+id: git.status
+title: git status (porcelain)
+kind: exec
+risk: low
+description: Working-tree status — uncommitted changes, branch, ahead/behind.
+side_effects:
+  - One git status.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "cd \"$GIT_REPO\" && git status --branch --porcelain=v1"
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: Working tree status
+    args: {}

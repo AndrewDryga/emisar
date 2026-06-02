@@ -1,0 +1,42 @@
+schema_version: 1
+id: kubernetes.drain
+title: kubectl drain node (cordon + evict)
+kind: exec
+risk: critical
+description: >
+  Cordons the node and evicts every pod that has a controller (Deployment/StatefulSet/etc). DaemonSets are ignored and emptyDir data is deleted with --delete-emptydir-data. Use before scheduled maintenance.
+side_effects:
+  - Node marked unschedulable.
+  - Every controller-managed pod evicted; recreated elsewhere.
+  - emptyDir volumes on this node are lost.
+args:
+  - name: name
+    type: string
+    required: true
+    description: Node name.
+    validation:
+      pattern: "^[a-z0-9][a-z0-9.\\-]{0,253}$"
+  - name: context
+    type: string
+    required: false
+    default: ""
+    description: kubeconfig context.
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{0,128}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "kubectl ${KCTX:+--context=$KCTX} drain {{ args.name }} --ignore-daemonsets --delete-emptydir-data"
+  timeout: 15m
+  env:
+    KCTX: "{{ args.context }}"
+output:
+  parser: text
+  max_stdout_bytes: 131072
+  max_stderr_bytes: 32768
+examples:
+  - title: Drain one node
+    args:
+      name: ip-10-0-1-23.eu-west-1.compute.internal

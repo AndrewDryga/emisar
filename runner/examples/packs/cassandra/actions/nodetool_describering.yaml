@@ -1,0 +1,25 @@
+schema_version: 1
+id: cassandra.nodetool_describering
+title: nodetool describering <keyspace>
+kind: exec
+risk: low
+description: Token range → replica endpoint mapping for one keyspace.
+side_effects: ["One JMX call.", "Read-only."]
+args:
+  - name: keyspace
+    type: string
+    required: true
+    description: Keyspace.
+    validation:
+      pattern: "^[a-zA-Z][a-zA-Z0-9_]{0,47}$"
+execution:
+  command: {binary: /usr/bin/nodetool, argv: ["describering", "{{ args.keyspace }}"]}
+  timeout: 60s
+output:
+  parser: text
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: One keyspace's ring
+    args:
+      keyspace: "my_ks"

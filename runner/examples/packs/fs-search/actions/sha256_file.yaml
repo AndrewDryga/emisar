@@ -1,0 +1,30 @@
+schema_version: 1
+id: fs.sha256_file
+title: sha256sum <file>
+kind: exec
+risk: low
+description: SHA-256 of one file. Use to confirm a binary matches a known-good hash.
+side_effects:
+  - One read of the file.
+  - Read-only.
+args:
+  - name: path
+    type: string
+    required: true
+    description: File path.
+    validation:
+      pattern: "^/[a-zA-Z0-9_./\\-]{0,512}$"
+execution:
+  command:
+    binary: /usr/bin/sha256sum
+    argv:
+      - "{{ args.path }}"
+  timeout: 5m
+output:
+  parser: text
+  max_stdout_bytes: 1024
+  max_stderr_bytes: 8192
+examples:
+  - title: Hash a binary
+    args:
+      path: "/usr/bin/sshd"

@@ -1,0 +1,22 @@
+schema_version: 1
+id: grafana.version
+title: GET /api/frontend/settings (build info)
+kind: exec
+risk: low
+description: Build info, edition, license expiry.
+side_effects: ["One API call.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "curl -sS -H \"Authorization: Bearer $GRAFANA_TOKEN\" \"$GRAFANA_URL/api/frontend/settings\""
+  timeout: 15s
+output:
+  parser: json
+  max_stdout_bytes: 131072
+  max_stderr_bytes: 8192
+examples:
+  - title: Build info
+    args: {}

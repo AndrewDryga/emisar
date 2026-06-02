@@ -1,0 +1,46 @@
+schema_version: 1
+id: net.http_probe
+title: HTTP probe with timing
+kind: exec
+risk: low
+description: >
+  Probes a URL with curl, returning HTTP status, DNS / TCP / TLS / total timings, and bytes transferred. Use as a synthetic check.
+side_effects:
+  - Outbound HTTPS to the URL.
+  - Read-only.
+args:
+  - name: url
+    type: string
+    required: true
+    description: URL to probe.
+    validation:
+      pattern: "^https?://[a-zA-Z0-9.:/_\\-?=&%+]{1,512}$"
+  - name: max_time
+    type: integer
+    required: false
+    default: 10
+    description: Max total seconds.
+    validation:
+      min: 1
+      max: 60
+execution:
+  command:
+    binary: /usr/bin/curl
+    argv:
+      - "-sS"
+      - "-o"
+      - "/dev/null"
+      - "--max-time"
+      - "{{ args.max_time }}"
+      - "-w"
+      - "http_code=%{http_code}\\nlookup=%{time_namelookup}\\nconnect=%{time_connect}\\nappconnect=%{time_appconnect}\\nstarttransfer=%{time_starttransfer}\\ntotal=%{time_total}\\nsize=%{size_download}\\n"
+      - "{{ args.url }}"
+  timeout: 90s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Probe example.com
+    args:
+      url: "https://example.com/"

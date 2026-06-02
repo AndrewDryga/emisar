@@ -1,0 +1,20 @@
+schema_version: 1
+id: rds.parameter_groups
+title: aws rds describe-db-parameter-groups
+kind: exec
+risk: low
+description: All DB parameter groups.
+side_effects: ["One API call.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: aws
+    argv: ["rds", "describe-db-parameter-groups", "--output", "json"]
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: Parameter groups
+    args: {}

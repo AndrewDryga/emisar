@@ -1,0 +1,40 @@
+schema_version: 1
+id: gh.workflow_rerun
+title: gh run rerun <run-id>
+kind: exec
+risk: medium
+description: >
+  Re-run one workflow run. Useful after fixing a transient
+  infrastructure issue. With --failed, only re-runs failed jobs.
+side_effects:
+  - Workflow run starts again.
+  - Compute consumed.
+  - Notifications fire.
+args:
+  - name: run_id
+    type: integer
+    required: true
+    description: Workflow run ID.
+    validation:
+      min: 1
+      max: 99999999999
+  - name: failed_only
+    type: boolean
+    required: false
+    default: true
+    description: Only re-run failed jobs.
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "if [ '{{ args.failed_only }}' = 'true' ]; then /usr/bin/gh run rerun {{ args.run_id }} --failed; else /usr/bin/gh run rerun {{ args.run_id }}; fi"
+  timeout: 60s
+output:
+  parser: text
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 8192
+examples:
+  - title: Re-run failed jobs only
+    args:
+      run_id: 12345678

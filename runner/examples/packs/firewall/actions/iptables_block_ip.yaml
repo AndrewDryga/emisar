@@ -1,0 +1,35 @@
+schema_version: 1
+id: fw.iptables_block_ip
+title: iptables -I INPUT -s <ip> -j DROP
+kind: exec
+risk: high
+description: >
+  Insert a DROP rule for one source IP at the top of the INPUT
+  chain. Use during an active incident to immediately block a
+  known-bad source. Rule is not persistent — survives only until
+  iptables service reload or reboot. Combine with iptables-save
+  to persist.
+side_effects:
+  - One rule inserted at INPUT[1].
+  - Traffic from that IP dropped immediately.
+  - Rule is in-memory; lost on iptables restart unless saved.
+args:
+  - name: ip
+    type: string
+    required: true
+    description: Source IP address or CIDR.
+    validation:
+      pattern: "^[0-9a-fA-F:.\\/]{1,43}$"
+execution:
+  command:
+    binary: /usr/sbin/iptables
+    argv: ["-I", "INPUT", "-s", "{{ args.ip }}", "-j", "DROP"]
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Block a scanner
+    args:
+      ip: "203.0.113.42"

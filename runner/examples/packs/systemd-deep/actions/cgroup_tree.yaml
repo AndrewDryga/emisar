@@ -1,0 +1,22 @@
+schema_version: 1
+id: systemd.cgroup_tree
+title: systemd cgroup tree
+kind: exec
+risk: low
+description: '`systemd-cgls` — the full cgroup hierarchy with process names. Use to understand resource accounting.'
+side_effects:
+  - One systemd-cgls invocation.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /bin/systemd-cgls
+    argv: ["--no-pager"]
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: cgroup hierarchy
+    args: {}

@@ -1,0 +1,33 @@
+schema_version: 1
+id: systemd.unit_reload
+title: systemctl reload <unit>
+kind: exec
+risk: medium
+description: >
+  Ask one unit to reload its config without restarting. Only works
+  if the unit has ExecReload= defined. Use over `restart` whenever
+  possible — no downtime.
+side_effects:
+  - Unit re-reads its config.
+  - Process keeps running; PID unchanged.
+  - In-flight requests survive.
+args:
+  - name: unit
+    type: string
+    required: true
+    description: Unit name.
+    validation:
+      pattern: "^[a-zA-Z0-9@_\\-.]{1,128}$"
+execution:
+  command:
+    binary: /usr/bin/systemctl
+    argv: ["reload", "{{ args.unit }}"]
+  timeout: 60s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Reload nginx without restart
+    args:
+      unit: "nginx.service"

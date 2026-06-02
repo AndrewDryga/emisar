@@ -1,0 +1,34 @@
+schema_version: 1
+
+id: docker.system_df
+title: docker system df
+kind: exec
+risk: low
+
+description: >
+  Reports disk usage by docker (images, containers, volumes, build
+  cache). Use to plan a prune. Read-only.
+
+side_effects:
+  - One docker system df invocation.
+  - Read-only.
+
+args: []
+
+execution:
+  command:
+    binary: /usr/bin/docker
+    argv:
+      - "system"
+      - "df"
+      - "-v"
+  timeout: 30s
+
+output:
+  parser: text
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 16384
+
+examples:
+  - title: Detailed docker disk usage
+    args: {}

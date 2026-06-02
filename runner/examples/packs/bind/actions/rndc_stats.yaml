@@ -1,0 +1,22 @@
+schema_version: 1
+id: bind.rndc_stats
+title: rndc stats + read dump
+kind: exec
+risk: low
+description: Forces a stats dump and reads it. Includes query counts, cache stats, NSID.
+side_effects: ["Writes /var/named/data/named_stats.txt.", "Read-only-ish — file rewrite, no service impact."]
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "rndc stats; sleep 1; cat /var/named/data/named_stats.txt 2>/dev/null || cat /var/cache/bind/named.stats"
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: Stats
+    args: {}

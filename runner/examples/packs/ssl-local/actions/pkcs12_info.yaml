@@ -1,0 +1,32 @@
+schema_version: 1
+id: ssl.pkcs12_info
+title: openssl pkcs12 -nokeys -info
+kind: exec
+risk: low
+description: >
+  Inspect a PKCS#12 bundle's bag contents — cert subjects, key types — without exporting the private key. Requires the bundle's password via PK12_PASSWORD env var on the runner host (or empty for password-less bundles).
+side_effects:
+  - One file read.
+  - Read-only — private keys NOT printed.
+args:
+  - name: path
+    type: string
+    required: true
+    description: .p12 / .pfx file.
+    validation:
+      pattern: "^/[a-zA-Z0-9_./\\-]{1,512}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "openssl pkcs12 -in {{ args.path }} -nokeys -info -passin env:PK12_PASSWORD 2>&1"
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 32768
+  max_stderr_bytes: 8192
+examples:
+  - title: Bag contents
+    args:
+      path: "/etc/ssl/private/server.p12"

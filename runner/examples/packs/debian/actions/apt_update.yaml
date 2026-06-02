@@ -1,0 +1,36 @@
+schema_version: 1
+
+id: debian.apt_update
+title: apt-get update
+kind: exec
+risk: medium
+
+description: >
+  Refreshes the apt package index from configured sources. Does not
+  upgrade anything. Network-bound, may fail on a host behind a
+  restrictive egress filter. Counts as medium-risk because it touches
+  /var/lib/apt and a stale index can confuse later patching.
+
+side_effects:
+  - Writes /var/lib/apt/lists/*.
+  - Holds the apt lock briefly.
+  - Outgoing HTTPS to configured sources.
+
+args: []
+
+execution:
+  command:
+    binary: /usr/bin/apt-get
+    argv:
+      - "update"
+      - "-qq"
+  timeout: 5m
+
+output:
+  parser: text
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 65536
+
+examples:
+  - title: Refresh apt index
+    args: {}

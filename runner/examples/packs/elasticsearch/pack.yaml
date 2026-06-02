@@ -1,0 +1,46 @@
+schema_version: 1
+
+id: elasticsearch
+name: Elasticsearch / OpenSearch ops
+version: 0.1.0
+description: >
+  Cluster + index introspection plus narrow mutators (cache_clear,
+  force_merge, flush_synced, close_index). Auth via ELASTIC_USER +
+  ELASTIC_PASSWORD env vars on the runner host. Does NOT include
+  delete_index — too easy to misuse.
+vendor: emisar
+homepage: https://github.com/andrewdryga/emisar
+
+requires:
+  os:
+    - linux
+  binaries:
+    - curl
+
+actions:
+  # Cluster
+  - actions/cluster_health.yaml
+  - actions/cluster_settings.yaml
+  - actions/cluster_allocation_explain.yaml
+  - actions/pending_tasks.yaml
+  # _cat
+  - actions/cat_nodes.yaml
+  - actions/cat_indices.yaml
+  - actions/cat_shards.yaml
+  - actions/cat_aliases.yaml
+  - actions/cat_thread_pool.yaml
+  - actions/cat_recovery.yaml
+  - actions/cat_segments.yaml
+  # Index introspection
+  - actions/index_settings.yaml
+  - actions/index_stats.yaml
+  - actions/index_mapping.yaml
+  - actions/index_count.yaml
+  # Snapshots
+  - actions/snapshot_list.yaml
+  - actions/snapshot_status.yaml
+  # Mutators
+  - actions/cache_clear.yaml
+  - actions/force_merge.yaml
+  - actions/flush_synced.yaml
+  - actions/close_index.yaml

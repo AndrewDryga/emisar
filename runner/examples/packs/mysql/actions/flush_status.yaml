@@ -1,0 +1,22 @@
+schema_version: 1
+id: mysql.flush_status
+title: FLUSH STATUS
+kind: exec
+risk: medium
+description: Resets the GLOBAL STATUS counters to zero. Use before a workload to get a clean rate measurement window.
+side_effects:
+  - Most GLOBAL STATUS counters reset to 0.
+  - Some session-level counters also affected.
+args: []
+execution:
+  command:
+    binary: /usr/bin/mysql
+    argv: ["-e", "FLUSH STATUS"]
+  timeout: 10s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Reset counters
+    args: {}

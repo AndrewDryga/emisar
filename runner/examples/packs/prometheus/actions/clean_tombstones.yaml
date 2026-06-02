@@ -1,0 +1,32 @@
+schema_version: 1
+id: prom.clean_tombstones
+title: POST /api/v1/admin/tsdb/clean_tombstones
+kind: exec
+risk: medium
+description: >
+  Reclaim disk space after a delete_series call. Tombstones are
+  removed and the data they marked is permanently deleted.
+side_effects:
+  - Tombstoned series permanently deleted from disk.
+  - Disk usage drops.
+  - Brief I/O spike.
+args:
+  - name: target
+    type: string
+    required: false
+    default: "http://localhost:9090"
+    description: Prometheus base URL.
+    validation:
+      pattern: "^https?://[a-zA-Z0-9._:\\-]{1,253}(:[0-9]{1,5})?$"
+execution:
+  command:
+    binary: /usr/bin/curl
+    argv: ["-sSfX", "POST", "{{ args.target }}/api/v1/admin/tsdb/clean_tombstones"]
+  timeout: 120s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Reclaim after a delete
+    args: {}

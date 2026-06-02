@@ -1,0 +1,34 @@
+schema_version: 1
+id: forensics.strace_pid_short
+title: strace -p <pid> (5 seconds)
+kind: exec
+risk: high
+description: >
+  Attach strace to one PID for 5 seconds. Slows the target process significantly while attached. Detaches automatically.
+side_effects:
+  - Target process runs ~5-20x slower during the strace window.
+  - On detach, target resumes normal speed.
+  - Requires CAP_SYS_PTRACE or matching uid.
+args:
+  - name: pid
+    type: integer
+    required: true
+    description: PID.
+    validation:
+      min: 1
+      max: 4194304
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "timeout 5 strace -p {{ args.pid }} -y -tt 2>&1 | head -2000 || true"
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: 5s strace of PID
+    args:
+      pid: 1234

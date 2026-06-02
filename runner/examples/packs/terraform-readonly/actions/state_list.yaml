@@ -1,0 +1,24 @@
+schema_version: 1
+id: tf.state_list
+title: terraform state list
+kind: exec
+risk: low
+description: All resource addresses currently in state.
+side_effects:
+  - Reads state file.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "cd \"$TF_DIR\" && terraform state list"
+  timeout: 60s
+output:
+  parser: text
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: State resources
+    args: {}

@@ -1,0 +1,26 @@
+schema_version: 1
+id: redis.bgsave
+title: BGSAVE
+kind: exec
+risk: medium
+description: >
+  Trigger a background RDB snapshot. The fork briefly doubles RSS
+  (copy-on-write). Returns immediately — completion shows in INFO
+  rdb_last_bgsave_status. Concurrent BGREWRITEAOF will queue.
+side_effects:
+  - One fork; brief CPU + memory spike.
+  - Writes an RDB file to disk.
+  - Concurrent BGREWRITEAOF will queue behind this.
+args: []
+execution:
+  command:
+    binary: /usr/bin/redis-cli
+    argv: ["BGSAVE"]
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Trigger background snapshot
+    args: {}

@@ -1,0 +1,28 @@
+schema_version: 1
+
+id: php-fpm
+name: PHP-FPM
+version: 0.1.0
+description: >
+  PHP runtime + FPM pool introspection — version, modules, ini, pool
+  status (via fpm_status endpoint), error + slow logs, OPcache state,
+  Composer manifest. Read-only. Set PHP_FPM_STATUS_URL env to point
+  to the FPM status endpoint.
+vendor: emisar
+homepage: https://github.com/andrewdryga/emisar
+
+requires:
+  os:
+    - linux
+
+actions:
+  - actions/version.yaml
+  - actions/modules.yaml
+  - actions/ini.yaml
+  - actions/fpm_status.yaml
+  - actions/fpm_status_full.yaml
+  - actions/fpm_ping.yaml
+  - actions/error_log_tail.yaml
+  - actions/slow_log_tail.yaml
+  - actions/opcache_status.yaml
+  - actions/composer_show.yaml

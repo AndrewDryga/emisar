@@ -1,0 +1,24 @@
+schema_version: 1
+id: kafka.cluster_info
+title: Cluster metadata
+kind: exec
+risk: low
+description: Broker IDs, controller, cluster ID. Read-only.
+side_effects:
+  - One metadata request.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "kafka-broker-api-versions.sh --bootstrap-server \"$KAFKA_BOOTSTRAP\" | head -50"
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Cluster info
+    args: {}

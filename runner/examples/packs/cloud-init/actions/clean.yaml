@@ -1,0 +1,38 @@
+schema_version: 1
+id: cloud-init.clean
+title: cloud-init clean
+kind: exec
+risk: critical
+description: >
+  Wipe ALL cloud-init state — /var/lib/cloud/, logs, instance-id,
+  module-run records. NEXT BOOT cloud-init treats the host as a
+  brand-new instance and re-runs every module from scratch.
+  Combine with a reboot to genuinely re-bootstrap the host.
+  Catastrophic on a long-lived host where users have been added
+  outside cloud-init — those won't be re-added.
+side_effects:
+  - All cloud-init state cleared.
+  - Next boot re-runs init-local, init, config, final.
+  - Any post-cloud-init changes that cloud-init didn't make will be left alone, BUT cloud-init modules will treat their state as fresh and may overwrite.
+  - With `--seed`, also wipes /var/lib/cloud/seed/.
+args:
+  - name: seed
+    type: boolean
+    required: false
+    default: false
+    description: Also wipe the seed dir (NoCloud datasource).
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "if [ '{{ args.seed }}' = 'true' ]; then /usr/bin/cloud-init clean --seed; else /usr/bin/cloud-init clean; fi"
+  timeout: 60s
+cancel_grace: 10s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Reset cloud-init state
+    args: {}

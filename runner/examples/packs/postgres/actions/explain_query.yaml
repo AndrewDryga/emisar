@@ -1,0 +1,30 @@
+schema_version: 1
+id: postgres.explain_query
+title: EXPLAIN (FORMAT JSON) <query>
+kind: exec
+risk: low
+description: Plan-only EXPLAIN. The query is NOT executed.
+side_effects: ["Parses + plans the query.", "Read-only — query body is not executed."]
+args:
+  - name: query
+    type: string
+    required: true
+    description: SELECT statement.
+    validation:
+      pattern: "^(SELECT|select|WITH|with)[^;]{1,8000}$"
+execution:
+  command:
+    binary: /usr/bin/psql
+    argv:
+      - "-XAt"
+      - "-c"
+      - "EXPLAIN (FORMAT JSON, VERBOSE) {{ args.query }}"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: Plan one query
+    args:
+      query: "SELECT count(*) FROM pg_stat_activity"

@@ -1,0 +1,22 @@
+schema_version: 1
+id: consul.list_nodes
+title: consul catalog nodes
+kind: exec
+risk: low
+description: All registered nodes.
+side_effects:
+  - One catalog request.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: consul
+    argv: ["catalog", "nodes"]
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Nodes
+    args: {}

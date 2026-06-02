@@ -1,0 +1,45 @@
+schema_version: 1
+id: fs.grep_file
+title: grep <pattern> <file>
+kind: exec
+risk: low
+description: Matching lines in one file. Pattern is treated as POSIX BRE.
+side_effects:
+  - One read of the file.
+  - Read-only.
+args:
+  - name: path
+    type: string
+    required: true
+    description: File path.
+    validation:
+      pattern: "^/[a-zA-Z0-9_./\\-]{0,512}$"
+  - name: pattern
+    type: string
+    required: true
+    description: Regex.
+    validation:
+      pattern: "^[^'\"`$;|&<>]{1,256}$"
+  - name: case_insensitive
+    type: boolean
+    required: false
+    default: false
+    description: -i mode.
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "if [ \"{{ args.case_insensitive }}\" = \"true\" ]; then grep -i -E \"$P\" \"{{ args.path }}\" | head -2000; else grep -E \"$P\" \"{{ args.path }}\" | head -2000; fi"
+  env:
+    P: "{{ args.pattern }}"
+  timeout: 2m
+output:
+  parser: text
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: grep ERROR in syslog
+    args:
+      path: "/var/log/syslog"
+      pattern: "ERROR"

@@ -1,0 +1,32 @@
+schema_version: 1
+id: fw.iptables_unblock_ip
+title: iptables -D INPUT -s <ip> -j DROP
+kind: exec
+risk: medium
+description: >
+  Remove a previously-inserted DROP rule for one IP. Use to undo a
+  manual block. Matches the rule by literal -s/-j signature; if the
+  rule isn't found, iptables errors and nothing changes.
+side_effects:
+  - One matching DROP rule removed (or error if no match).
+  - Traffic from that IP can flow again, subject to other rules.
+args:
+  - name: ip
+    type: string
+    required: true
+    description: Source IP address or CIDR.
+    validation:
+      pattern: "^[0-9a-fA-F:.\\/]{1,43}$"
+execution:
+  command:
+    binary: /usr/sbin/iptables
+    argv: ["-D", "INPUT", "-s", "{{ args.ip }}", "-j", "DROP"]
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Unblock after false-positive
+    args:
+      ip: "10.0.5.12"

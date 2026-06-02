@@ -1,0 +1,23 @@
+schema_version: 1
+id: postgres.wal_status
+title: Current WAL LSN + recovery state
+kind: exec
+risk: low
+description: Snapshot of current WAL LSN, last receive/replay LSNs, recovery state.
+side_effects: ["One SELECT.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /usr/bin/psql
+    argv:
+      - "-XAt"
+      - "-c"
+      - "SELECT pg_is_in_recovery() AS in_recovery, CASE WHEN pg_is_in_recovery() THEN NULL ELSE pg_current_wal_lsn() END AS current_lsn, pg_last_wal_receive_lsn() AS last_receive_lsn, pg_last_wal_replay_lsn() AS last_replay_lsn, pg_last_xact_replay_timestamp() AS last_replay_time;"
+  timeout: 10s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: WAL state
+    args: {}

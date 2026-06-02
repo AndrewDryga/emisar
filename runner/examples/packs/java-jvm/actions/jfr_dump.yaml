@@ -1,0 +1,34 @@
+schema_version: 1
+id: jvm.jfr_dump
+title: Dump active JFR recording
+kind: exec
+risk: low
+description: Dumps the active "emisar" recording to its current file. Use mid-flight to grab a snapshot without stopping the recording.
+side_effects:
+  - Writes JFR data to /tmp/<pid>-emisar.jfr.
+  - Recording continues.
+args:
+  - name: pid
+    type: integer
+    required: true
+    description: JVM PID.
+    validation:
+      min: 1
+      max: 4194304
+execution:
+  command:
+    binary: /usr/bin/jcmd
+    argv:
+      - "{{ args.pid }}"
+      - "JFR.dump"
+      - "name=emisar"
+      - "filename=/tmp/{{ args.pid }}-emisar.jfr"
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Snapshot the recording
+    args:
+      pid: 4321

@@ -1,0 +1,22 @@
+schema_version: 1
+id: envoy.clusters
+title: GET /clusters
+kind: exec
+risk: low
+description: All clusters with endpoint health + stats. Use for "which upstream is unhealthy?".
+side_effects: ["One admin GET.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "curl -sS \"${ENVOY_ADMIN:-http://127.0.0.1:9901}/clusters\""
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 4194304
+  max_stderr_bytes: 8192
+examples:
+  - title: Clusters + endpoints
+    args: {}

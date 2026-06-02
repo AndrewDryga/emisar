@@ -1,0 +1,34 @@
+schema_version: 1
+id: minio.bucket_stat
+title: mc du (bucket)
+kind: exec
+risk: low
+description: Object count + size for one bucket.
+side_effects: ["One scan; can be heavy on huge buckets.", "Read-only."]
+args:
+  - name: alias
+    type: string
+    required: true
+    description: mc alias.
+    validation:
+      pattern: "^[a-zA-Z0-9_\\-]{1,64}$"
+  - name: bucket
+    type: string
+    required: true
+    description: Bucket name.
+    validation:
+      pattern: "^[a-z0-9.\\-]{3,63}$"
+execution:
+  command:
+    binary: mc
+    argv: ["du", "{{ args.alias }}/{{ args.bucket }}"]
+  timeout: 5m
+output:
+  parser: text
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: One bucket
+    args:
+      alias: "minio"
+      bucket: "backups"

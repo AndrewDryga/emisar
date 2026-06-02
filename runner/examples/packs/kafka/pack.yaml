@@ -1,0 +1,46 @@
+schema_version: 1
+
+id: kafka
+name: Kafka cluster operations
+version: 0.1.0
+description: >
+  Topic introspection, consumer-group lag, broker config, ACLs, and narrow
+  mutators (reset_offsets, alter_topic_retention, delete_consumer_group,
+  preferred_leader_election). Auth via KAFKA_BOOTSTRAP env var on the
+  runner host plus optional KAFKA_COMMAND_CONFIG (jaas / SASL / SSL).
+vendor: emisar
+homepage: https://github.com/andrewdryga/emisar
+
+requires:
+  os:
+    - linux
+  binaries:
+    - kafka-topics.sh
+
+actions:
+  # Cluster
+  - actions/cluster_info.yaml
+  - actions/broker_api_versions.yaml
+  - actions/broker_configs.yaml
+  # Topics
+  - actions/list_topics.yaml
+  - actions/describe_topic.yaml
+  - actions/topic_configs.yaml
+  # Consumer groups
+  - actions/list_groups.yaml
+  - actions/describe_group.yaml
+  - actions/consumer_lag.yaml
+  - actions/list_consumer_offsets.yaml
+  # ACLs
+  - actions/list_acls.yaml
+  # Partition health
+  - actions/leader_partitions.yaml
+  - actions/under_replicated.yaml
+  - actions/unavailable_partitions.yaml
+  - actions/reassign_status.yaml
+  # Mutators
+  - actions/preferred_leader_election.yaml
+  - actions/reset_offsets_to_earliest.yaml
+  - actions/reset_offsets_to_latest.yaml
+  - actions/alter_topic_retention.yaml
+  - actions/delete_consumer_group.yaml

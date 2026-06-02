@@ -1,0 +1,22 @@
+schema_version: 1
+id: nomad.server_members
+title: nomad server members (json)
+kind: exec
+risk: low
+description: Server members as JSON. Use for programmatic consumption.
+side_effects: ["One API call.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "curl -sS -H \"X-Nomad-Token: $NOMAD_TOKEN\" \"$NOMAD_ADDR/v1/agent/members\""
+  timeout: 15s
+output:
+  parser: json
+  max_stdout_bytes: 131072
+  max_stderr_bytes: 8192
+examples:
+  - title: Members JSON
+    args: {}

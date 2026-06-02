@@ -1,0 +1,44 @@
+schema_version: 1
+id: gh.workflow_run_view
+title: gh run view
+kind: exec
+risk: low
+description: Job-by-job result for one workflow run.
+side_effects:
+  - One API call.
+  - Read-only.
+args:
+  - name: repo
+    type: string
+    required: true
+    description: 'Repo in owner/name form.'
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{1,40}/[a-zA-Z0-9_.\\-]{1,100}$"
+  - name: run_id
+    type: integer
+    required: true
+    description: Run ID (databaseId from run list).
+    validation:
+      min: 1
+      max: 999999999999
+execution:
+  command:
+    binary: gh
+    argv:
+      - "run"
+      - "view"
+      - "{{ args.run_id }}"
+      - "--repo"
+      - "{{ args.repo }}"
+      - "--json"
+      - "name,conclusion,jobs,createdAt,updatedAt"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: One run
+    args:
+      repo: "andrewdryga/emisar"
+      run_id: 1234567890

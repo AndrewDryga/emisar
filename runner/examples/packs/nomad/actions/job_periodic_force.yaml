@@ -1,0 +1,27 @@
+schema_version: 1
+id: nomad.job_periodic_force
+title: nomad job periodic force <id>
+kind: exec
+risk: medium
+description: Force-runs one periodic job NOW, ignoring schedule.
+side_effects:
+  - A new periodic child job is created and dispatched.
+  - Counts toward normal job history.
+args:
+  - name: job
+    type: string
+    required: true
+    description: Periodic job ID.
+    validation:
+      pattern: "^[a-zA-Z0-9_\\-]{1,128}$"
+execution:
+  command: {binary: /usr/bin/nomad, argv: ["job", "periodic", "force", "{{ args.job }}"]}
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Force-run
+    args:
+      job: "nightly-backup"

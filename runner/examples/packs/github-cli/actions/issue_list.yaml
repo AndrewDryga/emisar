@@ -1,0 +1,46 @@
+schema_version: 1
+id: gh.issue_list
+title: gh issue list
+kind: exec
+risk: low
+description: Open issues for one repo.
+side_effects:
+  - One API call.
+  - Read-only.
+args:
+  - name: repo
+    type: string
+    required: true
+    description: 'Repo in owner/name form.'
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{1,40}/[a-zA-Z0-9_.\\-]{1,100}$"
+  - name: state
+    type: string
+    required: false
+    default: "open"
+    description: open | closed | all.
+    validation:
+      enum: ["open", "closed", "all"]
+execution:
+  command:
+    binary: gh
+    argv:
+      - "issue"
+      - "list"
+      - "--repo"
+      - "{{ args.repo }}"
+      - "--state"
+      - "{{ args.state }}"
+      - "--limit"
+      - "100"
+      - "--json"
+      - "number,title,author,state,labels,createdAt,updatedAt"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: Open issues
+    args:
+      repo: "andrewdryga/emisar"

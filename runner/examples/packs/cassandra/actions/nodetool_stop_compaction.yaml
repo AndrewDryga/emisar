@@ -1,0 +1,27 @@
+schema_version: 1
+id: cassandra.nodetool_stop_compaction
+title: nodetool stop <operation>
+kind: exec
+risk: high
+description: 'Stops in-flight operations of one type (COMPACTION, CLEANUP, VERIFY, etc).'
+side_effects:
+  - In-flight ops of the named type are aborted.
+  - SSTables in progress are abandoned (no partial result).
+args:
+  - name: operation
+    type: string
+    required: true
+    description: Operation type.
+    validation:
+      enum: ["COMPACTION", "VALIDATION", "CLEANUP", "SCRUB", "VERIFY", "INDEX_BUILD", "VIEW_BUILD", "ANTICOMPACTION"]
+execution:
+  command: {binary: /usr/bin/nodetool, argv: ["stop", "{{ args.operation }}"]}
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 8192
+examples:
+  - title: Stop all compactions
+    args:
+      operation: "COMPACTION"

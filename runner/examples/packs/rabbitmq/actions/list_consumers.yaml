@@ -1,0 +1,23 @@
+schema_version: 1
+id: rmq.list_consumers
+title: rabbitmqctl list_consumers
+kind: exec
+risk: low
+description: All active consumers + their queue + ack-mode + prefetch.
+side_effects:
+  - One CLI call.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: rabbitmqctl
+    argv:
+      - "list_consumers"
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: Consumers
+    args: {}

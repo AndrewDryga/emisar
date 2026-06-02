@@ -1,0 +1,24 @@
+schema_version: 1
+id: es.cat_thread_pool
+title: GET /_cat/thread_pool
+kind: exec
+risk: low
+description: Per-node thread pool queue + rejection counts. Use to spot search/write thread saturation.
+side_effects:
+  - One GET request.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "curl -sS -u \"$ELASTIC_USER:$ELASTIC_PASSWORD\" \"$ELASTIC_URL/_cat/thread_pool?v\""
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 131072
+  max_stderr_bytes: 8192
+examples:
+  - title: Thread pools
+    args: {}

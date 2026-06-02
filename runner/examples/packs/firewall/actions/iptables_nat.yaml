@@ -1,0 +1,22 @@
+schema_version: 1
+id: fw.iptables_nat
+title: iptables -L -nv (nat table)
+kind: exec
+risk: low
+description: All nat-table rules — DNAT/SNAT/MASQUERADE.
+side_effects:
+  - One netfilter query.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /usr/sbin/iptables
+    argv: ["-L", "-nv", "--line-numbers", "-t", "nat"]
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+examples:
+  - title: NAT rules
+    args: {}

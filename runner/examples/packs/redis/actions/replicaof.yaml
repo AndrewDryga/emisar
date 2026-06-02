@@ -1,0 +1,45 @@
+schema_version: 1
+id: redis.replicaof
+title: REPLICAOF
+kind: exec
+risk: critical
+description: >
+  Reconfigures replication. REPLICAOF NO ONE promotes this node to
+  master (used in unmanaged failover). REPLICAOF host port reassigns
+  this node as a replica of host:port and triggers a full sync —
+  the local dataset is REPLACED. Misuse can wipe live data.
+side_effects:
+  - Replication topology changes immediately.
+  - "If becoming a replica: local dataset is replaced by the new master's snapshot."
+  - "If promoted to master: existing replicas of the old master may still follow it."
+args:
+  - name: host
+    type: string
+    required: true
+    description: New master host, or the literal "NO" to demote.
+    validation:
+      pattern: "^[a-zA-Z0-9._\\-]{1,253}$"
+  - name: port
+    type: string
+    required: true
+    description: New master port (1-65535), or the literal "ONE" if host is "NO".
+    validation:
+      pattern: "^([1-9][0-9]{0,4}|ONE)$"
+execution:
+  command:
+    binary: /usr/bin/redis-cli
+    argv: ["REPLICAOF", "{{ args.host }}", "{{ args.port }}"]
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Promote to master
+    args:
+      host: "NO"
+      port: "ONE"
+  - title: Become replica of 10.0.0.5:6379
+    args:
+      host: "10.0.0.5"
+      port: "6379"

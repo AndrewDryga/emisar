@@ -1,0 +1,39 @@
+schema_version: 1
+id: kafka.alter_topic_retention
+title: Set topic retention.ms
+kind: exec
+risk: high
+description: Sets `retention.ms` on a topic. Lower values cause old data to be deleted in the next log roll.
+side_effects:
+  - Old segments past retention will be deleted on next log roll.
+  - Replication lag may briefly spike during cleanup.
+args:
+  - name: topic
+    type: string
+    required: true
+    description: Topic name.
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{1,249}$"
+  - name: retention_ms
+    type: integer
+    required: true
+    description: New retention.ms.
+    validation:
+      min: 60000
+      max: 31536000000
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "kafka-configs.sh '--bootstrap-server' \"$KAFKA_BOOTSTRAP\" '--alter' '--entity-type' 'topics' '--entity-name' '{{ args.topic }}' '--add-config' 'retention.ms={{ args.retention_ms }}'"
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 8192
+examples:
+  - title: 7-day retention
+    args:
+      topic: "orders"
+      retention_ms: 604800000

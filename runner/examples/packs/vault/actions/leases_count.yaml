@@ -1,0 +1,32 @@
+schema_version: 1
+id: vault.leases_count
+title: vault list sys/leases/lookup/<prefix>
+kind: exec
+risk: low
+description: Count of active leases under one mount prefix.
+side_effects:
+  - One sys/leases/lookup request.
+  - Read-only.
+args:
+  - name: prefix
+    type: string
+    required: true
+    description: Mount/role prefix (no leading slash).
+    validation:
+      pattern: "^[a-zA-Z0-9_./\\-]{1,256}$"
+execution:
+  command:
+    binary: vault
+    argv:
+      - "list"
+      - "-format=json"
+      - "sys/leases/lookup/{{ args.prefix }}"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: Leases under aws/creds/readonly
+    args:
+      prefix: "aws/creds/readonly"

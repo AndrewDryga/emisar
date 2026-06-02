@@ -1,0 +1,23 @@
+schema_version: 1
+id: postgres.unused_indexes
+title: Unused indexes (idx_scan = 0)
+kind: exec
+risk: low
+description: 'Indexes never used since last stats reset. Drop candidates — but verify they''re not for an unrelated path (e.g., uniqueness constraint).'
+side_effects: ["One SELECT.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /usr/bin/psql
+    argv:
+      - "-XAt"
+      - "-c"
+      - "SELECT s.schemaname || '.' || s.relname AS table, s.indexrelname AS index, pg_size_pretty(pg_relation_size(s.indexrelid)) AS size, i.indisunique, i.indisprimary FROM pg_stat_user_indexes s JOIN pg_index i ON i.indexrelid = s.indexrelid WHERE s.idx_scan = 0 AND NOT i.indisunique AND NOT i.indisprimary ORDER BY pg_relation_size(s.indexrelid) DESC LIMIT 50;"
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Drop candidates
+    args: {}

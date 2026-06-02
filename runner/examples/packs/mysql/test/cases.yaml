@@ -1,0 +1,87 @@
+defaults:
+  env:
+    MYSQL_HOST: mysql
+    MYSQL_USER: root
+    MYSQL_PWD: testpass
+cases:
+- action: mysql.analyze_table
+  args:
+    database: app
+    table: orders
+  expect_exit: 0
+- action: mysql.binlog_positions
+  args: {}
+  expect_exit: 0
+- action: mysql.connections_summary
+  args: {}
+  expect_exit: 0
+- action: mysql.db_sizes
+  args: {}
+  expect_exit: 0
+- action: mysql.engines
+  args: {}
+  expect_exit: 0
+- action: mysql.flush_logs
+  args: {}
+  expect_exit: 0
+- action: mysql.flush_status
+  args: {}
+  expect_exit: 0
+- action: mysql.gtid_executed
+  args: {}
+  expect_exit: 0
+- action: mysql.index_unused
+  args: {}
+  expect_exit: 0
+- action: mysql.innodb_status
+  args: {}
+  expect_exit: 0
+- action: mysql.kill_connection
+  args:
+    thread_id: 12345
+  skip: mutator skipped by default (high); set --include=mysql.kill_connection to run
+- action: mysql.kill_query
+  args:
+    thread_id: 12345
+  skip: mutator skipped by default (high); set --include=mysql.kill_query to run
+- action: mysql.lock_waits
+  args: {}
+  expect_exit: 0
+- action: mysql.master_status
+  args: {}
+  expect_exit: 0
+- action: mysql.open_tables
+  args: {}
+  expect_exit: 0
+- action: mysql.optimize_table
+  args:
+    database: app
+    table: orders
+  skip: mutator skipped by default (high); set --include=mysql.optimize_table to run
+- action: mysql.processlist
+  args: {}
+  expect_exit: 0
+- action: mysql.replica_status
+  args: {}
+  expect_exit: 0
+- action: mysql.slow_queries
+  args: {}
+  expect_exit: 0
+- action: mysql.status
+  args: {}
+  expect_exit: 0
+- action: mysql.table_io_summary
+  args: {}
+  expect_exit: 0
+- action: mysql.table_sizes
+  args: {}
+  expect_exit: 0
+- action: mysql.uptime
+  args: {}
+  expect_exit: 0
+- action: mysql.users_grants
+  args: {}
+  expect_exit: 0
+- action: mysql.variables
+  args: {}
+  expect_exit: 0

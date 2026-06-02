@@ -1,0 +1,24 @@
+schema_version: 1
+id: kafka.preferred_leader_election
+title: Trigger preferred-leader election
+kind: exec
+risk: high
+description: Forces preferred-leader election cluster-wide. Use after a broker restart leaves leaders skewed.
+side_effects:
+  - Brief leadership transitions; in-flight produce/consume may retry.
+  - May cause a temporary spike in metadata churn.
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "kafka-leader-election.sh '--bootstrap-server' \"$KAFKA_BOOTSTRAP\" '--election-type' 'PREFERRED' '--all-topic-partitions'"
+  timeout: 5m
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Election across cluster
+    args: {}

@@ -1,0 +1,24 @@
+schema_version: 1
+id: haproxy.show_backend
+title: show backend
+kind: exec
+risk: low
+description: List backend names.
+side_effects:
+  - One admin socket command.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "echo 'show backend' | socat - \"$HAPROXY_SOCK\""
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Backends
+    args: {}

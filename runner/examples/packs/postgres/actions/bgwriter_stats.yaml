@@ -1,0 +1,23 @@
+schema_version: 1
+id: postgres.bgwriter_stats
+title: pg_stat_bgwriter
+kind: exec
+risk: low
+description: Background writer + checkpoint stats since stats reset.
+side_effects: ["One SELECT.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /usr/bin/psql
+    argv:
+      - "-XAt"
+      - "-c"
+      - "SELECT * FROM pg_stat_bgwriter;"
+  timeout: 10s
+output:
+  parser: text
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 8192
+examples:
+  - title: bgwriter
+    args: {}

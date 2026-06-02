@@ -1,0 +1,29 @@
+schema_version: 1
+id: redis.type_of
+title: TYPE key
+kind: exec
+risk: low
+description: Datatype of one key (string, list, set, hash, zset, stream, none).
+side_effects:
+  - One TYPE command.
+  - Read-only metadata.
+args:
+  - name: key
+    type: string
+    required: true
+    description: Key name.
+    validation:
+      pattern: "^[A-Za-z0-9_:.\\-{}@#/=+]{1,512}$"
+execution:
+  command:
+    binary: /usr/bin/redis-cli
+    argv: ["TYPE", "{{ args.key }}"]
+  timeout: 5s
+output:
+  parser: text
+  max_stdout_bytes: 1024
+  max_stderr_bytes: 8192
+examples:
+  - title: Type of a session key
+    args:
+      key: "session:abc123"

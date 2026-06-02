@@ -1,0 +1,34 @@
+schema_version: 1
+id: mysql.variables
+title: SHOW GLOBAL VARIABLES (filtered)
+kind: exec
+risk: low
+description: Global variables filtered by glob pattern. Default returns InnoDB + buffer settings.
+side_effects:
+  - One SHOW GLOBAL VARIABLES.
+  - Read-only.
+args:
+  - name: pattern
+    type: string
+    required: false
+    default: "innodb_%"
+    description: SHOW VARIABLES LIKE pattern.
+    validation:
+      pattern: "^[a-zA-Z0-9_%]{1,64}$"
+execution:
+  command:
+    binary: /usr/bin/mysql
+    argv:
+      - "-e"
+      - "SHOW GLOBAL VARIABLES LIKE '{{ args.pattern }}'"
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: InnoDB settings
+    args: {}
+  - title: max_connections
+    args:
+      pattern: "max_%"

@@ -1,0 +1,22 @@
+schema_version: 1
+id: mc.stats
+title: stats (general)
+kind: exec
+risk: low
+description: 'Uptime, current connections, get/set rates, hit/miss, bytes, evictions.'
+side_effects: ["One ASCII protocol call.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "printf 'stats\\nquit\\n' | nc -w 5 \"${MEMCACHED_HOST:-127.0.0.1}\" \"${MEMCACHED_PORT:-11211}\""
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Stats
+    args: {}

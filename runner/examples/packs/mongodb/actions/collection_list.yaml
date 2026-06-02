@@ -1,0 +1,31 @@
+schema_version: 1
+id: mongo.collection_list
+title: db.getCollectionNames()
+kind: exec
+risk: low
+description: List collections in one database.
+side_effects:
+  - One listCollections command.
+  - Read-only.
+args:
+  - name: database
+    type: string
+    required: true
+    description: Database name.
+    validation:
+      pattern: "^[a-zA-Z0-9_\\-]{1,63}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "mongosh \"$MONGO_URI\" '--quiet' '--eval' \"JSON.stringify(db.getSiblingDB('{{ args.database }}').getCollectionNames())\""
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Collections in DB
+    args:
+      database: "production"

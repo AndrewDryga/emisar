@@ -1,0 +1,22 @@
+schema_version: 1
+id: ch.merge_queue
+title: SELECT * FROM system.merges
+kind: exec
+risk: low
+description: In-progress + queued merges.
+side_effects: ["One SELECT.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "clickhouse-client --host \"${CH_HOST:-localhost}\" --user \"${CH_USER:-default}\" --password \"$CH_PASSWORD\" --query \"SELECT database, table, elapsed, progress, num_parts, source_part_names, result_part_name, total_size_bytes_compressed, memory_usage FROM system.merges FORMAT JSONEachRow\""
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: Active merges
+    args: {}

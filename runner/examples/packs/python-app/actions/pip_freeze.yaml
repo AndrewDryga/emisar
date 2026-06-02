@@ -1,0 +1,22 @@
+schema_version: 1
+id: py.pip_freeze
+title: $PY_VENV/bin/pip freeze
+kind: exec
+risk: low
+description: Requirements-format dump.
+side_effects: ["One pip freeze call.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "\"${PY_VENV:-/opt/app/venv}/bin/pip\" freeze"
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: Freeze
+    args: {}

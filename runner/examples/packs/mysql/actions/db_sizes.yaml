@@ -1,0 +1,24 @@
+schema_version: 1
+id: mysql.db_sizes
+title: Database sizes
+kind: exec
+risk: low
+description: Per-database data + index size summary. Read-only.
+side_effects:
+  - One SELECT against information_schema.tables.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /usr/bin/mysql
+    argv:
+      - "-e"
+      - "SELECT table_schema, ROUND(SUM(data_length)/1024/1024, 2) AS data_mb, ROUND(SUM(index_length)/1024/1024, 2) AS idx_mb, ROUND(SUM(data_length+index_length)/1024/1024, 2) AS total_mb FROM information_schema.tables GROUP BY table_schema ORDER BY SUM(data_length+index_length) DESC;"
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 32768
+  max_stderr_bytes: 8192
+examples:
+  - title: Per-DB sizes
+    args: {}

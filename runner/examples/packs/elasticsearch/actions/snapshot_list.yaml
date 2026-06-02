@@ -1,0 +1,31 @@
+schema_version: 1
+id: es.snapshot_list
+title: GET /_snapshot/<repo>/_all
+kind: exec
+risk: low
+description: Lists snapshots in one repository.
+side_effects:
+  - One GET request.
+  - Read-only.
+args:
+  - name: repository
+    type: string
+    required: true
+    description: Snapshot repository.
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{1,128}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "curl -sS -u \"$ELASTIC_USER:$ELASTIC_PASSWORD\" \"$ELASTIC_URL/_snapshot/{{ args.repository }}/_all?pretty\""
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: Snapshots in 's3-backup'
+    args:
+      repository: "s3-backup"

@@ -1,0 +1,22 @@
+schema_version: 1
+id: mysql.open_tables
+title: SHOW OPEN TABLES
+kind: exec
+risk: low
+description: Tables currently in the table cache. Read-only.
+side_effects:
+  - One SHOW OPEN TABLES.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /usr/bin/mysql
+    argv: ["-e", "SHOW OPEN TABLES"]
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 131072
+  max_stderr_bytes: 8192
+examples:
+  - title: Open tables
+    args: {}

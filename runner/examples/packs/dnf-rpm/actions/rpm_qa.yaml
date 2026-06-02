@@ -1,0 +1,18 @@
+schema_version: 1
+id: rpm.rpm_qa
+title: rpm -qa
+kind: exec
+risk: low
+description: All installed RPMs.
+side_effects: ["One rpmdb read.", "Read-only."]
+args: []
+execution:
+  command: {binary: /usr/bin/rpm, argv: ["-qa"]}
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: All packages
+    args: {}

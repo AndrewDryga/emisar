@@ -1,0 +1,24 @@
+schema_version: 1
+id: kafka.unavailable_partitions
+title: Unavailable partitions
+kind: exec
+risk: low
+description: Partitions with no leader. These mean writes are failing.
+side_effects:
+  - One metadata request.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "kafka-topics.sh '--bootstrap-server' \"$KAFKA_BOOTSTRAP\" '--describe' '--unavailable-partitions'"
+  timeout: 60s
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Unavailable partitions
+    args: {}

@@ -1,0 +1,32 @@
+schema_version: 1
+id: consul.destroy_session
+title: PUT /v1/session/destroy/<id>
+kind: exec
+risk: medium
+description: Destroys one session. Any locks held are released; KV entries with release behavior are unlocked.
+side_effects:
+  - Session is destroyed immediately.
+  - Held KV locks released (or keys deleted, if behavior=delete).
+  - Distributed lock holders may need to handle the loss.
+args:
+  - name: session_id
+    type: string
+    required: true
+    description: Session UUID.
+    validation:
+      pattern: "^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "curl -sS -XPUT -H \"X-Consul-Token: $CONSUL_HTTP_TOKEN\" \"$CONSUL_HTTP_ADDR/v1/session/destroy/{{ args.session_id }}\""
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Destroy one
+    args:
+      session_id: "abc12345-1234-5678-9abc-def012345678"

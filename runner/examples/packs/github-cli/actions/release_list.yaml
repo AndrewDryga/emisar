@@ -1,0 +1,35 @@
+schema_version: 1
+id: gh.release_list
+title: gh release list
+kind: exec
+risk: low
+description: Recent releases.
+side_effects:
+  - One API call.
+  - Read-only.
+args:
+  - name: repo
+    type: string
+    required: true
+    description: 'Repo in owner/name form.'
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{1,40}/[a-zA-Z0-9_.\\-]{1,100}$"
+execution:
+  command:
+    binary: gh
+    argv:
+      - "release"
+      - "list"
+      - "--repo"
+      - "{{ args.repo }}"
+      - "--limit"
+      - "20"
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Releases
+    args:
+      repo: "andrewdryga/emisar"

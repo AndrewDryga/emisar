@@ -1,0 +1,27 @@
+schema_version: 1
+
+id: fail2ban
+name: fail2ban
+version: 0.1.0
+description: >
+  fail2ban inventory + per-jail banned-IP listings plus operator mutators
+  for incident response: ban an IP into a jail, unban a false positive,
+  reload jail filters from disk.
+vendor: emisar
+homepage: https://github.com/andrewdryga/emisar
+
+requires:
+  os:
+    - linux
+  binaries:
+    - fail2ban-client
+
+actions:
+  - actions/status.yaml
+  - actions/version.yaml
+  - actions/jail_status.yaml
+  - actions/banned_ips.yaml
+  - actions/log_tail.yaml
+  - actions/unban_ip.yaml
+  - actions/banip.yaml
+  - actions/reload.yaml

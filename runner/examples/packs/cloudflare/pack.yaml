@@ -1,0 +1,30 @@
+schema_version: 1
+
+id: cloudflare
+name: Cloudflare zone operations
+version: 0.1.0
+description: >
+  Read-only zone, DNS record, cache, firewall, and analytics introspection
+  plus narrow mutators (purge cache, enable/disable dev mode). Auth via
+  CF_API_TOKEN env var.
+vendor: emisar
+homepage: https://github.com/andrewdryga/emisar
+
+requires:
+  os:
+    - linux
+  binaries:
+    - curl
+
+actions:
+  - actions/list_zones.yaml
+  - actions/zone_details.yaml
+  - actions/dns_records.yaml
+  - actions/cache_settings.yaml
+  - actions/firewall_rules.yaml
+  - actions/zone_analytics.yaml
+  - actions/page_rules.yaml
+  - actions/purge_all_cache.yaml
+  - actions/purge_url.yaml
+  - actions/dev_mode_on.yaml
+  - actions/dev_mode_off.yaml

@@ -1,0 +1,34 @@
+schema_version: 1
+
+id: linux.kernel_modules
+title: Loaded kernel modules sorted by size
+kind: exec
+risk: low
+
+description: >
+  `lsmod` sorted by size, top 30. Useful to spot unexpected modules
+  loaded on a production host (rootkits, debug tooling, vendor
+  drivers). Read-only.
+
+side_effects:
+  - One lsmod invocation.
+  - Read-only.
+
+args: []
+
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "lsmod | sort -k 3 -n -r | head -30"
+  timeout: 5s
+
+output:
+  parser: text
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 4096
+
+examples:
+  - title: Largest loaded modules
+    args: {}

@@ -1,0 +1,33 @@
+schema_version: 1
+id: es.close_index
+title: POST /<index>/_close
+kind: exec
+risk: critical
+description: >
+  Closes one index — it becomes unsearchable and unwritable, but stays on disk. Use to "archive" old logs without deleting. Reverse with /_open. **Closed indices count against shard limits in some versions.**
+side_effects:
+  - Index becomes read-only AND unsearchable.
+  - All in-flight requests against it fail.
+  - Reverse with `_open` (not part of this pack).
+args:
+  - name: index
+    type: string
+    required: true
+    description: Index name.
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{1,255}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "curl -sS -u \"$ELASTIC_USER:$ELASTIC_PASSWORD\" -XPOST \"$ELASTIC_URL/{{ args.index }}/_close?pretty\""
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 8192
+examples:
+  - title: Close one index
+    args:
+      index: "logs-2025-12-31"

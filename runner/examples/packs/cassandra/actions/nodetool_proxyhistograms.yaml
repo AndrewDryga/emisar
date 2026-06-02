@@ -1,0 +1,18 @@
+schema_version: 1
+id: cassandra.nodetool_proxyhistograms
+title: nodetool proxyhistograms
+kind: exec
+risk: low
+description: Coordinator-side read/write latency histograms — what clients actually see.
+side_effects: ["One JMX call.", "Read-only."]
+args: []
+execution:
+  command: {binary: /usr/bin/nodetool, argv: ["proxyhistograms"]}
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Coordinator latencies
+    args: {}

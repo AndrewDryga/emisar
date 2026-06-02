@@ -1,0 +1,32 @@
+schema_version: 1
+
+id: podman
+name: Podman containers
+version: 0.1.0
+description: >
+  Read-only inventory + per-container introspection plus narrow mutators
+  (restart, stop, kill, prune). Drop-in alternative for Docker on RHEL /
+  Fedora hosts. Rootless mode supported as long as the runner uid matches
+  the user that owns the containers.
+vendor: emisar
+homepage: https://github.com/andrewdryga/emisar
+
+requires:
+  os:
+    - linux
+  binaries:
+    - podman
+
+actions:
+  - actions/info.yaml
+  - actions/version.yaml
+  - actions/ps.yaml
+  - actions/inspect.yaml
+  - actions/logs.yaml
+  - actions/stats.yaml
+  - actions/images.yaml
+  - actions/system_df.yaml
+  - actions/restart.yaml
+  - actions/stop.yaml
+  - actions/kill.yaml
+  - actions/system_prune.yaml

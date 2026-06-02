@@ -1,0 +1,22 @@
+schema_version: 1
+id: grafana.settings
+title: GET /api/admin/settings
+kind: exec
+risk: low
+description: Server settings (auth, smtp, database paths).
+side_effects: ["One API call.", "Read-only — credentials in output may be partially masked but rely on audit redaction."]
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "curl -sS -H \"Authorization: Bearer $GRAFANA_TOKEN\" \"$GRAFANA_URL/api/admin/settings\""
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: Settings
+    args: {}

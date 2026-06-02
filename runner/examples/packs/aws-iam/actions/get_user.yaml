@@ -1,0 +1,27 @@
+schema_version: 1
+id: iam.get_user
+title: aws iam get-user
+kind: exec
+risk: low
+description: One IAM user's details.
+side_effects: ["One API call.", "Read-only."]
+args:
+  - name: user
+    type: string
+    required: true
+    description: Username.
+    validation:
+      pattern: "^[a-zA-Z0-9_+=,.@\\-]{1,64}$"
+execution:
+  command:
+    binary: aws
+    argv: ["iam", "get-user", "--user-name", "{{ args.user }}", "--output", "json"]
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: One user
+    args:
+      user: "alice"

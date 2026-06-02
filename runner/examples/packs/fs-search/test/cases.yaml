@@ -1,0 +1,67 @@
+defaults:
+  env: {}
+cases:
+- action: fs.count_lines
+  args:
+    path: /var/log/syslog
+  expect_exit: 0
+- action: fs.du_top
+  args:
+    path: /var
+  expect_exit: 0
+- action: fs.file_type
+  args:
+    path: /usr/bin/sshd
+  expect_exit: 0
+- action: fs.find_by_name
+  args:
+    path: /etc
+    glob: '*.conf'
+  expect_exit: 0
+- action: fs.find_large_files
+  args:
+    path: /var
+    min_mb: 500
+  expect_exit: 0
+- action: fs.find_recent_modified
+  args:
+    path: /etc
+    minutes: 1440
+  expect_exit: 0
+- action: fs.find_setuid
+  args: {}
+  expect_exit: 0
+- action: fs.find_world_writable
+  args:
+    path: /opt
+  expect_exit: 0
+- action: fs.grep_file
+  args:
+    path: /var/log/syslog
+    pattern: ERROR
+  expect_exit: 0
+- action: fs.grep_recursive
+  args:
+    path: /opt/app/src
+    pattern: deprecated_call
+  expect_exit: 0
+- action: fs.head_file
+  args:
+    path: /var/log/syslog
+  expect_exit: 0
+- action: fs.ls_long
+  args:
+    path: /etc
+  expect_exit: 0
+- action: fs.sha256_file
+  args:
+    path: /usr/bin/sshd
+  expect_exit: 0
+- action: fs.stat_path
+  args:
+    path: /etc/passwd
+  expect_exit: 0
+- action: fs.tail_file
+  args:
+    path: /var/log/syslog
+  expect_exit: 0

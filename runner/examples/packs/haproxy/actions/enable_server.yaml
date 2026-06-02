@@ -1,0 +1,37 @@
+schema_version: 1
+id: haproxy.enable_server
+title: enable server <backend>/<server>
+kind: exec
+risk: high
+description: Re-enables one backend server that was administratively disabled.
+side_effects:
+  - Server begins receiving traffic again (subject to health checks).
+args:
+  - name: backend
+    type: string
+    required: true
+    description: Backend name.
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{1,64}$"
+  - name: server
+    type: string
+    required: true
+    description: Server name within the backend.
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{1,64}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "echo 'enable server {{ args.backend }}/{{ args.server }}' | socat - \"$HAPROXY_SOCK\""
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Enable api/srv1
+    args:
+      backend: "api"
+      server: "srv1"

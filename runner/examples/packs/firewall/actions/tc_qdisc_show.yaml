@@ -1,0 +1,22 @@
+schema_version: 1
+id: fw.tc_qdisc_show
+title: tc -s qdisc show
+kind: exec
+risk: low
+description: Active traffic-control disciplines per interface + their counters. Use to see traffic shaping in effect.
+side_effects:
+  - One netlink query.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /sbin/tc
+    argv: ["-s", "qdisc", "show"]
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 131072
+  max_stderr_bytes: 8192
+examples:
+  - title: Active qdiscs
+    args: {}

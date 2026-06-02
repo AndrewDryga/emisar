@@ -1,0 +1,24 @@
+schema_version: 1
+id: tf.version
+title: terraform version
+kind: exec
+risk: low
+description: Terraform binary version + provider versions.
+side_effects:
+  - Forks terraform.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "cd \"$TF_DIR\" && terraform version"
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Version
+    args: {}

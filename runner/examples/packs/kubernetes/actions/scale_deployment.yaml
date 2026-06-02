@@ -1,0 +1,56 @@
+schema_version: 1
+id: kubernetes.scale_deployment
+title: Scale a deployment
+kind: exec
+risk: high
+description: >
+  Sets deployment replica count. Use to scale up before a traffic event or scale down to drain.
+side_effects:
+  - Triggers scale up/down.
+  - Pods created or terminated to reach the target replica count.
+args:
+  - name: namespace
+    type: string
+    required: true
+    description: Namespace.
+    validation:
+      pattern: "^[a-z0-9][a-z0-9\\-]{0,62}$"
+  - name: name
+    type: string
+    required: true
+    description: Deployment name.
+    validation:
+      pattern: "^[a-z0-9][a-z0-9.\\-]{0,253}$"
+  - name: replicas
+    type: integer
+    required: true
+    description: Target replica count.
+    validation:
+      min: 0
+      max: 1000
+  - name: context
+    type: string
+    required: false
+    default: ""
+    description: kubeconfig context.
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{0,128}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "kubectl ${KCTX:+--context=$KCTX} -n {{ args.namespace }} scale deploy/{{ args.name }} --replicas={{ args.replicas }}"
+  timeout: 30s
+  env:
+    KCTX: "{{ args.context }}"
+output:
+  parser: text
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 8192
+examples:
+  - title: Scale api to 10 replicas
+    args:
+      namespace: default
+      name: api
+      replicas: 10

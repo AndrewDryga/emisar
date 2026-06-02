@@ -1,0 +1,22 @@
+schema_version: 1
+id: grafana.users
+title: GET /api/users (org admin)
+kind: exec
+risk: low
+description: All users in the current org. Requires an Admin-scoped token.
+side_effects: ["One API call.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "curl -sS -H \"Authorization: Bearer $GRAFANA_TOKEN\" \"$GRAFANA_URL/api/users\""
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: Users
+    args: {}

@@ -1,0 +1,31 @@
+schema_version: 1
+id: kafka.consumer_lag
+title: Consumer lag for a group
+kind: exec
+risk: low
+description: Per-partition lag (log-end-offset minus committed offset) for one consumer group. The canonical "is consumption keeping up?" check.
+side_effects:
+  - One coordinator request.
+  - Read-only.
+args:
+  - name: group
+    type: string
+    required: true
+    description: Consumer group ID.
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{1,255}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "kafka-consumer-groups.sh '--bootstrap-server' \"$KAFKA_BOOTSTRAP\" '--describe' '--group' '{{ args.group }}'"
+  timeout: 60s
+output:
+  parser: text
+  max_stdout_bytes: 131072
+  max_stderr_bytes: 8192
+examples:
+  - title: Lag for one group
+    args:
+      group: "order-processor"

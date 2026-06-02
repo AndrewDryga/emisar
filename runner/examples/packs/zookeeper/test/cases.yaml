@@ -1,0 +1,35 @@
+defaults:
+  env: {}
+cases:
+- action: zk.conf
+  args:
+    server: zk1:2181
+  expect_exit: 0
+- action: zk.cons
+  args:
+    server: zk1:2181
+  expect_exit: 0
+- action: zk.envi
+  args:
+    server: zk1:2181
+  expect_exit: 0
+- action: zk.mntr
+  args:
+    server: zk1:2181
+  expect_exit: 0
+- action: zk.ruok
+  args:
+    server: zk1:2181
+  expect_exit: 0
+- action: zk.srvr
+  args:
+    server: zk1:2181
+  expect_exit: 0
+- action: zk.stat
+  args:
+    server: zk1:2181
+  expect_exit: 0
+- action: zk.wchs
+  args:
+    server: zk1:2181
+  expect_exit: 0

@@ -1,0 +1,81 @@
+schema_version: 1
+
+id: nomad
+name: HashiCorp Nomad
+version: 0.1.0
+description: >
+  Deep Nomad operations — full job lifecycle (inspect, history, scale,
+  dispatch, revert, promote, stop), allocation introspection + restart +
+  signal + stop, node fleet management (drain, eligibility, purge),
+  evaluation + deployment status, operator raft + autopilot, CSI + host
+  volumes, ACL policies + tokens, namespaces + quotas. Authenticates via
+  NOMAD_ADDR + NOMAD_TOKEN on the runner host.
+vendor: emisar
+homepage: https://github.com/andrewdryga/emisar
+
+requires:
+  os:
+    - linux
+  binaries:
+    - nomad
+
+actions:
+  # Cluster / agent
+  - actions/agent_info.yaml
+  - actions/agent_self.yaml
+  - actions/agent_members.yaml
+  - actions/server_members.yaml
+  - actions/leader.yaml
+  - actions/agent_force_leave.yaml
+  # Nodes (Nomad clients)
+  - actions/node_status_all.yaml
+  - actions/node_status_one.yaml
+  - actions/node_eligibility_show.yaml
+  - actions/node_drain.yaml
+  - actions/node_drain_done.yaml
+  - actions/node_eligibility_disable.yaml
+  - actions/node_eligibility_enable.yaml
+  - actions/node_purge.yaml
+  # Jobs
+  - actions/job_status_all.yaml
+  - actions/job_status_one.yaml
+  - actions/job_inspect.yaml
+  - actions/job_history.yaml
+  - actions/job_allocations.yaml
+  - actions/job_evaluations.yaml
+  - actions/job_deployments.yaml
+  - actions/job_periodic_force.yaml
+  - actions/job_dispatch.yaml
+  - actions/job_revert.yaml
+  - actions/job_scale.yaml
+  - actions/job_promote.yaml
+  - actions/job_stop.yaml
+  # Allocations
+  - actions/alloc_status.yaml
+  - actions/alloc_logs.yaml
+  - actions/alloc_logs_stderr.yaml
+  - actions/alloc_stats.yaml
+  - actions/alloc_restart.yaml
+  - actions/alloc_signal.yaml
+  - actions/alloc_stop.yaml
+  # Evaluations / deployments
+  - actions/eval_status.yaml
+  - actions/eval_list.yaml
+  - actions/deployment_status.yaml
+  # Operator (raft / autopilot)
+  - actions/operator_raft_list_peers.yaml
+  - actions/operator_raft_remove_peer.yaml
+  - actions/operator_autopilot_get_config.yaml
+  - actions/operator_autopilot_state.yaml
+  # Volumes
+  - actions/csi_volume_list.yaml
+  - actions/csi_volume_status.yaml
+  - actions/host_volume_list.yaml
+  # ACL
+  - actions/acl_policies.yaml
+  - actions/acl_token_self.yaml
+  # Namespaces / quotas
+  - actions/namespace_list.yaml
+  - actions/quota_list.yaml
+  # System
+  - actions/system_gc.yaml

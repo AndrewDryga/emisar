@@ -1,0 +1,32 @@
+schema_version: 1
+
+id: docker.images
+title: docker images
+kind: exec
+risk: low
+
+description: >
+  Lists images on the host. Use to verify expected tags are present
+  before a deploy or to find old images consuming disk. Read-only.
+
+side_effects:
+  - One docker images invocation.
+  - Read-only.
+
+args: []
+
+execution:
+  command:
+    binary: /usr/bin/docker
+    argv:
+      - "images"
+  timeout: 30s
+
+output:
+  parser: text
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 16384
+
+examples:
+  - title: List image cache
+    args: {}

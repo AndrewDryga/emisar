@@ -1,0 +1,31 @@
+schema_version: 1
+id: redis.object_idletime
+title: OBJECT IDLETIME key
+kind: exec
+risk: low
+description: >
+  Seconds since the key was last accessed. Requires an LRU
+  maxmemory-policy. Use to identify cold keys for manual eviction.
+side_effects:
+  - One OBJECT IDLETIME command.
+  - Read-only metadata; does not bump LRU age.
+args:
+  - name: key
+    type: string
+    required: true
+    description: Key name.
+    validation:
+      pattern: "^[A-Za-z0-9_:.\\-{}@#/=+]{1,512}$"
+execution:
+  command:
+    binary: /usr/bin/redis-cli
+    argv: ["OBJECT", "IDLETIME", "{{ args.key }}"]
+  timeout: 5s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: How cold is this key?
+    args:
+      key: "user:42"

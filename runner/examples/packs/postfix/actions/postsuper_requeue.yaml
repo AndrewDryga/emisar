@@ -1,0 +1,35 @@
+schema_version: 1
+id: postfix.postsuper_requeue
+title: postsuper -r <qid|ALL>
+kind: exec
+risk: medium
+description: >
+  Re-queue one message (or ALL deferred). The message is re-classified
+  from the deferred queue back to active, retrying delivery.
+side_effects:
+  - Message(s) moved from deferred to active.
+  - Delivery attempted on next tick.
+  - ALL can cause a delivery burst on a large queue.
+args:
+  - name: qid
+    type: string
+    required: true
+    description: Queue ID, or the literal "ALL".
+    validation:
+      pattern: "^([A-F0-9]{8,20}|ALL)$"
+execution:
+  command:
+    binary: /usr/sbin/postsuper
+    argv: ["-r", "{{ args.qid }}"]
+  timeout: 60s
+output:
+  parser: text
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 8192
+examples:
+  - title: Requeue one
+    args:
+      qid: "3ABCDEF12345"
+  - title: Requeue all deferred
+    args:
+      qid: "ALL"

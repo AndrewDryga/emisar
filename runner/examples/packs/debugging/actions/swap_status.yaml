@@ -1,0 +1,34 @@
+schema_version: 1
+
+id: debugging.swap_status
+title: Swap usage summary
+kind: exec
+risk: low
+
+description: >
+  `swapon --show` plus the per-process swap usage (top 20).
+  Read-only. Use to spot a host actively swapping — swap-in I/O
+  is the slowest userland-visible memory tier.
+
+side_effects:
+  - One swapon invocation + a /proc scan.
+  - Read-only.
+
+args: []
+
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "swapon --show; echo; cat /proc/swaps; echo; for f in /proc/[0-9]*/status; do awk '/VmSwap|Name/{printf \"%s %s \",$2,$3}END{print \"\"}' \"$f\" 2>/dev/null; done | sort -k 2 -n -r | head -20"
+  timeout: 15s
+
+output:
+  parser: text
+  max_stdout_bytes: 32768
+  max_stderr_bytes: 8192
+
+examples:
+  - title: Swap usage + top swappers
+    args: {}

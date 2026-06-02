@@ -1,0 +1,30 @@
+schema_version: 1
+
+id: bind
+name: BIND DNS server
+version: 0.1.0
+description: >
+  Authoritative/recursive BIND ops: rndc status + stats, zone validation,
+  cache inspection, local resolution probes, plus narrow operator actions
+  (rndc reload, zone freeze/thaw). Requires rndc key on the runner host.
+vendor: emisar
+homepage: https://github.com/andrewdryga/emisar
+
+requires:
+  os:
+    - linux
+  binaries:
+    - rndc
+
+actions:
+  - actions/rndc_status.yaml
+  - actions/rndc_stats.yaml
+  - actions/named_checkconf.yaml
+  - actions/named_checkzone.yaml
+  - actions/zone_dump.yaml
+  - actions/query_local.yaml
+  - actions/zone_serial.yaml
+  - actions/rndc_reload.yaml
+  - actions/rndc_freeze.yaml
+  - actions/rndc_thaw.yaml
+  - actions/rndc_flush.yaml

@@ -1,0 +1,24 @@
+schema_version: 1
+id: kafka.list_topics
+title: List topics
+kind: exec
+risk: low
+description: All topics in the cluster.
+side_effects:
+  - One metadata request.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "kafka-topics.sh '--bootstrap-server' \"$KAFKA_BOOTSTRAP\" '--list'"
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: All topics
+    args: {}

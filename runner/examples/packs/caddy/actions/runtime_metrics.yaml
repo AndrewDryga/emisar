@@ -1,0 +1,22 @@
+schema_version: 1
+id: caddy.runtime_metrics
+title: GET /metrics (Prometheus exposition)
+kind: exec
+risk: low
+description: Caddy's Prometheus-format metrics endpoint.
+side_effects: ["One admin GET.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "curl -sS \"${CADDY_ADMIN:-http://127.0.0.1:2019}/metrics\""
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: Metrics
+    args: {}

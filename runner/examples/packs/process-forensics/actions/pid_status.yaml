@@ -1,0 +1,31 @@
+schema_version: 1
+id: forensics.pid_status
+title: /proc/PID/status
+kind: exec
+risk: low
+description: Full /proc/PID/status — uid/gid, capability set, signal state, oom score.
+side_effects:
+  - One /proc read.
+  - Read-only.
+args:
+  - name: pid
+    type: integer
+    required: true
+    description: PID.
+    validation:
+      min: 1
+      max: 4194304
+execution:
+  command:
+    binary: /bin/cat
+    argv:
+      - "/proc/{{ args.pid }}/status"
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Status of PID 1
+    args:
+      pid: 1

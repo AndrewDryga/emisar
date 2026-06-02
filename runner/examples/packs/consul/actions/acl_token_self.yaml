@@ -1,0 +1,22 @@
+schema_version: 1
+id: consul.acl_token_self
+title: GET /v1/acl/token/self
+kind: exec
+risk: low
+description: Metadata on the runner's own token — accessor, policies, expiration.
+side_effects: ["One ACL request.", "Read-only — the secret is not returned."]
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "curl -sS -H \"X-Consul-Token: $CONSUL_HTTP_TOKEN\" \"$CONSUL_HTTP_ADDR/v1/acl/token/self\""
+  timeout: 15s
+output:
+  parser: json
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Self
+    args: {}

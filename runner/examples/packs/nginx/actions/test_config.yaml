@@ -1,0 +1,34 @@
+schema_version: 1
+
+id: nginx.test_config
+title: nginx -t
+kind: exec
+risk: low
+
+description: >
+  Runs `nginx -t`. Validates the loaded config without applying. Use
+  before every `nginx.reload`. A failing config returns non-zero exit
+  and the error lines go to stderr.
+
+side_effects:
+  - One nginx -t invocation.
+  - Opens files referenced in the config (logs, modules).
+  - Does NOT change runtime state.
+
+args: []
+
+execution:
+  command:
+    binary: /usr/sbin/nginx
+    argv:
+      - "-t"
+  timeout: 30s
+
+output:
+  parser: text
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 32768
+
+examples:
+  - title: Validate nginx config
+    args: {}

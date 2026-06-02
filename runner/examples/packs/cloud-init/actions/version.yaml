@@ -1,0 +1,22 @@
+schema_version: 1
+id: cloud-init.version
+title: cloud-init --version
+kind: exec
+risk: low
+description: Build + version string for the cloud-init on this host.
+side_effects:
+  - One CLI call.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /usr/bin/cloud-init
+    argv: ["--version"]
+  timeout: 5s
+output:
+  parser: text
+  max_stdout_bytes: 1024
+  max_stderr_bytes: 4096
+examples:
+  - title: Version
+    args: {}

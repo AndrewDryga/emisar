@@ -1,0 +1,24 @@
+schema_version: 1
+id: redis.cluster_info
+title: CLUSTER INFO
+kind: exec
+risk: low
+description: >
+  Cluster status — state ok/fail, slots assigned/ok/pfail/fail,
+  known nodes, size, epoch, my epoch, messages sent/received.
+side_effects:
+  - One CLUSTER INFO command.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /usr/bin/redis-cli
+    argv: ["CLUSTER", "INFO"]
+  timeout: 10s
+output:
+  parser: text
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Cluster health summary
+    args: {}

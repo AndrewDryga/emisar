@@ -1,0 +1,32 @@
+schema_version: 1
+id: jvm.thread_count
+title: OS thread count for a JVM
+kind: exec
+risk: low
+description: Counts /proc/<pid>/task entries — fastest way to spot "do we have an unbounded thread pool?"
+side_effects:
+  - One /proc read.
+  - Read-only.
+args:
+  - name: pid
+    type: integer
+    required: true
+    description: JVM PID.
+    validation:
+      min: 1
+      max: 4194304
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "ls /proc/{{ args.pid }}/task | wc -l"
+  timeout: 5s
+output:
+  parser: text
+  max_stdout_bytes: 64
+  max_stderr_bytes: 4096
+examples:
+  - title: Thread count
+    args:
+      pid: 4321

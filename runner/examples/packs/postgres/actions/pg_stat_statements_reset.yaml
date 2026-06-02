@@ -1,0 +1,25 @@
+schema_version: 1
+id: postgres.pg_stat_statements_reset
+title: pg_stat_statements_reset()
+kind: exec
+risk: medium
+description: Clears accumulated pg_stat_statements counters. Use to start a clean measurement window.
+side_effects:
+  - All accumulated counters are reset to 0.
+  - Future queries start from a clean baseline.
+args: []
+execution:
+  command:
+    binary: /usr/bin/psql
+    argv:
+      - "-XAt"
+      - "-c"
+      - "SELECT pg_stat_statements_reset();"
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 256
+  max_stderr_bytes: 8192
+examples:
+  - title: Reset
+    args: {}

@@ -1,0 +1,24 @@
+schema_version: 1
+id: mysql.index_unused
+title: Unused indexes
+kind: exec
+risk: low
+description: Indexes with zero reads since uptime — candidates for dropping (frees disk + speeds writes). Read-only.
+side_effects:
+  - One SELECT against performance_schema.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /usr/bin/mysql
+    argv:
+      - "-e"
+      - "SELECT object_schema, object_name, index_name FROM performance_schema.table_io_waits_summary_by_index_usage WHERE index_name IS NOT NULL AND count_star = 0 AND object_schema NOT IN ('mysql','performance_schema') ORDER BY object_schema, object_name;"
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 131072
+  max_stderr_bytes: 8192
+examples:
+  - title: Indexes nobody reads
+    args: {}

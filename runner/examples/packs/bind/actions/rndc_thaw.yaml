@@ -1,0 +1,27 @@
+schema_version: 1
+id: bind.rndc_thaw
+title: rndc thaw <zone>
+kind: exec
+risk: medium
+description: Unfreeze a zone — resumes dynamic updates + reloads it.
+side_effects: ["Dynamic updates resume.", "Zone reloads."]
+args:
+  - name: zone
+    type: string
+    required: true
+    description: Zone name.
+    validation:
+      pattern: "^[a-zA-Z0-9.\\-]{1,253}$"
+execution:
+  command:
+    binary: /usr/sbin/rndc
+    argv: ["thaw", "{{ args.zone }}"]
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Thaw after edit
+    args:
+      zone: "example.com"

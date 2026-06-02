@@ -1,0 +1,23 @@
+schema_version: 1
+id: nginx.stop_immediate
+title: nginx stop (immediate)
+kind: exec
+risk: critical
+description: >
+  `nginx -s stop` — workers stop NOW. In-flight requests are dropped mid-byte. Prefer `nginx.quit_graceful` unless the server is hung.
+side_effects:
+  - Workers SIGTERM immediately.
+  - In-flight requests dropped.
+args: []
+execution:
+  command:
+    binary: /usr/sbin/nginx
+    argv: ["-s", "stop"]
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Force-stop nginx
+    args: {}

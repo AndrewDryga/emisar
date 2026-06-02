@@ -1,0 +1,22 @@
+schema_version: 1
+id: cassandra.cqlsh_system_size_estimates
+title: SELECT * FROM system.size_estimates
+kind: exec
+risk: low
+description: Per-table partition + size estimates from the gossiped size_estimates table.
+side_effects: ["One CQL query.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "cqlsh -e 'SELECT keyspace_name, table_name, range_start, range_end, mean_partition_size, partitions_count FROM system.size_estimates LIMIT 200;' \"${CQLSH_HOST:-127.0.0.1}\" \"${CQLSH_PORT:-9042}\""
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: Size estimates
+    args: {}

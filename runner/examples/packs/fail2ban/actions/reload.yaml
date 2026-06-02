@@ -1,0 +1,37 @@
+schema_version: 1
+id: f2b.reload
+title: fail2ban-client reload [jail]
+kind: exec
+risk: medium
+description: >
+  Reload fail2ban config. Without a jail, reloads everything. With
+  a jail, reloads that jail only (its filter, action, and settings).
+  Existing bans are preserved.
+side_effects:
+  - Filter + action + jail settings re-read from disk.
+  - Active bans persist across reload.
+args:
+  - name: jail
+    type: string
+    required: false
+    default: ""
+    description: Jail name (empty to reload all).
+    validation:
+      pattern: "^[a-zA-Z0-9_\\-]{0,64}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "/usr/bin/fail2ban-client reload {{ args.jail }}"
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 8192
+examples:
+  - title: Reload everything
+    args: {}
+  - title: Reload sshd jail
+    args:
+      jail: "sshd"

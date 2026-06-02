@@ -1,0 +1,34 @@
+schema_version: 1
+
+id: linux.network_routes
+title: Routing table + policy rules
+kind: exec
+risk: low
+
+description: >
+  `ip route show && ip rule show && ip -6 route show`. Use to debug
+  "why does traffic go via X instead of Y?" — surfaces every route
+  and policy-based routing rule. Read-only.
+
+side_effects:
+  - Three ip invocations.
+  - Read-only.
+
+args: []
+
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "ip route show; echo; ip rule show; echo; ip -6 route show"
+  timeout: 5s
+
+output:
+  parser: text
+  max_stdout_bytes: 32768
+  max_stderr_bytes: 8192
+
+examples:
+  - title: All routes
+    args: {}

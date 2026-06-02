@@ -1,0 +1,42 @@
+schema_version: 1
+id: zfs.clear_pool_errors
+title: zpool clear <pool> [device]
+kind: exec
+risk: high
+description: >
+  Clear pool error counters and re-online any FAULTED device that
+  has come back. Use after replacing a failed disk, or after a
+  transient I/O storm cleared. Does NOT touch on-disk data.
+side_effects:
+  - Read, write, checksum error counters reset.
+  - FAULTED devices marked ONLINE if reachable.
+  - Resilvering may start if needed.
+args:
+  - name: pool
+    type: string
+    required: true
+    description: Pool name.
+    validation:
+      pattern: "^[a-zA-Z0-9_\\-]{1,64}$"
+  - name: device
+    type: string
+    required: false
+    default: ""
+    description: Specific device (empty for all).
+    validation:
+      pattern: "^[a-zA-Z0-9_/.\\-]{0,128}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "/usr/sbin/zpool clear {{ args.pool }} {{ args.device }}"
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Clear all errors on tank
+    args:
+      pool: "tank"

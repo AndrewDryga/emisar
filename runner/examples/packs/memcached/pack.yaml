@@ -1,0 +1,27 @@
+schema_version: 1
+
+id: memcached
+name: Memcached cache server
+version: 0.1.0
+description: >
+  Read-only memcached introspection via the `stats` ASCII protocol —
+  general stats, slab usage, item counts, sizes. Plus FLUSH_ALL as a
+  critical mutator. Target host/port via MEMCACHED_HOST + MEMCACHED_PORT
+  env vars on the runner host (default 127.0.0.1:11211).
+vendor: emisar
+homepage: https://github.com/andrewdryga/emisar
+
+requires:
+  os:
+    - linux
+  binaries:
+    - nc
+
+actions:
+  - actions/stats.yaml
+  - actions/stats_slabs.yaml
+  - actions/stats_items.yaml
+  - actions/stats_sizes.yaml
+  - actions/stats_settings.yaml
+  - actions/version.yaml
+  - actions/flush_all.yaml

@@ -1,0 +1,30 @@
+schema_version: 1
+id: envoy.stats
+title: GET /stats (filter)
+kind: exec
+risk: low
+description: Envoy stats matching a regex filter. Use 'cluster|listener|server' as a sane default.
+side_effects: ["One admin GET.", "Read-only."]
+args:
+  - name: filter
+    type: string
+    required: false
+    default: "cluster|listener|server"
+    description: Regex filter passed to ?filter=.
+    validation:
+      pattern: "^[a-zA-Z0-9_.|*\\-]{1,128}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "curl -sS \"${ENVOY_ADMIN:-http://127.0.0.1:9901}/stats?filter={{ args.filter }}\""
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 4194304
+  max_stderr_bytes: 8192
+examples:
+  - title: Cluster stats
+    args:
+      filter: "cluster"

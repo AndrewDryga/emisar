@@ -1,0 +1,23 @@
+schema_version: 1
+id: rmq.cluster_status
+title: rabbitmqctl cluster_status
+kind: exec
+risk: low
+description: 'Cluster summary: nodes, alarms, partitions.'
+side_effects:
+  - One CLI call.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: rabbitmqctl
+    argv:
+      - "cluster_status"
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Cluster status
+    args: {}

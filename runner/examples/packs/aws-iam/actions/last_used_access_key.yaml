@@ -1,0 +1,27 @@
+schema_version: 1
+id: iam.last_used_access_key
+title: aws iam get-access-key-last-used
+kind: exec
+risk: low
+description: When one access key was last used (use to spot dormant keys).
+side_effects: ["One API call.", "Read-only."]
+args:
+  - name: access_key_id
+    type: string
+    required: true
+    description: AKIA…
+    validation:
+      pattern: "^(AKIA|ASIA)[A-Z0-9]{16,30}$"
+execution:
+  command:
+    binary: aws
+    argv: ["iam", "get-access-key-last-used", "--access-key-id", "{{ args.access_key_id }}", "--output", "json"]
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: One key's last-used
+    args:
+      access_key_id: "AKIAIOSFODNN7EXAMPLE"

@@ -1,0 +1,29 @@
+schema_version: 1
+id: cloud-init.modules_config
+title: cloud-init modules --mode=config
+kind: exec
+risk: high
+description: >
+  Re-run every module in the `config` stage (locale, users-groups,
+  ssh, set-passwords, apt-pipelining, package-update-upgrade-install,
+  etc.). Mutates the host the same way boot does. Use after fixing a
+  buggy cloud-config — no need to reboot.
+side_effects:
+  - Every module in the config stage re-runs.
+  - System packages may install/update.
+  - User accounts, ssh keys, apt sources may change.
+  - Idempotent in design — but only as idempotent as the modules in your config.
+args: []
+execution:
+  command:
+    binary: /usr/bin/cloud-init
+    argv: ["modules", "--mode=config"]
+  timeout: 600s
+cancel_grace: 60s
+output:
+  parser: text
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 16384
+examples:
+  - title: Re-apply config stage
+    args: {}

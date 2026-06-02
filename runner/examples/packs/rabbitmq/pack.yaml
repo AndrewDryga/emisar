@@ -1,0 +1,43 @@
+schema_version: 1
+
+id: rabbitmq
+name: RabbitMQ operations
+version: 0.1.0
+description: >
+  Cluster, queue, exchange, binding, connection, channel, and consumer
+  inventory plus narrow operator actions (purge_queue, set_policy,
+  force_close_connection). Uses rabbitmqctl + rabbitmqadmin on the
+  runner host.
+vendor: emisar
+homepage: https://github.com/andrewdryga/emisar
+
+requires:
+  os:
+    - linux
+  binaries:
+    - rabbitmqctl
+
+actions:
+  # Cluster
+  - actions/cluster_status.yaml
+  - actions/node_health_check.yaml
+  - actions/list_nodes.yaml
+  # Vhosts / users / policies
+  - actions/list_vhosts.yaml
+  - actions/list_users.yaml
+  - actions/list_policies.yaml
+  - actions/list_parameters.yaml
+  # Topology
+  - actions/list_queues.yaml
+  - actions/list_exchanges.yaml
+  - actions/list_bindings.yaml
+  # Live traffic
+  - actions/list_connections.yaml
+  - actions/list_channels.yaml
+  - actions/list_consumers.yaml
+  # Mutators
+  - actions/purge_queue.yaml
+  - actions/close_connection.yaml
+  - actions/sync_queue.yaml
+  - actions/start_app.yaml
+  - actions/stop_app.yaml

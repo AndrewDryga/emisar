@@ -1,0 +1,22 @@
+schema_version: 1
+id: time.chrony_tracking
+title: chronyc tracking
+kind: exec
+risk: low
+description: Chrony's view of clock drift, frequency, last update.
+side_effects:
+  - One chrony query.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /usr/bin/chronyc
+    argv: ["tracking"]
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Chrony tracking
+    args: {}

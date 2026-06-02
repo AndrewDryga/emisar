@@ -1,0 +1,28 @@
+schema_version: 1
+id: consul.snapshot_save
+title: consul snapshot save <path>
+kind: exec
+risk: medium
+description: Writes a Raft snapshot to a local file. Use before risky operations + as a backup.
+side_effects:
+  - One read of the entire state store.
+  - File written at the configured path on the runner host.
+  - Brief leader IO; no service impact.
+args:
+  - name: path
+    type: string
+    required: true
+    description: Destination file.
+    validation:
+      pattern: "^/[a-zA-Z0-9_./\\-]{1,512}\\.snap$"
+execution:
+  command: {binary: /usr/bin/consul, argv: ["snapshot", "save", "{{ args.path }}"]}
+  timeout: 5m
+output:
+  parser: text
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 8192
+examples:
+  - title: Pre-migration snap
+    args:
+      path: "/var/backups/consul-pre-migration.snap"

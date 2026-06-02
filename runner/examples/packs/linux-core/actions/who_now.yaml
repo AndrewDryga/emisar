@@ -1,0 +1,34 @@
+schema_version: 1
+
+id: linux.who_now
+title: Currently logged-in users
+kind: exec
+risk: low
+
+description: >
+  `who` + `w` — usernames, terminals, login times, source IPs, and
+  what each session is currently running. Use to confirm whether a
+  human is on the box during an incident. Read-only.
+
+side_effects:
+  - Two utility invocations.
+  - Read-only.
+
+args: []
+
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "who; echo; w"
+  timeout: 5s
+
+output:
+  parser: text
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 4096
+
+examples:
+  - title: Current logins
+    args: {}

@@ -1,0 +1,22 @@
+schema_version: 1
+id: grafana.alerting_state
+title: GET /api/alertmanager/grafana/api/v2/alerts
+kind: exec
+risk: low
+description: Currently-firing alerts known to Grafana's alertmanager.
+side_effects: ["One API call.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "curl -sS -H \"Authorization: Bearer $GRAFANA_TOKEN\" \"$GRAFANA_URL/api/alertmanager/grafana/api/v2/alerts\""
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: Active alerts
+    args: {}

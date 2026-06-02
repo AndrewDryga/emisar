@@ -1,0 +1,29 @@
+schema_version: 1
+id: nomad.alloc_stats
+title: GET /v1/client/allocation/<id>/stats
+kind: exec
+risk: low
+description: CPU + memory + network stats for one allocation.
+side_effects: ["One API call.", "Read-only."]
+args:
+  - name: alloc_id
+    type: string
+    required: true
+    description: Allocation ID.
+    validation:
+      pattern: "^[a-fA-F0-9\\-]{4,36}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "curl -sS -H \"X-Nomad-Token: $NOMAD_TOKEN\" \"$NOMAD_ADDR/v1/client/allocation/{{ args.alloc_id }}/stats\""
+  timeout: 15s
+output:
+  parser: json
+  max_stdout_bytes: 131072
+  max_stderr_bytes: 8192
+examples:
+  - title: Stats
+    args:
+      alloc_id: "abc12345"

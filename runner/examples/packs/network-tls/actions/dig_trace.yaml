@@ -1,0 +1,30 @@
+schema_version: 1
+id: net.dig_trace
+title: dig +trace (full delegation chain)
+kind: exec
+risk: low
+description: >
+  `dig +trace` — follow the DNS delegation chain from the root to the authoritative server. Use to debug "the wrong nameservers are answering."
+side_effects:
+  - Multiple DNS queries down the delegation tree.
+  - Read-only.
+args:
+  - name: name
+    type: string
+    required: true
+    description: Domain name.
+    validation:
+      pattern: "^[a-zA-Z0-9.\\-_]{1,253}$"
+execution:
+  command:
+    binary: /usr/bin/dig
+    argv: ["+trace", "{{ args.name }}"]
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Trace delegation
+    args:
+      name: example.com

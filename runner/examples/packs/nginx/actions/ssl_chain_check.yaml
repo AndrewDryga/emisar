@@ -1,0 +1,39 @@
+schema_version: 1
+id: nginx.ssl_chain_check
+title: TLS chain dump for one vhost
+kind: exec
+risk: low
+description: Probes localhost:443 with SNI and dumps the certificate chain. Use to confirm the intermediate cert is being served.
+side_effects:
+  - One openssl s_client to localhost.
+  - Read-only.
+args:
+  - name: sni
+    type: string
+    required: true
+    description: SNI to probe.
+    validation:
+      pattern: "^[a-zA-Z0-9.\\-]{1,253}$"
+  - name: port
+    type: integer
+    required: false
+    default: 443
+    description: Port to probe.
+    validation:
+      min: 1
+      max: 65535
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "openssl s_client -connect 127.0.0.1:{{ args.port }} -servername {{ args.sni }} -showcerts </dev/null 2>/dev/null"
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 32768
+  max_stderr_bytes: 8192
+examples:
+  - title: Chain for api.example.com
+    args:
+      sni: "api.example.com"

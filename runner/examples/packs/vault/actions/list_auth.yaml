@@ -1,0 +1,25 @@
+schema_version: 1
+id: vault.list_auth
+title: vault auth list
+kind: exec
+risk: low
+description: All auth method mounts.
+side_effects:
+  - One sys/auth request.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: vault
+    argv:
+      - "auth"
+      - "list"
+      - "-format=json"
+  timeout: 15s
+output:
+  parser: json
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Auth methods
+    args: {}

@@ -1,0 +1,22 @@
+schema_version: 1
+id: systemd.failed_units
+title: Failed systemd units
+kind: exec
+risk: low
+description: '`systemctl --failed` — every unit not in `active` state with its last failure reason. The fast "what is broken on this host?" check.'
+side_effects:
+  - One systemctl invocation.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /bin/systemctl
+    argv: ["--failed", "--no-pager", "--no-legend"]
+  timeout: 10s
+output:
+  parser: text
+  max_stdout_bytes: 32768
+  max_stderr_bytes: 8192
+examples:
+  - title: Anything failed?
+    args: {}

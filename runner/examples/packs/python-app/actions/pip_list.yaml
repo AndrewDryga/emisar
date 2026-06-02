@@ -1,0 +1,22 @@
+schema_version: 1
+id: py.pip_list
+title: $PY_VENV/bin/pip list
+kind: exec
+risk: low
+description: Installed packages with versions.
+side_effects: ["One pip list call.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "\"${PY_VENV:-/opt/app/venv}/bin/pip\" list --format=json"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: All packages
+    args: {}

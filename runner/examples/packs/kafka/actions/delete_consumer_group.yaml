@@ -1,0 +1,31 @@
+schema_version: 1
+id: kafka.delete_consumer_group
+title: Delete consumer group
+kind: exec
+risk: high
+description: Removes a consumer group from the coordinator. The group must be empty (no active members).
+side_effects:
+  - Group must have no active members; command fails otherwise.
+  - Committed offsets for the group are dropped.
+args:
+  - name: group
+    type: string
+    required: true
+    description: Consumer group ID.
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{1,255}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "kafka-consumer-groups.sh '--bootstrap-server' \"$KAFKA_BOOTSTRAP\" '--delete' '--group' '{{ args.group }}'"
+  timeout: 60s
+output:
+  parser: text
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 8192
+examples:
+  - title: Drop empty group
+    args:
+      group: "legacy-consumer"

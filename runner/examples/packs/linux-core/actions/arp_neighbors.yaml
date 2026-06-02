@@ -1,0 +1,34 @@
+schema_version: 1
+
+id: linux.arp_neighbors
+title: ARP / IPv6 neighbor table
+kind: exec
+risk: low
+
+description: >
+  `ip neigh show` — every known L2 neighbor with state (REACHABLE,
+  STALE, FAILED). Useful for diagnosing intermittent L2 reachability
+  problems. Read-only.
+
+side_effects:
+  - One ip invocation.
+  - Read-only.
+
+args: []
+
+execution:
+  command:
+    binary: /sbin/ip
+    argv:
+      - "neigh"
+      - "show"
+  timeout: 5s
+
+output:
+  parser: text
+  max_stdout_bytes: 32768
+  max_stderr_bytes: 8192
+
+examples:
+  - title: ARP table
+    args: {}

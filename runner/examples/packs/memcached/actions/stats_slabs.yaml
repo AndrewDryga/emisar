@@ -1,0 +1,22 @@
+schema_version: 1
+id: mc.stats_slabs
+title: stats slabs
+kind: exec
+risk: low
+description: Per-slab allocation + utilization.
+side_effects: ["One ASCII protocol call.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "printf 'stats slabs\\nquit\\n' | nc -w 5 \"${MEMCACHED_HOST:-127.0.0.1}\" \"${MEMCACHED_PORT:-11211}\""
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 32768
+  max_stderr_bytes: 8192
+examples:
+  - title: Slabs
+    args: {}

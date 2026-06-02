@@ -1,0 +1,25 @@
+schema_version: 1
+id: systemd.daemon_reload
+title: systemctl daemon-reload
+kind: exec
+risk: medium
+description: >
+  Re-read unit files from disk. Required after editing a unit file
+  or installing a new package. Without this, systemctl restart still
+  uses the old unit definition.
+side_effects:
+  - systemd re-reads all unit files.
+  - Running units unaffected; their definitions update on next restart.
+args: []
+execution:
+  command:
+    binary: /usr/bin/systemctl
+    argv: ["daemon-reload"]
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Pick up unit file changes
+    args: {}

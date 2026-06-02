@@ -1,0 +1,18 @@
+schema_version: 1
+id: cassandra.nodetool_info
+title: nodetool info
+kind: exec
+risk: low
+description: 'This node: uptime, heap, load, exceptions, key+row+counter cache hit rates.'
+side_effects: ["One JMX call.", "Read-only."]
+args: []
+execution:
+  command: {binary: /usr/bin/nodetool, argv: ["info"]}
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: This node
+    args: {}

@@ -1,0 +1,22 @@
+schema_version: 1
+id: ch.dictionaries
+title: SELECT * FROM system.dictionaries
+kind: exec
+risk: low
+description: Loaded dictionaries with status, element count, source.
+side_effects: ["One SELECT.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "clickhouse-client --host \"${CH_HOST:-localhost}\" --user \"${CH_USER:-default}\" --password \"$CH_PASSWORD\" --query \"SELECT database, name, status, element_count, source FROM system.dictionaries FORMAT JSONEachRow\""
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Dictionaries
+    args: {}

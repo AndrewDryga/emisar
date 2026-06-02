@@ -1,0 +1,31 @@
+schema_version: 1
+id: es.index_mapping
+title: GET /<index>/_mapping
+kind: exec
+risk: low
+description: Returns the field mappings for one index.
+side_effects:
+  - One GET request.
+  - Read-only.
+args:
+  - name: index
+    type: string
+    required: true
+    description: Index name.
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{1,255}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "curl -sS -u \"$ELASTIC_USER:$ELASTIC_PASSWORD\" \"$ELASTIC_URL/{{ args.index }}/_mapping?pretty\""
+  timeout: 15s
+output:
+  parser: json
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+examples:
+  - title: Mapping for one index
+    args:
+      index: "logs-2026-06-01"

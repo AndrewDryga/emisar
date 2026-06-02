@@ -1,0 +1,34 @@
+schema_version: 1
+
+id: linux.lvm_status
+title: LVM volume / group / PV summary
+kind: exec
+risk: low
+
+description: >
+  Runs `lvs && vgs && pvs` for a one-shot LVM topology snapshot.
+  Logical volumes, volume groups, physical volumes — sizes, free
+  space, attributes. Read-only. Needs LVM tools installed.
+
+side_effects:
+  - Three LVM CLI invocations.
+  - Read-only.
+
+args: []
+
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "lvs; echo; vgs; echo; pvs"
+  timeout: 15s
+
+output:
+  parser: text
+  max_stdout_bytes: 32768
+  max_stderr_bytes: 8192
+
+examples:
+  - title: LVM snapshot
+    args: {}

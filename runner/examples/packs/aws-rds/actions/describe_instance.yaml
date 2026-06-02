@@ -1,0 +1,27 @@
+schema_version: 1
+id: rds.describe_instance
+title: aws rds describe-db-instances --db-instance-identifier
+kind: exec
+risk: low
+description: Full details for one instance.
+side_effects: ["One API call.", "Read-only."]
+args:
+  - name: instance
+    type: string
+    required: true
+    description: Instance identifier.
+    validation:
+      pattern: "^[a-zA-Z][a-zA-Z0-9\\-]{0,62}$"
+execution:
+  command:
+    binary: aws
+    argv: ["rds", "describe-db-instances", "--db-instance-identifier", "{{ args.instance }}", "--output", "json"]
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: One instance
+    args:
+      instance: "prod-postgres-1"

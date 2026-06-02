@@ -1,0 +1,25 @@
+schema_version: 1
+id: nomad.job_inspect
+title: nomad job inspect <id>
+kind: exec
+risk: low
+description: One job's full spec as JSON.
+side_effects: ["One API call.", "Read-only."]
+args:
+  - name: job
+    type: string
+    required: true
+    description: Job ID.
+    validation:
+      pattern: "^[a-zA-Z0-9_\\-]{1,128}$"
+execution:
+  command: {binary: /usr/bin/nomad, argv: ["job", "inspect", "{{ args.job }}"]}
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: Inspect job
+    args:
+      job: "api"

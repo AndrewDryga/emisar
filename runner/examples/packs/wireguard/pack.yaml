@@ -1,0 +1,30 @@
+schema_version: 1
+
+id: wireguard
+name: WireGuard VPN
+version: 0.1.0
+description: >
+  WireGuard state — interfaces, peers, transfer counts, last
+  handshakes — plus operator actions: bring iface up/down via wg-quick,
+  remove a peer from a live iface. Use to debug connectivity or evict
+  a compromised peer.
+vendor: emisar
+homepage: https://github.com/andrewdryga/emisar
+
+requires:
+  os:
+    - linux
+  binaries:
+    - wg
+
+actions:
+  # Inventory
+  - actions/show.yaml
+  - actions/show_transfer.yaml
+  - actions/show_latest_handshakes.yaml
+  - actions/show_endpoints.yaml
+  - actions/showconf.yaml
+  # Mutators
+  - actions/quick_up.yaml
+  - actions/quick_down.yaml
+  - actions/set_peer_remove.yaml

@@ -1,0 +1,48 @@
+schema_version: 1
+id: kubernetes.pod_describe
+title: kubectl describe pod
+kind: exec
+risk: low
+description: >
+  Full describe output — events, container states, conditions, volume mounts, scheduled node. The canonical "why isn't this pod running?" answer.
+side_effects:
+  - One kubectl describe invocation.
+  - Read-only.
+args:
+  - name: namespace
+    type: string
+    required: true
+    description: Namespace.
+    validation:
+      pattern: "^[a-z0-9][a-z0-9\\-]{0,62}$"
+  - name: name
+    type: string
+    required: true
+    description: Pod name.
+    validation:
+      pattern: "^[a-z0-9][a-z0-9.\\-]{0,253}$"
+  - name: context
+    type: string
+    required: false
+    default: ""
+    description: kubeconfig context.
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{0,128}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "kubectl ${KCTX:+--context=$KCTX} -n {{ args.namespace }} describe pod {{ args.name }}"
+  timeout: 30s
+  env:
+    KCTX: "{{ args.context }}"
+output:
+  parser: text
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 16384
+examples:
+  - title: Describe a pod
+    args:
+      namespace: default
+      name: api-7d4f8c5b8c-x2nzp

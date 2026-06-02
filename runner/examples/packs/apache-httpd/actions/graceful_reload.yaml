@@ -1,0 +1,23 @@
+schema_version: 1
+id: httpd.graceful_reload
+title: apachectl graceful
+kind: exec
+risk: high
+description: Re-reads config and gracefully reloads child workers — no dropped requests.
+side_effects:
+  - Workers finish in-flight requests, then respawn with the new config.
+  - If new config is invalid, master logs and keeps running old config.
+args: []
+execution:
+  command:
+    binary: apachectl
+    argv:
+      - "graceful"
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Graceful reload
+    args: {}

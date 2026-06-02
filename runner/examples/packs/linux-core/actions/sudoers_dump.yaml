@@ -1,0 +1,34 @@
+schema_version: 1
+
+id: linux.sudoers_dump
+title: sudoers configuration audit
+kind: exec
+risk: medium
+
+description: >
+  Dumps /etc/sudoers and the index of /etc/sudoers.d/. Use for an
+  audit pass — "who can sudo to what?". Sensitive content; output
+  goes through redaction. Read-only.
+
+side_effects:
+  - Reads /etc/sudoers and ls of /etc/sudoers.d/.
+  - Requires root or sudo-readable perms.
+
+args: []
+
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "cat /etc/sudoers 2>/dev/null; echo; ls -la /etc/sudoers.d/ 2>/dev/null"
+  timeout: 5s
+
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+
+examples:
+  - title: Sudoers audit
+    args: {}

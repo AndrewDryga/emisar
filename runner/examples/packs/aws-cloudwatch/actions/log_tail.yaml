@@ -1,0 +1,34 @@
+schema_version: 1
+id: cw.log_tail
+title: aws logs tail
+kind: exec
+risk: low
+description: Tails recent log events for one log group (no follow).
+side_effects: ["One API call.", "Read-only."]
+args:
+  - name: log_group
+    type: string
+    required: true
+    description: Log group name.
+    validation:
+      pattern: "^[a-zA-Z0-9_./#\\-]{1,512}$"
+  - name: since
+    type: string
+    required: false
+    default: "1h"
+    description: 'How far back: 30m, 1h, 6h, 24h.'
+    validation:
+      pattern: "^[0-9]{1,4}[mhd]$"
+execution:
+  command:
+    binary: aws
+    argv: ["logs", "tail", "{{ args.log_group }}", "--since", "{{ args.since }}", "--format", "short"]
+  timeout: 60s
+output:
+  parser: text
+  max_stdout_bytes: 4194304
+  max_stderr_bytes: 8192
+examples:
+  - title: Last hour
+    args:
+      log_group: "/aws/lambda/my-fn"

@@ -1,0 +1,18 @@
+schema_version: 1
+id: zfs.pool_iostat
+title: zpool iostat (5s sample)
+kind: exec
+risk: low
+description: One 5-second iostat sample per pool.
+side_effects: ["Reads pool metrics.", "Read-only."]
+args: []
+execution:
+  command: {binary: zpool, argv: ["iostat", "-v", "5", "1"]}
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: iostat sample
+    args: {}

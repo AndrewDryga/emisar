@@ -1,0 +1,23 @@
+schema_version: 1
+id: pm2.jlist
+title: pm2 jlist
+kind: exec
+risk: low
+description: PM2 process list as JSON (richer than `list`). Read-only.
+side_effects:
+  - One PM2 IPC call.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: pm2
+    argv:
+      - "jlist"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: JSON process list
+    args: {}

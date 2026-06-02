@@ -1,0 +1,36 @@
+schema_version: 1
+
+id: postgres.connections
+title: Postgres connection summary
+kind: exec
+risk: low
+
+description: >
+  Counts pg_stat_activity rows grouped by state and application_name.
+  Surfaces idle-in-transaction backends, connection storms, and
+  per-app traffic skew. Read-only. Pair with `postgres.kill_idle` if
+  the long-idle-in-transaction count is non-zero.
+
+side_effects:
+  - One SELECT against pg_stat_activity.
+  - No locks held.
+
+args: []
+
+execution:
+  command:
+    binary: /usr/bin/psql
+    argv:
+      - "-XAt"
+      - "-c"
+      - "SELECT state, application_name, count(*) AS n FROM pg_stat_activity GROUP BY state, application_name ORDER BY n DESC LIMIT 50;"
+  timeout: 10s
+
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+
+examples:
+  - title: Spot idle-in-transaction backends
+    args: {}

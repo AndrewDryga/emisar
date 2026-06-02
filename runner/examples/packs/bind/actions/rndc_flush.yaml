@@ -1,0 +1,25 @@
+schema_version: 1
+id: bind.rndc_flush
+title: rndc flush
+kind: exec
+risk: medium
+description: >
+  Flush the resolver cache. Use after a downstream domain's records
+  change and BIND is still serving stale answers. All clients hit
+  upstream until cache repopulates.
+side_effects:
+  - Resolver cache is emptied.
+  - Brief upstream-query spike as cache repopulates.
+args: []
+execution:
+  command:
+    binary: /usr/sbin/rndc
+    argv: ["flush"]
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Flush all caches
+    args: {}

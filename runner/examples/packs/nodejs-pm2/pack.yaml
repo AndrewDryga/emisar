@@ -1,0 +1,34 @@
+schema_version: 1
+
+id: nodejs-pm2
+name: Node.js / PM2 operations
+version: 0.1.0
+description: >
+  PM2 process inventory + logs + per-app introspection, plus narrow
+  mutators (restart, reload, stop, scale). Requires the runner to be the
+  same uid as the PM2 daemon (or set PM2_HOME).
+vendor: emisar
+homepage: https://github.com/andrewdryga/emisar
+
+requires:
+  os:
+    - linux
+  binaries:
+    - pm2
+
+actions:
+  - actions/list.yaml
+  - actions/jlist.yaml
+  - actions/describe.yaml
+  - actions/logs.yaml
+  - actions/error_logs.yaml
+  - actions/env.yaml
+  - actions/monit_snapshot.yaml
+  - actions/dump.yaml
+  - actions/pm2_version.yaml
+  - actions/node_version.yaml
+  - actions/restart.yaml
+  - actions/reload.yaml
+  - actions/stop.yaml
+  - actions/scale.yaml
+  - actions/flush_logs.yaml

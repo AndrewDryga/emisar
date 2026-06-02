@@ -1,0 +1,31 @@
+schema_version: 1
+id: net.whois_summary
+title: whois (registrar + expiry)
+kind: exec
+risk: low
+description: Filtered whois output — registrar, dates, name servers. Use to check "is this domain about to expire?"
+side_effects:
+  - One whois query to the registry.
+  - Read-only.
+args:
+  - name: domain
+    type: string
+    required: true
+    description: Domain.
+    validation:
+      pattern: "^[a-zA-Z0-9.\\-]{1,253}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "whois {{ args.domain }} | grep -iE 'registrar|registry|domain name|expir|name server|status' | head -30"
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 8192
+examples:
+  - title: whois example.com
+    args:
+      domain: "example.com"

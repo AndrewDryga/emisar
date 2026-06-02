@@ -1,0 +1,44 @@
+schema_version: 1
+id: nomad.job_scale
+title: nomad job scale <id> <group> <count>
+kind: exec
+risk: medium
+description: Adjusts the count for one task group.
+side_effects:
+  - Scheduler creates or stops allocations to reach the target count.
+  - Stopped allocations follow the kill_timeout / shutdown_delay stanzas.
+args:
+  - name: job
+    type: string
+    required: true
+    description: Job ID.
+    validation:
+      pattern: "^[a-zA-Z0-9_\\-]{1,128}$"
+  - name: group
+    type: string
+    required: true
+    description: Task group.
+    validation:
+      pattern: "^[a-zA-Z0-9_\\-]{1,128}$"
+  - name: count
+    type: integer
+    required: true
+    description: Target count.
+    validation:
+      min: 0
+      max: 10000
+execution:
+  command:
+    binary: /usr/bin/nomad
+    argv: ["job", "scale", "{{ args.job }}", "{{ args.group }}", "{{ args.count }}"]
+  timeout: 5m
+output:
+  parser: text
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 8192
+examples:
+  - title: Scale api group to 10
+    args:
+      job: "api"
+      group: "web"
+      count: 10

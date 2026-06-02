@@ -1,0 +1,49 @@
+schema_version: 1
+
+id: cloud-init
+name: cloud-init operations
+version: 0.1.0
+description: >
+  cloud-init introspection + boot diagnostics + stage re-runs. Use when
+  an EC2/GCE/Azure VM finishes booting but the workload didn't come up
+  the way it should: check overall status, blame slow modules, dump
+  user-data / cloud-config / vendor-data as the instance actually saw
+  them, tail the cloud-init logs, and (with operator approval) re-run
+  individual modules or the full init pipeline.
+vendor: emisar
+homepage: https://github.com/andrewdryga/emisar
+
+requires:
+  os:
+    - linux
+  binaries:
+    - cloud-init
+
+actions:
+  # Status / boot diagnostics
+  - actions/version.yaml
+  - actions/status.yaml
+  - actions/status_long.yaml
+  - actions/analyze_show.yaml
+  - actions/analyze_blame.yaml
+  - actions/analyze_dump.yaml
+  - actions/schema_validate.yaml
+  - actions/instance_id.yaml
+  # Query metadata
+  - actions/query_metadata.yaml
+  - actions/userdata_dump.yaml
+  - actions/cloud_config_dump.yaml
+  - actions/vendor_data_dump.yaml
+  # Logs
+  - actions/log_tail.yaml
+  - actions/output_log_tail.yaml
+  - actions/journal_tail.yaml
+  - actions/collect_logs.yaml
+  # Mutators
+  - actions/modules_config.yaml
+  - actions/modules_final.yaml
+  - actions/single_module.yaml
+  - actions/init_local.yaml
+  - actions/init.yaml
+  - actions/clean_logs.yaml
+  - actions/clean.yaml

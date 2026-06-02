@@ -1,0 +1,22 @@
+schema_version: 1
+id: ch.parts_summary
+title: SELECT system.parts (by table)
+kind: exec
+risk: low
+description: Active part counts + sizes per table. Use to spot too-many-parts.
+side_effects: ["One SELECT.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "clickhouse-client --host \"${CH_HOST:-localhost}\" --user \"${CH_USER:-default}\" --password \"$CH_PASSWORD\" --query \"SELECT database, table, sum(rows) as rows, sum(bytes_on_disk) as bytes, count() as parts FROM system.parts WHERE active GROUP BY database, table ORDER BY bytes DESC LIMIT 100 FORMAT JSONEachRow\""
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: Top tables by size
+    args: {}

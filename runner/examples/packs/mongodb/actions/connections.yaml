@@ -1,0 +1,24 @@
+schema_version: 1
+id: mongo.connections
+title: connPoolStats
+kind: exec
+risk: low
+description: Connection pool stats — totals, active, available, by host.
+side_effects:
+  - One connPoolStats command.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "mongosh \"$MONGO_URI\" '--quiet' '--eval' 'JSON.stringify(db.adminCommand({connPoolStats:1}))'"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Pool stats
+    args: {}

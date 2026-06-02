@@ -1,0 +1,85 @@
+schema_version: 1
+
+id: redis
+name: Redis operations pack
+version: 0.2.0
+description: >
+  Deep Redis ops — INFO + memory accounting, slowlog + per-event
+  latency, command stats, client list/kill/pause, keyspace introspection
+  (SCAN, TYPE, TTL, OBJECT encoding/refcount/idle/freq, MEMORY USAGE),
+  config get/set/rewrite/resetstat, ACL list/whoami/getuser, cluster
+  topology (info, nodes, slots, slot-count, check), cluster operators
+  (failover, forget, replicaof), persistence (lastsave, bgsave,
+  bgrewriteaof, memory purge/doctor), streams + pub/sub introspection,
+  script cache flush, and tier-critical actions (flush_db, flushall,
+  swapdb, shutdown_nosave). Authenticates via REDISCLI_AUTH / REDIS_*
+  env vars on the runner host — never via per-call credentials.
+vendor: emisar
+homepage: https://github.com/andrewdryga/emisar
+
+requires:
+  os:
+    - linux
+  binaries:
+    - redis-cli
+
+actions:
+  # INFO / stats
+  - actions/info.yaml
+  - actions/memory_stats.yaml
+  - actions/memory_doctor.yaml
+  - actions/command_stats.yaml
+  - actions/slowlog.yaml
+  - actions/latency.yaml
+  - actions/latency_history.yaml
+  - actions/dbsize.yaml
+  - actions/lastsave.yaml
+  - actions/role.yaml
+  # Clients
+  - actions/client_list.yaml
+  - actions/client_kill.yaml
+  - actions/client_pause.yaml
+  # Config
+  - actions/config_get.yaml
+  - actions/config_set.yaml
+  - actions/config_rewrite.yaml
+  - actions/config_resetstat.yaml
+  # ACL
+  - actions/acl_list.yaml
+  - actions/acl_whoami.yaml
+  - actions/acl_getuser.yaml
+  # Keyspace introspection
+  - actions/scan.yaml
+  - actions/randomkey.yaml
+  - actions/type_of.yaml
+  - actions/ttl_of.yaml
+  - actions/memory_usage.yaml
+  - actions/object_encoding.yaml
+  - actions/object_refcount.yaml
+  - actions/object_idletime.yaml
+  - actions/object_freq.yaml
+  # Streams / pubsub
+  - actions/pubsub_channels.yaml
+  - actions/pubsub_numsub.yaml
+  - actions/xinfo_stream.yaml
+  - actions/xlen.yaml
+  # Cluster
+  - actions/cluster_info.yaml
+  - actions/cluster_nodes.yaml
+  - actions/cluster_slots.yaml
+  - actions/cluster_countkeysinslot.yaml
+  - actions/cluster_check.yaml
+  # Cluster / replication operators
+  - actions/cluster_failover.yaml
+  - actions/cluster_forget.yaml
+  - actions/replicaof.yaml
+  # Persistence / memory operators
+  - actions/bgsave.yaml
+  - actions/bgrewriteaof.yaml
+  - actions/memory_purge.yaml
+  - actions/script_flush.yaml
+  # Critical mutators
+  - actions/flush_db.yaml
+  - actions/flushall.yaml
+  - actions/swapdb.yaml
+  - actions/shutdown_nosave.yaml

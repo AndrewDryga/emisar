@@ -1,0 +1,41 @@
+schema_version: 1
+id: debugging.sysctl_set
+title: sysctl -w <key>=<value>
+kind: exec
+risk: high
+description: >
+  Change a runtime kernel parameter. Change is not persistent —
+  reverts at next boot unless mirrored in /etc/sysctl.d/. Wrong
+  values can crash the kernel (net.* tunables especially). Read
+  the current value first.
+side_effects:
+  - Kernel tunable updated for current boot.
+  - Effect varies — net buffers, vm overcommit, kernel.panic, etc.
+  - Not persistent across reboot.
+args:
+  - name: key
+    type: string
+    required: true
+    description: sysctl key (e.g., net.ipv4.tcp_max_syn_backlog).
+    validation:
+      pattern: "^[a-z0-9._\\-]{1,128}$"
+  - name: value
+    type: string
+    required: true
+    description: New value.
+    validation:
+      pattern: "^[a-zA-Z0-9_:.,\\-/= ]{1,256}$"
+execution:
+  command:
+    binary: /usr/sbin/sysctl
+    argv: ["-w", "{{ args.key }}={{ args.value }}"]
+  timeout: 10s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Raise SYN backlog
+    args:
+      key: "net.ipv4.tcp_max_syn_backlog"
+      value: "4096"

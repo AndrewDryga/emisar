@@ -1,0 +1,33 @@
+schema_version: 1
+id: kubernetes.deployments_list
+title: List deployments
+kind: exec
+risk: low
+description: '`kubectl get deploy -A` — replica counts (desired/current/available), age, image references.'
+side_effects:
+  - One kubectl get invocation.
+  - Read-only.
+args:
+  - name: context
+    type: string
+    required: false
+    default: ""
+    description: kubeconfig context.
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{0,128}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "kubectl ${KCTX:+--context=$KCTX} get deploy -A"
+  timeout: 30s
+  env:
+    KCTX: "{{ args.context }}"
+output:
+  parser: text
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+examples:
+  - title: All deployments
+    args: {}

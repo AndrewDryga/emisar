@@ -1,0 +1,36 @@
+schema_version: 1
+id: rds.create_snapshot
+title: aws rds create-db-snapshot
+kind: exec
+risk: high
+description: Triggers a manual snapshot of one instance. Stored in your account; outlives instance deletion.
+side_effects:
+  - Brief IO impact during snapshot start.
+  - Storage charges apply until you delete the snapshot.
+args:
+  - name: instance
+    type: string
+    required: true
+    description: Source instance.
+    validation:
+      pattern: "^[a-zA-Z][a-zA-Z0-9\\-]{0,62}$"
+  - name: snapshot_id
+    type: string
+    required: true
+    description: New snapshot identifier.
+    validation:
+      pattern: "^[a-zA-Z][a-zA-Z0-9\\-]{0,254}$"
+execution:
+  command:
+    binary: aws
+    argv: ["rds", "create-db-snapshot", "--db-instance-identifier", "{{ args.instance }}", "--db-snapshot-identifier", "{{ args.snapshot_id }}", "--output", "json"]
+  timeout: 60s
+output:
+  parser: json
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Pre-migration snapshot
+    args:
+      instance: "prod-postgres-1"
+      snapshot_id: "prod-postgres-1-pre-migration-2026-06-01"

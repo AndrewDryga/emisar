@@ -1,0 +1,41 @@
+schema_version: 1
+id: net.traceroute_mtr
+title: mtr report (route + loss statistics)
+kind: exec
+risk: low
+description: >
+  `mtr --report` — 5 cycles of traceroute with per-hop packet loss and latency. The combined traceroute + ping report.
+side_effects:
+  - Outbound ICMP/UDP probes.
+  - Read-only.
+args:
+  - name: host
+    type: string
+    required: true
+    description: Target hostname or IP.
+    validation:
+      pattern: "^[a-zA-Z0-9.\\-:]{1,253}$"
+  - name: cycles
+    type: integer
+    required: false
+    default: 5
+    description: Number of probe cycles.
+    validation:
+      min: 1
+      max: 30
+execution:
+  command:
+    binary: /usr/bin/mtr
+    argv:
+      - "--report"
+      - "--report-cycles={{ args.cycles }}"
+      - "{{ args.host }}"
+  timeout: 120s
+output:
+  parser: text
+  max_stdout_bytes: 32768
+  max_stderr_bytes: 8192
+examples:
+  - title: 5-cycle mtr to 1.1.1.1
+    args:
+      host: "1.1.1.1"

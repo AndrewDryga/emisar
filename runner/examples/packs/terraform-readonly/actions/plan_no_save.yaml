@@ -1,0 +1,25 @@
+schema_version: 1
+id: tf.plan_no_save
+title: terraform plan
+kind: exec
+risk: medium
+description: >
+  Computes a plan but does NOT save it (no -out). Cannot be applied from this run. May call out to providers (read API quotas).
+side_effects:
+  - Calls every provider's read API — quota usage applies.
+  - Does not modify state or save a plan file.
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "cd \"$TF_DIR\" && terraform plan -input=false -no-color"
+  timeout: 30m
+output:
+  parser: text
+  max_stdout_bytes: 4194304
+  max_stderr_bytes: 8192
+examples:
+  - title: Plan
+    args: {}

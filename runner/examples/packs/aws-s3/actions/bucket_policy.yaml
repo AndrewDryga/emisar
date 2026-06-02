@@ -1,0 +1,29 @@
+schema_version: 1
+id: s3.bucket_policy
+title: aws s3api get-bucket-policy
+kind: exec
+risk: low
+description: Bucket policy JSON.
+side_effects:
+  - One API call.
+  - Read-only.
+args:
+  - name: bucket
+    type: string
+    required: true
+    description: Bucket name.
+    validation:
+      pattern: "^[a-z0-9.\\-]{3,63}$"
+execution:
+  command:
+    binary: aws
+    argv: ["s3api", "get-bucket-policy", "--bucket", "{{ args.bucket }}", "--output", "json"]
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Policy
+    args:
+      bucket: "my-bucket"

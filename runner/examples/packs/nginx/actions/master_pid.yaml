@@ -1,0 +1,22 @@
+schema_version: 1
+id: nginx.master_pid
+title: nginx master PID
+kind: exec
+risk: low
+description: Reads /run/nginx.pid (or the configured pid path). Read-only.
+side_effects:
+  - One file read.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /bin/cat
+    argv: ["/run/nginx.pid"]
+  timeout: 5s
+output:
+  parser: text
+  max_stdout_bytes: 64
+  max_stderr_bytes: 4096
+examples:
+  - title: Get the master PID
+    args: {}

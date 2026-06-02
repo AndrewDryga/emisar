@@ -1,0 +1,18 @@
+schema_version: 1
+id: cassandra.nodetool_invalidatecountercache
+title: nodetool invalidatecountercache
+kind: exec
+risk: medium
+description: Drops the counter cache.
+side_effects: ["Counter cache cleared.", "Counter reads pay cold-cache cost."]
+args: []
+execution:
+  command: {binary: /usr/bin/nodetool, argv: ["invalidatecountercache"]}
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Drop counter cache
+    args: {}

@@ -1,0 +1,35 @@
+schema_version: 1
+
+id: postgres.uptime
+title: Postgres uptime and version
+kind: exec
+risk: low
+
+description: >
+  Reports server uptime, version, and current connection count. Reads
+  pg_stat_database + pg_postmaster_start_time(). Use as a first-touch
+  sanity check before deeper diagnosis. Read-only.
+
+side_effects:
+  - Issues two SELECTs against system catalogs.
+  - No locks, no writes.
+
+args: []
+
+execution:
+  command:
+    binary: /usr/bin/psql
+    argv:
+      - "-XAt"
+      - "-c"
+      - "SELECT version(); SELECT pg_postmaster_start_time(); SELECT count(*) FROM pg_stat_activity;"
+  timeout: 10s
+
+output:
+  parser: text
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+
+examples:
+  - title: Basic server uptime check
+    args: {}

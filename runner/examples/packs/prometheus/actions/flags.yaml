@@ -1,0 +1,24 @@
+schema_version: 1
+id: prom.flags
+title: GET /api/v1/status/flags
+kind: exec
+risk: low
+description: Server command-line flags.
+side_effects:
+  - One GET request.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "curl -sS \"$PROM_URL/api/v1/status/flags\""
+  timeout: 15s
+output:
+  parser: json
+  max_stdout_bytes: 32768
+  max_stderr_bytes: 8192
+examples:
+  - title: CLI flags
+    args: {}

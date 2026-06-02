@@ -1,0 +1,35 @@
+schema_version: 1
+id: minio.user_enable
+title: mc admin user enable
+kind: exec
+risk: high
+description: Re-enables one IAM user.
+side_effects:
+  - User can authenticate again.
+args:
+  - name: alias
+    type: string
+    required: true
+    description: mc alias.
+    validation:
+      pattern: "^[a-zA-Z0-9_\\-]{1,64}$"
+  - name: user
+    type: string
+    required: true
+    description: User access key.
+    validation:
+      pattern: "^[a-zA-Z0-9_\\-]{3,128}$"
+execution:
+  command:
+    binary: mc
+    argv: ["admin", "user", "enable", "{{ args.alias }}", "{{ args.user }}"]
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Enable one
+    args:
+      alias: "minio"
+      user: "alice"

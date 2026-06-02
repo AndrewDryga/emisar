@@ -1,0 +1,22 @@
+schema_version: 1
+id: ch.system_metrics
+title: SELECT * FROM system.metrics
+kind: exec
+risk: low
+description: Per-metric current values (gauges + counters).
+side_effects: ["One SELECT.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "clickhouse-client --host \"${CH_HOST:-localhost}\" --user \"${CH_USER:-default}\" --password \"$CH_PASSWORD\" --query \"SELECT metric, value FROM system.metrics WHERE value != 0 ORDER BY metric FORMAT JSONEachRow\""
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 131072
+  max_stderr_bytes: 8192
+examples:
+  - title: Metrics
+    args: {}

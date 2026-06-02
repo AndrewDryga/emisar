@@ -1,0 +1,22 @@
+schema_version: 1
+id: ch.processes
+title: SELECT * FROM system.processes
+kind: exec
+risk: low
+description: Currently-running queries.
+side_effects: ["One SELECT.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "clickhouse-client --host \"${CH_HOST:-localhost}\" --user \"${CH_USER:-default}\" --password \"$CH_PASSWORD\" --query \"SELECT query_id, user, elapsed, memory_usage, read_rows, query FROM system.processes ORDER BY elapsed DESC FORMAT JSONEachRow\""
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: Live queries
+    args: {}

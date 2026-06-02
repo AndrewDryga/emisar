@@ -1,0 +1,38 @@
+schema_version: 1
+
+id: docker.system_prune
+title: docker system prune
+kind: exec
+risk: high
+
+description: >
+  Removes stopped containers, dangling images, and unused networks.
+  Does NOT remove unused volumes (intentional — volume data is the
+  riskiest thing to delete). Run `docker.system_df` first to scope
+  what will be freed. Irreversible.
+
+side_effects:
+  - Deletes stopped containers.
+  - Deletes images not referenced by any container.
+  - Deletes networks not used by any container.
+  - Frees disk; cannot be undone.
+
+args: []
+
+execution:
+  command:
+    binary: /usr/bin/docker
+    argv:
+      - "system"
+      - "prune"
+      - "-f"
+  timeout: 5m
+
+output:
+  parser: text
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 65536
+
+examples:
+  - title: Prune stopped containers + dangling images
+    args: {}

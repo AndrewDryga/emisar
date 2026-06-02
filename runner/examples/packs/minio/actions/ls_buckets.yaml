@@ -1,0 +1,27 @@
+schema_version: 1
+id: minio.ls_buckets
+title: mc ls (root)
+kind: exec
+risk: low
+description: All buckets in one alias.
+side_effects: ["One admin call.", "Read-only."]
+args:
+  - name: alias
+    type: string
+    required: true
+    description: mc alias.
+    validation:
+      pattern: "^[a-zA-Z0-9_\\-]{1,64}$"
+execution:
+  command:
+    binary: mc
+    argv: ["ls", "{{ args.alias }}", "--json"]
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: Buckets
+    args:
+      alias: "minio"

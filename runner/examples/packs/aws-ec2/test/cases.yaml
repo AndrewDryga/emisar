@@ -1,0 +1,42 @@
+defaults:
+  env: {}
+cases:
+- action: ec2.console_output
+  args:
+    instance_id: i-0123456789abcdef0
+  expect_exit: 0
+- action: ec2.describe_instance_one
+  args:
+    instance_id: i-0123456789abcdef0
+  expect_exit: 0
+- action: ec2.describe_instances
+  args: {}
+  expect_exit: 0
+- action: ec2.describe_security_groups
+  args: {}
+  expect_exit: 0
+- action: ec2.describe_subnets
+  args: {}
+  expect_exit: 0
+- action: ec2.describe_volumes
+  args: {}
+  expect_exit: 0
+- action: ec2.instance_status
+  args: {}
+  expect_exit: 0
+- action: ec2.reboot_instance
+  args:
+    instance_id: i-0123456789abcdef0
+  skip: mutator skipped by default (high); set --include=ec2.reboot_instance to run
+- action: ec2.start_instance
+  args:
+    instance_id: i-0123456789abcdef0
+  skip: mutator skipped by default (high); set --include=ec2.start_instance to run
+- action: ec2.stop_instance
+  args:
+    instance_id: i-0123456789abcdef0
+  skip: mutator skipped by default (high); set --include=ec2.stop_instance to run
+- action: ec2.terminate_instance
+  args:
+    instance_id: i-0123456789abcdef0
+  skip: mutator skipped by default (critical); set --include=ec2.terminate_instance to run

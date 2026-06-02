@@ -1,0 +1,51 @@
+schema_version: 1
+id: mongo.drop_index
+title: db.<coll>.dropIndex("<name>")
+kind: exec
+risk: high
+description: >
+  Drop one index from a collection. Use to remove a hot or unused
+  index discovered via index_stats. Queries that relied on the
+  index degrade to COLLSCAN until rebuilt or replaced.
+side_effects:
+  - Index removed.
+  - Queries that used the index switch to other indexes or full scan.
+  - Brief lock during the drop.
+args:
+  - name: db_name
+    type: string
+    required: true
+    description: Database name.
+    validation:
+      pattern: "^[a-zA-Z0-9_\\-]{1,64}$"
+  - name: collection
+    type: string
+    required: true
+    description: Collection name.
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{1,128}$"
+  - name: index_name
+    type: string
+    required: true
+    description: Index name.
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{1,128}$"
+execution:
+  command:
+    binary: /usr/bin/mongosh
+    argv:
+      - "--quiet"
+      - "{{ args.db_name }}"
+      - "--eval"
+      - "db.getCollection('{{ args.collection }}').dropIndex('{{ args.index_name }}')"
+  timeout: 60s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Drop unused index
+    args:
+      db_name: "shop"
+      collection: "orders"
+      index_name: "user_1_status_1"

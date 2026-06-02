@@ -35,6 +35,12 @@ ENV MIX_ENV="prod"
 # container root). Copying it early lets Docker layer-cache it.
 COPY install.sh /install.sh
 
+# EmisarWeb.PacksRegistry walks runner/examples/packs at compile time;
+# its default relative path bottoms out at /runner/examples/packs inside
+# the container. Copy the YAMLs there so the registry can scan them.
+# Layer-cached separately so pack edits don't bust deps.compile.
+COPY runner/examples/packs /runner/examples/packs
+
 # Install deps first so docker layer-caches them.
 COPY portal/mix.exs portal/mix.lock ./
 COPY portal/apps/emisar/mix.exs apps/emisar/mix.exs

@@ -1,0 +1,24 @@
+schema_version: 1
+id: mongo.top
+title: db.adminCommand({top:1})
+kind: exec
+risk: low
+description: 'Per-collection time spent in reads/writes/commands. Mongo "top" for query traffic.'
+side_effects:
+  - One top command.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "mongosh \"$MONGO_URI\" '--quiet' '--eval' 'JSON.stringify(db.adminCommand({top:1}))'"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: Per-coll time
+    args: {}

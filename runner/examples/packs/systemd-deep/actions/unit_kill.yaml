@@ -1,0 +1,47 @@
+schema_version: 1
+id: systemd.unit_kill
+title: systemctl kill -s <signal> <unit>
+kind: exec
+risk: high
+description: >
+  Send a signal to a unit's main process (or all processes). Useful
+  when a service is wedged and SIGTERM-via-stop isn't working. SIGKILL
+  is unrecoverable mid-syscall; consider SIGTERM/SIGHUP first.
+side_effects:
+  - Signal sent to the unit.
+  - Behavior depends on signal — SIGHUP often triggers config reload.
+args:
+  - name: unit
+    type: string
+    required: true
+    description: Unit name.
+    validation:
+      pattern: "^[a-zA-Z0-9@_\\-.]{1,128}$"
+  - name: signal
+    type: string
+    required: false
+    default: SIGTERM
+    description: Signal name.
+    validation:
+      enum:
+        - SIGTERM
+        - SIGKILL
+        - SIGHUP
+        - SIGUSR1
+        - SIGUSR2
+        - SIGINT
+        - SIGQUIT
+execution:
+  command:
+    binary: /usr/bin/systemctl
+    argv: ["kill", "-s", "{{ args.signal }}", "{{ args.unit }}"]
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Send SIGHUP for config reload
+    args:
+      unit: "rsyslog.service"
+      signal: SIGHUP

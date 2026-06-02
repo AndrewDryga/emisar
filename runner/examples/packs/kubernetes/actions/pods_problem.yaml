@@ -1,0 +1,34 @@
+schema_version: 1
+id: kubernetes.pods_problem
+title: Pods NOT in Running/Succeeded
+kind: exec
+risk: low
+description: >
+  Filters pods to only those NOT in Running or Succeeded phase — Pending, Failed, CrashLoopBackOff, ImagePullBackOff, etc. The fastest "what's broken right now?" query. Read-only.
+side_effects:
+  - One kubectl get invocation.
+  - Read-only.
+args:
+  - name: context
+    type: string
+    required: false
+    default: ""
+    description: kubeconfig context. Empty = current.
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{0,128}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "kubectl ${KCTX:+--context=$KCTX} get pods -A --field-selector=status.phase!=Running,status.phase!=Succeeded -o wide"
+  timeout: 30s
+  env:
+    KCTX: "{{ args.context }}"
+output:
+  parser: text
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 16384
+examples:
+  - title: Show problem pods
+    args: {}

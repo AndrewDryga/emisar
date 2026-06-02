@@ -1,0 +1,33 @@
+schema_version: 1
+id: envoy.reset_counters
+title: POST /reset_counters
+kind: exec
+risk: medium
+description: >
+  Reset all Envoy stat counters to zero. Use before isolating a
+  specific test scenario or after diagnosing a noisy historical
+  counter. Histograms and gauges unaffected.
+side_effects:
+  - All Envoy counters zero.
+  - Histograms and gauges unaffected.
+  - In-flight diagnostics referencing old counter values lose context.
+args:
+  - name: admin
+    type: string
+    required: false
+    default: "http://localhost:9901"
+    description: Envoy admin URL.
+    validation:
+      pattern: "^https?://[a-zA-Z0-9._:\\-]{1,253}(:[0-9]{1,5})?$"
+execution:
+  command:
+    binary: /usr/bin/curl
+    argv: ["-sSfX", "POST", "{{ args.admin }}/reset_counters"]
+  timeout: 10s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Reset stats
+    args: {}

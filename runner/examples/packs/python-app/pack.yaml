@@ -1,0 +1,28 @@
+schema_version: 1
+
+id: python-app
+name: Python application runtime
+version: 0.1.0
+description: >
+  Inspect a Python deployment — interpreter + venv state, pip
+  inventory + freeze, dependency conflicts, outdated packages, sys.path.
+  Read-only. Most actions act on the venv at PY_VENV env var
+  (default /opt/app/venv).
+vendor: emisar
+homepage: https://github.com/andrewdryga/emisar
+
+requires:
+  os:
+    - linux
+
+actions:
+  - actions/python_version_system.yaml
+  - actions/venv_python_version.yaml
+  - actions/pip_list.yaml
+  - actions/pip_freeze.yaml
+  - actions/pip_show.yaml
+  - actions/pip_check.yaml
+  - actions/pip_outdated.yaml
+  - actions/sys_path.yaml
+  - actions/site_packages_du.yaml
+  - actions/pip_cache_info.yaml

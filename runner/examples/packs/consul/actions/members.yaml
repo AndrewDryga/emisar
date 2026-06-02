@@ -1,0 +1,22 @@
+schema_version: 1
+id: consul.members
+title: consul members
+kind: exec
+risk: low
+description: All agents in the gossip pool with status, role, version.
+side_effects:
+  - One agent call.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: consul
+    argv: ["members"]
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Members
+    args: {}

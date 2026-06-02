@@ -1,0 +1,22 @@
+schema_version: 1
+id: fw.ip_rule_show
+title: ip rule show
+kind: exec
+risk: low
+description: Policy routing rules — which routing table is used for which traffic.
+side_effects:
+  - One netlink query.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /sbin/ip
+    argv: ["rule", "show"]
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 32768
+  max_stderr_bytes: 8192
+examples:
+  - title: Policy rules
+    args: {}

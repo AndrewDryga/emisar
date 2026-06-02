@@ -1,0 +1,24 @@
+schema_version: 1
+id: prom.tsdb_stats
+title: GET /api/v1/status/tsdb
+kind: exec
+risk: low
+description: Top-10 cardinal label/value pairs in the TSDB. Use to spot cardinality explosion.
+side_effects:
+  - One GET request.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "curl -sS \"$PROM_URL/api/v1/status/tsdb\""
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: TSDB cardinality
+    args: {}

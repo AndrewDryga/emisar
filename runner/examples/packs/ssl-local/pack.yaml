@@ -1,0 +1,27 @@
+schema_version: 1
+
+id: ssl-local
+name: Local SSL/TLS cert inspection
+version: 0.1.0
+description: >
+  Inspect TLS certificates and keys on the local filesystem — find PEMs
+  under a path, dump x509 details, check chain, verify private-key match,
+  inspect PKCS#12. Read-only. Pair with `network-tls` for the remote-side
+  view.
+vendor: emisar
+homepage: https://github.com/andrewdryga/emisar
+
+requires:
+  os:
+    - linux
+  binaries:
+    - openssl
+
+actions:
+  - actions/find_certs.yaml
+  - actions/cert_text.yaml
+  - actions/cert_expiry.yaml
+  - actions/cert_fingerprint.yaml
+  - actions/key_modulus.yaml
+  - actions/verify_chain.yaml
+  - actions/pkcs12_info.yaml

@@ -1,0 +1,22 @@
+schema_version: 1
+id: ec2.describe_instances
+title: aws ec2 describe-instances
+kind: exec
+risk: low
+description: All EC2 instances in the configured region with state + tags + IPs.
+side_effects:
+  - One API call.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: aws
+    argv: ["ec2", "describe-instances", "--output", "json"]
+  timeout: 60s
+output:
+  parser: json
+  max_stdout_bytes: 4194304
+  max_stderr_bytes: 8192
+examples:
+  - title: All instances
+    args: {}

@@ -1,0 +1,33 @@
+schema_version: 1
+id: prom.reload_config
+title: POST /-/reload
+kind: exec
+risk: medium
+description: >
+  Trigger Prometheus to reload its config + rule files in place.
+  Requires --web.enable-lifecycle. If the new config is invalid,
+  reload fails and Prometheus keeps the old one.
+side_effects:
+  - Prometheus re-reads prometheus.yml + rule files.
+  - Brief scrape pause during reload.
+  - Failure leaves the old config in place.
+args:
+  - name: target
+    type: string
+    required: false
+    default: "http://localhost:9090"
+    description: Prometheus base URL.
+    validation:
+      pattern: "^https?://[a-zA-Z0-9._:\\-]{1,253}(:[0-9]{1,5})?$"
+execution:
+  command:
+    binary: /usr/bin/curl
+    argv: ["-sSfX", "POST", "{{ args.target }}/-/reload"]
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Reload config
+    args: {}

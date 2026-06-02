@@ -1,0 +1,18 @@
+schema_version: 1
+id: rpm.dnf_history
+title: dnf history
+kind: exec
+risk: low
+description: Recent dnf transactions (installs / removes / updates).
+side_effects: ["One dnf history read.", "Read-only."]
+args: []
+execution:
+  command: {binary: /usr/bin/dnf, argv: ["history"]}
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 131072
+  max_stderr_bytes: 8192
+examples:
+  - title: History
+    args: {}

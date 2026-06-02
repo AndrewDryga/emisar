@@ -1,0 +1,25 @@
+schema_version: 1
+id: mysql.innodb_status
+title: SHOW ENGINE INNODB STATUS
+kind: exec
+risk: low
+description: >
+  Full InnoDB engine status — buffer pool, latest deadlock detected, longest waiting transaction, undo space, log sequence number. The canonical "InnoDB is sick" diagnostic.
+side_effects:
+  - One SHOW ENGINE INNODB STATUS.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /usr/bin/mysql
+    argv:
+      - "-e"
+      - "SHOW ENGINE INNODB STATUS\\G"
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: InnoDB engine state
+    args: {}

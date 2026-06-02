@@ -1,0 +1,31 @@
+schema_version: 1
+id: systemd.analyze_critical_chain
+title: systemd-analyze critical-chain
+kind: exec
+risk: low
+description: 'Shows the boot-time critical path leading to one unit — useful for understanding "why did multi-user.target take so long?"'
+side_effects:
+  - One systemd-analyze invocation.
+  - Read-only.
+args:
+  - name: unit
+    type: string
+    required: true
+    description: Unit to analyze.
+    validation:
+      pattern: "^[a-zA-Z0-9@:_.\\-]{1,128}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "systemd-analyze critical-chain {{ args.unit }}"
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 32768
+  max_stderr_bytes: 8192
+examples:
+  - title: Boot path for multi-user
+    args:
+      unit: multi-user.target

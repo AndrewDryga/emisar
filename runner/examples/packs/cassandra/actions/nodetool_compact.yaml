@@ -1,0 +1,41 @@
+schema_version: 1
+id: cassandra.nodetool_compact
+title: nodetool compact <ks> [table]
+kind: exec
+risk: high
+description: 'Forces major compaction. For STCS this merges everything into one big SSTable — almost always a mistake. Prefer per-token-range compaction or letting the strategy run.'
+side_effects:
+  - Heavy disk + CPU for the duration.
+  - For STCS, creates one giant SSTable that is hard to compact later.
+  - For LCS, may be fine.
+args:
+  - name: keyspace
+    type: string
+    required: true
+    description: Keyspace.
+    validation:
+      pattern: "^[a-zA-Z][a-zA-Z0-9_]{0,47}$"
+  - name: table
+    type: string
+    required: false
+    default: ""
+    description: Optional table.
+    validation:
+      pattern: "^[a-zA-Z][a-zA-Z0-9_]{0,47}$|^$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "if [ -n '{{ args.table }}' ]; then nodetool compact {{ args.keyspace }} {{ args.table }}; else nodetool compact {{ args.keyspace }}; fi"
+  timeout: 12h
+cancel_grace: 5m
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Major-compact one table
+    args:
+      keyspace: "my_ks"
+      table: "users"

@@ -1,0 +1,24 @@
+schema_version: 1
+id: mysql.master_status
+title: SHOW MASTER STATUS
+kind: exec
+risk: low
+description: Current binary log file, position, and GTID set on the primary. Read-only.
+side_effects:
+  - One SHOW MASTER STATUS.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /usr/bin/mysql
+    argv:
+      - "-e"
+      - "SHOW MASTER STATUS"
+  timeout: 10s
+output:
+  parser: text
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 8192
+examples:
+  - title: Primary binlog state
+    args: {}

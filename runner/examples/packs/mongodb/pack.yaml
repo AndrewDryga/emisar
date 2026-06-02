@@ -1,0 +1,49 @@
+schema_version: 1
+
+id: mongodb
+name: MongoDB operations
+version: 0.1.0
+description: >
+  Replica-set + shard-cluster introspection, slow-query identification,
+  collection stats, plus remediation surface (killOp, replSet stepDown,
+  collection compact, dropIndex). Authenticates via MONGO_URI env var
+  on the runner host.
+vendor: emisar
+homepage: https://github.com/andrewdryga/emisar
+
+requires:
+  os:
+    - linux
+  binaries:
+    - mongosh
+
+actions:
+  # Server state
+  - actions/server_status.yaml
+  - actions/build_info.yaml
+  - actions/host_info.yaml
+  - actions/get_parameter.yaml
+  - actions/connections.yaml
+  # Databases / collections
+  - actions/db_list.yaml
+  - actions/db_stats.yaml
+  - actions/collection_list.yaml
+  - actions/collection_stats.yaml
+  - actions/index_stats.yaml
+  - actions/explain_query.yaml
+  # Replication
+  - actions/replset_status.yaml
+  - actions/replset_config.yaml
+  - actions/oplog_size.yaml
+  # Sharding
+  - actions/shard_status.yaml
+  - actions/balancer_status.yaml
+  # Live ops / profiling
+  - actions/current_op.yaml
+  - actions/profiler_status.yaml
+  - actions/top.yaml
+  # Mutators
+  - actions/kill_op.yaml
+  - actions/replset_stepdown.yaml
+  - actions/compact_collection.yaml
+  - actions/drop_index.yaml

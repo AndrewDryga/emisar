@@ -1,0 +1,22 @@
+schema_version: 1
+id: phpfpm.opcache_status
+title: GET /opcache-status
+kind: exec
+risk: low
+description: OPcache stats endpoint (requires the standard opcache_status.php script reachable at PHP_OPCACHE_URL).
+side_effects: ["One HTTP GET.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "curl -sS \"${PHP_OPCACHE_URL:-http://127.0.0.1/opcache-status.php}\""
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 131072
+  max_stderr_bytes: 8192
+examples:
+  - title: OPcache
+    args: {}

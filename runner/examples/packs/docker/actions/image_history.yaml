@@ -1,0 +1,33 @@
+schema_version: 1
+id: docker.image_history
+title: docker history
+kind: exec
+risk: low
+description: >
+  Returns the layer-by-layer build history of one image — useful for tracing "where did this 2 GB layer come from?" Read-only.
+side_effects:
+  - One docker history invocation.
+  - Read-only.
+args:
+  - name: image
+    type: string
+    required: true
+    description: Image ref.
+    validation:
+      pattern: "^[a-zA-Z0-9_./@:\\-]{1,256}$"
+execution:
+  command:
+    binary: /usr/bin/docker
+    argv:
+      - "history"
+      - "--no-trunc"
+      - "{{ args.image }}"
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 131072
+  max_stderr_bytes: 8192
+examples:
+  - title: Layers of nginx:latest
+    args:
+      image: "nginx:latest"

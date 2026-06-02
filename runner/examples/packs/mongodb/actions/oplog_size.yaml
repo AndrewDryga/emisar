@@ -1,0 +1,24 @@
+schema_version: 1
+id: mongo.oplog_size
+title: Oplog size + window
+kind: exec
+risk: low
+description: 'Oplog size + first/last timestamps + estimated time window. The canonical "how far can a secondary fall behind?" check.'
+side_effects:
+  - Reads oplog metadata.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "mongosh \"$MONGO_URI\" '--quiet' '--eval' \"JSON.stringify(db.getSiblingDB('local').runCommand({collStats:'oplog.rs'}))\""
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 32768
+  max_stderr_bytes: 8192
+examples:
+  - title: Oplog stats
+    args: {}

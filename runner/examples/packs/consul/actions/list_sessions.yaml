@@ -1,0 +1,22 @@
+schema_version: 1
+id: consul.list_sessions
+title: GET /v1/session/list
+kind: exec
+risk: low
+description: 'Active sessions cluster-wide: ID, node, TTL, behavior.'
+side_effects: ["One API call.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "curl -sS -H \"X-Consul-Token: $CONSUL_HTTP_TOKEN\" \"$CONSUL_HTTP_ADDR/v1/session/list\""
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: Sessions
+    args: {}

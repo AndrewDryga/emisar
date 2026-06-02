@@ -1,0 +1,26 @@
+schema_version: 1
+id: redis.role
+title: ROLE
+kind: exec
+risk: low
+description: >
+  Reports whether this Redis is master, replica, or sentinel.
+  Master shows replication offset and connected replicas; replica
+  shows master addr + sync state. Use before any write-path
+  troubleshooting.
+side_effects:
+  - One ROLE command.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /usr/bin/redis-cli
+    argv: ["ROLE"]
+  timeout: 5s
+output:
+  parser: text
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Replication role
+    args: {}

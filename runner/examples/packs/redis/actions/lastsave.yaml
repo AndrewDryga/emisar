@@ -1,0 +1,24 @@
+schema_version: 1
+id: redis.lastsave
+title: LASTSAVE
+kind: exec
+risk: low
+description: >
+  Unix timestamp of the last successful background save (RDB). Use
+  to confirm the persistence schedule is firing.
+side_effects:
+  - One LASTSAVE command.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /usr/bin/redis-cli
+    argv: ["LASTSAVE"]
+  timeout: 5s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Last RDB timestamp
+    args: {}

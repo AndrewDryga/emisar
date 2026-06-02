@@ -1,0 +1,18 @@
+schema_version: 1
+id: cassandra.nodetool_failuredetector
+title: nodetool failuredetector
+kind: exec
+risk: low
+description: Phi accrual failure detector scores per peer. Phi > 8 ≈ marked down.
+side_effects: ["One JMX call.", "Read-only."]
+args: []
+execution:
+  command: {binary: /usr/bin/nodetool, argv: ["failuredetector"]}
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Phi scores
+    args: {}

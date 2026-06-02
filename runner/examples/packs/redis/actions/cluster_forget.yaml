@@ -1,0 +1,34 @@
+schema_version: 1
+id: redis.cluster_forget
+title: CLUSTER FORGET
+kind: exec
+risk: high
+description: >
+  Remove a node from the connected node's cluster view for 60s.
+  Used during node replacement. Run on every reachable node to
+  fully evict the old member. Wrong target id produces a brief
+  split view until gossip refreshes.
+side_effects:
+  - The connected node drops the named member from its view.
+  - Effect lasts 60 seconds; gossip may re-discover an alive node.
+  - Run on every node to permanently evict.
+args:
+  - name: node_id
+    type: string
+    required: true
+    description: 40-char hex node id.
+    validation:
+      pattern: "^[a-f0-9]{40}$"
+execution:
+  command:
+    binary: /usr/bin/redis-cli
+    argv: ["CLUSTER", "FORGET", "{{ args.node_id }}"]
+  timeout: 10s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Forget a node
+    args:
+      node_id: "07c37dfeb235213a872192d90877d0cd55635b91"

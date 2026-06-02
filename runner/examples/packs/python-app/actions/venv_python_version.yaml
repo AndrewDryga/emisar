@@ -1,0 +1,22 @@
+schema_version: 1
+id: py.venv_python_version
+title: $PY_VENV/bin/python --version
+kind: exec
+risk: low
+description: Interpreter version inside the configured venv.
+side_effects: ["One forked process.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "\"${PY_VENV:-/opt/app/venv}/bin/python\" --version 2>&1"
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 1024
+  max_stderr_bytes: 8192
+examples:
+  - title: Venv python
+    args: {}

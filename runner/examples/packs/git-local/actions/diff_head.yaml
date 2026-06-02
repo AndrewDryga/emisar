@@ -1,0 +1,24 @@
+schema_version: 1
+id: git.diff_head
+title: git diff HEAD
+kind: exec
+risk: low
+description: Uncommitted changes against HEAD. Capped at 1MB of output.
+side_effects:
+  - One git diff.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "cd \"$GIT_REPO\" && git diff HEAD"
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: Uncommitted changes
+    args: {}

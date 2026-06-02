@@ -1,0 +1,27 @@
+schema_version: 1
+id: postfix.postcat_qid
+title: postcat -q <queue-id>
+kind: exec
+risk: low
+description: Decode one queued message — headers + body. Body may contain sensitive content; rely on audit redaction.
+side_effects: ["Reads one spool file.", "Read-only — message content may include user PII."]
+args:
+  - name: queue_id
+    type: string
+    required: true
+    description: Postfix queue ID.
+    validation:
+      pattern: "^[A-F0-9]{6,20}$"
+execution:
+  command:
+    binary: /usr/sbin/postcat
+    argv: ["-q", "{{ args.queue_id }}"]
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: Show one deferred message
+    args:
+      queue_id: "3F7A8C001234"

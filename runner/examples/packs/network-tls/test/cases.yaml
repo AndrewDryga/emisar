@@ -1,0 +1,55 @@
+defaults:
+  env: {}
+cases:
+- action: net.dig_dnssec
+  args:
+    name: example.com
+  expect_exit: 0
+- action: net.dig_record
+  args:
+    name: example.com
+  expect_exit: 0
+- action: net.dig_reverse
+  args:
+    ip: 8.8.8.8
+  expect_exit: 0
+- action: net.dig_trace
+  args:
+    name: example.com
+  expect_exit: 0
+- action: net.http_headers
+  args:
+    url: https://example.com/
+  expect_exit: 0
+- action: net.http_probe
+  args:
+    url: https://example.com/
+  expect_exit: 0
+- action: net.ipinfo_lookup
+  args:
+    ip: 1.1.1.1
+  expect_exit: 0
+- action: net.ping_extended
+  args:
+    host: 1.1.1.1
+  expect_exit: 0
+- action: net.tls_cert_expiry
+  args:
+    host: example.com
+  expect_exit: 0
+- action: net.tls_chain_dump
+  args:
+    host: example.com
+  expect_exit: 0
+- action: net.tls_protocol_check
+  args:
+    host: example.com
+  expect_exit: 0
+- action: net.traceroute_mtr
+  args:
+    host: 1.1.1.1
+  expect_exit: 0
+- action: net.whois_summary
+  args:
+    domain: example.com
+  expect_exit: 0

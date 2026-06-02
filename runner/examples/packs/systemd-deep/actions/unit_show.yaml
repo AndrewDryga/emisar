@@ -1,0 +1,29 @@
+schema_version: 1
+id: systemd.unit_show
+title: systemctl show <unit>
+kind: exec
+risk: low
+description: 'Full property dump for one unit — every directive (CPUShares, MemoryMax, Restart, ExecStart, etc).'
+side_effects:
+  - One systemctl invocation.
+  - Read-only.
+args:
+  - name: unit
+    type: string
+    required: true
+    description: Unit name.
+    validation:
+      pattern: "^[a-zA-Z0-9@:_.\\-]{1,128}$"
+execution:
+  command:
+    binary: /bin/systemctl
+    argv: ["show", "{{ args.unit }}", "--no-pager"]
+  timeout: 10s
+output:
+  parser: text
+  max_stdout_bytes: 131072
+  max_stderr_bytes: 8192
+examples:
+  - title: Full nginx properties
+    args:
+      unit: nginx.service

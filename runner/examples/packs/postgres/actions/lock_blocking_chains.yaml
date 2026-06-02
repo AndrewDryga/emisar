@@ -1,0 +1,23 @@
+schema_version: 1
+id: postgres.lock_blocking_chains
+title: Blocker → blocked chains
+kind: exec
+risk: low
+description: Each blocked backend with its blocker. Use to find the head of a stuck lock chain.
+side_effects: ["One SELECT joining pg_locks.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /usr/bin/psql
+    argv:
+      - "-XAt"
+      - "-c"
+      - "SELECT blocked.pid AS blocked_pid, blocking.pid AS blocker_pid, blocked.usename AS blocked_user, blocking.usename AS blocker_user, blocked.wait_event_type, blocked.wait_event, substring(blocked.query, 1, 200) AS blocked_query, substring(blocking.query, 1, 200) AS blocker_query FROM pg_stat_activity blocked JOIN pg_stat_activity blocking ON blocking.pid = ANY(pg_blocking_pids(blocked.pid));"
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 131072
+  max_stderr_bytes: 8192
+examples:
+  - title: Lock chains
+    args: {}

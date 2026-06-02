@@ -1,0 +1,31 @@
+schema_version: 1
+id: consul.snapshot_restore
+title: consul snapshot restore <path>
+kind: exec
+risk: critical
+description: >
+  Restores cluster state from a snapshot. ALL existing state (KV, services, sessions, intentions, ACL) is REPLACED. Cluster briefly unavailable during restore.
+side_effects:
+  - All current Raft state is replaced.
+  - KV, services, sessions, ACLs, intentions all swap to snapshot contents.
+  - Brief outage during application.
+  - Cannot be undone without another snapshot.
+args:
+  - name: path
+    type: string
+    required: true
+    description: Snapshot file.
+    validation:
+      pattern: "^/[a-zA-Z0-9_./\\-]{1,512}\\.snap$"
+execution:
+  command: {binary: /usr/bin/consul, argv: ["snapshot", "restore", "{{ args.path }}"]}
+  timeout: 30m
+cancel_grace: 5m
+output:
+  parser: text
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Restore from backup
+    args:
+      path: "/var/backups/consul-pre-migration.snap"

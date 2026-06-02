@@ -1,0 +1,42 @@
+schema_version: 1
+
+id: debugging.pid_limits
+title: Resource limits applied to a PID
+kind: exec
+risk: low
+
+description: >
+  Reads /proc/<pid>/limits — every ulimit applied (open files,
+  stack size, NPROC, memlock, msgqueue, niceness). Use to confirm
+  whether a process is actually getting the higher limits its
+  service file requested.
+
+side_effects:
+  - One /proc read.
+  - Read-only.
+
+args:
+  - name: pid
+    type: integer
+    required: true
+    description: PID to inspect.
+    validation:
+      min: 1
+      max: 4194304
+
+execution:
+  command:
+    binary: /bin/cat
+    argv:
+      - "/proc/{{ args.pid }}/limits"
+  timeout: 5s
+
+output:
+  parser: text
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 4096
+
+examples:
+  - title: Limits for PID 4321
+    args:
+      pid: 4321

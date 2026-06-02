@@ -1,0 +1,24 @@
+schema_version: 1
+id: mysql.connections_summary
+title: Connection counts + cap
+kind: exec
+risk: low
+description: Connected vs max_connections + breakdown by host. Use to check "are we close to connection exhaustion?"
+side_effects:
+  - One SHOW STATUS + one SHOW PROCESSLIST.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /usr/bin/mysql
+    argv:
+      - "-e"
+      - "SHOW GLOBAL STATUS LIKE 'Threads_%'; SHOW GLOBAL VARIABLES LIKE 'max_connections'; SELECT SUBSTRING_INDEX(host, ':', 1) AS client, count(*) AS conns FROM information_schema.processlist GROUP BY client ORDER BY conns DESC;"
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 32768
+  max_stderr_bytes: 8192
+examples:
+  - title: Connection summary
+    args: {}

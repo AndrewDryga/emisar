@@ -1,0 +1,54 @@
+defaults:
+  env: {}
+cases:
+- action: haproxy.disable_server
+  args:
+    backend: api
+    server: srv1
+  expect_exit:
+  - 0
+  - 1
+  skip: mutator skipped by default (high)
+- action: haproxy.enable_server
+  args:
+    backend: api
+    server: srv1
+  expect_exit:
+  - 0
+  - 1
+  skip: mutator skipped by default (high)
+- action: haproxy.set_maxconn
+  args:
+    frontend: https-in
+    maxconn: 5000
+  expect_exit:
+  - 0
+  - 1
+  skip: mutator skipped by default (medium)
+- action: haproxy.show_backend
+  args: {}
+  expect_exit: 0
+- action: haproxy.show_errors
+  args: {}
+  expect_exit: 0
+- action: haproxy.show_frontend
+  args: {}
+  expect_exit: 0
+- action: haproxy.show_info
+  args: {}
+  expect_exit: 0
+- action: haproxy.show_map
+  args: {}
+  expect_exit: 0
+- action: haproxy.show_pools
+  args: {}
+  expect_exit: 0
+- action: haproxy.show_servers_state
+  args: {}
+  expect_exit: 0
+- action: haproxy.show_sess
+  args: {}
+  expect_exit: 0
+- action: haproxy.show_stat
+  args: {}
+  expect_exit: 0

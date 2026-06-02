@@ -1,0 +1,25 @@
+schema_version: 1
+id: rpm.rpm_qi
+title: rpm -qi <pkg>
+kind: exec
+risk: low
+description: Details for one package — version, release, install date, signer.
+side_effects: ["One rpmdb read.", "Read-only."]
+args:
+  - name: package
+    type: string
+    required: true
+    description: Package name.
+    validation:
+      pattern: "^[a-zA-Z0-9_.+\\-]{1,128}$"
+execution:
+  command: {binary: /usr/bin/rpm, argv: ["-qi", "{{ args.package }}"]}
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Info on httpd
+    args:
+      package: "httpd"

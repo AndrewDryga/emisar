@@ -1,0 +1,22 @@
+schema_version: 1
+id: postfix.queue_counts
+title: Per-queue message counts
+kind: exec
+risk: low
+description: Counts in incoming/active/deferred/hold queues.
+side_effects: ["Counts files in /var/spool/postfix/*.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "for q in incoming active deferred hold; do n=$(find /var/spool/postfix/$q -type f 2>/dev/null | wc -l); echo \"$q: $n\"; done"
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Counts
+    args: {}

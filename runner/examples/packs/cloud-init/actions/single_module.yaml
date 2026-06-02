@@ -1,0 +1,47 @@
+schema_version: 1
+id: cloud-init.single_module
+title: cloud-init single --name=<module>
+kind: exec
+risk: high
+description: >
+  Run one named cloud-init module out-of-band (e.g. `users-groups`,
+  `ssh`, `runcmd`, `set_hostname`). The module is invoked with its
+  current configuration; effects depend entirely on which module.
+side_effects:
+  - One module executes.
+  - Behavior depends on the module — could mutate users, ssh keys,
+    hostname, packages, runcmd, etc.
+args:
+  - name: module
+    type: string
+    required: true
+    description: Module name (e.g., users_groups, ssh, set_hostname).
+    validation:
+      pattern: "^[a-zA-Z0-9_\\-]{1,64}$"
+  - name: frequency
+    type: string
+    required: false
+    default: "always"
+    description: When to consider the module previously run.
+    validation:
+      enum:
+        - "always"
+        - "instance"
+        - "once"
+execution:
+  command:
+    binary: /usr/bin/cloud-init
+    argv: ["single", "--name={{ args.module }}", "--frequency={{ args.frequency }}"]
+  timeout: 300s
+cancel_grace: 30s
+output:
+  parser: text
+  max_stdout_bytes: 131072
+  max_stderr_bytes: 16384
+examples:
+  - title: Re-run users-groups
+    args:
+      module: "users_groups"
+  - title: Re-run ssh module
+    args:
+      module: "ssh"

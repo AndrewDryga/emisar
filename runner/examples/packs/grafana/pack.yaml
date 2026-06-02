@@ -1,0 +1,29 @@
+schema_version: 1
+
+id: grafana
+name: Grafana
+version: 0.1.0
+description: >
+  Grafana admin-API ops — datasource health, dashboard listings, alert
+  state, user list, version, settings. Read-only. Auth via GRAFANA_URL
+  + GRAFANA_TOKEN env vars on the runner host.
+vendor: emisar
+homepage: https://github.com/andrewdryga/emisar
+
+requires:
+  os:
+    - linux
+  binaries:
+    - curl
+
+actions:
+  - actions/health.yaml
+  - actions/version.yaml
+  - actions/datasources.yaml
+  - actions/datasource_health.yaml
+  - actions/dashboards_search.yaml
+  - actions/alerting_state.yaml
+  - actions/alerting_rules.yaml
+  - actions/users.yaml
+  - actions/orgs.yaml
+  - actions/settings.yaml

@@ -1,0 +1,25 @@
+schema_version: 1
+id: f2b.banned_ips
+title: get <jail> banip
+kind: exec
+risk: low
+description: Currently banned IPs in one jail.
+side_effects: ["One fail2ban call.", "Read-only."]
+args:
+  - name: jail
+    type: string
+    required: true
+    description: Jail name.
+    validation:
+      pattern: "^[a-zA-Z0-9_\\-]{1,64}$"
+execution:
+  command: {binary: /usr/bin/fail2ban-client, argv: ["get", "{{ args.jail }}", "banip"]}
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 131072
+  max_stderr_bytes: 8192
+examples:
+  - title: Banned in sshd
+    args:
+      jail: "sshd"

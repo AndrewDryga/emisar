@@ -1,0 +1,22 @@
+schema_version: 1
+id: envoy.ready
+title: GET /ready
+kind: exec
+risk: low
+description: 200 if Envoy is fully initialized; 503 otherwise.
+side_effects: ["One admin GET.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "curl -sS -o /dev/null -w '%{http_code}\\n' \"${ENVOY_ADMIN:-http://127.0.0.1:9901}/ready\""
+  timeout: 10s
+output:
+  parser: text
+  max_stdout_bytes: 256
+  max_stderr_bytes: 8192
+examples:
+  - title: Ready?
+    args: {}

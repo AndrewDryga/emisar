@@ -1,0 +1,22 @@
+schema_version: 1
+id: fw.nft_list_ruleset
+title: nft list ruleset
+kind: exec
+risk: low
+description: Full nftables ruleset across all families.
+side_effects:
+  - One netfilter query.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /usr/sbin/nft
+    argv: ["list", "ruleset"]
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: All nft rules
+    args: {}

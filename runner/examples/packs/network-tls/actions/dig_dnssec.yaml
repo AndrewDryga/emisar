@@ -1,0 +1,29 @@
+schema_version: 1
+id: net.dig_dnssec
+title: dig +dnssec (DNSSEC validation)
+kind: exec
+risk: low
+description: Issues a DNSSEC-validating query. Returns RRSIG records and the AD (authenticated-data) flag if validation succeeded.
+side_effects:
+  - One DNS query with DO bit set.
+  - Read-only.
+args:
+  - name: name
+    type: string
+    required: true
+    description: Domain name.
+    validation:
+      pattern: "^[a-zA-Z0-9.\\-_]{1,253}$"
+execution:
+  command:
+    binary: /usr/bin/dig
+    argv: ["+dnssec", "{{ args.name }}"]
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 32768
+  max_stderr_bytes: 8192
+examples:
+  - title: DNSSEC check
+    args:
+      name: example.com

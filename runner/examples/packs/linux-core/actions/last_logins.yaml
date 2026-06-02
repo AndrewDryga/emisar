@@ -1,0 +1,42 @@
+schema_version: 1
+
+id: linux.last_logins
+title: Recent successful logins
+kind: exec
+risk: low
+
+description: >
+  Last N successful logins from /var/log/wtmp via `last`. Shows user,
+  terminal, source IP, duration. Read-only.
+
+side_effects:
+  - One last invocation.
+  - Reads /var/log/wtmp.
+
+args:
+  - name: count
+    type: integer
+    required: false
+    default: 50
+    description: How many recent logins to return.
+    validation:
+      min: 1
+      max: 500
+
+execution:
+  command:
+    binary: /usr/bin/last
+    argv:
+      - "-F"
+      - "-n"
+      - "{{ args.count }}"
+  timeout: 10s
+
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+
+examples:
+  - title: Last 50 successful logins
+    args: {}

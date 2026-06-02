@@ -1,0 +1,24 @@
+schema_version: 1
+id: mongo.current_op
+title: db.currentOp()
+kind: exec
+risk: low
+description: 'In-flight operations. The canonical "what is the server doing right now?" check.'
+side_effects:
+  - One currentOp command.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "mongosh \"$MONGO_URI\" '--quiet' '--eval' 'JSON.stringify(db.currentOp({active:true}))'"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: Live ops
+    args: {}

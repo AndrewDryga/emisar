@@ -1,0 +1,31 @@
+schema_version: 1
+id: redis.latency_history
+title: LATENCY HISTORY
+kind: exec
+risk: low
+description: >
+  Per-event latency time series (e.g. fork, aof-write, expire).
+  Use after LATENCY LATEST to drill into one event class.
+side_effects:
+  - One LATENCY HISTORY command.
+  - Read-only.
+args:
+  - name: event
+    type: string
+    required: true
+    description: Event name from LATENCY LATEST.
+    validation:
+      pattern: "^[a-z0-9\\-_]{1,32}$"
+execution:
+  command:
+    binary: /usr/bin/redis-cli
+    argv: ["LATENCY", "HISTORY", "{{ args.event }}"]
+  timeout: 10s
+output:
+  parser: text
+  max_stdout_bytes: 32768
+  max_stderr_bytes: 8192
+examples:
+  - title: Fork latency history
+    args:
+      event: "fork"

@@ -1,0 +1,22 @@
+schema_version: 1
+id: grafana.alerting_rules
+title: GET /api/prometheus/grafana/api/v1/rules
+kind: exec
+risk: low
+description: All Grafana-managed alert rules with last evaluation state.
+side_effects: ["One API call.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "curl -sS -H \"Authorization: Bearer $GRAFANA_TOKEN\" \"$GRAFANA_URL/api/prometheus/grafana/api/v1/rules\""
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: Rules
+    args: {}

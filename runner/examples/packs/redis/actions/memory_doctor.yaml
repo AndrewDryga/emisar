@@ -1,0 +1,25 @@
+schema_version: 1
+id: redis.memory_doctor
+title: MEMORY DOCTOR
+kind: exec
+risk: low
+description: >
+  Runs the built-in memory advisor. Returns a human-readable
+  summary of suspected issues (fragmentation, oversized clients,
+  large peak vs current).
+side_effects:
+  - One MEMORY DOCTOR command.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /usr/bin/redis-cli
+    argv: ["MEMORY", "DOCTOR"]
+  timeout: 10s
+output:
+  parser: text
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Memory advisor
+    args: {}

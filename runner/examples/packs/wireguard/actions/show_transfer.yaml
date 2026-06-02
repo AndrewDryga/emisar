@@ -1,0 +1,18 @@
+schema_version: 1
+id: wg.show_transfer
+title: wg show all transfer
+kind: exec
+risk: low
+description: 'Per-peer cumulative bytes rx/tx. Use to confirm "is the tunnel actually carrying traffic?".'
+side_effects: ["One netlink query.", "Read-only."]
+args: []
+execution:
+  command: {binary: /usr/bin/wg, argv: ["show", "all", "transfer"]}
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 32768
+  max_stderr_bytes: 8192
+examples:
+  - title: Transfer counts
+    args: {}

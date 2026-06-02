@@ -1,0 +1,34 @@
+schema_version: 1
+id: minio.service_restart
+title: mc admin service restart <alias>
+kind: exec
+risk: high
+description: >
+  Restart MinIO across the cluster. Coordinated rolling restart —
+  one node at a time so the cluster stays available. Use after a
+  config change that requires restart.
+side_effects:
+  - Rolling restart across nodes.
+  - Brief unavailability per node; cluster-wide writes still served.
+  - Active uploads may need retry.
+args:
+  - name: alias
+    type: string
+    required: true
+    description: mc alias name.
+    validation:
+      pattern: "^[a-zA-Z0-9_\\-]{1,64}$"
+execution:
+  command:
+    binary: /usr/local/bin/mc
+    argv: ["admin", "service", "restart", "{{ args.alias }}"]
+  timeout: 600s
+cancel_grace: 60s
+output:
+  parser: text
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Restart cluster
+    args:
+      alias: "prod"

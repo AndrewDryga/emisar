@@ -1,0 +1,41 @@
+schema_version: 1
+
+id: debugging.pid_io
+title: Process I/O accounting
+kind: exec
+risk: low
+
+description: >
+  Reads /proc/<pid>/io — bytes read/written (logical + physical),
+  syscall counts, cancelled writes. Use to find which process is
+  driving disk I/O. Pair with `debugging.iostat` for the disk side.
+
+side_effects:
+  - One /proc read.
+  - Read-only.
+
+args:
+  - name: pid
+    type: integer
+    required: true
+    description: PID to inspect.
+    validation:
+      min: 1
+      max: 4194304
+
+execution:
+  command:
+    binary: /bin/cat
+    argv:
+      - "/proc/{{ args.pid }}/io"
+  timeout: 5s
+
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 4096
+
+examples:
+  - title: I/O counters for PID 4321
+    args:
+      pid: 4321

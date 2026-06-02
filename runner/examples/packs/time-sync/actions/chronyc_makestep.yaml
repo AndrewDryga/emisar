@@ -1,0 +1,28 @@
+schema_version: 1
+id: time.chronyc_makestep
+title: chronyc makestep
+kind: exec
+risk: high
+description: >
+  Force chrony to step the system clock NOW instead of slewing.
+  Use when drift exceeds slew tolerance and applications can't
+  wait. Jumps in time can confuse cert validation, log timestamps,
+  and event ordering.
+side_effects:
+  - System clock jumps to NTP-synced time.
+  - Apps observe a time discontinuity.
+  - Cron jobs in the skipped window do NOT fire.
+  - TLS cert validation may briefly fail mid-step.
+args: []
+execution:
+  command:
+    binary: /usr/bin/chronyc
+    argv: ["makestep"]
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Force clock step
+    args: {}

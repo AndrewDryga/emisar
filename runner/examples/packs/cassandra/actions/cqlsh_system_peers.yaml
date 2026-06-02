@@ -1,0 +1,22 @@
+schema_version: 1
+id: cassandra.cqlsh_system_peers
+title: SELECT * FROM system.peers_v2
+kind: exec
+risk: low
+description: 'Peer-node view as this coordinator sees it: dc, rack, schema version, tokens.'
+side_effects: ["One CQL query.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "cqlsh -e 'SELECT peer, data_center, rack, schema_version, host_id, tokens FROM system.peers_v2;' \"${CQLSH_HOST:-127.0.0.1}\" \"${CQLSH_PORT:-9042}\" || cqlsh -e 'SELECT peer, data_center, rack, schema_version, host_id, tokens FROM system.peers;' \"${CQLSH_HOST:-127.0.0.1}\" \"${CQLSH_PORT:-9042}\""
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 131072
+  max_stderr_bytes: 8192
+examples:
+  - title: Peers
+    args: {}

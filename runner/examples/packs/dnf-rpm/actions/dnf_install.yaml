@@ -1,0 +1,27 @@
+schema_version: 1
+id: rpm.dnf_install
+title: dnf install -y <pkg>
+kind: exec
+risk: high
+description: Installs one package + its dependencies.
+side_effects:
+  - Resolves + installs dependency tree.
+  - May restart services declared by the package's scriptlets.
+args:
+  - name: package
+    type: string
+    required: true
+    description: Package name.
+    validation:
+      pattern: "^[a-zA-Z0-9_.+\\-]{1,128}$"
+execution:
+  command: {binary: /usr/bin/dnf, argv: ["install", "-y", "{{ args.package }}"]}
+  timeout: 10m
+output:
+  parser: text
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 65536
+examples:
+  - title: Install jq
+    args:
+      package: "jq"

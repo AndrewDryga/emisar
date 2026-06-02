@@ -1,0 +1,32 @@
+schema_version: 1
+id: docker.volume_inspect
+title: docker volume inspect
+kind: exec
+risk: low
+description: Returns the JSON inspect document for one volume — driver, mountpoint, labels. Read-only.
+side_effects:
+  - One docker volume inspect invocation.
+  - Read-only.
+args:
+  - name: name
+    type: string
+    required: true
+    description: Volume name.
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{1,128}$"
+execution:
+  command:
+    binary: /usr/bin/docker
+    argv:
+      - "volume"
+      - "inspect"
+      - "{{ args.name }}"
+  timeout: 10s
+output:
+  parser: json
+  max_stdout_bytes: 32768
+  max_stderr_bytes: 8192
+examples:
+  - title: Inspect "pgdata"
+    args:
+      name: pgdata

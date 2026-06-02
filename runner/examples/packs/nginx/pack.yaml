@@ -1,0 +1,48 @@
+schema_version: 1
+
+id: nginx
+name: Nginx operations pack
+version: 0.2.0
+description: >
+  Operator pack for nginx — read-only status + access-log analysis,
+  TLS cert probes, and narrow operator actions (test_config, reload,
+  graceful quit, stop). Full restart is intentionally not included;
+  use systemd for that.
+vendor: emisar
+homepage: https://github.com/andrewdryga/emisar
+
+requires:
+  os:
+    - linux
+  binaries:
+    - nginx
+    - curl
+
+actions:
+  # Server state
+  - actions/active_version.yaml
+  - actions/master_pid.yaml
+  - actions/worker_count.yaml
+  - actions/connections_now.yaml
+  - actions/compiled_modules.yaml
+  - actions/status.yaml
+  # Config
+  - actions/config_dump.yaml
+  - actions/vhost_list.yaml
+  - actions/upstream_list.yaml
+  # Access log analysis
+  - actions/access_top_urls.yaml
+  - actions/access_top_clients.yaml
+  - actions/log_grep_5xx.yaml
+  - actions/log_grep_4xx.yaml
+  - actions/slow_requests.yaml
+  - actions/bytes_by_url.yaml
+  - actions/error_tail.yaml
+  # TLS
+  - actions/ssl_cert_expiry.yaml
+  - actions/ssl_chain_check.yaml
+  # Mutators
+  - actions/test_config.yaml
+  - actions/reload.yaml
+  - actions/quit_graceful.yaml
+  - actions/stop_immediate.yaml

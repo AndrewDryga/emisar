@@ -1,0 +1,22 @@
+schema_version: 1
+id: systemd.timers
+title: Active systemd timers
+kind: exec
+risk: low
+description: '`systemctl list-timers` — every timer with its next-elapse and last-trigger. The systemd replacement for crontab.'
+side_effects:
+  - One systemctl invocation.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /bin/systemctl
+    argv: ["list-timers", "--all", "--no-pager", "--no-legend"]
+  timeout: 10s
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: All timers
+    args: {}

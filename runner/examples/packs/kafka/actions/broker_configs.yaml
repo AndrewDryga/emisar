@@ -1,0 +1,31 @@
+schema_version: 1
+id: kafka.broker_configs
+title: Broker configs
+kind: exec
+risk: low
+description: All broker-level configs (dynamic + static + defaults).
+side_effects:
+  - One admin request.
+  - Read-only.
+args:
+  - name: broker_id
+    type: string
+    required: true
+    description: Broker ID (integer as string).
+    validation:
+      pattern: "^[0-9]{1,6}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "kafka-configs.sh '--bootstrap-server' \"$KAFKA_BOOTSTRAP\" '--describe' '--entity-type' 'brokers' '--entity-name' '{{ args.broker_id }}'"
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 131072
+  max_stderr_bytes: 8192
+examples:
+  - title: Configs for broker 0
+    args:
+      broker_id: "0"

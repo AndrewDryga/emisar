@@ -1,0 +1,31 @@
+schema_version: 1
+id: kafka.topic_configs
+title: Topic configs
+kind: exec
+risk: low
+description: Topic-level overrides (retention, compaction, segment size).
+side_effects:
+  - One admin request.
+  - Read-only.
+args:
+  - name: topic
+    type: string
+    required: true
+    description: Topic name.
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{1,249}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "kafka-configs.sh '--bootstrap-server' \"$KAFKA_BOOTSTRAP\" '--describe' '--entity-type' 'topics' '--entity-name' '{{ args.topic }}'"
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 32768
+  max_stderr_bytes: 8192
+examples:
+  - title: Configs for one topic
+    args:
+      topic: "orders"

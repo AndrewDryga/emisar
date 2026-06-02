@@ -1,0 +1,23 @@
+schema_version: 1
+id: postgres.pg_hba_rules
+title: pg_hba_file_rules
+kind: exec
+risk: low
+description: Effective pg_hba rules as the server loaded them. Catches syntax errors that didn't make it in.
+side_effects: ["One SELECT.", "Read-only — passwords are not exposed."]
+args: []
+execution:
+  command:
+    binary: /usr/bin/psql
+    argv:
+      - "-XAt"
+      - "-c"
+      - "SELECT line_number, type, database, user_name, address, netmask, auth_method, options, error FROM pg_hba_file_rules ORDER BY line_number;"
+  timeout: 10s
+output:
+  parser: text
+  max_stdout_bytes: 32768
+  max_stderr_bytes: 8192
+examples:
+  - title: Hba rules
+    args: {}

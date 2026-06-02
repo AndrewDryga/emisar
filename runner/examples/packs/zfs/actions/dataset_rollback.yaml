@@ -1,0 +1,52 @@
+schema_version: 1
+id: zfs.dataset_rollback
+title: zfs rollback <dataset>@<snap>
+kind: exec
+risk: critical
+description: >
+  Roll a dataset back to an earlier snapshot. ALL changes after the
+  snapshot are PERMANENTLY discarded. Intermediate snapshots between
+  current and target are also destroyed (require -r flag). Use only
+  after confirming current data is salvageable from elsewhere or
+  the loss is acceptable.
+side_effects:
+  - Dataset reverts to the snapshot's state.
+  - All data written after the snapshot is destroyed.
+  - Intermediate snapshots destroyed.
+  - Running processes with open file handles may break.
+args:
+  - name: dataset
+    type: string
+    required: true
+    description: Full dataset path.
+    validation:
+      pattern: "^[a-zA-Z0-9_/.\\-]{1,128}$"
+  - name: snap
+    type: string
+    required: true
+    description: Snapshot name (after the @).
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-:]{1,64}$"
+  - name: force
+    type: boolean
+    required: false
+    default: false
+    description: Destroy intermediate snapshots (zfs rollback -r).
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "if [ '{{ args.force }}' = 'true' ]; then /usr/sbin/zfs rollback -r '{{ args.dataset }}@{{ args.snap }}'; else /usr/sbin/zfs rollback '{{ args.dataset }}@{{ args.snap }}'; fi"
+  timeout: 300s
+cancel_grace: 30s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Roll back to a backup
+    args:
+      dataset: "tank/home"
+      snap: "pre-disaster"
+      force: true

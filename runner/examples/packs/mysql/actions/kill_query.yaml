@@ -1,0 +1,32 @@
+schema_version: 1
+id: mysql.kill_query
+title: KILL QUERY (cancel statement)
+kind: exec
+risk: high
+description: Cancels the currently-executing query on one connection. Connection survives — pair with `kill_connection` to terminate the session entirely.
+side_effects:
+  - Target connection's current query is aborted.
+  - Connection stays open; subsequent queries can be issued.
+args:
+  - name: thread_id
+    type: integer
+    required: true
+    description: Thread ID (from processlist).
+    validation:
+      min: 1
+      max: 4294967295
+execution:
+  command:
+    binary: /usr/bin/mysql
+    argv:
+      - "-e"
+      - "KILL QUERY {{ args.thread_id }}"
+  timeout: 10s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Cancel a runaway SELECT
+    args:
+      thread_id: 12345

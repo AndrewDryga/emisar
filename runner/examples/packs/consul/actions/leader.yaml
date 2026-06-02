@@ -1,0 +1,24 @@
+schema_version: 1
+id: consul.leader
+title: consul operator raft list-peers
+kind: exec
+risk: low
+description: Current Raft leader address.
+side_effects:
+  - One agent call.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "consul info | grep -E 'leader|leader_addr' | head -10"
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Leader
+    args: {}

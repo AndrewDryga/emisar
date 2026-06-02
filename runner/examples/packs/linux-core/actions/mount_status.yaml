@@ -1,0 +1,34 @@
+schema_version: 1
+
+id: linux.mount_status
+title: Mounted filesystems
+kind: exec
+risk: low
+
+description: >
+  Lists every mounted filesystem with type, source device, mountpoint,
+  and mount options. Read-only. Use to confirm a service has the
+  right disk attached or to find a stuck/duplicate mount.
+
+side_effects:
+  - One findmnt invocation.
+  - Read-only.
+
+args: []
+
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "findmnt -A"
+  timeout: 10s
+
+output:
+  parser: text
+  max_stdout_bytes: 131072
+  max_stderr_bytes: 8192
+
+examples:
+  - title: All mounted filesystems
+    args: {}

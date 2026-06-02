@@ -1,0 +1,38 @@
+schema_version: 1
+id: haproxy.set_maxconn
+title: set maxconn frontend <name> <N>
+kind: exec
+risk: medium
+description: Live-update the maxconn cap on one frontend without a reload.
+side_effects:
+  - Lowering below current conns rejects new connections until count drops.
+args:
+  - name: frontend
+    type: string
+    required: true
+    description: Frontend name.
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{1,64}$"
+  - name: maxconn
+    type: integer
+    required: true
+    description: New cap.
+    validation:
+      min: 1
+      max: 1000000
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "echo 'set maxconn frontend {{ args.frontend }} {{ args.maxconn }}' | socat - \"$HAPROXY_SOCK\""
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Cap to 5000
+    args:
+      frontend: "https-in"
+      maxconn: 5000

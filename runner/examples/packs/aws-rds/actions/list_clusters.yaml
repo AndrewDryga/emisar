@@ -1,0 +1,20 @@
+schema_version: 1
+id: rds.list_clusters
+title: aws rds describe-db-clusters
+kind: exec
+risk: low
+description: All Aurora clusters.
+side_effects: ["One API call.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: aws
+    argv: ["rds", "describe-db-clusters", "--output", "json"]
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: Aurora clusters
+    args: {}

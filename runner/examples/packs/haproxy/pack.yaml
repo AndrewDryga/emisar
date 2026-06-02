@@ -1,0 +1,31 @@
+schema_version: 1
+
+id: haproxy
+name: HAProxy operations
+version: 0.1.0
+description: >
+  Stats, server state, frontends/backends, session inventory, plus narrow
+  mutators to enable/disable backend servers. Talks to the HAProxy admin
+  socket. Set HAPROXY_SOCK env var on the runner host.
+vendor: emisar
+homepage: https://github.com/andrewdryga/emisar
+
+requires:
+  os:
+    - linux
+  binaries:
+    - socat
+
+actions:
+  - actions/show_info.yaml
+  - actions/show_stat.yaml
+  - actions/show_servers_state.yaml
+  - actions/show_pools.yaml
+  - actions/show_errors.yaml
+  - actions/show_sess.yaml
+  - actions/show_map.yaml
+  - actions/show_backend.yaml
+  - actions/show_frontend.yaml
+  - actions/enable_server.yaml
+  - actions/disable_server.yaml
+  - actions/set_maxconn.yaml

@@ -1,0 +1,21 @@
+schema_version: 1
+id: consul.reload
+title: consul reload
+kind: exec
+risk: medium
+description: Reloads the local agent's config (re-reads HCL files). Some settings can't be reloaded — see consul docs.
+side_effects:
+  - Local agent re-parses config.
+  - Service + check + watch definitions reload.
+  - Bind address, encryption keys, etc., remain at boot values.
+args: []
+execution:
+  command: {binary: /usr/bin/consul, argv: ["reload"]}
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Reload local
+    args: {}

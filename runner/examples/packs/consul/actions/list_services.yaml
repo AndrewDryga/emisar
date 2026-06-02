@@ -1,0 +1,22 @@
+schema_version: 1
+id: consul.list_services
+title: consul catalog services
+kind: exec
+risk: low
+description: All registered service names.
+side_effects:
+  - One catalog request.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: consul
+    argv: ["catalog", "services"]
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 32768
+  max_stderr_bytes: 8192
+examples:
+  - title: Services
+    args: {}

@@ -1,0 +1,33 @@
+schema_version: 1
+id: kubernetes.cluster_info
+title: kubectl cluster-info
+kind: exec
+risk: low
+description: API server, DNS, and CoreDNS endpoints for the configured cluster.
+side_effects:
+  - One kubectl cluster-info invocation.
+  - Read-only.
+args:
+  - name: context
+    type: string
+    required: false
+    default: ""
+    description: kubeconfig context.
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{0,128}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "kubectl ${KCTX:+--context=$KCTX} cluster-info"
+  timeout: 15s
+  env:
+    KCTX: "{{ args.context }}"
+output:
+  parser: text
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 8192
+examples:
+  - title: Cluster info
+    args: {}

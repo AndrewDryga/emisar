@@ -1,0 +1,29 @@
+schema_version: 1
+id: redis.pubsub_numsub
+title: PUBSUB NUMSUB
+kind: exec
+risk: low
+description: Subscriber count for a channel. Useful before tearing down a producer.
+side_effects:
+  - One PUBSUB NUMSUB command.
+  - Read-only.
+args:
+  - name: channel
+    type: string
+    required: true
+    description: Channel name.
+    validation:
+      pattern: "^[A-Za-z0-9_:.\\-{}@#/=+]{1,256}$"
+execution:
+  command:
+    binary: /usr/bin/redis-cli
+    argv: ["PUBSUB", "NUMSUB", "{{ args.channel }}"]
+  timeout: 5s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Subscribers on events.user
+    args:
+      channel: "events.user"

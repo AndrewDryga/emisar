@@ -1,0 +1,40 @@
+schema_version: 1
+id: es.force_merge
+title: POST /<index>/_forcemerge
+kind: exec
+risk: high
+description: >
+  Merges segments down to `max_num_segments`. Expensive — heavy disk + CPU for the duration. Use on read-only indices (e.g., yesterday's logs) only.
+side_effects:
+  - Heavy IO + CPU on each node holding shards.
+  - Disk space may spike before reclaiming.
+args:
+  - name: index
+    type: string
+    required: true
+    description: Index name.
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{1,255}$"
+  - name: max_segments
+    type: integer
+    required: false
+    default: 1
+    description: Target segment count per shard.
+    validation:
+      min: 1
+      max: 100
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "curl -sS -u \"$ELASTIC_USER:$ELASTIC_PASSWORD\" -XPOST \"$ELASTIC_URL/{{ args.index }}/_forcemerge?max_num_segments={{ args.max_segments }}&pretty\""
+  timeout: 1h
+output:
+  parser: json
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Force-merge yesterday's logs
+    args:
+      index: "logs-2026-06-01"

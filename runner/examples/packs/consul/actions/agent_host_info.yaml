@@ -1,0 +1,22 @@
+schema_version: 1
+id: consul.agent_host_info
+title: GET /v1/agent/host
+kind: exec
+risk: low
+description: 'Host info: OS, CPU, memory, filesystem, network from the agent''s view.'
+side_effects: ["One API call.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "curl -sS -H \"X-Consul-Token: $CONSUL_HTTP_TOKEN\" \"$CONSUL_HTTP_ADDR/v1/agent/host\""
+  timeout: 15s
+output:
+  parser: json
+  max_stdout_bytes: 131072
+  max_stderr_bytes: 8192
+examples:
+  - title: Host info
+    args: {}

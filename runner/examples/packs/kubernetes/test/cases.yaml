@@ -1,0 +1,128 @@
+defaults:
+  env: {}
+cases:
+- action: kubernetes.api_versions
+  args: {}
+  expect_exit: 0
+- action: kubernetes.cluster_info
+  args: {}
+  expect_exit: 0
+- action: kubernetes.cordon
+  args:
+    name: ip-10-0-1-23.eu-west-1.compute.internal
+  skip: mutator skipped by default (high); set --include=kubernetes.cordon to run
+- action: kubernetes.daemonsets_list
+  args: {}
+  expect_exit: 0
+- action: kubernetes.delete_pod
+  args:
+    namespace: default
+    name: api-7d4f8c5b8c-x2nzp
+  skip: mutator skipped by default (high); set --include=kubernetes.delete_pod to run
+- action: kubernetes.deployments_list
+  args: {}
+  expect_exit: 0
+- action: kubernetes.drain
+  args:
+    name: ip-10-0-1-23.eu-west-1.compute.internal
+  skip: mutator skipped by default (critical); set --include=kubernetes.drain to run
+- action: kubernetes.events_for_pod
+  args:
+    namespace: default
+    name: api-7d4f8c5b8c-x2nzp
+  expect_exit: 0
+- action: kubernetes.events_recent
+  args: {}
+  expect_exit: 0
+- action: kubernetes.get_yaml
+  args:
+    namespace: default
+    kind: deployment
+    name: api
+  expect_exit: 0
+- action: kubernetes.ingresses_list
+  args: {}
+  expect_exit: 0
+- action: kubernetes.namespaces
+  args: {}
+  expect_exit: 0
+- action: kubernetes.node_describe
+  args:
+    name: ip-10-0-1-23.eu-west-1.compute.internal
+  expect_exit: 0
+- action: kubernetes.nodes_list
+  args: {}
+  expect_exit: 0
+- action: kubernetes.nodes_top
+  args: {}
+  expect_exit: 0
+- action: kubernetes.pod_describe
+  args:
+    namespace: default
+    name: api-7d4f8c5b8c-x2nzp
+  expect_exit: 0
+- action: kubernetes.pod_logs
+  args:
+    namespace: default
+    name: api-7d4f8c5b8c-x2nzp
+  expect_exit: 0
+- action: kubernetes.pod_previous_logs
+  args:
+    namespace: default
+    name: api-7d4f8c5b8c-x2nzp
+  expect_exit: 0
+- action: kubernetes.pods_list
+  args: {}
+  expect_exit: 0
+- action: kubernetes.pods_problem
+  args: {}
+  expect_exit: 0
+- action: kubernetes.pods_top
+  args: {}
+  expect_exit: 0
+- action: kubernetes.pvcs_list
+  args: {}
+  expect_exit: 0
+- action: kubernetes.rollout_history
+  args:
+    namespace: default
+    name: api
+  expect_exit: 0
+- action: kubernetes.rollout_restart
+  args:
+    namespace: default
+    name: api
+  skip: mutator skipped by default (high); set --include=kubernetes.rollout_restart to run
+- action: kubernetes.rollout_status
+  args:
+    namespace: default
+    name: api
+  expect_exit: 0
+- action: kubernetes.rollout_undo
+  args:
+    namespace: default
+    name: api
+  skip: mutator skipped by default (high); set --include=kubernetes.rollout_undo to run
+- action: kubernetes.scale_deployment
+  args:
+    namespace: default
+    name: api
+    replicas: 10
+  skip: mutator skipped by default (high); set --include=kubernetes.scale_deployment to run
+- action: kubernetes.services_list
+  args: {}
+  expect_exit: 0
+- action: kubernetes.set_image
+  args:
+    namespace: default
+    name: api
+    container: api
+    image: ghcr.io/example/api:v1.42.0
+  skip: mutator skipped by default (high); set --include=kubernetes.set_image to run
+- action: kubernetes.statefulsets_list
+  args: {}
+  expect_exit: 0
+- action: kubernetes.uncordon
+  args:
+    name: ip-10-0-1-23.eu-west-1.compute.internal
+  skip: mutator skipped by default (medium); set --include=kubernetes.uncordon to run

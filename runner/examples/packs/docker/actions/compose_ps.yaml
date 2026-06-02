@@ -1,0 +1,35 @@
+schema_version: 1
+id: docker.compose_ps
+title: docker compose ps -a
+kind: exec
+risk: low
+description: >
+  Lists services in a compose project (running + stopped). The compose-file path is required and pattern-restricted. Read-only.
+side_effects:
+  - One docker compose ps invocation.
+  - Read-only.
+args:
+  - name: file
+    type: string
+    required: true
+    description: Path to docker-compose.yml.
+    validation:
+      pattern: "^/[A-Za-z0-9._/-]{1,256}$"
+execution:
+  command:
+    binary: /usr/bin/docker
+    argv:
+      - "compose"
+      - "-f"
+      - "{{ args.file }}"
+      - "ps"
+      - "-a"
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Status of services in the prod stack
+    args:
+      file: "/opt/stack/docker-compose.yml"

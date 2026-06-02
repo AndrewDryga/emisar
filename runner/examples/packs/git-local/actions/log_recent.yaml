@@ -1,0 +1,32 @@
+schema_version: 1
+id: git.log_recent
+title: git log -n <N>
+kind: exec
+risk: low
+description: Last N commits with author + date + subject.
+side_effects:
+  - One git log.
+  - Read-only.
+args:
+  - name: count
+    type: integer
+    required: false
+    default: 20
+    description: Number of commits.
+    validation:
+      min: 1
+      max: 1000
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "cd \"$GIT_REPO\" && git log -n {{ args.count }} --pretty=format:'%h %ad %an %s' --date=iso"
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: Recent 20 commits
+    args: {}

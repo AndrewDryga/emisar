@@ -1,0 +1,43 @@
+schema_version: 1
+
+id: redis.dbsize
+title: DBSIZE
+kind: exec
+risk: low
+
+description: >
+  Returns the number of keys in the currently selected database. O(1).
+  Read-only. Use as a sanity check before running operations that scan
+  the keyspace.
+
+side_effects:
+  - Issues one DBSIZE command.
+  - No keys read or written.
+
+args:
+  - name: db
+    type: integer
+    required: false
+    default: 0
+    description: Logical database index.
+    validation:
+      min: 0
+      max: 15
+
+execution:
+  command:
+    binary: /usr/bin/redis-cli
+    argv:
+      - "-n"
+      - "{{ args.db }}"
+      - "DBSIZE"
+  timeout: 5s
+
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+
+examples:
+  - title: Key count in DB 0
+    args: {}

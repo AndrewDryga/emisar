@@ -1,0 +1,51 @@
+schema_version: 1
+id: prom.query_range
+title: GET /api/v1/query_range
+kind: exec
+risk: low
+description: Range PromQL query (one expr, over a window). Use for trends.
+side_effects:
+  - One PromQL range query — can be expensive on large series.
+  - Read-only.
+args:
+  - name: query
+    type: string
+    required: true
+    description: PromQL expression.
+    validation:
+      pattern: "^.{1,2048}$"
+  - name: window
+    type: string
+    required: false
+    default: "1h"
+    description: 'Window: e.g. 1h, 6h, 24h.'
+    validation:
+      pattern: "^[0-9]{1,4}[smhd]$"
+  - name: step
+    type: string
+    required: false
+    default: "60s"
+    description: Step.
+    validation:
+      pattern: "^[0-9]{1,4}[sm]$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "U=${W##*[0-9]}; N=${W%[smhd]}; case $U in s) M=1;; m) M=60;; h) M=3600;; d) M=86400;; esac; END=$(date -u +%s); START=$((END - N*M)); curl -sS -G --data-urlencode \"query=$Q\" --data-urlencode \"start=$START\" --data-urlencode \"end=$END\" --data-urlencode \"step=$S\" \"$PROM_URL/api/v1/query_range\""
+  env:
+    Q: "{{ args.query }}"
+    W: "{{ args.window }}"
+    S: "{{ args.step }}"
+  timeout: 120s
+output:
+  parser: json
+  max_stdout_bytes: 4194304
+  max_stderr_bytes: 8192
+examples:
+  - title: 1h CPU usage
+    args:
+      query: "rate(node_cpu_seconds_total[5m])"
+      window: "1h"
+      step: "60s"

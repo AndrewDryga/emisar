@@ -1,0 +1,34 @@
+schema_version: 1
+id: forensics.gdb_backtrace
+title: gdb -ex "thread apply all bt"
+kind: exec
+risk: high
+description: >
+  Attaches gdb to one PID and dumps native stack for every thread, then detaches. The target is briefly stopped during the dump.
+side_effects:
+  - Target process is paused for the duration of the gdb session (typically 0.5-3 seconds).
+  - Requires CAP_SYS_PTRACE or matching uid.
+  - On detach, target resumes.
+args:
+  - name: pid
+    type: integer
+    required: true
+    description: PID.
+    validation:
+      min: 1
+      max: 4194304
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "gdb -p {{ args.pid }} -batch -ex 'set pagination off' -ex 'thread apply all bt' -ex 'detach' -ex 'quit' 2>&1 | head -5000"
+  timeout: 60s
+output:
+  parser: text
+  max_stdout_bytes: 4194304
+  max_stderr_bytes: 8192
+examples:
+  - title: All-thread backtrace
+    args:
+      pid: 1234

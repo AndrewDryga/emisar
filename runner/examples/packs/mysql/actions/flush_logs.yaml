@@ -1,0 +1,22 @@
+schema_version: 1
+id: mysql.flush_logs
+title: FLUSH LOGS
+kind: exec
+risk: medium
+description: Closes and reopens all log files (general, slow, error, binary). Use after rotating with logrotate.
+side_effects:
+  - Log files closed and reopened.
+  - Binlog rolls forward.
+args: []
+execution:
+  command:
+    binary: /usr/bin/mysql
+    argv: ["-e", "FLUSH LOGS"]
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Roll logs
+    args: {}

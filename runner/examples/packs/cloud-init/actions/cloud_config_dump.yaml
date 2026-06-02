@@ -1,0 +1,25 @@
+schema_version: 1
+id: cloud-init.cloud_config_dump
+title: cat /var/lib/cloud/instance/cloud-config.txt
+kind: exec
+risk: low
+description: >
+  Final merged cloud-config (user-data + vendor-data + system defaults)
+  as cloud-init evaluated it. The source of truth for "what did
+  cloud-init actually try to do?".
+side_effects:
+  - Reads one file.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /bin/cat
+    argv: ["/var/lib/cloud/instance/cloud-config.txt"]
+  timeout: 5s
+output:
+  parser: text
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 4096
+examples:
+  - title: Effective cloud-config
+    args: {}

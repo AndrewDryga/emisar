@@ -1,0 +1,42 @@
+schema_version: 1
+
+id: debugging.pid_fds
+title: Process open file descriptors
+kind: exec
+risk: low
+
+description: >
+  Lists what each FD in /proc/<pid>/fd points at. Sockets show up as
+  `socket:[N]`, files as their path. Use to spot FD-leak candidates or
+  confirm a daemon has the log file you expect.
+
+side_effects:
+  - One ls -l on /proc/<pid>/fd.
+  - Read-only.
+
+args:
+  - name: pid
+    type: integer
+    required: true
+    description: PID to inspect.
+    validation:
+      min: 1
+      max: 4194304
+
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "ls -l /proc/{{ args.pid }}/fd"
+  timeout: 10s
+
+output:
+  parser: text
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+
+examples:
+  - title: List FDs for PID 4321
+    args:
+      pid: 4321

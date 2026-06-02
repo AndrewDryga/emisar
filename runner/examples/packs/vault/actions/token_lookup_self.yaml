@@ -1,0 +1,25 @@
+schema_version: 1
+id: vault.token_lookup_self
+title: vault token lookup
+kind: exec
+risk: low
+description: Metadata on the current token (the runner's). Useful to debug policy denials.
+side_effects:
+  - One auth/token/lookup-self request.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: vault
+    argv:
+      - "token"
+      - "lookup"
+      - "-format=json"
+  timeout: 15s
+output:
+  parser: json
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Self lookup
+    args: {}

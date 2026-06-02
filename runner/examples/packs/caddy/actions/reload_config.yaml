@@ -1,0 +1,29 @@
+schema_version: 1
+id: caddy.reload_config
+title: caddy reload --config <file>
+kind: exec
+risk: high
+description: Live-swap the running config. No connection drops on success; rejected config keeps the old one running.
+side_effects:
+  - Replaces the in-memory config atomically.
+  - Existing connections keep running on their handlers.
+args:
+  - name: file
+    type: string
+    required: false
+    default: "/etc/caddy/Caddyfile"
+    description: Config path.
+    validation:
+      pattern: "^/[a-zA-Z0-9_./\\-]{1,512}$"
+execution:
+  command:
+    binary: /usr/bin/caddy
+    argv: ["reload", "--config", "{{ args.file }}"]
+  timeout: 60s
+output:
+  parser: text
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 16384
+examples:
+  - title: Reload
+    args: {}

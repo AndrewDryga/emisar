@@ -1,0 +1,32 @@
+schema_version: 1
+id: systemd.unit_mask
+title: systemctl mask <unit>
+kind: exec
+risk: high
+description: >
+  Prevent a unit from being started, even by dependencies. Symlinks
+  the unit to /dev/null. Used to disable a unit that another package
+  keeps re-enabling. Reversible with unmask.
+side_effects:
+  - Unit cannot be started until unmasked.
+  - Dependency chains referencing this unit may fail to activate.
+args:
+  - name: unit
+    type: string
+    required: true
+    description: Unit name.
+    validation:
+      pattern: "^[a-zA-Z0-9@_\\-.]{1,128}$"
+execution:
+  command:
+    binary: /usr/bin/systemctl
+    argv: ["mask", "{{ args.unit }}"]
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Mask a noisy service
+    args:
+      unit: "snapd.service"

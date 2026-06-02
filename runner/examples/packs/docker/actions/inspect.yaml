@@ -1,0 +1,41 @@
+schema_version: 1
+
+id: docker.inspect
+title: docker inspect (one container)
+kind: exec
+risk: low
+
+description: >
+  Returns the full JSON inspect document for one container. Includes
+  state, exit code, restart count, mounts, network config, env, labels.
+  Container name is pattern-restricted. Read-only.
+
+side_effects:
+  - One docker inspect invocation.
+  - Read-only.
+
+args:
+  - name: container
+    type: string
+    required: true
+    description: Container name or ID.
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{1,128}$"
+
+execution:
+  command:
+    binary: /usr/bin/docker
+    argv:
+      - "inspect"
+      - "{{ args.container }}"
+  timeout: 30s
+
+output:
+  parser: json
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 16384
+
+examples:
+  - title: Inspect the "api" container
+    args:
+      container: api

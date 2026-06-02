@@ -1,0 +1,27 @@
+schema_version: 1
+
+id: terraform-readonly
+name: Terraform read-only ops
+version: 0.1.0
+description: >
+  Read-only Terraform CLI actions for inspecting a workspace. NO apply,
+  NO destroy, NO state mutation — those should happen in CI, not via a
+  runner. Operates in the directory given by TF_DIR env var.
+vendor: emisar
+homepage: https://github.com/andrewdryga/emisar
+
+requires:
+  os:
+    - linux
+  binaries:
+    - terraform
+
+actions:
+  - actions/version.yaml
+  - actions/providers.yaml
+  - actions/state_list.yaml
+  - actions/state_show.yaml
+  - actions/show_json.yaml
+  - actions/output.yaml
+  - actions/validate.yaml
+  - actions/plan_no_save.yaml

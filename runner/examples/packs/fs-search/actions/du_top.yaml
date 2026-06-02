@@ -1,0 +1,31 @@
+schema_version: 1
+id: fs.du_top
+title: du -sh — top N subdirs
+kind: exec
+risk: low
+description: Top 20 immediate subdirs of one path by size.
+side_effects:
+  - One file-system traversal.
+  - Read-only.
+args:
+  - name: path
+    type: string
+    required: true
+    description: Root path.
+    validation:
+      pattern: "^/[a-zA-Z0-9_./\\-]{0,512}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "du -sh {{ args.path }}/* 2>/dev/null | sort -rh | head -20"
+  timeout: 5m
+output:
+  parser: text
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Where's the space in /var?
+    args:
+      path: "/var"

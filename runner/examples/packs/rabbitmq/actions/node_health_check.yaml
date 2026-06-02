@@ -1,0 +1,23 @@
+schema_version: 1
+id: rmq.node_health_check
+title: rabbitmq-diagnostics check_running
+kind: exec
+risk: low
+description: Health check — confirms the local node is running and reachable.
+side_effects:
+  - One diagnostics call.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: rabbitmq-diagnostics
+    argv:
+      - "check_running"
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 8192
+examples:
+  - title: Node health
+    args: {}

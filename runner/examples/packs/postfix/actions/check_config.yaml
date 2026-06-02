@@ -1,0 +1,18 @@
+schema_version: 1
+id: postfix.check_config
+title: postfix check
+kind: exec
+risk: low
+description: Validates Postfix configuration files.
+side_effects: ["Reads main.cf + master.cf.", "Read-only."]
+args: []
+execution:
+  command: {binary: /usr/sbin/postfix, argv: ["check"]}
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Check config
+    args: {}

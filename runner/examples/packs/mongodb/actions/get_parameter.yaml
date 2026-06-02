@@ -1,0 +1,24 @@
+schema_version: 1
+id: mongo.get_parameter
+title: getParameter '*'
+kind: exec
+risk: low
+description: All server parameters (read-only view of the current config).
+side_effects:
+  - One getParameter command.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "mongosh \"$MONGO_URI\" '--quiet' '--eval' \"JSON.stringify(db.adminCommand({getParameter:'*'}))\""
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: Server parameters
+    args: {}

@@ -1,0 +1,34 @@
+schema_version: 1
+
+id: caddy
+name: Caddy web server
+version: 0.1.0
+description: >
+  Caddy v2 ops via its admin API (default http://127.0.0.1:2019) and CLI.
+  Config dump, upstream health, PKI inventory, config validation, plus
+  reload (live config swap). Set CADDY_ADMIN env var if not on default.
+vendor: emisar
+homepage: https://github.com/andrewdryga/emisar
+
+requires:
+  os:
+    - linux
+  binaries:
+    - caddy
+    - curl
+
+actions:
+  # Inventory
+  - actions/version.yaml
+  - actions/config_dump.yaml
+  - actions/cluster_state.yaml
+  - actions/pki_certs.yaml
+  - actions/adapt_caddyfile.yaml
+  # Health + logs
+  - actions/reverse_proxy_upstreams.yaml
+  - actions/runtime_metrics.yaml
+  - actions/access_log_tail.yaml
+  # Mutators
+  - actions/validate_config.yaml
+  - actions/reload_config.yaml
+  - actions/stop.yaml

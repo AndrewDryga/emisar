@@ -1,0 +1,39 @@
+schema_version: 1
+id: nginx.log_grep_5xx
+title: Recent 5xx responses from access log
+kind: exec
+risk: low
+description: Greps the access log for 5xx status codes (assumes combined log format). Read-only.
+side_effects:
+  - Reads /var/log/nginx/access.log.
+  - Read-only.
+args:
+  - name: lines
+    type: integer
+    required: false
+    default: 100
+    description: How many recent 5xx lines.
+    validation:
+      min: 1
+      max: 5000
+  - name: log_path
+    type: string
+    required: false
+    default: /var/log/nginx/access.log
+    description: Access log path.
+    validation:
+      pattern: "^/var/log/nginx/[A-Za-z0-9._/-]{1,128}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "grep -E ' 5[0-9][0-9] ' {{ args.log_path }} | tail -n {{ args.lines }}"
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 16384
+examples:
+  - title: Last 100 5xx
+    args: {}

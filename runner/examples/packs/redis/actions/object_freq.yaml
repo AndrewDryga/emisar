@@ -1,0 +1,32 @@
+schema_version: 1
+id: redis.object_freq
+title: OBJECT FREQ key
+kind: exec
+risk: low
+description: >
+  LFU access-frequency counter for the key. Requires an LFU
+  maxmemory-policy. Use to compare access patterns across a
+  candidate eviction set.
+side_effects:
+  - One OBJECT FREQ command.
+  - Read-only metadata; does not bump the frequency counter.
+args:
+  - name: key
+    type: string
+    required: true
+    description: Key name.
+    validation:
+      pattern: "^[A-Za-z0-9_:.\\-{}@#/=+]{1,512}$"
+execution:
+  command:
+    binary: /usr/bin/redis-cli
+    argv: ["OBJECT", "FREQ", "{{ args.key }}"]
+  timeout: 5s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Access frequency
+    args:
+      key: "user:42"

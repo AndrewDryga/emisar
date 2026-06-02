@@ -1,0 +1,33 @@
+schema_version: 1
+
+id: linux.cpu_info
+title: CPU topology and features
+kind: exec
+risk: low
+
+description: >
+  `lscpu` output — sockets, cores per socket, threads per core,
+  architecture, microarchitecture, MHz, cache sizes, vulnerabilities
+  (Spectre/Meltdown mitigation state). Use to confirm a host's CPU
+  matches what the workload assumes. Read-only.
+
+side_effects:
+  - One lscpu invocation.
+  - Read-only.
+
+args: []
+
+execution:
+  command:
+    binary: /usr/bin/lscpu
+    argv: []
+  timeout: 10s
+
+output:
+  parser: text
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+
+examples:
+  - title: CPU layout + features
+    args: {}

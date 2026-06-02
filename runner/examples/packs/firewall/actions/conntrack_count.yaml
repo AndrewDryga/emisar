@@ -1,0 +1,24 @@
+schema_version: 1
+id: fw.conntrack_count
+title: conntrack count
+kind: exec
+risk: low
+description: Active connection-tracking entry count + per-state breakdown.
+side_effects:
+  - One conntrack query.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "echo 'Total:'; conntrack -C 2>/dev/null; echo; echo 'Per-state:'; conntrack -L 2>/dev/null | awk '{print $1,$4}' | sort | uniq -c | sort -rn | head -20"
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 32768
+  max_stderr_bytes: 8192
+examples:
+  - title: Conntrack stats
+    args: {}

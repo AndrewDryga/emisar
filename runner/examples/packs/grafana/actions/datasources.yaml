@@ -1,0 +1,22 @@
+schema_version: 1
+id: grafana.datasources
+title: GET /api/datasources
+kind: exec
+risk: low
+description: All datasources with type + URL + access mode.
+side_effects: ["One API call.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "curl -sS -H \"Authorization: Bearer $GRAFANA_TOKEN\" \"$GRAFANA_URL/api/datasources\""
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: All datasources
+    args: {}

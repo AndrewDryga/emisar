@@ -1,0 +1,23 @@
+schema_version: 1
+id: postgres.pg_stat_statements_top
+title: Top statements by total time
+kind: exec
+risk: low
+description: Top 30 normalized queries by total_exec_time. Requires pg_stat_statements extension to be loaded.
+side_effects: ["One SELECT against pg_stat_statements.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /usr/bin/psql
+    argv:
+      - "-XAt"
+      - "-c"
+      - "SELECT calls, ROUND(total_exec_time::numeric, 0) AS total_ms, ROUND(mean_exec_time::numeric, 1) AS mean_ms, rows, ROUND(100.0 * shared_blks_hit / NULLIF(shared_blks_hit + shared_blks_read, 0), 1) AS cache_hit_pct, substring(query, 1, 300) AS query FROM pg_stat_statements ORDER BY total_exec_time DESC LIMIT 30;"
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: Heavy hitters
+    args: {}

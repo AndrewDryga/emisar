@@ -1,0 +1,29 @@
+schema_version: 1
+id: ec2.console_output
+title: aws ec2 get-console-output
+kind: exec
+risk: low
+description: Serial console output for one instance. Useful for boot diagnostics.
+side_effects:
+  - One API call.
+  - Read-only.
+args:
+  - name: instance_id
+    type: string
+    required: true
+    description: Instance ID.
+    validation:
+      pattern: "^i-[0-9a-f]{8,17}$"
+execution:
+  command:
+    binary: aws
+    argv: ["ec2", "get-console-output", "--instance-id", "{{ args.instance_id }}", "--output", "json"]
+  timeout: 60s
+output:
+  parser: json
+  max_stdout_bytes: 4194304
+  max_stderr_bytes: 8192
+examples:
+  - title: Boot log
+    args:
+      instance_id: "i-0123456789abcdef0"

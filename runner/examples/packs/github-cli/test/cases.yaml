@@ -1,0 +1,83 @@
+defaults:
+  env: {}
+cases:
+- action: gh.auth_status
+  args: {}
+  expect_exit: 0
+- action: gh.branch_list
+  args:
+    repo: andrewdryga/emisar
+  expect_exit: 0
+- action: gh.issue_list
+  args:
+    repo: andrewdryga/emisar
+  expect_exit: 0
+- action: gh.issue_view
+  args:
+    repo: andrewdryga/emisar
+    issue: 1
+  expect_exit: 0
+- action: gh.pr_checks
+  args:
+    repo: andrewdryga/emisar
+    pr: 1
+  expect_exit: 0
+- action: gh.pr_close
+  args:
+    pr: 1234
+  skip: mutator skipped by default (medium); set --include=gh.pr_close to run
+- action: gh.pr_list
+  args:
+    repo: andrewdryga/emisar
+  expect_exit: 0
+- action: gh.pr_merge
+  args:
+    pr: 1234
+  skip: mutator skipped by default (high); set --include=gh.pr_merge to run
+- action: gh.pr_view
+  args:
+    repo: andrewdryga/emisar
+    pr: 1
+  expect_exit: 0
+- action: gh.release_list
+  args:
+    repo: andrewdryga/emisar
+  expect_exit: 0
+- action: gh.repo_clone_count
+  args:
+    repo: andrewdryga/emisar
+  expect_exit: 0
+- action: gh.repo_view
+  args:
+    repo: andrewdryga/emisar
+  expect_exit: 0
+- action: gh.search_prs
+  args:
+    query: author:@me state:open
+  expect_exit: 0
+- action: gh.workflow_dispatch
+  args:
+    workflow: deploy.yml
+  skip: mutator skipped by default (medium); set --include=gh.workflow_dispatch to run
+- action: gh.workflow_list
+  args:
+    repo: andrewdryga/emisar
+  expect_exit: 0
+- action: gh.workflow_rerun
+  args:
+    run_id: 12345678
+  skip: mutator skipped by default (medium); set --include=gh.workflow_rerun to run
+- action: gh.workflow_run_list
+  args:
+    repo: andrewdryga/emisar
+  expect_exit: 0
+- action: gh.workflow_run_logs
+  args:
+    repo: andrewdryga/emisar
+    run_id: 1234567890
+  expect_exit: 0
+- action: gh.workflow_run_view
+  args:
+    repo: andrewdryga/emisar
+    run_id: 1234567890
+  expect_exit: 0

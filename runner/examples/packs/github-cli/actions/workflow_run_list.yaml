@@ -1,0 +1,45 @@
+schema_version: 1
+id: gh.workflow_run_list
+title: gh run list
+kind: exec
+risk: low
+description: Recent workflow runs across the repo.
+side_effects:
+  - One API call.
+  - Read-only.
+args:
+  - name: repo
+    type: string
+    required: true
+    description: 'Repo in owner/name form.'
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{1,40}/[a-zA-Z0-9_.\\-]{1,100}$"
+  - name: limit
+    type: integer
+    required: false
+    default: 50
+    description: Max runs.
+    validation:
+      min: 1
+      max: 200
+execution:
+  command:
+    binary: gh
+    argv:
+      - "run"
+      - "list"
+      - "--repo"
+      - "{{ args.repo }}"
+      - "--limit"
+      - "{{ args.limit }}"
+      - "--json"
+      - "databaseId,name,conclusion,status,workflowName,event,headBranch,createdAt"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: Recent runs
+    args:
+      repo: "andrewdryga/emisar"

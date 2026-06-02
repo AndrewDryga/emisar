@@ -1,0 +1,86 @@
+defaults:
+  env:
+    ELASTIC_USER: elastic
+    ELASTIC_PASSWORD: testpass
+    ES_URL: http://elasticsearch:9200
+cases:
+- action: es.cache_clear
+  args:
+    index: logs-2026-06-01
+  expect_exit: 0
+- action: es.cat_aliases
+  args: {}
+  expect_exit: 0
+- action: es.cat_indices
+  args: {}
+  expect_exit: 0
+- action: es.cat_nodes
+  args: {}
+  expect_exit: 0
+- action: es.cat_recovery
+  args: {}
+  expect_exit: 0
+- action: es.cat_segments
+  args: {}
+  expect_exit: 0
+- action: es.cat_shards
+  args: {}
+  expect_exit: 0
+- action: es.cat_thread_pool
+  args: {}
+  expect_exit: 0
+- action: es.close_index
+  args:
+    index: logs-2025-12-31
+  expect_exit:
+  - 0
+  - 1
+  skip: mutator skipped by default (critical)
+- action: es.cluster_allocation_explain
+  args: {}
+  expect_exit: 0
+- action: es.cluster_health
+  args: {}
+  expect_exit: 0
+- action: es.cluster_settings
+  args: {}
+  expect_exit: 0
+- action: es.flush_synced
+  args:
+    index: logs-2026-06-01
+  expect_exit: 0
+- action: es.force_merge
+  args:
+    index: logs-2026-06-01
+  expect_exit:
+  - 0
+  - 1
+  skip: mutator skipped by default (high)
+- action: es.index_count
+  args:
+    index: logs-2026-06-01
+  expect_exit: 0
+- action: es.index_mapping
+  args:
+    index: logs-2026-06-01
+  expect_exit: 0
+- action: es.index_settings
+  args:
+    index: logs-2026-06-01
+  expect_exit: 0
+- action: es.index_stats
+  args:
+    index: logs-2026-06-01
+  expect_exit: 0
+- action: es.pending_tasks
+  args: {}
+  expect_exit: 0
+- action: es.snapshot_list
+  args:
+    repository: s3-backup
+  expect_exit: 0
+- action: es.snapshot_status
+  args:
+    repository: s3-backup
+    snapshot: daily-2026-06-01
+  expect_exit: 0

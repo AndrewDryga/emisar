@@ -1,0 +1,23 @@
+schema_version: 1
+id: postgres.last_vacuum_per_table
+title: Last vacuum/analyze per table
+kind: exec
+risk: low
+description: Tables ordered by oldest last-vacuum — find ones autovacuum hasn't touched.
+side_effects: ["One SELECT.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /usr/bin/psql
+    argv:
+      - "-XAt"
+      - "-c"
+      - "SELECT schemaname || '.' || relname AS table, last_vacuum, last_autovacuum, last_analyze, last_autoanalyze, n_live_tup, n_dead_tup FROM pg_stat_user_tables ORDER BY COALESCE(last_autovacuum, last_vacuum) ASC NULLS FIRST LIMIT 50;"
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Vacuum freshness
+    args: {}

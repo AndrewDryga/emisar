@@ -1,0 +1,37 @@
+defaults:
+  env:
+    CADDY_ADMIN: http://caddy:2019
+cases:
+- action: caddy.access_log_tail
+  args: {}
+  expect_exit: 0
+- action: caddy.adapt_caddyfile
+  args: {}
+  expect_exit: 0
+- action: caddy.cluster_state
+  args: {}
+  expect_exit: 0
+- action: caddy.config_dump
+  args: {}
+  expect_exit: 0
+- action: caddy.pki_certs
+  args: {}
+  expect_exit: 0
+- action: caddy.reload_config
+  args: {}
+  expect_exit: 0
+- action: caddy.reverse_proxy_upstreams
+  args: {}
+  expect_exit: 0
+- action: caddy.runtime_metrics
+  args: {}
+  expect_exit: 0
+- action: caddy.stop
+  args: {}
+  skip: mutator skipped by default (high); set --include=caddy.stop to run
+- action: caddy.validate_config
+  args: {}
+  expect_exit: 0
+- action: caddy.version
+  args: {}
+  expect_exit: 0

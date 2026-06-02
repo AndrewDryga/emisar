@@ -1,0 +1,28 @@
+schema_version: 1
+id: nomad.job_stop
+title: nomad job stop <id>
+kind: exec
+risk: high
+description: 'Stops one job. All its allocations are stopped + GC''d. Use -purge to also remove from history.'
+side_effects:
+  - All allocations of the job receive a shutdown signal.
+  - Job marked dead in catalog.
+  - History retained unless --purge is used (this action does NOT purge).
+args:
+  - name: job
+    type: string
+    required: true
+    description: Job ID.
+    validation:
+      pattern: "^[a-zA-Z0-9_\\-]{1,128}$"
+execution:
+  command: {binary: /usr/bin/nomad, argv: ["job", "stop", "{{ args.job }}"]}
+  timeout: 5m
+output:
+  parser: text
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 8192
+examples:
+  - title: Stop one job
+    args:
+      job: "api"

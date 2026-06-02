@@ -1,0 +1,34 @@
+schema_version: 1
+id: kubernetes.pods_top
+title: Pods by CPU (metrics-server)
+kind: exec
+risk: low
+description: >
+  `kubectl top pod -A --sort-by=cpu | head -50` — top 50 pods by CPU. Requires metrics-server to be installed. Read-only.
+side_effects:
+  - One kubectl top invocation.
+  - Read-only.
+args:
+  - name: context
+    type: string
+    required: false
+    default: ""
+    description: kubeconfig context. Empty = current.
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{0,128}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "kubectl ${KCTX:+--context=$KCTX} top pod -A --sort-by=cpu | head -50"
+  timeout: 30s
+  env:
+    KCTX: "{{ args.context }}"
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Top CPU consumers
+    args: {}

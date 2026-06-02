@@ -1,0 +1,47 @@
+schema_version: 1
+
+id: redis.config_get
+title: CONFIG GET
+kind: exec
+risk: low
+
+description: >
+  Reads runtime config by glob pattern. Useful before any tuning
+  conversation: confirm `maxmemory`, `maxmemory-policy`, `appendonly`,
+  `save`, etc. Read-only. Pattern is restricted to safe globs against
+  Redis config keys.
+
+side_effects:
+  - Issues one CONFIG GET command.
+  - No keys read or written.
+
+args:
+  - name: pattern
+    type: string
+    required: false
+    default: "*"
+    description: Glob pattern (e.g. "maxmemory*", "save", "*").
+    validation:
+      pattern: "^[a-zA-Z0-9_\\-*?]{1,64}$"
+
+execution:
+  command:
+    binary: /usr/bin/redis-cli
+    argv:
+      - "CONFIG"
+      - "GET"
+      - "{{ args.pattern }}"
+  timeout: 10s
+
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+
+examples:
+  - title: Memory-related config
+    args:
+      pattern: "maxmemory*"
+  - title: All persistence settings
+    args:
+      pattern: "save"

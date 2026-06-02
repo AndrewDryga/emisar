@@ -1,0 +1,23 @@
+schema_version: 1
+id: postgres.idle_in_transaction
+title: Idle-in-transaction backends
+kind: exec
+risk: low
+description: Backends sitting in 'idle in transaction' state — they hold locks + bloat vacuum's xmin horizon.
+side_effects: ["One SELECT.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /usr/bin/psql
+    argv:
+      - "-XAt"
+      - "-c"
+      - "SELECT pid, usename, application_name, client_addr, EXTRACT(EPOCH FROM (now()-state_change))::int AS idle_sec, substring(query, 1, 300) AS last_query FROM pg_stat_activity WHERE state IN ('idle in transaction','idle in transaction (aborted)') ORDER BY state_change ASC LIMIT 100;"
+  timeout: 10s
+output:
+  parser: text
+  max_stdout_bytes: 131072
+  max_stderr_bytes: 8192
+examples:
+  - title: IIT offenders
+    args: {}

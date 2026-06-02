@@ -1,0 +1,26 @@
+schema_version: 1
+id: redis.bgrewriteaof
+title: BGREWRITEAOF
+kind: exec
+risk: medium
+description: >
+  Rewrite the AOF file in the background, compacting it to the
+  smallest equivalent command set. Reduces AOF size and recovery
+  time. Brief fork. Concurrent BGSAVE will queue.
+side_effects:
+  - One fork; brief CPU + memory spike.
+  - Writes a new AOF file then renames into place.
+  - Concurrent BGSAVE will queue behind this.
+args: []
+execution:
+  command:
+    binary: /usr/bin/redis-cli
+    argv: ["BGREWRITEAOF"]
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Compact AOF
+    args: {}

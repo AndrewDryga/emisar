@@ -1,0 +1,42 @@
+schema_version: 1
+id: gh.pr_checks
+title: gh pr checks
+kind: exec
+risk: low
+description: All CI checks for one PR + pass/fail status.
+side_effects:
+  - One API call.
+  - Read-only.
+args:
+  - name: repo
+    type: string
+    required: true
+    description: 'Repo in owner/name form.'
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{1,40}/[a-zA-Z0-9_.\\-]{1,100}$"
+  - name: pr
+    type: integer
+    required: true
+    description: PR number.
+    validation:
+      min: 1
+      max: 9999999
+execution:
+  command:
+    binary: gh
+    argv:
+      - "pr"
+      - "checks"
+      - "{{ args.pr }}"
+      - "--repo"
+      - "{{ args.repo }}"
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: PR checks
+    args:
+      repo: "andrewdryga/emisar"
+      pr: 1

@@ -1,0 +1,18 @@
+schema_version: 1
+id: nfs.cat_etab
+title: cat /var/lib/nfs/etab
+kind: exec
+risk: low
+description: Effective export table (what kernel actually serves).
+side_effects: ["One file read.", "Read-only."]
+args: []
+execution:
+  command: {binary: /bin/cat, argv: ["/var/lib/nfs/etab"]}
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 32768
+  max_stderr_bytes: 8192
+examples:
+  - title: Effective exports
+    args: {}

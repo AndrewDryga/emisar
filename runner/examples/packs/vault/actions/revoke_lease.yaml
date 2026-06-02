@@ -1,0 +1,32 @@
+schema_version: 1
+id: vault.revoke_lease
+title: vault lease revoke <id>
+kind: exec
+risk: high
+description: 'Revokes one lease — the credential becomes invalid immediately. Anyone using it gets a 403 from the downstream system.'
+side_effects:
+  - Lease is revoked; underlying credential disabled.
+  - In-flight requests using the credential will fail.
+args:
+  - name: lease_id
+    type: string
+    required: true
+    description: Full lease ID.
+    validation:
+      pattern: "^[a-zA-Z0-9_./\\-]{1,512}$"
+execution:
+  command:
+    binary: vault
+    argv:
+      - "lease"
+      - "revoke"
+      - "{{ args.lease_id }}"
+  timeout: 60s
+output:
+  parser: text
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 8192
+examples:
+  - title: Revoke one
+    args:
+      lease_id: "aws/creds/readonly/abc123"

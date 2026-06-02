@@ -1,0 +1,31 @@
+schema_version: 1
+id: es.cache_clear
+title: POST /<index>/_cache/clear
+kind: exec
+risk: high
+description: Clears caches (request, query, fielddata) on one index. Next queries pay the cold-cache cost.
+side_effects:
+  - Drops cached data for the index.
+  - Subsequent queries slow until caches re-warm.
+args:
+  - name: index
+    type: string
+    required: true
+    description: Index name.
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{1,255}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "curl -sS -u \"$ELASTIC_USER:$ELASTIC_PASSWORD\" -XPOST \"$ELASTIC_URL/{{ args.index }}/_cache/clear?pretty\""
+  timeout: 60s
+output:
+  parser: json
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 8192
+examples:
+  - title: Clear caches for one index
+    args:
+      index: "logs-2026-06-01"

@@ -1,0 +1,18 @@
+schema_version: 1
+id: wg.show_latest_handshakes
+title: wg show all latest-handshakes
+kind: exec
+risk: low
+description: Per-peer epoch of last handshake. 0 means never seen.
+side_effects: ["One netlink query.", "Read-only."]
+args: []
+execution:
+  command: {binary: /usr/bin/wg, argv: ["show", "all", "latest-handshakes"]}
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 32768
+  max_stderr_bytes: 8192
+examples:
+  - title: Handshakes
+    args: {}

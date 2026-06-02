@@ -1,0 +1,38 @@
+schema_version: 1
+id: mongo.index_stats
+title: $indexStats aggregation
+kind: exec
+risk: low
+description: Per-index access counts since server start. Zeros usually mean unused indexes.
+side_effects:
+  - One aggregation.
+  - Read-only.
+args:
+  - name: database
+    type: string
+    required: true
+    description: Database name.
+    validation:
+      pattern: "^[a-zA-Z0-9_\\-]{1,63}$"
+  - name: collection
+    type: string
+    required: true
+    description: Collection name.
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{1,120}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "mongosh \"$MONGO_URI\" --quiet --eval 'JSON.stringify(db.getSiblingDB(\"{{ args.database }}\").getCollection(\"{{ args.collection }}\").aggregate([{$indexStats:{}}]).toArray())'"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Index usage for one coll
+    args:
+      database: "production"
+      collection: "users"

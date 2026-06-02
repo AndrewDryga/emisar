@@ -1,0 +1,22 @@
+schema_version: 1
+id: phpfpm.composer_show
+title: composer show (in $COMPOSER_DIR)
+kind: exec
+risk: low
+description: Installed Composer packages with versions.
+side_effects: ["Reads composer.lock + vendor/.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "cd \"${COMPOSER_DIR:-/var/www/html}\" && composer show --format=json --no-interaction 2>/dev/null"
+  timeout: 60s
+output:
+  parser: json
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: Composer packages
+    args: {}

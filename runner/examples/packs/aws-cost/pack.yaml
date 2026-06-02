@@ -1,0 +1,21 @@
+schema_version: 1
+id: aws-cost
+name: AWS Cost Explorer operations
+version: 0.1.0
+description: >
+  Read-only AWS spend introspection — month-to-date by service, by
+  account, forecast. Auth via AWS_PROFILE with ce:* permissions. Cost
+  Explorer must be enabled.
+vendor: emisar
+homepage: https://github.com/andrewdryga/emisar
+
+requires:
+  os: [linux]
+  binaries: [aws]
+
+actions:
+  - actions/mtd_by_service.yaml
+  - actions/mtd_by_account.yaml
+  - actions/last_7d_daily.yaml
+  - actions/forecast_current_month.yaml
+  - actions/savings_plans_coverage.yaml

@@ -1,0 +1,23 @@
+schema_version: 1
+id: nginx.quit_graceful
+title: nginx graceful quit
+kind: exec
+risk: high
+description: >
+  `nginx -s quit` — workers finish in-flight requests, then exit. No new connections accepted. Use to drain before host shutdown.
+side_effects:
+  - Workers stop accepting new connections.
+  - In-flight requests complete; workers exit when done.
+args: []
+execution:
+  command:
+    binary: /usr/sbin/nginx
+    argv: ["-s", "quit"]
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Drain + exit
+    args: {}

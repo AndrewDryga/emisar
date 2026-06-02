@@ -1,0 +1,40 @@
+schema_version: 1
+id: gh.workflow_dispatch
+title: gh workflow run <workflow>
+kind: exec
+risk: medium
+description: >
+  Trigger a workflow that supports workflow_dispatch. Pass ref + JSON
+  inputs. Used for ad-hoc deploys, scripted rollbacks, or manual
+  release flows.
+side_effects:
+  - Workflow run begins.
+  - Compute consumed.
+  - Effects depend entirely on the workflow definition.
+args:
+  - name: workflow
+    type: string
+    required: true
+    description: Workflow file basename (e.g., deploy.yml).
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{1,64}$"
+  - name: ref
+    type: string
+    required: false
+    default: main
+    description: Branch/tag/SHA.
+    validation:
+      pattern: "^[a-zA-Z0-9_./\\-]{1,128}$"
+execution:
+  command:
+    binary: /usr/bin/gh
+    argv: ["workflow", "run", "{{ args.workflow }}", "--ref", "{{ args.ref }}"]
+  timeout: 60s
+output:
+  parser: text
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 8192
+examples:
+  - title: Trigger deploy.yml on main
+    args:
+      workflow: "deploy.yml"

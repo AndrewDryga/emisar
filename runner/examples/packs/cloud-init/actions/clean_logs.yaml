@@ -1,0 +1,25 @@
+schema_version: 1
+id: cloud-init.clean_logs
+title: cloud-init clean --logs
+kind: exec
+risk: medium
+description: >
+  Truncate cloud-init logs without resetting instance state. Use to
+  clear noisy stale errors before re-running a stage to confirm a
+  fix worked.
+side_effects:
+  - /var/log/cloud-init.log + /var/log/cloud-init-output.log truncated.
+  - instance-id + module-run state preserved (use `clean` to also reset those).
+args: []
+execution:
+  command:
+    binary: /usr/bin/cloud-init
+    argv: ["clean", "--logs"]
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Clear logs only
+    args: {}

@@ -1,0 +1,29 @@
+schema_version: 1
+id: consul.intentions_match
+title: GET /v1/connect/intentions/match (by destination)
+kind: exec
+risk: low
+description: All intentions whose destination is the named service. Use to answer "what can talk to X?".
+side_effects: ["One API call.", "Read-only."]
+args:
+  - name: destination
+    type: string
+    required: true
+    description: Destination service.
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{1,128}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "curl -sS -H \"X-Consul-Token: $CONSUL_HTTP_TOKEN\" \"$CONSUL_HTTP_ADDR/v1/connect/intentions/match?by=destination&name={{ args.destination }}\""
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 131072
+  max_stderr_bytes: 8192
+examples:
+  - title: Match for api
+    args:
+      destination: "api"

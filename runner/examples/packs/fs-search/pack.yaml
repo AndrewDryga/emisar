@@ -1,0 +1,33 @@
+schema_version: 1
+
+id: fs-search
+name: Filesystem search and inspection
+version: 0.1.0
+description: >
+  Generic filesystem operations an LLM-driven runner needs constantly:
+  bounded find, recursive grep, file head/tail/hash, du, ls -la, stat.
+  All read-only. Paths are validated against simple patterns; the runner's
+  symlink-containment + audit redaction layers still apply on top.
+vendor: emisar
+homepage: https://github.com/andrewdryga/emisar
+
+requires:
+  os:
+    - linux
+
+actions:
+  - actions/find_by_name.yaml
+  - actions/find_recent_modified.yaml
+  - actions/find_world_writable.yaml
+  - actions/find_setuid.yaml
+  - actions/find_large_files.yaml
+  - actions/du_top.yaml
+  - actions/ls_long.yaml
+  - actions/stat_path.yaml
+  - actions/sha256_file.yaml
+  - actions/head_file.yaml
+  - actions/tail_file.yaml
+  - actions/grep_file.yaml
+  - actions/grep_recursive.yaml
+  - actions/count_lines.yaml
+  - actions/file_type.yaml

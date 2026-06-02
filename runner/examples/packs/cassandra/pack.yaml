@@ -1,9 +1,16 @@
 schema_version: 1
 
 id: cassandra
-name: Cassandra operations pack
-version: 0.2.0
-description: Safe Cassandra inspection actions for LLM runners.
+name: Cassandra operations
+version: 0.4.0
+description: >
+  Deep Cassandra ops via nodetool + cqlsh: topology (status, ring,
+  gossip, describering, failure detector), health (tpstats, netstats,
+  proxy + table histograms, compaction stats + history, throughput),
+  schema introspection, maintenance mutators (snapshot, flush, cleanup,
+  verify, compact, stop, throughput, cache invalidation), repair
+  workflows, node lifecycle (drain, decommission, assassinate,
+  removenode, rebuild), and logging level control. JMX on 127.0.0.1:7199.
 vendor: emisar
 homepage: https://github.com/andrewdryga/emisar
 
@@ -14,9 +21,57 @@ requires:
     - nodetool
 
 actions:
+  # Topology / cluster state
   - actions/nodetool_status.yaml
+  - actions/nodetool_describecluster.yaml
+  - actions/nodetool_info.yaml
+  - actions/nodetool_version.yaml
+  - actions/nodetool_gossipinfo.yaml
+  - actions/nodetool_ring.yaml
+  - actions/nodetool_failuredetector.yaml
+  - actions/nodetool_describering.yaml
+  # Health
   - actions/nodetool_tpstats.yaml
-  - actions/nodetool_compactionstats.yaml
+  - actions/nodetool_netstats.yaml
+  - actions/nodetool_proxyhistograms.yaml
+  - actions/nodetool_tablehistograms.yaml
   - actions/nodetool_tablestats.yaml
-  - actions/nodetool_repair.yaml
+  - actions/nodetool_compactionstats.yaml
+  - actions/nodetool_compactionhistory.yaml
+  - actions/nodetool_getconcurrentcompactors.yaml
+  - actions/nodetool_getcompactionthroughput.yaml
   - actions/analyze_disk_pressure.yaml
+  # Snapshots / endpoints
+  - actions/nodetool_listsnapshots.yaml
+  - actions/nodetool_getendpoints.yaml
+  # Schema (cqlsh)
+  - actions/cqlsh_describe_schema.yaml
+  - actions/cqlsh_list_keyspaces.yaml
+  - actions/cqlsh_describe_keyspace.yaml
+  - actions/cqlsh_list_roles.yaml
+  - actions/cqlsh_system_peers.yaml
+  - actions/cqlsh_system_size_estimates.yaml
+  # Maintenance mutators
+  - actions/nodetool_flush.yaml
+  - actions/nodetool_snapshot.yaml
+  - actions/nodetool_clearsnapshot.yaml
+  - actions/nodetool_cleanup.yaml
+  - actions/nodetool_verify.yaml
+  - actions/nodetool_compact.yaml
+  - actions/nodetool_stop_compaction.yaml
+  - actions/nodetool_setcompactionthroughput.yaml
+  # Cache invalidation
+  - actions/nodetool_invalidatekeycache.yaml
+  - actions/nodetool_invalidaterowcache.yaml
+  - actions/nodetool_invalidatecountercache.yaml
+  # Repair
+  - actions/nodetool_repair.yaml
+  # Lifecycle
+  - actions/nodetool_drain.yaml
+  - actions/nodetool_decommission.yaml
+  - actions/nodetool_assassinate.yaml
+  - actions/nodetool_removenode.yaml
+  - actions/nodetool_rebuild.yaml
+  # Logging
+  - actions/nodetool_getlogginglevels.yaml
+  - actions/nodetool_setlogginglevel.yaml

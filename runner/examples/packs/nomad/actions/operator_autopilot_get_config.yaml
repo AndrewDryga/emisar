@@ -1,0 +1,18 @@
+schema_version: 1
+id: nomad.operator_autopilot_get_config
+title: nomad operator autopilot get-config
+kind: exec
+risk: low
+description: Autopilot configuration (dead-server cleanup, redundancy zones, server stabilization).
+side_effects: ["One API call.", "Read-only."]
+args: []
+execution:
+  command: {binary: /usr/bin/nomad, argv: ["operator", "autopilot", "get-config"]}
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Autopilot config
+    args: {}

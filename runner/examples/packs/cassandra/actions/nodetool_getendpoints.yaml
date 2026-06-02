@@ -1,0 +1,39 @@
+schema_version: 1
+id: cassandra.nodetool_getendpoints
+title: nodetool getendpoints <ks> <table> <key>
+kind: exec
+risk: low
+description: Which replicas own a specific partition key. Use to confirm read/write routing.
+side_effects: ["One JMX call.", "Read-only."]
+args:
+  - name: keyspace
+    type: string
+    required: true
+    description: Keyspace.
+    validation:
+      pattern: "^[a-zA-Z][a-zA-Z0-9_]{0,47}$"
+  - name: table
+    type: string
+    required: true
+    description: Table.
+    validation:
+      pattern: "^[a-zA-Z][a-zA-Z0-9_]{0,47}$"
+  - name: key
+    type: string
+    required: true
+    description: Partition key (as a literal).
+    validation:
+      pattern: "^[a-zA-Z0-9_\\-:.]{1,256}$"
+execution:
+  command: {binary: /usr/bin/nodetool, argv: ["getendpoints", "{{ args.keyspace }}", "{{ args.table }}", "{{ args.key }}"]}
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Owning replicas
+    args:
+      keyspace: "my_ks"
+      table: "users"
+      key: "user-1234"

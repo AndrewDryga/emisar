@@ -1,0 +1,33 @@
+schema_version: 1
+id: kubernetes.nodes_top
+title: Nodes by CPU + memory
+kind: exec
+risk: low
+description: '`kubectl top nodes` — per-node CPU and memory utilization. Requires metrics-server.'
+side_effects:
+  - One kubectl top invocation.
+  - Read-only.
+args:
+  - name: context
+    type: string
+    required: false
+    default: ""
+    description: kubeconfig context.
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{0,128}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "kubectl ${KCTX:+--context=$KCTX} top nodes"
+  timeout: 30s
+  env:
+    KCTX: "{{ args.context }}"
+output:
+  parser: text
+  max_stdout_bytes: 32768
+  max_stderr_bytes: 8192
+examples:
+  - title: Node utilization
+    args: {}

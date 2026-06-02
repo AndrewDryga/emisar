@@ -1,0 +1,23 @@
+schema_version: 1
+id: postgres.wal_archive_status
+title: pg_stat_archiver
+kind: exec
+risk: low
+description: 'WAL archiver stats: archived/failed counts, last archived WAL, last failure.'
+side_effects: ["One SELECT.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /usr/bin/psql
+    argv:
+      - "-XAt"
+      - "-c"
+      - "SELECT * FROM pg_stat_archiver;"
+  timeout: 10s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Archiver
+    args: {}

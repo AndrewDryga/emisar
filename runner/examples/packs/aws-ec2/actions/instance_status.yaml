@@ -1,0 +1,22 @@
+schema_version: 1
+id: ec2.instance_status
+title: aws ec2 describe-instance-status
+kind: exec
+risk: low
+description: Per-instance system + instance status checks.
+side_effects:
+  - One API call.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: aws
+    argv: ["ec2", "describe-instance-status", "--include-all-instances", "--output", "json"]
+  timeout: 60s
+output:
+  parser: json
+  max_stdout_bytes: 4194304
+  max_stderr_bytes: 8192
+examples:
+  - title: Instance status checks
+    args: {}

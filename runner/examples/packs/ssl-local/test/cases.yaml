@@ -1,0 +1,30 @@
+defaults:
+  env: {}
+cases:
+- action: ssl.cert_expiry
+  args:
+    path: /etc/ssl/certs/server.crt
+  expect_exit: 0
+- action: ssl.cert_fingerprint
+  args:
+    path: /etc/ssl/certs/server.crt
+  expect_exit: 0
+- action: ssl.cert_text
+  args:
+    path: /etc/ssl/certs/server.crt
+  expect_exit: 0
+- action: ssl.find_certs
+  args: {}
+  expect_exit: 0
+- action: ssl.key_modulus
+  args:
+    path: /etc/ssl/private/server.key
+  expect_exit: 0
+- action: ssl.pkcs12_info
+  args:
+    path: /etc/ssl/private/server.p12
+  expect_exit: 0
+- action: ssl.verify_chain
+  args:
+    cert: /etc/ssl/certs/server.crt
+  expect_exit: 0

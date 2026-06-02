@@ -1,0 +1,22 @@
+schema_version: 1
+id: py.pip_cache_info
+title: $PY_VENV/bin/pip cache info
+kind: exec
+risk: low
+description: Cache size + location.
+side_effects: ["One pip cache call.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "\"${PY_VENV:-/opt/app/venv}/bin/pip\" cache info"
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Cache info
+    args: {}

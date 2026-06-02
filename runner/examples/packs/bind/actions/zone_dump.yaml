@@ -1,0 +1,27 @@
+schema_version: 1
+id: bind.zone_dump
+title: dig @localhost <zone> AXFR
+kind: exec
+risk: low
+description: Zone transfer from localhost (requires allow-transfer to include 127.0.0.1).
+side_effects: ["One AXFR query.", "Read-only."]
+args:
+  - name: zone
+    type: string
+    required: true
+    description: Zone name.
+    validation:
+      pattern: "^[a-zA-Z0-9.\\-]{1,253}$"
+execution:
+  command:
+    binary: /usr/bin/dig
+    argv: ["@127.0.0.1", "{{ args.zone }}", "AXFR"]
+  timeout: 60s
+output:
+  parser: text
+  max_stdout_bytes: 4194304
+  max_stderr_bytes: 8192
+examples:
+  - title: AXFR one zone
+    args:
+      zone: "example.com"

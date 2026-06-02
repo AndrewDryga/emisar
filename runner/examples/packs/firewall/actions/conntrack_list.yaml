@@ -1,0 +1,24 @@
+schema_version: 1
+id: fw.conntrack_list
+title: conntrack -L (capped)
+kind: exec
+risk: low
+description: First 1000 connection-tracking entries. Use to see what's NAT'd right now.
+side_effects:
+  - One conntrack query.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "conntrack -L 2>/dev/null | head -1000"
+  timeout: 60s
+output:
+  parser: text
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: First 1000 conntrack entries
+    args: {}

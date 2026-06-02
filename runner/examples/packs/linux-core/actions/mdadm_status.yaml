@@ -1,0 +1,34 @@
+schema_version: 1
+
+id: linux.mdadm_status
+title: mdadm RAID array status
+kind: exec
+risk: low
+
+description: >
+  Reads /proc/mdstat plus `mdadm --detail` for every active array.
+  Surfaces array state, devices, sync progress, faults. Read-only.
+  Returns "no arrays" cleanly when there's no mdadm RAID configured.
+
+side_effects:
+  - One cat + one mdadm --detail per array.
+  - Read-only.
+
+args: []
+
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "cat /proc/mdstat; for md in /dev/md[0-9]*; do [ -e \"$md\" ] && echo && mdadm --detail \"$md\"; done"
+  timeout: 15s
+
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+
+examples:
+  - title: Array health snapshot
+    args: {}

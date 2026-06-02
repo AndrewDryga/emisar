@@ -1,0 +1,39 @@
+schema_version: 1
+id: rmq.purge_queue
+title: rabbitmqctl purge_queue
+kind: exec
+risk: critical
+description: Drops every message in one queue. Unprocessed messages are lost.
+side_effects:
+  - All messages in the queue (including unacked-in-flight) are deleted.
+args:
+  - name: vhost
+    type: string
+    required: true
+    description: Virtual host.
+    validation:
+      pattern: "^[a-zA-Z0-9_./\\-]{1,128}$"
+  - name: queue
+    type: string
+    required: true
+    description: Queue name.
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{1,255}$"
+execution:
+  command:
+    binary: rabbitmqctl
+    argv:
+      - "purge_queue"
+      - "--vhost"
+      - "{{ args.vhost }}"
+      - "{{ args.queue }}"
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Purge dead-letter queue
+    args:
+      vhost: "/"
+      queue: "dead-letters"

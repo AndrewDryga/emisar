@@ -1,0 +1,18 @@
+schema_version: 1
+id: podman.ps
+title: podman ps -a
+kind: exec
+risk: low
+description: All containers (running + stopped).
+side_effects: ["One CLI call.", "Read-only."]
+args: []
+execution:
+  command: {binary: /usr/bin/podman, argv: ["ps", "-a", "--format", "json"]}
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: All containers
+    args: {}

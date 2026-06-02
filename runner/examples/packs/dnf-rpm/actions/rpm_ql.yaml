@@ -1,0 +1,25 @@
+schema_version: 1
+id: rpm.rpm_ql
+title: rpm -ql <pkg>
+kind: exec
+risk: low
+description: All files installed by one package.
+side_effects: ["One rpmdb read.", "Read-only."]
+args:
+  - name: package
+    type: string
+    required: true
+    description: Package name.
+    validation:
+      pattern: "^[a-zA-Z0-9_.+\\-]{1,128}$"
+execution:
+  command: {binary: /usr/bin/rpm, argv: ["-ql", "{{ args.package }}"]}
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: Files in httpd
+    args:
+      package: "httpd"

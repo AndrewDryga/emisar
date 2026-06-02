@@ -1,0 +1,24 @@
+schema_version: 1
+id: redis.config_rewrite
+title: CONFIG REWRITE
+kind: exec
+risk: medium
+description: >
+  Persist all runtime CONFIG SET changes back to the on-disk
+  redis.conf. Without this, runtime overrides revert at restart.
+side_effects:
+  - Rewrites redis.conf in place (preserves comments, updates values).
+  - No keyspace changes.
+args: []
+execution:
+  command:
+    binary: /usr/bin/redis-cli
+    argv: ["CONFIG", "REWRITE"]
+  timeout: 10s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Persist runtime config
+    args: {}

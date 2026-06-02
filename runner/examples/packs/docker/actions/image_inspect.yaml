@@ -1,0 +1,33 @@
+schema_version: 1
+id: docker.image_inspect
+title: docker image inspect
+kind: exec
+risk: low
+description: >
+  Returns the full JSON inspect document for one image — labels, config, env, exposed ports, build history root. Read-only.
+side_effects:
+  - One docker image inspect invocation.
+  - Read-only.
+args:
+  - name: image
+    type: string
+    required: true
+    description: Image ref (name:tag or sha256:...).
+    validation:
+      pattern: "^[a-zA-Z0-9_./@:\\-]{1,256}$"
+execution:
+  command:
+    binary: /usr/bin/docker
+    argv:
+      - "image"
+      - "inspect"
+      - "{{ args.image }}"
+  timeout: 15s
+output:
+  parser: json
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 16384
+examples:
+  - title: Inspect nginx:latest
+    args:
+      image: "nginx:latest"

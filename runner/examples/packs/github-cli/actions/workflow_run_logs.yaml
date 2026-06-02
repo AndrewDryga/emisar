@@ -1,0 +1,43 @@
+schema_version: 1
+id: gh.workflow_run_logs
+title: gh run view --log-failed
+kind: exec
+risk: low
+description: Logs from failed jobs in one run. Use for "why did CI break?".
+side_effects:
+  - Downloads logs.
+  - Read-only.
+args:
+  - name: repo
+    type: string
+    required: true
+    description: 'Repo in owner/name form.'
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{1,40}/[a-zA-Z0-9_.\\-]{1,100}$"
+  - name: run_id
+    type: integer
+    required: true
+    description: Run ID.
+    validation:
+      min: 1
+      max: 999999999999
+execution:
+  command:
+    binary: gh
+    argv:
+      - "run"
+      - "view"
+      - "{{ args.run_id }}"
+      - "--repo"
+      - "{{ args.repo }}"
+      - "--log-failed"
+  timeout: 120s
+output:
+  parser: text
+  max_stdout_bytes: 4194304
+  max_stderr_bytes: 8192
+examples:
+  - title: Failed-job logs
+    args:
+      repo: "andrewdryga/emisar"
+      run_id: 1234567890

@@ -1,0 +1,27 @@
+schema_version: 1
+id: caddy.validate_config
+title: caddy validate --config <file>
+kind: exec
+risk: low
+description: Validates a Caddyfile or JSON config without loading it.
+side_effects: ["One forked process.", "Read-only."]
+args:
+  - name: file
+    type: string
+    required: false
+    default: "/etc/caddy/Caddyfile"
+    description: Config path.
+    validation:
+      pattern: "^/[a-zA-Z0-9_./\\-]{1,512}$"
+execution:
+  command:
+    binary: /usr/bin/caddy
+    argv: ["validate", "--config", "{{ args.file }}"]
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 16384
+examples:
+  - title: Validate
+    args: {}

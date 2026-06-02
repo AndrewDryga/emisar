@@ -1,0 +1,22 @@
+schema_version: 1
+id: ch.slow_queries
+title: system.query_log slowest queries
+kind: exec
+risk: low
+description: Top 50 slowest queries from the last hour.
+side_effects: ["One SELECT.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "clickhouse-client --host \"${CH_HOST:-localhost}\" --user \"${CH_USER:-default}\" --password \"$CH_PASSWORD\" --query \"SELECT event_time, query_duration_ms, user, read_rows, memory_usage, query_id, substring(query, 1, 300) AS q FROM system.query_log WHERE event_time > now() - INTERVAL 1 HOUR AND type = 2 ORDER BY query_duration_ms DESC LIMIT 50 FORMAT JSONEachRow\""
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: Slow queries (1h)
+    args: {}

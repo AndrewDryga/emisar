@@ -1,0 +1,35 @@
+schema_version: 1
+
+id: envoy
+name: Envoy proxy / service mesh
+version: 0.1.0
+description: >
+  Envoy admin-API ops: cluster + listener + runtime + config + cert
+  inventory, server info, logging level read/write, plus traffic-shifting
+  mutators (drain listeners, healthcheck fail/ok, reset counters) for
+  planned failovers and incident response. Default admin URL
+  http://127.0.0.1:9901; override via ENVOY_ADMIN env.
+vendor: emisar
+homepage: https://github.com/andrewdryga/emisar
+
+requires:
+  os:
+    - linux
+  binaries:
+    - curl
+
+actions:
+  - actions/server_info.yaml
+  - actions/clusters.yaml
+  - actions/listeners.yaml
+  - actions/stats.yaml
+  - actions/config_dump.yaml
+  - actions/certs.yaml
+  - actions/runtime.yaml
+  - actions/ready.yaml
+  - actions/logging_get.yaml
+  - actions/logging_set.yaml
+  - actions/drain_listeners.yaml
+  - actions/healthcheck_fail.yaml
+  - actions/healthcheck_ok.yaml
+  - actions/reset_counters.yaml

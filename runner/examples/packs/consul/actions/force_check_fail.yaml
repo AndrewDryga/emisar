@@ -1,0 +1,38 @@
+schema_version: 1
+id: consul.force_check_fail
+title: PUT /v1/agent/check/fail/<check_id>
+kind: exec
+risk: high
+description: Forces one check into CRITICAL state. Service discovery stops returning it.
+side_effects:
+  - Targeted check transitions to CRITICAL.
+  - Discovery routes traffic away from the associated service.
+args:
+  - name: check_id
+    type: string
+    required: true
+    description: Check ID.
+    validation:
+      pattern: "^[a-zA-Z0-9_.:\\-]{1,128}$"
+  - name: note
+    type: string
+    required: false
+    default: "operator override"
+    description: Note attached to the check.
+    validation:
+      pattern: "^.{1,255}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "curl -sS -XPUT -H \"X-Consul-Token: $CONSUL_HTTP_TOKEN\" --data-urlencode \"note={{ args.note }}\" -G \"$CONSUL_HTTP_ADDR/v1/agent/check/fail/{{ args.check_id }}\""
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Drain one service instance
+    args:
+      check_id: "service:api:1"

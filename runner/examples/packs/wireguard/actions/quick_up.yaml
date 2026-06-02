@@ -1,0 +1,32 @@
+schema_version: 1
+id: wg.quick_up
+title: wg-quick up <iface>
+kind: exec
+risk: medium
+description: >
+  Bring up a WireGuard interface defined in /etc/wireguard/<iface>.conf.
+  Applies the address, peers, and PostUp rules.
+side_effects:
+  - Interface comes up with the configured peers.
+  - Routing table changes.
+  - PostUp scripts (if any) run.
+args:
+  - name: iface
+    type: string
+    required: true
+    description: Interface name (matches /etc/wireguard/<iface>.conf).
+    validation:
+      pattern: "^[a-zA-Z0-9_\\-]{1,15}$"
+execution:
+  command:
+    binary: /usr/bin/wg-quick
+    argv: ["up", "{{ args.iface }}"]
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 8192
+examples:
+  - title: Bring up wg0
+    args:
+      iface: "wg0"

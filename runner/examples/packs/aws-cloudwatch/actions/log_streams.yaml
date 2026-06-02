@@ -1,0 +1,27 @@
+schema_version: 1
+id: cw.log_streams
+title: aws logs describe-log-streams
+kind: exec
+risk: low
+description: Streams for one log group, sorted by last event time.
+side_effects: ["One API call.", "Read-only."]
+args:
+  - name: log_group
+    type: string
+    required: true
+    description: Log group name.
+    validation:
+      pattern: "^[a-zA-Z0-9_./#\\-]{1,512}$"
+execution:
+  command:
+    binary: aws
+    argv: ["logs", "describe-log-streams", "--log-group-name", "{{ args.log_group }}", "--order-by", "LastEventTime", "--descending", "--max-items", "50", "--output", "json"]
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: Streams
+    args:
+      log_group: "/aws/lambda/my-fn"

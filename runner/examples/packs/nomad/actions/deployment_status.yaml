@@ -1,0 +1,25 @@
+schema_version: 1
+id: nomad.deployment_status
+title: nomad deployment status <id>
+kind: exec
+risk: low
+description: 'One deployment''s state — per-task-group desired/placed/healthy/unhealthy.'
+side_effects: ["One API call.", "Read-only."]
+args:
+  - name: deployment_id
+    type: string
+    required: true
+    description: Deployment ID.
+    validation:
+      pattern: "^[a-fA-F0-9\\-]{4,36}$"
+execution:
+  command: {binary: /usr/bin/nomad, argv: ["deployment", "status", "-verbose", "{{ args.deployment_id }}"]}
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 131072
+  max_stderr_bytes: 8192
+examples:
+  - title: Deployment status
+    args:
+      deployment_id: "abc12345"

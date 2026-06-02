@@ -1,0 +1,23 @@
+schema_version: 1
+id: postgres.index_sizes
+title: Top 50 indexes by size
+kind: exec
+risk: low
+description: Largest indexes — candidates for bloat investigation.
+side_effects: ["One SELECT.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /usr/bin/psql
+    argv:
+      - "-XAt"
+      - "-c"
+      - "SELECT s.schemaname || '.' || s.relname AS table, s.indexrelname AS index, pg_size_pretty(pg_relation_size(s.indexrelid)) AS size, s.idx_scan FROM pg_stat_user_indexes s ORDER BY pg_relation_size(s.indexrelid) DESC LIMIT 50;"
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Largest indexes
+    args: {}

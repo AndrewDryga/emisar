@@ -1,0 +1,36 @@
+schema_version: 1
+
+id: postgres.locks
+title: Blocking lock graph
+kind: exec
+risk: low
+
+description: >
+  Returns who's blocking whom. Joins pg_locks with pg_stat_activity to
+  show blocker_pid → blocked_pid pairs plus the truncated SQL of each
+  side. Read-only. Use before a `cancel_query`; you want to cancel the
+  blocker, not the victim.
+
+side_effects:
+  - One SELECT joining pg_locks and pg_stat_activity.
+  - No locks held by this query.
+
+args: []
+
+execution:
+  command:
+    binary: /usr/bin/psql
+    argv:
+      - "-XAt"
+      - "-c"
+      - "SELECT blocked.pid AS blocked_pid, blocked.usename AS blocked_user, left(blocked.query, 120) AS blocked_query, blocking.pid AS blocking_pid, blocking.usename AS blocking_user, left(blocking.query, 120) AS blocking_query, blocked.wait_event_type, blocked.wait_event FROM pg_stat_activity blocked JOIN pg_stat_activity blocking ON blocking.pid = ANY(pg_blocking_pids(blocked.pid)) WHERE blocked.wait_event_type IS NOT NULL ORDER BY blocked.pid LIMIT 50;"
+  timeout: 10s
+
+output:
+  parser: text
+  max_stdout_bytes: 131072
+  max_stderr_bytes: 8192
+
+examples:
+  - title: What's currently blocked?
+    args: {}

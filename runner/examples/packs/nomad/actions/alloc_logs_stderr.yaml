@@ -1,0 +1,42 @@
+schema_version: 1
+id: nomad.alloc_logs_stderr
+title: nomad alloc logs -stderr <alloc> <task>
+kind: exec
+risk: low
+description: Last N lines of stderr from one task in one allocation.
+side_effects: ["One API call.", "Read-only."]
+args:
+  - name: alloc_id
+    type: string
+    required: true
+    description: Allocation ID or prefix.
+    validation:
+      pattern: "^[a-fA-F0-9\\-]{4,36}$"
+  - name: task
+    type: string
+    required: true
+    description: Task name.
+    validation:
+      pattern: "^[a-zA-Z0-9_\\-]{1,128}$"
+  - name: tail
+    type: integer
+    required: false
+    default: 200
+    description: Lines.
+    validation:
+      min: 1
+      max: 10000
+execution:
+  command:
+    binary: /usr/bin/nomad
+    argv: ["alloc", "logs", "-stderr", "-tail", "-n", "{{ args.tail }}", "{{ args.alloc_id }}", "{{ args.task }}"]
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 2097152
+  max_stderr_bytes: 8192
+examples:
+  - title: Last 200 stderr
+    args:
+      alloc_id: "abc12345"
+      task: "web"

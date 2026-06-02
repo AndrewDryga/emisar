@@ -1,0 +1,71 @@
+defaults:
+  env: {}
+cases:
+- action: nginx.access_top_clients
+  args: {}
+  expect_exit: 0
+- action: nginx.access_top_urls
+  args: {}
+  expect_exit: 0
+- action: nginx.active_version
+  args: {}
+  expect_exit: 0
+- action: nginx.bytes_by_url
+  args: {}
+  expect_exit: 0
+- action: nginx.compiled_modules
+  args: {}
+  expect_exit: 0
+- action: nginx.config_dump
+  args: {}
+  expect_exit: 0
+- action: nginx.connections_now
+  args: {}
+  expect_exit: 0
+- action: nginx.error_tail
+  args: {}
+  expect_exit: 0
+- action: nginx.log_grep_4xx
+  args: {}
+  expect_exit: 0
+- action: nginx.log_grep_5xx
+  args: {}
+  expect_exit: 0
+- action: nginx.master_pid
+  args: {}
+  expect_exit: 0
+- action: nginx.quit_graceful
+  args: {}
+  skip: mutator skipped by default (high); set --include=nginx.quit_graceful to run
+- action: nginx.reload
+  args: {}
+  expect_exit: 0
+- action: nginx.slow_requests
+  args: {}
+  expect_exit: 0
+- action: nginx.ssl_cert_expiry
+  args:
+    sni: example.com
+  expect_exit: 0
+- action: nginx.ssl_chain_check
+  args:
+    sni: api.example.com
+  expect_exit: 0
+- action: nginx.status
+  args: {}
+  expect_exit: 0
+- action: nginx.stop_immediate
+  args: {}
+  skip: mutator skipped by default (critical); set --include=nginx.stop_immediate to run
+- action: nginx.test_config
+  args: {}
+  expect_exit: 0
+- action: nginx.upstream_list
+  args: {}
+  expect_exit: 0
+- action: nginx.vhost_list
+  args: {}
+  expect_exit: 0
+- action: nginx.worker_count
+  args: {}
+  expect_exit: 0

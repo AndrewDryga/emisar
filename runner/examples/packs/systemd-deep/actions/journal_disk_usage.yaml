@@ -1,0 +1,22 @@
+schema_version: 1
+id: systemd.journal_disk_usage
+title: journalctl --disk-usage
+kind: exec
+risk: low
+description: How much disk the systemd journal is using.
+side_effects:
+  - One journalctl invocation.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /bin/journalctl
+    argv: ["--disk-usage"]
+  timeout: 10s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 4096
+examples:
+  - title: Journal disk usage
+    args: {}

@@ -1,0 +1,31 @@
+schema_version: 1
+id: gh.branch_list
+title: gh api repos/<repo>/branches
+kind: exec
+risk: low
+description: Branches in the repo (paginated, up to 100).
+side_effects:
+  - One API call.
+  - Read-only.
+args:
+  - name: repo
+    type: string
+    required: true
+    description: 'Repo in owner/name form.'
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{1,40}/[a-zA-Z0-9_.\\-]{1,100}$"
+execution:
+  command:
+    binary: gh
+    argv:
+      - "api"
+      - "repos/{{ args.repo }}/branches?per_page=100"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+examples:
+  - title: Branches
+    args:
+      repo: "andrewdryga/emisar"

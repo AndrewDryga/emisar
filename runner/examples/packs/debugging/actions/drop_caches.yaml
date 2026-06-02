@@ -1,0 +1,38 @@
+schema_version: 1
+id: debugging.drop_caches
+title: echo <n> > /proc/sys/vm/drop_caches
+kind: exec
+risk: medium
+description: >
+  Force the kernel to drop pagecache / dentries / inodes. Use only
+  when a benchmark or memory-fragmentation test requires a cold
+  cache — never on prod for "I want more free RAM". Production
+  RSS appears to drop briefly, then the cache repopulates and the
+  next workload is slower until it warms back up.
+side_effects:
+  - Page cache emptied (1), or slab caches emptied (2), or both (3).
+  - Brief I/O spike as caches repopulate.
+  - Production read latency increases until warm.
+args:
+  - name: mode
+    type: integer
+    required: true
+    description: 1=pagecache, 2=dentries+inodes, 3=both.
+    validation:
+      min: 1
+      max: 3
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "/bin/sync && echo {{ args.mode }} > /proc/sys/vm/drop_caches"
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Drop pagecache only
+    args:
+      mode: 1

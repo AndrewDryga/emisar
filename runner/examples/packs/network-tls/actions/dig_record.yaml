@@ -1,0 +1,53 @@
+schema_version: 1
+id: net.dig_record
+title: dig (DNS lookup)
+kind: exec
+risk: low
+description: >
+  `dig +short <type> <name> @<resolver>` — look up one DNS record. Type defaults to A; specify AAAA, MX, NS, TXT, CNAME, SRV. Resolver defaults to system default.
+side_effects:
+  - One DNS query.
+  - Read-only.
+args:
+  - name: name
+    type: string
+    required: true
+    description: Domain name to look up.
+    validation:
+      pattern: "^[a-zA-Z0-9.\\-_]{1,253}$"
+  - name: type
+    type: string
+    required: false
+    default: A
+    description: Record type.
+    validation:
+      enum: [A, AAAA, MX, NS, TXT, CNAME, SRV, PTR, SOA, CAA]
+  - name: resolver
+    type: string
+    required: false
+    default: ""
+    description: Resolver IP (empty = system default).
+    validation:
+      pattern: "^[0-9a-fA-F.:]{0,45}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "dig +short {{ args.type }} {{ args.name }} ${RES:+@$RES}"
+  timeout: 15s
+  env:
+    RES: "{{ args.resolver }}"
+output:
+  parser: text
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: A record
+    args:
+      name: example.com
+  - title: MX record via Google's resolver
+    args:
+      name: example.com
+      type: MX
+      resolver: "8.8.8.8"

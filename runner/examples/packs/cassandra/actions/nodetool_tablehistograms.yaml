@@ -1,0 +1,32 @@
+schema_version: 1
+id: cassandra.nodetool_tablehistograms
+title: nodetool tablehistograms <ks> <table>
+kind: exec
+risk: low
+description: Local-node read/write/sstable/partition-size histograms for one table.
+side_effects: ["One JMX call.", "Read-only."]
+args:
+  - name: keyspace
+    type: string
+    required: true
+    description: Keyspace.
+    validation:
+      pattern: "^[a-zA-Z][a-zA-Z0-9_]{0,47}$"
+  - name: table
+    type: string
+    required: true
+    description: Table.
+    validation:
+      pattern: "^[a-zA-Z][a-zA-Z0-9_]{0,47}$"
+execution:
+  command: {binary: /usr/bin/nodetool, argv: ["tablehistograms", "{{ args.keyspace }}", "{{ args.table }}"]}
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 32768
+  max_stderr_bytes: 8192
+examples:
+  - title: One table
+    args:
+      keyspace: "my_ks"
+      table: "users"

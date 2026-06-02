@@ -1,0 +1,40 @@
+schema_version: 1
+id: kubernetes.uncordon
+title: kubectl uncordon node
+kind: exec
+risk: medium
+description: Marks a node schedulable again. Reverse of cordon.
+side_effects:
+  - Node marked schedulable.
+  - New pods may schedule onto it.
+args:
+  - name: name
+    type: string
+    required: true
+    description: Node name.
+    validation:
+      pattern: "^[a-z0-9][a-z0-9.\\-]{0,253}$"
+  - name: context
+    type: string
+    required: false
+    default: ""
+    description: kubeconfig context.
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{0,128}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "kubectl ${KCTX:+--context=$KCTX} uncordon {{ args.name }}"
+  timeout: 30s
+  env:
+    KCTX: "{{ args.context }}"
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Uncordon one node
+    args:
+      name: ip-10-0-1-23.eu-west-1.compute.internal

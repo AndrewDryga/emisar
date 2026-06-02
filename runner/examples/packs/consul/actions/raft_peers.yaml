@@ -1,0 +1,22 @@
+schema_version: 1
+id: consul.raft_peers
+title: consul operator raft list-peers
+kind: exec
+risk: low
+description: Server peers with voter status, suffix, address.
+side_effects:
+  - One agent call.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: consul
+    argv: ["operator", "raft", "list-peers"]
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Raft peers
+    args: {}

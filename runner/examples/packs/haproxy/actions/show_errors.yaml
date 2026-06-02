@@ -1,0 +1,24 @@
+schema_version: 1
+id: haproxy.show_errors
+title: show errors
+kind: exec
+risk: low
+description: Recent request/response errors captured by HAProxy. Use to debug 503s.
+side_effects:
+  - One admin socket command.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "echo 'show errors' | socat - \"$HAPROXY_SOCK\""
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: Errors
+    args: {}

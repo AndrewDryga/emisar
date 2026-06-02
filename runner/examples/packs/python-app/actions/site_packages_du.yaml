@@ -1,0 +1,22 @@
+schema_version: 1
+id: py.site_packages_du
+title: du -sh site-packages/*
+kind: exec
+risk: low
+description: Disk usage per installed package — find bloated installs.
+side_effects: ["One file-system traversal of the venv's site-packages.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "V=${PY_VENV:-/opt/app/venv}; SP=$(\"$V/bin/python\" -c 'import site; print(site.getsitepackages()[0])'); du -sh \"$SP\"/* 2>/dev/null | sort -rh | head -50"
+  timeout: 5m
+output:
+  parser: text
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Top packages by disk
+    args: {}

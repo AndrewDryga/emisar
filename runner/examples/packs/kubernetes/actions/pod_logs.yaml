@@ -1,0 +1,63 @@
+schema_version: 1
+id: kubernetes.pod_logs
+title: Tail pod logs
+kind: exec
+risk: low
+description: Last N lines from one container in a pod.
+side_effects:
+  - One kubectl logs invocation.
+  - Read-only.
+args:
+  - name: namespace
+    type: string
+    required: true
+    description: Namespace.
+    validation:
+      pattern: "^[a-z0-9][a-z0-9\\-]{0,62}$"
+  - name: name
+    type: string
+    required: true
+    description: Pod name.
+    validation:
+      pattern: "^[a-z0-9][a-z0-9.\\-]{0,253}$"
+  - name: container
+    type: string
+    required: false
+    default: ""
+    description: Container name (empty = default container).
+    validation:
+      pattern: "^[a-z0-9][a-z0-9\\-]{0,62}$|^$"
+  - name: lines
+    type: integer
+    required: false
+    default: 200
+    description: How many tail lines.
+    validation:
+      min: 1
+      max: 10000
+  - name: context
+    type: string
+    required: false
+    default: ""
+    description: kubeconfig context.
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{0,128}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "kubectl ${KCTX:+--context=$KCTX} -n {{ args.namespace }} logs {{ args.name }} ${CONT:+-c $CONT} --tail={{ args.lines }}"
+  timeout: 60s
+  env:
+    KCTX: "{{ args.context }}"
+    CONT: "{{ args.container }}"
+output:
+  parser: text
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 16384
+examples:
+  - title: Last 200 lines
+    args:
+      namespace: default
+      name: api-7d4f8c5b8c-x2nzp

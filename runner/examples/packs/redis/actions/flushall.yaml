@@ -1,0 +1,35 @@
+schema_version: 1
+id: redis.flushall
+title: FLUSHALL
+kind: exec
+risk: critical
+description: >
+  Deletes EVERY key from EVERY database. Irreversible. Replicas
+  FLUSHALL in turn. Only use on caches that can be cold-rebuilt.
+side_effects:
+  - All databases emptied.
+  - Replicas wipe in turn.
+  - No recovery except restore.
+args:
+  - name: mode
+    type: string
+    required: false
+    default: ASYNC
+    description: SYNC (block) or ASYNC (return, drop in background).
+    validation:
+      enum:
+        - SYNC
+        - ASYNC
+execution:
+  command:
+    binary: /usr/bin/redis-cli
+    argv: ["FLUSHALL", "{{ args.mode }}"]
+  timeout: 60s
+cancel_grace: 10s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Async wipe all DBs
+    args: {}

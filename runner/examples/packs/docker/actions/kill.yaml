@@ -1,0 +1,45 @@
+schema_version: 1
+id: docker.kill
+title: docker kill (signal)
+kind: exec
+risk: high
+description: >
+  Sends a Unix signal to one container's main process. Default is SIGKILL — immediate, no graceful drain. Specify `signal:` for SIGTERM (graceful) or SIGHUP (reload).
+side_effects:
+  - Sends the chosen signal directly to the container's PID 1.
+  - "SIGKILL: instant termination; in-flight requests dropped."
+args:
+  - name: container
+    type: string
+    required: true
+    description: Container name or ID.
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{1,128}$"
+  - name: signal
+    type: string
+    required: false
+    default: KILL
+    description: Signal name (KILL, TERM, HUP, USR1, USR2, INT).
+    validation:
+      enum: [KILL, TERM, HUP, USR1, USR2, INT, QUIT]
+execution:
+  command:
+    binary: /usr/bin/docker
+    argv:
+      - "kill"
+      - "--signal"
+      - "{{ args.signal }}"
+      - "{{ args.container }}"
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: SIGKILL "api" immediately
+    args:
+      container: api
+  - title: SIGHUP "nginx" to reload config
+    args:
+      container: nginx
+      signal: HUP

@@ -1,0 +1,23 @@
+schema_version: 1
+id: postgres.xid_wraparound_proximity
+title: How close are we to XID wraparound?
+kind: exec
+risk: low
+description: 'Per-database age(datfrozenxid). 2^31 (~2.1B) is the wraparound limit. >1B = pay attention; >1.8B = emergency.'
+side_effects: ["One SELECT.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /usr/bin/psql
+    argv:
+      - "-XAt"
+      - "-c"
+      - "SELECT datname, age(datfrozenxid) AS xid_age, ROUND(100.0 * age(datfrozenxid) / 2147483648.0, 2) AS pct_to_wraparound FROM pg_database ORDER BY age(datfrozenxid) DESC;"
+  timeout: 10s
+output:
+  parser: text
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 8192
+examples:
+  - title: Wraparound risk
+    args: {}

@@ -1,0 +1,48 @@
+schema_version: 1
+id: mongo.explain_query
+title: explain a find()
+kind: exec
+risk: low
+description: Returns the execution plan for `find(filter)` on one collection at `executionStats` verbosity.
+side_effects:
+  - One explain command — does NOT execute the query.
+  - Read-only.
+args:
+  - name: database
+    type: string
+    required: true
+    description: Database name.
+    validation:
+      pattern: "^[a-zA-Z0-9_\\-]{1,63}$"
+  - name: collection
+    type: string
+    required: true
+    description: Collection name.
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{1,120}$"
+  - name: filter_json
+    type: string
+    required: false
+    default: "{}"
+    description: JSON filter document.
+    validation:
+      pattern: "^.{0,2048}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "mongosh \"$MONGO_URI\" --quiet --eval 'JSON.stringify(db.getSiblingDB(\"{{ args.database }}\").getCollection(\"{{ args.collection }}\").find(JSON.parse(process.env.FILTER || \"{}\")).explain(\"executionStats\"))'"
+  env:
+    FILTER: "{{ args.filter_json }}"
+  timeout: 60s
+output:
+  parser: json
+  max_stdout_bytes: 131072
+  max_stderr_bytes: 8192
+examples:
+  - title: Plan for {status:'active'}
+    args:
+      database: "production"
+      collection: "users"
+      filter_json: "{\"status\":\"active\"}"

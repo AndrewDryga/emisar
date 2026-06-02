@@ -1,0 +1,23 @@
+schema_version: 1
+id: postgres.longest_running_queries
+title: Top 20 by query age
+kind: exec
+risk: low
+description: Backends in 'active' state, oldest first. Use to spot stuck/runaway work.
+side_effects: ["One SELECT.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /usr/bin/psql
+    argv:
+      - "-XAt"
+      - "-c"
+      - "SELECT pid, usename, application_name, EXTRACT(EPOCH FROM (now()-query_start))::int AS age_sec, wait_event_type, wait_event, substring(query, 1, 300) AS query FROM pg_stat_activity WHERE state='active' AND pid <> pg_backend_pid() ORDER BY query_start ASC NULLS LAST LIMIT 20;"
+  timeout: 10s
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Long-runners
+    args: {}

@@ -1,0 +1,34 @@
+schema_version: 1
+
+id: docker.ps
+title: docker ps -a
+kind: exec
+risk: low
+
+description: >
+  Lists all containers (running + stopped). Returns id, image, status,
+  ports, names. Always includes stopped containers — for triage you
+  almost always want to see the dead ones too. Read-only.
+
+side_effects:
+  - One docker ps invocation.
+  - Read-only.
+
+args: []
+
+execution:
+  command:
+    binary: /usr/bin/docker
+    argv:
+      - "ps"
+      - "-a"
+  timeout: 30s
+
+output:
+  parser: text
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 16384
+
+examples:
+  - title: All containers
+    args: {}

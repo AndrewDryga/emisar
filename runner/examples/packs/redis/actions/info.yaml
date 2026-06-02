@@ -1,0 +1,58 @@
+schema_version: 1
+
+id: redis.info
+title: Redis INFO section
+kind: exec
+risk: low
+
+description: >
+  Runs `INFO <section>` and returns the raw text. Sections: server,
+  clients, memory, persistence, stats, replication, cpu, commandstats,
+  latencystats, cluster, keyspace, errorstats, all. Read-only.
+
+side_effects:
+  - Issues one INFO command.
+  - No keys read or written.
+
+args:
+  - name: section
+    type: string
+    required: false
+    default: default
+    description: INFO section.
+    validation:
+      enum:
+        - default
+        - all
+        - server
+        - clients
+        - memory
+        - persistence
+        - stats
+        - replication
+        - cpu
+        - commandstats
+        - latencystats
+        - cluster
+        - keyspace
+        - errorstats
+
+execution:
+  command:
+    binary: /usr/bin/redis-cli
+    argv:
+      - "INFO"
+      - "{{ args.section }}"
+  timeout: 10s
+
+output:
+  parser: text
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+
+examples:
+  - title: Default INFO
+    args: {}
+  - title: Memory-only INFO
+    args:
+      section: memory

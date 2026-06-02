@@ -1,0 +1,22 @@
+schema_version: 1
+id: consul.list_checks_warning
+title: GET /v1/health/state/warning
+kind: exec
+risk: low
+description: Every check currently in WARNING state.
+side_effects: ["One API call.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "curl -sS -H \"X-Consul-Token: $CONSUL_HTTP_TOKEN\" \"$CONSUL_HTTP_ADDR/v1/health/state/warning\""
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: Warning checks
+    args: {}

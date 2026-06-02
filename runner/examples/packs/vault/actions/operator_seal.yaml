@@ -1,0 +1,27 @@
+schema_version: 1
+id: vault.operator_seal
+title: vault operator seal
+kind: exec
+risk: critical
+description: >
+  Seal Vault. ALL clients lose access to secrets immediately;
+  ongoing requests fail. Recovery requires unseal keys from a
+  quorum of shareholders. Use only for compromised-cluster
+  containment.
+side_effects:
+  - Vault sealed; all secret operations fail.
+  - Active leases continue to be enforced by downstreams but cannot be renewed.
+  - Recovery needs unseal keys (auto-unseal still requires KMS/cloud HSM).
+args: []
+execution:
+  command:
+    binary: /usr/bin/vault
+    argv: ["operator", "seal"]
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Emergency seal
+    args: {}

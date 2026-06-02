@@ -1,0 +1,18 @@
+schema_version: 1
+id: nfs.exportfs_v
+title: exportfs -v
+kind: exec
+risk: low
+description: Currently-exported NFS shares + options.
+side_effects: ["One exportfs call.", "Read-only."]
+args: []
+execution:
+  command: {binary: /usr/sbin/exportfs, argv: ["-v"]}
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 32768
+  max_stderr_bytes: 8192
+examples:
+  - title: Active exports
+    args: {}

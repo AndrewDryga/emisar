@@ -1,0 +1,32 @@
+schema_version: 1
+id: ssl.key_modulus
+title: openssl rsa -modulus | sha256
+kind: exec
+risk: low
+description: >
+  Hash of the RSA private key's modulus. Compare to the modulus hash of a cert (via `openssl x509 -modulus`) to confirm key + cert match. NEVER prints the key itself.
+side_effects:
+  - One file read.
+  - Read-only — only the modulus hash is emitted; the key material is not returned.
+args:
+  - name: path
+    type: string
+    required: true
+    description: Key file.
+    validation:
+      pattern: "^/[a-zA-Z0-9_./\\-]{1,512}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "openssl rsa -in {{ args.path }} -modulus -noout 2>/dev/null | sha256sum"
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 1024
+  max_stderr_bytes: 8192
+examples:
+  - title: Modulus hash of key
+    args:
+      path: "/etc/ssl/private/server.key"

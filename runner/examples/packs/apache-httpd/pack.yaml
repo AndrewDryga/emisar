@@ -1,0 +1,31 @@
+schema_version: 1
+
+id: apache-httpd
+name: Apache HTTPD operations
+version: 0.1.0
+description: >
+  Apache version, modules, mod_status snapshot, config syntax check,
+  vhost dump, error/access log tails, plus narrow mutators (graceful
+  reload, graceful stop). Full restart not included — use systemd for
+  that.
+vendor: emisar
+homepage: https://github.com/andrewdryga/emisar
+
+requires:
+  os:
+    - linux
+  binaries:
+    - apachectl
+    - curl
+
+actions:
+  - actions/version.yaml
+  - actions/modules.yaml
+  - actions/vhosts.yaml
+  - actions/test_config.yaml
+  - actions/status.yaml
+  - actions/error_tail.yaml
+  - actions/access_top_clients.yaml
+  - actions/access_top_urls.yaml
+  - actions/graceful_reload.yaml
+  - actions/graceful_stop.yaml

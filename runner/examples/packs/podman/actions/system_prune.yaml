@@ -1,0 +1,20 @@
+schema_version: 1
+id: podman.system_prune
+title: podman system prune -f
+kind: exec
+risk: high
+description: Removes stopped containers, dangling images, unused networks.
+side_effects:
+  - Stopped containers are deleted permanently.
+  - Dangling images + unused networks removed.
+args: []
+execution:
+  command: {binary: /usr/bin/podman, argv: ["system", "prune", "-f"]}
+  timeout: 5m
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Prune
+    args: {}

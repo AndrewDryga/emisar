@@ -1,0 +1,79 @@
+schema_version: 1
+
+id: postgres
+name: Postgres operations
+version: 0.2.0
+description: >
+  Deep Postgres operations — activity introspection, session/lock
+  diagnostics, table + index analytics (bloat, dead tuples, unused
+  indexes), WAL + replication state, progress views, EXPLAIN, and a
+  curated set of operator-tier mutators (cancel/terminate backend,
+  ANALYZE, VACUUM, REINDEX CONCURRENTLY). Authenticates via PG* env
+  vars on the runner host.
+vendor: emisar
+homepage: https://github.com/andrewdryga/emisar
+
+requires:
+  os:
+    - linux
+  binaries:
+    - psql
+
+actions:
+  # Cluster / session
+  - actions/uptime.yaml
+  - actions/connections.yaml
+  - actions/activity_detail.yaml
+  - actions/activity_states.yaml
+  - actions/longest_running_queries.yaml
+  - actions/idle_in_transaction.yaml
+  - actions/ssl_connections.yaml
+  - actions/backend_holding_xmin.yaml
+  # Databases
+  - actions/db_sizes.yaml
+  - actions/database_stats.yaml
+  - actions/bgwriter_stats.yaml
+  - actions/settings_non_default.yaml
+  - actions/extensions_installed.yaml
+  - actions/pg_hba_rules.yaml
+  # Tables
+  - actions/table_sizes.yaml
+  - actions/largest_tables_full.yaml
+  - actions/table_io.yaml
+  - actions/seq_scan_offenders.yaml
+  - actions/dead_tuples_top.yaml
+  - actions/hot_update_ratio.yaml
+  # Indexes
+  - actions/index_sizes.yaml
+  - actions/unused_indexes.yaml
+  - actions/invalid_indexes.yaml
+  - actions/duplicate_indexes.yaml
+  # Vacuum / autovacuum
+  - actions/vacuum_status.yaml
+  - actions/last_vacuum_per_table.yaml
+  - actions/xid_wraparound_proximity.yaml
+  - actions/progress_vacuum.yaml
+  - actions/progress_create_index.yaml
+  # Locks
+  - actions/locks.yaml
+  - actions/lock_blocking_chains.yaml
+  # WAL / replication
+  - actions/replication_lag.yaml
+  - actions/replication_slots.yaml
+  - actions/wal_status.yaml
+  - actions/wal_archive_status.yaml
+  - actions/is_in_recovery.yaml
+  # Query analysis
+  - actions/slow_queries.yaml
+  - actions/pg_stat_statements_top.yaml
+  - actions/explain_query.yaml
+  - actions/explain_analyze.yaml
+  - actions/pg_stat_statements_reset.yaml
+  # Operator-tier (mutators)
+  - actions/cancel_query.yaml
+  - actions/kill_idle.yaml
+  - actions/terminate_backend.yaml
+  - actions/analyze_table.yaml
+  - actions/vacuum_table.yaml
+  - actions/reindex_concurrent.yaml
+  - actions/reload_conf.yaml

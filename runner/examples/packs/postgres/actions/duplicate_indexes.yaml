@@ -1,0 +1,23 @@
+schema_version: 1
+id: postgres.duplicate_indexes
+title: Duplicate indexes (same column set)
+kind: exec
+risk: low
+description: Indexes covering identical columns. One per group is redundant; drop after verifying.
+side_effects: ["One SELECT.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /usr/bin/psql
+    argv:
+      - "-XAt"
+      - "-c"
+      - "SELECT array_agg(indexrelid::regclass::text ORDER BY indexrelid) AS indexes, indrelid::regclass AS table, indkey::text AS columns FROM pg_index GROUP BY indrelid, indkey HAVING count(*) > 1 LIMIT 50;"
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 32768
+  max_stderr_bytes: 8192
+examples:
+  - title: Duplicates
+    args: {}

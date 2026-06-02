@@ -1,0 +1,39 @@
+schema_version: 1
+id: cloud-init.query_metadata
+title: cloud-init query <key>
+kind: exec
+risk: low
+description: >
+  Pull one key out of cloud-init's runtime metadata
+  (instance-id, hostname, region, availability_zone, …). Pass
+  `--all` to dump everything. Sensitive fields are redacted by
+  cloud-init itself.
+side_effects:
+  - One CLI call.
+  - Read-only.
+args:
+  - name: key
+    type: string
+    required: false
+    default: "--all"
+    description: Metadata key, or "--all" for everything.
+    validation:
+      pattern: "^(--all|[a-zA-Z0-9_./\\-]{1,128})$"
+execution:
+  command:
+    binary: /usr/bin/cloud-init
+    argv: ["query", "{{ args.key }}"]
+  timeout: 10s
+output:
+  parser: text
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+examples:
+  - title: All metadata
+    args: {}
+  - title: Instance id only
+    args:
+      key: "instance-id"
+  - title: Cloud-config user-data
+    args:
+      key: "userdata"

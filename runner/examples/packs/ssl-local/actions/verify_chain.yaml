@@ -1,0 +1,40 @@
+schema_version: 1
+id: ssl.verify_chain
+title: openssl verify -CAfile <bundle> <cert>
+kind: exec
+risk: low
+description: Verify that a cert chains to a trusted root via a given CA bundle.
+side_effects:
+  - Two file reads.
+  - Read-only.
+args:
+  - name: cert
+    type: string
+    required: true
+    description: Cert file.
+    validation:
+      pattern: "^/[a-zA-Z0-9_./\\-]{1,512}$"
+  - name: ca_bundle
+    type: string
+    required: false
+    default: "/etc/ssl/certs/ca-certificates.crt"
+    description: Trusted CA bundle.
+    validation:
+      pattern: "^/[a-zA-Z0-9_./\\-]{1,512}$"
+execution:
+  command:
+    binary: /usr/bin/openssl
+    argv:
+      - "verify"
+      - "-CAfile"
+      - "{{ args.ca_bundle }}"
+      - "{{ args.cert }}"
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Verify cert against system bundle
+    args:
+      cert: "/etc/ssl/certs/server.crt"

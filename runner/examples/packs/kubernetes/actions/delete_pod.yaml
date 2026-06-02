@@ -1,0 +1,48 @@
+schema_version: 1
+id: kubernetes.delete_pod
+title: Delete one pod (force-restart-by-killing)
+kind: exec
+risk: high
+description: >
+  Deletes one pod by name. Use to force-restart a single pod (the controller will recreate it). Faster than rollout_restart for a one-off bad pod. Namespace required to prevent wildcard mistakes.
+side_effects:
+  - Pod sent SIGTERM, then SIGKILL after terminationGracePeriodSeconds.
+  - Controller recreates the pod unless it was a standalone Pod.
+args:
+  - name: namespace
+    type: string
+    required: true
+    description: Namespace.
+    validation:
+      pattern: "^[a-z0-9][a-z0-9\\-]{0,62}$"
+  - name: name
+    type: string
+    required: true
+    description: Pod name (no wildcards).
+    validation:
+      pattern: "^[a-z0-9][a-z0-9.\\-]{0,253}$"
+  - name: context
+    type: string
+    required: false
+    default: ""
+    description: kubeconfig context.
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{0,128}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "kubectl ${KCTX:+--context=$KCTX} -n {{ args.namespace }} delete pod {{ args.name }}"
+  timeout: 5m
+  env:
+    KCTX: "{{ args.context }}"
+output:
+  parser: text
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 8192
+examples:
+  - title: Delete a stuck pod
+    args:
+      namespace: default
+      name: api-7d4f8c5b8c-x2nzp

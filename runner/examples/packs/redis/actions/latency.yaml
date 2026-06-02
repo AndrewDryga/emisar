@@ -1,0 +1,36 @@
+schema_version: 1
+
+id: redis.latency
+title: LATENCY LATEST + HISTORY
+kind: exec
+risk: low
+
+description: >
+  Runs `LATENCY LATEST` to summarize per-event latency spikes (fork,
+  AOF write, expire, eviction, command, etc.). Requires
+  `latency-monitor-threshold` to be set non-zero in redis.conf; if it
+  isn't, the output is empty and that is a configuration finding worth
+  reporting. Read-only.
+
+side_effects:
+  - Issues one LATENCY LATEST command.
+  - No keys read or written.
+
+args: []
+
+execution:
+  command:
+    binary: /usr/bin/redis-cli
+    argv:
+      - "LATENCY"
+      - "LATEST"
+  timeout: 10s
+
+output:
+  parser: text
+  max_stdout_bytes: 32768
+  max_stderr_bytes: 8192
+
+examples:
+  - title: Show latest latency events
+    args: {}

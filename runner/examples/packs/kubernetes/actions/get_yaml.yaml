@@ -1,0 +1,55 @@
+schema_version: 1
+id: kubernetes.get_yaml
+title: Get resource YAML
+kind: exec
+risk: low
+description: >
+  Returns the full YAML definition of one resource. Kind argument is restricted to a safe enum to prevent reading arbitrary CRDs of unknown size.
+side_effects:
+  - One kubectl get invocation.
+  - Read-only.
+args:
+  - name: namespace
+    type: string
+    required: true
+    description: Namespace.
+    validation:
+      pattern: "^[a-z0-9][a-z0-9\\-]{0,62}$"
+  - name: kind
+    type: string
+    required: true
+    description: Resource kind.
+    validation:
+      enum: [pod, deployment, statefulset, daemonset, service, ingress, configmap, secret, pvc, hpa, cronjob, job]
+  - name: name
+    type: string
+    required: true
+    description: Resource name.
+    validation:
+      pattern: "^[a-z0-9][a-z0-9.\\-]{0,253}$"
+  - name: context
+    type: string
+    required: false
+    default: ""
+    description: kubeconfig context.
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{0,128}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "kubectl ${KCTX:+--context=$KCTX} -n {{ args.namespace }} get {{ args.kind }}/{{ args.name }} -o yaml"
+  timeout: 15s
+  env:
+    KCTX: "{{ args.context }}"
+output:
+  parser: text
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: YAML of one deployment
+    args:
+      namespace: default
+      kind: deployment
+      name: api

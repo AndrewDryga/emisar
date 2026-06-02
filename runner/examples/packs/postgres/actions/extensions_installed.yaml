@@ -1,0 +1,23 @@
+schema_version: 1
+id: postgres.extensions_installed
+title: Installed extensions
+kind: exec
+risk: low
+description: Currently-loaded extensions with versions + schema.
+side_effects: ["One SELECT.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /usr/bin/psql
+    argv:
+      - "-XAt"
+      - "-c"
+      - "SELECT extname, extversion, n.nspname AS schema FROM pg_extension e JOIN pg_namespace n ON n.oid = e.extnamespace ORDER BY extname;"
+  timeout: 10s
+output:
+  parser: text
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Extensions
+    args: {}

@@ -1,0 +1,33 @@
+schema_version: 1
+id: kubernetes.daemonsets_list
+title: List daemonsets
+kind: exec
+risk: low
+description: '`kubectl get ds -A` — daemonset name, desired/current/ready counts, node selector.'
+side_effects:
+  - One kubectl get invocation.
+  - Read-only.
+args:
+  - name: context
+    type: string
+    required: false
+    default: ""
+    description: kubeconfig context.
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{0,128}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "kubectl ${KCTX:+--context=$KCTX} get ds -A"
+  timeout: 30s
+  env:
+    KCTX: "{{ args.context }}"
+output:
+  parser: text
+  max_stdout_bytes: 131072
+  max_stderr_bytes: 8192
+examples:
+  - title: All daemonsets
+    args: {}

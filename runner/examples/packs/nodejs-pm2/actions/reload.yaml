@@ -1,0 +1,31 @@
+schema_version: 1
+id: pm2.reload
+title: pm2 reload <name>
+kind: exec
+risk: high
+description: Zero-downtime reload — only safe for cluster-mode apps. For fork-mode, behaves like restart.
+side_effects:
+  - "Cluster mode: rolling worker swap, no dropped requests."
+  - "Fork mode: equivalent to restart — drops in-flight requests."
+args:
+  - name: name
+    type: string
+    required: true
+    description: Process name or id.
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{1,64}$"
+execution:
+  command:
+    binary: pm2
+    argv:
+      - "reload"
+      - "{{ args.name }}"
+  timeout: 120s
+output:
+  parser: text
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Reload one
+    args:
+      name: "api"

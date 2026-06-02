@@ -1,0 +1,31 @@
+schema_version: 1
+id: kafka.list_consumer_offsets
+title: Committed offsets per partition
+kind: exec
+risk: low
+description: Same view as consumer_lag but emphasizes committed-offset reading. Useful before reset_offsets.
+side_effects:
+  - One coordinator request.
+  - Read-only.
+args:
+  - name: group
+    type: string
+    required: true
+    description: Consumer group ID.
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{1,255}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "kafka-consumer-groups.sh '--bootstrap-server' \"$KAFKA_BOOTSTRAP\" '--describe' '--group' '{{ args.group }}' '--offsets'"
+  timeout: 60s
+output:
+  parser: text
+  max_stdout_bytes: 131072
+  max_stderr_bytes: 8192
+examples:
+  - title: Offsets for one group
+    args:
+      group: "order-processor"

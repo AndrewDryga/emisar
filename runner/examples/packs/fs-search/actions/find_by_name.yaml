@@ -1,0 +1,50 @@
+schema_version: 1
+id: fs.find_by_name
+title: find -name <glob> under <path>
+kind: exec
+risk: low
+description: Find files matching one shell glob under one path. Capped at 1000 results.
+side_effects:
+  - One file-system traversal.
+  - Read-only.
+args:
+  - name: path
+    type: string
+    required: true
+    description: Root path.
+    validation:
+      pattern: "^/[a-zA-Z0-9_./\\-]{0,512}$"
+  - name: glob
+    type: string
+    required: true
+    description: Shell glob (e.g. '*.log').
+    validation:
+      pattern: "^[a-zA-Z0-9_.*?[\\]\\-]{1,64}$"
+  - name: max_depth
+    type: integer
+    required: false
+    default: 6
+    description: Max directory depth.
+    validation:
+      min: 1
+      max: 20
+execution:
+  command:
+    binary: /usr/bin/find
+    argv:
+      - "{{ args.path }}"
+      - "-maxdepth"
+      - "{{ args.max_depth }}"
+      - "-name"
+      - "{{ args.glob }}"
+      - "-print"
+  timeout: 60s
+output:
+  parser: text
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: Find .conf under /etc
+    args:
+      path: "/etc"
+      glob: "*.conf"

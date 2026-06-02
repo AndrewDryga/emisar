@@ -1,0 +1,35 @@
+schema_version: 1
+id: cloud-init.status_long
+title: cloud-init status --long [--wait]
+kind: exec
+risk: low
+description: >
+  Detailed status — per-stage state, last update, recoverable + last
+  errors, datasource detected. With `wait: true`, blocks until cloud-init
+  finishes (useful right after boot).
+side_effects:
+  - One CLI call (may block up to timeout if wait=true).
+  - Read-only.
+args:
+  - name: wait
+    type: boolean
+    required: false
+    default: false
+    description: Block until cloud-init exits the running state.
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "if [ '{{ args.wait }}' = 'true' ]; then /usr/bin/cloud-init status --long --wait; else /usr/bin/cloud-init status --long; fi"
+  timeout: 300s
+output:
+  parser: text
+  max_stdout_bytes: 32768
+  max_stderr_bytes: 8192
+examples:
+  - title: Detailed status
+    args: {}
+  - title: Wait for boot
+    args:
+      wait: true

@@ -1,0 +1,36 @@
+schema_version: 1
+id: s3.object_metadata
+title: aws s3api head-object
+kind: exec
+risk: low
+description: Metadata for one object (size, content-type, storage class, etag).
+side_effects:
+  - One HeadObject call.
+  - Read-only.
+args:
+  - name: bucket
+    type: string
+    required: true
+    description: Bucket name.
+    validation:
+      pattern: "^[a-z0-9.\\-]{3,63}$"
+  - name: key
+    type: string
+    required: true
+    description: Object key.
+    validation:
+      pattern: "^[a-zA-Z0-9_.!*'(),/\\-]{1,1024}$"
+execution:
+  command:
+    binary: aws
+    argv: ["s3api", "head-object", "--bucket", "{{ args.bucket }}", "--key", "{{ args.key }}", "--output", "json"]
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: One object
+    args:
+      bucket: "my-bucket"
+      key: "logs/2026/06/01.log"

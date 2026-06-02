@@ -1,0 +1,25 @@
+schema_version: 1
+
+runner:
+  group: pack-tests
+  labels:
+    purpose: ci
+
+cloud:
+  url: wss://does-not-connect.invalid/runner/v1
+  auth_key_env: EMISAR_AUTH_KEY
+  token_path: /tmp/emisar-test/token
+  heartbeat_every: 30s
+  reconnect_min: 1s
+  reconnect_max: 60s
+
+paths:
+  data_dir: /tmp/emisar-test/data
+  work_dir: /tmp/emisar-test/work
+  packs:
+    - /workspace/examples/packs
+
+events:
+  jsonl_path: /tmp/emisar-test/events.jsonl
+
+execution: {}

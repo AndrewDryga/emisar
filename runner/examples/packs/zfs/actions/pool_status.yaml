@@ -1,0 +1,29 @@
+schema_version: 1
+id: zfs.pool_status
+title: zpool status -v
+kind: exec
+risk: low
+description: Per-pool vdev tree, scrub state, errors. Use to debug DEGRADED pools.
+side_effects: ["Reads pool metadata.", "Read-only."]
+args:
+  - name: pool
+    type: string
+    required: false
+    default: ""
+    description: Specific pool (empty = all).
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{0,64}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "if [ -z \"{{ args.pool }}\" ]; then zpool status -v; else zpool status -v \"{{ args.pool }}\"; fi"
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: All pools
+    args: {}

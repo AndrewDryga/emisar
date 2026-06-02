@@ -1,0 +1,22 @@
+schema_version: 1
+id: cassandra.cqlsh_describe_schema
+title: cqlsh -e "DESCRIBE SCHEMA"
+kind: exec
+risk: low
+description: 'Full schema dump as CQL. Note: large clusters produce big output; rely on the byte cap.'
+side_effects: ["One CQL query.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "cqlsh -e 'DESCRIBE SCHEMA;' \"${CQLSH_HOST:-127.0.0.1}\" \"${CQLSH_PORT:-9042}\""
+  timeout: 5m
+output:
+  parser: text
+  max_stdout_bytes: 4194304
+  max_stderr_bytes: 8192
+examples:
+  - title: Full schema
+    args: {}
