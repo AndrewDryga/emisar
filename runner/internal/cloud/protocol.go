@@ -49,12 +49,22 @@ type Envelope struct {
 // RunActionMsg asks the runner to execute an action. Cloud has already
 // evaluated its policy; the runner re-validates args against the action's
 // declared schema and refuses if anything is off.
+//
+// ExpectedPackHash is the trust-pinned pack hash the cloud last accepted
+// for this action's pack/version. The runner re-hashes its on-disk pack
+// and refuses the dispatch if the value doesn't match — that closes the
+// TOCTOU window between the last RunnerStateMsg broadcast and execution
+// (someone edited files on disk after the runner advertised its hash).
+// Empty when the cloud has no trusted hash on file (e.g. very early
+// observation, or the runner hasn't sent a state yet); runner skips the
+// check in that case.
 type RunActionMsg struct {
 	Envelope
-	ActionID string         `json:"action_id"`
-	Args     map[string]any `json:"args,omitempty"`
-	Opts     *RunOpts       `json:"opts,omitempty"`
-	Reason   string         `json:"reason,omitempty"`
+	ActionID         string         `json:"action_id"`
+	Args             map[string]any `json:"args,omitempty"`
+	Opts             *RunOpts       `json:"opts,omitempty"`
+	Reason           string         `json:"reason,omitempty"`
+	ExpectedPackHash string         `json:"expected_pack_hash,omitempty"`
 }
 
 // RunOpts is the per-call override envelope. Each field is clamped to the

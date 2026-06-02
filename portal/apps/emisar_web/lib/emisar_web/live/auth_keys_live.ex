@@ -264,42 +264,48 @@ defmodule EmisarWeb.AuthKeysLive do
               label="Description"
               placeholder="prod web tier"
             />
-            <.input
-              field={@form[:group]}
-              type="text"
-              label="Group"
-              placeholder="default"
-            />
-            <div class="sm:col-span-2 -mt-2 text-xs leading-relaxed text-zinc-500">
-              Group tags organize fleets (e.g.
-              <code class="text-zinc-400">cassandra-us-east1</code>,
-              <code class="text-zinc-400">edge-pop-fra</code>). Runners registered with this key
-              inherit it as their default — visible on the Runners page, and policies + API keys
-              can target a whole group instead of one runner at a time.
+            <div>
+              <.input
+                field={@form[:group]}
+                type="text"
+                label="Group"
+                placeholder="default"
+              />
+              <p class="mt-1 text-[11px] leading-relaxed text-zinc-500">
+                Inherited as each registering runner's default group.
+                Policies + API keys can target the group instead of one runner.
+              </p>
             </div>
             <.input
               field={@form[:expires_at]}
               type="datetime-local"
               label="Expires at (UTC, optional)"
             />
-            <div class="flex items-end pb-2">
+            <div class="sm:col-span-2 flex items-center pb-2">
               <.input
                 field={@form[:reusable]}
                 type="checkbox"
                 label="Reusable (many runners can register with this key)"
               />
             </div>
-            <.input
-              field={@form[:max_uses]}
-              type="number"
-              min="1"
-              label="Max uses (reusable keys only)"
-              placeholder="unlimited"
-            />
-            <div class="sm:col-span-2 -mt-2 text-xs leading-relaxed text-zinc-500">
-              Caps how many runners can register with a reusable key before it
-              auto-revokes. Leave blank for unlimited. Ignored when the key is
-              single-use.
+            <%!-- Max-uses only applies when Reusable is checked — single-
+                 use keys self-cap at 1. Hiding it (vs disabling with a
+                 disclaimer) follows the same progressive-disclosure rule
+                 the agents wizard uses: don't ask irrelevant questions.
+                 The field reappears with its inline hint as soon as the
+                 reusable checkbox flips on. --%>
+            <div :if={truthy?(@form[:reusable].value)} class="sm:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <.input
+                field={@form[:max_uses]}
+                type="number"
+                min="1"
+                label="Max uses"
+                placeholder="unlimited"
+              />
+              <p class="text-xs leading-relaxed text-zinc-500 sm:self-end sm:pb-2">
+                Caps how many runners can register before the key auto-revokes.
+                Leave blank for unlimited.
+              </p>
             </div>
             <:actions>
               <.button phx-disable-with="Creating...">Create key</.button>
@@ -357,7 +363,16 @@ defmodule EmisarWeb.AuthKeysLive do
               </li>
             </:item>
             <:empty>
-              No keys yet. Click <span class="text-zinc-300">New key</span> to bootstrap a runner.
+              <div class="mx-auto max-w-md">
+                <.icon name="hero-key" class="mx-auto h-8 w-8 text-zinc-700" />
+                <p class="mt-3 text-zinc-300">No auth keys yet.</p>
+                <p class="mt-1 text-xs leading-relaxed text-zinc-500">
+                  Auth keys are the bearer secret a fresh runner uses to register
+                  with cloud. Click
+                  <span class="rounded bg-zinc-900 px-1.5 py-0.5 text-[11px] font-medium text-zinc-300">New key</span>
+                  above, then run the install command on the host.
+                </p>
+              </div>
             </:empty>
           </LiveTable.live_table>
         </.list_section>

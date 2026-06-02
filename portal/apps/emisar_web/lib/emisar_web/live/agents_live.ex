@@ -374,8 +374,10 @@ defmodule EmisarWeb.AgentsLive do
   # quick key + snippet, it surfaces a key-builder form instead. Keeps
   # the "I need a tighter scope" affordance discoverable next to the
   # client tabs, not hidden in a collapsed details further down.
-  @client_ids ~w(claude_code claude_desktop cursor gemini codex custom)
+  @client_ids ~w(claude_web chatgpt claude_code claude_desktop cursor gemini codex custom)
   @client_labels %{
+    "claude_web" => "Claude.ai",
+    "chatgpt" => "ChatGPT",
     "claude_code" => "Claude Code",
     "claude_desktop" => "Claude Desktop",
     "cursor" => "Cursor",
@@ -384,13 +386,49 @@ defmodule EmisarWeb.AgentsLive do
     "custom" => "Custom"
   }
 
+  # Two transports under the hood — local stdio bridge (`emisar-mcp`)
+  # and remote MCP over HTTP at `/api/mcp/rpc`. Remote-MCP clients
+  # don't need the bridge binary installed; they just need a URL +
+  # bearer token. We surface that as a different tab variant rather
+  # than a global toggle because the operator's question is "which
+  # client am I connecting" first; transport falls out of the answer.
+  @remote_client_ids ~w(claude_web chatgpt)
+  defp remote_client?(id), do: id in @remote_client_ids
+
   defp client_label(id), do: Map.get(@client_labels, id, "MCP client")
   defp client_ids, do: @client_ids
 
   defp client_config(client_id, url, key) do
     case client_id do
+      "claude_web" ->
+        %{
+          kind: :remote,
+          rpc_url: "#{url}/api/mcp/rpc",
+          auth_header: "Authorization: Bearer #{key}",
+          steps: [
+            "Open Settings → Connectors → Add custom connector in claude.ai.",
+            "Name it \"Emisar\" and paste the URL below into Remote MCP server URL.",
+            "Under Authentication, add a header named Authorization with value Bearer <key>.",
+            "Save. Claude tests the connection and lists every Emisar action as a tool."
+          ]
+        }
+
+      "chatgpt" ->
+        %{
+          kind: :remote,
+          rpc_url: "#{url}/api/mcp/rpc",
+          auth_header: "Authorization: Bearer #{key}",
+          steps: [
+            "Open Settings → Connectors in ChatGPT (Pro / Team / Enterprise — custom connectors are gated).",
+            "Click Add custom connector and paste the URL below as the MCP server URL.",
+            "Set the bearer token to the API key (no header name needed — ChatGPT prepends \"Authorization: Bearer\").",
+            "Save. Tools become available in the next chat turn."
+          ]
+        }
+
       "claude_code" ->
         %{
+          kind: :local,
           location: "One command — registers the bridge globally",
           body: """
           claude mcp add emisar /usr/local/bin/emisar-mcp \\
@@ -403,24 +441,28 @@ defmodule EmisarWeb.AgentsLive do
 
       "claude_desktop" ->
         %{
+          kind: :local,
           location: "~/Library/Application Support/Claude/claude_desktop_config.json",
           body: mcp_json_snippet(url, key, "/usr/local/bin/emisar-mcp", "claude-desktop")
         }
 
       "cursor" ->
         %{
+          kind: :local,
           location: "~/.cursor/mcp.json",
           body: mcp_json_snippet(url, key, "emisar-mcp", "cursor")
         }
 
       "gemini" ->
         %{
+          kind: :local,
           location: "~/.gemini/settings.json",
           body: mcp_json_snippet(url, key, "/usr/local/bin/emisar-mcp", "gemini")
         }
 
       "codex" ->
         %{
+          kind: :local,
           location: "~/.codex/config.toml",
           body: """
           [mcp_servers.emisar]
@@ -539,7 +581,14 @@ defmodule EmisarWeb.AgentsLive do
             </li>
           </:item>
           <:empty>
-            No LLMs connected yet. Pick a client above and we'll mint a key + prefilled snippet.
+            <div class="mx-auto max-w-md">
+              <.icon name="hero-cpu-chip" class="mx-auto h-8 w-8 text-zinc-700" />
+              <p class="mt-3 text-zinc-300">No LLMs connected yet.</p>
+              <p class="mt-1 text-xs leading-relaxed text-zinc-500">
+                Pick a client above — we mint a key + pre-fill the snippet (local) or
+                URL + token (cloud). The agent shows up here on its first MCP call.
+              </p>
+            </div>
           </:empty>
         </LiveTable.live_table>
       </section>
@@ -593,6 +642,7 @@ defmodule EmisarWeb.AgentsLive do
     n = String.downcase(name)
 
     cond do
+      String.contains?(n, "chatgpt") -> "hero-chat-bubble-left-ellipsis"
       String.contains?(n, "claude") -> "hero-sparkles"
       String.contains?(n, "cursor") -> "hero-cursor-arrow-rays"
       String.contains?(n, "gemini") -> "hero-star"
@@ -623,134 +673,117 @@ defmodule EmisarWeb.AgentsLive do
 
     ~H"""
     <div class="overflow-hidden rounded-2xl border border-zinc-900 bg-zinc-950/60">
+      <%!-- Header. The whole rest of the panel responds to which client
+           the operator picks, so put the picker FIRST. Anything that
+           depends on the choice (install / snippet / URL+token / scope
+           note) renders below, only after a client is chosen. --%>
       <div class="border-b border-zinc-900 px-6 py-4">
-        <h2 class="text-base font-semibold text-zinc-50">Connect a client</h2>
+        <h2 class="text-base font-semibold text-zinc-50">Connect an LLM</h2>
         <p class="mt-0.5 text-xs text-zinc-500">
-          Pick the LLM client you're connecting. We mint a fresh API key named after the
-          client (so audit rows say "Claude Desktop" instead of "Quick connect"), pre-fill
-          its install snippet, and stamp every call with a User-Agent that names the host
-          and client.
+          Pick how your LLM connects. We mint a fresh API key named after the
+          client and pre-fill the exact setup it needs.
         </p>
       </div>
 
-      <%!-- Step 1: install the MCP binary. Same one-liner regardless of
-           client, so render once at the top instead of buried in each
-           per-client snippet's footer link. --%>
+      <%!-- Client picker, grouped into two transport families.
+           Cloud row first because that's the no-install path most
+           new users want; Local row below for IDE / desktop clients
+           that go through the stdio bridge. --%>
       <div class="border-b border-zinc-900 px-6 py-4">
-        <div class="flex items-center gap-2">
-          <span class="grid h-5 w-5 place-items-center rounded-full bg-indigo-500/20 text-[10px] font-bold text-indigo-300">
-            1
-          </span>
-          <h3 class="text-xs font-semibold uppercase tracking-wider text-zinc-300">
-            Install emisar-mcp
-          </h3>
-        </div>
-        <p class="mt-1 ml-7 text-xs text-zinc-500">
-          One-time install on the machine running your LLM client.
+        <p class="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+          Cloud LLMs
+          <span class="ml-1 normal-case tracking-normal text-zinc-600">— no install, URL + token</span>
         </p>
-        <div class="mt-2 ml-7 overflow-hidden rounded-lg border border-zinc-800 bg-black/80">
-          <div class="flex items-center justify-between gap-3 border-b border-zinc-800 px-3 py-2">
-            <p class="font-mono text-[10px] text-zinc-500">macOS / Linux</p>
-            <button
-              type="button"
-              id="copy-install-mcp"
-              class="rounded bg-zinc-800/80 px-2 py-0.5 text-[11px] font-medium text-zinc-200 hover:bg-zinc-700"
-              onclick="const el = document.getElementById('install-mcp-cmd'); navigator.clipboard.writeText(el.textContent.trim()); const orig = this.innerText; this.innerText = 'Copied'; setTimeout(() => { this.innerText = orig; }, 1500);"
-            >
-              Copy
-            </button>
-          </div>
-          <pre
-            id="install-mcp-cmd"
-            class="overflow-x-auto p-3 font-mono text-xs leading-5 text-zinc-200"
-          >curl -sSL https://emisar.dev/install-mcp.sh | sudo bash</pre>
+        <div class="mt-2 flex flex-wrap gap-1.5">
+          <.client_tab
+            :for={id <- client_ids() |> Enum.filter(&remote_client?/1)}
+            id={id}
+            label={client_label(id)}
+            selected={id == @selected_client}
+          />
         </div>
-        <p class="mt-2 ml-7 text-[11px] text-zinc-500">
-          Inspects the bridge first?
-          <.link href={~p"/docs/connect-an-llm"} class="text-indigo-400 hover:text-indigo-300">
-            Manual install →
-          </.link>
+
+        <p class="mt-5 text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+          Local / IDE clients
+          <span class="ml-1 normal-case tracking-normal text-zinc-600">— uses the stdio bridge</span>
         </p>
-      </div>
-
-      <%!-- Step 2: restrict scope (optional). Sits BEFORE the client
-           tab strip so operators set their scope first, then mint —
-           scrolling past it implicitly means "all runners + all
-           groups". The picker state survives client clicks so a
-           re-mint with the same scope is one tab click away. --%>
-      <div class="border-b border-zinc-900 px-6 py-3">
-        <div class="flex items-center gap-2">
-          <span class="grid h-5 w-5 place-items-center rounded-full bg-indigo-500/20 text-[10px] font-bold text-indigo-300">
-            2
-          </span>
-          <h3 class="text-xs font-semibold uppercase tracking-wider text-zinc-300">
-            Restrict scope <span class="ml-1 text-[10px] font-normal normal-case tracking-normal text-zinc-500">(optional)</span>
-          </h3>
+        <div class="mt-2 flex flex-wrap gap-1.5">
+          <.client_tab
+            :for={id <- client_ids() |> Enum.reject(&(remote_client?(&1) or &1 == "custom"))}
+            id={id}
+            label={client_label(id)}
+            selected={id == @selected_client}
+          />
         </div>
-        <p class="mt-1 ml-7 text-xs text-zinc-500">
-          Skip this to allow the key to target every runner in the account.
-          Tick groups or specific runners to scope the next mint.
+
+        <p class="mt-5 text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+          Roll your own
         </p>
-      </div>
-
-      <.scope_picker
-        runners={@runners}
-        selected_runner_ids={@selected_runner_ids}
-        selected_runner_groups={@selected_runner_groups}
-      />
-
-      <%!-- Step 3: client snippet. --%>
-      <div class="border-b border-zinc-900 px-6 py-3">
-        <div class="flex items-center gap-2">
-          <span class="grid h-5 w-5 place-items-center rounded-full bg-indigo-500/20 text-[10px] font-bold text-indigo-300">
-            3
-          </span>
-          <h3 class="text-xs font-semibold uppercase tracking-wider text-zinc-300">
-            Pick your client
-          </h3>
+        <div class="mt-2 flex flex-wrap gap-1.5">
+          <.client_tab
+            id="custom"
+            label="Custom key (advanced)"
+            selected={"custom" == @selected_client}
+          />
         </div>
       </div>
 
-      <%!-- Tab strip --%>
-      <div class="flex flex-wrap gap-1.5 border-b border-zinc-900 px-6 py-3">
-        <button
-          :for={id <- client_ids()}
-          type="button"
-          phx-click="select_client"
-          phx-value-client={id}
-          class={[
-            "rounded-lg px-3 py-1.5 text-sm font-medium transition",
-            if(id == @selected_client,
-              do: "bg-zinc-100 text-zinc-950",
-              else: "bg-zinc-900 text-zinc-300 hover:bg-zinc-800"
-            )
-          ]}
-        >
-          {client_label(id)}
-        </button>
-      </div>
-
-      <%!-- Body. Three states: nothing picked (placeholder), a real
-           client (snippet), or "custom" (key-builder form). --%>
-      <div class="space-y-5 px-6 py-5">
-        <%= cond do %>
-          <% is_nil(@selected_client) -> %>
+      <%!-- Body. Empty state until the operator picks. Once picked we
+           render the per-transport setup section — for local clients
+           that's "install + paste snippet", for remote it's
+           "URL + bearer header + per-host steps". Scope picker only
+           appears AFTER a client is chosen too; it's part of the
+           per-client setup, not a standalone step. --%>
+      <%= cond do %>
+        <% is_nil(@selected_client) -> %>
+          <div class="px-6 py-10">
             <div class="rounded-lg border border-dashed border-zinc-800 p-8 text-center">
               <p class="text-sm text-zinc-300">Pick a client above to get started.</p>
               <p class="mt-1 text-xs text-zinc-500">
                 We won't mint a key until you do — keeps the audit trail and the agents list clean.
               </p>
             </div>
+          </div>
 
-          <% @selected_client == "custom" -> %>
+        <% @selected_client == "custom" -> %>
+          <div class="space-y-5 px-6 py-5">
             <.custom_key_panel
               form={@form}
               runners={@runners}
               selected_runner_ids={@selected_runner_ids}
               selected_runner_groups={@selected_runner_groups}
             />
+          </div>
 
-          <% @config -> %>
+        <% @config && @config.kind == :remote -> %>
+          <div class="space-y-6 px-6 py-5">
+            <%= if @quick_secret do %>
+              <div class="flex items-start gap-3 rounded-lg bg-amber-500/10 p-3 ring-1 ring-amber-500/30">
+                <.icon name="hero-information-circle" class="mt-0.5 h-4 w-4 flex-none text-amber-300" />
+                <div class="text-xs text-amber-100/90">
+                  Copy the bearer token below before you leave this page — we won't show it
+                  again. If you lose it, pick the client again to mint a new one.
+                </div>
+              </div>
+            <% end %>
+
+            <.remote_mcp_panel
+              client_id={@selected_client}
+              client_label={client_label(@selected_client)}
+              rpc_url={@config.rpc_url}
+              auth_header={@config.auth_header}
+              steps={@config.steps}
+            />
+
+            <.scope_block
+              runners={@runners}
+              selected_runner_ids={@selected_runner_ids}
+              selected_runner_groups={@selected_runner_groups}
+            />
+          </div>
+
+        <% @config -> %>
+          <div class="space-y-6 px-6 py-5">
             <%= if @quick_secret do %>
               <div class="flex items-start gap-3 rounded-lg bg-amber-500/10 p-3 ring-1 ring-amber-500/30">
                 <.icon name="hero-information-circle" class="mt-0.5 h-4 w-4 flex-none text-amber-300" />
@@ -762,32 +795,210 @@ defmodule EmisarWeb.AgentsLive do
               </div>
             <% end %>
 
-            <div class="overflow-hidden rounded-lg border border-zinc-800 bg-black/80">
-              <div class="flex items-center justify-between gap-3 border-b border-zinc-800 px-4 py-2.5">
-                <p class="font-mono text-[11px] text-zinc-500">{@config.location}</p>
-                <button
-                  type="button"
-                  id={"copy-#{@selected_client}"}
-                  class="rounded bg-zinc-800/80 px-2.5 py-1 text-xs font-medium text-zinc-200 hover:bg-zinc-700"
-                  onclick={"const el = document.getElementById('snippet-#{@selected_client}'); navigator.clipboard.writeText(el.textContent.trim()); const orig = this.innerText; this.innerText = 'Copied'; setTimeout(() => { this.innerText = orig; }, 1500);"}
-                >
-                  Copy snippet
-                </button>
+            <.local_install_block />
+
+            <div>
+              <h3 class="text-xs font-semibold uppercase tracking-wider text-zinc-300">
+                Paste this into {client_label(@selected_client)}
+              </h3>
+              <p class="mt-1 text-[11px] text-zinc-500 font-mono">{@config.location}</p>
+              <div class="mt-2 overflow-hidden rounded-lg border border-zinc-800 bg-black/80">
+                <div class="flex items-center justify-between gap-3 border-b border-zinc-800 px-4 py-2.5">
+                  <p class="font-mono text-[11px] text-zinc-500">snippet (contains your API key)</p>
+                  <button
+                    type="button"
+                    id={"copy-#{@selected_client}"}
+                    class="rounded bg-zinc-800/80 px-2.5 py-1 text-xs font-medium text-zinc-200 hover:bg-zinc-700"
+                    onclick={"const el = document.getElementById('snippet-#{@selected_client}'); navigator.clipboard.writeText(el.textContent.trim()); const orig = this.innerText; this.innerText = 'Copied'; setTimeout(() => { this.innerText = orig; }, 1500);"}
+                  >
+                    Copy snippet
+                  </button>
+                </div>
+                <pre
+                  id={"snippet-#{@selected_client}"}
+                  class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-200"
+                ><%= @config.body %></pre>
               </div>
-              <pre
-                id={"snippet-#{@selected_client}"}
-                class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-200"
-              ><%= @config.body %></pre>
+              <p class="mt-2 text-xs text-zinc-500">
+                Restart {client_label(@selected_client)} after pasting.
+                <.link href={~p"/docs/connect-an-llm"} class="text-indigo-400 hover:text-indigo-300">
+                  Troubleshooting →
+                </.link>
+              </p>
             </div>
 
-            <p class="text-xs text-zinc-500">
-              Paste the snippet into the file path above and restart {client_label(@selected_client)}.
-              <.link href={~p"/docs/connect-an-llm"} class="text-indigo-400 hover:text-indigo-300">
-                Troubleshooting →
-              </.link>
-            </p>
-        <% end %>
+            <.scope_block
+              runners={@runners}
+              selected_runner_ids={@selected_runner_ids}
+              selected_runner_groups={@selected_runner_groups}
+            />
+          </div>
+      <% end %>
+    </div>
+    """
+  end
+
+  attr :id, :string, required: true
+  attr :label, :string, required: true
+  attr :selected, :boolean, default: false
+
+  defp client_tab(assigns) do
+    ~H"""
+    <button
+      type="button"
+      phx-click="select_client"
+      phx-value-client={@id}
+      class={[
+        "rounded-lg px-3 py-1.5 text-sm font-medium transition",
+        if(@selected,
+          do: "bg-zinc-100 text-zinc-950",
+          else: "bg-zinc-900 text-zinc-300 hover:bg-zinc-800"
+        )
+      ]}
+    >
+      {@label}
+    </button>
+    """
+  end
+
+  # Renders only AFTER a local client is picked. The install line is the
+  # same for every local client — extracting it keeps the per-client
+  # snippet focused on just the config the operator needs to paste, and
+  # cloud-LLM users never see it at all.
+  defp local_install_block(assigns) do
+    ~H"""
+    <div>
+      <h3 class="text-xs font-semibold uppercase tracking-wider text-zinc-300">
+        Install the bridge <span class="ml-1 text-[10px] font-normal normal-case tracking-normal text-zinc-500">one-time, per machine</span>
+      </h3>
+      <div class="mt-2 overflow-hidden rounded-lg border border-zinc-800 bg-black/80">
+        <div class="flex items-center justify-between gap-3 border-b border-zinc-800 px-3 py-2">
+          <p class="font-mono text-[10px] text-zinc-500">macOS / Linux</p>
+          <button
+            type="button"
+            id="copy-install-mcp"
+            class="rounded bg-zinc-800/80 px-2 py-0.5 text-[11px] font-medium text-zinc-200 hover:bg-zinc-700"
+            onclick="const el = document.getElementById('install-mcp-cmd'); navigator.clipboard.writeText(el.textContent.trim()); const orig = this.innerText; this.innerText = 'Copied'; setTimeout(() => { this.innerText = orig; }, 1500);"
+          >
+            Copy
+          </button>
+        </div>
+        <pre
+          id="install-mcp-cmd"
+          class="overflow-x-auto p-3 font-mono text-xs leading-5 text-zinc-200"
+        >curl -sSL https://emisar.dev/install-mcp.sh | sudo bash</pre>
       </div>
+      <p class="mt-2 text-[11px] text-zinc-500">
+        Inspects the bridge first?
+        <.link href={~p"/docs/connect-an-llm"} class="text-indigo-400 hover:text-indigo-300">
+          Manual install →
+        </.link>
+      </p>
+    </div>
+    """
+  end
+
+  # Scope picker block. Wrapped as a collapsible "Restrict scope"
+  # section because the default ("all runners, all groups") is the right
+  # one for most operators — surfacing it as an optional refinement
+  # that they can ignore feels less imposing than a step the wizard
+  # demands an answer to.
+  attr :runners, :list, required: true
+  attr :selected_runner_ids, :list, required: true
+  attr :selected_runner_groups, :list, required: true
+
+  defp scope_block(assigns) do
+    assigns =
+      assign(assigns,
+        scoped?:
+          assigns.selected_runner_ids != [] or assigns.selected_runner_groups != []
+      )
+
+    ~H"""
+    <details class="rounded-lg border border-zinc-800 bg-zinc-950/40" {if(@scoped?, do: %{open: ""}, else: %{})}>
+      <summary class="flex cursor-pointer items-center justify-between gap-3 px-4 py-3 text-sm text-zinc-200 hover:bg-zinc-900/40">
+        <div>
+          <span class="font-medium">Restrict scope</span>
+          <span class="ml-2 text-[11px] text-zinc-500">
+            <%= if @scoped? do %>
+              {length(@selected_runner_ids)} runner{if length(@selected_runner_ids) == 1, do: "", else: "s"},
+              {length(@selected_runner_groups)} group{if length(@selected_runner_groups) == 1, do: "", else: "s"}
+            <% else %>
+              defaults to all runners + all groups
+            <% end %>
+          </span>
+        </div>
+        <span class="text-xs text-zinc-500">click to {if @scoped?, do: "edit", else: "narrow"}</span>
+      </summary>
+      <div class="border-t border-zinc-900 px-4 pb-4 pt-3">
+        <p class="text-xs text-zinc-500">
+          Tick groups or specific runners to scope the next key mint. Re-picking your
+          client re-mints with the current scope.
+        </p>
+        <div class="mt-3">
+          <.scope_picker
+            runners={@runners}
+            selected_runner_ids={@selected_runner_ids}
+            selected_runner_groups={@selected_runner_groups}
+          />
+        </div>
+      </div>
+    </details>
+    """
+  end
+
+  attr :client_id, :string, required: true
+  attr :client_label, :string, required: true
+  attr :rpc_url, :string, required: true
+  attr :auth_header, :string, required: true
+  attr :steps, :list, required: true
+
+  defp remote_mcp_panel(assigns) do
+    ~H"""
+    <div class="space-y-4">
+      <%!-- The two values cloud LLMs need. Bearer header is rendered
+           in full (operator just minted it) so they can copy the whole
+           "Authorization: Bearer emk-..." string verbatim. --%>
+      <div class="overflow-hidden rounded-lg border border-zinc-800 bg-black/80">
+        <div class="flex items-center justify-between gap-3 border-b border-zinc-800 px-4 py-2.5">
+          <p class="font-mono text-[11px] text-zinc-500">connector settings</p>
+          <button
+            type="button"
+            id={"copy-#{@client_id}-conn"}
+            class="rounded bg-zinc-800/80 px-2.5 py-1 text-xs font-medium text-zinc-200 hover:bg-zinc-700"
+            onclick={"const url = document.getElementById('rpc-url-#{@client_id}').innerText; const hdr = document.getElementById('auth-hdr-#{@client_id}').innerText; navigator.clipboard.writeText('URL: ' + url + '\\nHeader: ' + hdr); const orig = this.innerText; this.innerText = 'Copied'; setTimeout(() => { this.innerText = orig; }, 1500);"}
+          >
+            Copy URL + header
+          </button>
+        </div>
+        <div class="grid grid-cols-[max-content,1fr] gap-x-3 gap-y-1 p-4 font-mono text-xs leading-6 text-zinc-200">
+          <span class="text-zinc-500">URL:</span>
+          <span id={"rpc-url-#{@client_id}"} class="break-all text-emerald-300">{@rpc_url}</span>
+          <span class="text-zinc-500">Header:</span>
+          <span id={"auth-hdr-#{@client_id}"} class="break-all text-emerald-300">{@auth_header}</span>
+        </div>
+      </div>
+
+      <%!-- Per-host step list. Each client config above stores its own
+           list because the menu paths differ (Claude.ai uses "Custom
+           connectors", ChatGPT uses "Connectors" under different
+           settings). --%>
+      <div class="rounded-lg border border-zinc-800 bg-zinc-950/40 p-4">
+        <p class="text-xs font-semibold uppercase tracking-wider text-zinc-300">
+          Steps for {@client_label}
+        </p>
+        <ol class="mt-2 list-decimal space-y-1 pl-5 text-xs text-zinc-300">
+          <li :for={step <- @steps}>{step}</li>
+        </ol>
+      </div>
+
+      <p class="text-xs text-zinc-500">
+        Cloud LLM connectors need {@client_label} to be on a plan that
+        supports custom MCP servers. Connection refused or 401?
+        <.link href={~p"/docs/connect-an-llm"} class="text-indigo-400 hover:text-indigo-300">
+          Troubleshooting →
+        </.link>
+      </p>
     </div>
     """
   end

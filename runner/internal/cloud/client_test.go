@@ -200,11 +200,17 @@ actions:
 
 func sendRunAction(t *testing.T, c *fakeConn, requestID, actionID string, args map[string]any) {
 	t.Helper()
+	sendRunActionWithHash(t, c, requestID, actionID, args, "")
+}
+
+func sendRunActionWithHash(t *testing.T, c *fakeConn, requestID, actionID string, args map[string]any, expectedPackHash string) {
+	t.Helper()
 	raw, err := json.Marshal(RunActionMsg{
-		Envelope: Envelope{Type: MsgRunAction, ProtocolVersion: ProtocolVersion, RequestID: requestID},
-		ActionID: actionID,
-		Args:     args,
-		Reason:   "test",
+		Envelope:         Envelope{Type: MsgRunAction, ProtocolVersion: ProtocolVersion, RequestID: requestID},
+		ActionID:         actionID,
+		Args:             args,
+		Reason:           "test",
+		ExpectedPackHash: expectedPackHash,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -227,6 +233,85 @@ func waitForResult(t *testing.T, c *fakeConn, requestID string, deadline time.Du
 		case <-tick.C:
 		case <-timeout:
 			t.Fatalf("no result for %s within %s", requestID, deadline)
+		}
+	}
+}
+
+// TestClient_TrustGate_PassWithMatchingHash — when cloud supplies an
+// ExpectedPackHash that matches the runner's on-disk hash, the run
+// proceeds normally and the result is delivered.
+func TestClient_TrustGate_PassWithMatchingHash(t *testing.T) {
+	conn := newFakeConn()
+	d := &queuedDialer{conns: []*fakeConn{conn}}
+	cli := buildClient(t, d)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- cli.Run(ctx) }()
+	t.Cleanup(func() { cancel(); <-done })
+
+	hash, ok := cli.opts.Engine.Registry().PackHash("t")
+	if !ok {
+		t.Fatal("registry has no hash for pack t")
+	}
+
+	sendRunActionWithHash(t, conn, "req_pass", "t.echo", map[string]any{"msg": "ok"}, hash)
+	res := waitForResult(t, conn, "req_pass", 3*time.Second)
+	if res["status"] != "success" {
+		t.Fatalf("status=%v reason=%v error=%v", res["status"], res["reason"], res["error"])
+	}
+}
+
+// TestClient_TrustGate_RefuseOnMismatch — when cloud's ExpectedPackHash
+// doesn't match the runner's on-disk hash, the runner refuses to
+// execute, returns a pack_hash_mismatch result, and re-advertises its
+// state so cloud sees the new bytes.
+func TestClient_TrustGate_RefuseOnMismatch(t *testing.T) {
+	conn := newFakeConn()
+	d := &queuedDialer{conns: []*fakeConn{conn}}
+	cli := buildClient(t, d)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- cli.Run(ctx) }()
+	t.Cleanup(func() { cancel(); <-done })
+
+	// Drain the initial state advertised on connect so the second one
+	// we expect after the refusal is unambiguous.
+	deadline := time.After(2 * time.Second)
+	for {
+		if len(conn.sentByType(MsgRunnerState)) > 0 {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatal("never saw initial agent_state")
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+	initialStateCount := len(conn.sentByType(MsgRunnerState))
+
+	sendRunActionWithHash(t, conn, "req_refuse", "t.echo", map[string]any{"msg": "x"}, "sha256:DEFINITELY_NOT_THE_HASH")
+	res := waitForResult(t, conn, "req_refuse", 3*time.Second)
+	if res["status"] != "pack_hash_mismatch" {
+		t.Fatalf("status=%v reason=%v error=%v", res["status"], res["reason"], res["error"])
+	}
+
+	// Re-advertisement was kicked. Poll briefly — the readvertise loop
+	// runs in a goroutine.
+	got := false
+	deadline = time.After(2 * time.Second)
+	for !got {
+		if len(conn.sentByType(MsgRunnerState)) > initialStateCount {
+			got = true
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatal("no follow-up agent_state after refusal")
+		case <-time.After(10 * time.Millisecond):
 		}
 	}
 }

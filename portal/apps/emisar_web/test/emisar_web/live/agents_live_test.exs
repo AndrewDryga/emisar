@@ -18,6 +18,8 @@ defmodule EmisarWeb.AgentsLiveTest do
       assert html =~ "Pick a client above to get started"
 
       # All client tiles are rendered.
+      assert html =~ "Claude.ai"
+      assert html =~ "ChatGPT"
       assert html =~ "Claude Code"
       assert html =~ "Claude Desktop"
       assert html =~ "Cursor"
@@ -27,6 +29,45 @@ defmodule EmisarWeb.AgentsLiveTest do
       # No key minted until a client is picked.
       assert Repo.all(ApiKey) == []
       refute html =~ "EMISAR_API_KEY"
+    end
+
+    test "selecting Claude.ai (remote MCP) shows URL + bearer header instead of bridge snippet", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, lv, _} = live(conn, ~p"/app/agents")
+
+      html = lv |> render_click("select_client", %{"client" => "claude_web"})
+
+      # Mint still happens — same flow, just remote transport.
+      [auto] = Repo.all(ApiKey)
+      assert auto.account_id == account.id
+      assert auto.name == "Claude.ai"
+
+      # Remote-MCP UI is shown:
+      assert html =~ "/api/mcp/rpc"
+      assert html =~ "Authorization: Bearer emk-"
+      assert html =~ "Steps for Claude.ai"
+      assert html =~ "Settings &rarr; Connectors" or html =~ "Settings → Connectors"
+
+      # The local-bridge snippet shape is NOT shown for this client.
+      refute html =~ "EMISAR_API_KEY"
+      refute html =~ "/usr/local/bin/emisar-mcp"
+
+      # The install-emisar-mcp block does not render at all for remote
+      # MCP clients — it's a local-bridge-only concern.
+      refute html =~ "install-mcp.sh"
+      refute html =~ "Install the bridge"
+    end
+
+    test "selecting ChatGPT shows the remote MCP panel too", %{conn: conn} do
+      {conn, _user, _account} = register_and_log_in(conn)
+      {:ok, lv, _} = live(conn, ~p"/app/agents")
+
+      html = lv |> render_click("select_client", %{"client" => "chatgpt"})
+
+      [auto] = Repo.all(ApiKey)
+      assert auto.name == "ChatGPT"
+      assert html =~ "/api/mcp/rpc"
+      assert html =~ "Steps for ChatGPT"
     end
 
     test "selecting a client mints a key named after the client + inlines snippet", %{conn: conn} do

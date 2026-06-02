@@ -112,6 +112,54 @@ defmodule Emisar.RunsTest do
       assert_receive {:cloud_to_runner, %{"type" => "run_action", "action_id" => "linux.uptime"}}, 500
     end
 
+    test "wire envelope carries trusted pack hash when one is on file" do
+      {_user, account, subject} = owner_subject_fixture()
+      runner = runner_fixture(account_id: account.id)
+
+      # Drive the catalog through `observe_state` so pack_version is
+      # populated on the action AND a PackVersion row exists. Custom
+      # packs land pending — operator approves before dispatch can
+      # carry the trusted hash on the wire.
+      :ok =
+        case Emisar.Catalog.observe_state(runner, %{
+               "hostname" => "h",
+               "version" => "0.1",
+               "labels" => %{},
+               "packs" => %{
+                 "linux-core" => %{"version" => "1.2.3", "hash" => "sha256:CLOUD_TRUSTED"}
+               },
+               "actions" => [
+                 %{
+                   "id" => "linux.uptime",
+                   "pack_id" => "linux-core",
+                   "title" => "Uptime",
+                   "kind" => "exec",
+                   "risk" => "low",
+                   "description" => "t",
+                   "args" => []
+                 }
+               ]
+             }) do
+          {:ok, _} -> :ok
+        end
+
+      {:ok, [pv], _} = Emisar.Catalog.list_pack_versions(subject)
+      assert {:ok, _} = Emisar.Catalog.trust_pack_version(pv.id, subject)
+
+      _ = policy_fixture(account_id: account.id)
+
+      Emisar.PubSub.subscribe_runner(runner.id)
+
+      assert {:ok, :running, _run} =
+               Runs.dispatch_run(
+                 base_attrs(account.id, runner.id),
+                 Emisar.Auth.Subject.system(account)
+               )
+
+      assert_receive {:cloud_to_runner, payload}, 500
+      assert payload["expected_pack_hash"] == "sha256:CLOUD_TRUSTED"
+    end
+
     test "rejects dispatch when the action is not advertised by the runner" do
       account = account_fixture()
       runner = runner_fixture(account_id: account.id)

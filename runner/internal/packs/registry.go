@@ -1,6 +1,9 @@
 package packs
 
 import (
+	"fmt"
+	"os"
+	"path/filepath"
 	"sort"
 
 	"github.com/andrewdryga/emisar/runner/pkg/actionspec"
@@ -51,10 +54,41 @@ func (r *Registry) ScriptInfo(actionID string) (ScriptInfo, bool) {
 	return si, ok
 }
 
-// PackHash returns the content-addressable hash for a pack id.
+// PackHash returns the content-addressable hash for a pack id, cached
+// from load time (or the most recent SIGHUP reload).
 func (r *Registry) PackHash(packID string) (string, bool) {
 	h, ok := r.packHashes[packID]
 	return h, ok
+}
+
+// RecomputePackHash re-reads the pack's files fresh from disk and
+// returns the hash for the current bytes. Same algorithm as the load-
+// time hash. Used by the dispatch path to detect post-load tampering
+// (the cached `PackHash` was computed when the pack was last loaded /
+// SIGHUP'd; this asks "what's the hash *right now*?"). The set of
+// relpaths the rehash walks is the same set we computed at load time;
+// added files between then and now don't change the hash, but that's
+// the same boundary the cloud's trust pin is drawn against.
+func (r *Registry) RecomputePackHash(packID string) (string, error) {
+	pack, ok := r.packs[packID]
+	if !ok {
+		return "", fmt.Errorf("packs: pack %q not loaded", packID)
+	}
+	entries := r.packHashInputs[packID]
+	if len(entries) == 0 {
+		return "", fmt.Errorf("packs: no hash inputs cached for %q", packID)
+	}
+
+	fresh := make([]hashEntry, len(entries))
+	for i, e := range entries {
+		full := filepath.Join(pack.Root, e.rel)
+		data, err := os.ReadFile(full)
+		if err != nil {
+			return "", fmt.Errorf("packs: rehash %s: %w", full, err)
+		}
+		fresh[i] = hashEntry{rel: e.rel, data: data}
+	}
+	return computePackHash(fresh), nil
 }
 
 // Packs returns all packs sorted by id.

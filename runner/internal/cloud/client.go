@@ -302,11 +302,23 @@ func (c *Client) enqueueTransient(requestID string, msg any) {
 // handleRun executes the action and enqueues progress + result messages
 // onto the runState. It does NOT call conn.Send directly; the sender
 // loop is responsible for delivery.
+//
+// Trust gate: if the cloud supplied ExpectedPackHash, re-hash the
+// action's pack from disk and refuse to execute on mismatch. Also
+// signal a re-advertisement so cloud sees the new hash and flips the
+// pack to pending in the trust UI.
 func (c *Client) handleRun(ctx context.Context, s *runState, m RunActionMsg) {
 	c.opts.Logger.Info("cloud.run_started",
 		"request_id", m.RequestID,
 		"action_id", m.ActionID,
 	)
+
+	if !c.passesTrustGate(s, m) {
+		s.mu.Lock()
+		s.finished = true
+		s.mu.Unlock()
+		return
+	}
 
 	seq := 0
 	progress := func(stream executor.Stream, line []byte) {
@@ -390,6 +402,84 @@ func (c *Client) handleRun(ctx context.Context, s *runState, m RunActionMsg) {
 	s.mu.Lock()
 	s.finished = true
 	s.mu.Unlock()
+}
+
+// passesTrustGate re-hashes the action's pack from disk and compares it
+// to the cloud-supplied ExpectedPackHash. Returns true (proceed) when
+// the cloud didn't supply a hash, the action is unknown, or the
+// computed hash matches. Returns false (refuse) on mismatch — in that
+// case it enqueues a `pack_hash_mismatch` ActionResultMsg and asks the
+// state loop to re-broadcast so the cloud's catalog sees the new bytes
+// and flips the (pack, version) to pending_trust.
+func (c *Client) passesTrustGate(s *runState, m RunActionMsg) bool {
+	expected := m.ExpectedPackHash
+	if expected == "" {
+		// Cloud has no trusted hash on file yet (very early observation
+		// or runner pre-dates Phase 2). Skip the gate.
+		return true
+	}
+
+	reg := c.opts.Engine.Registry()
+	action, ok := reg.Action(m.ActionID)
+	if !ok || action.PackID == "" {
+		// Action vanished or has no pack. Let the engine produce its
+		// own unknown_action result; nothing to gate.
+		return true
+	}
+
+	got, err := reg.RecomputePackHash(action.PackID)
+	if err != nil {
+		c.opts.Logger.Warn("cloud.pack_rehash_failed",
+			"request_id", m.RequestID,
+			"action_id", m.ActionID,
+			"pack_id", action.PackID,
+			"error", err.Error(),
+		)
+		// Fail-closed when we can't even read the pack — the most likely
+		// cause is the operator deleted files between load and dispatch,
+		// and we shouldn't run a half-existing pack on the assumption it
+		// matched.
+		c.emitPackMismatch(s, m, action.PackID, expected, "rehash_failed:"+err.Error())
+		return false
+	}
+
+	if got == expected {
+		return true
+	}
+
+	c.opts.Logger.Warn("cloud.pack_hash_mismatch",
+		"request_id", m.RequestID,
+		"action_id", m.ActionID,
+		"pack_id", action.PackID,
+		"expected", expected,
+		"got", got,
+	)
+	c.emitPackMismatch(s, m, action.PackID, expected, got)
+	// Kick a state re-advertisement so cloud sees the new hash and
+	// flips the pack to pending_trust in the UI.
+	c.Readvertise()
+	return false
+}
+
+// emitPackMismatch enqueues the terminal ActionResultMsg the cloud
+// receives when the runner refuses a dispatch on trust mismatch. Cloud
+// surfaces this as a run with status="pack_hash_mismatch" — the UI
+// renders it as a tamper alert, and the pending_trust card shows up on
+// /app/packs as soon as the runner's re-broadcast lands.
+func (c *Client) emitPackMismatch(s *runState, m RunActionMsg, packID, expected, got string) {
+	result := ActionResultMsg{
+		Envelope:   Envelope{Type: MsgActionResult, ProtocolVersion: ProtocolVersion, RequestID: m.RequestID},
+		Status:     "pack_hash_mismatch",
+		ExitCode:   -1,
+		DurationMS: 0,
+		Error: fmt.Sprintf(
+			"pack %q hash on disk (%s) does not match cloud-pinned trusted hash (%s); refused — operator must review the drift in /app/packs",
+			packID, got, expected,
+		),
+		Reason: "pack_hash_mismatch",
+	}
+	c.enqueue(s, result, never)
+	c.dedup.remember(m.RequestID, result)
 }
 
 // dropPolicy controls what happens when the per-run buffer is full.

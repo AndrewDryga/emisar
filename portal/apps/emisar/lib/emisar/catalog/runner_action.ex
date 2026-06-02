@@ -10,6 +10,7 @@ defmodule Emisar.Catalog.RunnerAction do
   schema "runner_actions" do
     field :action_id, :string
     field :pack_id, :string
+    field :pack_version, :string
     field :title, :string
     field :kind, :string
     field :risk, :string

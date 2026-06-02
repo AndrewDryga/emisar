@@ -148,7 +148,28 @@ defmodule EmisarWeb.AuditLive do
         <:col :let={ev} label="IP" class="w-32">
           <span class="font-mono text-xs text-zinc-500">{ev.ip_address || "—"}</span>
         </:col>
-        <:empty>{empty_message(@filter_params, @filters)}</:empty>
+        <:empty>
+          <%!-- Filter-active stays a one-liner so it doesn't dominate
+               when the operator is just over-filtering. Empty-account
+               state gets richer copy that names the surfaces that
+               actually produce events. --%>
+          <%= if any_filter_active?(@filter_params, @filters) do %>
+            <span class="text-zinc-500">No events match these filters.</span>
+          <% else %>
+            <div class="mx-auto max-w-md">
+              <.icon name="hero-document-text" class="mx-auto h-8 w-8 text-zinc-700" />
+              <p class="mt-3 text-zinc-300">No audit events yet.</p>
+              <p class="mt-1 text-xs leading-relaxed text-zinc-500">
+                They appear as soon as something happens — a
+                <.link navigate={~p"/app/runners"} class="text-indigo-400 hover:text-indigo-300">runner</.link>
+                connects, an operator dispatches a
+                <.link navigate={~p"/app/runs"} class="text-indigo-400 hover:text-indigo-300">run</.link>,
+                an approval is decided, or a pack is observed on the
+                <.link navigate={~p"/app/packs"} class="text-indigo-400 hover:text-indigo-300">Packs page</.link>.
+              </p>
+            </div>
+          <% end %>
+        </:empty>
       </LiveTable.live_table>
 
       <%!-- SIEM-export panel rendered AFTER the table so the audit log
@@ -346,17 +367,6 @@ defmodule EmisarWeb.AuditLive do
       fallback_label && fallback_label != "" -> fallback_label
       is_binary(id) -> String.slice(id, 0, 8)
       true -> "—"
-    end
-  end
-
-  # Distinguish "no rows in the table at all" from "no rows match the
-  # filters you set". The default `No X match these filters.` lies to a
-  # brand-new account whose log is just empty.
-  defp empty_message(params, filters) do
-    if any_filter_active?(params, filters) do
-      "No events match these filters."
-    else
-      "No audit events yet — they appear here as soon as something happens (runner connect, run dispatch, approval, etc.)."
     end
   end
 

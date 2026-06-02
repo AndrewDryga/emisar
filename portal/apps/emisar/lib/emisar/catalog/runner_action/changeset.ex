@@ -6,7 +6,7 @@ defmodule Emisar.Catalog.RunnerAction.Changeset do
   @kinds ~w(exec script)
 
   @fields ~w[
-    account_id runner_id action_id pack_id title kind risk
+    account_id runner_id action_id pack_id pack_version title kind risk
     description side_effects args_schema limits output examples
     first_seen_at last_seen_at
   ]a

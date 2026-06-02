@@ -693,7 +693,20 @@ defmodule EmisarWeb.TeamLive do
             </li>
           </:item>
           <:empty>
-            No team members yet.
+            <%!-- This branch is technically defensive — the current user is
+                 always a member of the account they're viewing, so an
+                 entirely empty list shouldn't happen. Keep meaningful
+                 copy anyway so it can never accidentally land as a
+                 mystery blank panel. --%>
+            <div class="mx-auto max-w-md">
+              <.icon name="hero-users" class="mx-auto h-8 w-8 text-zinc-700" />
+              <p class="mt-3 text-zinc-300">No team members yet.</p>
+              <p class="mt-1 text-xs leading-relaxed text-zinc-500">
+                Use the
+                <span class="rounded bg-zinc-900 px-1.5 py-0.5 text-[11px] font-medium text-zinc-300">Invite</span>
+                form above to send a magic-link to a teammate.
+              </p>
+            </div>
           </:empty>
         </LiveTable.live_table>
 

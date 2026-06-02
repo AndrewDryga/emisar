@@ -180,6 +180,13 @@ defmodule EmisarWeb.Router do
     pipe_through :api
 
     scope "/mcp" do
+      # JSON-RPC 2.0 / MCP-over-HTTP. Single endpoint the stdio bridge
+      # and remote-MCP clients (Claude / ChatGPT cloud connectors) use.
+      post "/rpc", McpRpcController, :handle
+
+      # REST routes — still in use by HTTP-only integrations (OpenAI
+      # function-calling shim, generic curl examples, etc.). The
+      # JSON-RPC endpoint above is the canonical MCP surface.
       get "/runners", McpController, :list_runners
       get "/tools", McpController, :list_tools
       post "/tools/:action_id", McpController, :run_tool

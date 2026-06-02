@@ -33,7 +33,11 @@ defmodule EmisarWeb.ApprovalDetailLive do
          |> assign(:run, run)
          |> assign(:requested_by, lookup_user(req.requested_by_id))
          |> assign(:decided_by, lookup_user(req.decided_by_id))
-         |> assign(:decision_reason, "")}
+         |> assign(:decision_reason, "")
+         # Tracks the duration the operator picked in the grant-reuse
+         # disclosure. "once" (the default) means "no grant" — in that
+         # mode the Match / Limit-to fields are irrelevant and hidden.
+         |> assign(:grant_duration, "once")}
     end
   end
 
@@ -58,6 +62,10 @@ defmodule EmisarWeb.ApprovalDetailLive do
   end
 
   def handle_info(_, socket), do: {:noreply, socket}
+
+  def handle_event("grant_form_changed", params, socket) do
+    {:noreply, assign(socket, :grant_duration, params["duration"] || "once")}
+  end
 
   def handle_event("approve", params, socket) do
     Permissions.gated(socket, :decide_approval, fn s ->
@@ -298,7 +306,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
              call") which doesn't create a grant. Reuse-window UI
              is collapsed behind a checkbox so the common path
              is one click of the green button. --%>
-        <form phx-submit="approve" class="mt-4 space-y-4">
+        <form phx-submit="approve" phx-change="grant_form_changed" class="mt-4 space-y-4">
           <textarea
             name="reason"
             rows="2"
@@ -333,7 +341,13 @@ defmodule EmisarWeb.ApprovalDetailLive do
                   <option value="ninety_days">Next 90 days</option>
                 </select>
               </div>
-              <div>
+              <%!-- Match / Limit-to only matter when an actual grant is
+                   being minted. With duration="once" no grant is created,
+                   so showing these fields was asking the operator to
+                   configure parameters that get discarded. The form's
+                   phx-change handler tracks duration → re-renders this
+                   block. --%>
+              <div :if={@grant_duration != "once"}>
                 <label class="block text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
                   Match
                 </label>
@@ -345,7 +359,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
                   <option value="any_args">Any arguments for this action</option>
                 </select>
               </div>
-              <div>
+              <div :if={@grant_duration != "once"}>
                 <label class="block text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
                   Limit to (optional)
                 </label>

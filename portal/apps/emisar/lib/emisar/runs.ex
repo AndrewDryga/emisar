@@ -259,7 +259,8 @@ defmodule Emisar.Runs do
            :ok <- require_reason(reason),
            :ok <- runner_in_account(runner_id, account_id),
            :ok <- runner_in_membership_scope(runner_id, account_id, membership_id),
-           {:ok, action} <- fetch_advertised_action(runner_id, action_id, subject) do
+           {:ok, action} <- fetch_advertised_action(runner_id, action_id, subject),
+           :ok <- check_pack_trust(action, account_id) do
         attrs
         |> Map.delete(:requested_by_membership_id)
         |> Map.put(:args_sha256, args_sha256(attrs[:args]))
@@ -364,6 +365,33 @@ defmodule Emisar.Runs do
     case Emisar.Catalog.fetch_action_by_id(action_id, runner_id, subject) do
       {:error, :not_found} -> {:error, :action_not_found}
       {:ok, action} -> {:ok, action}
+    end
+  end
+
+  # Refuse dispatch if the action's pack is in `pending_trust`. The
+  # runner is advertising a hash that diverges from what an operator
+  # has previously trusted (or from the baseline we ship) — execution
+  # waits for a human decision in the /app/packs UI.
+  defp check_pack_trust(action, account_id) do
+    case Emisar.Catalog.check_pack_trusted(action) do
+      :ok ->
+        :ok
+
+      {:error, :pack_untrusted, %{id: pv_id, pack_id: pack_id, version: version}} ->
+        Emisar.Audit.log(account_id, :dispatch_blocked_pack_untrusted,
+          actor_kind: "system",
+          subject_kind: "pack_version",
+          subject_id: pv_id,
+          subject_label: "#{pack_id}@#{version}",
+          payload: %{
+            pack_id: pack_id,
+            version: version,
+            action_id: action.action_id,
+            runner_id: action.runner_id
+          }
+        )
+
+        {:error, :pack_untrusted}
     end
   end
 
@@ -524,7 +552,7 @@ defmodule Emisar.Runs do
   Internal — called from `dispatch_run/2` and `Approvals.approve_request/4`.
   """
   def dispatch_to_runner(%ActionRun{} = run) do
-    PubSub.deliver_to_runner(run.runner_id, %{
+    payload = %{
       "type" => "run_action",
       "request_id" => run.request_id,
       "action_id" => run.action_id,
@@ -537,10 +565,38 @@ defmodule Emisar.Runs do
       # time, so every cloud-dispatched envelope hit the runner's
       # "reason required" guard.
       "reason" => run.reason
-    })
+    }
+
+    PubSub.deliver_to_runner(run.runner_id, maybe_stamp_pack_hash(payload, run))
 
     mark_sent(run)
     :ok
+  end
+
+  # Stamp the trusted pack hash into the wire envelope so the runner
+  # can re-hash its on-disk pack and refuse a dispatch whose bytes
+  # don't match what cloud trusts. We `fetch_action_by_id` against the
+  # system subject because this runs inside an authorized dispatch path
+  # — the caller's auth already passed; we're just enriching the wire
+  # payload with a side-channel fact (trusted hash on file).
+  #
+  # If anything's missing — catalog row gone, pack_version not yet
+  # populated, no trusted hash yet — we omit the key, and the runner
+  # skips its trust gate (same as a fresh runner pre-Phase 2). The
+  # operator-facing trust gate already ran upstream (`check_pack_trust`
+  # in the with-chain), so omitting here only widens the window during
+  # the brief moment when a hash is in flux; the upstream gate stays
+  # closed.
+  defp maybe_stamp_pack_hash(payload, %ActionRun{} = run) do
+    account = Emisar.Accounts.fetch_account_by_id!(run.account_id)
+    system = Subject.system(account)
+
+    with {:ok, action} <- Emisar.Catalog.fetch_action_by_id(run.action_id, run.runner_id, system),
+         hash when is_binary(hash) <- Emisar.Catalog.trusted_hash_for_action(action) do
+      Map.put(payload, "expected_pack_hash", hash)
+    else
+      _ -> payload
+    end
   end
 
   @doc """

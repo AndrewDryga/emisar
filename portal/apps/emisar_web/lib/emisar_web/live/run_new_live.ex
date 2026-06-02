@@ -189,13 +189,17 @@ defmodule EmisarWeb.RunNewLive do
           </ul>
         </section>
 
-        <%!-- The form — primary surface. Args first, reason last
-             (required), big dispatch button. --%>
+        <%!-- The form — primary surface. Reason is always required;
+             args render only when the action declares any, so the
+             "Arguments" header (and its "no arguments" microcopy)
+             don't waste space on zero-arg actions like `linux.uptime`.
+             Same progressive-disclosure rule as elsewhere: don't show
+             a section just to tell the operator there's nothing in
+             it. --%>
         <section class="rounded-xl border border-zinc-900 bg-zinc-950/40 p-5">
-          <h2 class="text-sm font-semibold text-zinc-100">Arguments</h2>
-          <p :if={@args_schema == []} class="mt-1 text-xs text-zinc-500">
-            This action takes no arguments.
-          </p>
+          <h2 class="text-sm font-semibold text-zinc-100">
+            {if(@args_schema == [], do: "Dispatch", else: "Arguments")}
+          </h2>
 
           <.simple_form
             for={@form}

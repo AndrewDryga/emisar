@@ -6,8 +6,16 @@ defmodule Emisar.Catalog.Authorizer do
 
   def view_catalog_permission, do: build(RunnerAction, :view)
 
+  # Pack trust mutations — Trust / Reject a pending pack-version hash.
+  # Owners + admins only; an unprivileged operator shouldn't be able
+  # to silently flip a tampered pack into a trusted state.
+  def manage_catalog_permission, do: build(PackVersion, :manage)
+
   @impl Emisar.Auth.Authorizer
-  def list_permissions_for_role(role) when role in [:owner, :admin, :operator, :viewer],
+  def list_permissions_for_role(role) when role in [:owner, :admin],
+    do: [view_catalog_permission(), manage_catalog_permission()]
+
+  def list_permissions_for_role(role) when role in [:operator, :viewer],
     do: [view_catalog_permission()]
 
   def list_permissions_for_role(:api_client),
@@ -17,7 +25,7 @@ defmodule Emisar.Catalog.Authorizer do
     do: [view_catalog_permission()]
 
   def list_permissions_for_role(:system),
-    do: [view_catalog_permission()]
+    do: [view_catalog_permission(), manage_catalog_permission()]
 
   def list_permissions_for_role(_), do: []
 

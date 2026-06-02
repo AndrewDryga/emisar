@@ -65,7 +65,28 @@ defmodule EmisarWeb.RunsLive do
         filter_params={@filter_params}
         filters={@filters}
       >
-        <:empty>{empty_message(@filter_params, @filters)}</:empty>
+        <:empty>
+          <%!-- Two-state empty: "you have a filter set" stays a quiet
+               one-liner, "you have an actually empty list" gets the
+               onboarding pitch (icon + concrete next step + links to
+               the two surfaces that produce runs). The richer state
+               only shows on a brand-new account so it's not noisy. --%>
+          <%= if any_filter_active?(@filter_params, @filters) do %>
+            <span class="text-zinc-500">No runs match these filters.</span>
+          <% else %>
+            <div class="mx-auto max-w-md">
+              <.icon name="hero-bolt" class="mx-auto h-8 w-8 text-zinc-700" />
+              <p class="mt-3 text-zinc-300">No runs yet.</p>
+              <p class="mt-1 text-xs leading-relaxed text-zinc-500">
+                Dispatch one from a
+                <.link navigate={~p"/app/runners"} class="text-indigo-400 hover:text-indigo-300">runner detail page</.link>
+                or kick off a <.link navigate={~p"/app/runbooks"} class="text-indigo-400 hover:text-indigo-300">runbook</.link>.
+                Runs from an LLM (via the
+                <.link navigate={~p"/app/agents"} class="text-indigo-400 hover:text-indigo-300">MCP API</.link>) land here too.
+              </p>
+            </div>
+          <% end %>
+        </:empty>
         <:col :let={run} label="When" class="w-24">
           <span class="text-xs text-zinc-400">{relative_time(run.inserted_at)}</span>
         </:col>
@@ -91,17 +112,6 @@ defmodule EmisarWeb.RunsLive do
       </LiveTable.live_table>
     </.dashboard_shell>
     """
-  end
-
-  # Honest empty-state copy: "no runs yet" when the operator is on a
-  # bare URL with no filter active, "no runs match these filters" only
-  # when at least one filter is set.
-  defp empty_message(params, filters) do
-    if any_filter_active?(params, filters) do
-      "No runs match these filters."
-    else
-      "No runs yet — dispatch one from a runner detail page or kick off a runbook."
-    end
   end
 
   defp any_filter_active?(params, filters) do

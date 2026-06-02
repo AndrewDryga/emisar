@@ -1,0 +1,699 @@
+defmodule EmisarWeb.Mcp.Service do
+  @moduledoc """
+  Shared business layer behind every MCP surface — the REST controller
+  (`EmisarWeb.McpController`) and the JSON-RPC controller
+  (`EmisarWeb.Mcp.RpcController`).
+
+  Returns plain data structures (lists, maps). Wrapping into HTTP /
+  JSON-RPC envelopes is the caller's job.
+
+  Every function takes a `conn` and reads `conn.assigns.api_key`
+  + `conn.assigns.current_subject` (both set by the auth plug shared
+  with McpController). No DB access bypasses the existing context
+  modules — `Catalog`, `Runners`, `Runs`, `Accounts`.
+  """
+
+  alias Emisar.{Accounts, Catalog, Runners, Runs}
+  alias EmisarWeb.Mcp.{Idempotency, ToolSchema}
+
+  # Same caps the REST handlers use; keep them in lockstep so
+  # behavior matches whether the LLM hits /api/mcp/tools/:id or the
+  # JSON-RPC equivalent.
+  @max_runners_per_call 16
+  @max_wait_ms 60_000
+  @max_get_run_wait_ms 300_000
+  @poll_interval_ms 200
+
+  @terminal_statuses ~w(success failed error validation_failed unknown_action cancelled timed_out denied)
+
+  @stdout_cap 65_536
+  @stderr_cap 65_536
+
+  # -- Tool list -------------------------------------------------------
+
+  @doc """
+  Build the tool descriptors this API key can dispatch. Same shape the
+  REST `GET /api/mcp/tools` returns under the `tools` key. One entry
+  per distinct `action_id`, sorted alphabetically.
+  """
+  @spec list_tools(Plug.Conn.t()) :: [map()]
+  def list_tools(conn) do
+    api_key = conn.assigns.api_key
+    subject = conn.assigns.current_subject
+
+    {:ok, runners, _} = Runners.list_runners_for_account(subject)
+    runners_by_id = Map.new(runners, fn r -> {r.id, r} end)
+    scopes = membership_scopes(api_key)
+
+    {:ok, actions, _} = Catalog.list_actions_for_account(subject)
+
+    actions
+    |> Enum.filter(&action_visible_to_key?(&1, api_key, runners_by_id))
+    |> Enum.filter(&action_in_membership_scope?(&1, runners_by_id, scopes))
+    |> Enum.group_by(& &1.action_id)
+    |> Enum.map(fn {_action_id, group} -> mcp_tool_from_group(group, runners_by_id) end)
+    |> Enum.sort_by(& &1.name)
+  end
+
+  # -- Runner list -----------------------------------------------------
+
+  @doc """
+  Runner inventory the API key can reach, with per-runner action
+  summaries. Same shape REST `GET /api/mcp/runners` returns under
+  the `runners` key.
+  """
+  @spec list_runners(Plug.Conn.t()) :: [map()]
+  def list_runners(conn) do
+    api_key = conn.assigns.api_key
+    subject = conn.assigns.current_subject
+
+    {:ok, actions, _} = Catalog.list_actions_for_account(subject)
+    actions_by_runner = Enum.group_by(actions, & &1.runner_id)
+
+    {:ok, all_runners, _} = Runners.list_runners_for_account(subject)
+    scopes = membership_scopes(api_key)
+
+    all_runners
+    |> Enum.reject(& &1.disabled_at)
+    |> Enum.filter(&runner_visible_to_key?(&1, api_key))
+    |> Enum.filter(&Accounts.runner_in_scope?(&1, scopes))
+    |> Enum.map(fn runner ->
+      %{
+        name: runner.name,
+        hostname: runner.hostname,
+        group: runner.group,
+        labels: runner.labels || %{},
+        status: runner.status,
+        last_heartbeat_at: runner.last_heartbeat_at,
+        runner_version: runner.runner_version,
+        actions:
+          actions_by_runner
+          |> Map.get(runner.id, [])
+          |> Enum.map(&action_summary/1)
+      }
+    end)
+  end
+
+  # -- Dispatch --------------------------------------------------------
+
+  @type dispatch_opts :: %{
+          optional(:runner_names) => [String.t()],
+          optional(:reason) => String.t() | nil,
+          optional(:wait_ms) => non_neg_integer(),
+          optional(:idempotency_key) => String.t() | nil
+        }
+
+  @type dispatch_error ::
+          {:error, :runner_required, [String.t()]}
+          | {:error, :runner_not_found, String.t()}
+          | {:error, :runner_not_allowed, String.t(), String.t()}
+          | {:error, :no_runner_available, :unknown_action | :scope_blocked}
+          | {:error, :too_many_runners, pos_integer()}
+
+  @doc """
+  Dispatch one action against the resolved runners.
+
+  Returns `{:ok, [run_result_map]}` on success — one entry per runner
+  in input order, post-long-poll. Errors mirror the REST 4xx body
+  shapes so error rendering is identical across surfaces.
+  """
+  @spec dispatch_tool(Plug.Conn.t(), String.t(), map(), dispatch_opts) ::
+          {:ok, [map()]} | dispatch_error()
+  def dispatch_tool(conn, action_id, args, opts \\ %{}) do
+    api_key = conn.assigns.api_key
+    subject = conn.assigns.current_subject
+
+    runner_names = Map.get(opts, :runner_names, [])
+    reason = Map.get(opts, :reason)
+    idempotency_key = Map.get(opts, :idempotency_key)
+    wait_ms = Map.get(opts, :wait_ms, 0)
+
+    with {:ok, resolved} <- resolve_runners(subject, api_key, action_id, runner_names) do
+      runners_by_id = fetch_runners_by_id(subject, Enum.map(resolved, fn {_, id} -> id end))
+
+      results =
+        Enum.map(resolved, fn {name, runner_id} ->
+          per_runner_key = Idempotency.per_runner(idempotency_key, runner_id)
+
+          attrs = %{
+            action_id: action_id,
+            runner_id: runner_id,
+            args: args,
+            reason: reason,
+            source: "mcp",
+            api_key_id: api_key.id,
+            idempotency_key: per_runner_key,
+            requested_by_membership_id: api_key.created_by_membership_id
+          }
+
+          result = Runs.dispatch_run(attrs, subject)
+          {name, result, Map.get(runners_by_id, runner_id)}
+        end)
+
+      maybe_poll_to_terminal(subject, results, wait_ms)
+      {:ok, Enum.map(results, &runner_result_to_json(&1, subject))}
+    end
+  end
+
+  # -- Run fetch + long-poll ------------------------------------------
+
+  @doc """
+  Single run state, with optional long-poll until terminal. `wait_ms`
+  is clamped to 300s. Returns `{:ok, payload, status}` where status
+  is `:terminal` or `:waiting` so the caller can choose a 200 vs 202.
+  """
+  @spec fetch_run(Plug.Conn.t(), String.t(), non_neg_integer()) ::
+          {:ok, map(), :terminal | :waiting} | {:error, :not_found | :invalid_wait}
+  def fetch_run(conn, id, wait_ms) when is_integer(wait_ms) and wait_ms >= 0 do
+    subject = conn.assigns.current_subject
+
+    case Runs.fetch_run_by_id(id, subject) do
+      {:error, :not_found} ->
+        {:error, :not_found}
+
+      {:ok, run} ->
+        cond do
+          wait_ms == 0 ->
+            {:ok, full_run_payload(run, subject), run_status_kind(run)}
+
+          true ->
+            deadline = System.monotonic_time(:millisecond) + min(wait_ms, @max_get_run_wait_ms)
+
+            case poll_to_terminal(subject, run.id, deadline) do
+              {:terminal, final} -> {:ok, full_run_payload(final, subject), :terminal}
+              :timeout ->
+                current =
+                  case Runs.fetch_run_by_id(run.id, subject) do
+                    {:ok, r} -> r
+                    {:error, _} -> run
+                  end
+
+                {:ok, full_run_payload(current, subject), :waiting}
+            end
+        end
+    end
+  end
+
+  # -- Helpers exposed for both controllers ---------------------------
+
+  @doc "Accepts \"15s\", \"1m\", \"500ms\"; clamped to `max_ms`."
+  @spec parse_wait(String.t() | nil, pos_integer()) :: {:ok, non_neg_integer()} | :error
+  def parse_wait(nil, _max_ms), do: {:ok, 0}
+  def parse_wait("", _max_ms), do: {:ok, 0}
+
+  def parse_wait(s, max_ms) when is_binary(s) do
+    case Regex.run(~r/^(\d+)(ms|s|m)?$/, s) do
+      [_, num, unit] ->
+        ms = String.to_integer(num) * unit_to_ms(unit)
+        {:ok, min(ms, max_ms)}
+
+      [_, num] ->
+        ms = String.to_integer(num) * 1000
+        {:ok, min(ms, max_ms)}
+
+      _ ->
+        :error
+    end
+  end
+
+  def parse_wait(_, _), do: :error
+
+  def max_wait_ms, do: @max_wait_ms
+  def max_get_run_wait_ms, do: @max_get_run_wait_ms
+  def max_runners_per_call, do: @max_runners_per_call
+  def terminal_statuses, do: @terminal_statuses
+
+  # -- Runner resolution ----------------------------------------------
+
+  defp resolve_runners(subject, api_key, action_id, []) do
+    case allowed_runners_for_action(subject, api_key, action_id) do
+      [] ->
+        if action_exists_in_account?(subject, action_id),
+          do: {:error, :no_runner_available, :scope_blocked},
+          else: {:error, :no_runner_available, :unknown_action}
+
+      [one] ->
+        {:ok, [{one.name, one.id}]}
+
+      candidates ->
+        {:error, :runner_required, Enum.map(candidates, & &1.name)}
+    end
+  end
+
+  defp resolve_runners(_subject, _api_key, _action_id, names)
+       when length(names) > @max_runners_per_call,
+       do: {:error, :too_many_runners, @max_runners_per_call}
+
+  defp resolve_runners(subject, api_key, action_id, names) do
+    allowed = allowed_runners_for_action(subject, api_key, action_id)
+    {:ok, all, _} = Runners.list_runners_for_account(subject)
+    scopes = membership_scopes(api_key)
+
+    Enum.reduce_while(names, {:ok, []}, fn name, {:ok, acc} ->
+      case resolve_one(allowed, all, api_key, scopes, name) do
+        {:ok, runner_id} -> {:cont, {:ok, [{name, runner_id} | acc]}}
+        err -> {:halt, err}
+      end
+    end)
+    |> case do
+      {:ok, list} -> {:ok, Enum.reverse(list)}
+      err -> err
+    end
+  end
+
+  defp resolve_one(allowed, all, api_key, scopes, name) do
+    case Enum.find(allowed, &(&1.name == name)) do
+      %{id: id} ->
+        {:ok, id}
+
+      nil ->
+        case Enum.find(all, &(&1.name == name)) do
+          nil -> {:error, :runner_not_found, name}
+          %_{} = runner -> {:error, :runner_not_allowed, name, deny_reason(runner, api_key, scopes)}
+        end
+    end
+  end
+
+  defp deny_reason(runner, api_key, scopes) do
+    cond do
+      runner.disabled_at -> "runner is disabled"
+      not runner_visible_to_key?(runner, api_key) -> "the API key's runner_filter / runner_group_filter doesn't include it"
+      not Accounts.runner_in_scope?(runner, scopes) -> "the user who minted this key has no runner-scope grant for it"
+      true -> "no advertised action with this name on this runner"
+    end
+  end
+
+  defp action_exists_in_account?(subject, action_id) do
+    {:ok, actions, _} = Catalog.list_actions_for_account(subject)
+    Enum.any?(actions, &(&1.action_id == action_id))
+  end
+
+  defp allowed_runners_for_action(subject, api_key, action_id) do
+    {:ok, actions, _} = Catalog.list_actions_for_account(subject)
+
+    runner_ids_advertising =
+      actions
+      |> Enum.filter(&(&1.action_id == action_id))
+      |> Enum.map(& &1.runner_id)
+      |> MapSet.new()
+
+    {:ok, runners, _} = Runners.list_runners_for_account(subject)
+    scopes = membership_scopes(api_key)
+
+    runners
+    |> Enum.reject(& &1.disabled_at)
+    |> Enum.filter(&(&1.id in runner_ids_advertising))
+    |> Enum.filter(&runner_visible_to_key?(&1, api_key))
+    |> Enum.filter(&Accounts.runner_in_scope?(&1, scopes))
+  end
+
+  defp fetch_runners_by_id(subject, ids) do
+    {:ok, all, _} = Runners.list_runners_for_account(subject)
+    Map.new(all, fn r -> {r.id, r} end) |> Map.take(ids)
+  end
+
+  # -- Tool descriptor builder ----------------------------------------
+
+  defp mcp_tool_from_group([first | _] = group, runners_by_id) do
+    runners =
+      group
+      |> Enum.map(&Map.get(runners_by_id, &1.runner_id))
+      |> Enum.reject(&is_nil/1)
+      |> Enum.sort_by(&{runner_status_rank(&1), &1.name})
+
+    runner_names = runners |> Enum.map(& &1.name) |> Enum.uniq()
+
+    %{
+      name: first.action_id,
+      description: tool_description(first, runners),
+      inputSchema: ToolSchema.build(first, runner_names)
+    }
+  end
+
+  defp runner_status_rank(%{status: "connected"}), do: 0
+  defp runner_status_rank(_), do: 1
+
+  defp tool_description(action, runners) do
+    base = action.description || action.title || action.action_id
+
+    side_effects =
+      case action.side_effects || [] do
+        [] -> ""
+        list -> "\n\nSide effects:\n" <> Enum.map_join(list, "\n", &("- " <> &1))
+      end
+
+    hosts =
+      case runners do
+        [] ->
+          ""
+
+        [only] ->
+          "\n\nRuns on: #{only.name} (#{runner_status_label(only)})"
+
+        many ->
+          lines = Enum.map_join(many, "\n", &("- " <> &1.name <> " (" <> runner_status_label(&1) <> ")"))
+          "\n\nAvailable runners (pick one or more by name):\n" <> lines
+      end
+
+    base <> side_effects <> hosts <> "\n\nRisk: #{action.risk}"
+  end
+
+  defp runner_status_label(%{status: "connected"}), do: "connected"
+  defp runner_status_label(%{status: "pending", last_heartbeat_at: nil}), do: "never connected"
+
+  defp runner_status_label(%{status: status, last_heartbeat_at: ts}) when not is_nil(ts),
+    do: "#{status} (last seen " <> human_ago(ts) <> " ago)"
+
+  defp runner_status_label(%{status: status}), do: status
+
+  defp human_ago(%DateTime{} = ts) do
+    seconds = DateTime.diff(DateTime.utc_now(), ts, :second)
+
+    cond do
+      seconds < 60 -> "#{max(seconds, 0)}s"
+      seconds < 3600 -> "#{div(seconds, 60)}m"
+      seconds < 86_400 -> "#{div(seconds, 3600)}h"
+      true -> "#{div(seconds, 86_400)}d"
+    end
+  end
+
+  defp human_ago(_), do: "unknown"
+
+  defp action_summary(action),
+    do: %{action_id: action.action_id, title: action.title, kind: action.kind, risk: action.risk}
+
+  # -- Visibility / membership ----------------------------------------
+
+  defp runner_visible_to_key?(runner, api_key) do
+    no_filter?(api_key) or
+      runner.id in api_key.runner_filter or
+      runner.group in (api_key.runner_group_filter || [])
+  end
+
+  defp action_visible_to_key?(action, api_key, runners_by_id) do
+    cond do
+      no_filter?(api_key) ->
+        true
+
+      action.runner_id in api_key.runner_filter ->
+        true
+
+      true ->
+        case Map.get(runners_by_id, action.runner_id) do
+          %{group: group} -> group in (api_key.runner_group_filter || [])
+          _ -> false
+        end
+    end
+  end
+
+  defp no_filter?(api_key),
+    do: api_key.runner_filter == [] and (api_key.runner_group_filter || []) == []
+
+  defp membership_scopes(%{created_by_membership_id: nil}), do: []
+
+  defp membership_scopes(%{created_by_membership_id: id}),
+    do: Accounts.runner_scopes_for_membership(id)
+
+  defp membership_scopes(_), do: []
+
+  defp action_in_membership_scope?(_action, _runners_by_id, []), do: true
+
+  defp action_in_membership_scope?(action, runners_by_id, scopes) do
+    case Map.get(runners_by_id, action.runner_id) do
+      %{} = runner -> Accounts.runner_in_scope?(runner, scopes)
+      _ -> false
+    end
+  end
+
+  # -- Per-runner long-poll + result rendering ------------------------
+
+  defp maybe_poll_to_terminal(_subject, _results, 0), do: :ok
+
+  defp maybe_poll_to_terminal(subject, results, ms) do
+    polling_ids =
+      for {_name, {:ok, :running, %{id: id}}, _runner} <- results, do: id
+
+    if polling_ids == [] do
+      :ok
+    else
+      deadline = System.monotonic_time(:millisecond) + ms
+      poll_all_to_terminal(subject, polling_ids, deadline)
+    end
+  end
+
+  defp poll_all_to_terminal(subject, ids, deadline) do
+    remaining = Enum.reject(ids, &run_terminal?(&1, subject))
+
+    cond do
+      remaining == [] -> :ok
+      System.monotonic_time(:millisecond) >= deadline -> :ok
+      true ->
+        Process.sleep(@poll_interval_ms)
+        poll_all_to_terminal(subject, remaining, deadline)
+    end
+  end
+
+  defp run_terminal?(run_id, subject) do
+    case Runs.fetch_run_by_id(run_id, subject) do
+      {:ok, %{status: s}} when s in @terminal_statuses -> true
+      _ -> false
+    end
+  end
+
+  defp run_status_kind(%{status: s}) when s in @terminal_statuses, do: :terminal
+  defp run_status_kind(_), do: :waiting
+
+  defp poll_to_terminal(subject, run_id, deadline) do
+    case Runs.fetch_run_by_id(run_id, subject) do
+      {:error, :not_found} ->
+        :timeout
+
+      {:ok, %{status: status} = run} when status in @terminal_statuses ->
+        {:terminal, run}
+
+      {:ok, _} ->
+        now = System.monotonic_time(:millisecond)
+
+        if now >= deadline do
+          :timeout
+        else
+          Process.sleep(min(@poll_interval_ms, max(deadline - now, 1)))
+          poll_to_terminal(subject, run_id, deadline)
+        end
+    end
+  end
+
+  defp runner_result_to_json({name, {:ok, :running, run}, runner}, subject) do
+    fresh =
+      case Runs.fetch_run_by_id(run.id, subject) do
+        {:ok, r} -> r
+        {:error, _} -> run
+      end
+
+    fresh
+    |> full_run_payload(subject)
+    |> Map.put(:runner, name)
+    |> maybe_offline_warning(runner)
+  end
+
+  defp runner_result_to_json({name, {:ok, :pending_approval, run}, _runner}, _subject),
+    do: %{
+      runner: name,
+      run_id: run.id,
+      status: "pending_approval",
+      waiting_on: "approval",
+      tip:
+        "Operator approval required. Use the `wait_for_run` tool with run_id=#{run.id} to block until the decision."
+    }
+
+  defp runner_result_to_json({name, {:error, :denied_by_policy, reason}, _runner}, _subject),
+    do: %{
+      runner: name,
+      status: "denied_by_policy",
+      reason: reason,
+      message:
+        "Policy denied this call. The `reason` is the rule that fired; show it to the " <>
+          "operator verbatim. If they want to bypass, they'd have to edit the policy " <>
+          "(or get an approval grant for the same (action, runner, args) shape)."
+    }
+
+  defp runner_result_to_json({name, {:error, %Ecto.Changeset{} = cs}, _runner}, _subject),
+    do: %{
+      runner: name,
+      status: "error",
+      error: "invalid_args",
+      details: errors(cs),
+      message:
+        "One or more arguments failed validation. `details` lists the offending fields " <>
+          "and the reason — fix and retry."
+    }
+
+  defp runner_result_to_json({name, {:error, code}, _runner}, _subject) when is_atom(code),
+    do: error_payload(name, code)
+
+  defp runner_result_to_json({name, other, _runner}, _subject),
+    do: %{
+      runner: name,
+      status: "error",
+      error: "unknown",
+      details: inspect(other),
+      message:
+        "Unrecognized error from the cloud. Report the `details` string to Emisar support; " <>
+          "the LLM can't recover from this on its own."
+    }
+
+  defp maybe_offline_warning(payload, %{status: "connected"}), do: payload
+  defp maybe_offline_warning(payload, nil), do: payload
+
+  defp maybe_offline_warning(payload, %{status: status} = runner) do
+    age =
+      case runner.last_heartbeat_at do
+        nil -> "never connected"
+        ts -> "last seen " <> human_ago(ts) <> " ago"
+      end
+
+    Map.merge(payload, %{
+      warning: "runner_offline",
+      warning_message:
+        "Runner `#{runner.name}` is #{status} (#{age}). The run is queued and will " <>
+          "deliver when it reconnects — tell the user, and offer to retry on a " <>
+          "connected runner (see /runners) if they need it sooner."
+    })
+  end
+
+  defp error_payload(name, :reason_required),
+    do: %{
+      runner: name,
+      status: "error",
+      error: "reason_required",
+      message:
+        "Every action call must include a non-empty `reason` field — a short freeform " <>
+          "sentence explaining why. It lands in the audit log so operators can later " <>
+          "answer 'why did this fire?'."
+    }
+
+  defp error_payload(name, :runner_required),
+    do: %{
+      runner: name,
+      status: "error",
+      error: "runner_required",
+      message:
+        "This action runs on multiple runners. Pass `runners: [\"name\"]` in the body " <>
+          "with one or more names from /tools."
+    }
+
+  defp error_payload(name, :runner_not_found),
+    do: %{
+      runner: name,
+      status: "error",
+      error: "runner_not_found",
+      message:
+        "The cloud couldn't resolve `#{name}` to a runner in this account. Re-fetch " <>
+          "/runners to get the current name list."
+    }
+
+  defp error_payload(name, :action_not_found),
+    do: %{
+      runner: name,
+      status: "error",
+      error: "action_not_found",
+      message:
+        "Runner `#{name}` doesn't advertise this action. Either the runner needs the " <>
+          "pack installed and the runner restarted (operator-side fix), or you should " <>
+          "dispatch to a different runner that lists it in /tools."
+    }
+
+  defp error_payload(name, :action_required),
+    do: %{
+      runner: name,
+      status: "error",
+      error: "action_required",
+      message: "The cloud didn't see an action_id in the call. This is a client-side bug."
+    }
+
+  defp error_payload(name, :runner_out_of_scope),
+    do: %{
+      runner: name,
+      status: "error",
+      error: "runner_out_of_scope",
+      message:
+        "Runner `#{name}` is outside the per-user runner scope of whoever minted this " <>
+          "API key. Ask an admin to grant that user access to the runner on the team " <>
+          "page, or mint a new key from a user that already has access."
+    }
+
+  defp error_payload(name, code),
+    do: %{
+      runner: name,
+      status: "error",
+      error: Atom.to_string(code),
+      message:
+        "Dispatch failed with `#{code}`. If this keeps happening, surface the code to " <>
+          "the operator — it usually maps to an admin-side fix."
+    }
+
+  # -- Run payload (incl. output) -------------------------------------
+
+  defp full_run_payload(run, subject) do
+    {:ok, events, _meta} = Runs.list_events_for_run(run.id, subject, page: [limit: 5_000])
+    {stdout, stderr} = collect_streams(events)
+
+    %{
+      id: run.id,
+      status: run.status,
+      action_id: run.action_id,
+      runner_id: run.runner_id,
+      request_id: run.request_id,
+      exit_code: run.exit_code,
+      duration_ms: run.duration_ms,
+      started_at: run.started_at,
+      finished_at: run.finished_at,
+      reason: run.reason_text,
+      error_message: run.error_message,
+      stdout: truncate(stdout, @stdout_cap),
+      stderr: truncate(stderr, @stderr_cap),
+      stdout_truncated: byte_size(stdout) > @stdout_cap,
+      stderr_truncated: byte_size(stderr) > @stderr_cap,
+      stdout_sha256: run.stdout_sha256,
+      stderr_sha256: run.stderr_sha256,
+      stdout_bytes: run.stdout_bytes,
+      stderr_bytes: run.stderr_bytes,
+      policy: %{
+        decision: run.policy_decision,
+        reason: run.policy_reason,
+        rules: run.matched_rules || []
+      }
+    }
+  end
+
+  defp collect_streams(events) do
+    Enum.reduce(events, {"", ""}, fn ev, {out, err} ->
+      chunk = get_chunk(ev)
+      stream = ev.stream || (ev.payload && ev.payload["stream"])
+
+      case stream do
+        "stderr" -> {out, err <> chunk}
+        _ -> {out <> chunk, err}
+      end
+    end)
+  end
+
+  defp get_chunk(%{payload: %{"chunk" => c}}) when is_binary(c), do: c
+  defp get_chunk(_), do: ""
+
+  defp truncate(s, n) when byte_size(s) <= n, do: s
+  defp truncate(s, n), do: binary_part(s, byte_size(s) - n, n)
+
+  defp errors(changeset) do
+    Ecto.Changeset.traverse_errors(changeset, fn {msg, opts} ->
+      Enum.reduce(opts, msg, fn {k, v}, acc ->
+        String.replace(acc, "%{#{k}}", to_string(v))
+      end)
+    end)
+  end
+
+  defp unit_to_ms(""), do: 1000
+  defp unit_to_ms("ms"), do: 1
+  defp unit_to_ms("s"), do: 1000
+  defp unit_to_ms("m"), do: 60_000
+end
