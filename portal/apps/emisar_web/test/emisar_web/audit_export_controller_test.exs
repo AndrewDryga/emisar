@@ -66,7 +66,11 @@ defmodule EmisarWeb.AuditExportControllerTest do
       assert json_response(conn, 401)["error"] == "unauthorized"
     end
 
-    test "403 when the key lacks the audit:read scope", %{conn: conn, account: account, subject: subject} do
+    test "403 when the key lacks the audit:read scope", %{
+      conn: conn,
+      account: account,
+      subject: subject
+    } do
       {:ok, _} = Emisar.Accounts.update_account(account, %{name: "ack"}, subject)
 
       {raw, _} =
@@ -92,7 +96,11 @@ defmodule EmisarWeb.AuditExportControllerTest do
   defp event_type_query, do: Enum.map_join(@test_types, "&", &"event_type[]=#{&1}")
 
   describe "happy path" do
-    test "returns NDJSON ordered ascending by (occurred_at, id)", %{conn: conn, account: account, raw_key: raw} do
+    test "returns NDJSON ordered ascending by (occurred_at, id)", %{
+      conn: conn,
+      account: account,
+      raw_key: raw
+    } do
       _ = insert_event(account, "user.signed_in")
       _ = insert_event(account, "policy.updated")
       _ = insert_event(account, "user.signed_out")
@@ -128,7 +136,10 @@ defmodule EmisarWeb.AuditExportControllerTest do
       assert event["payload"]["changes"]["defaults"] == %{}
     end
 
-    test "empty filter result is a 200 with no body and no next cursor", %{conn: conn, raw_key: raw} do
+    test "empty filter result is a 200 with no body and no next cursor", %{
+      conn: conn,
+      raw_key: raw
+    } do
       # Filter to a type that has zero rows.
       conn = conn |> bearer(raw) |> get(~p"/api/audit?event_type=approval.expired")
       assert conn.resp_body == ""
@@ -138,7 +149,11 @@ defmodule EmisarWeb.AuditExportControllerTest do
   end
 
   describe "pagination" do
-    test "limit caps the page; cursor headers present on a full page", %{conn: conn, account: account, raw_key: raw} do
+    test "limit caps the page; cursor headers present on a full page", %{
+      conn: conn,
+      account: account,
+      raw_key: raw
+    } do
       Enum.each(1..5, fn _ -> insert_event(account, "user.signed_in") end)
 
       conn = conn |> bearer(raw) |> get(~p"/api/audit?limit=2&event_type=user.signed_in")
@@ -152,7 +167,11 @@ defmodule EmisarWeb.AuditExportControllerTest do
       assert link =~ "cursor=#{cursor}"
     end
 
-    test "?cursor=<…> resumes strictly after the prior page", %{conn: conn, account: account, raw_key: raw} do
+    test "?cursor=<…> resumes strictly after the prior page", %{
+      conn: conn,
+      account: account,
+      raw_key: raw
+    } do
       all = Enum.map(1..5, fn _ -> insert_event(account, "user.signed_in") end)
       filter = "event_type=user.signed_in"
 
@@ -180,7 +199,11 @@ defmodule EmisarWeb.AuditExportControllerTest do
                all |> Enum.map(& &1.id) |> Enum.sort()
     end
 
-    test "limit beyond max is silently clamped to the hard cap", %{conn: conn, account: account, raw_key: raw} do
+    test "limit beyond max is silently clamped to the hard cap", %{
+      conn: conn,
+      account: account,
+      raw_key: raw
+    } do
       Enum.each(1..3, fn _ -> insert_event(account, "user.signed_in") end)
 
       # Asking for 99_999 still works — server caps to 1000.
@@ -224,7 +247,11 @@ defmodule EmisarWeb.AuditExportControllerTest do
       assert hd(events)["event_type"] == "policy.updated"
     end
 
-    test "?event_type=a&event_type=b stacks (repeated param)", %{conn: conn, account: account, raw_key: raw} do
+    test "?event_type=a&event_type=b stacks (repeated param)", %{
+      conn: conn,
+      account: account,
+      raw_key: raw
+    } do
       insert_event(account, "user.signed_in")
       insert_event(account, "policy.updated")
       insert_event(account, "user.signed_out")
@@ -259,7 +286,11 @@ defmodule EmisarWeb.AuditExportControllerTest do
   end
 
   describe "cross-account isolation" do
-    test "an audit:read key only sees its own account's events", %{conn: conn, account: own_account, raw_key: raw} do
+    test "an audit:read key only sees its own account's events", %{
+      conn: conn,
+      account: own_account,
+      raw_key: raw
+    } do
       # Build a separate account with its own events. The bearer-auth'd
       # key here belongs to `own_account` and must NEVER see the other.
       {other_user, other_account, _other_subject} = owner_subject_fixture()

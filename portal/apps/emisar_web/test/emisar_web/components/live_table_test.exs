@@ -149,7 +149,9 @@ defmodule EmisarWeb.LiveTableTest do
           metadata={empty_meta()}
           filter_params={%{}}
         >
-          <:item :let={_t}><li>row</li></:item>
+          <:item :let={_t}>
+            <li>row</li>
+          </:item>
           <:empty>No things yet.</:empty>
         </LiveTable.live_table>
         """)
@@ -173,7 +175,9 @@ defmodule EmisarWeb.LiveTableTest do
           metadata={%Metadata{count: 2, previous_page_cursor: nil, next_page_cursor: nil}}
           filter_params={%{}}
         >
-          <:item :let={t}><li data-name={t.name}>{t.name}</li></:item>
+          <:item :let={t}>
+            <li data-name={t.name}>{t.name}</li>
+          </:item>
         </LiveTable.live_table>
         """)
 
@@ -196,7 +200,9 @@ defmodule EmisarWeb.LiveTableTest do
           metadata={%Metadata{count: 1, previous_page_cursor: nil, next_page_cursor: "next-cursor"}}
           filter_params={%{}}
         >
-          <:item :let={_t}><li>row</li></:item>
+          <:item :let={_t}>
+            <li>row</li>
+          </:item>
         </LiveTable.live_table>
         """)
 
@@ -218,7 +224,9 @@ defmodule EmisarWeb.LiveTableTest do
           metadata={%Metadata{count: 1, previous_page_cursor: nil, next_page_cursor: nil}}
           filter_params={%{}}
         >
-          <:item :let={_t}><li>row</li></:item>
+          <:item :let={_t}>
+            <li>row</li>
+          </:item>
         </LiveTable.live_table>
         """)
 
@@ -232,7 +240,9 @@ defmodule EmisarWeb.LiveTableTest do
           metadata={%Metadata{count: 1, previous_page_cursor: nil, next_page_cursor: nil}}
           filter_params={%{}}
         >
-          <:item :let={_t}><li>row</li></:item>
+          <:item :let={_t}>
+            <li>row</li>
+          </:item>
         </LiveTable.live_table>
         """)
 
@@ -254,7 +264,9 @@ defmodule EmisarWeb.LiveTableTest do
           metadata={%Metadata{count: 1, previous_page_cursor: nil, next_page_cursor: nil}}
           filter_params={%{}}
         >
-          <:item :let={_t}><li class="amber">row</li></:item>
+          <:item :let={_t}>
+            <li class="amber">row</li>
+          </:item>
         </LiveTable.live_table>
         """)
 
@@ -282,7 +294,9 @@ defmodule EmisarWeb.LiveTableTest do
           filter_params={%{}}
           group_by={fn r -> r.group end}
         >
-          <:item :let={r}><li data-name={r.name}>{r.name}</li></:item>
+          <:item :let={r}>
+            <li data-name={r.name}>{r.name}</li>
+          </:item>
         </LiveTable.live_table>
         """)
 
@@ -290,7 +304,11 @@ defmodule EmisarWeb.LiveTableTest do
       assert html =~ "prod"
       assert html =~ "stage"
       # Order: header, alpha, beta, then stage header, gamma
-      assert String.contains?(html, [~s(data-name="alpha"), ~s(data-name="beta"), ~s(data-name="gamma")])
+      assert String.contains?(html, [
+               ~s(data-name="alpha"),
+               ~s(data-name="beta"),
+               ~s(data-name="gamma")
+             ])
     end
 
     test "custom :group_header slot wins over the default text-only header" do
@@ -310,7 +328,9 @@ defmodule EmisarWeb.LiveTableTest do
           <:group_header :let={label}>
             <li class="custom-divider">SECTION: {label}</li>
           </:group_header>
-          <:item :let={r}><li>{r.id}</li></:item>
+          <:item :let={r}>
+            <li>{r.id}</li>
+          </:item>
         </LiveTable.live_table>
         """)
 

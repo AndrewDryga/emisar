@@ -4,7 +4,9 @@
   <section class="py-16 sm:py-24">
     <div class="mx-auto max-w-3xl px-6 lg:px-8">
       <p class="text-sm font-semibold text-indigo-400">Docs / Action packs</p>
-      <h1 class="mt-2 text-4xl font-bold tracking-tight text-zinc-50 md:text-5xl">Action packs</h1>
+      <h1 class="mt-2 text-4xl font-bold tracking-tight text-zinc-50 md:text-5xl">
+        Action packs
+      </h1>
       <p class="mt-6 text-lg leading-8 text-zinc-400">
         An action pack is a versioned, content-addressed directory of YAML
         action declarations. The runner loads the pack at boot, advertises
@@ -100,21 +102,22 @@ examples:
           declares risk in the pack; the caller can't override it.
         </li>
         <li>
-          <strong>args</strong> — every argument is declared. Types: <code>string</code>,
-          <code>integer</code>, <code>number</code>, <code>boolean</code>,
-          <code>duration</code>, <code>path</code>, <code>string_array</code>,
-          <code>integer_array</code>. Validation tightens the type: enum, regex
+          <strong>args</strong>
+          — every argument is declared. Types: <code>string</code>, <code>integer</code>, <code>number</code>, <code>boolean</code>, <code>duration</code>, <code>path</code>, <code>string_array</code>, <code>integer_array</code>. Validation tightens the type: enum, regex
           pattern, allowed_prefixes / denied_prefixes for paths, max_items for
           arrays, min/max for numbers, max_duration for durations.
         </li>
         <li>
-          <strong>execution.user</strong> — Linux-only. Resolves the user via
-          <code>os/user.Lookup</code> and drops the child to its uid/gid via
+          <strong>execution.user</strong>
+          — Linux-only. Resolves the user via <code>os/user.Lookup</code>
+          and drops the child to its uid/gid via
           SysProcAttr.Credential before exec.
         </li>
         <li>
-          <strong>output.parser</strong> — <code>text</code> (default), <code>json</code>, or
-          <code>json (parser_required: true)</code> to force the run to fail if stdout
+          <strong>output.parser</strong>
+          — <code>text</code>
+          (default), <code>json</code>, or <code>json (parser_required: true)</code>
+          to force the run to fail if stdout
           isn't valid JSON.
         </li>
         <li>
@@ -127,8 +130,8 @@ examples:
           built-in regexes (bearer, JWT, AWS keys, etc.).
         </li>
         <li>
-          <strong>examples</strong> — optional list of
-          <code>&#123;title, args&#125;</code>
+          <strong>examples</strong>
+          — optional list of <code>&#123;title, args&#125;</code>
           entries. Each one renders as a clickable hint on the dispatch
           form, so operators and LLMs see realistic invocations before
           they type. Examples don't validate any tighter than the
@@ -142,7 +145,8 @@ examples:
         <.link navigate={~p"/app/packs"} class="text-indigo-400 hover:text-indigo-300">
           in-app Packs page
         </.link>
-        groups every observed <code>(pack_id, version, hash)</code> in your
+        groups every observed <code>(pack_id, version, hash)</code>
+        in your
         account. Two runners on the same pack version with different hashes
         means somebody hand-edited a pack on a host — the page flags it as
         drift. Re-deploy from the canonical source to clear it.
@@ -154,8 +158,10 @@ examples:
           public registry
         </.link>
         (linux-core, cassandra, showcase) — each shows every action it declares and an
-        install snippet you can paste on a runner host. Want to ship your own?
-        <.link navigate={~p"/docs/publishing-packs"} class="text-indigo-400 hover:text-indigo-300">
+        install snippet you can paste on a runner host. Want to ship your own? <.link
+          navigate={~p"/docs/publishing-packs"}
+          class="text-indigo-400 hover:text-indigo-300"
+        >
           Authoring + PR guide
         </.link>.
       </p>

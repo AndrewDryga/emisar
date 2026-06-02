@@ -14,8 +14,7 @@
 
       <h2 class="mt-12 text-2xl font-semibold text-zinc-50">Both approaches run real commands</h2>
       <p class="mt-3 text-sm leading-relaxed text-zinc-400">
-        emisar isn't a sandbox. When the runner executes
-        <code>nodetool repair</code>, it really repairs the keyspace — exactly like
+        emisar isn't a sandbox. When the runner executes <code>nodetool repair</code>, it really repairs the keyspace — exactly like
         SSH would. The difference is what happens <em>before</em> exec, and what's
         left <em>after</em>.
       </p>
@@ -31,13 +30,47 @@
             </tr>
           </thead>
           <tbody class="divide-y divide-zinc-900 text-zinc-300">
-            <tr><td class="px-4 py-3">What can the LLM run?</td><td class="px-4 py-3">Anything in the user's shell</td><td class="px-4 py-3">Only declared actions; everything else rejected</td></tr>
-            <tr><td class="px-4 py-3">What are the args?</td><td class="px-4 py-3">Free-text command line</td><td class="px-4 py-3">Typed, validated, redacted at the boundary</td></tr>
-            <tr><td class="px-4 py-3">Approvals?</td><td class="px-4 py-3">Human-on-the-loop in chat — easy to skip</td><td class="px-4 py-3">Policy gates, with email + audit, no skip path</td></tr>
-            <tr><td class="px-4 py-3">Audit trail?</td><td class="px-4 py-3">Whatever lands in <code>.bash_history</code> + Slack scrollback</td><td class="px-4 py-3">Hash-chained JSONL on host, mirrored to cloud</td></tr>
-            <tr><td class="px-4 py-3">Output redaction?</td><td class="px-4 py-3">None — passwords leak into chat logs</td><td class="px-4 py-3">Bearer / AWS / GitHub / private-key blocks masked before egress</td></tr>
-            <tr><td class="px-4 py-3">Lateral movement?</td><td class="px-4 py-3">SSH key on the model's box ≈ key everywhere</td><td class="px-4 py-3">Per-runner token + scoped API key + runner_filter</td></tr>
-            <tr><td class="px-4 py-3">Recovery story?</td><td class="px-4 py-3">"Read the chat scrollback and the logs and hope"</td><td class="px-4 py-3"><code>emisar audit verify</code> + replay every dispatched envelope</td></tr>
+            <tr>
+              <td class="px-4 py-3">What can the LLM run?</td>
+              <td class="px-4 py-3">Anything in the user's shell</td>
+              <td class="px-4 py-3">Only declared actions; everything else rejected</td>
+            </tr>
+            <tr>
+              <td class="px-4 py-3">What are the args?</td>
+              <td class="px-4 py-3">Free-text command line</td>
+              <td class="px-4 py-3">Typed, validated, redacted at the boundary</td>
+            </tr>
+            <tr>
+              <td class="px-4 py-3">Approvals?</td>
+              <td class="px-4 py-3">Human-on-the-loop in chat — easy to skip</td>
+              <td class="px-4 py-3">Policy gates, with email + audit, no skip path</td>
+            </tr>
+            <tr>
+              <td class="px-4 py-3">Audit trail?</td>
+              <td class="px-4 py-3">
+                Whatever lands in <code>.bash_history</code> + Slack scrollback
+              </td>
+              <td class="px-4 py-3">Hash-chained JSONL on host, mirrored to cloud</td>
+            </tr>
+            <tr>
+              <td class="px-4 py-3">Output redaction?</td>
+              <td class="px-4 py-3">None — passwords leak into chat logs</td>
+              <td class="px-4 py-3">
+                Bearer / AWS / GitHub / private-key blocks masked before egress
+              </td>
+            </tr>
+            <tr>
+              <td class="px-4 py-3">Lateral movement?</td>
+              <td class="px-4 py-3">SSH key on the model's box ≈ key everywhere</td>
+              <td class="px-4 py-3">Per-runner token + scoped API key + runner_filter</td>
+            </tr>
+            <tr>
+              <td class="px-4 py-3">Recovery story?</td>
+              <td class="px-4 py-3">"Read the chat scrollback and the logs and hope"</td>
+              <td class="px-4 py-3">
+                <code>emisar audit verify</code> + replay every dispatched envelope
+              </td>
+            </tr>
           </tbody>
         </table>
       </div>
@@ -59,8 +92,10 @@
       </p>
 
       <div class="mt-12 rounded-xl border border-indigo-900/40 bg-indigo-950/20 p-5 text-sm text-zinc-300">
-        Try it: install the runner via
-        <.link href="/docs/quickstart" class="text-indigo-400 hover:text-indigo-300">/docs/quickstart</.link>,
+        Try it: install the runner via <.link
+          href="/docs/quickstart"
+          class="text-indigo-400 hover:text-indigo-300"
+        >/docs/quickstart</.link>,
         declare one action you'd otherwise SSH for, point your model at it.
         Free tier covers 3 runners. No credit card.
       </div>

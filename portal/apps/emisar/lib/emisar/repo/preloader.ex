@@ -77,8 +77,8 @@ defmodule Emisar.Repo.Preloader do
         {results, ecto_preloads_to_prepend} =
           apply_or_postpone_preload(results, preload, preload_fun)
 
-        {results,
-         [{preload, nested_preloads}] ++ ecto_preloads_to_prepend ++ ecto_preloads, preloads}
+        {results, [{preload, nested_preloads}] ++ ecto_preloads_to_prepend ++ ecto_preloads,
+         preloads}
 
       {nil, nested_preload_funs} ->
         results = Emisar.Repo.preload(results, preload)
@@ -103,8 +103,8 @@ defmodule Emisar.Repo.Preloader do
         {results, nested_ecto_preloads} =
           handle_nested_preloads(results, preload, nested_preloads, nested_preload_funs)
 
-        {results,
-         ecto_preloads_to_prepend ++ [{preload, nested_ecto_preloads}] ++ ecto_preloads, preloads}
+        {results, ecto_preloads_to_prepend ++ [{preload, nested_ecto_preloads}] ++ ecto_preloads,
+         preloads}
     end
   end
 

@@ -28,10 +28,13 @@ defmodule EmisarWeb.DashboardLiveTest do
       subject = owner_subject(user, account)
 
       {:ok, _agent} =
-        Emisar.Runners.create_runner(%{
-          "name" => "runner-1",
-          "group" => "default"
-        }, subject)
+        Emisar.Runners.create_runner(
+          %{
+            "name" => "runner-1",
+            "group" => "default"
+          },
+          subject
+        )
 
       {:ok, _lv, html} = live(conn, ~p"/app")
       assert html =~ "Runners online"

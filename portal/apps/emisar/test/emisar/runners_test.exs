@@ -78,7 +78,9 @@ defmodule Emisar.RunnersTest do
     test "mints an runner + token on success" do
       account = account_fixture()
       user = user_fixture()
-      {raw, _key} = auth_key_fixture(account_id: account.id, created_by_id: user.id, reusable: true)
+
+      {raw, _key} =
+        auth_key_fixture(account_id: account.id, created_by_id: user.id, reusable: true)
 
       assert {:ok, %Runner{} = runner, %Token{}, raw_token} =
                Runners.register_via_auth_key(raw, %{
@@ -101,7 +103,8 @@ defmodule Emisar.RunnersTest do
       _ = runner_fixture(account_id: account.id)
       _ = runner_fixture(account_id: account.id)
 
-      {raw, _key} = auth_key_fixture(account_id: account.id, created_by_id: user.id, reusable: true)
+      {raw, _key} =
+        auth_key_fixture(account_id: account.id, created_by_id: user.id, reusable: true)
 
       assert {:error, :over_limit, "free", 3} =
                Runners.register_via_auth_key(raw, %{group: "demo"})
@@ -124,7 +127,9 @@ defmodule Emisar.RunnersTest do
       # async: true. No explicit `Sandbox.allow` needed.
       account = account_fixture()
       user = user_fixture()
-      {raw, _key} = auth_key_fixture(account_id: account.id, created_by_id: user.id, reusable: false)
+
+      {raw, _key} =
+        auth_key_fixture(account_id: account.id, created_by_id: user.id, reusable: false)
 
       results =
         1..8
@@ -154,7 +159,10 @@ defmodule Emisar.RunnersTest do
     test "returns {:ok, token, runner} for a valid raw token" do
       account = account_fixture()
       user = user_fixture()
-      {raw, _key} = auth_key_fixture(account_id: account.id, created_by_id: user.id, reusable: true)
+
+      {raw, _key} =
+        auth_key_fixture(account_id: account.id, created_by_id: user.id, reusable: true)
+
       {:ok, _agent, _token, raw_token} = Runners.register_via_auth_key(raw, %{group: "demo"})
 
       assert {:ok, %Token{} = tok, %Runner{}} = Runners.verify_runner_token(raw_token)
@@ -169,9 +177,19 @@ defmodule Emisar.RunnersTest do
 
     test "returns {:error, :token_invalid} for a revoked token (via disabled runner)" do
       account = account_fixture()
-      _ = membership_fixture(account_id: account.id, user_id: (user = user_fixture()).id, role: "owner")
+
+      _ =
+        membership_fixture(
+          account_id: account.id,
+          user_id: (user = user_fixture()).id,
+          role: "owner"
+        )
+
       subject = subject_for(user, account, role: :owner)
-      {raw, _key} = auth_key_fixture(account_id: account.id, created_by_id: user.id, reusable: true)
+
+      {raw, _key} =
+        auth_key_fixture(account_id: account.id, created_by_id: user.id, reusable: true)
+
       {:ok, runner, _token, raw_token} = Runners.register_via_auth_key(raw, %{group: "demo"})
 
       {:ok, _} = Runners.disable_runner(runner, subject)
@@ -359,7 +377,10 @@ defmodule Emisar.RunnersTest do
           external_id: "ext-#{System.unique_integer([:positive])}"
         })
 
-      events = Emisar.Audit.list_events(Emisar.Auth.Subject.system(account), page: [limit: 50]) |> elem(1)
+      events =
+        Emisar.Audit.list_events(Emisar.Auth.Subject.system(account), page: [limit: 50])
+        |> elem(1)
+
       bound = Enum.find(events, &(&1.event_type == "auth_key.bound"))
       assert bound != nil
       assert bound.payload["auto"] == true

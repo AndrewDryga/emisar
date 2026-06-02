@@ -238,7 +238,8 @@ defmodule Emisar.Policies do
     after_rules = after_rules || @default_rules
 
     %{
-      "defaults" => diff_defaults(before_rules["defaults"] || %{}, after_rules["defaults"] || %{}),
+      "defaults" =>
+        diff_defaults(before_rules["defaults"] || %{}, after_rules["defaults"] || %{}),
       "overrides" =>
         diff_overrides(before_rules["overrides"] || [], after_rules["overrides"] || [])
     }

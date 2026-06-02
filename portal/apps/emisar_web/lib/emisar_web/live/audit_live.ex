@@ -109,7 +109,8 @@ defmodule EmisarWeb.AuditLive do
 
   def render(assigns) do
     ~H"""
-    <.dashboard_shell pending_approvals_count={@pending_approvals_count}
+    <.dashboard_shell
+      pending_approvals_count={@pending_approvals_count}
       current_user={@current_user}
       current_account={@current_account}
       switchable_accounts={@switchable_accounts}
@@ -161,11 +162,17 @@ defmodule EmisarWeb.AuditLive do
               <p class="mt-3 text-zinc-300">No audit events yet.</p>
               <p class="mt-1 text-xs leading-relaxed text-zinc-500">
                 They appear as soon as something happens — a
-                <.link navigate={~p"/app/runners"} class="text-indigo-400 hover:text-indigo-300">runner</.link>
-                connects, an operator dispatches a
-                <.link navigate={~p"/app/runs"} class="text-indigo-400 hover:text-indigo-300">run</.link>,
-                an approval is decided, or a pack is observed on the
-                <.link navigate={~p"/app/packs"} class="text-indigo-400 hover:text-indigo-300">Packs page</.link>.
+                <.link navigate={~p"/app/runners"} class="text-indigo-400 hover:text-indigo-300">
+                  runner
+                </.link>
+                connects, an operator dispatches a <.link
+                  navigate={~p"/app/runs"}
+                  class="text-indigo-400 hover:text-indigo-300"
+                >run</.link>,
+                an approval is decided, or a pack is observed on the <.link
+                  navigate={~p"/app/packs"}
+                  class="text-indigo-400 hover:text-indigo-300"
+                >Packs page</.link>.
               </p>
             </div>
           <% end %>
@@ -187,8 +194,7 @@ defmodule EmisarWeb.AuditLive do
             <p class="mt-0.5 text-xs leading-relaxed text-zinc-500">
               Stream audit events as NDJSON to your SIEM. Mint an
               <code class="font-mono text-zinc-300">audit:read</code>
-              token below, then point your collector at
-              <code class="font-mono text-zinc-300">{@base_audit_url}</code>.
+              token below, then point your collector at <code class="font-mono text-zinc-300">{@base_audit_url}</code>.
             </p>
           </div>
           <button
@@ -232,7 +238,10 @@ defmodule EmisarWeb.AuditLive do
                 ><%= @export_secret %></pre>
               </div>
               <p class="mt-2 text-[11px] text-zinc-500">
-                Use with: <code class="font-mono text-zinc-300">curl -H "Authorization: Bearer &lt;token&gt;" {@base_audit_url}</code>
+                Use with:
+                <code class="font-mono text-zinc-300">
+                  curl -H "Authorization: Bearer &lt;token&gt;" {@base_audit_url}
+                </code>
               </p>
             </div>
             <button

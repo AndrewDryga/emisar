@@ -7,27 +7,53 @@
     <%!-- Robots: noindex on every /app/* and auth route via the
           conn-level noindex assign; everything else indexable. --%>
     <meta :if={assigns[:noindex]} name="robots" content="noindex, nofollow" />
-    <meta name="description" content={assigns[:meta_description] || "emisar — give AI tools approved infrastructure actions, not SSH. Pre-approved playbooks, fine-grained policy, full audit trail."} />
+    <meta
+      name="description"
+      content={
+        assigns[:meta_description] ||
+          "emisar — give AI tools approved infrastructure actions, not SSH. Pre-approved playbooks, fine-grained policy, full audit trail."
+      }
+    />
     <link :if={assigns[:canonical_url]} rel="canonical" href={@canonical_url} />
-    <.live_title default="emisar — give AI tools approved infrastructure actions, not SSH" suffix=" · emisar">
+    <.live_title
+      default="emisar — give AI tools approved infrastructure actions, not SSH"
+      suffix=" · emisar"
+    >
       {assigns[:page_title]}
     </.live_title>
 
     <%!-- Open Graph / Twitter Card --%>
     <meta property="og:type" content={assigns[:og_type] || "website"} />
     <meta property="og:title" content={assigns[:og_title] || assigns[:page_title] || "emisar"} />
-    <meta property="og:description" content={assigns[:og_description] || assigns[:meta_description] || "Give AI tools approved infrastructure actions, not SSH."} />
+    <meta
+      property="og:description"
+      content={
+        assigns[:og_description] || assigns[:meta_description] ||
+          "Give AI tools approved infrastructure actions, not SSH."
+      }
+    />
     <meta :if={assigns[:og_image]} property="og:image" content={@og_image} />
     <meta property="og:url" content={assigns[:canonical_url] || "https://emisar.dev"} />
     <meta property="og:site_name" content="emisar" />
-    <meta name="twitter:card" content={if assigns[:og_image], do: "summary_large_image", else: "summary"} />
+    <meta
+      name="twitter:card"
+      content={if assigns[:og_image], do: "summary_large_image", else: "summary"}
+    />
     <meta name="twitter:title" content={assigns[:og_title] || assigns[:page_title] || "emisar"} />
-    <meta name="twitter:description" content={assigns[:og_description] || assigns[:meta_description] || "Give AI tools approved infrastructure actions, not SSH."} />
+    <meta
+      name="twitter:description"
+      content={
+        assigns[:og_description] || assigns[:meta_description] ||
+          "Give AI tools approved infrastructure actions, not SSH."
+      }
+    />
     <meta :if={assigns[:og_image]} name="twitter:image" content={@og_image} />
 
     <%!-- JSON-LD: only emitted on routes that set @json_ld --%>
     <%= if assigns[:json_ld] do %>
-      <script type="application/ld+json">{Phoenix.HTML.raw(@json_ld)}</script>
+      <script type="application/ld+json">
+        {Phoenix.HTML.raw(@json_ld)}
+      </script>
     <% end %>
 
     <link rel="icon" type="image/svg+xml" href={~p"/images/emisar-icon.svg"} />

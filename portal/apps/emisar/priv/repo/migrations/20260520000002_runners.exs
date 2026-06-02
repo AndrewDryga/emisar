@@ -7,7 +7,9 @@ defmodule Emisar.Repo.Migrations.Runners do
     # auto-groups by ("cassandra-us-east1", "db-primary", etc.).
     create table(:runners, primary_key: false) do
       add :id, :binary_id, primary_key: true
-      add :account_id, references(:accounts, type: :binary_id, on_delete: :delete_all), null: false
+
+      add :account_id, references(:accounts, type: :binary_id, on_delete: :delete_all),
+        null: false
 
       # `name` is operator-facing and per-account unique (so MCP clients
       # and policies can address a runner by name). `external_id` is
@@ -52,7 +54,10 @@ defmodule Emisar.Repo.Migrations.Runners do
     # Modeled on Tailscale's auth keys.
     create table(:runner_auth_keys, primary_key: false) do
       add :id, :binary_id, primary_key: true
-      add :account_id, references(:accounts, type: :binary_id, on_delete: :delete_all), null: false
+
+      add :account_id, references(:accounts, type: :binary_id, on_delete: :delete_all),
+        null: false
+
       add :created_by_id, references(:users, type: :binary_id, on_delete: :nilify_all)
 
       add :key_prefix, :string, null: false
@@ -83,7 +88,9 @@ defmodule Emisar.Repo.Migrations.Runners do
       add :token_prefix, :string, null: false
       add :token_hash, :binary, null: false
 
-      add :issued_via_key_id, references(:runner_auth_keys, type: :binary_id, on_delete: :nilify_all)
+      add :issued_via_key_id,
+          references(:runner_auth_keys, type: :binary_id, on_delete: :nilify_all)
+
       add :issued_at, :utc_datetime_usec, null: false
       add :last_used_at, :utc_datetime_usec
       add :revoked_at, :utc_datetime_usec

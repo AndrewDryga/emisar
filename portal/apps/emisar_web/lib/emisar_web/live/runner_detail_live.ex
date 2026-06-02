@@ -49,7 +49,9 @@ defmodule EmisarWeb.RunnerDetailLive do
         opts = LiveTable.params_to_opts(params)
 
         {:ok, actions, meta} = Catalog.list_actions_for_runner(runner.id, subject, opts)
-        {:ok, recent_runs, _} = Runs.list_recent_runs_for_runner(runner.id, subject, page: [limit: 20])
+
+        {:ok, recent_runs, _} =
+          Runs.list_recent_runs_for_runner(runner.id, subject, page: [limit: 20])
 
         {:noreply,
          socket
@@ -60,8 +62,9 @@ defmodule EmisarWeb.RunnerDetailLive do
     end
   end
 
-  def handle_info({:runner_updated, %{id: id} = updated}, socket) when id == socket.assigns.runner.id,
-    do: {:noreply, assign(socket, :runner, updated)}
+  def handle_info({:runner_updated, %{id: id} = updated}, socket)
+      when id == socket.assigns.runner.id,
+      do: {:noreply, assign(socket, :runner, updated)}
 
   def handle_info(_, socket), do: {:noreply, socket}
 
@@ -85,7 +88,8 @@ defmodule EmisarWeb.RunnerDetailLive do
 
   def render(assigns) do
     ~H"""
-    <.dashboard_shell pending_approvals_count={@pending_approvals_count}
+    <.dashboard_shell
+      pending_approvals_count={@pending_approvals_count}
       current_user={@current_user}
       current_account={@current_account}
       switchable_accounts={@switchable_accounts}
@@ -157,7 +161,9 @@ defmodule EmisarWeb.RunnerDetailLive do
           <header class="flex items-center justify-between border-b border-zinc-900 px-5 py-3">
             <h2 class="text-sm font-semibold text-zinc-100">Advertised actions</h2>
             <span class="text-xs text-zinc-500">
-              {@actions_metadata.count} {if @actions_metadata.count == 1, do: "action", else: "actions"}
+              {@actions_metadata.count} {if @actions_metadata.count == 1,
+                do: "action",
+                else: "actions"}
             </span>
           </header>
 
@@ -197,7 +203,10 @@ defmodule EmisarWeb.RunnerDetailLive do
               </li>
             </ul>
 
-            <div :if={@actions_metadata.previous_page_cursor || @actions_metadata.next_page_cursor} class="border-t border-zinc-900 px-5 py-3">
+            <div
+              :if={@actions_metadata.previous_page_cursor || @actions_metadata.next_page_cursor}
+              class="border-t border-zinc-900 px-5 py-3"
+            >
               <LiveTable.paginator
                 id="actions"
                 path={~p"/app/runners/#{@runner.id}"}
@@ -286,7 +295,6 @@ defmodule EmisarWeb.RunnerDetailLive do
     </.dashboard_shell>
     """
   end
-
 
   # Runner heartbeat is sent every 30s by the Go client. The WebSocket
   # connect itself is the first liveness signal — between handshake

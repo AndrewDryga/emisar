@@ -31,7 +31,8 @@ defmodule EmisarWeb.AgentsLiveTest do
       refute html =~ "EMISAR_API_KEY"
     end
 
-    test "selecting Claude.ai (remote MCP) shows URL + bearer header instead of bridge snippet", %{conn: conn} do
+    test "selecting Claude.ai (remote MCP) shows URL + bearer header instead of bridge snippet",
+         %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
       {:ok, lv, _} = live(conn, ~p"/app/agents")
 
@@ -109,7 +110,9 @@ defmodule EmisarWeb.AgentsLiveTest do
       assert is_nil(promoted.auto_generated_at)
       assert promoted.last_used_at != nil
 
-      assert {:ok, [%ApiKey{id: id}], _} = ApiKeys.list_api_keys_for_account(owner_subject(user, account))
+      assert {:ok, [%ApiKey{id: id}], _} =
+               ApiKeys.list_api_keys_for_account(owner_subject(user, account))
+
       assert id == auto.id
     end
 
@@ -118,11 +121,14 @@ defmodule EmisarWeb.AgentsLiveTest do
       subject = owner_subject(user, account)
 
       {:ok, _raw, _key} =
-        ApiKeys.create_key(%{
-          name: "manual-bot",
-          scopes: ["actions:read"],
-          runner_filter: []
-        }, subject)
+        ApiKeys.create_key(
+          %{
+            name: "manual-bot",
+            scopes: ["actions:read"],
+            runner_filter: []
+          },
+          subject
+        )
 
       {:ok, _lv, html} = live(conn, ~p"/app/agents")
 
@@ -136,11 +142,14 @@ defmodule EmisarWeb.AgentsLiveTest do
 
       # Active: last_used 2 min ago
       {:ok, _, active} =
-        ApiKeys.create_key(%{
-          name: "ActiveBot",
-          scopes: ["actions:read"],
-          runner_filter: []
-        }, subject)
+        ApiKeys.create_key(
+          %{
+            name: "ActiveBot",
+            scopes: ["actions:read"],
+            runner_filter: []
+          },
+          subject
+        )
 
       active
       |> Ecto.Changeset.change(last_used_at: DateTime.add(DateTime.utc_now(), -120, :second))
@@ -148,11 +157,14 @@ defmodule EmisarWeb.AgentsLiveTest do
 
       # Idle: last_used 2 h ago
       {:ok, _, idle} =
-        ApiKeys.create_key(%{
-          name: "IdleBot",
-          scopes: ["actions:read"],
-          runner_filter: []
-        }, subject)
+        ApiKeys.create_key(
+          %{
+            name: "IdleBot",
+            scopes: ["actions:read"],
+            runner_filter: []
+          },
+          subject
+        )
 
       idle
       |> Ecto.Changeset.change(last_used_at: DateTime.add(DateTime.utc_now(), -2 * 3600, :second))
@@ -160,11 +172,14 @@ defmodule EmisarWeb.AgentsLiveTest do
 
       # Never used: leave last_used_at nil
       {:ok, _, _never} =
-        ApiKeys.create_key(%{
-          name: "NeverBot",
-          scopes: ["actions:read"],
-          runner_filter: []
-        }, subject)
+        ApiKeys.create_key(
+          %{
+            name: "NeverBot",
+            scopes: ["actions:read"],
+            runner_filter: []
+          },
+          subject
+        )
 
       {:ok, _lv, html} = live(conn, ~p"/app/agents")
 

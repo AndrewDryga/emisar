@@ -19,10 +19,14 @@ defmodule Emisar.RunnerScopesTest do
       {:ok, membership} = Accounts.fetch_membership_for_session(subject.actor, nil)
 
       assert {:ok, :ok} =
-               Accounts.replace_runner_scopes(membership, [
-                 {"group", "dba"},
-                 {"group", "edge"}
-               ], subject)
+               Accounts.replace_runner_scopes(
+                 membership,
+                 [
+                   {"group", "dba"},
+                   {"group", "edge"}
+                 ],
+                 subject
+               )
 
       assert [
                %{scope_type: "group", scope_value: "dba"},
@@ -88,10 +92,14 @@ defmodule Emisar.RunnerScopesTest do
       _other = runner_fixture(account_id: account.id, name: "other", group: "misc")
 
       {:ok, :ok} =
-        Accounts.replace_runner_scopes(membership, [
-          {"group", "dba"},
-          {"runner", edge.id}
-        ], subject)
+        Accounts.replace_runner_scopes(
+          membership,
+          [
+            {"group", "dba"},
+            {"runner", edge.id}
+          ],
+          subject
+        )
 
       {:ok, runners, _} =
         Runners.list_runners_for_account(subject, membership_id: membership.id)
@@ -114,13 +122,16 @@ defmodule Emisar.RunnerScopesTest do
         Accounts.replace_runner_scopes(membership, [{"group", "dba"}], subject)
 
       assert {:error, :runner_out_of_scope} =
-               Runs.dispatch_run(%{
-                 runner_id: runner_out.id,
-                 action_id: "x.y",
-                 reason: "test",
-                 requested_by_id: user.id,
-                 requested_by_membership_id: membership.id
-               }, Emisar.Auth.Subject.system(account))
+               Runs.dispatch_run(
+                 %{
+                   runner_id: runner_out.id,
+                   action_id: "x.y",
+                   reason: "test",
+                   requested_by_id: user.id,
+                   requested_by_membership_id: membership.id
+                 },
+                 Emisar.Auth.Subject.system(account)
+               )
     end
 
     test "no membership_id passed = bypasses the check (MCP/system path)" do
@@ -132,11 +143,14 @@ defmodule Emisar.RunnerScopesTest do
       # the catalog — that's the expected next error after the gate
       # passes.
       assert {:error, :action_not_found} =
-               Runs.dispatch_run(%{
-                 runner_id: runner.id,
-                 action_id: "x.y",
-                 reason: "test"
-               }, Emisar.Auth.Subject.system(account))
+               Runs.dispatch_run(
+                 %{
+                   runner_id: runner.id,
+                   action_id: "x.y",
+                   reason: "test"
+                 },
+                 Emisar.Auth.Subject.system(account)
+               )
     end
   end
 
@@ -146,6 +160,7 @@ defmodule Emisar.RunnerScopesTest do
       {:ok, m_a} = Accounts.fetch_membership_for_session(user_a, nil)
 
       email_b = "b-#{System.unique_integer()}@example.com"
+
       {:ok, %{membership: m_b}} =
         Accounts.invite_user_to_account(email_b, "admin", subject)
 
@@ -161,7 +176,13 @@ defmodule Emisar.RunnerScopesTest do
 
   defp account_with_owner do
     user = user_fixture()
-    {:ok, account} = Accounts.create_account_with_owner(%{name: "A", slug: "a-#{System.unique_integer()}", plan: "free"}, user)
+
+    {:ok, account} =
+      Accounts.create_account_with_owner(
+        %{name: "A", slug: "a-#{System.unique_integer()}", plan: "free"},
+        user
+      )
+
     subject = subject_for(user, account, role: :owner)
     {account, user, subject}
   end

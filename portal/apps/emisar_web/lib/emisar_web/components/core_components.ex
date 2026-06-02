@@ -1224,7 +1224,6 @@ defmodule EmisarWeb.CoreComponents do
     """
   end
 
-
   @doc """
   Key-value row for detail panes:
 
@@ -1329,7 +1328,10 @@ defmodule EmisarWeb.CoreComponents do
       <header class="flex items-center justify-between border-b border-zinc-900 px-5 py-3">
         <h2 class="text-sm font-semibold text-zinc-100">
           {@title}
-          <span :if={is_integer(@count) and is_binary(@noun)} class="ml-1 text-xs font-normal text-zinc-500">
+          <span
+            :if={is_integer(@count) and is_binary(@noun)}
+            class="ml-1 text-xs font-normal text-zinc-500"
+          >
             ({@count} {pluralize_noun(@count, @noun)})
           </span>
         </h2>
@@ -1408,7 +1410,8 @@ defmodule EmisarWeb.CoreComponents do
       <.chip>group: default</.chip>
       <.chip tone={:rose}>Suspended</.chip>
   """
-  attr :tone, :atom, default: :default,
+  attr :tone, :atom,
+    default: :default,
     values: [:default, :indigo, :amber, :rose, :emerald]
 
   attr :mono, :boolean, default: false
@@ -1441,7 +1444,8 @@ defmodule EmisarWeb.CoreComponents do
         ... sections ...
       </.page_container>
   """
-  attr :max, :string, default: "5xl",
+  attr :max, :string,
+    default: "5xl",
     values: ~w(2xl 3xl 4xl 5xl 6xl 7xl)
 
   attr :class, :string, default: nil
@@ -1483,10 +1487,14 @@ defmodule EmisarWeb.CoreComponents do
 
   def back_link(assigns) do
     ~H"""
-    <span class="inline-flex items-center text-zinc-500"><.link
+    <span class="inline-flex items-center text-zinc-500">
+      <.link
         navigate={@navigate}
         class="font-medium text-zinc-400 hover:text-zinc-200"
-      >{render_slot(@inner_block)}</.link><span class="mx-2 text-zinc-700" aria-hidden="true">/</span></span>
+      >
+        {render_slot(@inner_block)}
+      </.link><span class="mx-2 text-zinc-700" aria-hidden="true">/</span>
+    </span>
     """
   end
 
@@ -1524,7 +1532,9 @@ defmodule EmisarWeb.CoreComponents do
         <code
           id={@code_id}
           class="flex-1 whitespace-pre-wrap break-all font-mono text-xs text-zinc-200"
-        >{render_slot(@inner_block)}</code>
+        >
+          {render_slot(@inner_block)}
+        </code>
         <button
           type="button"
           class="self-start rounded bg-zinc-800/80 px-2.5 py-1 text-xs font-medium text-zinc-200 hover:bg-zinc-700"
@@ -1628,7 +1638,9 @@ defmodule EmisarWeb.CoreComponents do
                   <code
                     id="install-wizard-command"
                     class="flex-1 whitespace-pre-wrap break-all text-zinc-300"
-                  >{@install_command}</code>
+                  >
+                    {@install_command}
+                  </code>
                   <button
                     type="button"
                     class="self-start rounded bg-indigo-500/20 px-2 py-1 text-xs font-semibold text-indigo-200 hover:bg-indigo-500/30"
@@ -1650,7 +1662,8 @@ defmodule EmisarWeb.CoreComponents do
 
               <div class="flex items-center gap-3 rounded-lg border border-zinc-800 bg-zinc-950/60 p-4">
                 <span class="relative flex h-3 w-3">
-                  <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-indigo-500/50"></span>
+                  <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-indigo-500/50">
+                  </span>
                   <span class="relative inline-flex h-3 w-3 rounded-full bg-indigo-400"></span>
                 </span>
                 <div class="text-sm text-zinc-300">
@@ -1666,9 +1679,11 @@ defmodule EmisarWeb.CoreComponents do
                   class="rounded-xl border border-zinc-800 bg-zinc-950/60 p-4 transition hover:bg-zinc-900/60"
                 >
                   <div class="flex items-center gap-2 text-sm font-semibold text-zinc-200">
-                    <.icon name="hero-book-open" class="h-4 w-4 text-indigo-400" />
-                    Installation guide
-                    <.icon name="hero-arrow-top-right-on-square" class="ml-auto h-3.5 w-3.5 text-zinc-600" />
+                    <.icon name="hero-book-open" class="h-4 w-4 text-indigo-400" /> Installation guide
+                    <.icon
+                      name="hero-arrow-top-right-on-square"
+                      class="ml-auto h-3.5 w-3.5 text-zinc-600"
+                    />
                   </div>
                   <p class="mt-1 text-xs text-zinc-500">
                     Image-bake, cloud-init, manual install.
@@ -1689,7 +1704,6 @@ defmodule EmisarWeb.CoreComponents do
                 </.link>
               </div>
             </div>
-
           <% @install_command == :mint_failed -> %>
             <div class="mt-8 rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-200/90">
               We couldn't mint a bootstrap auth key just now. Open
@@ -1698,7 +1712,6 @@ defmodule EmisarWeb.CoreComponents do
               </.link>
               and create one manually, or refresh this page to try again.
             </div>
-
           <% true -> %>
             <div class="mt-8 flex items-center gap-3 rounded-lg border border-zinc-800 bg-zinc-950/60 p-4 text-sm text-zinc-400">
               <span class="hero-arrow-path h-4 w-4 animate-spin"></span>
@@ -1821,7 +1834,9 @@ defmodule EmisarWeb.CoreComponents do
             <code
               id="reveal-secret"
               class="flex-1 break-all font-mono text-xs text-zinc-100"
-            >{@secret}</code>
+            >
+              {@secret}
+            </code>
             <button
               type="button"
               class="rounded bg-amber-500/20 px-2 py-1 text-xs font-semibold text-amber-100 hover:bg-amber-500/30"
@@ -1846,7 +1861,9 @@ defmodule EmisarWeb.CoreComponents do
                 <code
                   id={"reveal-install-#{idx}"}
                   class="flex-1 break-all font-mono text-xs text-zinc-300"
-                >{render_slot(cmd)}</code>
+                >
+                  {render_slot(cmd)}
+                </code>
                 <button
                   type="button"
                   class="shrink-0 self-start rounded bg-amber-500/20 px-2 py-1 text-xs font-semibold text-amber-100 hover:bg-amber-500/30"
@@ -1987,7 +2004,10 @@ defmodule EmisarWeb.CoreComponents do
 
         <%!-- Desktop CTAs: visible md+ --%>
         <div class="hidden items-center gap-4 md:flex">
-          <.link href={~p"/sign_in"} class="whitespace-nowrap text-sm font-semibold text-zinc-100 hover:text-indigo-300">
+          <.link
+            href={~p"/sign_in"}
+            class="whitespace-nowrap text-sm font-semibold text-zinc-100 hover:text-indigo-300"
+          >
             Sign in
           </.link>
           <.link
@@ -2196,7 +2216,9 @@ defmodule EmisarWeb.CoreComponents do
           <div>
             <h4 class="text-xs font-semibold uppercase tracking-wider text-zinc-400">Product</h4>
             <ul class="mt-4 space-y-3 text-sm">
-              <li><.link href={~p"/packs"} class="text-zinc-400 hover:text-zinc-100">Packs</.link></li>
+              <li>
+                <.link href={~p"/packs"} class="text-zinc-400 hover:text-zinc-100">Packs</.link>
+              </li>
               <li>
                 <.link href={~p"/pricing"} class="text-zinc-400 hover:text-zinc-100">Pricing</.link>
               </li>
@@ -2230,7 +2252,9 @@ defmodule EmisarWeb.CoreComponents do
               </li>
               <li>
                 <a
-                  href={Application.get_env(:emisar_web, :status_page_url, "https://status.emisar.dev")}
+                  href={
+                    Application.get_env(:emisar_web, :status_page_url, "https://status.emisar.dev")
+                  }
                   target="_blank"
                   rel="noopener noreferrer"
                   class="inline-flex items-center gap-1 text-zinc-400 hover:text-zinc-100"
@@ -2273,8 +2297,7 @@ defmodule EmisarWeb.CoreComponents do
                   rel="noopener noreferrer"
                   class="inline-flex items-center gap-1 text-zinc-400 hover:text-zinc-100"
                 >
-                  License
-                  <.icon name="hero-arrow-top-right-on-square" class="h-3 w-3 opacity-60" />
+                  License <.icon name="hero-arrow-top-right-on-square" class="h-3 w-3 opacity-60" />
                 </a>
               </li>
             </ul>

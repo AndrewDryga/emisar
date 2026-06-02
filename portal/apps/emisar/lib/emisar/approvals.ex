@@ -73,7 +73,7 @@ defmodule Emisar.Approvals do
       |> Request.Query.ordered_by_recent()
       |> apply_request_status_filter(status)
       |> Authorizer.for_subject(subject)
-      |> Repo.list(Request.Query, Keyword.put_new(opts, :page, [limit: limit]))
+      |> Repo.list(Request.Query, Keyword.put_new(opts, :page, limit: limit))
     end
   end
 

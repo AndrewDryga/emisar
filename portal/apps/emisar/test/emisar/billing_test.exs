@@ -37,7 +37,9 @@ defmodule Emisar.BillingTest do
     test "members uses the member_count/limit fields" do
       assert Billing.headroom(%{member_count: 0, member_limit: 1}, :members) == :warning
       assert Billing.headroom(%{member_count: 1, member_limit: 1}, :members) == :at_limit
-      assert Billing.headroom(%{member_count: 5, member_limit: :unlimited}, :members) == :unlimited
+
+      assert Billing.headroom(%{member_count: 5, member_limit: :unlimited}, :members) ==
+               :unlimited
     end
   end
 
@@ -81,7 +83,9 @@ defmodule Emisar.BillingTest do
   describe "extract_next_billed_at/1" do
     test "parses ISO8601 from next_billed_at" do
       iso = "2026-07-01T00:00:00Z"
-      assert %DateTime{year: 2026, month: 7, day: 1} = Billing.extract_next_billed_at(%{"next_billed_at" => iso})
+
+      assert %DateTime{year: 2026, month: 7, day: 1} =
+               Billing.extract_next_billed_at(%{"next_billed_at" => iso})
     end
 
     test "falls back to current_billing_period.ends_at" do

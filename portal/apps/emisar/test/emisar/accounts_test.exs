@@ -60,7 +60,8 @@ defmodule Emisar.AccountsTest do
                  user
                )
 
-      assert {:ok, %Membership{role: "owner"}} = Accounts.fetch_membership_by_account_and_user(account.id, user.id)
+      assert {:ok, %Membership{role: "owner"}} =
+               Accounts.fetch_membership_by_account_and_user(account.id, user.id)
     end
 
     test "rolls back when the account changeset is invalid" do
@@ -147,7 +148,13 @@ defmodule Emisar.AccountsTest do
 
       email = "invitee-#{System.unique_integer([:positive])}@example.test"
 
-      assert {:ok, %{membership: %Membership{role: "admin"}, user: %User{} = u, invitation_token: token, created?: true}} =
+      assert {:ok,
+              %{
+                membership: %Membership{role: "admin"},
+                user: %User{} = u,
+                invitation_token: token,
+                created?: true
+              }} =
                Accounts.invite_user_to_account(email, "admin", subject)
 
       assert u.email == email
@@ -230,7 +237,8 @@ defmodule Emisar.AccountsTest do
       m = membership_fixture(account_id: account.id, user_id: target_user.id, role: "operator")
       subject = subject_for(owner, account, role: :owner)
 
-      assert {:ok, %Membership{role: "admin"}} = Accounts.update_membership_role(m, "admin", subject)
+      assert {:ok, %Membership{role: "admin"}} =
+               Accounts.update_membership_role(m, "admin", subject)
     end
 
     test "rejects an unknown role" do
@@ -289,7 +297,10 @@ defmodule Emisar.AccountsTest do
       {:ok, account: account, owner: owner, target: target, owner_subject: owner_subject}
     end
 
-    test "owner can suspend an operator and reinstate", %{target: target, owner_subject: owner_subject} do
+    test "owner can suspend an operator and reinstate", %{
+      target: target,
+      owner_subject: owner_subject
+    } do
       assert {:ok, suspended} = Accounts.suspend_membership(target, owner_subject)
       assert Membership.disabled?(suspended)
 
@@ -315,7 +326,11 @@ defmodule Emisar.AccountsTest do
                Accounts.suspend_membership(owner_membership, owner_subject)
     end
 
-    test "can't suspend the last owner", %{owner: owner, account: account, owner_subject: owner_subject} do
+    test "can't suspend the last owner", %{
+      owner: owner,
+      account: account,
+      owner_subject: owner_subject
+    } do
       owner_membership =
         Emisar.Accounts.Membership.Query.all()
         |> Emisar.Accounts.Membership.Query.by_account_and_user(account.id, owner.id)
@@ -340,6 +355,7 @@ defmodule Emisar.AccountsTest do
 
       assert {:error, :last_owner} =
                Accounts.suspend_membership(second_owner_membership, owner_subject)
+
       _ = owner
     end
 

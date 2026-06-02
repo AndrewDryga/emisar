@@ -74,8 +74,12 @@ defmodule EmisarWeb.Mcp.ContentBlocks do
   @spec from_run(map()) :: {[map()], boolean()}
   def from_run(run) when is_map(run) do
     if waiting?(run) do
-      {[text_block("Run #{run_id(run)} is still #{inspect(run["status"] || run[:status])}. " <>
-          "Call wait_for_run with the same run_id to keep waiting.")], false}
+      {[
+         text_block(
+           "Run #{run_id(run)} is still #{inspect(run["status"] || run[:status])}. " <>
+             "Call wait_for_run with the same run_id to keep waiting."
+         )
+       ], false}
     else
       render_run(run, false)
     end
@@ -185,7 +189,8 @@ defmodule EmisarWeb.Mcp.ContentBlocks do
   end
 
   defp failure_status?(s),
-    do: s in ~w(failed error validation_failed unknown_action cancelled timed_out denied denied_by_policy)
+    do:
+      s in ~w(failed error validation_failed unknown_action cancelled timed_out denied denied_by_policy)
 
   defp string_field(map, keys) do
     Enum.find_value(keys, "", fn k ->

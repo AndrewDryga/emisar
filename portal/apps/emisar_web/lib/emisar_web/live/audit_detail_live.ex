@@ -33,7 +33,8 @@ defmodule EmisarWeb.AuditDetailLive do
 
   def render(assigns) do
     ~H"""
-    <.dashboard_shell pending_approvals_count={@pending_approvals_count}
+    <.dashboard_shell
+      pending_approvals_count={@pending_approvals_count}
       current_user={@current_user}
       current_account={@current_account}
       switchable_accounts={@switchable_accounts}
@@ -130,7 +131,9 @@ defmodule EmisarWeb.AuditDetailLive do
       <section class="mt-6 overflow-hidden rounded-xl border border-zinc-900">
         <header class="flex items-center justify-between border-b border-zinc-900 bg-zinc-950/60 px-4 py-2">
           <h3 class="text-xs font-semibold uppercase tracking-wider text-zinc-400">Payload</h3>
-          <span class="font-mono text-[11px] text-zinc-500">event:{String.slice(@event.id, 0, 8)}…</span>
+          <span class="font-mono text-[11px] text-zinc-500">
+            event:{String.slice(@event.id, 0, 8)}…
+          </span>
         </header>
         <pre class="max-h-[60vh] overflow-auto bg-black p-4 font-mono text-xs leading-relaxed text-zinc-300">{pretty_payload(@event.payload)}</pre>
       </section>
@@ -159,9 +162,7 @@ defmodule EmisarWeb.AuditDetailLive do
 
     ~H"""
     <section
-      :if={
-        @defaults_diff != %{} or @added != [] or @removed != [] or @changed != []
-      }
+      :if={@defaults_diff != %{} or @added != [] or @removed != [] or @changed != []}
       class="mt-6 overflow-hidden rounded-xl border border-zinc-900"
     >
       <header class="border-b border-zinc-900 bg-zinc-950/60 px-4 py-2">
@@ -177,11 +178,18 @@ defmodule EmisarWeb.AuditDetailLive do
               Tier defaults
             </p>
             <ul class="space-y-1 text-sm">
-              <li :for={{tier, %{"from" => from, "to" => to}} <- @defaults_diff} class="flex items-center gap-2">
+              <li
+                :for={{tier, %{"from" => from, "to" => to}} <- @defaults_diff}
+                class="flex items-center gap-2"
+              >
                 <span class="font-mono text-xs text-zinc-300">{tier}:</span>
-                <code class="rounded bg-rose-500/10 px-1.5 py-0.5 text-[11px] text-rose-300">{from || "—"}</code>
+                <code class="rounded bg-rose-500/10 px-1.5 py-0.5 text-[11px] text-rose-300">
+                  {from || "—"}
+                </code>
                 <span class="text-zinc-600">→</span>
-                <code class="rounded bg-emerald-500/10 px-1.5 py-0.5 text-[11px] text-emerald-300">{to || "—"}</code>
+                <code class="rounded bg-emerald-500/10 px-1.5 py-0.5 text-[11px] text-emerald-300">
+                  {to || "—"}
+                </code>
               </li>
             </ul>
           </div>
@@ -197,7 +205,9 @@ defmodule EmisarWeb.AuditDetailLive do
                 <code class="font-mono text-zinc-200">{ov["action"]}</code>
                 <span class="text-zinc-500">→</span>
                 <code class="font-mono text-emerald-300">{ov["decision"]}</code>
-                <span :if={ov["name"] && ov["name"] != ""} class="ml-2 text-zinc-500">({ov["name"]})</span>
+                <span :if={ov["name"] && ov["name"] != ""} class="ml-2 text-zinc-500">
+                  ({ov["name"]})
+                </span>
               </li>
             </ul>
           </div>
@@ -226,9 +236,13 @@ defmodule EmisarWeb.AuditDetailLive do
             <ul class="space-y-1 text-xs">
               <li :for={c <- @changed} class="rounded bg-amber-500/[0.04] px-2 py-1">
                 <code class="font-mono text-zinc-200">{c["action"]}</code>:
-                <code class="rounded bg-rose-500/10 px-1.5 py-0.5 text-rose-300">{c["from"]["decision"]}</code>
+                <code class="rounded bg-rose-500/10 px-1.5 py-0.5 text-rose-300">
+                  {c["from"]["decision"]}
+                </code>
                 <span class="text-zinc-600">→</span>
-                <code class="rounded bg-emerald-500/10 px-1.5 py-0.5 text-emerald-300">{c["to"]["decision"]}</code>
+                <code class="rounded bg-emerald-500/10 px-1.5 py-0.5 text-emerald-300">
+                  {c["to"]["decision"]}
+                </code>
               </li>
             </ul>
           </div>

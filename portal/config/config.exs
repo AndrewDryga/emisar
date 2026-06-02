@@ -132,9 +132,9 @@ config :phoenix, :json_library, Jason
 # would otherwise land in Logger / Sentry / log shipper as plaintext.
 # `:discard` drops the value entirely; `:keep` would mask but keep
 # matches in the line — discard is the safer default for credentials.
-config :phoenix, :filter_parameters,
-       {:discard,
-        ~w(password current_password password_confirmation token raw_token
+config :phoenix,
+       :filter_parameters,
+       {:discard, ~w(password current_password password_confirmation token raw_token
            secret api_key auth_key bearer authorization mfa otp recovery_code
            webhook_signature)}
 

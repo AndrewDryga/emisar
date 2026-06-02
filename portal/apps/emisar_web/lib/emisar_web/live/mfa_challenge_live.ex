@@ -84,7 +84,7 @@ defmodule EmisarWeb.MfaChallengeLive do
           phx-click="toggle_recovery"
           class="font-medium text-indigo-400 hover:text-indigo-300"
         >
-          <%= if @recovery?, do: "Use authenticator app", else: "Lost your device? Use a recovery code" %>
+          {if @recovery?, do: "Use authenticator app", else: "Lost your device? Use a recovery code"}
         </button>
       </p>
 

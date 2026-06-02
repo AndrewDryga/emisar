@@ -17,9 +17,14 @@ defmodule EmisarWeb.RunnersLiveTest do
       {conn, user, account} = register_and_log_in(conn)
       subject = owner_subject(user, account)
 
-      {:ok, _} = Emisar.Runners.create_runner(%{"name" => "a1", "group" => "cassandra-us-east1"}, subject)
-      {:ok, _} = Emisar.Runners.create_runner(%{"name" => "a2", "group" => "cassandra-us-east1"}, subject)
-      {:ok, _} = Emisar.Runners.create_runner(%{"name" => "b1", "group" => "postgres-eu-west1"}, subject)
+      {:ok, _} =
+        Emisar.Runners.create_runner(%{"name" => "a1", "group" => "cassandra-us-east1"}, subject)
+
+      {:ok, _} =
+        Emisar.Runners.create_runner(%{"name" => "a2", "group" => "cassandra-us-east1"}, subject)
+
+      {:ok, _} =
+        Emisar.Runners.create_runner(%{"name" => "b1", "group" => "postgres-eu-west1"}, subject)
 
       {:ok, _lv, html} = live(conn, ~p"/app/runners")
       assert html =~ "cassandra-us-east1"
@@ -38,10 +43,13 @@ defmodule EmisarWeb.RunnersLiveTest do
       # Pre-existing runner shouldn't bypass the wizard — the user can
       # add a second runner the same way as the first.
       {:ok, _} =
-        Emisar.Runners.create_runner(%{
-          "name" => "existing",
-          "group" => "default"
-        }, subject)
+        Emisar.Runners.create_runner(
+          %{
+            "name" => "existing",
+            "group" => "default"
+          },
+          subject
+        )
 
       {:ok, _lv, html} = live(conn, ~p"/app/runners/install")
       assert html =~ "Install a runner"
@@ -69,10 +77,13 @@ defmodule EmisarWeb.RunnersLiveTest do
       subject = owner_subject(user, account)
 
       {:ok, runner} =
-        Emisar.Runners.create_runner(%{
-          "name" => "my-runner",
-          "group" => "default"
-        }, subject)
+        Emisar.Runners.create_runner(
+          %{
+            "name" => "my-runner",
+            "group" => "default"
+          },
+          subject
+        )
 
       {:ok, _lv, html} = live(conn, ~p"/app/runners/#{runner.id}")
       assert html =~ "my-runner"

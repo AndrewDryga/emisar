@@ -30,8 +30,11 @@ defmodule Emisar.Fixtures do
 
     membership =
       case Accounts.fetch_membership_by_account_and_user(account.id, user.id) do
-        {:ok, m} -> m
-        {:error, :not_found} -> %Membership{role: Atom.to_string(role), user_id: user.id, account_id: account.id}
+        {:ok, m} ->
+          m
+
+        {:error, :not_found} ->
+          %Membership{role: Atom.to_string(role), user_id: user.id, account_id: account.id}
       end
 
     Subject.for_user(user, account, membership, context)
@@ -297,7 +300,14 @@ defmodule Emisar.Fixtures do
         Policies.peek_policy_for_account(account_id)
 
       policy ->
-        {:ok, updated} = Repo.update(Emisar.Policies.Policy.Changeset.update(policy, %{rules: rules, updated_by_id: user_id}))
+        {:ok, updated} =
+          Repo.update(
+            Emisar.Policies.Policy.Changeset.update(policy, %{
+              rules: rules,
+              updated_by_id: user_id
+            })
+          )
+
         updated
     end
   end

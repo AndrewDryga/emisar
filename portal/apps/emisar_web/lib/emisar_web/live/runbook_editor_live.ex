@@ -313,7 +313,7 @@ defmodule EmisarWeb.RunbookEditorLive do
 
   defp pairs_to_args(pairs) do
     pairs
-    |> Enum.reject(&(blank?(&1["key"])))
+    |> Enum.reject(&blank?(&1["key"]))
     |> Enum.into(%{}, fn p -> {String.trim(p["key"]), p["value"] || ""} end)
   end
 
@@ -326,7 +326,8 @@ defmodule EmisarWeb.RunbookEditorLive do
 
   def render(assigns) do
     ~H"""
-    <.dashboard_shell pending_approvals_count={@pending_approvals_count}
+    <.dashboard_shell
+      pending_approvals_count={@pending_approvals_count}
       current_user={@current_user}
       current_account={@current_account}
       switchable_accounts={@switchable_accounts}
@@ -417,7 +418,10 @@ defmodule EmisarWeb.RunbookEditorLive do
 
             <form phx-change="meta_change" class="mt-4 space-y-4">
               <div>
-                <label class="block text-[10px] font-semibold uppercase tracking-wider text-zinc-500" for="runbook_title">
+                <label
+                  class="block text-[10px] font-semibold uppercase tracking-wider text-zinc-500"
+                  for="runbook_title"
+                >
                   Title
                 </label>
                 <input
@@ -432,7 +436,10 @@ defmodule EmisarWeb.RunbookEditorLive do
               </div>
 
               <div>
-                <label class="block text-[10px] font-semibold uppercase tracking-wider text-zinc-500" for="runbook_slug">
+                <label
+                  class="block text-[10px] font-semibold uppercase tracking-wider text-zinc-500"
+                  for="runbook_slug"
+                >
                   Slug
                 </label>
                 <input
@@ -446,7 +453,10 @@ defmodule EmisarWeb.RunbookEditorLive do
               </div>
 
               <div>
-                <label class="block text-[10px] font-semibold uppercase tracking-wider text-zinc-500" for="runbook_description">
+                <label
+                  class="block text-[10px] font-semibold uppercase tracking-wider text-zinc-500"
+                  for="runbook_description"
+                >
                   Description
                 </label>
                 <textarea
@@ -586,7 +596,12 @@ defmodule EmisarWeb.RunbookEditorLive do
               type="text"
               name="selector_value"
               value={@step["selector_value"]}
-              placeholder={if(@step["selector_kind"] == "runner_id", do: "runner UUID", else: "e.g. cassandra-us-east1")}
+              placeholder={
+                if(@step["selector_kind"] == "runner_id",
+                  do: "runner UUID",
+                  else: "e.g. cassandra-us-east1"
+                )
+              }
               class={input_class()}
             />
           </div>
@@ -624,8 +639,9 @@ defmodule EmisarWeb.RunbookEditorLive do
           </label>
           <p :if={@known_args != []} class="mt-0.5 text-[10px] text-zinc-500">
             Known for <code class="font-mono text-zinc-400">{@action_id}</code>:
-            <%= for {n, i} <- Enum.with_index(@known_args) do %><span
-              :if={i > 0}>, </span><code class="font-mono text-zinc-300">{n}</code><% end %>
+            <%= for {n, i} <- Enum.with_index(@known_args) do %>
+              <span :if={i > 0}>, </span><code class="font-mono text-zinc-300">{n}</code>
+            <% end %>
           </p>
         </div>
         <button

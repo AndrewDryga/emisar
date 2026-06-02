@@ -74,7 +74,11 @@ defmodule Emisar.Repo.Paginator do
     end)
   end
 
-  defp maybe_query_page(queryable, %{direction: direction, cursor_fields: cursor_fields, values: values}) do
+  defp maybe_query_page(queryable, %{
+         direction: direction,
+         cursor_fields: cursor_fields,
+         values: values
+       }) do
     dynamic =
       cursor_fields
       |> Enum.zip(values)
@@ -93,26 +97,42 @@ defmodule Emisar.Repo.Paginator do
     do: dynamic([{^binding, b}], field(b, ^field) < ^value)
 
   defp append_by_cursor_dynamic(dynamic, :before, {binding, :asc, field}, value),
-    do: dynamic([{^binding, b}], field(b, ^field) < ^value or (field(b, ^field) == ^value and ^dynamic))
+    do:
+      dynamic(
+        [{^binding, b}],
+        field(b, ^field) < ^value or (field(b, ^field) == ^value and ^dynamic)
+      )
 
   defp append_by_cursor_dynamic(nil, :after, {binding, :asc, field}, value),
     do: dynamic([{^binding, b}], field(b, ^field) > ^value)
 
   defp append_by_cursor_dynamic(dynamic, :after, {binding, :asc, field}, value),
-    do: dynamic([{^binding, b}], field(b, ^field) > ^value or (field(b, ^field) == ^value and ^dynamic))
+    do:
+      dynamic(
+        [{^binding, b}],
+        field(b, ^field) > ^value or (field(b, ^field) == ^value and ^dynamic)
+      )
 
   # DESC
   defp append_by_cursor_dynamic(nil, :before, {binding, :desc, field}, value),
     do: dynamic([{^binding, b}], field(b, ^field) > ^value)
 
   defp append_by_cursor_dynamic(dynamic, :before, {binding, :desc, field}, value),
-    do: dynamic([{^binding, b}], field(b, ^field) > ^value or (field(b, ^field) == ^value and ^dynamic))
+    do:
+      dynamic(
+        [{^binding, b}],
+        field(b, ^field) > ^value or (field(b, ^field) == ^value and ^dynamic)
+      )
 
   defp append_by_cursor_dynamic(nil, :after, {binding, :desc, field}, value),
     do: dynamic([{^binding, b}], field(b, ^field) < ^value)
 
   defp append_by_cursor_dynamic(dynamic, :after, {binding, :desc, field}, value),
-    do: dynamic([{^binding, b}], field(b, ^field) < ^value or (field(b, ^field) == ^value and ^dynamic))
+    do:
+      dynamic(
+        [{^binding, b}],
+        field(b, ^field) < ^value or (field(b, ^field) == ^value and ^dynamic)
+      )
 
   # Load limit+1 to know whether there's another page.
   defp limit_page_size(queryable, %{limit: limit}), do: Ecto.Query.limit(queryable, ^(limit + 1))
@@ -124,7 +144,9 @@ defmodule Emisar.Repo.Paginator do
   def metadata(results, %{direction: :before, cursor_fields: cf, limit: limit})
       when length(results) > limit do
     results = results |> List.delete_at(-1) |> Enum.reverse()
-    {results, %Metadata{
+
+    {results,
+     %Metadata{
        previous_page_cursor: encode_cursor(:before, cf, List.first(results)),
        next_page_cursor: encode_cursor(:after, cf, List.last(results)),
        limit: limit
@@ -133,7 +155,9 @@ defmodule Emisar.Repo.Paginator do
 
   def metadata(results, %{direction: :before, cursor_fields: cf, limit: limit}) do
     results = Enum.reverse(results)
-    {results, %Metadata{
+
+    {results,
+     %Metadata{
        previous_page_cursor: nil,
        next_page_cursor: encode_cursor(:after, cf, List.last(results)),
        limit: limit
@@ -143,7 +167,9 @@ defmodule Emisar.Repo.Paginator do
   def metadata(results, %{direction: :after, cursor_fields: cf, limit: limit})
       when length(results) > limit do
     results = List.delete_at(results, -1)
-    {results, %Metadata{
+
+    {results,
+     %Metadata{
        previous_page_cursor: encode_cursor(:before, cf, List.first(results)),
        next_page_cursor: encode_cursor(:after, cf, List.last(results)),
        limit: limit
@@ -151,7 +177,8 @@ defmodule Emisar.Repo.Paginator do
   end
 
   def metadata(results, %{direction: :after, cursor_fields: cf, limit: limit}) do
-    {results, %Metadata{
+    {results,
+     %Metadata{
        previous_page_cursor: encode_cursor(:before, cf, List.first(results)),
        next_page_cursor: nil,
        limit: limit
@@ -160,7 +187,9 @@ defmodule Emisar.Repo.Paginator do
 
   def metadata(results, %{cursor_fields: cf, limit: limit}) when length(results) > limit do
     results = List.delete_at(results, -1)
-    {results, %Metadata{
+
+    {results,
+     %Metadata{
        previous_page_cursor: nil,
        next_page_cursor: encode_cursor(:after, cf, List.last(results)),
        limit: limit

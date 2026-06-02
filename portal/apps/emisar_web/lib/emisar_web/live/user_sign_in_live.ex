@@ -26,7 +26,10 @@ defmodule EmisarWeb.UserSignInLive do
 
         <:actions>
           <.input field={@form[:remember_me]} type="checkbox" label="Keep me signed in for 60 days" />
-          <.link href={~p"/reset_password"} class="text-sm font-medium text-indigo-400 hover:text-indigo-300">
+          <.link
+            href={~p"/reset_password"}
+            class="text-sm font-medium text-indigo-400 hover:text-indigo-300"
+          >
             Forgot password?
           </.link>
         </:actions>

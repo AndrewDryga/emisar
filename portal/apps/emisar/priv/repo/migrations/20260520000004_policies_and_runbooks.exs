@@ -9,7 +9,9 @@ defmodule Emisar.Repo.Migrations.PoliciesAndRunbooks do
     # run_action.
     create table(:policies, primary_key: false) do
       add :id, :binary_id, primary_key: true
-      add :account_id, references(:accounts, type: :binary_id, on_delete: :delete_all), null: false
+
+      add :account_id, references(:accounts, type: :binary_id, on_delete: :delete_all),
+        null: false
 
       add :rules, :map, null: false, default: %{}
 
@@ -25,7 +27,9 @@ defmodule Emisar.Repo.Migrations.PoliciesAndRunbooks do
     # policies — one row per (name, version).
     create table(:runbooks, primary_key: false) do
       add :id, :binary_id, primary_key: true
-      add :account_id, references(:accounts, type: :binary_id, on_delete: :delete_all), null: false
+
+      add :account_id, references(:accounts, type: :binary_id, on_delete: :delete_all),
+        null: false
 
       add :name, :string, null: false
       add :slug, :citext, null: false

@@ -200,7 +200,8 @@ defmodule EmisarWeb.PoliciesLive do
 
   def render(assigns) do
     ~H"""
-    <.dashboard_shell pending_approvals_count={@pending_approvals_count}
+    <.dashboard_shell
+      pending_approvals_count={@pending_approvals_count}
       current_user={@current_user}
       current_account={@current_account}
       switchable_accounts={@switchable_accounts}
@@ -320,7 +321,9 @@ defmodule EmisarWeb.PoliciesLive do
             value={val}
             selected={@value == val}
             disabled={Policies.decision_rank(val) < @floor_rank}
-          >{label}</option>
+          >
+            {label}
+          </option>
         <% end %>
       </select>
     </label>

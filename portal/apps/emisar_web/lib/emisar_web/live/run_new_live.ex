@@ -113,7 +113,8 @@ defmodule EmisarWeb.RunNewLive do
 
   def render(assigns) do
     ~H"""
-    <.dashboard_shell pending_approvals_count={@pending_approvals_count}
+    <.dashboard_shell
+      pending_approvals_count={@pending_approvals_count}
       current_user={@current_user}
       current_account={@current_account}
       switchable_accounts={@switchable_accounts}
@@ -135,7 +136,10 @@ defmodule EmisarWeb.RunNewLive do
         <%!-- Action context — what you're about to do. Description
              prose + meta strip (risk/kind/pack). Replaces the
              stranded right-side info card. --%>
-        <section :if={@action.description && @action.description != ""} class="rounded-xl border border-zinc-900 bg-zinc-950/40 p-5">
+        <section
+          :if={@action.description && @action.description != ""}
+          class="rounded-xl border border-zinc-900 bg-zinc-950/40 p-5"
+        >
           <h2 :if={@action.title} class="text-sm font-semibold text-zinc-100">{@action.title}</h2>
           <p class="mt-1 text-sm leading-relaxed text-zinc-400">{@action.description}</p>
 
@@ -178,8 +182,7 @@ defmodule EmisarWeb.RunNewLive do
           class="rounded-xl border border-amber-500/30 bg-amber-500/[0.04] p-4"
         >
           <h3 class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-amber-200/80">
-            <.icon name="hero-exclamation-triangle" class="h-4 w-4 text-amber-300" />
-            Side effects
+            <.icon name="hero-exclamation-triangle" class="h-4 w-4 text-amber-300" /> Side effects
           </h3>
           <ul class="mt-2 space-y-1 text-sm text-amber-100/90">
             <li :for={effect <- @action.side_effects} class="flex items-start gap-2">

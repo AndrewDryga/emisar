@@ -16,7 +16,12 @@ defmodule EmisarWeb.Components.NavBadgeTest do
     assigns = %{badge: badge}
 
     rendered_to_string(~H"""
-    <CoreComponents.nav_link to="/app/approvals" active={false} icon="hero-shield-check" badge={@badge}>
+    <CoreComponents.nav_link
+      to="/app/approvals"
+      active={false}
+      icon="hero-shield-check"
+      badge={@badge}
+    >
       Approvals
     </CoreComponents.nav_link>
     """)

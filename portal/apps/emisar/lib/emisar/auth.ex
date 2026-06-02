@@ -131,7 +131,8 @@ defmodule Emisar.Auth do
   broadcasts a disconnect to each of those sessions' LiveView sockets.
   Returns the count of sessions terminated.
   """
-  def revoke_and_disconnect_other_sessions!(%User{} = user, keep_token) when is_binary(keep_token) do
+  def revoke_and_disconnect_other_sessions!(%User{} = user, keep_token)
+      when is_binary(keep_token) do
     keep_digest = :crypto.hash(:sha256, keep_token)
     broadcast_disconnect_for_user(user, except: keep_digest)
     revoke_other_sessions!(user, keep_token)
@@ -443,7 +444,12 @@ defmodule Emisar.Auth do
       Multi.new()
       |> Multi.update(
         :user,
-        User.Changeset.mfa(user, secret, DateTime.utc_now() |> DateTime.truncate(:microsecond), digests)
+        User.Changeset.mfa(
+          user,
+          secret,
+          DateTime.utc_now() |> DateTime.truncate(:microsecond),
+          digests
+        )
       )
       |> Audit.Multi.log_for_user(:audit, user, "user.mfa_enabled",
         user_fn: fn %{user: u} -> u end

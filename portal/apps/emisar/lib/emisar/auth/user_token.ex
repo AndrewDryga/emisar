@@ -161,8 +161,7 @@ defmodule Emisar.Auth.UserToken do
   """
   def other_sessions_for_user_query(%Emisar.Accounts.User{id: user_id}, keep_token_digest) do
     from t in __MODULE__,
-      where:
-        t.user_id == ^user_id and t.context == "session" and t.token != ^keep_token_digest
+      where: t.user_id == ^user_id and t.context == "session" and t.token != ^keep_token_digest
   end
 
   @doc "Query that deletes all tokens for a user."

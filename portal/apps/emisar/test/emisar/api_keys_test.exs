@@ -18,10 +18,13 @@ defmodule Emisar.ApiKeysTest do
       {user, account, subject} = owner_subject_pair()
 
       assert {:ok, raw, %ApiKey{} = key} =
-               ApiKeys.create_key(%{
-                 name: "ci",
-                 scopes: ["actions:read"]
-               }, subject)
+               ApiKeys.create_key(
+                 %{
+                   name: "ci",
+                   scopes: ["actions:read"]
+                 },
+                 subject
+               )
 
       assert String.starts_with?(raw, "emk-")
       assert key.account_id == account.id
@@ -34,10 +37,13 @@ defmodule Emisar.ApiKeysTest do
       {_user, _account, subject} = owner_subject_pair()
 
       assert {:error, cs} =
-               ApiKeys.create_key(%{
-                 name: "bad",
-                 scopes: ["actions:nuclear-launch"]
-               }, subject)
+               ApiKeys.create_key(
+                 %{
+                   name: "bad",
+                   scopes: ["actions:nuclear-launch"]
+                 },
+                 subject
+               )
 
       assert "has an invalid entry" in errors_on(cs).scopes
     end

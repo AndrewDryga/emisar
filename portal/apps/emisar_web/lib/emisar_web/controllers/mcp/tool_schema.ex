@@ -89,8 +89,7 @@ defmodule EmisarWeb.Mcp.ToolSchema do
        minItems: 1,
        maxItems: 1,
        default: [only],
-       description:
-         "Runners to execute on. Only `#{only}` advertises this action — safe to omit."
+       description: "Runners to execute on. Only `#{only}` advertises this action — safe to omit."
      }, false}
   end
 

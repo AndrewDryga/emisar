@@ -7,7 +7,10 @@ defmodule Emisar.Repo.Migrations.ApprovalsAndAudit do
     # operator clicks approve or deny in the UI.
     create table(:approval_requests, primary_key: false) do
       add :id, :binary_id, primary_key: true
-      add :account_id, references(:accounts, type: :binary_id, on_delete: :delete_all), null: false
+
+      add :account_id, references(:accounts, type: :binary_id, on_delete: :delete_all),
+        null: false
+
       add :run_id, references(:action_runs, type: :binary_id, on_delete: :delete_all), null: false
 
       add :requested_by_id, references(:users, type: :binary_id, on_delete: :nilify_all)
@@ -33,7 +36,9 @@ defmodule Emisar.Repo.Migrations.ApprovalsAndAudit do
     # tiers per pricing plan.
     create table(:audit_events, primary_key: false) do
       add :id, :binary_id, primary_key: true
-      add :account_id, references(:accounts, type: :binary_id, on_delete: :delete_all), null: false
+
+      add :account_id, references(:accounts, type: :binary_id, on_delete: :delete_all),
+        null: false
 
       add :occurred_at, :utc_datetime_usec, null: false
       add :event_type, :string, null: false

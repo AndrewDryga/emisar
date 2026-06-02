@@ -498,7 +498,8 @@ defmodule EmisarWeb.AgentsLive do
 
   def render(assigns) do
     ~H"""
-    <.dashboard_shell pending_approvals_count={@pending_approvals_count}
+    <.dashboard_shell
+      pending_approvals_count={@pending_approvals_count}
       current_user={@current_user}
       current_account={@current_account}
       switchable_accounts={@switchable_accounts}
@@ -515,7 +516,9 @@ defmodule EmisarWeb.AgentsLive do
         <.summary_stat tone={:amber} value={@idle_count} label="Idle" hint="last 24 h" />
         <.summary_stat tone={:zinc} value={@never_used_count} label="Never used" />
         <div class="ml-auto text-xs text-zinc-500">
-          {@metadata.count || @issued_count} {if (@metadata.count || @issued_count) == 1, do: "key", else: "keys"} total
+          {@metadata.count || @issued_count} {if (@metadata.count || @issued_count) == 1,
+            do: "key",
+            else: "keys"} total
         </div>
       </div>
 
@@ -563,8 +566,7 @@ defmodule EmisarWeb.AgentsLive do
                 <%!-- Row 2: prefix + scope (runners + groups) + last call --%>
                 <div class="mt-1 truncate font-mono text-[11px] text-zinc-500">
                   {key.key_prefix}…
-                  · {format_key_scope(key, @runners)}
-                  · last call {last_used(key.last_used_at)}
+                  · {format_key_scope(key, @runners)} · last call {last_used(key.last_used_at)}
                   <span :if={key.created_by}>· by {key.created_by.email}</span>
                 </div>
               </div>
@@ -592,7 +594,6 @@ defmodule EmisarWeb.AgentsLive do
           </:empty>
         </LiveTable.live_table>
       </section>
-
     </.dashboard_shell>
     """
   end
@@ -628,7 +629,8 @@ defmodule EmisarWeb.AgentsLive do
       status_class(@status)
     ]}>
       <span :if={@status == :active} class="relative inline-flex h-1.5 w-1.5">
-        <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75"></span>
+        <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75">
+        </span>
         <span class="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-400"></span>
       </span>
       {status_label(@status)}
@@ -692,7 +694,9 @@ defmodule EmisarWeb.AgentsLive do
       <div class="border-b border-zinc-900 px-6 py-4">
         <p class="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
           Cloud LLMs
-          <span class="ml-1 normal-case tracking-normal text-zinc-600">— no install, URL + token</span>
+          <span class="ml-1 normal-case tracking-normal text-zinc-600">
+            — no install, URL + token
+          </span>
         </p>
         <div class="mt-2 flex flex-wrap gap-1.5">
           <.client_tab
@@ -744,7 +748,6 @@ defmodule EmisarWeb.AgentsLive do
               </p>
             </div>
           </div>
-
         <% @selected_client == "custom" -> %>
           <div class="space-y-5 px-6 py-5">
             <.custom_key_panel
@@ -754,7 +757,6 @@ defmodule EmisarWeb.AgentsLive do
               selected_runner_groups={@selected_runner_groups}
             />
           </div>
-
         <% @config && @config.kind == :remote -> %>
           <div class="space-y-6 px-6 py-5">
             <%= if @quick_secret do %>
@@ -781,7 +783,6 @@ defmodule EmisarWeb.AgentsLive do
               selected_runner_groups={@selected_runner_groups}
             />
           </div>
-
         <% @config -> %>
           <div class="space-y-6 px-6 py-5">
             <%= if @quick_secret do %>
@@ -869,7 +870,10 @@ defmodule EmisarWeb.AgentsLive do
     ~H"""
     <div>
       <h3 class="text-xs font-semibold uppercase tracking-wider text-zinc-300">
-        Install the bridge <span class="ml-1 text-[10px] font-normal normal-case tracking-normal text-zinc-500">one-time, per machine</span>
+        Install the bridge
+        <span class="ml-1 text-[10px] font-normal normal-case tracking-normal text-zinc-500">
+          one-time, per machine
+        </span>
       </h3>
       <div class="mt-2 overflow-hidden rounded-lg border border-zinc-800 bg-black/80">
         <div class="flex items-center justify-between gap-3 border-b border-zinc-800 px-3 py-2">
@@ -910,19 +914,23 @@ defmodule EmisarWeb.AgentsLive do
   defp scope_block(assigns) do
     assigns =
       assign(assigns,
-        scoped?:
-          assigns.selected_runner_ids != [] or assigns.selected_runner_groups != []
+        scoped?: assigns.selected_runner_ids != [] or assigns.selected_runner_groups != []
       )
 
     ~H"""
-    <details class="rounded-lg border border-zinc-800 bg-zinc-950/40" {if(@scoped?, do: %{open: ""}, else: %{})}>
+    <details
+      class="rounded-lg border border-zinc-800 bg-zinc-950/40"
+      {if(@scoped?, do: %{open: ""}, else: %{})}
+    >
       <summary class="flex cursor-pointer items-center justify-between gap-3 px-4 py-3 text-sm text-zinc-200 hover:bg-zinc-900/40">
         <div>
           <span class="font-medium">Restrict scope</span>
           <span class="ml-2 text-[11px] text-zinc-500">
             <%= if @scoped? do %>
-              {length(@selected_runner_ids)} runner{if length(@selected_runner_ids) == 1, do: "", else: "s"},
-              {length(@selected_runner_groups)} group{if length(@selected_runner_groups) == 1, do: "", else: "s"}
+              {length(@selected_runner_ids)} runner{if length(@selected_runner_ids) == 1,
+                do: "",
+                else: "s"}, {length(@selected_runner_groups)} group{if length(@selected_runner_groups) ==
+                                                                         1, do: "", else: "s"}
             <% else %>
               defaults to all runners + all groups
             <% end %>
@@ -1012,8 +1020,8 @@ defmodule EmisarWeb.AgentsLive do
     ~H"""
     <div>
       <p class="text-xs text-zinc-500">
-        Mints an MCP key with the standard
-        <code class="font-mono text-zinc-300">actions:read</code> + <code class="font-mono text-zinc-300">actions:execute</code>
+        Mints an MCP key with the standard <code class="font-mono text-zinc-300">actions:read</code>
+        + <code class="font-mono text-zinc-300">actions:execute</code>
         scopes — the same shape the per-client tabs above use. The form below adds a
         name, description, and expiry on top of the shared scope picker.
       </p>

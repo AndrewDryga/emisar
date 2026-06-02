@@ -46,7 +46,8 @@ defmodule EmisarWeb.Mcp.IdempotencyTest do
     end
 
     test "trims whitespace before deciding" do
-      assert Idempotency.resolve(conn_without_header(), %{"idempotency_key" => "  abc  "}) == "abc"
+      assert Idempotency.resolve(conn_without_header(), %{"idempotency_key" => "  abc  "}) ==
+               "abc"
     end
   end
 

@@ -185,7 +185,10 @@ defmodule EmisarWeb.ProfileLive do
           {:ok, updated, recovery_codes} ->
             {:noreply,
              socket
-             |> put_flash(:info, "MFA enabled. Copy your recovery codes below — they'll only be shown once.")
+             |> put_flash(
+               :info,
+               "MFA enabled. Copy your recovery codes below — they'll only be shown once."
+             )
              |> assign(:current_user, updated)
              |> assign(:mfa_enabled?, true)
              |> assign(:mfa_recovery_codes, recovery_codes)
@@ -329,7 +332,8 @@ defmodule EmisarWeb.ProfileLive do
 
   def render(assigns) do
     ~H"""
-    <.dashboard_shell pending_approvals_count={@pending_approvals_count}
+    <.dashboard_shell
+      pending_approvals_count={@pending_approvals_count}
       current_user={@current_user}
       current_account={@current_account}
       switchable_accounts={@switchable_accounts}
@@ -467,14 +471,18 @@ defmodule EmisarWeb.ProfileLive do
                       data-clipboard-restore={code}
                       class="block w-full select-all rounded-md border border-amber-500/40 bg-black/60 px-3 py-2 text-left font-mono text-sm tracking-wide text-amber-50 hover:border-amber-400 hover:bg-black/80"
                       title="Click to copy this code"
-                    >{code}</button>
+                    >
+                      {code}
+                    </button>
                   </li>
                 </ul>
 
                 <code
                   id="mfa-recovery-codes-blob"
                   class="hidden"
-                >{Enum.join(@mfa_recovery_codes, "\n")}</code>
+                >
+                  {Enum.join(@mfa_recovery_codes, "\n")}
+                </code>
 
                 <div class="mt-4 flex flex-wrap items-center gap-3">
                   <button
@@ -540,7 +548,9 @@ defmodule EmisarWeb.ProfileLive do
                       <code
                         id="mfa-uri"
                         class="flex-1 break-all font-mono text-[11px] text-zinc-200"
-                      >{@mfa_uri}</code>
+                      >
+                        {@mfa_uri}
+                      </code>
                       <button
                         type="button"
                         class="rounded bg-indigo-500/20 px-2 py-1 text-xs font-semibold text-indigo-100 hover:bg-indigo-500/30"
@@ -630,7 +640,8 @@ defmodule EmisarWeb.ProfileLive do
                     </span>
                   </div>
                   <div class="mt-0.5 truncate text-xs text-zinc-500">
-                    Started {relative_time(s.inserted_at)}<%= if session_ip(s) do %>
+                    Started {relative_time(s.inserted_at)}
+                    <%= if session_ip(s) do %>
                       · <span class="font-mono">{session_ip(s)}</span>
                     <% end %>
                   </div>

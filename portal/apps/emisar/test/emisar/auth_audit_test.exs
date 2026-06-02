@@ -37,7 +37,9 @@ defmodule Emisar.AuthAuditTest do
     end
 
     test "record_failed_sign_in silently drops unknown emails (anti-enumeration)" do
-      assert :ok = Auth.record_failed_sign_in("ghost-#{System.unique_integer()}@nowhere.test", "x")
+      assert :ok =
+               Auth.record_failed_sign_in("ghost-#{System.unique_integer()}@nowhere.test", "x")
+
       # Nothing to assert against — the absence of a crash + the audit-log
       # silence is the contract. If it leaked into ANY account we'd have a
       # security bug; harder to prove a negative cheaply here.
@@ -73,7 +75,11 @@ defmodule Emisar.AuthAuditTest do
       assert event.actor_id == enabled.id
     end
 
-    test "verify_mfa with bad code audits user.mfa_failed", %{user: user, account: account, secret: secret} do
+    test "verify_mfa with bad code audits user.mfa_failed", %{
+      user: user,
+      account: account,
+      secret: secret
+    } do
       {:ok, enabled, _} = Auth.enable_mfa(user, secret, NimbleTOTP.verification_code(secret))
 
       assert {:error, :invalid} = Auth.verify_mfa(enabled, "000000")
@@ -82,7 +88,11 @@ defmodule Emisar.AuthAuditTest do
       assert event.payload["reason"] == "invalid_otp"
     end
 
-    test "consume_mfa_recovery_code success audits with remaining count", %{user: user, account: account, secret: secret} do
+    test "consume_mfa_recovery_code success audits with remaining count", %{
+      user: user,
+      account: account,
+      secret: secret
+    } do
       {:ok, enabled, codes} = Auth.enable_mfa(user, secret, NimbleTOTP.verification_code(secret))
 
       assert :ok = Auth.consume_mfa_recovery_code(enabled, hd(codes))
@@ -91,7 +101,11 @@ defmodule Emisar.AuthAuditTest do
       assert event.payload["remaining"] == length(codes) - 1
     end
 
-    test "consume_mfa_recovery_code with bad code audits user.mfa_failed", %{user: user, account: account, secret: secret} do
+    test "consume_mfa_recovery_code with bad code audits user.mfa_failed", %{
+      user: user,
+      account: account,
+      secret: secret
+    } do
       {:ok, enabled, _} = Auth.enable_mfa(user, secret, NimbleTOTP.verification_code(secret))
 
       assert {:error, :invalid} = Auth.consume_mfa_recovery_code(enabled, "not-a-real-code")
@@ -122,7 +136,10 @@ defmodule Emisar.AuthAuditTest do
       assert event.actor_id == user.id
     end
 
-    test "consume_magic_link_token audits user.signed_in with magic_link method", %{user: user, account: account} do
+    test "consume_magic_link_token audits user.signed_in with magic_link method", %{
+      user: user,
+      account: account
+    } do
       raw = Auth.issue_magic_link_token!(user)
 
       assert {:ok, _u} = Auth.consume_magic_link_token(raw)
@@ -136,7 +153,10 @@ defmodule Emisar.AuthAuditTest do
       assert event.actor_id == user.id
     end
 
-    test "reset_user_password audits user.password_reset_completed", %{user: user, account: account} do
+    test "reset_user_password audits user.password_reset_completed", %{
+      user: user,
+      account: account
+    } do
       raw = Auth.issue_password_reset_token!(user)
 
       assert {:ok, _} = Auth.reset_user_password(raw, "fresh-12-chars-now")
@@ -147,7 +167,13 @@ defmodule Emisar.AuthAuditTest do
     test "confirm_user_by_token audits user.email_confirmed", %{account: account} do
       # Unconfirmed user — bypass owner_subject_fixture which auto-confirms.
       unconfirmed = user_fixture(confirmed?: false)
-      _ = Accounts.create_membership(%{account_id: account.id, user_id: unconfirmed.id, role: "operator"})
+
+      _ =
+        Accounts.create_membership(%{
+          account_id: account.id,
+          user_id: unconfirmed.id,
+          role: "operator"
+        })
 
       raw = Auth.issue_confirmation_token!(unconfirmed)
       assert {:ok, _} = Auth.confirm_user_by_token(raw)
@@ -166,7 +192,11 @@ defmodule Emisar.AuthAuditTest do
       %{user: user, account: account, keep: keep}
     end
 
-    test "revoke_other_sessions! audits user.other_sessions_revoked with the count", %{user: user, account: account, keep: keep} do
+    test "revoke_other_sessions! audits user.other_sessions_revoked with the count", %{
+      user: user,
+      account: account,
+      keep: keep
+    } do
       assert n = Auth.revoke_other_sessions!(user, keep)
       assert n >= 1
 
@@ -174,7 +204,11 @@ defmodule Emisar.AuthAuditTest do
       assert event.payload["count"] == n
     end
 
-    test "revoke_session audits user.session_revoked", %{user: user, account: account, keep: _keep} do
+    test "revoke_session audits user.session_revoked", %{
+      user: user,
+      account: account,
+      keep: _keep
+    } do
       {:ok, [%{id: token_id} | _], _} = Auth.list_sessions_for_user(user)
 
       assert :ok = Auth.revoke_session(user, token_id)
@@ -189,14 +223,22 @@ defmodule Emisar.AuthAuditTest do
       %{user: user, account: account, subject: subject}
     end
 
-    test "update_user_profile audits user.profile_updated", %{user: user, account: account, subject: subject} do
+    test "update_user_profile audits user.profile_updated", %{
+      user: user,
+      account: account,
+      subject: subject
+    } do
       {:ok, _} = Accounts.update_user_profile(user, %{full_name: "New Name"}, subject)
 
       assert [event] = events_of(account, "user.profile_updated")
       assert event.payload["full_name"] == "New Name"
     end
 
-    test "update_user_email success audits with from/to addresses", %{user: user, account: account, subject: subject} do
+    test "update_user_email success audits with from/to addresses", %{
+      user: user,
+      account: account,
+      subject: subject
+    } do
       new = "renamed-#{System.unique_integer()}@example.test"
 
       {:ok, _} = Accounts.update_user_email(user, new, "password-with-12-chars", subject)
@@ -206,7 +248,11 @@ defmodule Emisar.AuthAuditTest do
       assert event.payload["to"] == new
     end
 
-    test "update_user_email with wrong current password audits user.email_change_failed", %{user: user, account: account, subject: subject} do
+    test "update_user_email with wrong current password audits user.email_change_failed", %{
+      user: user,
+      account: account,
+      subject: subject
+    } do
       assert {:error, :invalid_current_password} =
                Accounts.update_user_email(user, "new@example.test", "wrong", subject)
 
@@ -214,7 +260,11 @@ defmodule Emisar.AuthAuditTest do
       assert event.payload["reason"] == "invalid_current_password"
     end
 
-    test "change_user_password success audits user.password_changed", %{user: user, account: account, subject: subject} do
+    test "change_user_password success audits user.password_changed", %{
+      user: user,
+      account: account,
+      subject: subject
+    } do
       {:ok, _} =
         Accounts.change_user_password(user, "password-with-12-chars", "new-password-12c", subject)
 
@@ -222,7 +272,11 @@ defmodule Emisar.AuthAuditTest do
       assert event.actor_id == user.id
     end
 
-    test "change_user_password with wrong current audits user.password_change_failed", %{user: user, account: account, subject: subject} do
+    test "change_user_password with wrong current audits user.password_change_failed", %{
+      user: user,
+      account: account,
+      subject: subject
+    } do
       assert {:error, :invalid_current_password} =
                Accounts.change_user_password(user, "wrong-password", "new-pw-12-char", subject)
 
@@ -230,7 +284,10 @@ defmodule Emisar.AuthAuditTest do
       assert event.payload["reason"] == "invalid_current_password"
     end
 
-    test "change_user_password rejects passwords below the length minimum", %{user: user, subject: subject} do
+    test "change_user_password rejects passwords below the length minimum", %{
+      user: user,
+      subject: subject
+    } do
       assert {:error, :password_too_short} =
                Accounts.change_user_password(user, "password-with-12-chars", "short", subject)
     end
@@ -242,7 +299,11 @@ defmodule Emisar.AuthAuditTest do
       member = user_fixture()
 
       {:ok, membership} =
-        Accounts.create_membership(%{account_id: account.id, user_id: member.id, role: "operator"})
+        Accounts.create_membership(%{
+          account_id: account.id,
+          user_id: member.id,
+          role: "operator"
+        })
 
       %{
         owner: owner,
@@ -253,7 +314,13 @@ defmodule Emisar.AuthAuditTest do
       }
     end
 
-    test "update_membership_role audits with from/to", %{owner: owner, owner_subject: owner_subject, account: account, member: member, membership: membership} do
+    test "update_membership_role audits with from/to", %{
+      owner: owner,
+      owner_subject: owner_subject,
+      account: account,
+      member: member,
+      membership: membership
+    } do
       {:ok, _} = Accounts.update_membership_role(membership, "admin", owner_subject)
 
       assert [event] = events_of(account, "membership.role_changed")
@@ -263,7 +330,12 @@ defmodule Emisar.AuthAuditTest do
       assert event.payload["to"] == "admin"
     end
 
-    test "delete_membership audits with the deleted role", %{owner_subject: owner_subject, account: account, member: member, membership: membership} do
+    test "delete_membership audits with the deleted role", %{
+      owner_subject: owner_subject,
+      account: account,
+      member: member,
+      membership: membership
+    } do
       {:ok, _} = Accounts.delete_membership(membership, owner_subject)
 
       assert [event] = events_of(account, "membership.removed")
@@ -271,7 +343,11 @@ defmodule Emisar.AuthAuditTest do
       assert event.payload["role"] == "operator"
     end
 
-    test "replace_runner_scopes audits with scope payload", %{owner_subject: owner_subject, account: account, membership: membership} do
+    test "replace_runner_scopes audits with scope payload", %{
+      owner_subject: owner_subject,
+      account: account,
+      membership: membership
+    } do
       {:ok, _} =
         Accounts.replace_runner_scopes(
           membership,
@@ -283,7 +359,11 @@ defmodule Emisar.AuthAuditTest do
       assert event.payload["scope_count"] == 2
     end
 
-    test "mark_invitation_accepted (self-accept of existing user) audits", %{account: account, member: _member, membership: membership} do
+    test "mark_invitation_accepted (self-accept of existing user) audits", %{
+      account: account,
+      member: _member,
+      membership: membership
+    } do
       # Stamp the membership as pending an invitation, then accept it.
       {:ok, with_token} =
         membership
@@ -431,8 +511,13 @@ defmodule Emisar.AuthAuditTest do
 
       result =
         Ecto.Multi.new()
-        |> Ecto.Multi.update(:policy, Emisar.Policies.Policy.Changeset.update(policy,
-             %{rules: new_rules, updated_by_id: subject.actor.id}))
+        |> Ecto.Multi.update(
+          :policy,
+          Emisar.Policies.Policy.Changeset.update(
+            policy,
+            %{rules: new_rules, updated_by_id: subject.actor.id}
+          )
+        )
         |> Ecto.Multi.insert(:audit, fn %{policy: p} ->
           Audit.changeset(p.account_id, "policy.updated",
             actor_kind: "user",
@@ -492,7 +577,13 @@ defmodule Emisar.AuthAuditTest do
     end
 
     test "force_password_reset audits exactly ONE event, with admin as actor and target as subject",
-         %{admin: admin, admin_subject: admin_subject, account: account, target: target, target_membership: m} do
+         %{
+           admin: admin,
+           admin_subject: admin_subject,
+           account: account,
+           target: target,
+           target_membership: m
+         } do
       :ok = Accounts.force_password_reset(m, admin_subject)
 
       forced = events_of(account, "user.password_reset_forced")
@@ -552,7 +643,11 @@ defmodule Emisar.AuthAuditTest do
       # A too-long slug rolls the whole multi back — no audit row commits,
       # no broadcast.
       assert {:error, %Ecto.Changeset{valid?: false}} =
-               Emisar.Accounts.update_account(account, %{slug: String.duplicate("x", 1000)}, subject)
+               Emisar.Accounts.update_account(
+                 account,
+                 %{slug: String.duplicate("x", 1000)},
+                 subject
+               )
 
       refute_receive {:audit_event, %Emisar.Audit.Event{event_type: "account.updated"}}, 100
     end

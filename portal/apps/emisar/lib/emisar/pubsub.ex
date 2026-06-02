@@ -65,7 +65,9 @@ defmodule Emisar.PubSub do
     do: Phoenix.PubSub.subscribe(@pubsub, topic_for_account_audit(account_id))
 
   def subscribe_run(run_id), do: Phoenix.PubSub.subscribe(@pubsub, topic_for_run(run_id))
-  def subscribe_runner(runner_id), do: Phoenix.PubSub.subscribe(@pubsub, topic_for_runner(runner_id))
+
+  def subscribe_runner(runner_id),
+    do: Phoenix.PubSub.subscribe(@pubsub, topic_for_runner(runner_id))
 
   # -- Broadcasting -----------------------------------------------------
 

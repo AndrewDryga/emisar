@@ -238,7 +238,8 @@ defmodule Emisar.Audit do
   `Emisar.Repo.list/3` options (`:filter`, `:page`, `:preload`).
   """
   def list_events(%Subject{} = subject, opts \\ []) do
-    with :ok <- Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_audit_permission()) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_audit_permission()) do
       Event.Query.all()
       |> Authorizer.for_subject(subject)
       |> Repo.list(Event.Query, opts)
@@ -279,7 +280,8 @@ defmodule Emisar.Audit do
   @max_export_limit 1_000
 
   def list_for_export(%Subject{} = subject, opts \\ []) do
-    with :ok <- Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_audit_permission()) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_audit_permission()) do
       types = Keyword.get(opts, :event_types, [])
       limit = clamp_export_limit(Keyword.get(opts, :limit, @default_export_limit))
 
@@ -324,7 +326,8 @@ defmodule Emisar.Audit do
   `{:ok, event} | {:error, :not_found}`.
   """
   def fetch_event_by_id(id, %Subject{} = subject) do
-    with :ok <- Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_audit_permission()),
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_audit_permission()),
          true <- Repo.valid_uuid?(id) do
       Event.Query.all()
       |> Event.Query.by_id(id)

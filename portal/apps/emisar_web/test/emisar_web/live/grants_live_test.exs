@@ -14,12 +14,16 @@ defmodule EmisarWeb.GrantsLiveTest do
   defp seed_account(conn) do
     {conn, user, account} = register_and_log_in(conn)
     subject = owner_subject(user, account)
+
     {:ok, raw, _key} =
-      ApiKeys.create_key(%{
-        name: "bot-key",
-        scopes: ["actions:read", "actions:execute"],
-        runner_filter: []
-      }, subject)
+      ApiKeys.create_key(
+        %{
+          name: "bot-key",
+          scopes: ["actions:read", "actions:execute"],
+          runner_filter: []
+        },
+        subject
+      )
 
     {:ok, runner} =
       Runner.Changeset.register(%{

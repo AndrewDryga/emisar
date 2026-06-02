@@ -31,9 +31,11 @@ defmodule EmisarWeb.MarketingController do
     {"/terms", :terms, :terms, "Terms of Service", nil},
     {"/docs/connect-an-llm", :connect_llm, :connect_llm, "Connect an LLM",
      "Wire emisar into Claude Code, Claude Desktop, Cursor, Gemini CLI, or Codex CLI with one MCP config."},
-    {"/docs/quickstart", :docs_quickstart, :docs_quickstart, "Quickstart — install the runner + run uptime",
+    {"/docs/quickstart", :docs_quickstart, :docs_quickstart,
+     "Quickstart — install the runner + run uptime",
      "5-minute quickstart: install the emisar runner on a Linux host, register an enrollment key, run linux.uptime from the dashboard."},
-    {"/docs/action-packs", :docs_action_packs, :docs_action_packs, "Action packs — YAML reference",
+    {"/docs/action-packs", :docs_action_packs, :docs_action_packs,
+     "Action packs — YAML reference",
      "Full YAML schema reference for action packs: how to declare actions, argument validation, limits, redaction, and side-effects."},
     {"/docs/security-model", :docs_security_model, :docs_security_model, "Security model",
      "The emisar trust boundary: pre-approved actions only, server-side re-validation, hash-chained audit, redaction before egress, and what we are explicitly not."},
@@ -99,7 +101,9 @@ defmodule EmisarWeb.MarketingController do
     base_attrs = [page_title: title, canonical_url: @base <> path]
 
     attrs =
-      if description, do: Keyword.put(base_attrs, :meta_description, description), else: base_attrs
+      if description,
+        do: Keyword.put(base_attrs, :meta_description, description),
+        else: base_attrs
 
     template_atom = template
     attrs_literal = Macro.escape(attrs)

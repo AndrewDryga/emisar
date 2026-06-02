@@ -27,10 +27,15 @@
             <h2 class="text-xl font-semibold text-zinc-50">Lay out the pack directory</h2>
           </header>
           <p class="mt-4 text-sm leading-relaxed text-zinc-400">
-            Every pack lives under <code class="rounded bg-zinc-900 px-1 py-0.5">runner/examples/packs/&lt;pack-id&gt;/</code>
-            with a top-level <code>pack.yaml</code> manifest and a per-action YAML in
-            <code>actions/</code>. Optional <code>scripts/</code> holds packaged shell scripts for
-            <code>kind: script</code> actions.
+            Every pack lives under
+            <code class="rounded bg-zinc-900 px-1 py-0.5">
+              runner/examples/packs/&lt;pack-id&gt;/
+            </code>
+            with a top-level <code>pack.yaml</code>
+            manifest and a per-action YAML in <code>actions/</code>. Optional
+            <code>scripts/</code>
+            holds packaged shell scripts for <code>kind: script</code>
+            actions.
           </p>
           <pre class="mt-4 overflow-x-auto rounded-lg border border-zinc-800 bg-black/60 p-4 font-mono text-xs leading-6 text-zinc-300">my-pack/
   pack.yaml                    # pack manifest (see step 2)
@@ -50,7 +55,8 @@
           </header>
           <p class="mt-4 text-sm leading-relaxed text-zinc-400">
             The manifest declares pack-level metadata + which action YAMLs to load.
-            <code>id</code> is the pack slug (used in the registry URL and install path).
+            <code>id</code>
+            is the pack slug (used in the registry URL and install path).
           </p>
           <pre class="mt-4 overflow-x-auto rounded-lg border border-zinc-800 bg-black/60 p-4 font-mono text-xs leading-6 text-zinc-300">schema_version: 1
 id: my-pack
@@ -142,9 +148,9 @@ sudo journalctl -u emisar -n 50 --no-pager | grep my-pack</pre>
           <p class="mt-4 text-sm text-zinc-400">
             In the cloud dashboard, open
             <span class="font-mono text-zinc-300">/app/runners/&lt;runner&gt;</span>
-            and verify your actions appear under
-            <strong class="text-zinc-200">Advertised actions</strong>.
-            Click <strong class="text-zinc-200">Run</strong> on one to confirm dispatch end-to-end.
+            and verify your actions appear under <strong class="text-zinc-200">Advertised actions</strong>.
+            Click <strong class="text-zinc-200">Run</strong>
+            on one to confirm dispatch end-to-end.
           </p>
         </li>
 
@@ -160,8 +166,11 @@ sudo journalctl -u emisar -n 50 --no-pager | grep my-pack</pre>
             <.external_link
               href="https://github.com/andrewdryga/emisar"
               class="text-indigo-300 hover:text-indigo-200"
-            >main repo</.external_link>
-            adding your pack under <code class="rounded bg-zinc-900 px-1 py-0.5">runner/examples/packs/</code>
+            >
+              main repo
+            </.external_link>
+            adding your pack under
+            <code class="rounded bg-zinc-900 px-1 py-0.5">runner/examples/packs/</code>
             and an entry in <code class="rounded bg-zinc-900 px-1 py-0.5">apps/emisar_web/lib/emisar_web/packs_registry.ex</code>.
             We review for:
           </p>

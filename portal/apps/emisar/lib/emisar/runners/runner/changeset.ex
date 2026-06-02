@@ -57,7 +57,9 @@ defmodule Emisar.Runners.Runner.Changeset do
         attrs
 
       is_map(attrs) ->
-        key = if Enum.any?(attrs, fn {k, _} -> is_atom(k) end), do: :external_id, else: "external_id"
+        key =
+          if Enum.any?(attrs, fn {k, _} -> is_atom(k) end), do: :external_id, else: "external_id"
+
         Map.put(attrs, key, Ecto.UUID.generate())
 
       true ->

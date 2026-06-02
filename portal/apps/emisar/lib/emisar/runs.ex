@@ -401,9 +401,14 @@ defmodule Emisar.Runs do
     eval_attrs = Map.merge(attrs, %{risk: action.risk, kind: action.kind})
 
     case Emisar.Policies.evaluate_with_policy(account_id, eval_attrs) do
-      {:deny, matched, reason, policy} -> dispatch_deny(attrs, policy, reason, matched)
-      {:allow, matched, reason, policy} -> dispatch_allow(attrs, policy, reason, matched)
-      {:require_approval, matched, reason, policy} -> dispatch_require_approval(attrs, policy, reason, matched)
+      {:deny, matched, reason, policy} ->
+        dispatch_deny(attrs, policy, reason, matched)
+
+      {:allow, matched, reason, policy} ->
+        dispatch_allow(attrs, policy, reason, matched)
+
+      {:require_approval, matched, reason, policy} ->
+        dispatch_require_approval(attrs, policy, reason, matched)
     end
   end
 
@@ -653,7 +658,11 @@ defmodule Emisar.Runs do
   end
 
   def mark_cancelled(%ActionRun{} = run, reason \\ nil) do
-    transition(run, :cancelled, %{cancelled_at: now_utc(), finished_at: now_utc(), reason_text: reason})
+    transition(run, :cancelled, %{
+      cancelled_at: now_utc(),
+      finished_at: now_utc(),
+      reason_text: reason
+    })
   end
 
   @doc """

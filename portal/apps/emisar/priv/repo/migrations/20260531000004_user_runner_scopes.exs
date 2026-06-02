@@ -16,8 +16,10 @@ defmodule Emisar.Repo.Migrations.UserRunnerScopes do
     # runners). v2 may make this per-action — punt until needed.
     create table(:user_runner_scopes, primary_key: false) do
       add :id, :binary_id, primary_key: true
+
       add :membership_id, references(:memberships, type: :binary_id, on_delete: :delete_all),
         null: false
+
       add :scope_type, :string, null: false
       add :scope_value, :string, null: false
 

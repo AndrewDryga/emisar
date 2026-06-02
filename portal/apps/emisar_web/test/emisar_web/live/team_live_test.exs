@@ -41,6 +41,7 @@ defmodule EmisarWeb.TeamLiveTest do
       email = "scoped-#{System.unique_integer([:positive])}@example.com"
 
       subject = Emisar.Fixtures.subject_for(owner, account, role: :owner)
+
       {:ok, %{membership: m}} =
         Emisar.Accounts.invite_user_to_account(email, "admin", subject)
 

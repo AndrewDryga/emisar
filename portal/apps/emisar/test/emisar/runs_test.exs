@@ -104,12 +104,16 @@ defmodule Emisar.RunsTest do
       Emisar.PubSub.subscribe_runner(runner.id)
 
       assert {:ok, :running, %ActionRun{} = run} =
-               Runs.dispatch_run(base_attrs(account.id, runner.id), Emisar.Auth.Subject.system(account))
+               Runs.dispatch_run(
+                 base_attrs(account.id, runner.id),
+                 Emisar.Auth.Subject.system(account)
+               )
 
       assert run.account_id == account.id
 
       # Cloud-to-runner envelope was delivered.
-      assert_receive {:cloud_to_runner, %{"type" => "run_action", "action_id" => "linux.uptime"}}, 500
+      assert_receive {:cloud_to_runner, %{"type" => "run_action", "action_id" => "linux.uptime"}},
+                     500
     end
 
     test "wire envelope carries trusted pack hash when one is on file" do
@@ -166,7 +170,10 @@ defmodule Emisar.RunsTest do
       _ = policy_fixture(account_id: account.id)
 
       assert {:error, :action_not_found} =
-               Runs.dispatch_run(base_attrs(account.id, runner.id), Emisar.Auth.Subject.system(account))
+               Runs.dispatch_run(
+                 base_attrs(account.id, runner.id),
+                 Emisar.Auth.Subject.system(account)
+               )
     end
 
     test "policy sees the catalog's risk, not what the caller passes" do
@@ -194,7 +201,9 @@ defmodule Emisar.RunsTest do
 
       # Caller spoofs `risk: "low"` — should be ignored.
       attrs = base_attrs(account.id, runner.id, %{risk: "low"})
-      assert {:ok, :pending_approval, _run} = Runs.dispatch_run(attrs, Emisar.Auth.Subject.system(account))
+
+      assert {:ok, :pending_approval, _run} =
+               Runs.dispatch_run(attrs, Emisar.Auth.Subject.system(account))
     end
 
     test "require_approval policy stores the run as pending + creates a request" do
@@ -258,7 +267,10 @@ defmodule Emisar.RunsTest do
         )
 
       assert {:error, :denied_by_policy, reason} =
-               Runs.dispatch_run(base_attrs(account.id, runner.id), Emisar.Auth.Subject.system(account))
+               Runs.dispatch_run(
+                 base_attrs(account.id, runner.id),
+                 Emisar.Auth.Subject.system(account)
+               )
 
       assert is_binary(reason)
       # A denied run is recorded with status="denied" so operators can
@@ -276,7 +288,10 @@ defmodule Emisar.RunsTest do
       policy = policy_fixture(account_id: account.id)
 
       assert {:ok, :running, %ActionRun{} = run} =
-               Runs.dispatch_run(base_attrs(account.id, runner.id), Emisar.Auth.Subject.system(account))
+               Runs.dispatch_run(
+                 base_attrs(account.id, runner.id),
+                 Emisar.Auth.Subject.system(account)
+               )
 
       assert run.policy_id == policy.id
       assert run.policy_version == policy.vsn
@@ -365,7 +380,8 @@ defmodule Emisar.RunsTest do
       subject = subject_for(user, account, role: :owner)
       _ = policy_fixture(account_id: account.id)
 
-      {:ok, :running, run} = Runs.dispatch_run(base_attrs(account.id, runner.id), Emisar.Auth.Subject.system(account))
+      {:ok, :running, run} =
+        Runs.dispatch_run(base_attrs(account.id, runner.id), Emisar.Auth.Subject.system(account))
 
       Emisar.PubSub.subscribe_account_runs(account.id)
 

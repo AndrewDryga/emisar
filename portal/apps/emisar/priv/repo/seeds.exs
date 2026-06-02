@@ -98,11 +98,12 @@ system_subject = Subject.system(account)
 
 # -- Invited teammates ------------------------------------------------
 
-owner_subject = Subject.for_user(
-  user,
-  account,
-  %Emisar.Accounts.Membership{role: "owner", user_id: user.id, account_id: account.id}
-)
+owner_subject =
+  Subject.for_user(
+    user,
+    account,
+    %Emisar.Accounts.Membership{role: "owner", user_id: user.id, account_id: account.id}
+  )
 
 invite_member = fn email, full_name, role ->
   case Accounts.fetch_user_by_email(email) do
@@ -137,8 +138,8 @@ unless (
         slug: "nightly-edge-health",
         title: "Nightly edge fleet health",
         description:
-          "Routine 03:00 UTC sweep across every edge runner: uptime + disk usage. "
-          <> "Used by oncall to confirm fleet health before the EU traffic peak.",
+          "Routine 03:00 UTC sweep across every edge runner: uptime + disk usage. " <>
+            "Used by oncall to confirm fleet health before the EU traffic peak.",
         status: "published",
         definition: %{
           "steps" => [
@@ -270,7 +271,11 @@ runners =
     spec |> ensure_runner.() |> stamp_runner_state.(spec)
   end)
 
-IO.puts(IO.ANSI.cyan() <> "✓ Seeded #{length(runners)} demo runners (docker runners self-register on boot)" <> IO.ANSI.reset())
+IO.puts(
+  IO.ANSI.cyan() <>
+    "✓ Seeded #{length(runners)} demo runners (docker runners self-register on boot)" <>
+    IO.ANSI.reset()
+)
 
 # -- Catalog: actions on each runner ---------------------------------
 
@@ -411,8 +416,8 @@ edge = Enum.find(runners, &(&1.name == "edge-pop-fra"))
     %{
       name: "Claude — Andrew's terminal",
       description:
-        "MCP bridge running under Claude Desktop on andrew-mbp. "
-        <> "Used for ad-hoc edge cache purges and disk-usage checks.",
+        "MCP bridge running under Claude Desktop on andrew-mbp. " <>
+          "Used for ad-hoc edge cache purges and disk-usage checks.",
       scopes: ["actions:read", "actions:execute"],
       runner_group_filter: ["edge-eu"]
     },
@@ -434,8 +439,8 @@ IO.puts(IO.ANSI.cyan() <> "✓ Seeded MCP API key for the LLM agent" <> IO.ANSI.
     %{
       name: "SIEM export — initial",
       description:
-        "Streams audit events as NDJSON to the company SIEM. "
-        <> "Read-only — no dispatch rights.",
+        "Streams audit events as NDJSON to the company SIEM. " <>
+          "Read-only — no dispatch rights.",
       scopes: ["audit:read"]
     },
     owner_subject
@@ -619,8 +624,8 @@ if existing_runs == [] do
      "Andrew via Claude: 'flush the CSS cache after the deploy'", cache_purge_stdout}
   ]
 
-  Enum.each(successes, fn {runner, action_id, started_at, dur_ms, args, who, _source,
-                            _api_key_id, chunks} ->
+  Enum.each(successes, fn {runner, action_id, started_at, dur_ms, args, who, _source, _api_key_id,
+                           chunks} ->
     finished_at = DateTime.add(started_at, dur_ms, :millisecond)
 
     insert_run.(%{
@@ -681,16 +686,15 @@ if existing_runs == [] do
   failed_specs = [
     {ci, "ci.lint", mins_ago.(40), 1, "compilation error on lib/emisar/runs.ex:621", %{}, alex,
      lint_failure_output},
-    {edge, "cache.purge", hours_ago.(3), 1, "upstream cache API returned 503", %{"prefix" => "/api/v1/"},
-     sam,
+    {edge, "cache.purge", hours_ago.(3), 1, "upstream cache API returned 503",
+     %{"prefix" => "/api/v1/"}, sam,
      [
        {"stdout", "→ purging /api/v1/ on edge-pop-fra…\n"},
        {"stderr", "✗ upstream returned 503 service unavailable after 3 retries\n"}
      ]}
   ]
 
-  Enum.each(failed_specs, fn {runner, action_id, started_at, exit_code, reason, args, who,
-                               chunks} ->
+  Enum.each(failed_specs, fn {runner, action_id, started_at, exit_code, reason, args, who, chunks} ->
     finished_at = DateTime.add(started_at, 4500, :millisecond)
 
     insert_run.(%{
@@ -926,11 +930,14 @@ case Runners.list_auth_keys(owner_subject) do
 
       _ ->
         {:ok, raw, _key} =
-          Runners.create_auth_key(%{
-            description: "Demo auth key",
-            group: "edge-eu",
-            reusable: true
-          }, owner_subject)
+          Runners.create_auth_key(
+            %{
+              description: "Demo auth key",
+              group: "edge-eu",
+              reusable: true
+            },
+            owner_subject
+          )
 
         IO.puts("")
         IO.puts(IO.ANSI.green() <> "Bootstrap a runner:" <> IO.ANSI.reset())

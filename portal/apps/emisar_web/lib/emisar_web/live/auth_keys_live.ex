@@ -30,7 +30,10 @@ defmodule EmisarWeb.AuthKeysLive do
     do: {:noreply, load(socket, socket.assigns[:filter_params] || %{})}
 
   defp fetch_billing(socket) do
-    case Emisar.Billing.billing_summary(socket.assigns.current_account, socket.assigns.current_subject) do
+    case Emisar.Billing.billing_summary(
+           socket.assigns.current_account,
+           socket.assigns.current_subject
+         ) do
       {:ok, summary} -> summary
       {:error, _} -> nil
     end
@@ -160,7 +163,8 @@ defmodule EmisarWeb.AuthKeysLive do
 
   def render(assigns) do
     ~H"""
-    <.dashboard_shell pending_approvals_count={@pending_approvals_count}
+    <.dashboard_shell
+      pending_approvals_count={@pending_approvals_count}
       current_user={@current_user}
       current_account={@current_account}
       switchable_accounts={@switchable_accounts}
@@ -220,9 +224,8 @@ defmodule EmisarWeb.AuthKeysLive do
         >
           Treat it like a password. Anyone with this key can register a runner
           under <span class="font-semibold">{@current_account.name}</span>.
-
           <:install_command>
-             curl -sSL {@base_url}/install.sh | sudo EMISAR_AUTH_KEY={@new_secret} EMISAR_URL={@base_url} bash
+            curl -sSL {@base_url}/install.sh | sudo EMISAR_AUTH_KEY={@new_secret} EMISAR_URL={@base_url} bash
           </:install_command>
         </.secret_reveal>
 
@@ -294,7 +297,10 @@ defmodule EmisarWeb.AuthKeysLive do
                  the agents wizard uses: don't ask irrelevant questions.
                  The field reappears with its inline hint as soon as the
                  reusable checkbox flips on. --%>
-            <div :if={truthy?(@form[:reusable].value)} class="sm:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div
+              :if={truthy?(@form[:reusable].value)}
+              class="sm:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-4"
+            >
               <.input
                 field={@form[:max_uses]}
                 type="number"
@@ -344,8 +350,9 @@ defmodule EmisarWeb.AuthKeysLive do
                     <.chip :if={key.revoked_at} tone={:rose}>Revoked</.chip>
                   </div>
                   <div class="mt-1 truncate font-mono text-[11px] text-zinc-500">
-                    {key.key_prefix}… ·
-                    {key.uses_count} {if key.uses_count == 1, do: "use", else: "uses"} ·
+                    {key.key_prefix}… · {key.uses_count} {if key.uses_count == 1,
+                      do: "use",
+                      else: "uses"} ·
                     last used {last_used(key.last_used_at)}
                     <span :if={key.created_by}>· by {key.created_by.email}</span>
                   </div>
@@ -369,7 +376,9 @@ defmodule EmisarWeb.AuthKeysLive do
                 <p class="mt-1 text-xs leading-relaxed text-zinc-500">
                   Auth keys are the bearer secret a fresh runner uses to register
                   with cloud. Click
-                  <span class="rounded bg-zinc-900 px-1.5 py-0.5 text-[11px] font-medium text-zinc-300">New key</span>
+                  <span class="rounded bg-zinc-900 px-1.5 py-0.5 text-[11px] font-medium text-zinc-300">
+                    New key
+                  </span>
                   above, then run the install command on the host.
                 </p>
               </div>
@@ -386,9 +395,16 @@ defmodule EmisarWeb.AuthKeysLive do
   end
 
   defp show_create,
-    do: JS.show(to: "#create-panel", transition: {"transition-all ease-out duration-150", "opacity-0", "opacity-100"})
+    do:
+      JS.show(
+        to: "#create-panel",
+        transition: {"transition-all ease-out duration-150", "opacity-0", "opacity-100"}
+      )
 
   defp hide_create,
-    do: JS.hide(to: "#create-panel", transition: {"transition-all ease-in duration-100", "opacity-100", "opacity-0"})
-
+    do:
+      JS.hide(
+        to: "#create-panel",
+        transition: {"transition-all ease-in duration-100", "opacity-100", "opacity-0"}
+      )
 end

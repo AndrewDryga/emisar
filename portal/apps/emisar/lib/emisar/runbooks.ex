@@ -16,7 +16,8 @@ defmodule Emisar.Runbooks do
   # -- Reads -----------------------------------------------------------
 
   def list_runbooks(%Subject{} = subject, opts \\ []) do
-    with :ok <- Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_runbooks_permission()) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_runbooks_permission()) do
       Runbook.Query.not_deleted()
       |> Runbook.Query.ordered_by_title_version()
       |> Authorizer.for_subject(subject)
@@ -25,7 +26,8 @@ defmodule Emisar.Runbooks do
   end
 
   def fetch_runbook_by_id(id, %Subject{} = subject) do
-    with :ok <- Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_runbooks_permission()),
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_runbooks_permission()),
          true <- Repo.valid_uuid?(id) do
       Runbook.Query.not_deleted()
       |> Runbook.Query.by_id(id)
@@ -106,7 +108,12 @@ defmodule Emisar.Runbooks do
           subject_kind: "runbook",
           subject_id: rb.id,
           subject_label: rb.title || rb.name,
-          payload: %{name: rb.name, title: rb.title, from_version: old.version, to_version: rb.version}
+          payload: %{
+            name: rb.name,
+            title: rb.title,
+            from_version: old.version,
+            to_version: rb.version
+          }
         )
       end)
       |> Repo.commit_multi(after_commit: &broadcast_runbook_change(&1, "runbook.updated"))
@@ -191,11 +198,13 @@ defmodule Emisar.Runbooks do
   state. On success → dispatch the next step. Non-success stops the
   runbook (failed step is visible on the runbook detail page).
   """
-  def dispatch_next_step(%Emisar.Runs.ActionRun{
-        runbook_id: rb_id,
-        runbook_step_id: step_id,
-        status: "success"
-      } = run)
+  def dispatch_next_step(
+        %Emisar.Runs.ActionRun{
+          runbook_id: rb_id,
+          runbook_step_id: step_id,
+          status: "success"
+        } = run
+      )
       when is_binary(rb_id) and is_binary(step_id) do
     case peek_runbook_by_account_id(run.account_id, rb_id) do
       %Runbook{} = runbook ->

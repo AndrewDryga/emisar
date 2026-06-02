@@ -89,13 +89,15 @@ defmodule EmisarWeb.TeamLive do
              |> put_flash(
                :info,
                if(value,
-                 do: "Account-wide MFA enforced. Members without MFA will be prompted on next sign-in.",
+                 do:
+                   "Account-wide MFA enforced. Members without MFA will be prompted on next sign-in.",
                  else: "Account-wide MFA requirement turned off."
                )
              )}
 
           {:error, :unauthorized} ->
-            {:noreply, put_flash(socket, :error, "Only the account owner can change this setting.")}
+            {:noreply,
+             put_flash(socket, :error, "Only the account owner can change this setting.")}
 
           {:error, _} ->
             {:noreply, put_flash(socket, :error, "Could not update MFA setting.")}
@@ -242,9 +244,16 @@ defmodule EmisarWeb.TeamLive do
 
   defp error_message(:unauthorized), do: "Only owners and admins can manage memberships."
   defp error_message(:owner_required), do: "Only an existing owner can grant or revoke owner."
-  defp error_message(:last_owner), do: "Can't remove or demote the last owner. Promote someone else first."
-  defp error_message(:cannot_self_promote), do: "Promote someone else first — you can't promote yourself."
-  defp error_message(:cannot_modify_self), do: "You can't change your own membership from here. Use Profile."
+
+  defp error_message(:last_owner),
+    do: "Can't remove or demote the last owner. Promote someone else first."
+
+  defp error_message(:cannot_self_promote),
+    do: "Promote someone else first — you can't promote yourself."
+
+  defp error_message(:cannot_modify_self),
+    do: "You can't change your own membership from here. Use Profile."
+
   defp error_message(:not_found), do: "User no longer exists."
   defp error_message(%Ecto.Changeset{}), do: "Could not apply change."
   defp error_message(_), do: "Could not apply change."
@@ -281,7 +290,9 @@ defmodule EmisarWeb.TeamLive do
           |> Enum.map(& &1.id)
           |> Accounts.runner_scopes_for_membership_ids()
 
-        {:ok, runners, _} = Emisar.Runners.list_runners_for_account(socket.assigns.current_subject)
+        {:ok, runners, _} =
+          Emisar.Runners.list_runners_for_account(socket.assigns.current_subject)
+
         runners_by_id = Map.new(runners, &{&1.id, &1})
         runner_groups = runners |> Enum.map(& &1.group) |> Enum.uniq() |> Enum.sort()
 
@@ -340,7 +351,8 @@ defmodule EmisarWeb.TeamLive do
 
   def render(assigns) do
     ~H"""
-    <.dashboard_shell pending_approvals_count={@pending_approvals_count}
+    <.dashboard_shell
+      pending_approvals_count={@pending_approvals_count}
       current_user={@current_user}
       current_account={@current_account}
       switchable_accounts={@switchable_accounts}
@@ -397,7 +409,6 @@ defmodule EmisarWeb.TeamLive do
                 >
                   {if @current_account.require_mfa, do: "Stop enforcing 2FA", else: "Enforce 2FA"}
                 </button>
-
               <% true -> %>
                 <span class="shrink-0 text-[11px] text-zinc-600">Owner-only</span>
             <% end %>
@@ -436,8 +447,7 @@ defmodule EmisarWeb.TeamLive do
             <div>
               <h2 class="text-base font-semibold text-zinc-100">Invite a teammate</h2>
               <p class="mt-1 text-sm text-zinc-500">
-                We'll email a join link for
-                <span class="font-medium text-zinc-300">{@current_account.name}</span>.
+                We'll email a join link for <span class="font-medium text-zinc-300">{@current_account.name}</span>.
               </p>
             </div>
             <button
@@ -542,7 +552,9 @@ defmodule EmisarWeb.TeamLive do
                     </span>
                   </div>
                   <div class="truncate text-xs text-zinc-500">
-                    {m.user && m.user.email} · joined {relative_time(m.inserted_at)} · {sign_in_label(m.user)}
+                    {m.user && m.user.email} · joined {relative_time(m.inserted_at)} · {sign_in_label(
+                      m.user
+                    )}
                   </div>
                   <%!-- Per-user runner ACLs (#238): show what runners
                        this member can reach. Empty = all (default).
@@ -591,7 +603,10 @@ defmodule EmisarWeb.TeamLive do
 
               <%!-- Edit form appears inline under the row. No bolted-
                    on table column; just normal flow. --%>
-              <div :if={@editing_id == m.id and @edit_form} class="mt-4 rounded-lg border border-zinc-800 bg-zinc-900/40 p-4">
+              <div
+                :if={@editing_id == m.id and @edit_form}
+                class="mt-4 rounded-lg border border-zinc-800 bg-zinc-900/40 p-4"
+              >
                 <.simple_form
                   for={@edit_form}
                   id={"edit-form-#{m.id}"}
@@ -703,7 +718,9 @@ defmodule EmisarWeb.TeamLive do
               <p class="mt-3 text-zinc-300">No team members yet.</p>
               <p class="mt-1 text-xs leading-relaxed text-zinc-500">
                 Use the
-                <span class="rounded bg-zinc-900 px-1.5 py-0.5 text-[11px] font-medium text-zinc-300">Invite</span>
+                <span class="rounded bg-zinc-900 px-1.5 py-0.5 text-[11px] font-medium text-zinc-300">
+                  Invite
+                </span>
                 form above to send a magic-link to a teammate.
               </p>
             </div>
@@ -719,10 +736,18 @@ defmodule EmisarWeb.TeamLive do
   end
 
   defp show_invite,
-    do: JS.show(to: "#invite-panel", transition: {"transition-all ease-out duration-150", "opacity-0", "opacity-100"})
+    do:
+      JS.show(
+        to: "#invite-panel",
+        transition: {"transition-all ease-out duration-150", "opacity-0", "opacity-100"}
+      )
 
   defp hide_invite,
-    do: JS.hide(to: "#invite-panel", transition: {"transition-all ease-in duration-100", "opacity-100", "opacity-0"})
+    do:
+      JS.hide(
+        to: "#invite-panel",
+        transition: {"transition-all ease-in duration-100", "opacity-100", "opacity-0"}
+      )
 
   # Inline action menu for a single member row. Hidden for the actor's
   attr :user, :map, default: nil
@@ -776,7 +801,8 @@ defmodule EmisarWeb.TeamLive do
       <% true -> %>
         <details class="group relative inline-block text-left">
           <summary class="cursor-pointer list-none rounded px-2 py-1 text-xs font-medium text-zinc-300 ring-1 ring-zinc-800 hover:bg-zinc-900 [&::-webkit-details-marker]:hidden [&::marker]:hidden">
-            Actions <span class="text-zinc-500 group-open:hidden">▾</span><span class="hidden text-zinc-500 group-open:inline">▴</span>
+            Actions
+            <span class="text-zinc-500 group-open:hidden">▾</span><span class="hidden text-zinc-500 group-open:inline">▴</span>
           </summary>
           <div class="absolute right-0 z-10 mt-2 w-56 rounded-lg border border-zinc-800 bg-zinc-950 p-1 text-xs shadow-xl">
             <button
@@ -842,7 +868,9 @@ defmodule EmisarWeb.TeamLive do
     """
   end
 
-  defp self_owner?(%Membership{user_id: uid, role: "owner"}, user_id) when uid == user_id, do: true
+  defp self_owner?(%Membership{user_id: uid, role: "owner"}, user_id) when uid == user_id,
+    do: true
+
   defp self_owner?(_, _), do: false
 
   # Two cases worth surfacing to admins: "active in the last 90 days"

@@ -50,7 +50,10 @@ defmodule Emisar.Repo.Migrations.AccountsAndUsers do
     #   :viewer   — read-only access to dashboards + audit
     create table(:memberships, primary_key: false) do
       add :id, :binary_id, primary_key: true
-      add :account_id, references(:accounts, type: :binary_id, on_delete: :delete_all), null: false
+
+      add :account_id, references(:accounts, type: :binary_id, on_delete: :delete_all),
+        null: false
+
       add :user_id, references(:users, type: :binary_id, on_delete: :delete_all), null: false
       add :role, :string, null: false, default: "operator"
       add :invited_by_id, references(:users, type: :binary_id, on_delete: :nilify_all)

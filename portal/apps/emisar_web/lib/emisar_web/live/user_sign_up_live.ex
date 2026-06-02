@@ -40,7 +40,13 @@ defmodule EmisarWeb.UserSignUpLive do
           minlength="12"
           required
         />
-        <.input name="account_name" value={@account_name} type="text" label="Team or company name" required />
+        <.input
+          name="account_name"
+          value={@account_name}
+          type="text"
+          label="Team or company name"
+          required
+        />
 
         <:actions>
           <.button phx-disable-with="Creating..." class="w-full">

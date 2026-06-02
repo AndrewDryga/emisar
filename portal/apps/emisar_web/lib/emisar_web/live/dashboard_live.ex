@@ -32,7 +32,10 @@ defmodule EmisarWeb.DashboardLive do
     |> assign(:runners_connected, Enum.count(runners, &(&1.status == "connected")))
     |> assign(:actions_count, length(actions))
     |> assign(:recent_runs, list_or_empty(Runs.list_recent_runs(subject, limit: 6)))
-    |> assign(:recent_failures, list_or_empty(Runs.list_recent_failures(subject, hours: 24, limit: 4)))
+    |> assign(
+      :recent_failures,
+      list_or_empty(Runs.list_recent_failures(subject, hours: 24, limit: 4))
+    )
     |> assign(:run_stats, unwrap_ok(Runs.fetch_run_stats(subject, hours: 24)))
     |> assign(:pending_approvals, pending)
     |> assign(:has_llm_connected?, api_keys != [])
@@ -70,7 +73,8 @@ defmodule EmisarWeb.DashboardLive do
 
   def render(assigns) do
     ~H"""
-    <.dashboard_shell pending_approvals_count={@pending_approvals_count}
+    <.dashboard_shell
+      pending_approvals_count={@pending_approvals_count}
       current_user={@current_user}
       current_account={@current_account}
       switchable_accounts={@switchable_accounts}
@@ -246,7 +250,7 @@ defmodule EmisarWeb.DashboardLive do
               <div class="min-w-0">
                 <div class="truncate font-mono text-rose-100">{run.action_id}</div>
                 <div class="truncate text-xs text-rose-200/60">
-                  <span :if={run.runner}>on {run.runner.name} · </span>
+                  <span :if={run.runner}>on {run.runner.name}  · </span>
                   {relative_time(run.inserted_at)}
                 </div>
               </div>
@@ -279,11 +283,17 @@ defmodule EmisarWeb.DashboardLive do
           <p class="mt-3 text-sm text-zinc-300">No runs yet.</p>
           <p class="mt-1 text-xs leading-relaxed text-zinc-500">
             Register a
-            <.link navigate={~p"/app/runners"} class="text-indigo-400 hover:text-indigo-300">runner</.link>
-            and dispatch an action from its detail page, or kick off a
-            <.link navigate={~p"/app/runbooks"} class="text-indigo-400 hover:text-indigo-300">runbook</.link>.
-            LLM-driven runs (via the
-            <.link navigate={~p"/app/agents"} class="text-indigo-400 hover:text-indigo-300">MCP API</.link>) land here too.
+            <.link navigate={~p"/app/runners"} class="text-indigo-400 hover:text-indigo-300">
+              runner
+            </.link>
+            and dispatch an action from its detail page, or kick off a <.link
+              navigate={~p"/app/runbooks"}
+              class="text-indigo-400 hover:text-indigo-300"
+            >runbook</.link>.
+            LLM-driven runs (via the <.link
+              navigate={~p"/app/agents"}
+              class="text-indigo-400 hover:text-indigo-300"
+            >MCP API</.link>) land here too.
           </p>
         </div>
       <% else %>
@@ -296,7 +306,7 @@ defmodule EmisarWeb.DashboardLive do
               <div class="min-w-0">
                 <div class="truncate font-mono text-sm text-zinc-200">{run.action_id}</div>
                 <div class="truncate text-xs text-zinc-500">
-                  <span :if={run.runner}>on {run.runner.name} · </span>
+                  <span :if={run.runner}>on {run.runner.name}  · </span>
                   {relative_time(run.inserted_at)}
                 </div>
               </div>
@@ -361,10 +371,15 @@ defmodule EmisarWeb.DashboardLive do
         value={@stats.total}
         hint={
           cond do
-            @stats.total == 0 -> "Nothing dispatched yet"
-            @stats.success_rate == 100 -> "All succeeded"
+            @stats.total == 0 ->
+              "Nothing dispatched yet"
+
+            @stats.success_rate == 100 ->
+              "All succeeded"
+
             @stats.success_rate != nil ->
               "#{@stats.success_rate}% success · #{@stats.failed} failed"
+
             true ->
               "#{@stats.total} in progress"
           end
@@ -373,8 +388,12 @@ defmodule EmisarWeb.DashboardLive do
           cond do
             @stats.failed > 0 and @stats.success_rate != nil and @stats.success_rate < 75 ->
               "ring-1 ring-rose-500/30"
-            @stats.failed > 0 -> "ring-1 ring-amber-500/20"
-            true -> ""
+
+            @stats.failed > 0 ->
+              "ring-1 ring-amber-500/20"
+
+            true ->
+              ""
           end
         }
       />
@@ -506,7 +525,8 @@ defmodule EmisarWeb.DashboardLive do
     do: "#{m.missing} can't sign in until enrolled →"
 
   defp stat_hint(:amber, m),
-    do: "#{m.missing} #{if m.missing == 1, do: "member hasn't", else: "members haven't"} enrolled →"
+    do:
+      "#{m.missing} #{if m.missing == 1, do: "member hasn't", else: "members haven't"} enrolled →"
 
   defp stat_hint(:zinc, _),
     do: "No teammates yet."

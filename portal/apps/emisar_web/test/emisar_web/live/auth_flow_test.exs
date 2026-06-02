@@ -93,12 +93,16 @@ defmodule EmisarWeb.AuthFlowTest do
 
       # Enable MFA so the user has a TOTP secret on the row.
       secret = Emisar.Auth.generate_mfa_secret()
-      {:ok, user, _codes} = Emisar.Auth.enable_mfa(user, secret, NimbleTOTP.verification_code(secret))
+
+      {:ok, user, _codes} =
+        Emisar.Auth.enable_mfa(user, secret, NimbleTOTP.verification_code(secret))
 
       %{user: user, secret: secret, account: account}
     end
 
-    test "correct password sets a pending-MFA session marker and redirects to /sign_in/mfa", %{conn: conn} do
+    test "correct password sets a pending-MFA session marker and redirects to /sign_in/mfa", %{
+      conn: conn
+    } do
       conn =
         post(conn, ~p"/sign_in", %{
           "user" => %{"email" => "mfa@example.com", "password" => "long-mfa-password-123"}
@@ -112,7 +116,8 @@ defmodule EmisarWeb.AuthFlowTest do
       assert is_integer(get_session(conn, :pending_mfa_expires_at))
     end
 
-    test "OTP submitted against a valid pending marker finishes sign-in WITHOUT asking for the password again", %{conn: conn, secret: secret, account: account} do
+    test "OTP submitted against a valid pending marker finishes sign-in WITHOUT asking for the password again",
+         %{conn: conn, secret: secret, account: account} do
       # Step 1: password verifies, pending marker set.
       conn =
         post(conn, ~p"/sign_in", %{
@@ -142,7 +147,9 @@ defmodule EmisarWeb.AuthFlowTest do
       assert Enum.any?(events, fn ev -> ev.payload["method"] == "password+mfa" end)
     end
 
-    test "wrong OTP under a valid pending marker stays on /sign_in/mfa with a flash", %{conn: conn} do
+    test "wrong OTP under a valid pending marker stays on /sign_in/mfa with a flash", %{
+      conn: conn
+    } do
       conn =
         post(conn, ~p"/sign_in", %{
           "user" => %{"email" => "mfa@example.com", "password" => "long-mfa-password-123"}
@@ -159,7 +166,8 @@ defmodule EmisarWeb.AuthFlowTest do
       assert get_session(conn, :pending_mfa_user_id)
     end
 
-    test "an OTP submission without a pending marker bounces back to /sign_in (instead of crashing)", %{conn: conn} do
+    test "an OTP submission without a pending marker bounces back to /sign_in (instead of crashing)",
+         %{conn: conn} do
       # The visitor never ran the password step — just hit /sign_in
       # with an OTP. Without a pending marker, that's not a valid
       # second-step submission; we send them to the password page.
@@ -169,7 +177,9 @@ defmodule EmisarWeb.AuthFlowTest do
       assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "expired"
     end
 
-    test "the MFA challenge LV bounces visitors with no pending state back to /sign_in", %{conn: conn} do
+    test "the MFA challenge LV bounces visitors with no pending state back to /sign_in", %{
+      conn: conn
+    } do
       assert {:error, {:live_redirect, %{to: "/sign_in"}}} = live(conn, ~p"/sign_in/mfa")
     end
   end

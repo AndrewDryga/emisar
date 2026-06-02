@@ -180,7 +180,9 @@ defmodule EmisarWeb.Mcp.Service do
             deadline = System.monotonic_time(:millisecond) + min(wait_ms, @max_get_run_wait_ms)
 
             case poll_to_terminal(subject, run.id, deadline) do
-              {:terminal, final} -> {:ok, full_run_payload(final, subject), :terminal}
+              {:terminal, final} ->
+                {:ok, full_run_payload(final, subject), :terminal}
+
               :timeout ->
                 current =
                   case Runs.fetch_run_by_id(run.id, subject) do
@@ -268,18 +270,28 @@ defmodule EmisarWeb.Mcp.Service do
 
       nil ->
         case Enum.find(all, &(&1.name == name)) do
-          nil -> {:error, :runner_not_found, name}
-          %_{} = runner -> {:error, :runner_not_allowed, name, deny_reason(runner, api_key, scopes)}
+          nil ->
+            {:error, :runner_not_found, name}
+
+          %_{} = runner ->
+            {:error, :runner_not_allowed, name, deny_reason(runner, api_key, scopes)}
         end
     end
   end
 
   defp deny_reason(runner, api_key, scopes) do
     cond do
-      runner.disabled_at -> "runner is disabled"
-      not runner_visible_to_key?(runner, api_key) -> "the API key's runner_filter / runner_group_filter doesn't include it"
-      not Accounts.runner_in_scope?(runner, scopes) -> "the user who minted this key has no runner-scope grant for it"
-      true -> "no advertised action with this name on this runner"
+      runner.disabled_at ->
+        "runner is disabled"
+
+      not runner_visible_to_key?(runner, api_key) ->
+        "the API key's runner_filter / runner_group_filter doesn't include it"
+
+      not Accounts.runner_in_scope?(runner, scopes) ->
+        "the user who minted this key has no runner-scope grant for it"
+
+      true ->
+        "no advertised action with this name on this runner"
     end
   end
 
@@ -351,7 +363,13 @@ defmodule EmisarWeb.Mcp.Service do
           "\n\nRuns on: #{only.name} (#{runner_status_label(only)})"
 
         many ->
-          lines = Enum.map_join(many, "\n", &("- " <> &1.name <> " (" <> runner_status_label(&1) <> ")"))
+          lines =
+            Enum.map_join(
+              many,
+              "\n",
+              &("- " <> &1.name <> " (" <> runner_status_label(&1) <> ")")
+            )
+
           "\n\nAvailable runners (pick one or more by name):\n" <> lines
       end
 
@@ -445,8 +463,12 @@ defmodule EmisarWeb.Mcp.Service do
     remaining = Enum.reject(ids, &run_terminal?(&1, subject))
 
     cond do
-      remaining == [] -> :ok
-      System.monotonic_time(:millisecond) >= deadline -> :ok
+      remaining == [] ->
+        :ok
+
+      System.monotonic_time(:millisecond) >= deadline ->
+        :ok
+
       true ->
         Process.sleep(@poll_interval_ms)
         poll_all_to_terminal(subject, remaining, deadline)

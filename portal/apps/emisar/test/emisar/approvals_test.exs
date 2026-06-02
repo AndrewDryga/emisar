@@ -53,7 +53,8 @@ defmodule Emisar.ApprovalsTest do
                Approvals.approve_request(req, subject, "lgtm")
 
       assert Enum.any?(
-               Audit.list_events(Emisar.Auth.Subject.system(account), page: [limit: 50]) |> elem(1),
+               Audit.list_events(Emisar.Auth.Subject.system(account), page: [limit: 50])
+               |> elem(1),
                &(&1.event_type == "approval.approved")
              )
     end
@@ -69,7 +70,8 @@ defmodule Emisar.ApprovalsTest do
                Approvals.deny_request(req, subject, "not now")
 
       assert Enum.any?(
-               Audit.list_events(Emisar.Auth.Subject.system(account), page: [limit: 50]) |> elem(1),
+               Audit.list_events(Emisar.Auth.Subject.system(account), page: [limit: 50])
+               |> elem(1),
                &(&1.event_type == "approval.denied")
              )
     end
@@ -176,8 +178,11 @@ defmodule Emisar.ApprovalsTest do
 
       _ = insert_grant(account, key, action_id: "linux.uptime", granted_by_id: user.id)
 
-      assert %Grant{} = Approvals.peek_matching_grant(key.id, "linux.uptime", runner_a.id, "sha-a")
-      assert %Grant{} = Approvals.peek_matching_grant(key.id, "linux.uptime", runner_b.id, "sha-b")
+      assert %Grant{} =
+               Approvals.peek_matching_grant(key.id, "linux.uptime", runner_a.id, "sha-a")
+
+      assert %Grant{} =
+               Approvals.peek_matching_grant(key.id, "linux.uptime", runner_b.id, "sha-b")
     end
 
     test "exact runner match: grant on runner_a doesn't match runner_b" do
@@ -187,7 +192,8 @@ defmodule Emisar.ApprovalsTest do
       runner_a = runner_fixture(account_id: account.id)
       runner_b = runner_fixture(account_id: account.id)
 
-      _ = insert_grant(account, key, action_id: "x", runner_id: runner_a.id, granted_by_id: user.id)
+      _ =
+        insert_grant(account, key, action_id: "x", runner_id: runner_a.id, granted_by_id: user.id)
 
       assert %Grant{} = Approvals.peek_matching_grant(key.id, "x", runner_a.id, "any")
       assert Approvals.peek_matching_grant(key.id, "x", runner_b.id, "any") == nil
@@ -337,7 +343,9 @@ defmodule Emisar.ApprovalsTest do
         })
 
       {:ok, req} = Approvals.create_request(run, user.id, "x")
-      {:ok, _} = Approvals.approve_request(req, subject, nil, duration: :one_day, scope: :exact_args)
+
+      {:ok, _} =
+        Approvals.approve_request(req, subject, nil, duration: :one_day, scope: :exact_args)
 
       {:ok, [g], _} = Approvals.list_grants_for_api_key(key.id)
       assert g.action_id == "linux.uptime"
@@ -366,7 +374,9 @@ defmodule Emisar.ApprovalsTest do
         })
 
       {:ok, req} = Approvals.create_request(run, user.id, "x")
-      {:ok, _} = Approvals.approve_request(req, subject, nil, duration: :indefinite, scope: :any_args)
+
+      {:ok, _} =
+        Approvals.approve_request(req, subject, nil, duration: :indefinite, scope: :any_args)
 
       {:ok, [g], _} = Approvals.list_grants_for_api_key(key.id)
       assert g.args_sha256 == nil
@@ -382,6 +392,7 @@ defmodule Emisar.ApprovalsTest do
 
       # Move the request's expiry into the past.
       past = DateTime.utc_now() |> DateTime.add(-3600, :second) |> DateTime.truncate(:microsecond)
+
       {1, _} =
         Request.Query.all()
         |> Request.Query.by_id(req.id)
@@ -402,7 +413,8 @@ defmodule Emisar.ApprovalsTest do
       assert reloaded_run.status == "cancelled"
 
       assert Enum.any?(
-               Emisar.Audit.list_events(Emisar.Auth.Subject.system(account), page: [limit: 50]) |> elem(1),
+               Emisar.Audit.list_events(Emisar.Auth.Subject.system(account), page: [limit: 50])
+               |> elem(1),
                &(&1.event_type == "approval.expired" and &1.subject_id == req.id)
              )
     end
@@ -427,6 +439,7 @@ defmodule Emisar.ApprovalsTest do
       {:ok, req} = Approvals.create_request(run, user.id, "x")
       # default 24h is in the future
       assert Approvals.expire_overdue_requests() == 0
+
       assert (Request.Query.all()
               |> Request.Query.by_id(req.id)
               |> Repo.fetch!(Request.Query)).status == "pending"
@@ -480,11 +493,15 @@ defmodule Emisar.ApprovalsTest do
         api_key_id: key.id
       }
 
-      assert {:ok, :pending_approval, run1} = Runs.dispatch_run(attrs, Emisar.Auth.Subject.system(account))
+      assert {:ok, :pending_approval, run1} =
+               Runs.dispatch_run(attrs, Emisar.Auth.Subject.system(account))
+
       req =
         Request.Query.all() |> Request.Query.by_run_id(run1.id) |> Repo.fetch!(Request.Query)
 
-      {:ok, _} = Approvals.approve_request(req, subject, nil, duration: :one_day, scope: :any_args)
+      {:ok, _} =
+        Approvals.approve_request(req, subject, nil, duration: :one_day, scope: :any_args)
+
       assert_receive {:cloud_to_runner, %{"type" => "run_action"}}, 500
 
       assert {:ok, :running, run2} = Runs.dispatch_run(attrs, Emisar.Auth.Subject.system(account))
@@ -531,12 +548,16 @@ defmodule Emisar.ApprovalsTest do
         api_key_id: key.id
       }
 
-      {:ok, :pending_approval, run1} = Runs.dispatch_run(attrs, Emisar.Auth.Subject.system(account))
+      {:ok, :pending_approval, run1} =
+        Runs.dispatch_run(attrs, Emisar.Auth.Subject.system(account))
+
       req =
         Request.Query.all() |> Request.Query.by_run_id(run1.id) |> Repo.fetch!(Request.Query)
+
       {:ok, _} = Approvals.approve_request(req, subject, nil, duration: :once)
 
-      assert {:ok, :pending_approval, _run2} = Runs.dispatch_run(attrs, Emisar.Auth.Subject.system(account))
+      assert {:ok, :pending_approval, _run2} =
+               Runs.dispatch_run(attrs, Emisar.Auth.Subject.system(account))
     end
   end
 end

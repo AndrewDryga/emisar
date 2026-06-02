@@ -150,7 +150,9 @@ defmodule Emisar.Repo do
 
   defp maybe_insert_audit(audit_fun, schema) when is_function(audit_fun, 1) do
     case audit_fun.(schema) do
-      nil -> :ok
+      nil ->
+        :ok
+
       %Ecto.Changeset{} = audit_cs ->
         case insert(audit_cs, mode: :savepoint) do
           {:ok, _} -> :ok

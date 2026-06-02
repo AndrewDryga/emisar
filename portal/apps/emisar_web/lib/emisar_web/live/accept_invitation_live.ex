@@ -98,8 +98,7 @@ defmodule EmisarWeb.AcceptInvitationLive do
     ~H"""
     <.auth_layout title={"Join #{@membership.account.name}"}>
       <p class="mb-6 text-sm text-zinc-400">
-        You're signed in as
-        <span class="font-mono text-zinc-200">{@membership.user.email}</span>
+        You're signed in as <span class="font-mono text-zinc-200">{@membership.user.email}</span>
         — accept your invitation to join
         <span class="font-semibold text-zinc-200">{@membership.account.name}</span>
         as <span class="font-mono text-indigo-300">{@membership.role}</span>.
@@ -121,14 +120,11 @@ defmodule EmisarWeb.AcceptInvitationLive do
     <.auth_layout title="Wrong account">
       <div class="space-y-4 text-sm text-zinc-300">
         <p>
-          This invitation is for
-          <span class="font-mono text-zinc-100">{@membership.user.email}</span>, but
-          you're signed in as
-          <span class="font-mono text-zinc-100">{@current_user.email}</span>.
+          This invitation is for <span class="font-mono text-zinc-100">{@membership.user.email}</span>, but
+          you're signed in as <span class="font-mono text-zinc-100">{@current_user.email}</span>.
         </p>
         <p class="text-zinc-400">
-          Sign out first, then re-open the invitation link to accept it as
-          {@membership.user.email}.
+          Sign out first, then re-open the invitation link to accept it as {@membership.user.email}.
         </p>
 
         <.link

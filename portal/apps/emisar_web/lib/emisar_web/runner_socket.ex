@@ -91,8 +91,8 @@ defmodule EmisarWeb.RunnerSocket do
         if Map.get(msg, "protocol_version") in [nil, @protocol_version] do
           handle_envelope(type, msg, state)
         else
-          {:push, error_frame(nil, "protocol_version_mismatch",
-             "unsupported protocol_version"), state}
+          {:push, error_frame(nil, "protocol_version_mismatch", "unsupported protocol_version"),
+           state}
         end
 
       {:ok, _} ->

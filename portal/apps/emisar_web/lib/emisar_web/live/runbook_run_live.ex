@@ -32,7 +32,10 @@ defmodule EmisarWeb.RunbookRunLive do
 
   defp format_reason(%Ecto.Changeset{} = cs), do: humanize_errors(cs)
   defp format_reason(reason) when is_binary(reason), do: reason
-  defp format_reason(reason) when is_atom(reason), do: reason |> Atom.to_string() |> String.replace("_", " ")
+
+  defp format_reason(reason) when is_atom(reason),
+    do: reason |> Atom.to_string() |> String.replace("_", " ")
+
   defp format_reason(_), do: "unknown error"
 
   def handle_event("validate", params, socket) do
@@ -63,7 +66,12 @@ defmodule EmisarWeb.RunbookRunLive do
          |> put_flash(:error, "Reason is required — describe why you're running this runbook.")}
 
       true ->
-        case Runbooks.dispatch_runbook(socket.assigns.runbook, runner_id, reason, socket.assigns.current_subject) do
+        case Runbooks.dispatch_runbook(
+               socket.assigns.runbook,
+               runner_id,
+               reason,
+               socket.assigns.current_subject
+             ) do
           {:ok, _status, first_run} ->
             {:noreply,
              socket
@@ -77,7 +85,8 @@ defmodule EmisarWeb.RunbookRunLive do
             {:noreply, put_flash(socket, :error, "Runbook has no steps to run.")}
 
           {:error, reason} ->
-            {:noreply, put_flash(socket, :error, "Could not start runbook: #{format_reason(reason)}")}
+            {:noreply,
+             put_flash(socket, :error, "Could not start runbook: #{format_reason(reason)}")}
 
           _other ->
             {:noreply, put_flash(socket, :error, "Could not start runbook. Try again.")}
@@ -87,7 +96,8 @@ defmodule EmisarWeb.RunbookRunLive do
 
   def render(assigns) do
     ~H"""
-    <.dashboard_shell pending_approvals_count={@pending_approvals_count}
+    <.dashboard_shell
+      pending_approvals_count={@pending_approvals_count}
       current_user={@current_user}
       current_account={@current_account}
       switchable_accounts={@switchable_accounts}
@@ -122,7 +132,9 @@ defmodule EmisarWeb.RunbookRunLive do
               <.link
                 navigate={~p"/app/runbooks/#{@runbook.id}/edit"}
                 class="text-indigo-400 hover:text-indigo-300"
-              >Edit the runbook</.link>
+              >
+                Edit the runbook
+              </.link>
               first.
             </div>
           <% else %>

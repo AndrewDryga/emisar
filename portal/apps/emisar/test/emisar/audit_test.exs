@@ -139,6 +139,7 @@ defmodule Emisar.AuditTest do
         Audit.list_events(Subject.system(account), page: [cursor: cursor, limit: 3])
 
       assert length(page2) == 3
+
       {:ok, page3, %{next_page_cursor: nil}} =
         Audit.list_events(Subject.system(account), page: [cursor: cursor2, limit: 3])
 
@@ -183,6 +184,7 @@ defmodule Emisar.AuditTest do
 
     test "invalid cursor surfaces an error rather than returning random rows" do
       account = account_fixture()
+
       assert {:error, :invalid_cursor} =
                Audit.list_events(Subject.system(account), page: [cursor: "garbage"])
     end

@@ -32,7 +32,8 @@ defmodule EmisarWeb.BillingLive do
             {:noreply, redirect(s, external: url)}
 
           {:error, reason} ->
-            {:noreply, put_flash(s, :error, "Could not start checkout: #{humanize_reason(reason)}")}
+            {:noreply,
+             put_flash(s, :error, "Could not start checkout: #{humanize_reason(reason)}")}
         end
       else
         {:noreply, put_flash(s, :error, "Unknown plan.")}
@@ -41,7 +42,8 @@ defmodule EmisarWeb.BillingLive do
   end
 
   def handle_event("contact_sales", _params, socket) do
-    {:noreply, put_flash(socket, :info, "We'll be in touch — email sales@emisar.dev to chat sooner.")}
+    {:noreply,
+     put_flash(socket, :info, "We'll be in touch — email sales@emisar.dev to chat sooner.")}
   end
 
   def handle_event("manage_billing", _params, socket) do
@@ -118,6 +120,7 @@ defmodule EmisarWeb.BillingLive do
   defp usage_pct(_n, nil), do: nil
   defp usage_pct(_n, :unlimited), do: nil
   defp usage_pct(0, _), do: 0
+
   defp usage_pct(n, limit) when is_integer(limit) and limit > 0,
     do: min(100, round(n * 100 / limit))
 
@@ -134,12 +137,16 @@ defmodule EmisarWeb.BillingLive do
   defp usage_class(_), do: "bg-indigo-400"
 
   defp humanize_reason(reason) when is_binary(reason), do: reason
-  defp humanize_reason(reason) when is_atom(reason), do: reason |> Atom.to_string() |> String.replace("_", " ")
+
+  defp humanize_reason(reason) when is_atom(reason),
+    do: reason |> Atom.to_string() |> String.replace("_", " ")
+
   defp humanize_reason(_), do: "unknown error"
 
   def render(assigns) do
     ~H"""
-    <.dashboard_shell pending_approvals_count={@pending_approvals_count}
+    <.dashboard_shell
+      pending_approvals_count={@pending_approvals_count}
       current_user={@current_user}
       current_account={@current_account}
       switchable_accounts={@switchable_accounts}
@@ -220,8 +227,8 @@ defmodule EmisarWeb.BillingLive do
             </button>
           </div>
 
-          <%= runner_limit = plan_limit(@plans, @summary.plan, :runners_limit) %>
-          <%= member_limit = plan_limit(@plans, @summary.plan, :members_limit) %>
+          {runner_limit = plan_limit(@plans, @summary.plan, :runners_limit)}
+          {member_limit = plan_limit(@plans, @summary.plan, :members_limit)}
 
           <div class="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
             <.usage_meter
@@ -330,13 +337,13 @@ defmodule EmisarWeb.BillingLive do
         </span>
       </div>
       <div :if={@pct} class="mt-2 h-1.5 overflow-hidden rounded-full bg-zinc-900">
-        <div class={["h-full transition-all", usage_class(@pct)]} style={"width: #{@pct}%"}>
-        </div>
+        <div class={["h-full transition-all", usage_class(@pct)]} style={"width: #{@pct}%"}></div>
       </div>
       <div
         :if={is_nil(@pct)}
         class="mt-2 h-1.5 rounded-full bg-gradient-to-r from-indigo-900/30 via-indigo-500/40 to-indigo-900/30"
-      ></div>
+      >
+      </div>
     </div>
     """
   end

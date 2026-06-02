@@ -21,7 +21,12 @@ defmodule Emisar.PoliciesAuditTest do
       %{user: user, account: account, subject: subject, policy: policy}
     end
 
-    test "captures before/after snapshots", %{user: user, account: account, subject: subject, policy: policy} do
+    test "captures before/after snapshots", %{
+      user: user,
+      account: account,
+      subject: subject,
+      policy: policy
+    } do
       new_rules = %{
         "schema_version" => 2,
         "defaults" => %{
@@ -68,7 +73,11 @@ defmodule Emisar.PoliciesAuditTest do
       refute Map.has_key?(event.payload["changes"]["defaults"], "low")
     end
 
-    test "diff identifies override add / remove / change", %{subject: subject, account: account, policy: policy} do
+    test "diff identifies override add / remove / change", %{
+      subject: subject,
+      account: account,
+      policy: policy
+    } do
       starting =
         Policies.default_rules()
         |> Map.put("overrides", [

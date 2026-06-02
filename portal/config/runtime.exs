@@ -72,7 +72,9 @@ if config_env() == :prod do
   # proxy that already handles the redirect itself. Defaults to true.
   force_ssl_enabled? = System.get_env("FORCE_SSL", "true") in ~w(true 1)
   url_scheme = if force_ssl_enabled?, do: "https", else: "http"
-  url_port = if force_ssl_enabled?, do: 443, else: String.to_integer(System.get_env("PORT") || "4000")
+
+  url_port =
+    if force_ssl_enabled?, do: 443, else: String.to_integer(System.get_env("PORT") || "4000")
 
   endpoint_opts = [
     url: [host: host, port: url_port, scheme: url_scheme],

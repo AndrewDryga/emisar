@@ -74,8 +74,7 @@ defmodule Emisar.Runs.ActionRun do
 
   @doc "Is `status` a terminal state?"
   def terminal?(status) when is_binary(status),
-    do:
-      status in ~w(success failed error validation_failed unknown_action cancelled timed_out)
+    do: status in ~w(success failed error validation_failed unknown_action cancelled timed_out)
 
   def terminal?(_), do: false
 end

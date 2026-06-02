@@ -164,9 +164,7 @@ defmodule EmisarWeb.UserAuth do
         cond do
           Accounts.all_memberships_suspended?(user) ->
             conn
-            |> log_out_user_with_flash(
-              "Your access has been suspended. Contact your team admin."
-            )
+            |> log_out_user_with_flash("Your access has been suspended. Contact your team admin.")
             |> halt()
 
           true ->
@@ -183,7 +181,10 @@ defmodule EmisarWeb.UserAuth do
         |> maybe_refresh_account_session(membership.account_id, requested_account_id)
         |> assign(:current_account, membership.account)
         |> assign(:current_membership, membership)
-        |> assign(:current_subject, Subject.for_user(user, membership.account, membership, context))
+        |> assign(
+          :current_subject,
+          Subject.for_user(user, membership.account, membership, context)
+        )
     end
   end
 

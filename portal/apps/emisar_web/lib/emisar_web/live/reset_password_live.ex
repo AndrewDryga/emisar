@@ -10,7 +10,10 @@ defmodule EmisarWeb.ResetPasswordLive do
       |> assign(:sent_to, nil)
       |> assign(:reset_token, params["token"])
       |> assign(:request_form, to_form(%{"email" => ""}, as: "user"))
-      |> assign(:reset_form, to_form(%{"password" => "", "password_confirmation" => ""}, as: "user"))
+      |> assign(
+        :reset_form,
+        to_form(%{"password" => "", "password_confirmation" => ""}, as: "user")
+      )
 
     {:ok, socket}
   end
@@ -54,8 +57,7 @@ defmodule EmisarWeb.ResetPasswordLive do
       <%= if @sent_to do %>
         <div class="rounded-lg border border-emerald-700/40 bg-emerald-950/40 p-6 text-emerald-200">
           <p>
-            If <span class="font-mono">{@sent_to}</span>
-            is registered, a reset link is on its way.
+            If <span class="font-mono">{@sent_to}</span> is registered, a reset link is on its way.
           </p>
           <button
             phx-click="reset_form"
@@ -80,7 +82,9 @@ defmodule EmisarWeb.ResetPasswordLive do
 
       <p class="mt-6 text-center text-sm text-zinc-400">
         Remembered it?
-        <.link href={~p"/sign_in"} class="font-medium text-indigo-400 hover:text-indigo-300">Sign in</.link>
+        <.link href={~p"/sign_in"} class="font-medium text-indigo-400 hover:text-indigo-300">
+          Sign in
+        </.link>
       </p>
     </.auth_layout>
     """
@@ -106,7 +110,11 @@ defmodule EmisarWeb.ResetPasswordLive do
     {:noreply, assign(socket, :sent_to, email)}
   end
 
-  def handle_event("reset", %{"user" => %{"password" => password, "password_confirmation" => confirmation}}, socket) do
+  def handle_event(
+        "reset",
+        %{"user" => %{"password" => password, "password_confirmation" => confirmation}},
+        socket
+      ) do
     cond do
       password != confirmation ->
         {:noreply, put_flash(socket, :error, "Passwords don't match.")}

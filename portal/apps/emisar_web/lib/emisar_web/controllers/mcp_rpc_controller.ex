@@ -142,7 +142,12 @@ defmodule EmisarWeb.McpRpcController do
         {:ok, %{content: content, isError: true}}
 
       {:error, :runner_not_found, runner} ->
-        {content, _} = ContentBlocks.error_content("Runner not found", "No runner named `#{runner}` in this account.")
+        {content, _} =
+          ContentBlocks.error_content(
+            "Runner not found",
+            "No runner named `#{runner}` in this account."
+          )
+
         {:ok, %{content: content, isError: true}}
 
       {:error, :runner_not_allowed, runner, why} ->

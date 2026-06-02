@@ -65,7 +65,8 @@ defmodule Emisar.Repo.Migrations.PoliciesV2Shape do
 
   defp convert(_), do: @default_rules
 
-  defp override_from_rule(%{"action" => action} = r, decision) when is_binary(action) and action != "" do
+  defp override_from_rule(%{"action" => action} = r, decision)
+       when is_binary(action) and action != "" do
     %{
       "name" => r["name"] || "migrated",
       "action" => action,

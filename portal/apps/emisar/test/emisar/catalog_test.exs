@@ -81,14 +81,18 @@ defmodule Emisar.CatalogTest do
       system = Emisar.Auth.Subject.system(account)
 
       _ =
-        Catalog.observe_state(runner, state_payload(actions: [action("a"), action("b"), action("c")]))
+        Catalog.observe_state(
+          runner,
+          state_payload(actions: [action("a"), action("b"), action("c")])
+        )
 
       assert {:ok, actions, _} = Catalog.list_actions_for_runner(runner.id, system)
       assert length(actions) == 3
 
       _ = Catalog.observe_state(runner, state_payload(actions: [action("a")]))
 
-      assert {:ok, [%RunnerAction{action_id: "a"}], _} = Catalog.list_actions_for_runner(runner.id, system)
+      assert {:ok, [%RunnerAction{action_id: "a"}], _} =
+               Catalog.list_actions_for_runner(runner.id, system)
     end
 
     test "updates the runner row's hostname/labels/version" do
@@ -113,8 +117,11 @@ defmodule Emisar.CatalogTest do
       account = Emisar.Accounts.fetch_account_by_id!(runner.account_id)
       system = Emisar.Auth.Subject.system(account)
 
-      assert {:ok, _runner} = Catalog.observe_state(runner.id, state_payload(actions: [action("a")]))
-      assert {:ok, [%RunnerAction{action_id: "a"}], _} = Catalog.list_actions_for_runner(runner.id, system)
+      assert {:ok, _runner} =
+               Catalog.observe_state(runner.id, state_payload(actions: [action("a")]))
+
+      assert {:ok, [%RunnerAction{action_id: "a"}], _} =
+               Catalog.list_actions_for_runner(runner.id, system)
     end
 
     test "returns {:error, :unknown_runner} for an unknown id" do
@@ -200,7 +207,9 @@ defmodule Emisar.CatalogTest do
       # is exercised (baseline-match would auto-pin without testing the
       # contended insert path).
       payload =
-        state_payload(packs: %{"raceduck-custom-pack" => %{"version" => "0.3.0", "hash" => "sha256:RACE"}})
+        state_payload(
+          packs: %{"raceduck-custom-pack" => %{"version" => "0.3.0", "hash" => "sha256:RACE"}}
+        )
 
       tasks =
         Task.async_stream(

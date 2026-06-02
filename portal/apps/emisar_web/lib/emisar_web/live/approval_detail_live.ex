@@ -155,8 +155,9 @@ defmodule EmisarWeb.ApprovalDetailLive do
   # Rendering helper for "Requested by" / "Decided by". Prefers the
   # user's full name, falls back to email, then to a short UUID slice
   # if the user record is gone (deleted account), then to em-dash.
-  defp user_label(%Emisar.Accounts.User{full_name: name}, _id) when is_binary(name) and name != "",
-    do: name
+  defp user_label(%Emisar.Accounts.User{full_name: name}, _id)
+       when is_binary(name) and name != "",
+       do: name
 
   defp user_label(%Emisar.Accounts.User{email: email}, _id), do: email
   defp user_label(_, id) when is_binary(id), do: String.slice(id, 0, 8) <> "…"
@@ -164,7 +165,8 @@ defmodule EmisarWeb.ApprovalDetailLive do
 
   def render(assigns) do
     ~H"""
-    <.dashboard_shell pending_approvals_count={@pending_approvals_count}
+    <.dashboard_shell
+      pending_approvals_count={@pending_approvals_count}
       current_user={@current_user}
       current_account={@current_account}
       switchable_accounts={@switchable_accounts}
@@ -173,8 +175,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
     >
       <:title>
         <.back_link navigate={~p"/app/approvals"}>Approvals</.back_link>
-        Approval ·
-        <span class="font-mono text-base">{@request.context["action_id"] || "—"}</span>
+        Approval · <span class="font-mono text-base">{@request.context["action_id"] || "—"}</span>
       </:title>
       <%!-- Meta strip: at-a-glance facts. Status leads — same pattern
            as RunDetail / RunnerDetail — then action, runner,
@@ -198,7 +199,9 @@ defmodule EmisarWeb.ApprovalDetailLive do
             </.link>
           <% else %>
             <span class="truncate font-mono text-xs text-zinc-400">
-              {String.slice(@request.context["runner_id"] || "—", 0, 12)}{if @request.context["runner_id"], do: "…"}
+              {String.slice(@request.context["runner_id"] || "—", 0, 12)}{if @request.context[
+                                                                               "runner_id"
+                                                                             ], do: "…"}
             </span>
           <% end %>
         </.meta_field>
@@ -372,8 +375,10 @@ defmodule EmisarWeb.ApprovalDetailLive do
                 />
                 <p class="mt-1 text-[11px] leading-relaxed text-zinc-500">
                   Cap how many times this grant can be used within the window. Leave blank for unlimited.
-                  Grants are reviewable + revocable on the
-                  <.link navigate={~p"/app/approvals"} class="text-indigo-400 hover:text-indigo-300">
+                  Grants are reviewable + revocable on the <.link
+                    navigate={~p"/app/approvals"}
+                    class="text-indigo-400 hover:text-indigo-300"
+                  >
                     approvals page
                   </.link>.
                 </p>
@@ -382,15 +387,13 @@ defmodule EmisarWeb.ApprovalDetailLive do
           </details>
 
           <button class="flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-500 px-3 py-2.5 text-sm font-semibold text-zinc-950 hover:bg-emerald-400">
-            <.icon name="hero-check" class="h-4 w-4" />
-            Approve and send
+            <.icon name="hero-check" class="h-4 w-4" /> Approve and send
           </button>
         </form>
 
         <form phx-submit="deny" class="mt-3">
           <button class="flex w-full items-center justify-center gap-2 rounded-lg border border-rose-500/40 px-3 py-2.5 text-sm font-medium text-rose-200 hover:bg-rose-500/10">
-            <.icon name="hero-x-mark" class="h-4 w-4" />
-            Deny
+            <.icon name="hero-x-mark" class="h-4 w-4" /> Deny
           </button>
         </form>
       <% else %>
@@ -401,5 +404,4 @@ defmodule EmisarWeb.ApprovalDetailLive do
     </section>
     """
   end
-
 end

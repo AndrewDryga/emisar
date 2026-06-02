@@ -63,15 +63,21 @@
       <div class="mx-auto mt-12 grid max-w-5xl grid-cols-1 gap-6 md:grid-cols-3">
         <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-6">
           <h3 class="text-sm font-semibold text-indigo-300">LLM</h3>
-          <p class="mt-2 text-sm text-zinc-400">Untrusted. Can only call catalog actions with declared args.</p>
+          <p class="mt-2 text-sm text-zinc-400">
+            Untrusted. Can only call catalog actions with declared args.
+          </p>
         </div>
         <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-6">
           <h3 class="text-sm font-semibold text-indigo-300">Control plane</h3>
-          <p class="mt-2 text-sm text-zinc-400">Validates, gates, routes, audits. Never executes shell itself.</p>
+          <p class="mt-2 text-sm text-zinc-400">
+            Validates, gates, routes, audits. Never executes shell itself.
+          </p>
         </div>
         <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-6">
           <h3 class="text-sm font-semibold text-indigo-300">Runner</h3>
-          <p class="mt-2 text-sm text-zinc-400">Runs as a non-root user with only the binaries your pack declares, by default (set via install.sh).</p>
+          <p class="mt-2 text-sm text-zinc-400">
+            Runs as a non-root user with only the binaries your pack declares, by default (set via install.sh).
+          </p>
         </div>
       </div>
     </div>
@@ -102,7 +108,9 @@
           <div class="flex h-12 w-12 items-center justify-center rounded-lg bg-indigo-500/10 text-indigo-400">
             <.icon name="hero-arrow-up-on-square" class="h-6 w-6" />
           </div>
-          <h3 class="mt-6 text-xl font-semibold text-zinc-50">No inbound connections to runners</h3>
+          <h3 class="mt-6 text-xl font-semibold text-zinc-50">
+            No inbound connections to runners
+          </h3>
           <p class="mt-3 text-sm leading-6 text-zinc-400">
             Runners are outbound-only. No ports to expose, no firewall holes, no NAT traversal.
             Your hosts initiate every connection.
@@ -176,13 +184,14 @@
         <h2 class="text-4xl font-bold tracking-tight text-zinc-50">Responsible disclosure</h2>
         <p class="mt-6 text-lg leading-8 text-zinc-400">
           Found a security issue? We want to hear about it. Email
-          <a href="mailto:security@emisar.dev" class="text-indigo-300 hover:text-indigo-200">security@emisar.dev</a>
+          <a href="mailto:security@emisar.dev" class="text-indigo-300 hover:text-indigo-200">
+            security@emisar.dev
+          </a>
           with a description and reproduction steps. We acknowledge within one business day
           and credit reporters in our security advisories.
         </p>
         <p class="mt-4 text-sm text-zinc-500">
-          Full policy in
-          <a
+          Full policy in <a
             href="https://github.com/andrewdryga/emisar/blob/main/.github/SECURITY.md"
             target="_blank"
             rel="noopener noreferrer"
@@ -196,10 +205,12 @@
             rel="noopener noreferrer"
             class="inline-flex items-center gap-1.5 rounded-lg bg-indigo-500 px-6 py-3 text-sm font-semibold text-zinc-950 hover:bg-indigo-400"
           >
-            Read SECURITY.md
-            <.icon name="hero-arrow-top-right-on-square" class="h-4 w-4" />
+            Read SECURITY.md <.icon name="hero-arrow-top-right-on-square" class="h-4 w-4" />
           </a>
-          <a href="mailto:security@emisar.dev" class="text-sm font-semibold text-zinc-100 hover:text-indigo-300">
+          <a
+            href="mailto:security@emisar.dev"
+            class="text-sm font-semibold text-zinc-100 hover:text-indigo-300"
+          >
             Email security team <span aria-hidden="true">&rarr;</span>
           </a>
         </div>

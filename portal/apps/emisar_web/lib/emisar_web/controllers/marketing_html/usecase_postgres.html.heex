@@ -16,21 +16,22 @@
       <h2 class="mt-12 text-2xl font-semibold text-zinc-50">The pack</h2>
       <ul class="mt-4 space-y-3 text-sm text-zinc-300">
         <li>
-          <code class="font-mono text-indigo-300">pg.replication_lag</code> — risk:
-          <code>low</code>, read-only. Runs <code>SELECT pg_wal_lsn_diff(...)</code> via
+          <code class="font-mono text-indigo-300">pg.replication_lag</code>
+          — risk: <code>low</code>, read-only. Runs <code>SELECT pg_wal_lsn_diff(...)</code>
+          via
           a service-role connection and returns a numeric lag. The model can poll
           it freely.
         </li>
         <li>
-          <code class="font-mono text-indigo-300">pg.slow_queries</code> — risk:
-          <code>low</code>. <code>SELECT pid, query_start, state, query FROM pg_stat_activity
+          <code class="font-mono text-indigo-300">pg.slow_queries</code>
+          — risk: <code>low</code>. <code>SELECT pid, query_start, state, query FROM pg_stat_activity
           WHERE query_start &lt; now() - interval '$arg&#123;min_age&#125;'</code>. Output
           is JSON-parsed; queries past the redactor pass through with arguments
           masked.
         </li>
         <li>
-          <code class="font-mono text-indigo-300">pg.kill_pid</code> — risk:
-          <code>high</code>. <code>SELECT pg_terminate_backend($1)</code>. Args: a
+          <code class="font-mono text-indigo-300">pg.kill_pid</code>
+          — risk: <code>high</code>. <code>SELECT pg_terminate_backend($1)</code>. Args: a
           single integer PID. Policy default requires one approval.
         </li>
       </ul>
@@ -55,8 +56,8 @@
       <p class="mt-3 text-sm text-zinc-400">
         The model returned the URL to the human. The human looks at the run
         context — the slow query, the runner, the reason — and approves with one
-        click. The kill fires, output captures the boolean
-        <code>pg_terminate_backend</code> result, replication starts catching up.
+        click. The kill fires, output captures the boolean <code>pg_terminate_backend</code>
+        result, replication starts catching up.
       </p>
 
       <h2 class="mt-10 text-2xl font-semibold text-zinc-50">What stays out of bounds</h2>
@@ -66,7 +67,8 @@
           driven by AI, that's a deliberate authoring choice, not a default.
         </li>
         <li>
-          Reading row data: <code>pg.slow_queries</code> returns the query <em>text</em>
+          Reading row data: <code>pg.slow_queries</code>
+          returns the query <em>text</em>
           but not result rows. Arguments in the text get redacted.
         </li>
         <li>

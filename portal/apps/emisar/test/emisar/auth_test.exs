@@ -17,6 +17,7 @@ defmodule Emisar.AuthTest do
 
     test "returns :not_found for the wrong password" do
       user = user_fixture(password: @password)
+
       assert {:error, :not_found} =
                Auth.fetch_user_by_email_and_password(user.email, "definitely-wrong")
     end
@@ -151,7 +152,9 @@ defmodule Emisar.AuthTest do
     test "consume_mfa_recovery_code accepts a fresh code once, rejects reuse" do
       user = user_fixture()
       secret = Auth.generate_mfa_secret()
-      {:ok, user, [code | _]} = Auth.enable_mfa(user, secret, NimbleTOTP.verification_code(secret))
+
+      {:ok, user, [code | _]} =
+        Auth.enable_mfa(user, secret, NimbleTOTP.verification_code(secret))
 
       assert :ok = Auth.consume_mfa_recovery_code(user, code)
 

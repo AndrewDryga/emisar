@@ -46,23 +46,39 @@ defmodule EmisarWeb.LiveTable do
   attr :filter_params, :map, default: %{}, doc: "params currently driving the filter form"
   attr :filters, :list, default: [], doc: "list of %Filter{} from the entity's Query module"
 
-  attr :prefix, :string, default: "",
-    doc: "URL-param prefix for the embedded paginator. Use when a page hosts multiple paginated lists (e.g. approvals: pending_/grants_/decided_) so each list's prev/next cursors don't collide"
+  attr :prefix, :string,
+    default: "",
+    doc:
+      "URL-param prefix for the embedded paginator. Use when a page hosts multiple paginated lists (e.g. approvals: pending_/grants_/decided_) so each list's prev/next cursors don't collide"
 
-  attr :layout, :atom, default: :table, values: [:table, :cards],
-    doc: "`:table` renders `<table>` with `:col` slots (data dense); `:cards` renders `<ul>/<li>` with the `:item` slot (operator-friendly card rows)"
+  attr :layout, :atom,
+    default: :table,
+    values: [:table, :cards],
+    doc:
+      "`:table` renders `<table>` with `:col` slots (data dense); `:cards` renders `<ul>/<li>` with the `:item` slot (operator-friendly card rows)"
 
-  attr :overflow, :atom, default: :hidden, values: [:hidden, :visible],
-    doc: "`:cards` only. Set `:visible` when the rendered rows include floating popovers / dropdowns that need to escape the rounded card boundary (TeamLive's per-row <details> popover)"
+  attr :overflow, :atom,
+    default: :hidden,
+    values: [:hidden, :visible],
+    doc:
+      "`:cards` only. Set `:visible` when the rendered rows include floating popovers / dropdowns that need to escape the rounded card boundary (TeamLive's per-row <details> popover)"
 
-  attr :wrapper_class, :string, default: nil,
-    doc: "`:cards` only. Replaces the default `<ul>` class entirely. Use for visually distinct lists that share the LiveTable shell but break the divide-y card pattern (ApprovalsLive pending — gapped attention cards)"
+  attr :wrapper_class, :string,
+    default: nil,
+    doc:
+      "`:cards` only. Replaces the default `<ul>` class entirely. Use for visually distinct lists that share the LiveTable shell but break the divide-y card pattern (ApprovalsLive pending — gapped attention cards)"
 
-  attr :group_by, :any, default: nil,
-    doc: "`:cards` only. `fn row -> group_label end`. When set, rows are scanned in order and a group-header `<li>` is inserted before the first row of each new label. The `:group_header` slot renders the divider; falls back to a plain text header"
+  attr :group_by, :any,
+    default: nil,
+    doc:
+      "`:cards` only. `fn row -> group_label end`. When set, rows are scanned in order and a group-header `<li>` is inserted before the first row of each new label. The `:group_header` slot renders the divider; falls back to a plain text header"
 
   attr :row_id, :any, default: nil, doc: "fn row -> dom id end"
-  attr :row_click, :any, default: nil, doc: "fn row -> JS command end — applied to <tr> in :table mode, <li> in :cards mode"
+
+  attr :row_click, :any,
+    default: nil,
+    doc: "fn row -> JS command end — applied to <tr> in :table mode, <li> in :cards mode"
+
   attr :class, :string, default: nil
 
   slot :col, doc: "`:table` layout column. Required when `layout == :table`." do
@@ -72,10 +88,14 @@ defmodule EmisarWeb.LiveTable do
 
   slot :item, doc: "`:cards` layout row body — receives `row`. Required when `layout == :cards`."
 
-  slot :group_header, doc: "`:cards` + `:group_by` only — receives the group label, renders the divider"
+  slot :group_header,
+    doc: "`:cards` + `:group_by` only — receives the group label, renders the divider"
 
   slot :empty
-  slot :action, doc: "right-side actions for each row (`:table` only — for `:cards`, render them inside `:item`)"
+
+  slot :action,
+    doc:
+      "right-side actions for each row (`:table` only — for `:cards`, render them inside `:item`)"
 
   def live_table(%{layout: :cards} = assigns) do
     assigns =
@@ -96,7 +116,10 @@ defmodule EmisarWeb.LiveTable do
       />
 
       <%= if Enum.empty?(@rows) do %>
-        <div id={"#{@id}-empty"} class="rounded-xl border border-zinc-900 bg-zinc-950/40 px-5 py-10 text-center text-sm text-zinc-500">
+        <div
+          id={"#{@id}-empty"}
+          class="rounded-xl border border-zinc-900 bg-zinc-950/40 px-5 py-10 text-center text-sm text-zinc-500"
+        >
           {render_slot(@empty) || "Nothing to show."}
         </div>
       <% else %>
@@ -124,7 +147,9 @@ defmodule EmisarWeb.LiveTable do
              between the card list and the footer when the table is
              nested inside a list_section. --%>
         <div
-          :if={@metadata.previous_page_cursor || @metadata.next_page_cursor || (@metadata.count || 0) > 0}
+          :if={
+            @metadata.previous_page_cursor || @metadata.next_page_cursor || (@metadata.count || 0) > 0
+          }
           class="border-t border-zinc-900 px-5 py-3"
         >
           <.paginator
@@ -152,7 +177,10 @@ defmodule EmisarWeb.LiveTable do
       />
 
       <%= if Enum.empty?(@rows) do %>
-        <div id={"#{@id}-empty"} class="rounded-lg border border-zinc-800 bg-zinc-900/30 p-8 text-center text-sm text-zinc-400">
+        <div
+          id={"#{@id}-empty"}
+          class="rounded-lg border border-zinc-800 bg-zinc-900/30 p-8 text-center text-sm text-zinc-400"
+        >
           {render_slot(@empty) || "Nothing to show."}
         </div>
       <% else %>
@@ -202,7 +230,8 @@ defmodule EmisarWeb.LiveTable do
     do: "divide-y divide-zinc-900 rounded-xl border border-zinc-900 bg-zinc-950/40"
 
   defp default_cards_wrapper_class(_),
-    do: "divide-y divide-zinc-900 overflow-hidden rounded-xl border border-zinc-900 bg-zinc-950/40"
+    do:
+      "divide-y divide-zinc-900 overflow-hidden rounded-xl border border-zinc-900 bg-zinc-950/40"
 
   # When `:group_by` is set, walk the rows preserving order and bucket
   # them by label — returns `[{label, [row, …]}, …]`. Without group_by
@@ -231,7 +260,11 @@ defmodule EmisarWeb.LiveTable do
       action={@path}
       class="flex flex-wrap items-end gap-3 rounded-lg border border-zinc-800 bg-zinc-900/30 p-3"
     >
-      <.filter_input :for={filter <- @filters} filter={filter} value={Map.get(@params, to_string(filter.name))} />
+      <.filter_input
+        :for={filter <- @filters}
+        filter={filter}
+        value={Map.get(@params, to_string(filter.name))}
+      />
       <div class="flex gap-2">
         <button
           type="submit"

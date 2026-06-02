@@ -100,12 +100,15 @@ defmodule EmisarWeb.McpControllerTest do
     subject = Emisar.Fixtures.subject_for(user, account, role: :owner)
 
     {:ok, raw, _key} =
-      ApiKeys.create_key(%{
-        name: "key-#{unique()}",
-        scopes: opts[:scopes] || ["actions:read", "actions:execute"],
-        runner_filter: opts[:runner_filter] || [],
-        runner_group_filter: opts[:runner_group_filter] || []
-      }, subject)
+      ApiKeys.create_key(
+        %{
+          name: "key-#{unique()}",
+          scopes: opts[:scopes] || ["actions:read", "actions:execute"],
+          runner_filter: opts[:runner_filter] || [],
+          runner_group_filter: opts[:runner_group_filter] || []
+        },
+        subject
+      )
 
     raw
   end
@@ -244,6 +247,7 @@ defmodule EmisarWeb.McpControllerTest do
 
       shared = tools_by_name["shared.action"]
       assert shared["inputSchema"]["properties"]["runners"]["type"] == "array"
+
       assert shared["inputSchema"]["properties"]["runners"]["items"]["enum"] ==
                ["db-prod-01", "db-prod-02"]
 
@@ -268,16 +272,22 @@ defmodule EmisarWeb.McpControllerTest do
         action_id: "showcase.every_arg_type",
         args_schema: %{
           "args" => [
-            %{"name" => "mode", "type" => "string", "required" => true,
-              "validation" => %{"enum" => ["fast", "slow"]}},
-            %{"name" => "port", "type" => "integer", "default" => 8080,
-              "validation" => %{"allowed" => [80, 443, 8080]}},
-            %{"name" => "ratio", "type" => "number",
-              "validation" => %{"min" => 0, "max" => 1}},
+            %{
+              "name" => "mode",
+              "type" => "string",
+              "required" => true,
+              "validation" => %{"enum" => ["fast", "slow"]}
+            },
+            %{
+              "name" => "port",
+              "type" => "integer",
+              "default" => 8080,
+              "validation" => %{"allowed" => [80, 443, 8080]}
+            },
+            %{"name" => "ratio", "type" => "number", "validation" => %{"min" => 0, "max" => 1}},
             %{"name" => "verbose", "type" => "boolean", "default" => false},
             %{"name" => "window", "type" => "duration", "default" => "5m"},
-            %{"name" => "tags", "type" => "string_array",
-              "validation" => %{"max_items" => 16}},
+            %{"name" => "tags", "type" => "string_array", "validation" => %{"max_items" => 16}},
             %{"name" => "ids", "type" => "integer_array"},
             %{"name" => "mystery", "type" => "unknown_emisar_type"}
           ]
@@ -318,7 +328,13 @@ defmodule EmisarWeb.McpControllerTest do
       assert props["verbose"]["type"] == "boolean"
       assert props["window"]["type"] == "string"
       assert props["window"]["pattern"] =~ ~r/ms|s|m|h/
-      assert props["tags"] == %{"type" => "array", "items" => %{"type" => "string"}, "maxItems" => 16}
+
+      assert props["tags"] == %{
+               "type" => "array",
+               "items" => %{"type" => "string"},
+               "maxItems" => 16
+             }
+
       assert props["ids"] == %{"type" => "array", "items" => %{"type" => "integer"}}
       # Unknown type widens to string.
       assert props["mystery"]["type"] == "string"
@@ -406,7 +422,13 @@ defmodule EmisarWeb.McpControllerTest do
       assert %{"runs" => [run_entry]} = body
       assert run_entry["runner"] == runner.name
       assert run_entry["status"] in ["running", "sent", "success"]
-      {:ok, run} = Emisar.Runs.fetch_run_by_id(run_entry["run_id"] || run_entry["id"], Emisar.Auth.Subject.system(account))
+
+      {:ok, run} =
+        Emisar.Runs.fetch_run_by_id(
+          run_entry["run_id"] || run_entry["id"],
+          Emisar.Auth.Subject.system(account)
+        )
+
       assert run.runner_id == runner.id
       assert run.action_id == "linux.uptime"
     end
@@ -459,7 +481,12 @@ defmodule EmisarWeb.McpControllerTest do
       # Each runner got its own action_run row.
       runner_ids =
         Enum.map(body["runs"], fn entry ->
-          {:ok, r} = Emisar.Runs.fetch_run_by_id(entry["run_id"] || entry["id"], Emisar.Auth.Subject.system(account))
+          {:ok, r} =
+            Emisar.Runs.fetch_run_by_id(
+              entry["run_id"] || entry["id"],
+              Emisar.Auth.Subject.system(account)
+            )
+
           r.runner_id
         end)
 
@@ -602,7 +629,11 @@ defmodule EmisarWeb.McpControllerTest do
       assert body["error"] == "missing_scope"
     end
 
-    test "runner_not_found error includes actionable message", %{conn: conn, account: account, user: user} do
+    test "runner_not_found error includes actionable message", %{
+      conn: conn,
+      account: account,
+      user: user
+    } do
       raw = make_api_key!(account, user)
 
       body =
@@ -619,7 +650,11 @@ defmodule EmisarWeb.McpControllerTest do
       assert body["message"] =~ "GET /api/mcp/runners"
     end
 
-    test "runner_not_allowed includes specific reason + message", %{conn: conn, account: account, user: user} do
+    test "runner_not_allowed includes specific reason + message", %{
+      conn: conn,
+      account: account,
+      user: user
+    } do
       # Two runners; only the first is in the key's filter.
       in_filter = make_runner!(account, name: "in-filter")
       out = make_runner!(account, name: "out-of-filter")
@@ -641,7 +676,11 @@ defmodule EmisarWeb.McpControllerTest do
       assert body["message"] =~ "API key"
     end
 
-    test "action_not_found distinguished from no_runner_in_scope", %{conn: conn, account: account, user: user} do
+    test "action_not_found distinguished from no_runner_in_scope", %{
+      conn: conn,
+      account: account,
+      user: user
+    } do
       # Truly missing action_id (nobody advertises it) → action_not_found 404.
       # The shared setup already gave us a runner advertising linux.uptime.
       raw = make_api_key!(account, user)
@@ -657,7 +696,11 @@ defmodule EmisarWeb.McpControllerTest do
       assert body["message"] =~ "/tools"
     end
 
-    test "no_runner_in_scope: action exists but filter blocks every runner", %{conn: conn, account: account, user: user} do
+    test "no_runner_in_scope: action exists but filter blocks every runner", %{
+      conn: conn,
+      account: account,
+      user: user
+    } do
       # Action exists on a runner that the key's filter excludes — should
       # land as `no_runner_in_scope` (403), not `action_not_found` (404).
       blocked = make_runner!(account, name: "blocked")
@@ -676,7 +719,11 @@ defmodule EmisarWeb.McpControllerTest do
       assert body["message"] =~ "API key"
     end
 
-    test "dispatch to offline runner queues + surfaces warning", %{conn: conn, account: account, user: user} do
+    test "dispatch to offline runner queues + surfaces warning", %{
+      conn: conn,
+      account: account,
+      user: user
+    } do
       # Mark the runner as disconnected, then dispatch — should still
       # succeed (run is queued), but include warning fields so the LLM
       # can tell the user.
@@ -998,7 +1045,9 @@ defmodule EmisarWeb.McpControllerTest do
           seq: 1,
           kind: "progress",
           stream: "stderr",
-          payload: %{"chunk" => "nginx: bind() to 0.0.0.0:80 failed (98: Address already in use)\n"}
+          payload: %{
+            "chunk" => "nginx: bind() to 0.0.0.0:80 failed (98: Address already in use)\n"
+          }
         })
 
       body =

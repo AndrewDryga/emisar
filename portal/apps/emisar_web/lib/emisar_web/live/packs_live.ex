@@ -73,7 +73,10 @@ defmodule EmisarWeb.PacksLive do
       {:ok, pv} ->
         {:noreply,
          socket
-         |> put_flash(:info, "Rejected drift on #{pv.pack_id} v#{pv.version}. The runner advertising the new hash will re-broadcast — if it's still set, this will re-surface.")
+         |> put_flash(
+           :info,
+           "Rejected drift on #{pv.pack_id} v#{pv.version}. The runner advertising the new hash will re-broadcast — if it's still set, this will re-surface."
+         )
          |> load_packs()}
 
       {:error, :not_pending} ->
@@ -89,7 +92,8 @@ defmodule EmisarWeb.PacksLive do
 
   def render(assigns) do
     ~H"""
-    <.dashboard_shell pending_approvals_count={@pending_approvals_count}
+    <.dashboard_shell
+      pending_approvals_count={@pending_approvals_count}
       current_user={@current_user}
       current_account={@current_account}
       switchable_accounts={@switchable_accounts}
@@ -99,23 +103,33 @@ defmodule EmisarWeb.PacksLive do
       <:title>Packs</:title>
 
       <p class="mt-2 max-w-2xl text-sm text-zinc-400">
-        Each <em>(pack, version)</em> has a pinned trusted hash. Runners advertising the same
+        Each <em>(pack, version)</em>
+        has a pinned trusted hash. Runners advertising the same
         bytes match the pin; a different hash flips the pack into
-        <strong class="text-amber-300">pending</strong> — dispatch refuses runs against it until
+        <strong class="text-amber-300">pending</strong>
+        — dispatch refuses runs against it until
         you Trust (adopt the new bytes) or Reject (keep the pinned hash).
       </p>
 
-      <div :if={@pending_count > 0} class="mt-4 rounded-lg border border-amber-700/60 bg-amber-950/40 p-4 ring-1 ring-amber-700/30">
+      <div
+        :if={@pending_count > 0}
+        class="mt-4 rounded-lg border border-amber-700/60 bg-amber-950/40 p-4 ring-1 ring-amber-700/30"
+      >
         <div class="flex items-center gap-2 text-sm text-amber-200">
           <.icon name="hero-shield-exclamation" class="h-4 w-4" />
-          <strong>{@pending_count} pack version{if @pending_count == 1, do: "", else: "s"} need trust review.</strong>
+          <strong>
+            {@pending_count} pack version{if @pending_count == 1, do: "", else: "s"} need trust review.
+          </strong>
         </div>
         <p class="mt-1 text-xs text-amber-100/70">
           Dispatch against these versions is blocked until an admin reviews the new hash.
         </p>
       </div>
 
-      <div :if={@packs == []} class="mt-8 rounded-xl border border-dashed border-zinc-800 p-10 text-center">
+      <div
+        :if={@packs == []}
+        class="mt-8 rounded-xl border border-dashed border-zinc-800 p-10 text-center"
+      >
         <.icon name="hero-cube" class="mx-auto h-8 w-8 text-zinc-700" />
         <p class="mt-3 text-sm text-zinc-400">No packs reported yet.</p>
         <p class="mt-1 text-xs text-zinc-500">
@@ -136,7 +150,10 @@ defmodule EmisarWeb.PacksLive do
               <span class="text-xs text-zinc-500">
                 {length(versions)} {if length(versions) == 1, do: "version", else: "versions"}
               </span>
-              <span :if={any_pending?(versions)} class="ml-2 rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-amber-200 ring-1 ring-amber-500/30">
+              <span
+                :if={any_pending?(versions)}
+                class="ml-2 rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-amber-200 ring-1 ring-amber-500/30"
+              >
                 Pending
               </span>
             </div>
@@ -152,22 +169,34 @@ defmodule EmisarWeb.PacksLive do
                   <span class="truncate font-mono text-[11px] text-zinc-500" title={v.hash}>
                     sha256:{short_hash(v.hash)}
                   </span>
-                  <span :if={v.trust_state == "trusted"} class="rounded bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-emerald-200 ring-1 ring-emerald-500/20">
+                  <span
+                    :if={v.trust_state == "trusted"}
+                    class="rounded bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-emerald-200 ring-1 ring-emerald-500/20"
+                  >
                     Trusted
                   </span>
-                  <span :if={v.trust_state == "pending"} class="rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-amber-200 ring-1 ring-amber-500/30">
+                  <span
+                    :if={v.trust_state == "pending"}
+                    class="rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-amber-200 ring-1 ring-amber-500/30"
+                  >
                     Pending
                   </span>
                 </div>
                 <div class="shrink-0 text-right text-xs text-zinc-500">
                   <div>last seen <.local_time value={v.last_seen_at} class="text-zinc-300" /></div>
-                  <div :if={v.first_seen_at && v.first_seen_at != v.last_seen_at} class="text-[10px] text-zinc-600">
+                  <div
+                    :if={v.first_seen_at && v.first_seen_at != v.last_seen_at}
+                    class="text-[10px] text-zinc-600"
+                  >
                     first seen <.local_time value={v.first_seen_at} class="inline" />
                   </div>
                 </div>
               </div>
 
-              <div :if={v.trust_state == "pending"} class="rounded border border-amber-800/60 bg-amber-950/30 p-3">
+              <div
+                :if={v.trust_state == "pending"}
+                class="rounded border border-amber-800/60 bg-amber-950/30 p-3"
+              >
                 <p :if={is_nil(v.hash)} class="text-xs text-amber-100/90">
                   A runner advertised <code>{pack_id}</code> v{v.version} — a
                   pack we don't ship a baseline for. Dispatch is blocked

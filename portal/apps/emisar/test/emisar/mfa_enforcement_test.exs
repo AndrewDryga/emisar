@@ -9,7 +9,13 @@ defmodule Emisar.MfaEnforcementTest do
   describe "update_account_require_mfa/3" do
     test "owner can enable; flips the column" do
       user = user_fixture()
-      {:ok, account} = Accounts.create_account_with_owner(%{name: "A", slug: "a-#{System.unique_integer()}", plan: "free"}, user)
+
+      {:ok, account} =
+        Accounts.create_account_with_owner(
+          %{name: "A", slug: "a-#{System.unique_integer()}", plan: "free"},
+          user
+        )
+
       refute account.require_mfa
       owner_subject = subject_for(user, account, role: :owner)
 
@@ -22,10 +28,17 @@ defmodule Emisar.MfaEnforcementTest do
 
     test "non-owner is rejected" do
       owner = user_fixture()
-      {:ok, account} = Accounts.create_account_with_owner(%{name: "A", slug: "a-#{System.unique_integer()}", plan: "free"}, owner)
+
+      {:ok, account} =
+        Accounts.create_account_with_owner(
+          %{name: "A", slug: "a-#{System.unique_integer()}", plan: "free"},
+          owner
+        )
+
       owner_subject = subject_for(owner, account, role: :owner)
 
       email = "admin-#{System.unique_integer([:positive])}@example.com"
+
       {:ok, %{user: admin_user, membership: m}} =
         Accounts.invite_user_to_account(email, "admin", owner_subject)
 
@@ -41,11 +54,20 @@ defmodule Emisar.MfaEnforcementTest do
   describe "User.valid_password?/2 after force_password_reset" do
     test "old password stops working immediately" do
       owner = user_fixture()
-      {:ok, account} = Accounts.create_account_with_owner(%{name: "A", slug: "a-#{System.unique_integer()}", plan: "free"}, owner)
+
+      {:ok, account} =
+        Accounts.create_account_with_owner(
+          %{name: "A", slug: "a-#{System.unique_integer()}", plan: "free"},
+          owner
+        )
+
       owner_subject = subject_for(owner, account, role: :owner)
 
       email = "t-#{System.unique_integer([:positive])}@example.com"
-      {:ok, user} = Accounts.register_user(%{email: email, password: "Hunter222-original", full_name: "T"})
+
+      {:ok, user} =
+        Accounts.register_user(%{email: email, password: "Hunter222-original", full_name: "T"})
+
       {:ok, user} = Accounts.confirm_user(user)
       {:ok, _} = Accounts.invite_user_to_account(email, "operator", owner_subject)
       {:ok, m} = Accounts.fetch_membership_for_session(user, nil)
@@ -65,6 +87,7 @@ defmodule Emisar.MfaEnforcementTest do
   describe "require_mfa default" do
     test "new accounts default to require_mfa: false (signup never blocks)" do
       user = user_fixture()
+
       {:ok, account} =
         Accounts.create_account_with_owner(
           %{name: "Fresh", slug: "fresh-#{System.unique_integer()}", plan: "free"},

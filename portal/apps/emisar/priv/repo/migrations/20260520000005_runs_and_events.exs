@@ -9,7 +9,10 @@ defmodule Emisar.Repo.Migrations.RunsAndEvents do
     # :validation_failed, :unknown_action, :error, :cancelled).
     create table(:action_runs, primary_key: false) do
       add :id, :binary_id, primary_key: true
-      add :account_id, references(:accounts, type: :binary_id, on_delete: :delete_all), null: false
+
+      add :account_id, references(:accounts, type: :binary_id, on_delete: :delete_all),
+        null: false
+
       add :runner_id, references(:runners, type: :binary_id, on_delete: :delete_all), null: false
 
       # request_id is the wire protocol's correlation key. Globally
@@ -82,7 +85,9 @@ defmodule Emisar.Repo.Migrations.RunsAndEvents do
     create table(:action_run_events, primary_key: false) do
       add :id, :binary_id, primary_key: true
       add :run_id, references(:action_runs, type: :binary_id, on_delete: :delete_all), null: false
-      add :account_id, references(:accounts, type: :binary_id, on_delete: :delete_all), null: false
+
+      add :account_id, references(:accounts, type: :binary_id, on_delete: :delete_all),
+        null: false
 
       add :seq, :integer, null: false
       add :kind, :string, null: false

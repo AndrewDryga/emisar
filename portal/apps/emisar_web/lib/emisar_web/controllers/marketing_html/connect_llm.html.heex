@@ -15,8 +15,7 @@
       <ul class="mt-4 list-disc space-y-1 pl-6 text-sm text-zinc-300">
         <li>
           <strong>Remote MCP</strong> (cloud LLMs, recent IDE clients) —
-          paste a URL + API key. Works with Claude's
-          <em>Custom Connectors</em>, ChatGPT's <em>Connectors</em>, and any
+          paste a URL + API key. Works with Claude's <em>Custom Connectors</em>, ChatGPT's <em>Connectors</em>, and any
           client that speaks the MCP HTTP transport.
         </li>
         <li>
@@ -31,13 +30,14 @@
       <%!-- ============================================================ --%>
       <section class="mt-12">
         <div class="flex items-center gap-3">
-          <span class="grid h-8 w-8 place-items-center rounded-full bg-indigo-500/20 text-sm font-semibold text-indigo-300">1</span>
+          <span class="grid h-8 w-8 place-items-center rounded-full bg-indigo-500/20 text-sm font-semibold text-indigo-300">
+            1
+          </span>
           <h2 class="text-2xl font-semibold tracking-tight text-zinc-50">Mint an API key</h2>
         </div>
 
         <p class="mt-4 text-base leading-relaxed text-zinc-400">
-          In the dashboard sidebar, click
-          <code class="rounded bg-zinc-900 px-1.5 py-0.5 text-sm">Agents</code>.
+          In the dashboard sidebar, click <code class="rounded bg-zinc-900 px-1.5 py-0.5 text-sm">Agents</code>.
           Pick your LLM client from the tab strip — we mint a key named
           after it and drop a prefilled snippet you can paste into the
           client's config. Quick keys are scoped to
@@ -59,8 +59,12 @@
       <%!-- ============================================================ --%>
       <section class="mt-12">
         <div class="flex items-center gap-3">
-          <span class="grid h-8 w-8 place-items-center rounded-full bg-indigo-500/20 text-sm font-semibold text-indigo-300">2</span>
-          <h2 class="text-2xl font-semibold tracking-tight text-zinc-50">Option A — Remote MCP (recommended)</h2>
+          <span class="grid h-8 w-8 place-items-center rounded-full bg-indigo-500/20 text-sm font-semibold text-indigo-300">
+            2
+          </span>
+          <h2 class="text-2xl font-semibold tracking-tight text-zinc-50">
+            Option A — Remote MCP (recommended)
+          </h2>
         </div>
 
         <p class="mt-4 text-base leading-relaxed text-zinc-400">
@@ -70,8 +74,10 @@
         </p>
 
         <div class="mt-4 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
-          <div class="border-b border-zinc-900 px-3 py-2 font-mono text-[11px] text-zinc-500">connector settings</div>
-<pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300">URL:        <span class="text-emerald-300">https://app.emisar.dev/api/mcp/rpc</span>
+          <div class="border-b border-zinc-900 px-3 py-2 font-mono text-[11px] text-zinc-500">
+            connector settings
+          </div>
+          <pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300">URL:        <span class="text-emerald-300">https://app.emisar.dev/api/mcp/rpc</span>
 Auth header: <span class="text-emerald-300">Authorization: Bearer emk-...</span></pre>
         </div>
 
@@ -84,12 +90,12 @@ Auth header: <span class="text-emerald-300">Authorization: Bearer emk-...</span>
                 Open <strong>Settings → Connectors → Add custom connector</strong>.
               </li>
               <li>
-                Set <strong>Remote MCP server URL</strong> to
-                <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">https://app.emisar.dev/api/mcp/rpc</code>.
+                Set <strong>Remote MCP server URL</strong>
+                to <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">https://app.emisar.dev/api/mcp/rpc</code>.
               </li>
               <li>
-                Add an <strong>Authorization</strong> header:
-                <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">Bearer emk-...</code>.
+                Add an <strong>Authorization</strong>
+                header: <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">Bearer emk-...</code>.
               </li>
               <li>
                 Enable the connector in any chat that should reach your
@@ -108,13 +114,15 @@ Auth header: <span class="text-emerald-300">Authorization: Bearer emk-...</span>
                 Enterprise).
               </li>
               <li>
-                Click <strong>Add connector</strong>, choose
-                <strong>Custom MCP</strong>.
+                Click <strong>Add connector</strong>, choose <strong>Custom MCP</strong>.
               </li>
               <li>
                 Set the URL to
-                <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">https://app.emisar.dev/api/mcp/rpc</code>
-                and the bearer token to your <code>emk-...</code> key.
+                <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">
+                  https://app.emisar.dev/api/mcp/rpc
+                </code>
+                and the bearer token to your <code>emk-...</code>
+                key.
               </li>
               <li>
                 Toggle the connector on in any conversation; tools appear
@@ -129,15 +137,14 @@ Auth header: <span class="text-emerald-300">Authorization: Bearer emk-...</span>
             <p class="mt-2 text-sm text-zinc-400">
               Cursor, Continue, Zed, and bespoke agents that speak the
               MCP HTTP transport take the same URL + bearer. The endpoint
-              implements JSON-RPC 2.0 with the standard
-              <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">initialize</code>,
-              <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">tools/list</code>,
-              <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">tools/call</code>,
+              implements JSON-RPC 2.0 with the standard <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">initialize</code>, <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">tools/list</code>, <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">tools/call</code>,
               and <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">ping</code> methods.
             </p>
             <div class="mt-3 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
-              <div class="border-b border-zinc-900 px-3 py-2 font-mono text-[11px] text-zinc-500">terminal</div>
-<pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300"><span class="text-zinc-500"># Try it from a shell — should return the tool list.</span>
+              <div class="border-b border-zinc-900 px-3 py-2 font-mono text-[11px] text-zinc-500">
+                terminal
+              </div>
+              <pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300"><span class="text-zinc-500"># Try it from a shell — should return the tool list.</span>
 <span class="text-zinc-500">$</span> curl -X POST <span class="text-emerald-300">https://app.emisar.dev/api/mcp/rpc</span> \
     -H <span class="text-emerald-300">"Authorization: Bearer $EMISAR_API_KEY"</span> \
     -H <span class="text-emerald-300">"Content-Type: application/json"</span> \
@@ -152,8 +159,12 @@ Auth header: <span class="text-emerald-300">Authorization: Bearer emk-...</span>
       <%!-- ============================================================ --%>
       <section class="mt-12">
         <div class="flex items-center gap-3">
-          <span class="grid h-8 w-8 place-items-center rounded-full bg-indigo-500/20 text-sm font-semibold text-indigo-300">3</span>
-          <h2 class="text-2xl font-semibold tracking-tight text-zinc-50">Option B — Stdio bridge (desktop clients)</h2>
+          <span class="grid h-8 w-8 place-items-center rounded-full bg-indigo-500/20 text-sm font-semibold text-indigo-300">
+            3
+          </span>
+          <h2 class="text-2xl font-semibold tracking-tight text-zinc-50">
+            Option B — Stdio bridge (desktop clients)
+          </h2>
         </div>
 
         <p class="mt-4 text-base leading-relaxed text-zinc-400">
@@ -161,9 +172,11 @@ Auth header: <span class="text-emerald-300">Authorization: Bearer emk-...</span>
           Code, Cursor (local mode), Gemini CLI, Codex CLI — install the
           tiny <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar-mcp</code>
           binary. It's a thin shim that forwards stdio JSON-RPC frames
-          to the same <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/api/mcp/rpc</code> endpoint.
+          to the same <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/api/mcp/rpc</code>
+          endpoint.
           Every MCP semantic — tool descriptors, content blocks,
-          <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">wait_for_run</code> — is implemented in the portal,
+          <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">wait_for_run</code>
+          — is implemented in the portal,
           so the bridge stays version-locked to the spec without you
           redownloading it.
         </p>
@@ -173,8 +186,10 @@ Auth header: <span class="text-emerald-300">Authorization: Bearer emk-...</span>
           <strong>From a GitHub release</strong>:
         </p>
         <div class="mt-2 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
-          <div class="border-b border-zinc-900 px-3 py-2 font-mono text-[11px] text-zinc-500">terminal</div>
-<pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300"><span class="text-zinc-500"># Pick the right OS/arch (linux-amd64, linux-arm64, darwin-amd64,</span>
+          <div class="border-b border-zinc-900 px-3 py-2 font-mono text-[11px] text-zinc-500">
+            terminal
+          </div>
+          <pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300"><span class="text-zinc-500"># Pick the right OS/arch (linux-amd64, linux-arm64, darwin-amd64,</span>
 <span class="text-zinc-500"># darwin-arm64). Each release tarball contains both `emisar` (the runner)</span>
 <span class="text-zinc-500"># and `emisar-mcp` (the bridge).</span>
 <span class="text-zinc-500">$</span> curl -sSL <span class="text-emerald-300">https://github.com/andrewdryga/emisar/releases/latest/download/emisar-vX.Y.Z-darwin-arm64.tar.gz</span> \
@@ -183,12 +198,16 @@ Auth header: <span class="text-emerald-300">Authorization: Bearer emk-...</span>
         </div>
 
         <p class="mt-4 text-sm text-zinc-300">
-          <strong>Or <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">go install</code></strong>
+          <strong>
+            Or <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">go install</code>
+          </strong>
           (Go 1.26+):
         </p>
         <div class="mt-2 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
-          <div class="border-b border-zinc-900 px-3 py-2 font-mono text-[11px] text-zinc-500">terminal</div>
-<pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300"><span class="text-zinc-500">$</span> go install github.com/andrewdryga/emisar/mcp@latest
+          <div class="border-b border-zinc-900 px-3 py-2 font-mono text-[11px] text-zinc-500">
+            terminal
+          </div>
+          <pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300"><span class="text-zinc-500">$</span> go install github.com/andrewdryga/emisar/mcp@latest
 <span class="text-zinc-500">$</span> sudo ln -s ~/go/bin/emisar-mcp /usr/local/bin/emisar-mcp</pre>
         </div>
 
@@ -222,8 +241,7 @@ Auth header: <span class="text-emerald-300">Authorization: Bearer emk-...</span>
           <section>
             <h3 class="text-xl font-semibold text-zinc-50">Cursor</h3>
             <p class="mt-2 text-sm text-zinc-400">
-              Same bridge. Cursor reads
-              <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">~/.cursor/mcp.json</code>:
+              Same bridge. Cursor reads <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">~/.cursor/mcp.json</code>:
             </p>
             <div class="mt-3 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
               <pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300">&#123;
@@ -240,7 +258,8 @@ Auth header: <span class="text-emerald-300">Authorization: Bearer emk-...</span>
             </div>
             <p class="mt-3 text-sm text-zinc-400">
               Recent Cursor builds also speak remote MCP — point them at
-              <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/api/mcp/rpc</code> directly if you'd rather skip
+              <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/api/mcp/rpc</code>
+              directly if you'd rather skip
               the bridge.
             </p>
           </section>
@@ -252,8 +271,10 @@ Auth header: <span class="text-emerald-300">Authorization: Bearer emk-...</span>
               One-line register, user scope (every project):
             </p>
             <div class="mt-3 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
-              <div class="border-b border-zinc-900 px-3 py-2 font-mono text-[11px] text-zinc-500">terminal</div>
-<pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300"><span class="text-zinc-500">$</span> claude mcp add emisar /usr/local/bin/emisar-mcp \
+              <div class="border-b border-zinc-900 px-3 py-2 font-mono text-[11px] text-zinc-500">
+                terminal
+              </div>
+              <pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300"><span class="text-zinc-500">$</span> claude mcp add emisar /usr/local/bin/emisar-mcp \
     --scope user \
     -e EMISAR_URL=https://app.emisar.dev \
     -e EMISAR_API_KEY=emk-...</pre>
@@ -291,7 +312,7 @@ Auth header: <span class="text-emerald-300">Authorization: Bearer emk-...</span>
               Add to <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">~/.codex/config.toml</code>:
             </p>
             <div class="mt-3 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
-<pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300">[mcp_servers.emisar]
+              <pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300">[mcp_servers.emisar]
 command = "/usr/local/bin/emisar-mcp"
 env = &#123; EMISAR_URL = "https://app.emisar.dev", EMISAR_API_KEY = "emk-..." &#125;</pre>
             </div>
@@ -304,8 +325,12 @@ env = &#123; EMISAR_URL = "https://app.emisar.dev", EMISAR_API_KEY = "emk-..." &
       <%!-- ============================================================ --%>
       <section class="mt-12">
         <div class="flex items-center gap-3">
-          <span class="grid h-8 w-8 place-items-center rounded-full bg-indigo-500/20 text-sm font-semibold text-indigo-300">4</span>
-          <h2 class="text-2xl font-semibold tracking-tight text-zinc-50">Option C — Plain HTTP / your own agent</h2>
+          <span class="grid h-8 w-8 place-items-center rounded-full bg-indigo-500/20 text-sm font-semibold text-indigo-300">
+            4
+          </span>
+          <h2 class="text-2xl font-semibold tracking-tight text-zinc-50">
+            Option C — Plain HTTP / your own agent
+          </h2>
         </div>
 
         <p class="mt-4 text-base leading-relaxed text-zinc-400">
@@ -325,22 +350,26 @@ env = &#123; EMISAR_URL = "https://app.emisar.dev", EMISAR_API_KEY = "emk-..." &
             input descriptor.
           </li>
           <li>
-            <code class="rounded bg-zinc-900 px-1.5 py-0.5 text-xs">POST /api/mcp/tools/:action_id?wait=15s</code>
+            <code class="rounded bg-zinc-900 px-1.5 py-0.5 text-xs">
+              POST /api/mcp/tools/:action_id?wait=15s
+            </code>
             — fire-and-forget or long-poll dispatch.
           </li>
           <li>
-            <code class="rounded bg-zinc-900 px-1.5 py-0.5 text-xs">GET /api/mcp/runs/:id?wait=60s</code>
+            <code class="rounded bg-zinc-900 px-1.5 py-0.5 text-xs">
+              GET /api/mcp/runs/:id?wait=60s
+            </code>
             — fetch result; long-poll for pending approvals.
           </li>
         </ul>
 
         <p class="mt-4 text-sm text-zinc-400">
           For OpenAI tool calling: pull <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/api/mcp/tools</code>,
-          forward each entry's <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">inputSchema</code>
+          forward each entry's
+          <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">inputSchema</code>
           as a function parameter schema, and POST the model's chosen
           arguments back to <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/api/mcp/tools/:name?wait=30s</code>.
-          The
-          <.link href={~p"/docs"} class="text-indigo-400 hover:text-indigo-300">docs</.link>
+          The <.link href={~p"/docs"} class="text-indigo-400 hover:text-indigo-300">docs</.link>
           have a full sample.
         </p>
       </section>

@@ -4,7 +4,9 @@
   <section class="py-16 sm:py-24">
     <div class="mx-auto max-w-3xl px-6 lg:px-8">
       <p class="text-sm font-semibold text-indigo-400">Docs / Security</p>
-      <h1 class="mt-2 text-4xl font-bold tracking-tight text-zinc-50 md:text-5xl">Security model</h1>
+      <h1 class="mt-2 text-4xl font-bold tracking-tight text-zinc-50 md:text-5xl">
+        Security model
+      </h1>
       <p class="mt-6 text-lg leading-8 text-zinc-400">
         emisar is a curated allowlist with an audit envelope. It is not a sandbox.
         Restarting Cassandra still restarts Cassandra. The value is in the
@@ -14,9 +16,11 @@
       <h2 class="mt-12 text-2xl font-semibold text-zinc-50">The trust boundary</h2>
       <ol class="mt-4 space-y-3 text-sm text-zinc-300 list-decimal pl-6">
         <li>
-          <strong>Pre-approved actions only.</strong> The runner loads action YAMLs
+          <strong>Pre-approved actions only.</strong>
+          The runner loads action YAMLs
           at boot and refuses anything not in the catalog. A model that asks for
-          <code>rm -rf /</code> can't issue it — the request never reaches a shell.
+          <code>rm -rf /</code>
+          can't issue it — the request never reaches a shell.
         </li>
         <li>
           <strong>Outbound-only network.</strong> Runners dial the control plane
@@ -36,12 +40,15 @@
           undeclared argument past the runner.
         </li>
         <li>
-          <strong>Policy.</strong> Two-layer per-account model: a default
-          decision per risk tier (<code>low</code> / <code>medium</code> /
-          <code>high</code> / <code>critical</code>), plus ordered per-action
+          <strong>Policy.</strong>
+          Two-layer per-account model: a default
+          decision per risk tier (<code>low</code> / <code>medium</code>
+          / <code>high</code>
+          / <code>critical</code>), plus ordered per-action
           overrides that glob-match on action ID. First matching override
-          wins; otherwise the tier default applies. Decisions:
-          <code>allow</code> / <code>require_approval</code> / <code>deny</code>.
+          wins; otherwise the tier default applies. Decisions: <code>allow</code>
+          / <code>require_approval</code>
+          / <code>deny</code>.
           Higher-risk tiers are forced to be at least as restrictive as
           lower-risk ones — you can't allow <code>cassandra.drain</code>
           while requiring approval for <code>cassandra.nodetool_status</code>.
@@ -53,10 +60,13 @@
           link lands them on the request page.
         </li>
         <li>
-          <strong>Output redaction.</strong> Bearer tokens, AWS keys, GitHub tokens,
-          private-key blocks, and common <code>password=</code> /
-          <code>secret=</code> / <code>token=</code> assignments are masked
-          <em>before</em> the chunk leaves the runner. Per-action rules layer on top.
+          <strong>Output redaction.</strong>
+          Bearer tokens, AWS keys, GitHub tokens,
+          private-key blocks, and common <code>password=</code>
+          / <code>secret=</code>
+          / <code>token=</code>
+          assignments are masked <em>before</em>
+          the chunk leaves the runner. Per-action rules layer on top.
         </li>
         <li>
           <strong>Limits.</strong> Every action has a timeout and stdout/stderr byte
@@ -64,16 +74,17 @@
           declared maximum.
         </li>
         <li>
-          <strong>Hash-chained audit, two tiers.</strong> Cloud-side, every mutation
+          <strong>Hash-chained audit, two tiers.</strong>
+          Cloud-side, every mutation
           — dispatch, approval, runner state change, policy edit, sign-in —
-          appends a row to the account's <code>audit_events</code> table with
-          <code>prev_hash = sha256(prev_row)</code>. The chain ships out as
-          NDJSON over <code>GET /api/audit</code>, gated on an
-          <code>audit:read</code>-scoped API key minted from the audit page.
+          appends a row to the account's <code>audit_events</code>
+          table with <code>prev_hash = sha256(prev_row)</code>. The chain ships out as
+          NDJSON over <code>GET /api/audit</code>, gated on an <code>audit:read</code>-scoped API key minted from the audit page.
           Point any SIEM that speaks HTTP at it. Runner-side, every action
           attempt writes a JSONL line to <code>/var/log/emisar/events.jsonl</code>
           with the same prev-hash construction — that's the host-side
-          forensics copy. <code>emisar audit verify</code> detects tampering
+          forensics copy. <code>emisar audit verify</code>
+          detects tampering
           on either side.
         </li>
         <li>
@@ -83,16 +94,18 @@
           declared action as the right user.
         </li>
         <li>
-          <strong>Local action admission (defense-in-depth).</strong> The
-          runner config supports an
-          <code>admission.allow</code> / <code>admission.deny</code> list of
+          <strong>Local action admission (defense-in-depth).</strong>
+          The
+          runner config supports an <code>admission.allow</code>
+          / <code>admission.deny</code>
+          list of
           glob patterns over action ids
           (e.g. <code>cassandra.*</code>, <code>*.repair</code>). Blocked
           actions are hidden from the catalog this runner advertises to cloud
           AND refused at execution time, so even a compromised portal cannot
           push something the host operator did not sanction. Refusals land in
-          the JSONL audit log as
-          <code>action_blocked_by_admission</code> events for SIEM alerting.
+          the JSONL audit log as <code>action_blocked_by_admission</code>
+          events for SIEM alerting.
         </li>
       </ol>
 
@@ -104,26 +117,33 @@
           recommend all of those).
         </li>
         <li>
-          <strong>Not an EDR.</strong> emisar doesn't detect malicious binaries,
-          lateral movement, or tampered packs at run time. It detects tampered
-          <em>audit logs</em> (via the hash chain) and refuses tampered packs at
+          <strong>Not an EDR.</strong>
+          emisar doesn't detect malicious binaries,
+          lateral movement, or tampered packs at run time. It detects tampered <em>audit logs</em>
+          (via the hash chain) and refuses tampered packs at
           load time (content-addressed hashes).
         </li>
         <li>
-          <strong>Not a replacement for OS-level access control.</strong> The
-          <code>user:</code> drop only works because the OS already permits it.
+          <strong>Not a replacement for OS-level access control.</strong>
+          The <code>user:</code>
+          drop only works because the OS already permits it.
         </li>
       </ul>
 
       <h2 class="mt-10 text-2xl font-semibold text-zinc-50">Reporting</h2>
       <p class="mt-3 text-sm leading-relaxed text-zinc-400">
-        Security issues: <a href="mailto:security@emisar.dev" class="text-indigo-400 hover:text-indigo-300">security@emisar.dev</a>.
+        Security issues: <a
+          href="mailto:security@emisar.dev"
+          class="text-indigo-400 hover:text-indigo-300"
+        >security@emisar.dev</a>.
         We commit to a 72-hour acknowledgement window and will credit reporters
         unless they request otherwise. See
         <.external_link
           href="https://github.com/andrewdryga/emisar/blob/main/.github/SECURITY.md"
           class="text-indigo-400 hover:text-indigo-300"
-        >SECURITY.md</.external_link>
+        >
+          SECURITY.md
+        </.external_link>
         for the full policy.
       </p>
     </div>

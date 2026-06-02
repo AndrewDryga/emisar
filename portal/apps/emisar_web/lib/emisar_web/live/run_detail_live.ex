@@ -70,7 +70,8 @@ defmodule EmisarWeb.RunDetailLive do
 
   def render(assigns) do
     ~H"""
-    <.dashboard_shell pending_approvals_count={@pending_approvals_count}
+    <.dashboard_shell
+      pending_approvals_count={@pending_approvals_count}
       current_user={@current_user}
       current_account={@current_account}
       switchable_accounts={@switchable_accounts}
@@ -86,7 +87,9 @@ defmodule EmisarWeb.RunDetailLive do
       </:title>
       <:actions>
         <button
-          :if={@run.status in ["sent", "running", "pending"] and Permissions.can?(assigns, :cancel_run)}
+          :if={
+            @run.status in ["sent", "running", "pending"] and Permissions.can?(assigns, :cancel_run)
+          }
           phx-click="cancel"
           data-confirm="Cancel this run? The runner will SIGTERM then SIGKILL."
           class="rounded-lg border border-rose-500/40 px-3 py-1.5 text-sm font-medium text-rose-200 hover:bg-rose-500/10"
@@ -204,13 +207,18 @@ defmodule EmisarWeb.RunDetailLive do
         <span class={[
           "rounded px-1.5 py-0.5 font-mono text-[10px]",
           policy_decision_class(@run.policy_decision)
-        ]}>{@run.policy_decision}</span>
+        ]}>
+          {@run.policy_decision}
+        </span>
         <span
           :if={@run.policy_reason && @run.policy_reason != ""}
           class="text-zinc-300"
-        >{@run.policy_reason}</span>
+        >
+          {@run.policy_reason}
+        </span>
         <span :if={matched_rules_label(@run.matched_rules) != "—"} class="text-xs text-zinc-500">
-          · Matched <span class="font-mono text-zinc-400">{matched_rules_label(@run.matched_rules)}</span>
+          · Matched
+          <span class="font-mono text-zinc-400">{matched_rules_label(@run.matched_rules)}</span>
         </span>
         <span :if={is_integer(@run.policy_version)} class="text-xs text-zinc-500">
           · Policy <span class="font-mono text-zinc-400">v{@run.policy_version}</span>
@@ -263,7 +271,9 @@ defmodule EmisarWeb.RunDetailLive do
               "whitespace-pre-wrap",
               event.stream == "stderr" && "text-rose-300"
             ]}
-          >{event_chunk(event)}</div>
+          >
+            {event_chunk(event)}
+          </div>
         </div>
       </section>
     </.dashboard_shell>
@@ -284,8 +294,12 @@ defmodule EmisarWeb.RunDetailLive do
   defp format_json(nil), do: "{}"
   defp format_json(map), do: Jason.encode!(map, pretty: true)
 
-  defp runner_label(%Emisar.Runners.Runner{name: name}) when is_binary(name) and name != "", do: name
-  defp runner_label(%Emisar.Runners.Runner{hostname: host}) when is_binary(host) and host != "", do: host
+  defp runner_label(%Emisar.Runners.Runner{name: name}) when is_binary(name) and name != "",
+    do: name
+
+  defp runner_label(%Emisar.Runners.Runner{hostname: host}) when is_binary(host) and host != "",
+    do: host
+
   defp runner_label(_), do: "Unknown runner"
 
   # `allow` is the implicit happy path — if the run dispatched at all
@@ -308,8 +322,12 @@ defmodule EmisarWeb.RunDetailLive do
 
   defp show_output?(_), do: true
 
-  defp policy_decision_class("allow"), do: "bg-emerald-500/10 text-emerald-300 ring-1 ring-emerald-500/30"
-  defp policy_decision_class("require_approval"), do: "bg-amber-500/10 text-amber-300 ring-1 ring-amber-500/30"
+  defp policy_decision_class("allow"),
+    do: "bg-emerald-500/10 text-emerald-300 ring-1 ring-emerald-500/30"
+
+  defp policy_decision_class("require_approval"),
+    do: "bg-amber-500/10 text-amber-300 ring-1 ring-amber-500/30"
+
   defp policy_decision_class("deny"), do: "bg-rose-500/10 text-rose-300 ring-1 ring-rose-500/30"
   defp policy_decision_class(_), do: "bg-zinc-700/40 text-zinc-300 ring-1 ring-zinc-700"
 

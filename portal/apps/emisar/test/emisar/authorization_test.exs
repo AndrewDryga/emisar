@@ -90,7 +90,12 @@ defmodule Emisar.AuthorizationTest do
 
       new_rules = %{
         "schema_version" => 2,
-        "defaults" => %{"low" => "allow", "medium" => "allow", "high" => "deny", "critical" => "deny"},
+        "defaults" => %{
+          "low" => "allow",
+          "medium" => "allow",
+          "high" => "deny",
+          "critical" => "deny"
+        },
         "overrides" => []
       }
 

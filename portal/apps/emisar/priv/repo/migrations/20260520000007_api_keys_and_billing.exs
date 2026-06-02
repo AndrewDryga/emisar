@@ -6,7 +6,10 @@ defmodule Emisar.Repo.Migrations.ApiKeysAndBilling do
     # LLM tool callers (Claude, Cursor, etc.) with these.
     create table(:api_keys, primary_key: false) do
       add :id, :binary_id, primary_key: true
-      add :account_id, references(:accounts, type: :binary_id, on_delete: :delete_all), null: false
+
+      add :account_id, references(:accounts, type: :binary_id, on_delete: :delete_all),
+        null: false
+
       add :created_by_id, references(:users, type: :binary_id, on_delete: :nilify_all)
 
       add :name, :string, null: false
@@ -48,8 +51,12 @@ defmodule Emisar.Repo.Migrations.ApiKeysAndBilling do
     #   expires_at  = NULL → indefinite (must be manually revoked)
     create table(:approval_grants, primary_key: false) do
       add :id, :binary_id, primary_key: true
-      add :account_id, references(:accounts, type: :binary_id, on_delete: :delete_all), null: false
-      add :api_key_id, references(:api_keys, type: :binary_id, on_delete: :delete_all), null: false
+
+      add :account_id, references(:accounts, type: :binary_id, on_delete: :delete_all),
+        null: false
+
+      add :api_key_id, references(:api_keys, type: :binary_id, on_delete: :delete_all),
+        null: false
 
       add :action_id, :string, null: false
       add :runner_id, references(:runners, type: :binary_id, on_delete: :delete_all)
@@ -67,7 +74,8 @@ defmodule Emisar.Repo.Migrations.ApiKeysAndBilling do
 
       # Pointer back to the approval row that originated this grant —
       # dashboard "what grant came from this approval?" lookup.
-      add :approval_request_id, references(:approval_requests, type: :binary_id, on_delete: :nilify_all)
+      add :approval_request_id,
+          references(:approval_requests, type: :binary_id, on_delete: :nilify_all)
 
       timestamps(type: :utc_datetime_usec)
     end
@@ -82,7 +90,9 @@ defmodule Emisar.Repo.Migrations.ApiKeysAndBilling do
     # Paddle on every request.
     create table(:subscriptions, primary_key: false) do
       add :id, :binary_id, primary_key: true
-      add :account_id, references(:accounts, type: :binary_id, on_delete: :delete_all), null: false
+
+      add :account_id, references(:accounts, type: :binary_id, on_delete: :delete_all),
+        null: false
 
       add :paddle_subscription_id, :string
       add :paddle_price_id, :string

@@ -48,7 +48,8 @@ defmodule EmisarWeb.RunsLive do
 
   def render(assigns) do
     ~H"""
-    <.dashboard_shell pending_approvals_count={@pending_approvals_count}
+    <.dashboard_shell
+      pending_approvals_count={@pending_approvals_count}
       current_user={@current_user}
       current_account={@current_account}
       switchable_accounts={@switchable_accounts}
@@ -79,10 +80,17 @@ defmodule EmisarWeb.RunsLive do
               <p class="mt-3 text-zinc-300">No runs yet.</p>
               <p class="mt-1 text-xs leading-relaxed text-zinc-500">
                 Dispatch one from a
-                <.link navigate={~p"/app/runners"} class="text-indigo-400 hover:text-indigo-300">runner detail page</.link>
-                or kick off a <.link navigate={~p"/app/runbooks"} class="text-indigo-400 hover:text-indigo-300">runbook</.link>.
-                Runs from an LLM (via the
-                <.link navigate={~p"/app/agents"} class="text-indigo-400 hover:text-indigo-300">MCP API</.link>) land here too.
+                <.link navigate={~p"/app/runners"} class="text-indigo-400 hover:text-indigo-300">
+                  runner detail page
+                </.link>
+                or kick off a <.link
+                  navigate={~p"/app/runbooks"}
+                  class="text-indigo-400 hover:text-indigo-300"
+                >runbook</.link>.
+                Runs from an LLM (via the <.link
+                  navigate={~p"/app/agents"}
+                  class="text-indigo-400 hover:text-indigo-300"
+                >MCP API</.link>) land here too.
               </p>
             </div>
           <% end %>

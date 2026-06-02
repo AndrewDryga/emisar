@@ -18,11 +18,16 @@ defmodule EmisarWeb.AuditSummaryTest do
   describe "membership.role_changed" do
     test "renders from → to" do
       assert [{"change", "operator → admin"}] =
-               AuditSummary.summary_pairs(ev("membership.role_changed", %{"from" => "operator", "to" => "admin"}))
+               AuditSummary.summary_pairs(
+                 ev("membership.role_changed", %{"from" => "operator", "to" => "admin"})
+               )
     end
 
     test "ignores no-op when from == to" do
-      assert [] = AuditSummary.summary_pairs(ev("membership.role_changed", %{"from" => "admin", "to" => "admin"}))
+      assert [] =
+               AuditSummary.summary_pairs(
+                 ev("membership.role_changed", %{"from" => "admin", "to" => "admin"})
+               )
     end
   end
 
@@ -30,14 +35,18 @@ defmodule EmisarWeb.AuditSummaryTest do
     test "renders from → to" do
       assert [{"change", "old@example.com → new@example.com"}] =
                AuditSummary.summary_pairs(
-                 ev("user.email_changed", %{"from" => "old@example.com", "to" => "new@example.com"})
+                 ev("user.email_changed", %{
+                   "from" => "old@example.com",
+                   "to" => "new@example.com"
+                 })
                )
     end
   end
 
   describe "user.signed_in" do
     test "shows method when present" do
-      assert [{"via", "password"}] = AuditSummary.summary_pairs(ev("user.signed_in", %{"method" => "password"}))
+      assert [{"via", "password"}] =
+               AuditSummary.summary_pairs(ev("user.signed_in", %{"method" => "password"}))
     end
 
     test "drops to empty when method missing" do
@@ -47,7 +56,8 @@ defmodule EmisarWeb.AuditSummaryTest do
 
   describe "user.other_sessions_revoked" do
     test "renders the count" do
-      assert [{"count", "3"}] = AuditSummary.summary_pairs(ev("user.other_sessions_revoked", %{"count" => 3}))
+      assert [{"count", "3"}] =
+               AuditSummary.summary_pairs(ev("user.other_sessions_revoked", %{"count" => 3}))
     end
 
     test "ignores zero" do
@@ -57,24 +67,31 @@ defmodule EmisarWeb.AuditSummaryTest do
 
   describe "account.require_mfa_set" do
     test "renders 'enforced' for true" do
-      assert [{"MFA", "enforced"}] = AuditSummary.summary_pairs(ev("account.require_mfa_set", %{"require_mfa" => true}))
+      assert [{"MFA", "enforced"}] =
+               AuditSummary.summary_pairs(ev("account.require_mfa_set", %{"require_mfa" => true}))
     end
 
     test "renders 'off' for false" do
-      assert [{"MFA", "off"}] = AuditSummary.summary_pairs(ev("account.require_mfa_set", %{"require_mfa" => false}))
+      assert [{"MFA", "off"}] =
+               AuditSummary.summary_pairs(
+                 ev("account.require_mfa_set", %{"require_mfa" => false})
+               )
     end
   end
 
   describe "runbook.updated" do
     test "renders v1 → v2 for new-version events" do
       assert [{"version", "v1 → v2"}] =
-               AuditSummary.summary_pairs(ev("runbook.updated", %{"from_version" => 1, "to_version" => 2}))
+               AuditSummary.summary_pairs(
+                 ev("runbook.updated", %{"from_version" => 1, "to_version" => 2})
+               )
     end
   end
 
   describe "action_run.success" do
     test "renders sub-second duration in ms" do
-      assert [{"duration_ms", "850ms"}] = AuditSummary.summary_pairs(ev("action_run.success", %{"duration_ms" => 850}))
+      assert [{"duration_ms", "850ms"}] =
+               AuditSummary.summary_pairs(ev("action_run.success", %{"duration_ms" => 850}))
     end
 
     test "renders seconds when over 1s" do
@@ -84,7 +101,9 @@ defmodule EmisarWeb.AuditSummaryTest do
 
     test "renders minutes when over 1m" do
       assert [{"duration_ms", "5m 30s"}] =
-               AuditSummary.summary_pairs(ev("action_run.success", %{"duration_ms" => 5 * 60_000 + 30_000}))
+               AuditSummary.summary_pairs(
+                 ev("action_run.success", %{"duration_ms" => 5 * 60_000 + 30_000})
+               )
     end
   end
 
@@ -126,7 +145,8 @@ defmodule EmisarWeb.AuditSummaryTest do
     end
 
     test "accepts atom keys (test fixtures)" do
-      assert [{"via", "password"}] = AuditSummary.summary_pairs(ev("user.signed_in", %{method: "password"}))
+      assert [{"via", "password"}] =
+               AuditSummary.summary_pairs(ev("user.signed_in", %{method: "password"}))
     end
   end
 end

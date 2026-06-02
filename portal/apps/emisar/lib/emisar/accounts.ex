@@ -591,8 +591,11 @@ defmodule Emisar.Accounts do
       # audit" or vice versa. The PubSub disconnect broadcast is a side
       # effect that fires only after the rows actually commit.
       Multi.new()
-      |> Multi.delete_all(:tokens, Auth.UserToken.Query.by_user_id(user.id)
-                                   |> Auth.UserToken.Query.by_contexts(["session"]))
+      |> Multi.delete_all(
+        :tokens,
+        Auth.UserToken.Query.by_user_id(user.id)
+        |> Auth.UserToken.Query.by_contexts(["session"])
+      )
       |> Multi.insert(:audit, fn _ ->
         Audit.changeset(target.account_id, "user.sessions_revoked",
           actor_kind: "user",
@@ -845,7 +848,10 @@ defmodule Emisar.Accounts do
     now = DateTime.utc_now() |> DateTime.truncate(:microsecond)
 
     Multi.new()
-    |> Multi.update(:user, User.Changeset.registration(fetch_user_by_id!(membership.user_id), user_attrs))
+    |> Multi.update(
+      :user,
+      User.Changeset.registration(fetch_user_by_id!(membership.user_id), user_attrs)
+    )
     |> Multi.update(:confirmed_user, fn %{user: u} -> User.Changeset.confirm(u) end)
     |> Multi.update(
       :membership,
@@ -892,7 +898,6 @@ defmodule Emisar.Accounts do
     |> Repo.fetch(User.Query)
   end
 
-
   # -- Per-user runner ACLs (per-membership scope) -----------------
   #
   # Empty scope list = all runners (default). Any rows = union of
@@ -923,7 +928,11 @@ defmodule Emisar.Accounts do
   Wrapped in a transaction so a partial failure can't leave a
   half-applied scope set.
   """
-  def replace_runner_scopes(%Membership{id: membership_id} = membership, new_scopes, %Subject{} = subject)
+  def replace_runner_scopes(
+        %Membership{id: membership_id} = membership,
+        new_scopes,
+        %Subject{} = subject
+      )
       when is_list(new_scopes) do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(subject, Authorizer.manage_team_permission()),
@@ -934,7 +943,11 @@ defmodule Emisar.Accounts do
 
       multi =
         Enum.reduce(Enum.with_index(new_scopes), multi, fn {{type, value}, i}, acc ->
-          Multi.insert(acc, {:scope, i}, UserRunnerScope.Changeset.create(membership_id, type, value))
+          Multi.insert(
+            acc,
+            {:scope, i},
+            UserRunnerScope.Changeset.create(membership_id, type, value)
+          )
         end)
 
       multi
@@ -985,6 +998,7 @@ defmodule Emisar.Accounts do
   there too; callers must do their own auth check.
   """
   def runner_in_scope?(_runner, nil), do: true
+
   def runner_in_scope?(runner, %Membership{} = membership),
     do: runner_in_scope?(runner, runner_scopes_for_membership(membership.id))
 

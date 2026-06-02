@@ -345,8 +345,9 @@ defmodule EmisarWeb.McpController do
     end
   end
 
-  defp resolve_runners(_conn, _api_key, _action_id, names) when length(names) > @max_runners_per_call,
-    do: {:error, :too_many_runners, @max_runners_per_call}
+  defp resolve_runners(_conn, _api_key, _action_id, names)
+       when length(names) > @max_runners_per_call,
+       do: {:error, :too_many_runners, @max_runners_per_call}
 
   defp resolve_runners(conn, api_key, action_id, names) do
     allowed = allowed_runners_for_action(conn, api_key, action_id)
@@ -479,7 +480,13 @@ defmodule EmisarWeb.McpController do
           "\n\nRuns on: #{only.name} (#{runner_status_label(only)})"
 
         many ->
-          lines = Enum.map_join(many, "\n", &("- " <> &1.name <> " (" <> runner_status_label(&1) <> ")"))
+          lines =
+            Enum.map_join(
+              many,
+              "\n",
+              &("- " <> &1.name <> " (" <> runner_status_label(&1) <> ")")
+            )
+
           "\n\nAvailable runners (pick one or more by name):\n" <> lines
       end
 
@@ -639,8 +646,12 @@ defmodule EmisarWeb.McpController do
     remaining = Enum.reject(ids, &run_terminal?(&1, subject))
 
     cond do
-      remaining == [] -> :ok
-      System.monotonic_time(:millisecond) >= deadline -> :ok
+      remaining == [] ->
+        :ok
+
+      System.monotonic_time(:millisecond) >= deadline ->
+        :ok
+
       true ->
         Process.sleep(@poll_interval_ms)
         poll_all_to_terminal(subject, remaining, deadline)

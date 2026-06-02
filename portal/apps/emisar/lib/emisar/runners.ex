@@ -92,8 +92,11 @@ defmodule Emisar.Runners do
 
   defp apply_scope_filter({:ok, runners, metadata}, membership_id) do
     case Emisar.Accounts.runner_scopes_for_membership(membership_id) do
-      [] -> {:ok, runners, metadata}
-      scopes -> {:ok, Enum.filter(runners, &Emisar.Accounts.runner_in_scope?(&1, scopes)), metadata}
+      [] ->
+        {:ok, runners, metadata}
+
+      scopes ->
+        {:ok, Enum.filter(runners, &Emisar.Accounts.runner_in_scope?(&1, scopes)), metadata}
     end
   end
 
@@ -161,7 +164,8 @@ defmodule Emisar.Runners do
   `register_via_auth_key/2`; not exposed to LiveView/MCP — they don't
   have an external_id at the auth boundary.
   """
-  def fetch_runner_by_external_id_for_account(external_id, account_id) when is_binary(external_id) do
+  def fetch_runner_by_external_id_for_account(external_id, account_id)
+      when is_binary(external_id) do
     Runner.Query.not_deleted()
     |> Runner.Query.by_account_id(account_id)
     |> Runner.Query.by_external_id(external_id)
@@ -443,7 +447,9 @@ defmodule Emisar.Runners do
         |> Repo.commit_multi(after_commit: &broadcast_auth_key_change(&1, "auth_key.revoked"))
 
       case result do
-        {:ok, %{key: revoked}} -> {:ok, revoked}
+        {:ok, %{key: revoked}} ->
+          {:ok, revoked}
+
         {:error, _} = err ->
           err
       end

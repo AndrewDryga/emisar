@@ -8,7 +8,10 @@ defmodule Emisar.Repo.Migrations.Catalog do
     # detection) don't need to scan every runner's `packs` column.
     create table(:pack_versions, primary_key: false) do
       add :id, :binary_id, primary_key: true
-      add :account_id, references(:accounts, type: :binary_id, on_delete: :delete_all), null: false
+
+      add :account_id, references(:accounts, type: :binary_id, on_delete: :delete_all),
+        null: false
+
       add :pack_id, :string, null: false
       add :version, :string, null: false
       add :hash, :string
@@ -26,7 +29,10 @@ defmodule Emisar.Repo.Migrations.Catalog do
     # advertised — are stored as JSON for fidelity to the wire shape.
     create table(:runner_actions, primary_key: false) do
       add :id, :binary_id, primary_key: true
-      add :account_id, references(:accounts, type: :binary_id, on_delete: :delete_all), null: false
+
+      add :account_id, references(:accounts, type: :binary_id, on_delete: :delete_all),
+        null: false
+
       add :runner_id, references(:runners, type: :binary_id, on_delete: :delete_all), null: false
 
       add :action_id, :string, null: false

@@ -44,9 +44,10 @@ defmodule Emisar.Billing.PaddleClient.Live do
   def create_billing_portal_session(attrs) do
     with {:ok,
           %{
-            "data" => %{
-              "urls" => %{"general" => %{"overview" => url}}
-            } = data
+            "data" =>
+              %{
+                "urls" => %{"general" => %{"overview" => url}}
+              } = data
           }} <-
            post_json("/customers/#{attrs[:customer]}/portal-sessions", %{}) do
       {:ok, Map.put(data, "url", url)}

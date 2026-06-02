@@ -66,7 +66,8 @@ defmodule EmisarWeb.RunnersLive do
 
   def render(assigns) do
     ~H"""
-    <.dashboard_shell pending_approvals_count={@pending_approvals_count}
+    <.dashboard_shell
+      pending_approvals_count={@pending_approvals_count}
       current_user={@current_user}
       current_account={@current_account}
       switchable_accounts={@switchable_accounts}
@@ -106,9 +107,13 @@ defmodule EmisarWeb.RunnersLive do
         >
           <:group_header :let={group_label}>
             <li class="border-b border-zinc-900 bg-zinc-950/60 px-5 py-2 flex items-baseline gap-2">
-              <h2 class="text-xs font-semibold uppercase tracking-wider text-zinc-200">{group_label}</h2>
+              <h2 class="text-xs font-semibold uppercase tracking-wider text-zinc-200">
+                {group_label}
+              </h2>
               <span class="text-[11px] text-zinc-500">
-                {group_total(@groups, group_label)} {if group_total(@groups, group_label) == 1, do: "runner", else: "runners"} total
+                {group_total(@groups, group_label)} {if group_total(@groups, group_label) == 1,
+                  do: "runner",
+                  else: "runners"} total
               </span>
             </li>
           </:group_header>
@@ -132,8 +137,10 @@ defmodule EmisarWeb.RunnersLive do
                     </span>
                   </div>
                   <div class="mt-0.5 truncate text-xs text-zinc-500">
-                    {runner.hostname || runner.external_id || "no host"} ·
-                    {heartbeat_label(runner, derived_status(runner, @online))}
+                    {runner.hostname || runner.external_id || "no host"} · {heartbeat_label(
+                      runner,
+                      derived_status(runner, @online)
+                    )}
                   </div>
                 </div>
 
@@ -178,7 +185,8 @@ defmodule EmisarWeb.RunnersLive do
   defp connection_dot(%{status: "connected"} = assigns) do
     ~H"""
     <span class="relative grid h-3 w-3 flex-none place-items-center" title="Connected">
-      <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-500/40"></span>
+      <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-500/40">
+      </span>
       <span class="relative h-2 w-2 rounded-full bg-emerald-400"></span>
     </span>
     """

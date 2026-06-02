@@ -35,10 +35,18 @@ defmodule Emisar.Auth.SubjectTest do
       account = account_fixture()
 
       viewer_subj =
-        Subject.for_user(user, account, %Membership{role: "viewer", user_id: user.id, account_id: account.id})
+        Subject.for_user(user, account, %Membership{
+          role: "viewer",
+          user_id: user.id,
+          account_id: account.id
+        })
 
       admin_subj =
-        Subject.for_user(user, account, %Membership{role: "admin", user_id: user.id, account_id: account.id})
+        Subject.for_user(user, account, %Membership{
+          role: "admin",
+          user_id: user.id,
+          account_id: account.id
+        })
 
       # Admin is a strict superset of viewer.
       assert MapSet.subset?(viewer_subj.permissions, admin_subj.permissions)
@@ -103,7 +111,11 @@ defmodule Emisar.Auth.SubjectTest do
       user = user_fixture()
 
       subject =
-        Subject.for_user(user, account, %Membership{role: "owner", user_id: user.id, account_id: account.id})
+        Subject.for_user(user, account, %Membership{
+          role: "owner",
+          user_id: user.id,
+          account_id: account.id
+        })
 
       assert :ok =
                Emisar.Auth.Authorizer.ensure_has_permissions(
@@ -117,7 +129,11 @@ defmodule Emisar.Auth.SubjectTest do
       user = user_fixture()
 
       subject =
-        Subject.for_user(user, account, %Membership{role: "viewer", user_id: user.id, account_id: account.id})
+        Subject.for_user(user, account, %Membership{
+          role: "viewer",
+          user_id: user.id,
+          account_id: account.id
+        })
 
       assert {:error, :unauthorized} =
                Emisar.Auth.Authorizer.ensure_has_permissions(
@@ -131,7 +147,11 @@ defmodule Emisar.Auth.SubjectTest do
       user = user_fixture()
 
       operator =
-        Subject.for_user(user, account, %Membership{role: "operator", user_id: user.id, account_id: account.id})
+        Subject.for_user(user, account, %Membership{
+          role: "operator",
+          user_id: user.id,
+          account_id: account.id
+        })
 
       # Operator does NOT hold manage_runners but DOES hold view_runners.
       perms = [
@@ -147,7 +167,11 @@ defmodule Emisar.Auth.SubjectTest do
       user = user_fixture()
 
       viewer =
-        Subject.for_user(user, account, %Membership{role: "viewer", user_id: user.id, account_id: account.id})
+        Subject.for_user(user, account, %Membership{
+          role: "viewer",
+          user_id: user.id,
+          account_id: account.id
+        })
 
       perms = [
         Emisar.Accounts.Authorizer.manage_security_settings_permission(),

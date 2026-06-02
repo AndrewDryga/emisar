@@ -65,13 +65,18 @@ defmodule EmisarWeb.ApprovalsLive do
     grants_opts = LiveTable.params_to_opts(params, [], prefix: "grants_")
     decided_opts = LiveTable.params_to_opts(params, [], prefix: "decided_")
 
-    {:ok, pending, pending_meta} = list_or_empty(Approvals.list_pending_approval_requests(subject, pending_opts))
-    {:ok, grants, grants_meta} = list_or_empty(Approvals.list_grants_for_account(subject, grants_opts))
+    {:ok, pending, pending_meta} =
+      list_or_empty(Approvals.list_pending_approval_requests(subject, pending_opts))
+
+    {:ok, grants, grants_meta} =
+      list_or_empty(Approvals.list_grants_for_account(subject, grants_opts))
 
     # "Decided" = the full list minus the ones already showing in the
     # Pending section above (only relevant on page 1 — on later pages
     # the cursors don't overlap). Caps keep the section tight.
-    {:ok, all_recent, decided_meta} = list_or_empty(Approvals.list_approval_requests_for_account(subject, decided_opts))
+    {:ok, all_recent, decided_meta} =
+      list_or_empty(Approvals.list_approval_requests_for_account(subject, decided_opts))
+
     decided = all_recent -- pending
 
     socket
@@ -121,7 +126,7 @@ defmodule EmisarWeb.ApprovalsLive do
   end
 
   defp user_label(nil, _labels), do: "—"
-  defp user_label(id, labels), do: labels[id] || (String.slice(id, 0, 8) <> "…")
+  defp user_label(id, labels), do: labels[id] || String.slice(id, 0, 8) <> "…"
 
   # -- Grant helpers (moved from old GrantsLive) ---------------------
 
@@ -147,7 +152,8 @@ defmodule EmisarWeb.ApprovalsLive do
 
   def render(assigns) do
     ~H"""
-    <.dashboard_shell pending_approvals_count={@pending_approvals_count}
+    <.dashboard_shell
+      pending_approvals_count={@pending_approvals_count}
       current_user={@current_user}
       current_account={@current_account}
       switchable_accounts={@switchable_accounts}
@@ -191,8 +197,10 @@ defmodule EmisarWeb.ApprovalsLive do
                         {req.context["action_id"] || "—"}
                       </div>
                       <div class="mt-0.5 truncate text-xs text-amber-200/70">
-                        on {runner_label(req, @runner_labels)}
-                        · requested by {user_label(req.requested_by_id, @user_labels)}
+                        on {runner_label(req, @runner_labels)} · requested by {user_label(
+                          req.requested_by_id,
+                          @user_labels
+                        )}
                       </div>
                     </div>
                     <span class="shrink-0 text-xs text-amber-200/70">
@@ -211,8 +219,11 @@ defmodule EmisarWeb.ApprovalsLive do
                 <p class="mt-3 text-zinc-300">Nothing waiting.</p>
                 <p class="mt-1 text-xs leading-relaxed text-zinc-500">
                   Approvals show up here when
-                  <.link navigate={~p"/app/policies"} class="text-indigo-400 hover:text-indigo-300">policy</.link>
-                  gates a run as <code class="text-zinc-300">require_approval</code> — for example a high-risk
+                  <.link navigate={~p"/app/policies"} class="text-indigo-400 hover:text-indigo-300">
+                    policy
+                  </.link>
+                  gates a run as <code class="text-zinc-300">require_approval</code>
+                  — for example a high-risk
                   mutating action from an LLM. You'll get an email + a row here.
                 </p>
               </div>
@@ -288,7 +299,8 @@ defmodule EmisarWeb.ApprovalsLive do
                 <p class="mt-3 text-zinc-300">No active grants.</p>
                 <p class="mt-1 text-xs leading-relaxed text-zinc-500">
                   Grants appear when you approve a run with a duration other than
-                  <em>just this call</em> — they let the same LLM client re-run the same action
+                  <em>just this call</em>
+                  — they let the same LLM client re-run the same action
                   inside the window without re-asking. Revocable here at any time.
                 </p>
               </div>
@@ -324,7 +336,10 @@ defmodule EmisarWeb.ApprovalsLive do
                     <div class="truncate text-xs text-zinc-500">
                       on {runner_label(req, @runner_labels)}
                       <span :if={req.decided_by_id}>
-                        · {String.capitalize(req.status)} by {user_label(req.decided_by_id, @user_labels)}
+                        · {String.capitalize(req.status)} by {user_label(
+                          req.decided_by_id,
+                          @user_labels
+                        )}
                       </span>
                     </div>
                   </div>

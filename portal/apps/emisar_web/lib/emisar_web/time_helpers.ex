@@ -177,7 +177,8 @@ defmodule EmisarWeb.TimeHelpers do
     assigns =
       assigns
       |> assign(:iso, DateTime.to_iso8601(dt))
-      |> assign(:fallback,
+      |> assign(
+        :fallback,
         case assigns.mode do
           :relative -> relative_time(dt)
           :absolute -> absolute_time(dt)
@@ -192,7 +193,9 @@ defmodule EmisarWeb.TimeHelpers do
       datetime={@iso}
       data-format={Atom.to_string(@mode)}
       class={@class}
-    >{@fallback}</time>
+    >
+      {@fallback}
+    </time>
     """
   end
 
