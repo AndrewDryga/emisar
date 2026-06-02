@@ -11,7 +11,7 @@ kill_timeout = "30s"
   release_command = "/app/bin/migrate"
 
 [env]
-  PHX_HOST = "app.emisar.com"
+  PHX_HOST = "emisar.dev"
   PORT = "4000"
   POOL_SIZE = "20"
 

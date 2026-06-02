@@ -1,0 +1,13 @@
+# Build context is the REPO ROOT (see portal/Dockerfile). The image only
+# needs source; everything below is either rebuilt inside the container
+# (_build, deps via `mix deps.get`/`mix release`) or never COPY-ed at all.
+.git
+.github
+**/_build
+**/deps
+**/.elixir_ls
+**/node_modules
+**/erl_crash.dump
+**/*.log
+.DS_Store
+**/.DS_Store
