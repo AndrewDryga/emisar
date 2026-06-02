@@ -99,8 +99,26 @@ warn()  { printf '\033[1;33m[install]\033[0m %s\n' "$*" >&2; }
 die()   { printf '\033[1;31m[install]\033[0m %s\n' "$*" >&2; exit 1; }
 confirm() {
   if [ "$ASSUME_YES" = "1" ]; then return 0; fi
-  printf '%s [y/N] ' "$1"
-  read -r reply || reply=""
+
+  # `curl | bash` makes stdin the script content, not a terminal — so a
+  # plain `read` consumes the NEXT LINE of the script and reports an
+  # "empty" answer to every prompt. Try /dev/tty so the operator can
+  # actually answer; if no controlling terminal exists at all (CI,
+  # cloud-init, container provisioner) auto-yes — at that point the
+  # caller explicitly opted in by running with sudo + env vars and
+  # there's no human at the keyboard to confirm anyway.
+  if [ -t 0 ]; then
+    printf '%s [y/N] ' "$1"
+    read -r reply || reply=""
+  elif { exec 3</dev/tty; } 2>/dev/null; then
+    printf '%s [y/N] ' "$1" >/dev/tty
+    read -r reply <&3 || reply=""
+    exec 3<&-
+  else
+    # No tty at all — treat as a non-interactive install. The caller
+    # already opted in by piping us through `sudo bash`.
+    return 0
+  fi
   case "$reply" in [yY]|[yY][eE][sS]) return 0;; *) return 1;; esac
 }
 

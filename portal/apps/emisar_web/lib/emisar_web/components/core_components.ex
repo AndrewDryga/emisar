@@ -1837,15 +1837,28 @@ defmodule EmisarWeb.CoreComponents do
             </button>
           </div>
 
-          <%= for cmd <- @install_command do %>
+          <%= for {cmd, idx} <- Enum.with_index(@install_command) do %>
             <div class="mt-4">
               <h3 class="text-xs font-semibold uppercase tracking-wider text-amber-200/80">
                 {cmd[:label] || "Install on a host"}
               </h3>
-              <div class="mt-2 flex items-center gap-2 rounded-lg bg-zinc-950/80 p-3 ring-1 ring-zinc-800">
-                <code class="flex-1 break-all font-mono text-xs text-zinc-300">
-                  {render_slot(cmd)}
-                </code>
+              <div class="mt-2 flex items-start gap-2 rounded-lg bg-zinc-950/80 p-3 ring-1 ring-zinc-800">
+                <code
+                  id={"reveal-install-#{idx}"}
+                  class="flex-1 break-all font-mono text-xs text-zinc-300"
+                >{render_slot(cmd)}</code>
+                <button
+                  type="button"
+                  class="shrink-0 self-start rounded bg-amber-500/20 px-2 py-1 text-xs font-semibold text-amber-100 hover:bg-amber-500/30"
+                  onclick={
+                    "const el = document.getElementById('reveal-install-#{idx}');" <>
+                      "navigator.clipboard.writeText(el.innerText.trim());" <>
+                      "const orig = this.innerText; this.innerText = 'Copied';" <>
+                      "setTimeout(() => { this.innerText = orig; }, 1500);"
+                  }
+                >
+                  Copy
+                </button>
               </div>
             </div>
           <% end %>
