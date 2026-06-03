@@ -847,6 +847,29 @@ defmodule EmisarWeb.CoreComponents do
       </div>
 
       <div class="flex flex-1 flex-col">
+        <%!-- Portal-wide nudge: a signed-in user whose email isn't
+             confirmed yet. Shown on every page until they verify; the
+             "Resend" button is handled by the global `:email_confirmation`
+             on_mount hook so it works regardless of which LV is mounted. --%>
+        <div
+          :if={@current_user && is_nil(@current_user.confirmed_at)}
+          class="flex flex-wrap items-center justify-between gap-3 border-b border-amber-500/30 bg-amber-500/10 px-4 py-2.5 sm:px-6"
+        >
+          <p class="flex items-center gap-2 text-sm text-amber-200">
+            <.icon name="hero-envelope" class="h-4 w-4 shrink-0" />
+            <span>
+              Verify your email — we sent a confirmation link to <span class="font-medium text-amber-100">{@current_user.email}</span>.
+            </span>
+          </p>
+          <button
+            type="button"
+            phx-click="resend_confirmation"
+            class="shrink-0 rounded-md bg-amber-500/20 px-3 py-1.5 text-xs font-semibold text-amber-100 ring-1 ring-amber-500/40 hover:bg-amber-500/30"
+          >
+            Resend email
+          </button>
+        </div>
+
         <header class="flex h-16 items-center gap-3 border-b border-zinc-900 bg-zinc-950 px-4 sm:px-6">
           <%!-- Mobile hamburger (hidden on lg) --%>
           <button

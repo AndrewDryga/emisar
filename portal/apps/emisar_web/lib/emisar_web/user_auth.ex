@@ -374,6 +374,21 @@ defmodule EmisarWeb.UserAuth do
     end
   end
 
+  # Wires a global "resend confirmation email" handler onto every
+  # authenticated LiveView so the unverified-email banner (rendered by
+  # `dashboard_shell`) can re-send the link from any page without each
+  # host LV defining the event. The banner reads `@current_user.confirmed_at`
+  # directly, so this hook only needs to handle the button's event.
+  def on_mount(:email_confirmation, _params, _session, socket) do
+    {:cont,
+     Phoenix.LiveView.attach_hook(
+       socket,
+       :resend_confirmation,
+       :handle_event,
+       &resend_confirmation_email/3
+     )}
+  end
+
   defp refresh_pending_approvals({:approval_updated, _}, socket) do
     {:cont,
      Phoenix.Component.assign(
@@ -384,6 +399,26 @@ defmodule EmisarWeb.UserAuth do
   end
 
   defp refresh_pending_approvals(_msg, socket), do: {:cont, socket}
+
+  defp resend_confirmation_email("resend_confirmation", _params, socket) do
+    socket =
+      case socket.assigns[:current_user] do
+        %{confirmed_at: nil} = user ->
+          token = Auth.issue_confirmation_token!(user)
+          _ = Emisar.Mailers.UserNotifier.deliver_confirmation_instructions(user, token)
+          Phoenix.LiveView.put_flash(socket, :info, "Confirmation email sent to #{user.email}.")
+
+        %{} ->
+          Phoenix.LiveView.put_flash(socket, :info, "Your email is already confirmed.")
+
+        _ ->
+          socket
+      end
+
+    {:halt, socket}
+  end
+
+  defp resend_confirmation_email(_event, _params, socket), do: {:cont, socket}
 
   defp approval_count_for(nil), do: 0
   defp approval_count_for(subject), do: Emisar.Approvals.count_pending_approval_requests(subject)
