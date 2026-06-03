@@ -137,12 +137,13 @@ examples:
             <h2 class="text-xl font-semibold text-zinc-50">Test against your runner</h2>
           </header>
           <p class="mt-4 text-sm leading-relaxed text-zinc-400">
-            Drop the directory into your runner's <code>/etc/emisar/packs</code> and reload.
-            The runner journals every action's SHA-256 at load — diff against your local copy
-            to confirm it picked up the version you intended.
+            <code>emisar pack install</code> validates the pack (same checks the runner runs
+            at load) and copies it into <code>/etc/emisar/packs</code>. It prints the pack's
+            content hash — note it down to pin future installs with <code>--hash</code>. Then
+            reload and confirm the runner picked up your version.
           </p>
           <pre class="mt-4 overflow-x-auto rounded-lg border border-zinc-800 bg-black/60 p-4 font-mono text-xs leading-6 text-zinc-300"># on the runner host
-sudo cp -r my-pack /etc/emisar/packs/
+sudo emisar pack install ./my-pack --dest /etc/emisar/packs
 sudo systemctl reload emisar
 sudo journalctl -u emisar -n 50 --no-pager | grep my-pack</pre>
           <p class="mt-4 text-sm text-zinc-400">

@@ -85,12 +85,36 @@ defmodule EmisarWeb.PacksTest do
       assert url =~ "linux-core/actions/disk_usage.yaml"
     end
 
-    test "install_snippet/1 includes the pack id" do
+    test "install_snippet/1 includes the pack id, pack install, and the --hash pin" do
       pack = PacksRegistry.get("cassandra")
       snippet = PacksRegistry.install_snippet(pack)
       assert snippet =~ "cassandra"
       assert snippet =~ "/etc/emisar/packs"
+      assert snippet =~ "emisar pack install"
+      assert snippet =~ "--hash #{pack.content_hash}"
       assert snippet =~ "systemctl reload emisar"
+    end
+
+    test "every pack has a well-formed sha256 content hash" do
+      for pack <- PacksRegistry.list() do
+        assert pack.content_hash =~ ~r/^sha256:[0-9a-f]{64}$/,
+               "bad content_hash for #{pack.id}: #{inspect(pack.content_hash)}"
+      end
+    end
+
+    # Golden values captured from the Go runner's `emisar pack validate`
+    # (runner/internal/packs computePackHash). If a pack's bytes change,
+    # both the Go hash and this expectation must move together — a
+    # mismatch here means the portal's Elixir hash has drifted from the
+    # runner's, which would make every `--hash` install fail for users.
+    # redis is exec-only; cassandra includes a script-kind action, so
+    # the pair covers both hash code paths.
+    test "content_hash matches the Go runner byte-for-byte (golden values)" do
+      assert PacksRegistry.get("redis").content_hash ==
+               "sha256:32ad81b61b268e5ff63de19613a729cf4e45f8f5fd6086089a5fb4d1e4e87fe3"
+
+      assert PacksRegistry.get("cassandra").content_hash ==
+               "sha256:647ba6fbbc7abb39de8dbf8d6853da65bb09d75cdcbdf2ddd3031ae2c36ec0ea"
     end
   end
 end

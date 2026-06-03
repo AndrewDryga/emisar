@@ -77,6 +77,36 @@ defmodule EmisarWeb.PacksRegistry do
              }
            end
 
+           # Content hash matching the Go runner's computePackHash
+           # (runner/internal/packs/loader.go): for pack.yaml + every
+           # action file listed in the manifest's `actions:` + every
+           # referenced script, hash sort-by-relpath of
+           # `relpath <0x00> bytes <0x00>`. Verified byte-for-byte
+           # against `emisar pack validate` for all 58 packs (see
+           # packs_registry_test.exs).
+           content_hash = fn pack_dir, manifest ->
+             action_rels = Map.get(manifest, "actions", []) || []
+
+             action_entries =
+               Enum.flat_map(action_rels, fn rel ->
+                 full = Path.join(pack_dir, rel)
+                 action = parse_yaml!.(full)
+                 base = [{rel, File.read!(full)}]
+
+                 case get_in(action, ["execution", "script", "path"]) do
+                   nil -> base
+                   spath -> base ++ [{spath, File.read!(Path.join(pack_dir, spath))}]
+                 end
+               end)
+
+             iodata =
+               [{"pack.yaml", File.read!(Path.join(pack_dir, "pack.yaml"))} | action_entries]
+               |> Enum.sort_by(fn {rel, _} -> rel end)
+               |> Enum.map(fn {rel, data} -> [rel, <<0>>, data, <<0>>] end)
+
+             "sha256:" <> Base.encode16(:crypto.hash(:sha256, iodata), case: :lower)
+           end
+
            build_pack = fn manifest_path ->
              pack_dir = Path.dirname(manifest_path)
              manifest = parse_yaml!.(manifest_path)
@@ -103,6 +133,7 @@ defmodule EmisarWeb.PacksRegistry do
                homepage: Map.get(manifest, "homepage") || @repo_url,
                requires_os: Map.get(requires, "os", []) || [],
                requires_binaries: Map.get(requires, "binaries", []) || [],
+               content_hash: content_hash.(pack_dir, manifest),
                actions: actions
              }
            end
@@ -135,14 +166,28 @@ defmodule EmisarWeb.PacksRegistry do
     "#{@packs_root}/#{pack_id}/actions/#{file}.yaml"
   end
 
-  @doc "Install snippet operators paste on a runner host."
+  @doc """
+  Install snippet operators paste on a runner host.
+
+  Fetches the pack source from the repo into a temp dir, then runs
+  `emisar pack install` which re-validates the pack and verifies its
+  content hash against `--hash` before copying it into the packs dir.
+  The `--hash` pin means a tampered mirror or a drifted `main` is
+  rejected — the runner only ever installs the exact bytes this page
+  was rendered against.
+  """
   @spec install_snippet(Pack.t()) :: String.t()
-  def install_snippet(%Pack{id: id}) do
+  def install_snippet(%Pack{id: id, content_hash: hash}) do
     """
-    # Drop the pack into the runner's pack directory and reload:
-    sudo curl -L #{@repo_url}/archive/refs/heads/main.tar.gz | \\
-        sudo tar -xz -C /etc/emisar/packs --strip-components=3 \\
-        emisar-main/runner/examples/packs/#{id}
+    # Fetch the pack source, then verify + install by content hash.
+    curl -sSL #{@repo_url}/archive/refs/heads/main.tar.gz \\
+      | tar -xz -C /tmp emisar-main/runner/examples/packs/#{id}
+
+    sudo emisar pack install /tmp/emisar-main/runner/examples/packs/#{id} \\
+      --hash #{hash} \\
+      --dest /etc/emisar/packs
+
+    # Reload so the runner re-reads the catalog:
     sudo systemctl reload emisar\
     """
   end

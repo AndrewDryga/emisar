@@ -63,10 +63,15 @@
       <section class="mt-10">
         <h2 class="text-xl font-semibold text-zinc-50">Install</h2>
         <p class="mt-2 text-sm text-zinc-400">
-          Drop the pack into the runner's
-          <code class="rounded bg-zinc-900 px-1 py-0.5">/etc/emisar/packs</code>
-          directory and reload. The runner re-reads the catalog and advertises every action
-          in this pack to the cloud.
+          <code class="rounded bg-zinc-900 px-1 py-0.5">emisar pack install</code>
+          validates the pack and verifies its content hash before copying it into <code class="rounded bg-zinc-900 px-1 py-0.5">/etc/emisar/packs</code>.
+          The <code class="rounded bg-zinc-900 px-1 py-0.5">--hash</code>
+          below pins the
+          install to the exact bytes on this page — a tampered copy is rejected. After
+          install, reload the runner; it re-reads the catalog and advertises every action.
+        </p>
+        <p class="mt-2 font-mono text-[11px] text-zinc-500">
+          content hash: {@pack.content_hash}
         </p>
         <div class="mt-3 overflow-hidden rounded-lg border border-zinc-800 bg-black/60">
           <div class="flex items-center justify-between gap-2 border-b border-zinc-800 px-4 py-2">

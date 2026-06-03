@@ -16,6 +16,12 @@ defmodule EmisarWeb.PacksRegistry.Pack do
     :homepage,
     :requires_os,
     :requires_binaries,
+    # content_hash is the runner's content-addressable pack hash
+    # ("sha256:..."), computed at compile time over the same byte set
+    # and algorithm the Go runner uses. Drives the `--hash` pin shown
+    # in the install snippet so an operator's `emisar pack install`
+    # rejects a tampered or drifted copy.
+    :content_hash,
     actions: []
   ]
 
@@ -28,6 +34,7 @@ defmodule EmisarWeb.PacksRegistry.Pack do
           homepage: String.t() | nil,
           requires_os: [String.t()],
           requires_binaries: [String.t()],
+          content_hash: String.t() | nil,
           actions: [EmisarWeb.PacksRegistry.Action.t()]
         }
 end

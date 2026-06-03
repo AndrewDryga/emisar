@@ -386,14 +386,20 @@ runner:
   group: ${group}
   labels:
     # Free-form tags. The cloud UI uses these for filtering / search.
-    # Set RUNNER_ROLE / RUNNER_ENVIRONMENT at install time to bake
-    # them in, or edit later (any string=string pair works).
+    # Set RUNNER_ROLE / RUNNER_ENVIRONMENT at install time to bake them
+    # in, or uncomment + edit below (any string=string pair works).
 EOF
   if [ -n "${RUNNER_ROLE:-}" ]; then
     printf '    role: %s\n' "${RUNNER_ROLE}"
+  else
+    printf '    # role: web\n'
+  fi
+  if [ -n "${RUNNER_ENVIRONMENT:-}" ]; then
+    printf '    environment: %s\n' "${RUNNER_ENVIRONMENT}"
+  else
+    printf '    # environment: prod\n'
   fi
   cat <<EOF
-    environment: ${RUNNER_ENVIRONMENT:-prod}
 
 cloud:
   # WSS URL of the control plane. Until you set this, the runner runs in
@@ -820,9 +826,9 @@ EOF
       if [ "${NEEDS_CONFIGURATION:-1}" = "1" ]; then
         cat <<EOF
   3. Run the binary directly (no service was installed):
-       ${BIN_DIR}/emisar runner --config ${ETC_DIR}/config.yaml
+       ${BIN_DIR}/emisar connect --config ${ETC_DIR}/config.yaml
      For a one-off connect test, pass the key inline:
-       EMISAR_AUTH_KEY=emkey-... ${BIN_DIR}/emisar runner --config ${ETC_DIR}/config.yaml
+       EMISAR_AUTH_KEY=emkey-... ${BIN_DIR}/emisar connect --config ${ETC_DIR}/config.yaml
 EOF
       else
         # No systemd to load runner.env, so we source it in the same
@@ -833,7 +839,7 @@ EOF
         cat <<EOF
 
 Run the binary directly (no service was installed):
-  sudo bash -c 'set -a; . ${ETC_DIR}/runner.env; set +a; ${BIN_DIR}/emisar runner --config ${ETC_DIR}/config.yaml'
+  sudo bash -c 'set -a; . ${ETC_DIR}/runner.env; set +a; ${BIN_DIR}/emisar connect --config ${ETC_DIR}/config.yaml'
 EOF
       fi
       ;;
