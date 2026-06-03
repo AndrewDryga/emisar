@@ -70,6 +70,14 @@ jobs:
       - name: Format check
         run: mix format --check-formatted
 
+      - name: Prepare test database (so Oban can start in testing: :inline)
+        # Oban verifies that `oban_jobs` exists at Application boot — even
+        # in `testing: :inline` mode — and crashes the supervision tree if
+        # the table is missing. The "unit, no DB" step still boots the
+        # application, so the schema has to exist; we just don't EXERCISE
+        # it. ecto.setup runs both the create + migrate steps.
+        run: cd apps/emisar && mix ecto.create && mix ecto.migrate
+
       - name: Test (unit, no DB)
         run: cd apps/emisar && mix test --exclude db
 
