@@ -404,8 +404,7 @@ defmodule EmisarWeb.UserAuth do
     socket =
       case socket.assigns[:current_user] do
         %{confirmed_at: nil} = user ->
-          token = Auth.issue_confirmation_token!(user)
-          _ = Emisar.Mailers.UserNotifier.deliver_confirmation_instructions(user, token)
+          :ok = Auth.deliver_confirmation_instructions(user)
           Phoenix.LiveView.put_flash(socket, :info, "Confirmation email sent to #{user.email}.")
 
         %{} ->

@@ -216,30 +216,13 @@ defmodule EmisarWeb.TeamLive do
     end)
   end
 
-  # Self-serve: a signed-in user can re-request their own confirmation
-  # email. We don't expose this for other members from here — an
-  # unconfirmed teammate may be invited-but-not-accepted, who needs a
-  # re-invite (to set a password), not a bare confirm link.
-  def handle_event("resend_confirmation", _params, socket) do
-    user = socket.assigns.current_user
-
-    if is_nil(user.confirmed_at) do
-      deliver_confirmation(user)
-      {:noreply, put_flash(socket, :info, "Confirmation email sent to #{user.email}.")}
-    else
-      {:noreply, put_flash(socket, :info, "Your email is already confirmed.")}
-    end
-  end
+  # The per-row "Resend confirmation" button (current user, unconfirmed)
+  # fires the `resend_confirmation` event, but it's handled globally by
+  # the `:email_confirmation` on_mount hook (UserAuth) — the same hook
+  # that powers the portal-wide verify-email banner — so there's no
+  # per-LV handler here.
 
   defp find_membership(socket, id), do: Enum.find(socket.assigns.memberships, &(&1.id == id))
-
-  # Issues a fresh confirmation token and emails the /confirm link —
-  # mirror of the sign-up delivery, reused by the self + admin resends.
-  defp deliver_confirmation(user) do
-    token = Emisar.Auth.issue_confirmation_token!(user)
-    Mailers.UserNotifier.deliver_confirmation_instructions(user, token)
-    :ok
-  end
 
   defp tap_clear_scope_edit({:noreply, %{assigns: %{flash: %{"info" => _}}} = socket}),
     do: {:noreply, assign(socket, :scope_editing_id, nil)}

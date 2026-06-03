@@ -18,7 +18,7 @@ defmodule EmisarWeb.OAuthMetadataController do
   # RFC 9728 — protected resource metadata. `resource` is the canonical
   # MCP endpoint URI clients bind tokens to (RFC 8707).
   def protected_resource(conn, _params) do
-    base = base_url(conn)
+    base = EmisarWeb.Endpoint.url()
 
     json(conn, %{
       resource: base <> "/api/mcp/rpc",
@@ -30,7 +30,7 @@ defmodule EmisarWeb.OAuthMetadataController do
 
   # RFC 8414 — authorization server metadata.
   def authorization_server(conn, _params) do
-    base = base_url(conn)
+    base = EmisarWeb.Endpoint.url()
 
     json(conn, %{
       issuer: base,
@@ -43,14 +43,5 @@ defmodule EmisarWeb.OAuthMetadataController do
       token_endpoint_auth_methods_supported: ["none"],
       scopes_supported: OAuth.supported_scopes()
     })
-  end
-
-  # Public base URL: https everywhere except localhost dev.
-  defp base_url(conn) do
-    if conn.host in ["localhost", "127.0.0.1"] do
-      "http://#{conn.host}:#{conn.port}"
-    else
-      "https://#{conn.host}"
-    end
   end
 end

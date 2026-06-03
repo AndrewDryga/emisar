@@ -387,6 +387,18 @@ defmodule Emisar.Auth do
     raw
   end
 
+  @doc """
+  Issues a fresh confirmation token and emails the confirm link. The one
+  place "send a confirmation email" lives — sign-up, the Team-page resend,
+  and the portal banner all call this so the token + delivery never drift.
+  Best-effort: returns `:ok` regardless of the mailer result.
+  """
+  def deliver_confirmation_instructions(%User{} = user) do
+    token = issue_confirmation_token!(user)
+    _ = Emisar.Mailers.UserNotifier.deliver_confirmation_instructions(user, token)
+    :ok
+  end
+
   def confirm_user_by_token(raw) when is_binary(raw) do
     case UserToken.verify_hashed_token_query(raw, "confirm") do
       {:ok, query} ->

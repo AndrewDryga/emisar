@@ -1,7 +1,7 @@
 defmodule EmisarWeb.UserSignUpLive do
   use EmisarWeb, :live_view
 
-  alias Emisar.{Accounts, Auth, Mailers}
+  alias Emisar.{Accounts, Auth}
 
   def mount(_params, _session, socket) do
     changeset = Accounts.change_user(%Emisar.Accounts.User{})
@@ -104,8 +104,7 @@ defmodule EmisarWeb.UserSignUpLive do
                user
              ) do
           {:ok, _account} ->
-            token = Auth.issue_confirmation_token!(user)
-            Mailers.UserNotifier.deliver_confirmation_instructions(user, token) |> deliver_safe()
+            :ok = Auth.deliver_confirmation_instructions(user)
 
             {:noreply,
              socket
@@ -129,7 +128,4 @@ defmodule EmisarWeb.UserSignUpLive do
 
   defp assign_form(socket, %Ecto.Changeset{} = changeset),
     do: assign(socket, :form, to_form(changeset, as: "user"))
-
-  defp deliver_safe({:ok, _}), do: :ok
-  defp deliver_safe(_), do: :ok
 end
