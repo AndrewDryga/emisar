@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -13,6 +14,10 @@ import (
 	"github.com/andrewdryga/emisar/runner/internal/config"
 	"github.com/andrewdryga/emisar/runner/internal/packs"
 )
+
+// defaultRegistry is the pack registry the runner fetches named packs
+// from. Override with --registry or EMISAR_PACKS_REGISTRY.
+const defaultRegistry = "https://emisar.dev"
 
 func packCmd() *cobra.Command {
 	cmd := &cobra.Command{Use: "pack", Short: "Manage action packs"}
@@ -96,24 +101,50 @@ func packInstallCmd() *cobra.Command {
 	var (
 		wantHash string
 		dest     string
+		registry string
 		force    bool
 	)
 	cmd := &cobra.Command{
-		Use:   "install <path>",
-		Short: "Validate a pack, verify its hash, and copy it into the packs dir",
-		Long: `Install a pack from a local directory into the runner's packs dir.
+		Use:   "install <name|path|url>",
+		Short: "Fetch/validate a pack, verify its hash, and copy it into the packs dir",
+		Long: `Install a single action pack into the runner's packs dir.
+
+The source can be:
+
+  * a pack name      (e.g. "redis") — fetched from the registry at
+                     <registry>/packs/<name>/pack.tar.gz
+  * a local directory (e.g. "./my-pack" or an absolute path)
+  * an https:// URL  to a pack tarball
 
 The pack is validated (same checks as 'pack validate') and its content
 hash is computed. If --hash is given, the install aborts unless the
 computed hash matches exactly — this pins the install to the exact pack
 content the portal advertised, so a tampered or mismatched copy is
-rejected before it ever reaches the runner.
+rejected before it reaches the runner.
 
 The pack is copied to <dest>/<pack-id>. After install, reload the runner
-(systemctl reload emisar, or SIGHUP) so it re-reads the catalog.`,
+(systemctl reload emisar, or SIGHUP) so it re-reads the catalog.
+
+  emisar pack install redis --dest /etc/emisar/packs
+  emisar pack install redis --hash sha256:... --dest /etc/emisar/packs
+  emisar pack install ./my-pack --dest /etc/emisar/packs`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			src := args[0]
+			arg := args[0]
+			if registry == "" {
+				registry = os.Getenv("EMISAR_PACKS_REGISTRY")
+			}
+			if registry == "" {
+				registry = defaultRegistry
+			}
+
+			src, cleanup, err := resolvePackSource(cmd.Context(), arg, registry)
+			if err != nil {
+				return err
+			}
+			if cleanup != nil {
+				defer cleanup()
+			}
 
 			reg, err := packs.LoadOne(src, packs.LoadOptions{})
 			if err != nil {
@@ -170,8 +201,45 @@ The pack is copied to <dest>/<pack-id>. After install, reload the runner
 	}
 	cmd.Flags().StringVar(&wantHash, "hash", "", "expected pack content hash (sha256:...); install aborts on mismatch")
 	cmd.Flags().StringVar(&dest, "dest", "", "destination packs dir (default: config paths.packs[0])")
+	cmd.Flags().StringVar(&registry, "registry", "", "pack registry base URL for named packs (default $EMISAR_PACKS_REGISTRY or "+defaultRegistry+")")
 	cmd.Flags().BoolVar(&force, "force", false, "overwrite an already-installed pack with the same id")
 	return cmd
+}
+
+// resolvePackSource turns the install argument into a local directory
+// containing the pack. A local path is returned as-is (no cleanup); a
+// name or URL is fetched + extracted to a temp dir (cleanup removes it).
+func resolvePackSource(ctx context.Context, arg, registry string) (dir string, cleanup func(), err error) {
+	switch {
+	case strings.HasPrefix(arg, "https://") || strings.HasPrefix(arg, "http://"):
+		banner("fetching pack from %s", arg)
+		return packs.Fetch(ctx, arg, nil)
+	case looksLikeLocalPath(arg):
+		return arg, nil, nil
+	default:
+		// Bare name → registry URL.
+		base := strings.TrimRight(registry, "/")
+		url := fmt.Sprintf("%s/packs/%s/pack.tar.gz", base, arg)
+		banner("fetching pack %q from %s", arg, base)
+		return packs.Fetch(ctx, url, nil)
+	}
+}
+
+// looksLikeLocalPath reports whether arg should be treated as a path on
+// disk rather than a registry pack name. Anything with a separator, a
+// leading dot, or that resolves to an existing directory is a path;
+// a bare token like "redis" is a registry name.
+func looksLikeLocalPath(arg string) bool {
+	if strings.ContainsRune(arg, '/') || strings.ContainsRune(arg, os.PathSeparator) {
+		return true
+	}
+	if arg == "." || arg == ".." || strings.HasPrefix(arg, ".") {
+		return true
+	}
+	if fi, err := os.Stat(arg); err == nil && fi.IsDir() {
+		return true
+	}
+	return false
 }
 
 // copyTree recursively copies the directory at src into dst. Regular

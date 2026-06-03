@@ -116,5 +116,47 @@ defmodule EmisarWeb.PacksTest do
       assert PacksRegistry.get("cassandra").content_hash ==
                "sha256:647ba6fbbc7abb39de8dbf8d6853da65bb09d75cdcbdf2ddd3031ae2c36ec0ea"
     end
+
+    test "tarball/1 returns a gzip tarball with flat pack files" do
+      assert {:ok, bin} = PacksRegistry.tarball("redis")
+      # gzip magic bytes
+      assert <<0x1F, 0x8B, _::binary>> = bin
+
+      {:ok, files} = :erl_tar.extract({:binary, bin}, [:memory, :compressed])
+      names = Enum.map(files, fn {name, _} -> to_string(name) end)
+      assert "pack.yaml" in names
+      assert Enum.any?(names, &String.starts_with?(&1, "actions/"))
+    end
+
+    test "tarball/1 is :error for an unknown id" do
+      assert PacksRegistry.tarball("nope") == :error
+    end
+  end
+
+  describe "registry endpoints" do
+    test "GET /packs.json lists every pack with hash + tarball url", %{conn: conn} do
+      body = conn |> get(~p"/packs.json") |> json_response(200)
+      ids = Enum.map(body["packs"], & &1["id"])
+
+      for pack <- PacksRegistry.list() do
+        assert pack.id in ids, "missing #{pack.id} from index"
+      end
+
+      redis = Enum.find(body["packs"], &(&1["id"] == "redis"))
+      assert redis["hash"] == PacksRegistry.get("redis").content_hash
+      assert redis["tarball"] =~ "/packs/redis/pack.tar.gz"
+    end
+
+    test "GET /packs/:id/pack.tar.gz serves a gzip tarball", %{conn: conn} do
+      conn = get(conn, ~p"/packs/redis/pack.tar.gz")
+      assert response_content_type(conn, :gzip)
+      bin = response(conn, 200)
+      assert <<0x1F, 0x8B, _::binary>> = bin
+    end
+
+    test "GET /packs/:id/pack.tar.gz 404s for an unknown pack", %{conn: conn} do
+      conn = get(conn, ~p"/packs/this-does-not-exist/pack.tar.gz")
+      assert json_response(conn, 404)["error"] =~ "unknown pack"
+    end
   end
 end

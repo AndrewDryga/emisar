@@ -182,15 +182,26 @@ jobs:
           mkdir -p "dist/${name}"
           cp dist/emisar "dist/${name}/emisar"
           cp README.md "dist/${name}/"
-          # LICENSE.md, install.sh, runner/examples are repo invariants;
-          # if any is missing, the release is malformed and we want the
-          # build to fail loudly. No `[ -f X ] && ... || true` swallows.
-          # `docs/` is intentionally NOT shipped — the directory is
-          # gitignored (operators read docs at https://emisar.dev/docs).
+          # LICENSE.md + install.sh are repo invariants; missing either
+          # is a malformed release, so copy unconditionally (no
+          # `[ -f X ] && ... || true` swallows). `docs/` is gitignored
+          # and read at https://emisar.dev/docs, so it's not shipped.
           cp LICENSE.md "dist/${name}/"
           cp install.sh "dist/${name}/install.sh"
           chmod +x "dist/${name}/install.sh"
-          cp -R runner/examples "dist/${name}/examples"
+          # Bundle only a SMALL curated default set so install.sh can set
+          # up host-appropriate starter packs offline. The full catalog
+          # (~58 packs) is fetched on demand via `emisar pack install
+          # <name>` from the registry — we do NOT ship all of them.
+          mkdir -p "dist/${name}/packs"
+          for pack in linux-core debugging debian dnf-rpm systemd-deep docker; do
+            if [ -d "runner/examples/packs/${pack}" ]; then
+              cp -R "runner/examples/packs/${pack}" "dist/${name}/packs/${pack}"
+            else
+              echo "::error::bundled default pack ${pack} not found"
+              exit 1
+            fi
+          done
           tar -C dist -czf "dist/${name}.tar.gz" "${name}"
           shasum -a 256 "dist/${name}.tar.gz" | awk '{print $1}' > "dist/${name}.tar.gz.sha256"
           ls -la dist/

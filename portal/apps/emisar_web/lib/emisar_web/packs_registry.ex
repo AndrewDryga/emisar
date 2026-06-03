@@ -143,11 +143,64 @@ defmodule EmisarWeb.PacksRegistry do
            |> Enum.sort_by(& &1.id)
          )
 
+  # -- Per-pack tarballs (compile-time, compressed) --------------------
+  #
+  # Bake a gzip tarball of each pack's files into the module so the
+  # registry can serve a single pack over HTTP without the runtime
+  # container needing the source files on disk. Compressed, the whole
+  # catalog is ~1 MB. Entries are flat (relative to the pack dir:
+  # pack.yaml, actions/…) which is exactly what `emisar pack install`
+  # extracts and re-hashes — tar order/mtime are irrelevant since the
+  # runner hashes file CONTENTS, not the archive.
+  @pack_tarballs (
+                   build_targz = fn dir ->
+                     entries =
+                       "#{dir}/**"
+                       |> Path.wildcard(match_dot: false)
+                       |> Enum.filter(&File.regular?/1)
+                       |> Enum.map(fn abs ->
+                         rel = Path.relative_to(abs, dir)
+                         {String.to_charlist(rel), String.to_charlist(abs)}
+                       end)
+
+                     tmp =
+                       Path.join(
+                         System.tmp_dir!(),
+                         "emisar-pack-build-#{:erlang.unique_integer([:positive])}.tar.gz"
+                       )
+
+                     :ok = :erl_tar.create(String.to_charlist(tmp), entries, [:compressed])
+                     bin = File.read!(tmp)
+                     File.rm(tmp)
+                     bin
+                   end
+
+                   @manifest_paths
+                   |> Enum.map(fn mp ->
+                     {:ok, m} = YamlElixir.read_from_file(mp)
+                     {Map.fetch!(m, "id"), build_targz.(Path.dirname(mp))}
+                   end)
+                   |> Map.new()
+                 )
+
   # -- Public API ------------------------------------------------------
 
   @doc "All packs, ordered alphabetically by id."
   @spec list() :: [Pack.t()]
   def list, do: @packs
+
+  @doc """
+  Gzip tarball bytes for a single pack id, or `:error` if unknown.
+  Flat entries (pack.yaml, actions/…) — what `emisar pack install`
+  fetches from `/packs/<id>/pack.tar.gz`.
+  """
+  @spec tarball(String.t()) :: {:ok, binary()} | :error
+  def tarball(id) when is_binary(id) do
+    case Map.fetch(@pack_tarballs, id) do
+      {:ok, bin} -> {:ok, bin}
+      :error -> :error
+    end
+  end
 
   @doc "Fetch a single pack by id, or nil if not in the registry."
   @spec get(String.t()) :: Pack.t() | nil
@@ -169,21 +222,16 @@ defmodule EmisarWeb.PacksRegistry do
   @doc """
   Install snippet operators paste on a runner host.
 
-  Fetches the pack source from the repo into a temp dir, then runs
-  `emisar pack install` which re-validates the pack and verifies its
-  content hash against `--hash` before copying it into the packs dir.
-  The `--hash` pin means a tampered mirror or a drifted `main` is
-  rejected — the runner only ever installs the exact bytes this page
-  was rendered against.
+  `emisar pack install <id>` fetches just this pack from the registry
+  (`/packs/<id>/pack.tar.gz`), re-validates it, and verifies its content
+  hash against `--hash` before copying it into the packs dir. The
+  `--hash` pin means a tampered mirror is rejected — the runner only
+  installs the exact bytes this page was rendered against.
   """
   @spec install_snippet(Pack.t()) :: String.t()
   def install_snippet(%Pack{id: id, content_hash: hash}) do
     """
-    # Fetch the pack source, then verify + install by content hash.
-    curl -sSL #{@repo_url}/archive/refs/heads/main.tar.gz \\
-      | tar -xz -C /tmp emisar-main/runner/examples/packs/#{id}
-
-    sudo emisar pack install /tmp/emisar-main/runner/examples/packs/#{id} \\
+    sudo emisar pack install #{id} \\
       --hash #{hash} \\
       --dest /etc/emisar/packs
 

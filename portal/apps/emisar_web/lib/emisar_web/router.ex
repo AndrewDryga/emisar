@@ -75,6 +75,11 @@ defmodule EmisarWeb.Router do
     get "/use-cases/postgres-ops", MarketingController, :usecase_postgres
     get "/compare/raw-ssh-for-ai", MarketingController, :compare_raw_ssh
     get "/packs", MarketingController, :packs
+    # Machine-facing registry endpoints (consumed by `emisar pack install`).
+    # Declared before "/packs/:id" so the literal segments win; Phoenix
+    # matches top-to-bottom and these are more specific.
+    get "/packs.json", PackRegistryController, :index
+    get "/packs/:id/pack.tar.gz", PackRegistryController, :tarball
     get "/packs/:id", MarketingController, :pack_detail
     get "/docs/publishing-packs", MarketingController, :docs_publishing_packs
     get "/sitemap.xml", SitemapController, :show

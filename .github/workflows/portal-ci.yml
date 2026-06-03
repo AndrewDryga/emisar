@@ -172,4 +172,15 @@ jobs:
             sleep 2
           done
 
+          # The pack registry endpoint must serve a real gzip tarball
+          # from the running image — catches a missing compile-time
+          # bake or a broken route before it reaches an install script.
+          ctype=$(curl -fsS -o /tmp/pack.tgz -w '%{content_type}' \
+            http://localhost:4000/packs/linux-core/pack.tar.gz)
+          echo "pack tarball content-type: ${ctype}"
+          gzip -t /tmp/pack.tgz || { echo "::error::/packs/linux-core/pack.tar.gz is not valid gzip"; exit 1; }
+          curl -fsS http://localhost:4000/packs.json | grep -q '"linux-core"' \
+            || { echo "::error::/packs.json missing linux-core"; exit 1; }
+          echo "pack registry endpoints OK"
+
           docker stop --time 15 "$cid"

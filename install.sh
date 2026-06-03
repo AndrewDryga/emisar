@@ -624,21 +624,60 @@ install_binary() {
   fi
 }
 
-install_packs_if_present() {
-  local src_dir="$1/examples/packs"
-  if [ ! -d "${src_dir}" ]; then
+# select_default_packs prints the pack names that suit this host, one per
+# line. Always includes the OS-agnostic core; adds package-manager and
+# service-specific packs only when the matching tool is present. The set
+# is deliberately small — operators add the rest with `emisar pack
+# install <name>`.
+select_default_packs() {
+  printf '%s\n' linux-core debugging
+  command -v apt-get >/dev/null 2>&1 && printf '%s\n' debian
+  { command -v dnf >/dev/null 2>&1 || command -v rpm >/dev/null 2>&1; } && printf '%s\n' dnf-rpm
+  [ "${INIT}" = "systemd" ] && printf '%s\n' systemd-deep
+  command -v docker >/dev/null 2>&1 && printf '%s\n' docker
+  return 0
+}
+
+# install_default_packs installs the host-matched starter packs from the
+# bundle shipped inside this tarball (offline — no registry round-trip).
+# The full catalog is fetched on demand later via `emisar pack install
+# <name>`. $1 is the extracted tarball root.
+install_default_packs() {
+  local bundle="$1/packs"
+  local dst="${ETC_DIR}/packs"
+
+  if [ ! -d "${bundle}" ]; then
+    warn "no bundled packs in this tarball; skipping starter packs"
     return 0
   fi
-  local dst_dir="${ETC_DIR}/packs"
-  if [ -d "${dst_dir}" ]; then
-    log "${dst_dir} exists; leaving installed packs untouched"
+
+  # Intersect the host-matched selection with what's actually bundled.
+  local wanted selected=()
+  while IFS= read -r wanted; do
+    [ -d "${bundle}/${wanted}" ] && selected+=("${wanted}")
+  done < <(select_default_packs)
+
+  if [ ${#selected[@]} -eq 0 ]; then
     return 0
   fi
-  log "copying example packs to ${dst_dir}"
-  mkdir -p "${dst_dir}"
-  cp -R "${src_dir}/." "${dst_dir}/"
-  if [ "${OS}" = "linux" ]; then
-    chown -R "${SERVICE_USER}:${SERVICE_GROUP}" "${dst_dir}"
+
+  if ! confirm "install starter packs for this host (${selected[*]})?"; then
+    log "skipping starter packs — add them later with: ${BIN_DIR}/emisar pack install <name>"
+    return 0
+  fi
+
+  mkdir -p "${dst}"
+  local p
+  for p in "${selected[@]}"; do
+    if "${BIN_DIR}/emisar" pack install "${bundle}/${p}" --dest "${dst}" --force >/dev/null 2>&1; then
+      log "installed pack ${p}"
+    else
+      warn "failed to install pack ${p} (continuing)"
+    fi
+  done
+
+  if [ "${OS}" = "linux" ] && [ "${INIT}" != "none" ]; then
+    chown -R "${SERVICE_USER}:${SERVICE_GROUP}" "${dst}" 2>/dev/null || true
   fi
 }
 
@@ -760,7 +799,7 @@ do_install() {
 
   ensure_dirs
   install_binary "${extracted}"
-  install_packs_if_present "${extracted}"
+  install_default_packs "${extracted}"
   drop_config_skeleton
 
   case "${INIT}" in
@@ -856,6 +895,13 @@ EOF
 EOF
       ;;
   esac
+  cat <<EOF
+
+Action packs:
+  Installed: $(ls "${ETC_DIR}/packs" 2>/dev/null | tr '\n' ' ')
+  Add more:  ${BIN_DIR}/emisar pack install <name>   (then reload the runner)
+  Browse:    https://emisar.dev/packs
+EOF
   echo
   # \$0 is "bash" when run as `curl ... | sudo bash`, so don't print that.
   # Show the canonical re-curl form instead.
