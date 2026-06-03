@@ -1,0 +1,74 @@
+<div class="flex min-h-screen items-center justify-center bg-zinc-950 px-6 py-12">
+  <div class="w-full max-w-md">
+    <div class="mb-8 flex items-center justify-center gap-2">
+      <img src={~p"/images/emisar-icon.svg"} alt="emisar" class="h-7 w-7" />
+      <span class="text-lg font-semibold tracking-tight text-zinc-100">emisar</span>
+    </div>
+
+    <div class="overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900/60 shadow-xl">
+      <div class="border-b border-zinc-800 px-6 py-5">
+        <h1 class="text-lg font-semibold text-zinc-50">
+          Authorize <span class="text-indigo-400">{@client_name}</span>
+        </h1>
+        <p class="mt-1 text-sm text-zinc-400">
+          wants to connect to <strong class="text-zinc-200">{@account_name}</strong>
+        </p>
+      </div>
+
+      <div class="px-6 py-5">
+        <p class="text-xs font-medium uppercase tracking-wide text-zinc-500">
+          This will allow it to
+        </p>
+        <ul class="mt-3 space-y-3">
+          <li :for={scope <- @scopes} class="flex items-start gap-3">
+            <.icon name="hero-check-circle" class="mt-0.5 h-5 w-5 flex-none text-emerald-400" />
+            <span class="text-sm leading-snug text-zinc-300">{scope_label(scope)}</span>
+          </li>
+        </ul>
+
+        <div class="mt-5 rounded-lg border border-zinc-800 bg-black/40 px-4 py-3">
+          <p class="text-xs leading-relaxed text-zinc-500">
+            The client can only run actions your policy already permits, and
+            every call is attributed to you and recorded in the audit log.
+            Anything requiring approval still waits for a human.
+          </p>
+        </div>
+
+        <.form for={%{}} action={~p"/oauth/authorize"} method="post" class="mt-6">
+          <input
+            :for={{key, value} <- @params}
+            :if={value not in [nil, ""]}
+            type="hidden"
+            name={key}
+            value={value}
+          />
+
+          <div class="flex flex-col gap-3">
+            <button
+              type="submit"
+              name="decision"
+              value="approve"
+              class="w-full rounded-lg bg-indigo-500 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:ring-offset-2 focus:ring-offset-zinc-900"
+            >
+              Authorize
+            </button>
+            <button
+              type="submit"
+              name="decision"
+              value="deny"
+              class="w-full rounded-lg border border-zinc-700 px-4 py-2.5 text-sm font-medium text-zinc-300 transition hover:bg-zinc-800"
+            >
+              Deny
+            </button>
+          </div>
+        </.form>
+      </div>
+
+      <div :if={@user_email} class="border-t border-zinc-800 px-6 py-3">
+        <p class="text-center text-xs text-zinc-500">
+          Signed in as <span class="text-zinc-400">{@user_email}</span>
+        </p>
+      </div>
+    </div>
+  </div>
+</div>

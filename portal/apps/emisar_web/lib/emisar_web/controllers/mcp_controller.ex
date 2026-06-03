@@ -33,7 +33,7 @@ defmodule EmisarWeb.McpController do
 
   use EmisarWeb, :controller
 
-  alias Emisar.{Accounts, ApiKeys, Catalog, Runners, Runs}
+  alias Emisar.{Accounts, ApiKeys, Catalog, OAuth, Runners, Runs}
   alias Emisar.Auth.Subject
   alias EmisarWeb.Mcp.{Idempotency, ToolSchema}
 
@@ -933,20 +933,54 @@ defmodule EmisarWeb.McpController do
 
   # -- Plugs ----------------------------------------------------------
 
+  # Accepts both `emk-` static keys and `emo-` OAuth access tokens; both
+  # resolve to the same backing `%ApiKey{}`. Mirrors `McpRpcController`.
   defp authenticate(conn, _opts) do
-    with ["Bearer " <> raw] <- get_req_header(conn, "authorization"),
-         %{} = key <- ApiKeys.peek_api_key_by_secret(raw),
-         {:ok, account} <- Accounts.fetch_account_by_id(key.account_id) do
-      conn
-      |> assign(:api_key, key)
-      |> assign(:current_subject, Subject.for_api_key(key, account))
-    else
-      _ ->
+    case resolve_bearer(conn) do
+      {:ok, key, account} ->
         conn
+        |> assign(:api_key, key)
+        |> assign(:current_subject, Subject.for_api_key(key, account))
+
+      :error ->
+        conn
+        |> put_resp_header("www-authenticate", www_authenticate(conn))
         |> put_status(:unauthorized)
         |> json(%{error: "unauthorized"})
         |> halt()
     end
+  end
+
+  defp resolve_bearer(conn) do
+    case get_req_header(conn, "authorization") do
+      ["Bearer " <> raw] -> resolve_token(raw)
+      _ -> :error
+    end
+  end
+
+  defp resolve_token("emo-" <> _ = raw) do
+    case OAuth.resolve_access_token(raw) do
+      {:ok, %{api_key: key, account: account}} -> {:ok, key, account}
+      _ -> :error
+    end
+  end
+
+  defp resolve_token(raw) do
+    with %{} = key <- ApiKeys.peek_api_key_by_secret(raw),
+         {:ok, account} <- Accounts.fetch_account_by_id(key.account_id) do
+      {:ok, key, account}
+    else
+      _ -> :error
+    end
+  end
+
+  defp www_authenticate(conn) do
+    base =
+      if conn.host in ["localhost", "127.0.0.1"],
+        do: "http://#{conn.host}:#{conn.port}",
+        else: "https://#{conn.host}"
+
+    ~s(Bearer resource_metadata="#{base}/.well-known/oauth-protected-resource")
   end
 
   defp mcp_subject(conn), do: conn.assigns.current_subject

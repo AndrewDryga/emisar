@@ -12,32 +12,179 @@
         Context Protocol server. Two ways to plug an LLM in:
       </p>
 
-      <ul class="mt-4 list-disc space-y-1 pl-6 text-sm text-zinc-300">
+      <ul class="mt-4 list-disc space-y-2 pl-6 text-sm text-zinc-300">
         <li>
-          <strong>Remote MCP</strong> (cloud LLMs, recent IDE clients) —
-          paste a URL + API key. Works with Claude's <em>Custom Connectors</em>, ChatGPT's <em>Connectors</em>, and any
-          client that speaks the MCP HTTP transport.
+          <strong>Remote MCP</strong>
+          (Claude.ai, ChatGPT, recent IDE
+          clients) — paste one URL. emisar signs you in over OAuth; there
+          is no API key or header to manage. This is the <em>only</em>
+          way the cloud connectors work — their setup form has a URL field
+          and nothing else.
         </li>
         <li>
-          <strong>Stdio bridge</strong> (Claude Desktop, Cursor, Claude
-          Code, Codex CLI, Gemini CLI) — a tiny binary that runs on your
-          laptop and proxies stdio MCP to the same HTTP endpoint.
+          <strong>Stdio bridge or static key</strong> (Claude Desktop,
+          Claude Code, Cursor, Codex CLI, Gemini CLI, plain HTTP) — a tiny
+          binary on your machine, or a raw bearer token, authenticated with
+          an <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emk-</code> API key.
         </li>
       </ul>
 
       <%!-- ============================================================ --%>
-      <%!-- Step 1: API key                                              --%>
+      <%!-- Step 1: Remote MCP (OAuth)                                    --%>
       <%!-- ============================================================ --%>
       <section class="mt-12">
         <div class="flex items-center gap-3">
           <span class="grid h-8 w-8 place-items-center rounded-full bg-indigo-500/20 text-sm font-semibold text-indigo-300">
             1
           </span>
-          <h2 class="text-2xl font-semibold tracking-tight text-zinc-50">Mint an API key</h2>
+          <h2 class="text-2xl font-semibold tracking-tight text-zinc-50">
+            Connect a cloud LLM (recommended)
+          </h2>
         </div>
 
         <p class="mt-4 text-base leading-relaxed text-zinc-400">
-          In the dashboard sidebar, click <code class="rounded bg-zinc-900 px-1.5 py-0.5 text-sm">Agents</code>.
+          Claude.ai and ChatGPT only let you enter a <strong>URL</strong> —
+          no header, no token field. emisar is a full OAuth&nbsp;2.1
+          authorization server, so the connector discovers it from that URL,
+          registers itself automatically, and sends you through a one-time
+          emisar sign-in. The single value to enter:
+        </p>
+
+        <div class="mt-4 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
+          <div class="border-b border-zinc-900 px-3 py-2 font-mono text-[11px] text-zinc-500">
+            remote MCP server URL
+          </div>
+          <pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300"><span class="text-emerald-300">https://app.emisar.dev/api/mcp/rpc</span></pre>
+        </div>
+
+        <div class="mt-8 space-y-10">
+          <%!-- Claude.ai (cloud) --%>
+          <section>
+            <h3 class="text-xl font-semibold text-zinc-50">Claude (claude.ai)</h3>
+            <ol class="mt-3 list-decimal space-y-2 pl-6 text-sm text-zinc-300">
+              <li>
+                Open <strong>Settings → Connectors</strong>
+                (on Pro/Max it's <strong>Customize → Connectors</strong>).
+              </li>
+              <li>
+                Click <strong>+</strong> → <strong>Add custom connector</strong>.
+              </li>
+              <li>
+                Paste the <strong>Remote MCP server URL</strong> above into the URL field.
+              </li>
+              <li>
+                Leave <strong>Advanced settings</strong>
+                (OAuth Client ID / Client Secret) <strong>empty</strong>
+                —
+                emisar registers your client for you via Dynamic Client
+                Registration. Click <strong>Add</strong>.
+              </li>
+              <li>
+                Claude opens an emisar tab. Sign in, review what the
+                connector is asking for, and click <strong>Authorize</strong>. The connector flips on.
+              </li>
+              <li>
+                Turn it on for a chat: the <strong>+</strong> button (lower-left of the composer)
+                → <strong>Connectors</strong> → toggle <strong>emisar</strong>.
+              </li>
+            </ol>
+            <p class="mt-3 rounded-lg border border-zinc-900 bg-black/40 px-4 py-3 text-xs leading-relaxed text-zinc-500">
+              <strong class="text-zinc-400">Team / Enterprise:</strong>
+              only an Owner can add the connector, under <strong>Settings → Organization settings → Connectors → Add → Custom → Web</strong>.
+              Members then open <strong>Customize → Connectors</strong>
+              and click <strong>Connect</strong>
+              to run the same sign-in.
+            </p>
+          </section>
+
+          <%!-- ChatGPT --%>
+          <section>
+            <h3 class="text-xl font-semibold text-zinc-50">ChatGPT</h3>
+            <p class="mt-2 text-sm text-zinc-400">
+              ChatGPT hides custom MCP connectors behind <strong>Developer mode</strong>, so there's an extra toggle
+              before the form the search guides show up. Available on Plus,
+              Pro, Business, Enterprise, and Education.
+            </p>
+            <ol class="mt-3 list-decimal space-y-2 pl-6 text-sm text-zinc-300">
+              <li>
+                Enable it once:
+                <strong>Settings → Apps &amp; Connectors → Advanced settings</strong>
+                → turn on <strong>Developer mode</strong>.
+              </li>
+              <li>
+                Back in <strong>Settings → Apps &amp; Connectors</strong>,
+                click <strong>Create</strong>.
+              </li>
+              <li>
+                Fill the form:
+                <ul class="mt-1 list-disc space-y-1 pl-6 text-zinc-400">
+                  <li>
+                    <strong>Name</strong>
+                    — <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar</code>
+                  </li>
+                  <li>
+                    <strong>Description</strong> — e.g. "Run approved
+                    infrastructure actions on my fleet."
+                  </li>
+                  <li>
+                    <strong>MCP Server URL</strong>
+                    —
+                    <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">
+                      https://app.emisar.dev/api/mcp/rpc
+                    </code>
+                  </li>
+                  <li><strong>Authentication</strong> — choose <strong>OAuth</strong></li>
+                </ul>
+              </li>
+              <li>
+                Check <strong>I trust this application</strong>, then click <strong>Create</strong>. ChatGPT sends you to an emisar
+                sign-in → <strong>Authorize</strong>.
+              </li>
+              <li>
+                Use it in a chat: click <strong>+</strong>
+                near the composer → <strong>More</strong>, then enable <strong>emisar</strong>. You may need to re-add it for each
+                new conversation.
+              </li>
+            </ol>
+            <p class="mt-3 text-xs leading-relaxed text-zinc-500">
+              ChatGPT connects to remote HTTPS MCP servers only — there is
+              no stdio option. The emisar endpoint is already remote, so
+              nothing extra to host.
+            </p>
+          </section>
+
+          <%!-- What you're authorizing --%>
+          <section>
+            <h3 class="text-xl font-semibold text-zinc-50">What the sign-in grants</h3>
+            <p class="mt-2 text-sm leading-relaxed text-zinc-400">
+              The consent screen mints a key bound to <em>your</em>
+              membership. The connector can only run actions your policy
+              already permits, every call is attributed to you in the audit
+              log, and anything needing approval still waits for a human.
+              Revoke access any time from <strong>Agents</strong>
+              in the dashboard, or from the connector settings in
+              Claude / ChatGPT.
+            </p>
+          </section>
+        </div>
+      </section>
+
+      <%!-- ============================================================ --%>
+      <%!-- Step 2: API key (bridge + REST)                              --%>
+      <%!-- ============================================================ --%>
+      <section class="mt-12">
+        <div class="flex items-center gap-3">
+          <span class="grid h-8 w-8 place-items-center rounded-full bg-indigo-500/20 text-sm font-semibold text-indigo-300">
+            2
+          </span>
+          <h2 class="text-2xl font-semibold tracking-tight text-zinc-50">
+            Mint an API key (desktop, CLI &amp; HTTP)
+          </h2>
+        </div>
+
+        <p class="mt-4 text-base leading-relaxed text-zinc-400">
+          The clients in steps 3 and 4 authenticate with a raw key instead
+          of OAuth. In the dashboard sidebar, click <code class="rounded bg-zinc-900 px-1.5 py-0.5 text-sm">Agents</code>.
           Pick your LLM client from the tab strip — we mint a key named
           after it and drop a prefilled snippet you can paste into the
           client's config. Quick keys are scoped to
@@ -52,106 +199,12 @@
           tab and restrict which runners or groups the key may target.
           The dashboard reveals the raw key once — copy and store it.
         </p>
-      </section>
 
-      <%!-- ============================================================ --%>
-      <%!-- Step 2: Remote MCP                                            --%>
-      <%!-- ============================================================ --%>
-      <section class="mt-12">
-        <div class="flex items-center gap-3">
-          <span class="grid h-8 w-8 place-items-center rounded-full bg-indigo-500/20 text-sm font-semibold text-indigo-300">
-            2
-          </span>
-          <h2 class="text-2xl font-semibold tracking-tight text-zinc-50">
-            Option A — Remote MCP (recommended)
-          </h2>
-        </div>
-
-        <p class="mt-4 text-base leading-relaxed text-zinc-400">
-          Most modern MCP clients (Claude.ai web, ChatGPT web/Mac, recent
-          Cursor, Continue, Zed) accept a remote MCP server. Two values
-          to enter:
+        <p class="mt-4 rounded-lg border border-zinc-900 bg-black/40 px-4 py-3 text-xs leading-relaxed text-zinc-500">
+          The cloud connectors in step 1 do <strong>not</strong>
+          need an API key — they authenticate with OAuth. Mint a key only
+          for the stdio bridge or plain-HTTP clients below.
         </p>
-
-        <div class="mt-4 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
-          <div class="border-b border-zinc-900 px-3 py-2 font-mono text-[11px] text-zinc-500">
-            connector settings
-          </div>
-          <pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300">URL:        <span class="text-emerald-300">https://app.emisar.dev/api/mcp/rpc</span>
-Auth header: <span class="text-emerald-300">Authorization: Bearer emk-...</span></pre>
-        </div>
-
-        <div class="mt-8 space-y-8">
-          <%!-- Claude.ai (cloud) --%>
-          <section>
-            <h3 class="text-xl font-semibold text-zinc-50">Claude (claude.ai)</h3>
-            <ol class="mt-2 list-decimal space-y-1 pl-6 text-sm text-zinc-300">
-              <li>
-                Open <strong>Settings → Connectors → Add custom connector</strong>.
-              </li>
-              <li>
-                Set <strong>Remote MCP server URL</strong>
-                to <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">https://app.emisar.dev/api/mcp/rpc</code>.
-              </li>
-              <li>
-                Add an <strong>Authorization</strong>
-                header: <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">Bearer emk-...</code>.
-              </li>
-              <li>
-                Enable the connector in any chat that should reach your
-                fleet. Claude lists the action catalog under the tool
-                icon.
-              </li>
-            </ol>
-          </section>
-
-          <%!-- ChatGPT --%>
-          <section>
-            <h3 class="text-xl font-semibold text-zinc-50">ChatGPT (chat.openai.com)</h3>
-            <ol class="mt-2 list-decimal space-y-1 pl-6 text-sm text-zinc-300">
-              <li>
-                Open <strong>Settings → Connectors</strong> (Pro / Team /
-                Enterprise).
-              </li>
-              <li>
-                Click <strong>Add connector</strong>, choose <strong>Custom MCP</strong>.
-              </li>
-              <li>
-                Set the URL to
-                <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">
-                  https://app.emisar.dev/api/mcp/rpc
-                </code>
-                and the bearer token to your <code>emk-...</code>
-                key.
-              </li>
-              <li>
-                Toggle the connector on in any conversation; tools appear
-                under the wrench icon.
-              </li>
-            </ol>
-          </section>
-
-          <%!-- Generic remote MCP --%>
-          <section>
-            <h3 class="text-xl font-semibold text-zinc-50">Any other MCP-HTTP client</h3>
-            <p class="mt-2 text-sm text-zinc-400">
-              Cursor, Continue, Zed, and bespoke agents that speak the
-              MCP HTTP transport take the same URL + bearer. The endpoint
-              implements JSON-RPC 2.0 with the standard <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">initialize</code>, <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">tools/list</code>, <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">tools/call</code>,
-              and <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">ping</code> methods.
-            </p>
-            <div class="mt-3 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
-              <div class="border-b border-zinc-900 px-3 py-2 font-mono text-[11px] text-zinc-500">
-                terminal
-              </div>
-              <pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300"><span class="text-zinc-500"># Try it from a shell — should return the tool list.</span>
-<span class="text-zinc-500">$</span> curl -X POST <span class="text-emerald-300">https://app.emisar.dev/api/mcp/rpc</span> \
-    -H <span class="text-emerald-300">"Authorization: Bearer $EMISAR_API_KEY"</span> \
-    -H <span class="text-emerald-300">"Content-Type: application/json"</span> \
-    -d <span class="text-emerald-300">'&#123;"jsonrpc":"2.0","id":1,"method":"tools/list"&#125;'</span></pre>
-            </div>
-          </section>
-        </div>
       </section>
 
       <%!-- ============================================================ --%>
@@ -163,7 +216,7 @@ Auth header: <span class="text-emerald-300">Authorization: Bearer emk-...</span>
             3
           </span>
           <h2 class="text-2xl font-semibold tracking-tight text-zinc-50">
-            Option B — Stdio bridge (desktop clients)
+            Desktop &amp; CLI clients (stdio bridge)
           </h2>
         </div>
 
@@ -260,8 +313,7 @@ Auth header: <span class="text-emerald-300">Authorization: Bearer emk-...</span>
             <p class="mt-3 text-sm text-zinc-400">
               Recent Cursor builds also speak remote MCP — point them at
               <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/api/mcp/rpc</code>
-              directly if you'd rather skip
-              the bridge.
+              directly (step 1) if you'd rather skip the bridge.
             </p>
           </section>
 
@@ -322,7 +374,7 @@ env = &#123; EMISAR_URL = "https://app.emisar.dev", EMISAR_API_KEY = "emk-..." &
       </section>
 
       <%!-- ============================================================ --%>
-      <%!-- REST endpoints                                                --%>
+      <%!-- Step 4: REST endpoints                                        --%>
       <%!-- ============================================================ --%>
       <section class="mt-12">
         <div class="flex items-center gap-3">
@@ -330,17 +382,29 @@ env = &#123; EMISAR_URL = "https://app.emisar.dev", EMISAR_API_KEY = "emk-..." &
             4
           </span>
           <h2 class="text-2xl font-semibold tracking-tight text-zinc-50">
-            Option C — Plain HTTP / your own agent
+            Plain HTTP / your own agent
           </h2>
         </div>
 
         <p class="mt-4 text-base leading-relaxed text-zinc-400">
           Same auth, same data, REST-shaped. Use these when wiring a
           custom agent (OpenAI tool calling, internal automation,
-          generic curl).
+          generic curl) with an <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emk-</code>
+          key from step 2.
         </p>
 
-        <ul class="mt-4 space-y-2 text-sm text-zinc-300">
+        <div class="mt-4 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
+          <div class="border-b border-zinc-900 px-3 py-2 font-mono text-[11px] text-zinc-500">
+            terminal
+          </div>
+          <pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300"><span class="text-zinc-500"># Try it from a shell — should return the tool list.</span>
+<span class="text-zinc-500">$</span> curl -X POST <span class="text-emerald-300">https://app.emisar.dev/api/mcp/rpc</span> \
+    -H <span class="text-emerald-300">"Authorization: Bearer $EMISAR_API_KEY"</span> \
+    -H <span class="text-emerald-300">"Content-Type: application/json"</span> \
+    -d <span class="text-emerald-300">'&#123;"jsonrpc":"2.0","id":1,"method":"tools/list"&#125;'</span></pre>
+        </div>
+
+        <ul class="mt-6 space-y-2 text-sm text-zinc-300">
           <li>
             <code class="rounded bg-zinc-900 px-1.5 py-0.5 text-xs">GET /api/mcp/runners</code>
             — runners + the actions each advertises.

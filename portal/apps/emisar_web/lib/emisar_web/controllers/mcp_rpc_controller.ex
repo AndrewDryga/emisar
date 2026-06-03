@@ -28,7 +28,7 @@ defmodule EmisarWeb.McpRpcController do
 
   use EmisarWeb, :controller
 
-  alias Emisar.{Accounts, ApiKeys}
+  alias Emisar.{Accounts, ApiKeys, OAuth}
   alias Emisar.Auth.Subject
   alias EmisarWeb.Mcp.{ContentBlocks, Idempotency, Service}
 
@@ -262,19 +262,28 @@ defmodule EmisarWeb.McpRpcController do
 
   # -- Auth -----------------------------------------------------------
   #
-  # Same shape as McpController's authenticate plug so the bridge can
-  # forward the user's Bearer token unchanged.
+  # Two credential shapes resolve to the same backing `%ApiKey{}`, so the
+  # rest of the pipeline (scoping, attribution) is identical:
+  #
+  #   * `emk-…` static bearer keys — pasted into desktop/CLI clients and
+  #     the stdio bridge.
+  #   * `emo-…` OAuth access tokens — issued to remote connectors
+  #     (Claude.ai, ChatGPT) that can only speak OAuth.
+  #
+  # On failure we emit RFC 9728's `WWW-Authenticate` pointing at the
+  # protected-resource metadata, which is what triggers a remote MCP
+  # client to discover the authorization server and start the OAuth flow.
 
   defp authenticate(conn, _opts) do
-    with ["Bearer " <> raw] <- get_req_header(conn, "authorization"),
-         %{} = key <- ApiKeys.peek_api_key_by_secret(raw),
-         {:ok, account} <- Accounts.fetch_account_by_id(key.account_id) do
-      conn
-      |> assign(:api_key, key)
-      |> assign(:current_subject, Subject.for_api_key(key, account))
-    else
-      _ ->
+    case resolve_bearer(conn) do
+      {:ok, key, account} ->
         conn
+        |> assign(:api_key, key)
+        |> assign(:current_subject, Subject.for_api_key(key, account))
+
+      :error ->
+        conn
+        |> put_resp_header("www-authenticate", www_authenticate(conn))
         |> put_status(:unauthorized)
         |> json(%{
           jsonrpc: "2.0",
@@ -283,6 +292,40 @@ defmodule EmisarWeb.McpRpcController do
         })
         |> halt()
     end
+  end
+
+  defp resolve_bearer(conn) do
+    case get_req_header(conn, "authorization") do
+      ["Bearer " <> raw] -> resolve_token(raw)
+      _ -> :error
+    end
+  end
+
+  # OAuth access token → its backing key (carries scope + attribution).
+  defp resolve_token("emo-" <> _ = raw) do
+    case OAuth.resolve_access_token(raw) do
+      {:ok, %{api_key: key, account: account}} -> {:ok, key, account}
+      _ -> :error
+    end
+  end
+
+  # Static bearer key.
+  defp resolve_token(raw) do
+    with %{} = key <- ApiKeys.peek_api_key_by_secret(raw),
+         {:ok, account} <- Accounts.fetch_account_by_id(key.account_id) do
+      {:ok, key, account}
+    else
+      _ -> :error
+    end
+  end
+
+  defp www_authenticate(conn) do
+    base =
+      if conn.host in ["localhost", "127.0.0.1"],
+        do: "http://#{conn.host}:#{conn.port}",
+        else: "https://#{conn.host}"
+
+    ~s(Bearer resource_metadata="#{base}/.well-known/oauth-protected-resource")
   end
 
   defp require_scope(conn, scope) do

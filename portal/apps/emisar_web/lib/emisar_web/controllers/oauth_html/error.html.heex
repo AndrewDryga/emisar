@@ -1,0 +1,23 @@
+<div class="flex min-h-screen items-center justify-center bg-zinc-950 px-6 py-12">
+  <div class="w-full max-w-md text-center">
+    <div class="mb-8 flex items-center justify-center gap-2">
+      <img src={~p"/images/emisar-icon.svg"} alt="emisar" class="h-7 w-7" />
+      <span class="text-lg font-semibold tracking-tight text-zinc-100">emisar</span>
+    </div>
+
+    <div class="rounded-2xl border border-zinc-800 bg-zinc-900/60 px-6 py-8 shadow-xl">
+      <.icon name="hero-exclamation-triangle" class="mx-auto h-10 w-10 text-amber-400" />
+      <h1 class="mt-4 text-lg font-semibold text-zinc-50">Authorization error</h1>
+      <p class="mt-2 text-sm leading-relaxed text-zinc-400">{@message}</p>
+      <p class="mt-6 text-xs text-zinc-500">
+        Nothing was authorized. Close this window and retry the connection
+        from your client, or <.link
+          href={~p"/docs/connect-an-llm"}
+          class="text-indigo-400 hover:text-indigo-300"
+        >
+          read the connection guide
+        </.link>.
+      </p>
+    </div>
+  </div>
+</div>

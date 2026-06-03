@@ -205,6 +205,37 @@ defmodule EmisarWeb.Router do
     get "/audit", AuditExportController, :index
   end
 
+  # -- OAuth 2.1 authorization server (remote MCP clients) ------------
+  #
+  # Claude.ai / ChatGPT cloud connectors offer only a URL field, then
+  # drive the MCP OAuth flow themselves: discover this metadata,
+  # self-register (DCR), bounce the operator through the consent screen
+  # with PKCE, exchange the code for tokens, and present the resulting
+  # `emo-` access token to `/api/mcp/rpc`.
+
+  scope "/", EmisarWeb do
+    pipe_through :api
+
+    # Discovery (RFC 9728 + RFC 8414) — public, unauthenticated.
+    get "/.well-known/oauth-protected-resource", OAuthMetadataController, :protected_resource
+    get "/.well-known/oauth-authorization-server", OAuthMetadataController, :authorization_server
+
+    # Dynamic Client Registration + token endpoint — public (clients are
+    # PKCE public clients), and deliberately CSRF-free since the MCP
+    # client calls them cross-origin, not a browser form.
+    post "/oauth/register", OAuthController, :register
+    post "/oauth/token", OAuthController, :token
+  end
+
+  # Consent screen — the operator must be signed in; the approve/deny
+  # POST rides the CSRF-protected browser pipeline.
+  scope "/oauth", EmisarWeb do
+    pipe_through [:browser, :noindex, :require_authenticated_user]
+
+    get "/authorize", OAuthController, :authorize
+    post "/authorize", OAuthController, :authorize_submit
+  end
+
   # -- Paddle webhook -------------------------------------------------
 
   scope "/webhooks", EmisarWeb do

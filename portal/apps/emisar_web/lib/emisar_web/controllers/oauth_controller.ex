@@ -1,0 +1,267 @@
+defmodule EmisarWeb.OAuthController do
+  @moduledoc """
+  OAuth 2.1 authorization endpoints for remote MCP clients (Claude.ai,
+  ChatGPT). Implements exactly the subset the MCP authorization spec
+  requires:
+
+    * `POST /oauth/register` — Dynamic Client Registration (RFC 7591).
+      Public; the client self-registers and gets back a `client_id`.
+    * `GET  /oauth/authorize` — renders a consent screen to the
+      logged-in operator (behind `:require_authenticated_user`).
+    * `POST /oauth/authorize` — records the consent decision; on approve
+      mints a single-use code bound to the PKCE challenge and redirects
+      back to the client.
+    * `POST /oauth/token` — `authorization_code` + `refresh_token`
+      grants; returns the standard JSON token response.
+
+  All issuance + validation lives in `Emisar.OAuth`; this controller is
+  just the HTTP shell (param plumbing, consent render, OAuth-shaped
+  errors).
+  """
+  use EmisarWeb, :controller
+
+  alias Emisar.OAuth
+
+  plug :put_layout, html: {EmisarWeb.Layouts, :app}
+  # Auth surface — keep it out of search indexes.
+  plug :put_noindex when action in [:authorize, :authorize_submit]
+
+  defp put_noindex(conn, _opts), do: assign(conn, :noindex, true)
+
+  # -- Dynamic Client Registration (RFC 7591) -------------------------
+
+  # POST /oauth/register
+  def register(conn, params) do
+    case OAuth.register_client(params) do
+      {:ok, client} ->
+        conn
+        |> put_status(:created)
+        |> json(registration_response(client))
+
+      {:error, %Ecto.Changeset{} = changeset} ->
+        conn
+        |> put_status(:bad_request)
+        |> json(%{
+          error: "invalid_client_metadata",
+          error_description: changeset_errors(changeset)
+        })
+    end
+  end
+
+  # -- Authorization (consent) ----------------------------------------
+
+  # GET /oauth/authorize — validate the request, then render consent.
+  #
+  # Per OAuth 2.1: errors caused by a bad `client_id`/`redirect_uri`
+  # MUST NOT redirect (we can't trust where they'd land) — show an error
+  # page instead. Everything else redirects back with `error=...`.
+  def authorize(conn, params) do
+    with {:ok, client} <- OAuth.fetch_client(params["client_id"]),
+         :ok <- check_redirect(client, params["redirect_uri"]) do
+      case validate_request(params) do
+        :ok ->
+          render_consent(conn, client, params)
+
+        {:error, code} ->
+          redirect_error(conn, params["redirect_uri"], code, params["state"])
+      end
+    else
+      _ -> render_invalid(conn, "Unknown client or unregistered redirect URI.")
+    end
+  end
+
+  # POST /oauth/authorize — the operator approved or denied.
+  def authorize_submit(conn, params) do
+    subject = conn.assigns.current_subject
+    redirect_uri = params["redirect_uri"]
+    state = params["state"]
+
+    with {:ok, client} <- OAuth.fetch_client(params["client_id"]),
+         :ok <- check_redirect(client, redirect_uri) do
+      case params["decision"] do
+        "approve" ->
+          case OAuth.issue_code(subject, client, params) do
+            {:ok, code} ->
+              redirect_back(conn, redirect_uri, %{code: code, state: state})
+
+            {:error, _reason} ->
+              redirect_error(conn, redirect_uri, "server_error", state)
+          end
+
+        _ ->
+          redirect_error(conn, redirect_uri, "access_denied", state)
+      end
+    else
+      _ -> render_invalid(conn, "Unknown client or unregistered redirect URI.")
+    end
+  end
+
+  # -- Token endpoint -------------------------------------------------
+
+  # POST /oauth/token
+  def token(conn, %{"grant_type" => "authorization_code"} = params) do
+    respond_with_tokens(conn, OAuth.exchange_code(params))
+  end
+
+  def token(conn, %{"grant_type" => "refresh_token"} = params) do
+    respond_with_tokens(conn, OAuth.refresh(params))
+  end
+
+  def token(conn, _params), do: token_error(conn, :unsupported_grant_type)
+
+  defp respond_with_tokens(conn, {:ok, tokens}), do: json(conn, token_response(tokens))
+  defp respond_with_tokens(conn, {:error, reason}), do: token_error(conn, reason)
+
+  # -- Rendering / redirects ------------------------------------------
+
+  defp render_consent(conn, client, params) do
+    requested = scopes(params["scope"])
+
+    render(conn, :consent,
+      client_name: client_label(client),
+      account_name: account_label(conn),
+      user_email: user_email(conn),
+      scopes: requested,
+      # Echoed back verbatim as hidden fields on the consent form.
+      params: %{
+        "client_id" => params["client_id"],
+        "redirect_uri" => params["redirect_uri"],
+        "response_type" => params["response_type"],
+        "scope" => Enum.join(requested, " "),
+        "state" => params["state"],
+        "code_challenge" => params["code_challenge"],
+        "code_challenge_method" => params["code_challenge_method"] || "S256",
+        "resource" => params["resource"]
+      },
+      page_title: "Authorize #{client_label(client)}"
+    )
+  end
+
+  defp render_invalid(conn, message) do
+    conn
+    |> put_status(:bad_request)
+    |> render(:error, message: message, page_title: "Authorization error")
+  end
+
+  # Append OAuth result params to the client's redirect_uri and 302 to
+  # it (external — it's the client's origin, e.g. claude.ai).
+  defp redirect_back(conn, redirect_uri, extra) do
+    redirect(conn, external: append_query(redirect_uri, extra))
+  end
+
+  defp redirect_error(conn, redirect_uri, error_code, state) do
+    redirect_back(conn, redirect_uri, %{error: error_code, state: state})
+  end
+
+  # -- Validation -----------------------------------------------------
+
+  # redirect_uri must EXACTLY match one the client registered.
+  defp check_redirect(client, redirect_uri) when is_binary(redirect_uri) do
+    if redirect_uri in (client.redirect_uris || []), do: :ok, else: :error
+  end
+
+  defp check_redirect(_client, _), do: :error
+
+  defp validate_request(params) do
+    cond do
+      params["response_type"] != "code" -> {:error, "unsupported_response_type"}
+      not is_binary(params["code_challenge"]) -> {:error, "invalid_request"}
+      params["code_challenge"] == "" -> {:error, "invalid_request"}
+      # MCP mandates S256; reject "plain" (absent defaults to S256).
+      params["code_challenge_method"] not in [nil, "S256"] -> {:error, "invalid_request"}
+      true -> :ok
+    end
+  end
+
+  # -- Token response shaping -----------------------------------------
+
+  defp token_response(tokens) do
+    base = %{
+      access_token: tokens.access_token,
+      token_type: tokens.token_type,
+      expires_in: tokens.expires_in,
+      scope: tokens.scope
+    }
+
+    if tokens.refresh_token,
+      do: Map.put(base, :refresh_token, tokens.refresh_token),
+      else: base
+  end
+
+  defp token_error(conn, reason) do
+    conn
+    |> put_status(:bad_request)
+    |> json(%{error: oauth_error(reason)})
+  end
+
+  defp oauth_error(:invalid_grant), do: "invalid_grant"
+  defp oauth_error(:invalid_client), do: "invalid_client"
+  defp oauth_error(:unsupported_grant_type), do: "unsupported_grant_type"
+  defp oauth_error(_), do: "invalid_request"
+
+  # -- Registration response ------------------------------------------
+
+  defp registration_response(client) do
+    %{
+      client_id: client.id,
+      client_id_issued_at: DateTime.to_unix(client.inserted_at),
+      client_name: client.client_name,
+      redirect_uris: client.redirect_uris,
+      grant_types: client.grant_types,
+      response_types: client.response_types,
+      token_endpoint_auth_method: client.token_endpoint_auth_method,
+      scope: client.scope
+    }
+  end
+
+  # -- Small helpers --------------------------------------------------
+
+  defp scopes(nil), do: ["mcp", "offline_access"]
+
+  defp scopes(scope) when is_binary(scope) do
+    requested = scope |> String.split(~r/\s+/, trim: true)
+    supported = OAuth.supported_scopes()
+    keep = Enum.filter(requested, &(&1 in supported))
+    if keep == [], do: ["mcp"], else: keep
+  end
+
+  defp client_label(%{client_name: name}) when is_binary(name) and name != "", do: name
+  defp client_label(_), do: "An MCP client"
+
+  defp account_label(conn) do
+    case conn.assigns[:current_account] do
+      %{name: name} when is_binary(name) -> name
+      _ -> "your account"
+    end
+  end
+
+  defp user_email(conn) do
+    case conn.assigns[:current_user] do
+      %{email: email} when is_binary(email) -> email
+      _ -> nil
+    end
+  end
+
+  defp append_query(uri_string, extra) do
+    uri = URI.parse(uri_string)
+    existing = URI.decode_query(uri.query || "")
+
+    merged =
+      extra
+      |> Enum.reject(fn {_k, v} -> is_nil(v) end)
+      |> Enum.reduce(existing, fn {k, v}, acc -> Map.put(acc, to_string(k), v) end)
+
+    %{uri | query: URI.encode_query(merged)} |> URI.to_string()
+  end
+
+  defp changeset_errors(changeset) do
+    changeset
+    |> Ecto.Changeset.traverse_errors(fn {msg, opts} ->
+      Enum.reduce(opts, msg, fn {key, value}, acc ->
+        String.replace(acc, "%{#{key}}", to_string(value))
+      end)
+    end)
+    |> Enum.map(fn {field, msgs} -> "#{field} #{Enum.join(msgs, ", ")}" end)
+    |> Enum.join("; ")
+  end
+end

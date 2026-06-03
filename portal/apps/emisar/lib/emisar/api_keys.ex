@@ -268,6 +268,39 @@ defmodule Emisar.ApiKeys do
     end
   end
 
+  @doc """
+  Mint a backing MCP key for an OAuth grant. Scoped to actions:read +
+  actions:execute and owned by the consenting member's membership, so
+  the existing MCP scope/attribution logic applies unchanged. The raw
+  secret is generated then DISCARDED — the OAuth client never sees it;
+  it authenticates with OAuth access tokens that resolve to this key.
+
+  Internal: called from `Emisar.OAuth` during the authorize step, where
+  the operator's consent is the authorization. Returns `{:ok, key}`.
+  """
+  def create_backing_key(account_id, user_id, membership_id, name) do
+    {_raw, prefix, hash} = mint_secret()
+
+    ApiKey.Changeset.create(account_id, user_id, membership_id, prefix, hash, %{
+      name: name,
+      scopes: ["actions:read", "actions:execute"]
+    })
+    |> Repo.insert()
+  end
+
+  @doc """
+  Load a usable (non-revoked / non-expired / non-deleted) key by id.
+
+  Internal — the MCP auth path uses this to resolve an OAuth access
+  token to its backing key. Returns the key or `nil`.
+  """
+  def peek_api_key_by_id(id) when is_binary(id) do
+    case ApiKey.Query.all() |> ApiKey.Query.by_id(id) |> Repo.peek() do
+      %ApiKey{} = key -> if ApiKey.usable?(key), do: key, else: nil
+      _ -> nil
+    end
+  end
+
   # -- Helpers ---------------------------------------------------------
 
   defp mint_secret do
