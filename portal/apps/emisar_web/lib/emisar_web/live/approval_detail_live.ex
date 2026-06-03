@@ -149,9 +149,6 @@ defmodule EmisarWeb.ApprovalDetailLive do
   defp blank_or(""), do: nil
   defp blank_or(s), do: s
 
-  defp format_json(nil), do: "{}"
-  defp format_json(map), do: Jason.encode!(map, pretty: true)
-
   # Rendering helper for "Requested by" / "Decided by". Prefers the
   # user's full name, falls back to email, then to a short UUID slice
   # if the user record is gone (deleted account), then to em-dash.

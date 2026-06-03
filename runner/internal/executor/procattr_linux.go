@@ -82,11 +82,13 @@ func applyCredential(cmd *exec.Cmd, username string) error {
 		// least-privilege, drop the runner itself to a low-privilege
 		// uid via systemd User= and grant CAP_SETUID).
 		//
-		// TODO: enumerate the target user's groups via getgrouplist(3)
-		// and pass Groups: [...] with NoSetGroups: false. Needs a small
-		// cgo helper or a /etc/group parser; not needed for v1's use
-		// cases (cassandra runner under root → cassandra user is what
-		// the OS would do anyway).
+		// We deliberately don't enumerate the target user's groups via
+		// getgrouplist(3) (which would mean Groups: [...] with
+		// NoSetGroups: false): it needs a cgo helper or an /etc/group
+		// parser, and isn't needed for the supported deployment (a
+		// cassandra runner under root dropping to the cassandra user —
+		// the inherited supplementary set is what the OS would give
+		// that user anyway).
 		NoSetGroups: true,
 	}
 	return nil

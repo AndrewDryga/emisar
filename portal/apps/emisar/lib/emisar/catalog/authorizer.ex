@@ -41,7 +41,4 @@ defmodule Emisar.Catalog.Authorizer do
   end
 
   def for_subject(queryable, _), do: queryable
-
-  defp query_source(%Ecto.Query{from: %{source: {table, _}}}), do: String.to_atom(table)
-  defp query_source(_), do: nil
 end

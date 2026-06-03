@@ -68,10 +68,10 @@ type Client struct {
 	runs  map[string]*runState // request_id -> in-flight state
 	dedup *dedupRing           // bounded cache of completed results
 
-	// readvertise is closed-and-replaced when state should be re-sent.
-	// Buffered channel of struct{} — at most one pending wake-up.
-	readvertiseMu sync.Mutex
-	readvertise   chan struct{}
+	// readvertise is a coalescing wake-up: Readvertise() does a
+	// non-blocking send and readvertiseLoop drains it. Buffered size 1,
+	// so many calls between drains collapse into a single extra send.
+	readvertise chan struct{}
 }
 
 // runState is the per-request outbox. handleRun appends to it; the
@@ -693,9 +693,8 @@ func (c *Client) cancelAllRuns() {
 }
 
 // buildReasonWithDrops appends a "(N progress chunks dropped)" suffix to
-// the reason when the per-run outbox lost messages. The exact count
-// also lives on the JSONL event via the engine's redaction summary
-// (well, future change — for now the suffix is the only signal).
+// the reason when the per-run outbox lost progress messages during a
+// disconnect, so the dropped count survives in the final result.
 func buildReasonWithDrops(reason string, dropped int) string {
 	if dropped <= 0 {
 		return reason

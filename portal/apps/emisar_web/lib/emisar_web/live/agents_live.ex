@@ -40,17 +40,16 @@ defmodule EmisarWeb.AgentsLive do
       PubSub.subscribe_account_api_keys(socket.assigns.current_account.id)
     end
 
-    # The page no longer auto-mints on load — instead the operator
-    # first picks which LLM client they're connecting (Claude Desktop,
-    # Cursor, Codex, …). When they pick, we mint a quick key whose
-    # `name` reflects the choice so the audit trail and the agents
-    # list both say "Claude Desktop" instead of "Quick connect (auto)".
-    # The client id also flows into the snippet's EMISAR_CLIENT env
-    # var so the bridge stamps it onto every User-Agent.
+    # The operator first picks which LLM client they're connecting
+    # (Claude Desktop, Cursor, Codex, …). On pick we mint a quick key
+    # whose `name` reflects the choice, so the audit trail and the
+    # agents list both read "Claude Desktop" rather than a generic
+    # "Quick connect". The client id also flows into the snippet's
+    # EMISAR_CLIENT env var so the bridge stamps it onto every
+    # User-Agent.
     #
-    # Ring eviction in `ApiKeys.mint_quick_key/3` still caps unused
-    # autos at 42 per account regardless of how many tabs the operator
-    # opens.
+    # `ApiKeys.mint_quick_key/3` ring-evicts unused autos at 42 per
+    # account, so opening many tabs can't accumulate dangling keys.
 
     {:ok, runners, _} = Runners.list_runners_for_account(socket.assigns.current_subject)
 

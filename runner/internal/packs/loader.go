@@ -305,11 +305,10 @@ func resolveScript(packRoot, rel, actionID string, skipChecksum, allowSymlinks b
 	if err != nil {
 		return ScriptInfo{}, nil, fmt.Errorf("packs: action %s: script: %w", actionID, err)
 	}
-	info, err := os.Stat(full)
-	if err != nil {
+	if _, err := os.Stat(full); err != nil {
 		return ScriptInfo{}, nil, fmt.Errorf("packs: action %s: stat script: %w", actionID, err)
 	}
-	si := ScriptInfo{Path: full, Size: info.Size()}
+	si := ScriptInfo{Path: full}
 	data, err := os.ReadFile(full)
 	if err != nil {
 		return ScriptInfo{}, nil, fmt.Errorf("packs: action %s: read script: %w", actionID, err)

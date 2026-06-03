@@ -2,8 +2,8 @@ defmodule EmisarWeb.TimeHelpers do
   use Phoenix.Component
 
   @moduledoc """
-  Shared formatters for dates/times in the UI. One place so every
-  page renders timestamps the same way.
+  Shared view formatters — timestamps, durations, JSON, audit labels,
+  and changeset errors. One place so every page renders the same way.
 
       <span>{relative_time(@run.inserted_at)}</span>     # "3m ago"
       <span>{absolute_time(@run.inserted_at)}</span>     # "May 21, 14:03 UTC"
@@ -86,6 +86,13 @@ defmodule EmisarWeb.TimeHelpers do
   """
   def last_used(nil), do: "never"
   def last_used(ts), do: relative_time(ts)
+
+  @doc """
+  Pretty-prints a map (e.g. a run's args) as indented JSON for `<pre>`
+  blocks. `nil` renders as `"{}"`.
+  """
+  def format_json(nil), do: "{}"
+  def format_json(map), do: Jason.encode!(map, pretty: true)
 
   @doc """
   Humanizes an Ecto.Changeset (or a list of `{field, {msg, opts}}` errors)

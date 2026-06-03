@@ -64,7 +64,4 @@ defmodule Emisar.Runs.Authorizer do
     do: ActionRun.Query.by_account_id(queryable, account_id)
 
   def for_subject(queryable, _), do: queryable
-
-  defp query_source(%Ecto.Query{from: %{source: {table, _}}}), do: String.to_atom(table)
-  defp query_source(_), do: nil
 end

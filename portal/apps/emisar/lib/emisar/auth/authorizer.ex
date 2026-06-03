@@ -28,7 +28,7 @@ defmodule Emisar.Auth.Authorizer do
       @behaviour Emisar.Auth.Authorizer
       alias Emisar.Auth.Subject
 
-      import Emisar.Auth.Authorizer, only: [build: 2, has_permission?: 2]
+      import Emisar.Auth.Authorizer, only: [build: 2, has_permission?: 2, query_source: 1]
     end
   end
 
@@ -37,6 +37,15 @@ defmodule Emisar.Auth.Authorizer do
 
   def has_permission?(%Subject{permissions: perms}, permission),
     do: MapSet.member?(perms, permission)
+
+  @doc """
+  The base table of a queryable as an atom (e.g. `:action_runs`), or `nil`
+  when it can't be determined. `for_subject/2` implementations use it to
+  apply a table-specific scope only when the query actually targets that
+  table — a joined or label-selecting query must not get the row filter.
+  """
+  def query_source(%Ecto.Query{from: %{source: {table, _}}}), do: String.to_atom(table)
+  def query_source(_), do: nil
 
   @doc """
   Top-level gate. Returns `:ok` if the subject holds every required

@@ -14,7 +14,6 @@ import (
 type ScriptInfo struct {
 	Path   string
 	SHA256 string
-	Size   int64
 }
 
 // Registry is the in-memory index of loaded packs and actions.

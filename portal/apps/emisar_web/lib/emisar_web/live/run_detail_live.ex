@@ -175,10 +175,9 @@ defmodule EmisarWeb.RunDetailLive do
         </div>
       </div>
 
-      <%!-- Operator's reason. Single column — the policy decision
-           used to live next to it but became a redundant side panel
-           (chip echoed the decision, reason text repeated it). Policy
-           is now an inline strip below when it carries signal. --%>
+      <%!-- Operator's reason, full width. The policy decision renders
+           as an inline strip below (only when it carries signal), not a
+           side panel that would just echo the status chip. --%>
       <section
         :if={@run.reason && @run.reason != ""}
         class="mt-4 rounded-xl border border-zinc-900 bg-zinc-950/40 p-4"
@@ -290,9 +289,6 @@ defmodule EmisarWeb.RunDetailLive do
   defp exit_code_class(0), do: "text-emerald-300"
   defp exit_code_class(code) when is_integer(code), do: "text-rose-300"
   defp exit_code_class(_), do: "text-zinc-500"
-
-  defp format_json(nil), do: "{}"
-  defp format_json(map), do: Jason.encode!(map, pretty: true)
 
   defp runner_label(%Emisar.Runners.Runner{name: name}) when is_binary(name) and name != "",
     do: name

@@ -81,6 +81,7 @@ env var can be unset after the first successful connect.`,
 			builder := &cloud.StateBuilder{
 				AgentID:     rt.cfg.Runner.ID,
 				Version:     Version,
+				Hostname:    hostname,
 				Group:       rt.cfg.Runner.Group,
 				Labels:      rt.cfg.Runner.Labels,
 				GetRegistry: rt.engine.Registry,

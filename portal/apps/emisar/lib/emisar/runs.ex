@@ -311,7 +311,7 @@ defmodule Emisar.Runs do
   #     approval; `wait_for_run` is still the right tool.
   #   * anything else (sent, running, terminal) — the run exists and the
   #     LLM can long-poll via `/runs/:id?wait=…` for the final state.
-  defp replay_outcome(%ActionRun{status: "denied", policy_reason: reason} = _run),
+  defp replay_outcome(%ActionRun{status: "denied", policy_reason: reason}),
     do: {:error, :denied_by_policy, reason || "policy denied this call"}
 
   defp replay_outcome(%ActionRun{status: status} = run)
