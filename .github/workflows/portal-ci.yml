@@ -70,7 +70,7 @@ jobs:
       - name: Format check
         run: mix format --check-formatted
 
-      - name: Prepare test database (so Oban can start in testing: :inline)
+      - name: "Prepare test database (so Oban can start in testing :inline mode)"
         # Oban verifies that `oban_jobs` exists at Application boot — even
         # in `testing: :inline` mode — and crashes the supervision tree if
         # the table is missing. The "unit, no DB" step still boots the
