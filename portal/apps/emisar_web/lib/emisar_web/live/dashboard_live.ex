@@ -483,7 +483,7 @@ defmodule EmisarWeb.DashboardLive do
 
     ~H"""
     <div class={[
-      "mt-4 flex items-start gap-3 rounded-xl border p-4",
+      "mb-4 flex items-start gap-3 rounded-xl border p-4",
       if(@headroom == :at_limit,
         do: "border-rose-500/40 bg-rose-500/10",
         else: "border-amber-500/40 bg-amber-500/10"
