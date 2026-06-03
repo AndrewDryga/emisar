@@ -19,6 +19,27 @@ defmodule EmisarWeb.TeamLiveTest do
     end
   end
 
+  describe "resend confirmation (self)" do
+    test "an unconfirmed user can resend their own confirmation email", %{conn: conn} do
+      {conn, user, _account} = register_and_log_in(conn)
+      # Simulate the signed-up-but-unconfirmed state (register_and_log_in
+      # confirms by default).
+      {:ok, _} = user |> Ecto.Changeset.change(confirmed_at: nil) |> Emisar.Repo.update()
+
+      {:ok, lv, html} = live(conn, ~p"/app/settings/team")
+      assert html =~ "Resend confirmation"
+
+      html = lv |> element("button", "Resend confirmation") |> render_click()
+      assert html =~ "Confirmation email sent"
+    end
+
+    test "a confirmed user sees no resend button", %{conn: conn} do
+      {conn, _user, _account} = register_and_log_in(conn)
+      {:ok, _lv, html} = live(conn, ~p"/app/settings/team")
+      refute html =~ "Resend confirmation"
+    end
+  end
+
   describe "GET /app/settings/team as a viewer" do
     test "renders the read-only banner instead of the form", %{conn: conn} do
       {conn, user, _account} = register_and_log_in(conn, %{account: %{name: "ViewerOrg"}})

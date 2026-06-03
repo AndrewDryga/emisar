@@ -216,7 +216,30 @@ defmodule EmisarWeb.TeamLive do
     end)
   end
 
+  # Self-serve: a signed-in user can re-request their own confirmation
+  # email. We don't expose this for other members from here — an
+  # unconfirmed teammate may be invited-but-not-accepted, who needs a
+  # re-invite (to set a password), not a bare confirm link.
+  def handle_event("resend_confirmation", _params, socket) do
+    user = socket.assigns.current_user
+
+    if is_nil(user.confirmed_at) do
+      deliver_confirmation(user)
+      {:noreply, put_flash(socket, :info, "Confirmation email sent to #{user.email}.")}
+    else
+      {:noreply, put_flash(socket, :info, "Your email is already confirmed.")}
+    end
+  end
+
   defp find_membership(socket, id), do: Enum.find(socket.assigns.memberships, &(&1.id == id))
+
+  # Issues a fresh confirmation token and emails the /confirm link —
+  # mirror of the sign-up delivery, reused by the self + admin resends.
+  defp deliver_confirmation(user) do
+    token = Emisar.Auth.issue_confirmation_token!(user)
+    Mailers.UserNotifier.deliver_confirmation_instructions(user, token)
+    :ok
+  end
 
   defp tap_clear_scope_edit({:noreply, %{assigns: %{flash: %{"info" => _}}} = socket}),
     do: {:noreply, assign(socket, :scope_editing_id, nil)}
@@ -795,7 +818,16 @@ defmodule EmisarWeb.TeamLive do
     ~H"""
     <%= cond do %>
       <% @membership.user_id == @current_user_id -> %>
-        <span class="text-xs text-zinc-500">you</span>
+        <div class="flex shrink-0 items-center gap-2">
+          <button
+            :if={@membership.user && is_nil(@membership.user.confirmed_at)}
+            phx-click="resend_confirmation"
+            class="rounded px-2 py-1 text-xs font-medium text-indigo-300 ring-1 ring-indigo-500/30 hover:bg-indigo-500/10"
+          >
+            Resend confirmation
+          </button>
+          <span class="text-xs text-zinc-500">you</span>
+        </div>
       <% not @can_manage? -> %>
         <span></span>
       <% true -> %>
