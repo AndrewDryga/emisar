@@ -228,11 +228,13 @@ require_root_and_tools() {
 }
 
 sha_verify() {
-  # Reads "<sha256>  <filename>" lines on stdin, exits non-zero on mismatch.
+  # Reads "<sha256>  <filename>" lines on stdin, exits non-zero on
+  # mismatch. Output is silenced (>/dev/null) so the caller can print
+  # its own clean status line instead of the tool's "<file>: OK".
   if command -v sha256sum >/dev/null 2>&1; then
-    sha256sum -c -
+    sha256sum -c - >/dev/null
   elif command -v shasum >/dev/null 2>&1; then
-    shasum -a 256 -c -
+    shasum -a 256 -c - >/dev/null
   else
     die "neither sha256sum nor shasum found — cannot verify download"
   fi
@@ -502,15 +504,17 @@ download_release() {
   curl -sSL --fail -o "${tmp}/SHA256SUMS" "${base}/SHA256SUMS" \
     || die "failed to download ${base}/SHA256SUMS"
 
-  log "verifying checksum"
-  # Subshell's stdout (sha256sum's "<file>: OK" line, plus anything
-  # downstream tools might print) is redirected to stderr so it doesn't
-  # contaminate this function's return value (`printf '%s\n' "${tmp}/${name}"`
-  # below). Same reasoning as log() going to stderr.
+  # Pull the expected hash for our tarball out of SHA256SUMS so we can
+  # show it in the status line. The verification itself is done by
+  # sha_verify (silenced) so we print one clean line instead of the
+  # tool's raw "<file>: OK".
+  local expected
+  expected="$(grep -E "  ${tarball}\$" "${tmp}/SHA256SUMS" | awk '{print $1}')"
   (
     cd "${tmp}"
     grep -E "  ${tarball}\$" SHA256SUMS | sha_verify
-  ) >&2 || die "checksum verification failed for ${tarball}"
+  ) || die "checksum verification failed for ${tarball}"
+  log "checksum verified  sha256:${expected:0:16}…"
 
   log "extracting"
   tar -C "${tmp}" -xzf "${tmp}/${tarball}" >&2
