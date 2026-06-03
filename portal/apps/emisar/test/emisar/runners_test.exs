@@ -3,6 +3,7 @@ defmodule Emisar.RunnersTest do
 
   import Emisar.Fixtures
 
+  alias Emisar.Billing
   alias Emisar.Runners
   alias Emisar.Runners.{Runner, AuthKey, Token}
   alias Emisar.Repo
@@ -557,6 +558,79 @@ defmodule Emisar.RunnersTest do
       bound = Enum.find(events, &(&1.event_type == "auth_key.bound"))
       assert bound != nil
       assert bound.payload["auto"] == true
+    end
+  end
+
+  describe "enable_runner/2" do
+    test "re-enables a disabled runner (clears disabled_at)" do
+      {account, _user, subject} = account_with_owner_subject()
+      runner = runner_fixture(account_id: account.id, connected?: false)
+      {:ok, disabled} = Runners.disable_runner(runner, subject)
+      assert disabled.disabled_at
+
+      assert {:ok, enabled} = Runners.enable_runner(disabled, subject)
+      assert is_nil(enabled.disabled_at)
+    end
+
+    test "a viewer can't enable a runner" do
+      {account, _owner_user, owner} = account_with_owner_subject()
+      runner = runner_fixture(account_id: account.id, connected?: false)
+      {:ok, disabled} = Runners.disable_runner(runner, owner)
+
+      viewer = user_fixture()
+      _ = membership_fixture(account_id: account.id, user_id: viewer.id, role: "viewer")
+      viewer_subject = subject_for(viewer, account, role: :viewer)
+
+      assert {:error, :unauthorized} = Runners.enable_runner(disabled, viewer_subject)
+    end
+
+    test "won't enable a runner from another account" do
+      {account_a, _ua, owner_a} = account_with_owner_subject()
+      {_account_b, _ub, owner_b} = account_with_owner_subject()
+      runner = runner_fixture(account_id: account_a.id, connected?: false)
+      {:ok, disabled} = Runners.disable_runner(runner, owner_a)
+
+      assert {:error, :not_found} = Runners.enable_runner(disabled, owner_b)
+    end
+
+    test "refuses to enable past the plan limit (free = 3)" do
+      {account, _user, subject} = account_with_owner_subject()
+      to_disable = runner_fixture(account_id: account.id, connected?: false)
+      {:ok, disabled} = Runners.disable_runner(to_disable, subject)
+
+      # Fill all three active slots while it's disabled, then try to claim a
+      # fourth by re-enabling.
+      for _ <- 1..3, do: runner_fixture(account_id: account.id, connected?: false)
+
+      assert {:error, :over_limit, "free", 3} = Runners.enable_runner(disabled, subject)
+    end
+  end
+
+  describe "plan-limit runner count (Billing.check_limit/2)" do
+    test "deleted runners don't count toward the limit" do
+      {account, _user, subject} = account_with_owner_subject()
+      r1 = runner_fixture(account_id: account.id, connected?: false)
+      runner_fixture(account_id: account.id, connected?: false)
+      runner_fixture(account_id: account.id, connected?: false)
+
+      assert {:error, :over_limit, "free", 3} = Billing.check_limit(account, :runners)
+
+      {:ok, _} = Runners.delete_runner(r1, subject)
+
+      assert :ok = Billing.check_limit(account, :runners)
+      assert {:ok, %{runner_count: 2}} = Billing.billing_summary(account, subject)
+    end
+
+    test "disabled runners don't count toward the limit" do
+      {account, _user, subject} = account_with_owner_subject()
+      r1 = runner_fixture(account_id: account.id, connected?: false)
+      runner_fixture(account_id: account.id, connected?: false)
+      runner_fixture(account_id: account.id, connected?: false)
+
+      assert {:error, :over_limit, "free", 3} = Billing.check_limit(account, :runners)
+
+      {:ok, _} = Runners.disable_runner(r1, subject)
+      assert :ok = Billing.check_limit(account, :runners)
     end
   end
 end

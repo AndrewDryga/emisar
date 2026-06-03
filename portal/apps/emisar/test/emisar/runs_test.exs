@@ -205,6 +205,22 @@ defmodule Emisar.RunsTest do
                )
     end
 
+    test "rejects dispatch to a soft-deleted runner" do
+      account = account_fixture()
+      runner = runner_fixture(account_id: account.id)
+
+      # Soft-delete the runner (sets deleted_at). The dispatch gate runs
+      # before the action-advertised check, so a deleted runner is refused
+      # as :runner_not_found rather than slipping through to execution.
+      {:ok, _} = runner |> Emisar.Runners.Runner.Changeset.delete() |> Emisar.Repo.update()
+
+      assert {:error, :runner_not_found} =
+               Runs.dispatch_run(
+                 base_attrs(account.id, runner.id),
+                 Emisar.Auth.Subject.system(account)
+               )
+    end
+
     test "policy sees the catalog's risk, not what the caller passes" do
       account = account_fixture()
       runner = runner_fixture(account_id: account.id)

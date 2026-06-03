@@ -522,7 +522,7 @@ defmodule Emisar.Runs do
   end
 
   defp runner_belongs_to_account?(runner_id, account_id) do
-    Runner.Query.all()
+    Runner.Query.not_deleted()
     |> Runner.Query.not_disabled()
     |> Runner.Query.by_id(runner_id)
     |> Runner.Query.by_account_id(account_id)

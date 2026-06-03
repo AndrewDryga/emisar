@@ -252,6 +252,41 @@ defmodule Emisar.Runners do
   end
 
   @doc """
+  Re-enables a disabled runner — clears `disabled_at`. A disabled runner
+  doesn't occupy a plan slot (`Billing.current_count` excludes it), so
+  re-enabling claims one back and is refused with
+  `{:error, :over_limit, plan, limit}` when the account is already at its
+  runner ceiling. Returns `{:ok, runner}` otherwise.
+  """
+  def enable_runner(%Runner{} = runner, %Subject{} = subject) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.manage_runners_permission()
+           ),
+         :ok <- Subject.ensure_in_account(subject, runner.account_id),
+         account = Emisar.Accounts.fetch_account_by_id!(runner.account_id),
+         :ok <- Emisar.Billing.check_limit(account, :runners) do
+      Multi.new()
+      |> Multi.update(:runner, Runner.Changeset.enable(runner))
+      |> Multi.insert(:audit, fn %{runner: enabled} ->
+        Audit.changeset(enabled.account_id, "runner.enabled",
+          actor_kind: Subject.actor_kind(subject),
+          actor_id: Subject.actor_id(subject),
+          subject_kind: "runner",
+          subject_id: enabled.id,
+          subject_label: enabled.name
+        )
+      end)
+      |> Repo.commit_multi()
+      |> case do
+        {:ok, %{runner: enabled}} -> {:ok, enabled}
+        {:error, reason} -> {:error, reason}
+      end
+    end
+  end
+
+  @doc """
   Soft-deletes a runner — sets `deleted_at`. The runner becomes
   invisible from the default scope (`Query.not_deleted/1`) but
   historical references (audit events, run rows) remain intact.

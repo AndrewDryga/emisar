@@ -80,6 +80,26 @@ defmodule EmisarWeb.RunnerDetailLive do
     end)
   end
 
+  def handle_event("enable", _params, socket) do
+    Permissions.gated(socket, :manage_runners, fn s ->
+      case Runners.enable_runner(s.assigns.runner, s.assigns.current_subject) do
+        {:ok, runner} ->
+          {:noreply, s |> put_flash(:info, "Runner enabled.") |> assign(:runner, runner)}
+
+        {:error, :over_limit, _plan, limit} ->
+          {:noreply,
+           put_flash(
+             s,
+             :error,
+             "Can't enable — you're at your runner limit (#{limit}). Upgrade your plan or remove another runner first."
+           )}
+
+        {:error, _} ->
+          {:noreply, put_flash(s, :error, "Could not enable runner.")}
+      end
+    end)
+  end
+
   def handle_event("delete", _params, socket) do
     Permissions.gated(socket, :manage_runners, fn s ->
       {:ok, _runner} = Runners.delete_runner(s.assigns.runner, s.assigns.current_subject)
@@ -275,6 +295,32 @@ defmodule EmisarWeb.RunnerDetailLive do
             </button>
           </:button>
         </.danger_zone>
+      </div>
+
+      <%!-- Enable: the inverse of disable. Shown only while the runner is
+           disabled (the disable zone above hides then). Positive styling —
+           it's a restorative action, not a danger one. --%>
+      <div
+        :if={not is_nil(@runner.disabled_at) and Permissions.can?(assigns, :manage_runners)}
+        class="mt-6"
+      >
+        <section class="flex items-start justify-between gap-4 rounded-xl border border-emerald-500/30 bg-emerald-500/[0.04] p-5">
+          <div>
+            <h3 class="text-sm font-semibold text-emerald-100">Enable this runner</h3>
+            <p class="mt-1 text-xs text-zinc-400">
+              Clears the disabled flag so the host can reconnect and reappear in the catalog.
+              Counts against your plan's runner limit.
+            </p>
+          </div>
+          <div class="shrink-0">
+            <button
+              phx-click="enable"
+              class="rounded-lg border border-emerald-500/40 px-3 py-1.5 text-sm font-medium text-emerald-200 hover:bg-emerald-500/10"
+            >
+              Enable runner
+            </button>
+          </div>
+        </section>
       </div>
 
       <div

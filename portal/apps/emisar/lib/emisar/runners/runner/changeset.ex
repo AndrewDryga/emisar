@@ -106,6 +106,10 @@ defmodule Emisar.Runners.Runner.Changeset do
     change(runner, disabled_at: now())
   end
 
+  def enable(%Runner{} = runner) do
+    change(runner, disabled_at: nil)
+  end
+
   def delete(%Runner{} = runner) do
     change(runner, deleted_at: now())
   end

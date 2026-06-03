@@ -103,7 +103,7 @@ defmodule Emisar.Billing do
   defp limit_key(:members), do: :members_limit
 
   defp current_count(%Account{id: account_id}, :runners) do
-    Runner.Query.all()
+    Runner.Query.not_deleted()
     |> Runner.Query.not_disabled()
     |> Runner.Query.by_account_id(account_id)
     |> Repo.aggregate(:count, :id)
