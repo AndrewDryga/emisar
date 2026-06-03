@@ -636,6 +636,12 @@ defmodule Emisar.Runners do
   # a no-op instead of a constraint error that would poison the
   # transaction (Postgres 25P02); we then re-fetch the canonical row and
   # report whether *this* call inserted it. Returns `{runner, fresh?}`.
+  #
+  # The unique index is partial (`WHERE deleted_at IS NULL`) so a
+  # soft-deleted runner frees its external_id — the conflict target has to
+  # carry the same predicate or Postgres won't match the partial index.
+  # An :unsafe_fragment is the only way to express that in Ecto; the
+  # columns/predicate are literals here, so there's nothing to interpolate.
   defp insert_runner!(key, attrs, external_id) do
     changeset =
       Runner.Changeset.register(%{
@@ -651,7 +657,8 @@ defmodule Emisar.Runners do
 
     case Repo.insert(changeset,
            on_conflict: :nothing,
-           conflict_target: [:account_id, :external_id]
+           conflict_target:
+             {:unsafe_fragment, "(account_id, external_id) WHERE deleted_at IS NULL"}
          ) do
       {:ok, inserted} ->
         {:ok, runner} = fetch_runner_by_external_id_for_account(external_id, key.account_id)

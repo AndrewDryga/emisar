@@ -120,6 +120,29 @@ defmodule Emisar.RunnersTest do
       assert id1 == id2
     end
 
+    test "re-registration after a soft-delete creates a fresh runner" do
+      # The (account_id, external_id) unique index is partial
+      # (WHERE deleted_at IS NULL), so a soft-deleted runner no longer
+      # reserves its external_id: the same host re-registers as a brand-new
+      # row instead of 500ing on the constraint / re-fetch mismatch.
+      {account, user, subject} = account_with_owner_subject()
+
+      {raw, _key} =
+        auth_key_fixture(account_id: account.id, created_by_id: user.id, reusable: true)
+
+      attrs = %{hostname: "host-x", group: "g", external_id: "recycled-ext-id"}
+
+      assert {:ok, %Runner{id: id1} = runner1, %Token{}, _} =
+               Runners.register_via_auth_key(raw, attrs)
+
+      assert {:ok, %Runner{id: ^id1}} = Runners.delete_runner(runner1, subject)
+
+      assert {:ok, %Runner{id: id2}, %Token{}, _} =
+               Runners.register_via_auth_key(raw, attrs)
+
+      refute id1 == id2
+    end
+
     test "a different external_id with the same name creates a second runner" do
       # Names are display-only and may repeat — a fresh install / different
       # machine gets a new external_id and registers as its own runner.
