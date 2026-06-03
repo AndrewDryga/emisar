@@ -200,6 +200,13 @@ jobs:
         # The attestation is signed by Sigstore using a workflow-bound
         # ambient OIDC identity (no long-lived keys). Verifiable later
         # with `gh attestation verify <tarball> --owner andrewdryga`.
+        #
+        # GitHub's attestation API rejects user-owned private repos
+        # (free-tier feature gate). Skip on private; the step kicks
+        # back in automatically once the repo is public. Without this
+        # guard, the release would never publish (build job fails →
+        # publish skips) on a private repo.
+        if: ${{ !github.event.repository.private }}
         uses: actions/attest-build-provenance@v2
         with:
           subject-path: |
