@@ -10,10 +10,11 @@ name: Runner CI
 #     which is tag-triggered and not reachable from a PR.
 #   * `actions/checkout` is invoked with `persist-credentials: false`
 #     so the auth token isn't sticky in the workspace .git config.
-#   * Third-party actions are pinned to commit SHAs (comment lists the
-#     human-readable tag they correspond to). First-party
-#     `actions/*` are pinned to SHAs too — GitHub-owned but mutable
-#     tags are still a supply-chain hazard if a tag gets re-pointed.
+#   * Third-party actions are pinned to commit SHAs (e.g.
+#     softprops/action-gh-release). First-party `actions/*` are
+#     tracked at major-version tags — GitHub owns that namespace and
+#     re-points tags only with security advisories; SHA-pinning every
+#     bump is more friction than it's worth for trusted orgs.
 #   * Module cache is keyed only on `runner/go.sum`. A PR can edit
 #     `runner/go.sum`, but the cache it writes is scoped to that PR's
 #     ref — `actions/setup-go` doesn't share PR-scoped caches with
@@ -46,11 +47,11 @@ jobs:
     name: vet + gofmt + shellcheck
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@v4
         with:
           persist-credentials: false
 
-      - uses: actions/setup-go@f111f3307d8850f501ac008e886eec1fd1932a9a # v5.3.0
+      - uses: actions/setup-go@v5
         with:
           go-version-file: runner/go.mod
           cache: true
@@ -102,11 +103,11 @@ jobs:
     name: test (race)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@v4
         with:
           persist-credentials: false
 
-      - uses: actions/setup-go@f111f3307d8850f501ac008e886eec1fd1932a9a # v5.3.0
+      - uses: actions/setup-go@v5
         with:
           go-version-file: runner/go.mod
           cache: true
@@ -121,7 +122,7 @@ jobs:
 
       - name: upload coverage
         if: always()
-        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        uses: actions/upload-artifact@v4
         with:
           name: runner-coverage
           path: coverage.out
@@ -144,11 +145,11 @@ jobs:
           - os: darwin
             arch: arm64
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@v4
         with:
           persist-credentials: false
 
-      - uses: actions/setup-go@f111f3307d8850f501ac008e886eec1fd1932a9a # v5.3.0
+      - uses: actions/setup-go@v5
         with:
           go-version-file: runner/go.mod
           cache: true
