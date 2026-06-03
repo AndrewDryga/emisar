@@ -87,6 +87,19 @@ jobs:
       - name: Format check
         run: mix format --check-formatted
 
+      - name: Dependency audit (mix_audit)
+        # emisar is a security product — fail the build on a known
+        # advisory in any dependency. GHSA-g2wm-735q-3f56 (cowlib, low)
+        # has no upstream patch yet; ignore it explicitly and revisit
+        # when cowlib ships a fix.
+        run: mix deps.audit --ignore-advisory-ids GHSA-g2wm-735q-3f56
+
+      - name: Security scan (Sobelow)
+        # Static analysis of the Phoenix surface (XSS, SQLi, command
+        # injection, CSRF, insecure config). Threshold + ignores live in
+        # apps/emisar_web/.sobelow-conf.
+        run: mix sobelow --root apps/emisar_web --config
+
       - name: Test (emisar app — context + DB integration)
         # `mix test.ci` runs `ecto.create --quiet && ecto.migrate --quiet
         # && test`. The previous separate "unit, no DB" step was a no-op

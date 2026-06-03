@@ -16,7 +16,10 @@ defmodule EmisarWeb.UserConfirmationController do
     case Auth.confirm_user_by_token(token) do
       {:ok, _user} ->
         conn
-        |> put_flash(:info, if(signed_in?, do: "Email confirmed.", else: "Email confirmed. Sign in to continue."))
+        |> put_flash(
+          :info,
+          if(signed_in?, do: "Email confirmed.", else: "Email confirmed. Sign in to continue.")
+        )
         |> redirect(to: post_confirm_path(signed_in?))
 
       {:error, :invalid_or_expired} ->

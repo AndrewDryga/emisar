@@ -1,0 +1,16 @@
+# Sobelow static-analysis config for the emisar_web Phoenix app.
+# Run in CI from the umbrella root via:
+#   mix sobelow --root apps/emisar_web --config
+#
+# Config.CSP is ignored for now: a real Content-Security-Policy needs a
+# nonce-based script-src to keep the inline JSON-LD (SEO) and LiveView
+# transport working, which is its own change. Tracked as a follow-up —
+# the gate still catches XSS (raw/1), SQLi, command injection, path
+# traversal, CSRF, and insecure-config regressions.
+[
+  verbose: false,
+  private: false,
+  skip: true,
+  ignore: ["Config.CSP"],
+  exit: "Low"
+]
