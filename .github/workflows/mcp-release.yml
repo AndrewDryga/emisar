@@ -59,6 +59,13 @@ jobs:
     name: build ${{ matrix.os }}/${{ matrix.arch }}
     runs-on: ubuntu-latest
     needs: [verify]
+    # `release` environment gate at BUILD so the Sigstore OIDC token
+    # used to sign the attestation isn't minted until a maintainer
+    # approves. Defense in depth against tag-push from a compromised
+    # collaborator: even if publish blocks, an attested artefact with
+    # a real signature would otherwise be minted automatically.
+    environment:
+      name: release
     strategy:
       fail-fast: true
       matrix:
@@ -117,8 +124,9 @@ jobs:
           name="emisar-mcp-${VERSION}-${GOOS}-${GOARCH}"
           mkdir -p "dist/${name}"
           cp dist/emisar-mcp "dist/${name}/emisar-mcp"
-          [ -f LICENSE ] && cp LICENSE "dist/${name}/" || true
-          [ -f LICENSE.md ] && cp LICENSE.md "dist/${name}/" || true
+          # LICENSE.md is a repo invariant; missing it is a malformed
+          # release, fail loudly rather than silently shipping without one.
+          cp LICENSE.md "dist/${name}/"
           # Self-documenting README so a maintainer looking at the
           # extracted tarball months later remembers what it is.
           # Heredoc is quoted ('EOF') so shell + actions expressions
@@ -163,9 +171,8 @@ jobs:
     name: publish GitHub release
     runs-on: ubuntu-latest
     needs: [build]
-    environment:
-      name: release
-      url: ${{ github.server_url }}/${{ github.repository }}/releases
+    # Build is already env-gated; one approval covers the run, so
+    # don't add a second `environment:` here. See runner-release.yml.
     permissions:
       contents: write
     steps:

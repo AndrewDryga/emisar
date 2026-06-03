@@ -27,12 +27,16 @@ on:
     paths:
       - "runner/**"
       - "install.sh"
+      - "go.work"
+      - "go.work.sum"
       - ".github/workflows/runner-ci.yml"
   push:
     branches: [main]
     paths:
       - "runner/**"
       - "install.sh"
+      - "go.work"
+      - "go.work.sum"
       - ".github/workflows/runner-ci.yml"
 
 concurrency:
@@ -75,9 +79,13 @@ jobs:
         run: cd runner && go mod verify
 
       - name: go mod tidy is up to date
+        # `working-directory:` instead of `cd &&` so a typo'd path fails
+        # the step rather than running the next command in the wrong
+        # directory and silently passing.
+        working-directory: runner
         run: |
-          cd runner && go mod tidy
-          if ! git diff --exit-code -- runner/go.mod runner/go.sum; then
+          go mod tidy
+          if ! git diff --exit-code -- go.mod go.sum; then
             echo "::error::runner/go.mod or go.sum are not tidy. Run 'cd runner && go mod tidy' and commit."
             exit 1
           fi
@@ -91,13 +99,17 @@ jobs:
         run: bash -n install.sh
 
       - name: govulncheck
-        # Informational only — same-day CVE in a transitive dep
-        # shouldn't block unrelated PRs. Drop continue-on-error to
-        # enforce when we're ready.
-        continue-on-error: true
+        # Informational by design — a same-day CVE in a transitive
+        # dep shouldn't block unrelated PRs. We surface findings as a
+        # GHA `::warning::` so the PR check summary highlights them,
+        # then exit 0. Pinned version (not @latest) so a future
+        # govulncheck behavior change can't silently rebreak CI.
+        working-directory: runner
         run: |
-          go install golang.org/x/vuln/cmd/govulncheck@latest
-          cd runner && govulncheck ./...
+          go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
+          if ! govulncheck ./...; then
+            echo "::warning::govulncheck reported findings — review and update deps"
+          fi
 
   test:
     name: test (race)

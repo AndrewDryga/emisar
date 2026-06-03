@@ -17,7 +17,12 @@ on:
       - "runner/internal/packs/**"
       - "runner/pkg/packspec/**"
       - "runner/pkg/actionspec/**"
-      - "runner/cmd/pack/**"
+      - "runner/pack.go"
+      - "runner/main.go"
+      - "runner/go.mod"
+      - "runner/go.sum"
+      - "go.work"
+      - "go.work.sum"
       - ".github/workflows/packs-ci.yml"
   push:
     branches: [main]
@@ -26,7 +31,12 @@ on:
       - "runner/internal/packs/**"
       - "runner/pkg/packspec/**"
       - "runner/pkg/actionspec/**"
-      - "runner/cmd/pack/**"
+      - "runner/pack.go"
+      - "runner/main.go"
+      - "runner/go.mod"
+      - "runner/go.sum"
+      - "go.work"
+      - "go.work.sum"
       - ".github/workflows/packs-ci.yml"
 
 concurrency:
@@ -62,12 +72,23 @@ jobs:
         # validate` on each. Collect failures so the report names
         # every bad pack instead of bailing on the first one — makes
         # PR triage faster.
+        #
+        # The `nullglob` shopt makes the loop run zero times if the
+        # directory is empty; without an explicit floor that would
+        # masquerade as a green run. We require >= 1 pack and fail
+        # loudly if the inventory is suspiciously thin.
         run: |
           set -euo pipefail
           shopt -s nullglob
 
+          packs=(runner/examples/packs/*/)
+          if [ ${#packs[@]} -lt 1 ]; then
+            echo "::error::no packs found under runner/examples/packs/ — did the layout change?"
+            exit 1
+          fi
+
           failures=()
-          for pack in runner/examples/packs/*/; do
+          for pack in "${packs[@]}"; do
             pack="${pack%/}"  # strip trailing slash
             name="$(basename "$pack")"
             printf '\n\033[1m==> %s\033[0m\n' "$name"
@@ -82,7 +103,7 @@ jobs:
             exit 1
           fi
 
-          printf '\n\033[1;32m✓ all packs valid\033[0m\n'
+          printf '\n\033[1;32m✓ all %d packs valid\033[0m\n' "${#packs[@]}"
 
       - name: pack count summary
         if: always()

@@ -10,12 +10,16 @@ on:
     paths:
       - "mcp/**"
       - "install-mcp.sh"
+      - "go.work"
+      - "go.work.sum"
       - ".github/workflows/mcp-ci.yml"
   push:
     branches: [main]
     paths:
       - "mcp/**"
       - "install-mcp.sh"
+      - "go.work"
+      - "go.work.sum"
       - ".github/workflows/mcp-ci.yml"
 
 concurrency:
@@ -54,28 +58,31 @@ jobs:
       - run: cd mcp && go mod verify
 
       - name: go mod tidy is up to date
+        working-directory: mcp
         run: |
-          cd mcp && go mod tidy
-          if ! git diff --exit-code -- mcp/go.mod mcp/go.sum; then
+          go mod tidy
+          if ! git diff --exit-code -- go.mod go.sum; then
             echo "::error::mcp/go.mod or go.sum are not tidy. Run 'cd mcp && go mod tidy' and commit."
             exit 1
           fi
 
       - name: shellcheck install-mcp.sh
-        # Skip silently if the script doesn't exist yet (first PR
-        # that adds it lands without changing this workflow).
+        # install-mcp.sh is a permanent part of the install surface;
+        # if it's gone, that's a regression we want CI to flag.
         run: |
-          if [ -f install-mcp.sh ]; then
-            sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
-            shellcheck install-mcp.sh
-            bash -n install-mcp.sh
-          fi
+          sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
+          shellcheck install-mcp.sh
+          bash -n install-mcp.sh
 
       - name: govulncheck
-        continue-on-error: true
+        # Same posture as runner-ci: surface findings as a warning,
+        # don't block unrelated PRs. Pinned version (not @latest).
+        working-directory: mcp
         run: |
-          go install golang.org/x/vuln/cmd/govulncheck@latest
-          cd mcp && govulncheck ./...
+          go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
+          if ! govulncheck ./...; then
+            echo "::warning::govulncheck reported findings — review and update deps"
+          fi
 
   test:
     name: test (race)

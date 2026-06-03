@@ -5,11 +5,26 @@ on:
     branches: [main]
     paths:
       - "portal/**"
+      - "install.sh"
+      - "runner/examples/packs/**"
       - ".github/workflows/portal-ci.yml"
   pull_request:
+    branches: [main]
     paths:
       - "portal/**"
+      - "install.sh"
+      - "runner/examples/packs/**"
       - ".github/workflows/portal-ci.yml"
+
+# install.sh + runner/examples/packs/** are real source inputs to the
+# portal release: InstallController embeds install.sh via @external_resource
+# and EmisarWeb.PacksRegistry compile-scans runner/examples/packs/. A
+# change to either silently rebuilds the release artefact, so it must
+# also re-run portal-ci.
+
+concurrency:
+  group: portal-ci-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -42,6 +57,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - uses: erlef/setup-beam@v1
         with:
@@ -70,21 +87,14 @@ jobs:
       - name: Format check
         run: mix format --check-formatted
 
-      - name: "Prepare test database (so Oban can start in testing :inline mode)"
-        # Oban verifies that `oban_jobs` exists at Application boot — even
-        # in `testing: :inline` mode — and crashes the supervision tree if
-        # the table is missing. The "unit, no DB" step still boots the
-        # application, so the schema has to exist; we just don't EXERCISE
-        # it. ecto.setup runs both the create + migrate steps.
-        run: cd apps/emisar && mix ecto.create && mix ecto.migrate
-
-      - name: Test (unit, no DB)
-        run: cd apps/emisar && mix test --exclude db
-
-      - name: Test (integration, with DB)
+      - name: Test (emisar app — context + DB integration)
+        # `mix test.ci` runs `ecto.create --quiet && ecto.migrate --quiet
+        # && test`. The previous separate "unit, no DB" step was a no-op
+        # — no tests carry the `:db` moduletag, so `--exclude db` excluded
+        # nothing and the same suite ran twice. One step covers both.
         run: cd apps/emisar && mix test.ci
 
-      - name: Test (web app — gates LiveView + controller regressions)
+      - name: Test (web app — LiveView + controller regressions)
         # `cd` into the umbrella child; running `mix test apps/...` from
         # the root passes that path through to each child's test runner,
         # which can't resolve it against its own working dir.
@@ -97,3 +107,69 @@ jobs:
         # Override here only — other steps stay in portal/.
         working-directory: ${{ github.workspace }}
         run: docker build -f portal/Dockerfile -t emisar/portal:ci .
+
+      - name: Docker smoke (release boots + runs migrations + serves /healthz)
+        # `docker build` passing only proves the Dockerfile parses and
+        # compiles — it doesn't prove the image boots. Three checks here:
+        #
+        #   1. `Emisar.Release.migrate()` — exercises runtime.exs +
+        #      DATABASE_URL handling + the migrator. Catches a broken
+        #      release alias or a config bug that crashes on prod boot.
+        #   2. `/app/bin/server` boots in the background and serves
+        #      `/healthz`. Catches supervision-tree crashes that only
+        #      surface at runtime.
+        #   3. `docker stop` exits within the grace window. Catches a
+        #      hung GenServer.terminate/2.
+        #
+        # `--network host` lets the container reach the `postgres` service
+        # via localhost:5432 (the service is published there by GHA).
+        working-directory: ${{ github.workspace }}
+        env:
+          DATABASE_URL: postgres://postgres:postgres@localhost/emisar_smoke
+          SECRET_KEY_BASE: smoke-key-base-64-chars-of-non-secret-text-aaaaaaaaaaaaaaaaaaaaaaa
+          PHX_HOST: localhost
+          PORT: "4000"
+          # runtime.exs raises in :prod if neither PADDLE_API_KEY nor
+          # EMISAR_DISABLE_BILLING is set — we don't want to bake a
+          # Paddle key into CI, so use the stub.
+          EMISAR_DISABLE_BILLING: "1"
+          # FORCE_SSL=false disables HTTPS redirect and the secure-
+          # cookie pin so plain-HTTP `curl http://localhost:4000/healthz`
+          # works against the smoke container.
+          FORCE_SSL: "false"
+        run: |
+          set -euo pipefail
+
+          # Fresh DB next to the running postgres service. `|| true`
+          # is fine here — the migrate step below will fail loudly if
+          # the DB really isn't there.
+          PGPASSWORD=postgres psql -h localhost -U postgres -d postgres \
+            -c 'CREATE DATABASE emisar_smoke;' || true
+
+          docker run --rm --network host \
+            -e DATABASE_URL -e SECRET_KEY_BASE -e PHX_HOST \
+            -e EMISAR_DISABLE_BILLING -e FORCE_SSL \
+            emisar/portal:ci /app/bin/emisar eval 'Emisar.Release.migrate()'
+
+          cid=$(docker run -d --network host \
+            -e DATABASE_URL -e SECRET_KEY_BASE -e PHX_HOST -e PORT \
+            -e EMISAR_DISABLE_BILLING -e FORCE_SSL \
+            emisar/portal:ci)
+
+          # Always dump tail on exit so a boot failure is debuggable
+          # from the CI log without re-running.
+          trap 'docker logs "$cid" 2>&1 | tail -80; docker rm -f "$cid" >/dev/null 2>&1 || true' EXIT
+
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:4000/healthz >/dev/null; then
+              echo "healthz OK after ~${i}s"
+              break
+            fi
+            if [ "$i" = "30" ]; then
+              echo "::error::release container failed to serve /healthz within 60s"
+              exit 1
+            fi
+            sleep 2
+          done
+
+          docker stop --time 15 "$cid"

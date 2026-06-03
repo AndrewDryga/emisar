@@ -62,10 +62,63 @@ jobs:
       - run: cd runner && go vet ./...
       - run: cd runner && go test -race -count=1 ./...
 
+  validate-packs:
+    # Runs every shipped pack through `emisar pack validate` before
+    # we tag a binary. Without this, a malformed pack baked into the
+    # release tarball would only fail when an operator extracted it
+    # — packs-ci catches it on PR, but a force-push to main after the
+    # PR closed could slip a regression past that gate. Defense in depth.
+    name: validate packs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+          persist-credentials: false
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: runner/go.mod
+          cache: true
+          cache-dependency-path: runner/go.sum
+
+      - name: build emisar CLI
+        run: cd runner && go build -trimpath -o /tmp/emisar .
+
+      - name: validate every shipped pack
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          packs=(runner/examples/packs/*/)
+          if [ ${#packs[@]} -lt 1 ]; then
+            echo "::error::no packs found — refusing to release"
+            exit 1
+          fi
+          failures=()
+          for pack in "${packs[@]}"; do
+            name="$(basename "${pack%/}")"
+            printf '\n==> %s\n' "$name"
+            /tmp/emisar pack validate "${pack%/}" || failures+=("$name")
+          done
+          if [ ${#failures[@]} -gt 0 ]; then
+            printf '\n✗ packs failed validation:\n'
+            printf '   - %s\n' "${failures[@]}"
+            exit 1
+          fi
+          printf '\n✓ all %d packs valid\n' "${#packs[@]}"
+
   build:
     name: build ${{ matrix.os }}/${{ matrix.arch }}
     runs-on: ubuntu-latest
-    needs: [verify]
+    needs: [verify, validate-packs]
+    # `release` environment gate at BUILD (not just publish) so the
+    # Sigstore OIDC token used for attestation isn't minted until a
+    # maintainer approves. Without this, anyone who can push a tag
+    # (collaborators with write access) can mint an attested-by-our-
+    # workflow artefact — even if the publish step blocks them from
+    # uploading, the attestation itself carries a real signature.
+    environment:
+      name: release
     strategy:
       fail-fast: true
       matrix:
@@ -129,12 +182,15 @@ jobs:
           mkdir -p "dist/${name}"
           cp dist/emisar "dist/${name}/emisar"
           cp README.md "dist/${name}/"
-          [ -f LICENSE ] && cp LICENSE "dist/${name}/" || true
-          [ -f LICENSE.md ] && cp LICENSE.md "dist/${name}/" || true
+          # LICENSE.md, install.sh, runner/examples, and docs are all
+          # part of the repo invariant; if any is missing, the release
+          # is malformed and we want the build to fail loudly. No
+          # `[ -f X ] && ... || true` swallow patterns here.
+          cp LICENSE.md "dist/${name}/"
           cp install.sh "dist/${name}/install.sh"
           chmod +x "dist/${name}/install.sh"
           cp -R runner/examples "dist/${name}/examples"
-          [ -d docs ] && cp -R docs "dist/${name}/docs" || true
+          cp -R docs "dist/${name}/docs"
           tar -C dist -czf "dist/${name}.tar.gz" "${name}"
           shasum -a 256 "dist/${name}.tar.gz" | awk '{print $1}' > "dist/${name}.tar.gz.sha256"
           ls -la dist/
@@ -162,11 +218,12 @@ jobs:
     name: publish GitHub release
     runs-on: ubuntu-latest
     needs: [build]
-    environment:
-      name: release
-      url: ${{ github.server_url }}/${{ github.repository }}/releases
-    # Only this job gets contents:write — needed to create the release
-    # and upload assets.
+    # No `environment:` block here — the `build` job is already gated
+    # by `environment: release`, and GitHub Actions prompts for an
+    # approval per env-gated job (not per env, per workflow run). One
+    # approval at build covers the whole release flow; double-gating
+    # publish would just mean clicking approve twice for no extra
+    # protection.
     permissions:
       contents: write
     steps:
