@@ -182,15 +182,15 @@ jobs:
           mkdir -p "dist/${name}"
           cp dist/emisar "dist/${name}/emisar"
           cp README.md "dist/${name}/"
-          # LICENSE.md, install.sh, runner/examples, and docs are all
-          # part of the repo invariant; if any is missing, the release
-          # is malformed and we want the build to fail loudly. No
-          # `[ -f X ] && ... || true` swallow patterns here.
+          # LICENSE.md, install.sh, runner/examples are repo invariants;
+          # if any is missing, the release is malformed and we want the
+          # build to fail loudly. No `[ -f X ] && ... || true` swallows.
+          # `docs/` is intentionally NOT shipped — the directory is
+          # gitignored (operators read docs at https://emisar.dev/docs).
           cp LICENSE.md "dist/${name}/"
           cp install.sh "dist/${name}/install.sh"
           chmod +x "dist/${name}/install.sh"
           cp -R runner/examples "dist/${name}/examples"
-          cp -R docs "dist/${name}/docs"
           tar -C dist -czf "dist/${name}.tar.gz" "${name}"
           shasum -a 256 "dist/${name}.tar.gz" | awk '{print $1}' > "dist/${name}.tar.gz.sha256"
           ls -la dist/
