@@ -79,6 +79,7 @@ defmodule EmisarWeb.Router do
     get "/docs/publishing-packs", MarketingController, :docs_publishing_packs
     get "/sitemap.xml", SitemapController, :show
     get "/install.sh", InstallController, :show
+    get "/install-mcp.sh", InstallMcpController, :show
   end
 
   # -- Auth surface (only when signed-out) ----------------------------

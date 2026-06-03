@@ -115,30 +115,8 @@
           </p>
         </.link>
 
-        <a
-          href="https://github.com/andrewdryga/emisar/blob/main/docs/wire-protocol.md"
-          target="_blank"
-          rel="noopener noreferrer"
-          class="group rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8 transition hover:border-indigo-500/50"
-        >
-          <div class="flex h-12 w-12 items-center justify-center rounded-lg bg-indigo-500/10 text-indigo-400">
-            <.icon name="hero-bolt" class="h-6 w-6" />
-          </div>
-          <h2 class="mt-6 text-xl font-semibold text-zinc-50 group-hover:text-indigo-300">
-            Wire protocol
-          </h2>
-          <p class="mt-2 text-sm text-zinc-400">
-            The runner-to-control-plane WSS protocol: framing, events, error model.
-          </p>
-          <p class="mt-4 text-sm font-semibold text-indigo-300">
-            Read on GitHub <span aria-hidden="true">&rarr;</span>
-          </p>
-        </a>
-
-        <a
-          href="https://github.com/andrewdryga/emisar/blob/main/docs/deploy.md"
-          target="_blank"
-          rel="noopener noreferrer"
+        <.link
+          href={~p"/pricing"}
           class="group rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8 transition hover:border-indigo-500/50"
         >
           <div class="flex h-12 w-12 items-center justify-center rounded-lg bg-indigo-500/10 text-indigo-400">
@@ -148,12 +126,13 @@
             Self-hosting
           </h2>
           <p class="mt-2 text-sm text-zinc-400">
-            Run the control plane in your own VPC. Bring your own Postgres. Enterprise only.
+            Run the control plane in your own VPC. Bring your own Postgres.
+            Enterprise plan — contact us for the deploy guide.
           </p>
           <p class="mt-4 text-sm font-semibold text-indigo-300">
-            Deployment guide <span aria-hidden="true">&rarr;</span>
+            See pricing <span aria-hidden="true">&rarr;</span>
           </p>
-        </a>
+        </.link>
 
         <a
           href="https://github.com/andrewdryga/emisar"

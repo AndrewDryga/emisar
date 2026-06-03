@@ -183,18 +183,17 @@ Auth header: <span class="text-emerald-300">Authorization: Bearer emk-...</span>
 
         <h3 class="mt-6 text-xl font-semibold text-zinc-50">Install</h3>
         <p class="mt-2 text-sm text-zinc-300">
-          <strong>From a GitHub release</strong>:
+          One-liner — auto-resolves the latest
+          <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">mcp-v*</code>
+          release, verifies sha256, drops
+          <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar-mcp</code>
+          into <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/usr/local/bin</code>:
         </p>
         <div class="mt-2 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
           <div class="border-b border-zinc-900 px-3 py-2 font-mono text-[11px] text-zinc-500">
             terminal
           </div>
-          <pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300"><span class="text-zinc-500"># Pick the right OS/arch (linux-amd64, linux-arm64, darwin-amd64,</span>
-<span class="text-zinc-500"># darwin-arm64). Each release tarball contains both `emisar` (the runner)</span>
-<span class="text-zinc-500"># and `emisar-mcp` (the bridge).</span>
-<span class="text-zinc-500">$</span> curl -sSL <span class="text-emerald-300">https://github.com/andrewdryga/emisar/releases/latest/download/emisar-vX.Y.Z-darwin-arm64.tar.gz</span> \
-    | tar -xz --strip-components=1 -C /tmp emisar-vX.Y.Z-darwin-arm64/emisar-mcp
-<span class="text-zinc-500">$</span> sudo install -m 0755 /tmp/emisar-mcp /usr/local/bin/emisar-mcp</pre>
+          <pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300"><span class="text-zinc-500">$</span> curl -sSL <span class="text-emerald-300">https://emisar.dev/install-mcp.sh</span> | sudo bash</pre>
         </div>
 
         <p class="mt-4 text-sm text-zinc-300">
@@ -207,8 +206,10 @@ Auth header: <span class="text-emerald-300">Authorization: Bearer emk-...</span>
           <div class="border-b border-zinc-900 px-3 py-2 font-mono text-[11px] text-zinc-500">
             terminal
           </div>
-          <pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300"><span class="text-zinc-500">$</span> go install github.com/andrewdryga/emisar/mcp@latest
-<span class="text-zinc-500">$</span> sudo ln -s ~/go/bin/emisar-mcp /usr/local/bin/emisar-mcp</pre>
+          <pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300"><span class="text-zinc-500"># `go install` builds the package directory's binary; the binary will</span>
+<span class="text-zinc-500"># be ~/go/bin/mcp, so rename it on the symlink.</span>
+<span class="text-zinc-500">$</span> go install github.com/andrewdryga/emisar/mcp@latest
+<span class="text-zinc-500">$</span> sudo ln -sf ~/go/bin/mcp /usr/local/bin/emisar-mcp</pre>
         </div>
 
         <div class="mt-8 space-y-8">

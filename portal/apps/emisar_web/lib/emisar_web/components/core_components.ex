@@ -1692,7 +1692,7 @@ defmodule EmisarWeb.CoreComponents do
 
               <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <.link
-                  href="https://github.com/andrewdryga/emisar/blob/main/docs/install.md"
+                  href="/docs/quickstart"
                   target="_blank"
                   rel="noopener noreferrer"
                   class="rounded-xl border border-zinc-800 bg-zinc-950/60 p-4 transition hover:bg-zinc-900/60"
