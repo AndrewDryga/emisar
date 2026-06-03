@@ -45,6 +45,7 @@ SERVICE_USER="${SERVICE_USER:-emisar}"
 SERVICE_GROUP="${SERVICE_GROUP:-emisar}"
 ASSUME_YES="${ASSUME_YES:-0}"
 NO_START="${NO_START:-0}"
+NO_SERVICE="${NO_SERVICE:-0}"     # skip user + service unit + activation
 MODE="install"                    # install|uninstall
 
 usage() {
@@ -62,6 +63,11 @@ Flags:
                      (use --purge to remove those too).
   --purge            With --uninstall, also delete config + data + logs.
   --no-start         Install + enable the service but don't start it.
+  --no-service       Binary-only install: skip system user creation,
+                     systemd/launchd unit, and service activation.
+                     Use on hosts without a real init (containers,
+                     cloud shell, CI runners) or for one-shot smoke
+                     runs. Operator runs the binary by hand afterward.
   --bin-dir DIR      Install path for the binary (default /usr/local/bin)
   --etc-dir DIR      Config dir (default /etc/emisar)
   --data-dir DIR     Data dir (default /var/lib/emisar)
@@ -71,7 +77,8 @@ Flags:
   --help             This message.
 
 Env vars accepted: VERSION, BIN_DIR, ETC_DIR, DATA_DIR, LOG_DIR,
-SERVICE_USER, SERVICE_GROUP, ASSUME_YES, NO_START, EMISAR_REPO.
+SERVICE_USER, SERVICE_GROUP, ASSUME_YES, NO_START, NO_SERVICE,
+EMISAR_REPO.
 USAGE
 }
 
@@ -95,6 +102,7 @@ while [ $# -gt 0 ]; do
     --uninstall) MODE="uninstall"; shift;;
     --purge) PURGE=1; shift;;
     --no-start) NO_START=1; shift;;
+    --no-service) NO_SERVICE=1; shift;;
     --bin-dir) BIN_DIR="$2"; shift 2;;
     --etc-dir) ETC_DIR="$2"; shift 2;;
     --data-dir) DATA_DIR="$2"; shift 2;;
@@ -195,7 +203,15 @@ detect_init() {
 
 OS="$(detect_os)"
 ARCH="$(detect_arch)"
-INIT="$(detect_init)"
+# With --no-service, skip init detection entirely — the whole point of
+# the flag is to install on hosts that don't HAVE a real init (cloud
+# shell, containers, CI). detect_init() would die on those before we
+# ever reach do_install.
+if [ "${NO_SERVICE}" = "1" ]; then
+  INIT="none"
+else
+  INIT="$(detect_init)"
+fi
 
 require_root_and_tools() {
   if [ "$(id -u)" != "0" ]; then
@@ -484,6 +500,12 @@ ensure_dirs() {
   if [ "${OS}" = "darwin" ]; then
     owner="root:wheel"
   fi
+  # --no-service skipped user creation, so SERVICE_USER doesn't exist
+  # as an account. Fall back to root:root — the operator will be running
+  # the binary by hand anyway and can chown later if needed.
+  if [ "${INIT}" = "none" ] && [ "${OS}" = "linux" ]; then
+    owner="root:root"
+  fi
   for d in "${ETC_DIR}" "${DATA_DIR}" "${LOG_DIR}" "${DATA_DIR}/work"; do
     if [ ! -d "$d" ]; then
       log "mkdir $d"
@@ -572,6 +594,10 @@ install_launchd() {
 }
 
 start_service() {
+  if [ "${INIT}" = "none" ]; then
+    # No service unit to start — the operator runs the binary directly.
+    return 0
+  fi
   if [ "${NEEDS_CONFIGURATION:-0}" = "1" ]; then
     warn "skipping service start — edit ${ETC_DIR}/config.yaml and ${ETC_DIR}/runner.env first"
     return 0
@@ -634,7 +660,13 @@ do_install() {
     log "pinned release: ${VERSION}"
   fi
 
-  if ! confirm "install emisar ${VERSION} to ${BIN_DIR}/emisar (and configure as a service)?"; then
+  local prompt
+  if [ "${INIT}" = "none" ]; then
+    prompt="install emisar ${VERSION} to ${BIN_DIR}/emisar (binary only, no service)?"
+  else
+    prompt="install emisar ${VERSION} to ${BIN_DIR}/emisar (and configure as a service)?"
+  fi
+  if ! confirm "${prompt}"; then
     die "aborted by user"
   fi
 
@@ -647,10 +679,15 @@ do_install() {
 
   stop_service_if_running
 
-  case "${OS}" in
-    linux)  ensure_user_linux;;
-    darwin) ensure_user_macos;;
-  esac
+  # --no-service skips the daemon user — without an init unit, the
+  # binary runs as whoever invokes it. Keeping the system user would
+  # leave a stray uid behind on hosts where nobody's about to use it.
+  if [ "${INIT}" != "none" ]; then
+    case "${OS}" in
+      linux)  ensure_user_linux;;
+      darwin) ensure_user_macos;;
+    esac
+  fi
 
   ensure_dirs
   install_binary "${extracted}"
@@ -660,6 +697,7 @@ do_install() {
   case "${INIT}" in
     systemd) install_systemd;;
     launchd) install_launchd;;
+    none)    log "skipping service unit (--no-service)";;
   esac
 
   start_service
@@ -695,6 +733,14 @@ EOF
   4. Check status / logs:
        sudo systemctl status emisar
        sudo journalctl -u emisar -f
+EOF
+      ;;
+    none)
+      cat <<EOF
+  3. Run the binary directly (no service was installed):
+       ${BIN_DIR}/emisar runner --config ${ETC_DIR}/config.yaml
+     For a one-off connect test, pass the key inline:
+       EMISAR_AUTH_KEY=emkey-... ${BIN_DIR}/emisar runner --config ${ETC_DIR}/config.yaml
 EOF
       ;;
     launchd)
