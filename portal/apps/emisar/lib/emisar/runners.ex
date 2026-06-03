@@ -172,6 +172,19 @@ defmodule Emisar.Runners do
     |> Repo.fetch(Runner.Query)
   end
 
+  @doc """
+  Internal lookup by `(account, name)` — the stable key a runner
+  provides via its hostname when it doesn't persist an external_id.
+  Used inside `register_via_auth_key/2` to make re-registration
+  idempotent. `(account_id, name)` is unique, so this returns at most one.
+  """
+  def fetch_runner_by_name_for_account(name, account_id) when is_binary(name) do
+    Runner.Query.not_deleted()
+    |> Runner.Query.by_account_id(account_id)
+    |> Runner.Query.by_name(name)
+    |> Repo.fetch(Runner.Query)
+  end
+
   # -- Runners: mutations ----------------------------------------------
 
   def create_runner(attrs, %Subject{account: account} = subject) do
@@ -583,28 +596,20 @@ defmodule Emisar.Runners do
             )
           end
 
-          external_id = attrs[:external_id] || Ecto.UUID.generate()
+          name = derive_name(attrs)
 
+          # Identity resolution. A runner's durable identity is its
+          # external_id when it sends one — but the runner only sends
+          # {hostname, group, version}, so external_id arrives nil and we
+          # fall back to (account, name). Without this, every reconnect
+          # minted a fresh UUID, missed the external_id lookup, and tried
+          # to INSERT a second runner with the same name — tripping the
+          # (account_id, name) unique index and (via the old hard match on
+          # Repo.insert) 500ing the whole register call.
           {runner, fresh?} =
-            case fetch_runner_by_external_id_for_account(external_id, key.account_id) do
-              {:ok, %Runner{} = existing} ->
-                {existing, false}
-
-              {:error, :not_found} ->
-                {:ok, runner} =
-                  Runner.Changeset.register(%{
-                    account_id: key.account_id,
-                    name: derive_name(attrs),
-                    external_id: external_id,
-                    group: attrs[:group] || key.group || "default",
-                    hostname: attrs[:hostname],
-                    labels: attrs[:labels] || %{},
-                    runner_version: attrs[:runner_version],
-                    bootstrap_auth_key_id: key.id
-                  })
-                  |> Repo.insert()
-
-                {runner, true}
+            case resolve_runner_for_registration(attrs[:external_id], name, key.account_id) do
+              {:ok, %Runner{} = existing} -> {existing, false}
+              {:error, :not_found} -> insert_runner_for_registration(key, attrs, name)
             end
 
           if fresh? do
@@ -634,6 +639,49 @@ defmodule Emisar.Runners do
 
       {:error, :over_limit, plan, limit} ->
         {:error, :over_limit, plan, limit}
+    end
+  end
+
+  # Prefer external_id (durable, when a runner persists one); fall back
+  # to (account, name) so a runner that doesn't send an external_id
+  # still re-registers idempotently to the same row instead of forever
+  # trying to create a same-named duplicate.
+  defp resolve_runner_for_registration(external_id, name, account_id) do
+    with true <- is_binary(external_id) and external_id != "",
+         {:ok, %Runner{} = runner} <-
+           fetch_runner_by_external_id_for_account(external_id, account_id) do
+      {:ok, runner}
+    else
+      _ -> fetch_runner_by_name_for_account(name, account_id)
+    end
+  end
+
+  # Insert a brand-new runner row inside the registration transaction.
+  # On the (account, name) unique-index race (two registers inserting
+  # the same name at once) re-fetch the winner and reuse it rather than
+  # crash. Returns `{runner, fresh?}`.
+  defp insert_runner_for_registration(key, attrs, name) do
+    changeset =
+      Runner.Changeset.register(%{
+        account_id: key.account_id,
+        name: name,
+        external_id: attrs[:external_id] || Ecto.UUID.generate(),
+        group: attrs[:group] || key.group || "default",
+        hostname: attrs[:hostname],
+        labels: attrs[:labels] || %{},
+        runner_version: attrs[:version] || attrs[:runner_version],
+        bootstrap_auth_key_id: key.id
+      })
+
+    case Repo.insert(changeset) do
+      {:ok, runner} ->
+        {runner, true}
+
+      {:error, _changeset} ->
+        case fetch_runner_by_name_for_account(name, key.account_id) do
+          {:ok, runner} -> {runner, false}
+          {:error, :not_found} -> Repo.rollback(:runner_register_failed)
+        end
     end
   end
 

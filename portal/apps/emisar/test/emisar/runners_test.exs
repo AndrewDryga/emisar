@@ -94,6 +94,34 @@ defmodule Emisar.RunnersTest do
       assert String.starts_with?(raw_token, "rnrtok-")
     end
 
+    test "re-registration with the same hostname + no external_id reuses the runner" do
+      # The cloud runner sends {hostname, group, version} but no
+      # external_id, so the server mints a fresh UUID each call. Without
+      # idempotent (account, name) resolution the second register tripped
+      # the (account_id, name) unique index and crashed with a MatchError
+      # (HTTP 500), so a runner could never reconnect to its own row.
+      account = account_fixture()
+      user = user_fixture()
+
+      {raw, _key} =
+        auth_key_fixture(account_id: account.id, created_by_id: user.id, reusable: true)
+
+      attrs = %{hostname: "cs-429836741138", group: "cs-default", version: "0.3.1"}
+
+      assert {:ok, %Runner{id: id1, runner_version: "0.3.1"}, %Token{}, _} =
+               Runners.register_via_auth_key(raw, attrs)
+
+      assert {:ok, %Runner{id: id2}, %Token{}, _} =
+               Runners.register_via_auth_key(raw, attrs)
+
+      # Same logical runner — not a duplicate.
+      assert id1 == id2
+
+      # Exactly one row for that (account, name).
+      assert {:ok, %Runner{id: ^id1}} =
+               Runners.fetch_runner_by_name_for_account("cs-429836741138", account.id)
+    end
+
     test "returns :over_limit when the plan cap is exceeded" do
       # `free` plan caps runners at 3.
       account = account_fixture(plan: "free")
