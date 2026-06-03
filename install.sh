@@ -78,7 +78,12 @@ Flags:
 
 Env vars accepted: VERSION, BIN_DIR, ETC_DIR, DATA_DIR, LOG_DIR,
 SERVICE_USER, SERVICE_GROUP, ASSUME_YES, NO_START, NO_SERVICE,
-EMISAR_REPO.
+EMISAR_REPO, EMISAR_URL, EMISAR_AUTH_KEY, RUNNER_GROUP, RUNNER_ROLE,
+RUNNER_ENVIRONMENT.
+
+EMISAR_URL + EMISAR_AUTH_KEY are baked into config.yaml + runner.env
+at install time so the runner boots without a follow-up edit.
+RUNNER_GROUP defaults to `hostname -s`; RUNNER_ENVIRONMENT to `prod`.
 USAGE
 }
 
@@ -362,18 +367,33 @@ config_skeleton() {
       *)         cloud_url="${EMISAR_URL}";;  # already wss:// or bare host
     esac
   fi
-  local group="${RUNNER_GROUP:-REPLACE_ME}"
+  # Group defaults to the short hostname so a fresh install boots
+  # without an edit. Operators relabel a runner later from the portal
+  # or by editing config.yaml. The runner schema requires a non-empty
+  # group (see runner/internal/config/config.go), so falling back to
+  # the bare `hostname` then a literal "emisar-runner" covers minimal
+  # images where neither `hostname -s` nor `/etc/hostname` is populated.
+  local default_group
+  default_group="$(hostname -s 2>/dev/null || hostname 2>/dev/null || echo emisar-runner)"
+  local group="${RUNNER_GROUP:-${default_group}}"
   cat <<EOF
 schema_version: 1
 
 runner:
-  # group is the cloud UI's auto-grouping key. Pick a stable label
-  # that names this fleet (e.g., role + region).
+  # group is the cloud UI's auto-grouping key. Defaults to the host's
+  # short hostname; override by editing this line or by passing
+  # RUNNER_GROUP=... to install.sh next time.
   group: ${group}
   labels:
     # Free-form tags. The cloud UI uses these for filtering / search.
-    role: REPLACE_ME
-    environment: prod
+    # Set RUNNER_ROLE / RUNNER_ENVIRONMENT at install time to bake
+    # them in, or edit later (any string=string pair works).
+EOF
+  if [ -n "${RUNNER_ROLE:-}" ]; then
+    printf '    role: %s\n' "${RUNNER_ROLE}"
+  fi
+  cat <<EOF
+    environment: ${RUNNER_ENVIRONMENT:-prod}
 
 cloud:
   # WSS URL of the control plane. Until you set this, the runner runs in
