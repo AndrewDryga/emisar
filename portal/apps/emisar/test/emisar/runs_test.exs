@@ -464,9 +464,10 @@ defmodule Emisar.RunsTest do
       assert msg =~ "disconnected"
     end
 
-    test "worker only touches stale runs whose runner is offline" do
+    test "worker times out a stale run whose runner is offline" do
       account = account_fixture()
-      runner = runner_fixture(account_id: account.id)
+      # connected?: false → never tracked in presence → offline.
+      runner = runner_fixture(account_id: account.id, connected?: false)
       _ = action_fixture(runner: runner)
       _ = policy_fixture(account_id: account.id)
 
@@ -480,16 +481,32 @@ defmodule Emisar.RunsTest do
       |> Ecto.Changeset.change(queued_at: stale_at, status: "sent")
       |> Repo.update!()
 
-      # And mark the runner disconnected so the sweeper times it out.
-      runner
-      |> Ecto.Changeset.change(status: "disconnected")
-      |> Repo.update!()
-
       assert :ok = Emisar.Workers.RunDispatchTimeout.perform(%Oban.Job{args: %{}})
 
       reloaded = Repo.get!(ActionRun, run.id)
       assert reloaded.status == "error"
-      assert reloaded.error_message =~ "disconnected"
+      assert reloaded.error_message =~ "offline"
+    end
+
+    test "worker leaves a stale run alone while its runner is online" do
+      account = account_fixture()
+      # connected?: true → tracked in presence from this process → online.
+      runner = runner_fixture(account_id: account.id, connected?: true)
+      _ = action_fixture(runner: runner)
+      _ = policy_fixture(account_id: account.id)
+
+      {:ok, :running, run} =
+        Runs.dispatch_run(base_attrs(account.id, runner.id), Emisar.Auth.Subject.system(account))
+
+      stale_at = DateTime.utc_now() |> DateTime.add(-5 * 60, :second)
+
+      run
+      |> Ecto.Changeset.change(queued_at: stale_at, status: "sent")
+      |> Repo.update!()
+
+      assert :ok = Emisar.Workers.RunDispatchTimeout.perform(%Oban.Job{args: %{}})
+
+      assert Repo.get!(ActionRun, run.id).status == "sent"
     end
   end
 end

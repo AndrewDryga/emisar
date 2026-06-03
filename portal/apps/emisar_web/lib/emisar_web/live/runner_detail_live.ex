@@ -1,7 +1,7 @@
 defmodule EmisarWeb.RunnerDetailLive do
   use EmisarWeb, :live_view
 
-  alias Emisar.{Runners, Catalog, PubSub, Runs}
+  alias Emisar.{Runners, Catalog, Runs}
   alias EmisarWeb.{LiveTable, Permissions}
 
   def mount(%{"id" => id}, _session, socket) do
@@ -25,7 +25,7 @@ defmodule EmisarWeb.RunnerDetailLive do
            |> put_flash(:error, "Runner not found.")
            |> push_navigate(to: ~p"/app/runners")}
         else
-          if connected?(socket), do: PubSub.subscribe_account_runners(account_id)
+          if connected?(socket), do: Runners.subscribe_connections(account_id)
 
           {:ok,
            socket
@@ -62,9 +62,14 @@ defmodule EmisarWeb.RunnerDetailLive do
     end
   end
 
-  def handle_info({:runner_updated, %{id: id} = updated}, socket)
-      when id == socket.assigns.runner.id,
-      do: {:noreply, assign(socket, :runner, updated)}
+  # A runner connected/disconnected somewhere in the account — re-fetch
+  # so the badge, action_load, and heartbeat refresh from presence.
+  def handle_info(%{event: "presence_diff"}, socket) do
+    case Runners.fetch_runner_by_id(socket.assigns.runner.id, socket.assigns.current_subject) do
+      {:ok, runner} -> {:noreply, assign(socket, :runner, runner)}
+      {:error, _} -> {:noreply, socket}
+    end
+  end
 
   def handle_info(_, socket), do: {:noreply, socket}
 
@@ -107,7 +112,7 @@ defmodule EmisarWeb.RunnerDetailLive do
            ID dropped — it's debug-trace, not at-a-glance signal. --%>
       <.meta_strip cols={6}>
         <.meta_field label="Status">
-          <.status_badge status={@runner.status} />
+          <.status_badge status={conn_status(@runner)} />
         </.meta_field>
         <.meta_field label="Hostname">
           <span class="truncate text-zinc-200">{@runner.hostname || "—"}</span>
@@ -185,7 +190,7 @@ defmodule EmisarWeb.RunnerDetailLive do
                      otherwise the run sits in `pending` until reconnect.
                      Gate the button visually so operators don't queue up
                      work against a disconnected/disabled runner. --%>
-                <%= if @runner.status == "connected" do %>
+                <%= if @runner.online? do %>
                   <.link
                     navigate={~p"/app/runs/new/#{@runner.id}/#{action.action_id}"}
                     class="shrink-0 rounded-lg bg-indigo-500/10 px-2.5 py-1 text-xs font-semibold text-indigo-300 ring-1 ring-indigo-500/30 hover:bg-indigo-500/20"
@@ -194,7 +199,7 @@ defmodule EmisarWeb.RunnerDetailLive do
                   </.link>
                 <% else %>
                   <span
-                    title={"Runner is #{@runner.status} — runs queue until it reconnects"}
+                    title={"Runner is #{conn_status(@runner)} — runs queue until it reconnects"}
                     class="shrink-0 cursor-not-allowed rounded-lg bg-zinc-900 px-2.5 py-1 text-xs font-semibold text-zinc-600 ring-1 ring-zinc-800"
                   >
                     Run
@@ -253,7 +258,7 @@ defmodule EmisarWeb.RunnerDetailLive do
            stale duplicate holding a name; a connected runner must be
            disabled first so a misclick can't wipe a live one. --%>
       <div
-        :if={@runner.status != "disabled" and Permissions.can?(assigns, :manage_runners)}
+        :if={is_nil(@runner.disabled_at) and Permissions.can?(assigns, :manage_runners)}
         class="mt-6"
       >
         <.danger_zone title="Disable this runner">
@@ -273,7 +278,7 @@ defmodule EmisarWeb.RunnerDetailLive do
       </div>
 
       <div
-        :if={@runner.status != "connected" and Permissions.can?(assigns, :manage_runners)}
+        :if={not @runner.online? and Permissions.can?(assigns, :manage_runners)}
         class="mt-6"
       >
         <.danger_zone title="Delete this runner">
@@ -317,9 +322,21 @@ defmodule EmisarWeb.RunnerDetailLive do
 
   defp runner_labels(_), do: []
 
-  defp disconnect_note?(%{status: status, last_disconnect_reason: r})
-       when status in ["disconnected", "disabled"] and is_binary(r) and r != "",
-       do: true
+  # Map the derived connection state onto the status-badge vocabulary.
+  defp conn_status(runner) do
+    case Runners.connection_state(runner) do
+      :online -> "connected"
+      :offline -> "disconnected"
+      :disabled -> "disabled"
+      :pending -> "pending"
+    end
+  end
+
+  # Show the last-disconnect reason note when the runner isn't online and
+  # we actually have a reason on file.
+  defp disconnect_note?(%{online?: true}), do: false
+
+  defp disconnect_note?(%{last_disconnect_reason: r}) when is_binary(r) and r != "", do: true
 
   defp disconnect_note?(_), do: false
 end

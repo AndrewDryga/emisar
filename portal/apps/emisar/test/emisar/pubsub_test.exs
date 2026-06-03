@@ -5,7 +5,6 @@ defmodule Emisar.PubSubTest do
 
   describe "topic helpers" do
     test "account topics are scoped by account id" do
-      assert PubSub.topic_for_account_runners("a1") == "account:a1:runners"
       assert PubSub.topic_for_account_runs("a1") == "account:a1:runs"
       assert PubSub.topic_for_account_approvals("a1") == "account:a1:approvals"
     end

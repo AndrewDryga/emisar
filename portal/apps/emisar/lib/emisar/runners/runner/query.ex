@@ -27,30 +27,49 @@ defmodule Emisar.Runners.Runner.Query do
   def by_group(q, group),
     do: where(q, [runners: r], r.group == ^group)
 
-  def by_status(q, status),
-    do: where(q, [runners: r], r.status == ^status)
-
   def ordered_by_group_name(q),
     do: order_by(q, [runners: r], asc: r.group, asc: r.name)
 
   @doc """
-  Runners that opened a socket, sent at least one heartbeat, but went
-  silent before `cutoff`. Used by `Workers.RunnerHealthSweep` to mark
-  stale runners disconnected.
-
-  Excludes runners that never heartbeat (`last_heartbeat_at IS NULL`) —
-  those are caught by the WebSock-level heartbeat_timeout in
-  `runner_socket.ex` and would otherwise race the 5-minute sweep cron
-  against freshly-connected runners.
+  Filter by derived connection state. `online_ids` is the set of runner
+  ids currently tracked in `Emisar.Runners.Presence` — the DB can't see
+  presence, so the context resolves the ids and hands them in (Firezone's
+  pattern). `statuses` is any of `"connected"`, `"disconnected"`,
+  `"pending"`, `"disabled"`, ORed together. An empty `statuses` list
+  matches nothing.
   """
-  def stale_connected(q \\ all(), cutoff) do
-    q
-    |> where(
-      [runners: r],
-      r.status == "connected" and
-        not is_nil(r.last_heartbeat_at) and
-        r.last_heartbeat_at < ^cutoff
-    )
+  def by_connection(q \\ all(), statuses, online_ids) when is_list(statuses) do
+    # Clauses mirror `Emisar.Runners.connection_state/1`'s precedence
+    # (disabled beats a stale socket), so the four states partition the
+    # set cleanly — a disabled-never-connected runner is only "disabled".
+    condition =
+      Enum.reduce(statuses, dynamic(false), fn
+        "connected", acc ->
+          dynamic([runners: r], ^acc or (r.id in ^online_ids and is_nil(r.disabled_at)))
+
+        "disconnected", acc ->
+          dynamic(
+            [runners: r],
+            ^acc or
+              (r.id not in ^online_ids and not is_nil(r.last_connected_at) and
+                 is_nil(r.disabled_at))
+          )
+
+        "pending", acc ->
+          dynamic(
+            [runners: r],
+            ^acc or
+              (is_nil(r.last_connected_at) and r.id not in ^online_ids and is_nil(r.disabled_at))
+          )
+
+        "disabled", acc ->
+          dynamic([runners: r], ^acc or not is_nil(r.disabled_at))
+
+        _other, acc ->
+          acc
+      end)
+
+    where(q, ^condition)
   end
 
   @doc "Audit label-lookup helper. See Accounts.User.Query.select_labels/3."
@@ -76,18 +95,6 @@ defmodule Emisar.Runners.Runner.Query do
   @impl Emisar.Repo.Query
   def filters,
     do: [
-      %Filter{
-        name: :status,
-        title: "Status",
-        type: {:list, :string},
-        values: [
-          {"connected", "Connected"},
-          {"disconnected", "Disconnected"},
-          {"disabled", "Disabled"},
-          {"pending", "Pending"}
-        ],
-        fun: fn q, statuses -> {q, dynamic([runners: r], r.status in ^statuses)} end
-      },
       %Filter{
         name: :group,
         title: "Group",

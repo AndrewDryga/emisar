@@ -51,7 +51,7 @@
 
     <%!-- JSON-LD: only emitted on routes that set @json_ld --%>
     <%= if assigns[:json_ld] do %>
-      <script type="application/ld+json">
+      <script type="application/ld+json" nonce={assigns[:csp_nonce]}>
         {Phoenix.HTML.raw(@json_ld)}
       </script>
     <% end %>

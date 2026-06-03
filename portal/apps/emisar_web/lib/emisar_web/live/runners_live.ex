@@ -1,17 +1,14 @@
 defmodule EmisarWeb.RunnersLive do
   use EmisarWeb, :live_view
 
-  alias Emisar.{Runners, PubSub}
+  alias Emisar.Runners
   alias Emisar.Runners.Runner
-  alias EmisarWeb.{LiveTable, RunnerPresence}
+  alias EmisarWeb.LiveTable
 
   def mount(_params, _session, socket) do
     account_id = socket.assigns.current_account.id
 
-    if connected?(socket) do
-      PubSub.subscribe_account_runners(account_id)
-      Phoenix.PubSub.subscribe(Emisar.PubSub.Server, "presence:account:#{account_id}")
-    end
+    if connected?(socket), do: Runners.subscribe_connections(account_id)
 
     {:ok, assign(socket, :page_title, "Runners")}
   end
@@ -20,9 +17,6 @@ defmodule EmisarWeb.RunnersLive do
     {:noreply, load(socket, params)}
   end
 
-  def handle_info({:runner_updated, _}, socket), do: {:noreply, reload(socket)}
-  def handle_info({:runner_connected, _}, socket), do: {:noreply, reload(socket)}
-  def handle_info({:runner_disconnected, _}, socket), do: {:noreply, reload(socket)}
   def handle_info(%{event: "presence_diff"}, socket), do: {:noreply, reload(socket)}
   def handle_info(_, socket), do: {:noreply, socket}
 
@@ -30,7 +24,6 @@ defmodule EmisarWeb.RunnersLive do
   defp reload(socket), do: load(socket, socket.assigns[:filter_params] || %{})
 
   defp load(socket, params) do
-    account = socket.assigns.current_account
     filters = Runner.Query.filters()
     opts = LiveTable.params_to_opts(params, filters)
 
@@ -49,15 +42,12 @@ defmodule EmisarWeb.RunnersLive do
             _ -> []
           end
 
-        online = RunnerPresence.list_for_account(account.id)
-
         socket
         |> assign(:runners, runners)
         |> assign(:metadata, meta)
         |> assign(:filter_params, params)
         |> assign(:filters, filters)
         |> assign(:groups, groups)
-        |> assign(:online, online)
 
       {:error, _} ->
         load(socket, %{})
@@ -127,7 +117,7 @@ defmodule EmisarWeb.RunnersLive do
                 <%!-- Connection dot: green/pulsing when live, amber
                      when known-but-disconnected, zinc when never
                      seen. Clearer than reading a status badge first. --%>
-                <.connection_dot status={derived_status(runner, @online)} />
+                <.connection_dot status={derived_status(runner)} />
 
                 <div class="min-w-0 flex-1">
                   <div class="flex items-center gap-2">
@@ -139,7 +129,7 @@ defmodule EmisarWeb.RunnersLive do
                   <div class="mt-0.5 truncate text-xs text-zinc-500">
                     {runner.hostname || runner.external_id || "no host"} · {heartbeat_label(
                       runner,
-                      derived_status(runner, @online)
+                      derived_status(runner)
                     )}
                   </div>
                 </div>
@@ -148,7 +138,7 @@ defmodule EmisarWeb.RunnersLive do
                   <div class="hidden text-xs text-zinc-400 sm:block">
                     {runner.action_load} active
                   </div>
-                  <.status_badge status={derived_status(runner, @online)} class="shrink-0" />
+                  <.status_badge status={derived_status(runner)} class="shrink-0" />
                 </div>
               </.link>
             </li>
@@ -173,10 +163,14 @@ defmodule EmisarWeb.RunnersLive do
     end)
   end
 
-  defp derived_status(runner, online) do
-    cond do
-      Map.has_key?(online, runner.id) -> "connected"
-      true -> runner.status
+  # Map the presence-derived connection state onto the status-badge /
+  # connection-dot vocabulary the components already speak.
+  defp derived_status(runner) do
+    case Runners.connection_state(runner) do
+      :online -> "connected"
+      :offline -> "disconnected"
+      :disabled -> "disabled"
+      :pending -> "pending"
     end
   end
 

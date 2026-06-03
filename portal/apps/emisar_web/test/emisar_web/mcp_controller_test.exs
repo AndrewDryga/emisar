@@ -69,8 +69,13 @@ defmodule EmisarWeb.McpControllerTest do
       })
       |> Repo.insert()
 
-    {:ok, runner} = Runners.mark_connected(runner)
-    runner
+    if Keyword.get(opts, :connected, true) do
+      # Tracks presence from the test process → reads "online".
+      {:ok, runner} = Runners.connect_runner(runner)
+      runner
+    else
+      runner
+    end
   end
 
   defp advertise_action!(runner, opts) do
@@ -724,10 +729,10 @@ defmodule EmisarWeb.McpControllerTest do
       account: account,
       user: user
     } do
-      # Mark the runner as disconnected, then dispatch — should still
-      # succeed (run is queued), but include warning fields so the LLM
-      # can tell the user.
-      runner = make_runner!(account, name: "offline-host")
+      # Offline runner (never tracked in presence), then dispatch — should
+      # still succeed (run is queued), but include warning fields so the
+      # LLM can tell the user.
+      runner = make_runner!(account, name: "offline-host", connected: false)
       advertise_action!(runner, action_id: "linux.uptime")
 
       {:ok, _} = Runners.mark_disconnected(runner, "test-disconnect")

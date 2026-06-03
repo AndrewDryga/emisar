@@ -26,7 +26,6 @@ defmodule EmisarWeb.RunnerSocket do
 
   alias Emisar.{Runners, Audit, Catalog, PubSub, Runs}
   alias Emisar.Runners.{Runner, Token}
-  alias EmisarWeb.RunnerPresence
 
   @protocol_version 1
   @heartbeat_timeout_ms 90_000
@@ -61,15 +60,11 @@ defmodule EmisarWeb.RunnerSocket do
     # it in sync with `Emisar.PubSub.@pubsub`.
     Phoenix.PubSub.subscribe(Emisar.PubSub.Server, EmisarWeb.RunnerSocketDrain.drain_topic())
 
-    {:ok, _} = RunnerPresence.track_runner(self(), runner.account_id, runner.id)
-
-    # Flip status to "connected" the moment the WebSocket auth handshake
-    # succeeds. Previously the row stayed "pending" until the first
-    # `runner_state` envelope arrived — which made a row look offline in
-    # the operator UI even while Presence already showed it online, and
-    # gave a runner an indefinite stuck-at-pending window if catalog
-    # ingestion errored. Catalog observation stays a separate concern.
-    Runners.mark_connected(runner.id)
+    # Track this socket in presence (the live "online" signal) and stamp
+    # last_connected_at. Presence — not a DB status column — is the
+    # source of truth for "connected now"; it clears automatically when
+    # this process dies. Catalog observation stays a separate concern.
+    Runners.connect_runner(runner)
 
     Audit.log(runner.account_id, "runner.connected",
       actor_kind: "runner",
@@ -188,7 +183,7 @@ defmodule EmisarWeb.RunnerSocket do
   defp handle_envelope("runner_state", msg, state) do
     case Catalog.observe_state(state.runner_id, msg) do
       {:ok, _runner} ->
-        # mark_connected already fired at socket init; this just refreshes
+        # connect_runner already fired at socket init; this just refreshes
         # the heartbeat-timeout watcher now that we have a catalog.
         reset_heartbeat_timeout(state)
         {:ok, refresh_heartbeat(state)}
@@ -247,7 +242,7 @@ defmodule EmisarWeb.RunnerSocket do
   end
 
   defp handle_envelope("heartbeat", msg, state) do
-    Runners.record_heartbeat(state.runner_id, msg["action_load"])
+    Runners.record_heartbeat(state.account_id, state.runner_id, msg["action_load"])
     {:ok, refresh_heartbeat(state)}
   end
 

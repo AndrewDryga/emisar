@@ -1,7 +1,7 @@
 defmodule EmisarWeb.ApprovalDetailLive do
   use EmisarWeb, :live_view
 
-  alias Emisar.{Accounts, Approvals, PubSub, Runs}
+  alias Emisar.{Accounts, Approvals, PubSub, Runners, Runs}
   alias EmisarWeb.Permissions
 
   def mount(%{"id" => id}, _session, socket) do
@@ -171,8 +171,9 @@ defmodule EmisarWeb.ApprovalDetailLive do
   # An action only leaves the queue when its runner is connected. The
   # decision panel surfaces this so an operator doesn't approve into a
   # dead runner and then wonder why the run never moved.
-  defp runner_connection(%{runner: %{status: "connected"}}), do: :online
-  defp runner_connection(%{runner: %{status: _}}), do: :offline
+  defp runner_connection(%{runner: %{id: id, account_id: account_id}}),
+    do: if(Runners.online?(account_id, id), do: :online, else: :offline)
+
   defp runner_connection(_), do: :unknown
 
   def render(assigns) do
@@ -207,9 +208,9 @@ defmodule EmisarWeb.ApprovalDetailLive do
               <span
                 class={[
                   "h-1.5 w-1.5 flex-none rounded-full",
-                  if(@run.runner.status == "connected", do: "bg-emerald-400", else: "bg-zinc-600")
+                  if(runner_connection(@run) == :online, do: "bg-emerald-400", else: "bg-zinc-600")
                 ]}
-                title={if(@run.runner.status == "connected", do: "Online", else: "Offline")}
+                title={if(runner_connection(@run) == :online, do: "Online", else: "Offline")}
               />
               <.link
                 navigate={~p"/app/runners/#{@run.runner.id}"}

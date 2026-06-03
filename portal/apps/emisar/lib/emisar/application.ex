@@ -9,6 +9,7 @@ defmodule Emisar.Application do
       Emisar.Repo,
       {DNSCluster, query: Application.get_env(:emisar, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: Emisar.PubSub.Server},
+      Emisar.Runners.Presence,
       {Finch, name: Emisar.Finch},
       {Oban, Application.fetch_env!(:emisar, Oban)}
     ]

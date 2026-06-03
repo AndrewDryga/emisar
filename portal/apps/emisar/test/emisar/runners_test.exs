@@ -15,6 +15,11 @@ defmodule Emisar.RunnersTest do
     {account, user, subject}
   end
 
+  defp filter_names(subject, status) do
+    {:ok, runners, _} = Runners.list_runners_for_account(subject, status: status)
+    runners |> Enum.map(& &1.name) |> Enum.sort()
+  end
+
   describe "create_auth_key/2" do
     test "returns a raw secret + persists the hash with a prefix" do
       {account, user, subject} = account_with_owner_subject()
@@ -308,44 +313,101 @@ defmodule Emisar.RunnersTest do
     end
   end
 
-  describe "mark_connected / mark_disconnected" do
-    test "struct-based mark_connected updates status + broadcasts" do
+  describe "connect_runner / mark_disconnected" do
+    test "connect_runner tracks presence and stamps last_connected_at" do
       runner = runner_fixture(connected?: false)
-      Emisar.PubSub.subscribe_account_runners(runner.account_id)
+      refute Runners.online?(runner.account_id, runner.id)
 
-      assert {:ok, %Runner{status: "connected", last_connected_at: %DateTime{}}} =
-               Runners.mark_connected(runner)
-
-      assert_receive {:runner_connected, %Runner{}}, 500
+      assert {:ok, %Runner{last_connected_at: %DateTime{}}} = Runners.connect_runner(runner)
+      assert Runners.online?(runner.account_id, runner.id)
     end
 
     test "id-based mark_disconnected returns :not_found for an unknown id" do
       assert {:error, :not_found} = Runners.mark_disconnected(Ecto.UUID.generate(), "gone")
     end
 
-    test "id-based mark_disconnected updates the runner + broadcasts" do
-      runner = runner_fixture()
-      Emisar.PubSub.subscribe_account_runners(runner.account_id)
+    test "id-based mark_disconnected stamps last_disconnected_at + reason" do
+      runner = runner_fixture(connected?: false)
 
-      assert {:ok, %Runner{status: "disconnected", last_disconnect_reason: "shutdown"}} =
+      assert {:ok, %Runner{last_disconnected_at: %DateTime{}, last_disconnect_reason: "shutdown"}} =
                Runners.mark_disconnected(runner.id, "shutdown")
-
-      assert_receive {:runner_disconnected, %Runner{}}, 500
     end
   end
 
-  describe "record_heartbeat/2" do
-    test "updates last_heartbeat_at + action_load" do
-      runner = runner_fixture()
+  describe "record_heartbeat/3" do
+    test "refreshes action_load + last heartbeat in presence metadata, not the DB" do
+      runner = runner_fixture(connected?: false)
+      {:ok, _} = Runners.connect_runner(runner)
 
-      assert {:ok, %Runner{last_heartbeat_at: ts, action_load: 7}} =
-               Runners.record_heartbeat(runner, 7)
+      assert {:ok, _ref} = Runners.record_heartbeat(runner.account_id, runner.id, 7)
 
-      assert %DateTime{} = ts
+      assert %{metas: [meta | _]} =
+               Runners.connection_metas(runner.account_id) |> Map.fetch!(runner.id)
+
+      assert meta.action_load == 7
+      assert is_integer(meta.last_heartbeat_at)
+    end
+  end
+
+  describe "connection state & presence" do
+    test "connection_state/1 maps online / disabled / pending / offline" do
+      now = DateTime.utc_now()
+
+      assert Runners.connection_state(%Runner{online?: true}) == :online
+      assert Runners.connection_state(%Runner{disabled_at: now}) == :disabled
+      assert Runners.connection_state(%Runner{online?: false, last_connected_at: nil}) == :pending
+
+      assert Runners.connection_state(%Runner{online?: false, last_connected_at: now}) ==
+               :offline
+
+      # disabled wins over a still-live socket
+      assert Runners.connection_state(%Runner{online?: true, disabled_at: now}) == :disabled
     end
 
-    test "id-based variant returns :not_found for unknown id" do
-      assert {:error, :not_found} = Runners.record_heartbeat(Ecto.UUID.generate(), 0)
+    test "list/fetch decorate online?, action_load + last heartbeat from presence" do
+      {account, _user, subject} = account_with_owner_subject()
+      runner = runner_fixture(account_id: account.id, connected?: true)
+      {:ok, _ref} = Runners.record_heartbeat(account.id, runner.id, 5)
+
+      {:ok, fetched} = Runners.fetch_runner_by_id(runner.id, subject)
+      assert fetched.online?
+      assert fetched.action_load == 5
+      assert %DateTime{} = fetched.last_heartbeat_at
+
+      assert {:ok, [listed], _} = Runners.list_runners_for_account(subject)
+      assert listed.online?
+      assert listed.action_load == 5
+    end
+
+    test "presence is account-scoped — another account never sees the runner online" do
+      account_a = account_fixture()
+      account_b = account_fixture()
+      runner = runner_fixture(account_id: account_a.id, connected?: true)
+
+      assert Runners.online?(account_a.id, runner.id)
+      refute Runners.online?(account_b.id, runner.id)
+      assert Runners.connection_metas(account_b.id) == %{}
+    end
+
+    test "status filter resolves each connection state via presence ids" do
+      {account, _user, subject} = account_with_owner_subject()
+      topic = Emisar.Runners.Presence.topic(account.id)
+
+      _online = runner_fixture(account_id: account.id, name: "r-online", connected?: true)
+      _pending = runner_fixture(account_id: account.id, name: "r-pending", connected?: false)
+
+      # Connected then dropped from presence = "disconnected": last_connected_at
+      # is set but the socket is no longer live.
+      disc = runner_fixture(account_id: account.id, name: "r-disc", connected?: true)
+      :ok = Emisar.Runners.Presence.untrack(self(), topic, disc.id)
+
+      disabled = runner_fixture(account_id: account.id, name: "r-disabled", connected?: false)
+      {:ok, _} = Runners.disable_runner(disabled, subject)
+
+      assert filter_names(subject, "connected") == ["r-online"]
+      assert filter_names(subject, "disconnected") == ["r-disc"]
+      assert filter_names(subject, "pending") == ["r-pending"]
+      assert filter_names(subject, "disabled") == ["r-disabled"]
     end
   end
 
@@ -363,7 +425,8 @@ defmodule Emisar.RunnersTest do
       assert {:ok, list, _} = Runners.list_runners_for_account(subject, group: "web")
       assert length(list) == 1
 
-      # connected? defaults to true → status="connected"
+      # connected? tracks presence from this process, so the "connected"
+      # filter resolves the online id set and returns just that runner.
       assert {:ok, list, _} = Runners.list_runners_for_account(subject, status: "connected")
       assert length(list) == 1
     end

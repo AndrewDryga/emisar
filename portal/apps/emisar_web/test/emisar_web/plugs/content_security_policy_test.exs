@@ -26,5 +26,28 @@ defmodule EmisarWeb.Plugs.ContentSecurityPolicyTest do
       [csp] = conn |> get(~p"/") |> get_resp_header("content-security-policy")
       refute csp =~ "'unsafe-eval'"
     end
+
+    test "stamps a per-request nonce on script-src and reuses it on the inline JSON-LD",
+         %{conn: conn} do
+      conn = get(conn, ~p"/")
+      [csp] = get_resp_header(conn, "content-security-policy")
+      [_, nonce] = Regex.run(~r/'nonce-([^']+)'/, csp)
+
+      # script-src carries the nonce (so no 'unsafe-inline' is needed)...
+      assert csp =~ "script-src 'self' 'nonce-#{nonce}'"
+      # ...and the home page's JSON-LD <script> reuses it, or the browser
+      # would block the structured data under script-src 'self'.
+      assert html_response(conn, 200) =~ ~s(application/ld+json" nonce="#{nonce}")
+    end
+
+    test "uses a fresh nonce on each request", %{conn: conn} do
+      nonce = fn conn ->
+        [csp] = conn |> get(~p"/") |> get_resp_header("content-security-policy")
+        [_, n] = Regex.run(~r/'nonce-([^']+)'/, csp)
+        n
+      end
+
+      assert nonce.(conn) != nonce.(conn)
+    end
   end
 end

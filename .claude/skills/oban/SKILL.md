@@ -9,8 +9,8 @@ allowed-tools: Read, Grep, Glob, Bash, Write, Edit
 # Oban jobs
 
 Workers live in `lib/emisar/workers/`. Read the existing ones first and match them —
-`approval_expiry`, `audit_retention`, `billing_sync`, `run_dispatch_timeout`,
-`runner_health_sweep` are the templates.
+`approval_expiry`, `audit_retention`, `billing_sync`, and `run_dispatch_timeout`
+are the templates.
 
 ## Shape
 

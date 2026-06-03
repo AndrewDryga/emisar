@@ -2,8 +2,8 @@ defmodule Emisar.Runners.Runner.Changeset do
   @moduledoc """
   All changesets for `%Emisar.Runners.Runner{}`. The schema itself is
   data-only — every transition (registration, manual create, advertised
-  state, connected, disconnected, heartbeat, disabled, deleted) lives
-  here as a single-purpose changeset.
+  state, connected, disconnected, disabled, deleted) lives here as a
+  single-purpose changeset.
   """
   use Emisar, :changeset
   alias Emisar.Runners.Runner
@@ -92,36 +92,18 @@ defmodule Emisar.Runners.Runner.Changeset do
     cast(runner, attrs, [:hostname, :labels, :runner_version, :packs])
   end
 
+  # Connect/disconnect stamp the durable "last seen" history only.
+  # "Online now" is Phoenix.Presence — there's no status column to flip.
   def connected(%Runner{} = runner) do
-    change(runner,
-      status: "connected",
-      last_connected_at: now(),
-      last_disconnect_reason: nil
-    )
+    change(runner, last_connected_at: now(), last_disconnect_reason: nil)
   end
 
   def disconnected(%Runner{} = runner, reason \\ nil) do
-    change(runner,
-      status: "disconnected",
-      last_disconnected_at: now(),
-      last_disconnect_reason: reason
-    )
-  end
-
-  def heartbeat(%Runner{} = runner, action_load) do
-    # A fresh heartbeat is positive evidence the runner is alive. Flip
-    # status back to connected if anything (e.g. health sweep, transient
-    # socket close) marked it disconnected, but DON'T touch
-    # last_connected_at — that stays the original session start.
-    change(runner,
-      status: "connected",
-      last_heartbeat_at: now(),
-      action_load: action_load || runner.action_load
-    )
+    change(runner, last_disconnected_at: now(), last_disconnect_reason: reason)
   end
 
   def disable(%Runner{} = runner) do
-    change(runner, status: "disabled", disabled_at: now())
+    change(runner, disabled_at: now())
   end
 
   def delete(%Runner{} = runner) do

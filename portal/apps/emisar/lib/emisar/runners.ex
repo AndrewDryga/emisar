@@ -1,22 +1,27 @@
 defmodule Emisar.Runners do
   @moduledoc """
   Runner lifecycle: registration, auth-key management, token mint/verify,
-  state advertisement persistence, heartbeats, connection state.
+  state advertisement persistence, connection state.
+
+  Connection state lives in `Emisar.Runners.Presence`, not the database:
+  presence is the source of truth for "connected right now" and carries
+  the runner's ephemeral state (`action_load`, last heartbeat) in its
+  metadata. The DB keeps only durable, event-driven facts.
 
   Reads/writes go through `Runner.Query` + `Runner.Changeset` (and
   similar per-entity modules under `Emisar.Runners.AuthKey`,
   `Token`, `EventCursor`). The public surface takes `%Subject{}` and
   routes through `Authorizer.for_subject/2`; the runner-socket-driven
-  state helpers (`apply_state`, `mark_connected`, `mark_disconnected`,
+  state helpers (`apply_state`, `connect_runner`, `mark_disconnected`,
   `record_heartbeat`, `mark_event_acked`, `event_acked?`) are internal
   to the runner connection process and called with the runner
   socket's own subject upstream.
   """
 
   alias Ecto.Multi
-  alias Emisar.{Audit, Auth, PubSub, Repo}
+  alias Emisar.{Audit, Auth, Repo}
   alias Emisar.Auth.Subject
-  alias Emisar.Runners.{Authorizer, AuthKey, EventCursor, Runner, Token}
+  alias Emisar.Runners.{Authorizer, AuthKey, EventCursor, Presence, Runner, Token}
 
   # 11 chars for "emkey-auth-" + 16 random chars => 27.
   @auth_key_prefix_size 27
@@ -77,9 +82,11 @@ defmodule Emisar.Runners do
 
       Runner.Query.not_deleted()
       |> Runner.Query.ordered_by_group_name()
-      |> apply_runner_opts(group: group, status: status)
+      |> maybe_by_group(group)
+      |> maybe_by_connection(subject, status)
       |> Authorizer.for_subject(subject)
       |> Repo.list(Runner.Query, opts)
+      |> decorate_result()
       |> apply_scope_filter(membership_id)
     end
   end
@@ -102,13 +109,20 @@ defmodule Emisar.Runners do
 
   defp apply_scope_filter({:error, _} = err, _), do: err
 
-  defp apply_runner_opts(query, opts) do
-    Enum.reduce(opts, query, fn
-      {:group, group}, q when is_binary(group) -> Runner.Query.by_group(q, group)
-      {:status, status}, q when is_binary(status) -> Runner.Query.by_status(q, status)
-      _, q -> q
-    end)
+  defp maybe_by_group(query, group) when is_binary(group), do: Runner.Query.by_group(query, group)
+  defp maybe_by_group(query, _), do: query
+
+  # Connection-state filtering needs the live presence id set, which the
+  # DB can't see — resolve it here and hand it to the Query as IN/NOT IN
+  # id lists (Firezone's pattern). Scoped to the subject's account.
+  defp maybe_by_connection(query, _subject, status) when status in [nil, []], do: query
+
+  defp maybe_by_connection(query, %Subject{account: %{id: account_id}}, status) do
+    online_ids = connection_metas(account_id) |> Map.keys()
+    Runner.Query.by_connection(query, List.wrap(status), online_ids)
   end
+
+  defp maybe_by_connection(query, _subject, _status), do: query
 
   @doc """
   Group → count tuples for the RunnersLive sidebar. Returns
@@ -142,6 +156,7 @@ defmodule Emisar.Runners do
       |> Runner.Query.by_id(id)
       |> Authorizer.for_subject(subject)
       |> Repo.fetch(Runner.Query, opts)
+      |> decorate_result()
     else
       false -> {:error, :not_found}
       other -> other
@@ -265,12 +280,14 @@ defmodule Emisar.Runners do
     end
   end
 
-  # -- Runner socket-driven state updates ------------------------------
+  # -- Runner socket-driven connection state ---------------------------
   #
-  # These are called from the runner WebSocket process — the auth gate
-  # is the socket-level token check, and the calling process IS the
-  # runner. No Subject thread necessary; row id + account_id come off
-  # the runner struct itself.
+  # These run inside the runner WebSocket process — the auth gate is the
+  # socket-level token check, and the calling process IS the runner. No
+  # Subject thread necessary; row id + account_id come off the runner
+  # struct itself. Presence is the source of truth for "connected now";
+  # the DB keeps only durable, event-driven facts (last_connected_at,
+  # last_disconnected_at, last_disconnect_reason).
 
   def apply_state(%Runner{} = runner, %{} = payload) do
     runner
@@ -284,18 +301,37 @@ defmodule Emisar.Runners do
     |> Repo.update()
   end
 
-  def mark_connected(%Runner{} = runner) do
+  @doc """
+  Internal — called by the runner socket on connect. Tracks the socket
+  process in presence (the live "online" signal) and stamps
+  `last_connected_at` for the durable "last seen" history.
+  """
+  def connect_runner(%Runner{} = runner) do
+    {:ok, _ref} =
+      Presence.track(self(), Presence.topic(runner.account_id), runner.id, %{
+        online_at: System.system_time(:second),
+        action_load: 0,
+        last_heartbeat_at: nil,
+        node: node()
+      })
+
     runner
     |> Runner.Changeset.connected()
     |> Repo.update()
-    |> broadcast(:runner_connected)
   end
 
-  def mark_connected(runner_id) when is_binary(runner_id) do
-    case peek_runner_by_id(runner_id) do
-      {:ok, runner} -> mark_connected(runner)
-      {:error, :not_found} = err -> err
-    end
+  @doc """
+  Internal — called by the runner socket each heartbeat. Refreshes the
+  runner's ephemeral state in presence metadata; never touches the DB.
+  """
+  def record_heartbeat(account_id, runner_id, action_load) do
+    Presence.update(self(), Presence.topic(account_id), runner_id, fn meta ->
+      %{
+        meta
+        | action_load: action_load || meta.action_load,
+          last_heartbeat_at: System.system_time(:second)
+      }
+    end)
   end
 
   def mark_disconnected(runner_or_id, reason \\ nil)
@@ -304,7 +340,6 @@ defmodule Emisar.Runners do
     runner
     |> Runner.Changeset.disconnected(reason)
     |> Repo.update()
-    |> broadcast(:runner_disconnected)
   end
 
   def mark_disconnected(runner_id, reason) when is_binary(runner_id) do
@@ -314,15 +349,76 @@ defmodule Emisar.Runners do
     end
   end
 
-  def record_heartbeat(%Runner{} = runner, action_load),
-    do: runner |> Runner.Changeset.heartbeat(action_load) |> Repo.update()
+  # -- Connection state reads (Phoenix.Presence) -----------------------
 
-  def record_heartbeat(runner_id, action_load) when is_binary(runner_id) do
-    case peek_runner_by_id(runner_id) do
-      {:ok, runner} -> record_heartbeat(runner, action_load)
-      {:error, :not_found} = err -> err
+  @doc "True when the runner currently has a live socket tracked in presence."
+  def online?(account_id, runner_id) do
+    case Map.get(connection_metas(account_id), runner_id) do
+      %{metas: [_ | _]} -> true
+      _ -> false
     end
   end
+
+  @doc "Raw presence map for an account: `%{runner_id => %{metas: [meta, ...]}}`."
+  def connection_metas(account_id), do: Presence.list(Presence.topic(account_id))
+
+  @doc "Subscribe the caller to this account's runner presence diffs."
+  def subscribe_connections(account_id) do
+    Phoenix.PubSub.subscribe(Emisar.PubSub.Server, Presence.topic(account_id))
+  end
+
+  @doc """
+  Derived connection state for a runner struct carrying the virtual
+  `online?` field (set by `list_runners_for_account/2` and
+  `fetch_runner_by_id/3` from presence). `:disabled` and `:pending`
+  win over a stale socket so the operator UI reads true.
+  """
+  def connection_state(%Runner{disabled_at: %DateTime{}}), do: :disabled
+  def connection_state(%Runner{online?: true}), do: :online
+  def connection_state(%Runner{last_connected_at: nil}), do: :pending
+  def connection_state(%Runner{}), do: :offline
+
+  # Fill the virtual online?/action_load/last_heartbeat_at fields from
+  # presence so read callers get connection state without a second
+  # lookup. Grouped by account_id so a multi-account listing decorates
+  # correctly. Mirrors Firezone's preload_presence.
+  defp decorate_result({:ok, runners, metadata}),
+    do: {:ok, decorate_connection(runners), metadata}
+
+  defp decorate_result({:ok, runner}), do: {:ok, decorate_connection(runner)}
+  defp decorate_result({:error, _} = err), do: err
+
+  defp decorate_connection([]), do: []
+
+  defp decorate_connection(runners) when is_list(runners) do
+    metas_by_account =
+      runners
+      |> Enum.map(& &1.account_id)
+      |> Enum.uniq()
+      |> Map.new(fn account_id -> {account_id, connection_metas(account_id)} end)
+
+    Enum.map(runners, fn runner ->
+      put_connection_meta(runner, get_in(metas_by_account, [runner.account_id, runner.id]))
+    end)
+  end
+
+  defp decorate_connection(%Runner{} = runner) do
+    put_connection_meta(runner, Map.get(connection_metas(runner.account_id), runner.id))
+  end
+
+  defp put_connection_meta(runner, %{metas: [meta | _]}) do
+    %{
+      runner
+      | online?: true,
+        action_load: meta.action_load,
+        last_heartbeat_at: unix_to_datetime(meta.last_heartbeat_at)
+    }
+  end
+
+  defp put_connection_meta(runner, _absent), do: %{runner | online?: false}
+
+  defp unix_to_datetime(nil), do: nil
+  defp unix_to_datetime(unix) when is_integer(unix), do: DateTime.from_unix!(unix)
 
   # -- Auth keys -------------------------------------------------------
 
@@ -753,12 +849,4 @@ defmodule Emisar.Runners do
   end
 
   defdelegate secure_compare(a, b), to: Emisar.Crypto
-
-  # Wraps a Repo.update result, broadcasting on success.
-  defp broadcast({:ok, runner} = ok, event) do
-    PubSub.broadcast_runner(runner, event)
-    ok
-  end
-
-  defp broadcast(err, _event), do: err
 end

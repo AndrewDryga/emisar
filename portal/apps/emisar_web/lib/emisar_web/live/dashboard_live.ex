@@ -8,7 +8,7 @@ defmodule EmisarWeb.DashboardLive do
 
     if connected?(socket) do
       PubSub.subscribe_account_runs(account_id)
-      PubSub.subscribe_account_runners(account_id)
+      Runners.subscribe_connections(account_id)
       PubSub.subscribe_account_approvals(account_id)
       {:ok, load(socket)}
     else
@@ -16,6 +16,7 @@ defmodule EmisarWeb.DashboardLive do
     end
   end
 
+  def handle_info(%{event: "presence_diff"}, socket), do: {:noreply, load(socket)}
   def handle_info({_event, _struct}, socket), do: {:noreply, load(socket)}
 
   defp load(socket) do
@@ -31,7 +32,7 @@ defmodule EmisarWeb.DashboardLive do
     |> assign(:page_title, "Dashboard")
     |> assign(:loading?, false)
     |> assign(:runners_total, length(runners))
-    |> assign(:runners_connected, Enum.count(runners, &(&1.status == "connected")))
+    |> assign(:runners_connected, Enum.count(runners, & &1.online?))
     |> assign(:actions_count, length(actions))
     |> assign(:recent_runs, list_or_empty(Runs.list_recent_runs(subject, limit: 6)))
     |> assign(:run_stats, unwrap_ok(Runs.fetch_run_stats(subject, hours: 24)))

@@ -177,7 +177,10 @@ defmodule Emisar.Fixtures do
       |> Repo.insert()
 
     if Map.get(attrs, :connected?, true) do
-      {:ok, runner} = Runners.mark_connected(runner)
+      # Tracks presence from the calling (test) process and stamps
+      # last_connected_at — the runner reads "online" for the test's
+      # lifetime, then auto-untracks when the process exits.
+      {:ok, runner} = Runners.connect_runner(runner)
       runner
     else
       runner

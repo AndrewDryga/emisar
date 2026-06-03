@@ -29,8 +29,12 @@ defmodule Emisar.MixProject do
 
   defp deps do
     [
-      # Phoenix glue
+      # Phoenix glue. `phoenix` is here (not just in emisar_web) for
+      # `Phoenix.Presence` — connection tracking is a domain concern
+      # (workers + context reads need it), so the tracker lives in the
+      # domain app. Same dep already resolved for emisar_web.
       {:dns_cluster, "~> 0.1.1"},
+      {:phoenix, "~> 1.7.21"},
       {:phoenix_pubsub, "~> 2.1"},
 
       # Persistence

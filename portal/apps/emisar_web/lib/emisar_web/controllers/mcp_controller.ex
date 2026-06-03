@@ -62,7 +62,7 @@ defmodule EmisarWeb.McpController do
           hostname: runner.hostname,
           group: runner.group,
           labels: runner.labels || %{},
-          status: runner.status,
+          status: runner_wire_status(runner),
           last_heartbeat_at: runner.last_heartbeat_at,
           runner_version: runner.runner_version,
           actions:
@@ -453,9 +453,8 @@ defmodule EmisarWeb.McpController do
     }
   end
 
-  # Connected runners come first (rank 0), then anything else.
-  defp runner_status_rank(%{status: "connected"}), do: 0
-  defp runner_status_rank(_), do: 1
+  # Online runners come first (rank 0), then anything else.
+  defp runner_status_rank(runner), do: if(runner.online?, do: 0, else: 1)
 
   # Many LLMs treat the description as the canonical safety brief. Pack
   # everything the model needs into it: action intent, side effects,
@@ -495,16 +494,30 @@ defmodule EmisarWeb.McpController do
   # "connected" / "disconnected (last seen 5m ago)" / "pending (never connected)" —
   # one line per runner so the LLM can prefer online targets and warn
   # the user when an offline pick is the only option.
-  defp runner_status_label(%{status: "connected"}), do: "connected"
-
-  defp runner_status_label(%{status: "pending", last_heartbeat_at: nil}),
-    do: "never connected"
-
-  defp runner_status_label(%{status: status, last_heartbeat_at: ts}) when not is_nil(ts) do
-    "#{status} (last seen " <> human_ago(ts) <> " ago)"
+  defp runner_status_label(runner) do
+    case Runners.connection_state(runner) do
+      :online -> "connected"
+      :pending -> "never connected"
+      :disabled -> last_seen_label("disabled", runner)
+      :offline -> last_seen_label("disconnected", runner)
+    end
   end
 
-  defp runner_status_label(%{status: status}), do: status
+  defp last_seen_label(word, %{last_disconnected_at: %DateTime{} = ts}),
+    do: "#{word} (last seen " <> human_ago(ts) <> " ago)"
+
+  defp last_seen_label(word, _runner), do: word
+
+  # Wire-facing connection word for the /runners JSON. Keeps the
+  # pre-presence vocabulary so existing MCP clients don't break.
+  defp runner_wire_status(runner) do
+    case Runners.connection_state(runner) do
+      :online -> "connected"
+      :offline -> "disconnected"
+      :disabled -> "disabled"
+      :pending -> "pending"
+    end
+  end
 
   # Compact "Nm" / "Nh" / "Nd" — enough granularity for the LLM to decide
   # whether to wait for a reconnect or pick a different runner. Uses
@@ -733,23 +746,26 @@ defmodule EmisarWeb.McpController do
   # until the runner reconnects. Surface that so the LLM warns the user
   # before they start watching for output. We don't block dispatch —
   # short blips happen; the operator can decide whether to wait.
-  defp maybe_offline_warning(payload, %{status: "connected"}), do: payload
   defp maybe_offline_warning(payload, nil), do: payload
 
-  defp maybe_offline_warning(payload, %{status: status} = runner) do
-    age =
-      case runner.last_heartbeat_at do
-        nil -> "never connected"
-        ts -> "last seen " <> human_ago(ts) <> " ago"
-      end
+  defp maybe_offline_warning(payload, runner) do
+    if runner.online? do
+      payload
+    else
+      age =
+        case runner.last_disconnected_at do
+          nil -> "never connected"
+          ts -> "last seen " <> human_ago(ts) <> " ago"
+        end
 
-    Map.merge(payload, %{
-      warning: "runner_offline",
-      warning_message:
-        "Runner `#{runner.name}` is #{status} (#{age}). The run is queued and will " <>
-          "deliver when it reconnects — tell the user, and offer to retry on a " <>
-          "connected runner (see /runners) if they need it sooner."
-    })
+      Map.merge(payload, %{
+        warning: "runner_offline",
+        warning_message:
+          "Runner `#{runner.name}` is offline (#{age}). The run is queued and will " <>
+            "deliver when it reconnects — tell the user, and offer to retry on a " <>
+            "connected runner (see /runners) if they need it sooner."
+      })
+    end
   end
 
   defp error_payload(name, :reason_required),

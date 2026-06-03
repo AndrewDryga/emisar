@@ -60,7 +60,7 @@ defmodule EmisarWeb.McpRpcControllerTest do
       })
       |> Repo.insert()
 
-    {:ok, runner} = Runners.mark_connected(runner)
+    {:ok, runner} = Runners.connect_runner(runner)
     runner
   end
 

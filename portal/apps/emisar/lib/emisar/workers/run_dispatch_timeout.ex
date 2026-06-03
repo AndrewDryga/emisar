@@ -8,15 +8,16 @@ defmodule Emisar.Workers.RunDispatchTimeout do
 
   Behavior:
 
-    * runner is connected → leave the run alone (slow runs are normal,
-      progress events keep ticking over the websocket).
-    * runner is disconnected / disabled / deleted → mark the run as
-      `:error` with a clear `error_message` explaining the runner was
-      unreachable. Operator sees a terminal red row with context.
+    * runner is online (tracked in `Emisar.Runners.Presence`) → leave the
+      run alone (slow runs are normal, progress events keep ticking over
+      the websocket).
+    * runner is offline / disabled / deleted → mark the run as `:error`
+      with a clear `error_message` explaining the runner was unreachable.
+      Operator sees a terminal red row with context.
 
   The grace window has to be longer than the slowest plausible runner
   ack so we don't false-positive a brief network blip. Two minutes is
-  comfortably outside the 30s heartbeat window + transport buffer.
+  comfortably outside the heartbeat window + transport buffer.
   """
   use Oban.Worker, queue: :default, max_attempts: 2
 
@@ -36,15 +37,13 @@ defmodule Emisar.Workers.RunDispatchTimeout do
 
   defp maybe_time_out(run) do
     case Runners.peek_runner_by_id(run.runner_id) do
-      {:ok, %{status: status}} when status in ["connected"] ->
-        # Runner's online — the run is just slow. Leave it.
-        :noop
-
-      {:ok, %{status: status} = runner} when status in ["disconnected", "disabled"] ->
-        Runs.mark_runner_unreachable(
-          run,
-          "Runner #{runner.name} was #{status} when the dispatch was sent. The action never reached it."
-        )
+      {:ok, runner} ->
+        if Runners.online?(runner.account_id, runner.id) do
+          # Runner's online — the run is just slow. Leave it.
+          :noop
+        else
+          Runs.mark_runner_unreachable(run, unreachable_reason(runner))
+        end
 
       {:error, :not_found} ->
         # Runner row vanished mid-flight (delete_runner).
@@ -52,9 +51,13 @@ defmodule Emisar.Workers.RunDispatchTimeout do
           run,
           "Runner was removed before this run could be dispatched."
         )
-
-      _ ->
-        :noop
     end
+  end
+
+  defp unreachable_reason(runner) do
+    state = if runner.disabled_at, do: "disabled", else: "offline"
+
+    "Runner #{runner.name} was #{state} when the dispatch was sent. " <>
+      "The action never reached it."
   end
 end

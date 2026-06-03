@@ -6,7 +6,6 @@ defmodule Emisar.PubSub do
 
   Topic shapes:
 
-    "account:<id>:runners"     — runner connect/disconnect/state
     "account:<id>:runs"        — run create/transition
     "account:<id>:approvals"   — approval requests / decisions
     "account:<id>:auth_keys"   — auth key issued / revoked / bound
@@ -19,7 +18,6 @@ defmodule Emisar.PubSub do
   """
 
   alias Emisar.Runs.{ActionRun, RunEvent}
-  alias Emisar.Runners.Runner
   alias Emisar.Approvals.Request
   alias Emisar.Audit.Event
 
@@ -27,7 +25,6 @@ defmodule Emisar.PubSub do
 
   # -- Topics -----------------------------------------------------------
 
-  def topic_for_account_runners(account_id), do: "account:#{account_id}:runners"
   def topic_for_account_runs(account_id), do: "account:#{account_id}:runs"
   def topic_for_account_approvals(account_id), do: "account:#{account_id}:approvals"
   def topic_for_account_auth_keys(account_id), do: "account:#{account_id}:auth_keys"
@@ -39,9 +36,6 @@ defmodule Emisar.PubSub do
   def topic_for_runner(runner_id), do: "runner:#{runner_id}"
 
   # -- Subscribing ------------------------------------------------------
-
-  def subscribe_account_runners(account_id),
-    do: Phoenix.PubSub.subscribe(@pubsub, topic_for_account_runners(account_id))
 
   def subscribe_account_runs(account_id),
     do: Phoenix.PubSub.subscribe(@pubsub, topic_for_account_runs(account_id))
@@ -70,12 +64,6 @@ defmodule Emisar.PubSub do
     do: Phoenix.PubSub.subscribe(@pubsub, topic_for_runner(runner_id))
 
   # -- Broadcasting -----------------------------------------------------
-
-  def broadcast_runner(%Runner{} = runner, msg \\ :runner_updated) do
-    payload = {msg, runner}
-    Phoenix.PubSub.broadcast(@pubsub, topic_for_runner(runner.id), payload)
-    Phoenix.PubSub.broadcast(@pubsub, topic_for_account_runners(runner.account_id), payload)
-  end
 
   def broadcast_run(%ActionRun{} = run) do
     # Subscribers (RunDetailLive's meta strip, RunsLive table) need
@@ -121,7 +109,6 @@ defmodule Emisar.PubSub do
         :api_key -> topic_for_account_api_keys(account_id)
         :runbook -> topic_for_account_runbooks(account_id)
         :team -> topic_for_account_team(account_id)
-        :runner -> topic_for_account_runners(account_id)
       end
 
     Phoenix.PubSub.broadcast(@pubsub, topic, payload)

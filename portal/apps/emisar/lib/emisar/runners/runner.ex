@@ -1,12 +1,12 @@
 defmodule Emisar.Runners.Runner do
   @moduledoc """
-  A single emisar binary running on a host. State here is the most
-  recent runner_state advertisement plus heartbeat-driven liveness.
+  A single emisar binary running on a host. The DB row holds the most
+  recent runner_state advertisement plus durable connect/disconnect
+  history; live connection state (online, action_load, last heartbeat)
+  is Phoenix.Presence, surfaced here as virtual fields.
   """
 
   use Emisar, :schema
-
-  @statuses ~w(pending connected disconnected disabled)
 
   schema "runners" do
     field :name, :string
@@ -15,13 +15,18 @@ defmodule Emisar.Runners.Runner do
     field :hostname, :string
     field :labels, :map, default: %{}
     field :runner_version, :string
-    field :status, :string, default: "pending"
     field :last_connected_at, :utc_datetime_usec
     field :last_disconnected_at, :utc_datetime_usec
     field :last_disconnect_reason, :string
-    field :last_heartbeat_at, :utc_datetime_usec
-    field :action_load, :integer, default: 0
     field :packs, :map, default: %{}
+
+    # Connection state lives in `Emisar.Runners.Presence`, not the DB.
+    # These virtuals are filled from presence metadata by the context
+    # read functions; see `Emisar.Runners.connection_state/1`.
+    field :online?, :boolean, virtual: true, default: false
+    field :action_load, :integer, virtual: true, default: 0
+    field :last_heartbeat_at, :utc_datetime_usec, virtual: true
+
     field :disabled_at, :utc_datetime_usec
     field :deleted_at, :utc_datetime_usec
 
@@ -34,6 +39,4 @@ defmodule Emisar.Runners.Runner do
 
     timestamps()
   end
-
-  def statuses, do: @statuses
 end

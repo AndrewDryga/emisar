@@ -19,14 +19,14 @@ defmodule EmisarWeb.RunnerInstallLive do
   """
   use EmisarWeb, :live_view
 
-  alias Emisar.{PubSub, Runners}
+  alias Emisar.Runners
   alias EmisarWeb.UrlHelpers
 
   def mount(_params, _session, socket) do
     account_id = socket.assigns.current_account.id
 
     if connected?(socket) do
-      PubSub.subscribe_account_runners(account_id)
+      Runners.subscribe_connections(account_id)
     end
 
     install_command =
@@ -41,11 +41,12 @@ defmodule EmisarWeb.RunnerInstallLive do
      |> assign(:waiting?, true)}
   end
 
-  # A runner registered + connected on this account while the page was
-  # open — bounce the operator over to the runners list so they see
-  # their new host immediately. Filters disconnected events so a flapping
-  # runner doesn't redirect prematurely.
-  def handle_info({:runner_connected, _runner}, socket) do
+  # A runner joined this account's presence (registered + connected) while
+  # the page was open — bounce the operator over to the runners list so
+  # they see their new host immediately. Only presence *joins* navigate, so
+  # a leaving/flapping runner doesn't redirect prematurely.
+  def handle_info(%{event: "presence_diff", payload: %{joins: joins}}, socket)
+      when map_size(joins) > 0 do
     {:noreply,
      socket
      |> put_flash(:info, "Runner connected — taking you to the list.")
