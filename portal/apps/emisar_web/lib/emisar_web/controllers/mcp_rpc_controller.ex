@@ -115,10 +115,22 @@ defmodule EmisarWeb.McpRpcController do
     {runner_names, reason, wait, action_args} = split_call_args(args)
     idempotency_key = Idempotency.resolve(conn, args)
 
+    # Omitting `wait` means "block for the result" — the default has to
+    # be the full window, not 0, or a tool call returns a bare
+    # status=sent with no output and the LLM has nothing to act on.
+    # `parse_wait(nil)` returns 0, so handle the omitted case explicitly
+    # here; an explicit `wait: "0"` from the caller still means
+    # fire-and-forget.
     wait_ms =
-      case Service.parse_wait(wait, Service.max_wait_ms()) do
-        {:ok, ms} -> ms
-        :error -> Service.max_wait_ms()
+      case wait do
+        blank when blank in [nil, ""] ->
+          Service.max_wait_ms()
+
+        _ ->
+          case Service.parse_wait(wait, Service.max_wait_ms()) do
+            {:ok, ms} -> ms
+            :error -> Service.max_wait_ms()
+          end
       end
 
     opts = %{

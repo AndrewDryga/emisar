@@ -100,8 +100,25 @@ defmodule EmisarWeb.Mcp.ContentBlocks do
       status == "pending_approval" -> render_pending_approval(run, multi)
       status in ["denied_by_policy", "denied"] -> render_denied(run, multi)
       (err = string_field(run, ["error"])) != "" -> render_validation_error(run, multi, err)
+      # A run that's dispatched but not yet terminal (the wait window
+      # elapsed before it finished). Surface the run_id so the LLM can
+      # poll — otherwise render_terminal would emit a bare "status=sent"
+      # with no handle and the round-trip dead-ends.
+      status in ["pending", "sent", "running"] -> render_in_flight(run, multi)
       true -> render_terminal(run, multi)
     end
+  end
+
+  defp render_in_flight(run, multi) do
+    hdr = header_prefix(run, multi)
+    rid = run_id(run)
+    status = string_field(run, ["status"])
+
+    text =
+      "#{hdr}Run dispatched (status=#{status}) but hasn't finished yet.\nrun_id: #{rid}\n\n" <>
+        "Call `wait_for_run` with this run_id to block until it finishes and get the output."
+
+    {[text_block(text)], false}
   end
 
   defp render_pending_approval(run, multi) do
