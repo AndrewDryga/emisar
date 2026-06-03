@@ -2,9 +2,9 @@ defmodule Emisar.Repo.Preloader do
   @moduledoc """
   Routes `:preload` opts on `Repo.fetch/3` and `Repo.list/3` through
   the query module's `preloads/0` callback before falling back to
-  `Ecto.Repo.preload/2`. Mirrors firezone's `Domain.Repo.Preloader`
-  exactly — the calling shape is the same as `Ecto.Repo.preload/2`,
-  so context functions never need a separate `Repo.preload/2` call.
+  `Ecto.Repo.preload/2`. The calling shape is the same as
+  `Ecto.Repo.preload/2`, so context functions never need a separate
+  `Repo.preload/2` call.
 
   Each entry in `Query.preloads/0` is one of:
 
@@ -114,8 +114,7 @@ defmodule Emisar.Repo.Preloader do
         {results, [preload] ++ ecto_preloads, preloads}
 
       # `preloads/0` declared the assoc but with no override (e.g.
-      # `account: []`) — fall through to plain Ecto preload like
-      # the firezone preloader does.
+      # `account: []`) — fall through to plain Ecto preload.
       {nil, _nested} ->
         {results, [preload] ++ ecto_preloads, preloads}
 

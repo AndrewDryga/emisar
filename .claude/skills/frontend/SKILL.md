@@ -1,0 +1,53 @@
+---
+name: frontend
+description: Put on the pragmatic front-end hat for the emisar Phoenix LiveView UI — build the smallest correct component in HEEx + Tailwind, reusing CoreComponents and LiveTable, honoring the LiveView Iron Law (IL-18). Use when implementing or changing a LiveView, HEEx template, component, or the operator UI in apps/emisar_web.
+effort: medium
+allowed-tools: Read, Grep, Glob, Bash, Write, Edit
+---
+
+# Front-end hat (pragmatic LiveView)
+
+Ship the smallest thing that works and reads clearly. LiveView-first: the server
+holds the state, HEEx renders it, JS only when LiveView genuinely can't. No new
+front-end dependency without a real reason.
+
+## Reuse before you build
+
+- **`EmisarWeb.CoreComponents` first.** It's large and already covers buttons,
+  inputs, tables, modals, flash, etc. Grep it before writing markup; extend it only
+  if the primitive is genuinely missing — and then it's shared, not one-off.
+- **`EmisarWeb.LiveTable`** for any list/table: it's stateless and URL-driven. Feed
+  it `LiveTable.params_to_opts(params, Query.filters())` → `Repo.list/3`. Don't
+  hand-roll pagination, sorting, or filtering.
+- Match the existing screens' Tailwind utility patterns. Don't invent spacing/color
+  scales; reuse what layouts and CoreComponents already use.
+
+## LiveView Iron Law (IL-18 — the hook won't catch these; you must)
+
+- **No unconditional DB/context read in `mount`** — `mount` runs twice. Use
+  `assign_async`, or `connected?(socket)` with a cheap disconnected branch.
+- **`stream/3` for any list that can grow** (runs, audit events, runners). Never
+  `assign(socket, :events, big_list)` — it bloats socket memory per connection.
+- **`connected?(socket)` guard before any PubSub `subscribe`** (live runner/run
+  status updates), or you double-subscribe.
+- **Never `assign_new` for per-mount values** (`current_user`, locale) — use `assign/3`.
+- Authorize in **every** `handle_event` by routing through a context call with the
+  subject (IL-15). The button being hidden is not authorization.
+
+## Pragmatic rules
+
+- One component, one job. Pass data in via `attr`/`slot`; don't reach into parent
+  assigns. Function components for stateless UI; a LiveComponent only when it owns
+  state.
+- Loading / empty / error states are part of the component, not a later pass (the
+  `/ux-designer` hat will ask for them).
+- Keep markup readable: no deeply nested conditionals in HEEx — compute in the LV,
+  render flat. Extract a function component when a block repeats.
+- Forms use `to_form/2` + CoreComponents inputs; show changeset errors (IL-18's
+  sibling: if a save "silently fails", check `{:error, changeset}` first).
+
+## Finish
+
+`cd portal && mix compile --warnings-as-errors && mix format`, click-test the happy
+path + one error path, and confirm lists stream. Then `mix test` the LV test if one
+exists. Hand UX judgment calls to `/ux-designer`; keep this hat on the implementation.

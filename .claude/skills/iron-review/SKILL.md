@@ -1,0 +1,94 @@
+---
+name: iron-review
+description: Review a diff or the working tree against the Emisar Iron Laws (IL-1…IL-20) — the architecture greps plus the judgment checks the PostToolUse hook can't do. Use when reviewing portal/ Elixir before a PR, after a refactor, or to double-check context/query/changeset/LiveView changes. Reports law · file:line · fix.
+effort: medium
+argument-hint: "[path or git ref, default = working tree]  [--fix]"
+allowed-tools: Read, Grep, Glob, Bash
+---
+
+# Iron Law review
+
+Check `portal/` Elixir against the Iron Laws in `portal/CLAUDE.md`. The
+`PostToolUse` hook already blocks the regex-precise subset (IL-1/2/6/7/8/12) on
+every edit; this skill **re-runs those** (in case the hook is off) **and adds the
+judgment laws** — including IL-14 and IL-16, whose safety depends on where a value
+came from, which the hook deliberately can't decide. Default scope: the working
+tree (`git diff` + untracked). A path or git ref narrows it.
+
+Read-only by default. With `--fix`, apply only the unambiguous mechanical fixes
+(see end) and re-verify; never "fix" a judgment finding without showing it first.
+
+## Step 1 — mechanical greps (run from `portal/apps/emisar/lib/emisar/`)
+
+Each is **zero hits on a clean tree**. The globs exclude the Query/Repo machinery; the `(^|[^.\w])` prefix stops `Path.join`/`Enum.join`/`Repo.preload`/Swoosh `from` from false-positiving.
+
+```sh
+# IL-1: import Ecto.Query outside Query/Repo modules
+rg 'import Ecto\.Query' -g '!**/query.ex' -g '!**/repo.ex' -g '!repo/**' -g '!**/user_token.ex' .
+# IL-2: Repo.get/get!/get_by
+rg '\bRepo\.(get|get!|get_by)\b' .
+# IL-1: inline Ecto DSL outside Query/Repo (unqualified macros only; Repo.preload is qualified, so allowed by IL-10 and won't match)
+rg '(^|[^.\w])(from|where|order_by|join|select|preload|limit|lock|group_by|having|distinct|offset)\(' \
+   -g '!**/query.ex' -g '!**/repo.ex' -g '!repo/**' -g '!**/user_token.ex' -g '!mailers/**' .
+# IL-6 / IL-8: Repo.<fn> CALLS inside a query/changeset module (Repo.Query/Repo.Filter module refs are fine)
+rg '\bRepo\.[a-z]' -g '**/query.ex' -g '**/changeset.ex' -g '!repo/**' .
+# IL-12: :float money field (schema fields + migrations)
+rg '(field|add) :(price|amount|cost|total|balance|fee|rate|charge|payment|budget|revenue|tax|cents|money)[a-z_]*, :float' . ../../priv/repo/migrations
+```
+
+## Step 2 — judgment checks (read the changed bodies)
+
+For each changed context / query / changeset / authorizer / LiveView / MCP /
+controller file, read it and check:
+
+- **IL-3** — every *public* context fn takes `%Subject{}` as the last required
+  arg and calls `ensure_has_permissions/2` **before** any DB call. (Internal §1.4
+  helpers are exempt — confirm they're truly internal and unexposed.)
+- **IL-4** — `Authorizer.for_subject(query, subject)` sits immediately before
+  every `Repo.fetch`/`list`/`fetch_and_update` in a context.
+- **IL-5** — public reads/writes return tagged tuples; no bare struct/`nil`.
+- **IL-9** — authorizers expose `build(Schema, :verb)` accessors, clause all
+  roles, and the new authorizer is in `auth/authorizer.ex`'s `@authorizers`.
+- **IL-10** — no `Repo.preload/2` in a context (route via Query `preloads/0`),
+  except a post-commit email helper.
+- **IL-13** — Oban `perform` matches **string** keys; args carry IDs, not structs;
+  the job is safe to run twice.
+- **IL-14** — `String.to_atom/1` only on code literals / bounded sets; **never** on
+  request params, runner output, or MCP/LLM input (atom-table DoS). Trace the arg to
+  its source before clearing it.
+- **IL-16** — `raw/1` only on app-generated / known-safe HTML (server-rendered QR
+  SVG, sanitized markdown); **never** on runner output, runbook, or pack text
+  (stored XSS). Confirm the source.
+- **IL-15** — every LiveView `handle_event` / MCP action / controller action that
+  mutates passes the subject into a context call (no trusting mount/connect).
+- **IL-17** — long-lived processes are under a supervisor (no bare `start_link`).
+- **IL-18** — LiveView: no unconditional `Repo`/context read in `mount`
+  (`assign_async` or `connected?` + cache); `stream/3` for lists that can grow;
+  `connected?(socket)` guard before `subscribe`; no `assign_new` for per-mount
+  values.
+- **IL-11** — no shim/flag/deprecated-kept/corrective-migration-on-unshipped.
+- **IL-20** — if the change claims "done", `mix compile --warnings-as-errors && mix test` output is present.
+
+## Step 3 — report
+
+One block per finding, ordered by law number, then severity:
+
+```
+IL-4 · BLOCKER · lib/emisar/widgets.ex:42
+  list_widgets/2 calls Repo.list without Authorizer.for_subject above it — cross-account leak.
+  Fix: pipe `|> Authorizer.for_subject(subject)` before `|> Repo.list(...)`.
+```
+
+Lead with a one-line verdict (`N blockers, M suggestions`). If clean, say so in
+one line — don't pad. Findings that need a human call (is this list large enough
+to need a stream?) are SUGGESTIONS with the question stated, not BLOCKERS.
+
+## `--fix` scope (mechanical only)
+
+Apply without asking only the unambiguous, behavior-preserving rewrites:
+`Repo.get(X, id)` → `Schema.Query.by_id/2` + `Repo.fetch/3`; `:float`→`:decimal` on
+a money field; moving an inline `where`/`order_by`/`join` into the Schema.Query
+module. Re-run Step 1 and `mix compile` after. Everything else — a missing
+`for_subject` scope, a `String.to_atom`, a `raw/1`, any authz-shape gap — is
+**report-only**: it needs a human to confirm intent/source first (e.g.
+`String.to_existing_atom` raises if the atom was never defined).

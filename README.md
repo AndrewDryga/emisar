@@ -106,8 +106,8 @@ EMISAR_AUTH_KEY=emkey-auth-... \
 
 ## Repository layout
 
-Monorepo with one folder per deployable component (mirrors firezone's
-language-rooted layout). Each Go folder is its own module; the Elixir
+Monorepo with one folder per deployable component, in a language-rooted
+layout. Each Go folder is its own module; the Elixir
 control plane is an umbrella project. `go.work` ties the two Go modules
 together for editor + CLI convenience.
 
