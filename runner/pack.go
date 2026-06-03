@@ -24,6 +24,7 @@ func packCmd() *cobra.Command {
 	cmd.AddCommand(packListCmd())
 	cmd.AddCommand(packValidateCmd())
 	cmd.AddCommand(packInstallCmd())
+	cmd.AddCommand(packUninstallCmd())
 	return cmd
 }
 
@@ -240,6 +241,90 @@ func looksLikeLocalPath(arg string) bool {
 		return true
 	}
 	return false
+}
+
+func packUninstallCmd() *cobra.Command {
+	var dest string
+	cmd := &cobra.Command{
+		Use:     "uninstall <name>",
+		Aliases: []string{"remove", "rm", "delete"},
+		Short:   "Remove an installed pack from the packs dir",
+		Long: `Delete a pack from the runner's packs dir by id.
+
+Resolves the destination the same way 'pack install' does (--dest, else
+config paths.packs[0]) and removes <dest>/<name>. After removal, reload
+the runner (systemctl reload emisar, or SIGHUP) so it drops the pack's
+actions from the advertised catalog.
+
+  emisar pack uninstall redis --dest /etc/emisar/packs
+  emisar pack rm redis --config /etc/emisar/config.yaml`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			name := args[0]
+
+			// A pack id must be a single, safe path segment. This is the
+			// guard that keeps `uninstall ../../etc` (or an absolute path)
+			// from turning into a RemoveAll outside the packs dir.
+			if !safePackName(name) {
+				return fmt.Errorf("invalid pack name %q (must be a single path segment, no slashes or '..')", name)
+			}
+
+			if dest == "" {
+				dirs, err := resolvePackDirs()
+				if err != nil {
+					return fmt.Errorf("no --dest and %w", err)
+				}
+				if len(dirs) == 0 {
+					return fmt.Errorf("config has no paths.packs entry; pass --dest")
+				}
+				dest = dirs[0]
+			}
+
+			target := filepath.Join(dest, name)
+			info, err := os.Stat(target)
+			if err != nil {
+				if os.IsNotExist(err) {
+					return fmt.Errorf("pack %q is not installed at %s", name, target)
+				}
+				return err
+			}
+			if !info.IsDir() {
+				return fmt.Errorf("%s is not a pack directory", target)
+			}
+
+			// Refuse to delete a directory that isn't actually a pack —
+			// avoids nuking an unrelated dir if the packs dir was pointed
+			// somewhere unexpected.
+			if _, err := os.Stat(filepath.Join(target, "pack.yaml")); err != nil {
+				return fmt.Errorf("%s has no pack.yaml — refusing to delete (not a pack)", target)
+			}
+
+			if err := os.RemoveAll(target); err != nil {
+				return fmt.Errorf("remove %s: %w", target, err)
+			}
+
+			fmt.Printf("removed pack %s from %s\n", name, target)
+			fmt.Println("reload the runner to drop its actions: sudo systemctl reload emisar")
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&dest, "dest", "", "packs dir the pack lives in (default: config paths.packs[0])")
+	return cmd
+}
+
+// safePackName reports whether name is a single path segment safe to
+// join under the packs dir — no separators, no traversal, not empty/dot.
+func safePackName(name string) bool {
+	if name == "" || name == "." || name == ".." {
+		return false
+	}
+	if strings.ContainsRune(name, '/') || strings.ContainsRune(name, os.PathSeparator) {
+		return false
+	}
+	if filepath.IsAbs(name) || name != filepath.Clean(name) {
+		return false
+	}
+	return true
 }
 
 // copyTree recursively copies the directory at src into dst. Regular

@@ -908,7 +908,8 @@ EOF
 
 Action packs:
   Installed: ${installed:-(none)}
-  Add more:  ${BIN_DIR}/emisar pack install <name>   (then reload the runner)
+  Add more:  ${BIN_DIR}/emisar pack install <name>     (then reload the runner)
+  Remove:    ${BIN_DIR}/emisar pack uninstall <name>   (then reload the runner)
   Browse:    https://emisar.dev/packs
 EOF
   echo
