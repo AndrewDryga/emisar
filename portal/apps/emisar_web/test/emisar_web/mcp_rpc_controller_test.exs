@@ -160,6 +160,39 @@ defmodule EmisarWeb.McpRpcControllerTest do
     end
   end
 
+  describe "tools/call runner resolution" do
+    test "dispatches to the connected runner when two rows share a name", %{
+      conn: conn,
+      account: account,
+      user: user
+    } do
+      # Two runner rows, same name, different external_ids — the state after
+      # a host whose persisted runner_id was wiped re-registers. Insert the
+      # disconnected one FIRST, so a naive first-by-name match would target
+      # it (the bug: the run lands on a dead runner and times out unreachable
+      # while the live one sits idle).
+      stale = make_runner!(account, name: "dup")
+      {:ok, _} = Runners.mark_disconnected(stale, "lost link")
+      advertise_action!(stale, action_id: "debugging.disk_free", pack_id: "debugging")
+
+      live = make_runner!(account, name: "dup")
+      advertise_action!(live, action_id: "debugging.disk_free", pack_id: "debugging")
+
+      raw = make_api_key!(account, user)
+
+      conn
+      |> put_req_header("authorization", "Bearer " <> raw)
+      |> rpc("tools/call", %{
+        "name" => "debugging.disk_free",
+        "arguments" => %{"runners" => ["dup"], "reason" => "smoke test", "wait" => "0"}
+      })
+      |> json_response(200)
+
+      assert [run] = Repo.all(Emisar.Runs.ActionRun)
+      assert run.runner_id == live.id
+    end
+  end
+
   describe "tools/list" do
     test "returns advertised tools + the synthetic wait_for_run tool",
          %{conn: conn, account: account, user: user} do
