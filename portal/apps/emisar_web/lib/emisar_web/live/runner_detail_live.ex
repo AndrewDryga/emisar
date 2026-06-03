@@ -199,7 +199,7 @@ defmodule EmisarWeb.RunnerDetailLive do
                   </.link>
                 <% else %>
                   <span
-                    title={"Runner is #{conn_status(@runner)} — runs queue until it reconnects"}
+                    title={"Runner is #{conn_status(@runner)} — runs can't be dispatched from here until it reconnects"}
                     class="shrink-0 cursor-not-allowed rounded-lg bg-zinc-900 px-2.5 py-1 text-xs font-semibold text-zinc-600 ring-1 ring-zinc-800"
                   >
                     Run

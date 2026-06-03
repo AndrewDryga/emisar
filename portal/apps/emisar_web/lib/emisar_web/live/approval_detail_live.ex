@@ -16,7 +16,10 @@ defmodule EmisarWeb.ApprovalDetailLive do
          |> push_navigate(to: ~p"/app/approvals")}
 
       {:ok, req} ->
-        if connected?(socket), do: PubSub.subscribe_account_approvals(account_id)
+        if connected?(socket) do
+          PubSub.subscribe_account_approvals(account_id)
+          Runners.subscribe_connections(account_id)
+        end
 
         run =
           case Runs.fetch_run_by_id(req.run_id, socket.assigns.current_subject) do
@@ -31,6 +34,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
          |> assign(:page_title, title)
          |> assign(:request, req)
          |> assign(:run, run)
+         |> assign(:runner_connection, runner_connection(run))
          |> assign(:requested_by, lookup_user(req.requested_by_id))
          |> assign(:decided_by, lookup_user(req.decided_by_id))
          |> assign(:decision_reason, "")
@@ -59,6 +63,13 @@ defmodule EmisarWeb.ApprovalDetailLive do
      socket
      |> assign(:request, updated)
      |> assign(:decided_by, lookup_user(updated.decided_by_id))}
+  end
+
+  # A runner connected/disconnected in the account — refresh the target
+  # runner's online dot so the operator knows whether approving executes
+  # now or queues.
+  def handle_info(%{event: "presence_diff"}, socket) do
+    {:noreply, assign(socket, :runner_connection, runner_connection(socket.assigns.run))}
   end
 
   def handle_info(_, socket), do: {:noreply, socket}
@@ -208,9 +219,9 @@ defmodule EmisarWeb.ApprovalDetailLive do
               <span
                 class={[
                   "h-1.5 w-1.5 flex-none rounded-full",
-                  if(runner_connection(@run) == :online, do: "bg-emerald-400", else: "bg-zinc-600")
+                  if(@runner_connection == :online, do: "bg-emerald-400", else: "bg-zinc-600")
                 ]}
-                title={if(runner_connection(@run) == :online, do: "Online", else: "Offline")}
+                title={if(@runner_connection == :online, do: "Online", else: "Offline")}
               />
               <.link
                 navigate={~p"/app/runners/#{@run.runner.id}"}
@@ -299,7 +310,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
             <.decision_panel
               can_decide?={Permissions.can?(assigns, :decide_approval)}
               grant_duration={@grant_duration}
-              runner_state={runner_connection(@run)}
+              runner_state={@runner_connection}
             />
           <% else %>
             <section class="rounded-xl border border-zinc-900 bg-zinc-950/40 p-5">

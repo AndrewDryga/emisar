@@ -23,6 +23,8 @@ defmodule Emisar.Runners do
   alias Emisar.Auth.Subject
   alias Emisar.Runners.{Authorizer, AuthKey, EventCursor, Presence, Runner, Token}
 
+  require Logger
+
   # 11 chars for "emkey-auth-" + 16 random chars => 27.
   @auth_key_prefix_size 27
   # 7 chars for "rnrtok-" + 5 random.
@@ -307,13 +309,23 @@ defmodule Emisar.Runners do
   `last_connected_at` for the durable "last seen" history.
   """
   def connect_runner(%Runner{} = runner) do
-    {:ok, _ref} =
-      Presence.track(self(), Presence.topic(runner.account_id), runner.id, %{
-        online_at: System.system_time(:second),
-        action_load: 0,
-        last_heartbeat_at: nil,
-        node: node()
-      })
+    meta = %{
+      online_at: System.system_time(:second),
+      action_load: 0,
+      last_heartbeat_at: nil,
+      node: node()
+    }
+
+    case Presence.track(self(), Presence.topic(runner.account_id), runner.id, meta) do
+      {:ok, _ref} ->
+        :ok
+
+      {:error, reason} ->
+        # Don't fail the connect over a tracker hiccup — the DB still stamps
+        # last_connected_at and the heartbeat-timeout watcher closes a
+        # genuinely dead socket. Surface it for diagnosis.
+        Logger.warning("presence track failed for runner #{runner.id}: #{inspect(reason)}")
+    end
 
     runner
     |> Runner.Changeset.connected()
