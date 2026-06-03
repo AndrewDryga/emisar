@@ -32,10 +32,6 @@ defmodule EmisarWeb.DashboardLive do
     |> assign(:runners_connected, Enum.count(runners, &(&1.status == "connected")))
     |> assign(:actions_count, length(actions))
     |> assign(:recent_runs, list_or_empty(Runs.list_recent_runs(subject, limit: 6)))
-    |> assign(
-      :recent_failures,
-      list_or_empty(Runs.list_recent_failures(subject, hours: 24, limit: 4))
-    )
     |> assign(:run_stats, unwrap_ok(Runs.fetch_run_stats(subject, hours: 24)))
     |> assign(:pending_approvals, pending)
     |> assign(:has_llm_connected?, api_keys != [])
@@ -89,7 +85,6 @@ defmodule EmisarWeb.DashboardLive do
         actions_count={@actions_count}
         pending_approvals={@pending_approvals}
         recent_runs={@recent_runs}
-        recent_failures={@recent_failures}
         run_stats={@run_stats}
         has_llm_connected?={@has_llm_connected?}
         billing={@billing}
@@ -158,18 +153,18 @@ defmodule EmisarWeb.DashboardLive do
   # The "active" dashboard once at least one runner exists.
   #
   # Layout follows triage hierarchy:
-  #   1. Banners (plan-at-limit, runners-all-offline) — only when bad
+  #   1. Banners (plan-at-limit, all-runners-offline) — only when bad
   #   2. Stats row — three numbers, never four
-  #   3. "Needs attention" — pending approvals + recent failures, side-
-  #      by-side. Hidden entirely when both are empty.
-  #   4. "Connect an LLM" CTA — only when no API keys exist
-  #   5. Recent runs — last 6, single column, full width
+  #   3. Pending approvals — full width, only when something is waiting.
+  #      (Failures aren't mirrored here: they surface inline in Recent
+  #      runs and roll up into the Runs stat tile, so there's no separate
+  #      panel left half-empty when there's nothing else beside it.)
+  #   4. Recent runs — last 6, single column, full width
   attr :runners_connected, :integer, required: true
   attr :runners_total, :integer, required: true
   attr :actions_count, :integer, required: true
   attr :pending_approvals, :list, required: true
   attr :recent_runs, :list, required: true
-  attr :recent_failures, :list, required: true
   attr :run_stats, :map, required: true
   attr :has_llm_connected?, :boolean, required: true
   attr :billing, :map, required: true
@@ -183,10 +178,7 @@ defmodule EmisarWeb.DashboardLive do
     />
 
     <.plan_limit_banner :if={runner_headroom_warn?(@billing)} billing={@billing} />
-    <.runners_offline_banner
-      :if={@runners_total > 0 and @runners_connected == 0}
-      runners_total={@runners_total}
-    />
+    <.runners_offline_banner :if={@runners_total > 0 and @runners_connected == 0} />
 
     <%!-- Three tiles, never four. Plan info used to live in the third
          slot but billing is rarely operational. Team-MFA posture is —
@@ -199,12 +191,11 @@ defmodule EmisarWeb.DashboardLive do
       <.team_security_stat team_mfa={@team_mfa} />
     </div>
 
-    <%!-- Attention rail. Two columns. Collapses to a single muted line
-         when both are empty — never silent, always status-aware. --%>
-    <div :if={needs_attention?(assigns)} class="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
+    <%!-- Pending approvals — runs held on a human decision, the one
+         thing on this page that actively blocks an LLM. Full width;
+         shown only when there's something to act on. --%>
+    <div :if={@pending_approvals != []} class="mt-6">
       <.attention_panel
-        :if={@pending_approvals != []}
-        tone={:amber}
         icon="hero-hand-raised"
         title="Awaiting your approval"
         count={length(@pending_approvals)}
@@ -212,7 +203,7 @@ defmodule EmisarWeb.DashboardLive do
         cta="Review all"
       >
         <ul class="divide-y divide-amber-500/10">
-          <li :for={req <- Enum.take(@pending_approvals, 4)}>
+          <li :for={req <- Enum.take(@pending_approvals, 5)}>
             <.link
               navigate={~p"/app/approvals/#{req.id}"}
               class="flex items-center justify-between gap-3 py-2.5 text-sm hover:opacity-90"
@@ -227,34 +218,6 @@ defmodule EmisarWeb.DashboardLive do
                 </div>
               </div>
               <.icon name="hero-arrow-right" class="h-4 w-4 shrink-0 text-amber-300/70" />
-            </.link>
-          </li>
-        </ul>
-      </.attention_panel>
-
-      <.attention_panel
-        :if={@recent_failures != []}
-        tone={:rose}
-        icon="hero-exclamation-triangle"
-        title="Recent failures (24h)"
-        count={length(@recent_failures)}
-        href={~p"/app/runs?filter[status][]=failed&filter[status][]=error&filter[status][]=timed_out"}
-        cta="See all"
-      >
-        <ul class="divide-y divide-rose-500/10">
-          <li :for={run <- @recent_failures}>
-            <.link
-              navigate={~p"/app/runs/#{run.id}"}
-              class="flex items-center justify-between gap-3 py-2.5 text-sm hover:opacity-90"
-            >
-              <div class="min-w-0">
-                <div class="truncate font-mono text-rose-100">{run.action_id}</div>
-                <div class="truncate text-xs text-rose-200/60">
-                  <span :if={run.runner}>{"on #{run.runner.name} · "}</span>
-                  {relative_time(run.inserted_at)}
-                </div>
-              </div>
-              <.status_badge status={run.status} class="shrink-0" />
             </.link>
           </li>
         </ul>
@@ -319,17 +282,11 @@ defmodule EmisarWeb.DashboardLive do
     """
   end
 
-  defp needs_attention?(assigns),
-    do: assigns.pending_approvals != [] or assigns.recent_failures != []
-
   # Dashboard tiles want a plain list, not a paginator tuple — they
   # don't show Prev/Next. Treat any unauthorized / unexpected reply as
   # empty so the tile still renders cleanly.
   defp list_or_empty({:ok, list, _meta}), do: list
   defp list_or_empty(_), do: []
-
-  defp tone_icon_class(:amber), do: "text-amber-300"
-  defp tone_icon_class(:rose), do: "text-rose-300"
 
   # -- Stat tiles ------------------------------------------------------
 
@@ -344,6 +301,7 @@ defmodule EmisarWeb.DashboardLive do
         value={"#{@connected} / #{@total}"}
         hint={
           cond do
+            @total == 0 -> "No runners yet"
             @connected == 0 -> "All runners offline"
             @connected < @total -> "#{@total - @connected} disconnected"
             true -> "All connected"
@@ -403,7 +361,6 @@ defmodule EmisarWeb.DashboardLive do
 
   # -- Attention panel ------------------------------------------------
 
-  attr :tone, :atom, required: true, values: [:amber, :rose]
   attr :icon, :string, required: true
   attr :title, :string, required: true
   attr :count, :integer, required: true
@@ -413,37 +370,18 @@ defmodule EmisarWeb.DashboardLive do
 
   defp attention_panel(assigns) do
     ~H"""
-    <section class={[
-      "rounded-xl border p-5",
-      @tone == :amber && "border-amber-500/30 bg-amber-500/[0.04]",
-      @tone == :rose && "border-rose-500/30 bg-rose-500/[0.04]"
-    ]}>
+    <section class="rounded-xl border border-amber-500/30 bg-amber-500/[0.04] p-5">
       <header class="flex items-center justify-between gap-3">
         <div class="flex items-center gap-2">
-          <.icon name={@icon} class={"h-4 w-4 #{tone_icon_class(@tone)}"} />
-          <h3 class={[
-            "text-sm font-semibold",
-            @tone == :amber && "text-amber-100",
-            @tone == :rose && "text-rose-100"
-          ]}>
+          <.icon name={@icon} class="h-4 w-4 text-amber-300" />
+          <h3 class="text-sm font-semibold text-amber-100">
             {@title}
-            <span class={[
-              "ml-1 rounded px-1.5 py-0.5 text-xs font-medium",
-              @tone == :amber && "bg-amber-500/20 text-amber-200",
-              @tone == :rose && "bg-rose-500/20 text-rose-200"
-            ]}>
+            <span class="ml-1 rounded bg-amber-500/20 px-1.5 py-0.5 text-xs font-medium text-amber-200">
               {@count}
             </span>
           </h3>
         </div>
-        <.link
-          navigate={@href}
-          class={[
-            "text-xs font-medium",
-            @tone == :amber && "text-amber-200 hover:text-amber-100",
-            @tone == :rose && "text-rose-200 hover:text-rose-100"
-          ]}
-        >
+        <.link navigate={@href} class="text-xs font-medium text-amber-200 hover:text-amber-100">
           {@cta} →
         </.link>
       </header>
@@ -452,19 +390,15 @@ defmodule EmisarWeb.DashboardLive do
     """
   end
 
-  attr :runners_total, :integer, required: true
-
   defp runners_offline_banner(assigns) do
     ~H"""
     <div class="mb-4 flex items-start gap-3 rounded-xl border border-rose-500/40 bg-rose-500/10 p-4">
       <.icon name="hero-signal-slash" class="mt-0.5 h-5 w-5 flex-none text-rose-300" />
       <div class="flex-1 text-sm">
-        <p class="font-semibold text-rose-100">
-          {@runners_total} {if @runners_total == 1, do: "runner", else: "runners"} offline
-        </p>
+        <p class="font-semibold text-rose-100">All runners offline</p>
         <p class="mt-1 text-xs text-rose-200/90">
-          No actions can be dispatched until at least one runner reconnects. Check the
-          runner host's logs or the systemd/launchd unit.
+          No actions can be dispatched until a runner reconnects. Check the runner
+          host's logs or the systemd/launchd unit.
         </p>
       </div>
       <.link

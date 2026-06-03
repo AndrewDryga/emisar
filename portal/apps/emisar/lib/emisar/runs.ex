@@ -67,31 +67,6 @@ defmodule Emisar.Runs do
   @audited_run_statuses ~w[success failed error validation_failed unknown_action timed_out cancelled denied]
 
   @doc """
-  Paginated list of runs that ended in a non-success terminal status
-  within the last `hours` hours. Dashboard surfaces these at the top
-  so failures aren't lost in the recent-runs scroll. Returns
-  `{:ok, [run], %Paginator.Metadata{}}` with runner preloaded; default
-  window is 24 hours, default page size 5.
-  """
-  def list_recent_failures(%Subject{} = subject, opts \\ []) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.view_runs_permission()
-           ) do
-      hours = Keyword.get(opts, :hours, 24)
-      limit = Keyword.get(opts, :limit, 5)
-      cutoff = DateTime.utc_now() |> DateTime.add(-hours * 3600, :second)
-
-      ActionRun.Query.all()
-      |> ActionRun.Query.status_in(@failed_statuses)
-      |> ActionRun.Query.inserted_after(cutoff)
-      |> Authorizer.for_subject(subject)
-      |> Repo.list(ActionRun.Query, preload: [:runner], page: [limit: limit])
-    end
-  end
-
-  @doc """
   Rolled-up totals for the dashboard headline: total runs in window,
   successes, failures (failed/error/timed_out). Pending/running rows
   are excluded — only terminal outcomes count toward the success rate.
