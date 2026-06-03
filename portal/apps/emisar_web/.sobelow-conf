@@ -2,15 +2,19 @@
 # Run in CI from the umbrella root via:
 #   mix sobelow --root apps/emisar_web --config
 #
-# Config.CSP is ignored for now: a real Content-Security-Policy needs a
-# nonce-based script-src to keep the inline JSON-LD (SEO) and LiveView
-# transport working, which is its own change. Tracked as a follow-up —
-# the gate still catches XSS (raw/1), SQLi, command injection, path
-# traversal, CSRF, and insecure-config regressions.
+# Config.CSP is the one ignored check, and it's a tool false negative,
+# not a missing control: the Content-Security-Policy IS enforced by
+# EmisarWeb.Plugs.ContentSecurityPolicy (nonce-based strict script-src,
+# wired into the :browser pipeline and covered by
+# content_security_policy_test.exs). Sobelow's Config.CSP can only detect
+# a CSP passed to put_secure_browser_headers, which can't carry a
+# per-request nonce, so it can't see the dedicated plug. `exit: "Low"`
+# still fails the build on any other finding at Low confidence or above —
+# XSS (raw/1), SQLi, command injection, path traversal, CSRF, insecure
+# config, hardcoded secrets.
 [
   verbose: false,
   private: false,
-  skip: true,
   ignore: ["Config.CSP"],
   exit: "Low"
 ]
