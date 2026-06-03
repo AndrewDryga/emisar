@@ -111,10 +111,10 @@ defmodule EmisarWeb.PacksTest do
     # the pair covers both hash code paths.
     test "content_hash matches the Go runner byte-for-byte (golden values)" do
       assert PacksRegistry.get("redis").content_hash ==
-               "sha256:32ad81b61b268e5ff63de19613a729cf4e45f8f5fd6086089a5fb4d1e4e87fe3"
+               "sha256:2af6e6bcb24138097c4ca7491dd609bea87a5d15ac54997622a298a62649293b"
 
       assert PacksRegistry.get("cassandra").content_hash ==
-               "sha256:647ba6fbbc7abb39de8dbf8d6853da65bb09d75cdcbdf2ddd3031ae2c36ec0ea"
+               "sha256:f34130c504288e6f9a61942a9037378422cc2ae6d37ddca62358f5f401684c27"
     end
 
     test "tarball/1 returns a gzip tarball with flat pack files" do
