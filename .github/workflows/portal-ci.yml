@@ -91,4 +91,9 @@ jobs:
         run: cd apps/emisar_web && mix test
 
       - name: Docker build (release image)
-        run: docker build -f Dockerfile -t emisar/portal:ci .
+        # Build context must be the REPO ROOT (the Dockerfile pulls in
+        # ../install.sh and ../runner/examples/packs); the default
+        # working-directory: portal would scope the context too tight.
+        # Override here only — other steps stay in portal/.
+        working-directory: ${{ github.workspace }}
+        run: docker build -f portal/Dockerfile -t emisar/portal:ci .
