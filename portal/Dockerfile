@@ -30,10 +30,12 @@ RUN mix local.hex --force && mix local.rebar --force
 
 ENV MIX_ENV="prod"
 
-# Place install.sh where InstallController's compile-time `Path.expand`
-# resolves to (six levels up from the controller's source dir =>
-# container root). Copying it early lets Docker layer-cache it.
+# Place install.sh / install-mcp.sh where InstallController +
+# InstallMcpController's compile-time `Path.expand` resolves to (six
+# levels up from each controller's source dir => container root).
+# Copying early lets Docker layer-cache them.
 COPY install.sh /install.sh
+COPY install-mcp.sh /install-mcp.sh
 
 # EmisarWeb.PacksRegistry walks runner/examples/packs at compile time;
 # its default relative path bottoms out at /runner/examples/packs inside
