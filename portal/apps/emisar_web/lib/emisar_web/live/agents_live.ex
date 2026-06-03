@@ -398,6 +398,18 @@ defmodule EmisarWeb.AgentsLive do
   defp client_label(id), do: Map.get(@client_labels, id, "MCP client")
   defp client_ids, do: @client_ids
 
+  # Plain string instead of inline ternaries to dodge a fixed-point
+  # bug in the HEEx formatter where multiple `if x == 1, do:`
+  # expressions in one text node grow extra whitespace every time
+  # `mix format` runs.
+  defp scope_summary(runner_ids, group_ids) do
+    "#{length(runner_ids)} runner#{pluralize(runner_ids)}, " <>
+      "#{length(group_ids)} group#{pluralize(group_ids)}"
+  end
+
+  defp pluralize([_]), do: ""
+  defp pluralize(_), do: "s"
+
   defp client_config(client_id, url, key) do
     case client_id do
       "claude_web" ->
@@ -924,10 +936,7 @@ defmodule EmisarWeb.AgentsLive do
           <span class="font-medium">Restrict scope</span>
           <span class="ml-2 text-[11px] text-zinc-500">
             <%= if @scoped? do %>
-              {length(@selected_runner_ids)} runner{if length(@selected_runner_ids) == 1,
-                do: "",
-                else: "s"}, {length(@selected_runner_groups)} group{if length(@selected_runner_groups) ==
-                                                                         1, do: "", else: "s"}
+              {scope_summary(@selected_runner_ids, @selected_runner_groups)}
             <% else %>
               defaults to all runners + all groups
             <% end %>
