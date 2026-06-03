@@ -213,7 +213,7 @@ func (d *WebsocketDialer) register(ctx context.Context) (agentToken, error) {
 		client = &http.Client{Timeout: 10 * time.Second}
 	}
 
-	registerURL, err := joinURL(d.URL, "/runner/register")
+	registerURL, err := httpURL(d.URL, "/runner/register")
 	if err != nil {
 		return agentToken{}, err
 	}
@@ -287,10 +287,26 @@ func (d *WebsocketDialer) deriveWSURL() (string, error) {
 	return u.String(), nil
 }
 
-func joinURL(base, path string) (string, error) {
+// httpURL joins path under base, normalizing a websocket scheme to its
+// HTTP equivalent. cloud.url may be configured as wss:// (the form the
+// runner dials for the socket); the register step is a plain HTTP POST,
+// and net/http rejects ws/wss with "unsupported protocol scheme". This
+// mirrors deriveWSURL in reverse so both http(s):// and ws(s):// configs
+// register correctly.
+func httpURL(base, path string) (string, error) {
 	u, err := url.Parse(base)
 	if err != nil {
 		return "", err
+	}
+	switch u.Scheme {
+	case "http", "https":
+		// already an HTTP scheme.
+	case "ws":
+		u.Scheme = "http"
+	case "wss":
+		u.Scheme = "https"
+	default:
+		return "", fmt.Errorf("cloud: unsupported URL scheme %q (want http/https/ws/wss)", u.Scheme)
 	}
 	u.Path = strings.TrimRight(u.Path, "/") + path
 	return u.String(), nil

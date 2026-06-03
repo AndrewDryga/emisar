@@ -271,3 +271,32 @@ func TestWebsocketDialerDerivesWSScheme(t *testing.T) {
 		}
 	}
 }
+
+// The register POST is plain HTTP; a wss:// config (the form the runner
+// dials for the socket) must be normalized to https:// or net/http
+// rejects it with "unsupported protocol scheme".
+func TestRegisterURLNormalizesScheme(t *testing.T) {
+	cases := []struct {
+		in, want string
+	}{
+		{"https://app.emisar.dev", "https://app.emisar.dev/runner/register"},
+		{"http://localhost:4000", "http://localhost:4000/runner/register"},
+		{"wss://app.emisar.dev", "https://app.emisar.dev/runner/register"},
+		{"ws://localhost:4000", "http://localhost:4000/runner/register"},
+		{"wss://app.emisar.dev/", "https://app.emisar.dev/runner/register"},
+	}
+	for _, c := range cases {
+		got, err := httpURL(c.in, "/runner/register")
+		if err != nil {
+			t.Errorf("%s: httpURL: %v", c.in, err)
+			continue
+		}
+		if got != c.want {
+			t.Errorf("%s: got %s, want %s", c.in, got, c.want)
+		}
+	}
+
+	if _, err := httpURL("ftp://nope", "/x"); err == nil {
+		t.Error("expected error for unsupported scheme ftp")
+	}
+}
