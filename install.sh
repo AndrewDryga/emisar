@@ -599,8 +599,11 @@ drop_config_skeleton() {
   local env="${ETC_DIR}/runner.env"
   if [ ! -f "${env}" ]; then
     log "writing runner.env stub to ${env}"
-    runner_env_skeleton > "${env}"
-    # Restrictive perms: only the service user can read the secret.
+    # Create the file 0600 from the first byte (umask in a subshell) so
+    # EMISAR_AUTH_KEY is never momentarily world-readable. The previous
+    # write-then-chmod left a brief race window where it was 0644.
+    ( umask 077 && runner_env_skeleton > "${env}" )
+    # Belt-and-suspenders in case a restrictive umask wasn't honoured.
     chmod 600 "${env}"
     chown "${SERVICE_USER}:${SERVICE_GROUP}" "${env}" 2>/dev/null || \
       chown root:root "${env}"

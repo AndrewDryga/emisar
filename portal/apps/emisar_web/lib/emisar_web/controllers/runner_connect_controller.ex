@@ -59,10 +59,12 @@ defmodule EmisarWeb.RunnerConnectController do
               "different runner.name / runner.id in this host's config, then it will connect."
         })
 
-      {:error, reason} ->
+      {:error, _reason} ->
+        # Don't echo the internal reason term to an unauthenticated
+        # caller — the specific failure modes above are already named.
         conn
         |> put_status(:bad_request)
-        |> json(%{error: "register_failed", reason: inspect(reason)})
+        |> json(%{error: "register_failed"})
     end
   end
 
@@ -94,10 +96,10 @@ defmodule EmisarWeb.RunnerConnectController do
       {:error, :token_invalid} ->
         unauthorized(conn, "token_invalid")
 
-      {:error, reason} ->
+      {:error, _reason} ->
         conn
         |> put_status(:bad_request)
-        |> json(%{error: "connect_failed", reason: inspect(reason)})
+        |> json(%{error: "connect_failed"})
     end
   end
 

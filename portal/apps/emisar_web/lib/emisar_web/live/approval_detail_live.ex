@@ -168,6 +168,13 @@ defmodule EmisarWeb.ApprovalDetailLive do
   defp truncated_runner_id(nil), do: "—"
   defp truncated_runner_id(id) when is_binary(id), do: String.slice(id, 0, 12) <> "…"
 
+  # An action only leaves the queue when its runner is connected. The
+  # decision panel surfaces this so an operator doesn't approve into a
+  # dead runner and then wonder why the run never moved.
+  defp runner_connection(%{runner: %{status: "connected"}}), do: :online
+  defp runner_connection(%{runner: %{status: _}}), do: :offline
+  defp runner_connection(_), do: :unknown
+
   def render(assigns) do
     ~H"""
     <.dashboard_shell
@@ -196,12 +203,21 @@ defmodule EmisarWeb.ApprovalDetailLive do
         </.meta_field>
         <.meta_field label="Runner">
           <%= if @run && @run.runner do %>
-            <.link
-              navigate={~p"/app/runners/#{@run.runner.id}"}
-              class="truncate text-zinc-200 hover:text-indigo-300"
-            >
-              {@run.runner.name}
-            </.link>
+            <span class="inline-flex min-w-0 items-center gap-1.5">
+              <span
+                class={[
+                  "h-1.5 w-1.5 flex-none rounded-full",
+                  if(@run.runner.status == "connected", do: "bg-emerald-400", else: "bg-zinc-600")
+                ]}
+                title={if(@run.runner.status == "connected", do: "Online", else: "Offline")}
+              />
+              <.link
+                navigate={~p"/app/runners/#{@run.runner.id}"}
+                class="truncate text-zinc-200 hover:text-indigo-300"
+              >
+                {@run.runner.name}
+              </.link>
+            </span>
           <% else %>
             <span class="truncate font-mono text-xs text-zinc-400">
               {truncated_runner_id(@request.context["runner_id"])}
@@ -282,6 +298,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
             <.decision_panel
               can_decide?={Permissions.can?(assigns, :decide_approval)}
               grant_duration={@grant_duration}
+              runner_state={runner_connection(@run)}
             />
           <% else %>
             <section class="rounded-xl border border-zinc-900 bg-zinc-950/40 p-5">
@@ -307,12 +324,26 @@ defmodule EmisarWeb.ApprovalDetailLive do
   # once a real grant is being minted (duration != "once"). Defaulted so
   # a caller that forgets to thread it through can't crash the panel.
   attr :grant_duration, :string, default: "once"
+  # Connection state of the target runner (:online | :offline | :unknown)
+  # so the operator knows whether an approval will actually dispatch.
+  attr :runner_state, :atom, default: :unknown
 
   defp decision_panel(assigns) do
     ~H"""
     <section class="rounded-xl border border-zinc-900 bg-zinc-950/60 p-5">
       <h3 class="text-sm font-semibold text-zinc-100">Decide</h3>
       <p class="mt-1 text-xs text-zinc-500">Logged to the audit trail.</p>
+
+      <div
+        :if={@runner_state == :offline}
+        class="mt-4 flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/[0.06] p-3 text-xs text-amber-200"
+      >
+        <.icon name="hero-signal-slash" class="mt-0.5 h-4 w-4 flex-none text-amber-300" />
+        <span>
+          This runner is offline. You can still approve — the action queues and runs once the
+          runner reconnects, or expires if it doesn't.
+        </span>
+      </div>
 
       <%= if @can_decide? do %>
         <%!-- Approve form. Default state = one-shot ("just this

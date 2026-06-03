@@ -14,7 +14,8 @@ defmodule EmisarWeb.PoliciesLive do
   @tiers Policies.risk_tiers()
 
   def mount(_params, _session, socket) do
-    {:ok, load(socket) |> assign(:page_title, "Policy")}
+    socket = assign(socket, page_title: "Policy", loading?: not connected?(socket))
+    {:ok, if(connected?(socket), do: load(socket), else: socket)}
   end
 
   defp load(socket) do
@@ -52,9 +53,14 @@ defmodule EmisarWeb.PoliciesLive do
   end
 
   def handle_event("remove_override", %{"index" => idx}, socket) do
-    i = String.to_integer(idx)
-    overrides = List.delete_at(socket.assigns.overrides, i)
-    {:noreply, assign(socket, :overrides, overrides)}
+    case Integer.parse(idx) do
+      {i, _} ->
+        overrides = List.delete_at(socket.assigns.overrides, i)
+        {:noreply, assign(socket, :overrides, overrides)}
+
+      :error ->
+        {:noreply, socket}
+    end
   end
 
   def handle_event("save", _params, socket) do
@@ -209,11 +215,13 @@ defmodule EmisarWeb.PoliciesLive do
       section={:policies}
     >
       <:title>Policy</:title>
-      <:actions :if={Permissions.can?(assigns, :manage_policies)}>
+      <:actions :if={not @loading? and Permissions.can?(assigns, :manage_policies)}>
         <.button type="submit" form="policy-form" phx-disable-with="Saving...">Save</.button>
       </:actions>
 
-      <div class="mx-auto max-w-4xl space-y-6">
+      <.loading_state :if={@loading?} />
+
+      <div :if={not @loading?} class="mx-auto max-w-4xl space-y-6">
         <section class="rounded-xl border border-zinc-900 bg-zinc-950/40 p-5">
           <h2 class="text-sm font-semibold text-zinc-100">How this works</h2>
           <p class="mt-2 text-sm leading-relaxed text-zinc-400">

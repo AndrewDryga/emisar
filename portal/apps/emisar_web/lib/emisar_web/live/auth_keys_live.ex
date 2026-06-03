@@ -18,7 +18,9 @@ defmodule EmisarWeb.AuthKeysLive do
      |> assign(:new_secret, nil)
      |> assign(:new_key, nil)
      |> assign(:base_url, UrlHelpers.derive_base_url(socket))
-     |> assign(:billing, fetch_billing(socket))
+     # IL-18: only hit the billing read on the connected mount; the
+     # cap-warning banner just stays hidden until it loads.
+     |> assign(:billing, connected?(socket) && fetch_billing(socket))
      |> assign_form(default_params())}
   end
 
@@ -185,7 +187,7 @@ defmodule EmisarWeb.AuthKeysLive do
         <%!-- Runner-cap warning: a key minted here is useless if the
              runner that tries to use it bounces off a 402. --%>
         <div
-          :if={Emisar.Billing.headroom(@billing, :runners) in [:warning, :at_limit]}
+          :if={@billing && Emisar.Billing.headroom(@billing, :runners) in [:warning, :at_limit]}
           class={[
             "flex items-start gap-3 rounded-xl border p-4 text-sm",
             if(Emisar.Billing.headroom(@billing, :runners) == :at_limit,

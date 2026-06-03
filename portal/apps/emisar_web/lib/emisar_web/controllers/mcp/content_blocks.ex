@@ -211,15 +211,25 @@ defmodule EmisarWeb.Mcp.ContentBlocks do
 
   defp string_field(map, keys) do
     Enum.find_value(keys, "", fn k ->
-      v = Map.get(map, k) || Map.get(map, String.to_atom(k))
+      v = Map.get(map, k) || Map.get(map, existing_atom(k))
       if is_binary(v) and v != "", do: v
     end) || ""
   end
 
   defp numeric_field(map, key) do
-    case Map.get(map, key) || Map.get(map, String.to_atom(key)) do
+    case Map.get(map, key) || Map.get(map, existing_atom(key)) do
       n when is_number(n) -> {n * 1.0, true}
       _ -> {0.0, false}
     end
+  end
+
+  # IL-14: never grow the atom table from request data. The run payload
+  # is built with atom keys, so the existing-atom lookup resolves them;
+  # an unknown key just falls through to `nil` (no map hit) instead of
+  # raising or minting a new atom.
+  defp existing_atom(k) do
+    String.to_existing_atom(k)
+  rescue
+    ArgumentError -> nil
   end
 end

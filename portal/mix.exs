@@ -22,7 +22,14 @@ defmodule Emisar.Umbrella.MixProject do
   end
 
   defp deps do
-    [{:phoenix_live_view, ">= 0.0.0"}]
+    [
+      {:phoenix_live_view, ">= 0.0.0"},
+      # Security gate (run in CI). Sobelow = static analysis for the
+      # Phoenix surface; mix_audit = CVE/advisory scan of the lockfile.
+      # dev/test only + runtime: false — never compiled into the release.
+      {:sobelow, "~> 0.13", only: [:dev, :test], runtime: false},
+      {:mix_audit, "~> 2.1", only: [:dev, :test], runtime: false}
+    ]
   end
 
   defp aliases do

@@ -19,7 +19,20 @@ defmodule EmisarWeb.ProfileLive do
      |> assign_email_form(user)
      |> assign_password_form()
      |> assign_mfa_form()
-     |> load_sessions()}
+     |> maybe_load_sessions()}
+  end
+
+  # IL-18: the session list is the only DB read on this page — skip it on
+  # the pre-connect render so `mount/3` does no query work; the connected
+  # mount fills it in.
+  defp maybe_load_sessions(socket) do
+    if connected?(socket) do
+      load_sessions(socket)
+    else
+      socket
+      |> assign(:sessions, [])
+      |> assign(:current_session_digest, nil)
+    end
   end
 
   defp load_sessions(socket) do

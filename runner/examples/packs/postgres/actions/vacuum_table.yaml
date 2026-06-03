@@ -28,10 +28,13 @@ args:
     description: Also run ANALYZE.
 execution:
   command:
-    binary: /bin/sh
+    binary: /usr/bin/psql
     argv:
+      - "-XAt"
       - "-c"
-      - "if [ \"{{ args.analyze }}\" = \"true\" ]; then psql -XAt -c \"VACUUM (VERBOSE, ANALYZE) {{ args.schema }}.{{ args.table }};\"; else psql -XAt -c \"VACUUM (VERBOSE) {{ args.schema }}.{{ args.table }};\"; fi"
+      # ANALYZE takes a boolean value (PG 12+): args.analyze is a typed
+      # boolean, so it renders only as `true`/`false` — no shell, no branch.
+      - "VACUUM (VERBOSE, ANALYZE {{ args.analyze }}) {{ args.schema }}.{{ args.table }};"
   timeout: 2h
 output:
   parser: text

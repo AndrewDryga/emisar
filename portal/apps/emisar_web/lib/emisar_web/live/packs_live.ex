@@ -25,7 +25,17 @@ defmodule EmisarWeb.PacksLive do
   alias Emisar.Catalog
 
   def mount(_params, _session, socket) do
-    {:ok, load_packs(socket)}
+    if connected?(socket) do
+      {:ok, load_packs(socket) |> assign(:loading?, false)}
+    else
+      {:ok,
+       socket
+       |> assign(:page_title, "Packs")
+       |> assign(:loading?, true)
+       |> assign(:rows, [])
+       |> assign(:packs, [])
+       |> assign(:pending_count, 0)}
+    end
   end
 
   defp load_packs(socket) do
@@ -126,8 +136,10 @@ defmodule EmisarWeb.PacksLive do
         </p>
       </div>
 
+      <.loading_state :if={@loading?} />
+
       <div
-        :if={@packs == []}
+        :if={@packs == [] and not @loading?}
         class="mt-8 rounded-xl border border-dashed border-zinc-800 p-10 text-center"
       >
         <.icon name="hero-cube" class="mx-auto h-8 w-8 text-zinc-700" />

@@ -7,14 +7,19 @@ defmodule EmisarWeb.BillingLive do
   @plan_order ["free", "team", "enterprise"]
 
   def mount(_params, _session, socket) do
-    account = socket.assigns.current_account
+    socket = assign(socket, page_title: "Billing", loading?: not connected?(socket))
 
-    {:ok,
-     socket
-     |> assign(:page_title, "Billing")
-     |> assign(:plans, ordered_plans())
-     |> assign(:summary, fetch_summary(account, socket.assigns.current_subject))
-     |> assign(:member_count, member_count(socket))}
+    if connected?(socket) do
+      account = socket.assigns.current_account
+
+      {:ok,
+       socket
+       |> assign(:plans, ordered_plans())
+       |> assign(:summary, fetch_summary(account, socket.assigns.current_subject))
+       |> assign(:member_count, member_count(socket))}
+    else
+      {:ok, socket}
+    end
   end
 
   defp fetch_summary(account, subject) do
@@ -155,7 +160,9 @@ defmodule EmisarWeb.BillingLive do
     >
       <:title>Billing</:title>
 
-      <.page_container max="6xl">
+      <.loading_state :if={@loading?} />
+
+      <.page_container :if={not @loading?} max="6xl">
         <%!-- Current-plan strip across the top. Plan name + price on
              the left, three usage bars on the right. Replaces a tall
              narrow sidebar card that wasted the page real estate. --%>

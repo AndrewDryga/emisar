@@ -10,9 +10,10 @@ defmodule EmisarWeb.DashboardLive do
       PubSub.subscribe_account_runs(account_id)
       PubSub.subscribe_account_runners(account_id)
       PubSub.subscribe_account_approvals(account_id)
+      {:ok, load(socket)}
+    else
+      {:ok, socket |> assign(:page_title, "Dashboard") |> assign(:loading?, true)}
     end
-
-    {:ok, load(socket)}
   end
 
   def handle_info({_event, _struct}, socket), do: {:noreply, load(socket)}
@@ -28,6 +29,7 @@ defmodule EmisarWeb.DashboardLive do
 
     socket
     |> assign(:page_title, "Dashboard")
+    |> assign(:loading?, false)
     |> assign(:runners_total, length(runners))
     |> assign(:runners_connected, Enum.count(runners, &(&1.status == "connected")))
     |> assign(:actions_count, length(actions))
@@ -79,7 +81,10 @@ defmodule EmisarWeb.DashboardLive do
     >
       <:title>Dashboard</:title>
 
+      <.loading_state :if={@loading?} />
+
       <.live_dashboard
+        :if={not @loading?}
         runners_total={@runners_total}
         runners_connected={@runners_connected}
         actions_count={@actions_count}

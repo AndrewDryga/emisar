@@ -415,11 +415,11 @@
       </div>
 
       <div class="mx-auto mt-16 grid max-w-5xl grid-cols-1 gap-6 sm:grid-cols-2 lg:max-w-none lg:grid-cols-4">
-        <%= for {tag, title, scenario, icon} <- [
-          {"cassandra", "Cassandra ops", "Agent triages a slow read latency alert by running nodetool.status, then proposes nodetool.repair on the lagging keyspace — pending one approver click.", "hero-circle-stack"},
-          {"postgres", "Postgres ops", "Replication lag spikes overnight. The model runs pg.replication_lag, kills the offending slow query, then opens a follow-up ticket with the EXPLAIN plan attached.", "hero-server-stack"},
-          {"k8s", "K8s troubleshoot", "Pod is CrashLoopBackOff. Agent fetches logs and a describe via the kubectl pack. Restarting the deployment requires an approver — and a one-line justification.", "hero-cube"},
-          {"incident", "Incident response", "Pager fires at 02:14. Agent executes the approved 'database failover' runbook step-by-step, pausing at each gate so the human can stay in the loop, not in the keyboard.", "hero-bell-alert"}
+        <%= for {tag, title, scenario, icon, href} <- [
+          {"cassandra", "Cassandra ops", "Agent triages a slow read latency alert by running nodetool.status, then proposes nodetool.repair on the lagging keyspace — pending one approver click.", "hero-circle-stack", ~p"/use-cases/cassandra-ops"},
+          {"postgres", "Postgres ops", "Replication lag spikes overnight. The model runs pg.replication_lag, kills the offending slow query, then opens a follow-up ticket with the EXPLAIN plan attached.", "hero-server-stack", ~p"/use-cases/postgres-ops"},
+          {"k8s", "K8s troubleshoot", "Pod is CrashLoopBackOff. Agent fetches logs and a describe via the kubectl pack. Restarting the deployment requires an approver — and a one-line justification.", "hero-cube", nil},
+          {"incident", "Incident response", "Pager fires at 02:14. Agent executes the approved 'database failover' runbook step-by-step, pausing at each gate so the human can stay in the loop, not in the keyboard.", "hero-bell-alert", nil}
         ] do %>
           <div class="group flex flex-col rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8 transition hover:-translate-y-0.5 hover:border-indigo-500/40">
             <div class="flex items-center justify-between">
@@ -432,6 +432,13 @@
             </div>
             <h3 class="mt-6 text-lg font-semibold text-white">{title}</h3>
             <p class="mt-3 text-sm text-zinc-400 leading-relaxed">{scenario}</p>
+            <.link
+              :if={href}
+              navigate={href}
+              class="mt-4 inline-flex items-center gap-1 text-sm font-medium text-indigo-400 hover:text-indigo-300"
+            >
+              Read the playbook <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
+            </.link>
           </div>
         <% end %>
       </div>
@@ -511,6 +518,15 @@
           </table>
         </div>
       </div>
+
+      <p class="mt-8 text-center">
+        <.link
+          navigate={~p"/compare/raw-ssh-for-ai"}
+          class="inline-flex items-center gap-1 text-sm font-medium text-indigo-400 hover:text-indigo-300"
+        >
+          Read the full SSH-for-AI comparison <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
+        </.link>
+      </p>
     </div>
   </section>
 
@@ -630,14 +646,7 @@
       </div>
 
       <div class="mt-16 divide-y divide-zinc-900 rounded-2xl border border-zinc-900 bg-zinc-950/60">
-        <%= for {q, a} <- [
-          {"Can the LLM run anything it wants?", "No. The runner only exposes actions declared in a content-addressed pack. Anything else is rejected at the runner before it touches your shell. The model literally cannot see undeclared commands."},
-          {"Where do approvals happen?", "In the web UI today. The approver sees the actor, the arguments, the target host, and the policy rule that triggered the gate. One click to allow, one to deny."},
-          {"What if my runner dies mid-run?", "Child processes are reaped with PR_SET_PDEATHSIG on Linux — no zombies, no orphans. The cloud reconciles run state on reconnect and marks orphaned runs as crashed in the audit log."},
-          {"Is this MCP-compatible?", "Yes. We expose an HTTP tool API in the MCP shape (tool listing + invocation with bearer auth), and we ship emisar-mcp — a tiny stdio bridge — for Claude Code, Claude Desktop, Cursor, Gemini CLI, and Codex CLI."},
-          {"Can I self-host the control plane?", "Yes, on the Enterprise plan. Single Docker image plus a Postgres database — that's the entire dependency surface. Runs air-gapped, runs in your VPC, runs on a Pi if you really want."},
-          {"What about secrets?", "The runner runs a redaction pipeline on every stdout/stderr stream before forwarding. Patterns are declared per-action; sane defaults catch AWS keys, JWTs, and bearer tokens. The cloud never sees raw secrets."}
-        ] do %>
+        <%= for {q, a} <- @faqs do %>
           <details class="group">
             <summary class="flex cursor-pointer items-center justify-between px-8 py-6 text-base font-semibold text-white">
               {q}

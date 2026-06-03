@@ -1131,6 +1131,20 @@ defmodule EmisarWeb.CoreComponents do
   defp badge_label(n) when is_integer(n) and n >= 100, do: "99+"
   defp badge_label(n) when is_integer(n), do: Integer.to_string(n)
 
+  @doc """
+  Placeholder for the brief pre-connect render pass of a LiveView whose
+  data loads only once the socket is `connected?/1` (IL-18) — keeps
+  `mount/3` free of DB work without flashing a misleading empty state.
+  """
+  def loading_state(assigns) do
+    ~H"""
+    <div class="flex items-center justify-center gap-2 py-20 text-sm text-zinc-500">
+      <.icon name="hero-arrow-path" class="h-5 w-5 animate-spin" />
+      <span>Loading…</span>
+    </div>
+    """
+  end
+
   @doc "Coloured pill for run/runner status."
   attr :status, :string, required: true
   attr :class, :string, default: ""
@@ -2204,7 +2218,7 @@ defmodule EmisarWeb.CoreComponents do
     ~H"""
     <footer class="border-t border-zinc-900 bg-zinc-950">
       <div class="mx-auto max-w-7xl px-6 py-16 lg:px-8">
-        <div class="grid grid-cols-2 gap-12 md:grid-cols-5">
+        <div class="grid grid-cols-2 gap-12 md:grid-cols-6">
           <div class="col-span-2">
             <.link href={~p"/"}>
               <.brand size={:md} />
@@ -2230,6 +2244,27 @@ defmodule EmisarWeb.CoreComponents do
               <li>
                 <.link href={~p"/changelog"} class="text-zinc-400 hover:text-zinc-100">
                   Changelog
+                </.link>
+              </li>
+            </ul>
+          </div>
+
+          <div>
+            <h4 class="text-xs font-semibold uppercase tracking-wider text-zinc-400">Use cases</h4>
+            <ul class="mt-4 space-y-3 text-sm">
+              <li>
+                <.link href={~p"/use-cases/cassandra-ops"} class="text-zinc-400 hover:text-zinc-100">
+                  Cassandra ops
+                </.link>
+              </li>
+              <li>
+                <.link href={~p"/use-cases/postgres-ops"} class="text-zinc-400 hover:text-zinc-100">
+                  Postgres ops
+                </.link>
+              </li>
+              <li>
+                <.link href={~p"/compare/raw-ssh-for-ai"} class="text-zinc-400 hover:text-zinc-100">
+                  SSH vs emisar
                 </.link>
               </li>
             </ul>

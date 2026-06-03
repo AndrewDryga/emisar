@@ -53,6 +53,25 @@ defmodule EmisarWeb.MarketingController do
      "How to author and publish an emisar action pack: pack.yaml, action YAMLs, validation rules, version + hash, and PR workflow to land in the registry."}
   ]
 
+  # Home FAQ — the single source of truth for both the visible FAQ
+  # accordion (rendered from the `faqs` assign) and the FAQPage JSON-LD
+  # below. Keeping them in one list is what lets Google's rich result
+  # match visible content without the two drifting apart.
+  @home_faqs [
+    {"Can the LLM run anything it wants?",
+     "No. The runner only exposes actions declared in a content-addressed pack. Anything else is rejected at the runner before it touches your shell. The model literally cannot see undeclared commands."},
+    {"Where do approvals happen?",
+     "In the web UI today. The approver sees the actor, the arguments, the target host, and the policy rule that triggered the gate. One click to allow, one to deny."},
+    {"What if my runner dies mid-run?",
+     "Child processes are reaped with PR_SET_PDEATHSIG on Linux — no zombies, no orphans. The cloud reconciles run state on reconnect and marks orphaned runs as crashed in the audit log."},
+    {"Is this MCP-compatible?",
+     "Yes. We expose an HTTP tool API in the MCP shape (tool listing + invocation with bearer auth), and we ship emisar-mcp — a tiny stdio bridge — for Claude Code, Claude Desktop, Cursor, Gemini CLI, and Codex CLI."},
+    {"Can I self-host the control plane?",
+     "Yes, on the Enterprise plan. Single Docker image plus a Postgres database — that's the entire dependency surface. Runs air-gapped, runs in your VPC, runs on a Pi if you really want."},
+    {"What about secrets?",
+     "The runner runs a redaction pipeline on every stdout/stderr stream before forwarding. Patterns are declared per-action; sane defaults catch AWS keys, JWTs, and bearer tokens. The cloud never sees raw secrets."}
+  ]
+
   # The home page has bespoke JSON-LD; keep it as its own def. Every
   # other page is generated below from @pages.
   def home(conn, _params) do
@@ -81,6 +100,17 @@ defmodule EmisarWeb.MarketingController do
               "price" => "0",
               "description" => "Free for up to 3 runners"
             }
+          },
+          %{
+            "@type" => "FAQPage",
+            "mainEntity" =>
+              Enum.map(@home_faqs, fn {q, a} ->
+                %{
+                  "@type" => "Question",
+                  "name" => q,
+                  "acceptedAnswer" => %{"@type" => "Answer", "text" => a}
+                }
+              end)
           }
         ]
       })
@@ -90,9 +120,40 @@ defmodule EmisarWeb.MarketingController do
       meta_description:
         "emisar lets your LLM (Claude Code, Cursor, Gemini, Codex) call exactly the operational actions you've declared — with policy, approvals, and a hash-chained audit log.",
       canonical_url: @base <> "/",
+      faqs: @home_faqs,
       json_ld: org_ld
     )
   end
+
+  # Product + per-plan Offer rich data for the pricing page. Prices
+  # mirror `Emisar.Billing.@plans` (Free = 3 runners, Team = $20/runner).
+  @pricing_ld Jason.encode!(%{
+                "@context" => "https://schema.org",
+                "@type" => "Product",
+                "name" => "emisar",
+                "description" =>
+                  "Approved infrastructure actions for AI agents — policy, approvals, and a hash-chained audit log instead of SSH.",
+                "brand" => %{"@type" => "Brand", "name" => "emisar"},
+                "offers" => [
+                  %{
+                    "@type" => "Offer",
+                    "name" => "Free",
+                    "price" => "0",
+                    "priceCurrency" => "USD",
+                    "description" => "Up to 3 runners, 1 user, 7-day audit retention"
+                  },
+                  %{
+                    "@type" => "Offer",
+                    "name" => "Team",
+                    "price" => "20",
+                    "priceCurrency" => "USD",
+                    "description" => "Per runner / month. Unlimited users, 90-day audit retention"
+                  }
+                ]
+              })
+
+  # Per-action JSON-LD, injected into the generated def below when present.
+  @page_json_ld %{pricing: @pricing_ld}
 
   # Generate one `def <action>(conn, _)` per row. Keeping this in module
   # body (not a macro) so the action names show up directly in routes,
@@ -104,6 +165,12 @@ defmodule EmisarWeb.MarketingController do
       if description,
         do: Keyword.put(base_attrs, :meta_description, description),
         else: base_attrs
+
+    attrs =
+      case Map.get(@page_json_ld, action) do
+        nil -> attrs
+        json -> Keyword.put(attrs, :json_ld, json)
+      end
 
     template_atom = template
     attrs_literal = Macro.escape(attrs)
@@ -126,7 +193,7 @@ defmodule EmisarWeb.MarketingController do
       packs: EmisarWeb.PacksRegistry.list(),
       page_title: "Action packs registry",
       meta_description:
-        "Browse the registry of action packs you can install on your emisar runner: linux-core, cassandra, showcase. Each pack ships a typed catalog of actions an LLM can call.",
+        "Browse the registry of action packs you can install on your emisar runner — Postgres, Cassandra, Linux core, Docker, AWS, and more. Each pack ships a typed catalog of actions an LLM can call.",
       canonical_url: @base <> "/packs"
     )
   end

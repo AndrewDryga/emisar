@@ -51,7 +51,16 @@ defmodule EmisarWeb.AgentsLive do
     # `ApiKeys.mint_quick_key/3` ring-evicts unused autos at 42 per
     # account, so opening many tabs can't accumulate dangling keys.
 
-    {:ok, runners, _} = Runners.list_runners_for_account(socket.assigns.current_subject)
+    # IL-18: defer the runner read to the connected mount so the
+    # pre-connect render does no query work. The picker briefly shows
+    # its empty state, then fills in once the socket connects.
+    runners =
+      if connected?(socket) do
+        {:ok, list, _} = Runners.list_runners_for_account(socket.assigns.current_subject)
+        list
+      else
+        []
+      end
 
     {:ok,
      socket
