@@ -17,6 +17,19 @@ requires:
   binaries:
     - git
 
+setup:
+  summary: >
+    Runs read-only git commands against a checkout on the runner host —
+    no credentials needed (nothing fetches or pushes to a remote).
+  env:
+    - name: GIT_REPO
+      required: true
+      description: Absolute path to the git checkout on the runner host that every action operates in. Add it to the runner's inherit_env.
+      example: /opt/myapp
+  notes:
+    - "The runner uid must be able to read the repo directory; for repos owned by another user, add the path to git's safe.directory or run as that user."
+  verify: git.status
+
 actions:
   - actions/status.yaml
   - actions/log_recent.yaml

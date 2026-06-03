@@ -17,6 +17,29 @@ requires:
   binaries:
     - curl
 
+setup:
+  summary: >
+    Each action expands ELASTIC_URL, ELASTIC_USER, and ELASTIC_PASSWORD on the
+    runner host and passes them to curl as the target URL and HTTP basic-auth
+    credentials.
+  env:
+    - name: ELASTIC_URL
+      required: true
+      description: Base URL of the cluster, scheme and port included. No default — curl has no endpoint without it.
+      example: "https://es.internal:9200"
+    - name: ELASTIC_USER
+      required: true
+      description: Username for HTTP basic auth; needs privileges for the actions you enable.
+      example: elastic
+    - name: ELASTIC_PASSWORD
+      required: true
+      description: Password for ELASTIC_USER.
+  notes:
+    - curl does not read these on its own; the actions build the -u credential and the URL from them, so all three must be allowlisted in inherit_env.
+    - For a cluster without security enabled, point ELASTIC_URL at the HTTP endpoint and set ELASTIC_USER / ELASTIC_PASSWORD to any non-empty placeholder — the basic-auth header is sent unconditionally.
+    - Mutators (cache_clear, force_merge, flush_synced, close_index) need a role with manage privileges on the target indices.
+  verify: es.cluster_health
+
 actions:
   # Cluster
   - actions/cluster_health.yaml

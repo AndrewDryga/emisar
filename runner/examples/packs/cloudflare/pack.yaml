@@ -16,6 +16,20 @@ requires:
   binaries:
     - curl
 
+setup:
+  summary: >
+    Calls the Cloudflare REST API over HTTPS with curl, sending the token
+    in an Authorization: Bearer header. curl reads it from CF_API_TOKEN on
+    the runner host, so allowlist that variable in inherit_env.
+  env:
+    - name: CF_API_TOKEN
+      required: true
+      description: Cloudflare API token (Bearer auth). Scope it to the zones and permissions the actions you enable need.
+  notes:
+    - "Zone IDs are per-call action arguments, not environment variables — list_zones returns them for use in the other actions."
+    - "Token scopes: Zone Read for the read actions; Cache Purge for purge_all_cache / purge_url; Zone Settings Edit for dev_mode_on / dev_mode_off."
+  verify: cf.list_zones
+
 actions:
   - actions/list_zones.yaml
   - actions/zone_details.yaml

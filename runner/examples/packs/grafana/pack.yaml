@@ -16,6 +16,24 @@ requires:
   binaries:
     - curl
 
+setup:
+  summary: >
+    Every action calls the Grafana HTTP API at $GRAFANA_URL via curl, sending
+    $GRAFANA_TOKEN as an "Authorization: Bearer" header. Both are read on the
+    runner host; set them to a reachable Grafana and a valid token.
+  env:
+    - name: GRAFANA_URL
+      required: true
+      description: Grafana base URL (scheme + host + port, no trailing path).
+      example: https://grafana.internal:3000
+    - name: GRAFANA_TOKEN
+      required: true
+      description: Service-account token or API key sent as the Bearer credential.
+  notes:
+    - "Create the token as a service account (Administration -> Service accounts) or a legacy API key; this pack is read-only, so a Viewer/Admin-read role is enough."
+    - "settings and users actions return data only if the token's role can read them — a Viewer token may see less than an Admin token."
+  verify: grafana.health
+
 actions:
   - actions/health.yaml
   - actions/version.yaml

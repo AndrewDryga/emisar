@@ -17,6 +17,13 @@ requires:
   binaries:
     - iptables
 
+setup:
+  summary: >
+    Operates on the local runner host — no credentials needed.
+  notes:
+    - "Needs root (or CAP_NET_ADMIN) for essentially everything — even listing rulesets and conntrack queries require it. Run the runner as root or via sudo."
+  verify: fw.conntrack_count
+
 actions:
   - actions/iptables_filter.yaml
   - actions/iptables_nat.yaml

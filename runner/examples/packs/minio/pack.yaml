@@ -13,6 +13,22 @@ requires:
   os: [linux]
   binaries: [mc]
 
+setup:
+  summary: >
+    Actions run the mc client against an alias passed as an argument. mc reads
+    that alias from an MC_HOST_<alias> env var of the form
+    https://ACCESS:SECRET@endpoint on the runner host — no on-disk mc config
+    needed.
+  env:
+    - name: MC_HOST_minio
+      required: true
+      description: 'Connection for the "minio" alias, as https://ACCESS_KEY:SECRET_KEY@endpoint. Rename the suffix to match the alias you pass.'
+      example: https://minioadmin:minioadmin@minio.internal:9000
+  notes:
+    - "The env var suffix must exactly match the alias argument: actions whose examples pass alias \"minio\" need MC_HOST_minio; a different alias needs MC_HOST_<that-alias>."
+    - "The access/secret pair needs admin permissions for the admin-* actions (info, user list/enable/disable, heal, service restart); a plain user key can only list buckets and stat."
+  verify: minio.admin_info
+
 actions:
   - actions/admin_info.yaml
   - actions/admin_top_locks.yaml

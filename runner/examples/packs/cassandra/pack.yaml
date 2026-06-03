@@ -20,6 +20,25 @@ requires:
   binaries:
     - nodetool
 
+setup:
+  summary: >
+    nodetool actions connect to the local node's JMX port (127.0.0.1:7199 by
+    default, set per call) and take no credentials. cqlsh actions read
+    CQLSH_HOST and CQLSH_PORT on the runner host (defaulting to 127.0.0.1:9042)
+    and authenticate, when the cluster requires it, from ~/.cassandra/cqlshrc.
+  env:
+    - name: CQLSH_HOST
+      description: Host for the cqlsh actions (schema/keyspace/role introspection).
+      default: 127.0.0.1
+    - name: CQLSH_PORT
+      description: Native CQL port for the cqlsh actions.
+      default: "9042"
+  notes:
+    - nodetool host/port come from each action's args (default 127.0.0.1:7199), not the environment; this pack passes no JMX username/password, so it works only against a node without JMX auth.
+    - "cqlsh credentials belong in ~/.cassandra/cqlshrc (with a [authentication] username/password) on the runner host — read from disk, so it needs no inherit_env entry; the actions pass no -u/-p."
+    - Lifecycle and maintenance mutators (repair, drain, decommission, assassinate, removenode, cleanup, compact) are cluster-affecting; run the read actions first.
+  verify: cassandra.nodetool_status
+
 actions:
   # Topology / cluster state
   - actions/nodetool_status.yaml

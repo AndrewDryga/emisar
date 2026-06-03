@@ -23,6 +23,21 @@ requires:
   binaries:
     - redis-cli
 
+setup:
+  summary: >
+    redis-cli authenticates with the password in REDISCLI_AUTH on the runner
+    host. It does not read host or port from the environment — the actions
+    pass no -h/-p flags, so connections default to the local instance at
+    127.0.0.1:6379.
+  env:
+    - name: REDISCLI_AUTH
+      description: Password sent via AUTH. Omit for an instance with no requirepass/ACL. The matching user must hold the commands the actions you enable will run.
+  notes:
+    - Host and port are not configurable through this pack's env — redis-cli takes them as -h/-p flags, which the actions do not set, so it always targets 127.0.0.1:6379.
+    - "REDISCLI_AUTH supplies only the password; for an ACL-enabled server with a non-default username, set requirepass-style access or run the runner as a user whose default ACL covers these commands."
+    - Critical mutators (flush_db, flushall, swapdb, shutdown_nosave) and config writes need an ACL/user permitted to run them.
+  verify: redis.info
+
 actions:
   # INFO / stats
   - actions/info.yaml

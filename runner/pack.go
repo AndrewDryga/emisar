@@ -22,10 +22,25 @@ const defaultRegistry = "https://emisar.dev"
 func packCmd() *cobra.Command {
 	cmd := &cobra.Command{Use: "pack", Short: "Manage action packs"}
 	cmd.AddCommand(packListCmd())
+	cmd.AddCommand(packInfoCmd())
 	cmd.AddCommand(packValidateCmd())
 	cmd.AddCommand(packInstallCmd())
 	cmd.AddCommand(packUninstallCmd())
 	return cmd
+}
+
+// configInheritEnv returns the runner's inherit_env allowlist and whether
+// a config was actually resolved. Best-effort: pack info/install still
+// render without it — we just skip the "missing from inherit_env" check.
+func configInheritEnv() (env []string, ok bool) {
+	if flagConfig == "" {
+		return nil, false
+	}
+	cfg, err := config.Load(flagConfig)
+	if err != nil {
+		return nil, false
+	}
+	return cfg.Execution.InheritEnv, true
 }
 
 // resolvePackDirs picks the pack search dirs for read-only pack commands.
@@ -75,6 +90,43 @@ func packListCmd() *cobra.Command {
 				fmt.Fprintf(tw, "%s\t%s\t%d\t%s\t%s\n", p.ID, p.Version, actions, shortHash(hash), p.Description)
 			}
 			return tw.Flush()
+		},
+	}
+}
+
+func packInfoCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "info <id>",
+		Short: "Show how to make an installed pack work (setup, auth, action profile)",
+		Long: `Print a pack's setup requirements and action profile: what it does,
+its risk breakdown, required binaries (with a live PATH check), the
+environment variables its tool reads to authenticate, and a command to
+verify it can reach its target.
+
+This is the same summary 'pack install' prints after a successful
+install. Resolves the pack from the configured packs dirs (or --packs-dir).
+With --config, it also flags any required env var missing from the
+runner's inherit_env allowlist.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			dirs, err := resolvePackDirs()
+			if err != nil {
+				return err
+			}
+			reg, err := packs.LoadAll(dirs, packs.LoadOptions{})
+			if err != nil {
+				return err
+			}
+			pack, ok := reg.Pack(args[0])
+			if !ok {
+				return fmt.Errorf("pack %q not installed (looked in %s)", args[0], strings.Join(dirs, ", "))
+			}
+			if flagJSONOut {
+				return printJSON(pack)
+			}
+			env, haveCfg := configInheritEnv()
+			writePackInfo(os.Stdout, reg, pack, env, haveCfg)
+			return nil
 		},
 	}
 }
@@ -194,9 +246,10 @@ The pack is copied to <dest>/<pack-id>. After install, reload the runner
 				return fmt.Errorf("copy pack: %w", err)
 			}
 
-			fmt.Printf("installed pack %s (%d actions) to %s\nhash: %s\n",
-				pack.ID, len(reg.Actions()), target, gotHash)
-			fmt.Println("reload the runner to pick it up: sudo systemctl reload emisar")
+			fmt.Printf("installed %s → %s\n", pack.ID, target)
+			env, haveCfg := configInheritEnv()
+			writePackInfo(os.Stdout, reg, pack, env, haveCfg)
+			fmt.Println("\nReload the runner to load it: sudo systemctl reload emisar")
 			return nil
 		},
 	}

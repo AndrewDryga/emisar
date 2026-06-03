@@ -15,6 +15,15 @@ requires:
   os:
     - linux
 
+setup:
+  summary: >
+    Queries and adjusts the local runner host's time daemon (chrony /
+    systemd-timesyncd / ntpd) — no credentials needed.
+  notes:
+    - "Read actions (timedatectl, chronyc tracking/sources, ntpq, date) need no privileges."
+    - "Fix actions (chronyc makestep, enabling/disabling NTP via timedatectl) need root/local admin."
+  verify: time.timedatectl
+
 actions:
   - actions/timedatectl.yaml
   - actions/chrony_tracking.yaml

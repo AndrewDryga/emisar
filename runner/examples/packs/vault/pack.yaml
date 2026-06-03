@@ -19,6 +19,25 @@ requires:
   binaries:
     - vault
 
+setup:
+  summary: >
+    The vault CLI reads the server address and auth token from VAULT_ADDR
+    and VAULT_TOKEN on the runner host.
+  env:
+    - name: VAULT_ADDR
+      required: true
+      description: Vault API address, including scheme.
+      example: https://vault.internal:8200
+    - name: VAULT_TOKEN
+      description: >
+        Token to authenticate with. Required unless a ~/.vault-token file
+        is present on the runner host.
+  notes:
+    - "Alternative to VAULT_TOKEN: a ~/.vault-token file (written by `vault login`) on the runner host — read from disk, so it needs no inherit_env entry."
+    - The token's policies gate every action; the incident-response mutators (revoke_lease, lease_revoke_prefix, operator_step_down, operator_seal) need sys/* capabilities, so a read-only token will see those denied.
+    - "TLS to an https:// VAULT_ADDR uses the system CA bundle; set VAULT_CACERT for a private CA, or VAULT_SKIP_VERIFY=1 only in non-production."
+  verify: vault.status
+
 actions:
   - actions/status.yaml
   - actions/seal_status.yaml

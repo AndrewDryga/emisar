@@ -21,6 +21,16 @@ requires:
     - ping
     - whois
 
+setup:
+  summary: >
+    Probes the remote host, endpoint, or domain you pass as an action
+    argument (host:port / name / URL) from the runner — no host-side
+    credentials, but the runner needs outbound network reach to the
+    target.
+  notes:
+    - "DNS/whois/ipinfo go to public resolvers and services; reachability and TLS probes need a network path from the runner to the target, so firewalls or egress rules can block them."
+  verify: net.tls_cert_expiry
+
 actions:
   - actions/dig_record.yaml
   - actions/dig_trace.yaml

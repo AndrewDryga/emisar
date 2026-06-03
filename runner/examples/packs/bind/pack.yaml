@@ -16,6 +16,17 @@ requires:
   binaries:
     - rndc
 
+setup:
+  summary: >
+    Operates on the local named instance on the runner host — no
+    credentials needed. rndc controls named via its key file; dig queries
+    127.0.0.1.
+  notes:
+    - "rndc needs its key readable by the runner user (/etc/rndc.key or the key in /etc/rndc.conf) and the named controls channel reachable on 127.0.0.1."
+    - "rndc_reload, rndc_freeze, rndc_thaw, and rndc_flush change server state and need root (or a key with the matching rndc permissions)."
+    - "zone_dump (AXFR) requires named's allow-transfer to include 127.0.0.1."
+  verify: bind.rndc_status
+
 actions:
   - actions/rndc_status.yaml
   - actions/rndc_stats.yaml

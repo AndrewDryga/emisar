@@ -16,6 +16,13 @@ requires:
   os:
     - linux
 
+setup:
+  summary: >
+    Inspects processes on the local runner host — no credentials needed.
+  notes:
+    - "Inspecting another user's process, or the strace/gdb attach actions, needs root or CAP_SYS_PTRACE; without it you only see your own processes and shallow detail."
+  verify: forensics.pid_status
+
 actions:
   - actions/pid_maps.yaml
   - actions/pid_smaps_summary.yaml

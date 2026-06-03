@@ -19,6 +19,15 @@ requires:
   binaries:
     - cloud-init
 
+setup:
+  summary: >
+    Reads the local runner host's cloud-init status, logs, and results —
+    no credentials needed.
+  notes:
+    - "Most reads work as any user, but cloud-init logs and result files are often root-only; run as root for full visibility."
+    - "Mutators (re-running modules / init stages, clean) need root."
+  verify: cloud-init.status
+
 actions:
   # Status / boot diagnostics
   - actions/version.yaml

@@ -16,6 +16,21 @@ requires:
   binaries:
     - socat
 
+setup:
+  summary: >
+    Talks to the local HAProxy admin/stats UNIX socket via socat on the
+    runner host. There is no default — you must point HAPROXY_SOCK at the
+    socket.
+  env:
+    - name: HAPROXY_SOCK
+      required: true
+      description: Path to the HAProxy admin/stats UNIX socket (the `stats socket` from haproxy.cfg).
+      example: /run/haproxy/admin.sock
+  notes:
+    - "The socket must be declared with `level admin` in haproxy.cfg for the enable/disable/set mutators to work."
+    - "The runner user needs read/write access to the socket (it is often owned by root with mode 0600) — run the runner as root or grant access via the socket's group/mode."
+  verify: haproxy.show_info
+
 actions:
   - actions/show_info.yaml
   - actions/show_stat.yaml

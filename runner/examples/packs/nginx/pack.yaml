@@ -18,6 +18,16 @@ requires:
     - nginx
     - curl
 
+setup:
+  summary: >
+    Operates on the local nginx instance on the runner host — no
+    credentials needed. Status actions curl the stub_status endpoint at
+    127.0.0.1; config and signal actions run the nginx binary directly.
+  notes:
+    - "reload, quit_graceful, and stop_immediate signal the master process and need root (run the runner as root or via sudo)."
+    - "Status actions require `stub_status on;` in a location reachable from 127.0.0.1; pass a non-default URL with the `url` arg."
+  verify: nginx.active_version
+
 actions:
   # Server state
   - actions/active_version.yaml

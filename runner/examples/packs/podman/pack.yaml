@@ -17,6 +17,14 @@ requires:
   binaries:
     - podman
 
+setup:
+  summary: >
+    Drives the local podman CLI on the runner host — no credentials
+    needed.
+  notes:
+    - "Rootless by default: the runner sees only the containers owned by the uid it runs as, so it must run as the user that owns the target containers (or as root for rootful / system-wide containers)."
+  verify: podman.ps
+
 actions:
   - actions/info.yaml
   - actions/version.yaml

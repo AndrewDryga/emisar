@@ -15,6 +15,15 @@ requires:
   os:
     - linux
 
+setup:
+  summary: >
+    Reads the local filesystem on the runner host (find/grep/du/stat and
+    friends) — no credentials needed; paths and patterns are passed as
+    arguments.
+  notes:
+    - "The runner sees only what its uid can read; reaching root-owned or otherwise restricted paths requires running as root."
+  verify: fs.stat_path
+
 actions:
   - actions/find_by_name.yaml
   - actions/find_recent_modified.yaml

@@ -17,6 +17,19 @@ requires:
     - caddy
     - curl
 
+setup:
+  summary: >
+    Operates on the local Caddy instance on the runner host — no
+    credentials needed. Inventory/health actions curl the admin API at
+    127.0.0.1:2019; validate/reload/stop run the caddy binary directly.
+  env:
+    - name: CADDY_ADMIN
+      description: Base URL of the Caddy admin API; set only if it does not listen on the default.
+      default: "http://127.0.0.1:2019"
+  notes:
+    - "reload_config and stop change runtime state and need permission to talk to the admin socket and signal the process — run the runner as root or as the caddy service user."
+  verify: caddy.version
+
 actions:
   # Inventory
   - actions/version.yaml

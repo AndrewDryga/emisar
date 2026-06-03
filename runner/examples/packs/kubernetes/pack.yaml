@@ -18,6 +18,22 @@ requires:
   binaries:
     - kubectl
 
+setup:
+  summary: >
+    kubectl finds the cluster and credentials from a kubeconfig on the
+    runner host. Point it at one with KUBECONFIG, or rely on the default
+    ~/.kube/config. Each action takes an optional context argument.
+  env:
+    - name: KUBECONFIG
+      description: >
+        Path (or colon-separated paths) to the kubeconfig file. Omit to
+        use the default ~/.kube/config.
+      example: /etc/emisar/kubeconfig
+  notes:
+    - "If KUBECONFIG is unset, kubectl reads ~/.kube/config on the runner host — a file, so it needs no inherit_env entry."
+    - The kubeconfig must embed working credentials (client cert, token, or an exec auth plugin); whatever identity it carries gates which actions succeed, and mutators (cordon, drain, delete_pod) need RBAC for those verbs.
+  verify: kubernetes.cluster_info
+
 actions:
   # Discovery
   - actions/pods_list.yaml

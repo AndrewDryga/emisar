@@ -18,6 +18,14 @@ requires:
   binaries:
     - systemctl
 
+setup:
+  summary: >
+    Operates on the local runner host — no credentials needed.
+  notes:
+    - "Most introspection (failed_units, list_units, timers, cgroup_tree, analyze_*, unit_show) is read-only and needs no privilege."
+    - "Mutators (daemon_reload, unit_start/stop/restart/reload/kill/mask/unmask, reset_failed) and vacuum_journal need root — run the runner as root, via sudo, or grant the matching polkit rule."
+  verify: systemd.failed_units
+
 actions:
   - actions/failed_units.yaml
   - actions/list_units.yaml

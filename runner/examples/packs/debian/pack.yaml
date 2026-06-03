@@ -18,6 +18,14 @@ requires:
     - apt-get
     - dpkg
 
+setup:
+  summary: >
+    Operates on the local runner host — no credentials needed.
+  notes:
+    - "Read-only inventory (dpkg_status, apt_upgradable, apt_security_check, kernel_info) needs no privilege."
+    - "Mutators (apt_install, apt_remove, apt_autoremove) and apt_update need root — run the runner as root or via sudo."
+  verify: debian.dpkg_status
+
 actions:
   - actions/apt_update.yaml
   - actions/apt_upgradable.yaml

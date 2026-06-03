@@ -17,6 +17,14 @@ requires:
     - rpm
     - dnf
 
+setup:
+  summary: >
+    Operates on the local runner host — no credentials needed.
+  notes:
+    - "Read-only inventory (rpm_qa, rpm_qi, rpm_ql, rpm_verify, dnf_check_update, dnf_history, dnf_repolist) needs no privilege."
+    - "Mutators (dnf_install, dnf_remove, dnf_clean_metadata, upgrade_pkg, reinstall_pkg, autoremove) need root — run the runner as root or via sudo."
+  verify: rpm.rpm_qa
+
 actions:
   # rpm inventory
   - actions/rpm_qa.yaml

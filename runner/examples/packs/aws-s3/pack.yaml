@@ -14,6 +14,29 @@ requires:
   os: [linux]
   binaries: [aws]
 
+setup:
+  summary: >
+    Drives the aws CLI on the runner host. It resolves credentials from
+    its own environment or ~/.aws config — the runner only forwards the
+    variables you allowlist in inherit_env.
+  env:
+    - name: AWS_PROFILE
+      description: Named profile in ~/.aws/config and ~/.aws/credentials. Omit to use the default profile or static-key/instance-role auth.
+      example: prod
+    - name: AWS_REGION
+      description: Default region for the CLI. S3 redirects per-bucket calls to the bucket's own region, so this is rarely required; set it to avoid an unset-region error on some setups.
+      example: us-east-1
+    - name: AWS_ACCESS_KEY_ID
+      description: Static access key. Use instead of a profile; pair with AWS_SECRET_ACCESS_KEY.
+    - name: AWS_SECRET_ACCESS_KEY
+      description: Secret for AWS_ACCESS_KEY_ID.
+    - name: AWS_SESSION_TOKEN
+      description: Session token for temporary (STS) credentials.
+  notes:
+    - "Read-only: the principal needs s3:ListAllMyBuckets, s3:ListBucket, s3:GetBucketLocation and the s3:GetBucket* / s3:GetObject permissions for the buckets you inspect."
+    - "Alternative to env keys: an ~/.aws/credentials profile (read from disk, no inherit_env entry) or, on EC2/ECS, the instance/task role from instance metadata (no credentials needed at all)."
+  verify: s3.list_buckets
+
 actions:
   - actions/list_buckets.yaml
   - actions/bucket_location.yaml

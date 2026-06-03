@@ -162,6 +162,14 @@ func loadPackInto(reg *Registry, root string, opts LoadOptions) error {
 		reg.packHashInputs[pack.ID] = append(reg.packHashInputs[pack.ID],
 			hashEntry{rel: relPath, data: data})
 	}
+	// setup.verify must name one of this pack's own actions — a typo here
+	// would otherwise ship a broken "run this to verify" hint.
+	if v := pack.Setup.Verify; v != "" {
+		act, ok := reg.actions[v]
+		if !ok || act.PackID != pack.ID {
+			return fmt.Errorf("packs: pack %s setup.verify %q is not an action in this pack", pack.ID, v)
+		}
+	}
 	reg.packHashes[pack.ID] = computePackHash(reg.packHashInputs[pack.ID])
 	return nil
 }

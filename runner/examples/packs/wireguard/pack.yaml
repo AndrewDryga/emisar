@@ -17,6 +17,15 @@ requires:
   binaries:
     - wg
 
+setup:
+  summary: >
+    Reads and manages WireGuard interfaces on the local runner host — no
+    credentials needed.
+  notes:
+    - "wg show / showconf read interface and peer state via netlink, which needs root (CAP_NET_ADMIN); showconf can include private keys in its output."
+    - "Mutators (wg-quick up/down, removing a peer) also need root."
+  verify: wg.show
+
 actions:
   # Inventory
   - actions/show.yaml

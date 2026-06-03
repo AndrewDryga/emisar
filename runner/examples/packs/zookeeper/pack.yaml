@@ -13,6 +13,17 @@ requires:
   os: [linux]
   binaries: [nc]
 
+setup:
+  summary: >
+    No credentials and no env vars. Each action targets a ZooKeeper node
+    by a required server argument (host:port) and probes it with a
+    four-letter word over a plain nc TCP connection.
+  notes:
+    - "Targeting is per-call, not via env: pass server=host:port to every action (the ZK_SERVERS list in the description is operator shorthand, not read by any action)."
+    - "The 4lw commands (srvr, stat, conf, cons, wchs, ruok, mntr, envi) only work if each is in the node's zoo.cfg 4lw.commands.whitelist."
+    - The runner host must have plain TCP reach to the client port (default 2181); 4lw is unauthenticated, so restrict it at the network layer.
+  verify: zk.ruok
+
 actions:
   - actions/srvr.yaml
   - actions/stat.yaml

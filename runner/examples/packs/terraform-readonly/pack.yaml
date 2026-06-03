@@ -16,6 +16,25 @@ requires:
   binaries:
     - terraform
 
+setup:
+  summary: >
+    Every action runs `cd "$TF_DIR" && terraform …`, so TF_DIR must point
+    at an initialized Terraform working directory on the runner host.
+    Provider and backend credentials come from that config, not from this
+    pack.
+  env:
+    - name: TF_DIR
+      required: true
+      description: >
+        Path to an initialized working directory (already `terraform
+        init`-ed, with .terraform and a backend configured).
+      example: /srv/infra/prod
+  notes:
+    - "Provider and backend auth depend entirely on what the config uses: an AWS provider/backend reads AWS_* (or an EC2/role profile), GCP reads GOOGLE_APPLICATION_CREDENTIALS, and so on — allowlist whatever your config needs."
+    - "state_list, state_show, show_json and output read the backend state, so the backend credentials must be reachable; validate and version do not."
+    - "plan_no_save (risk medium) calls every provider's read APIs (quota usage) but never writes state or saves an applyable plan."
+  verify: tf.version
+
 actions:
   - actions/version.yaml
   - actions/providers.yaml

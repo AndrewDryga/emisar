@@ -22,6 +22,27 @@ requires:
     - consul
     - curl
 
+setup:
+  summary: >
+    Both the consul CLI and the curl-based API actions read the agent
+    address and ACL token from CONSUL_HTTP_ADDR and CONSUL_HTTP_TOKEN on
+    the runner host.
+  env:
+    - name: CONSUL_HTTP_ADDR
+      description: >
+        Agent HTTP address, including scheme (the curl actions build URLs
+        directly from it).
+      default: http://127.0.0.1:8500
+      example: http://consul.internal:8500
+    - name: CONSUL_HTTP_TOKEN
+      description: >
+        ACL token. Required when ACLs are enabled; its policy gates which
+        actions succeed.
+  notes:
+    - On a cluster with ACLs enabled the token must grant the rights the action needs — operator/write for raft_remove_peer and reload, service/node write for the maintenance and deregister mutators, and key/read for the KV reads.
+    - "For TLS-enabled agents use an https:// CONSUL_HTTP_ADDR; you may also need CONSUL_CACERT (the consul CLI reads it, but the curl actions do not)."
+  verify: consul.members
+
 actions:
   # Agent / cluster
   - actions/members.yaml

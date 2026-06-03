@@ -19,6 +19,32 @@ requires:
   binaries:
     - psql
 
+setup:
+  summary: >
+    Authenticates via libpq PG* environment variables on the runner host.
+    psql reads them directly — the runner only forwards the ones you
+    allowlist in inherit_env.
+  env:
+    - name: PGHOST
+      required: true
+      description: Server host or socket directory.
+      example: db.internal
+    - name: PGPORT
+      description: Server port.
+      default: "5432"
+    - name: PGUSER
+      required: true
+      description: Role to connect as; needs privileges for the actions you enable.
+    - name: PGPASSWORD
+      description: Password for PGUSER. Omit if using ~/.pgpass or trust/peer auth.
+    - name: PGDATABASE
+      description: Default database.
+      default: same as PGUSER
+  notes:
+    - "Alternative to PGPASSWORD: put credentials in ~/.pgpass (mode 0600) on the runner host — read from disk, so it needs no inherit_env entry."
+    - High-risk mutators (terminate_backend, vacuum_table, reindex_concurrent) need a role with the matching privileges.
+  verify: postgres.uptime
+
 actions:
   # Cluster / session
   - actions/uptime.yaml

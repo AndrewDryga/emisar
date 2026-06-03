@@ -18,6 +18,21 @@ requires:
   binaries:
     - curl
 
+setup:
+  summary: >
+    Every action calls the Prometheus HTTP API at $PROM_URL via curl on the
+    runner host. Set PROM_URL to the server base URL; the actions send no
+    auth, so a reachable endpoint is all that is needed.
+  env:
+    - name: PROM_URL
+      required: true
+      description: Prometheus base URL (scheme + host + port, no trailing path).
+      example: http://prometheus.internal:9090
+  notes:
+    - "No credentials are sent. If your Prometheus sits behind an auth proxy, expose it to the runner on a network path that does not require a header, or point PROM_URL at a trusted side door."
+    - "Admin actions (reload_config, snapshot, clean_tombstones, delete_series) only work if Prometheus was started with --web.enable-admin-api and --web.enable-lifecycle."
+  verify: prom.build_info
+
 actions:
   - actions/build_info.yaml
   - actions/runtime_info.yaml

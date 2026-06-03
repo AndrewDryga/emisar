@@ -17,6 +17,30 @@ requires:
   binaries:
     - mysql
 
+setup:
+  summary: >
+    The mysql client reads its password and connection target from its own
+    environment variables on the runner host; the actions pass no connection
+    flags. The username is not taken from the environment — it comes from
+    ~/.my.cnf or defaults to the runner's OS user.
+  env:
+    - name: MYSQL_PWD
+      description: Password for the connecting user. Prefer ~/.my.cnf instead — env-var passwords are visible in the process list.
+    - name: MYSQL_HOST
+      description: Server host for TCP connections.
+      default: localhost
+    - name: MYSQL_TCP_PORT
+      description: Server TCP port.
+      default: "3306"
+    - name: MYSQL_UNIX_PORT
+      description: Unix socket path, used when connecting to localhost.
+      example: /var/run/mysqld/mysqld.sock
+  notes:
+    - "Cleanest credential store: ~/.my.cnf (mode 0600) on the runner host with [client] user/password/host — read from disk, so it needs no inherit_env entry."
+    - The username is never read from the environment; set it in ~/.my.cnf, otherwise it defaults to the runner's OS user.
+    - Mutators (kill_query, kill_connection, flush_logs, analyze_table, optimize_table) need a user with PROCESS/RELOAD and the relevant table privileges.
+  verify: mysql.uptime
+
 actions:
   # Server state
   - actions/uptime.yaml

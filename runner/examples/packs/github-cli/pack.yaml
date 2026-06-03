@@ -17,6 +17,19 @@ requires:
   binaries:
     - gh
 
+setup:
+  summary: >
+    Actions shell out to gh on the runner host. gh authenticates with GH_TOKEN
+    (or GITHUB_TOKEN) if set, otherwise with the token stored by `gh auth
+    login`. Provide one of those so gh is signed in.
+  env:
+    - name: GH_TOKEN
+      description: 'GitHub token gh uses to authenticate. Omit if the runner host is already signed in via `gh auth login`.'
+  notes:
+    - "Token-free alternative: run `gh auth login` as the runner's user once; the credential is stored in ~/.config/gh/hosts.yml and read from disk, so it needs no inherit_env entry."
+    - "The token needs repo read scope for the introspection actions; the mutators (pr_merge, pr_close, workflow_rerun, workflow_dispatch) and repo_clone_count need write/push access to the target repo."
+  verify: gh.auth_status
+
 actions:
   # Auth + repo
   - actions/auth_status.yaml

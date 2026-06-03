@@ -15,6 +15,18 @@ requires:
   os:
     - linux
 
+setup:
+  summary: >
+    Inspects a local Python deployment on the runner host — interpreter,
+    venv, and pip state — no credentials needed.
+  env:
+    - name: PY_VENV
+      description: Path to the application's virtualenv; the venv-scoped actions run its bin/python and bin/pip. Optional; defaults to /opt/app/venv. Add it to the runner's inherit_env if you override it.
+      default: "/opt/app/venv"
+  notes:
+    - "The runner uid must be able to read the venv and the interpreter it points at; system actions use /usr/bin/python3."
+  verify: py.python_version_system
+
 actions:
   - actions/python_version_system.yaml
   - actions/venv_python_version.yaml

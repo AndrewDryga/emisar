@@ -17,6 +17,15 @@ requires:
   binaries:
     - openssl
 
+setup:
+  summary: >
+    Inspects certificate and key files on the local runner host's
+    filesystem at the paths you pass as action arguments — no credentials
+    needed.
+  notes:
+    - "The runner process needs read access to the cert/key files it inspects; private keys and PKCS#12 stores are often root- or owner-only, so run as a user that can read them."
+  verify: ssl.cert_expiry
+
 actions:
   - actions/find_certs.yaml
   - actions/cert_text.yaml

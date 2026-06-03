@@ -19,6 +19,15 @@ requires:
     - ps
     - ss
 
+setup:
+  summary: >
+    Operates on the local runner host — no credentials needed.
+  notes:
+    - "Basic diagnostics (tops, vmstat, loadavg, dmesg, ping) work unprivileged but only see the runner user's own processes."
+    - "Deep inspection — pid_stack, pid_environ/pid_fds/pid_io and socket-to-PID mapping for other users — needs root or CAP_SYS_PTRACE for full visibility."
+    - "Mutators (drop_caches, kill_pid for other users, sysctl_set) need root."
+  verify: debugging.loadavg
+
 actions:
   # Process tops
   - actions/processes_top.yaml

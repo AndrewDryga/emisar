@@ -72,6 +72,34 @@ func TestPack_Validate(t *testing.T) {
 	}
 }
 
+func TestSetup_Validate(t *testing.T) {
+	good := Setup{Env: []EnvVar{{Name: "PGHOST", Required: true}, {Name: "PGPORT"}}}
+	if err := good.Validate("p"); err != nil {
+		t.Fatalf("good setup should validate: %v", err)
+	}
+	if err := (Setup{}).Validate("p"); err != nil {
+		t.Fatalf("empty setup should validate: %v", err)
+	}
+
+	bad := []struct {
+		name  string
+		setup Setup
+	}{
+		{"empty env name", Setup{Env: []EnvVar{{Name: ""}}}},
+		{"hyphen in name", Setup{Env: []EnvVar{{Name: "HAS-DASH"}}}},
+		{"leading digit", Setup{Env: []EnvVar{{Name: "1ABC"}}}},
+		{"space in name", Setup{Env: []EnvVar{{Name: "A B"}}}},
+		{"duplicate var", Setup{Env: []EnvVar{{Name: "X"}, {Name: "X"}}}},
+	}
+	for _, c := range bad {
+		t.Run(c.name, func(t *testing.T) {
+			if err := c.setup.Validate("p"); err == nil {
+				t.Fatalf("expected validation to fail")
+			}
+		})
+	}
+}
+
 func TestRequirements_MatchesHost(t *testing.T) {
 	// Empty OS list matches everything.
 	if !(Requirements{}).MatchesHost() {

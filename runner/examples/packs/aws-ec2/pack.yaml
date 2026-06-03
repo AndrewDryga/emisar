@@ -13,6 +13,30 @@ requires:
   os: [linux]
   binaries: [aws]
 
+setup:
+  summary: >
+    Drives the aws CLI on the runner host. It resolves credentials and
+    region from its own environment or ~/.aws config — the runner only
+    forwards the variables you allowlist in inherit_env.
+  env:
+    - name: AWS_PROFILE
+      description: Named profile in ~/.aws/config and ~/.aws/credentials. Omit to use the default profile or static-key/instance-role auth.
+      example: prod
+    - name: AWS_REGION
+      required: true
+      description: Region to operate in; EC2 is regional, so calls fail without it.
+      example: us-east-1
+    - name: AWS_ACCESS_KEY_ID
+      description: Static access key. Use instead of a profile; pair with AWS_SECRET_ACCESS_KEY.
+    - name: AWS_SECRET_ACCESS_KEY
+      description: Secret for AWS_ACCESS_KEY_ID.
+    - name: AWS_SESSION_TOKEN
+      description: Session token for temporary (STS) credentials.
+  notes:
+    - "Alternative to env keys: an ~/.aws/credentials profile (read from disk, no inherit_env entry) or, on EC2/ECS, the instance/task role from instance metadata (no credentials needed at all)."
+    - "Inventory needs ec2:Describe* (read-only). The mutators stop_instance / start_instance / reboot_instance / terminate_instance additionally need ec2:StopInstances / StartInstances / RebootInstances / TerminateInstances."
+  verify: ec2.describe_instances
+
 actions:
   - actions/describe_instances.yaml
   - actions/describe_instance_one.yaml

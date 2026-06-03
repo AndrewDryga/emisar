@@ -15,6 +15,16 @@ requires:
   os:
     - linux
 
+setup:
+  summary: >
+    Operates on the local Postfix instance on the runner host — no
+    credentials needed. Uses the standard binaries (postqueue, postconf,
+    mailq, postsuper) and reads the queue under /var/spool/postfix.
+  notes:
+    - "The runner user must own the Postfix queue or be in the postdrop group to read it; the postsuper_* hold/release/requeue actions and `reload` need root."
+    - "maillog actions read /var/log/mail.log, falling back to /var/log/maillog (RHEL-family)."
+  verify: postfix.mailq
+
 actions:
   - actions/mailq.yaml
   - actions/qshape.yaml

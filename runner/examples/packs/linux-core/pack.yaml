@@ -15,6 +15,15 @@ requires:
   os:
     - linux
 
+setup:
+  summary: >
+    Operates on the local runner host — no credentials needed.
+  notes:
+    - "Read-only diagnostics (disk, memory, logs, network, users) need no privilege."
+    - "systemctl start/stop/restart/reload/enable/disable and reboot_host need root — run the runner as root, via sudo, or grant the matching polkit rule."
+    - "Some reads (sudoers_dump, certain journalctl/auth paths) only return full output when run as root."
+  verify: linux.uptime
+
 actions:
   # Filesystem & storage
   - actions/disk_usage.yaml

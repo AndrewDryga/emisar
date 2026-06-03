@@ -57,6 +57,41 @@ actions:
 `
 }
 
+func TestLoad_SetupVerify(t *testing.T) {
+	packWithVerify := func(verify string) string {
+		return `schema_version: 1
+id: vp
+name: t
+version: 0.0.1
+description: t
+setup:
+  verify: ` + verify + `
+actions:
+  - actions/a.yaml
+`
+	}
+
+	t.Run("valid verify resolves", func(t *testing.T) {
+		root := writePack(t, t.TempDir(), "p", map[string]string{
+			"pack.yaml":      packWithVerify("vp.a"),
+			"actions/a.yaml": actionYAML("vp.a"),
+		})
+		if _, err := LoadOne(root, LoadOptions{}); err != nil {
+			t.Fatalf("valid verify should load: %v", err)
+		}
+	})
+
+	t.Run("unknown verify fails", func(t *testing.T) {
+		root := writePack(t, t.TempDir(), "p", map[string]string{
+			"pack.yaml":      packWithVerify("vp.missing"),
+			"actions/a.yaml": actionYAML("vp.a"),
+		})
+		if _, err := LoadOne(root, LoadOptions{}); err == nil {
+			t.Fatal("unknown verify action should fail to load")
+		}
+	})
+}
+
 func TestLoad_ValidPack(t *testing.T) {
 	tmp := t.TempDir()
 	root := writePack(t, tmp, "p", map[string]string{

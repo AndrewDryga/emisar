@@ -14,6 +14,15 @@ requires:
   os: [linux]
   binaries: [zpool, zfs]
 
+setup:
+  summary: >
+    Operates on the ZFS pools of the local runner host — no credentials
+    needed.
+  notes:
+    - "Status/list/iostat reads work as any user that can run zpool/zfs."
+    - "Mutators (scrub start/stop, clear errors, snapshot create/destroy, rollback) need root, or a non-root user holding the matching ZFS delegated permissions (zfs allow)."
+  verify: zfs.pool_list
+
 actions:
   - actions/pool_list.yaml
   - actions/pool_status.yaml

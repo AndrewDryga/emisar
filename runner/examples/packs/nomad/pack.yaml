@@ -19,6 +19,27 @@ requires:
   binaries:
     - nomad
 
+setup:
+  summary: >
+    Both the nomad CLI and the curl-based API actions read the server
+    address and ACL token from NOMAD_ADDR and NOMAD_TOKEN on the runner
+    host.
+  env:
+    - name: NOMAD_ADDR
+      description: >
+        Server HTTP address, including scheme (the curl actions build
+        URLs directly from it).
+      default: http://127.0.0.1:4646
+      example: http://nomad.internal:4646
+    - name: NOMAD_TOKEN
+      description: >
+        ACL token. Required when ACLs are enabled; its policy gates which
+        actions succeed.
+  notes:
+    - With ACLs enabled the token needs the matching capabilities — submit-job for the job mutators, node:write for drain/eligibility/purge, and operator:write for the raft remove-peer action.
+    - "For TLS-enabled servers use an https:// NOMAD_ADDR; the nomad CLI also reads NOMAD_CACERT / NOMAD_CLIENT_CERT / NOMAD_CLIENT_KEY, but the curl actions do not."
+  verify: nomad.agent_info
+
 actions:
   # Cluster / agent
   - actions/agent_info.yaml

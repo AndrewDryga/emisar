@@ -16,6 +16,15 @@ requires:
   binaries:
     - jcmd
 
+setup:
+  summary: >
+    Attaches to local JVM processes on the runner host with the JDK
+    tools (jcmd/jstack/jmap/jstat/JFR) — no credentials needed; the
+    target JVM's pid is passed as an argument.
+  notes:
+    - "The attach API requires the runner to run as the same uid as the target JVM (or as root, or with CAP_SYS_PTRACE); otherwise actions fail cleanly with a permission error."
+  verify: jvm.vm_uptime
+
 actions:
   # VM info (jcmd VM.*)
   - actions/vm_flags.yaml

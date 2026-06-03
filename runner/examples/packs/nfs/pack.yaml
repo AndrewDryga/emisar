@@ -14,6 +14,14 @@ requires:
   os:
     - linux
 
+setup:
+  summary: >
+    Inspects the local runner host's NFS server/client state — no
+    credentials needed.
+  notes:
+    - "exportfs (including the -r re-export and unexport) needs root; showmount/nfsstat/rpcinfo reads work as any user."
+  verify: nfs.exportfs_v
+
 actions:
   - actions/exportfs_v.yaml
   - actions/showmount_e.yaml

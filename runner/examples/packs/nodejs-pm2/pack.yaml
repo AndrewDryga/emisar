@@ -16,6 +16,14 @@ requires:
   binaries:
     - pm2
 
+setup:
+  summary: >
+    Drives the local pm2 CLI on the runner host — no credentials needed.
+  notes:
+    - "pm2 talks to a per-user daemon, so the runner must run as the same user that owns the target pm2 processes; running as a different uid (or root) sees a different, usually empty, process list."
+    - "If the apps run under a daemon at a non-default location, set PM2_HOME to that directory (and add it to the runner's inherit_env)."
+  verify: pm2.list
+
 actions:
   - actions/list.yaml
   - actions/jlist.yaml

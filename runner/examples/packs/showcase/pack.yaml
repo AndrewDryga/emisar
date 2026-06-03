@@ -10,6 +10,13 @@ description: >
   use it as a reference when authoring real ones.
 vendor: emisar
 
+setup:
+  summary: >
+    Reference pack only — every action runs a trivial local command (echo or a
+    bundled script) and authenticates to nothing. No env vars or credentials
+    to provision; do not use it in production.
+  verify: showcase.every_arg_type
+
 actions:
   - actions/every_arg_type.yaml
   - actions/path_validation.yaml

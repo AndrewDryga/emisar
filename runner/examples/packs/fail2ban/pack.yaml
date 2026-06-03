@@ -16,6 +16,13 @@ requires:
   binaries:
     - fail2ban-client
 
+setup:
+  summary: >
+    Operates on the local runner host — no credentials needed.
+  notes:
+    - "fail2ban-client talks to the local fail2ban daemon socket — every action (including status and version) needs root or write access to that socket. Run the runner as root or via sudo."
+  verify: f2b.status
+
 actions:
   - actions/status.yaml
   - actions/version.yaml

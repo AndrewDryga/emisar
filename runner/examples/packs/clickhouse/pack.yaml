@@ -17,6 +17,26 @@ requires:
   binaries:
     - clickhouse-client
 
+setup:
+  summary: >
+    Each action reads CH_HOST, CH_USER, and CH_PASSWORD on the runner host and
+    passes them to clickhouse-client as --host/--user/--password. Host and user
+    fall back to localhost and the default user, so a local server with the
+    default account needs no setup at all.
+  env:
+    - name: CH_HOST
+      description: Server host passed to --host.
+      default: localhost
+    - name: CH_USER
+      description: User passed to --user.
+      default: default
+    - name: CH_PASSWORD
+      description: Password passed to --password. Leave unset for a passwordless account.
+  notes:
+    - Connection always uses clickhouse-client's default native port (9000); there is no port env var in this pack.
+    - The user needs SELECT on the system tables for the reads, plus rights for the mutators (KILL QUERY, OPTIMIZE, SYSTEM ... for replica/config actions) you enable.
+  verify: ch.uptime
+
 actions:
   # Server state
   - actions/uptime.yaml

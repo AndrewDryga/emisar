@@ -17,6 +17,24 @@ requires:
   binaries:
     - nc
 
+setup:
+  summary: >
+    Actions speak the memcached ASCII protocol over nc to MEMCACHED_HOST:
+    MEMCACHED_PORT on the runner host, defaulting to the local instance at
+    127.0.0.1:11211. The ASCII protocol has no authentication, so no
+    credentials are involved.
+  env:
+    - name: MEMCACHED_HOST
+      description: Target host.
+      default: 127.0.0.1
+    - name: MEMCACHED_PORT
+      description: Target port.
+      default: "11211"
+  notes:
+    - No authentication exists for this transport; reach a remote daemon only over a trusted network or tunnel.
+    - flush_all is destructive — it invalidates every key and can stampede the origin on the next miss.
+  verify: mc.stats
+
 actions:
   - actions/stats.yaml
   - actions/stats_slabs.yaml

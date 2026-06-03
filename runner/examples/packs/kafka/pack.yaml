@@ -17,6 +17,21 @@ requires:
   binaries:
     - kafka-topics.sh
 
+setup:
+  summary: >
+    The kafka-*.sh tools take the broker list from the KAFKA_BOOTSTRAP
+    env var on the runner host, which every action passes through as
+    --bootstrap-server.
+  env:
+    - name: KAFKA_BOOTSTRAP
+      required: true
+      description: Comma-separated bootstrap broker list (host:port).
+      example: broker1:9092,broker2:9092
+  notes:
+    - "These actions pass only --bootstrap-server — none reference a --command-config / KAFKA_COMMAND_CONFIG properties file, so as written they assume a listener reachable without per-client SASL/TLS credentials."
+    - "Mutators (reset_offsets_*, alter_topic_retention, delete_consumer_group, preferred_leader_election) need a principal with cluster/topic/group Alter rights if the cluster enforces ACLs."
+  verify: kafka.cluster_info
+
 actions:
   # Cluster
   - actions/cluster_info.yaml

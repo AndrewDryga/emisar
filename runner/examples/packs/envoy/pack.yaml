@@ -18,6 +18,19 @@ requires:
   binaries:
     - curl
 
+setup:
+  summary: >
+    Operates on the local Envoy instance on the runner host via its admin
+    endpoint (default 127.0.0.1:9901) — no credentials needed.
+  env:
+    - name: ENVOY_ADMIN
+      description: Base URL of the Envoy admin endpoint for the read actions; set only if it is not on the default.
+      default: "http://127.0.0.1:9901"
+  notes:
+    - "The admin endpoint must be enabled in the Envoy bootstrap (admin.address) for any action to work."
+    - "The traffic-shifting mutators (drain_listeners, healthcheck_fail/ok, reset_counters) take their admin URL as an `admin` argument, not from ENVOY_ADMIN."
+  verify: envoy.ready
+
 actions:
   - actions/server_info.yaml
   - actions/clusters.yaml

@@ -22,6 +22,13 @@ type Pack struct {
 
 	Requires Requirements `yaml:"requires,omitempty"`
 
+	// Setup documents what an operator must do on the runner host before
+	// this pack's actions can work — chiefly the environment variables its
+	// tools read to authenticate. Surfaced by `emisar pack install` and
+	// `emisar pack info`. Optional: packs that act only on the local host
+	// can omit it or set just a summary.
+	Setup Setup `yaml:"setup,omitempty"`
+
 	Actions []string `yaml:"actions,omitempty"`
 
 	// AllowSymlinks lets the pack include symlinks for action YAML and
@@ -66,6 +73,74 @@ func (r Requirements) MatchesHost() bool {
 	return false
 }
 
+// Setup is the operator-facing "how to make this pack work" block. It is
+// documentation, not enforced config: the runner never reads these env
+// vars itself (the pack's tool does), and never injects them — the
+// operator must still allowlist each one in the runner's inherit_env.
+// `emisar pack install` and `emisar pack info` render it so an operator
+// knows exactly what to provision.
+type Setup struct {
+	// Summary is one or two sentences on the auth model in prose, e.g.
+	// "Authenticates via PG* environment variables on the runner host."
+	Summary string `yaml:"summary,omitempty"`
+	// Env is the environment variables the pack's tool reads. Each must
+	// also be added to the runner's inherit_env to reach the process.
+	Env []EnvVar `yaml:"env,omitempty"`
+	// Notes are extra setup caveats (file-based auth alternatives,
+	// required privileges, group membership, …) as scannable bullets.
+	Notes []string `yaml:"notes,omitempty"`
+	// Verify is the id of a low-risk read action an operator can run to
+	// confirm the pack can reach and authenticate to its target. Checked
+	// at load time to be one of the pack's own actions.
+	Verify string `yaml:"verify,omitempty"`
+}
+
+// EnvVar documents one environment variable a pack's tool reads to find or
+// authenticate to its target.
+type EnvVar struct {
+	Name        string `yaml:"name"`
+	Required    bool   `yaml:"required,omitempty"`
+	Description string `yaml:"description,omitempty"`
+	Default     string `yaml:"default,omitempty"`
+	Example     string `yaml:"example,omitempty"`
+}
+
+// Validate checks the setup block is well-formed. Verify is validated by
+// the loader (it needs the loaded action set), not here.
+func (s Setup) Validate(packID string) error {
+	seen := make(map[string]struct{}, len(s.Env))
+	for _, e := range s.Env {
+		if !validEnvName(e.Name) {
+			return fmt.Errorf("pack %s: setup.env name %q is not a valid environment variable name", packID, e.Name)
+		}
+		if _, dup := seen[e.Name]; dup {
+			return fmt.Errorf("pack %s: duplicate setup.env var %q", packID, e.Name)
+		}
+		seen[e.Name] = struct{}{}
+	}
+	return nil
+}
+
+// validEnvName reports whether s is a POSIX-shaped environment variable
+// name (first char a letter or underscore, rest alphanumeric/underscore).
+func validEnvName(s string) bool {
+	if s == "" {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch {
+		case c >= 'A' && c <= 'Z':
+		case c >= 'a' && c <= 'z':
+		case c == '_':
+		case c >= '0' && c <= '9' && i > 0:
+		default:
+			return false
+		}
+	}
+	return true
+}
+
 // Validate checks that the pack manifest itself is well-formed.
 func (p *Pack) Validate() error {
 	if p.SchemaVersion != SchemaVersion {
@@ -88,6 +163,9 @@ func (p *Pack) Validate() error {
 	}
 	if len(p.Actions) == 0 {
 		return fmt.Errorf("pack %s: must declare at least one action", p.ID)
+	}
+	if err := p.Setup.Validate(p.ID); err != nil {
+		return err
 	}
 	return nil
 }

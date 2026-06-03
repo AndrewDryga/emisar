@@ -17,6 +17,15 @@ requires:
   binaries:
     - docker
 
+setup:
+  summary: >
+    Talks to the local Docker daemon on the runner host via its Unix
+    socket — no credentials needed.
+  notes:
+    - "The runner uid must be in the docker group (or be root) to reach /var/run/docker.sock; this pack does not escalate."
+    - "Membership in the docker group is effectively root-equivalent on the host, since a container can mount and write the host filesystem."
+  verify: docker.ps
+
 actions:
   # Discovery
   - actions/ps.yaml
