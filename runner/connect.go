@@ -2,12 +2,14 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 
 	"github.com/spf13/cobra"
@@ -57,15 +59,23 @@ env var can be unset after the first successful connect.`,
 
 			hostname, _ := os.Hostname()
 
+			// Durable identity, persisted next to the token so reconnects
+			// (and reboots) map back to the same runner row in the cloud.
+			externalID, err := resolveExternalID(rt.cfg.Runner.ID, rt.cfg.Paths.DataDir)
+			if err != nil {
+				return fmt.Errorf("resolve runner id: %w", err)
+			}
+
 			logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 			dialer := &cloud.WebsocketDialer{
-				URL:       rt.cfg.Cloud.URL,
-				AuthKey:   authKey,
-				TokenPath: tokenPath,
-				Hostname:  hostname,
-				Group:     rt.cfg.Runner.Group,
-				Version:   Version,
-				Logger:    logger,
+				URL:        rt.cfg.Cloud.URL,
+				AuthKey:    authKey,
+				TokenPath:  tokenPath,
+				Hostname:   hostname,
+				Group:      rt.cfg.Runner.Group,
+				Version:    Version,
+				ExternalID: externalID,
+				Logger:     logger,
 			}
 
 			builder := &cloud.StateBuilder{
@@ -126,4 +136,53 @@ env var can be unset after the first successful connect.`,
 			return err
 		},
 	}
+}
+
+// resolveExternalID returns the runner's durable identity. Precedence:
+//  1. an operator-pinned `runner.id` in config, if set;
+//  2. a UUID persisted at <data_dir>/runner_id from a previous boot;
+//  3. a freshly minted UUID, persisted for next time.
+//
+// Presenting a stable id on every register lets the cloud map reconnects
+// (and reboots) back to the same runner row instead of creating a new one.
+func resolveExternalID(configuredID, dataDir string) (string, error) {
+	if id := strings.TrimSpace(configuredID); id != "" {
+		return id, nil
+	}
+
+	path := filepath.Join(dataDir, "runner_id")
+	if b, err := os.ReadFile(path); err == nil {
+		if id := strings.TrimSpace(string(b)); id != "" {
+			return id, nil
+		}
+	}
+
+	id, err := newUUIDv4()
+	if err != nil {
+		return "", err
+	}
+
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+		return "", err
+	}
+	// Write atomically so a crash mid-write can't leave a corrupt id.
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, []byte(id), 0o600); err != nil {
+		return "", err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		return "", err
+	}
+	return id, nil
+}
+
+// newUUIDv4 builds an RFC 4122 v4 UUID from crypto/rand — no external dep.
+func newUUIDv4() (string, error) {
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", err
+	}
+	b[6] = (b[6] & 0x0f) | 0x40 // version 4
+	b[8] = (b[8] & 0x3f) | 0x80 // variant 10
+	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16]), nil
 }

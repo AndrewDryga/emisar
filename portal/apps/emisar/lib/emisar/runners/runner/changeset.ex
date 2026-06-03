@@ -27,7 +27,6 @@ defmodule Emisar.Runners.Runner.Changeset do
     |> validate_length(:name, min: 1, max: 80)
     |> validate_length(:group, min: 1, max: 80)
     |> unique_constraint([:account_id, :external_id])
-    |> unique_constraint(:name, name: :runners_account_id_name_index)
   end
 
   @doc """
@@ -43,7 +42,6 @@ defmodule Emisar.Runners.Runner.Changeset do
     |> validate_required([:name, :external_id, :group])
     |> validate_length(:name, min: 1, max: 80)
     |> unique_constraint([:account_id, :external_id])
-    |> unique_constraint(:name, name: :runners_account_id_name_index)
   end
 
   # Attribute-key-agnostic default: only fills `external_id` when the
@@ -74,7 +72,6 @@ defmodule Emisar.Runners.Runner.Changeset do
     |> cast(attrs, [:name, :group, :labels])
     |> validate_required([:name, :group])
     |> validate_length(:name, min: 1, max: 80)
-    |> unique_constraint(:name, name: :runners_account_id_name_index)
   end
 
   @doc "Apply a runner_state advertisement (hostname, labels, version, packs)."

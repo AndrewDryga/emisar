@@ -26,6 +26,7 @@ type fakeCloud struct {
 	wsAccepted    chan *websocket.Conn
 	failRegister  bool
 	failWSUpgrade bool
+	lastRegister  map[string]any
 }
 
 func newFakeCloud(t *testing.T) (*fakeCloud, *httptest.Server) {
@@ -56,6 +57,7 @@ func newFakeCloud(t *testing.T) (*fakeCloud, *httptest.Server) {
 		body, _ := io.ReadAll(r.Body)
 		var got map[string]any
 		_ = json.Unmarshal(body, &got)
+		fc.lastRegister = got
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
@@ -146,6 +148,67 @@ func TestWebsocketDialerRegistersAndConnects(t *testing.T) {
 	}
 
 	// Drain the server-side ws so the goroutine doesn't leak.
+	srvConn := <-fc.wsAccepted
+	srvConn.Close(websocket.StatusNormalClosure, "")
+}
+
+func TestWebsocketDialerSendsExternalID(t *testing.T) {
+	fc, srv := newFakeCloud(t)
+
+	d := &WebsocketDialer{
+		URL:        srv.URL,
+		AuthKey:    fc.authKey,
+		TokenPath:  filepath.Join(t.TempDir(), "token.json"),
+		Hostname:   "test-host",
+		Group:      "default",
+		Version:    "0.test",
+		ExternalID: "stable-id-123",
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	conn, _, err := d.Dial(ctx)
+	if err != nil {
+		t.Fatalf("Dial: %v", err)
+	}
+	defer conn.Close()
+
+	if got := fc.lastRegister["external_id"]; got != "stable-id-123" {
+		t.Errorf("register external_id = %v, want stable-id-123", got)
+	}
+
+	srvConn := <-fc.wsAccepted
+	srvConn.Close(websocket.StatusNormalClosure, "")
+}
+
+func TestWebsocketDialerOmitsBlankExternalID(t *testing.T) {
+	fc, srv := newFakeCloud(t)
+
+	d := &WebsocketDialer{
+		URL:       srv.URL,
+		AuthKey:   fc.authKey,
+		TokenPath: filepath.Join(t.TempDir(), "token.json"),
+		Hostname:  "test-host",
+		Group:     "default",
+		Version:   "0.test",
+		// ExternalID intentionally empty — the cloud must not receive a
+		// blank key (it would collapse all id-less runners into one row).
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	conn, _, err := d.Dial(ctx)
+	if err != nil {
+		t.Fatalf("Dial: %v", err)
+	}
+	defer conn.Close()
+
+	if _, present := fc.lastRegister["external_id"]; present {
+		t.Errorf("blank external_id should be omitted, got %v", fc.lastRegister["external_id"])
+	}
+
 	srvConn := <-fc.wsAccepted
 	srvConn.Close(websocket.StatusNormalClosure, "")
 }

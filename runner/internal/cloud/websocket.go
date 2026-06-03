@@ -51,6 +51,12 @@ type WebsocketDialer struct {
 	Group    string
 	Version  string
 
+	// ExternalID is the runner's durable identity: persisted across
+	// boots and presented on every register so the cloud maps reconnects
+	// back to the same runner row. When empty, the cloud assigns a fresh
+	// id each register (older behavior — a new row per connect).
+	ExternalID string
+
 	// HTTPClient is used for /runner/register; defaults to a 10s-timeout
 	// client. Tests can inject a stub.
 	HTTPClient *http.Client
@@ -218,11 +224,18 @@ func (d *WebsocketDialer) register(ctx context.Context) (agentToken, error) {
 		return agentToken{}, err
 	}
 
-	body, err := json.Marshal(map[string]any{
+	payload := map[string]any{
 		"hostname": d.Hostname,
 		"group":    d.Group,
 		"version":  d.Version,
-	})
+	}
+	// Only send external_id when we have one — a blank value must not be
+	// sent (the cloud would otherwise have to special-case empty strings).
+	if d.ExternalID != "" {
+		payload["external_id"] = d.ExternalID
+	}
+
+	body, err := json.Marshal(payload)
 	if err != nil {
 		return agentToken{}, err
 	}

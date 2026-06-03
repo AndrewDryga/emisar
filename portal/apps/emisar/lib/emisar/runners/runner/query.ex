@@ -21,9 +21,6 @@ defmodule Emisar.Runners.Runner.Query do
   def by_external_id(q, external_id),
     do: where(q, [runners: r], r.external_id == ^external_id)
 
-  def by_name(q, name),
-    do: where(q, [runners: r], r.name == ^name)
-
   def by_group(q, group),
     do: where(q, [runners: r], r.group == ^group)
 

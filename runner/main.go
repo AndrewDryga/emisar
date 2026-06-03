@@ -22,7 +22,7 @@ var (
 )
 
 // Version is overridden via -ldflags at build time.
-var Version = "0.3.1-dev"
+var Version = "0.4.0-dev"
 
 func main() {
 	root := &cobra.Command{

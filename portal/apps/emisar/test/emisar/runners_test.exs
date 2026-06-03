@@ -94,19 +94,22 @@ defmodule Emisar.RunnersTest do
       assert String.starts_with?(raw_token, "rnrtok-")
     end
 
-    test "re-registration with the same hostname + no external_id reuses the runner" do
-      # The cloud runner sends {hostname, group, version} but no
-      # external_id, so the server mints a fresh UUID each call. Without
-      # idempotent (account, name) resolution the second register tripped
-      # the (account_id, name) unique index and crashed with a MatchError
-      # (HTTP 500), so a runner could never reconnect to its own row.
+    test "re-registration with the same external_id reuses the runner" do
+      # Reconnect: the runner persists + presents a stable external_id, so
+      # the same row is reused (and the version is refreshed). This is the
+      # path that used to 500 on the (account_id, name) unique index.
       account = account_fixture()
       user = user_fixture()
 
       {raw, _key} =
         auth_key_fixture(account_id: account.id, created_by_id: user.id, reusable: true)
 
-      attrs = %{hostname: "cs-429836741138", group: "cs-default", version: "0.3.1"}
+      attrs = %{
+        hostname: "cs-429836741138",
+        group: "cs-default",
+        version: "0.3.1",
+        external_id: "stable-ext-id-1"
+      }
 
       assert {:ok, %Runner{id: id1, runner_version: "0.3.1"}, %Token{}, _} =
                Runners.register_via_auth_key(raw, attrs)
@@ -114,12 +117,45 @@ defmodule Emisar.RunnersTest do
       assert {:ok, %Runner{id: id2}, %Token{}, _} =
                Runners.register_via_auth_key(raw, attrs)
 
-      # Same logical runner — not a duplicate.
       assert id1 == id2
+    end
 
-      # Exactly one row for that (account, name).
-      assert {:ok, %Runner{id: ^id1}} =
-               Runners.fetch_runner_by_name_for_account("cs-429836741138", account.id)
+    test "a different external_id with the same name creates a second runner" do
+      # Names are display-only and may repeat — a fresh install / different
+      # machine gets a new external_id and registers as its own runner.
+      account = account_fixture()
+      user = user_fixture()
+
+      {raw, _key} =
+        auth_key_fixture(account_id: account.id, created_by_id: user.id, reusable: true)
+
+      base = %{hostname: "samehost", group: "g"}
+
+      assert {:ok, %Runner{id: id1, name: "samehost"}, _, _} =
+               Runners.register_via_auth_key(raw, Map.put(base, :external_id, "ext-a"))
+
+      assert {:ok, %Runner{id: id2, name: "samehost"}, _, _} =
+               Runners.register_via_auth_key(raw, Map.put(base, :external_id, "ext-b"))
+
+      refute id1 == id2
+    end
+
+    test "registers without an external_id (no crash) — each call a fresh runner" do
+      # An older runner that doesn't send external_id: the server mints a
+      # fresh UUID per call. It must register cleanly (no 500), even though
+      # that means a new row each time.
+      account = account_fixture()
+      user = user_fixture()
+
+      {raw, _key} =
+        auth_key_fixture(account_id: account.id, created_by_id: user.id, reusable: true)
+
+      attrs = %{hostname: "no-id-host", group: "g"}
+
+      assert {:ok, %Runner{id: id1}, _, _} = Runners.register_via_auth_key(raw, attrs)
+      assert {:ok, %Runner{id: id2}, _, _} = Runners.register_via_auth_key(raw, attrs)
+
+      refute id1 == id2
     end
 
     test "returns :over_limit when the plan cap is exceeded" do

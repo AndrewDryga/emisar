@@ -40,11 +40,13 @@ defmodule Emisar.Repo.Migrations.Runners do
       timestamps(type: :utc_datetime_usec)
     end
 
+    # A runner's durable identity. The runner persists this and presents
+    # it on every register, so reconnects map back to the same row.
     create unique_index(:runners, [:account_id, :external_id])
-    # Per-account uniqueness on `name` so MCP clients can address a
-    # runner by its human-readable name. Without this, "use runner X"
-    # is ambiguous when two runners happen to share a name.
-    create unique_index(:runners, [:account_id, :name])
+    # `name` is a display label (defaults to hostname) and is NOT unique:
+    # a fresh install / different machine gets a new external_id and may
+    # reuse a name. Plain index for the by-name lookups MCP dispatch does.
+    create index(:runners, [:account_id, :name])
     create index(:runners, [:account_id, :group])
     create index(:runners, [:account_id, :status])
 
