@@ -104,6 +104,15 @@ defmodule EmisarWeb.Router do
 
     post "/sign_in", UserSessionController, :create
     get "/sign_in/magic/:token", UserSessionController, :magic_link_confirm
+  end
+
+  # Email confirmation must run whether or not you're signed in — the link
+  # has to consume the token either way. It previously lived under
+  # :redirect_if_user_is_authenticated, which silently bounced an
+  # already-signed-in user to the dashboard without ever confirming.
+  scope "/", EmisarWeb do
+    pipe_through [:browser, :noindex]
+
     get "/confirm/:token", UserConfirmationController, :confirm
   end
 
