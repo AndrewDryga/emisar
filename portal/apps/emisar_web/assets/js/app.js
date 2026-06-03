@@ -136,13 +136,14 @@ function setupCopyToClipboardDelegation() {
     if (!sel) return null
     const target = document.querySelector(sel)
     if (!target) return null
-    // .trim() would strip an intentional leading space the author put
-    // there — install commands rely on that to skip bash history via
-    // HISTCONTROL=ignorespace. Instead:
-    //   * drop leading blank lines + the indentation on the first
-    //     non-blank line (HEEx template whitespace)
-    //   * drop trailing whitespace
-    //   * preserve any space the first content line started with
+    // Strip the first content line's indentation (HEEx template
+    // whitespace) and the same prefix from later lines, so a multi-line
+    // snippet copies without the template's leading indentation, then
+    // drop trailing whitespace. This CANNOT tell template indent from an
+    // intentional leading space, so leading-whitespace-significant
+    // content (e.g. a ` curl …` command relying on
+    // HISTCONTROL=ignorespace to skip shell history) must be copied via
+    // `data-copy-text` (the literal-string path above), not a selector.
     const raw = target.innerText
     const lines = raw.replace(/\s+$/, "").split("\n")
     while (lines.length && lines[0].trim() === "") lines.shift()

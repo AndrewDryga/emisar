@@ -1662,12 +1662,12 @@ defmodule EmisarWeb.CoreComponents do
                   Run on any Linux or macOS host
                 </div>
                 <div class="mt-2 flex items-center gap-2 rounded-lg border border-zinc-800 bg-black/60 p-4 font-mono text-xs">
-                  <pre
-                    id="install-wizard-command"
-                    class="flex-1 whitespace-pre-wrap break-all text-zinc-300"
-                  >{@install_command}</pre>
+                  <pre class="flex-1 whitespace-pre-wrap break-all text-zinc-300">{@install_command}</pre>
+                  <%!-- Copy the literal string, not the rendered element's
+                       innerText: the leading space (HISTCONTROL=ignorespace)
+                       is significant and the selector path would strip it. --%>
                   <.copy_button
-                    target="#install-wizard-command"
+                    text={@install_command}
                     class="self-start bg-indigo-500/20 px-2 text-indigo-200 hover:bg-indigo-500/30 font-semibold"
                   >
                     Copy
