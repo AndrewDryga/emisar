@@ -282,7 +282,10 @@ defmodule EmisarWeb.ApprovalDetailLive do
              reach when scanning a long args/reason. --%>
         <aside class="lg:sticky lg:top-6 lg:self-start">
           <%= if @request.status == "pending" do %>
-            <.decision_panel can_decide?={Permissions.can?(assigns, :decide_approval)} />
+            <.decision_panel
+              can_decide?={Permissions.can?(assigns, :decide_approval)}
+              grant_duration={@grant_duration}
+            />
           <% else %>
             <section class="rounded-xl border border-zinc-900 bg-zinc-950/40 p-5">
               <h3 class="text-sm font-semibold text-zinc-100">Decision history</h3>
@@ -303,6 +306,10 @@ defmodule EmisarWeb.ApprovalDetailLive do
   end
 
   attr :can_decide?, :boolean, required: true
+  # Drives the reuse-window UI: the Match / Limit-to fields only show
+  # once a real grant is being minted (duration != "once"). Defaulted so
+  # a caller that forgets to thread it through can't crash the panel.
+  attr :grant_duration, :string, default: "once"
 
   defp decision_panel(assigns) do
     ~H"""
