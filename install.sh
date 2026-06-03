@@ -350,13 +350,26 @@ EOF
 }
 
 config_skeleton() {
+  # Pre-fill cloud.url from EMISAR_URL when the install command set it.
+  # We translate http(s):// → ws(s):// so the YAML carries the websocket
+  # URL the runner actually dials. Empty otherwise so the operator edits
+  # before connecting.
+  local cloud_url=""
+  if [ -n "${EMISAR_URL:-}" ]; then
+    case "${EMISAR_URL}" in
+      https://*) cloud_url="wss://${EMISAR_URL#https://}";;
+      http://*)  cloud_url="ws://${EMISAR_URL#http://}";;
+      *)         cloud_url="${EMISAR_URL}";;  # already wss:// or bare host
+    esac
+  fi
+  local group="${RUNNER_GROUP:-REPLACE_ME}"
   cat <<EOF
 schema_version: 1
 
 runner:
   # group is the cloud UI's auto-grouping key. Pick a stable label
   # that names this fleet (e.g., role + region).
-  group: REPLACE_ME
+  group: ${group}
   labels:
     # Free-form tags. The cloud UI uses these for filtering / search.
     role: REPLACE_ME
@@ -366,7 +379,7 @@ cloud:
   # WSS URL of the control plane. Until you set this, the runner runs in
   # local-only mode (CLI subcommands work; \`connect\` exits with an
   # error).
-  url: ""
+  url: "${cloud_url}"
   # Name of the environment variable holding the runner auth key. The
   # systemd unit reads ${ETC_DIR}/runner.env which should contain:
   #   EMISAR_AUTH_KEY=emkey-auth-...
@@ -399,7 +412,18 @@ EOF
 }
 
 runner_env_skeleton() {
-  cat <<'EOF'
+  # If the install command set EMISAR_AUTH_KEY, bake it in so the runner
+  # boots without a follow-up edit. Otherwise emit a commented-out
+  # placeholder the operator fills in by hand.
+  if [ -n "${EMISAR_AUTH_KEY:-}" ]; then
+    cat <<EOF
+# Cloud auth key. Loaded at runner start via systemd's EnvironmentFile=
+# (failure to read is non-fatal, but the runner refuses to connect
+# without the key).
+EMISAR_AUTH_KEY=${EMISAR_AUTH_KEY}
+EOF
+  else
+    cat <<'EOF'
 # Drop your cloud auth key here. The systemd unit's EnvironmentFile=
 # directive loads this file at start (failure to read is non-fatal,
 # but the runner will refuse to connect without the key).
@@ -408,6 +432,7 @@ runner_env_skeleton() {
 #
 #EMISAR_AUTH_KEY=emkey-auth-replace-me
 EOF
+  fi
 }
 
 # -----------------------------------------------------------------------
@@ -520,11 +545,22 @@ ensure_dirs() {
 drop_config_skeleton() {
   local cfg="${ETC_DIR}/config.yaml"
   if [ ! -f "${cfg}" ]; then
-    log "writing default config to ${cfg} (edit before starting)"
+    # If the install command supplied EMISAR_URL + EMISAR_AUTH_KEY, the
+    # generated config + env are complete and the runner can boot. Only
+    # flag NEEDS_CONFIGURATION when an operator-edit is actually needed.
+    local needs=0
+    if [ -z "${EMISAR_URL:-}" ] || [ -z "${EMISAR_AUTH_KEY:-}" ]; then
+      needs=1
+    fi
+    if [ "${needs}" = "1" ]; then
+      log "writing default config to ${cfg} (edit before starting)"
+    else
+      log "writing pre-configured config to ${cfg}"
+    fi
     config_skeleton > "${cfg}"
     chmod 640 "${cfg}"
     chown "root:${SERVICE_GROUP}" "${cfg}" 2>/dev/null || true
-    NEEDS_CONFIGURATION=1
+    NEEDS_CONFIGURATION="${needs}"
   else
     log "config exists at ${cfg}; leaving untouched"
     NEEDS_CONFIGURATION=0
@@ -670,9 +706,12 @@ do_install() {
     die "aborted by user"
   fi
 
-  local tmp
+  # `tmp` is intentionally global — the EXIT trap fires after this
+  # function returns, by which point a `local tmp` would be out of scope
+  # and `set -u` would trip on the bare reference. Default-empty in the
+  # trap so an early exit before mktemp doesn't print "unbound variable".
   tmp="$(mktemp -d -t emisar-install.XXXXXX)"
-  trap 'rm -rf "${tmp}"' EXIT
+  trap '[ -n "${tmp:-}" ] && rm -rf "${tmp}"' EXIT
 
   local extracted
   extracted="$(download_release "${VERSION}" "${tmp}")"
@@ -717,15 +756,29 @@ Config:   ${ETC_DIR}/config.yaml
 Secrets:  ${ETC_DIR}/runner.env   (chmod 600)
 Data:     ${DATA_DIR}
 Logs:     ${LOG_DIR}/events.jsonl (security log)
+EOF
+
+  # If EMISAR_URL + EMISAR_AUTH_KEY came in via env, drop_config_skeleton
+  # already wrote them — no manual edit needed. Otherwise prompt for it.
+  if [ "${NEEDS_CONFIGURATION:-1}" = "1" ]; then
+    cat <<EOF
 
 Next steps:
   1. Edit ${ETC_DIR}/config.yaml — set runner.group, cloud.url, etc.
-  2. Edit ${ETC_DIR}/runner.env — set EMISAR_AUTH_KEY=tskey-...
+  2. Edit ${ETC_DIR}/runner.env — set EMISAR_AUTH_KEY=emkey-auth-...
 EOF
+  else
+    cat <<EOF
+
+Pre-configured from install env (EMISAR_URL + EMISAR_AUTH_KEY).
+Edit ${ETC_DIR}/config.yaml to tighten runner.group / labels later.
+EOF
+  fi
 
   case "${INIT}" in
     systemd)
-      cat <<EOF
+      if [ "${NEEDS_CONFIGURATION:-1}" = "1" ]; then
+        cat <<EOF
   3. Start the service:
        sudo systemctl start emisar
      Or restart after editing config:
@@ -734,14 +787,35 @@ EOF
        sudo systemctl status emisar
        sudo journalctl -u emisar -f
 EOF
+      else
+        cat <<EOF
+
+The service is running. Check status / logs:
+  sudo systemctl status emisar
+  sudo journalctl -u emisar -f
+EOF
+      fi
       ;;
     none)
-      cat <<EOF
+      if [ "${NEEDS_CONFIGURATION:-1}" = "1" ]; then
+        cat <<EOF
   3. Run the binary directly (no service was installed):
        ${BIN_DIR}/emisar runner --config ${ETC_DIR}/config.yaml
      For a one-off connect test, pass the key inline:
        EMISAR_AUTH_KEY=emkey-... ${BIN_DIR}/emisar runner --config ${ETC_DIR}/config.yaml
 EOF
+      else
+        # No systemd to load runner.env, so we source it in the same
+        # shell that starts the binary. set -a/+a marks subsequent
+        # assignments as exported, the dot-source loads the KEY=VALUE
+        # lines, then set +a stops auto-exporting before running the
+        # binary.
+        cat <<EOF
+
+Run the binary directly (no service was installed):
+  sudo bash -c 'set -a; . ${ETC_DIR}/runner.env; set +a; ${BIN_DIR}/emisar runner --config ${ETC_DIR}/config.yaml'
+EOF
+      fi
       ;;
     launchd)
       cat <<EOF
@@ -753,7 +827,9 @@ EOF
       ;;
   esac
   echo
-  echo "Uninstall:  sudo $0 --uninstall"
+  # \$0 is "bash" when run as `curl ... | sudo bash`, so don't print that.
+  # Show the canonical re-curl form instead.
+  echo "Uninstall:  curl -sSL https://emisar.dev/install.sh | sudo bash -s -- --uninstall"
   echo "==============================================================="
 }
 
