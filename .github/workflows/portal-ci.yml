@@ -85,7 +85,10 @@ jobs:
         run: cd apps/emisar && mix test.ci
 
       - name: Test (web app — gates LiveView + controller regressions)
-        run: mix test apps/emisar_web
+        # `cd` into the umbrella child; running `mix test apps/...` from
+        # the root passes that path through to each child's test runner,
+        # which can't resolve it against its own working dir.
+        run: cd apps/emisar_web && mix test
 
       - name: Docker build (release image)
         run: docker build -f Dockerfile -t emisar/portal:ci .
