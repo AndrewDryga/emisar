@@ -110,9 +110,13 @@ done
 # Logging helpers
 # -----------------------------------------------------------------------
 
-log()   { printf '\033[1;34m[install]\033[0m %s\n' "$*"; }
+log()   { printf '\033[1;34m[install]\033[0m %s\n' "$*" >&2; }
 warn()  { printf '\033[1;33m[install]\033[0m %s\n' "$*" >&2; }
 die()   { printf '\033[1;31m[install]\033[0m %s\n' "$*" >&2; exit 1; }
+# log()/warn()/die() ALL write to stderr. Function return values come
+# back via stdout (e.g. `download_release` printf's the extracted dir).
+# A stdout-bound log() would leak into command substitutions and corrupt
+# the captured value — caused a "binary missing" misreport in 0.1.0.
 confirm() {
   if [ "$ASSUME_YES" = "1" ]; then return 0; fi
 
@@ -161,11 +165,23 @@ detect_arch() {
 detect_init() {
   case "$(detect_os)" in
     linux)
-      if command -v systemctl >/dev/null 2>&1; then
-        echo systemd
-      else
-        die "this installer requires systemd on Linux (found: $(uname -a))"
+      # Three conditions to call this a systemd host:
+      #   1. systemctl binary present
+      #   2. /run/systemd/system exists — systemd's documented marker
+      #      that "systemd is running on this system" (per systemd(1));
+      #      survives the cloud-shell / container case where systemctl
+      #      is installed but PID 1 is not systemd.
+      #   3. (Optional sanity) systemctl --quiet is-system-running
+      #      doesn't reject. We don't enforce it because some early-boot
+      #      states return "starting" or "degraded" and we still want
+      #      the install to proceed.
+      if ! command -v systemctl >/dev/null 2>&1; then
+        die "this installer requires systemd on Linux (systemctl not found on \$PATH)"
       fi
+      if [ ! -d /run/systemd/system ]; then
+        die "this installer requires systemd on Linux (systemctl present but /run/systemd/system missing — PID 1 is not systemd; this looks like a container or cloud shell)"
+      fi
+      echo systemd
       ;;
     darwin)
       if command -v launchctl >/dev/null 2>&1; then
@@ -420,13 +436,17 @@ download_release() {
     || die "failed to download ${base}/SHA256SUMS"
 
   log "verifying checksum"
+  # Subshell's stdout (sha256sum's "<file>: OK" line, plus anything
+  # downstream tools might print) is redirected to stderr so it doesn't
+  # contaminate this function's return value (`printf '%s\n' "${tmp}/${name}"`
+  # below). Same reasoning as log() going to stderr.
   (
     cd "${tmp}"
     grep -E "  ${tarball}\$" SHA256SUMS | sha_verify
-  ) || die "checksum verification failed for ${tarball}"
+  ) >&2 || die "checksum verification failed for ${tarball}"
 
   log "extracting"
-  tar -C "${tmp}" -xzf "${tmp}/${tarball}"
+  tar -C "${tmp}" -xzf "${tmp}/${tarball}" >&2
   printf '%s\n' "${tmp}/${name}"
 }
 

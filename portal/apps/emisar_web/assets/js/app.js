@@ -135,7 +135,23 @@ function setupCopyToClipboardDelegation() {
     const sel = btn.dataset.copy
     if (!sel) return null
     const target = document.querySelector(sel)
-    return target ? target.innerText.trim() : null
+    if (!target) return null
+    // .trim() would strip an intentional leading space the author put
+    // there — install commands rely on that to skip bash history via
+    // HISTCONTROL=ignorespace. Instead:
+    //   * drop leading blank lines + the indentation on the first
+    //     non-blank line (HEEx template whitespace)
+    //   * drop trailing whitespace
+    //   * preserve any space the first content line started with
+    const raw = target.innerText
+    const lines = raw.replace(/\s+$/, "").split("\n")
+    while (lines.length && lines[0].trim() === "") lines.shift()
+    if (!lines.length) return ""
+    // Strip the indentation of the first content line, then apply the
+    // same strip to every subsequent line (so a multi-line snippet
+    // keeps its relative indentation).
+    const indent = lines[0].match(/^[ \t]*/)[0]
+    return lines.map(l => l.startsWith(indent) ? l.slice(indent.length) : l).join("\n")
   }
 
   function flashCopied(btn) {

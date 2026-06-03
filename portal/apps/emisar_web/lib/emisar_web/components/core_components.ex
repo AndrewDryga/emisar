@@ -1570,12 +1570,10 @@ defmodule EmisarWeb.CoreComponents do
         <div class="font-mono text-[11px] text-zinc-500">{render_slot(@header)}</div>
       </div>
       <div class="flex items-start gap-2 p-4">
-        <code
+        <pre
           id={@code_id}
           class="flex-1 whitespace-pre-wrap break-all font-mono text-xs text-zinc-200"
-        >
-          {render_slot(@inner_block)}
-        </code>
+        >{render_slot(@inner_block)}</pre>
         <.copy_button target={"##{@code_id}"} class="self-start">Copy</.copy_button>
       </div>
     </div>
@@ -1665,12 +1663,10 @@ defmodule EmisarWeb.CoreComponents do
                   Run on any Linux or macOS host
                 </div>
                 <div class="mt-2 flex items-center gap-2 rounded-lg border border-zinc-800 bg-black/60 p-4 font-mono text-xs">
-                  <code
+                  <pre
                     id="install-wizard-command"
                     class="flex-1 whitespace-pre-wrap break-all text-zinc-300"
-                  >
-                    {@install_command}
-                  </code>
+                  >{@install_command}</pre>
                   <.copy_button
                     target="#install-wizard-command"
                     class="self-start bg-indigo-500/20 px-2 text-indigo-200 hover:bg-indigo-500/30 font-semibold"
@@ -1854,12 +1850,10 @@ defmodule EmisarWeb.CoreComponents do
                proof), and flip the label to "Copied" for 1.5s as
                visible click feedback. --%>
           <div class="mt-4 flex items-center gap-2 rounded-lg bg-zinc-950/80 p-3 ring-1 ring-zinc-800">
-            <code
+            <pre
               id="reveal-secret"
-              class="flex-1 break-all font-mono text-xs text-zinc-100"
-            >
-              {@secret}
-            </code>
+              class="flex-1 whitespace-pre-wrap break-all font-mono text-xs text-zinc-100"
+            >{@secret}</pre>
             <.copy_button
               target="#reveal-secret"
               class="bg-amber-500/20 px-2 text-amber-100 hover:bg-amber-500/30 font-semibold"
@@ -1874,12 +1868,10 @@ defmodule EmisarWeb.CoreComponents do
                 {cmd[:label] || "Install on a host"}
               </h3>
               <div class="mt-2 flex items-start gap-2 rounded-lg bg-zinc-950/80 p-3 ring-1 ring-zinc-800">
-                <code
+                <pre
                   id={"reveal-install-#{idx}"}
-                  class="flex-1 break-all font-mono text-xs text-zinc-300"
-                >
-                  {render_slot(cmd)}
-                </code>
+                  class="flex-1 whitespace-pre-wrap break-all font-mono text-xs text-zinc-300"
+                >{render_slot(cmd)}</pre>
                 <.copy_button
                   target={"#reveal-install-#{idx}"}
                   class="shrink-0 self-start bg-amber-500/20 px-2 text-amber-100 hover:bg-amber-500/30 font-semibold"
