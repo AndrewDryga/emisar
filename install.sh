@@ -895,10 +895,19 @@ EOF
 EOF
       ;;
   esac
+
+  # Collect installed pack names via a glob (portable + avoids parsing
+  # `ls`); each immediate child dir of the packs dir is one pack id.
+  local installed="" d
+  for d in "${ETC_DIR}/packs"/*/; do
+    [ -d "$d" ] || continue
+    installed+="$(basename "$d") "
+  done
+
   cat <<EOF
 
 Action packs:
-  Installed: $(ls "${ETC_DIR}/packs" 2>/dev/null | tr '\n' ' ')
+  Installed: ${installed:-(none)}
   Add more:  ${BIN_DIR}/emisar pack install <name>   (then reload the runner)
   Browse:    https://emisar.dev/packs
 EOF
