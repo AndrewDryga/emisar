@@ -172,6 +172,17 @@ defmodule Emisar.Runners do
     |> Repo.fetch(Runner.Query)
   end
 
+  # Internal: the live runner currently holding `name` in this account, or
+  # `{:error, :not_found}`. Names are unique among live runners, so at most
+  # one matches. Used by the register path to detect a name collision before
+  # a fresh external_id tries to claim a taken name.
+  defp fetch_live_runner_by_name(name, account_id) when is_binary(name) do
+    Runner.Query.not_deleted()
+    |> Runner.Query.by_account_id(account_id)
+    |> Runner.Query.by_name(name)
+    |> Repo.fetch(Runner.Query)
+  end
+
   # -- Runners: mutations ----------------------------------------------
 
   def create_runner(attrs, %Subject{account: account} = subject) do
@@ -623,6 +634,7 @@ defmodule Emisar.Runners do
         end)
         |> case do
           {:ok, {runner, token, raw_token}} -> {:ok, runner, token, raw_token}
+          {:error, {:runner_name_taken, name}} -> {:error, :runner_name_taken, name}
           {:error, reason} -> {:error, reason}
         end
 
@@ -643,29 +655,54 @@ defmodule Emisar.Runners do
   # An :unsafe_fragment is the only way to express that in Ecto; the
   # columns/predicate are literals here, so there's nothing to interpolate.
   defp insert_runner!(key, attrs, external_id) do
-    changeset =
-      Runner.Changeset.register(%{
-        account_id: key.account_id,
-        name: derive_name(attrs),
-        external_id: external_id,
-        group: attrs[:group] || key.group || "default",
-        hostname: attrs[:hostname],
-        labels: attrs[:labels] || %{},
-        runner_version: attrs[:version] || attrs[:runner_version],
-        bootstrap_auth_key_id: key.id
-      })
+    name = derive_name(attrs)
 
-    case Repo.insert(changeset,
-           on_conflict: :nothing,
-           conflict_target:
-             {:unsafe_fragment, "(account_id, external_id) WHERE deleted_at IS NULL"}
-         ) do
-      {:ok, inserted} ->
-        {:ok, runner} = fetch_runner_by_external_id_for_account(external_id, key.account_id)
-        {runner, runner.id == inserted.id}
+    # Names are unique among live runners. We're here because no live runner
+    # has this external_id, so if another live runner already holds this name
+    # it's a real conflict: bail with a clean error the controller turns into
+    # a 409 ("delete/rename the other runner") instead of a constraint crash.
+    # The partial unique index is the race backstop in the insert below.
+    case fetch_live_runner_by_name(name, key.account_id) do
+      {:ok, %Runner{}} ->
+        Repo.rollback({:runner_name_taken, name})
 
-      {:error, changeset} ->
-        Repo.rollback(changeset)
+      {:error, :not_found} ->
+        changeset =
+          Runner.Changeset.register(%{
+            account_id: key.account_id,
+            name: name,
+            external_id: external_id,
+            group: attrs[:group] || key.group || "default",
+            hostname: attrs[:hostname],
+            labels: attrs[:labels] || %{},
+            runner_version: attrs[:version] || attrs[:runner_version],
+            bootstrap_auth_key_id: key.id
+          })
+
+        case Repo.insert(changeset,
+               on_conflict: :nothing,
+               conflict_target:
+                 {:unsafe_fragment, "(account_id, external_id) WHERE deleted_at IS NULL"}
+             ) do
+          {:ok, inserted} ->
+            {:ok, runner} = fetch_runner_by_external_id_for_account(external_id, key.account_id)
+            {runner, runner.id == inserted.id}
+
+          {:error, changeset} ->
+            if name_taken_changeset?(changeset),
+              do: Repo.rollback({:runner_name_taken, name}),
+              else: Repo.rollback(changeset)
+        end
+    end
+  end
+
+  # A changeset error from the (account_id, name) partial unique index — vs a
+  # plain validation error — so a race that slips past the pre-check still
+  # surfaces as `:runner_name_taken` rather than a generic failure.
+  defp name_taken_changeset?(%Ecto.Changeset{errors: errors}) do
+    case errors[:name] do
+      {_msg, opts} -> Keyword.get(opts, :constraint) == :unique
+      _ -> false
     end
   end
 

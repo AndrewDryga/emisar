@@ -247,9 +247,11 @@ defmodule EmisarWeb.RunnerDetailLive do
 
       <%!-- Danger zone — destructive actions live in their own
            visually-distinct card so they can't be mistaken for the
-           regular content above. Disable is the soft "stop" — Delete
-           only appears once the runner is already disabled (two-step
-           commit prevents a misclick from wiping a live runner). --%>
+           regular content above. Disable is the soft "stop". Delete is
+           available for any runner that isn't currently connected
+           (disconnected / disabled / pending) — that's how you clear a
+           stale duplicate holding a name; a connected runner must be
+           disabled first so a misclick can't wipe a live one. --%>
       <div
         :if={@runner.status != "disabled" and Permissions.can?(assigns, :manage_runners)}
         class="mt-6"
@@ -271,7 +273,7 @@ defmodule EmisarWeb.RunnerDetailLive do
       </div>
 
       <div
-        :if={@runner.status == "disabled" and Permissions.can?(assigns, :manage_runners)}
+        :if={@runner.status != "connected" and Permissions.can?(assigns, :manage_runners)}
         class="mt-6"
       >
         <.danger_zone title="Delete this runner">

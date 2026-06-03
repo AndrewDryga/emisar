@@ -47,6 +47,18 @@ defmodule EmisarWeb.RunnerConnectController do
         |> put_status(:payment_required)
         |> json(%{error: "runner_limit_exceeded", plan: plan, limit: limit})
 
+      {:error, :runner_name_taken, name} ->
+        conn
+        |> put_status(:conflict)
+        |> json(%{
+          error: "runner_name_taken",
+          name: name,
+          message:
+            "The name #{inspect(name)} is already used by another runner in this account. " <>
+              "Delete or rename that runner in the Emisar dashboard (Runners), or set a " <>
+              "different runner.name / runner.id in this host's config, then it will connect."
+        })
+
       {:error, reason} ->
         conn
         |> put_status(:bad_request)

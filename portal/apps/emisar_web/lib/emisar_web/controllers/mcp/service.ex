@@ -228,7 +228,7 @@ defmodule EmisarWeb.Mcp.Service do
   # -- Runner resolution ----------------------------------------------
 
   defp resolve_runners(subject, api_key, action_id, []) do
-    case best_runner_per_name(allowed_runners_for_action(subject, api_key, action_id)) do
+    case allowed_runners_for_action(subject, api_key, action_id) do
       [] ->
         if action_exists_in_account?(subject, action_id),
           do: {:error, :no_runner_available, :scope_blocked},
@@ -263,13 +263,15 @@ defmodule EmisarWeb.Mcp.Service do
     end
   end
 
+  # Names are unique among live runners (enforced at register time + by a
+  # partial unique index), so at most one allowed runner matches a name.
   defp resolve_one(allowed, all, api_key, scopes, name) do
-    case named_liveliest(allowed, name) do
+    case Enum.find(allowed, &(&1.name == name)) do
       %{id: id} ->
         {:ok, id}
 
       nil ->
-        case named_liveliest(all, name) do
+        case Enum.find(all, &(&1.name == name)) do
           nil ->
             {:error, :runner_not_found, name}
 
@@ -278,35 +280,6 @@ defmodule EmisarWeb.Mcp.Service do
         end
     end
   end
-
-  # Two runner rows can share a name: a host whose persisted runner_id was
-  # wiped (ephemeral disk / re-image) registers again under a fresh
-  # external_id, leaving an older disconnected row with the same name. When
-  # resolving a name for dispatch we must target the live one — otherwise
-  # the run goes to a dead twin and times out unreachable while a healthy
-  # runner sits idle. Prefer connected over anything else, then the
-  # most-recently-seen.
-  defp best_runner_per_name(runners) do
-    runners
-    |> Enum.group_by(& &1.name)
-    |> Enum.map(fn {_name, group} -> pick_liveliest(group) end)
-    |> Enum.sort_by(& &1.name)
-  end
-
-  defp named_liveliest(runners, name) do
-    case Enum.filter(runners, &(&1.name == name)) do
-      [] -> nil
-      matches -> pick_liveliest(matches)
-    end
-  end
-
-  defp pick_liveliest(runners),
-    do: Enum.min_by(runners, &{runner_status_rank(&1), -heartbeat_unix(&1)})
-
-  defp heartbeat_unix(%{last_heartbeat_at: %DateTime{} = ts}),
-    do: DateTime.to_unix(ts, :microsecond)
-
-  defp heartbeat_unix(_), do: 0
 
   defp deny_reason(runner, api_key, scopes) do
     cond do

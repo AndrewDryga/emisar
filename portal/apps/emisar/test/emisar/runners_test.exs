@@ -143,9 +143,10 @@ defmodule Emisar.RunnersTest do
       refute id1 == id2
     end
 
-    test "a different external_id with the same name creates a second runner" do
-      # Names are display-only and may repeat — a fresh install / different
-      # machine gets a new external_id and registers as its own runner.
+    test "a different external_id with a taken name is rejected (names unique among live)" do
+      # Names are unique among live runners: a different machine reusing a
+      # name gets a clean conflict, not a silent second runner. Identity is
+      # still external_id; the operator deletes/renames the holder to resolve.
       account = account_fixture()
       user = user_fixture()
 
@@ -154,19 +155,41 @@ defmodule Emisar.RunnersTest do
 
       base = %{hostname: "samehost", group: "g"}
 
-      assert {:ok, %Runner{id: id1, name: "samehost"}, _, _} =
+      assert {:ok, %Runner{name: "samehost"}, _, _} =
                Runners.register_via_auth_key(raw, Map.put(base, :external_id, "ext-a"))
 
-      assert {:ok, %Runner{id: id2, name: "samehost"}, _, _} =
+      assert {:error, :runner_name_taken, "samehost"} =
                Runners.register_via_auth_key(raw, Map.put(base, :external_id, "ext-b"))
-
-      refute id1 == id2
     end
 
-    test "registers without an external_id (no crash) — each call a fresh runner" do
-      # An older runner that doesn't send external_id: the server mints a
-      # fresh UUID per call. It must register cleanly (no 500), even though
-      # that means a new row each time.
+    test "a taken name frees up once the holding runner is deleted" do
+      {account, user, subject} = account_with_owner_subject()
+
+      {raw, _key} =
+        auth_key_fixture(account_id: account.id, created_by_id: user.id, reusable: true)
+
+      base = %{hostname: "samehost", group: "g"}
+
+      assert {:ok, %Runner{} = holder, _, _} =
+               Runners.register_via_auth_key(raw, Map.put(base, :external_id, "ext-a"))
+
+      assert {:error, :runner_name_taken, "samehost"} =
+               Runners.register_via_auth_key(raw, Map.put(base, :external_id, "ext-b"))
+
+      # Deleting the holder soft-deletes it, freeing the name (partial index).
+      {:ok, _} = Runners.delete_runner(holder, subject)
+
+      assert {:ok, %Runner{name: "samehost"}, _, _} =
+               Runners.register_via_auth_key(raw, Map.put(base, :external_id, "ext-b"))
+    end
+
+    test "registers without an external_id (no crash), then conflicts on its name" do
+      # A legacy runner that doesn't send external_id: the server mints a
+      # fresh UUID, so the first register succeeds cleanly (no 500). A second
+      # register from the same host (same name, still no external_id) can't
+      # reuse that identity, so it cleanly conflicts on the name instead of
+      # crashing — the fix is to upgrade to a runner that persists a stable
+      # runner_id (or delete the stale row).
       account = account_fixture()
       user = user_fixture()
 
@@ -175,10 +198,10 @@ defmodule Emisar.RunnersTest do
 
       attrs = %{hostname: "no-id-host", group: "g"}
 
-      assert {:ok, %Runner{id: id1}, _, _} = Runners.register_via_auth_key(raw, attrs)
-      assert {:ok, %Runner{id: id2}, _, _} = Runners.register_via_auth_key(raw, attrs)
+      assert {:ok, %Runner{}, _, _} = Runners.register_via_auth_key(raw, attrs)
 
-      refute id1 == id2
+      assert {:error, :runner_name_taken, "no-id-host"} =
+               Runners.register_via_auth_key(raw, attrs)
     end
 
     test "returns :over_limit when the plan cap is exceeded" do

@@ -43,9 +43,12 @@ defmodule Emisar.Repo.Migrations.Runners do
     # A runner's durable identity. The runner persists this and presents
     # it on every register, so reconnects map back to the same row.
     create unique_index(:runners, [:account_id, :external_id])
-    # `name` is a display label (defaults to hostname) and is NOT unique:
-    # a fresh install / different machine gets a new external_id and may
-    # reuse a name. Plain index for the by-name lookups MCP dispatch does.
+    # `name` (defaults to hostname) is the operator/LLM-facing address.
+    # It's unique among LIVE runners — see 20260603030000, which swaps this
+    # plain index for a partial unique one (`WHERE deleted_at IS NULL`).
+    # Identity is still external_id; a re-registering host that can't claim
+    # a taken name gets a clean 409 to resolve (delete/rename the other
+    # runner), never a crash. Partial so deleting a runner frees its name.
     create index(:runners, [:account_id, :name])
     create index(:runners, [:account_id, :group])
     create index(:runners, [:account_id, :status])

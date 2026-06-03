@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -213,6 +214,29 @@ func (d *WebsocketDialer) writeToken(t agentToken) error {
 
 // -- Register --------------------------------------------------------
 
+// serverErrorMessage pulls a human-readable message out of an error response
+// body — preferring the JSON `message` field, then `error`, then raw text —
+// and bounds the read so a stray HTML error page can't flood the log.
+func serverErrorMessage(body io.Reader) string {
+	raw, err := io.ReadAll(io.LimitReader(body, 4096))
+	if err != nil || len(raw) == 0 {
+		return ""
+	}
+	var parsed struct {
+		Message string `json:"message"`
+		Error   string `json:"error"`
+	}
+	if json.Unmarshal(raw, &parsed) == nil {
+		if parsed.Message != "" {
+			return parsed.Message
+		}
+		if parsed.Error != "" {
+			return parsed.Error
+		}
+	}
+	return strings.TrimSpace(string(raw))
+}
+
 func (d *WebsocketDialer) register(ctx context.Context) (agentToken, error) {
 	client := d.HTTPClient
 	if client == nil {
@@ -258,6 +282,11 @@ func (d *WebsocketDialer) register(ctx context.Context) (agentToken, error) {
 	}
 
 	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
+		// Surface the server's message (e.g. a name conflict the operator
+		// must resolve) instead of just the status code.
+		if msg := serverErrorMessage(resp.Body); msg != "" {
+			return agentToken{}, fmt.Errorf("cloud: register returned %d: %s", resp.StatusCode, msg)
+		}
 		return agentToken{}, fmt.Errorf("cloud: register returned %d", resp.StatusCode)
 	}
 
