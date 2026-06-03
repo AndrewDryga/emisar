@@ -163,6 +163,14 @@ defmodule EmisarWeb.ApprovalDetailLive do
   defp user_label(_, id) when is_binary(id), do: String.slice(id, 0, 8) <> "…"
   defp user_label(_, _), do: "—"
 
+  # First 12 chars of a runner UUID + "…" trailer when one exists, or
+  # an em-dash if the context didn't carry a runner_id at all. Kept as
+  # a helper so the template stays single-expression — mixing a slice
+  # and a ternary inline tripped the HEEx formatter into an unstable
+  # whitespace fixed-point.
+  defp truncated_runner_id(nil), do: "—"
+  defp truncated_runner_id(id) when is_binary(id), do: String.slice(id, 0, 12) <> "…"
+
   def render(assigns) do
     ~H"""
     <.dashboard_shell
@@ -199,9 +207,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
             </.link>
           <% else %>
             <span class="truncate font-mono text-xs text-zinc-400">
-              {String.slice(@request.context["runner_id"] || "—", 0, 12)}{if @request.context[
-                                                                               "runner_id"
-                                                                             ], do: "…"}
+              {truncated_runner_id(@request.context["runner_id"])}
             </span>
           <% end %>
         </.meta_field>

@@ -1493,16 +1493,57 @@ defmodule EmisarWeb.CoreComponents do
         class="font-medium text-zinc-400 hover:text-zinc-200"
       >
         {render_slot(@inner_block)}
-      </.link><span class="mx-2 text-zinc-700" aria-hidden="true">/</span>
+      </.link>
+      <span class="mx-2 text-zinc-700" aria-hidden="true">/</span>
     </span>
+    """
+  end
+
+  @doc """
+  Copy-to-clipboard button.
+
+  CSP-safe + works on both LiveView and controller-rendered pages.
+  Uses the delegated `[data-copy]` click listener in `assets/js/app.js`
+  (no inline `onclick` — those get stripped by CSP in prod, which is
+  why every Copy button across the portal was silently broken).
+
+  Pass exactly one of:
+    * `target` — CSS selector of the element whose `.innerText` to copy
+    * `text`   — literal string to copy
+
+      <.copy_button target="#install-cmd">Copy</.copy_button>
+      <.copy_button text="emk-abc123" class="bg-amber-500/20">Copy key</.copy_button>
+  """
+  attr :target, :string, default: nil, doc: "CSS selector of element whose innerText to copy"
+  attr :text, :string, default: nil, doc: "literal string to copy (alternative to :target)"
+  attr :class, :any, default: nil
+  attr :label_copied, :string, default: "Copied"
+  attr :rest, :global, include: ~w(id)
+
+  slot :inner_block, required: true
+
+  def copy_button(assigns) do
+    ~H"""
+    <button
+      type="button"
+      data-copy={@target}
+      data-copy-text={@text}
+      data-copy-label-copied={@label_copied}
+      class={[
+        "rounded bg-zinc-800/80 px-2.5 py-1 text-xs font-medium text-zinc-200 hover:bg-zinc-700",
+        @class
+      ]}
+      {@rest}
+    >
+      {render_slot(@inner_block)}
+    </button>
     """
   end
 
   @doc """
   Copy-to-clipboard code block. Renders the inner_block inside a
   styled `<code>` with a "Copy" button that flips to "Copied" for
-  1.5s. The button grabs the visible text via DOM lookup (safer than
-  string-interpolating the value into a JS literal).
+  1.5s. Uses the CSP-safe `data-copy` mechanism via `.copy_button/1`.
 
       <.copy_code id="install-cmd">
         {@install_command}
@@ -1535,18 +1576,7 @@ defmodule EmisarWeb.CoreComponents do
         >
           {render_slot(@inner_block)}
         </code>
-        <button
-          type="button"
-          class="self-start rounded bg-zinc-800/80 px-2.5 py-1 text-xs font-medium text-zinc-200 hover:bg-zinc-700"
-          onclick={
-            "const el = document.getElementById('#{@code_id}');" <>
-              "navigator.clipboard.writeText(el.innerText.trim());" <>
-              "const orig = this.innerText; this.innerText = 'Copied';" <>
-              "setTimeout(() => { this.innerText = orig; }, 1500);"
-          }
-        >
-          Copy
-        </button>
+        <.copy_button target={"##{@code_id}"} class="self-start">Copy</.copy_button>
       </div>
     </div>
     """
@@ -1641,19 +1671,12 @@ defmodule EmisarWeb.CoreComponents do
                   >
                     {@install_command}
                   </code>
-                  <button
-                    type="button"
-                    class="self-start rounded bg-indigo-500/20 px-2 py-1 text-xs font-semibold text-indigo-200 hover:bg-indigo-500/30"
-                    onclick="
-                      const el = document.getElementById('install-wizard-command');
-                      navigator.clipboard.writeText(el.innerText.trim());
-                      const orig = this.innerText;
-                      this.innerText = 'Copied';
-                      setTimeout(() => { this.innerText = orig; }, 1500);
-                    "
+                  <.copy_button
+                    target="#install-wizard-command"
+                    class="self-start bg-indigo-500/20 px-2 text-indigo-200 hover:bg-indigo-500/30 font-semibold"
                   >
                     Copy
-                  </button>
+                  </.copy_button>
                 </div>
                 <p class="mt-2 text-xs text-zinc-500">
                   Paste as-is — the leading space keeps the key out of your shell history.
@@ -1837,19 +1860,12 @@ defmodule EmisarWeb.CoreComponents do
             >
               {@secret}
             </code>
-            <button
-              type="button"
-              class="rounded bg-amber-500/20 px-2 py-1 text-xs font-semibold text-amber-100 hover:bg-amber-500/30"
-              onclick="
-                const el = document.getElementById('reveal-secret');
-                navigator.clipboard.writeText(el.innerText.trim());
-                const orig = this.innerText;
-                this.innerText = 'Copied';
-                setTimeout(() => { this.innerText = orig; }, 1500);
-              "
+            <.copy_button
+              target="#reveal-secret"
+              class="bg-amber-500/20 px-2 text-amber-100 hover:bg-amber-500/30 font-semibold"
             >
               Copy
-            </button>
+            </.copy_button>
           </div>
 
           <%= for {cmd, idx} <- Enum.with_index(@install_command) do %>
@@ -1864,18 +1880,12 @@ defmodule EmisarWeb.CoreComponents do
                 >
                   {render_slot(cmd)}
                 </code>
-                <button
-                  type="button"
-                  class="shrink-0 self-start rounded bg-amber-500/20 px-2 py-1 text-xs font-semibold text-amber-100 hover:bg-amber-500/30"
-                  onclick={
-                    "const el = document.getElementById('reveal-install-#{idx}');" <>
-                      "navigator.clipboard.writeText(el.innerText.trim());" <>
-                      "const orig = this.innerText; this.innerText = 'Copied';" <>
-                      "setTimeout(() => { this.innerText = orig; }, 1500);"
-                  }
+                <.copy_button
+                  target={"#reveal-install-#{idx}"}
+                  class="shrink-0 self-start bg-amber-500/20 px-2 text-amber-100 hover:bg-amber-500/30 font-semibold"
                 >
                   Copy
-                </button>
+                </.copy_button>
               </div>
             </div>
           <% end %>

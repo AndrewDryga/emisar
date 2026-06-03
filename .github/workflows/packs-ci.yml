@@ -1,0 +1,94 @@
+name: Packs CI
+
+# Validates every action pack under runner/examples/packs/ against
+# the runner's spec checker. Catches: bad YAML, missing required
+# fields, dangling action references in pack.yaml, script-path
+# escapes, ID-shape violations, unknown risk tiers.
+#
+# Triggered on changes to packs or to the validator itself. Build
+# is fail-fast: one broken pack fails the whole job, so contributors
+# can't sneak a malformed pack past review.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "runner/examples/packs/**"
+      - "runner/internal/packs/**"
+      - "runner/pkg/packspec/**"
+      - "runner/pkg/actionspec/**"
+      - "runner/cmd/pack/**"
+      - ".github/workflows/packs-ci.yml"
+  push:
+    branches: [main]
+    paths:
+      - "runner/examples/packs/**"
+      - "runner/internal/packs/**"
+      - "runner/pkg/packspec/**"
+      - "runner/pkg/actionspec/**"
+      - "runner/cmd/pack/**"
+      - ".github/workflows/packs-ci.yml"
+
+concurrency:
+  group: packs-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: validate all packs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@f111f3307d8850f501ac008e886eec1fd1932a9a # v5.3.0
+        with:
+          go-version-file: runner/go.mod
+          cache: true
+          cache-dependency-path: runner/go.sum
+
+      - name: build emisar CLI
+        run: |
+          cd runner
+          go build -trimpath -o /tmp/emisar .
+          /tmp/emisar version
+
+      - name: validate every pack
+        # Iterate over runner/examples/packs/* and run `emisar pack
+        # validate` on each. Collect failures so the report names
+        # every bad pack instead of bailing on the first one — makes
+        # PR triage faster.
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+
+          failures=()
+          for pack in runner/examples/packs/*/; do
+            pack="${pack%/}"  # strip trailing slash
+            name="$(basename "$pack")"
+            printf '\n\033[1m==> %s\033[0m\n' "$name"
+            if ! /tmp/emisar pack validate "$pack"; then
+              failures+=("$name")
+            fi
+          done
+
+          if [ ${#failures[@]} -gt 0 ]; then
+            printf '\n\033[1;31m✗ packs failed validation:\033[0m\n'
+            printf '   - %s\n' "${failures[@]}"
+            exit 1
+          fi
+
+          printf '\n\033[1;32m✓ all packs valid\033[0m\n'
+
+      - name: pack count summary
+        if: always()
+        run: |
+          # Visible signal in CI logs so "validated N packs" is a clear
+          # marker — easy to catch a regression where pattern matching
+          # silently skips a pack dir.
+          count=$(find runner/examples/packs -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')
+          echo "validated $count packs"

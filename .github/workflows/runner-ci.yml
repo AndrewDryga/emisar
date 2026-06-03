@@ -1,73 +1,87 @@
 name: Runner CI
 
-# Runner + MCP CI runs on every PR and every push to main.
-# It uses ONLY the read-only GITHUB_TOKEN scope — no repo secrets are
-# referenced anywhere. PRs from forks are therefore safe to run: a
-# malicious PR cannot exfiltrate any signing keys, publish artefacts,
-# or write to the repository. See .github/workflows/runner-release.yml
-# for the trusted publishing path.
+# CI for the Go runner binary. Runs on every PR + push to main that
+# touches `runner/`, the install script, or this workflow file.
+#
+# Security posture:
+#
+#   * Default `permissions: read` for the GITHUB_TOKEN. No job opts
+#     into write scopes — release/publish lives in runner-release.yml,
+#     which is tag-triggered and not reachable from a PR.
+#   * `actions/checkout` is invoked with `persist-credentials: false`
+#     so the auth token isn't sticky in the workspace .git config.
+#   * Third-party actions are pinned to commit SHAs (comment lists the
+#     human-readable tag they correspond to). First-party
+#     `actions/*` are pinned to SHAs too — GitHub-owned but mutable
+#     tags are still a supply-chain hazard if a tag gets re-pointed.
+#   * Module cache is keyed only on `runner/go.sum`. A PR can edit
+#     `runner/go.sum`, but the cache it writes is scoped to that PR's
+#     ref — `actions/setup-go` doesn't share PR-scoped caches with
+#     `main`, so a malicious PR can't poison the cache `main` reads
+#     from. (Cache scoping is enforced by GitHub Actions, not us.)
 
 on:
   pull_request:
     branches: [main]
     paths:
       - "runner/**"
-      - "mcp/**"
       - "install.sh"
-      - "Makefile"
       - ".github/workflows/runner-ci.yml"
   push:
     branches: [main]
     paths:
       - "runner/**"
-      - "mcp/**"
       - "install.sh"
-      - "Makefile"
       - ".github/workflows/runner-ci.yml"
 
-# Cancel earlier runs on the same ref when a new commit lands.
 concurrency:
-  group: ci-${{ github.ref }}
+  group: runner-ci-${{ github.ref }}
   cancel-in-progress: true
 
-# Lock down GITHUB_TOKEN to the absolute minimum required for CI.
 permissions:
   contents: read
 
 jobs:
   lint:
-    name: vet + gofmt
+    name: vet + gofmt + shellcheck
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@f111f3307d8850f501ac008e886eec1fd1932a9a # v5.3.0
         with:
           go-version-file: runner/go.mod
           cache: true
-          cache-dependency-path: |
-            runner/go.sum
+          cache-dependency-path: runner/go.sum
 
-      - name: go vet (runner)
+      - name: go vet
         run: cd runner && go vet ./...
 
-      - name: go vet (mcp)
-        run: cd mcp && go vet ./...
-
-      - name: gofmt check
+      - name: gofmt -s check
         run: |
-          diff=$(gofmt -d -s runner/ mcp/ | head -200)
+          diff=$(gofmt -d -s runner/ | head -200)
           if [ -n "$diff" ]; then
-            echo "::error::gofmt diff (run 'gofmt -w -s runner/ mcp/'):"
+            echo "::error::gofmt diff (run 'gofmt -w -s runner/'):"
             echo "$diff"
             exit 1
           fi
 
+      - name: go mod verify
+        # Verifies hashes in runner/go.sum match the on-disk module
+        # bytes. A tampered cache won't pass.
+        run: cd runner && go mod verify
+
+      - name: go mod tidy is up to date
+        run: |
+          cd runner && go mod tidy
+          if ! git diff --exit-code -- runner/go.mod runner/go.sum; then
+            echo "::error::runner/go.mod or go.sum are not tidy. Run 'cd runner && go mod tidy' and commit."
+            exit 1
+          fi
+
       - name: shellcheck install.sh
-        # apt's shellcheck is fine on ubuntu-latest. Pin nothing — the
-        # lint output is informative even when the version drifts.
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
           shellcheck install.sh
@@ -75,66 +89,41 @@ jobs:
       - name: bash -n install.sh
         run: bash -n install.sh
 
-      - name: go mod verify
-        # Fails the build if go.sum hashes don't match the cached
-        # module bytes — a tampered dependency cache won't pass.
-        run: cd runner && go mod verify
-
-      - name: go mod tidy is up to date
-        # Catches PRs that add a dep without running `go mod tidy`. If
-        # the diff is non-empty, the PR needs a tidy commit.
-        run: |
-          cd runner && go mod tidy
-          if ! git diff --exit-code -- runner/go.mod runner/go.sum; then
-            echo "::error::runner/go.mod or go.sum are not tidy. Run 'cd runner && go mod tidy' locally and commit."
-            exit 1
-          fi
-
       - name: govulncheck
-        # Scans the dependency graph against the Go vulnerability
-        # database. CI is informational by default (continue-on-error)
-        # so a same-day-disclosed vuln in a transitive dep doesn't
-        # break unrelated PRs; remove continue-on-error to enforce.
+        # Informational only — same-day CVE in a transitive dep
+        # shouldn't block unrelated PRs. Drop continue-on-error to
+        # enforce when we're ready.
         continue-on-error: true
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@latest
           cd runner && govulncheck ./...
 
   test:
-    name: test (Linux)
+    name: test (race)
     runs-on: ubuntu-latest
-    strategy:
-      # Don't abort other jobs on a single timing flake — let them all
-      # finish so we have a full picture.
-      fail-fast: false
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@f111f3307d8850f501ac008e886eec1fd1932a9a # v5.3.0
         with:
           go-version-file: runner/go.mod
           cache: true
-          cache-dependency-path: |
-            runner/go.sum
+          cache-dependency-path: runner/go.sum
 
-      - name: go test (runner, race + cover)
-        run: |
-          cd runner && go test -race -count=1 -coverprofile=../coverage.out ./...
-
-      - name: go test (mcp, race)
-        run: cd mcp && go test -race -count=1 ./...
+      - name: go test
+        run: cd runner && go test -race -count=1 -coverprofile=../coverage.out ./...
 
       - name: coverage summary
         if: always()
         run: go tool cover -func=coverage.out | tail -50
 
-      - name: upload coverage artifact
+      - name: upload coverage
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
         with:
-          name: coverage
+          name: runner-coverage
           path: coverage.out
           retention-days: 7
 
@@ -155,16 +144,15 @@ jobs:
           - os: darwin
             arch: arm64
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@f111f3307d8850f501ac008e886eec1fd1932a9a # v5.3.0
         with:
           go-version-file: runner/go.mod
           cache: true
-          cache-dependency-path: |
-            runner/go.sum
+          cache-dependency-path: runner/go.sum
 
       - name: build
         env:
@@ -174,15 +162,5 @@ jobs:
         run: |
           mkdir -p dist
           (cd runner && go build -trimpath -ldflags "-s -w" -o ../dist/emisar .)
-          (cd mcp    && go build -trimpath -ldflags "-s -w" -o ../dist/emisar-mcp .)
           file dist/emisar || true
           ls -la dist/
-
-      - name: upload binary
-        uses: actions/upload-artifact@v4
-        with:
-          name: emisar-${{ matrix.os }}-${{ matrix.arch }}
-          path: |
-            dist/emisar
-            dist/emisar-mcp
-          retention-days: 7

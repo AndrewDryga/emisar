@@ -250,7 +250,7 @@ defmodule EmisarWeb.DashboardLive do
               <div class="min-w-0">
                 <div class="truncate font-mono text-rose-100">{run.action_id}</div>
                 <div class="truncate text-xs text-rose-200/60">
-                  <span :if={run.runner}>on {run.runner.name}  · </span>
+                  <span :if={run.runner}>{"on #{run.runner.name} · "}</span>
                   {relative_time(run.inserted_at)}
                 </div>
               </div>
@@ -306,7 +306,7 @@ defmodule EmisarWeb.DashboardLive do
               <div class="min-w-0">
                 <div class="truncate font-mono text-sm text-zinc-200">{run.action_id}</div>
                 <div class="truncate text-xs text-zinc-500">
-                  <span :if={run.runner}>on {run.runner.name}  · </span>
+                  <span :if={run.runner}>{"on #{run.runner.name} · "}</span>
                   {relative_time(run.inserted_at)}
                 </div>
               </div>

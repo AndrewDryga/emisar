@@ -91,18 +91,84 @@ function formatAbsolute(dt, sameYear, short = false) {
   return dt.toLocaleString(undefined, opts)
 }
 
-// CSP forbids inline `onclick` handlers, so any copy-to-clipboard
-// button has to go through a hook. Reads its source from either
-// `data-clipboard-text` (literal text) or `data-clipboard-target`
-// (#id of an element whose textContent we copy). Briefly swaps the
-// button's label to "Copied" so the operator gets visible feedback.
+// Clipboard copy. We use a delegated document-level click listener
+// rather than a Phoenix hook for two reasons:
+//
+//   1. CSP forbids inline `onclick` handlers — historically every
+//      Copy button broke silently because the inline handler was
+//      stripped by the CSP middleware in prod.
+//   2. The CSP-safe alternative (`phx-hook`) only attaches to
+//      elements inside a LiveView container. Marketing pages
+//      (controller-rendered: pack detail, install snippets, …) have
+//      no LiveSocket, so a hook there is dead too.
+//
+// The button just needs `data-copy="#some-id"` (id of the element
+// whose textContent to grab) OR `data-copy-text="literal string"`.
+// Optional `data-copy-label-copied="Copied!"` overrides the flash
+// label; otherwise it flips to "Copied" for 1.5s.
+function setupCopyToClipboardDelegation() {
+  async function tryWriteToClipboard(text) {
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text)
+        return true
+      }
+    } catch (_e) { /* fall through */ }
+
+    // Fallback for non-secure contexts (dev over plain http, some
+    // embedded webviews). Off-screen textarea + execCommand("copy").
+    const ta = document.createElement("textarea")
+    ta.value = text
+    ta.setAttribute("readonly", "")
+    ta.style.position = "fixed"
+    ta.style.top = "-1000px"
+    document.body.appendChild(ta)
+    ta.select()
+    let ok = false
+    try { ok = document.execCommand("copy") } catch (_e) {}
+    document.body.removeChild(ta)
+    return ok
+  }
+
+  function resolveText(btn) {
+    if (btn.dataset.copyText != null) return btn.dataset.copyText
+    const sel = btn.dataset.copy
+    if (!sel) return null
+    const target = document.querySelector(sel)
+    return target ? target.innerText.trim() : null
+  }
+
+  function flashCopied(btn) {
+    const original = btn.innerText
+    btn.innerText = btn.dataset.copyLabelCopied || "Copied"
+    if (btn._copyTimer) clearTimeout(btn._copyTimer)
+    btn._copyTimer = setTimeout(() => { btn.innerText = original }, 1500)
+  }
+
+  document.addEventListener("click", async (e) => {
+    // Closest so clicks on a nested icon/span inside the button still fire.
+    const btn = e.target.closest("[data-copy], [data-copy-text]")
+    if (!btn) return
+    e.preventDefault()
+    const text = resolveText(btn)
+    if (text == null || text === "") return
+    if (await tryWriteToClipboard(text)) flashCopied(btn)
+  })
+}
+setupCopyToClipboardDelegation()
+
+// Phoenix hook kept for back-compat with the MFA recovery codes panel
+// which uses `phx-hook="CopyToClipboard"` and the older
+// `data-clipboard-*` attribute names. New code should prefer the
+// delegated `data-copy` pattern above so it works on marketing pages
+// too. Body is identical to the delegated path.
 const CopyToClipboard = {
   mounted() {
-    this.handler = (e) => {
+    this.handler = async (e) => {
       e.preventDefault()
       const text = this.resolveText()
-      if (text == null) return
-      this.copy(text)
+      if (text == null || text === "") return
+      if (await this.copy(text)) this.flashCopied()
     }
     this.el.addEventListener("click", this.handler)
   },
@@ -116,32 +182,26 @@ const CopyToClipboard = {
     const sel = this.el.dataset.clipboardTarget
     if (!sel) return null
     const target = document.querySelector(sel)
-    return target ? target.textContent.trim() : null
+    return target ? target.innerText.trim() : null
   },
   async copy(text) {
-    let ok = false
     try {
       if (navigator.clipboard && window.isSecureContext) {
         await navigator.clipboard.writeText(text)
-        ok = true
+        return true
       }
-    } catch (_e) { /* fall through to textarea fallback */ }
-
-    if (!ok) {
-      // execCommand fallback for non-secure contexts (dev over plain http,
-      // some embedded webviews). Mount off-screen so it never flashes.
-      const ta = document.createElement("textarea")
-      ta.value = text
-      ta.setAttribute("readonly", "")
-      ta.style.position = "fixed"
-      ta.style.top = "-1000px"
-      document.body.appendChild(ta)
-      ta.select()
-      try { ok = document.execCommand("copy") } catch (_e) { ok = false }
-      document.body.removeChild(ta)
-    }
-
-    if (ok) this.flashCopied()
+    } catch (_e) {}
+    const ta = document.createElement("textarea")
+    ta.value = text
+    ta.setAttribute("readonly", "")
+    ta.style.position = "fixed"
+    ta.style.top = "-1000px"
+    document.body.appendChild(ta)
+    ta.select()
+    let ok = false
+    try { ok = document.execCommand("copy") } catch (_e) {}
+    document.body.removeChild(ta)
+    return ok
   },
   flashCopied() {
     const original = this.el.innerText

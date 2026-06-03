@@ -71,14 +71,12 @@
         <div class="mt-3 overflow-hidden rounded-lg border border-zinc-800 bg-black/60">
           <div class="flex items-center justify-between gap-2 border-b border-zinc-800 px-4 py-2">
             <span class="font-mono text-[11px] text-zinc-500">on the runner host</span>
-            <button
-              type="button"
+            <EmisarWeb.CoreComponents.copy_button
               id={"copy-install-#{@pack.id}"}
-              class="rounded bg-zinc-800/80 px-2.5 py-1 text-xs font-medium text-zinc-200 hover:bg-zinc-700"
-              onclick={"const el = document.getElementById('install-snippet-#{@pack.id}'); navigator.clipboard.writeText(el.innerText.trim()); const orig = this.innerText; this.innerText = 'Copied'; setTimeout(() => { this.innerText = orig; }, 1500);"}
+              target={"#install-snippet-#{@pack.id}"}
             >
               Copy
-            </button>
+            </EmisarWeb.CoreComponents.copy_button>
           </div>
           <pre
             id={"install-snippet-#{@pack.id}"}

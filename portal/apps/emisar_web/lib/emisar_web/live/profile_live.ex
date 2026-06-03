@@ -551,19 +551,12 @@ defmodule EmisarWeb.ProfileLive do
                       >
                         {@mfa_uri}
                       </code>
-                      <button
-                        type="button"
-                        class="rounded bg-indigo-500/20 px-2 py-1 text-xs font-semibold text-indigo-100 hover:bg-indigo-500/30"
-                        onclick="
-                          const el = document.getElementById('mfa-uri');
-                          navigator.clipboard.writeText(el.innerText.trim());
-                          const orig = this.innerText;
-                          this.innerText = 'Copied';
-                          setTimeout(() => { this.innerText = orig; }, 1500);
-                        "
+                      <.copy_button
+                        target="#mfa-uri"
+                        class="bg-indigo-500/20 px-2 text-indigo-100 hover:bg-indigo-500/30 font-semibold"
                       >
                         Copy
-                      </button>
+                      </.copy_button>
                     </div>
                   </details>
                   <.simple_form for={@mfa_form} id="mfa_form" phx-submit="confirm_mfa">

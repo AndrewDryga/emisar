@@ -223,14 +223,13 @@ defmodule EmisarWeb.AuditLive do
               <div class="mt-2 overflow-hidden rounded-lg border border-zinc-800 bg-black/80">
                 <div class="flex items-center justify-between gap-3 border-b border-zinc-800 px-3 py-2">
                   <p class="font-mono text-[10px] text-zinc-500">audit:read token</p>
-                  <button
-                    type="button"
+                  <.copy_button
                     id="copy-export-token"
-                    class="rounded bg-zinc-800/80 px-2 py-0.5 text-[11px] font-medium text-zinc-200 hover:bg-zinc-700"
-                    onclick="const el = document.getElementById('export-token'); navigator.clipboard.writeText(el.textContent.trim()); const orig = this.innerText; this.innerText = 'Copied'; setTimeout(() => { this.innerText = orig; }, 1500);"
+                    target="#export-token"
+                    class="px-2 py-0.5 text-[11px]"
                   >
                     Copy
-                  </button>
+                  </.copy_button>
                 </div>
                 <pre
                   id="export-token"

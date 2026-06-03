@@ -18,8 +18,9 @@
 #
 #   curl -sSL https://raw.githubusercontent.com/andrewdryga/emisar/main/install.sh | sudo bash
 #
-#   # Pin a specific version:
-#   curl -sSL https://.../install.sh | sudo bash -s -- --version v0.3.0
+#   # Pin a specific runner version (tag, with or without prefix):
+#   curl -sSL https://.../install.sh | sudo bash -s -- --version runner-v0.3.0
+#   curl -sSL https://.../install.sh | sudo bash -s -- --version 0.3.0
 #
 #   # Uninstall:
 #   sudo bash install.sh --uninstall
@@ -50,10 +51,12 @@ usage() {
   cat <<'USAGE'
 emisar installer
 
-Usage: install.sh [--version vX.Y.Z] [--uninstall] [--no-start] [--yes]
+Usage: install.sh [--version TAG] [--uninstall] [--no-start] [--yes]
 
 Flags:
-  --version vX.Y.Z   Install a specific release tag. Default: latest.
+  --version TAG      Install a specific runner release tag. Default: latest.
+                     Accepts `runner-vX.Y.Z`, `vX.Y.Z`, or bare `X.Y.Z`
+                     (bare/v-prefixed forms are auto-prefixed with `runner-v`).
   --uninstall        Stop the service, remove binary + service unit.
                      Keeps /etc/emisar and /var/lib/emisar by default
                      (use --purge to remove those too).
@@ -72,10 +75,23 @@ SERVICE_USER, SERVICE_GROUP, ASSUME_YES, NO_START, EMISAR_REPO.
 USAGE
 }
 
+# Normalize --version into the canonical `runner-vX.Y.Z` shape so
+# `download_release` doesn't have to. Accepts:
+#   runner-v0.3.0  → runner-v0.3.0  (verbatim)
+#   v0.3.0         → runner-v0.3.0
+#   0.3.0          → runner-v0.3.0
+normalize_version() {
+  case "$1" in
+    runner-v*) printf '%s\n' "$1";;
+    v*)        printf 'runner-%s\n' "$1";;
+    *)         printf 'runner-v%s\n' "$1";;
+  esac
+}
+
 PURGE=0
 while [ $# -gt 0 ]; do
   case "$1" in
-    --version) VERSION="$2"; shift 2;;
+    --version) VERSION="$(normalize_version "$2")"; shift 2;;
     --uninstall) MODE="uninstall"; shift;;
     --purge) PURGE=1; shift;;
     --no-start) NO_START=1; shift;;
@@ -367,18 +383,32 @@ EOF
 # -----------------------------------------------------------------------
 
 resolve_latest_version() {
-  # Use the GitHub redirect on /releases/latest — works without API auth
-  # for public repos. Parses the final URL for the tag.
-  local url
-  url=$(curl -sSL -o /dev/null -w '%{url_effective}' "https://github.com/${REPO}/releases/latest") \
-    || die "could not query latest release"
-  printf '%s\n' "${url##*/}"
+  # The runner ships under the `runner-v*` tag prefix; the MCP bridge
+  # uses `mcp-v*` and shouldn't be picked up here. We use the GitHub
+  # releases API (anonymous, 60 req/hr per IP — fine for install
+  # scripts) and grep the first matching tag. The /releases/latest
+  # redirect would only work if we made the runner the "latest" via
+  # `make_latest: legacy`, which we do, BUT the bridge release stream
+  # might still claim it temporarily — filtering by prefix is more
+  # robust than trusting the Latest pointer.
+  local out
+  out=$(curl -fsSL -H 'Accept: application/vnd.github+json' \
+    "https://api.github.com/repos/${REPO}/releases?per_page=30") \
+    || die "could not query GitHub releases API"
+  printf '%s\n' "$out" \
+    | grep -oE '"tag_name":[[:space:]]*"runner-v[^"]+"' \
+    | head -1 \
+    | sed -E 's/.*"(runner-v[^"]+)".*/\1/'
 }
 
 download_release() {
   local version="$1" tmp="$2"
+  # `version` is the full tag (e.g. `runner-v0.3.0`). The tarball
+  # inside the release uses just the semver portion — strip the
+  # `runner-v` prefix.
+  local version_num="${version#runner-v}"
   local base="https://github.com/${REPO}/releases/download/${version}"
-  local name="emisar-${version}-${OS}-${ARCH}"
+  local name="emisar-${version_num}-${OS}-${ARCH}"
   local tarball="${name}.tar.gz"
 
   log "downloading ${tarball}"

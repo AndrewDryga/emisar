@@ -1,0 +1,217 @@
+name: MCP bridge release
+
+# Triggered by tag `mcp-vMAJOR.MINOR.PATCH` only. Builds the standalone
+# `emisar-mcp` stdio bridge for darwin + linux (amd64 + arm64),
+# signs build provenance via Sigstore, uploads to GitHub releases.
+#
+# Same security posture as runner-release.yml: no PR triggers, all
+# write scopes confined to publish, `release` environment requires
+# maintainer approval.
+#
+# Asset naming:
+#
+#   tag      : mcp-v0.1.0
+#   version  : 0.1.0
+#   tarball  : emisar-mcp-0.1.0-<OS>-<ARCH>.tar.gz
+#   checksum : SHA256SUMS-MCP
+#
+# `install-mcp.sh` queries the latest release with prefix `mcp-v`
+# and downloads `emisar-mcp-${version}-${os}-${arch}.tar.gz`.
+
+on:
+  push:
+    tags:
+      - "mcp-v*.*.*"
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "git tag to release (e.g. mcp-v0.1.0)"
+        required: true
+        type: string
+
+concurrency:
+  group: mcp-release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: verify (vet + test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+          persist-credentials: false
+
+      - uses: actions/setup-go@f111f3307d8850f501ac008e886eec1fd1932a9a # v5.3.0
+        with:
+          go-version-file: mcp/go.mod
+          cache: true
+          cache-dependency-path: mcp/go.sum
+
+      - run: cd mcp && go vet ./...
+      - run: cd mcp && go test -race -count=1 ./...
+
+  build:
+    name: build ${{ matrix.os }}/${{ matrix.arch }}
+    runs-on: ubuntu-latest
+    needs: [verify]
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - os: linux
+            arch: amd64
+          - os: linux
+            arch: arm64
+          - os: darwin
+            arch: amd64
+          - os: darwin
+            arch: arm64
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+          persist-credentials: false
+
+      - uses: actions/setup-go@f111f3307d8850f501ac008e886eec1fd1932a9a # v5.3.0
+        with:
+          go-version-file: mcp/go.mod
+          cache: true
+          cache-dependency-path: mcp/go.sum
+
+      - name: derive version
+        id: ver
+        run: |
+          ref="${{ inputs.ref || github.ref_name }}"
+          ref="${ref#refs/tags/}"
+          if [[ ! "$ref" =~ ^mcp-v[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+            echo "::error::tag $ref doesn't match mcp-vMAJOR.MINOR.PATCH"
+            exit 1
+          fi
+          version="${ref#mcp-v}"
+          echo "tag=${ref}"           >> "$GITHUB_OUTPUT"
+          echo "version=${version}"   >> "$GITHUB_OUTPUT"
+
+      - name: build
+        env:
+          GOOS: ${{ matrix.os }}
+          GOARCH: ${{ matrix.arch }}
+          CGO_ENABLED: "0"
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          mkdir -p dist
+          (cd mcp && go build -trimpath \
+            -ldflags "-s -w -X main.Version=${VERSION}" \
+            -o "../dist/emisar-mcp" .)
+          # The MCP bridge ships as a tiny tarball — just the binary,
+          # LICENSE, and a short README. No installer script: the
+          # binary is a single CLI that operators drop into PATH.
+          name="emisar-mcp-${VERSION}-${GOOS}-${GOARCH}"
+          mkdir -p "dist/${name}"
+          cp dist/emisar-mcp "dist/${name}/emisar-mcp"
+          [ -f LICENSE ] && cp LICENSE "dist/${name}/" || true
+          [ -f LICENSE.md ] && cp LICENSE.md "dist/${name}/" || true
+          # Self-documenting README so a maintainer looking at the
+          # extracted tarball months later remembers what it is.
+          # Heredoc is quoted ('EOF') so shell + actions expressions
+          # are NOT expanded — we want the README to keep ${VERSION}
+          # etc. as literal placeholders if any sneak in. Substitute
+          # afterwards.
+          cat > "dist/${name}/README.md" <<'EOF'
+          # emisar-mcp __VERSION__ (__GOOS__/__GOARCH__)
+
+          MCP stdio↔HTTP bridge for emisar. Configured by an
+          MCP-aware client (Claude Desktop, Cursor, Claude Code,
+          Gemini CLI, Codex CLI, ...) via stdin/stdout.
+
+          Drop the binary somewhere on $PATH (`/usr/local/bin` is the
+          convention). Then point your MCP client at the binary path
+          and set `EMISAR_URL` + `EMISAR_API_KEY` in the launcher's
+          env block. The portal at https://app.emisar.dev/app/agents
+          generates a copy-pasteable snippet per client.
+          EOF
+          sed -i "s/__VERSION__/${VERSION}/g; s/__GOOS__/${GOOS}/g; s/__GOARCH__/${GOARCH}/g" \
+            "dist/${name}/README.md"
+          tar -C dist -czf "dist/${name}.tar.gz" "${name}"
+          shasum -a 256 "dist/${name}.tar.gz" | awk '{print $1}' > "dist/${name}.tar.gz.sha256"
+          ls -la dist/
+
+      - name: attest build provenance
+        uses: actions/attest-build-provenance@7668a9144a5acddc1c0a26ca31a2e7e1e0c20f70 # v2.1.0
+        with:
+          subject-path: |
+            dist/emisar-mcp-${{ steps.ver.outputs.version }}-${{ matrix.os }}-${{ matrix.arch }}.tar.gz
+
+      - name: upload artefact
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: emisar-mcp-${{ steps.ver.outputs.version }}-${{ matrix.os }}-${{ matrix.arch }}
+          path: |
+            dist/*.tar.gz
+            dist/*.sha256
+          retention-days: 7
+
+  publish:
+    name: publish GitHub release
+    runs-on: ubuntu-latest
+    needs: [build]
+    environment:
+      name: release
+      url: ${{ github.server_url }}/${{ github.repository }}/releases
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+          persist-credentials: false
+
+      - name: download artefacts
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          path: artefacts/
+
+      - name: assemble release assets
+        run: |
+          mkdir -p release
+          find artefacts/ -name "emisar-mcp-*.tar.gz" -exec cp {} release/ \;
+          find artefacts/ -name "emisar-mcp-*.tar.gz.sha256" -exec cp {} release/ \;
+          # Suffix the combined checksum file with -MCP so it can't
+          # collide with the runner's SHA256SUMS on the same release.
+          # (In practice the two streams use separate releases, but
+          # the rename costs nothing and is unambiguous.)
+          ( cd release && shasum -a 256 emisar-mcp-*.tar.gz > SHA256SUMS-MCP )
+          ls -la release/
+
+      - name: derive version
+        id: ver
+        run: |
+          ref="${{ inputs.ref || github.ref_name }}"
+          ref="${ref#refs/tags/}"
+          version="${ref#mcp-v}"
+          echo "tag=${ref}"           >> "$GITHUB_OUTPUT"
+          echo "version=${version}"   >> "$GITHUB_OUTPUT"
+
+      - name: create GitHub release
+        uses: softprops/action-gh-release@72f2c25fcb47643c292f7107632f7a47c1df5cd8 # v2.3.2
+        with:
+          tag_name: ${{ steps.ver.outputs.tag }}
+          name: "emisar-mcp ${{ steps.ver.outputs.version }}"
+          # NOT marked as latest — the runner owns the Latest pointer
+          # so `curl emisar.dev/install.sh | bash` always gets the
+          # runner install path, not the MCP bridge.
+          make_latest: "false"
+          generate_release_notes: true
+          files: |
+            release/emisar-mcp-*.tar.gz
+            release/emisar-mcp-*.tar.gz.sha256
+            release/SHA256SUMS-MCP
+          fail_on_unmatched_files: true

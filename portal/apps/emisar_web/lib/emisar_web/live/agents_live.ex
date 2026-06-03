@@ -806,14 +806,12 @@ defmodule EmisarWeb.AgentsLive do
               <div class="mt-2 overflow-hidden rounded-lg border border-zinc-800 bg-black/80">
                 <div class="flex items-center justify-between gap-3 border-b border-zinc-800 px-4 py-2.5">
                   <p class="font-mono text-[11px] text-zinc-500">snippet (contains your API key)</p>
-                  <button
-                    type="button"
+                  <.copy_button
                     id={"copy-#{@selected_client}"}
-                    class="rounded bg-zinc-800/80 px-2.5 py-1 text-xs font-medium text-zinc-200 hover:bg-zinc-700"
-                    onclick={"const el = document.getElementById('snippet-#{@selected_client}'); navigator.clipboard.writeText(el.textContent.trim()); const orig = this.innerText; this.innerText = 'Copied'; setTimeout(() => { this.innerText = orig; }, 1500);"}
+                    target={"#snippet-#{@selected_client}"}
                   >
                     Copy snippet
-                  </button>
+                  </.copy_button>
                 </div>
                 <pre
                   id={"snippet-#{@selected_client}"}
@@ -878,14 +876,13 @@ defmodule EmisarWeb.AgentsLive do
       <div class="mt-2 overflow-hidden rounded-lg border border-zinc-800 bg-black/80">
         <div class="flex items-center justify-between gap-3 border-b border-zinc-800 px-3 py-2">
           <p class="font-mono text-[10px] text-zinc-500">macOS / Linux</p>
-          <button
-            type="button"
+          <.copy_button
             id="copy-install-mcp"
-            class="rounded bg-zinc-800/80 px-2 py-0.5 text-[11px] font-medium text-zinc-200 hover:bg-zinc-700"
-            onclick="const el = document.getElementById('install-mcp-cmd'); navigator.clipboard.writeText(el.textContent.trim()); const orig = this.innerText; this.innerText = 'Copied'; setTimeout(() => { this.innerText = orig; }, 1500);"
+            target="#install-mcp-cmd"
+            class="px-2 py-0.5 text-[11px]"
           >
             Copy
-          </button>
+          </.copy_button>
         </div>
         <pre
           id="install-mcp-cmd"
@@ -970,14 +967,12 @@ defmodule EmisarWeb.AgentsLive do
       <div class="overflow-hidden rounded-lg border border-zinc-800 bg-black/80">
         <div class="flex items-center justify-between gap-3 border-b border-zinc-800 px-4 py-2.5">
           <p class="font-mono text-[11px] text-zinc-500">connector settings</p>
-          <button
-            type="button"
+          <.copy_button
             id={"copy-#{@client_id}-conn"}
-            class="rounded bg-zinc-800/80 px-2.5 py-1 text-xs font-medium text-zinc-200 hover:bg-zinc-700"
-            onclick={"const url = document.getElementById('rpc-url-#{@client_id}').innerText; const hdr = document.getElementById('auth-hdr-#{@client_id}').innerText; navigator.clipboard.writeText('URL: ' + url + '\\nHeader: ' + hdr); const orig = this.innerText; this.innerText = 'Copied'; setTimeout(() => { this.innerText = orig; }, 1500);"}
+            text={"URL: #{@rpc_url}\nHeader: #{@auth_header}"}
           >
             Copy URL + header
-          </button>
+          </.copy_button>
         </div>
         <div class="grid grid-cols-[max-content,1fr] gap-x-3 gap-y-1 p-4 font-mono text-xs leading-6 text-zinc-200">
           <span class="text-zinc-500">URL:</span>

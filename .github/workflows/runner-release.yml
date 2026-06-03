@@ -1,66 +1,66 @@
 name: Runner release
 
-# Releases are triggered ONLY by a maintainer pushing a tag matching
-# v*.*.*. PRs cannot trigger this workflow — the `on:` triggers below
-# do not include pull_request or pull_request_target. The only ways to
-# kick off a release are:
+# Triggered ONLY by a maintainer pushing a tag `runner-vMAJOR.MINOR.PATCH`,
+# or by manual `workflow_dispatch` (also restricted to maintainers via
+# the `release` environment's required-reviewers config).
 #
-#   1. `git tag vX.Y.Z && git push origin vX.Y.Z` from someone with
-#      push access to the repo (or via the protected `release` GitHub
-#      Environment which requires manual approval).
-#   2. Manual `workflow_dispatch`, restricted to maintainers.
+# A PR cannot reach this workflow:
 #
-# A PR opened by an attacker against this repo will never reach the
-# release path. The CI workflow runs on PRs separately and has no
-# secret access.
+#   * `on:` does not include `pull_request` or `pull_request_target`.
+#   * The publish step gates on `environment: release`, which the repo
+#     settings configure with required reviewers — at least one
+#     maintainer must approve before binaries are uploaded.
+#   * Default token permissions are read-only; the publish job is the
+#     only place that opts into `contents: write` (for the release
+#     itself) and `id-token: write` + `attestations: write` (for
+#     generating Sigstore build provenance).
+#
+# Asset naming:
+#
+#   tag      : runner-v0.3.0
+#   version  : 0.3.0   (tag with `runner-v` prefix stripped)
+#   tarball  : emisar-0.3.0-<OS>-<ARCH>.tar.gz
+#   checksum : SHA256SUMS (one combined file for all four arches)
+#
+# `install.sh` queries the latest release matching `runner-v*` and
+# downloads `emisar-${version}-${os}-${arch}.tar.gz` + `SHA256SUMS`.
 
 on:
   push:
     tags:
-      - "v*.*.*"
-  # workflow_dispatch lets maintainers re-run a release manually
-  # without pushing a new tag (e.g., to rebuild after fixing CI).
+      - "runner-v*.*.*"
   workflow_dispatch:
     inputs:
       ref:
-        description: "git tag or commit to release"
+        description: "git tag to release (e.g. runner-v0.3.0)"
         required: true
         type: string
 
-# Cancel in-flight releases of the same tag (avoids parallel uploads
-# clashing on the same release).
 concurrency:
-  group: release-${{ github.ref }}
+  group: runner-release-${{ github.ref }}
   cancel-in-progress: false
 
-# Default token scope is read-only. The publish job below opts into
-# `contents: write` for creating the release; no other elevated scopes
-# are granted anywhere in this workflow.
 permissions:
   contents: read
 
 jobs:
   verify:
-    name: verify (test + vet)
+    name: verify (vet + test)
     runs-on: ubuntu-latest
-    # No secrets needed for verify; runs with the default read-only token.
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           ref: ${{ inputs.ref || github.ref }}
           persist-credentials: false
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@f111f3307d8850f501ac008e886eec1fd1932a9a # v5.3.0
         with:
           go-version-file: runner/go.mod
           cache: true
-          cache-dependency-path: |
-            runner/go.sum
+          cache-dependency-path: runner/go.sum
 
       - run: cd runner && go vet ./...
-      - run: cd mcp && go vet ./...
       - run: cd runner && go test -race -count=1 ./...
-      - run: cd mcp && go test -race -count=1 ./...
 
   build:
     name: build ${{ matrix.os }}/${{ matrix.arch }}
@@ -78,26 +78,37 @@ jobs:
             arch: amd64
           - os: darwin
             arch: arm64
+    # Attestations need id-token write at the build job (where the
+    # SLSA provenance subject is computed) so the runner can request
+    # an OIDC token bound to this workflow run.
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           ref: ${{ inputs.ref || github.ref }}
           persist-credentials: false
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@f111f3307d8850f501ac008e886eec1fd1932a9a # v5.3.0
         with:
           go-version-file: runner/go.mod
           cache: true
-          cache-dependency-path: |
-            runner/go.sum
+          cache-dependency-path: runner/go.sum
 
       - name: derive version
         id: ver
         run: |
           ref="${{ inputs.ref || github.ref_name }}"
-          # Strip refs/tags/ prefix if present.
           ref="${ref#refs/tags/}"
-          echo "version=${ref}" >> "$GITHUB_OUTPUT"
+          if [[ ! "$ref" =~ ^runner-v[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+            echo "::error::tag $ref doesn't match runner-vMAJOR.MINOR.PATCH"
+            exit 1
+          fi
+          version="${ref#runner-v}"
+          echo "tag=${ref}"           >> "$GITHUB_OUTPUT"
+          echo "version=${version}"   >> "$GITHUB_OUTPUT"
 
       - name: build
         env:
@@ -107,42 +118,41 @@ jobs:
           VERSION: ${{ steps.ver.outputs.version }}
         run: |
           mkdir -p dist
-          # emisar — the runner (runs on managed Linux hosts as a service)
           (cd runner && go build -trimpath \
             -ldflags "-s -w -X main.Version=${VERSION}" \
             -o "../dist/emisar" .)
-          # emisar-mcp — the stdio MCP bridge (runs on the operator's
-          # laptop, spawned as a child process by Claude Code, Cursor,
-          # Gemini CLI, Codex CLI, etc.)
-          (cd mcp && go build -trimpath \
-            -ldflags "-s -w -X main.Version=${VERSION}" \
-            -o "../dist/emisar-mcp" .)
-          # Bundle both binaries, README, install.sh, packs dir, and docs
-          # into a tarball. The install.sh inside the tarball matches
-          # the version of the runner it ships — operators can extract
-          # and run it directly without a separate curl-pipe step.
-          # Note: tarball internals keep the flat shape install.sh
-          # expects (examples/packs at the tarball root), independent
-          # of the monorepo layout.
+          # Bundle runner binary + install.sh + sample packs + docs
+          # into the tarball install.sh expects. Tarball internals
+          # keep the flat shape (examples/packs at the root) so the
+          # script's hard-coded paths work after extraction.
           name="emisar-${VERSION}-${GOOS}-${GOARCH}"
           mkdir -p "dist/${name}"
           cp dist/emisar "dist/${name}/emisar"
-          cp dist/emisar-mcp "dist/${name}/emisar-mcp"
           cp README.md "dist/${name}/"
           [ -f LICENSE ] && cp LICENSE "dist/${name}/" || true
           [ -f LICENSE.md ] && cp LICENSE.md "dist/${name}/" || true
           cp install.sh "dist/${name}/install.sh"
           chmod +x "dist/${name}/install.sh"
           cp -R runner/examples "dist/${name}/examples"
-          cp -R docs "dist/${name}/docs"
+          [ -d docs ] && cp -R docs "dist/${name}/docs" || true
           tar -C dist -czf "dist/${name}.tar.gz" "${name}"
           shasum -a 256 "dist/${name}.tar.gz" | awk '{print $1}' > "dist/${name}.tar.gz.sha256"
           ls -la dist/
 
-      - name: upload binary artefact
-        uses: actions/upload-artifact@v4
+      - name: attest build provenance
+        # Generates a SLSA-3 provenance attestation for the tarball.
+        # The attestation is signed by Sigstore using a workflow-bound
+        # ambient OIDC identity (no long-lived keys). Verifiable later
+        # with `gh attestation verify <tarball> --owner andrewdryga`.
+        uses: actions/attest-build-provenance@7668a9144a5acddc1c0a26ca31a2e7e1e0c20f70 # v2.1.0
         with:
-          name: emisar-${{ steps.ver.outputs.version }}-${{ matrix.os }}-${{ matrix.arch }}
+          subject-path: |
+            dist/emisar-${{ steps.ver.outputs.version }}-${{ matrix.os }}-${{ matrix.arch }}.tar.gz
+
+      - name: upload artefact
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: emisar-runner-${{ steps.ver.outputs.version }}-${{ matrix.os }}-${{ matrix.arch }}
           path: |
             dist/*.tar.gz
             dist/*.sha256
@@ -152,29 +162,26 @@ jobs:
     name: publish GitHub release
     runs-on: ubuntu-latest
     needs: [build]
-    # The `release` environment is configured in GitHub repo settings
-    # with required reviewers — at least one maintainer must approve
-    # before this job runs. This is the single human checkpoint between
-    # a tag landing and binaries being published.
     environment:
       name: release
       url: ${{ github.server_url }}/${{ github.repository }}/releases
     # Only this job gets contents:write — needed to create the release
-    # and upload assets. No other secret is referenced anywhere.
+    # and upload assets.
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           ref: ${{ inputs.ref || github.ref }}
           persist-credentials: false
 
-      - name: download all artefacts
-        uses: actions/download-artifact@v4
+      - name: download artefacts
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
         with:
           path: artefacts/
 
       - name: assemble release assets
+        id: assets
         run: |
           mkdir -p release
           find artefacts/ -name "emisar-*.tar.gz" -exec cp {} release/ \;
@@ -188,13 +195,21 @@ jobs:
         run: |
           ref="${{ inputs.ref || github.ref_name }}"
           ref="${ref#refs/tags/}"
-          echo "version=${ref}" >> "$GITHUB_OUTPUT"
+          version="${ref#runner-v}"
+          echo "tag=${ref}"           >> "$GITHUB_OUTPUT"
+          echo "version=${version}"   >> "$GITHUB_OUTPUT"
 
       - name: create GitHub release
         uses: softprops/action-gh-release@72f2c25fcb47643c292f7107632f7a47c1df5cd8 # v2.3.2
         with:
-          tag_name: ${{ steps.ver.outputs.version }}
-          name: ${{ steps.ver.outputs.version }}
+          tag_name: ${{ steps.ver.outputs.tag }}
+          name: "emisar runner ${{ steps.ver.outputs.version }}"
+          # `make_latest: legacy` — only this release is marked Latest
+          # on GitHub if it's the newest by semver. The MCP bridge has
+          # its own release stream (mcp-v*) and shouldn't compete for
+          # the Latest pointer; we keep the runner as Latest because
+          # that's what most install pipelines (`curl | bash`) hit.
+          make_latest: legacy
           generate_release_notes: true
           files: |
             release/emisar-*.tar.gz
