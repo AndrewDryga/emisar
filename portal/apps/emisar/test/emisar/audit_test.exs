@@ -194,7 +194,7 @@ defmodule Emisar.AuditTest do
 
       # One of each: 2 noisy types + 2 operator-facing types.
       {:ok, _} = Audit.log(account.id, "policy.evaluated", actor_kind: "system")
-      {:ok, _} = Audit.log(account.id, "action_run.sent", actor_kind: "system")
+      {:ok, _} = Audit.log(account.id, "runner.connected", actor_kind: "runner")
       {:ok, _} = Audit.log(account.id, "approval.approved", actor_kind: "user")
       {:ok, _} = Audit.log(account.id, "user.invited", actor_kind: "user")
 

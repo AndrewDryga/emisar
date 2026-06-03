@@ -4,18 +4,17 @@ defmodule Emisar.Audit.Event.Query do
   alias Emisar.Repo.Filter
 
   # Event types the audit log fires automatically as a byproduct of
-  # normal traffic — one per dispatch (`policy.evaluated`) or per run
-  # state transition (`action_run.*`) or per runner socket reconnect
-  # (`runner.connected`/`runner.disconnected`, which fires on every
-  # network blip). They're indispensable for postmortem reconstruction
-  # but they bury the operator-facing events (auth-key minted, member
-  # invited, approval decided) in the default listing. The "Hide noisy
-  # events" filter excludes this set.
+  # normal traffic — one per dispatch (`policy.evaluated`) or per runner
+  # socket reconnect (`runner.connected`/`runner.disconnected`, which
+  # fires on every network blip). High-frequency but useful for
+  # postmortems; they bury the operator-facing events (auth-key minted,
+  # member invited, approval decided) in the default listing, so the
+  # "Hide noisy events" filter excludes this set. Run lifecycle states
+  # (pending/sent/running) are intentionally NOT audited at all — only
+  # terminal outcomes + policy denials leave a row (see
+  # `Runs.@audited_run_statuses`).
   @noisy_event_types ~w[
     policy.evaluated
-    action_run.pending
-    action_run.sent
-    action_run.running
     runner.connected
     runner.disconnected
   ]

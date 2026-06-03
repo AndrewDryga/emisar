@@ -56,6 +56,16 @@ defmodule Emisar.Runs do
 
   @failed_statuses ~w[failed error timed_out]
 
+  # Run statuses that earn an audit row. The intermediate lifecycle
+  # states — pending, sent, running, pending_approval — are already
+  # visible on the run's own timeline (status + queued/sent/started
+  # timestamps + the event stream); duplicating each into the security
+  # log just buried the policy decision and the final outcome under
+  # five-rows-per-run noise. Only terminal results and policy denials
+  # are audited as run events; the decision itself is captured by the
+  # separate `policy.evaluated` row.
+  @audited_run_statuses ~w[success failed error validation_failed unknown_action timed_out cancelled denied]
+
   @doc """
   Paginated list of runs that ended in a non-success terminal status
   within the last `hours` hours. Dashboard surfaces these at the top
@@ -192,7 +202,7 @@ defmodule Emisar.Runs do
     result =
       Multi.new()
       |> Multi.insert(:run, ActionRun.Changeset.create(attrs))
-      |> Multi.insert(:audit, fn %{run: run} -> Audit.run_event_changeset(run) end)
+      |> put_run_audit_event()
       |> Repo.commit_multi(after_commit: fn %{run: run} -> PubSub.broadcast_run(run) end)
 
     case result do
@@ -440,8 +450,12 @@ defmodule Emisar.Runs do
 
     case create_run(attrs) do
       {:ok, run} ->
+        # Record the policy decision *before* the envelope leaves for the
+        # runner, so the audit trail reads decision → outcome — never the
+        # other way round.
+        log_policy_evaluated(run, policy, "allow", reason, matched)
+
         with :ok <- dispatch_to_runner(run) do
-          log_policy_evaluated(run, policy, "allow", reason, matched)
           {:ok, :running, run}
         end
 
@@ -469,8 +483,11 @@ defmodule Emisar.Runs do
 
         case create_run(attrs) do
           {:ok, run} ->
+            # Same ordering rule as the allow path: log the grant-based
+            # decision before the run reaches the runner.
+            log_grant_used(run, grant, policy)
+
             with :ok <- dispatch_to_runner(run) do
-              log_grant_used(run, grant, policy)
               {:ok, :running, run}
             end
 
@@ -724,12 +741,27 @@ defmodule Emisar.Runs do
   defp transition(%ActionRun{} = run, status, attrs) do
     Multi.new()
     |> Multi.update(:run, ActionRun.Changeset.transition(run, status, attrs))
-    |> Multi.insert(:audit, fn %{run: run} -> Audit.run_event_changeset(run) end)
+    |> put_run_audit_event()
     |> Repo.commit_multi(after_commit: fn %{run: run} -> PubSub.broadcast_run(run) end)
     |> case do
       {:ok, %{run: run}} -> {:ok, run}
       {:error, _} = err -> err
     end
+  end
+
+  # Adds the run-event audit insert to a Multi, but only for statuses
+  # worth auditing (see `@audited_run_statuses`). Returns `{:ok, nil}`
+  # for the skipped intermediate states so the transaction still
+  # commits and `fan_out_audit_events/1` simply finds no event to
+  # broadcast.
+  defp put_run_audit_event(multi) do
+    Multi.run(multi, :audit, fn repo, %{run: run} ->
+      if run.status in @audited_run_statuses do
+        repo.insert(Audit.run_event_changeset(run))
+      else
+        {:ok, nil}
+      end
+    end)
   end
 
   # -- Events (progress chunks) ----------------------------------------

@@ -116,6 +116,35 @@ defmodule Emisar.RunsTest do
                      500
     end
 
+    test "audits only the policy decision + terminal outcome, decision first" do
+      account = account_fixture()
+      runner = runner_fixture(account_id: account.id)
+      _ = action_fixture(runner: runner, action_id: "linux.uptime", risk: "low")
+      _ = policy_fixture(account_id: account.id)
+
+      {:ok, :running, run} =
+        Runs.dispatch_run(base_attrs(account.id, runner.id), Emisar.Auth.Subject.system(account))
+
+      {:ok, _} = Runs.mark_finished(run, %{"status" => "success", "duration_ms" => 6})
+
+      {:ok, events, _} =
+        Emisar.Audit.list_events(Emisar.Auth.Subject.system(account), page: [limit: 50])
+
+      types = events |> Enum.filter(&(&1.subject_id == run.id)) |> Enum.map(& &1.event_type)
+
+      # The decision and the outcome — and none of the intermediate
+      # lifecycle noise (pending/sent/running).
+      assert Enum.sort(types) == ["action_run.success", "policy.evaluated"]
+      refute "action_run.pending" in types
+      refute "action_run.sent" in types
+      refute "action_run.running" in types
+
+      # Policy is recorded no later than the run it gated.
+      evaluated = Enum.find(events, &(&1.event_type == "policy.evaluated"))
+      success = Enum.find(events, &(&1.event_type == "action_run.success"))
+      assert DateTime.compare(evaluated.occurred_at, success.occurred_at) in [:lt, :eq]
+    end
+
     test "wire envelope carries trusted pack hash when one is on file" do
       {_user, account, subject} = owner_subject_fixture()
       runner = runner_fixture(account_id: account.id)
