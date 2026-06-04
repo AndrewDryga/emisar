@@ -433,6 +433,28 @@ defmodule Emisar.RunnersTest do
     end
   end
 
+  describe "list_all_runners_for_account/1" do
+    test "returns every runner — no pagination cap — decorated + account-scoped" do
+      {account, _user, subject} = account_with_owner_subject()
+
+      # 40 runners — past the paginator's 35-row default page.
+      for _ <- 1..40, do: runner_fixture(account_id: account.id, connected?: false)
+
+      {:ok, all} = Runners.list_all_runners_for_account(subject)
+      assert length(all) == 40
+      # Presence-decorated: the virtual field is populated, not left unloaded.
+      assert Enum.all?(all, &(&1.online? == false))
+
+      # The UI reader is deliberately left paginated.
+      assert {:ok, paged, _meta} = Runners.list_runners_for_account(subject)
+      assert length(paged) == 35
+
+      # Another account sees none of them.
+      {_other, _u, other_subject} = account_with_owner_subject()
+      assert {:ok, []} = Runners.list_all_runners_for_account(other_subject)
+    end
+  end
+
   describe "create_auth_key_with_secret/4" do
     test "inserts a key whose hash matches the supplied raw secret" do
       account = account_fixture()

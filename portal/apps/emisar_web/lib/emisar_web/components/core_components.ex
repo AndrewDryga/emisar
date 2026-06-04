@@ -764,6 +764,7 @@ defmodule EmisarWeb.CoreComponents do
   attr :switchable_accounts, :list, default: nil
   attr :section, :atom, default: :dashboard
   attr :pending_approvals_count, :integer, default: 0
+  attr :pending_packs_count, :integer, default: 0
   attr :flash, :map, default: %{}
 
   slot :inner_block, required: true
@@ -782,7 +783,11 @@ defmodule EmisarWeb.CoreComponents do
           current_account={@current_account}
           switchable_accounts={@switchable_accounts || [@current_account]}
         />
-        <.shell_nav section={@section} pending_approvals_count={@pending_approvals_count} />
+        <.shell_nav
+          section={@section}
+          pending_approvals_count={@pending_approvals_count}
+          pending_packs_count={@pending_packs_count}
+        />
         <.shell_user current_user={@current_user} />
       </aside>
 
@@ -817,7 +822,11 @@ defmodule EmisarWeb.CoreComponents do
               <.icon name="hero-x-mark" class="h-5 w-5" />
             </button>
           </div>
-          <.shell_nav section={@section} pending_approvals_count={@pending_approvals_count} />
+          <.shell_nav
+            section={@section}
+            pending_approvals_count={@pending_approvals_count}
+            pending_packs_count={@pending_packs_count}
+          />
           <.shell_user current_user={@current_user} />
         </aside>
       </div>
@@ -947,6 +956,7 @@ defmodule EmisarWeb.CoreComponents do
 
   attr :section, :atom, required: true
   attr :pending_approvals_count, :integer, default: 0
+  attr :pending_packs_count, :integer, default: 0
 
   defp shell_nav(assigns) do
     ~H"""
@@ -990,7 +1000,12 @@ defmodule EmisarWeb.CoreComponents do
       <.nav_link to={~p"/app/policies"} active={@section == :policies} icon="hero-document-text">
         Policy
       </.nav_link>
-      <.nav_link to={~p"/app/packs"} active={@section == :packs} icon="hero-cube">
+      <.nav_link
+        to={~p"/app/packs"}
+        active={@section == :packs}
+        icon="hero-cube"
+        badge={@pending_packs_count}
+      >
         Packs
       </.nav_link>
       <.nav_link to={~p"/app/audit"} active={@section == :audit} icon="hero-list-bullet">

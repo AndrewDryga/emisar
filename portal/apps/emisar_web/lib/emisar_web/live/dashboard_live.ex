@@ -40,6 +40,7 @@ defmodule EmisarWeb.DashboardLive do
     |> assign(:has_llm_connected?, api_keys != [])
     |> assign(:billing, unwrap_ok(Billing.billing_summary(account, subject)))
     |> assign(:team_mfa, team_mfa_stats(memberships, account))
+    |> assign(:pending_packs_count, Catalog.count_pending_pack_versions(subject))
   end
 
   defp list_memberships(subject) do
@@ -74,6 +75,7 @@ defmodule EmisarWeb.DashboardLive do
     ~H"""
     <.dashboard_shell
       pending_approvals_count={@pending_approvals_count}
+      pending_packs_count={@pending_packs_count}
       current_user={@current_user}
       current_account={@current_account}
       switchable_accounts={@switchable_accounts}
@@ -95,6 +97,7 @@ defmodule EmisarWeb.DashboardLive do
         has_llm_connected?={@has_llm_connected?}
         billing={@billing}
         team_mfa={@team_mfa}
+        pending_packs_count={@pending_packs_count}
       />
     </.dashboard_shell>
     """
@@ -175,6 +178,7 @@ defmodule EmisarWeb.DashboardLive do
   attr :has_llm_connected?, :boolean, required: true
   attr :billing, :map, required: true
   attr :team_mfa, :map, required: true
+  attr :pending_packs_count, :integer, default: 0
 
   defp live_dashboard(assigns) do
     ~H"""
@@ -185,6 +189,7 @@ defmodule EmisarWeb.DashboardLive do
 
     <.plan_limit_banner :if={runner_headroom_warn?(@billing)} billing={@billing} />
     <.runners_offline_banner :if={@runners_total > 0 and @runners_connected == 0} />
+    <.packs_pending_banner :if={@pending_packs_count > 0} count={@pending_packs_count} />
 
     <%!-- Three tiles, never four. Plan info used to live in the third
          slot but billing is rarely operational. Team-MFA posture is —
@@ -414,6 +419,30 @@ defmodule EmisarWeb.DashboardLive do
         View runners →
       </.link>
     </div>
+    """
+  end
+
+  attr :count, :integer, required: true
+
+  defp packs_pending_banner(assigns) do
+    ~H"""
+    <.link
+      navigate={~p"/app/packs"}
+      class="mb-4 flex items-start gap-3 rounded-xl border border-amber-500/40 bg-amber-500/10 p-4 transition hover:bg-amber-500/[0.16]"
+    >
+      <.icon name="hero-shield-exclamation" class="mt-0.5 h-5 w-5 flex-none text-amber-300" />
+      <div class="flex-1 text-sm">
+        <p class="font-semibold text-amber-100">
+          {@count} pack version{if @count == 1, do: "", else: "s"} need trust review
+        </p>
+        <p class="mt-1 text-xs text-amber-200/90">
+          Dispatch is blocked against these until an admin trusts or rejects the new hash.
+        </p>
+      </div>
+      <span class="shrink-0 self-start rounded-lg bg-amber-500/20 px-3 py-1.5 text-xs font-semibold text-amber-100">
+        Review →
+      </span>
+    </.link>
     """
   end
 

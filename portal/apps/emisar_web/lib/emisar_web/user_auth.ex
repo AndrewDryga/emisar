@@ -358,6 +358,9 @@ defmodule EmisarWeb.UserAuth do
       |> Phoenix.Component.assign_new(:pending_approvals_count, fn ->
         approval_count_for(socket.assigns[:current_subject])
       end)
+      |> Phoenix.Component.assign_new(:pending_packs_count, fn ->
+        pack_pending_count_for(socket.assigns[:current_subject])
+      end)
 
     if Phoenix.LiveView.connected?(socket) and socket.assigns[:current_account] do
       Emisar.PubSub.subscribe_account_approvals(socket.assigns.current_account.id)
@@ -421,6 +424,13 @@ defmodule EmisarWeb.UserAuth do
 
   defp approval_count_for(nil), do: 0
   defp approval_count_for(subject), do: Emisar.Approvals.count_pending_approval_requests(subject)
+
+  # Pack-trust badge counterpart. Computed once at mount (assign_new);
+  # the packs page re-assigns it after Trust/Reject and the dashboard
+  # recomputes on reload, so it stays accurate without a PubSub topic —
+  # pending-trust is a non-urgent "review when you get to it" signal.
+  defp pack_pending_count_for(nil), do: 0
+  defp pack_pending_count_for(subject), do: Emisar.Catalog.count_pending_pack_versions(subject)
 
   defp format_peer_ip(%{address: ip}) when is_tuple(ip),
     do: ip |> :inet_parse.ntoa() |> to_string()

@@ -208,6 +208,7 @@ defmodule EmisarWeb.PoliciesLive do
     ~H"""
     <.dashboard_shell
       pending_approvals_count={@pending_approvals_count}
+      pending_packs_count={@pending_packs_count}
       current_user={@current_user}
       current_account={@current_account}
       switchable_accounts={@switchable_accounts}

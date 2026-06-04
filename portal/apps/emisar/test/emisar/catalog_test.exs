@@ -58,6 +58,69 @@ defmodule Emisar.CatalogTest do
     end
   end
 
+  describe "count_pending_pack_versions/1" do
+    test "counts pending versions for the account and never another account's" do
+      {account, subject} = account_with_owner()
+      runner = runner_fixture(account_id: account.id)
+
+      # No shipped baseline for these versions → they land pending.
+      {:ok, _} =
+        Catalog.observe_state(
+          runner,
+          state_payload(
+            packs: %{
+              "linux-core" => %{"version" => "9.9.9", "hash" => "h1"},
+              "redis" => %{"version" => "9.9.9", "hash" => "h2"}
+            }
+          )
+        )
+
+      assert Catalog.count_pending_pack_versions(subject) == 2
+
+      # A second account's pending pack must not leak into the first's count.
+      {other_account, other_subject} = account_with_owner()
+      other_runner = runner_fixture(account_id: other_account.id)
+
+      {:ok, _} =
+        Catalog.observe_state(
+          other_runner,
+          state_payload(packs: %{"redis" => %{"version" => "9.9.9", "hash" => "h3"}})
+        )
+
+      assert Catalog.count_pending_pack_versions(subject) == 2
+      assert Catalog.count_pending_pack_versions(other_subject) == 1
+    end
+  end
+
+  describe "list_all_actions_for_account/1" do
+    test "returns the COMPLETE catalog — no pagination cap — scoped to the account" do
+      {account, subject} = account_with_owner()
+      runner = runner_fixture(account_id: account.id)
+
+      # 40 actions — past the paginator's 35-row default page.
+      advertised = for n <- 1..40, do: action("pack.act_#{n}")
+      {:ok, _} = Catalog.observe_state(runner, state_payload(actions: advertised))
+
+      {:ok, all} = Catalog.list_all_actions_for_account(subject)
+      assert length(all) == 40
+
+      # The UI reader is deliberately left paginated.
+      {:ok, paged, _meta} = Catalog.list_actions_for_account(subject)
+      assert length(paged) == 35
+
+      # Another account sees none of them.
+      {_account, other_subject} = account_with_owner()
+      assert {:ok, []} = Catalog.list_all_actions_for_account(other_subject)
+    end
+  end
+
+  defp account_with_owner do
+    account = account_fixture()
+    user = user_fixture()
+    _ = membership_fixture(account_id: account.id, user_id: user.id, role: "owner")
+    {account, subject_for(user, account, role: :owner)}
+  end
+
   describe "observe_state/2 — actions" do
     test "upserts runner_actions" do
       runner = runner_fixture()

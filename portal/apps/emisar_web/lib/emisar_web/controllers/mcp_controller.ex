@@ -48,7 +48,7 @@ defmodule EmisarWeb.McpController do
   def list_runners(conn, _params) do
     api_key = conn.assigns.api_key
     actions_by_runner = group_actions_by_runner(conn)
-    {:ok, all_runners, _} = Runners.list_runners_for_account(mcp_subject(conn))
+    {:ok, all_runners} = Runners.list_all_runners_for_account(mcp_subject(conn))
     scopes = membership_scopes(api_key)
 
     runners =
@@ -82,11 +82,11 @@ defmodule EmisarWeb.McpController do
     # Load runners once and reuse for both visibility filtering
     # (needs runner.group to evaluate runner_group_filter) and the
     # per-tool runner-id enum rendering downstream.
-    {:ok, runners, _} = Runners.list_runners_for_account(mcp_subject(conn))
+    {:ok, runners} = Runners.list_all_runners_for_account(mcp_subject(conn))
     runners_by_id = Map.new(runners, fn r -> {r.id, r} end)
     scopes = membership_scopes(api_key)
 
-    {:ok, actions, _} = Catalog.list_actions_for_account(mcp_subject(conn))
+    {:ok, actions} = Catalog.list_all_actions_for_account(mcp_subject(conn))
 
     visible_actions =
       actions
@@ -350,7 +350,7 @@ defmodule EmisarWeb.McpController do
 
   defp resolve_runners(conn, api_key, action_id, names) do
     allowed = allowed_runners_for_action(conn, api_key, action_id)
-    {:ok, all, _} = Runners.list_runners_for_account(mcp_subject(conn))
+    {:ok, all} = Runners.list_all_runners_for_account(mcp_subject(conn))
     scopes = membership_scopes(api_key)
 
     Enum.reduce_while(names, {:ok, []}, fn name, {:ok, acc} ->
@@ -409,12 +409,12 @@ defmodule EmisarWeb.McpController do
   # filters out every runner that has it" in the no-target dispatch
   # path.
   defp action_exists_in_account?(conn, action_id) do
-    {:ok, actions, _} = Catalog.list_actions_for_account(mcp_subject(conn))
+    {:ok, actions} = Catalog.list_all_actions_for_account(mcp_subject(conn))
     Enum.any?(actions, &(&1.action_id == action_id))
   end
 
   defp allowed_runners_for_action(conn, api_key, action_id) do
-    {:ok, actions, _} = Catalog.list_actions_for_account(mcp_subject(conn))
+    {:ok, actions} = Catalog.list_all_actions_for_account(mcp_subject(conn))
 
     runner_ids_advertising =
       actions
@@ -422,7 +422,7 @@ defmodule EmisarWeb.McpController do
       |> Enum.map(& &1.runner_id)
       |> MapSet.new()
 
-    {:ok, runners, _} = Runners.list_runners_for_account(mcp_subject(conn))
+    {:ok, runners} = Runners.list_all_runners_for_account(mcp_subject(conn))
     scopes = membership_scopes(api_key)
 
     runners
@@ -591,7 +591,7 @@ defmodule EmisarWeb.McpController do
   end
 
   defp group_actions_by_runner(conn) do
-    {:ok, actions, _} = Catalog.list_actions_for_account(mcp_subject(conn))
+    {:ok, actions} = Catalog.list_all_actions_for_account(mcp_subject(conn))
     Enum.group_by(actions, & &1.runner_id)
   end
 
@@ -600,7 +600,7 @@ defmodule EmisarWeb.McpController do
   # never-connected warnings to each successfully-queued run without an
   # N+1 hit per target.
   defp fetch_runners_by_id(conn, ids) when is_list(ids) do
-    {:ok, all, _} = Runners.list_runners_for_account(mcp_subject(conn))
+    {:ok, all} = Runners.list_all_runners_for_account(mcp_subject(conn))
     Map.new(all, fn r -> {r.id, r} end) |> Map.take(ids)
   end
 

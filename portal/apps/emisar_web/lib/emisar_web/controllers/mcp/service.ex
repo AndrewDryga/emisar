@@ -41,11 +41,11 @@ defmodule EmisarWeb.Mcp.Service do
     api_key = conn.assigns.api_key
     subject = conn.assigns.current_subject
 
-    {:ok, runners, _} = Runners.list_runners_for_account(subject)
+    {:ok, runners} = Runners.list_all_runners_for_account(subject)
     runners_by_id = Map.new(runners, fn r -> {r.id, r} end)
     scopes = membership_scopes(api_key)
 
-    {:ok, actions, _} = Catalog.list_actions_for_account(subject)
+    {:ok, actions} = Catalog.list_all_actions_for_account(subject)
 
     actions
     |> Enum.filter(&action_visible_to_key?(&1, api_key, runners_by_id))
@@ -67,10 +67,10 @@ defmodule EmisarWeb.Mcp.Service do
     api_key = conn.assigns.api_key
     subject = conn.assigns.current_subject
 
-    {:ok, actions, _} = Catalog.list_actions_for_account(subject)
+    {:ok, actions} = Catalog.list_all_actions_for_account(subject)
     actions_by_runner = Enum.group_by(actions, & &1.runner_id)
 
-    {:ok, all_runners, _} = Runners.list_runners_for_account(subject)
+    {:ok, all_runners} = Runners.list_all_runners_for_account(subject)
     scopes = membership_scopes(api_key)
 
     all_runners
@@ -248,7 +248,7 @@ defmodule EmisarWeb.Mcp.Service do
 
   defp resolve_runners(subject, api_key, action_id, names) do
     allowed = allowed_runners_for_action(subject, api_key, action_id)
-    {:ok, all, _} = Runners.list_runners_for_account(subject)
+    {:ok, all} = Runners.list_all_runners_for_account(subject)
     scopes = membership_scopes(api_key)
 
     Enum.reduce_while(names, {:ok, []}, fn name, {:ok, acc} ->
@@ -298,12 +298,12 @@ defmodule EmisarWeb.Mcp.Service do
   end
 
   defp action_exists_in_account?(subject, action_id) do
-    {:ok, actions, _} = Catalog.list_actions_for_account(subject)
+    {:ok, actions} = Catalog.list_all_actions_for_account(subject)
     Enum.any?(actions, &(&1.action_id == action_id))
   end
 
   defp allowed_runners_for_action(subject, api_key, action_id) do
-    {:ok, actions, _} = Catalog.list_actions_for_account(subject)
+    {:ok, actions} = Catalog.list_all_actions_for_account(subject)
 
     runner_ids_advertising =
       actions
@@ -311,7 +311,7 @@ defmodule EmisarWeb.Mcp.Service do
       |> Enum.map(& &1.runner_id)
       |> MapSet.new()
 
-    {:ok, runners, _} = Runners.list_runners_for_account(subject)
+    {:ok, runners} = Runners.list_all_runners_for_account(subject)
     scopes = membership_scopes(api_key)
 
     runners
@@ -322,7 +322,7 @@ defmodule EmisarWeb.Mcp.Service do
   end
 
   defp fetch_runners_by_id(subject, ids) do
-    {:ok, all, _} = Runners.list_runners_for_account(subject)
+    {:ok, all} = Runners.list_all_runners_for_account(subject)
     Map.new(all, fn r -> {r.id, r} end) |> Map.take(ids)
   end
 

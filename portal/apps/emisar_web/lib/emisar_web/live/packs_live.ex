@@ -44,11 +44,15 @@ defmodule EmisarWeb.PacksLive do
            page: [limit: 500]
          ) do
       {:ok, rows, _meta} ->
+        pending = Enum.count(rows, &(&1.trust_state == "pending"))
+
         socket
         |> assign(:page_title, "Packs")
         |> assign(:rows, rows)
         |> assign(:packs, group_by_pack(rows))
-        |> assign(:pending_count, Enum.count(rows, &(&1.trust_state == "pending")))
+        |> assign(:pending_count, pending)
+        # Keep the sidebar badge in step after Trust/Reject on this page.
+        |> assign(:pending_packs_count, pending)
 
       {:error, _} ->
         socket
@@ -104,6 +108,7 @@ defmodule EmisarWeb.PacksLive do
     ~H"""
     <.dashboard_shell
       pending_approvals_count={@pending_approvals_count}
+      pending_packs_count={@pending_packs_count}
       current_user={@current_user}
       current_account={@current_account}
       switchable_accounts={@switchable_accounts}

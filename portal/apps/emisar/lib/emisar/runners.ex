@@ -93,6 +93,32 @@ defmodule Emisar.Runners do
     end
   end
 
+  @doc """
+  Every non-deleted runner for the subject's account — the COMPLETE
+  set, deliberately un-paginated, presence-decorated.
+
+  The MCP path: `tools/list`, dispatch resolution, and runner
+  inventory must see every runner (no `status`/`group`/membership
+  filter), not a page. The UI uses the paginated
+  `list_runners_for_account/2`. Returns `{:ok, runners}`.
+  """
+  def list_all_runners_for_account(%Subject{} = subject) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.view_runners_permission()
+           ) do
+      runners =
+        Runner.Query.not_deleted()
+        |> Runner.Query.ordered_by_group_name()
+        |> Authorizer.for_subject(subject)
+        |> Repo.all()
+        |> decorate_connection()
+
+      {:ok, runners}
+    end
+  end
+
   # Per-user runner ACLs (v1 — uniform per-membership scope). When the
   # caller passes `membership_id: id`, restrict the result to runners
   # the membership is allowed to see (empty scopes = all). Defaults to

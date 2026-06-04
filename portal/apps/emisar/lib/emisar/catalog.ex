@@ -516,6 +516,33 @@ defmodule Emisar.Catalog do
   defp apply_risk_filter(query, risk), do: RunnerAction.Query.by_risk(query, risk)
 
   @doc """
+  Every advertised catalog action for the subject's account — the
+  COMPLETE set, deliberately un-paginated.
+
+  This is the MCP path. `tools/list` and dispatch resolution must see
+  the whole catalog, not a page: a single runner with a handful of
+  packs advertises hundreds of actions, so the paginated
+  `list_actions_for_account/2` (what the UI uses) would silently hide
+  everything past the first page. Same `view_catalog` gate + account
+  scoping; returns `{:ok, actions}` — there is no cursor.
+  """
+  def list_all_actions_for_account(%Subject{} = subject) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.view_catalog_permission()
+           ) do
+      actions =
+        RunnerAction.Query.all()
+        |> RunnerAction.Query.ordered_by_action_seen()
+        |> Authorizer.for_subject(subject)
+        |> Repo.all()
+
+      {:ok, actions}
+    end
+  end
+
+  @doc """
   Lookup a single catalog action row by (runner, action_id) scoped to
   the subject's account.
   """
@@ -542,6 +569,24 @@ defmodule Emisar.Catalog do
       PackVersion.Query.all()
       |> Authorizer.for_subject(subject)
       |> Repo.list(PackVersion.Query, opts)
+    end
+  end
+
+  @doc """
+  Cheap COUNT(*) of pack versions pending trust review — drives the
+  sidebar + dashboard "needs review" badge. Same Subject gate + account
+  scoping as `list_pack_versions/2`; returns `0` when the caller lacks
+  permission so the badge silently disappears instead of erroring.
+  """
+  def count_pending_pack_versions(%Subject{} = subject) do
+    case Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_catalog_permission()) do
+      :ok ->
+        PackVersion.Query.pending()
+        |> Authorizer.for_subject(subject)
+        |> Repo.aggregate(:count)
+
+      _ ->
+        0
     end
   end
 end
