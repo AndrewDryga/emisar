@@ -8,6 +8,7 @@ defmodule Emisar.PubSub do
 
     "account:<id>:runs"        — run create/transition
     "account:<id>:approvals"   — approval requests / decisions
+    "account:<id>:packs"       — pack-trust pending appeared / resolved
     "account:<id>:auth_keys"   — auth key issued / revoked / bound
     "account:<id>:api_keys"    — API key issued / revoked / bound
     "account:<id>:runbooks"    — runbook created / updated / published
@@ -27,6 +28,7 @@ defmodule Emisar.PubSub do
 
   def topic_for_account_runs(account_id), do: "account:#{account_id}:runs"
   def topic_for_account_approvals(account_id), do: "account:#{account_id}:approvals"
+  def topic_for_account_packs(account_id), do: "account:#{account_id}:packs"
   def topic_for_account_auth_keys(account_id), do: "account:#{account_id}:auth_keys"
   def topic_for_account_api_keys(account_id), do: "account:#{account_id}:api_keys"
   def topic_for_account_runbooks(account_id), do: "account:#{account_id}:runbooks"
@@ -42,6 +44,9 @@ defmodule Emisar.PubSub do
 
   def subscribe_account_approvals(account_id),
     do: Phoenix.PubSub.subscribe(@pubsub, topic_for_account_approvals(account_id))
+
+  def subscribe_account_packs(account_id),
+    do: Phoenix.PubSub.subscribe(@pubsub, topic_for_account_packs(account_id))
 
   def subscribe_account_auth_keys(account_id),
     do: Phoenix.PubSub.subscribe(@pubsub, topic_for_account_auth_keys(account_id))
@@ -88,6 +93,20 @@ defmodule Emisar.PubSub do
   def broadcast_approval(%Request{} = req) do
     payload = {:approval_updated, req}
     Phoenix.PubSub.broadcast(@pubsub, topic_for_account_approvals(req.account_id), payload)
+  end
+
+  @doc """
+  Pack-trust badge signal: a pack version just became pending (drift or a
+  new custom pack) or was resolved (Trust/Reject). Subscribers recompute
+  the "needs review" count. Fired by `Catalog` only after the mutation
+  commits, so a rolled-back observe can't light up the badge.
+  """
+  def broadcast_pack_trust(account_id) when is_binary(account_id) do
+    Phoenix.PubSub.broadcast(
+      @pubsub,
+      topic_for_account_packs(account_id),
+      {:pack_trust_changed, account_id}
+    )
   end
 
   @doc """

@@ -42,6 +42,8 @@ defmodule EmisarWeb.AuditLive do
   def handle_info({:list_changed, :api_key, _event_type, _id}, socket),
     do: {:noreply, assign_export_keys(socket)}
 
+  def handle_info(_, socket), do: {:noreply, socket}
+
   def handle_event("revoke_export_key", %{"id" => id}, socket) do
     Permissions.gated(socket, :manage_api_keys, fn s ->
       case ApiKeys.fetch_api_key_by_id(id, s.assigns.current_subject) do

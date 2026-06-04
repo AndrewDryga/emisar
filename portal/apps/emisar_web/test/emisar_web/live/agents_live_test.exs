@@ -191,5 +191,17 @@ defmodule EmisarWeb.AgentsLiveTest do
       assert html =~ "IdleBot"
       assert html =~ "NeverBot"
     end
+
+    test "survives an account-topic broadcast it doesn't render", %{conn: conn} do
+      {conn, _user, _account} = register_and_log_in(conn)
+      {:ok, lv, _} = live(conn, ~p"/app/agents")
+
+      # The pending-badge hooks subscribe every authenticated LV to the
+      # account's approvals/packs topics and forward those broadcasts.
+      # This page renders neither — it must absorb the message, not crash.
+      send(lv.pid, {:approval_updated, %{id: Ecto.UUID.generate()}})
+
+      assert render(lv) =~ "Agents"
+    end
   end
 end

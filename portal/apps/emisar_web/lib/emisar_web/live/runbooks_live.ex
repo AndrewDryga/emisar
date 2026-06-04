@@ -23,6 +23,8 @@ defmodule EmisarWeb.RunbooksLive do
   def handle_info({:list_changed, :runbook, _event_type, _id}, socket),
     do: {:noreply, load(socket, socket.assigns[:filter_params] || %{})}
 
+  def handle_info(_, socket), do: {:noreply, socket}
+
   defp load(socket, params) do
     opts = LiveTable.params_to_opts(params)
 

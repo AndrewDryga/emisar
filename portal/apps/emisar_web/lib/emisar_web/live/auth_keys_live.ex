@@ -31,6 +31,8 @@ defmodule EmisarWeb.AuthKeysLive do
   def handle_info({:list_changed, :auth_key, _event_type, _id}, socket),
     do: {:noreply, load(socket, socket.assigns[:filter_params] || %{})}
 
+  def handle_info(_, socket), do: {:noreply, socket}
+
   defp fetch_billing(socket) do
     case Emisar.Billing.billing_summary(
            socket.assigns.current_account,

@@ -38,23 +38,37 @@ defmodule Emisar.Catalog do
   authenticated by the runner token. Not exposed to LV/MCP.
   """
   def observe_state(%Runner{} = runner, %{} = payload) do
-    Repo.transaction(fn ->
-      now = DateTime.utc_now() |> DateTime.truncate(:microsecond)
-      packs = payload["packs"] || %{}
-      actions = payload["actions"] || []
+    result =
+      Repo.transaction(fn ->
+        now = DateTime.utc_now() |> DateTime.truncate(:microsecond)
+        packs = payload["packs"] || %{}
+        actions = payload["actions"] || []
 
-      {:ok, runner} = Emisar.Runners.apply_state(runner, payload)
+        {:ok, runner} = Emisar.Runners.apply_state(runner, payload)
 
-      Enum.each(packs, &observe_pack(runner.account_id, &1, now))
+        pending_before = pending_pack_count(runner.account_id)
+        Enum.each(packs, &observe_pack(runner.account_id, &1, now))
+        pending_after = pending_pack_count(runner.account_id)
 
-      seen_ids =
-        actions
-        |> Enum.map(&observe_action(runner, &1, packs, now))
-        |> Enum.reject(&is_nil/1)
+        seen_ids =
+          actions
+          |> Enum.map(&observe_action(runner, &1, packs, now))
+          |> Enum.reject(&is_nil/1)
 
-      prune_missing_actions(runner.id, seen_ids)
-      runner
-    end)
+        prune_missing_actions(runner.id, seen_ids)
+        {runner, pending_before != pending_after}
+      end)
+
+    case result do
+      {:ok, {runner, pending_changed?}} ->
+        # Light up the pack-trust badge only when the pending set actually
+        # moved (drift / new custom pack), and only after the commit.
+        if pending_changed?, do: Emisar.PubSub.broadcast_pack_trust(runner.account_id)
+        {:ok, runner}
+
+      {:error, _} = error ->
+        error
+    end
   end
 
   def observe_state(runner_id, payload) when is_binary(runner_id) do
@@ -63,6 +77,25 @@ defmodule Emisar.Catalog do
       {:error, :not_found} -> {:error, :unknown_runner}
     end
   end
+
+  # COUNT of pending pack versions for an account — internal liveness
+  # signal for the badge broadcast, no Subject (runs inside the already
+  # authenticated runner-socket observe path).
+  defp pending_pack_count(account_id) do
+    PackVersion.Query.all()
+    |> PackVersion.Query.by_account_id(account_id)
+    |> PackVersion.Query.pending()
+    |> Repo.aggregate(:count)
+  end
+
+  # Taps a Trust/Reject result: on success, fire the badge broadcast and
+  # pass the result through unchanged.
+  defp broadcast_trust_change({:ok, %PackVersion{account_id: account_id}} = result) do
+    Emisar.PubSub.broadcast_pack_trust(account_id)
+    result
+  end
+
+  defp broadcast_trust_change(other), do: other
 
   # -- Pack-version pinning --------------------------------------------
 
@@ -262,6 +295,7 @@ defmodule Emisar.Catalog do
           {:ok, updated}
       end
     end
+    |> broadcast_trust_change()
   end
 
   @doc """
@@ -340,6 +374,7 @@ defmodule Emisar.Catalog do
           {:ok, updated}
       end
     end
+    |> broadcast_trust_change()
   end
 
   def fetch_pack_version_by_id(id, %Subject{} = subject) do

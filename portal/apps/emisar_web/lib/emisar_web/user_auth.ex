@@ -342,16 +342,16 @@ defmodule EmisarWeb.UserAuth do
     {:cont, socket}
   end
 
-  # Tracks the account's pending-approval count so the sidebar badge
-  # stays live across every authenticated LV without each one having
-  # to re-implement the subscribe/handle_info dance.
+  # Tracks the account's pending-approval AND pending-pack-trust counts
+  # so both sidebar badges stay live across every authenticated LV
+  # without each one re-implementing the subscribe/handle_info dance.
   #
-  # First connect computes the count + subscribes to the account's
-  # approvals topic; an `attach_hook` then refreshes whenever a request
-  # is created or decided. The hook returns `{:cont, ...}` so it never
-  # competes with the host LV's own `handle_info/2` clauses — they both
-  # see the message, the badge stays current, and the host's own
-  # reaction (e.g. reload the approvals table) keeps working.
+  # First connect computes the counts + subscribes to the account's
+  # approvals and packs topics; `attach_hook`s then refresh whenever a
+  # request is created/decided or a pack flips pending/resolved. The
+  # approvals hook returns `{:cont, ...}` so the host LV's own
+  # `handle_info/2` (e.g. reload the approvals table) still runs; the
+  # packs hook `{:halt}`s — no host LV needs that message forwarded.
   def on_mount(:track_pending_approvals, _params, _session, socket) do
     socket =
       socket
@@ -363,14 +363,21 @@ defmodule EmisarWeb.UserAuth do
       end)
 
     if Phoenix.LiveView.connected?(socket) and socket.assigns[:current_account] do
-      Emisar.PubSub.subscribe_account_approvals(socket.assigns.current_account.id)
+      account_id = socket.assigns.current_account.id
+      Emisar.PubSub.subscribe_account_approvals(account_id)
+      Emisar.PubSub.subscribe_account_packs(account_id)
 
       {:cont,
-       Phoenix.LiveView.attach_hook(
-         socket,
+       socket
+       |> Phoenix.LiveView.attach_hook(
          :refresh_pending_approvals,
          :handle_info,
          &refresh_pending_approvals/2
+       )
+       |> Phoenix.LiveView.attach_hook(
+         :refresh_pending_packs,
+         :handle_info,
+         &refresh_pending_packs/2
        )}
     else
       {:cont, socket}
@@ -403,6 +410,22 @@ defmodule EmisarWeb.UserAuth do
 
   defp refresh_pending_approvals(_msg, socket), do: {:cont, socket}
 
+  # Pack-trust badge counterpart. The count drives both the sidebar badge
+  # and the dashboard banner (both read `@pending_packs_count`), so the
+  # hook owns the refresh end-to-end and HALTS: no host LV needs the
+  # message forwarded, and halting keeps `{:pack_trust_changed, _}` off
+  # pages whose `handle_info/2` doesn't expect it.
+  defp refresh_pending_packs({:pack_trust_changed, _account_id}, socket) do
+    {:halt,
+     Phoenix.Component.assign(
+       socket,
+       :pending_packs_count,
+       pack_pending_count_for(socket.assigns[:current_subject])
+     )}
+  end
+
+  defp refresh_pending_packs(_msg, socket), do: {:cont, socket}
+
   defp resend_confirmation_email("resend_confirmation", _params, socket) do
     socket =
       case socket.assigns[:current_user] do
@@ -425,10 +448,8 @@ defmodule EmisarWeb.UserAuth do
   defp approval_count_for(nil), do: 0
   defp approval_count_for(subject), do: Emisar.Approvals.count_pending_approval_requests(subject)
 
-  # Pack-trust badge counterpart. Computed once at mount (assign_new);
-  # the packs page re-assigns it after Trust/Reject and the dashboard
-  # recomputes on reload, so it stays accurate without a PubSub topic —
-  # pending-trust is a non-urgent "review when you get to it" signal.
+  # Pack-trust badge counterpart: computed at mount (assign_new) and kept
+  # live by `refresh_pending_packs` on the account's packs topic.
   defp pack_pending_count_for(nil), do: 0
   defp pack_pending_count_for(subject), do: Emisar.Catalog.count_pending_pack_versions(subject)
 

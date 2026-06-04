@@ -156,6 +156,10 @@ defmodule EmisarWeb.AgentsLive do
   def handle_info({:list_changed, :api_key, _event_type, _id}, socket),
     do: {:noreply, reload(socket)}
 
+  # The badge hooks (UserAuth) forward account-topic broadcasts to every
+  # authenticated LV — ignore the ones this page doesn't render.
+  def handle_info(_, socket), do: {:noreply, socket}
+
   # -- Internals -------------------------------------------------------
 
   defp do_create(socket, params) do

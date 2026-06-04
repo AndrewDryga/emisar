@@ -29,6 +29,8 @@ defmodule EmisarWeb.TeamLive do
   def handle_info({:list_changed, :team, _event_type, _id}, socket),
     do: {:noreply, reload(socket)}
 
+  def handle_info(_, socket), do: {:noreply, socket}
+
   defp reload(socket), do: load(socket, socket.assigns[:filter_params] || %{})
 
   def handle_event("start_edit", %{"membership_id" => id}, socket) do

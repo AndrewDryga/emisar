@@ -114,6 +114,38 @@ defmodule Emisar.CatalogTest do
     end
   end
 
+  describe "pack-trust PubSub" do
+    test "broadcasts when pending appears and is resolved, but not on a no-op observe" do
+      {account, subject} = account_with_owner()
+      runner = runner_fixture(account_id: account.id)
+      account_id = account.id
+      Emisar.PubSub.subscribe_account_packs(account_id)
+
+      # New custom pack (no shipped baseline) → lands pending → broadcast.
+      {:ok, _} =
+        Catalog.observe_state(
+          runner,
+          state_payload(packs: %{"custom-pack" => %{"version" => "1.0", "hash" => "h1"}})
+        )
+
+      assert_receive {:pack_trust_changed, ^account_id}
+
+      # Re-advertising the same pending hash changes nothing → silence.
+      {:ok, _} =
+        Catalog.observe_state(
+          runner,
+          state_payload(packs: %{"custom-pack" => %{"version" => "1.0", "hash" => "h1"}})
+        )
+
+      refute_receive {:pack_trust_changed, _}
+
+      # Resolving it (Trust) → broadcast again.
+      {:ok, [pv], _} = Catalog.list_pack_versions(subject)
+      {:ok, _} = Catalog.trust_pack_version(pv.id, subject)
+      assert_receive {:pack_trust_changed, ^account_id}
+    end
+  end
+
   defp account_with_owner do
     account = account_fixture()
     user = user_fixture()
