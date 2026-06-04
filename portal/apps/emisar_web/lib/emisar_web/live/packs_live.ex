@@ -115,10 +115,10 @@ defmodule EmisarWeb.PacksLive do
       <p class="mt-2 max-w-2xl text-sm text-zinc-400">
         Each <em>(pack, version)</em>
         has a pinned trusted hash. Runners advertising the same
-        bytes match the pin; a different hash flips the pack into
+        contents match the pin; a different hash flips the pack into
         <strong class="text-amber-300">pending</strong>
         — dispatch refuses runs against it until
-        you Trust (adopt the new bytes) or Reject (keep the pinned hash).
+        you Trust (adopt the new contents) or Reject (keep the pinned hash).
       </p>
 
       <div
@@ -212,7 +212,7 @@ defmodule EmisarWeb.PacksLive do
                 <p :if={is_nil(v.hash)} class="text-xs text-amber-100/90">
                   A runner advertised <code>{pack_id}</code> v{v.version} — a
                   pack we don't ship a baseline for. Dispatch is blocked
-                  until you approve the bytes.
+                  until you approve its contents.
                 </p>
                 <p :if={not is_nil(v.hash)} class="text-xs text-amber-100/90">
                   A runner is advertising a different hash. Dispatch is blocked
@@ -230,14 +230,14 @@ defmodule EmisarWeb.PacksLive do
                     phx-value-id={v.id}
                     data-confirm={
                       if is_nil(v.hash) do
-                        "Approve #{pack_id} v#{v.version}? Cloud will allow its actions to run against the advertised bytes."
+                        "Approve #{pack_id} v#{v.version}? Cloud will allow its actions to run against the advertised contents."
                       else
-                        "Adopt the new hash as trusted for #{pack_id} v#{v.version}? Future dispatches will authorize against the advertised bytes."
+                        "Adopt the new hash as trusted for #{pack_id} v#{v.version}? Future dispatches will authorize against the advertised contents."
                       end
                     }
                     class="rounded bg-amber-500 px-3 py-1 text-xs font-semibold text-amber-950 hover:bg-amber-400"
                   >
-                    {if is_nil(v.hash), do: "Approve pack", else: "Trust new bytes"}
+                    {if is_nil(v.hash), do: "Approve pack", else: "Trust new contents"}
                   </button>
                   <button
                     phx-click="reject"
