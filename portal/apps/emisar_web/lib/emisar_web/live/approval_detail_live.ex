@@ -99,9 +99,13 @@ defmodule EmisarWeb.ApprovalDetailLive do
     end)
   end
 
-  def handle_event("deny", %{"reason" => reason}, socket) do
+  def handle_event("deny", params, socket) do
     Permissions.gated(socket, :decide_approval, fn s ->
-      case Approvals.deny_request(s.assigns.request, s.assigns.current_subject, blank_or(reason)) do
+      case Approvals.deny_request(
+             s.assigns.request,
+             s.assigns.current_subject,
+             blank_or(params["reason"])
+           ) do
         {:ok, {req, _run}} ->
           {:noreply, s |> assign(:request, req) |> put_flash(:info, "Denied.")}
 

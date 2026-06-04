@@ -145,10 +145,17 @@ func (c *Client) Run(ctx context.Context) error {
 			c.cancelAllRuns()
 			return err
 		}
-		err := c.runSession(ctx)
+		connected, err := c.runSession(ctx)
 		if errors.Is(err, context.Canceled) || ctx.Err() != nil {
 			c.cancelAllRuns()
 			return ctx.Err()
+		}
+		// A session that actually connected clears the backoff: the drop
+		// that ended it is a fresh failure, not a continuation of the
+		// reconnect storm. Without this the backoff ratchets up across
+		// unrelated disconnects and never recovers on success.
+		if connected {
+			backoff = c.opts.ReconnectMin
 		}
 		c.opts.Logger.Warn("cloud.session_ended", "error", err, "backoff", backoff)
 		select {
@@ -165,11 +172,13 @@ func (c *Client) Run(ctx context.Context) error {
 }
 
 // runSession dials, advertises state, runs the sender + heartbeat +
-// receiver until any of them errors, then returns.
-func (c *Client) runSession(parent context.Context) error {
+// receiver until any of them errors, then returns. The bool reports
+// whether the dial+register handshake succeeded (i.e. we actually
+// connected), so the caller can reset its reconnect backoff on success.
+func (c *Client) runSession(parent context.Context) (bool, error) {
 	conn, _, err := c.dialer.Dial(parent)
 	if err != nil {
-		return fmt.Errorf("dial: %w", err)
+		return false, fmt.Errorf("dial: %w", err)
 	}
 	defer conn.Close()
 
@@ -180,7 +189,7 @@ func (c *Client) runSession(parent context.Context) error {
 
 	state := c.opts.StateBuilder.Build()
 	if err := conn.Send(sessionCtx, state); err != nil {
-		return fmt.Errorf("send state: %w", err)
+		return true, fmt.Errorf("send state: %w", err)
 	}
 	c.opts.Logger.Info("cloud.connected",
 		"actions", len(state.Actions),
@@ -200,7 +209,7 @@ func (c *Client) runSession(parent context.Context) error {
 		raw, err := conn.Recv(sessionCtx)
 		if err != nil {
 			sessionCancel()
-			return fmt.Errorf("recv: %w", err)
+			return true, fmt.Errorf("recv: %w", err)
 		}
 		c.dispatch(parent, raw)
 	}

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sync"
@@ -663,5 +664,126 @@ func TestClient_ConcurrencyCap(t *testing.T) {
 			t.Fatalf("timed out waiting for two responses; results=%v errs=%v",
 				len(results), len(errs))
 		}
+	}
+}
+
+// --- backoff-reset regression ---------------------------------------
+
+// backoffCapture is a slog.Handler that records the "backoff" attr of
+// every cloud.session_ended log, so a test can assert the reconnect
+// backoff used after each session.
+type backoffCapture struct {
+	mu  sync.Mutex
+	got []time.Duration
+}
+
+func (h *backoffCapture) Enabled(context.Context, slog.Level) bool { return true }
+func (h *backoffCapture) WithAttrs([]slog.Attr) slog.Handler       { return h }
+func (h *backoffCapture) WithGroup(string) slog.Handler            { return h }
+
+func (h *backoffCapture) Handle(_ context.Context, r slog.Record) error {
+	if r.Message != "cloud.session_ended" {
+		return nil
+	}
+	r.Attrs(func(a slog.Attr) bool {
+		if a.Key == "backoff" {
+			h.mu.Lock()
+			h.got = append(h.got, a.Value.Duration())
+			h.mu.Unlock()
+		}
+		return true
+	})
+	return nil
+}
+
+func (h *backoffCapture) backoffs() []time.Duration {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return append([]time.Duration(nil), h.got...)
+}
+
+// dropAfterConnectDialer fails `fails` dials (escalating the reconnect
+// backoff), then hands out one conn, then errors forever. The test closes
+// the handed conn once it has connected, so the session ends right after
+// a successful connect.
+type dropAfterConnectDialer struct {
+	mu    sync.Mutex
+	fails int
+	conn  *fakeConn
+	done  bool
+}
+
+func (d *dropAfterConnectDialer) Dial(context.Context) (Conn, string, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.fails > 0 {
+		d.fails--
+		return nil, "", errors.New("register returned 409")
+	}
+	if !d.done {
+		d.done = true
+		return d.conn, "agt_test", nil
+	}
+	return nil, "", errors.New("no more conns")
+}
+
+func waitUntil(t *testing.T, timeout time.Duration, cond func() bool) {
+	t.Helper()
+	deadline := time.After(timeout)
+	tick := time.NewTicker(5 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		if cond() {
+			return
+		}
+		select {
+		case <-tick.C:
+		case <-deadline:
+			t.Fatal("waitUntil: condition not met before timeout")
+		}
+	}
+}
+
+// TestClient_BackoffResetsAfterSuccessfulSession guards the reconnect
+// loop: a backoff that escalated across failed dials must drop back to
+// the floor once a session actually connects, so a healthy runner that
+// briefly disconnects reconnects fast instead of inheriting an old,
+// inflated backoff. Regression for "backoff is not reset on success".
+func TestClient_BackoffResetsAfterSuccessfulSession(t *testing.T) {
+	conn := newFakeConn()
+	d := &dropAfterConnectDialer{fails: 2, conn: conn}
+	cli := buildClient(t, d)
+	cli.opts.ReconnectMin = 10 * time.Millisecond
+	cli.opts.ReconnectMax = 10 * time.Second // headroom so escalation shows
+	rec := &backoffCapture{}
+	cli.opts.Logger = slog.New(rec)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- cli.Run(ctx) }()
+	t.Cleanup(func() {
+		cancel()
+		<-done
+	})
+
+	// Let two dials fail (backoff escalates), then the third connects —
+	// drop it so the session ends right after a successful connect.
+	waitUntil(t, 3*time.Second, func() bool {
+		return len(conn.sentByType(MsgRunnerState)) > 0
+	})
+	conn.Close()
+
+	// got[0],got[1] = the two escalating failures; got[2] = the
+	// session_ended after the successful connect.
+	waitUntil(t, 3*time.Second, func() bool { return len(rec.backoffs()) >= 3 })
+	cancel()
+
+	got := rec.backoffs()
+	if !(got[1] > got[0]) {
+		t.Fatalf("expected backoff to escalate across failed dials, got %v", got)
+	}
+	if got[2] != cli.opts.ReconnectMin {
+		t.Fatalf("backoff not reset after a successful session: got[2]=%v want %v (full sequence %v)",
+			got[2], cli.opts.ReconnectMin, got)
 	}
 }

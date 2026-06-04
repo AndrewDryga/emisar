@@ -14,6 +14,8 @@ defmodule Emisar.Approvals.Grant.Changeset do
       :granted_at,
       :expires_at,
       :max_uses,
+      :uses_count,
+      :last_used_at,
       :approval_request_id
     ])
     |> validate_required([:account_id, :api_key_id, :action_id, :granted_at])

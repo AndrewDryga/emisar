@@ -135,6 +135,22 @@ defmodule EmisarWeb.RunDetailLive do
         </.meta_field>
       </.meta_strip>
 
+      <%!-- Policy verdict that gated this run. The decision is its own
+           chip; the reason explains why. Shown for every run the policy
+           evaluated — the approval banner below only covers the
+           require_approval case while it's still pending. --%>
+      <div
+        :if={@run.policy_decision}
+        class="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border border-zinc-900 bg-zinc-950/40 px-4 py-3"
+      >
+        <span class="text-xs font-medium uppercase tracking-wide text-zinc-500">Policy</span>
+        <.chip tone={policy_tone(@run.policy_decision)}>{policy_label(@run.policy_decision)}</.chip>
+        <span :if={@run.policy_reason} class="text-sm text-zinc-300">{@run.policy_reason}</span>
+        <span :if={@run.policy_version} class="ml-auto text-xs text-zinc-600">
+          policy v{@run.policy_version}
+        </span>
+      </div>
+
       <%!-- Approval banner — fires for both flavors of "needs human"
            status (`pending_approval` is what dispatch_run writes;
            `awaiting_approval` lingers from older code paths + seeds).
@@ -149,7 +165,6 @@ defmodule EmisarWeb.RunDetailLive do
             <div class="text-sm font-semibold text-amber-100">Waiting on approval</div>
             <p class="mt-1 text-xs text-amber-200/80">
               This run is held until an approver decides.
-              <span :if={@run.policy_reason}>Policy: {@run.policy_reason}.</span>
             </p>
           </div>
         </div>
@@ -306,6 +321,16 @@ defmodule EmisarWeb.RunDetailLive do
   defp exit_code_class(0), do: "text-emerald-300"
   defp exit_code_class(code) when is_integer(code), do: "text-rose-300"
   defp exit_code_class(_), do: "text-zinc-500"
+
+  defp policy_label("allow"), do: "Allowed"
+  defp policy_label("require_approval"), do: "Requires approval"
+  defp policy_label("deny"), do: "Denied"
+  defp policy_label(other), do: other
+
+  defp policy_tone("allow"), do: :emerald
+  defp policy_tone("require_approval"), do: :amber
+  defp policy_tone("deny"), do: :rose
+  defp policy_tone(_), do: :zinc
 
   defp runner_label(%Emisar.Runners.Runner{name: name}) when is_binary(name) and name != "",
     do: name

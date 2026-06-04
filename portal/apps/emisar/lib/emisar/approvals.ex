@@ -495,6 +495,12 @@ defmodule Emisar.Approvals do
       granted_at: now,
       expires_at: expires_at_for(duration, now),
       max_uses: max_uses_for(duration, attrs[:max_uses]),
+      # Minting a grant also dispatches the run it was approved from —
+      # that execution is the grant's first use. Record it so the UI
+      # never shows "not used yet" for an action that already ran, and
+      # so `max_uses` counts total executions (this one included).
+      uses_count: 1,
+      last_used_at: now,
       approval_request_id: request.id
     })
     |> Repo.insert()
@@ -559,8 +565,10 @@ defmodule Emisar.Approvals do
   @doc """
   Lists active (un-revoked) grants for an account. `opts[:include_expired]`
   defaults to false. Grants are returned with `api_key`, `runner`,
-  `granted_by` preloaded so the LV table can render labels without an
-  N+1.
+  `granted_by` and `approval_request: :run` preloaded so the LV table can
+  render labels — and the exact arguments the grant is locked to (the
+  grant stores only the hash; the raw args live on the originating run) —
+  without an N+1.
   """
   def list_grants_for_account(%Subject{} = subject, opts \\ []) do
     with :ok <-
@@ -576,7 +584,7 @@ defmodule Emisar.Approvals do
       |> Authorizer.for_subject(subject)
       |> Repo.list(
         Grant.Query,
-        Keyword.put_new(opts, :preload, [:api_key, :runner, :granted_by])
+        Keyword.put_new(opts, :preload, [:api_key, :runner, :granted_by, approval_request: :run])
       )
     end
   end

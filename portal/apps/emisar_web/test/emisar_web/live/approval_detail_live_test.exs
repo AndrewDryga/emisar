@@ -1,9 +1,10 @@
 defmodule EmisarWeb.ApprovalDetailLiveTest do
   @moduledoc """
   The approval detail page + its decision panel. Regression coverage for
-  a production KeyError: the `decision_panel` component read
-  `@grant_duration` but the call site only passed `can_decide?`, so the
-  panel crashed for anyone who could actually decide an approval.
+  two production crashes: a KeyError where the `decision_panel` component
+  read `@grant_duration` but the call site only passed `can_decide?`, and
+  a FunctionClauseError where clicking Deny submitted no `reason` but the
+  handler head required `%{"reason" => reason}`.
   """
   use EmisarWeb.ConnCase, async: true
 
@@ -63,5 +64,21 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
       |> render_change(%{"duration" => "one_day"})
 
     assert changed =~ "Same arguments only"
+  end
+
+  test "denying does not crash when the form carries no reason", %{conn: conn} do
+    {conn, user, account} = register_and_log_in(conn)
+    req = pending_request(account, user)
+
+    {:ok, lv, _html} = live(conn, ~p"/app/approvals/#{req.id}")
+
+    # The Deny form is a bare button — it submits no `reason`, which used
+    # to raise FunctionClauseError in handle_event/3.
+    html =
+      lv
+      |> element("form[phx-submit='deny']")
+      |> render_submit()
+
+    assert html =~ "Denied."
   end
 end

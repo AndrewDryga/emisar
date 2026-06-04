@@ -136,9 +136,9 @@ defmodule EmisarWeb.ApprovalsLive do
   defp grant_key_label(%{api_key: %{key_prefix: p}}) when is_binary(p), do: "#{p}…"
   defp grant_key_label(_), do: "(deleted key)"
 
-  # Fresh grants always start with uses_count=0 — say so plainly
-  # instead of "0 uses", which reads like the grant was somehow
-  # consumed-but-not-consumed and confuses operators.
+  # New grants start at uses_count=1 — minting a grant also dispatches the
+  # run it was approved from, and that execution counts. The 0 clauses
+  # stay as a fallback for legacy grants minted before that was recorded.
   defp format_uses(%{uses_count: 0, max_uses: nil}), do: "not used yet"
   defp format_uses(%{uses_count: 0, max_uses: max}), do: "not used yet · cap #{max}"
   defp format_uses(%{uses_count: c, max_uses: nil}), do: "#{c} #{pluralize(c, "use")}"
@@ -149,6 +149,25 @@ defmodule EmisarWeb.ApprovalsLive do
 
   defp pluralize(1, word), do: word
   defp pluralize(_, word), do: word <> "s"
+
+  # The exact arguments an `:exact_args` grant is locked to, as a "k=v"
+  # summary. The grant row stores only the hash, so we read the raw args
+  # off the originating run (preloaded via `approval_request`). Returns
+  # nil for any-args grants, no-arg actions, or a since-pruned run — the
+  # scope chip already covers those.
+  defp grant_args_line(%{args_sha256: nil}), do: nil
+
+  defp grant_args_line(%{approval_request: %{run: %{args: args}}})
+       when is_map(args) and map_size(args) > 0 do
+    args
+    |> Enum.sort_by(fn {k, _} -> k end)
+    |> Enum.map_join("  ", fn {k, v} -> "#{k}=#{grant_arg_value(v)}" end)
+  end
+
+  defp grant_args_line(_), do: nil
+
+  defp grant_arg_value(v) when is_binary(v), do: v
+  defp grant_arg_value(v), do: inspect(v)
 
   def render(assigns) do
     ~H"""
@@ -270,6 +289,14 @@ defmodule EmisarWeb.ApprovalsLive do
                     <.chip>runner: {if g.runner, do: g.runner.name, else: "any"}</.chip>
                     <.chip>args: {if g.args_sha256, do: "exact", else: "any"}</.chip>
                     <.chip :if={g.expires_at == nil} tone={:rose}>No expiry</.chip>
+                  </div>
+
+                  <div
+                    :if={grant_args_line(g)}
+                    class="mt-1 truncate font-mono text-xs text-zinc-400"
+                    title={grant_args_line(g)}
+                  >
+                    {grant_args_line(g)}
                   </div>
 
                   <div class="mt-1 truncate text-xs text-zinc-500">

@@ -352,6 +352,41 @@ defmodule Emisar.ApprovalsTest do
       assert g.args_sha256 == "abc123"
       assert g.expires_at != nil
       assert DateTime.diff(g.expires_at, DateTime.utc_now(), :hour) in 23..24
+
+      # Minting the grant dispatched the approved run — that's its first
+      # use, so it starts at 1 (never "not used yet") with last_used_at set.
+      assert g.uses_count == 1
+      assert g.last_used_at != nil
+    end
+
+    test "preloads the originating run so the UI can show the locked args" do
+      account = account_fixture()
+      user = user_fixture()
+      _ = membership_fixture(account_id: account.id, user_id: user.id, role: "owner")
+      subject = subject_for(user, account, role: :owner)
+      {_, key} = api_key_fixture(account_id: account.id, created_by_id: user.id)
+      runner = runner_fixture(account_id: account.id)
+
+      {:ok, run} =
+        Runs.create_run(%{
+          account_id: account.id,
+          runner_id: runner.id,
+          action_id: "postgres.vacuum",
+          source: "mcp",
+          api_key_id: key.id,
+          args: %{"table" => "users", "full" => true},
+          args_sha256: "deadbeef"
+        })
+
+      {:ok, req} = Approvals.create_request(run, user.id, "x")
+
+      {:ok, _} =
+        Approvals.approve_request(req, subject, nil, duration: :one_day, scope: :exact_args)
+
+      # The grant stores only the hash; the list preloads approval_request
+      # → run so the operator can see exactly what args it's locked to.
+      {:ok, [g], _} = Approvals.list_grants_for_account(subject)
+      assert g.approval_request.run.args == %{"table" => "users", "full" => true}
     end
 
     test ":any_args scope drops args_sha256 so any args match" do
@@ -510,7 +545,9 @@ defmodule Emisar.ApprovalsTest do
       assert_receive {:cloud_to_runner, %{"type" => "run_action"}}, 500
 
       {:ok, [g], _} = Approvals.list_grants_for_api_key(key.id)
-      assert g.uses_count == 1
+      # Two executions under this grant: the approved first call (its
+      # minting use) and the auto-approved second call.
+      assert g.uses_count == 2
     end
 
     test ":once approval doesn't create a reusable grant" do
