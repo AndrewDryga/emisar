@@ -19,7 +19,7 @@ defmodule Emisar.Runs.ActionRun.Changeset do
     sent_at started_at finished_at cancelled_at
     exit_code duration_ms timed_out
     stdout_sha256 stderr_sha256 stdout_bytes stderr_bytes
-    event_id reason_text error_message
+    event_id reason_text error_message executed_command
   ]a
 
   def create(attrs) do

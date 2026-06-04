@@ -242,6 +242,22 @@ defmodule EmisarWeb.RunDetailLive do
         <pre class="max-h-64 overflow-auto bg-black/40 p-4 font-mono text-xs text-zinc-300">{format_json(@run.args)}</pre>
       </section>
 
+      <%!-- The exact shell command the runner ran. Sensitive arg values
+           are redacted runner-side (shown as [REDACTED]) — this is the
+           audit-grade record of what actually executed. --%>
+      <section
+        :if={@run.executed_command && @run.executed_command != ""}
+        class="mt-6 overflow-hidden rounded-xl border border-zinc-900 bg-zinc-950/40"
+      >
+        <header class="flex items-center justify-between border-b border-zinc-900 px-4 py-2">
+          <h3 class="text-xs font-semibold uppercase tracking-wider text-zinc-400">
+            Executed command
+          </h3>
+          <span class="text-[11px] text-zinc-600">secrets redacted</span>
+        </header>
+        <pre class="overflow-auto bg-black/40 p-4 font-mono text-xs text-zinc-200">{@run.executed_command}</pre>
+      </section>
+
       <%!-- Output stream — the main event. Full width, large, dark
            terminal-style background. Stderr lines render in rose so
            a failure jumps out. Hidden entirely for statuses where

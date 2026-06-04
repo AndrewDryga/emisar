@@ -383,18 +383,19 @@ func (c *Client) handleRun(ctx context.Context, s *runState, m RunActionMsg) {
 		)
 
 		result := ActionResultMsg{
-			Envelope:     Envelope{Type: MsgActionResult, ProtocolVersion: ProtocolVersion, RequestID: m.RequestID},
-			Status:       string(res.Status),
-			ExitCode:     res.ExitCode,
-			DurationMS:   res.DurationMS,
-			TimedOut:     res.TimedOut,
-			StdoutSHA256: res.StdoutSHA256,
-			StderrSHA256: res.StderrSHA256,
-			StdoutBytes:  res.StdoutBytes,
-			StderrBytes:  res.StderrBytes,
-			Redactions:   toProtocolRedactions(res.Redactions),
-			Reason:       buildReasonWithDrops(res.Reason, dropped),
-			EventID:      res.EventID,
+			Envelope:        Envelope{Type: MsgActionResult, ProtocolVersion: ProtocolVersion, RequestID: m.RequestID},
+			Status:          string(res.Status),
+			ExitCode:        res.ExitCode,
+			DurationMS:      res.DurationMS,
+			TimedOut:        res.TimedOut,
+			StdoutSHA256:    res.StdoutSHA256,
+			StderrSHA256:    res.StderrSHA256,
+			StdoutBytes:     res.StdoutBytes,
+			StderrBytes:     res.StderrBytes,
+			Redactions:      toProtocolRedactions(res.Redactions),
+			Reason:          buildReasonWithDrops(res.Reason, dropped),
+			EventID:         res.EventID,
+			ExecutedCommand: res.ExecutedCommand,
 		}
 		c.enqueue(s, result, never)
 		c.dedup.remember(m.RequestID, result)

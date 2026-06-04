@@ -373,6 +373,28 @@ defmodule Emisar.RunsTest do
                })
     end
 
+    test "persists executed_command and carries it into the audit event" do
+      account = account_fixture()
+      runner = runner_fixture(account_id: account.id)
+      {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
+
+      assert {:ok, %ActionRun{status: "success", executed_command: "uptime -p"}} =
+               Runs.finalize_from_result(runner.id, %{
+                 "request_id" => run.request_id,
+                 "status" => "success",
+                 "exit_code" => 0,
+                 "executed_command" => "uptime -p"
+               })
+
+      # The terminal run audit event records what actually ran.
+      event =
+        Emisar.Audit.Event
+        |> Repo.all()
+        |> Enum.find(&(&1.subject_id == run.id and &1.event_type == "action_run.success"))
+
+      assert event.payload["executed_command"] == "uptime -p"
+    end
+
     test "unknown request_id returns {:error, :unknown_request_id}" do
       account = account_fixture()
       runner = runner_fixture(account_id: account.id)

@@ -144,6 +144,25 @@ defmodule EmisarWeb.McpRpcControllerTest do
       assert body["result"]["serverInfo"]["name"] == "emisar"
       assert get_in(body, ["result", "capabilities", "tools", "listChanged"]) == false
     end
+
+    test "includes an instructions guide covering error recovery",
+         %{conn: conn, account: account, user: user} do
+      raw = make_api_key!(account, user)
+
+      body =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> rpc("initialize")
+        |> json_response(200)
+
+      instructions = body["result"]["instructions"]
+      assert is_binary(instructions)
+      # The guide must teach the recovery model the LLM kept guessing at:
+      # pack trust, the snapshot-vs-live catalog, and reason-required.
+      assert instructions =~ "pack_untrusted"
+      assert instructions =~ "tools/list"
+      assert instructions =~ "reason"
+    end
   end
 
   describe "ping" do

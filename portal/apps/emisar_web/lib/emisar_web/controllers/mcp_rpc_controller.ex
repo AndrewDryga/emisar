@@ -28,7 +28,7 @@ defmodule EmisarWeb.McpRpcController do
 
   use EmisarWeb, :controller
 
-  alias EmisarWeb.Mcp.{Auth, ContentBlocks, Idempotency, Service}
+  alias EmisarWeb.Mcp.{Auth, ContentBlocks, Idempotency, Instructions, Service}
 
   @protocol_version "2024-11-05"
   @server_name "emisar"
@@ -69,7 +69,8 @@ defmodule EmisarWeb.McpRpcController do
      %{
        protocolVersion: @protocol_version,
        serverInfo: %{name: @server_name, version: app_version()},
-       capabilities: %{tools: %{listChanged: false}}
+       capabilities: %{tools: %{listChanged: false}},
+       instructions: Instructions.text()
      }}
   end
 
@@ -166,7 +167,12 @@ defmodule EmisarWeb.McpRpcController do
 
       {:error, :no_runner_available, :unknown_action} ->
         {content, _} =
-          ContentBlocks.error_content("Action not found", "No runner advertises `#{name}`.")
+          ContentBlocks.error_content(
+            "Action not found",
+            "No currently-connected runner advertises `#{name}`. Re-call tools/list to refresh; " <>
+              "if it's still missing, the runner is likely offline or the pack isn't loaded — " <>
+              "tell the user to check the runner is online (Runners page). Don't retry in a loop."
+          )
 
         {:ok, %{content: content, isError: true}}
 
@@ -174,7 +180,9 @@ defmodule EmisarWeb.McpRpcController do
         {content, _} =
           ContentBlocks.error_content(
             "No runner in scope",
-            "`#{name}` exists but no runner you can reach is advertising it."
+            "`#{name}` exists but no runner you're allowed to reach advertises it. This is an " <>
+              "access grant, not a transient state — ask an admin to grant runner access. " <>
+              "Retrying won't help."
           )
 
         {:ok, %{content: content, isError: true}}

@@ -57,6 +57,9 @@ defmodule Emisar.Runs.ActionRun do
     field :event_id, :string
     field :reason_text, :string
     field :error_message, :string
+    # The exact shell command the runner executed, with sensitive arg
+    # values redacted by the runner. Set on the result transition.
+    field :executed_command, :string
 
     belongs_to :account, Emisar.Accounts.Account
     belongs_to :runner, Emisar.Runners.Runner

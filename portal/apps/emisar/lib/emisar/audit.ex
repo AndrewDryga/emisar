@@ -203,6 +203,7 @@ defmodule Emisar.Audit do
           runbook_id: run.runbook_id,
           exit_code: run.exit_code,
           duration_ms: run.duration_ms,
+          executed_command: run.executed_command,
           reason: run.reason_text
         })
     )

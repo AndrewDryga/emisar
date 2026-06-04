@@ -829,6 +829,17 @@ defmodule EmisarWeb.McpController do
           "page, or mint a new key from a user that already has access."
     }
 
+  defp error_payload(name, :pack_untrusted),
+    do: %{
+      runner: name,
+      status: "error",
+      error: "pack_untrusted",
+      message:
+        "Runner `#{name}` advertises a pack version no operator has trusted yet, so the cloud " <>
+          "won't run it. A human must Trust the pack on the portal's Packs page — retrying or " <>
+          "reloading tools will NOT clear this. Tell the user, and offer to retry once it's trusted."
+    }
+
   defp error_payload(name, code),
     do: %{
       runner: name,

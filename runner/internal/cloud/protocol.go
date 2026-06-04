@@ -175,6 +175,9 @@ type ActionResultMsg struct {
 	Reason       string             `json:"reason,omitempty"`
 	Error        string             `json:"error,omitempty"`
 	EventID      string             `json:"event_id"`
+	// ExecutedCommand is the exact command the runner ran, shell-quoted,
+	// with sensitive arg values masked runner-side.
+	ExecutedCommand string `json:"executed_command,omitempty"`
 }
 
 // RedactionSummary is the per-rule hit count on this action call.

@@ -67,6 +67,10 @@ type ExecutionInfo struct {
 	StdoutBytes   int      `json:"stdout_bytes"`
 	StderrBytes   int      `json:"stderr_bytes"`
 	ScriptSHA256  string   `json:"script_sha256,omitempty"`
+	// ExecutedCommand is argv rendered as a shell-quoted string with
+	// sensitive arg values masked — the human-readable redacted record.
+	// The raw bytes stay in Argv above for local forensics.
+	ExecutedCommand string `json:"executed_command,omitempty"`
 }
 
 // RedactionSummary is the per-rule redaction count on this event.

@@ -706,6 +706,8 @@ defmodule Emisar.Runs do
       stdout_bytes: payload["stdout_bytes"],
       stderr_bytes: payload["stderr_bytes"],
       event_id: payload["event_id"],
+      # Exact shell command the runner ran, already redacted runner-side.
+      executed_command: payload["executed_command"],
       # The runner's `reason` on non-success results is the failure cause
       # (e.g. validation message). It belongs in error_message, not in
       # reason_text — which holds the operator's freeform reason.

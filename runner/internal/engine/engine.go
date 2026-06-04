@@ -89,6 +89,9 @@ type Result struct {
 	StderrSHA256 string       `json:"stderr_sha256,omitempty"`
 	StdoutBytes  int          `json:"stdout_bytes,omitempty"`
 	StderrBytes  int          `json:"stderr_bytes,omitempty"`
+	// ExecutedCommand is the exact command that ran, shell-quoted, with
+	// sensitive arg values masked. Forwarded to the cloud + local audit.
+	ExecutedCommand string `json:"executed_command,omitempty"`
 }
 
 // Engine wires the registry + executor + redactor + journal into a single
@@ -364,12 +367,18 @@ func (e *Engine) Run(ctx context.Context, req Request) (*Result, error) {
 		status = StatusFailed
 	}
 
+	// The exact command that ran, with sensitive arg values masked. The
+	// raw argv stays in execution.argv (local audit only); only this
+	// redacted form is forwarded to the cloud.
+	executedCommand := redactedCommand(execRes.Binary, execRes.Argv, cleanArgs, act.Args)
+
 	ev := e.baseEvent(req, evType, now)
 	ev.PackID = act.PackID
 	ev.ActionID = act.ID
 	ev.Metadata = metaFor(act)
 	ev.Request = e.requestInfo(req, redactArgs(cleanArgs, act.Args))
 	ev.Execution = e.executionInfo(execRes, redactedStdout, redactedStderr, scriptSHA, plan)
+	ev.Execution.ExecutedCommand = executedCommand
 	ev.Redactions = toAuditRedactions(hits)
 	journaled := e.journal(ctx, ev)
 
@@ -378,22 +387,23 @@ func (e *Engine) Run(ctx context.Context, req Request) (*Result, error) {
 	}
 
 	return &Result{
-		Status:       status,
-		EventID:      journaled.EventID,
-		ActionID:     act.ID,
-		ExitCode:     execRes.ExitCode,
-		Stdout:       redactedStdout,
-		Stderr:       redactedStderr,
-		Output:       parsed,
-		ParserError:  parserError,
-		DurationMS:   execRes.DurationMS,
-		Redactions:   hits,
-		TimedOut:     execRes.TimedOut,
-		Reason:       reasonForStatus(status, execRes),
-		StdoutSHA256: execRes.StdoutSHA256,
-		StderrSHA256: execRes.StderrSHA256,
-		StdoutBytes:  execRes.StdoutBytes,
-		StderrBytes:  execRes.StderrBytes,
+		Status:          status,
+		EventID:         journaled.EventID,
+		ActionID:        act.ID,
+		ExitCode:        execRes.ExitCode,
+		Stdout:          redactedStdout,
+		Stderr:          redactedStderr,
+		Output:          parsed,
+		ParserError:     parserError,
+		DurationMS:      execRes.DurationMS,
+		Redactions:      hits,
+		TimedOut:        execRes.TimedOut,
+		Reason:          reasonForStatus(status, execRes),
+		StdoutSHA256:    execRes.StdoutSHA256,
+		StderrSHA256:    execRes.StderrSHA256,
+		StdoutBytes:     execRes.StdoutBytes,
+		StderrBytes:     execRes.StderrBytes,
+		ExecutedCommand: executedCommand,
 	}, nil
 }
 
@@ -461,6 +471,71 @@ func redactArgs(args map[string]any, schema []actionspec.Arg) map[string]any {
 		}
 	}
 	return out
+}
+
+// redactedCommand renders the exact command that ran (binary + argv) as a
+// copy-pasteable, shell-quoted string with any `sensitive: true` arg value
+// masked. It masks secret substrings out of the *actual* argv (rather than
+// re-deriving), so a secret embedded inside a larger flag — e.g.
+// `--url=user:pw@host` — is masked too. The raw argv still lives in
+// execution.argv for local forensics; only this redacted form leaves the host.
+func redactedCommand(binary string, argv []string, cleanArgs map[string]any, schema []actionspec.Arg) string {
+	secrets := sensitiveValues(cleanArgs, schema)
+
+	mask := func(s string) string {
+		for _, sec := range secrets {
+			s = strings.ReplaceAll(s, sec, "[REDACTED]")
+		}
+		return s
+	}
+
+	parts := make([]string, 0, len(argv)+1)
+	parts = append(parts, shellQuote(mask(binary)))
+	for _, a := range argv {
+		parts = append(parts, shellQuote(mask(a)))
+	}
+	return strings.Join(parts, " ")
+}
+
+// sensitiveValues returns the string forms of every arg the schema marks
+// `sensitive: true`, so they can be masked out of the recorded command.
+func sensitiveValues(args map[string]any, schema []actionspec.Arg) []string {
+	var out []string
+	for _, a := range schema {
+		if !a.Sensitive {
+			continue
+		}
+		if v, ok := args[a.Name]; ok {
+			if s := fmt.Sprintf("%v", v); s != "" {
+				out = append(out, s)
+			}
+		}
+	}
+	return out
+}
+
+// shellQuote makes an argv element safe + readable to paste into a shell:
+// bare when it's plain, single-quoted (with embedded quotes escaped) otherwise.
+func shellQuote(s string) string {
+	if s == "" {
+		return "''"
+	}
+
+	bare := strings.IndexFunc(s, func(r rune) bool {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+			return false
+		case r == '-' || r == '_' || r == '.' || r == '/' || r == ':' || r == '=' || r == '@' || r == ',' || r == '+':
+			return false
+		default:
+			return true
+		}
+	}) == -1
+
+	if bare {
+		return s
+	}
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
 // combinedRedactor merges the action's redaction rules into the global ones.
