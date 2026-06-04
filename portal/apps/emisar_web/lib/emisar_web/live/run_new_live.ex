@@ -105,8 +105,30 @@ defmodule EmisarWeb.RunNewLive do
           {:error, :runner_required} ->
             {:noreply, put_flash(socket, :error, "Runner is required.")}
 
-          {:error, changeset} ->
+          {:error, :pack_untrusted} ->
+            {:noreply,
+             put_flash(
+               socket,
+               :error,
+               "This runner is advertising an untrusted version of the action's pack. " <>
+                 "Review and trust it on the Packs page before dispatching."
+             )}
+
+          {:error, :action_not_found} ->
+            {:noreply,
+             put_flash(
+               socket,
+               :error,
+               "This runner no longer advertises that action — reload the page and pick a current one."
+             )}
+
+          {:error, %Ecto.Changeset{} = changeset} ->
             {:noreply, put_flash(socket, :error, "Invalid: #{humanize_errors(changeset)}")}
+
+          # Don't swallow an unexpected error into "Something went wrong" —
+          # surface the actual code so the operator (and the logs) can act.
+          {:error, other} ->
+            {:noreply, put_flash(socket, :error, "Dispatch failed (#{inspect(other)}).")}
         end
     end
   end
@@ -378,9 +400,17 @@ defmodule EmisarWeb.RunNewLive do
   end
 
   # `examples` is a packspec field — list of `{description, args}` maps.
-  # Defensive: any shape that isn't a list is a no-op render.
-  defp action_examples(%{examples: list}) when is_list(list), do: list
+  # Defensive: any shape that isn't a list is a no-op render. Empty
+  # examples (no args AND no description) are dropped — for a zero-arg
+  # action like `linux.uptime` they'd render a useless "{}" card.
+  defp action_examples(%{examples: list}) when is_list(list),
+    do: Enum.filter(list, &meaningful_example?/1)
+
   defp action_examples(_), do: []
+
+  defp meaningful_example?(%{"args" => args}) when is_map(args) and map_size(args) > 0, do: true
+  defp meaningful_example?(%{"description" => d}) when is_binary(d) and d != "", do: true
+  defp meaningful_example?(_), do: false
 
   # Pretty-print the example args. Keep it compact — these go in a
   # tight info card, not a sprawling pre.

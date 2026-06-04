@@ -186,8 +186,7 @@ runner_specs = [
     state: :disconnected,
     disconnect_reason: "operator closed lid",
     version: "0.4.1",
-    last_seen_min: 95,
-    action_load: 0
+    last_seen_min: 95
   },
   %{
     name: "ci-bot-runner",
@@ -196,8 +195,7 @@ runner_specs = [
     labels: %{"env" => "ci", "purpose" => "lint+deploy"},
     state: :connected,
     version: "0.4.1",
-    last_seen_min: 1,
-    action_load: 0
+    last_seen_min: 1
   },
   %{
     name: "edge-pop-fra",
@@ -206,8 +204,7 @@ runner_specs = [
     labels: %{"region" => "eu-central", "tier" => "edge"},
     state: :connected,
     version: "0.4.1",
-    last_seen_min: 2,
-    action_load: 1
+    last_seen_min: 2
   }
 ]
 
@@ -237,27 +234,22 @@ ensure_runner = fn spec ->
 end
 
 stamp_runner_state = fn runner, spec ->
-  # Bypass the lifecycle API; we want exact backdated timestamps.
+  # Connection state is Phoenix.Presence now and can't be seeded (there's
+  # no live socket), so we only backdate the durable "last seen" history.
+  # Seed runners therefore render as offline; the live docker runners
+  # (runner-1/2/3) provide the connected demo state.
   seen_at = mins_ago.(spec.last_seen_min)
 
   attrs =
     case spec.state do
       :connected ->
-        %{
-          status: "connected",
-          last_connected_at: seen_at,
-          last_heartbeat_at: seen_at,
-          action_load: spec.action_load
-        }
+        %{last_connected_at: seen_at}
 
       :disconnected ->
         %{
-          status: "disconnected",
           last_connected_at: mins_ago.(spec.last_seen_min + 60),
           last_disconnected_at: seen_at,
-          last_disconnect_reason: spec[:disconnect_reason] || "websocket dropped",
-          last_heartbeat_at: seen_at,
-          action_load: 0
+          last_disconnect_reason: spec[:disconnect_reason] || "websocket dropped"
         }
     end
 
