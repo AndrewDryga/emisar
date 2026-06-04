@@ -63,7 +63,7 @@ jobs:
       - uses: erlef/setup-beam@v1
         with:
           elixir-version: "1.20.0"
-          otp-version: "28.4.1"
+          otp-version: "29.0.1"
 
       - name: Restore deps cache
         uses: actions/cache@v5

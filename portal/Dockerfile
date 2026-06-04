@@ -8,8 +8,8 @@
 #
 # Invoked by docker-compose as `build: { context: ., dockerfile: portal/Dockerfile }`.
 
-ARG ELIXIR_VERSION=1.17.3
-ARG OTP_VERSION=27.1
+ARG ELIXIR_VERSION=1.20.0
+ARG OTP_VERSION=29.0.1
 ARG DEBIAN_VERSION=bookworm-20260518-slim
 
 ARG BUILDER_IMAGE="hexpm/elixir:${ELIXIR_VERSION}-erlang-${OTP_VERSION}-debian-${DEBIAN_VERSION}"
