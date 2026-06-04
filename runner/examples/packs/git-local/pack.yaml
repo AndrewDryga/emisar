@@ -2,7 +2,7 @@ schema_version: 1
 
 id: git-local
 name: Host-side git
-version: 0.1.0
+version: 0.1.1
 description: >
   Read-only git operations against a checkout living on the runner host
   (e.g. /opt/myapp). For remote-GitHub-API work, see the `github-cli`

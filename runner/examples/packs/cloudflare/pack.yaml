@@ -2,7 +2,7 @@ schema_version: 1
 
 id: cloudflare
 name: Cloudflare zone operations
-version: 0.1.0
+version: 0.1.1
 description: >
   Read-only zone, DNS record, cache, firewall, and analytics introspection
   plus narrow mutators (purge cache, enable/disable dev mode). Auth via

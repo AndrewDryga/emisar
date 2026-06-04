@@ -2,7 +2,7 @@ schema_version: 1
 
 id: postfix
 name: Postfix mail server
-version: 0.1.0
+version: 0.1.1
 description: >
   Queue inspection, config dump, log tailing, plus narrow operator
   actions (flush, requeue, delete-by-queue-id). All queue mutators are

@@ -2,7 +2,7 @@ schema_version: 1
 
 id: process-forensics
 name: Process forensics
-version: 0.1.0
+version: 0.1.1
 description: >
   Deep per-process diagnostics for "why is this process stuck / slow /
   leaking?" — strace (HIGH RISK; slows the target), pid memory maps,

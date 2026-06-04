@@ -2,7 +2,7 @@ schema_version: 1
 
 id: clickhouse
 name: ClickHouse analytics DB
-version: 0.1.0
+version: 0.1.1
 description: >
   ClickHouse server + table introspection plus narrow mutators
   (OPTIMIZE, KILL QUERY, SYSTEM RELOAD CONFIG). Auth via CH_HOST +

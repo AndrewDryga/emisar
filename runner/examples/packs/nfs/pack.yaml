@@ -2,7 +2,7 @@ schema_version: 1
 
 id: nfs
 name: NFS server + client
-version: 0.1.0
+version: 0.1.1
 description: >
   Inspect a host's NFS exports, mounted shares, RPC state, active client
   connections. Plus one narrow operator action (exportfs -r). Read-only
