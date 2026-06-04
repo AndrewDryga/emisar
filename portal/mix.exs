@@ -6,6 +6,10 @@ defmodule Emisar.Umbrella.MixProject do
       apps_path: "apps",
       version: "0.1.0",
       start_permanent: Mix.env() == :prod,
+      # Phoenix 1.8 code reloader coordinates recompiles through a Mix
+      # compilation listener. `mix phx.server` runs from the umbrella
+      # root, so the listener is registered here (not in a child app).
+      listeners: [Phoenix.CodeReloader],
       deps: deps(),
       aliases: aliases(),
       releases: [
