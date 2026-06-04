@@ -306,8 +306,6 @@ defmodule EmisarWeb.AgentsLive do
     |> assign(:selected_runner_groups, selected_runner_groups(params, runners))
   end
 
-  defp format_runner_filter([], _runners), do: "All runners"
-
   defp format_runner_filter(ids, runners) do
     names =
       runners

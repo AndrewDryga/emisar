@@ -9,7 +9,7 @@ defmodule Emisar.MixProject do
       config_path: "../../config/config.exs",
       deps_path: "../../deps",
       lockfile: "../../mix.lock",
-      elixir: "~> 1.17",
+      elixir: "~> 1.20",
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
       aliases: aliases(),
@@ -33,36 +33,36 @@ defmodule Emisar.MixProject do
       # `Phoenix.Presence` — connection tracking is a domain concern
       # (workers + context reads need it), so the tracker lives in the
       # domain app. Same dep already resolved for emisar_web.
-      {:dns_cluster, "~> 0.1.1"},
-      {:phoenix, "~> 1.7.21"},
-      {:phoenix_pubsub, "~> 2.1"},
+      {:dns_cluster, "~> 0.2.0"},
+      {:phoenix, "~> 1.8"},
+      {:phoenix_pubsub, "~> 2.2"},
 
       # Persistence
-      {:ecto_sql, "~> 3.11"},
+      {:ecto_sql, "~> 3.14"},
       {:postgrex, ">= 0.0.0"},
 
       # Background jobs (delivery retries, audit ingestion, etc.)
-      {:oban, "~> 2.18"},
+      {:oban, "~> 2.23"},
 
       # Auth — password hashing and TOTP for MFA
-      {:bcrypt_elixir, "~> 3.0"},
+      {:bcrypt_elixir, "~> 3.3"},
       {:nimble_totp, "~> 1.0"},
       # Pure-Elixir QR encoder — used to render scannable TOTP QRs
       # server-side as SVG so the profile MFA setup doesn't need a
       # third-party JS lib or an external image service.
-      {:eqrcode, "~> 0.2"},
+      {:eqrcode, "~> 0.2.1"},
 
       # Outbound email + HTTP
-      {:swoosh, "~> 1.16"},
-      {:finch, "~> 0.18"},
-      {:gen_smtp, "~> 1.2"},
+      {:swoosh, "~> 1.26"},
+      {:finch, "~> 0.22"},
+      {:gen_smtp, "~> 1.3"},
 
       # Misc primitives
       {:jason, "~> 1.4"},
       # Compile-time pack baseline reads runner/examples/packs/*.yaml
       # to know each shipped pack's canonical hash. Auto-trust pinning
       # only — never started at runtime.
-      {:yaml_elixir, "~> 2.11", runtime: false}
+      {:yaml_elixir, "~> 2.12", runtime: false}
     ]
   end
 

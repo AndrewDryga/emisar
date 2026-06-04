@@ -9,7 +9,7 @@ defmodule EmisarWeb.MixProject do
       config_path: "../../config/config.exs",
       deps_path: "../../deps",
       lockfile: "../../mix.lock",
-      elixir: "~> 1.14",
+      elixir: "~> 1.20",
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
       aliases: aliases(),
@@ -36,40 +36,40 @@ defmodule EmisarWeb.MixProject do
   # Type `mix help deps` for examples and options.
   defp deps do
     [
-      {:phoenix, "~> 1.7.21"},
-      {:phoenix_ecto, "~> 4.5"},
-      {:phoenix_html, "~> 4.1"},
-      {:phoenix_live_reload, "~> 1.2", only: :dev},
-      {:phoenix_live_view, "~> 1.0"},
+      {:phoenix, "~> 1.8"},
+      {:phoenix_ecto, "~> 4.7"},
+      {:phoenix_html, "~> 4.3"},
+      {:phoenix_live_reload, "~> 1.6", only: :dev},
+      {:phoenix_live_view, "~> 1.1"},
       # Phoenix.LiveViewTest's HTML parser. Floki was the previous one
       # and is no longer used (LV 1.0+ uses LazyHTML exclusively).
       {:lazy_html, ">= 0.1.0", only: :test},
-      {:phoenix_live_dashboard, "~> 0.8.3"},
-      {:esbuild, "~> 0.8", runtime: Mix.env() == :dev},
-      {:tailwind, "~> 0.2.0", runtime: Mix.env() == :dev},
+      {:phoenix_live_dashboard, "~> 0.8.7"},
+      {:esbuild, "~> 0.10.0", runtime: Mix.env() == :dev},
+      {:tailwind, "~> 0.4.1", runtime: Mix.env() == :dev},
       {:heroicons,
        github: "tailwindlabs/heroicons",
-       tag: "v2.1.1",
+       tag: "v2.2.0",
        sparse: "optimized",
        app: false,
        compile: false,
        depth: 1},
-      {:telemetry_metrics, "~> 1.0"},
+      {:telemetry_metrics, "~> 1.1"},
       {:telemetry_metrics_prometheus, "~> 1.1"},
-      {:telemetry_poller, "~> 1.0"},
+      {:telemetry_poller, "~> 1.3"},
       # Optional: error reporting via Sentry. Compiled out when
       # SENTRY_DSN isn't set (init/0 short-circuits on no-DSN).
-      {:sentry, "~> 10.8"},
+      {:sentry, "~> 13.1"},
       {:hackney, "~> 1.20"},
-      {:gettext, "~> 0.26"},
+      {:gettext, "~> 1.0"},
       {:emisar, in_umbrella: true},
-      {:jason, "~> 1.2"},
-      {:bandit, "~> 1.5"},
+      {:jason, "~> 1.4"},
+      {:bandit, "~> 1.11"},
       {:websock_adapter, "~> 0.5"},
       # Used only at compile time by EmisarWeb.PacksRegistry to load the
       # pack catalog from YAML files. The parsed data is baked into the
       # module, so the lib is not needed at runtime.
-      {:yaml_elixir, "~> 2.11", runtime: false}
+      {:yaml_elixir, "~> 2.12", runtime: false}
     ]
   end
 

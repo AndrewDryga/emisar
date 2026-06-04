@@ -51,11 +51,11 @@ jobs:
     name: vet + gofmt + shellcheck
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           persist-credentials: false
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: runner/go.mod
           cache: true
@@ -106,7 +106,7 @@ jobs:
         # govulncheck behavior change can't silently rebreak CI.
         working-directory: runner
         run: |
-          go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
+          go install golang.org/x/vuln/cmd/govulncheck@v1.3.0
           if ! govulncheck ./...; then
             echo "::warning::govulncheck reported findings — review and update deps"
           fi
@@ -115,11 +115,11 @@ jobs:
     name: test (race)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           persist-credentials: false
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: runner/go.mod
           cache: true
@@ -134,7 +134,7 @@ jobs:
 
       - name: upload coverage
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: runner-coverage
           path: coverage.out
@@ -157,11 +157,11 @@ jobs:
           - os: darwin
             arch: arm64
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           persist-credentials: false
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: runner/go.mod
           cache: true

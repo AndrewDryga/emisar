@@ -25,6 +25,9 @@ events.jsonl
 events.jsonl.cursor
 events.jsonl.*
 
+# Erlang/BEAM crash dumps — written to the CWD when the VM aborts.
+erl_crash.dump
+
 # Editor noise
 .idea/
 .vscode/

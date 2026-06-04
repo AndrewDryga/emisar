@@ -50,7 +50,11 @@ defmodule EmisarWeb.RunbookEditorLive do
   end
 
   defp assign_catalog(socket) do
-    {:ok, runner_actions, _} = Catalog.list_actions_for_account(socket.assigns.current_subject)
+    # The step picker needs every advertised action selectable, not a
+    # paginated page — a catalog with >35 actions must not silently hide
+    # the rest. (Same complete-set read MCP uses; the UI list pages stay
+    # paginated.)
+    {:ok, runner_actions} = Catalog.list_all_actions_for_account(socket.assigns.current_subject)
 
     actions =
       runner_actions |> Enum.map(& &1.action_id) |> Enum.uniq() |> Enum.sort()

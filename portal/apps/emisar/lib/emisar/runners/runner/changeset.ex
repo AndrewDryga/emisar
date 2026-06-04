@@ -62,14 +62,11 @@ defmodule Emisar.Runners.Runner.Changeset do
       is_binary(Map.get(attrs, "external_id")) and Map.get(attrs, "external_id") != "" ->
         attrs
 
-      is_map(attrs) ->
+      true ->
         key =
           if Enum.any?(attrs, fn {k, _} -> is_atom(k) end), do: :external_id, else: "external_id"
 
         Map.put(attrs, key, Ecto.UUID.generate())
-
-      true ->
-        attrs
     end
   end
 

@@ -95,11 +95,6 @@ defmodule EmisarWeb.RunnerConnectController do
 
       {:error, :token_invalid} ->
         unauthorized(conn, "token_invalid")
-
-      {:error, _reason} ->
-        conn
-        |> put_status(:bad_request)
-        |> json(%{error: "connect_failed"})
     end
   end
 

@@ -22,8 +22,7 @@ defmodule EmisarWeb.DashboardLive do
   defp load(socket) do
     account = socket.assigns.current_account
     subject = socket.assigns.current_subject
-    {:ok, runners, _} = Runners.list_runners_for_account(subject)
-    {:ok, actions, _} = Catalog.list_actions_for_account(subject)
+    {:ok, runners} = Runners.list_all_runners_for_account(subject)
     {:ok, pending, _} = Approvals.list_pending_approval_requests(subject)
     {:ok, api_keys, _} = ApiKeys.list_api_keys_for_account(subject)
     memberships = list_memberships(subject)
@@ -33,7 +32,6 @@ defmodule EmisarWeb.DashboardLive do
     |> assign(:loading?, false)
     |> assign(:runners_total, length(runners))
     |> assign(:runners_connected, Enum.count(runners, & &1.online?))
-    |> assign(:actions_count, length(actions))
     |> assign(:recent_runs, list_or_empty(Runs.list_recent_runs(subject, limit: 6)))
     |> assign(:run_stats, unwrap_ok(Runs.fetch_run_stats(subject, hours: 24)))
     |> assign(:pending_approvals, pending)
@@ -90,8 +88,8 @@ defmodule EmisarWeb.DashboardLive do
         :if={not @loading?}
         runners_total={@runners_total}
         runners_connected={@runners_connected}
-        actions_count={@actions_count}
         pending_approvals={@pending_approvals}
+        pending_approvals_count={@pending_approvals_count}
         recent_runs={@recent_runs}
         run_stats={@run_stats}
         has_llm_connected?={@has_llm_connected?}
@@ -171,8 +169,8 @@ defmodule EmisarWeb.DashboardLive do
   #   4. Recent runs — last 6, single column, full width
   attr :runners_connected, :integer, required: true
   attr :runners_total, :integer, required: true
-  attr :actions_count, :integer, required: true
   attr :pending_approvals, :list, required: true
+  attr :pending_approvals_count, :integer, required: true
   attr :recent_runs, :list, required: true
   attr :run_stats, :map, required: true
   attr :has_llm_connected?, :boolean, required: true
@@ -209,7 +207,7 @@ defmodule EmisarWeb.DashboardLive do
       <.attention_panel
         icon="hero-hand-raised"
         title="Awaiting your approval"
-        count={length(@pending_approvals)}
+        count={@pending_approvals_count}
         href={~p"/app/approvals"}
         cta="Review all"
       >

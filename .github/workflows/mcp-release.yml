@@ -41,12 +41,12 @@ jobs:
     name: verify (vet + test)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           ref: ${{ inputs.ref || github.ref }}
           persist-credentials: false
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: mcp/go.mod
           cache: true
@@ -83,12 +83,12 @@ jobs:
       id-token: write
       attestations: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           ref: ${{ inputs.ref || github.ref }}
           persist-credentials: false
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: mcp/go.mod
           cache: true
@@ -158,13 +158,13 @@ jobs:
         # back in automatically once the repo is public. See
         # runner-release.yml for the same guard + rationale.
         if: ${{ !github.event.repository.private }}
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@v4
         with:
           subject-path: |
             dist/emisar-mcp-${{ steps.ver.outputs.version }}-${{ matrix.os }}-${{ matrix.arch }}.tar.gz
 
       - name: upload artefact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: emisar-mcp-${{ steps.ver.outputs.version }}-${{ matrix.os }}-${{ matrix.arch }}
           path: |
@@ -181,13 +181,13 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           ref: ${{ inputs.ref || github.ref }}
           persist-credentials: false
 
       - name: download artefacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: artefacts/
 
@@ -213,7 +213,7 @@ jobs:
           echo "version=${version}"   >> "$GITHUB_OUTPUT"
 
       - name: create GitHub release
-        uses: softprops/action-gh-release@72f2c25fcb47643c292f7107632f7a47c1df5cd8 # v2.3.2
+        uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3.0.0
         with:
           tag_name: ${{ steps.ver.outputs.tag }}
           name: "emisar-mcp ${{ steps.ver.outputs.version }}"
