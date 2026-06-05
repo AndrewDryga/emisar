@@ -26,6 +26,16 @@ defmodule EmisarWeb.Endpoint do
   #
   # You should set gzip to true if you are running phx.digest
   # when deploying your static files in production.
+
+  # Phoenix 1.8 reads the endpoint's `:force_ssl` at COMPILE time, so the
+  # http→https redirect can no longer be toggled per-deploy through that
+  # key (it tripped `validate_compile_env` on release boot). We apply
+  # Plug.SSL ourselves from a runtime app-env flag instead: production
+  # gets the redirect + HSTS, while FORCE_SSL=false deploys (docker-compose
+  # dev, the CI smoke) serve plain HTTP. Runs first so nothing is served
+  # before the redirect.
+  plug :force_ssl_at_runtime
+
   plug Plug.Static,
     at: "/",
     from: :emisar_web,
@@ -62,4 +72,15 @@ defmodule EmisarWeb.Endpoint do
   plug Plug.Head
   plug Plug.Session, @session_options
   plug EmisarWeb.Router
+
+  # Runtime HTTPS enforcement (see the :force_ssl_at_runtime plug above).
+  # `:force_ssl_opts` is set in runtime.exs from FORCE_SSL — nil means no
+  # enforcement; otherwise it's the Plug.SSL opts (`hsts: true, host: nil`)
+  # this app used pre-1.8.
+  defp force_ssl_at_runtime(conn, _opts) do
+    case Application.get_env(:emisar_web, :force_ssl_opts) do
+      nil -> conn
+      ssl_opts -> Plug.SSL.call(conn, Plug.SSL.init(ssl_opts))
+    end
+  end
 end

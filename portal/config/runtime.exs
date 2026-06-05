@@ -86,12 +86,15 @@ if config_env() == :prod do
     server: true
   ]
 
-  endpoint_opts =
-    if force_ssl_enabled?,
-      do: Keyword.put(endpoint_opts, :force_ssl, hsts: true, host: nil),
-      else: endpoint_opts
-
   config :emisar_web, EmisarWeb.Endpoint, endpoint_opts
+
+  # Phoenix 1.8 reads the endpoint's `:force_ssl` at COMPILE time, so the
+  # redirect can no longer be toggled through that key at runtime (doing so
+  # aborts release boot via `validate_compile_env`). Expose the Plug.SSL
+  # opts as a runtime flag instead — EmisarWeb.Endpoint's
+  # `:force_ssl_at_runtime` plug applies them. nil = no enforcement.
+  config :emisar_web,
+    force_ssl_opts: if(force_ssl_enabled?, do: [hsts: true, host: nil], else: nil)
 
   # Force `secure: true` on the remember-me cookie + tighten the session
   # cookie. Combined with force_ssl above, browsers will never send the
