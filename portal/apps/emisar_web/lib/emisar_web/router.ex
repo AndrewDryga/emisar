@@ -67,6 +67,7 @@ defmodule EmisarWeb.Router do
     get "/about", MarketingController, :about
     get "/privacy", MarketingController, :privacy
     get "/terms", MarketingController, :terms
+    get "/refund-policy", MarketingController, :refund
     get "/docs/connect-an-llm", MarketingController, :connect_llm
     get "/docs/quickstart", MarketingController, :docs_quickstart
     get "/docs/action-packs", MarketingController, :docs_action_packs

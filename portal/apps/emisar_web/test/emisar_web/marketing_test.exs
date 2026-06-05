@@ -15,6 +15,7 @@ defmodule EmisarWeb.MarketingTest do
     /about
     /privacy
     /terms
+    /refund-policy
     /packs
     /packs/postgres
     /packs/cassandra

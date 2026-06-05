@@ -2353,6 +2353,11 @@ defmodule EmisarWeb.CoreComponents do
                 <.link href={~p"/terms"} class="text-zinc-400 hover:text-zinc-100">Terms</.link>
               </li>
               <li>
+                <.link href={~p"/refund-policy"} class="text-zinc-400 hover:text-zinc-100">
+                  Refund Policy
+                </.link>
+              </li>
+              <li>
                 <a
                   href="https://github.com/andrewdryga/emisar/blob/main/.github/SECURITY.md"
                   target="_blank"

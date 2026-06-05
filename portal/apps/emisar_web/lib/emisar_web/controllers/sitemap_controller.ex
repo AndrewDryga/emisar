@@ -15,6 +15,7 @@ defmodule EmisarWeb.SitemapController do
     "/security",
     "/privacy",
     "/terms",
+    "/refund-policy",
     "/docs",
     "/docs/quickstart",
     "/docs/action-packs",

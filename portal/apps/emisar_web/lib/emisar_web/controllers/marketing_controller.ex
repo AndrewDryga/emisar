@@ -28,6 +28,8 @@ defmodule EmisarWeb.MarketingController do
     {"/about", :about, :about, "About", "Why emisar exists and how we built it."},
     {"/privacy", :privacy, :privacy, "Privacy Policy", nil},
     {"/terms", :terms, :terms, "Terms of Service", nil},
+    {"/refund-policy", :refund, :refund, "Refund Policy",
+     "emisar's refund policy: Free is free; Team is billed monthly via Paddle and cancellable any time with access through the paid period; duplicate charges and billing errors are refunded in full."},
     {"/docs/connect-an-llm", :connect_llm, :connect_llm, "Connect an LLM",
      "Connect Claude.ai and ChatGPT with remote MCP and OAuth, or use the emisar-mcp stdio bridge with Claude Code, Claude Desktop, Cursor, Gemini CLI, and Codex CLI."},
     {"/docs/quickstart", :docs_quickstart, :docs_quickstart,
