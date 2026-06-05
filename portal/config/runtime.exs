@@ -66,21 +66,29 @@ if config_env() == :prod do
 
   host = System.get_env("PHX_HOST") || "app.emisar.dev"
 
-  # FORCE_SSL=false disables the HTTP→HTTPS redirect AND the
-  # secure-cookie pin. Required for local docker-compose dev (plain
-  # HTTP), and for production deployments behind a TLS-terminating
-  # proxy that already handles the redirect itself. Defaults to true.
-  force_ssl_enabled? = System.get_env("FORCE_SSL", "true") in ~w(true 1)
-  url_scheme = if force_ssl_enabled?, do: "https", else: "http"
+  # FORCE_SSL marks this deployment as HTTPS-fronted: it drives the public
+  # URL scheme/port and the secure-cookie pin below. The actual HTTP→HTTPS
+  # redirect + HSTS is the compile-time `force_ssl` in prod.exs (Phoenix 1.8
+  # requires it at compile time), NOT this knob. docker-compose sets it
+  # false for plain-HTTP localhost. Defaults to true.
+  https_fronted? = System.get_env("FORCE_SSL", "true") in ~w(true 1)
+  url_scheme = if https_fronted?, do: "https", else: "http"
 
   url_port =
-    if force_ssl_enabled?, do: 443, else: String.to_integer(System.get_env("PORT") || "4000")
+    if https_fronted?, do: 443, else: String.to_integer(System.get_env("PORT") || "4000")
 
   endpoint_opts = [
     url: [host: host, port: url_port, scheme: url_scheme],
     http: [
       ip: {0, 0, 0, 0, 0, 0, 0, 0},
-      port: String.to_integer(System.get_env("PORT") || "4000")
+      port: String.to_integer(System.get_env("PORT") || "4000"),
+      # Bind the IPv6 wildcard as DUAL-STACK so the single socket also
+      # accepts IPv4. Fly's kernel sets net.ipv6.bindv6only=1, and OTP's
+      # socket backend honors it — without this override the listener is
+      # IPv6-only, so fly-proxy (which reaches the app over IPv4) reports
+      # "not listening on 0.0.0.0:4000" and the deploy fails its health
+      # check. Restores the pre-OTP-28 dual-stack behavior.
+      thousand_island_options: [transport_options: [ipv6_v6only: false]]
     ],
     secret_key_base: secret_key_base,
     server: true
@@ -88,19 +96,11 @@ if config_env() == :prod do
 
   config :emisar_web, EmisarWeb.Endpoint, endpoint_opts
 
-  # Phoenix 1.8 reads the endpoint's `:force_ssl` at COMPILE time, so the
-  # redirect can no longer be toggled through that key at runtime (doing so
-  # aborts release boot via `validate_compile_env`). Expose the Plug.SSL
-  # opts as a runtime flag instead — EmisarWeb.Endpoint's
-  # `:force_ssl_at_runtime` plug applies them. nil = no enforcement.
-  config :emisar_web,
-    force_ssl_opts: if(force_ssl_enabled?, do: [hsts: true, host: nil], else: nil)
-
   # Force `secure: true` on the remember-me cookie + tighten the session
-  # cookie. Combined with force_ssl above, browsers will never send the
-  # cookie over plain HTTP. Disabled when FORCE_SSL=false so local dev
-  # over http://localhost can still complete sign-in.
-  config :emisar_web, force_secure_cookies: force_ssl_enabled?
+  # cookie. Combined with the compile-time `force_ssl` (prod.exs), browsers
+  # never send the cookie over plain HTTP. Disabled when FORCE_SSL=false so
+  # local dev over http://localhost can still complete sign-in.
+  config :emisar_web, force_secure_cookies: https_fronted?
 
   config :emisar, :dns_cluster_query, System.get_env("DNS_CLUSTER_QUERY")
 
@@ -178,8 +178,11 @@ if config_env() == :prod do
         paddle_api_key: System.fetch_env!("PADDLE_API_KEY"),
         paddle_webhook_secret: System.fetch_env!("PADDLE_WEBHOOK_SECRET")
 
+      # Keyed by plan name under one atom key — Elixir 1.20's Config.config/3
+      # only accepts an atom key, so the old `{:paddle_price_id, "team"}`
+      # tuple key now raises in the config provider and aborts boot.
       if id = System.get_env("PADDLE_PRICE_ID_TEAM"),
-        do: config(:emisar, {:paddle_price_id, "team"}, id)
+        do: config(:emisar, paddle_price_ids: %{"team" => id})
 
     System.get_env("EMISAR_DISABLE_BILLING") in ~w(true 1) ->
       config :emisar, paddle_client: Emisar.Billing.PaddleClient.Stub

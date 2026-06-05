@@ -7,7 +7,18 @@ import Config
 # before starting your production server.
 config :emisar_web, EmisarWeb.Endpoint,
   url: [host: "example.com", port: 80],
-  cache_static_manifest: "priv/static/cache_manifest.json"
+  cache_static_manifest: "priv/static/cache_manifest.json",
+  # Force HTTPS in production (this also sets the HSTS header). Phoenix 1.8
+  # reads `:force_ssl` via `Application.compile_env`, so it MUST be set at
+  # compile time here — setting it in runtime.exs aborts release boot with
+  # `validate_compile_env`. `rewrite_on` trusts fly-proxy's
+  # `x-forwarded-proto` (it terminates TLS and forwards plain HTTP), so real
+  # requests get HSTS instead of a 301 loop; `exclude` lets the plain-HTTP
+  # `/healthz` probe and localhost dev through without a redirect.
+  force_ssl: [
+    rewrite_on: [:x_forwarded_proto],
+    exclude: ["localhost", "127.0.0.1", {:paths, ["/healthz"]}]
+  ]
 
 # Configures Swoosh API Client
 config :swoosh, :api_client, Emisar.Finch

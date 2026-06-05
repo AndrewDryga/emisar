@@ -132,12 +132,13 @@ defmodule Emisar.Billing do
         not Map.has_key?(@plans, plan_name) ->
           {:error, :unknown_plan}
 
-        is_nil(Application.get_env(:emisar, {:paddle_price_id, plan_name})) ->
+        is_nil(Application.get_env(:emisar, :paddle_price_ids, %{})[plan_name]) ->
           {:ok, "/paddle-checkout-stub?plan=" <> plan_name}
 
         true ->
           with {:ok, cid, _account} <- ensure_paddle_customer(account),
-               price_id <- Application.fetch_env!(:emisar, {:paddle_price_id, plan_name}),
+               price_id <-
+                 Map.fetch!(Application.get_env(:emisar, :paddle_price_ids, %{}), plan_name),
                {:ok, %{"url" => url}} <-
                  Emisar.Billing.PaddleClient.create_checkout_session(%{
                    customer: cid,
