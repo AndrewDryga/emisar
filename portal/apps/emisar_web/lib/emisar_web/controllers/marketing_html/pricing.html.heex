@@ -13,8 +13,8 @@
           Pricing
         </h1>
         <p class="mt-6 text-lg leading-8 text-zinc-400">
-          Per-runner, not per-seat. Invite the whole team on every plan.
-          Free forever for tinkering — pay only when you ship to prod.
+          Per-runner, not per-seat. Free covers one user and three runners;
+          Team and Enterprise include unlimited users.
         </p>
       </div>
 
@@ -92,7 +92,7 @@
             </li>
             <li class="flex items-start gap-3">
               <.icon name="hero-check" class="mt-0.5 h-5 w-5 flex-none text-indigo-400" />
-              Standard support
+              Email support
             </li>
           </ul>
         </div>
@@ -100,7 +100,7 @@
         <%!-- Enterprise --%>
         <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8">
           <h2 class="text-lg font-semibold text-zinc-50">Enterprise</h2>
-          <p class="mt-2 text-sm text-zinc-400">For regulated industries.</p>
+          <p class="mt-2 text-sm text-zinc-400">For design partners and regulated teams.</p>
           <p class="mt-6 flex items-baseline gap-x-1">
             <span class="text-5xl font-bold tracking-tight text-zinc-50">Custom</span>
           </p>
@@ -121,19 +121,19 @@
             </li>
             <li class="flex items-start gap-3">
               <.icon name="hero-check" class="mt-0.5 h-5 w-5 flex-none text-zinc-500" />
-              Enterprise SSO &mdash; contact us
+              Security and procurement review
             </li>
             <li class="flex items-start gap-3">
               <.icon name="hero-check" class="mt-0.5 h-5 w-5 flex-none text-zinc-500" />
-              On-prem / self-hosted option
+              Design-partner deployment planning
             </li>
             <li class="flex items-start gap-3">
               <.icon name="hero-check" class="mt-0.5 h-5 w-5 flex-none text-zinc-500" />
-              99.9% uptime SLA
+              Rollout support
             </li>
             <li class="flex items-start gap-3">
               <.icon name="hero-check" class="mt-0.5 h-5 w-5 flex-none text-zinc-500" />
-              Dedicated Slack + named CSM
+              Custom commercial terms
             </li>
           </ul>
         </div>
@@ -149,8 +149,8 @@
           Compare plans
         </h2>
       </div>
-      <div class="mx-auto mt-12 max-w-5xl overflow-hidden rounded-2xl border border-zinc-900">
-        <table class="min-w-full divide-y divide-zinc-900 text-sm">
+      <div class="mx-auto mt-12 max-w-5xl overflow-x-auto rounded-2xl border border-zinc-900">
+        <table class="min-w-[720px] divide-y divide-zinc-900 text-sm">
           <thead class="bg-zinc-950/80">
             <tr>
               <th scope="col" class="px-6 py-4 text-left font-semibold text-zinc-300">Feature</th>
@@ -205,30 +205,40 @@
               </td>
             </tr>
             <tr>
-              <td class="px-6 py-4 font-medium text-zinc-100">Enterprise SSO</td>
-              <td class="px-6 py-4 text-zinc-600">—</td>
-              <td class="px-6 py-4 text-zinc-600">—</td>
-              <td class="px-6 py-4 text-zinc-400">Contact us</td>
-            </tr>
-            <tr>
-              <td class="px-6 py-4 font-medium text-zinc-100">On-prem deployment</td>
-              <td class="px-6 py-4 text-zinc-600">—</td>
-              <td class="px-6 py-4 text-zinc-600">—</td>
+              <td class="px-6 py-4 font-medium text-zinc-100">Pack trust + drift blocking</td>
+              <td class="px-6 py-4 text-zinc-400">
+                <.icon name="hero-check" class="h-5 w-5 text-indigo-400" />
+              </td>
+              <td class="px-6 py-4 text-zinc-400">
+                <.icon name="hero-check" class="h-5 w-5 text-indigo-400" />
+              </td>
               <td class="px-6 py-4 text-zinc-400">
                 <.icon name="hero-check" class="h-5 w-5 text-indigo-400" />
               </td>
             </tr>
             <tr>
-              <td class="px-6 py-4 font-medium text-zinc-100">SLA</td>
+              <td class="px-6 py-4 font-medium text-zinc-100">SIEM export</td>
+              <td class="px-6 py-4 text-zinc-400">
+                <.icon name="hero-check" class="h-5 w-5 text-indigo-400" />
+              </td>
+              <td class="px-6 py-4 text-zinc-400">
+                <.icon name="hero-check" class="h-5 w-5 text-indigo-400" />
+              </td>
+              <td class="px-6 py-4 text-zinc-400">
+                <.icon name="hero-check" class="h-5 w-5 text-indigo-400" />
+              </td>
+            </tr>
+            <tr>
+              <td class="px-6 py-4 font-medium text-zinc-100">Deployment planning</td>
               <td class="px-6 py-4 text-zinc-600">—</td>
-              <td class="px-6 py-4 text-zinc-400">Best-effort</td>
-              <td class="px-6 py-4 text-zinc-400">99.9%</td>
+              <td class="px-6 py-4 text-zinc-600">—</td>
+              <td class="px-6 py-4 text-zinc-400">Design partner</td>
             </tr>
             <tr>
               <td class="px-6 py-4 font-medium text-zinc-100">Support</td>
               <td class="px-6 py-4 text-zinc-400">Community</td>
               <td class="px-6 py-4 text-zinc-400">Email</td>
-              <td class="px-6 py-4 text-zinc-400">Dedicated Slack + CSM</td>
+              <td class="px-6 py-4 text-zinc-400">Rollout support</td>
             </tr>
           </tbody>
         </table>
@@ -242,51 +252,24 @@
       <h2 class="text-4xl font-bold tracking-tight text-zinc-50 sm:text-5xl">
         Frequently asked questions
       </h2>
-      <dl class="mt-12 space-y-8">
-        <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8">
-          <dt class="text-lg font-semibold text-zinc-50">What counts as a "runner"?</dt>
-          <dd class="mt-2 text-sm text-zinc-400">
-            One installation of the <code class="rounded bg-zinc-900 px-1.5 py-0.5">emisar</code>
-            binary on
-            one host (VM, container, bare metal). You can run as many runners as your plan allows.
-            Users (humans) are unlimited on Team and Enterprise.
-          </dd>
-        </div>
-        <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8">
-          <dt class="text-lg font-semibold text-zinc-50">
-            Do you store the output of my commands?
-          </dt>
-          <dd class="mt-2 text-sm text-zinc-400">
-            We store metadata (who, when, what action, exit code) and a configurable amount of
-            stdout/stderr for the audit log. You can mark fields as secret in your pack — those are
-            redacted before they leave the runner.
-          </dd>
-        </div>
-        <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8">
-          <dt class="text-lg font-semibold text-zinc-50">Can I self-host?</dt>
-          <dd class="mt-2 text-sm text-zinc-400">
-            Yes — on the Enterprise plan. The control plane ships as a container; bring your own
-            Postgres. Most customers run it inside the same VPC as their infra.
-          </dd>
-        </div>
-        <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8">
-          <dt class="text-lg font-semibold text-zinc-50">Can I cancel any time?</dt>
-          <dd class="mt-2 text-sm text-zinc-400">
-            Yes. Cancel from the billing settings and you drop back to Free at the end of the
-            current billing period. Your audit data is retained per the Free retention window.
-          </dd>
-        </div>
-        <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8">
-          <dt class="text-lg font-semibold text-zinc-50">Do you offer startup discounts?</dt>
-          <dd class="mt-2 text-sm text-zinc-400">
-            Yes. Email
-            <a href="mailto:sales@emisar.dev" class="text-indigo-300 hover:text-indigo-200">
-              sales@emisar.dev
-            </a>
-            with your YC / pre-seed letter and we'll take it from there.
-          </dd>
-        </div>
-      </dl>
+      <div class="mt-12 divide-y divide-zinc-900 rounded-2xl border border-zinc-900 bg-zinc-950/60">
+        <%= for {q, a} <- @faqs do %>
+          <details class="group">
+            <summary class="flex cursor-pointer items-center justify-between px-8 py-6 text-base font-semibold text-zinc-50">
+              {q}
+              <.icon name="hero-plus" class="h-5 w-5 text-zinc-500 transition group-open:hidden" />
+              <.icon name="hero-minus" class="hidden h-5 w-5 text-indigo-400 group-open:block" />
+            </summary>
+            <p class="px-8 pb-6 text-sm leading-6 text-zinc-400">{a}</p>
+          </details>
+        <% end %>
+      </div>
+      <p class="mt-8 text-sm text-zinc-500">
+        More on how we handle data, secrets, and audit on the <.link
+          navigate={~p"/security"}
+          class="text-indigo-400 hover:text-indigo-300"
+        >security page</.link>.
+      </p>
     </div>
   </section>
 

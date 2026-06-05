@@ -74,6 +74,8 @@ defmodule EmisarWeb.Router do
     get "/use-cases/cassandra-ops", MarketingController, :usecase_cassandra
     get "/use-cases/postgres-ops", MarketingController, :usecase_postgres
     get "/compare/raw-ssh-for-ai", MarketingController, :compare_raw_ssh
+    get "/compare/custom-mcp-server", MarketingController, :compare_custom_mcp
+    get "/compare/slack-bots-for-ops", MarketingController, :compare_slack_bots
     get "/packs", MarketingController, :packs
     # Machine-facing registry endpoints (consumed by `emisar pack install`).
     # Declared before "/packs/:id" so the literal segments win; Phoenix

@@ -10,6 +10,7 @@ defmodule EmisarWeb.SitemapController do
   @paths [
     "/",
     "/about",
+    "/changelog",
     "/pricing",
     "/security",
     "/privacy",
@@ -23,12 +24,12 @@ defmodule EmisarWeb.SitemapController do
     "/packs",
     "/use-cases/cassandra-ops",
     "/use-cases/postgres-ops",
-    "/compare/raw-ssh-for-ai"
+    "/compare/raw-ssh-for-ai",
+    "/compare/custom-mcp-server",
+    "/compare/slack-bots-for-ops"
   ]
 
   def show(conn, _params) do
-    today = Date.utc_today() |> Date.to_iso8601()
-
     # Static marketing routes + a synthesized entry per published pack
     # (so /packs/linux-core etc. show up in search engines without
     # having to hand-maintain a list here).
@@ -39,7 +40,6 @@ defmodule EmisarWeb.SitemapController do
         """
           <url>
             <loc>#{@base}#{path}</loc>
-            <lastmod>#{today}</lastmod>
             <changefreq>weekly</changefreq>
           </url>\
         """

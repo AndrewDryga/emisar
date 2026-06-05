@@ -222,7 +222,7 @@ defmodule EmisarWeb.AuditExportController do
       |> json(%{
         error: "missing_scope",
         required: scope,
-        message: "Mint an API key with the `#{scope}` scope on the Agents page."
+        message: "Mint an API key with the `#{scope}` scope on the LLM agents page."
       })
       |> halt()
     end

@@ -14,7 +14,7 @@ defmodule EmisarWeb.AgentsLiveTest do
       {conn, _user, _account} = register_and_log_in(conn)
       {:ok, _lv, html} = live(conn, ~p"/app/agents")
 
-      assert html =~ "Agents"
+      assert html =~ "LLM agents"
       assert html =~ "Pick a client above to get started"
 
       # All client tiles are rendered.
@@ -201,7 +201,7 @@ defmodule EmisarWeb.AgentsLiveTest do
       # This page renders neither — it must absorb the message, not crash.
       send(lv.pid, {:approval_updated, %{id: Ecto.UUID.generate()}})
 
-      assert render(lv) =~ "Agents"
+      assert render(lv) =~ "LLM agents"
     end
   end
 end

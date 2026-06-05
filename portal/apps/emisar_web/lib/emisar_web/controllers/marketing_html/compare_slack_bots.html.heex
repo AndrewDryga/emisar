@@ -1,0 +1,112 @@
+<div class="bg-zinc-950 text-zinc-100">
+  <.marketing_nav current={:docs} />
+
+  <section class="py-16 sm:py-24">
+    <div class="mx-auto max-w-3xl px-6 lg:px-8">
+      <p class="text-sm font-semibold text-indigo-400">Compare</p>
+      <h1 class="mt-2 text-4xl font-bold tracking-tight text-zinc-50 md:text-5xl">
+        Slack ops bots vs emisar
+      </h1>
+      <p class="mt-6 text-lg leading-8 text-zinc-400">
+        Chat is useful for coordination. It is a weak execution boundary once AI agents
+        start invoking production operations.
+      </p>
+
+      <h2 class="mt-12 text-2xl font-semibold text-zinc-50">
+        The channel is not the control plane
+      </h2>
+      <p class="mt-3 text-sm leading-relaxed text-zinc-400">
+        Slash commands and bot messages make operations accessible, but permission checks,
+        approvals, output retention, and ownership tend to remain fragmented across handlers
+        and channel conventions. emisar keeps the chat or LLM client at the request layer and
+        moves enforcement into a dedicated control plane and on-host runner.
+      </p>
+
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">Side-by-side</h2>
+      <div class="mt-4 overflow-x-auto rounded-lg border border-zinc-900">
+        <table class="min-w-[680px] text-sm">
+          <thead class="bg-zinc-950/80 text-xs uppercase tracking-wider text-zinc-500">
+            <tr>
+              <th class="px-4 py-3 text-left">Concern</th>
+              <th class="px-4 py-3 text-left">Slack ops bot</th>
+              <th class="px-4 py-3 text-left">emisar</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-zinc-900 text-zinc-300">
+            <tr>
+              <td class="px-4 py-3">Caller interface</td>
+              <td class="px-4 py-3">Slash commands and message parsing</td>
+              <td class="px-4 py-3">Typed MCP tools with declared schemas</td>
+            </tr>
+            <tr>
+              <td class="px-4 py-3">Authorization</td>
+              <td class="px-4 py-3">Channel membership and custom checks</td>
+              <td class="px-4 py-3">Roles, per-user runner scopes, policy gates</td>
+            </tr>
+            <tr>
+              <td class="px-4 py-3">Approval</td>
+              <td class="px-4 py-3">Reaction or message convention</td>
+              <td class="px-4 py-3">Contextual approve/deny with revocable standing grants</td>
+            </tr>
+            <tr>
+              <td class="px-4 py-3">Output</td>
+              <td class="px-4 py-3">Channel messages and thread history</td>
+              <td class="px-4 py-3">Live run output with redaction and terminal state</td>
+            </tr>
+            <tr>
+              <td class="px-4 py-3">Action drift</td>
+              <td class="px-4 py-3">Depends on bot deployment process</td>
+              <td class="px-4 py-3">Changed pack hashes block dispatch pending review</td>
+            </tr>
+            <tr>
+              <td class="px-4 py-3">Audit export</td>
+              <td class="px-4 py-3">Chat export plus application logs</td>
+              <td class="px-4 py-3">
+                Tamper-evident host journal (<code>emisar audit verify</code>), searchable cloud
+                audit, read-only SIEM token
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">Keep Slack in the workflow</h2>
+      <p class="mt-3 text-sm leading-relaxed text-zinc-400">
+        emisar does not need to replace team communication. Operators can still coordinate in
+        Slack while the action contract, policy decision, approval, run state, and audit record
+        live in the product built to own them. A disciplined bot with real RBAC and interactive
+        approvals narrows the gap — emisar's point is that you get that boundary by default,
+        on-host, across every MCP client, not bolted onto one channel.
+      </p>
+
+      <div class="mt-12 flex flex-wrap gap-x-6 gap-y-3 border-t border-zinc-900 pt-8 text-sm">
+        <.link
+          navigate={~p"/docs/connect-an-llm"}
+          class="inline-flex items-center gap-1 font-medium text-indigo-400 hover:text-indigo-300"
+        >
+          Connect an LLM <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
+        </.link>
+        <.link
+          navigate={~p"/docs/security-model"}
+          class="inline-flex items-center gap-1 font-medium text-indigo-400 hover:text-indigo-300"
+        >
+          Policy &amp; approvals <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
+        </.link>
+        <.link
+          navigate={~p"/packs"}
+          class="inline-flex items-center gap-1 font-medium text-indigo-400 hover:text-indigo-300"
+        >
+          Pack registry <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
+        </.link>
+        <.link
+          navigate={~p"/pricing"}
+          class="inline-flex items-center gap-1 font-medium text-indigo-400 hover:text-indigo-300"
+        >
+          Pricing <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
+        </.link>
+      </div>
+    </div>
+  </section>
+
+  <.marketing_footer />
+</div>

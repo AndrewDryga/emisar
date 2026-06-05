@@ -68,7 +68,7 @@ homepage: https://github.com/acme/my-pack
 
 requires:
   os: [linux]
-  binaries: [my-cli]      # optional — refused if missing on the host
+  binaries: [my-cli]      # optional — advertised to cloud; a missing one fails at run time
 
 actions:
   - actions/do_thing.yaml
@@ -145,7 +145,10 @@ examples:
           <pre class="mt-4 overflow-x-auto rounded-lg border border-zinc-800 bg-black/60 p-4 font-mono text-xs leading-6 text-zinc-300"># on the runner host
 sudo emisar pack install ./my-pack --dest /etc/emisar/packs
 sudo systemctl reload emisar
-sudo journalctl -u emisar -n 50 --no-pager | grep my-pack</pre>
+sudo journalctl -u emisar -n 50 --no-pager | grep my-pack
+
+# Re-install pinned to the hash it printed — what registry consumers run:
+sudo emisar pack install my-pack --hash sha256:&lt;printed&gt; --dest /etc/emisar/packs</pre>
           <p class="mt-4 text-sm text-zinc-400">
             In the cloud dashboard, open
             <span class="font-mono text-zinc-300">/app/runners/&lt;runner&gt;</span>
@@ -178,7 +181,7 @@ sudo journalctl -u emisar -n 50 --no-pager | grep my-pack</pre>
           <ul class="mt-3 space-y-2 pl-5 text-sm text-zinc-400">
             <li class="list-disc">
               <strong class="text-zinc-200">Tight argument validation</strong> — no free-form
-              shell strings, paths use <code>allowed_prefixes</code>, enums declare <code>values</code>.
+              shell strings, paths use <code>allowed_prefixes</code>, and choice args use <code>validation.enum</code>.
             </li>
             <li class="list-disc">
               <strong class="text-zinc-200">Honest <code>side_effects</code></strong> — every

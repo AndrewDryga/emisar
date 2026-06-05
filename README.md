@@ -1,45 +1,51 @@
 # emisar
 
-**Local enforcement runner for AI-safe infrastructure actions.**
+**Approved infrastructure actions for AI tools, enforced on-host.**
 
-emisar is a single Go binary that runs on a VM (or in a container) and
-lets a cloud control plane orchestrate a curated, declared, fully
-journaled set of operational actions on that host — without giving the
-LLM raw shell or SSH access, and without opening any inbound port.
+emisar is a control plane, outbound-only runner, and MCP bridge for
+letting AI tools request a finite, declared set of operational actions
+without receiving raw shell or SSH access.
 
-Status: **v0.2, local-runner only.** The cloud control plane (policy
-authoring, approval workflow, audit storage, runbook orchestration) is
-out of scope for this repository, but the wire protocol and transport
-interfaces are defined. See [`docs/cloud-boundary.md`](docs/cloud-boundary.md)
-and [`docs/wire-protocol.md`](docs/wire-protocol.md).
+Status: **active private beta.** This monorepo contains the complete
+runner, Phoenix control plane, public website, and MCP stdio bridge.
+The hosted control plane is the current supported product boundary;
+self-hosted and air-gapped deployments are not generally available.
 
 ## What it does
 
-- Loads **action packs** baked into the VM image at build time.
-- Dials **out** to the cloud over a TLS websocket — no inbound listener.
-- Advertises every action it can run (full schemas) to the cloud.
+- Loads versioned, content-addressed **action packs** on each runner.
+- Dials **out** to the control plane over a TLS websocket — no inbound listener.
+- Blocks dispatch when a runner advertises new, custom, or changed pack contents
+  until an admin trusts the hash.
+- Connects remote MCP clients through OAuth and local clients through the
+  `emisar-mcp` stdio bridge.
+- Applies per-user runner scopes, risk-tier policy, action overrides,
+  human approvals, and revocable standing grants.
 - For each `run_action` message from cloud:
   1. Re-validates arguments against the action's declared schema.
-  2. Clamps cloud-supplied opts to the action's `*_min`/`*_max` bounds.
-  3. Executes via `os/exec` with **argv arrays, never shell strings**.
-  4. Streams line-buffered, redacted output back over the websocket.
-  5. Writes one JSONL event per attempt to the local security log.
-- Refuses anything not declared or not validated.
+  2. Recomputes and verifies the trusted pack hash.
+  3. Clamps cloud-supplied opts to the action's `*_min`/`*_max` bounds.
+  4. Executes via `os/exec` with **argv arrays, never shell strings**.
+  5. Streams line-buffered, redacted output back over the websocket.
+  6. Writes one hash-chained JSONL event per attempt to the local security log.
+- Mirrors run state into a searchable audit log with a read-only SIEM export.
 
 ## What it deliberately is NOT
 
 - Not a sandbox or process isolator.
-- Not a cloud service. No listener, no UI, no audit search here.
-- Not the audit system of record — cloud is. JSONL is for on-host
-  forensics.
-- Not a policy engine — the control plane decides what should run,
-  the runner decides whether the *inputs* match the declared schema.
+- Not an arbitrary remote shell or generic `execute(command)` tool.
+- Not a replacement for OS-level least privilege, process isolation, or
+  customer change-management controls.
+- Not OSI-approved open source. The repository is source-available under
+  [`LICENSE.md`](LICENSE.md).
 
 See [`docs/security-model.md`](docs/security-model.md).
 
 ## Install (production)
 
-For a supervised daemon install on Linux (systemd) or macOS (launchd):
+Create a runner from the portal to receive a scoped bootstrap key and
+generated install command. The underlying supervised installer for Linux
+(systemd) and macOS (launchd) is:
 
 ```sh
 curl -sSL https://raw.githubusercontent.com/andrewdryga/emisar/main/install.sh | sudo bash
@@ -51,8 +57,9 @@ a config skeleton at `/etc/emisar/`, and installs the systemd unit or
 launchd plist with `Restart=on-failure` supervision and `StartLimitBurst`
 caps.
 
-After install, edit `/etc/emisar/config.yaml` and `/etc/emisar/runner.env`,
-then `sudo systemctl start emisar`. See
+After install, edit `/etc/emisar/config.yaml` and `/etc/emisar/runner.env`
+if the portal-generated command did not populate them, then start the
+service. See
 [`docs/install.md`](docs/install.md) for upgrade, uninstall, air-gapped
 install, and full operational commands.
 
@@ -101,7 +108,7 @@ EMISAR_AUTH_KEY=emkey-auth-... \
 | [docs/install.md](docs/install.md)                  | Production install, supervised operation, upgrade.   |
 | [docs/security-model.md](docs/security-model.md)    | Threats considered and explicitly not considered.    |
 | [docs/action-packs.md](docs/action-packs.md)        | How to write a pack.                                 |
-| [docs/cloud-boundary.md](docs/cloud-boundary.md)    | What the cloud will own; what the runner will own.    |
+| [docs/cloud-boundary.md](docs/cloud-boundary.md)    | What the control plane and runner each enforce.        |
 | [docs/wire-protocol.md](docs/wire-protocol.md)      | JSON message types, connection lifecycle, opts.      |
 
 ## Repository layout
@@ -132,7 +139,7 @@ runner/                          Go module — on-host runner binary
   examples/config.yaml             example runner config
 mcp/                             Go module — stdio MCP bridge for Claude Code / Cursor / etc.
 docs/                            architecture, security, action-packs, cloud-boundary, wire-protocol
-docker/                          docker-compose + Dockerfile for runner dev container
+compose.yaml                     Full local stack: Postgres, portal, seeder, and runners
 install.sh                       supervised install (systemd / launchd) — run against tarball
 Makefile                         dev orchestrator (build, test, lint across modules)
 ```

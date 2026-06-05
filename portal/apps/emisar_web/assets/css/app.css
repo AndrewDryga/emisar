@@ -2,4 +2,58 @@
 @import "tailwindcss/components";
 @import "tailwindcss/utilities";
 
-/* This file is for your main application CSS */
+/* ---------------------------------------------------------------------------
+   Global accessibility + polish.
+
+   Tailwind utilities cover per-element styling; this layer adds the few
+   things utilities can't express once, site-wide: a consistent keyboard
+   focus ring, motion that honors the OS "reduce motion" setting, and a
+   site-wide text-selection color. Applies to both the marketing site and the
+   operator console.
+   --------------------------------------------------------------------------- */
+
+/* Keyboard focus only (never on mouse click): one high-contrast indigo ring
+   on every interactive element, so the keyboard path is always visible. */
+:focus-visible {
+  outline: 2px solid #818cf8; /* indigo-400 */
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* Site-wide selection color (the home hero set this inline; make it global). */
+::selection {
+  background-color: rgb(99 102 241 / 0.3); /* indigo-500 / 30% */
+}
+
+/* Honor "reduce motion": neutralize the hover lifts, pings, spins, and long
+   transitions for operators who opt out of animation. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Marketing hero backdrop.
+
+   Replaces the washed-out product screenshot with a crisp, weightless dark
+   treatment: a faint dotted grid that fades toward the edges, plus a soft
+   indigo glow for depth. Pure CSS — no image to download, sharp at any size.
+   --------------------------------------------------------------------------- */
+.hero-grid {
+  background-image: radial-gradient(circle, rgb(63 63 70 / 0.4) 1px, transparent 1px);
+  background-size: 22px 22px;
+  -webkit-mask-image: radial-gradient(ellipse 75% 60% at 50% 0%, #000 35%, transparent 100%);
+  mask-image: radial-gradient(ellipse 75% 60% at 50% 0%, #000 35%, transparent 100%);
+}
+.hero-glow {
+  background: radial-gradient(55% 50% at 50% -8%, rgb(99 102 241 / 0.2), transparent 70%);
+}

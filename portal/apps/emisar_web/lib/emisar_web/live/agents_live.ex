@@ -64,7 +64,7 @@ defmodule EmisarWeb.AgentsLive do
 
     {:ok,
      socket
-     |> assign(:page_title, "Agents")
+     |> assign(:page_title, "LLM agents")
      |> assign(:runners, runners)
      |> assign(:quick_secret, nil)
      |> assign(:selected_client, nil)
@@ -529,7 +529,7 @@ defmodule EmisarWeb.AgentsLive do
       flash={@flash}
       section={:agents}
     >
-      <:title>Agents</:title>
+      <:title>LLM agents</:title>
 
       <%!-- Header summary strip — 4 stats in a single horizontal
            band instead of 4 separate tiles. Lower visual weight so

@@ -8,44 +8,45 @@
         Letting an LLM run nodetool — safely
       </h1>
       <p class="mt-6 text-lg leading-8 text-zinc-400">
-        On a Cassandra cluster, "agent runs <code>nodetool repair</code>" is a
-        coin-flip between "you reduced inconsistency by 0.001%" and "you took
-        an extra disk offline for six hours". This page walks the boundary.
+        On a Cassandra cluster, "agent runs <code>nodetool repair</code>" is a coin-flip
+        between "you reduced inconsistency by 0.001%" and "you took a replica offline for
+        six hours". This page walks the boundary that makes the coin-flip a human's call.
       </p>
 
       <h2 class="mt-12 text-2xl font-semibold text-zinc-50">What the pack declares</h2>
       <p class="mt-3 text-sm leading-relaxed text-zinc-400">
         The shipping <code>cassandra</code>
-        pack (see <.external_link
-          href="https://github.com/andrewdryga/emisar/tree/main/runner/examples/packs/cassandra"
+        pack (see <.link
+          navigate={~p"/packs/cassandra"}
           class="text-indigo-400 hover:text-indigo-300"
-        >examples/packs/cassandra</.external_link>)
-        publishes six actions:
+        >the public pack page</.link>)
+        publishes 45 nodetool + cqlsh actions across topology, health, schema, maintenance,
+        repair, and node lifecycle. The risk-relevant ones for this incident:
       </p>
       <ul class="mt-4 space-y-2 text-sm text-zinc-300">
         <li>
           <code class="font-mono text-indigo-300">cassandra.nodetool_status</code>
-          — risk: <code>low</code>, read-only. Cluster topology and per-node up/down state.
-        </li>
-        <li>
-          <code class="font-mono text-indigo-300">cassandra.nodetool_compactionstats</code>
-          — risk: <code>low</code>, read-only. Pending and in-flight compactions per host.
-        </li>
-        <li>
-          <code class="font-mono text-indigo-300">cassandra.nodetool_tablestats</code>
-          — risk: <code>low</code>, read-only. Per-keyspace / per-table stats (read counts, bytes, latency).
+          — risk <code class="text-emerald-300">low</code>, read-only. Cluster topology and per-node up/down state.
         </li>
         <li>
           <code class="font-mono text-indigo-300">cassandra.nodetool_tpstats</code>
-          — risk: <code>low</code>, read-only. Thread-pool queue depth — fastest signal for a saturated node.
+          — risk <code class="text-emerald-300">low</code>, read-only. Thread-pool queue depth — the fastest signal for a saturated node.
         </li>
         <li>
-          <code class="font-mono text-indigo-300">cassandra.analyze_disk_pressure</code>
-          — risk: <code>low</code>, read-only. Shell pipeline summarising disk fill per data dir.
+          <code class="font-mono text-indigo-300">cassandra.nodetool_compactionstats</code>
+          — risk <code class="text-emerald-300">low</code>, read-only. Pending and in-flight compactions per host.
+        </li>
+        <li>
+          <code class="font-mono text-indigo-300">cassandra.nodetool_tablestats</code>
+          — risk <code class="text-emerald-300">low</code>, read-only. Per-keyspace / per-table read counts, bytes, and latency.
         </li>
         <li>
           <code class="font-mono text-indigo-300">cassandra.nodetool_repair</code>
-          — risk: <code>high</code>. Args restricted to an allowlist of keyspaces. Long timeout, default policy requires one human approval.
+          — risk <code class="text-amber-300">high</code>. <code>keyspace</code>
+          validated by
+          pattern (<code>^[a-zA-Z][a-zA-Z0-9_]&#123;0,47&#125;$</code>); <code>mode</code>
+          defaults
+          to <code>preview</code>; 6-hour timeout. The default policy holds it for one approval.
         </li>
       </ul>
 
@@ -53,59 +54,126 @@
       <ol class="mt-4 space-y-3 text-sm text-zinc-300 list-decimal pl-6">
         <li>Alert fires: read latency on <code>orders_ks</code> creeps up.</li>
         <li>
-          Model: <code>nodetool_status</code>. Sees node 3 is DN (down). Calls
+          Model runs <code>nodetool_status</code>, sees node 3 is DN (down), then
           <code>nodetool_compactionstats</code>
-          on its peers — pending compactions
-          piling up.
+          on its peers — pending compactions piling up.
+          All three are <code>low</code>, so they run unattended.
         </li>
         <li>
-          Model proposes <code>nodetool_repair orders_ks</code> on the surviving
-          replicas. Policy says <code>require_approval</code>. The model surfaces this
-          to the operator with the policy reason ("repair is high-risk; one approval
-          required") and the LLM-supplied <code>reason</code> for the run.
+          Model proposes <code>nodetool_repair orders_ks</code>
+          on the surviving replicas.
+          The action is <code>high</code>, so the policy returns <code>require_approval</code>.
+          The model surfaces the policy reason and its own one-line <code>reason</code>
+          for the run.
         </li>
         <li>
-          Operator gets an email. One click → approve. The repair dispatches.
-          Output streams into the run detail page, hash-chained to audit.
+          The approver gets an email and opens the run. They see the actor, the keyspace, the
+          target runner, and the reason — then approve with one click. Because <code>mode</code>
+          defaulted to <code>preview</code>, the approved run previews the repair unless the args
+          explicitly asked for a full or incremental pass.
         </li>
         <li>
-          If the repair runs longer than 30m, the runner SIGTERMs the process group
-          (catching the <code>nodetool</code> wrapper plus any subprocesses) and
-          escalates to SIGKILL after the per-action grace period.
+          Output streams into the run detail page, lands in the searchable cloud audit, and is
+          recorded in the runner's hash-chained journal. If a repair exceeds its 6-hour timeout,
+          the runner SIGTERMs the whole process group — the <code>nodetool</code> wrapper and
+          anything it spawned — and escalates to SIGKILL after the 5-minute cancel grace.
         </li>
       </ol>
 
       <h2 class="mt-10 text-2xl font-semibold text-zinc-50">What the LLM cannot do</h2>
       <ul class="mt-4 space-y-2 text-sm text-zinc-300">
         <li>
-          Run <code>nodetool removenode</code>: not in the catalog. Request rejected
-          at the runner before exec.
+          <strong class="text-zinc-100">Tear down a node on its own.</strong>
+          <code>nodetool decommission</code>, <code>removenode</code>, <code>assassinate</code>, and
+          <code>drain</code> <em>are</em>
+          in the pack — and they all ship at <code class="text-rose-300">critical</code>, which the default policy <code>deny</code>s
+          outright. No approval path; the runner never execs them. Lifting that is a deliberate
+          policy edit, itself audited.
         </li>
         <li>
-          Run <code>nodetool repair</code> against a keyspace not in the allowlist:
-          arg validation rejects it.
+          <strong class="text-zinc-100">Repair an arbitrary keyspace.</strong>
+          A <code>keyspace</code>
+          that fails the validation pattern is rejected before exec — the
+          argument never reaches <code>nodetool</code>.
         </li>
         <li>
-          Bypass approval by claiming the action is "low risk": the runner publishes
-          the risk from the catalog, the policy engine evaluates against the
-          authoritative value, not what the caller passes.
+          <strong class="text-zinc-100">Talk its way past the gate.</strong>
+          The runner advertises each action's risk from the trusted pack; the policy engine
+          evaluates the authoritative value, not whatever the caller claims.
         </li>
         <li>
-          Read <code>cassandra.yaml</code>: there's no <code>cassandra.read_config</code>
-          action. Read-actions for configuration
-          are a separate authoring decision.
+          <strong class="text-zinc-100">Read secrets off the host.</strong>
+          There's no <code>read_config</code>
+          action, and any JMX or cqlsh output is run through
+          redaction before it leaves the runner.
         </li>
       </ul>
 
-      <p class="mt-10 text-sm text-zinc-400">
-        See
-        <.link href="/docs/action-packs" class="text-indigo-400 hover:text-indigo-300">
-          the action pack reference
+      <%!-- FAQ --%>
+      <h2 class="mt-12 text-2xl font-semibold text-zinc-50">
+        Questions a Cassandra operator asks
+      </h2>
+      <div class="mt-6 divide-y divide-zinc-900 rounded-2xl border border-zinc-900 bg-zinc-950/60">
+        <details class="group">
+          <summary class="flex cursor-pointer items-center justify-between px-6 py-5 text-sm font-semibold text-zinc-100">
+            Is repair really safe to hand to a model?
+            <.icon name="hero-plus" class="h-5 w-5 text-zinc-500 transition group-open:hidden" />
+            <.icon name="hero-minus" class="hidden h-5 w-5 text-indigo-400 group-open:block" />
+          </summary>
+          <p class="px-6 pb-5 text-sm leading-6 text-zinc-400">
+            The model can <em>propose</em>
+            a repair; a human decides. It ships at <code>high</code>,
+            it defaults to <code>preview</code>, and the validated <code>keyspace</code>
+            argument is
+            the only thing it can vary. The destructive lifecycle commands sit a tier above, at <code>critical</code>, denied by default.
+          </p>
+        </details>
+        <details class="group">
+          <summary class="flex cursor-pointer items-center justify-between px-6 py-5 text-sm font-semibold text-zinc-100">
+            How does emisar know an action is "high risk"?
+            <.icon name="hero-plus" class="h-5 w-5 text-zinc-500 transition group-open:hidden" />
+            <.icon name="hero-minus" class="hidden h-5 w-5 text-indigo-400 group-open:block" />
+          </summary>
+          <p class="px-6 pb-5 text-sm leading-6 text-zinc-400">
+            The risk tier is declared in the action's YAML and travels with the pack's content hash.
+            An operator trusts that hash once; the runner re-verifies it before every run. Change the
+            risk in the YAML and the hash changes, which blocks dispatch until someone re-trusts it.
+          </p>
+        </details>
+        <details class="group">
+          <summary class="flex cursor-pointer items-center justify-between px-6 py-5 text-sm font-semibold text-zinc-100">
+            Can I let routine repairs run without paging me every time?
+            <.icon name="hero-plus" class="h-5 w-5 text-zinc-500 transition group-open:hidden" />
+            <.icon name="hero-minus" class="hidden h-5 w-5 text-indigo-400 group-open:block" />
+          </summary>
+          <p class="px-6 pb-5 text-sm leading-6 text-zinc-400">
+            Yes — approve once and issue a standing grant bounded by duration, runner, argument
+            shape, and a use count. The next identical repair matches the grant and runs; anything
+            outside it still stops for a human. Revoke the grant at any time.
+          </p>
+        </details>
+      </div>
+
+      <div class="mt-12 flex flex-wrap gap-x-6 gap-y-3 border-t border-zinc-900 pt-8 text-sm">
+        <.link
+          navigate={~p"/packs/cassandra"}
+          class="inline-flex items-center gap-1 font-medium text-indigo-400 hover:text-indigo-300"
+        >
+          Browse all 45 Cassandra actions <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
         </.link>
-        for the YAML schema. To run the shipping Cassandra pack against your
-        cluster, drop it under <code class="font-mono text-xs">/etc/emisar/packs/</code>
-        and SIGHUP the runner.
-      </p>
+        <.link
+          navigate={~p"/docs/security-model"}
+          class="inline-flex items-center gap-1 font-medium text-indigo-400 hover:text-indigo-300"
+        >
+          How the trust boundary works <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
+        </.link>
+        <.link
+          navigate={~p"/docs/action-packs"}
+          class="inline-flex items-center gap-1 font-medium text-indigo-400 hover:text-indigo-300"
+        >
+          The action pack YAML reference <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
+        </.link>
+      </div>
     </div>
   </section>
 

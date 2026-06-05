@@ -288,7 +288,7 @@ func TestClient_TrustGate_RefuseOnMismatch(t *testing.T) {
 		}
 		select {
 		case <-deadline:
-			t.Fatal("never saw initial agent_state")
+			t.Fatal("never saw initial runner_state")
 		case <-time.After(10 * time.Millisecond):
 		}
 	}
@@ -311,7 +311,7 @@ func TestClient_TrustGate_RefuseOnMismatch(t *testing.T) {
 		}
 		select {
 		case <-deadline:
-			t.Fatal("no follow-up agent_state after refusal")
+			t.Fatal("no follow-up runner_state after refusal")
 		case <-time.After(10 * time.Millisecond):
 		}
 	}
@@ -371,7 +371,7 @@ func TestClient_ReplaysResultAcrossReconnect(t *testing.T) {
 	}()
 
 	// The client should fail conn1's sender, back off briefly, dial
-	// conn2, send agent_state, then replay the queued result on conn2.
+	// conn2, send runner_state, then replay the queued result on conn2.
 	res := waitForResult(t, conn2, "req_replay", 3*time.Second)
 	if res["status"] != "success" {
 		t.Fatalf("status=%v reason=%v", res["status"], res["reason"])
@@ -422,7 +422,7 @@ func TestClient_HeartbeatFailureTriggersReconnect(t *testing.T) {
 		<-done
 	})
 
-	// Wait until the second conn receives an agent_state — that
+	// Wait until the second conn receives a runner_state — that
 	// confirms reconnect happened.
 	deadline := time.After(5 * time.Second)
 	tick := time.NewTicker(20 * time.Millisecond)

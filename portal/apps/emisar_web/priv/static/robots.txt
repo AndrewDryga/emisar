@@ -8,6 +8,9 @@ Disallow: /reset_password
 Disallow: /reset_password/
 Disallow: /confirm/
 Disallow: /accept_invitation/
+Disallow: /onboarding
+Disallow: /oauth/
+Disallow: /admin/
 Disallow: /api/
 
 Sitemap: https://emisar.dev/sitemap.xml

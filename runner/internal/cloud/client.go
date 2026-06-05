@@ -124,7 +124,7 @@ func NewClient(d Dialer, opts Options) *Client {
 	}
 }
 
-// Readvertise asks the client to re-send agent_state on the current
+// Readvertise asks the client to re-send runner_state on the current
 // connection (e.g., after SIGHUP-driven pack reload). Calls are
 // coalesced — multiple Readvertise() invocations between sends produce
 // exactly one extra send.
@@ -571,7 +571,7 @@ func (c *Client) drainOnce(ctx context.Context, conn Conn) error {
 }
 
 // readvertiseLoop watches for Readvertise() pings and sends a fresh
-// agent_state on the current connection. SIGHUP-driven pack reload
+// runner_state on the current connection. SIGHUP-driven pack reload
 // uses this to inform cloud of the new pack inventory.
 func (c *Client) readvertiseLoop(ctx context.Context, sessionCancel context.CancelFunc, conn Conn) {
 	defer sessionCancel()

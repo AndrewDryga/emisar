@@ -9,7 +9,7 @@ import (
 func stateCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "state",
-		Short: "Print the agent_state message this runner would advertise to cloud",
+		Short: "Print the runner_state message this runner would advertise to cloud",
 		RunE: func(_ *cobra.Command, _ []string) error {
 			rt, err := boot()
 			if err != nil {

@@ -17,6 +17,13 @@
         is designed so the LLM is the least-privileged participant in the system — and
         every action is auditable.
       </p>
+      <div class="mt-8 flex flex-wrap gap-2">
+        <%= for chip <- ["No inbound port on hosts", "Secrets redacted before egress", "Hash-chained audit journal", "MFA + per-user runner scopes", "No raw shell, ever"] do %>
+          <span class="inline-flex items-center gap-1.5 rounded-full border border-zinc-800 bg-zinc-950/60 px-3 py-1 text-xs font-medium text-zinc-300">
+            <.icon name="hero-check" class="h-3.5 w-3.5 text-indigo-400" />{chip}
+          </span>
+        <% end %>
+      </div>
     </div>
   </section>
 
@@ -34,30 +41,19 @@
         </p>
       </div>
 
-      <div class="mx-auto mt-16 max-w-5xl rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8">
-        <pre class="overflow-x-auto font-mono text-xs leading-6 text-zinc-300">
-  ┌────────────┐   1. asks                       ┌──────────────────┐
-  │            │ ──────────────────────────────▶ │                  │
-  │    LLM     │                                 │   Control plane  │
-  │            │ ◀────────────────────────────── │                  │
-  └────────────┘   5. structured result          └──────────────────┘
-       △                                                  │
-       │                                                  │ 2. validate args
-       │                                                  │ 3. policy gate
-       │                                                  │ 4. enqueue
-       │                                                  ▼
-  ┌────────────┐                                  ┌──────────────────┐
-  │            │ ◀─── outbound WSS only ────────  │                  │
-  │  Operator  │                                  │ Runner on host    │
-  │  (human)   │ ───── approve / deny ──────────▶ │ (least privilege)│
-  └────────────┘                                  └──────────────────┘
-                                                          │
-                                                          ▼
-                                                  ┌──────────────────┐
-                                                  │  Append-only     │
-                                                  │  JSONL journal   │
-                                                  └──────────────────┘
-        </pre>
+      <div class="mx-auto mt-16 max-w-3xl rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8">
+        <pre class="overflow-x-auto font-mono text-xs leading-6 text-zinc-300"><span class="text-indigo-300">LLM</span> <span class="text-zinc-500">(untrusted)</span>
+ │  asks for a catalog action over MCP — with a required reason
+ ▼
+<span class="text-indigo-300">Control plane</span>
+ │  re-validates args · evaluates policy · routes · records audit
+ │  <span class="text-zinc-500">on require_approval, waits for a human ──▶ Operator approves / denies</span>
+ ▼  run_action <span class="text-zinc-500">(only after the gate passes)</span>
+<span class="text-indigo-300">Runner on host</span> <span class="text-zinc-500">— outbound WSS only; the host dials out, nothing listens</span>
+ │  re-verifies the pack hash · drops to least privilege
+ │  argv arrays, never a shell · redacts output before egress
+ ▼
+<span class="text-indigo-300">Hash-chained JSONL journal</span> <span class="text-zinc-500">on the host + searchable cloud audit</span></pre>
       </div>
 
       <div class="mx-auto mt-12 grid max-w-5xl grid-cols-1 gap-6 md:grid-cols-3">
@@ -76,7 +72,8 @@
         <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-6">
           <h3 class="text-sm font-semibold text-indigo-300">Runner</h3>
           <p class="mt-2 text-sm text-zinc-400">
-            Runs as a non-root user with only the binaries your pack declares, by default (set via install.sh).
+            Non-root service user; drops to a per-action user/group, clamps every option to the
+            action's min/max bounds, and runs argv arrays — never shell strings.
           </p>
         </div>
       </div>
@@ -100,8 +97,8 @@
           </div>
           <h3 class="mt-6 text-xl font-semibold text-zinc-50">TLS-only transport</h3>
           <p class="mt-3 text-sm leading-6 text-zinc-400">
-            Runners connect to the control plane over WSS (TLS 1.3). Authentication via
-            long-lived bearer tokens, revocable from the dashboard.
+            Runners connect to the control plane over WSS using TLS 1.2+. A bootstrap key is
+            exchanged for a per-runner token that can be revoked from the dashboard.
           </p>
         </div>
         <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8">
@@ -133,8 +130,37 @@
           </div>
           <h3 class="mt-6 text-xl font-semibold text-zinc-50">Hash-pinned packs</h3>
           <p class="mt-3 text-sm leading-6 text-zinc-400">
-            Action packs are content-addressed. The runner computes and advertises a SHA-256
-            of every loaded pack, so operators can see exactly what was reviewed.
+            Action packs are content-addressed. New, custom, or changed hashes block dispatch
+            until an admin trusts the contents. Before execution, the runner recomputes the
+            cloud-pinned hash and rejects a mismatch. This is content integrity, not publisher
+            signing — the runner trusts the exact bytes an admin approved.
+          </p>
+        </div>
+        <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8">
+          <div class="flex h-12 w-12 items-center justify-center rounded-lg bg-indigo-500/10 text-indigo-400">
+            <.icon name="hero-eye-slash" class="h-6 w-6" />
+          </div>
+          <h3 class="mt-6 text-xl font-semibold text-zinc-50">Secrets redacted before egress</h3>
+          <p class="mt-3 text-sm leading-6 text-zinc-400">
+            30+ built-in patterns (AWS/GCP keys, GitHub tokens, JWTs, bearer/basic auth, secret
+            assignments) plus your own per-action rules scrub stdout and stderr on the runner
+            before anything is forwarded. The control plane never sees the raw bytes; per-rule hit
+            counts are recorded so you can see what was masked.
+          </p>
+        </div>
+        <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8">
+          <div class="flex h-12 w-12 items-center justify-center rounded-lg bg-indigo-500/10 text-indigo-400">
+            <.icon name="hero-arrow-down-tray" class="h-6 w-6" />
+          </div>
+          <h3 class="mt-6 text-xl font-semibold text-zinc-50">
+            SIEM export, least-privilege token
+          </h3>
+          <p class="mt-3 text-sm leading-6 text-zinc-400">
+            The cloud audit is the searchable system of record. Stream it to your SIEM as NDJSON
+            with keyset cursor pagination and RFC 5988 <code class="text-zinc-300">Link</code>
+            headers, using a dedicated <code class="text-zinc-300">audit:read</code>
+            key — your
+            SIEM never holds a token that can execute an action.
           </p>
         </div>
       </div>
@@ -156,29 +182,59 @@
           <.icon name="hero-user-group" class="h-7 w-7 text-indigo-400" />
           <h3 class="mt-4 text-lg font-semibold text-zinc-50">RBAC</h3>
           <p class="mt-2 text-sm text-zinc-400">
-            Roles for owner, admin, operator, viewer. Per-action grants. No "god mode."
+            Roles for owner, admin, operator, and viewer, plus per-user runner and runner-group
+            scopes.
           </p>
         </div>
         <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8">
           <.icon name="hero-key" class="h-7 w-7 text-indigo-400" />
-          <h3 class="mt-4 text-lg font-semibold text-zinc-50">SSO (Enterprise)</h3>
+          <h3 class="mt-4 text-lg font-semibold text-zinc-50">Scoped LLM access</h3>
           <p class="mt-2 text-sm text-zinc-400">
-            Enterprise SSO &mdash; contact us.
+            Each MCP key carries its own scopes (<code>actions:read</code>, <code>actions:execute</code>, <code>audit:read</code>), user attribution, and runner
+            filters. Keys are revocable, rate-limited, and inherit their creator's runner scope at
+            call time — revoke the user and every key they minted shrinks with them.
           </p>
         </div>
         <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8">
           <.icon name="hero-shield-check" class="h-7 w-7 text-indigo-400" />
           <h3 class="mt-4 text-lg font-semibold text-zinc-50">MFA</h3>
           <p class="mt-2 text-sm text-zinc-400">
-            TOTP on every plan. Optional enforcement org-wide.
+            TOTP (RFC 6238) on every plan, with one-time recovery codes and replay protection.
+            Enforce it org-wide with one switch.
           </p>
         </div>
       </div>
     </div>
   </section>
 
+  <%!-- Go deeper --%>
+  <section class="py-16">
+    <div class="mx-auto max-w-5xl px-6 lg:px-8">
+      <div class="flex flex-wrap items-center justify-center gap-x-8 gap-y-3 text-sm">
+        <.link
+          navigate={~p"/docs/security-model"}
+          class="inline-flex items-center gap-1 font-medium text-indigo-400 hover:text-indigo-300"
+        >
+          Read the full security model <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
+        </.link>
+        <.link
+          navigate={~p"/docs/connect-an-llm"}
+          class="inline-flex items-center gap-1 font-medium text-indigo-400 hover:text-indigo-300"
+        >
+          How an LLM connects <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
+        </.link>
+        <.link
+          navigate={~p"/pricing"}
+          class="inline-flex items-center gap-1 font-medium text-indigo-400 hover:text-indigo-300"
+        >
+          Plans &amp; audit retention <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
+        </.link>
+      </div>
+    </div>
+  </section>
+
   <%!-- Responsible disclosure --%>
-  <section class="py-24 sm:py-32">
+  <section class="pb-24 sm:pb-32">
     <div class="mx-auto max-w-4xl px-6 lg:px-8">
       <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-12">
         <h2 class="text-4xl font-bold tracking-tight text-zinc-50">Responsible disclosure</h2>

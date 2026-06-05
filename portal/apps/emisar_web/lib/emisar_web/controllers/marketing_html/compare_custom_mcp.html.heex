@@ -1,0 +1,125 @@
+<div class="bg-zinc-950 text-zinc-100">
+  <.marketing_nav current={:docs} />
+
+  <section class="py-16 sm:py-24">
+    <div class="mx-auto max-w-3xl px-6 lg:px-8">
+      <p class="text-sm font-semibold text-indigo-400">Compare</p>
+      <h1 class="mt-2 text-4xl font-bold tracking-tight text-zinc-50 md:text-5xl">
+        Custom infrastructure MCP server vs emisar
+      </h1>
+      <p class="mt-6 text-lg leading-8 text-zinc-400">
+        A focused MCP server can be the right first step. The question is what your team
+        must build once the prototype starts touching multiple production hosts.
+      </p>
+
+      <h2 class="mt-12 text-2xl font-semibold text-zinc-50">
+        The prototype is not the hard part
+      </h2>
+      <p class="mt-3 text-sm leading-relaxed text-zinc-400">
+        Listing tools and invoking a command is straightforward. Production use adds a longer
+        list: host enrollment, scoped access, typed validation, policy, approval state,
+        reconnect behavior, output limits, redaction, pack drift, and an audit trail that
+        survives the chat session.
+      </p>
+
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">Side-by-side</h2>
+      <div class="mt-4 overflow-x-auto rounded-lg border border-zinc-900">
+        <table class="min-w-[680px] text-sm">
+          <thead class="bg-zinc-950/80 text-xs uppercase tracking-wider text-zinc-500">
+            <tr>
+              <th class="px-4 py-3 text-left">Concern</th>
+              <th class="px-4 py-3 text-left">Typical custom MCP server</th>
+              <th class="px-4 py-3 text-left">emisar</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-zinc-900 text-zinc-300">
+            <tr>
+              <td class="px-4 py-3">Action contract</td>
+              <td class="px-4 py-3">Handlers embedded in application code</td>
+              <td class="px-4 py-3">Versioned YAML packs with typed argument schemas</td>
+            </tr>
+            <tr>
+              <td class="px-4 py-3">Changed tool contents</td>
+              <td class="px-4 py-3">Depends on deployment controls</td>
+              <td class="px-4 py-3">New or changed pack hashes block dispatch until trusted</td>
+            </tr>
+            <tr>
+              <td class="px-4 py-3">Host access</td>
+              <td class="px-4 py-3">Usually custom credentials and routing</td>
+              <td class="px-4 py-3">Outbound-only runners with per-runner tokens</td>
+            </tr>
+            <tr>
+              <td class="px-4 py-3">Policy and approvals</td>
+              <td class="px-4 py-3">Application-specific logic</td>
+              <td class="px-4 py-3">
+                Risk tiers (low/medium allow, high approve, critical deny by default), per-action
+                overrides, approvals, and revocable standing grants
+              </td>
+            </tr>
+            <tr>
+              <td class="px-4 py-3">Per-user access</td>
+              <td class="px-4 py-3">Hand-rolled, if at all</td>
+              <td class="px-4 py-3">
+                Per-member runner scopes enforced in UI, API, and dispatch; API keys inherit the
+                creator's scope at call time
+              </td>
+            </tr>
+            <tr>
+              <td class="px-4 py-3">LLM connection</td>
+              <td class="px-4 py-3">Client-specific auth and transport work</td>
+              <td class="px-4 py-3">Remote MCP with OAuth plus a stdio bridge</td>
+            </tr>
+            <tr>
+              <td class="px-4 py-3">Audit</td>
+              <td class="px-4 py-3">Logs you design and maintain</td>
+              <td class="px-4 py-3">Hash-chained local journal, cloud audit, SIEM export</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">When custom is the right answer</h2>
+      <p class="mt-3 text-sm leading-relaxed text-zinc-400">
+        Build custom when the surface is narrow, one team owns it, the target is already an API,
+        and your existing authorization and audit layers cover the workflow. A small MCP adapter
+        can be exactly enough.
+      </p>
+
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">When emisar starts paying back</h2>
+      <p class="mt-3 text-sm leading-relaxed text-zinc-400">
+        emisar is useful when tools reach hosts, multiple LLM clients need access, security needs a
+        reviewable action contract, and operators need one approval and audit surface across the
+        fleet.
+      </p>
+
+      <div class="mt-12 flex flex-wrap gap-x-6 gap-y-3 border-t border-zinc-900 pt-8 text-sm">
+        <.link
+          navigate={~p"/docs/security-model"}
+          class="inline-flex items-center gap-1 font-medium text-indigo-400 hover:text-indigo-300"
+        >
+          Security model <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
+        </.link>
+        <.link
+          navigate={~p"/docs/connect-an-llm"}
+          class="inline-flex items-center gap-1 font-medium text-indigo-400 hover:text-indigo-300"
+        >
+          Connect your model <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
+        </.link>
+        <.link
+          navigate={~p"/packs"}
+          class="inline-flex items-center gap-1 font-medium text-indigo-400 hover:text-indigo-300"
+        >
+          Pack registry <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
+        </.link>
+        <.link
+          navigate={~p"/pricing"}
+          class="inline-flex items-center gap-1 font-medium text-indigo-400 hover:text-indigo-300"
+        >
+          Pricing <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
+        </.link>
+      </div>
+    </div>
+  </section>
+
+  <.marketing_footer />
+</div>

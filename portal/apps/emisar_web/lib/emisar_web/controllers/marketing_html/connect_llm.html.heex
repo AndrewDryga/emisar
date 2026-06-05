@@ -101,8 +101,8 @@
           <section>
             <h3 class="text-xl font-semibold text-zinc-50">ChatGPT</h3>
             <p class="mt-2 text-sm text-zinc-400">
-              ChatGPT hides custom MCP connectors behind <strong>Developer mode</strong>, so there's an extra toggle
-              before the form the search guides show up. Available on Plus,
+              ChatGPT hides custom MCP connectors behind <strong>Developer mode</strong>, so there's one extra toggle
+              before the connector form appears. Available on Plus,
               Pro, Business, Enterprise, and Education.
             </p>
             <ol class="mt-3 list-decimal space-y-2 pl-6 text-sm text-zinc-300">
@@ -161,7 +161,7 @@
               membership. The connector can only run actions your policy
               already permits, every call is attributed to you in the audit
               log, and anything needing approval still waits for a human.
-              Revoke access any time from <strong>Agents</strong>
+              Revoke access any time from <strong>LLM agents</strong>
               in the dashboard, or from the connector settings in
               Claude / ChatGPT.
             </p>
@@ -184,7 +184,7 @@
 
         <p class="mt-4 text-base leading-relaxed text-zinc-400">
           The clients in steps 3 and 4 authenticate with a raw key instead
-          of OAuth. In the dashboard sidebar, click <code class="rounded bg-zinc-900 px-1.5 py-0.5 text-sm">Agents</code>.
+          of OAuth. In the dashboard sidebar, click <code class="rounded bg-zinc-900 px-1.5 py-0.5 text-sm">LLM agents</code>.
           Pick your LLM client from the tab strip — we mint a key named
           after it and drop a prefilled snippet you can paste into the
           client's config. Quick keys are scoped to
@@ -196,8 +196,11 @@
         <p class="mt-4 text-base leading-relaxed text-zinc-400">
           Want a tighter scope? Pick the
           <code class="rounded bg-zinc-900 px-1.5 py-0.5 text-sm">Custom</code>
-          tab and restrict which runners or groups the key may target.
-          The dashboard reveals the raw key once — copy and store it.
+          tab and restrict which runners or groups the key may target. Keys are revocable and
+          rate-limited per key. A separate
+          <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">audit:read</code>
+          scope exists for shipping the audit log to a SIEM — it can read events but never execute
+          an action. The dashboard reveals the raw key once — copy and store it.
         </p>
 
         <p class="mt-4 rounded-lg border border-zinc-900 bg-black/40 px-4 py-3 text-xs leading-relaxed text-zinc-500">
@@ -259,8 +262,7 @@
           <div class="border-b border-zinc-900 px-3 py-2 font-mono text-[11px] text-zinc-500">
             terminal
           </div>
-          <pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300"><span class="text-zinc-500"># `go install` builds the package directory's binary; the binary will</span>
-<span class="text-zinc-500"># be ~/go/bin/mcp, so rename it on the symlink.</span>
+          <pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300"><span class="text-zinc-500"># go install drops the binary at ~/go/bin/mcp; symlink it as emisar-mcp:</span>
 <span class="text-zinc-500">$</span> go install github.com/andrewdryga/emisar/mcp@latest
 <span class="text-zinc-500">$</span> sudo ln -sf ~/go/bin/mcp /usr/local/bin/emisar-mcp</pre>
         </div>
@@ -434,8 +436,11 @@ env = &#123; EMISAR_URL = "https://app.emisar.dev", EMISAR_API_KEY = "emk-..." &
           <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">inputSchema</code>
           as a function parameter schema, and POST the model's chosen
           arguments back to <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/api/mcp/tools/:name?wait=30s</code>.
-          The <.link href={~p"/docs"} class="text-indigo-400 hover:text-indigo-300">docs</.link>
-          have a full sample.
+          Every dispatch must include a
+          <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">reason</code>
+          — it's logged to the audit trail and shown to approvers — and an
+          <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">Idempotency-Key</code>
+          header makes a retry at-most-once.
         </p>
       </section>
     </div>

@@ -184,7 +184,7 @@ defmodule EmisarWeb.AuditLive do
 
       <%!-- SIEM-export panel rendered AFTER the table so the audit log
            itself leads the page. Admin-only `audit:read` tokens live
-           here, not on the Agents page (which is for LLM bridges).
+           here, not on the LLM agents page (which is for MCP connections).
            Lists existing tokens with revoke + the mint affordance. --%>
       <section
         :if={Permissions.can?(assigns, :manage_api_keys)}

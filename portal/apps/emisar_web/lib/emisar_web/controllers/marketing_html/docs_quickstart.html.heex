@@ -14,7 +14,7 @@
 
       <h2 class="mt-12 text-2xl font-semibold text-zinc-50">1. Create your account</h2>
       <p class="mt-3 text-sm leading-relaxed text-zinc-400">
-        Sign up at <.link href="/sign_up" class="text-indigo-400 hover:text-indigo-300">/sign_up</.link>.
+        Sign up at <.link href={~p"/sign_up"} class="text-indigo-400 hover:text-indigo-300">/sign_up</.link>.
         Free tier supports up to 3 runners — no credit card.
       </p>
 
@@ -35,10 +35,11 @@
 
       <h2 class="mt-10 text-2xl font-semibold text-zinc-50">3. The runner connects back</h2>
       <p class="mt-3 text-sm leading-relaxed text-zinc-400">
-        The installer drops a systemd unit (<code class="font-mono">emisar.service</code>)
-        running as a dedicated <code class="font-mono">emisar</code> user. The runner dials
-        out to the control plane over outbound TLS, advertises its action catalog,
-        and waits for work. No inbound ports.
+        The installer verifies the download's SHA-256, then drops a systemd unit
+        (<code class="font-mono">emisar.service</code>) running as a dedicated
+        <code class="font-mono">emisar</code>
+        user. The runner dials out to the control plane
+        over outbound TLS, advertises its action catalog, and waits for work. No inbound ports.
       </p>
       <p class="mt-3 text-sm text-zinc-400">
         Refresh the dashboard. You should see your host under <strong>Runners online</strong>.
@@ -57,12 +58,12 @@
       <h2 class="mt-10 text-2xl font-semibold text-zinc-50">5. Connect an LLM</h2>
       <p class="mt-3 text-sm leading-relaxed text-zinc-400">
         With one runner alive, you can wire a model. The dashboard's
-        onboarding checklist links straight to <strong class="text-zinc-200">Agents</strong>
+        onboarding checklist links straight to <strong class="text-zinc-200">LLM agents</strong>
         in the sidebar, where you pick a client (Claude Code, Claude Desktop,
         Cursor, Gemini CLI, Codex CLI) — we mint the API key and drop a
         prefilled snippet you can paste straight into the client's config.
         Step-by-step walkthrough: <.link
-          href="/docs/connect-an-llm"
+          navigate={~p"/docs/connect-an-llm"}
           class="text-indigo-400 hover:text-indigo-300"
         >/docs/connect-an-llm</.link>.
       </p>
@@ -72,6 +73,27 @@
         check <code class="font-mono text-xs">journalctl -u emisar -f</code> on the host.
         The most common cause is a stale enrollment key (single-use keys can only
         be consumed once) or an outbound firewall blocking <code class="font-mono">app.emisar.dev:443</code>.
+      </div>
+
+      <div class="mt-8 flex flex-wrap gap-x-6 gap-y-3 border-t border-zinc-900 pt-8 text-sm">
+        <.link
+          navigate={~p"/docs/action-packs"}
+          class="inline-flex items-center gap-1 font-medium text-indigo-400 hover:text-indigo-300"
+        >
+          What else can it run? <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
+        </.link>
+        <.link
+          navigate={~p"/docs/security-model"}
+          class="inline-flex items-center gap-1 font-medium text-indigo-400 hover:text-indigo-300"
+        >
+          Is this safe? The security model <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
+        </.link>
+        <.link
+          navigate={~p"/packs"}
+          class="inline-flex items-center gap-1 font-medium text-indigo-400 hover:text-indigo-300"
+        >
+          Browse the pack registry <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
+        </.link>
       </div>
     </div>
   </section>

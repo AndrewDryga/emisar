@@ -831,7 +831,7 @@ defmodule EmisarWeb.CoreComponents do
         </aside>
       </div>
 
-      <div class="flex flex-1 flex-col">
+      <div class="flex min-w-0 flex-1 flex-col">
         <%!-- Portal-wide nudge: a signed-in user whose email isn't
              confirmed yet. Shown on every page until they verify; the
              "Resend" button is handled by the global `:email_confirmation`
@@ -975,13 +975,13 @@ defmodule EmisarWeb.CoreComponents do
         Auth keys
       </.nav_link>
 
-      <.nav_group label="Agents" />
+      <.nav_group label="Connections" />
       <.nav_link
         to={~p"/app/agents"}
         active={@section == :agents}
         icon="hero-sparkles"
       >
-        Agents
+        LLM agents
       </.nav_link>
 
       <.nav_group label="Operations" />
@@ -2241,6 +2241,15 @@ defmodule EmisarWeb.CoreComponents do
             <p class="mt-4 max-w-xs text-sm text-zinc-500">
               Give AI tools approved infrastructure actions, not SSH.
             </p>
+            <p class="mt-3 max-w-xs text-xs leading-relaxed text-zinc-600">
+              The runner and control-plane source are available for inspection and permitted
+              internal use under a non-OSI <a
+                href="https://github.com/andrewdryga/emisar/blob/main/LICENSE.md"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="text-zinc-400 hover:text-zinc-200"
+              >source-available license</a>.
+            </p>
           </div>
 
           <div>
@@ -2280,6 +2289,19 @@ defmodule EmisarWeb.CoreComponents do
               <li>
                 <.link href={~p"/compare/raw-ssh-for-ai"} class="text-zinc-400 hover:text-zinc-100">
                   SSH vs emisar
+                </.link>
+              </li>
+              <li>
+                <.link href={~p"/compare/custom-mcp-server"} class="text-zinc-400 hover:text-zinc-100">
+                  Custom MCP vs emisar
+                </.link>
+              </li>
+              <li>
+                <.link
+                  href={~p"/compare/slack-bots-for-ops"}
+                  class="text-zinc-400 hover:text-zinc-100"
+                >
+                  Slack bots vs emisar
                 </.link>
               </li>
             </ul>

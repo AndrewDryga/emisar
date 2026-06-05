@@ -57,6 +57,8 @@ defmodule EmisarWeb.PacksTest do
 
       assert body =~ "https://emisar.dev/packs</loc>"
       assert body =~ "https://emisar.dev/docs/publishing-packs</loc>"
+      assert body =~ "https://emisar.dev/compare/custom-mcp-server</loc>"
+      refute body =~ "<lastmod>"
 
       for pack <- PacksRegistry.list() do
         assert body =~ "https://emisar.dev/packs/#{pack.id}</loc>"

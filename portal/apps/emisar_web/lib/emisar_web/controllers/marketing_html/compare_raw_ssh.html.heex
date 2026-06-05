@@ -20,8 +20,8 @@
       </p>
 
       <h2 class="mt-10 text-2xl font-semibold text-zinc-50">Side-by-side</h2>
-      <div class="mt-4 overflow-hidden rounded-xl border border-zinc-900">
-        <table class="w-full text-sm">
+      <div class="mt-4 overflow-x-auto rounded-xl border border-zinc-900">
+        <table class="min-w-[680px] text-sm">
           <thead class="bg-zinc-950/80 text-xs uppercase tracking-wider text-zinc-500">
             <tr>
               <th class="px-4 py-3 text-left">Concern</th>
@@ -41,9 +41,20 @@
               <td class="px-4 py-3">Typed, validated, redacted at the boundary</td>
             </tr>
             <tr>
+              <td class="px-4 py-3">What actually ran?</td>
+              <td class="px-4 py-3">Whatever was on <code>PATH</code> that day</td>
+              <td class="px-4 py-3">
+                Content-addressed pack — the runner recomputes the SHA-256 and blocks changed
+                contents until an admin re-trusts
+              </td>
+            </tr>
+            <tr>
               <td class="px-4 py-3">Approvals?</td>
-              <td class="px-4 py-3">Human-on-the-loop in chat — easy to skip</td>
-              <td class="px-4 py-3">Policy gates, with email + audit, no skip path</td>
+              <td class="px-4 py-3">Human-in-the-loop in chat — easy to skip</td>
+              <td class="px-4 py-3">
+                Policy gates with approver email + audit; skipping means a policy change, itself
+                audited
+              </td>
             </tr>
             <tr>
               <td class="px-4 py-3">Audit trail?</td>
@@ -56,13 +67,17 @@
               <td class="px-4 py-3">Output redaction?</td>
               <td class="px-4 py-3">None — passwords leak into chat logs</td>
               <td class="px-4 py-3">
-                Bearer / AWS / GitHub / private-key blocks masked before egress
+                30+ patterns (bearer/JWT, AWS/GCP/GitHub keys, secret assignments) masked on the
+                host before egress
               </td>
             </tr>
             <tr>
               <td class="px-4 py-3">Lateral movement?</td>
               <td class="px-4 py-3">SSH key on the model's box ≈ key everywhere</td>
-              <td class="px-4 py-3">Per-runner token + scoped API key + runner_filter</td>
+              <td class="px-4 py-3">
+                Per-runner token + per-user runner scopes every API key inherits — revoke the
+                user, every key they minted shrinks
+              </td>
             </tr>
             <tr>
               <td class="px-4 py-3">Recovery story?</td>
@@ -92,12 +107,36 @@
       </p>
 
       <div class="mt-12 rounded-xl border border-indigo-900/40 bg-indigo-950/20 p-5 text-sm text-zinc-300">
-        Try it: install the runner via <.link
-          href="/docs/quickstart"
+        Try it: install the runner from the <.link
+          navigate={~p"/docs/quickstart"}
           class="text-indigo-400 hover:text-indigo-300"
-        >/docs/quickstart</.link>,
-        declare one action you'd otherwise SSH for, point your model at it.
-        Free tier covers 3 runners. No credit card.
+        >quickstart</.link>, declare one action you'd otherwise SSH for, and point your model at
+        it. The
+        <.link navigate={~p"/pricing"} class="text-indigo-400 hover:text-indigo-300">
+          free tier
+        </.link>
+        covers 3 runners — no credit card.
+      </div>
+
+      <div class="mt-8 flex flex-wrap gap-x-6 gap-y-3 border-t border-zinc-900 pt-8 text-sm">
+        <.link
+          navigate={~p"/docs/security-model"}
+          class="inline-flex items-center gap-1 font-medium text-indigo-400 hover:text-indigo-300"
+        >
+          How the trust boundary works <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
+        </.link>
+        <.link
+          navigate={~p"/docs/connect-an-llm"}
+          class="inline-flex items-center gap-1 font-medium text-indigo-400 hover:text-indigo-300"
+        >
+          Connect your model <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
+        </.link>
+        <.link
+          navigate={~p"/use-cases/cassandra-ops"}
+          class="inline-flex items-center gap-1 font-medium text-indigo-400 hover:text-indigo-300"
+        >
+          See it on a Cassandra incident <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
+        </.link>
       </div>
     </div>
   </section>

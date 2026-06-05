@@ -151,10 +151,10 @@ defmodule EmisarWeb.ApprovalDetailLive do
         "Approved. Standing grant active for the next 24 hours (#{scope_label(scope)})."
 
       :thirty_days ->
-        "Approved. Standing grant active for the next 30 days (#{scope_label(scope)}). Revoke from the agents page."
+        "Approved. Standing grant active for the next 30 days (#{scope_label(scope)}). Revoke from the Approvals page."
 
       :ninety_days ->
-        "Approved. Standing grant active for the next 90 days (#{scope_label(scope)}). Revoke from the agents page."
+        "Approved. Standing grant active for the next 90 days (#{scope_label(scope)}). Revoke from the Approvals page."
     end
   end
 

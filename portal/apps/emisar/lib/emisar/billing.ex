@@ -42,10 +42,10 @@ defmodule Emisar.Billing do
       audit_retention_days: 365,
       features: [
         "Everything in Team",
-        "SAML SSO",
-        "On-prem control plane",
-        "Custom retention",
-        "Dedicated support / SLA"
+        "365-day audit retention",
+        "Security and procurement review",
+        "Design-partner deployment planning",
+        "Rollout support"
       ]
     }
   }

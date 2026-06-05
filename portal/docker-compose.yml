@@ -1,5 +1,3 @@
-version: "3.9"
-
 # Local dev stack: just Postgres. Run the Phoenix app with `mix phx.server`
 # on the host so code reload + breakpoints work.
 

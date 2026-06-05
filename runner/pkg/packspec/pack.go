@@ -43,7 +43,7 @@ type Pack struct {
 }
 
 // Requirements describes optional host requirements declared by a pack.
-// The runner records these and ships them to cloud in the agent_state
+// The runner records these and ships them to cloud in the runner_state
 // advertisement, but does not enforce them at load time:
 //
 //   - OS mismatch is surfaced via cloud-side fleet filtering (the cloud

@@ -92,8 +92,12 @@ examples:
       <h2 class="mt-10 text-2xl font-semibold text-zinc-50">Field reference</h2>
       <ul class="mt-4 space-y-3 text-sm text-zinc-300">
         <li>
-          <strong>kind</strong> — <code>exec</code> (run a binary), <code>script</code> (run a
-          packaged shell script), or — coming — <code>http</code>.
+          <strong>kind</strong>
+          — <code>exec</code>
+          (run a binary with an explicit argv) or <code>script</code>
+          (run a script packaged in the pack, its bytes SHA-256-verified at
+          load). There is no shell kind: actions are argv arrays, never shell strings, so there
+          is nothing to inject.
         </li>
         <li>
           <strong>risk</strong> — <code>low | medium | high | critical</code>.
@@ -108,10 +112,9 @@ examples:
           arrays, min/max for numbers, max_duration for durations.
         </li>
         <li>
-          <strong>execution.user</strong>
-          — Linux-only. Resolves the user via <code>os/user.Lookup</code>
-          and drops the child to its uid/gid via
-          SysProcAttr.Credential before exec.
+          <strong>execution.user / group</strong>
+          — Linux-only. Drops the child process to that uid/gid before exec, so a runner under a
+          privileged service account still runs the action as the declared, lower-privilege user.
         </li>
         <li>
           <strong>output.parser</strong>
@@ -126,8 +129,10 @@ examples:
           declared maximum.
         </li>
         <li>
-          <strong>redact</strong> — per-action redaction rules layered on top of the
-          built-in regexes (bearer, JWT, AWS keys, etc.).
+          <strong>redact</strong> — per-action rules layered on top of 30+ built-in patterns
+          (AWS/GCP keys, GitHub tokens, JWTs, bearer/basic auth, secret assignments). Redaction
+          runs on the runner before output leaves the host; the control plane never sees the raw
+          bytes, and per-rule hit counts are recorded.
         </li>
         <li>
           <strong>examples</strong>
@@ -139,26 +144,31 @@ examples:
         </li>
       </ul>
 
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">Pack trust</h2>
+      <p class="mt-3 text-sm leading-6 text-zinc-300">
+        Every pack is content-addressed by a SHA-256 over all its files. The control plane pins
+        the hash an admin trusted; the runner recomputes it and refuses to run a pack whose
+        on-disk bytes don't match. A new, changed, or custom pack blocks dispatch until an admin
+        trusts its hash — a tampered mirror is rejected, not silently run. This is content
+        integrity, not publisher signing: the runner trusts the exact bytes you approved.
+      </p>
+
       <h2 class="mt-10 text-2xl font-semibold text-zinc-50">Drift detection</h2>
       <p class="mt-3 text-sm text-zinc-300">
-        Once a pack is installed on at least one runner, the
-        <.link navigate={~p"/app/packs"} class="text-indigo-400 hover:text-indigo-300">
-          in-app Packs page
-        </.link>
-        groups every observed <code>(pack_id, version, hash)</code>
-        in your
-        account. Two runners on the same pack version with different hashes
-        means somebody hand-edited a pack on a host — the page flags it as
-        drift. Re-deploy from the canonical source to clear it.
+        Once a pack is installed on at least one runner, the in-app Packs page groups every
+        observed <code>(pack_id, version, hash)</code> in your account. Two runners on the same
+        pack version with different hashes means somebody hand-edited a pack on a host — the page
+        flags it as drift. Re-deploy from the canonical source to clear it.
       </p>
 
       <p class="mt-8 text-sm text-zinc-400">
-        Browse working packs in the
+        Browse ~50 working packs in the
         <.link navigate={~p"/packs"} class="text-indigo-400 hover:text-indigo-300">
           public registry
         </.link>
-        (linux-core, cassandra, showcase) — each shows every action it declares and an
-        install snippet you can paste on a runner host. Want to ship your own? <.link
+        (linux-core, postgres, docker, kubernetes, nginx, redis, the AWS suite, vault, and more)
+        — each shows every action it declares and a hash-pinned install snippet you can paste on a
+        runner host. Want to ship your own? <.link
           navigate={~p"/docs/publishing-packs"}
           class="text-indigo-400 hover:text-indigo-300"
         >

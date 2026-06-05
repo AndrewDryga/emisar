@@ -101,7 +101,7 @@ env var can be unset after the first successful connect.`,
 			defer cancel()
 
 			// SIGHUP: reload packs, then ask the client to re-send
-			// agent_state on the active connection. Reloading mid-action
+			// runner_state on the active connection. Reloading mid-action
 			// is safe because the engine holds the registry behind an
 			// atomic pointer and in-flight runs captured their pointer
 			// at start.
