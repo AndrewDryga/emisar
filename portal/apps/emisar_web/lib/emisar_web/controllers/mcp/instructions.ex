@@ -36,8 +36,12 @@ defmodule EmisarWeb.Mcp.Instructions do
   `runners: ["name"]` (candidates are listed in the error).
   - "Denied by policy": an account policy blocked it; the reason is the rule that fired — show it \
   to the user verbatim. Won't change on retry; it needs a policy edit or an approval grant.
-  - status `pending_approval`: a human must approve in the portal. Call `wait_for_run` with the \
-  returned `run_id` to block for the decision (up to 5 min per call; call again to keep waiting).
+  - status `pending_approval`: the action is paused for a human to approve in the portal — the \
+  result leads with a `⏸ pending approval` line naming the action and why. Relay that line to the \
+  user so they know it's waiting on them, then call `wait_for_run` with the returned `run_id` to \
+  block for the decision (up to 5 min per call; call again to keep waiting). On approve the output \
+  is prefixed `✓ approved · audit event recorded` — tell the user it cleared the gate and ran; on \
+  deny, show the reason verbatim.
   - `runner_offline` warning on an otherwise-successful dispatch: the run is queued and delivers \
   when the runner reconnects. Not an error — tell the user it's queued.
   - `invalid_args`: fix the arguments per the error `details` and retry.

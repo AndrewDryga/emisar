@@ -65,4 +65,59 @@ defmodule EmisarWeb.Mcp.ContentBlocksTest do
       assert is_error
     end
   end
+
+  describe "from_runs/1 — approval gate" do
+    test "pending_approval leads with the ⏸ line naming the action + reason" do
+      {blocks, is_error} =
+        ContentBlocks.from_runs([
+          %{
+            id: "run-7",
+            status: "pending_approval",
+            action_id: "debugging.kill_pid",
+            policy: %{reason: "high-risk actions require approval"}
+          }
+        ])
+
+      body = text(blocks)
+      assert body =~ "⏸ pending approval — debugging.kill_pid"
+      assert body =~ "high-risk actions require approval"
+      assert body =~ "a human approves it in the portal"
+      assert body =~ "run-7"
+      assert body =~ "wait_for_run"
+      refute is_error
+    end
+
+    test "an approved (require_approval) run that executed is prefixed ✓ approved" do
+      {blocks, is_error} =
+        ContentBlocks.from_runs([
+          %{
+            id: "run-8",
+            status: "success",
+            exit_code: 0,
+            stdout: "terminated",
+            policy: %{decision: "require_approval"}
+          }
+        ])
+
+      body = text(blocks)
+      assert body =~ "✓ approved · audit event recorded"
+      assert body =~ "terminated"
+      refute is_error
+    end
+
+    test "an auto-allowed run is not labelled approved" do
+      {blocks, _} =
+        ContentBlocks.from_runs([
+          %{
+            id: "run-9",
+            status: "success",
+            exit_code: 0,
+            stdout: "ok",
+            policy: %{decision: "allow"}
+          }
+        ])
+
+      refute text(blocks) =~ "✓ approved"
+    end
+  end
 end

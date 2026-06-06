@@ -80,6 +80,32 @@ defmodule EmisarWeb.MarketingTest do
     refute html =~ "Phoenix.HTML.raw"
   end
 
+  test "landing page renders the interactive demo verbatim for no-JS + crawlers", %{conn: conn} do
+    html = conn |> get(~p"/") |> html_response(200)
+
+    # The component + the hooks emisar_demo.js enhances.
+    assert html =~ "data-emisar-demo"
+    assert html =~ ~s(data-demo-tab="server")
+    assert html =~ ~s(data-demo-tab="llm")
+    assert html =~ "data-demo-replay"
+
+    # The whole incident is server-rendered for no-JS + crawlers — install,
+    # the Claude tool call, and the approval beat.
+    assert html =~ ">curl -sSL https://emisar.dev/install.sh | sudo bash</div>"
+    assert html =~ "emisar · debugging.kill_pid(pid: 24317"
+    assert html =~ "⏸ pending approval — kill_pid is high-risk"
+    assert html =~ "✓ approved by you · one use · audit event recorded"
+
+    # Lines render verbatim: no template indentation leaks into the text
+    # (whitespace-pre-wrap + the typing animation would expose it), yet the
+    # intentional column-alignment spaces in the process table survive.
+    assert html =~ ">24317   782%  14:02    python /opt/jobs/reindex.py</div>"
+
+    # phx-no-format is a mix-format directive only — it must not survive into
+    # the served markup.
+    refute html =~ "phx-no-format"
+  end
+
   test "healthz returns 200 when the DB is reachable", %{conn: conn} do
     conn = get(conn, ~p"/healthz")
     assert json_response(conn, 200) == %{"status" => "ok"}

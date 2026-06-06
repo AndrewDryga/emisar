@@ -540,8 +540,10 @@ defmodule EmisarWeb.Mcp.Service do
     do: %{
       runner: name,
       run_id: run.id,
+      action_id: run.action_id,
       status: "pending_approval",
       waiting_on: "approval",
+      policy: %{decision: run.policy_decision, reason: run.policy_reason},
       tip:
         "Operator approval required. Use the `wait_for_run` tool with run_id=#{run.id} to block until the decision."
     }

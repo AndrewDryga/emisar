@@ -57,3 +57,130 @@
 .hero-glow {
   background: radial-gradient(55% 50% at 50% -8%, rgb(99 102 241 / 0.2), transparent 70%);
 }
+
+/* ---------------------------------------------------------------------------
+   "Watch emisar work" terminal (home page).
+
+   Per-line styling for the two-tab transcript: the host tab mirrors real
+   shell + Go-runner output; the LLM tab mirrors a Claude Code session. The
+   glyph prefixes (prompt, [install], ⏺, ⎿) are ::before pseudo-elements so
+   they stay out of the line's textContent — the typing animation reads
+   textContent, and these must not pollute it. The component lives in
+   marketing_html.ex; the playback in assets/js/emisar_demo.js.
+   --------------------------------------------------------------------------- */
+.demo-line {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Host tab — shell + Go runner (install.sh + banner()/slog). */
+.demo-srv-comment {
+  color: #52525b;
+}
+.demo-srv-prompt {
+  color: #fafafa;
+}
+.demo-srv-prompt::before {
+  content: "ops@prod-api-3:~$ ";
+  color: #4ade80; /* green-400 */
+}
+.demo-srv-install {
+  color: #a1a1aa;
+}
+.demo-srv-install::before {
+  content: "[install] ";
+  font-weight: 600;
+  color: #60a5fa; /* blue-400 — matches install.sh */
+}
+.demo-srv-banner {
+  color: #a1a1aa;
+}
+.demo-srv-log {
+  color: #6b7280;
+}
+.demo-srv-ok {
+  color: #34d399; /* emerald-400 */
+}
+
+/* LLM tab — Claude Code. ⏺ assistant/tool bullet in Claude's coral; ⎿
+   result connector dim; hanging indents so wrapped lines align. */
+.demo-cc-meta {
+  color: #52525b;
+}
+.demo-cc-user {
+  color: #d4d4d8;
+}
+.demo-cc-user::before {
+  content: "> ";
+  color: #6b7280;
+}
+.demo-cc-text,
+.demo-cc-tool {
+  padding-left: 2ch;
+  text-indent: -2ch;
+}
+.demo-cc-text {
+  color: #e4e4e7;
+}
+.demo-cc-tool {
+  color: #93c5fd; /* blue-300 — tool call */
+}
+.demo-cc-text::before,
+.demo-cc-tool::before {
+  content: "⏺ ";
+  color: #d97757; /* Claude coral */
+}
+.demo-cc-result,
+.demo-cc-result-cont,
+.demo-cc-pending,
+.demo-cc-approved {
+  padding-left: 4ch;
+}
+.demo-cc-result,
+.demo-cc-pending,
+.demo-cc-approved {
+  text-indent: -2ch;
+}
+.demo-cc-result,
+.demo-cc-result-cont {
+  color: #9ca3af;
+}
+.demo-cc-result::before,
+.demo-cc-pending::before,
+.demo-cc-approved::before {
+  content: "⎿ ";
+  color: #52525b;
+}
+.demo-cc-pending {
+  color: #fbbf24; /* amber-400 */
+}
+.demo-cc-approved {
+  color: #34d399; /* emerald-400 */
+}
+
+/* Claude's thinking spinner (text built by the JS; glyph coloured here). */
+.demo-cc-spin,
+.demo-cc-spin-wait {
+  color: #6b7280;
+}
+.demo-spin-glyph {
+  color: #d97757; /* Claude coral */
+}
+
+/* Blinking caret for the typing animation. Only inserted while typing,
+   which the JS skips under reduced motion — so it never animates for
+   opted-out visitors anyway. */
+.demo-cursor {
+  display: inline-block;
+  width: 0.5ch;
+  height: 1.05em;
+  margin-left: 1px;
+  vertical-align: text-bottom;
+  background: #d4d4d8;
+  animation: demo-blink 1s steps(2, start) infinite;
+}
+@keyframes demo-blink {
+  50% {
+    opacity: 0;
+  }
+}

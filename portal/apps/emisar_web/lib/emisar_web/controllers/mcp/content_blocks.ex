@@ -124,12 +124,20 @@ defmodule EmisarWeb.Mcp.ContentBlocks do
   defp render_pending_approval(run, multi) do
     hdr = header_prefix(run, multi)
     rid = run_id(run)
+    action = string_field(run, ["action_id"])
+    why = policy_reason(run) || ""
+
+    headline =
+      "⏸ pending approval — " <>
+        if(action != "", do: action, else: "this action") <>
+        if(why != "", do: " (#{why})", else: "") <>
+        "; a human approves it in the portal."
 
     text =
-      "#{hdr}Human approval pending in the operator dashboard.\nrun_id: #{rid}\n\n" <>
-        "Call `wait_for_run` with this run_id to block until the operator decides " <>
-        "(up to 5 minutes per call). You'll get the action output on approve, or the " <>
-        "denial reason on deny."
+      "#{hdr}#{headline}\nrun_id: #{rid}\n\n" <>
+        "Tell the user it's paused for human approval, then call `wait_for_run` with this " <>
+        "run_id to block until the operator decides (up to 5 minutes per call). You'll get " <>
+        "the action output on approve, or the denial reason on deny."
 
     {[text_block(text)], false}
   end
@@ -165,8 +173,14 @@ defmodule EmisarWeb.Mcp.ContentBlocks do
       |> Enum.reject(&(&1 == ""))
       |> Enum.join(" ")
 
+    # An action that ran on a require_approval decision got here only
+    # because a human approved it — lead with that so the LLM can tell the
+    # user it cleared the gate and is on the record.
+    approved? = policy_decision(run) == "require_approval"
+
     blocks =
       [
+        if(approved?, do: text_block("✓ approved · audit event recorded")),
         if(headerline != "", do: text_block(headerline)),
         if(stdout != "", do: text_block(stdout)),
         if(stderr != "", do: text_block("stderr:\n" <> stderr)),
@@ -196,6 +210,13 @@ defmodule EmisarWeb.Mcp.ContentBlocks do
   defp policy_reason(run) do
     case run["policy"] || run[:policy] do
       %{} = p -> p["reason"] || p[:reason]
+      _ -> nil
+    end
+  end
+
+  defp policy_decision(run) do
+    case run["policy"] || run[:policy] do
+      %{} = p -> p["decision"] || p[:decision]
       _ -> nil
     end
   end

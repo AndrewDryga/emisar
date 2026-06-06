@@ -21,6 +21,7 @@ import "phoenix_html"
 import {Socket} from "phoenix"
 import {LiveSocket} from "phoenix_live_view"
 import topbar from "../vendor/topbar"
+import {initEmisarDemo} from "./emisar_demo.js"
 
 // `<time>` element formatter. The server renders a UTC fallback into
 // `textContent` (so non-JS users see something) and stamps the ISO
@@ -173,6 +174,10 @@ function setupCopyToClipboardDelegation() {
   })
 }
 setupCopyToClipboardDelegation()
+
+// Animate the "watch emisar work" terminal on the marketing home page.
+// No-op on every page that doesn't render it.
+initEmisarDemo()
 
 // Phoenix hook kept for back-compat with the MFA recovery codes panel
 // which uses `phx-hook="CopyToClipboard"` and the older
