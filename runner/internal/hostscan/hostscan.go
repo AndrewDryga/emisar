@@ -1,18 +1,26 @@
 // Package hostscan inspects the local host to recommend which action
-// packs are worth installing. It detects which service binaries are
-// present — on $PATH, in the standard bin dirs, or running right now as
-// a process — and matches that evidence against the catalog's per-pack
-// requirements. The detection is deliberately path-agnostic: a service
-// binary shipped in /usr/local/bin (or running from /opt) counts the
-// same as one on $PATH, so a trimmed root PATH never hides a service
-// that's plainly there.
+// packs are worth installing. For each candidate pack it checks a
+// "detect" signal — service-specific binaries present, service processes
+// running, or service ports listening — and recommends the pack when any
+// of those fire.
+//
+// Detection is path-agnostic: a binary in /usr/local/bin or /opt counts
+// the same as one on $PATH. And the policy of WHICH binaries are too
+// generic to be a signal (curl, nc, …) lives server-side — the portal
+// strips ubiquitous helpers from each pack's detect signal before the
+// runner ever sees it — so this package is pure mechanism: "is this
+// signal present on this host?". That keeps the curated list editable on
+// a portal deploy, with no runner release.
 package hostscan
 
 import (
+	"bufio"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -26,12 +34,17 @@ var standardBinDirs = []string{
 	"/opt/bin",
 }
 
-// PackReq is the slice of a pack manifest the suggester matches on.
+// PackReq is the per-pack detect signal the suggester matches on, as
+// served by the portal's /packs/suggest.json (or derived from a local
+// pack.yaml). Binaries are already service-specific — generic helpers are
+// stripped upstream — so the runner just asks "is any of this here?".
 type PackReq struct {
-	ID       string
-	Name     string
-	OS       []string
-	Binaries []string
+	ID        string
+	Name      string
+	OS        []string
+	Binaries  []string // service-specific binaries (not generic helpers)
+	Processes []string // process names that indicate the service runs
+	Ports     []int    // TCP ports that indicate the service listens
 }
 
 // MatchesHostOS reports whether this pack's OS allowlist includes the
@@ -39,20 +52,17 @@ type PackReq struct {
 func (r PackReq) MatchesHostOS() bool { return osMatches(r.OS) }
 
 // Facts is what we observed about the host: where each probed binary was
-// found, and the set of basenames of currently-running processes.
+// found, the basenames of running processes, and the set of listening
+// TCP ports.
 type Facts struct {
-	// Binaries maps a probed binary name (lowercased) to where it was
-	// found on disk.
-	Binaries map[string]string
-	// Running is the set of lowercased basenames of running processes.
-	Running map[string]bool
+	Binaries map[string]string // probed binary name (lowercased) -> path
+	Running  map[string]bool   // running process basenames (lowercased)
+	Ports    map[int]bool      // listening TCP ports
 }
 
-// available reports whether binary bin is present by any signal and, if
-// so, a short label for why — used to explain the match to the operator.
-// A running process wins over a static binary because it's the stronger
-// "this service is actually here" signal.
-func (f Facts) available(bin string) (why string, ok bool) {
+// availableBinary reports whether binary bin is present — running, or on
+// $PATH / a standard dir — and a short label for why.
+func (f Facts) availableBinary(bin string) (why string, ok bool) {
 	b := strings.ToLower(bin)
 	if f.Running[b] {
 		return "running", true
@@ -67,61 +77,48 @@ func (f Facts) available(bin string) (why string, ok bool) {
 type Suggestion struct {
 	ID       string   `json:"id"`
 	Name     string   `json:"name"`
-	Evidence []string `json:"evidence"` // e.g. ["nomad (running)", "consul (/usr/bin/consul)"]
-}
-
-// genericHelpers are tools present on nearly every host (curl, nc, …) and
-// used by many packs only to TALK to a service over its API. Their
-// presence says nothing about which services actually run here, so they
-// must not be the signal that earns a recommendation: "this host has curl"
-// can't recommend grafana. They still count toward "all required present"
-// (a pack that needs curl can't run without it) — they just don't
-// discriminate one host from another.
-var genericHelpers = map[string]bool{
-	"curl": true, "wget": true, "nc": true, "ncat": true, "netcat": true,
-	"socat": true, "jq": true, "openssl": true,
+	Evidence []string `json:"evidence"` // e.g. ["nomad (/usr/bin/nomad)", ":3000 (listening)"]
 }
 
 // Match returns the packs worth recommending for this host, in stable id
-// order. A pack qualifies when its OS matches, EVERY required binary is
-// present, AND at least one of those present requirements is specific to a
-// service rather than a ubiquitous helper.
-//
-// The two rules work together: "all required present" keeps a pack the host
-// can't run from being suggested and stops a co-listed helper from matching
-// a service pack on its own (consul needs the `consul` binary, not just
-// `curl`); the "discriminating signal" rule stops a pack whose ONLY
-// requirement is a ubiquitous helper (grafana → curl) from matching on
-// every host. Packs with no required binaries are the caller's baseline,
-// not a host signal, and never match here.
+// order. A pack qualifies when its OS matches and ANY of its detect
+// signals fires: a service-specific binary is present, a service process
+// is running, or a service port is listening. A pack with no detect
+// signal at all never matches — there's nothing to recommend it on.
 func Match(reqs []PackReq, f Facts) []Suggestion {
 	var out []Suggestion
 	for _, r := range reqs {
-		if len(r.Binaries) == 0 || !r.MatchesHostOS() {
+		if !r.MatchesHostOS() {
 			continue
 		}
-		evidence := make([]string, 0, len(r.Binaries))
-		matched := true
-		discriminating := false
-		for _, b := range r.Binaries {
-			why, ok := f.available(b)
-			if !ok {
-				matched = false
-				break
-			}
-			evidence = append(evidence, b+" ("+why+")")
-			// A binary specific to a service (not a ubiquitous helper) is
-			// the real "this service is here" signal.
-			if !genericHelpers[strings.ToLower(b)] {
-				discriminating = true
-			}
-		}
-		if matched && discriminating {
-			out = append(out, Suggestion{ID: r.ID, Name: r.Name, Evidence: evidence})
+		if ev := evidence(r, f); len(ev) > 0 {
+			out = append(out, Suggestion{ID: r.ID, Name: r.Name, Evidence: ev})
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
 	return out
+}
+
+// evidence collects a short note for each of the pack's detect signals
+// that fires on this host. Empty means nothing matched.
+func evidence(r PackReq, f Facts) []string {
+	var ev []string
+	for _, b := range r.Binaries {
+		if why, ok := f.availableBinary(b); ok {
+			ev = append(ev, b+" ("+why+")")
+		}
+	}
+	for _, p := range r.Processes {
+		if f.Running[strings.ToLower(p)] {
+			ev = append(ev, p+" (running)")
+		}
+	}
+	for _, port := range r.Ports {
+		if f.Ports[port] {
+			ev = append(ev, fmt.Sprintf(":%d (listening)", port))
+		}
+	}
+	return ev
 }
 
 func osMatches(list []string) bool {
@@ -136,14 +133,15 @@ func osMatches(list []string) bool {
 	return false
 }
 
-// Detect probes the host for the given candidate binary names and the
-// set of running processes. binaryNames is the union of the catalog's
-// required binaries — we probe only what some pack actually cares about,
-// rather than enumerating all of $PATH.
+// Detect probes the host for the given candidate binary names, the set of
+// running processes, and the set of listening ports. binaryNames is the
+// union of the catalog's detect binaries — we probe only what some pack
+// cares about; processes and ports are scanned wholesale.
 func Detect(binaryNames []string) Facts {
 	return Facts{
 		Binaries: scanBinaries(binaryNames, standardBinDirs),
 		Running:  scanProcesses("/proc"),
+		Ports:    scanPorts("/proc"),
 	}
 }
 
@@ -244,6 +242,48 @@ func processNames(procRoot, pid string) []string {
 		}
 	}
 	return names
+}
+
+// scanPorts returns the set of TCP ports in the LISTEN state, read from
+// <procRoot>/net/tcp and net/tcp6. On a host without /proc (macOS, etc.)
+// it returns an empty set.
+func scanPorts(procRoot string) map[int]bool {
+	out := make(map[int]bool)
+	for _, name := range []string{"net/tcp", "net/tcp6"} {
+		readListenPorts(filepath.Join(procRoot, name), out)
+	}
+	return out
+}
+
+// readListenPorts parses one /proc/net/tcp{,6} file, adding every
+// LISTEN-state local port to out. Lines look like:
+//
+//	sl  local_address rem_address   st ...
+//	 0: 0100007F:1F90 00000000:0000 0A ...
+//
+// local_address is HEXIP:HEXPORT; st 0A is TCP_LISTEN.
+func readListenPorts(path string, out map[int]bool) {
+	f, err := os.Open(path)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	sc := bufio.NewScanner(f)
+	sc.Scan() // header row
+	for sc.Scan() {
+		fields := strings.Fields(sc.Text())
+		if len(fields) < 4 || fields[3] != "0A" {
+			continue
+		}
+		local := fields[1]
+		i := strings.LastIndexByte(local, ':')
+		if i < 0 {
+			continue
+		}
+		if port, err := strconv.ParseInt(local[i+1:], 16, 32); err == nil {
+			out[int(port)] = true
+		}
+	}
 }
 
 func isAllDigits(s string) bool {

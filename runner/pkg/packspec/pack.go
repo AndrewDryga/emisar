@@ -22,6 +22,12 @@ type Pack struct {
 
 	Requires Requirements `yaml:"requires,omitempty"`
 
+	// Detect describes how `emisar pack suggest` recognizes that this
+	// pack's target service is present on a host. Optional: when omitted,
+	// the suggester derives a signal from Requires.Binaries (minus
+	// ubiquitous helpers, server-side).
+	Detect Detect `yaml:"detect,omitempty"`
+
 	// Setup documents what an operator must do on the runner host before
 	// this pack's actions can work — chiefly the environment variables its
 	// tools read to authenticate. Surfaced by `emisar pack install` and
@@ -57,6 +63,35 @@ type Pack struct {
 type Requirements struct {
 	OS       []string `yaml:"os,omitempty"`
 	Binaries []string `yaml:"binaries,omitempty"`
+}
+
+// Detect is the service-presence signal for `emisar pack suggest`. It is
+// deliberately separate from Requirements (the tools the pack's actions
+// USE to run): a pack can drive a service over its HTTP API with curl yet
+// only be detectable by the service's own process or a listening port.
+// The three signals are OR'd — any hit means "this service is here" — so a
+// service-API pack like grafana lists its server process / port here while
+// leaving curl in Requires. A pack about a remote service (a cloud API)
+// declares no Detect, and is therefore never auto-suggested.
+type Detect struct {
+	// Binaries specific to the service (not generic helpers like curl).
+	Binaries []string `yaml:"binaries,omitempty"`
+	// Processes are executable names that, when running, indicate the
+	// service is present (e.g. "grafana-server").
+	Processes []string `yaml:"processes,omitempty"`
+	// Ports are TCP ports that, when listened on, indicate the service
+	// (e.g. 3000 for Grafana, 9090 for Prometheus).
+	Ports []int `yaml:"ports,omitempty"`
+}
+
+// validate checks the detect block is well-formed.
+func (d Detect) validate(packID string) error {
+	for _, p := range d.Ports {
+		if p < 1 || p > 65535 {
+			return fmt.Errorf("pack %s: detect.port %d out of range (1-65535)", packID, p)
+		}
+	}
+	return nil
 }
 
 // MatchesHost reports whether the current runtime.GOOS is in the OS
@@ -165,6 +200,9 @@ func (p *Pack) Validate() error {
 		return fmt.Errorf("pack %s: must declare at least one action", p.ID)
 	}
 	if err := p.Setup.Validate(p.ID); err != nil {
+		return err
+	}
+	if err := p.Detect.validate(p.ID); err != nil {
 		return err
 	}
 	return nil

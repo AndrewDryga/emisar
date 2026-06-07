@@ -2,7 +2,7 @@ schema_version: 1
 
 id: memcached
 name: Memcached cache server
-version: 0.1.1
+version: 0.1.2
 description: >
   Read-only memcached introspection via the `stats` ASCII protocol —
   general stats, slab usage, item counts, sizes. Plus FLUSH_ALL as a
@@ -16,6 +16,13 @@ requires:
     - linux
   binaries:
     - nc
+
+# `emisar pack suggest` detection: memcached's process + default port.
+detect:
+  processes:
+    - memcached
+  ports:
+    - 11211
 
 setup:
   summary: >

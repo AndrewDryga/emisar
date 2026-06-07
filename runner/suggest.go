@@ -23,12 +23,21 @@ var baselinePackIDs = []string{"linux-core", "debugging"}
 
 const systemdPackID = "systemd-deep"
 
-// catalogPack mirrors one entry of the registry's /packs.json index.
+// catalogPack mirrors one entry of the registry's /packs/suggest.json
+// index: the per-pack detect signal, with ubiquitous helpers already
+// stripped server-side, plus id/name/os. No description/hash/tarball —
+// suggestion doesn't need them.
 type catalogPack struct {
-	ID               string   `json:"id"`
-	Name             string   `json:"name"`
-	RequiresOS       []string `json:"requires_os"`
-	RequiresBinaries []string `json:"requires_binaries"`
+	ID     string        `json:"id"`
+	Name   string        `json:"name"`
+	OS     []string      `json:"os"`
+	Detect catalogDetect `json:"detect"`
+}
+
+type catalogDetect struct {
+	Binaries  []string `json:"binaries"`
+	Processes []string `json:"processes"`
+	Ports     []int    `json:"ports"`
 }
 
 func packSuggestCmd() *cobra.Command {
@@ -42,19 +51,21 @@ func packSuggestCmd() *cobra.Command {
 		Short: "Recommend packs to install based on what's running on this host",
 		Long: `Inspect this host and recommend which action packs to install.
 
-It detects which service binaries are present — on $PATH, in the standard
-bin dirs, or running right now as a process — and matches that against the
-pack catalog's requirements. A service pack is recommended only when every
-binary it needs is present, so a host running Nomad is pointed at the nomad
-pack, Postgres at postgres, and so on. The read-only core (linux-core,
-debugging, and systemd-deep on a systemd host) is always recommended.
+For each pack it checks a detection signal — a service-specific binary
+present (on $PATH, in the standard bin dirs, or running as a process), a
+service process running, or a service port listening — and recommends the
+pack when any of those fire. So a host running Nomad is pointed at the nomad
+pack, one with Grafana on :3000 at grafana, and so on. The read-only core
+(linux-core, debugging, and systemd-deep on a systemd host) is always
+recommended.
 
-The catalog comes from the registry's /packs.json by default; --catalog
-points at a local packs.json file or a directory of packs instead (offline,
-e.g. the bundle install.sh ships). Packs already installed in the runner's
-packs dir are left out.
+The detection metadata comes from the registry's /packs/suggest.json by
+default (the curated list of which binaries are too generic to be a signal
+lives server-side, so it evolves without a runner upgrade); --catalog points
+at a local suggest.json file or a directory of packs instead (offline, e.g.
+the bundle install.sh ships). Packs already installed are left out.
 
-  emisar pack suggest                       # full catalog from the registry
+  emisar pack suggest                       # from the registry
   emisar pack suggest --names-only          # just ids, one per line (scripts)
   emisar pack suggest --catalog ./packs     # match against a local pack dir`,
 		Args: cobra.NoArgs,
@@ -80,7 +91,7 @@ packs dir are left out.
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&catalogSrc, "catalog", "", "local packs.json file or pack directory to match against (default: registry /packs.json)")
+	cmd.Flags().StringVar(&catalogSrc, "catalog", "", "local suggest.json file or pack directory to match against (default: registry /packs/suggest.json)")
 	cmd.Flags().StringVar(&registry, "registry", "", "pack registry base URL (default $EMISAR_PACKS_REGISTRY or "+defaultRegistry+")")
 	cmd.Flags().BoolVar(&namesOnly, "names-only", false, "print only pack ids, one per line")
 	return cmd
@@ -153,7 +164,7 @@ func unionBinaries(catalog []hostscan.PackReq) []string {
 }
 
 // loadCatalog resolves the candidate pack set: a local file/dir when
-// --catalog is given, otherwise the registry's /packs.json.
+// --catalog is given, otherwise the registry's /packs/suggest.json.
 func loadCatalog(ctx context.Context, src, registry string) ([]hostscan.PackReq, error) {
 	if src != "" {
 		if fi, err := os.Stat(src); err == nil && fi.IsDir() {
@@ -177,12 +188,18 @@ func catalogFromPackDir(dir string) ([]hostscan.PackReq, error) {
 	}
 	var out []hostscan.PackReq
 	for _, p := range reg.Packs() {
-		out = append(out, hostscan.PackReq{
-			ID:       p.ID,
-			Name:     p.Name,
-			OS:       p.Requires.OS,
-			Binaries: p.Requires.Binaries,
-		})
+		req := hostscan.PackReq{ID: p.ID, Name: p.Name, OS: p.Requires.OS}
+		// A pack that declares a detect block defines its own signal
+		// exactly (e.g. processes/ports for a service it only reaches via
+		// curl). Otherwise fall back to its required binaries: the offline
+		// catalog is the install bundle, which has no generic-helper-only
+		// packs, so no server-side stripping is needed here.
+		if d := p.Detect; len(d.Binaries) > 0 || len(d.Processes) > 0 || len(d.Ports) > 0 {
+			req.Binaries, req.Processes, req.Ports = d.Binaries, d.Processes, d.Ports
+		} else {
+			req.Binaries = p.Requires.Binaries
+		}
+		out = append(out, req)
 	}
 	return out, nil
 }
@@ -197,7 +214,7 @@ func catalogFromFile(path string) ([]hostscan.PackReq, error) {
 }
 
 func fetchCatalog(ctx context.Context, registry string) ([]hostscan.PackReq, error) {
-	url := strings.TrimRight(registry, "/") + "/packs.json"
+	url := strings.TrimRight(registry, "/") + "/packs/suggest.json"
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
@@ -226,10 +243,12 @@ func decodeCatalog(r io.Reader) ([]hostscan.PackReq, error) {
 	out := make([]hostscan.PackReq, 0, len(doc.Packs))
 	for _, p := range doc.Packs {
 		out = append(out, hostscan.PackReq{
-			ID:       p.ID,
-			Name:     p.Name,
-			OS:       p.RequiresOS,
-			Binaries: p.RequiresBinaries,
+			ID:        p.ID,
+			Name:      p.Name,
+			OS:        p.OS,
+			Binaries:  p.Detect.Binaries,
+			Processes: p.Detect.Processes,
+			Ports:     p.Detect.Ports,
 		})
 	}
 	return out, nil

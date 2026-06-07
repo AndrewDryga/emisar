@@ -2,7 +2,7 @@ schema_version: 1
 
 id: prometheus
 name: Prometheus operations
-version: 0.1.1
+version: 0.1.2
 description: >
   Server status, target health, alertmanager linkage, instant + range
   queries, rule listing, TSDB stats, plus admin-API actions for
@@ -17,6 +17,13 @@ requires:
     - linux
   binaries:
     - curl
+
+# `emisar pack suggest` detection: Prometheus' own process + default port.
+detect:
+  processes:
+    - prometheus
+  ports:
+    - 9090
 
 setup:
   summary: >

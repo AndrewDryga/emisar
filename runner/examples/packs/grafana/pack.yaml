@@ -2,7 +2,7 @@ schema_version: 1
 
 id: grafana
 name: Grafana
-version: 0.1.1
+version: 0.1.2
 description: >
   Grafana admin-API ops — datasource health, dashboard listings, alert
   state, user list, version, settings. Read-only. Auth via GRAFANA_URL
@@ -15,6 +15,16 @@ requires:
     - linux
   binaries:
     - curl
+
+# Suggestion signal for `emisar pack suggest`: Grafana runs locally on its
+# own process and port; the curl above is only how the read actions reach
+# its HTTP API, so it can't be the detection signal.
+detect:
+  processes:
+    - grafana-server
+    - grafana
+  ports:
+    - 3000
 
 setup:
   summary: >

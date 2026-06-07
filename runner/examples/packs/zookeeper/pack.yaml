@@ -1,7 +1,7 @@
 schema_version: 1
 id: zookeeper
 name: ZooKeeper operations
-version: 0.1.1
+version: 0.1.2
 description: >
   Cluster + 4lw command + watch + session introspection. Read-only. Set
   ZK_SERVERS env var (host:port,host:port,…). All four-letter words need
@@ -12,6 +12,12 @@ homepage: https://github.com/andrewdryga/emisar
 requires:
   os: [linux]
   binaries: [nc]
+
+# `emisar pack suggest` detection: ZooKeeper runs inside the JVM (process
+# `java`, too generic), so detect by the default client port.
+detect:
+  ports:
+    - 2181
 
 setup:
   summary: >

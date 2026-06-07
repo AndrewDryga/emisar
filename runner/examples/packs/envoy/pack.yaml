@@ -2,7 +2,7 @@ schema_version: 1
 
 id: envoy
 name: Envoy proxy / service mesh
-version: 0.1.1
+version: 0.1.2
 description: >
   Envoy admin-API ops: cluster + listener + runtime + config + cert
   inventory, server info, logging level read/write, plus traffic-shifting
@@ -17,6 +17,13 @@ requires:
     - linux
   binaries:
     - curl
+
+# `emisar pack suggest` detection: the envoy process + its default admin port.
+detect:
+  processes:
+    - envoy
+  ports:
+    - 9901
 
 setup:
   summary: >

@@ -4,18 +4,19 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
 func facts(bins map[string]string, running ...string) Facts {
 	r := make(map[string]bool, len(running))
 	for _, p := range running {
-		r[p] = true
+		r[strings.ToLower(p)] = true
 	}
 	if bins == nil {
 		bins = map[string]string{}
 	}
-	return Facts{Binaries: bins, Running: r}
+	return Facts{Binaries: bins, Running: r, Ports: map[int]bool{}}
 }
 
 func ids(s []Suggestion) []string {
@@ -26,77 +27,78 @@ func ids(s []Suggestion) []string {
 	return out
 }
 
-func TestMatch_AllRequiredBinariesMustBePresent(t *testing.T) {
+// TestMatch_AnyDetectSignalFires — a pack is recommended when ANY of its
+// detect signals hits (binary present, process running, port listening),
+// and never when none do.
+func TestMatch_AnyDetectSignalFires(t *testing.T) {
 	reqs := []PackReq{
-		// consul needs both the consul CLI and curl — curl alone (a
-		// near-ubiquitous helper) must NOT be enough to suggest it.
-		{ID: "consul", OS: []string{runtime.GOOS}, Binaries: []string{"consul", "curl"}},
-		{ID: "nomad", OS: []string{runtime.GOOS}, Binaries: []string{"nomad"}},
+		{ID: "grafana", OS: []string{runtime.GOOS}, Processes: []string{"grafana-server"}, Ports: []int{3000}},
+		{ID: "consul", OS: []string{runtime.GOOS}, Binaries: []string{"consul"}},
 	}
 
-	// Only curl present → neither matches.
-	got := ids(Match(reqs, facts(map[string]string{"curl": "/usr/bin/curl"})))
-	if len(got) != 0 {
-		t.Fatalf("curl alone should match nothing, got %v", got)
+	// process signal
+	if got := ids(Match(reqs, facts(nil, "grafana-server"))); !equal(got, []string{"grafana"}) {
+		t.Fatalf("process signal: got %v", got)
 	}
-
-	// consul + curl present → consul matches; nomad still absent.
-	got = ids(Match(reqs, facts(map[string]string{"curl": "/usr/bin/curl"}, "consul")))
-	if want := []string{"consul"}; !equal(got, want) {
-		t.Fatalf("got %v, want %v", got, want)
+	// port signal
+	f := facts(nil)
+	f.Ports[3000] = true
+	if got := ids(Match(reqs, f)); !equal(got, []string{"grafana"}) {
+		t.Fatalf("port signal: got %v", got)
+	}
+	// binary signal
+	if got := ids(Match(reqs, facts(map[string]string{"consul": "/usr/bin/consul"}))); !equal(got, []string{"consul"}) {
+		t.Fatalf("binary signal: got %v", got)
+	}
+	// nothing present
+	if got := Match(reqs, facts(nil)); len(got) != 0 {
+		t.Fatalf("no signal should suggest nothing, got %v", ids(got))
 	}
 }
 
-func TestMatch_GenericHelperAloneIsNotASignal(t *testing.T) {
-	reqs := []PackReq{
-		// Only a ubiquitous helper required — these must NOT be recommended
-		// just because curl/nc/openssl are present (they're on every host).
-		{ID: "grafana", OS: []string{runtime.GOOS}, Binaries: []string{"curl"}},
-		{ID: "memcached", OS: []string{runtime.GOOS}, Binaries: []string{"nc"}},
-		{ID: "ssl-local", OS: []string{runtime.GOOS}, Binaries: []string{"openssl"}},
-		// A real service pack that also lists curl IS recommended — its
-		// discriminating binary (the consul CLI) carries the signal.
-		{ID: "consul", OS: []string{runtime.GOOS}, Binaries: []string{"consul", "curl"}},
+func TestMatch_EvidenceNamesEachSignal(t *testing.T) {
+	r := []PackReq{{ID: "grafana", OS: []string{runtime.GOOS}, Processes: []string{"grafana-server"}, Ports: []int{3000}}}
+	f := facts(nil, "grafana-server")
+	f.Ports[3000] = true
+	got := Match(r, f)
+	if len(got) != 1 {
+		t.Fatalf("expected 1 match, got %v", ids(got))
 	}
-	f := facts(map[string]string{
-		"curl":    "/usr/bin/curl",
-		"nc":      "/usr/bin/nc",
-		"openssl": "/usr/bin/openssl",
-		"consul":  "/usr/bin/consul",
-	})
-	if got := ids(Match(reqs, f)); !equal(got, []string{"consul"}) {
-		t.Fatalf("only the pack with a service-specific binary should match; got %v", got)
+	joined := strings.Join(got[0].Evidence, " ")
+	if !strings.Contains(joined, "grafana-server (running)") || !strings.Contains(joined, ":3000 (listening)") {
+		t.Fatalf("evidence should name both signals, got %q", joined)
 	}
 }
 
-func TestMatch_RunningProcessCountsAsPresent(t *testing.T) {
-	// The binary isn't on any path we probed, but it's running — that's
-	// the /usr/local/bin/nomad case: detect it anyway.
-	reqs := []PackReq{{ID: "nomad", OS: []string{runtime.GOOS}, Binaries: []string{"nomad"}}}
-	got := Match(reqs, facts(nil, "nomad"))
-	if len(got) != 1 || got[0].ID != "nomad" {
-		t.Fatalf("running process should match, got %v", ids(got))
-	}
-	if len(got[0].Evidence) != 1 || got[0].Evidence[0] != "nomad (running)" {
-		t.Fatalf("evidence = %v, want [nomad (running)]", got[0].Evidence)
+// TestMatch_NoSignalNeverSuggests — a pack with an empty detect signal is
+// never recommended, even on a busy host. (The portal omits these from the
+// index, but the runner must not invent a match either.)
+func TestMatch_NoSignalNeverSuggests(t *testing.T) {
+	r := []PackReq{{ID: "cloudflare", OS: []string{runtime.GOOS}}}
+	if got := Match(r, facts(map[string]string{"curl": "/usr/bin/curl"}, "anything")); len(got) != 0 {
+		t.Fatalf("empty-signal pack must never match, got %v", ids(got))
 	}
 }
 
-func TestMatch_OSFilterAndEmptyBinariesSkip(t *testing.T) {
-	reqs := []PackReq{
-		{ID: "winthing", OS: []string{"windows"}, Binaries: []string{"nomad"}},
-		{ID: "linux-core", OS: []string{"linux"}, Binaries: nil}, // baseline, no binaries
+func TestMatch_OSFilter(t *testing.T) {
+	r := []PackReq{{ID: "winonly", OS: []string{"windows"}, Binaries: []string{"foo"}}}
+	if got := Match(r, facts(map[string]string{"foo": "/x/foo"})); len(got) != 0 {
+		t.Fatalf("wrong-OS pack must be skipped, got %v", ids(got))
 	}
-	got := ids(Match(reqs, facts(nil, "nomad")))
-	if len(got) != 0 {
-		t.Fatalf("wrong-OS and empty-binaries packs must be skipped, got %v", got)
+	r = []PackReq{{ID: "anyos", Binaries: []string{"foo"}}}
+	if got := Match(r, facts(map[string]string{"foo": "/x/foo"})); len(got) != 1 {
+		t.Fatalf("empty OS should match host, got %v", ids(got))
 	}
 }
 
-func TestMatch_EmptyOSMatchesAnyHost(t *testing.T) {
-	reqs := []PackReq{{ID: "anyos", OS: nil, Binaries: []string{"git"}}}
-	if got := Match(reqs, facts(map[string]string{"git": "/usr/bin/git"})); len(got) != 1 {
-		t.Fatalf("empty OS list should match host, got %v", ids(got))
+func TestMatch_BinaryPresentViaPathOrRunning(t *testing.T) {
+	r := []PackReq{{ID: "nomad", OS: []string{runtime.GOOS}, Binaries: []string{"nomad"}}}
+	if got := Match(r, facts(nil, "nomad")); len(got) != 1 || got[0].Evidence[0] != "nomad (running)" {
+		t.Fatalf("running binary: got %v", got)
+	}
+	got := Match(r, facts(map[string]string{"nomad": "/usr/local/bin/nomad"}))
+	if len(got) != 1 || got[0].Evidence[0] != "nomad (/usr/local/bin/nomad)" {
+		t.Fatalf("path binary: got %v", got)
 	}
 }
 
@@ -116,12 +118,10 @@ func TestScanBinaries_PathAndStandardDirs(t *testing.T) {
 	dir := t.TempDir()
 	writeExe(t, filepath.Join(dir, "nomad"))
 	writeExe(t, filepath.Join(dir, "consul"))
-	// A non-executable file must not count as a found binary.
 	if err := os.WriteFile(filepath.Join(dir, "plain"), []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
-	// dir reached only via the standard-dirs fallback (empty PATH).
 	t.Setenv("PATH", "")
 	got := scanBinaries([]string{"nomad", "consul", "plain", "absent"}, []string{dir})
 
@@ -138,28 +138,20 @@ func TestScanBinaries_PathAndStandardDirs(t *testing.T) {
 
 func TestScanProcesses_ReadsCmdlineAndComm(t *testing.T) {
 	proc := t.TempDir()
-	// pid with absolute argv0 in cmdline → basename, untruncated.
 	writeProc(t, proc, "100", "/usr/local/bin/nomad\x00agent\x00", "")
-	// pid with only comm (kernel thread style).
 	writeProc(t, proc, "200", "", "consul\n")
-	// argv-rewriting daemon: cmdline basename is the rewritten title, but
-	// comm still carries the real name — both must be recorded so the real
-	// one (postgres) is detectable.
+	// argv-rewriting daemon: cmdline basename is the rewritten title, comm
+	// still carries the real name — both must be recorded.
 	writeProc(t, proc, "300", "postgres: writer process\x00", "postgres\n")
-	// non-pid dirs and files are ignored.
 	if err := os.MkdirAll(filepath.Join(proc, "self"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 
 	got := scanProcesses(proc)
-	if !got["nomad"] {
-		t.Fatalf("cmdline argv0 basename should be detected, got %v", got)
-	}
-	if !got["consul"] {
-		t.Fatalf("comm-only process should be detected, got %v", got)
-	}
-	if !got["postgres"] {
-		t.Fatalf("comm should be read even when cmdline is non-empty (argv rewrite), got %v", got)
+	for _, want := range []string{"nomad", "consul", "postgres"} {
+		if !got[want] {
+			t.Fatalf("expected %q detected, got %v", want, got)
+		}
 	}
 }
 
@@ -169,9 +161,46 @@ func TestScanProcesses_NoProcDirIsEmptyNotError(t *testing.T) {
 	}
 }
 
+func TestScanPorts_ParsesListenSockets(t *testing.T) {
+	proc := t.TempDir()
+	netDir := filepath.Join(proc, "net")
+	if err := os.MkdirAll(netDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// header, a LISTEN socket on 0x1F90 (8080), and an ESTABLISHED one (st
+	// 01, port 0x0050 = 80) that must be ignored.
+	tcp := "  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode\n" +
+		"   0: 0100007F:1F90 00000000:0000 0A 00000000:00000000 00:00000000 00000000  1000 0 12345 1\n" +
+		"   1: 0100007F:0050 0100007F:ABCD 01 00000000:00000000 00:00000000 00000000  1000 0 12346 1\n"
+	if err := os.WriteFile(filepath.Join(netDir, "tcp"), []byte(tcp), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// tcp6 LISTEN on 0x2382 (9090).
+	tcp6 := "  sl  local_address rem_address st others\n" +
+		"   0: 00000000000000000000000000000000:2382 00000000000000000000000000000000:0000 0A 0 0 0 0 0 1\n"
+	if err := os.WriteFile(filepath.Join(netDir, "tcp6"), []byte(tcp6), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	ports := scanPorts(proc)
+	if !ports[8080] {
+		t.Fatalf("expected :8080 LISTEN (tcp), got %v", ports)
+	}
+	if !ports[9090] {
+		t.Fatalf("expected :9090 LISTEN (tcp6), got %v", ports)
+	}
+	if ports[80] {
+		t.Fatalf("ESTABLISHED :80 must not count as listening, got %v", ports)
+	}
+}
+
+func TestScanPorts_NoFileIsEmptyNotError(t *testing.T) {
+	if got := scanPorts(filepath.Join(t.TempDir(), "nope")); len(got) != 0 {
+		t.Fatalf("missing proc/net should yield empty set, got %v", got)
+	}
+}
+
 func TestDetect_FindsHostGoBinary(t *testing.T) {
-	// Integration smoke: the go toolchain that runs this test is on PATH,
-	// so Detect must surface it. Keeps Detect()'s real wiring covered.
 	if runtime.GOOS == "windows" {
 		t.Skip("path semantics differ on windows")
 	}
