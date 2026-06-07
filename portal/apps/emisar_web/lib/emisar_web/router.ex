@@ -78,6 +78,7 @@ defmodule EmisarWeb.Router do
     get "/compare/raw-ssh-for-ai", MarketingController, :compare_raw_ssh
     get "/compare/custom-mcp-server", MarketingController, :compare_custom_mcp
     get "/compare/slack-bots-for-ops", MarketingController, :compare_slack_bots
+    get "/zero-trust", MarketingController, :zero_trust
     get "/packs", MarketingController, :packs
     # Machine-facing registry endpoints (consumed by `emisar pack install`).
     # Declared before "/packs/:id" so the literal segments win; Phoenix

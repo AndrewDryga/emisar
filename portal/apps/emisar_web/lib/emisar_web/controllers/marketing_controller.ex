@@ -46,6 +46,9 @@ defmodule EmisarWeb.MarketingController do
     {"/use-cases/postgres-ops", :usecase_postgres, :usecase_postgres,
      "Postgres ops — letting an LLM triage and kill backends safely",
      "A declared Postgres action pack: replication_lag, longest_running_queries, and lock_blocking_chains run read-only with no approval; cancel_query and terminate_backend are high-risk and stop for one click."},
+    {"/use-cases/csi-data-loss", :usecase_csi_data_loss, :usecase_csi_data_loss,
+     "Case study: a CSI driver wiped 33h of metrics — contained via emisar",
+     "A real incident: democratic-csi reformatted a live Pure LUN on a multipath race, wiping 33 hours of VictoriaMetrics data. How an agent on emisar investigated through declared actions, stopped the bleed behind one approval, and wrote the durable fix to Terraform."},
     {"/compare/raw-ssh-for-ai", :compare_raw_ssh, :compare_raw_ssh,
      "Why not just give the LLM SSH? — honest comparison",
      "Comparison: raw SSH-for-AI agents vs an emisar action pack. Both run real commands; the difference is whose recovery you're betting on."},
@@ -55,6 +58,8 @@ defmodule EmisarWeb.MarketingController do
     {"/compare/slack-bots-for-ops", :compare_slack_bots, :compare_slack_bots,
      "Slack ops bots vs emisar",
      "Compare Slack-based operational bots with emisar's typed MCP actions, policy gates, approvals, live output, and searchable audit trail."},
+    {"/zero-trust", :zero_trust, :zero_trust, "Zero Trust for AI Agents",
+     "Anthropic's Zero Trust for AI Agents framework calls for least agency, deny-by-default tools, human approval for high-risk actions, and an immutable audit trail. See how emisar enforces that exact control set between an LLM and your infrastructure — with approval gates, just-in-time access, and SIEM export at the Enterprise and Advanced tier, by default."},
     {"/docs/publishing-packs", :docs_publishing_packs, :docs_publishing_packs,
      "Publishing an action pack",
      "How to author and publish an emisar action pack: pack.yaml, action YAMLs, validation rules, version + hash, and PR workflow to land in the registry."}

@@ -2264,6 +2264,11 @@ defmodule EmisarWeb.CoreComponents do
               <li>
                 <.link href={~p"/security"} class="text-zinc-400 hover:text-zinc-100">Security</.link>
               </li>
+              <li>
+                <.link href={~p"/zero-trust"} class="text-zinc-400 hover:text-zinc-100">
+                  Zero Trust
+                </.link>
+              </li>
               <li><.link href={~p"/docs"} class="text-zinc-400 hover:text-zinc-100">Docs</.link></li>
               <li>
                 <.link href={~p"/changelog"} class="text-zinc-400 hover:text-zinc-100">
@@ -2284,6 +2289,14 @@ defmodule EmisarWeb.CoreComponents do
               <li>
                 <.link href={~p"/use-cases/postgres-ops"} class="text-zinc-400 hover:text-zinc-100">
                   Postgres ops
+                </.link>
+              </li>
+              <li>
+                <.link
+                  href={~p"/use-cases/csi-data-loss"}
+                  class="text-zinc-400 hover:text-zinc-100"
+                >
+                  Case study: the 33-hour wipe
                 </.link>
               </li>
               <li>

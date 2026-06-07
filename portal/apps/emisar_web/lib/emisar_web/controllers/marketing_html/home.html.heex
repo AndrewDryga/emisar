@@ -58,58 +58,6 @@
     </div>
   </section>
 
-  <%!-- Watch it work — the live demo, lifted right under the hero so it's
-       the second thing you see. --%>
-  <section class="pt-16 pb-24 sm:pt-20 sm:pb-28">
-    <div class="mx-auto max-w-7xl px-6 lg:px-8">
-      <div class="mx-auto max-w-3xl text-center">
-        <h2 class="text-base font-semibold text-indigo-400">Watch it work</h2>
-        <p class="mt-2 text-4xl font-bold tracking-tight text-white sm:text-5xl">
-          A real incident, start to finish.
-        </p>
-        <p class="mt-6 text-lg leading-relaxed text-zinc-400">
-          Install the runner on the host, connect your LLM over MCP, and let it work the
-          problem. Reads run on policy; the one destructive step stops for your approval —
-          and every action lands in the audit trail.
-        </p>
-      </div>
-
-      <.emisar_demo />
-
-      <%!-- The four guarantees the demo just exercised, kept as scannable
-           value props (and crawlable copy). --%>
-      <dl class="mx-auto mt-10 grid max-w-4xl grid-cols-1 gap-x-8 gap-y-6 sm:grid-cols-2 lg:grid-cols-4">
-        <%= for {icon, term, desc} <- [
-          {"hero-cpu-chip", "Any MCP client",
-           "OAuth for cloud clients, stdio bridge for local tools — access scoped to selected runners or groups."},
-          {"hero-shield-exclamation", "Pack trust",
-           "New, custom, or changed hashes stop dispatch until an admin trusts the contents."},
-          {"hero-hand-raised", "Approvals & grants",
-           "Allow a single call, or mint a revocable grant bounded by duration, arguments, runner, and use count."},
-          {"hero-document-check", "Searchable audit",
-           "Inspect actor and subject context in the portal, or stream NDJSON to your SIEM."}
-        ] do %>
-          <div>
-            <dt class="flex items-center gap-2 text-sm font-semibold text-zinc-100">
-              <.icon name={icon} class="h-4 w-4 flex-none text-indigo-400" />{term}
-            </dt>
-            <dd class="mt-1.5 text-sm leading-relaxed text-zinc-400">{desc}</dd>
-          </div>
-        <% end %>
-      </dl>
-
-      <p class="mt-10 text-center text-sm">
-        <.link
-          navigate={~p"/use-cases/csi-data-loss"}
-          class="inline-flex items-center gap-1 font-medium text-indigo-400 hover:text-indigo-300"
-        >
-          See the same loop on a real incident — the 33-hour wipe
-          <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
-        </.link>
-      </p>
-    </div>
-  </section>
-
   <%!-- Pain section --%>
   <section class="py-24 sm:py-32">
     <div class="mx-auto max-w-7xl px-6 lg:px-8">
@@ -162,6 +110,58 @@
     </div>
   </section>
 
+  <%!-- Watch it work — the live demo, placed right after the pain so it
+       reads as the payoff: here's the problem, now watch emisar handle it. --%>
+  <section class="py-24 sm:py-32">
+    <div class="mx-auto max-w-7xl px-6 lg:px-8">
+      <div class="mx-auto max-w-3xl text-center">
+        <h2 class="text-base font-semibold text-indigo-400">Watch it work</h2>
+        <p class="mt-2 text-4xl font-bold tracking-tight text-white sm:text-5xl">
+          A real incident, start to finish.
+        </p>
+        <p class="mt-6 text-lg leading-relaxed text-zinc-400">
+          Install the runner on the host, connect your LLM over MCP, and let it work the
+          problem. Reads run on policy; the one destructive step stops for your approval —
+          and every action lands in the audit trail.
+        </p>
+      </div>
+
+      <.emisar_demo />
+
+      <%!-- The four guarantees the demo just exercised, kept as scannable
+           value props (and crawlable copy). --%>
+      <dl class="mx-auto mt-10 grid max-w-4xl grid-cols-1 gap-x-8 gap-y-6 sm:grid-cols-2 lg:grid-cols-4">
+        <%= for {icon, term, desc} <- [
+          {"hero-cpu-chip", "Any MCP client",
+           "OAuth for cloud clients, stdio bridge for local tools — access scoped to selected runners or groups."},
+          {"hero-shield-exclamation", "Pack trust",
+           "New, custom, or changed hashes stop dispatch until an admin trusts the contents."},
+          {"hero-hand-raised", "Approvals & grants",
+           "Allow a single call, or mint a revocable grant bounded by duration, arguments, runner, and use count."},
+          {"hero-document-check", "Searchable audit",
+           "Inspect actor and subject context in the portal, or stream NDJSON to your SIEM."}
+        ] do %>
+          <div>
+            <dt class="flex items-center gap-2 text-sm font-semibold text-zinc-100">
+              <.icon name={icon} class="h-4 w-4 flex-none text-indigo-400" />{term}
+            </dt>
+            <dd class="mt-1.5 text-sm leading-relaxed text-zinc-400">{desc}</dd>
+          </div>
+        <% end %>
+      </dl>
+
+      <p class="mt-10 text-center text-sm">
+        <.link
+          navigate={~p"/use-cases/csi-data-loss"}
+          class="inline-flex items-center gap-1 font-medium text-indigo-400 hover:text-indigo-300"
+        >
+          See the same loop on a real incident — the 33-hour wipe
+          <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
+        </.link>
+      </p>
+    </div>
+  </section>
+
   <%!-- How it works --%>
   <section class="border-y border-zinc-900 bg-zinc-950/40 py-24 sm:py-32">
     <div class="mx-auto max-w-7xl px-6 lg:px-8">
@@ -179,11 +179,11 @@
       <div class="mx-auto mt-16 max-w-6xl">
         <div class="grid grid-cols-1 gap-4 md:grid-cols-5">
           <%= for {step, title, desc, icon} <- [
-            {"01", "DevOps publishes pack", "Actions are declared as YAML, versioned in git, content-addressed, and installed with the runner.", "hero-document-text"},
+            {"01", "DevOps installs or builds a pack", "Actions are declared as YAML, validated, content-addressed, and versioned.", "hero-document-text"},
             {"02", "Runner advertises + verifies", "The outbound-only runner reports its catalog and pack hashes. Changed or custom contents block dispatch until trusted.", "hero-signal"},
             {"03", "LLM calls MCP tool", "Remote clients connect with OAuth; local clients use the stdio bridge. Every call carries a user and runner scope.", "hero-cpu-chip"},
             {"04", "Policy evaluates", "Allow, deny, or page an approver. Decision is recorded before any side effect.", "hero-shield-check"},
-            {"05", "Audit + stream", "Redacted output, exit state, policy, and approval context stream to the portal and can be exported to a SIEM.", "hero-document-check"}
+            {"05", "Audit + stream", "Redacted output, exit state, policy, and approval context stream to the journal and the portal, can be exported to a SIEM.", "hero-document-check"}
           ] do %>
             <div class="group relative rounded-2xl border border-zinc-900 bg-zinc-950/60 p-6 transition hover:-translate-y-0.5 hover:border-indigo-500/40">
               <div class="flex items-center justify-between">
@@ -213,80 +213,8 @@
     </div>
   </section>
 
-  <%!-- Action catalog example --%>
-  <section class="py-24 sm:py-32">
-    <div class="mx-auto max-w-7xl px-6 lg:px-8">
-      <div class="mx-auto max-w-3xl text-center">
-        <h2 class="text-base font-semibold text-indigo-400">The action contract</h2>
-        <p class="mt-2 text-4xl font-bold tracking-tight text-white sm:text-5xl">
-          One YAML file. One source of truth.
-        </p>
-        <p class="mt-6 text-lg text-zinc-400 leading-relaxed">
-          This abbreviated action YAML is the operator-authored contract behind <code class="font-mono text-indigo-300">cassandra.nodetool_repair</code>.
-          The LLM receives a tool schema derived from it; the runner refuses anything
-          outside it.
-        </p>
-      </div>
-
-      <div class="mx-auto mt-12 max-w-4xl rounded-xl border border-zinc-900 bg-black/60 shadow-2xl shadow-indigo-950/20">
-        <div class="flex min-w-0 items-center gap-2 border-b border-zinc-900 px-4 py-3">
-          <span class="h-3 w-3 rounded-full bg-red-500/70"></span>
-          <span class="h-3 w-3 rounded-full bg-yellow-500/70"></span>
-          <span class="h-3 w-3 rounded-full bg-green-500/70"></span>
-          <span class="ml-3 min-w-0 truncate font-mono text-xs text-zinc-500">
-            packs/cassandra/actions/nodetool_repair.yaml
-          </span>
-        </div>
-        <pre class="overflow-x-auto p-6 font-mono text-xs leading-6 text-zinc-300"><span class="text-zinc-500">## Abbreviated: repair a Cassandra keyspace.</span>
-<span class="text-indigo-300">schema_version</span>: <span class="text-amber-300">1</span>
-<span class="text-indigo-300">id</span>: cassandra.nodetool_repair
-<span class="text-indigo-300">title</span>: <span class="text-emerald-300">"Cassandra repair"</span>
-<span class="text-indigo-300">kind</span>: exec
-<span class="text-indigo-300">risk</span>: <span class="text-amber-300">high</span>            <span class="text-zinc-500"># forces policy to require_approval by default</span>
-
-<span class="text-indigo-300">args</span>:
-  - <span class="text-indigo-300">name</span>: keyspace
-    <span class="text-indigo-300">type</span>: string
-    <span class="text-indigo-300">required</span>: <span class="text-amber-300">true</span>
-    <span class="text-indigo-300">validation</span>:
-      <span class="text-indigo-300">pattern</span>: <span class="text-emerald-300">"^[a-zA-Z][a-zA-Z0-9_]&#123;0,47&#125;$"</span>
-  - <span class="text-indigo-300">name</span>: parallelism
-    <span class="text-indigo-300">type</span>: string
-    <span class="text-indigo-300">default</span>: <span class="text-emerald-300">sequential</span>
-    <span class="text-indigo-300">validation</span>:
-      <span class="text-indigo-300">enum</span>: [<span class="text-emerald-300">sequential</span>, <span class="text-emerald-300">parallel</span>, <span class="text-emerald-300">dc_parallel</span>]
-
-<span class="text-indigo-300">execution</span>:
-  <span class="text-indigo-300">command</span>:
-    <span class="text-indigo-300">binary</span>: /usr/bin/nodetool
-    <span class="text-indigo-300">argv</span>:
-      - <span class="text-emerald-300">"repair"</span>
-      - <span class="text-emerald-300">"&#123;&#123; args.keyspace &#125;&#125;"</span>
-  <span class="text-indigo-300">timeout</span>: 6h
-  <span class="text-indigo-300">cancel_grace</span>: 5m
-
-<span class="text-indigo-300">output</span>:
-  <span class="text-indigo-300">parser</span>: text
-  <span class="text-indigo-300">max_stdout_bytes</span>: <span class="text-amber-300">4194304</span>
-  <span class="text-indigo-300">max_stderr_bytes</span>: <span class="text-amber-300">262144</span></pre>
-      </div>
-      <p class="mx-auto mt-6 max-w-2xl text-center text-sm text-zinc-400">
-        This is the contract. The LLM sees only what you declare; your SRE sees every invocation.
-      </p>
-      <div class="mt-8 flex justify-center">
-        <.link
-          navigate={~p"/packs"}
-          class="inline-flex items-center gap-1.5 text-sm font-medium text-indigo-400 hover:text-indigo-300"
-        >
-          Browse the pack registry — Postgres, Cassandra, Docker, Kubernetes, the AWS suite, and 50+ more
-          <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
-        </.link>
-      </div>
-    </div>
-  </section>
-
   <%!-- Three-pillar deep-dive --%>
-  <section class="border-y border-zinc-900 bg-zinc-950/40 py-24 sm:py-32">
+  <section class="py-24 sm:py-32">
     <div class="mx-auto max-w-7xl px-6 lg:px-8">
       <div class="mx-auto max-w-3xl text-center">
         <h2 class="text-base font-semibold text-indigo-400">Three pillars</h2>
@@ -373,9 +301,7 @@
           <p class="mt-3 text-sm text-zinc-400 leading-relaxed">
             Every input, output, exit code, redaction. SHA-256-chained JSONL on the
             host — any tampered or removed line is detected by <code class="text-zinc-300">emisar audit verify</code>. Mirrored to the
-            cloud dashboard for review and available as NDJSON through a separate
-            <code class="text-zinc-300">audit:read</code>
-            SIEM token.
+            cloud dashboard for review and available as NDJSON for straming to your SIEM.
           </p>
           <div class="mt-6 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
             <div class="border-b border-zinc-900 px-3 py-2 font-mono text-[11px] text-zinc-500">
@@ -437,49 +363,80 @@
     </div>
   </section>
 
-  <%!-- Use cases --%>
-  <section class="py-24 sm:py-32">
+  <%!-- Action catalog example --%>
+  <section class="border-y border-zinc-900 bg-zinc-950/40 py-24 sm:py-32">
     <div class="mx-auto max-w-7xl px-6 lg:px-8">
       <div class="mx-auto max-w-3xl text-center">
-        <h2 class="text-base font-semibold text-indigo-400">Example workflows</h2>
+        <h2 class="text-base font-semibold text-indigo-400">The action contract</h2>
         <p class="mt-2 text-4xl font-bold tracking-tight text-white sm:text-5xl">
-          Operational actions teams can expose without exposing a shell.
+          One YAML file. One source of truth.
+        </p>
+        <p class="mt-6 text-lg text-zinc-400 leading-relaxed">
+          This abbreviated action YAML is the operator-authored contract behind <code class="font-mono text-indigo-300">cassandra.nodetool_repair</code>.
+          The LLM receives a tool schema derived from it; the runner refuses anything
+          outside it.
         </p>
       </div>
 
-      <div class="mx-auto mt-16 grid max-w-5xl grid-cols-1 gap-6 sm:grid-cols-2 lg:max-w-none lg:grid-cols-4">
-        <%= for {tag, title, scenario, icon, href} <- [
-          {"cassandra", "Cassandra ops", "Agent triages a slow read latency alert by running nodetool.status, then proposes nodetool.repair on the lagging keyspace — pending one approver click.", "hero-circle-stack", ~p"/use-cases/cassandra-ops"},
-          {"postgres", "Postgres ops", "Replication lag spikes overnight. The model checks lag and slow queries, then requests approval before terminating the blocking backend.", "hero-server-stack", ~p"/use-cases/postgres-ops"},
-          {"k8s", "K8s troubleshoot", "Pod is CrashLoopBackOff. Agent fetches logs and a describe via the kubectl pack. Restarting the deployment requires an approver — and a one-line justification.", "hero-cube", nil},
-          {"incident", "Incident response", "Pager fires at 02:14. A published runbook executes sequentially, stopping on failure and waiting whenever a step's policy requires approval.", "hero-bell-alert", nil}
-        ] do %>
-          <div class="group flex flex-col rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8 transition hover:-translate-y-0.5 hover:border-indigo-500/40">
-            <div class="flex items-center justify-between">
-              <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-indigo-500/10 text-indigo-400">
-                <.icon name={icon} class="h-5 w-5" />
-              </div>
-              <span class="font-mono text-[10px] uppercase tracking-widest text-zinc-600">
-                {tag}
-              </span>
-            </div>
-            <h3 class="mt-6 text-lg font-semibold text-white">{title}</h3>
-            <p class="mt-3 text-sm text-zinc-400 leading-relaxed">{scenario}</p>
-            <.link
-              :if={href}
-              navigate={href}
-              class="mt-4 inline-flex items-center gap-1 text-sm font-medium text-indigo-400 hover:text-indigo-300"
-            >
-              Read the playbook <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
-            </.link>
-          </div>
-        <% end %>
+      <div class="mx-auto mt-12 max-w-4xl rounded-xl border border-zinc-900 bg-black/60 shadow-2xl shadow-indigo-950/20">
+        <div class="flex min-w-0 items-center gap-2 border-b border-zinc-900 px-4 py-3">
+          <span class="h-3 w-3 rounded-full bg-red-500/70"></span>
+          <span class="h-3 w-3 rounded-full bg-yellow-500/70"></span>
+          <span class="h-3 w-3 rounded-full bg-green-500/70"></span>
+          <span class="ml-3 min-w-0 truncate font-mono text-xs text-zinc-500">
+            packs/cassandra/actions/nodetool_repair.yaml
+          </span>
+        </div>
+        <pre class="overflow-x-auto p-6 font-mono text-xs leading-6 text-zinc-300"><span class="text-zinc-500">## Abbreviated: repair a Cassandra keyspace.</span>
+<span class="text-indigo-300">schema_version</span>: <span class="text-amber-300">1</span>
+<span class="text-indigo-300">id</span>: cassandra.nodetool_repair
+<span class="text-indigo-300">title</span>: <span class="text-emerald-300">"Cassandra repair"</span>
+<span class="text-indigo-300">kind</span>: exec
+<span class="text-indigo-300">risk</span>: <span class="text-amber-300">high</span>            <span class="text-zinc-500"># forces policy to require_approval by default</span>
+
+<span class="text-indigo-300">args</span>:
+  - <span class="text-indigo-300">name</span>: keyspace
+    <span class="text-indigo-300">type</span>: string
+    <span class="text-indigo-300">required</span>: <span class="text-amber-300">true</span>
+    <span class="text-indigo-300">validation</span>:
+      <span class="text-indigo-300">pattern</span>: <span class="text-emerald-300">"^[a-zA-Z][a-zA-Z0-9_]&#123;0,47&#125;$"</span>
+  - <span class="text-indigo-300">name</span>: parallelism
+    <span class="text-indigo-300">type</span>: string
+    <span class="text-indigo-300">default</span>: <span class="text-emerald-300">sequential</span>
+    <span class="text-indigo-300">validation</span>:
+      <span class="text-indigo-300">enum</span>: [<span class="text-emerald-300">sequential</span>, <span class="text-emerald-300">parallel</span>, <span class="text-emerald-300">dc_parallel</span>]
+
+<span class="text-indigo-300">execution</span>:
+  <span class="text-indigo-300">command</span>:
+    <span class="text-indigo-300">binary</span>: /usr/bin/nodetool
+    <span class="text-indigo-300">argv</span>:
+      - <span class="text-emerald-300">"repair"</span>
+      - <span class="text-emerald-300">"&#123;&#123; args.keyspace &#125;&#125;"</span>
+  <span class="text-indigo-300">timeout</span>: 6h
+  <span class="text-indigo-300">cancel_grace</span>: 5m
+
+<span class="text-indigo-300">output</span>:
+  <span class="text-indigo-300">parser</span>: text
+  <span class="text-indigo-300">max_stdout_bytes</span>: <span class="text-amber-300">4194304</span>
+  <span class="text-indigo-300">max_stderr_bytes</span>: <span class="text-amber-300">262144</span></pre>
+      </div>
+      <p class="mx-auto mt-6 max-w-2xl text-center text-sm text-zinc-400">
+        This is the contract. The LLM sees only what you declare; your SRE sees every invocation.
+      </p>
+      <div class="mt-8 flex justify-center">
+        <.link
+          navigate={~p"/packs"}
+          class="inline-flex items-center gap-1.5 text-sm font-medium text-indigo-400 hover:text-indigo-300"
+        >
+          Browse the pack registry — Postgres, Cassandra, Docker, Kubernetes, the AWS suite, and 50+ more
+          <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
+        </.link>
       </div>
     </div>
   </section>
 
   <%!-- Comparison table --%>
-  <section class="border-y border-zinc-900 bg-zinc-950/40 py-24 sm:py-32">
+  <section class="py-24 sm:py-32">
     <div class="mx-auto max-w-7xl px-6 lg:px-8">
       <div class="mx-auto max-w-3xl text-center">
         <h2 class="text-base font-semibold text-indigo-400">Why not just&hellip;</h2>
@@ -496,20 +453,19 @@
                 <th class="px-6 py-4 font-medium"></th>
                 <th class="px-6 py-4 font-semibold text-indigo-300">emisar</th>
                 <th class="px-6 py-4 font-medium">Raw SSH key</th>
-                <th class="px-6 py-4 font-medium">Slack ops bot</th>
                 <th class="px-6 py-4 font-medium">Custom MCP server</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-zinc-900 text-zinc-300">
-              <%= for {row, em, ssh, slack, mcp} <- [
-                {"Typed action contract", "yes", "no", "no", "maybe"},
-                {"Pack drift blocks dispatch", "yes", "no", "no", "no"},
-                {"Risk-tier policy + overrides", "yes", "no", "no", "maybe"},
-                {"Approvals + standing grants", "yes", "no", "maybe", "no"},
-                {"Per-user runner scopes", "yes", "no", "maybe", "maybe"},
-                {"Streaming stdout/stderr", "yes", "yes", "maybe", "maybe"},
-                {"Audit + SIEM export", "yes", "no", "maybe", "maybe"},
-                {"Setup time", "5 min", "instant + nightmares", "weeks, then drift", "1-2 weeks"}
+              <%= for {row, em, ssh, mcp} <- [
+                {"Typed action contract", "yes", "no", "maybe"},
+                {"Pack drift blocks dispatch", "yes", "no", "no"},
+                {"Risk-tier policy + overrides", "yes", "no", "maybe"},
+                {"Approvals + standing grants", "yes", "no", "no"},
+                {"Per-user runner scopes", "yes", "no", "maybe"},
+                {"Streaming stdout/stderr", "yes", "yes", "maybe"},
+                {"Audit + SIEM export", "yes", "no", "maybe"},
+                {"Setup time", "5 min", "instant + nightmares", "1-2 weeks"}
               ] do %>
                 <tr class="hover:bg-zinc-900/30">
                   <td class="px-6 py-4 font-medium text-zinc-100">{row}</td>
@@ -526,7 +482,7 @@
                         {em}
                     <% end %>
                   </td>
-                  <%= for v <- [ssh, slack, mcp] do %>
+                  <%= for v <- [ssh, mcp] do %>
                     <td class="px-6 py-4">
                       <%= cond do %>
                         <% v == "yes" -> %>
@@ -573,6 +529,103 @@
         >
           Compare with Slack ops bots <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
         </.link>
+      </div>
+    </div>
+  </section>
+
+  <%!-- Zero Trust validation — third-party framework. Shaded so it pops
+    between the comparison table above and the example workflows below. --%>
+  <section class="border-y border-zinc-900 bg-zinc-950/40 py-24 sm:py-32">
+    <div class="mx-auto max-w-5xl px-6 lg:px-8">
+      <div class="mx-auto max-w-3xl text-center">
+        <h2 class="text-base font-semibold text-indigo-400">Zero Trust for AI Agents</h2>
+        <p class="mt-2 text-4xl font-bold tracking-tight text-white sm:text-5xl">
+          The framework a frontier lab published — enforced by emisar.
+        </p>
+        <p class="mt-6 text-lg leading-8 text-zinc-400">
+          Anthropic's
+          <a
+            href="https://cdn.prod.website-files.com/6889473510b50328dbb70ae6/6a1611a04085d7cd3dadc924_Claude-eBook-Zero-Trust-for-AI-Agents-05182026.pdf"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="text-indigo-300 underline decoration-zinc-700 underline-offset-4 hover:text-indigo-200"
+          >
+            Zero Trust for AI Agents
+          </a>
+          guide says an agent with access to real systems needs least agency, deny-by-default
+          tools, human approval for high-risk actions, and an immutable audit trail. That's the
+          exact boundary emisar enforces — several of them at the Enterprise and Advanced tier the
+          framework names, on the Free plan.
+        </p>
+      </div>
+
+      <div class="mx-auto mt-14 grid max-w-5xl grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <%= for {principle, detail} <- [
+          {"Least agency", "Typed action contract — the agent only sees declared tools"},
+          {"Human in the loop", "High-risk actions stop for a one-click approval"},
+          {"Immutable audit", "Searchable portal audit, a hash-chained host journal, and SIEM export"},
+          {"Assume breach", "A jailbroken agent still can't exceed the catalog"}
+        ] do %>
+          <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-6 text-left">
+            <h3 class="text-sm font-semibold text-indigo-300">{principle}</h3>
+            <p class="mt-2 text-sm leading-6 text-zinc-400">{detail}</p>
+          </div>
+        <% end %>
+      </div>
+
+      <div class="mt-10 text-center">
+        <.link
+          navigate={~p"/zero-trust"}
+          class="inline-flex items-center gap-1.5 text-sm font-semibold text-indigo-400 hover:text-indigo-300"
+        >
+          See emisar mapped to the framework, control by control
+          <.icon name="hero-arrow-right" class="h-4 w-4" />
+        </.link>
+        <p class="mx-auto mt-4 max-w-xl text-xs leading-relaxed text-zinc-600">
+          Not affiliated with or endorsed by Anthropic. We cite the framework because emisar is
+          built to the control set it describes.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <%!-- Use cases --%>
+  <section class="py-24 sm:py-32">
+    <div class="mx-auto max-w-7xl px-6 lg:px-8">
+      <div class="mx-auto max-w-3xl text-center">
+        <h2 class="text-base font-semibold text-indigo-400">Example workflows</h2>
+        <p class="mt-2 text-4xl font-bold tracking-tight text-white sm:text-5xl">
+          Operational actions teams can expose without exposing a shell.
+        </p>
+      </div>
+
+      <div class="mx-auto mt-16 grid max-w-5xl grid-cols-1 gap-6 sm:grid-cols-2 lg:max-w-none lg:grid-cols-4">
+        <%= for {tag, title, scenario, icon, href} <- [
+          {"cassandra", "Cassandra ops", "Agent triages a slow read latency alert by running nodetool.status, then proposes nodetool.repair on the lagging keyspace — pending one approver click.", "hero-circle-stack", ~p"/use-cases/cassandra-ops"},
+          {"postgres", "Postgres ops", "Replication lag spikes overnight. The model checks lag and slow queries, then requests approval before terminating the blocking backend.", "hero-server-stack", ~p"/use-cases/postgres-ops"},
+          {"k8s", "K8s troubleshoot", "Pod is CrashLoopBackOff. Agent fetches logs and a describe via the kubectl pack. Restarting the deployment requires an approver — and a one-line justification.", "hero-cube", nil},
+          {"incident", "Incident response", "Pager fires at 02:14. A published runbook executes sequentially, stopping on failure and waiting whenever a step's policy requires approval.", "hero-bell-alert", nil}
+        ] do %>
+          <div class="group flex flex-col rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8 transition hover:-translate-y-0.5 hover:border-indigo-500/40">
+            <div class="flex items-center justify-between">
+              <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-indigo-500/10 text-indigo-400">
+                <.icon name={icon} class="h-5 w-5" />
+              </div>
+              <span class="font-mono text-[10px] uppercase tracking-widest text-zinc-600">
+                {tag}
+              </span>
+            </div>
+            <h3 class="mt-6 text-lg font-semibold text-white">{title}</h3>
+            <p class="mt-3 text-sm text-zinc-400 leading-relaxed">{scenario}</p>
+            <.link
+              :if={href}
+              navigate={href}
+              class="mt-4 inline-flex items-center gap-1 text-sm font-medium text-indigo-400 hover:text-indigo-300"
+            >
+              Read the playbook <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
+            </.link>
+          </div>
+        <% end %>
       </div>
     </div>
   </section>

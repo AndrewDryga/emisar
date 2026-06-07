@@ -25,6 +25,7 @@ defmodule EmisarWeb.MarketingTest do
     /compare/raw-ssh-for-ai
     /compare/custom-mcp-server
     /compare/slack-bots-for-ops
+    /zero-trust
   )
 
   for route <- @routes do
@@ -105,6 +106,34 @@ defmodule EmisarWeb.MarketingTest do
     # phx-no-format is a mix-format directive only — it must not survive into
     # the served markup.
     refute html =~ "phx-no-format"
+  end
+
+  test "zero-trust page cites the framework honestly without claiming endorsement", %{conn: conn} do
+    html = conn |> get(~p"/zero-trust") |> html_response(200)
+
+    # Cites the source framework and links it.
+    assert html =~ "Zero Trust for AI Agents"
+    assert html =~ "Claude-eBook-Zero-Trust-for-AI-Agents"
+
+    # Maps a concrete control to an emisar feature.
+    assert html =~ "Least agency"
+    assert html =~ "Human-in-the-loop approval"
+
+    # Stays honest: the not-affiliated disclaimer and the explicit scope
+    # boundary must both be present — this is a security product, so the
+    # framing is "we implement it", never "they endorse us".
+    assert html =~ "not affiliated with, endorsed by, or sponsored by Anthropic"
+    assert html =~ "One pillar, not the whole framework"
+  end
+
+  test "landing page surfaces the Zero Trust framework with the not-affiliated note", %{
+    conn: conn
+  } do
+    html = conn |> get(~p"/") |> html_response(200)
+
+    assert html =~ "Zero Trust for AI Agents"
+    assert html =~ "Not affiliated with or endorsed by Anthropic"
+    assert html =~ ~p"/zero-trust"
   end
 
   test "healthz returns 200 when the DB is reachable", %{conn: conn} do
