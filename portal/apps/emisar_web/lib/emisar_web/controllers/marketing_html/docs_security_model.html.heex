@@ -8,9 +8,16 @@
         Security model
       </h1>
       <p class="mt-6 text-lg leading-8 text-zinc-400">
-        emisar is a curated allowlist with an audit envelope. It is not a sandbox.
-        Restarting Cassandra still restarts Cassandra. The value is in the
-        narrow attack surface and the audit trail — not in process isolation.
+        The precise mechanics behind every control — exactly what each layer checks, and what it
+        deliberately doesn't. For the pitch and the trust-boundary picture, start with the <.link
+          navigate={~p"/security"}
+          class="text-indigo-300 hover:text-indigo-200"
+        >security overview</.link>; this page is the reference your security team reads next.
+      </p>
+      <p class="mt-4 text-sm leading-6 text-zinc-500">
+        The short version: emisar is a curated allowlist with an audit envelope, not a sandbox.
+        Restarting Cassandra still restarts Cassandra — the value is the narrow attack surface and
+        the audit trail, not process isolation.
       </p>
 
       <h2 class="mt-12 text-2xl font-semibold text-zinc-50">The trust boundary</h2>
@@ -135,23 +142,6 @@
           drop only works because the OS already permits it.
         </li>
       </ul>
-
-      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">Reporting</h2>
-      <p class="mt-3 text-sm leading-relaxed text-zinc-400">
-        Security issues: <a
-          href="mailto:security@emisar.dev"
-          class="text-indigo-400 hover:text-indigo-300"
-        >security@emisar.dev</a>.
-        We commit to acknowledgement within one business day and will credit reporters
-        unless they request otherwise. See
-        <.external_link
-          href="https://github.com/andrewdryga/emisar/blob/main/.github/SECURITY.md"
-          class="text-indigo-400 hover:text-indigo-300"
-        >
-          SECURITY.md
-        </.external_link>
-        for the full policy.
-      </p>
 
       <div class="mt-12 flex flex-wrap gap-x-6 gap-y-3 border-t border-zinc-900 pt-8 text-sm">
         <.link

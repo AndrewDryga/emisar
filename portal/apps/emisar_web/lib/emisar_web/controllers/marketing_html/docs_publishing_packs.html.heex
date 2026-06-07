@@ -1,5 +1,6 @@
 <%!-- ============================================================
-  Docs / Publishing an action pack — author + PR workflow
+  Docs / Author your own action pack — self-maintained packs first;
+  the public registry is curated.
 ============================================================ --%>
 
 <div class="bg-zinc-950 text-zinc-100">
@@ -7,14 +8,22 @@
 
   <section class="py-16 sm:py-24">
     <div class="mx-auto max-w-3xl px-6 lg:px-8">
-      <p class="text-sm font-semibold text-indigo-400">Docs / Publishing</p>
+      <p class="text-sm font-semibold text-indigo-400">Docs / Authoring packs</p>
       <h1 class="mt-2 text-4xl font-bold tracking-tight text-zinc-50 md:text-5xl">
-        Publishing an action pack
+        Author your own pack
       </h1>
       <p class="mt-6 text-lg leading-8 text-zinc-400">
-        A pack is a directory of YAML. No SDK, no compiler, no signing keys. Author it
-        locally, test against a runner you control, then open a PR to land it in the
-        public <.link navigate={~p"/packs"} class="text-indigo-300 hover:text-indigo-200">registry</.link>.
+        A pack is a directory of YAML you write and maintain yourself — no SDK, no compiler, no
+        signing keys, nothing uploaded to anyone. Drop it on the runners you control, trust it
+        once, and your model can call it. Most packs stay private to your fleet, and that's by
+        design: the public
+        <.link navigate={~p"/packs"} class="text-indigo-300 hover:text-indigo-200">
+          registry
+        </.link>
+        is curated, not a free-for-all (more on that <a
+          href="#registry"
+          class="text-indigo-300 hover:text-indigo-200"
+        >below</a>).
       </p>
 
       <%!-- Steps --%>
@@ -27,15 +36,11 @@
             <h2 class="text-xl font-semibold text-zinc-50">Lay out the pack directory</h2>
           </header>
           <p class="mt-4 text-sm leading-relaxed text-zinc-400">
-            Every pack lives under
-            <code class="rounded bg-zinc-900 px-1 py-0.5">
-              runner/examples/packs/&lt;pack-id&gt;/
-            </code>
-            with a top-level <code>pack.yaml</code>
-            manifest and a per-action YAML in <code>actions/</code>. Optional
+            A pack is just a folder: a top-level <code>pack.yaml</code>
+            manifest and one YAML per action in <code>actions/</code>. Optional
             <code>scripts/</code>
             holds packaged shell scripts for <code>kind: script</code>
-            actions.
+            actions. Keep the whole thing in your own git repo.
           </p>
           <pre class="mt-4 overflow-x-auto rounded-lg border border-zinc-800 bg-black/60 p-4 font-mono text-xs leading-6 text-zinc-300">my-pack/
   pack.yaml                    # pack manifest (see step 2)
@@ -54,17 +59,18 @@
             <h2 class="text-xl font-semibold text-zinc-50">Write pack.yaml</h2>
           </header>
           <p class="mt-4 text-sm leading-relaxed text-zinc-400">
-            The manifest declares pack-level metadata + which action YAMLs to load.
+            The manifest declares pack-level metadata and which action YAMLs to load.
             <code>id</code>
-            is the pack slug (used in the registry URL and install path).
+            is the pack slug (used in the install path and, for self-maintained packs, however you
+            reference it internally).
           </p>
           <pre class="mt-4 overflow-x-auto rounded-lg border border-zinc-800 bg-black/60 p-4 font-mono text-xs leading-6 text-zinc-300">schema_version: 1
 id: my-pack
 name: My ops pack
 version: 0.1.0
-description: Short one-line summary shown in the registry.
+description: Short one-line summary shown on the runner + dashboard.
 vendor: acme
-homepage: https://github.com/acme/my-pack
+homepage: https://github.acme.internal/sre/my-pack   # your repo; optional
 
 requires:
   os: [linux]
@@ -83,8 +89,11 @@ actions:
             <h2 class="text-xl font-semibold text-zinc-50">Declare each action</h2>
           </header>
           <p class="mt-4 text-sm leading-relaxed text-zinc-400">
-            One YAML per action — the runner refuses anything not in the catalog, so this
-            file is the contract between your ops team and the LLM. See the full
+            One YAML per action — the runner refuses anything not in the catalog, so this file is
+            the contract between your ops team and the LLM. This is where the safety lives: tight
+            argument validation, an honest <code>side_effects</code>
+            list, and the right <code>risk</code>
+            tier. See the full
             <.link navigate={~p"/docs/action-packs"} class="text-indigo-300 hover:text-indigo-200">
               YAML schema reference
             </.link>
@@ -134,27 +143,30 @@ examples:
             <span class="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-indigo-500/20 font-mono text-sm font-bold text-indigo-300 ring-1 ring-indigo-500/30">
               4
             </span>
-            <h2 class="text-xl font-semibold text-zinc-50">Test against your runner</h2>
+            <h2 class="text-xl font-semibold text-zinc-50">Validate, install, and trust it</h2>
           </header>
           <p class="mt-4 text-sm leading-relaxed text-zinc-400">
-            <code>emisar pack install</code> validates the pack (same checks the runner runs
-            at load) and copies it into <code>/etc/emisar/packs</code>. It prints the pack's
-            content hash — note it down to pin future installs with <code>--hash</code>. Then
-            reload and confirm the runner picked up your version.
+            Validate locally first — the same checks the runner runs at load — then install the
+            directory into the runner's packs dir and reload:
           </p>
           <pre class="mt-4 overflow-x-auto rounded-lg border border-zinc-800 bg-black/60 p-4 font-mono text-xs leading-6 text-zinc-300"># on the runner host
+emisar pack validate ./my-pack
 sudo emisar pack install ./my-pack --dest /etc/emisar/packs
-sudo systemctl reload emisar
-sudo journalctl -u emisar -n 50 --no-pager | grep my-pack
-
-# Re-install pinned to the hash it printed — what registry consumers run:
-sudo emisar pack install my-pack --hash sha256:&lt;printed&gt; --dest /etc/emisar/packs</pre>
+sudo systemctl reload emisar</pre>
+          <p class="mt-4 text-sm leading-relaxed text-zinc-400">
+            Because your pack isn't one emisar publishes, it has no baseline hash — so it lands in
+            the dashboard's <strong class="text-zinc-200">Packs</strong>
+            page as <strong class="text-zinc-200">pending</strong>, with dispatch held until you
+            approve it. Open <strong class="text-zinc-200">Packs</strong>, review the content hash,
+            and click <strong class="text-zinc-200">Trust</strong>. From then on, that exact
+            byte-for-byte version is the only one authorized: edit the pack and its hash changes,
+            which re-marks it pending until you re-trust. That's your drift guard — trust in bytes
+            you reviewed, not a publisher you hope is honest.
+          </p>
           <p class="mt-4 text-sm text-zinc-400">
-            In the cloud dashboard, open
-            <span class="font-mono text-zinc-300">/app/runners/&lt;runner&gt;</span>
-            and verify your actions appear under <strong class="text-zinc-200">Advertised actions</strong>.
-            Click <strong class="text-zinc-200">Run</strong>
-            on one to confirm dispatch end-to-end.
+            Confirm it end-to-end: open the runner in the dashboard, check your actions under <strong class="text-zinc-200">Advertised actions</strong>, and
+            <strong class="text-zinc-200">Run</strong>
+            one.
           </p>
         </li>
 
@@ -163,56 +175,102 @@ sudo emisar pack install my-pack --hash sha256:&lt;printed&gt; --dest /etc/emisa
             <span class="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-indigo-500/20 font-mono text-sm font-bold text-indigo-300 ring-1 ring-indigo-500/30">
               5
             </span>
-            <h2 class="text-xl font-semibold text-zinc-50">Submit to the registry</h2>
+            <h2 class="text-xl font-semibold text-zinc-50">Roll it out and maintain it</h2>
           </header>
           <p class="mt-4 text-sm leading-relaxed text-zinc-400">
-            Open a PR against the
-            <.external_link
-              href="https://github.com/andrewdryga/emisar"
-              class="text-indigo-300 hover:text-indigo-200"
-            >
-              main repo
-            </.external_link>
-            adding your pack under
-            <code class="rounded bg-zinc-900 px-1 py-0.5">runner/examples/packs/</code>
-            and an entry in <code class="rounded bg-zinc-900 px-1 py-0.5">apps/emisar_web/lib/emisar_web/packs_registry.ex</code>.
-            We review for:
+            To put the pack on another runner, install it pinned to the hash you trusted, so every
+            host runs identical bytes — or let your config management (Ansible, Chef, a base image)
+            drop the directory and reload:
           </p>
-          <ul class="mt-3 space-y-2 pl-5 text-sm text-zinc-400">
-            <li class="list-disc">
-              <strong class="text-zinc-200">Tight argument validation</strong> — no free-form
-              shell strings, paths use <code>allowed_prefixes</code>, and choice args use <code>validation.enum</code>.
-            </li>
-            <li class="list-disc">
-              <strong class="text-zinc-200">Honest <code>side_effects</code></strong> — every
-              file/network/process side effect listed. The LLM reads these.
-            </li>
-            <li class="list-disc">
-              <strong class="text-zinc-200">Correct <code>risk</code> level</strong> — destructive
-              actions (restart, delete, repair) are <code>high</code> or <code>critical</code>.
-            </li>
-            <li class="list-disc">
-              <strong class="text-zinc-200">Resolvable binaries</strong> — declare what
-              the runner needs on the host under <code>requires.binaries</code>.
-            </li>
-          </ul>
+          <pre class="mt-4 overflow-x-auto rounded-lg border border-zinc-800 bg-black/60 p-4 font-mono text-xs leading-6 text-zinc-300">sudo emisar pack install ./my-pack --hash sha256:&lt;the hash you trusted&gt; --dest /etc/emisar/packs
+sudo systemctl reload emisar</pre>
+          <p class="mt-4 text-sm leading-relaxed text-zinc-400">
+            When you change the pack, bump its <code>version</code>, re-validate, re-deploy, and
+            re-trust the new hash once in the dashboard — the same review you'd give any production
+            change. The pack is yours: its lifecycle, its hosts, its risk tiers, on your schedule.
+          </p>
         </li>
       </ol>
 
+      <%!-- The curated registry --%>
+      <h2 id="registry" class="mt-16 scroll-mt-8 text-2xl font-semibold text-zinc-50">
+        Keep it yours — or propose it to the registry
+      </h2>
+      <p class="mt-4 text-sm leading-relaxed text-zinc-400">
+        The public registry behind the
+        <.link navigate={~p"/packs"} class="text-indigo-300 hover:text-indigo-200">
+          Packs page
+        </.link>
+        is curated by us, deliberately. We only take packs that are
+        <strong class="text-zinc-200">genuinely
+          generic and broadly useful</strong>
+        — Postgres, Cassandra, Docker, Linux core, the AWS suite — the kind of thing many teams run
+        unchanged. We don't accept every submission, because an open dumping ground of one-off,
+        environment-specific packs would be a mess: hard to trust, hard to maintain, and low signal
+        for everyone browsing it.
+      </p>
+      <p class="mt-4 text-sm leading-relaxed text-zinc-400">
+        <strong class="text-zinc-200">Most packs should stay yours.</strong>
+        A pack that hardcodes your service names, your hostnames, or your internal CLIs is more
+        useful private — and you keep control of its lifecycle. Self-maintained is the default
+        here, not a fallback.
+      </p>
+      <p class="mt-4 text-sm leading-relaxed text-zinc-400">
+        If your pack really is generic — useful to teams who've never heard of yours, with no
+        environment-specific assumptions — we'd love to ship it. Open a PR against the
+        <.external_link
+          href="https://github.com/andrewdryga/emisar"
+          class="text-indigo-300 hover:text-indigo-200"
+        >
+          repo
+        </.external_link>
+        adding it under
+        <code class="rounded bg-zinc-900 px-1 py-0.5">runner/examples/packs/</code>
+        plus an entry in <code class="rounded bg-zinc-900 px-1 py-0.5">apps/emisar_web/lib/emisar_web/packs_registry.ex</code>, or email
+        <a href="mailto:support@emisar.dev" class="text-indigo-300 hover:text-indigo-200">
+          support@emisar.dev
+        </a>
+        first if you're not sure it clears the bar. We review for:
+      </p>
+      <ul class="mt-3 space-y-2 pl-5 text-sm text-zinc-400">
+        <li class="list-disc">
+          <strong class="text-zinc-200">Genuinely generic</strong>
+          — no hardcoded hosts, service names, or org-specific paths. If it only makes sense inside
+          your company, it belongs in your repo, not ours.
+        </li>
+        <li class="list-disc">
+          <strong class="text-zinc-200">Tight argument validation</strong>
+          — no free-form shell strings; paths use <code>allowed_prefixes</code>, choice args use <code>validation.enum</code>, and numbers use min/max.
+        </li>
+        <li class="list-disc">
+          <strong class="text-zinc-200">Honest <code>side_effects</code></strong>
+          — every file, network, and process side effect listed. The LLM reads these.
+        </li>
+        <li class="list-disc">
+          <strong class="text-zinc-200">Correct <code>risk</code> level</strong>
+          — destructive actions (restart, delete, repair) are <code>high</code>
+          or <code>critical</code>; reads are <code>low</code>.
+        </li>
+        <li class="list-disc">
+          <strong class="text-zinc-200">Resolvable binaries</strong>
+          — declare what the runner needs on the host under <code>requires.binaries</code>.
+        </li>
+      </ul>
+
       <%!-- Next steps --%>
       <div class="mt-16 flex flex-wrap items-center justify-between gap-3 border-t border-zinc-900 pt-8 text-sm">
-        <.link navigate={~p"/packs"} class="text-zinc-400 hover:text-zinc-200">
-          ← Back to registry
+        <.link navigate={~p"/docs/action-packs"} class="text-indigo-300 hover:text-indigo-200">
+          Full YAML reference
         </.link>
         <div class="flex items-center gap-4">
-          <.link navigate={~p"/docs/action-packs"} class="text-indigo-300 hover:text-indigo-200">
-            Full YAML reference
+          <.link navigate={~p"/packs"} class="text-zinc-400 hover:text-zinc-200">
+            Browse the registry
           </.link>
           <.external_link
             href="https://github.com/andrewdryga/emisar/tree/main/runner/examples/packs"
             class="text-zinc-400 hover:text-zinc-200"
           >
-            Browse on GitHub
+            Example packs on GitHub
           </.external_link>
         </div>
       </div>

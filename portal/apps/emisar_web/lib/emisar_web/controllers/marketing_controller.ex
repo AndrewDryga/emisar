@@ -58,8 +58,8 @@ defmodule EmisarWeb.MarketingController do
     {"/zero-trust", :zero_trust, :zero_trust, "Zero Trust for AI Agents",
      "Anthropic's Zero Trust for AI Agents framework calls for least agency, deny-by-default tools, human approval for high-risk actions, and an immutable audit trail. See how emisar enforces that exact control set between an LLM and your infrastructure — with approval gates, just-in-time access, and SIEM export at the Enterprise and Advanced tier, by default."},
     {"/docs/publishing-packs", :docs_publishing_packs, :docs_publishing_packs,
-     "Publishing an action pack",
-     "How to author and publish an emisar action pack: pack.yaml, action YAMLs, validation rules, version + hash, and PR workflow to land in the registry."}
+     "Author your own action pack",
+     "Write, validate, install, and trust an emisar action pack you maintain yourself — pack.yaml, action YAMLs, content-hash trust, and fleet rollout. Plus when (and how) to propose a genuinely generic pack to the curated public registry."}
   ]
 
   # Home FAQ — the single source of truth for both the visible FAQ
