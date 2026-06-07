@@ -2,7 +2,7 @@ schema_version: 1
 
 id: nfs
 name: NFS server + client
-version: 0.1.1
+version: 0.1.2
 description: >
   Inspect a host's NFS exports, mounted shares, RPC state, active client
   connections. Plus one narrow operator action (exportfs -r). Read-only
@@ -13,6 +13,13 @@ homepage: https://github.com/andrewdryga/emisar
 requires:
   os:
     - linux
+
+# `emisar pack suggest` detection — default process names / ports.
+detect:
+  processes:
+    - nfsd
+  ports:
+    - 2049
 
 setup:
   summary: >

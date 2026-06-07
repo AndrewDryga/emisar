@@ -2,7 +2,7 @@ schema_version: 1
 
 id: vault
 name: HashiCorp Vault operations
-version: 0.1.1
+version: 0.1.2
 description: >
   Vault status, seal state, auth/audit/secret backends, mount listing,
   token & lease introspection, plus operator surface for incident
@@ -18,6 +18,13 @@ requires:
     - linux
   binaries:
     - vault
+
+# `emisar pack suggest` detection — default process names / ports.
+detect:
+  processes:
+    - vault
+  ports:
+    - 8200
 
 setup:
   summary: >

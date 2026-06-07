@@ -2,7 +2,7 @@ schema_version: 1
 
 id: postfix
 name: Postfix mail server
-version: 0.1.1
+version: 0.1.2
 description: >
   Queue inspection, config dump, log tailing, plus narrow operator
   actions (flush, requeue, delete-by-queue-id). All queue mutators are
@@ -14,6 +14,11 @@ homepage: https://github.com/andrewdryga/emisar
 requires:
   os:
     - linux
+
+# `emisar pack suggest` detection — default process names / ports.
+detect:
+  ports:
+    - 25
 
 setup:
   summary: >

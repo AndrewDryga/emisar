@@ -2,7 +2,7 @@ schema_version: 1
 
 id: java-jvm
 name: JVM introspection
-version: 0.1.1
+version: 0.1.2
 description: >
   JVM diagnostics via jcmd/jstack/jmap/jstat/JFR. Requires runner uid
   to match the JVM process owner (or CAP_SYS_PTRACE) — actions return
@@ -15,6 +15,11 @@ requires:
     - linux
   binaries:
     - jcmd
+
+# `emisar pack suggest` detection — default process names / ports.
+detect:
+  processes:
+    - java
 
 setup:
   summary: >

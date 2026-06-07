@@ -2,7 +2,7 @@ schema_version: 1
 
 id: time-sync
 name: Time sync diagnostics
-version: 0.1.1
+version: 0.1.2
 description: >
   Clock-sync state: chrony tracking + sources, NTP peer status, current
   time, drift estimate, timezone, plus fix actions (chronyc makestep,
@@ -14,6 +14,12 @@ homepage: https://github.com/andrewdryga/emisar
 requires:
   os:
     - linux
+
+# `emisar pack suggest` detection — default process names / ports.
+detect:
+  processes:
+    - chronyd
+    - ntpd
 
 setup:
   summary: >

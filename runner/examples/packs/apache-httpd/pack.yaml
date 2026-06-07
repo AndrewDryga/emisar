@@ -2,7 +2,7 @@ schema_version: 1
 
 id: apache-httpd
 name: Apache HTTPD operations
-version: 0.1.1
+version: 0.1.2
 description: >
   Apache version, modules, mod_status snapshot, config syntax check,
   vhost dump, error/access log tails, plus narrow mutators (graceful
@@ -17,6 +17,15 @@ requires:
   binaries:
     - apachectl
     - curl
+
+# `emisar pack suggest` detection — default process names / ports.
+detect:
+  processes:
+    - httpd
+    - apache2
+  ports:
+    - 80
+    - 443
 
 setup:
   summary: >

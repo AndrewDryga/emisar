@@ -2,7 +2,7 @@ schema_version: 1
 
 id: cassandra
 name: Cassandra operations
-version: 0.4.1
+version: 0.4.2
 description: >
   Deep Cassandra ops via nodetool + cqlsh: topology (status, ring,
   gossip, describering, failure detector), health (tpstats, netstats,
@@ -19,6 +19,12 @@ requires:
     - linux
   binaries:
     - nodetool
+
+# `emisar pack suggest` detection — default process names / ports.
+detect:
+  ports:
+    - 9042
+    - 7000
 
 setup:
   summary: >

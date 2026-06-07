@@ -2,7 +2,7 @@ schema_version: 1
 
 id: rabbitmq
 name: RabbitMQ operations
-version: 0.1.1
+version: 0.1.2
 description: >
   Cluster, queue, exchange, binding, connection, channel, and consumer
   inventory plus narrow operator actions (purge_queue, set_policy,
@@ -16,6 +16,12 @@ requires:
     - linux
   binaries:
     - rabbitmqctl
+
+# `emisar pack suggest` detection — default process names / ports.
+detect:
+  ports:
+    - 5672
+    - 15672
 
 setup:
   summary: >

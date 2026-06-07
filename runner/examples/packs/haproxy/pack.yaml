@@ -2,7 +2,7 @@ schema_version: 1
 
 id: haproxy
 name: HAProxy operations
-version: 0.1.1
+version: 0.1.2
 description: >
   Stats, server state, frontends/backends, session inventory, plus narrow
   mutators to enable/disable backend servers. Talks to the HAProxy admin
@@ -15,6 +15,11 @@ requires:
     - linux
   binaries:
     - socat
+
+# `emisar pack suggest` detection — default process names / ports.
+detect:
+  processes:
+    - haproxy
 
 setup:
   summary: >

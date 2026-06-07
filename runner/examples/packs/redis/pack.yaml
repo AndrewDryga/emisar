@@ -2,7 +2,7 @@ schema_version: 1
 
 id: redis
 name: Redis operations pack
-version: 0.2.1
+version: 0.2.2
 description: >
   Deep Redis ops — INFO + memory accounting, slowlog + per-event
   latency, command stats, client list/kill/pause, keyspace introspection
@@ -22,6 +22,13 @@ requires:
     - linux
   binaries:
     - redis-cli
+
+# `emisar pack suggest` detection — default process names / ports.
+detect:
+  processes:
+    - redis-server
+  ports:
+    - 6379
 
 setup:
   summary: >

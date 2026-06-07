@@ -2,7 +2,7 @@ schema_version: 1
 
 id: mongodb
 name: MongoDB operations
-version: 0.1.1
+version: 0.1.2
 description: >
   Replica-set + shard-cluster introspection, slow-query identification,
   collection stats, plus remediation surface (killOp, replSet stepDown,
@@ -16,6 +16,13 @@ requires:
     - linux
   binaries:
     - mongosh
+
+# `emisar pack suggest` detection — default process names / ports.
+detect:
+  processes:
+    - mongod
+  ports:
+    - 27017
 
 setup:
   summary: >

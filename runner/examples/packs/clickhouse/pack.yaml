@@ -2,7 +2,7 @@ schema_version: 1
 
 id: clickhouse
 name: ClickHouse analytics DB
-version: 0.1.1
+version: 0.1.2
 description: >
   ClickHouse server + table introspection plus narrow mutators
   (OPTIMIZE, KILL QUERY, SYSTEM RELOAD CONFIG). Auth via CH_HOST +
@@ -16,6 +16,14 @@ requires:
     - linux
   binaries:
     - clickhouse-client
+
+# `emisar pack suggest` detection — default process names / ports.
+detect:
+  processes:
+    - clickhouse-server
+  ports:
+    - 8123
+    - 9000
 
 setup:
   summary: >

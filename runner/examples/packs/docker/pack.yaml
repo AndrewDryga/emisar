@@ -2,7 +2,7 @@ schema_version: 1
 
 id: docker
 name: Docker operations pack
-version: 0.2.1
+version: 0.2.2
 description: >
   Operator pack for Docker hosts: read-only inventory and per-container
   introspection, plus narrow mutators (restart, stop, kill, prune).
@@ -16,6 +16,11 @@ requires:
     - linux
   binaries:
     - docker
+
+# `emisar pack suggest` detection — default process names / ports.
+detect:
+  processes:
+    - dockerd
 
 setup:
   summary: >

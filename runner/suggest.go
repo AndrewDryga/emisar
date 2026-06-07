@@ -188,16 +188,21 @@ func catalogFromPackDir(dir string) ([]hostscan.PackReq, error) {
 	}
 	var out []hostscan.PackReq
 	for _, p := range reg.Packs() {
-		req := hostscan.PackReq{ID: p.ID, Name: p.Name, OS: p.Requires.OS}
-		// A pack that declares a detect block defines its own signal
-		// exactly (e.g. processes/ports for a service it only reaches via
-		// curl). Otherwise fall back to its required binaries: the offline
-		// catalog is the install bundle, which has no generic-helper-only
-		// packs, so no server-side stripping is needed here.
-		if d := p.Detect; len(d.Binaries) > 0 || len(d.Processes) > 0 || len(d.Ports) > 0 {
-			req.Binaries, req.Processes, req.Ports = d.Binaries, d.Processes, d.Ports
-		} else {
-			req.Binaries = p.Requires.Binaries
+		// Mirror the portal's derivation: an explicit detect.binaries wins,
+		// else fall back to the pack's requires binaries; the declared
+		// processes/ports are always added on top. (The offline catalog is
+		// the install bundle, which has no generic-helper-only packs, so no
+		// server-side stripping is needed here.)
+		req := hostscan.PackReq{
+			ID:        p.ID,
+			Name:      p.Name,
+			OS:        p.Requires.OS,
+			Binaries:  p.Requires.Binaries,
+			Processes: p.Detect.Processes,
+			Ports:     p.Detect.Ports,
+		}
+		if len(p.Detect.Binaries) > 0 {
+			req.Binaries = p.Detect.Binaries
 		}
 		out = append(out, req)
 	}
