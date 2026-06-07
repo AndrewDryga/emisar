@@ -681,6 +681,49 @@ install_default_packs() {
   fi
 }
 
+# install_suggested_packs queries the full registry catalog for packs that
+# match services detected on this host (running processes + installed
+# binaries) and offers to install them now — so a host running Nomad,
+# Consul, Postgres, etc. gets the matching packs in one step instead of
+# hunting for them. Network-dependent: if the catalog can't be reached it
+# says so and points at `emisar pack suggest`; it never blocks the install.
+install_suggested_packs() {
+  local dst="${ETC_DIR}/packs"
+  local out
+
+  # `if cmd` (not `cmd || true`) so set -e doesn't abort here, and so we can
+  # tell "catalog unreachable" (non-zero exit) from "nothing matched" (zero
+  # exit, empty output) — only the former warrants the can't-reach note.
+  if ! out="$("${BIN_DIR}/emisar" pack suggest --packs-dir "${dst}" --names-only 2>/dev/null)"; then
+    log "couldn't reach the pack catalog — run '${BIN_DIR}/emisar pack suggest' later for host-matched packs"
+    return 0
+  fi
+  [ -n "${out}" ] || return 0
+
+  local names
+  names="$(printf '%s' "${out}" | tr '\n' ' ')"
+  names="${names% }"
+
+  if ! confirm "detected services on this host — install their packs (${names})?"; then
+    log "skipping — add them later with: ${BIN_DIR}/emisar pack install <name>"
+    return 0
+  fi
+
+  mkdir -p "${dst}"
+  local n
+  for n in ${out}; do
+    if "${BIN_DIR}/emisar" pack install "${n}" --dest "${dst}" --force >/dev/null 2>&1; then
+      log "installed pack ${n}"
+    else
+      warn "failed to install pack ${n} (continuing)"
+    fi
+  done
+
+  if [ "${OS}" = "linux" ] && [ "${INIT}" != "none" ]; then
+    chown -R "${SERVICE_USER}:${SERVICE_GROUP}" "${dst}" 2>/dev/null || true
+  fi
+}
+
 install_systemd() {
   local unit="/etc/systemd/system/emisar.service"
   log "writing ${unit}"
@@ -800,6 +843,7 @@ do_install() {
   ensure_dirs
   install_binary "${extracted}"
   install_default_packs "${extracted}"
+  install_suggested_packs
   drop_config_skeleton
 
   case "${INIT}" in
@@ -907,29 +951,12 @@ EOF
   cat <<EOF
 
 Action packs:
-  Installed: ${installed:-(none)}
-  Add more:  ${BIN_DIR}/emisar pack install <name>     (then reload the runner)
-  Remove:    ${BIN_DIR}/emisar pack uninstall <name>   (then reload the runner)
-  Browse:    https://emisar.dev/packs
+  Installed:  ${installed:-(none)}
+  Suggest:    ${BIN_DIR}/emisar pack suggest             (host-matched packs for what's running)
+  Add more:   ${BIN_DIR}/emisar pack install <name>      (then reload the runner)
+  Remove:     ${BIN_DIR}/emisar pack uninstall <name>    (then reload the runner)
+  Browse:     https://emisar.dev/packs
 EOF
-
-  # Best-effort: ask the registry catalog which service packs match this
-  # host but aren't installed yet (e.g. nomad/consul/postgres detected
-  # running). Network-dependent and entirely optional — an air-gapped host
-  # or fetch failure just prints nothing; it never blocks or fails install.
-  # `|| true`: the script runs under `set -e` with pipefail, so a failed
-  # fetch (offline host) would otherwise abort the install right here.
-  local more
-  more="$("${BIN_DIR}/emisar" pack suggest --packs-dir "${ETC_DIR}/packs" --names-only 2>/dev/null | tr '\n' ' ' || true)"
-  more="${more% }"
-  if [ -n "${more}" ]; then
-    cat <<EOF
-
-Detected on this host — packs you may want:
-  ${more}
-  Install each with: ${BIN_DIR}/emisar pack install <name>   (then reload the runner)
-EOF
-  fi
 
   echo
   # \$0 is "bash" when run as `curl ... | sudo bash`, so don't print that.
