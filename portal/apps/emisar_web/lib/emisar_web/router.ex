@@ -83,6 +83,7 @@ defmodule EmisarWeb.Router do
     # Declared before "/packs/:id" so the literal segments win; Phoenix
     # matches top-to-bottom and these are more specific.
     get "/packs.json", PackRegistryController, :index
+    get "/packs/suggest.json", PackRegistryController, :suggest
     get "/packs/:id/pack.tar.gz", PackRegistryController, :tarball
     get "/packs/:id", MarketingController, :pack_detail
     get "/docs/publishing-packs", MarketingController, :docs_publishing_packs

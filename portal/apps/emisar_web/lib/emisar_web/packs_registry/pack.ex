@@ -22,6 +22,12 @@ defmodule EmisarWeb.PacksRegistry.Pack do
     # in the install snippet so an operator's `emisar pack install`
     # rejects a tampered or drifted copy.
     :content_hash,
+    # detect is the service-presence signal for `emisar pack suggest`:
+    # the binaries/processes/ports that mean "this service runs here".
+    # Computed at compile time = the pack's declared `detect` block, else
+    # requires_binaries minus ubiquitous helpers (curl, nc, …). A pack with
+    # an all-empty detect (e.g. a remote-API pack) is never auto-suggested.
+    detect: %{binaries: [], processes: [], ports: []},
     actions: []
   ]
 
@@ -35,6 +41,11 @@ defmodule EmisarWeb.PacksRegistry.Pack do
           requires_os: [String.t()],
           requires_binaries: [String.t()],
           content_hash: String.t() | nil,
+          detect: %{
+            binaries: [String.t()],
+            processes: [String.t()],
+            ports: [integer()]
+          },
           actions: [EmisarWeb.PacksRegistry.Action.t()]
         }
 end

@@ -104,6 +104,28 @@ defmodule EmisarWeb.PacksTest do
       end
     end
 
+    test "suggest_index strips generic helpers and omits undetectable packs" do
+      by_id = Map.new(PacksRegistry.suggest_index(), &{&1.id, &1})
+
+      # grafana: curl stripped server-side → no binary signal; detected by
+      # its server process and listening port instead.
+      grafana = by_id["grafana"]
+      assert grafana.detect.binaries == []
+      assert "grafana-server" in grafana.detect.processes
+      assert 3000 in grafana.detect.ports
+
+      # consul: no detect block → binaries derived from requires (consul,
+      # which is service-specific, survives; a generic helper would not).
+      assert by_id["consul"].detect.binaries == ["consul"]
+
+      # cloudflare: requires only curl and declares no detect → all-empty
+      # signal → omitted entirely (a remote-API pack isn't host-detectable).
+      refute Map.has_key?(by_id, "cloudflare")
+
+      # Lean shape: only id/name/os/detect — no hash/tarball/description.
+      assert grafana |> Map.keys() |> Enum.sort() == [:detect, :id, :name, :os]
+    end
+
     # Golden values captured from the Go runner's `emisar pack validate`
     # (runner/internal/packs computePackHash). If a pack's bytes change,
     # both the Go hash and this expectation must move together — a
@@ -147,6 +169,22 @@ defmodule EmisarWeb.PacksTest do
       redis = Enum.find(body["packs"], &(&1["id"] == "redis"))
       assert redis["hash"] == PacksRegistry.get("redis").content_hash
       assert redis["tarball"] =~ "/packs/redis/pack.tar.gz"
+    end
+
+    test "GET /packs/suggest.json returns the lean detect index", %{conn: conn} do
+      body = conn |> get(~p"/packs/suggest.json") |> json_response(200)
+      ids = Enum.map(body["packs"], & &1["id"])
+
+      assert "grafana" in ids
+      refute "cloudflare" in ids
+
+      grafana = Enum.find(body["packs"], &(&1["id"] == "grafana"))
+      assert grafana["detect"]["ports"] == [3000]
+      assert "grafana-server" in grafana["detect"]["processes"]
+      assert grafana["detect"]["binaries"] == []
+      # Lean: suggestion doesn't need the hash/tarball/description.
+      refute Map.has_key?(grafana, "hash")
+      refute Map.has_key?(grafana, "tarball")
     end
 
     test "GET /packs/:id/pack.tar.gz serves a gzip tarball", %{conn: conn} do

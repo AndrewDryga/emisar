@@ -29,6 +29,14 @@ defmodule EmisarWeb.PacksRegistry do
   @repo_url "https://github.com/andrewdryga/emisar"
   @packs_root "#{@repo_url}/tree/main/runner/examples/packs"
 
+  # Ubiquitous helper binaries — present on nearly every host and used by
+  # many packs only to TALK to a service (curl hits an HTTP API). They say
+  # nothing about which services run here, so they're stripped when deriving
+  # a pack's detect signal from its `requires`. Maintaining the list HERE,
+  # server-side, means it evolves on a portal deploy — no runner release. A
+  # pack that needs a real signal declares an explicit `detect:` block.
+  @generic_binaries ~w(curl wget nc ncat netcat socat jq openssl)
+
   # -- Compile-time scan -----------------------------------------------
 
   @packs_path System.get_env("EMISAR_PACKS_DIR") ||
@@ -107,10 +115,31 @@ defmodule EmisarWeb.PacksRegistry do
              "sha256:" <> Base.encode16(:crypto.hash(:sha256, iodata), case: :lower)
            end
 
+           # Effective detect signal: an explicit `detect:` block wins;
+           # otherwise derive binaries from `requires` minus generic helpers
+           # (so a curl-only pack collapses to an empty binary signal and
+           # leans on declared processes/ports — or is unsuggestable).
+           detect_signal = fn manifest, requires_binaries ->
+             declared = Map.get(manifest, "detect", %{}) || %{}
+             declared_bins = Map.get(declared, "binaries", []) || []
+
+             binaries =
+               if declared_bins == [],
+                 do: Enum.reject(requires_binaries, &(&1 in @generic_binaries)),
+                 else: declared_bins
+
+             %{
+               binaries: binaries,
+               processes: Map.get(declared, "processes", []) || [],
+               ports: Map.get(declared, "ports", []) || []
+             }
+           end
+
            build_pack = fn manifest_path ->
              pack_dir = Path.dirname(manifest_path)
              manifest = parse_yaml!.(manifest_path)
              requires = Map.get(manifest, "requires", %{}) || %{}
+             requires_binaries = Map.get(requires, "binaries", []) || []
 
              actions =
                "#{pack_dir}/actions/*.yaml"
@@ -132,7 +161,8 @@ defmodule EmisarWeb.PacksRegistry do
                vendor: Map.get(manifest, "vendor", "emisar"),
                homepage: Map.get(manifest, "homepage") || @repo_url,
                requires_os: Map.get(requires, "os", []) || [],
-               requires_binaries: Map.get(requires, "binaries", []) || [],
+               requires_binaries: requires_binaries,
+               detect: detect_signal.(manifest, requires_binaries),
                content_hash: content_hash.(pack_dir, manifest),
                actions: actions
              }
@@ -188,6 +218,24 @@ defmodule EmisarWeb.PacksRegistry do
   @doc "All packs, ordered alphabetically by id."
   @spec list() :: [Pack.t()]
   def list, do: @packs
+
+  @doc """
+  Lean index for `emisar pack suggest` — per pack, only what host-matching
+  needs: id, name, OS allowlist, and the detect signal (binaries/processes/
+  ports, with ubiquitous helpers already stripped). Packs whose detect is
+  all-empty are omitted: with no signal there's nothing to suggest them on
+  (e.g. remote-API packs like cloudflare), and leaving them out keeps the
+  payload small and the runner honest.
+  """
+  @spec suggest_index() :: [map()]
+  def suggest_index do
+    @packs
+    |> Enum.map(fn p -> %{id: p.id, name: p.name, os: p.requires_os, detect: p.detect} end)
+    |> Enum.reject(fn p -> detect_empty?(p.detect) end)
+  end
+
+  defp detect_empty?(%{binaries: b, processes: pr, ports: po}),
+    do: b == [] and pr == [] and po == []
 
   @doc """
   Gzip tarball bytes for a single pack id, or `:error` if unknown.

@@ -34,6 +34,17 @@ defmodule EmisarWeb.PackRegistryController do
     json(conn, %{packs: packs})
   end
 
+  @doc """
+  Lean suggest index consumed by `emisar pack suggest` — only the per-pack
+  detect signal (binaries/processes/ports, generic helpers stripped) plus
+  id/name/os, and only for packs that are host-detectable. Smaller than the
+  full index, and the curl/nc filtering lives server-side so the list can
+  evolve without a runner release.
+  """
+  def suggest(conn, _params) do
+    json(conn, %{packs: PacksRegistry.suggest_index()})
+  end
+
   @doc "Single pack as a gzip tarball, or a 404 for an unknown id."
   def tarball(conn, %{"id" => id}) do
     case PacksRegistry.tarball(id) do
