@@ -308,25 +308,28 @@ defmodule EmisarWeb.DashboardLive do
       <.stat
         label="Runners online"
         value={"#{@connected} / #{@total}"}
-        hint={
-          cond do
-            @total == 0 -> "No runners yet"
-            @connected == 0 -> "All runners offline"
-            @connected < @total -> "#{@total - @connected} disconnected"
-            true -> "All connected"
-          end
-        }
-        class={
-          cond do
-            @connected == 0 and @total > 0 -> "ring-1 ring-rose-500/30"
-            @connected < @total -> "ring-1 ring-amber-500/20"
-            true -> ""
-          end
-        }
+        hint={runners_hint(@connected, @total)}
+        class={runners_ring(@connected, @total)}
       />
     </.link>
     """
   end
+
+  # connected/total are :integer attrs, but Elixir 1.20's type checker won't
+  # carry that into the template and flags `<`/`>` there as a struct
+  # comparison. Guard clauses use term ordering (no such warning) and read
+  # more clearly. Clause order preserves the original cond priority.
+  defp runners_hint(_connected, 0), do: "No runners yet"
+  defp runners_hint(0, _total), do: "All runners offline"
+
+  defp runners_hint(connected, total) when connected < total,
+    do: "#{total - connected} disconnected"
+
+  defp runners_hint(_connected, _total), do: "All connected"
+
+  defp runners_ring(0, total) when total > 0, do: "ring-1 ring-rose-500/30"
+  defp runners_ring(connected, total) when connected < total, do: "ring-1 ring-amber-500/20"
+  defp runners_ring(_connected, _total), do: ""
 
   attr :stats, :map, required: true
 
