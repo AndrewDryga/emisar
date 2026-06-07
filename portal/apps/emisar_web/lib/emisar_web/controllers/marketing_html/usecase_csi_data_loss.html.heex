@@ -1,0 +1,195 @@
+<div class="bg-zinc-950 text-zinc-100">
+  <.marketing_nav current={:docs} />
+
+  <section class="py-16 sm:py-24">
+    <div class="mx-auto max-w-3xl px-6 lg:px-8">
+      <p class="text-sm font-semibold text-indigo-400">Case study</p>
+      <h1 class="mt-2 text-4xl font-bold tracking-tight text-zinc-50 md:text-5xl">
+        The 33-hour wipe: a CSI driver reformatted a live LUN
+      </h1>
+      <p class="mt-6 text-lg leading-8 text-zinc-400">
+        A routine node drain ended with 33 hours of production telemetry gone — a
+        <code>democratic-csi</code>
+        driver reformatted a live Pure LUN out from under VictoriaMetrics, triggered by a
+        dm-multipath path-group race. Here is the incident, and the exact emisar loop that
+        contains it: <strong class="font-semibold text-zinc-200">investigate through declared
+          actions, stop the bleed behind one approval, then write the durable fix to
+          Terraform</strong>
+        — no raw SSH, every step on the record.
+      </p>
+
+      <h2 class="mt-12 text-2xl font-semibold text-zinc-50">The stack</h2>
+      <p class="mt-4 text-sm leading-6 text-zinc-400">
+        Five Dell R640s in VA1 · Pure FlashArray //M50 over iSCSI multipath · Nomad 2.0.2 ·
+        democratic-csi <code>node-manual</code>. VictoriaMetrics owns a 750 GB LUN, VictoriaLogs
+        a 100 GB LUN — both <code>single-node-writer</code>, both holding 33 hours of Apex /
+        Fortnite / Tarkov / Deadlock backend telemetry. The investigation below runs entirely
+        through emisar: the stock <code>debugging</code>
+        and <code>docker</code>
+        packs, plus a small storage + Nomad pack we authored for this fleet. emisar is only as
+        capable as the actions you declare — that is the point.
+      </p>
+
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">T+0 — the drain</h2>
+      <p class="mt-4 text-sm leading-6 text-zinc-400">
+        Drain <code>nomad-hvn01</code>, reboot, restore — routine. VictoriaMetrics and
+        VictoriaLogs migrated to <code>hvn03</code>
+        and came up green in about 30 seconds. Ingest resumed. Dull and normal.
+      </p>
+
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">T+50m — 33 hours, gone</h2>
+      <p class="mt-4 text-sm leading-6 text-zinc-400">
+        Grafana on the last 7 days: almost everything flat, only the last
+        <strong class="text-zinc-200">12 minutes</strong>
+        of metrics alive. A sharp cliff where the history just ended. Same for logs. The
+        processes were healthy and ingesting — the data was missing because the data was <em>not there</em>. An agent picks up the page.
+      </p>
+
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">
+        1 · Investigate — through emisar, not SSH
+      </h2>
+      <p class="mt-4 text-sm leading-6 text-zinc-400">
+        The agent works down the layers with declared pack actions, each scoped to
+        <code>nomad-hvn03</code>
+        and logged with a reason. No shell, no standing SSH key.
+      </p>
+      <pre class="mt-3 overflow-x-auto rounded-lg border border-zinc-900 bg-black/60 p-4 font-mono text-xs leading-6 text-zinc-300"><span class="text-zinc-500"># Claude, over MCP → emisar. Each call is a declared, scoped, logged action.</span>
+
+storage.csi_volume_ls &#123;"volume": "vm-data"&#125;
+<span class="text-zinc-500">→ total 24
+  drwx------ 2 root root 16384 Jun  4 13:11 lost+found
+  # a freshly-formatted ext4, born 30 minutes ago. VM's history isn't here.</span>
+
+debugging.dmesg_grep &#123;"pattern": "multipath|EXT4|sd[c-z]"&#125;
+<span class="text-zinc-500">→ 13:11:03  device-mapper: multipath 254:3: queue_if_no_path enabled
+  13:11:09  EXT4-fs (dm-3): mounted filesystem … clean
+  # six seconds with no active path group — that's the window.</span>
+
+docker.logs &#123;"container": "democratic-csi", "grep": "blkid|mkfs"&#125;
+<span class="text-zinc-500">→ GetDiskFormat /dev/mapper/3624…265c → blkid output="" (empty)
+  Disk appears unformatted; running mkfs.ext4 -F /dev/mapper/3624…
+  Disk successfully formatted (mkfs)</span></pre>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        Diagnosis: when the multipath device was re-probed on migration, every path came up
+        <code>enabled</code>
+        (queue-ready) but no group was promoted <code>active</code>. <code>blkid</code>
+        was the first I/O — it opened the device, the read sat in the queue, and it timed out
+        empty. The driver read "empty" as "unformatted" and ran <code>mkfs.ext4 -F</code>
+        over a live LUN, then mounted the fresh filesystem for VictoriaMetrics to write to.
+        It is
+        <a
+          href="https://github.com/kubernetes/kubernetes/issues/95183"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="text-indigo-400 hover:text-indigo-300"
+        >
+          kubernetes/kubernetes#95183
+        </a>
+        — a whole bug class, confirmed against Azure Disk, NetApp Trident, Longhorn, and OpenEBS.
+        Switching CSI drivers would not fix it; the guard has to live at the wrapper layer.
+      </p>
+
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">2 · Stop the bleed — one approval</h2>
+      <p class="mt-4 text-sm leading-6 text-zinc-400">
+        VictoriaMetrics is already writing fresh parts to the empty filesystem — every
+        group-commit overwrites blocks that still hold the old data. The move is to halt it,
+        and halting a live alloc is destructive, so policy holds it for a human.
+      </p>
+      <pre class="mt-3 overflow-x-auto rounded-lg border border-zinc-900 bg-black/60 p-4 font-mono text-xs leading-6 text-zinc-300">nomad.stop_alloc &#123;"alloc": "a1b2c3d4", "reason":
+  "CSI reformatted a live LUN — stop writes to preserve recoverable blocks"&#125;
+<span class="text-amber-300">⏸ pending approval — nomad.stop_alloc is high-risk; a human approves in the portal</span>
+<span class="text-emerald-300">✓ approved by you · one use · audit event recorded</span>
+<span class="text-zinc-500">→ alloc stopped · writes halted · LUN frozen for forensics</span></pre>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        Caught in the first minute, that freeze preserves the LUN for recovery. Here a human
+        took an hour to notice, the ext4 journal had wrapped, and the old blocks were already
+        reused — so we accepted the 33-hour gap (game-side state was untouched; only telemetry
+        was lost). But the bleed stopped on one approval, and the audit trail shows exactly who
+        authorized the only destructive action and when.
+      </p>
+
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">
+        3 · Codify the fix — a Terraform PR the agent wrote
+      </h2>
+      <p class="mt-4 text-sm leading-6 text-zinc-400">
+        The fix can't live on the host — the next drain would undo it. So the agent writes it
+        where it belongs: a pull request against the infra repo, locally, for a human to review
+        and merge. Three layers, each closing the wipe path at a different point.
+      </p>
+      <pre class="mt-3 overflow-x-auto rounded-lg border border-zinc-900 bg-black/60 p-4 font-mono text-xs leading-6 text-zinc-300"><span class="text-zinc-500"># PR: "csi: never auto-format on blkid-empty (the 33h wipe)"
+# democratic-csi-node.nomad.hcl — the root cause, in one line:</span>
+  node &#123;
+    format &#123;
+<span class="text-emerald-300">+     disabled = true        # never mkfs a "blank" device — refuse loudly</span>
+    &#125;
+  &#125;
+
+<span class="text-rose-300">- csi_volume_claim_gc_interval = "5m"</span>
+<span class="text-emerald-300">+ csi_volume_claim_gc_interval = "1m"   # stuck-claim recovery: 10m → 6m worst case</span>
+<span class="text-emerald-300">+ kill_timeout                 = "60s"  # let NodeUnstageVolume flush on drain</span>
+<span class="text-zinc-500">
+# new files in the same PR:
+#   multipath-watchdog.nomad.hcl  — 30s dd-kick promotes stuck path groups active
+#   format-new-volume.sh          — mkfs.xfs (refuses overwrite without -f) for new LUNs
+#   alerts/multipath.yaml         — page if a path group sits status=enabled &gt; 2 min</span></pre>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        The one line that matters is <code>format &#123; disabled = true &#125;</code>. The
+        watchdog kicks a stuck path group active in microseconds with a single 4 KiB direct
+        read; XFS-by-default refuses to overwrite an existing signature; the alert pages when
+        the watchdog itself fails — which is exactly when you want to know.
+      </p>
+
+      <h2 class="mt-12 text-2xl font-semibold text-zinc-50">What emisar actually changed</h2>
+      <ul class="mt-4 space-y-3 text-sm leading-6 text-zinc-300">
+        <li>
+          <strong class="text-zinc-100">The forensics were legible and scoped.</strong>
+          Every <code>dmesg</code>, multipath, and CSI-log read was a declared action against one
+          host, logged with a reason — not a <code>tailscale ssh root@…</code>
+          scramble across
+          five tools with no record of who looked at what.
+        </li>
+        <li>
+          <strong class="text-zinc-100">The one destructive step stopped for a person.</strong>
+          Halting the alloc was gated, approved once, and recorded — the agent could contain the
+          damage without being trusted to run arbitrary commands.
+        </li>
+        <li>
+          <strong class="text-zinc-100">The cure landed as reviewable Terraform.</strong>
+          The permanent fix is a diff a human merged, not a command that lived for ten minutes in
+          someone's shell history and got lost.
+        </li>
+      </ul>
+      <p class="mt-4 text-sm leading-6 text-zinc-400">
+        Honest note: emisar would not have stopped democratic-csi's <code>mkfs</code>
+        — that was
+        an automated component doing its job badly. What emisar changes is everything a human or
+        agent does <em>around</em>
+        the failure. Investigate through tools, stop the disaster where you can, then hand a
+        Terraform path back to you — imperative containment, declarative cure.
+      </p>
+
+      <div class="mt-12 flex flex-wrap gap-x-6 gap-y-3 border-t border-zinc-900 pt-8 text-sm">
+        <.link
+          href={~p"/sign_up"}
+          class="inline-flex items-center gap-1 font-medium text-indigo-400 hover:text-indigo-300"
+        >
+          Start free — connect a runner <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
+        </.link>
+        <.link
+          navigate={~p"/docs/security-model"}
+          class="inline-flex items-center gap-1 font-medium text-indigo-400 hover:text-indigo-300"
+        >
+          How the trust boundary works <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
+        </.link>
+        <.link
+          navigate={~p"/docs/action-packs"}
+          class="inline-flex items-center gap-1 font-medium text-indigo-400 hover:text-indigo-300"
+        >
+          Author your own pack <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
+        </.link>
+      </div>
+    </div>
+  </section>
+
+  <.marketing_footer />
+</div>

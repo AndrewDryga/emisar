@@ -21,6 +21,7 @@ defmodule EmisarWeb.MarketingTest do
     /packs/cassandra
     /use-cases/cassandra-ops
     /use-cases/postgres-ops
+    /use-cases/csi-data-loss
     /compare/raw-ssh-for-ai
     /compare/custom-mcp-server
     /compare/slack-bots-for-ops

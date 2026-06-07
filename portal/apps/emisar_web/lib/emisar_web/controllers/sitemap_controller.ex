@@ -25,6 +25,7 @@ defmodule EmisarWeb.SitemapController do
     "/packs",
     "/use-cases/cassandra-ops",
     "/use-cases/postgres-ops",
+    "/use-cases/csi-data-loss",
     "/compare/raw-ssh-for-ai",
     "/compare/custom-mcp-server",
     "/compare/slack-bots-for-ops"

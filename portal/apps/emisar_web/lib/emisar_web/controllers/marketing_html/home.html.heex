@@ -97,6 +97,16 @@
           </div>
         <% end %>
       </dl>
+
+      <p class="mt-10 text-center text-sm">
+        <.link
+          navigate={~p"/use-cases/csi-data-loss"}
+          class="inline-flex items-center gap-1 font-medium text-indigo-400 hover:text-indigo-300"
+        >
+          See the same loop on a real incident — the 33-hour wipe
+          <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
+        </.link>
+      </p>
     </div>
   </section>
 
@@ -486,20 +496,20 @@
                 <th class="px-6 py-4 font-medium"></th>
                 <th class="px-6 py-4 font-semibold text-indigo-300">emisar</th>
                 <th class="px-6 py-4 font-medium">Raw SSH key</th>
-                <th class="px-6 py-4 font-medium">Code Interpreter</th>
+                <th class="px-6 py-4 font-medium">Slack ops bot</th>
                 <th class="px-6 py-4 font-medium">Custom MCP server</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-zinc-900 text-zinc-300">
-              <%= for {row, em, ssh, ci, mcp} <- [
+              <%= for {row, em, ssh, slack, mcp} <- [
                 {"Typed action contract", "yes", "no", "no", "maybe"},
                 {"Pack drift blocks dispatch", "yes", "no", "no", "no"},
                 {"Risk-tier policy + overrides", "yes", "no", "no", "maybe"},
-                {"Approvals + standing grants", "yes", "no", "no", "no"},
-                {"Per-user runner scopes", "yes", "no", "no", "maybe"},
-                {"Streaming stdout/stderr", "yes", "yes", "no", "maybe"},
-                {"Audit + SIEM export", "yes", "no", "no", "maybe"},
-                {"Setup time", "5 min", "instant + nightmares", "30 sec", "1-2 weeks"}
+                {"Approvals + standing grants", "yes", "no", "maybe", "no"},
+                {"Per-user runner scopes", "yes", "no", "maybe", "maybe"},
+                {"Streaming stdout/stderr", "yes", "yes", "maybe", "maybe"},
+                {"Audit + SIEM export", "yes", "no", "maybe", "maybe"},
+                {"Setup time", "5 min", "instant + nightmares", "weeks, then drift", "1-2 weeks"}
               ] do %>
                 <tr class="hover:bg-zinc-900/30">
                   <td class="px-6 py-4 font-medium text-zinc-100">{row}</td>
@@ -516,7 +526,7 @@
                         {em}
                     <% end %>
                   </td>
-                  <%= for v <- [ssh, ci, mcp] do %>
+                  <%= for v <- [ssh, slack, mcp] do %>
                     <td class="px-6 py-4">
                       <%= cond do %>
                         <% v == "yes" -> %>
