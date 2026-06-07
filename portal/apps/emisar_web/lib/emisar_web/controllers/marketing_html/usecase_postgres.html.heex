@@ -3,110 +3,156 @@
 
   <section class="py-16 sm:py-24">
     <div class="mx-auto max-w-3xl px-6 lg:px-8">
-      <p class="text-sm font-semibold text-indigo-400">Use cases / Postgres</p>
+      <p class="text-sm font-semibold text-indigo-400">Case study · Postgres</p>
       <h1 class="mt-2 text-4xl font-bold tracking-tight text-zinc-50 md:text-5xl">
-        Postgres ops — read-only triage, one-approval kill
+        The migration that died holding a lock
       </h1>
       <p class="mt-6 text-lg leading-8 text-zinc-400">
-        At 02:14 a read replica falls 5 GB behind. A model with raw <code>psql</code>
-        on the primary is either useful or terrifying — and you find out which one
-        after it runs. With a declared Postgres pack, triage is read-only and
-        unattended; anything that disconnects a backend stops for a human.
+        At 02:14 the API started timing out across the board. Not a slow query, not a CPU spike —
+        every write was queued behind a single transaction a crashed deploy had left open
+        eighteen minutes earlier. Here is the loop that cleared it: an agent investigates through
+        declared, read-only <code>psql</code>
+        actions, finds the head of the lock chain, and severs it behind one human approval — no
+        <code>psql -c</code>
+        shell anywhere in reach.
       </p>
 
-      <h2 class="mt-12 text-2xl font-semibold text-zinc-50">The actions that matter here</h2>
+      <h2 class="mt-12 text-2xl font-semibold text-zinc-50">The database</h2>
       <p class="mt-4 text-sm leading-6 text-zinc-400">
-        The
-        <.link navigate={~p"/packs/postgres"} class="text-indigo-400 hover:text-indigo-300">
-          Postgres pack
-        </.link>
-        ships 48 actions. Five carry this incident; note where the risk tier sits.
-      </p>
-      <ul class="mt-4 space-y-3 text-sm text-zinc-300">
-        <li>
-          <code class="font-mono text-indigo-300">postgres.replication_lag</code>
-          — risk <code class="text-emerald-300">low</code>, no args. One
-          <code>SELECT … pg_wal_lsn_diff(…) FROM pg_stat_replication</code>
-          on the primary; sent/replay lag in bytes per replica. The model polls it freely.
-        </li>
-        <li>
-          <code class="font-mono text-indigo-300">postgres.longest_running_queries</code>
-          — risk <code class="text-emerald-300">low</code>. Active backends, oldest first,
-          with PID, wait event, and the first 300 chars of the statement. No approval.
-        </li>
-        <li>
-          <code class="font-mono text-indigo-300">postgres.lock_blocking_chains</code>
-          — risk <code class="text-emerald-300">low</code>. Blocker → blocked PID pairs via <code>pg_blocking_pids()</code>. Find the head of the chain before you touch anything.
-        </li>
-        <li>
-          <code class="font-mono text-indigo-300">postgres.cancel_query</code>
-          — risk <code class="text-amber-300">high</code>. <code>pg_cancel_backend(pid)</code>:
-          SIGINT, the connection survives. Argument is one integer PID (1–4194304). The default
-          policy holds it for one approval.
-        </li>
-        <li>
-          <code class="font-mono text-indigo-300">postgres.terminate_backend</code>
-          — risk <code class="text-amber-300">high</code>. <code>pg_terminate_backend(pid)</code>:
-          SIGTERM, the connection is severed and its transaction rolls back. The escalation when
-          cancel won't take. Also one approval.
-        </li>
-      </ul>
-
-      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">Worked example</h2>
-      <pre class="mt-3 overflow-x-auto rounded-lg border border-zinc-900 bg-black/60 p-4 font-mono text-xs leading-6 text-zinc-300"><span class="text-zinc-500"># LLM, via MCP. Every call carries a reason; it's logged.</span>
-
-postgres.replication_lag &#123;&#125;
-<span class="text-zinc-500">→ replica_1|10.0.0.6|streaming|async|0|2048
-  replica_2|10.0.0.7|streaming|async|512|4812345678   # ~4.8 GB behind</span>
-
-postgres.longest_running_queries &#123;&#125;
-<span class="text-zinc-500">→ 9871|etl|analytics|1240|IO|DataFileRead|REINDEX TABLE orders_2018 ...
-  4502|web|api|3|Lock|relation|UPDATE orders SET ...</span>
-
-<span class="text-zinc-500"># Gentle first — cancel, don't kill. risk: high → one approval.</span>
-postgres.cancel_query &#123;"pid": 9871,
-  "reason": "20-min REINDEX on the primary starving WAL replay to replica_2."&#125;
-<span class="text-zinc-500">→ status: pending_approval
-  policy:  high tier → require_approval
-  review:  https://app.emisar.dev/app/approvals/r_8f3a…</span></pre>
-      <p class="mt-3 text-sm text-zinc-400">
-        The model hands the approval URL back to the human. The approver sees the actor, the
-        target runner, the exact PID, and the reason — then approves with one click. The cancel
-        fires, the output captures <code>pg_cancel_backend</code>'s boolean, and replay starts
-        catching up. If the backend is wedged in a syscall and ignores the SIGINT, the model
-        escalates to <code>postgres.terminate_backend</code> — which is its own approval, not a
-        free upgrade.
+        A managed Postgres 16 primary with two streaming replicas. The agent reaches it over
+        MCP → emisar with the stock <code>postgres</code>
+        pack: 48 actions, each a single fixed SQL statement run through <code>psql -XAt</code>
+        with only typed, validated arguments substituted. The runner authenticates with libpq
+        <code>PG*</code>
+        env vars on the host; the role is scoped to <code>pg_monitor</code>
+        plus <code>pg_signal_backend</code>
+        — enough to read state and signal a backend, nothing
+        that can run DDL.
       </p>
 
-      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">What stays out of bounds</h2>
-      <ul class="mt-4 space-y-2 text-sm text-zinc-300">
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">
+        T+0 — everything starts timing out
+      </h2>
+      <p class="mt-4 text-sm leading-6 text-zinc-400">
+        p99 API latency goes vertical; checkout requests pile up against a 30-second timeout.
+        Connection count climbs as the app retries. CPU is flat — the database isn't busy, it's <em>waiting</em>. The on-call agent picks up the page.
+      </p>
+
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">
+        1 · Investigate — through declared reads
+      </h2>
+      <p class="mt-4 text-sm leading-6 text-zinc-400">
+        Every call below is <code class="text-emerald-300">low</code>
+        risk and holds no locks of its own — so the default policy runs them unattended while the
+        agent narrows in.
+      </p>
+      <pre class="mt-3 overflow-x-auto rounded-lg border border-zinc-900 bg-black/60 p-4 font-mono text-xs leading-6 text-zinc-300"><span class="text-zinc-500"># Claude, over MCP → emisar. Every call carries a reason; it's logged.</span>
+
+postgres.activity_states &#123;&#125;
+<span class="text-zinc-500">→ active|41
+  idle in transaction|6
+  idle|22
+  # 41 "active" backends and climbing — but active here means blocked, not working.</span>
+
+postgres.lock_blocking_chains &#123;&#125;
+<span class="text-zinc-500">→ blocked_pid|blocker_pid|blocked_query
+  8801|4471|UPDATE orders SET status='paid' WHERE id=$1
+  8802|4471|UPDATE orders SET status='paid' WHERE id=$1
+  … 30 rows, every one blocked_by 4471
+  # one backend — pid 4471 — is the head of the entire chain.</span>
+
+postgres.idle_in_transaction &#123;&#125;
+<span class="text-zinc-500">→ pid|usename|application_name|idle_seconds|query
+  4471|deploy|migrate-svc|1084|SELECT id FROM orders WHERE region='eu' FOR UPDATE
+  # 4471 has been idle *inside* a transaction for 18 min, holding a FOR UPDATE lock.</span>
+
+postgres.activity_detail &#123;&#125;
+<span class="text-zinc-500">→ 4471|deploy|migrate-svc|idle in transaction|Client|ClientRead|…
+  # wait_event = ClientRead: the client is gone. A migration died mid-transaction.</span></pre>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        Diagnosis: <code>migrate-svc</code>
+        opened a transaction, took a <code>FOR UPDATE</code>
+        lock on a batch of <code>orders</code>
+        rows, and then crashed before <code>COMMIT</code>. Postgres holds the transaction — and
+        its locks — open until the connection closes. Every checkout touching those rows is now
+        queued behind a client that no longer exists.
+      </p>
+
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">2 · Stop the bleed — one approval</h2>
+      <p class="mt-4 text-sm leading-6 text-zinc-400">
+        There are two ways to signal a backend, and the difference matters here.
+        <code>cancel_query</code>
+        (<code>pg_cancel_backend</code>, a SIGINT) cancels a running <em>query</em>
+        — but 4471 isn't running one, it's sitting idle holding a lock, so a cancel
+        does nothing. The tool that releases it is <code>terminate_backend</code>
+        (<code>pg_terminate_backend</code>, a SIGTERM): sever the connection, roll back the
+        orphaned transaction, drop the lock. It ships at <code class="text-amber-300">high</code>,
+        so policy holds it for a human.
+      </p>
+      <pre class="mt-3 overflow-x-auto rounded-lg border border-zinc-900 bg-black/60 p-4 font-mono text-xs leading-6 text-zinc-300">postgres.terminate_backend &#123;"pid": 4471,
+  "reason": "crashed migrate-svc left an idle FOR UPDATE txn blocking 30 writers"&#125;
+<span class="text-amber-300">⏸ pending approval — terminate_backend is high-risk; a human approves in the portal</span>
+<span class="text-emerald-300">✓ approved by you · one use · audit event recorded</span>
+<span class="text-zinc-500">→ pg_terminate_backend(4471) = t · connection severed · txn rolled back · lock released</span></pre>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        The thirty blocked <code>UPDATE</code>s commit in the next second and API latency drops
+        back to baseline. The approver saw the actor, the exact <code>pid</code>
+        (validated as an integer in <code>[1, 4194304]</code>, nothing else), the target runner,
+        and the reason before clicking once — and that approval is now tied to the run in the
+        audit trail forever.
+      </p>
+
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">3 · Sweep the stragglers</h2>
+      <p class="mt-4 text-sm leading-6 text-zinc-400">
+        The same failed deploy left a handful of other idle-in-transaction backends. None are
+        blocking writers yet, but each pins an old <code>xmin</code>
+        that keeps vacuum from cleaning up — slow-motion bloat. One gated bulk action clears them:
+      </p>
+      <pre class="mt-3 overflow-x-auto rounded-lg border border-zinc-900 bg-black/60 p-4 font-mono text-xs leading-6 text-zinc-300">postgres.kill_idle &#123;"older_than_seconds": 600,
+  "reason": "clear the remaining idle-in-transaction backends from the failed migrate-svc deploy"&#125;
+<span class="text-amber-300">⏸ pending approval — kill_idle is high-risk; a human approves in the portal</span>
+<span class="text-emerald-300">✓ approved by you · one use · audit event recorded</span>
+<span class="text-zinc-500">→ terminated 5 idle-in-transaction backends older than 600s</span></pre>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        <code>older_than_seconds</code>
+        is bounded to <code>[60, 86400]</code>
+        and the kill only ever targets <code>idle in transaction</code>
+        backends — it can't reach a healthy connection mid-query. Like the terminate before it,
+        it's <code>high</code>, so it stopped for a human, and every backend it touched is on the
+        record.
+      </p>
+
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">What stayed out of bounds</h2>
+      <ul class="mt-4 space-y-3 text-sm leading-6 text-zinc-300">
         <li>
           <strong class="text-zinc-100">No raw SQL.</strong>
           There is no <code>postgres.exec</code>
           and no <code>psql -c</code>
-          passthrough. Every
-          action runs one fixed statement with only validated, typed arguments substituted —
-          a PID is an integer in <code>[1, 4194304]</code>, nothing else.
+          passthrough. Every action runs one fixed statement with only validated, typed arguments
+          substituted — a PID is an integer in <code>[1, 4194304]</code>, an identifier matches <code>^[a-zA-Z_][a-zA-Z0-9_]&#123;0,62&#125;$</code>, nothing else reaches psql.
         </li>
         <li>
           <strong class="text-zinc-100">No DDL.</strong>
           The pack's writes stop at cancel/terminate, <code>ANALYZE</code>, <code>VACUUM</code>,
           and <code>REINDEX CONCURRENTLY</code>
-          — each individually risk-tiered. There is no <code>ALTER</code>
-          or <code>DROP</code>
-          to call.
-        </li>
-        <li>
-          <strong class="text-zinc-100">No raw secrets leave the host.</strong>
-          <code>psql</code> connection errors and <code>PG*</code> environment values run through
-          redaction on the runner before egress. The control plane never sees your database
-          password.
+          — each individually risk-tiered. There is no <code>ALTER</code>, <code>DROP</code>, or
+          <code>DELETE</code>
+          action to call.
         </li>
         <li>
           <strong class="text-zinc-100">Shapes, not values.</strong>
-          <code>postgres.slow_queries</code> reads <code>pg_stat_statements</code>, where literals
-          are already normalized to <code>$1</code>. You get query fingerprints and timings —
-          not the rows they touched.
+          The diagnostic reads return query <em>fingerprints</em>
+          and counts — <code>slow_queries</code>
+          reads <code>pg_stat_statements</code>, where
+          literals are already normalized to <code>$1</code>. The agent sees what's slow, not the
+          rows it touched.
+        </li>
+        <li>
+          <strong class="text-zinc-100">No raw secrets leave the host.</strong>
+          <code>psql</code>
+          connection errors and <code>PG*</code>
+          environment values run through redaction on the runner before egress. The control plane
+          never sees your database password.
         </li>
       </ul>
 
@@ -120,9 +166,11 @@ postgres.cancel_query &#123;"pid": 9871,
             <.icon name="hero-minus" class="hidden h-5 w-5 text-indigo-400 group-open:block" />
           </summary>
           <p class="px-6 pb-5 text-sm leading-6 text-zinc-400">
-            No. The runner only exposes the actions in the trusted pack, each a fixed SQL string.
-            A statement that isn't one of those 48 doesn't exist as far as the model is concerned —
-            there's no free-text SQL surface to reach.
+            No. The runner only exposes the actions in the trusted pack, each a fixed SQL string. A
+            statement that isn't one of those 48 doesn't exist as far as the model is concerned —
+            there is no free-text SQL surface to reach, so prompt-injecting a
+            <code>DROP TABLE</code>
+            has nowhere to land.
           </p>
         </details>
         <details class="group">
@@ -132,13 +180,12 @@ postgres.cancel_query &#123;"pid": 9871,
             <.icon name="hero-minus" class="hidden h-5 w-5 text-indigo-400 group-open:block" />
           </summary>
           <p class="px-6 pb-5 text-sm leading-6 text-zinc-400">
-            Because clearing a blocker at 02:14 is the whole point. It's gated, not removed:
-            <code>cancel_query</code>
-            and <code>terminate_backend</code>
-            ship at <code>high</code>,
-            which the default policy holds for one human approval. Tighten it to <code>deny</code>
-            for a given role, or grant a bounded standing approval — that's a
-            policy decision, and the policy change is itself audited.
+            Because clearing a wedged lock at 02:14 is the whole point. It's gated, not removed: <code>cancel_query</code>, <code>terminate_backend</code>, and
+            <code>kill_idle</code>
+            ship at <code>high</code>, which the default policy holds for one approval. Tighten any
+            of them to <code>deny</code>
+            for a role, or grant a bounded standing approval so on-call can clear the common case
+            unattended — either way it's a policy decision, and the change is itself audited.
           </p>
         </details>
         <details class="group">
@@ -148,12 +195,11 @@ postgres.cancel_query &#123;"pid": 9871,
             <.icon name="hero-minus" class="hidden h-5 w-5 text-indigo-400 group-open:block" />
           </summary>
           <p class="px-6 pb-5 text-sm leading-6 text-zinc-400">
-            Only the privileges the actions you enable require. The pack authenticates with libpq
-            <code>PG*</code>
-            env vars on the host; scope that role to <code>pg_monitor</code>
-            plus <code>pg_signal_backend</code>
-            if read-only triage and backend cancellation is all you
-            expose.
+            No — only the privileges the actions you enable require. For this incident,
+            <code>pg_monitor</code>
+            (read every stat view) plus <code>pg_signal_backend</code>
+            (cancel and terminate other backends) is the whole grant. No superuser, no ownership,
+            no write access to a single table.
           </p>
         </details>
       </div>
@@ -166,10 +212,10 @@ postgres.cancel_query &#123;"pid": 9871,
           Browse all 48 Postgres actions <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
         </.link>
         <.link
-          navigate={~p"/docs/security-model"}
+          navigate={~p"/use-cases/cassandra-ops"}
           class="inline-flex items-center gap-1 font-medium text-indigo-400 hover:text-indigo-300"
         >
-          How the trust boundary works <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
+          The Cassandra incident <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
         </.link>
         <.link
           navigate={~p"/compare/raw-ssh-for-ai"}

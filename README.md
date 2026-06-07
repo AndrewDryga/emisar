@@ -164,4 +164,4 @@ See:
 - [`SECURITY.md`](.github/SECURITY.md)
 
 For commercial licensing, hosted use, AI permissions, or other rights,
-contact `licensing@dryga.com`.
+contact `licensing@emisar.dev`.

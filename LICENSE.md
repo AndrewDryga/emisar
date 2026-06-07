@@ -167,7 +167,7 @@ Any dispute arising out of or related to this license or the Software must be br
 
 ## 19. Additional Commercial Rights
 
-For commercial use, hosted use, managed use, AI use, model training, redistribution of modified versions, or use not permitted by this license, contact `licensing@dryga.com`.
+For commercial use, hosted use, managed use, AI use, model training, redistribution of modified versions, or use not permitted by this license, contact `licensing@emisar.dev`.
 
 Separate written agreements signed by Licensor may grant additional rights.
 

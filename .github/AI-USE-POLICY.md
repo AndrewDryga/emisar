@@ -60,7 +60,7 @@ Not for publication or competitive use without prior written permission.
 
 ## Requesting Permission
 
-For permission to use this repository for an AI-related purpose, email `licensing@dryga.com` with:
+For permission to use this repository for an AI-related purpose, email `licensing@emisar.dev` with:
 
 - who you are;
 - what materials you want to use;

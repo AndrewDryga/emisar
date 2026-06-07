@@ -2233,8 +2233,8 @@ defmodule EmisarWeb.CoreComponents do
     ~H"""
     <footer class="border-t border-zinc-900 bg-zinc-950">
       <div class="mx-auto max-w-7xl px-6 py-16 lg:px-8">
-        <div class="grid grid-cols-2 gap-12 md:grid-cols-6">
-          <div class="col-span-2">
+        <div class="grid grid-cols-1 gap-12 lg:grid-cols-4">
+          <div>
             <.link href={~p"/"}>
               <.brand size={:md} />
             </.link>
@@ -2252,146 +2252,153 @@ defmodule EmisarWeb.CoreComponents do
             </p>
           </div>
 
-          <div>
-            <h4 class="text-xs font-semibold uppercase tracking-wider text-zinc-400">Product</h4>
-            <ul class="mt-4 space-y-3 text-sm">
-              <li>
-                <.link href={~p"/packs"} class="text-zinc-400 hover:text-zinc-100">Packs</.link>
-              </li>
-              <li>
-                <.link href={~p"/pricing"} class="text-zinc-400 hover:text-zinc-100">Pricing</.link>
-              </li>
-              <li>
-                <.link href={~p"/security"} class="text-zinc-400 hover:text-zinc-100">Security</.link>
-              </li>
-              <li>
-                <.link href={~p"/zero-trust"} class="text-zinc-400 hover:text-zinc-100">
-                  Zero Trust
-                </.link>
-              </li>
-              <li><.link href={~p"/docs"} class="text-zinc-400 hover:text-zinc-100">Docs</.link></li>
-              <li>
-                <.link href={~p"/changelog"} class="text-zinc-400 hover:text-zinc-100">
-                  Changelog
-                </.link>
-              </li>
-            </ul>
-          </div>
+          <div class="grid grid-cols-2 gap-8 sm:grid-cols-3 lg:col-span-3 lg:grid-cols-5">
+            <div>
+              <h4 class="text-xs font-semibold uppercase tracking-wider text-zinc-400">Product</h4>
+              <ul class="mt-4 space-y-3 text-sm">
+                <li>
+                  <.link href={~p"/packs"} class="text-zinc-400 hover:text-zinc-100">Packs</.link>
+                </li>
+                <li>
+                  <.link href={~p"/pricing"} class="text-zinc-400 hover:text-zinc-100">Pricing</.link>
+                </li>
+                <li>
+                  <.link href={~p"/security"} class="text-zinc-400 hover:text-zinc-100">
+                    Security
+                  </.link>
+                </li>
+                <li>
+                  <.link href={~p"/zero-trust"} class="text-zinc-400 hover:text-zinc-100">
+                    Zero Trust
+                  </.link>
+                </li>
+                <li>
+                  <.link href={~p"/docs"} class="text-zinc-400 hover:text-zinc-100">Docs</.link>
+                </li>
+                <li>
+                  <.link href={~p"/changelog"} class="text-zinc-400 hover:text-zinc-100">
+                    Changelog
+                  </.link>
+                </li>
+              </ul>
+            </div>
 
-          <div>
-            <h4 class="text-xs font-semibold uppercase tracking-wider text-zinc-400">Use cases</h4>
-            <ul class="mt-4 space-y-3 text-sm">
-              <li>
-                <.link href={~p"/use-cases/cassandra-ops"} class="text-zinc-400 hover:text-zinc-100">
-                  Cassandra ops
-                </.link>
-              </li>
-              <li>
-                <.link href={~p"/use-cases/postgres-ops"} class="text-zinc-400 hover:text-zinc-100">
-                  Postgres ops
-                </.link>
-              </li>
-              <li>
-                <.link
-                  href={~p"/use-cases/csi-data-loss"}
-                  class="text-zinc-400 hover:text-zinc-100"
-                >
-                  Case study: the 33-hour wipe
-                </.link>
-              </li>
-              <li>
-                <.link href={~p"/compare/raw-ssh-for-ai"} class="text-zinc-400 hover:text-zinc-100">
-                  SSH vs emisar
-                </.link>
-              </li>
-              <li>
-                <.link href={~p"/compare/custom-mcp-server"} class="text-zinc-400 hover:text-zinc-100">
-                  Custom MCP vs emisar
-                </.link>
-              </li>
-              <li>
-                <.link
-                  href={~p"/compare/slack-bots-for-ops"}
-                  class="text-zinc-400 hover:text-zinc-100"
-                >
-                  Slack bots vs emisar
-                </.link>
-              </li>
-            </ul>
-          </div>
+            <div>
+              <h4 class="text-xs font-semibold uppercase tracking-wider text-zinc-400">Use cases</h4>
+              <ul class="mt-4 space-y-3 text-sm">
+                <li>
+                  <.link href={~p"/use-cases/cassandra-ops"} class="text-zinc-400 hover:text-zinc-100">
+                    Cassandra ops
+                  </.link>
+                </li>
+                <li>
+                  <.link href={~p"/use-cases/postgres-ops"} class="text-zinc-400 hover:text-zinc-100">
+                    Postgres ops
+                  </.link>
+                </li>
+                <li>
+                  <.link
+                    href={~p"/use-cases/csi-data-loss"}
+                    class="text-zinc-400 hover:text-zinc-100"
+                  >
+                    Case study: the 33-hour wipe
+                  </.link>
+                </li>
+              </ul>
+            </div>
 
-          <div>
-            <h4 class="text-xs font-semibold uppercase tracking-wider text-zinc-400">Company</h4>
-            <ul class="mt-4 space-y-3 text-sm">
-              <li>
-                <.link href={~p"/about"} class="text-zinc-400 hover:text-zinc-100">About</.link>
-              </li>
-              <li>
-                <a
-                  href="https://github.com/andrewdryga/emisar"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  class="inline-flex items-center gap-1 text-zinc-400 hover:text-zinc-100"
-                >
-                  GitHub <.icon name="hero-arrow-top-right-on-square" class="h-3 w-3 opacity-60" />
-                </a>
-              </li>
-              <li>
-                <a
-                  href={
-                    Application.get_env(:emisar_web, :status_page_url, "https://status.emisar.dev")
-                  }
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  class="inline-flex items-center gap-1 text-zinc-400 hover:text-zinc-100"
-                >
-                  Status <.icon name="hero-arrow-top-right-on-square" class="h-3 w-3 opacity-60" />
-                </a>
-              </li>
-              <li>
-                <a href="mailto:hello@emisar.dev" class="text-zinc-400 hover:text-zinc-100">
-                  Contact
-                </a>
-              </li>
-            </ul>
-          </div>
+            <div>
+              <h4 class="text-xs font-semibold uppercase tracking-wider text-zinc-400">Compare</h4>
+              <ul class="mt-4 space-y-3 text-sm">
+                <li>
+                  <.link href={~p"/compare/raw-ssh-for-ai"} class="text-zinc-400 hover:text-zinc-100">
+                    SSH vs emisar
+                  </.link>
+                </li>
+                <li>
+                  <.link
+                    href={~p"/compare/custom-mcp-server"}
+                    class="text-zinc-400 hover:text-zinc-100"
+                  >
+                    Custom MCP vs emisar
+                  </.link>
+                </li>
+              </ul>
+            </div>
 
-          <div>
-            <h4 class="text-xs font-semibold uppercase tracking-wider text-zinc-400">Legal</h4>
-            <ul class="mt-4 space-y-3 text-sm">
-              <li>
-                <.link href={~p"/privacy"} class="text-zinc-400 hover:text-zinc-100">Privacy</.link>
-              </li>
-              <li>
-                <.link href={~p"/terms"} class="text-zinc-400 hover:text-zinc-100">Terms</.link>
-              </li>
-              <li>
-                <.link href={~p"/refund-policy"} class="text-zinc-400 hover:text-zinc-100">
-                  Refund Policy
-                </.link>
-              </li>
-              <li>
-                <a
-                  href="https://github.com/andrewdryga/emisar/blob/main/.github/SECURITY.md"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  class="inline-flex items-center gap-1 text-zinc-400 hover:text-zinc-100"
-                >
-                  Security policy
-                  <.icon name="hero-arrow-top-right-on-square" class="h-3 w-3 opacity-60" />
-                </a>
-              </li>
-              <li>
-                <a
-                  href="https://github.com/andrewdryga/emisar/blob/main/LICENSE.md"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  class="inline-flex items-center gap-1 text-zinc-400 hover:text-zinc-100"
-                >
-                  License <.icon name="hero-arrow-top-right-on-square" class="h-3 w-3 opacity-60" />
-                </a>
-              </li>
-            </ul>
+            <div>
+              <h4 class="text-xs font-semibold uppercase tracking-wider text-zinc-400">Company</h4>
+              <ul class="mt-4 space-y-3 text-sm">
+                <li>
+                  <.link href={~p"/about"} class="text-zinc-400 hover:text-zinc-100">About</.link>
+                </li>
+                <li>
+                  <a
+                    href="https://github.com/andrewdryga/emisar"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="inline-flex items-center gap-1 text-zinc-400 hover:text-zinc-100"
+                  >
+                    GitHub <.icon name="hero-arrow-top-right-on-square" class="h-3 w-3 opacity-60" />
+                  </a>
+                </li>
+                <li>
+                  <a
+                    href={
+                      Application.get_env(:emisar_web, :status_page_url, "https://status.emisar.dev")
+                    }
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="inline-flex items-center gap-1 text-zinc-400 hover:text-zinc-100"
+                  >
+                    Status <.icon name="hero-arrow-top-right-on-square" class="h-3 w-3 opacity-60" />
+                  </a>
+                </li>
+                <li>
+                  <a href="mailto:support@emisar.dev" class="text-zinc-400 hover:text-zinc-100">
+                    Contact
+                  </a>
+                </li>
+              </ul>
+            </div>
+
+            <div>
+              <h4 class="text-xs font-semibold uppercase tracking-wider text-zinc-400">Legal</h4>
+              <ul class="mt-4 space-y-3 text-sm">
+                <li>
+                  <.link href={~p"/privacy"} class="text-zinc-400 hover:text-zinc-100">Privacy</.link>
+                </li>
+                <li>
+                  <.link href={~p"/terms"} class="text-zinc-400 hover:text-zinc-100">Terms</.link>
+                </li>
+                <li>
+                  <.link href={~p"/refund-policy"} class="text-zinc-400 hover:text-zinc-100">
+                    Refund Policy
+                  </.link>
+                </li>
+                <li>
+                  <a
+                    href="https://github.com/andrewdryga/emisar/blob/main/.github/SECURITY.md"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="inline-flex items-center gap-1 text-zinc-400 hover:text-zinc-100"
+                  >
+                    Security policy
+                    <.icon name="hero-arrow-top-right-on-square" class="h-3 w-3 opacity-60" />
+                  </a>
+                </li>
+                <li>
+                  <a
+                    href="https://github.com/andrewdryga/emisar/blob/main/LICENSE.md"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="inline-flex items-center gap-1 text-zinc-400 hover:text-zinc-100"
+                  >
+                    License <.icon name="hero-arrow-top-right-on-square" class="h-3 w-3 opacity-60" />
+                  </a>
+                </li>
+              </ul>
+            </div>
           </div>
         </div>
 

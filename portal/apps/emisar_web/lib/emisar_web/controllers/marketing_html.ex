@@ -189,4 +189,72 @@ defmodule EmisarWeb.MarketingHTML do
     >{@text}</div>
     """
   end
+
+  attr :title, :string, required: true
+  attr :updated, :string, required: true
+  attr :summary, :string, default: nil
+
+  attr :toc, :list,
+    required: true,
+    doc: "List of {anchor_id, label}; ids must match the id on each section's <h2> in the body."
+
+  slot :inner_block, required: true
+
+  @doc """
+  Shared layout for the legal pages (Terms, Privacy, Refund). Renders the
+  marketing chrome, a compact header (title + last-updated date + an
+  optional plain-language summary), a sticky table of contents on desktop
+  built from `toc`, and the body as readable prose. Keeping the chrome in
+  one place is what keeps the three legal pages consistent.
+  """
+  def legal_page(assigns) do
+    ~H"""
+    <div class="bg-zinc-950 text-zinc-100">
+      <.marketing_nav current={:legal} />
+
+      <header class="border-b border-zinc-900">
+        <div class="mx-auto max-w-5xl px-6 py-16 sm:py-20 lg:px-8">
+          <p class="text-sm font-semibold text-indigo-400">Legal</p>
+          <h1 class="mt-2 text-4xl font-bold tracking-tight text-zinc-50 sm:text-5xl">
+            {@title}
+          </h1>
+          <p class="mt-4 text-sm text-zinc-500">Last updated {@updated}</p>
+          <p :if={@summary} class="mt-6 max-w-2xl text-base leading-7 text-zinc-400">
+            {@summary}
+          </p>
+        </div>
+      </header>
+
+      <section class="py-14 sm:py-16">
+        <div class="mx-auto max-w-5xl px-6 lg:px-8">
+          <div class="lg:grid lg:grid-cols-[15rem_1fr] lg:gap-14">
+            <aside class="hidden lg:block">
+              <nav class="sticky top-12" aria-label="On this page">
+                <p class="text-xs font-semibold uppercase tracking-wider text-zinc-500">
+                  On this page
+                </p>
+                <ul class="mt-4 space-y-1 border-l border-zinc-800">
+                  <li :for={{id, label} <- @toc}>
+                    <a
+                      href={"##{id}"}
+                      class="-ml-px block border-l border-transparent py-1 pl-4 text-sm text-zinc-400 transition hover:border-indigo-400 hover:text-zinc-100"
+                    >
+                      {label}
+                    </a>
+                  </li>
+                </ul>
+              </nav>
+            </aside>
+
+            <article class="prose prose-invert max-w-none prose-headings:scroll-mt-8 prose-headings:font-bold prose-headings:tracking-tight prose-headings:text-zinc-50 prose-h2:mb-4 prose-h2:mt-12 prose-h2:text-2xl prose-p:leading-8 prose-p:text-zinc-400 prose-a:font-medium prose-a:text-indigo-300 prose-a:no-underline hover:prose-a:text-indigo-200 prose-strong:text-zinc-200 prose-li:text-zinc-400 prose-li:marker:text-zinc-600">
+              {render_slot(@inner_block)}
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <.marketing_footer />
+    </div>
+    """
+  end
 end

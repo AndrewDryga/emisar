@@ -36,7 +36,16 @@ config :emisar, Emisar.Mailer, adapter: Swoosh.Adapters.Local
 config :emisar, Oban,
   repo: Emisar.Repo,
   plugins: [
+    # Rescue jobs stuck in `executing` because a node was shut down mid-run
+    # (e.g. a Fly deploy) back to `available`. Safe because our workers are
+    # idempotent (IL-13); rescue_after defaults to 60 minutes.
+    Oban.Plugins.Lifeline,
+    # Prune completed/cancelled/discarded jobs older than 7 days so the
+    # oban_jobs table stays bounded.
     {Oban.Plugins.Pruner, max_age: 60 * 60 * 24 * 7},
+    # REINDEX CONCURRENTLY the oban_jobs indexes weekly to release the index
+    # bloat VACUUM leaves behind on a high-churn, frequently-pruned table.
+    {Oban.Plugins.Reindexer, schedule: "@weekly"},
     {Oban.Plugins.Cron,
      crontab: [
        {"@daily", Emisar.Workers.AuditRetention},

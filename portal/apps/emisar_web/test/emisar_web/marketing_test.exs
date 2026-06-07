@@ -24,7 +24,6 @@ defmodule EmisarWeb.MarketingTest do
     /use-cases/csi-data-loss
     /compare/raw-ssh-for-ai
     /compare/custom-mcp-server
-    /compare/slack-bots-for-ops
     /zero-trust
   )
 

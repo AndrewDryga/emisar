@@ -1,130 +1,117 @@
 <%!-- ============================================================
-  Refund Policy
+  Refund Policy — chrome + layout via <.legal_page>
 ============================================================ --%>
+<.legal_page
+  title="Refund Policy"
+  updated="June 5, 2026"
+  summary="Free costs nothing, paid plans bill monthly and you can cancel any time, and we make any billing mistake right."
+  toc={[
+    {"short-version", "The short version"},
+    {"free", "1. Free plan"},
+    {"team", "2. Team plan (monthly)"},
+    {"enterprise", "3. Enterprise and annual plans"},
+    {"mistakes", "4. Billing mistakes we refund"},
+    {"request", "5. How to request a refund"},
+    {"statutory", "6. Your statutory rights"},
+    {"chargeback", "7. Before you file a chargeback"},
+    {"contact", "8. Contact"}
+  ]}
+>
+  <p>
+    This policy is part of, and read together with, our <.link navigate={~p"/terms"}>Terms of Service</.link>.
+  </p>
 
-<div class="bg-zinc-950 text-zinc-100">
-  <.marketing_nav current={:refund} />
+  <h2 id="short-version">The short version</h2>
+  <ul>
+    <li>
+      <strong>Free</strong> is free. There is nothing to charge and nothing to refund.
+    </li>
+    <li>
+      <strong>Team</strong> is billed monthly, per runner. Cancel any time and you keep
+      access until the end of the period you already paid for.
+    </li>
+    <li>
+      We <strong>don't pro-rate or refund partial months</strong> for a normal
+      cancellation — but we <strong>do</strong> refund genuine billing mistakes in full.
+    </li>
+  </ul>
 
-  <%!-- Hero --%>
-  <section class="py-24 sm:py-32">
-    <div class="mx-auto max-w-4xl px-6 lg:px-8">
-      <p class="text-base font-semibold text-indigo-400">Legal</p>
-      <h1 class="mt-2 text-6xl font-bold tracking-tight text-zinc-50 md:text-7xl">
-        Refund Policy
-      </h1>
-      <p class="mt-8 max-w-2xl text-lg leading-8 text-zinc-400">
-        Last updated: June 5, 2026. The plain version: Free costs nothing, paid plans bill
-        monthly and you can cancel any time, and we make any billing mistake right. The detail
-        is below. This policy is part of, and read together with, our <.link
-          navigate={~p"/terms"}
-          class="text-indigo-300 hover:text-indigo-200"
-        >Terms of Service</.link>.
-      </p>
-    </div>
-  </section>
+  <h2 id="free">1. Free plan</h2>
+  <p>
+    The Free plan carries no charge. Nothing is billed, so there is nothing to refund.
+    You can use it for as long as you like within its limits (1 user, 3 runners, 7-day
+    audit retention — see <.link navigate={~p"/pricing"}>pricing</.link>).
+  </p>
 
-  <%!-- Body --%>
-  <section class="border-t border-zinc-900 bg-zinc-950/40 pb-24 pt-16 sm:pb-32">
-    <div class="mx-auto max-w-4xl px-6 lg:px-8">
-      <div class="prose prose-invert prose-lg max-w-none prose-headings:text-zinc-50 prose-headings:font-bold prose-headings:tracking-tight prose-p:text-zinc-400 prose-p:leading-8 prose-a:text-indigo-300 prose-a:no-underline hover:prose-a:text-indigo-200 prose-strong:text-zinc-200 prose-li:text-zinc-400">
-        <h2>The short version</h2>
-        <ul>
-          <li>
-            <strong>Free</strong> is free. There is nothing to charge and nothing to refund.
-          </li>
-          <li>
-            <strong>Team</strong> is billed monthly, per runner. Cancel any time and you keep
-            access until the end of the period you already paid for.
-          </li>
-          <li>
-            We <strong>don't pro-rate or refund partial months</strong> for a normal
-            cancellation — but we <strong>do</strong> refund genuine billing mistakes in full.
-          </li>
-        </ul>
+  <h2 id="team">2. Team plan (monthly)</h2>
+  <p>
+    Team is billed <strong>monthly, per runner</strong>, through <strong>Paddle</strong>, our
+    Merchant of Record. Each charge pays for the month ahead.
+  </p>
+  <p>
+    You can cancel any time from your billing settings. Cancellation takes effect at the <strong>end of the current billing period</strong>: you keep full access until then,
+    and you are not charged again. Consistent with our Terms, we do not pro-rate or refund
+    the remainder of a month you have already paid for. If you'd rather stop being billed
+    immediately, cancel and the plan simply does not renew.
+  </p>
 
-        <h2>1. Free plan</h2>
-        <p>
-          The Free plan carries no charge. Nothing is billed, so there is nothing to refund.
-          You can use it for as long as you like within its limits (1 user, 3 runners, 7-day
-          audit retention — see <.link navigate={~p"/pricing"}>pricing</.link>).
-        </p>
+  <h2 id="enterprise">3. Enterprise and annual plans</h2>
+  <p>
+    Enterprise and any annual or invoiced plans are governed by the order form or contract
+    you signed. Where those terms address refunds, cancellation, or credits, they take
+    precedence over this page. Questions: <a href="mailto:sales@emisar.dev">sales@emisar.dev</a>.
+  </p>
 
-        <h2>2. Team plan (monthly)</h2>
-        <p>
-          Team is billed <strong>monthly, per runner</strong>, through <strong>Paddle</strong>, our Merchant of Record. Each charge pays for the month ahead.
-        </p>
-        <p>
-          You can cancel any time from your billing settings. Cancellation takes effect at the <strong>end of the current billing period</strong>: you keep full access until then,
-          and you are not charged again. Consistent with our Terms, we do not pro-rate or refund
-          the remainder of a month you have already paid for. If you'd rather stop being billed
-          immediately, cancel and the plan simply does not renew.
-        </p>
+  <h2 id="mistakes">4. Billing mistakes we refund</h2>
+  <p>
+    Separate from normal cancellation, we refund charges that shouldn't have happened. If
+    any of these apply, tell us and we'll return the amount in full to the original payment
+    method:
+  </p>
+  <ul>
+    <li>A <strong>duplicate</strong> or accidental charge.</li>
+    <li>
+      A charge <strong>after you cancelled</strong>, or for a plan you didn't sign up for.
+    </li>
+    <li>
+      A charge for the <strong>wrong amount</strong>, or a runner count that's clearly incorrect.
+    </li>
+    <li>A charge caused by an <strong>error on our side</strong>.</li>
+  </ul>
+  <p>
+    We're a small team and we'd rather fix a mistake than argue about it. If something
+    looks wrong on your invoice, it probably is — let us know.
+  </p>
 
-        <h2>3. Enterprise and annual plans</h2>
-        <p>
-          Enterprise and any annual or invoiced plans are governed by the order form or contract
-          you signed. Where those terms address refunds, cancellation, or credits, they take
-          precedence over this page. Questions: <a href="mailto:sales@emisar.dev">sales@emisar.dev</a>.
-        </p>
+  <h2 id="request">5. How to request a refund</h2>
+  <p>
+    Email <a href="mailto:support@emisar.dev">support@emisar.dev</a>
+    within <strong>60 days</strong>
+    of the charge with your account email and the date and amount
+    of the charge (a Paddle receipt number helps). We aim to respond within two business
+    days and to process approved refunds promptly. Refunds go back to your original payment
+    method; how quickly it appears depends on your bank or card issuer.
+  </p>
 
-        <h2>4. Billing mistakes we refund</h2>
-        <p>
-          Separate from normal cancellation, we refund charges that shouldn't have happened. If
-          any of these apply, tell us and we'll return the amount in full to the original payment
-          method:
-        </p>
-        <ul>
-          <li>A <strong>duplicate</strong> or accidental charge.</li>
-          <li>
-            A charge <strong>after you cancelled</strong>, or for a plan you didn't sign up for.
-          </li>
-          <li>
-            A charge for the <strong>wrong amount</strong>, or a runner count that's clearly incorrect.
-          </li>
-          <li>A charge caused by an <strong>error on our side</strong>.</li>
-        </ul>
-        <p>
-          We're a small team and we'd rather fix a mistake than argue about it. If something
-          looks wrong on your invoice, it probably is — let us know.
-        </p>
+  <h2 id="statutory">6. Your statutory rights</h2>
+  <p>
+    Nothing in this policy limits any rights you have as a consumer under the law of your
+    jurisdiction — for example, statutory cooling-off or withdrawal periods in the EU and
+    UK. Where those apply, they take precedence. Because <strong>Paddle</strong> is the
+    Merchant of Record for paid plans, Paddle handles payment processing and can also
+    assist with refunds; their buyer terms apply to the transaction alongside this policy.
+  </p>
 
-        <h2>5. How to request a refund</h2>
-        <p>
-          Email <a href="mailto:support@emisar.dev">support@emisar.dev</a>
-          within <strong>60 days</strong>
-          of the charge with your account email and the date and amount
-          of the charge (a Paddle receipt number helps). We aim to respond within two business
-          days and to process approved refunds promptly. Refunds go back to your original payment
-          method; how quickly it appears depends on your bank or card issuer.
-        </p>
+  <h2 id="chargeback">7. Before you file a chargeback</h2>
+  <p>
+    If a charge looks wrong, please email us first. A bank chargeback can take weeks and
+    may suspend the account while the dispute is open; we can almost always resolve a
+    genuine billing error faster and without that disruption.
+  </p>
 
-        <h2>6. Your statutory rights</h2>
-        <p>
-          Nothing in this policy limits any rights you have as a consumer under the law of your
-          jurisdiction — for example, statutory cooling-off or withdrawal periods in the EU and
-          UK. Where those apply, they take precedence. Because <strong>Paddle</strong> is the
-          Merchant of Record for paid plans, Paddle handles payment processing and can also
-          assist with refunds; their buyer terms apply to the transaction alongside this policy.
-        </p>
-
-        <h2>7. Before you file a chargeback</h2>
-        <p>
-          If a charge looks wrong, please email us first. A bank chargeback can take weeks and
-          may suspend the account while the dispute is open; we can almost always resolve a
-          genuine billing error faster and without that disruption.
-        </p>
-
-        <h2>8. Contact</h2>
-        <p>
-          Billing and refunds: <a href="mailto:support@emisar.dev">support@emisar.dev</a>.
-          Enterprise contracts: <a href="mailto:sales@emisar.dev">sales@emisar.dev</a>.
-        </p>
-        <p class="text-sm text-zinc-500">
-          Last updated: June 5, 2026.
-        </p>
-      </div>
-    </div>
-  </section>
-
-  <.marketing_footer />
-</div>
+  <h2 id="contact">8. Contact</h2>
+  <p>
+    Billing and refunds: <a href="mailto:support@emisar.dev">support@emisar.dev</a>.
+    Enterprise contracts: <a href="mailto:sales@emisar.dev">sales@emisar.dev</a>.
+  </p>
+</.legal_page>

@@ -77,7 +77,6 @@ defmodule EmisarWeb.Router do
     get "/use-cases/csi-data-loss", MarketingController, :usecase_csi_data_loss
     get "/compare/raw-ssh-for-ai", MarketingController, :compare_raw_ssh
     get "/compare/custom-mcp-server", MarketingController, :compare_custom_mcp
-    get "/compare/slack-bots-for-ops", MarketingController, :compare_slack_bots
     get "/zero-trust", MarketingController, :zero_trust
     get "/packs", MarketingController, :packs
     # Machine-facing registry endpoints (consumed by `emisar pack install`).

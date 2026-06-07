@@ -6,76 +6,175 @@
       <p class="text-sm font-semibold text-indigo-400">Docs / Quickstart</p>
       <h1 class="mt-2 text-4xl font-bold tracking-tight text-zinc-50 md:text-5xl">Quickstart</h1>
       <p class="mt-6 text-lg leading-8 text-zinc-400">
-        Five minutes to your first audited action. Install the runner on a
-        Linux host, mint an enrollment key, watch
+        Zero to your first audited action in about five minutes. You'll install the runner on a
+        Linux host, watch it connect, run
         <code class="font-mono text-indigo-300">linux.uptime</code>
-        come back in your dashboard.
+        — gated by policy, recorded in the audit trail — and then point your LLM at the same
+        catalog.
       </p>
 
-      <h2 class="mt-12 text-2xl font-semibold text-zinc-50">1. Create your account</h2>
+      <div class="mt-8 rounded-xl border border-zinc-800 bg-zinc-950/60 p-5 text-sm leading-6 text-zinc-400">
+        <strong class="text-zinc-100">Before you start, you need:</strong>
+        <ul class="mt-3 space-y-2">
+          <li class="flex items-start gap-2.5">
+            <.icon name="hero-check" class="mt-1 h-4 w-4 flex-none text-indigo-400" />
+            <span>
+              A Linux host with <strong class="text-zinc-300">systemd</strong>
+              — a VM, a cloud instance, or bare metal. (Not a bare container; the installer needs
+              an init.)
+            </span>
+          </li>
+          <li class="flex items-start gap-2.5">
+            <.icon name="hero-check" class="mt-1 h-4 w-4 flex-none text-indigo-400" />
+            <span><code class="text-zinc-300">sudo</code> on that host.</span>
+          </li>
+          <li class="flex items-start gap-2.5">
+            <.icon name="hero-check" class="mt-1 h-4 w-4 flex-none text-indigo-400" />
+            <span>
+              Outbound HTTPS to <code class="text-zinc-300">app.emisar.dev:443</code>. The runner
+              dials out; nothing listens on the host, so there's no inbound port to open.
+            </span>
+          </li>
+        </ul>
+      </div>
+
+      <h2 class="mt-12 text-2xl font-semibold text-zinc-50">1 · Create your account</h2>
       <p class="mt-3 text-sm leading-relaxed text-zinc-400">
-        Sign up at <.link href={~p"/sign_up"} class="text-indigo-400 hover:text-indigo-300">/sign_up</.link>.
-        Free tier supports up to 3 runners — no credit card.
+        Sign up at <.link href={~p"/sign_up"} class="text-indigo-400 hover:text-indigo-300">/sign_up</.link>. Free covers
+        <strong class="text-zinc-300">3 runners and 1 user</strong>
+        — no credit card.
       </p>
 
-      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">2. Mint an enrollment key</h2>
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">2 · Install the runner</h2>
       <p class="mt-3 text-sm leading-relaxed text-zinc-400">
-        From the dashboard, hit <strong>Connect your first runner</strong>. We'll generate
-        an <code class="font-mono text-indigo-300">emkey-auth-…</code> key and a one-line
-        install command. The key is shown <em>once</em>; copy it now.
+        In the dashboard, click <strong>Connect a runner</strong>. emisar shows a one-line command
+        carrying a single-use enrollment key
+        (<code class="font-mono text-indigo-300">emkey-auth-…</code>, shown <em>once</em>
+        — copy it now). Run it on your host:
       </p>
       <div class="mt-3 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
         <pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300"><span class="text-zinc-500">$</span> curl -sSL https://emisar.dev/install.sh \
-    | sudo EMISAR_AUTH_KEY=emkey-auth-... EMISAR_URL=https://app.emisar.dev bash</pre>
+    | sudo EMISAR_AUTH_KEY=emkey-auth-… EMISAR_URL=https://app.emisar.dev bash</pre>
       </div>
-      <p class="mt-3 text-sm text-zinc-400">
-        The leading space (when shown in the dashboard) keeps the key out of your
-        shell history if you have <code>HISTCONTROL=ignorespace</code> set.
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        That leading space keeps the key out of your shell history if you have
+        <code class="font-mono">HISTCONTROL=ignorespace</code>
+        set. It's a plain, readable shell script —
+        <.link href={~p"/install.sh"} class="text-indigo-400 hover:text-indigo-300">
+          read it first
+        </.link>
+        if you'd rather. It:
+      </p>
+      <ul class="mt-3 space-y-2 text-sm leading-6 text-zinc-400">
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-600">—</span>
+          <span>verifies the download's SHA-256;</span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-600">—</span>
+          <span>
+            creates a dedicated <code class="font-mono">emisar</code>
+            system user and an <code class="font-mono">emisar.service</code>
+            systemd unit (<code class="font-mono">Restart=on-failure</code>);
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-600">—</span>
+          <span>
+            bakes the key and URL into <code class="font-mono">/etc/emisar/runner.env</code>;
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-600">—</span>
+          <span>
+            installs the starter packs that match the host (on Linux, <code class="font-mono">linux-core</code>);
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-600">—</span>
+          <span>starts the service, which dials out to the control plane over WSS.</span>
+        </li>
+      </ul>
+
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">3 · Watch it connect</h2>
+      <p class="mt-3 text-sm leading-relaxed text-zinc-400">
+        Refresh the dashboard — your host appears under <strong>Runners</strong>, online,
+        advertising its action catalog. On the host you can watch the same thing:
+      </p>
+      <div class="mt-3 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
+        <pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300"><span class="text-zinc-500">$</span> journalctl -u emisar -f
+<span class="text-zinc-500">level=INFO msg="runner online" group=default packs=2 actions=96</span></pre>
+      </div>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        The stock <code class="font-mono">linux-core</code>
+        pack is trusted automatically — its bytes match the catalog emisar publishes, so the hash
+        auto-pins as trusted. (A <em>custom or edited</em>
+        pack lands as <strong class="text-zinc-300">pending</strong>
+        instead and waits for one click on the <strong>Packs</strong>
+        page before anything can dispatch it. That's the drift guard; you'll meet it the first time
+        you change a pack.)
       </p>
 
-      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">3. The runner connects back</h2>
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">4 · Run your first action</h2>
       <p class="mt-3 text-sm leading-relaxed text-zinc-400">
-        The installer verifies the download's SHA-256, then drops a systemd unit
-        (<code class="font-mono">emisar.service</code>) running as a dedicated
-        <code class="font-mono">emisar</code>
-        user. The runner dials out to the control plane
-        over outbound TLS, advertises its action catalog, and waits for work. No inbound ports.
+        Open the runner, pick <code class="font-mono text-indigo-300">linux.uptime</code>, add the
+        required <strong>reason</strong>
+        (one line — it's logged), and <strong>Dispatch</strong>. The output streams back live:
       </p>
-      <p class="mt-3 text-sm text-zinc-400">
-        Refresh the dashboard. You should see your host under <strong>Runners online</strong>.
-      </p>
-
-      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">4. Run uptime</h2>
-      <p class="mt-3 text-sm leading-relaxed text-zinc-400">
-        From the runner's detail page, click <code>linux.uptime</code>
-        → fill in a reason
-        (required — logged in audit) → <strong>Dispatch to runner</strong>. The output
-        streams back in real time. The default policy ships with <code>linux.uptime</code>
-        allowlisted because it's read-only, low-risk, and a
-        useful first signal.
+      <div class="mt-3 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
+        <pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300"> 14:32:07 up 18 days,  4:01,  load average: 0.42, 0.51, 0.48</pre>
+      </div>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        <code class="font-mono">linux.uptime</code>
+        is <code class="text-emerald-300">low</code>
+        risk, so the default policy runs it on the spot. A <code class="text-amber-300">high</code>-risk
+        action — killing a process, restarting a service — would stop here for a human approval
+        instead: same flow, one extra click. Either way the run is now in the searchable cloud
+        audit and the runner's hash-chained journal, tagged with your reason.
       </p>
 
-      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">5. Connect an LLM</h2>
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">5 · Point your LLM at it</h2>
       <p class="mt-3 text-sm leading-relaxed text-zinc-400">
-        With one runner alive, you can wire a model. The dashboard's
-        onboarding checklist links straight to <strong class="text-zinc-200">LLM agents</strong>
-        in the sidebar, where you pick a client (Claude Code, Claude Desktop,
-        Cursor, Gemini CLI, Codex CLI) — we mint the API key and drop a
-        prefilled snippet you can paste straight into the client's config.
-        Step-by-step walkthrough: <.link
+        A runner on its own is just a safer way to click buttons. The payoff is handing the catalog
+        to a model. In the dashboard open <strong>Agents</strong>, pick your client — Claude Code,
+        Claude Desktop, Cursor, Gemini CLI, Codex CLI, or remote MCP for Claude.ai and ChatGPT —
+        and emisar mints a scoped API key with a prefilled config snippet to paste in.
+      </p>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        Now your model sees the same catalog as typed tools, scoped to the runners you allow. Ask
+        it <em>"what's the load on web-01?"</em>
+        and it calls <code class="font-mono">linux.uptime</code>; ask it to restart a service and
+        that high-risk action stops for your approval. Reads run on policy, mutations are gated,
+        every call is audited — and the model never gets a shell. Full walkthrough: <.link
           navigate={~p"/docs/connect-an-llm"}
           class="text-indigo-400 hover:text-indigo-300"
-        >/docs/connect-an-llm</.link>.
+        >
+          /docs/connect-an-llm
+        </.link>.
       </p>
 
-      <div class="mt-12 rounded-xl border border-indigo-900/40 bg-indigo-950/20 p-5 text-sm text-zinc-300">
-        <strong class="text-zinc-100">Troubleshooting:</strong> if the runner doesn't show up,
-        check <code class="font-mono text-xs">journalctl -u emisar -f</code> on the host.
-        The most common cause is a stale enrollment key (single-use keys can only
-        be consumed once) or an outbound firewall blocking <code class="font-mono">app.emisar.dev:443</code>.
+      <div class="mt-12 rounded-xl border border-indigo-900/40 bg-indigo-950/20 p-5 text-sm leading-6 text-zinc-300">
+        <strong class="text-zinc-100">What you just built.</strong>
+        A finite, reviewed action catalog sitting between an AI agent and your host — instead of an
+        SSH key and a prayer. The model can only call what you declared, risky calls stop for a
+        human, secrets are redacted before they leave the box, and there's a tamper-evident record
+        of who ran what, and why.
+      </div>
+
+      <div class="mt-6 rounded-xl border border-zinc-800 bg-zinc-950/60 p-5 text-sm leading-6 text-zinc-400">
+        <strong class="text-zinc-100">Runner not showing up?</strong>
+        Check <code class="font-mono text-xs">journalctl -u emisar -f</code>
+        on the host. The two usual causes are a stale enrollment key (they're single-use — mint a
+        fresh one from <strong>Connect a runner</strong>) and an outbound firewall blocking <code class="font-mono">app.emisar.dev:443</code>.
       </div>
 
       <div class="mt-8 flex flex-wrap gap-x-6 gap-y-3 border-t border-zinc-900 pt-8 text-sm">
+        <.link
+          navigate={~p"/docs/connect-an-llm"}
+          class="inline-flex items-center gap-1 font-medium text-indigo-400 hover:text-indigo-300"
+        >
+          Connect your LLM <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
+        </.link>
         <.link
           navigate={~p"/docs/action-packs"}
           class="inline-flex items-center gap-1 font-medium text-indigo-400 hover:text-indigo-300"
@@ -87,12 +186,6 @@
           class="inline-flex items-center gap-1 font-medium text-indigo-400 hover:text-indigo-300"
         >
           Is this safe? The security model <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
-        </.link>
-        <.link
-          navigate={~p"/packs"}
-          class="inline-flex items-center gap-1 font-medium text-indigo-400 hover:text-indigo-300"
-        >
-          Browse the pack registry <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
         </.link>
       </div>
     </div>

@@ -17,7 +17,7 @@ This repository is **not** licensed for:
 
 For commercial licensing, hosted use, AI permissions, or other rights, contact:
 
-`licensing@dryga.com`
+`licensing@emisar.dev`
 
 ## Trademarks
 
