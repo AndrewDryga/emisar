@@ -8,7 +8,7 @@ defmodule EmisarWeb.PacksTest do
       html = conn |> get(~p"/packs") |> html_response(200)
 
       assert html =~ "Action packs"
-      assert html =~ "Publishing your own"
+      assert html =~ "Author your own pack"
 
       # Each registered pack is rendered as a card — assert id + name
       # for every one so adding a pack without listing it surfaces.
@@ -43,11 +43,11 @@ defmodule EmisarWeb.PacksTest do
   end
 
   describe "GET /docs/publishing-packs" do
-    test "renders the publish-your-own authoring guide", %{conn: conn} do
+    test "renders the author-your-own authoring guide", %{conn: conn} do
       html = conn |> get(~p"/docs/publishing-packs") |> html_response(200)
-      assert html =~ "Publishing an action pack"
+      assert html =~ "Author your own pack"
       assert html =~ "pack.yaml"
-      assert html =~ "Submit to the registry"
+      assert html =~ "propose it to the registry"
     end
   end
 
