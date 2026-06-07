@@ -47,6 +47,28 @@ func TestMatch_AllRequiredBinariesMustBePresent(t *testing.T) {
 	}
 }
 
+func TestMatch_GenericHelperAloneIsNotASignal(t *testing.T) {
+	reqs := []PackReq{
+		// Only a ubiquitous helper required — these must NOT be recommended
+		// just because curl/nc/openssl are present (they're on every host).
+		{ID: "grafana", OS: []string{runtime.GOOS}, Binaries: []string{"curl"}},
+		{ID: "memcached", OS: []string{runtime.GOOS}, Binaries: []string{"nc"}},
+		{ID: "ssl-local", OS: []string{runtime.GOOS}, Binaries: []string{"openssl"}},
+		// A real service pack that also lists curl IS recommended — its
+		// discriminating binary (the consul CLI) carries the signal.
+		{ID: "consul", OS: []string{runtime.GOOS}, Binaries: []string{"consul", "curl"}},
+	}
+	f := facts(map[string]string{
+		"curl":    "/usr/bin/curl",
+		"nc":      "/usr/bin/nc",
+		"openssl": "/usr/bin/openssl",
+		"consul":  "/usr/bin/consul",
+	})
+	if got := ids(Match(reqs, f)); !equal(got, []string{"consul"}) {
+		t.Fatalf("only the pack with a service-specific binary should match; got %v", got)
+	}
+}
+
 func TestMatch_RunningProcessCountsAsPresent(t *testing.T) {
 	// The binary isn't on any path we probed, but it's running — that's
 	// the /usr/local/bin/nomad case: detect it anyway.

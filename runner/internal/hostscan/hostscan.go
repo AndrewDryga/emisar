@@ -70,15 +70,30 @@ type Suggestion struct {
 	Evidence []string `json:"evidence"` // e.g. ["nomad (running)", "consul (/usr/bin/consul)"]
 }
 
-// Match returns the packs whose OS matches this host and whose every
-// required binary is present, in stable id order. A pack with no
-// required binaries never matches here — those (the OS-agnostic core)
-// are the caller's baseline, not a host-specific signal.
+// genericHelpers are tools present on nearly every host (curl, nc, …) and
+// used by many packs only to TALK to a service over its API. Their
+// presence says nothing about which services actually run here, so they
+// must not be the signal that earns a recommendation: "this host has curl"
+// can't recommend grafana. They still count toward "all required present"
+// (a pack that needs curl can't run without it) — they just don't
+// discriminate one host from another.
+var genericHelpers = map[string]bool{
+	"curl": true, "wget": true, "nc": true, "ncat": true, "netcat": true,
+	"socat": true, "jq": true, "openssl": true,
+}
+
+// Match returns the packs worth recommending for this host, in stable id
+// order. A pack qualifies when its OS matches, EVERY required binary is
+// present, AND at least one of those present requirements is specific to a
+// service rather than a ubiquitous helper.
 //
-// Requiring ALL of a pack's binaries is both a relevance and a
-// correctness rule: it stops a pack that lists a common helper (e.g.
-// consul's `curl`) from matching on the helper alone, and it never
-// suggests a pack the host can't actually run because a tool is missing.
+// The two rules work together: "all required present" keeps a pack the host
+// can't run from being suggested and stops a co-listed helper from matching
+// a service pack on its own (consul needs the `consul` binary, not just
+// `curl`); the "discriminating signal" rule stops a pack whose ONLY
+// requirement is a ubiquitous helper (grafana → curl) from matching on
+// every host. Packs with no required binaries are the caller's baseline,
+// not a host signal, and never match here.
 func Match(reqs []PackReq, f Facts) []Suggestion {
 	var out []Suggestion
 	for _, r := range reqs {
@@ -87,6 +102,7 @@ func Match(reqs []PackReq, f Facts) []Suggestion {
 		}
 		evidence := make([]string, 0, len(r.Binaries))
 		matched := true
+		discriminating := false
 		for _, b := range r.Binaries {
 			why, ok := f.available(b)
 			if !ok {
@@ -94,8 +110,13 @@ func Match(reqs []PackReq, f Facts) []Suggestion {
 				break
 			}
 			evidence = append(evidence, b+" ("+why+")")
+			// A binary specific to a service (not a ubiquitous helper) is
+			// the real "this service is here" signal.
+			if !genericHelpers[strings.ToLower(b)] {
+				discriminating = true
+			}
 		}
-		if matched {
+		if matched && discriminating {
 			out = append(out, Suggestion{ID: r.ID, Name: r.Name, Evidence: evidence})
 		}
 	}
