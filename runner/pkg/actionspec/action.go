@@ -1,6 +1,9 @@
 package actionspec
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // SchemaVersion is the currently supported action schema version.
 const SchemaVersion = 1
@@ -175,6 +178,26 @@ func (a *Action) Validate() error {
 	for _, rr := range a.Output.Redact {
 		if err := rr.Validate(); err != nil {
 			return fmt.Errorf("action %s: %w", a.ID, err)
+		}
+	}
+	if err := validateExecutionEnv(a); err != nil {
+		return err
+	}
+	return nil
+}
+
+// validateExecutionEnv rejects environment variables a pack must not set:
+// the dynamic-linker (LD_*/DYLD_*) and shell-startup (BASH_ENV) hijack
+// vectors. The runner's job is to constrain WHAT runs, so even a trusted
+// pack must not be able to LD_PRELOAD a library or BASH_ENV a script into
+// the target process. A binary that genuinely needs extra libraries should
+// get them from the system, not a per-action env injection. Matched
+// case-sensitively — the loader only honors the canonical uppercase forms,
+// so a lowercased variant would be inert anyway.
+func validateExecutionEnv(a *Action) error {
+	for k := range a.Execution.Env {
+		if strings.HasPrefix(k, "LD_") || strings.HasPrefix(k, "DYLD_") || k == "BASH_ENV" {
+			return fmt.Errorf("action %s: execution.env must not set %q (dynamic-linker/shell-init hijack vector)", a.ID, k)
 		}
 	}
 	return nil

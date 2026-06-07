@@ -434,18 +434,22 @@ func (e *Engine) baseEvent(req Request, t audit.EventType, now time.Time) audit.
 	}
 }
 
-func (e *Engine) requestInfo(req Request, cleanArgs map[string]any) *audit.RequestInfo {
+func (e *Engine) requestInfo(req Request, redactedArgs map[string]any) *audit.RequestInfo {
 	return &audit.RequestInfo{
-		ArgsSHA256:   hashArgs(cleanArgs),
-		ArgsRedacted: cleanArgs,
+		ArgsSHA256:   hashArgs(redactedArgs),
+		ArgsRedacted: redactedArgs,
 		Reason:       req.Reason,
 	}
 }
 
 // redactArgs replaces any value declared `sensitive: true` with the
-// literal "[REDACTED]". Hash of the cleaned (pre-redaction) args is
-// still kept on the audit event so an operator can prove two runs used
-// the same secret without storing the secret itself.
+// literal "[REDACTED]". The audit event's args_sha256 is computed over
+// this redacted map (see requestInfo), NOT the raw args — deliberately:
+// writing a hash of a raw secret into the on-disk journal would let
+// anyone who reads the file brute-force a low-entropy secret offline.
+// The trade-off is that two runs with different secret values but
+// otherwise-identical args share an args_sha256; that's the safe
+// direction for a local audit log.
 func redactArgs(args map[string]any, schema []actionspec.Arg) map[string]any {
 	if len(args) == 0 {
 		return args

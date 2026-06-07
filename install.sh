@@ -627,20 +627,6 @@ install_binary() {
   fi
 }
 
-# select_default_packs prints the pack names that suit this host, one per
-# line. Always includes the OS-agnostic core; adds package-manager and
-# service-specific packs only when the matching tool is present. The set
-# is deliberately small — operators add the rest with `emisar pack
-# install <name>`.
-select_default_packs() {
-  printf '%s\n' linux-core debugging
-  command -v apt-get >/dev/null 2>&1 && printf '%s\n' debian
-  { command -v dnf >/dev/null 2>&1 || command -v rpm >/dev/null 2>&1; } && printf '%s\n' dnf-rpm
-  [ "${INIT}" = "systemd" ] && printf '%s\n' systemd-deep
-  command -v docker >/dev/null 2>&1 && printf '%s\n' docker
-  return 0
-}
-
 # install_default_packs installs the host-matched starter packs from the
 # bundle shipped inside this tarball (offline — no registry round-trip).
 # The full catalog is fetched on demand later via `emisar pack install
@@ -654,11 +640,22 @@ install_default_packs() {
     return 0
   fi
 
-  # Intersect the host-matched selection with what's actually bundled.
+  # Let the runner pick which bundled packs suit this host: `pack suggest`
+  # inspects the host (binaries on PATH, in standard dirs, or running as a
+  # process) and matches the bundle's declared requirements — data-driven,
+  # so a new bundled pack needs no edit here. Intersect with what's bundled
+  # in case catalog and bundle ever drift; fall back to the OS-agnostic
+  # core if suggest can't run.
   local wanted selected=()
   while IFS= read -r wanted; do
-    [ -d "${bundle}/${wanted}" ] && selected+=("${wanted}")
-  done < <(select_default_packs)
+    [ -n "${wanted}" ] && [ -d "${bundle}/${wanted}" ] && selected+=("${wanted}")
+  done < <("${BIN_DIR}/emisar" pack suggest --catalog "${bundle}" --names-only 2>/dev/null || true)
+
+  if [ ${#selected[@]} -eq 0 ]; then
+    for wanted in linux-core debugging; do
+      [ -d "${bundle}/${wanted}" ] && selected+=("${wanted}")
+    done
+  fi
 
   if [ ${#selected[@]} -eq 0 ]; then
     return 0
@@ -915,6 +912,25 @@ Action packs:
   Remove:    ${BIN_DIR}/emisar pack uninstall <name>   (then reload the runner)
   Browse:    https://emisar.dev/packs
 EOF
+
+  # Best-effort: ask the registry catalog which service packs match this
+  # host but aren't installed yet (e.g. nomad/consul/postgres detected
+  # running). Network-dependent and entirely optional — an air-gapped host
+  # or fetch failure just prints nothing; it never blocks or fails install.
+  # `|| true`: the script runs under `set -e` with pipefail, so a failed
+  # fetch (offline host) would otherwise abort the install right here.
+  local more
+  more="$("${BIN_DIR}/emisar" pack suggest --packs-dir "${ETC_DIR}/packs" --names-only 2>/dev/null | tr '\n' ' ' || true)"
+  more="${more% }"
+  if [ -n "${more}" ]; then
+    cat <<EOF
+
+Detected on this host — packs you may want:
+  ${more}
+  Install each with: ${BIN_DIR}/emisar pack install <name>   (then reload the runner)
+EOF
+  fi
+
   echo
   # \$0 is "bash" when run as `curl ... | sudo bash`, so don't print that.
   # Show the canonical re-curl form instead.

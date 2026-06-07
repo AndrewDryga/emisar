@@ -81,7 +81,7 @@ func writeSetup(w io.Writer, p *packspec.Pack, inheritEnv []string, haveConfig b
 	}
 
 	if s.Verify != "" {
-		fmt.Fprintf(w, "\n    Verify it works:\n      emisar action run %s --config %s\n", s.Verify, configPathHint())
+		fmt.Fprintf(w, "\n    Verify it works:\n      emisar action run %s --reason \"verify install\"\n", s.Verify)
 	}
 }
 
@@ -174,15 +174,6 @@ func riskSummary(low, med, high, crit int) string {
 		return "none"
 	}
 	return strings.Join(parts, " · ")
-}
-
-// configPathHint is the --config value to show in the verify command:
-// the one in use if set, else the canonical install location.
-func configPathHint() string {
-	if flagConfig != "" {
-		return flagConfig
-	}
-	return "/etc/emisar/config.yaml"
 }
 
 // collapseSpace folds any run of whitespace (incl. the newlines YAML

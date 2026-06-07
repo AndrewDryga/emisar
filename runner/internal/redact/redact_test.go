@@ -90,6 +90,24 @@ func TestEngine_DefaultRulesCommonSecrets(t *testing.T) {
 			leak:  emisarAuthKey,
 		},
 		{
+			// neutral "issued " prefix (no token/secret word, no =/:) so
+			// only the emisar-token rule can fire — proves the emo-family
+			// pattern itself catches these, not a fallback rule.
+			name:  "emisar oauth access token",
+			input: "issued emo-" + strings.Repeat("a", 43),
+			leak:  "emo-" + strings.Repeat("a", 43),
+		},
+		{
+			name:  "emisar oauth refresh token",
+			input: "issued emor-" + strings.Repeat("b", 43),
+			leak:  "emor-" + strings.Repeat("b", 43),
+		},
+		{
+			name:  "emisar oauth authorization code",
+			input: "issued emoc-" + strings.Repeat("c", 43),
+			leak:  "emoc-" + strings.Repeat("c", 43),
+		},
+		{
 			name:  "aws temporary access key",
 			input: "AWS_ACCESS_KEY_ID=ASIA1234567890ABCDEF",
 			leak:  "ASIA1234567890ABCDEF",

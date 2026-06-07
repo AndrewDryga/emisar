@@ -135,11 +135,11 @@ runner/                          Go module — on-host runner binary
   internal/config                  config loader
   pkg/actionspec                   action spec types (YAML schema)
   pkg/packspec                     pack manifest types
-  examples/packs/                  example packs (linux-core, cassandra, showcase)
+  examples/packs/                  example packs — linux-core, cassandra, showcase, + 50+ more
   examples/config.yaml             example runner config
 mcp/                             Go module — stdio MCP bridge for Claude Code / Cursor / etc.
 docs/                            architecture, security, action-packs, cloud-boundary, wire-protocol
-compose.yaml                     Full local stack: Postgres, portal, seeder, and runners
+docker-compose.yml               Full local stack: Postgres, portal, seeder, and runners
 install.sh                       supervised install (systemd / launchd) — run against tarball
 Makefile                         dev orchestrator (build, test, lint across modules)
 ```

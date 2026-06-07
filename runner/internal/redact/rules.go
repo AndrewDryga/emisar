@@ -81,13 +81,16 @@ func DefaultRules() []actionspec.RedactionRule {
 		{
 			Name: "emisar-token",
 			Type: "regex",
-			// Three emisar token classes:
-			//   emk-     — operator API keys (MCP / programmatic)
-			//   rnrtok-   — per-runner tokens minted at registration
+			// emisar credential prefixes (each followed by a base64url
+			// random tail):
+			//   emk-        — operator API keys (MCP / programmatic)
+			//   rnrtok-     — per-runner tokens minted at registration
 			//   emkey-auth- — runner enrollment/bootstrap keys
+			//   emo- / emor- / emoc- — OAuth access / refresh token and
+			//                          authorization code
 			// tskey-auth- is kept as a legacy match so any pre-rebrand keys
 			// surfaced in old logs still get redacted.
-			Pattern:     `\b(?:(?:emk|rnrtok)-[A-Za-z0-9_-]{30,}|(?:emkey|tskey)-auth-[A-Za-z0-9_-]{30,})\b`,
+			Pattern:     `\b(?:(?:emk|rnrtok)-[A-Za-z0-9_-]{30,}|emo[rc]?-[A-Za-z0-9_-]{30,}|(?:emkey|tskey)-auth-[A-Za-z0-9_-]{30,})\b`,
 			Replacement: "[REDACTED_EMISAR_TOKEN]",
 		},
 		{

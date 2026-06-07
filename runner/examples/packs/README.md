@@ -52,8 +52,7 @@ action to verify it works. `emisar pack install` prints this after
 installing; re-read it any time:
 
 ```sh
-emisar pack info postgres                       # full setup for a pack
-emisar pack info postgres --config /etc/emisar/config.yaml   # also flags vars missing from inherit_env
+emisar pack info postgres   # full setup; also flags vars missing from inherit_env once config is found
 ```
 
 In the inventory below, the **Auth** column is the short form: `PG*` =

@@ -26,6 +26,7 @@ func packCmd() *cobra.Command {
 	cmd.AddCommand(packValidateCmd())
 	cmd.AddCommand(packInstallCmd())
 	cmd.AddCommand(packUninstallCmd())
+	cmd.AddCommand(packSuggestCmd())
 	return cmd
 }
 
@@ -33,10 +34,11 @@ func packCmd() *cobra.Command {
 // a config was actually resolved. Best-effort: pack info/install still
 // render without it — we just skip the "missing from inherit_env" check.
 func configInheritEnv() (env []string, ok bool) {
-	if flagConfig == "" {
+	cfgPath, err := resolveConfigPath()
+	if err != nil {
 		return nil, false
 	}
-	cfg, err := config.Load(flagConfig)
+	cfg, err := config.Load(cfgPath)
 	if err != nil {
 		return nil, false
 	}
@@ -50,10 +52,11 @@ func resolvePackDirs() ([]string, error) {
 	if len(flagPacksDir) > 0 {
 		return flagPacksDir, nil
 	}
-	if flagConfig == "" {
-		return nil, fmt.Errorf("provide --packs-dir or --config")
+	cfgPath, err := resolveConfigPath()
+	if err != nil {
+		return nil, fmt.Errorf("provide --packs-dir, or %w", err)
 	}
-	cfg, err := config.Load(flagConfig)
+	cfg, err := config.Load(cfgPath)
 	if err != nil {
 		return nil, err
 	}
@@ -105,8 +108,8 @@ verify it can reach its target.
 
 This is the same summary 'pack install' prints after a successful
 install. Resolves the pack from the configured packs dirs (or --packs-dir).
-With --config, it also flags any required env var missing from the
-runner's inherit_env allowlist.`,
+Once a config is found (auto-discovered, or via --config), it also flags
+any required env var missing from the runner's inherit_env allowlist.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			dirs, err := resolvePackDirs()
@@ -310,7 +313,7 @@ the runner (systemctl reload emisar, or SIGHUP) so it drops the pack's
 actions from the advertised catalog.
 
   emisar pack uninstall redis --dest /etc/emisar/packs
-  emisar pack rm redis --config /etc/emisar/config.yaml`,
+  emisar pack rm redis`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]

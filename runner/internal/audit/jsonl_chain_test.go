@@ -3,6 +3,7 @@ package audit
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -144,5 +145,92 @@ func TestChain_ContinuesAcrossReopen(t *testing.T) {
 
 	if err := VerifyChain(path); err != nil {
 		t.Fatalf("expected intact chain after reopen, got %v", err)
+	}
+}
+
+// TestChain_RotationProducesSelfContainedFiles — after size rotation, the
+// active file AND every rotated sibling (.1, .2, …) must each verify as an
+// intact, self-contained chain whose first line starts fresh (no
+// prev_hash). Regression for the bug where the rotated-into file's first
+// line carried a backward prev_hash to the rotated-away file, which
+// VerifyChain (per-file, expecting "" at the start) flagged as tampering —
+// false-alarming `emisar audit verify` on every rotated log.
+func TestChain_RotationProducesSelfContainedFiles(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "events.jsonl")
+	// Small threshold so several rotations happen across the writes.
+	s, err := OpenJSONL(path, JSONLOptions{MaxSizeBytes: 300, MaxBackups: 20})
+	if err != nil {
+		t.Fatal(err)
+	}
+	j := New(Defaults{AgentID: "a"}, s)
+	for i := 0; i < 30; i++ {
+		if _, err := j.Record(context.Background(), Event{
+			Type:     EventExecutionCompleted,
+			ActionID: "x.do",
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := j.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	files := []string{path}
+	for i := 1; ; i++ {
+		p := fmt.Sprintf("%s.%d", path, i)
+		if _, err := os.Stat(p); err != nil {
+			break
+		}
+		files = append(files, p)
+	}
+	if len(files) < 2 {
+		t.Fatalf("expected rotation to produce sibling files, got only %v", files)
+	}
+	for _, p := range files {
+		if err := VerifyChain(p); err != nil {
+			t.Fatalf("%s must be a self-contained chain, got %v", p, err)
+		}
+		body, err := os.ReadFile(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		first := strings.SplitN(string(body), "\n", 2)[0]
+		if first == "" {
+			continue
+		}
+		if strings.Contains(first, `"prev_hash"`) {
+			t.Fatalf("%s first line must start a fresh chain (no prev_hash), got: %s", p, first)
+		}
+	}
+}
+
+// TestChain_TailTruncationIsNotDetected documents a deliberate limitation
+// of the threat model: the chain has no external anchor (the cloud is the
+// system of record), so dropping events off the END yields a shorter but
+// still internally consistent chain that VerifyChain cannot flag. In-place
+// edits, mid-file deletes, and reorders ARE caught (tests above); tail
+// truncation and whole-file rewrite are not. This is intentional — locking
+// it in so a future change that claims otherwise gets a failing test here.
+func TestChain_TailTruncationIsNotDetected(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "events.jsonl")
+	writeN(t, path, 5)
+
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimRight(string(body), "\n"), "\n")
+	if len(lines) != 5 {
+		t.Fatalf("setup: expected 5 lines, got %d", len(lines))
+	}
+	// Drop the two most recent events.
+	kept := strings.Join(lines[:3], "\n") + "\n"
+	if err := os.WriteFile(path, []byte(kept), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := VerifyChain(path); err != nil {
+		t.Fatalf("tail-truncated chain stays internally valid by design; "+
+			"VerifyChain should return nil, got %v", err)
 	}
 }

@@ -162,6 +162,10 @@ defmodule EmisarWeb.McpRpcControllerTest do
       assert instructions =~ "pack_untrusted"
       assert instructions =~ "tools/list"
       assert instructions =~ "reason"
+      # ...and where to find more capabilities + how to add them when a task
+      # genuinely needs a pack that isn't installed.
+      assert instructions =~ "emisar.dev/packs"
+      assert instructions =~ "pack install"
     end
   end
 

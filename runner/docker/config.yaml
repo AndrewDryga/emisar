@@ -12,6 +12,10 @@ runner:
 # same image can target different control planes.
 cloud:
   url: "http://host.docker.internal:4000"
+  # host.docker.internal is not a loopback IP, so the cleartext http://
+  # above is refused unless we explicitly opt in. Safe here (local dev
+  # against a host-side control plane); never set this for a real endpoint.
+  allow_insecure: true
   auth_key_env: "EMISAR_AUTH_KEY"
   token_path: "/var/lib/emisar/token.json"
   heartbeat_every: "30s"

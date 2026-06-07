@@ -58,7 +58,7 @@
           / <code>require_approval</code>
           / <code>deny</code>.
           Higher-risk tiers are forced to be at least as restrictive as
-          lower-risk ones — you can't allow <code>cassandra.drain</code>
+          lower-risk ones — you can't allow <code>cassandra.nodetool_drain</code>
           while requiring approval for <code>cassandra.nodetool_status</code>.
           Shipped defaults: low and medium <code>allow</code>, high <code>require_approval</code>, critical <code>deny</code>. The runner
           sees the decision only; it doesn't reason about policy.

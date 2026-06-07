@@ -110,19 +110,32 @@ func (s *JSONLSink) Write(_ context.Context, ev Event) error {
 	defer s.mu.Unlock()
 
 	ev.PrevHash = s.lastHash
-
 	b, err := json.Marshal(ev)
 	if err != nil {
 		return err
+	}
+
+	// Rotate before writing if this line would cross the threshold.
+	// Rotation resets the chain head to "" so the new file is a self-
+	// contained chain — the per-file invariant VerifyChain assumes (it
+	// starts every file from prev_hash=""). When a rotation happens,
+	// re-stamp this event as the new file's head and re-marshal so it
+	// actually carries prev_hash="" instead of a dangling backward link
+	// to the rotated-away file (which VerifyChain would flag as tamper).
+	if err := s.maybeRotateLocked(int64(len(b) + 1)); err != nil {
+		return err
+	}
+	if ev.PrevHash != s.lastHash {
+		ev.PrevHash = s.lastHash
+		if b, err = json.Marshal(ev); err != nil {
+			return err
+		}
 	}
 
 	line := make([]byte, len(b)+1)
 	copy(line, b)
 	line[len(b)] = '\n'
 
-	if err := s.maybeRotateLocked(int64(len(line))); err != nil {
-		return err
-	}
 	// Defensive: rotation can land in a state where the active file
 	// failed to reopen (disk full, perms). maybeRotateLocked returns
 	// an error in that case but if a future change ever loses that
@@ -181,6 +194,12 @@ func (s *JSONLSink) maybeRotateLocked(incoming int64) error {
 		return fmt.Errorf("audit: reopen jsonl after rotation: %w", err)
 	}
 	s.f = f
+	// A rotated file begins a fresh per-file hash chain: the next event
+	// becomes its head with prev_hash="". Without this reset the new
+	// file's first line would carry a backward link to the rotated-away
+	// file, which VerifyChain (per-file, expecting "" at the start) reads
+	// as a tamper break — false-alarming on every rotated log.
+	s.lastHash = ""
 	return nil
 }
 

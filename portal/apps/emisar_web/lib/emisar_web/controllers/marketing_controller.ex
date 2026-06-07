@@ -56,7 +56,7 @@ defmodule EmisarWeb.MarketingController do
      "Custom MCP server vs emisar",
      "Custom MCP server vs emisar, honestly: the arg validation, pack integrity, policy, approvals, per-user scopes, redaction, audit, and reconnect handling you'd build and own for production agent access — and emisar's real tradeoffs in return."},
     {"/zero-trust", :zero_trust, :zero_trust, "Zero Trust for AI Agents",
-     "Anthropic's Zero Trust for AI Agents framework calls for least agency, deny-by-default tools, human approval for high-risk actions, and an immutable audit trail. See how emisar enforces that exact control set between an LLM and your infrastructure — with approval gates, just-in-time access, and SIEM export at the Enterprise and Advanced tier, by default."},
+     "Anthropic's Zero Trust for AI Agents framework calls for least agency, deny-by-default tools, human approval for high-risk actions, and an immutable audit trail. See how emisar enforces that exact control set between an LLM and your infrastructure — including the approval gates, just-in-time access, and SIEM export the framework files under its top tiers, shipped by default on emisar's Free plan."},
     {"/docs/publishing-packs", :docs_publishing_packs, :docs_publishing_packs,
      "Author your own action pack",
      "Write, validate, install, and trust an emisar action pack you maintain yourself — pack.yaml, action YAMLs, content-hash trust, and fleet rollout. Plus when (and how) to propose a genuinely generic pack to the curated public registry."}

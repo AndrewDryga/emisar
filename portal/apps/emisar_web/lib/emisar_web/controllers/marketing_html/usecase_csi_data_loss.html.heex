@@ -96,9 +96,9 @@ docker.logs &#123;"container": "democratic-csi", "lines": 2000&#125;
         group-commit overwrites blocks that still hold the old data. The move is to halt it,
         and halting a live alloc is destructive, so policy holds it for a human.
       </p>
-      <pre class="mt-3 overflow-x-auto rounded-lg border border-zinc-900 bg-black/60 p-4 font-mono text-xs leading-6 text-zinc-300">nomad.stop_alloc &#123;"alloc": "a1b2c3d4", "reason":
+      <pre class="mt-3 overflow-x-auto rounded-lg border border-zinc-900 bg-black/60 p-4 font-mono text-xs leading-6 text-zinc-300">nomad.alloc_stop &#123;"alloc": "a1b2c3d4", "reason":
   "CSI reformatted a live LUN — stop writes to preserve recoverable blocks"&#125;
-<span class="text-amber-300">⏸ pending approval — nomad.stop_alloc is high-risk; a human approves in the portal</span>
+<span class="text-amber-300">⏸ pending approval — nomad.alloc_stop is high-risk; a human approves in the portal</span>
 <span class="text-emerald-300">✓ approved by you · one use · audit event recorded</span>
 <span class="text-zinc-500">→ alloc stopped · writes halted · LUN frozen for forensics</span></pre>
       <p class="mt-3 text-sm leading-6 text-zinc-400">

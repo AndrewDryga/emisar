@@ -5,7 +5,7 @@
 If you find a security issue in emisar, please **do not file a public
 GitHub issue**. Instead:
 
-- Email **security@dryga.com** with the details, or
+- Email **security@emisar.dev** with the details, or
 - Use GitHub's [private vulnerability reporting](https://github.com/andrewdryga/emisar/security/advisories/new).
 
 Include:

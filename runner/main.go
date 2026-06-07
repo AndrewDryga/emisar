@@ -35,7 +35,7 @@ authoring, approval workflow, and audit storage live in the cloud.`,
 		SilenceUsage: true,
 		Version:      Version,
 	}
-	root.PersistentFlags().StringVar(&flagConfig, "config", "", "path to config.yaml")
+	root.PersistentFlags().StringVar(&flagConfig, "config", "", "path to config.yaml (default: $EMISAR_CONFIG, else /etc/emisar/config.yaml)")
 	root.PersistentFlags().StringSliceVar(&flagPacksDir, "packs-dir", nil, "extra pack search dirs (overrides config)")
 	root.PersistentFlags().BoolVar(&flagJSONOut, "json", false, "emit JSON output where applicable")
 

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -29,14 +30,54 @@ type runtime struct {
 // SIGHUP reload, this reflects the new registry.
 func (r *runtime) registry() *packs.Registry { return r.engine.Registry() }
 
+// defaultConfigPaths lists where emisar looks for config.yaml when
+// --config isn't given, in priority order: the canonical install
+// location first, then a per-user XDG path.
+func defaultConfigPaths() []string {
+	paths := []string{"/etc/emisar/config.yaml"}
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		paths = append(paths, filepath.Join(home, ".config", "emisar", "config.yaml"))
+	}
+	return paths
+}
+
+// resolveConfigPath decides which config.yaml to load so operators don't
+// have to pass --config on every command. Precedence: the explicit
+// --config flag, then $EMISAR_CONFIG, then the first well-known location
+// that exists. An explicit flag/env value is returned as-is (config.Load
+// reports if it's unreadable); auto-discovered paths must exist to win.
+func resolveConfigPath() (string, error) {
+	if flagConfig != "" {
+		return flagConfig, nil
+	}
+	if env := os.Getenv("EMISAR_CONFIG"); env != "" {
+		return env, nil
+	}
+	for _, p := range defaultConfigPaths() {
+		if isRegularFile(p) {
+			return p, nil
+		}
+	}
+	return "", fmt.Errorf(
+		"no config found — looked in $EMISAR_CONFIG and %s; pass --config <path>",
+		strings.Join(defaultConfigPaths(), ", "),
+	)
+}
+
+func isRegularFile(p string) bool {
+	info, err := os.Stat(p)
+	return err == nil && info.Mode().IsRegular()
+}
+
 // boot loads config, packs, and the JSONL journal, then constructs the
 // action engine. CLI subcommands call this and use whichever fields they
 // need.
 func boot() (*runtime, error) {
-	if flagConfig == "" {
-		return nil, fmt.Errorf("--config is required")
+	cfgPath, err := resolveConfigPath()
+	if err != nil {
+		return nil, err
 	}
-	cfg, err := config.Load(flagConfig)
+	cfg, err := config.Load(cfgPath)
 	if err != nil {
 		return nil, err
 	}

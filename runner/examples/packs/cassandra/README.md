@@ -1,6 +1,10 @@
 # cassandra
 
-Read-only Cassandra inspection actions plus the data-disk analyzer script.
+Cassandra operations — read-only inspection (nodetool + cqlsh) plus risk-tiered
+maintenance and node-lifecycle actions.
+
+A representative sample below — run `emisar pack info cassandra` for the full,
+current list (45 actions).
 
 | ID                                  | Mutation        | Risk     |
 | ----------------------------------- | --------------- | -------- |

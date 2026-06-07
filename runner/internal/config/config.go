@@ -3,6 +3,9 @@ package config
 
 import (
 	"fmt"
+	"net"
+	"net/url"
+	"strings"
 
 	"github.com/andrewdryga/emisar/runner/pkg/actionspec"
 )
@@ -38,8 +41,13 @@ type Runner struct {
 
 // Cloud configures the outbound websocket connection.
 type Cloud struct {
-	URL            string              `yaml:"url"`
-	AuthKeyEnv     string              `yaml:"auth_key_env"`
+	URL        string `yaml:"url"`
+	AuthKeyEnv string `yaml:"auth_key_env"`
+	// AllowInsecure opts in to a cleartext (http/ws) control-plane URL on
+	// a non-loopback host. Off by default: plaintext transmits the runner
+	// auth key in the clear, so it's only permitted for loopback dev or
+	// when an operator explicitly accepts the risk.
+	AllowInsecure  bool                `yaml:"allow_insecure,omitempty"`
 	TokenPath      string              `yaml:"token_path,omitempty"`
 	HeartbeatEvery actionspec.Duration `yaml:"heartbeat_every,omitempty"`
 	ReconnectMin   actionspec.Duration `yaml:"reconnect_min,omitempty"`
@@ -114,8 +122,13 @@ func (c *Config) Validate() error {
 	// it manually.
 	if c.Cloud.URL == "" {
 		// Permitted: developer using only CLI subcommands locally.
-	} else if c.Cloud.AuthKeyEnv == "" {
-		return fmt.Errorf("config: cloud.auth_key_env required when cloud.url is set")
+	} else {
+		if c.Cloud.AuthKeyEnv == "" {
+			return fmt.Errorf("config: cloud.auth_key_env required when cloud.url is set")
+		}
+		if err := c.validateCloudTransportSecurity(); err != nil {
+			return err
+		}
 	}
 	if c.Cloud.HeartbeatEvery <= 0 {
 		c.Cloud.HeartbeatEvery = actionspec.Duration(30e9) // 30s
@@ -153,4 +166,37 @@ func (c *Config) Validate() error {
 		}
 	}
 	return nil
+}
+
+// validateCloudTransportSecurity refuses a cleartext (http/ws) control-
+// plane URL to a non-loopback host: the runner sends its auth key and
+// per-runner token over that channel, so plaintext to a real host exposes
+// credentials and invites MITM command injection. Loopback is allowed for
+// local development; any other insecure endpoint requires an explicit
+// cloud.allow_insecure opt-in so it can never happen by accident in prod.
+func (c *Config) validateCloudTransportSecurity() error {
+	u, err := url.Parse(c.Cloud.URL)
+	if err != nil {
+		return fmt.Errorf("config: cloud.url %q is not a valid URL: %w", c.Cloud.URL, err)
+	}
+	if u.Scheme != "http" && u.Scheme != "ws" {
+		return nil // https/wss are fine; an unknown scheme is rejected at dial.
+	}
+	if c.Cloud.AllowInsecure || isLoopbackHost(u.Hostname()) {
+		return nil
+	}
+	return fmt.Errorf(
+		"config: cloud.url %q uses cleartext %s to a non-loopback host, which sends the runner auth key in plaintext; use https/wss, or set cloud.allow_insecure: true to override",
+		c.Cloud.URL, u.Scheme)
+}
+
+// isLoopbackHost reports whether host is localhost or a loopback IP, the
+// only place cleartext cloud transport is safe without an explicit opt-in.
+func isLoopbackHost(host string) bool {
+	// DNS is case-insensitive, so accept any casing of localhost.
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }

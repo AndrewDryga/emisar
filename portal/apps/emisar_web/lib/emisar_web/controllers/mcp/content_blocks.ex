@@ -21,12 +21,13 @@ defmodule EmisarWeb.Mcp.ContentBlocks do
     %{
       name: "wait_for_run",
       description:
-        "Park on a previously-dispatched run until it reaches a terminal state " <>
-          "(success, failed, denied, cancelled, etc.). Call this whenever a tool returns " <>
-          "`status: \"pending_approval\"` — the response carries a `run_id` and this tool " <>
-          "polls the cloud for the operator's decision and the action's output. " <>
-          "Times out after 5 minutes; if you hit the timeout, call wait_for_run again " <>
-          "with the same run_id to keep waiting.",
+        "Block on a previously-dispatched run until it reaches a terminal state " <>
+          "(success, failed, denied, cancelled, etc.). Call this AUTOMATICALLY and immediately " <>
+          "whenever a tool returns `status: \"pending_approval\"` — by default wait for the " <>
+          "decision rather than asking the user whether to wait. The response carries a `run_id`; " <>
+          "this tool polls the cloud for the operator's decision and the action's output. " <>
+          "Times out after 5 minutes; if you hit the timeout while still pending, call " <>
+          "wait_for_run again with the same run_id and keep waiting until it resolves.",
       inputSchema: %{
         "$schema" => "https://json-schema.org/draft/2020-12/schema",
         "type" => "object",
@@ -135,9 +136,12 @@ defmodule EmisarWeb.Mcp.ContentBlocks do
 
     text =
       "#{hdr}#{headline}\nrun_id: #{rid}\n\n" <>
-        "Tell the user it's paused for human approval, then call `wait_for_run` with this " <>
-        "run_id to block until the operator decides (up to 5 minutes per call). You'll get " <>
-        "the action output on approve, or the denial reason on deny."
+        "This run is paused for human approval. By default, call `wait_for_run` with this " <>
+        "run_id right now and keep waiting until the operator decides — do NOT stop to ask the " <>
+        "user whether to wait. wait_for_run blocks up to 5 minutes per call; if it times out " <>
+        "while still pending, call it again with the same run_id. Let the user know it's paused " <>
+        "on them so they go approve it, but keep waiting. You'll get the action output on " <>
+        "approve, or the denial reason on deny — report that outcome."
 
     {[text_block(text)], false}
   end

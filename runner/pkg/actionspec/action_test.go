@@ -257,6 +257,18 @@ func TestAction_Validate(t *testing.T) {
 		{"bad redaction rule", func(a *Action) {
 			a.Output.Redact = []RedactionRule{{Name: "r", Type: "nope"}}
 		}, "redaction"},
+		{"env LD_PRELOAD", func(a *Action) {
+			a.Execution.Env = map[string]string{"LD_PRELOAD": "/tmp/evil.so"}
+		}, "hijack"},
+		{"env LD_LIBRARY_PATH", func(a *Action) {
+			a.Execution.Env = map[string]string{"LD_LIBRARY_PATH": "/tmp"}
+		}, "hijack"},
+		{"env DYLD_INSERT_LIBRARIES", func(a *Action) {
+			a.Execution.Env = map[string]string{"DYLD_INSERT_LIBRARIES": "/tmp/evil.dylib"}
+		}, "hijack"},
+		{"env BASH_ENV", func(a *Action) {
+			a.Execution.Env = map[string]string{"BASH_ENV": "/tmp/evil.sh"}
+		}, "hijack"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -271,6 +283,17 @@ func TestAction_Validate(t *testing.T) {
 			}
 		})
 	}
+
+	// The env denylist must target only loader/shell-init hijack vectors,
+	// not ordinary configuration — a benign env key (incl. ENV, which is
+	// deliberately not denied) still validates.
+	t.Run("benign env allowed", func(t *testing.T) {
+		a := good()
+		a.Execution.Env = map[string]string{"PGHOST": "db.internal", "ENV": "production"}
+		if err := a.Validate(); err != nil {
+			t.Fatalf("benign env keys should validate, got %v", err)
+		}
+	})
 }
 
 func TestArg_Validate(t *testing.T) {
