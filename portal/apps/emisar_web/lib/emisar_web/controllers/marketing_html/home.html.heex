@@ -252,10 +252,10 @@
     <span class="text-indigo-300">type</span>: string
     <span class="text-indigo-300">required</span>: <span class="text-amber-300">true</span>
     <span class="text-indigo-300">validation</span>:
-      <span class="text-indigo-300">enum</span>: [<span class="text-emerald-300">cassandra</span>, <span class="text-emerald-300">nginx</span>, <span class="text-emerald-300">postgresql</span>, <span class="text-emerald-300">docker</span>]
+      <span class="text-indigo-300">pattern</span>: <span class="text-emerald-300">"^[a-zA-Z0-9@._-]&#123;1,128&#125;$"</span>  <span class="text-zinc-500"># any systemd unit name</span>
 <span class="text-indigo-300">execution</span>:
   <span class="text-indigo-300">command</span>:
-    <span class="text-indigo-300">binary</span>: /bin/systemctl
+    <span class="text-indigo-300">binary</span>: /usr/bin/systemctl
     <span class="text-indigo-300">argv</span>: [<span class="text-emerald-300">"status"</span>, <span class="text-emerald-300">"&#123;&#123; args.unit &#125;&#125;"</span>, <span class="text-emerald-300">"--no-pager"</span>]</pre>
           </div>
         </div>
@@ -299,9 +299,9 @@
           </div>
           <h3 class="mt-6 text-xl font-semibold text-white">Audit + runner journal</h3>
           <p class="mt-3 text-sm text-zinc-400 leading-relaxed">
-            Every input, output, exit code, redaction. SHA-256-chained JSONL on the
-            host — any tampered or removed line is detected by <code class="text-zinc-300">emisar audit verify</code>. Mirrored to the
-            cloud dashboard for review and available as NDJSON for straming to your SIEM.
+            Every input, output, exit code, and redaction. A SHA-256-chained JSONL journal on the
+            host — any tampered or removed line is caught by <code class="text-zinc-300">emisar audit verify</code>— mirrored to the
+            searchable cloud audit and streamable to your SIEM as NDJSON.
           </p>
           <div class="mt-6 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
             <div class="border-b border-zinc-900 px-3 py-2 font-mono text-[11px] text-zinc-500">
@@ -310,49 +310,36 @@
             <table class="w-full font-mono text-[11px] text-zinc-300">
               <thead class="bg-zinc-950/80 text-zinc-500">
                 <tr>
-                  <th class="px-3 py-2 text-left font-normal">time</th>
-                  <th class="px-3 py-2 text-left font-normal">actor</th>
-                  <th class="px-3 py-2 text-left font-normal">action</th>
-                  <th class="px-3 py-2 text-left font-normal">status</th>
+                  <th class="px-3 py-2 text-left font-normal">When</th>
+                  <th class="px-3 py-2 text-left font-normal">Event</th>
+                  <th class="px-3 py-2 text-left font-normal">Actor</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-zinc-900">
-                <tr>
-                  <td class="px-3 py-2">14:02:18</td>
-                  <td class="px-3 py-2 text-indigo-300">claude-opus</td>
-                  <td class="px-3 py-2">cassandra.nodetool_status</td>
+                <tr :for={
+                  {time, title, type, chip, title_class, actor_kind, actor_label} <- [
+                    {"14:02", "Run succeeded", "action_run.success", "docker.ps",
+                     "text-emerald-300", "api_key", "claude-prod"},
+                    {"14:01", "Awaiting approval", "action_run.pending_approval",
+                     "cassandra.nodetool_repair", "text-amber-300", "api_key", "claude-prod"},
+                    {"13:58", "Policy evaluated", "policy.evaluated", "require_approval",
+                     "text-zinc-300", "system", nil},
+                    {"13:52", "Denied by policy", "action_run.denied", "linux.reboot_host",
+                     "text-rose-300", "api_key", "claude-prod"}
+                  ]
+                }>
+                  <td class="px-3 py-2 align-top text-zinc-500">{time}</td>
                   <td class="px-3 py-2">
-                    <span class="rounded bg-emerald-500/10 px-1.5 py-0.5 text-emerald-300">
-                      ok
+                    <div class={title_class}>{title}</div>
+                    <div class="text-[10px] text-zinc-500">{type}</div>
+                    <span class="mt-1 inline-block rounded bg-zinc-800/60 px-1.5 py-0.5 text-[10px] text-zinc-400">
+                      {chip}
                     </span>
                   </td>
-                </tr>
-                <tr>
-                  <td class="px-3 py-2">14:01:55</td>
-                  <td class="px-3 py-2 text-indigo-300">claude-opus</td>
-                  <td class="px-3 py-2">cassandra.nodetool_repair</td>
-                  <td class="px-3 py-2">
-                    <span class="rounded bg-amber-500/10 px-1.5 py-0.5 text-amber-300">
-                      approval
-                    </span>
-                  </td>
-                </tr>
-                <tr>
-                  <td class="px-3 py-2">13:58:01</td>
-                  <td class="px-3 py-2 text-indigo-300">claude-opus</td>
-                  <td class="px-3 py-2">linux.systemctl_status</td>
-                  <td class="px-3 py-2">
-                    <span class="rounded bg-emerald-500/10 px-1.5 py-0.5 text-emerald-300">
-                      ok
-                    </span>
-                  </td>
-                </tr>
-                <tr>
-                  <td class="px-3 py-2">13:52:44</td>
-                  <td class="px-3 py-2 text-indigo-300">claude-opus</td>
-                  <td class="px-3 py-2">linux.tail_log</td>
-                  <td class="px-3 py-2">
-                    <span class="rounded bg-red-500/10 px-1.5 py-0.5 text-red-300">denied</span>
+                  <td class="px-3 py-2 align-top leading-5">
+                    <span :if={actor_label} class="text-zinc-500">{actor_kind}:</span>
+                    <span :if={actor_label} class="text-indigo-300">{actor_label}</span>
+                    <span :if={!actor_label} class="text-zinc-400">{actor_kind}</span>
                   </td>
                 </tr>
               </tbody>
@@ -599,12 +586,11 @@
         </p>
       </div>
 
-      <div class="mx-auto mt-16 grid max-w-5xl grid-cols-1 gap-6 sm:grid-cols-2 lg:max-w-none lg:grid-cols-4">
+      <div class="mx-auto mt-16 grid max-w-5xl grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
         <%= for {tag, title, scenario, icon, href} <- [
           {"cassandra", "Cassandra ops", "Agent triages a slow read latency alert by running nodetool.status, then proposes nodetool.repair on the lagging keyspace — pending one approver click.", "hero-circle-stack", ~p"/use-cases/cassandra-ops"},
           {"postgres", "Postgres ops", "Replication lag spikes overnight. The model checks lag and slow queries, then requests approval before terminating the blocking backend.", "hero-server-stack", ~p"/use-cases/postgres-ops"},
-          {"k8s", "K8s troubleshoot", "Pod is CrashLoopBackOff. Agent fetches logs and a describe via the kubectl pack. Restarting the deployment requires an approver — and a one-line justification.", "hero-cube", nil},
-          {"incident", "Incident response", "Pager fires at 02:14. A published runbook executes sequentially, stopping on failure and waiting whenever a step's policy requires approval.", "hero-bell-alert", nil}
+          {"incident", "Incident response", "A CSI driver reformats a live volume and wipes 33 hours of metrics. The agent investigates through declared actions, stops the bleed behind one approval, and writes the durable fix to Terraform.", "hero-bell-alert", ~p"/use-cases/csi-data-loss"}
         ] do %>
           <div class="group flex flex-col rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8 transition hover:-translate-y-0.5 hover:border-indigo-500/40">
             <div class="flex items-center justify-between">

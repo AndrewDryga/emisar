@@ -37,8 +37,6 @@ defmodule EmisarWeb.AuditExportController do
       single-shot scans that would page the audit table out of buffer
       pool.
     * No total-count round-trip per request (unlike the LV listing).
-    * The same per-API-key rate limit that gates the MCP surface
-      applies — see `EmisarWeb.RateLimiter` config.
   """
 
   use EmisarWeb, :controller

@@ -129,8 +129,8 @@ examples:
           declared maximum.
         </li>
         <li>
-          <strong>redact</strong> — per-action rules layered on top of 30+ built-in patterns
-          (AWS/GCP keys, GitHub tokens, JWTs, bearer/basic auth, secret assignments). Redaction
+          <strong>redact</strong> — per-action rules layered on top of 20+ built-in patterns
+          (AWS keys, GitHub/GitLab/Slack tokens, JWTs, bearer/basic auth, secret assignments). Redaction
           runs on the runner before output leaves the host; the control plane never sees the raw
           bytes, and per-rule hit counts are recorded.
         </li>
@@ -162,7 +162,7 @@ examples:
       </p>
 
       <p class="mt-8 text-sm text-zinc-400">
-        Browse ~50 working packs in the
+        Browse 50+ working packs in the
         <.link navigate={~p"/packs"} class="text-indigo-400 hover:text-indigo-300">
           public registry
         </.link>

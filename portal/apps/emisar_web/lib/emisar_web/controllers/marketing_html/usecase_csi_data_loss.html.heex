@@ -60,13 +60,14 @@ storage.csi_volume_ls &#123;"volume": "vm-data"&#125;
   drwx------ 2 root root 16384 Jun  4 13:11 lost+found
   # a freshly-formatted ext4, born 30 minutes ago. VM's history isn't here.</span>
 
-debugging.dmesg_grep &#123;"pattern": "multipath|EXT4|sd[c-z]"&#125;
-<span class="text-zinc-500">→ 13:11:03  device-mapper: multipath 254:3: queue_if_no_path enabled
+debugging.dmesg_tail &#123;"lines": 400&#125;
+<span class="text-zinc-500">→ … 13:11:03  device-mapper: multipath 254:3: queue_if_no_path enabled
   13:11:09  EXT4-fs (dm-3): mounted filesystem … clean
-  # six seconds with no active path group — that's the window.</span>
+  # the two lines that matter in the tail: six seconds with no active
+  # path group — that's the window.</span>
 
-docker.logs &#123;"container": "democratic-csi", "grep": "blkid|mkfs"&#125;
-<span class="text-zinc-500">→ GetDiskFormat /dev/mapper/3624…265c → blkid output="" (empty)
+docker.logs &#123;"container": "democratic-csi", "lines": 2000&#125;
+<span class="text-zinc-500">→ … GetDiskFormat /dev/mapper/3624…265c → blkid output="" (empty)
   Disk appears unformatted; running mkfs.ext4 -F /dev/mapper/3624…
   Disk successfully formatted (mkfs)</span></pre>
       <p class="mt-3 text-sm leading-6 text-zinc-400">

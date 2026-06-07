@@ -34,10 +34,11 @@
           can never both succeed.
         </li>
         <li>
-          <strong>Re-validation cloud-side and host-side.</strong> The control plane
-          validates args against the action's declared schema; the runner re-checks
-          the same schema before executing. A misbehaving cloud cannot smuggle an
-          undeclared argument past the runner.
+          <strong>Argument validation on the runner.</strong> The runner is the authority on
+          arguments: it validates every arg against the action's declared schema — rejecting
+          anything undeclared, coercing types, and enforcing each arg's min/max — before it
+          executes. The control plane gates the dispatch (policy, scope, pack trust); a
+          misbehaving cloud cannot smuggle an undeclared argument past the runner.
         </li>
         <li>
           <strong>Policy.</strong>
@@ -62,7 +63,7 @@
         </li>
         <li>
           <strong>Output redaction.</strong>
-          30+ built-in patterns — bearer/basic auth, JWTs, AWS and GCP keys,
+          20+ built-in patterns — bearer/basic auth, JWTs, AWS keys, Google API keys,
           GitHub tokens, private-key blocks, and common <code>password=</code>
           / <code>secret=</code>
           / <code>token=</code>

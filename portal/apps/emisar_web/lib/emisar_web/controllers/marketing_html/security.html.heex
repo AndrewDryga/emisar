@@ -46,12 +46,12 @@
  │  asks for a catalog action over MCP — with a required reason
  ▼
 <span class="text-indigo-300">Control plane</span>
- │  re-validates args · evaluates policy · routes · records audit
+ │  evaluates policy · checks scope &amp; pack trust · routes · records audit
  │  <span class="text-zinc-500">on require_approval, waits for a human ──▶ Operator approves / denies</span>
  ▼  run_action <span class="text-zinc-500">(only after the gate passes)</span>
 <span class="text-indigo-300">Runner on host</span> <span class="text-zinc-500">— outbound WSS only; the host dials out, nothing listens</span>
- │  re-verifies the pack hash · drops to least privilege
- │  argv arrays, never a shell · redacts output before egress
+ │  validates args against the action schema · re-verifies the pack hash
+ │  drops to least privilege · argv arrays, never a shell · redacts before egress
  ▼
 <span class="text-indigo-300">Hash-chained JSONL journal</span> <span class="text-zinc-500">on the host + searchable cloud audit</span></pre>
       </div>
@@ -66,14 +66,17 @@
         <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-6">
           <h3 class="text-sm font-semibold text-indigo-300">Control plane</h3>
           <p class="mt-2 text-sm text-zinc-400">
-            Validates, gates, routes, audits. Never executes shell itself.
+            Evaluates policy, checks scope and pack trust, routes, and audits. Never executes
+            shell itself.
           </p>
         </div>
         <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-6">
           <h3 class="text-sm font-semibold text-indigo-300">Runner</h3>
           <p class="mt-2 text-sm text-zinc-400">
-            Non-root service user; drops to a per-action user/group, clamps every option to the
-            action's min/max bounds, and runs argv arrays — never shell strings.
+            Non-root service user, and the authority on arguments: validates every arg against the
+            action's declared schema (rejecting anything undeclared), drops to a per-action
+            user/group, clamps options to the action's min/max bounds, and runs argv arrays — never
+            shell strings.
           </p>
         </div>
       </div>
@@ -142,10 +145,11 @@
           </div>
           <h3 class="mt-6 text-xl font-semibold text-zinc-50">Secrets redacted before egress</h3>
           <p class="mt-3 text-sm leading-6 text-zinc-400">
-            30+ built-in patterns (AWS/GCP keys, GitHub tokens, JWTs, bearer/basic auth, secret
-            assignments) plus your own per-action rules scrub stdout and stderr on the runner
-            before anything is forwarded. The control plane never sees the raw bytes; per-rule hit
-            counts are recorded so you can see what was masked.
+            20+ built-in patterns (AWS keys, GitHub/GitLab/Slack/Stripe/OpenAI/Anthropic tokens,
+            JWTs, bearer/basic auth, private-key blocks, secret assignments) plus your own
+            per-action rules scrub stdout and stderr on the runner before anything is forwarded.
+            The control plane receives only the redacted stream; per-rule hit counts are recorded
+            so you can see what was masked.
           </p>
         </div>
         <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8">
@@ -191,8 +195,8 @@
           <h3 class="mt-4 text-lg font-semibold text-zinc-50">Scoped LLM access</h3>
           <p class="mt-2 text-sm text-zinc-400">
             Each MCP key carries its own scopes (<code>actions:read</code>, <code>actions:execute</code>, <code>audit:read</code>), user attribution, and runner
-            filters. Keys are revocable, rate-limited, and inherit their creator's runner scope at
-            call time — revoke the user and every key they minted shrinks with them.
+            filters. Keys are revocable and inherit their creator's runner scope at call time —
+            revoke the user and every key they minted shrinks with them.
           </p>
         </div>
         <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8">
@@ -207,6 +211,47 @@
     </div>
   </section>
 
+  <%!-- Built for assume breach — the Anthropic Zero Trust framing plus the
+    host-side admission control that backs it. --%>
+  <section class="py-24 sm:py-32">
+    <div class="mx-auto max-w-4xl px-6 lg:px-8">
+      <p class="text-base font-semibold text-indigo-400">Independent standard</p>
+      <h2 class="mt-2 text-4xl font-bold tracking-tight text-zinc-50 sm:text-5xl">
+        Built for &ldquo;assume breach.&rdquo;
+      </h2>
+      <p class="mt-6 text-lg leading-8 text-zinc-400">
+        Anthropic — the lab behind Claude — published <a
+          href="https://cdn.prod.website-files.com/6889473510b50328dbb70ae6/6a1611a04085d7cd3dadc924_Claude-eBook-Zero-Trust-for-AI-Agents-05182026.pdf"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="text-indigo-300 underline decoration-zinc-700 underline-offset-4 hover:text-indigo-200"
+        >Zero Trust for AI Agents</a>, a framework for giving autonomous agents access to real
+        systems: least agency, deny-by-default tools, human approval for high-risk actions, and an
+        immutable audit trail. emisar enforces that control set — and assumes the agent may already
+        be compromised, so a jailbroken or prompt-injected model still can't exceed the declared,
+        gated, audited catalog.
+      </p>
+      <div class="mt-8 rounded-2xl border border-zinc-900 bg-zinc-950/60 p-6">
+        <h3 class="text-sm font-semibold text-indigo-300">Local admission control</h3>
+        <p class="mt-2 text-sm leading-6 text-zinc-400">
+          Beyond the cloud policy, an operator can set an allow/deny list on the runner itself.
+          Denied actions are hidden from the catalog and refused at execution — fail-closed, even
+          against a compromised control plane. The host always has the last word.
+        </p>
+      </div>
+      <div class="mt-8 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
+        <.link
+          navigate={~p"/zero-trust"}
+          class="inline-flex items-center gap-1 font-semibold text-indigo-400 hover:text-indigo-300"
+        >
+          See emisar mapped to the framework, control by control
+          <.icon name="hero-arrow-right" class="h-4 w-4" />
+        </.link>
+        <span class="text-xs text-zinc-600">Not affiliated with or endorsed by Anthropic.</span>
+      </div>
+    </div>
+  </section>
+
   <%!-- Go deeper --%>
   <section class="py-16">
     <div class="mx-auto max-w-5xl px-6 lg:px-8">
@@ -216,13 +261,6 @@
           class="inline-flex items-center gap-1 font-medium text-indigo-400 hover:text-indigo-300"
         >
           Read the full security model <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
-        </.link>
-        <.link
-          navigate={~p"/zero-trust"}
-          class="inline-flex items-center gap-1 font-medium text-indigo-400 hover:text-indigo-300"
-        >
-          emisar &amp; Anthropic's Zero Trust framework
-          <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
         </.link>
         <.link
           navigate={~p"/docs/connect-an-llm"}

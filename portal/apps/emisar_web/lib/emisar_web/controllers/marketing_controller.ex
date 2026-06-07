@@ -142,7 +142,7 @@ defmodule EmisarWeb.MarketingController do
     {"What counts as a \"runner\"?",
      "One installation of the emisar binary on one host — VM, container, or bare metal. Run as many runners as your plan allows. Human users are unlimited on Team and Enterprise."},
     {"Do you store the output of my commands?",
-     "We store metadata (who, when, which action, exit code) and a configurable slice of stdout/stderr for the audit log. Secrets are redacted on the runner before anything is forwarded — 30+ built-in patterns plus your own per-action rules — so the control plane never sees raw secrets."},
+     "We store metadata (who, when, which action, exit code) and a configurable slice of stdout/stderr for the audit log. Secrets are redacted on the runner before anything is forwarded — 20+ built-in patterns plus your own per-action rules — so the control plane never sees raw secrets."},
     {"How does billing work?",
      "Paid plans are billed per runner through Paddle, our Merchant of Record. You get monthly invoices, and Paddle handles sales tax and VAT. We never see or store full card numbers."},
     {"Can I self-host?",

@@ -159,6 +159,45 @@
     </div>
   </section>
 
+  <%!-- Use cases --%>
+  <section class="border-t border-zinc-900 py-24 sm:py-32">
+    <div class="mx-auto max-w-7xl px-6 lg:px-8">
+      <div class="mx-auto max-w-3xl text-center">
+        <h2 class="text-3xl font-bold tracking-tight text-zinc-50 sm:text-4xl">Use cases</h2>
+        <p class="mt-4 text-lg leading-8 text-zinc-400">
+          Worked examples of letting an agent operate real infrastructure through declared,
+          gated, audited actions — not a shell.
+        </p>
+      </div>
+      <div class="mx-auto mt-12 grid max-w-5xl grid-cols-1 gap-6 md:grid-cols-3">
+        <%= for {title, desc, href} <- [
+          {"Cassandra ops",
+           "Triage a read-latency alert and run nodetool repair on the lagging keyspace, behind one approval.",
+           ~p"/use-cases/cassandra-ops"},
+          {"Postgres ops",
+           "Check replication lag and slow queries, then terminate a blocking backend — with approval.",
+           ~p"/use-cases/postgres-ops"},
+          {"Incident response: the 33-hour wipe",
+           "A CSI driver reformats a live volume; the agent contains it through declared actions and writes the fix to Terraform.",
+           ~p"/use-cases/csi-data-loss"}
+        ] do %>
+          <.link
+            navigate={href}
+            class="group rounded-2xl border border-zinc-900 bg-zinc-950/60 p-6 transition hover:border-indigo-500/50"
+          >
+            <h3 class="text-base font-semibold text-zinc-50 group-hover:text-indigo-300">
+              {title}
+            </h3>
+            <p class="mt-2 text-sm leading-6 text-zinc-400">{desc}</p>
+            <p class="mt-4 text-sm font-semibold text-indigo-300">
+              Read it <span aria-hidden="true">&rarr;</span>
+            </p>
+          </.link>
+        <% end %>
+      </div>
+    </div>
+  </section>
+
   <%!-- Help CTA --%>
   <section class="border-t border-zinc-900 py-24 sm:py-32">
     <div class="mx-auto max-w-4xl px-6 text-center lg:px-8">
