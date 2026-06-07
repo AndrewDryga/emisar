@@ -654,5 +654,18 @@ defmodule Emisar.RunnersTest do
       {:ok, _} = Runners.disable_runner(r1, subject)
       assert :ok = Billing.check_limit(account, :runners)
     end
+
+    test "an unknown/legacy plan name falls back to free limits, not a crash" do
+      {account, _user, _subject} = account_with_owner_subject()
+      # A plan name no longer in Billing.plans() (legacy/renamed) used to
+      # raise BadMapError on Map.get(nil, :runners_limit). It must fall
+      # back to the free plan instead.
+      legacy = %{account | plan: "legacy-pro"}
+
+      assert :ok = Billing.check_limit(legacy, :runners)
+
+      for _ <- 1..3, do: runner_fixture(account_id: account.id, connected?: false)
+      assert {:error, :over_limit, "legacy-pro", 3} = Billing.check_limit(legacy, :runners)
+    end
   end
 end

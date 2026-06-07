@@ -87,7 +87,10 @@ defmodule Emisar.Billing do
   account-scoped (the runner counting), not subject-scoped.
   """
   def check_limit(%Account{plan: plan_name} = account, resource) do
-    plan = plan(plan_name)
+    # Fall back to the free plan when the account's plan name isn't a
+    # current plan (legacy/renamed) — the same guard billing_summary and
+    # audit_retention use, and it avoids Map.get on a nil plan.
+    plan = plan(plan_name) || plan("free")
     limit = Map.get(plan, limit_key(resource))
 
     current = current_count(account, resource)
