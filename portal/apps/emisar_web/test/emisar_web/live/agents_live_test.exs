@@ -136,6 +136,25 @@ defmodule EmisarWeb.AgentsLiveTest do
       assert html =~ user.email
     end
 
+    test "agents list shows the MCP client a key reported (clientInfo)", %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      subject = owner_subject(user, account)
+
+      {:ok, _raw, key} =
+        ApiKeys.create_key(
+          %{name: "prod-mcp", scopes: ["actions:execute"], runner_filter: []},
+          subject
+        )
+
+      {:ok, _} = ApiKeys.record_client_info(key, %{"name" => "Claude Code", "version" => "1.2.3"})
+
+      {:ok, _lv, html} = live(conn, ~p"/app/agents")
+
+      # The reported client (name + version) shows even though the key is
+      # named generically — it's the actual client, not the operator label.
+      assert html =~ "Claude Code 1.2.3"
+    end
+
     test "status badge derives from last_used_at", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
       subject = owner_subject(user, account)

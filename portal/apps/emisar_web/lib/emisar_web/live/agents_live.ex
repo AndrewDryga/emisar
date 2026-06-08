@@ -356,6 +356,18 @@ defmodule EmisarWeb.AgentsLive do
     end
   end
 
+  # The MCP client a key reported at `initialize` (clientInfo): "name" with
+  # "version" appended when present. nil until a client has connected.
+  defp reported_client(%ApiKey{last_client_info: %{"name" => name} = info})
+       when is_binary(name) and name != "" do
+    case info["version"] do
+      v when is_binary(v) and v != "" -> "#{name} #{v}"
+      _ -> name
+    end
+  end
+
+  defp reported_client(_), do: nil
+
   defp status_label(:active), do: "Active"
   defp status_label(:idle), do: "Idle"
   defp status_label(:dormant), do: "Dormant"
@@ -591,6 +603,13 @@ defmodule EmisarWeb.AgentsLive do
                   {key.key_prefix}…
                   · {format_key_scope(key, @runners)} · last call {last_used(key.last_used_at)}
                   <span :if={key.created_by}>· by {key.created_by.email}</span>
+                </div>
+
+                <%!-- Row 3: the MCP client this key reported at `initialize`
+                     (clientInfo) — what's actually talking, vs the operator
+                     name above. Only shown once a client has connected. --%>
+                <div :if={reported_client(key)} class="mt-0.5 truncate text-[11px] text-zinc-500">
+                  client <span class="text-zinc-300">{reported_client(key)}</span>
                 </div>
               </div>
 
