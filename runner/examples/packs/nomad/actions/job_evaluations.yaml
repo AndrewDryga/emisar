@@ -1,10 +1,15 @@
 schema_version: 1
 id: nomad.job_evaluations
-title: nomad job eval status <id>
+title: nomad job eval <id> (force re-evaluation)
 kind: exec
-risk: low
-description: Recent evaluations for one job — scheduling decisions.
-side_effects: ["One API call.", "Read-only."]
+risk: medium
+description: >
+  Forces a fresh evaluation of one job — the scheduler re-checks placement
+  and constraints and may reschedule allocations. NOT read-only: the CLI
+  `nomad job eval` creates a new evaluation, it does not just list them.
+side_effects:
+  - Creates a new evaluation for the job.
+  - The scheduler reconciles the job; allocations may be moved or restarted.
 args:
   - name: job
     type: string
@@ -20,6 +25,6 @@ output:
   max_stdout_bytes: 131072
   max_stderr_bytes: 8192
 examples:
-  - title: Evaluations
+  - title: Force a re-evaluation
     args:
       job: "api"

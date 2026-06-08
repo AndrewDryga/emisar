@@ -23,8 +23,10 @@ args:
       max: 3600
 execution:
   command:
-    binary: /usr/bin/mongosh
-    argv: ["--quiet", "--eval", "rs.stepDown({{ args.seconds }})"]
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "mongosh \"$MONGO_URI\" --quiet --eval \"rs.stepDown({{ args.seconds }})\""
   timeout: 60s
 cancel_grace: 15s
 output:

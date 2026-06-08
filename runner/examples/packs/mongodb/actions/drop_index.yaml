@@ -32,12 +32,10 @@ args:
       pattern: "^[a-zA-Z0-9_.\\-]{1,128}$"
 execution:
   command:
-    binary: /usr/bin/mongosh
+    binary: /bin/sh
     argv:
-      - "--quiet"
-      - "{{ args.db_name }}"
-      - "--eval"
-      - "db.getCollection('{{ args.collection }}').dropIndex('{{ args.index_name }}')"
+      - "-c"
+      - "mongosh \"$MONGO_URI\" --quiet --eval \"db.getSiblingDB('{{ args.db_name }}').getCollection('{{ args.collection }}').dropIndex('{{ args.index_name }}')\""
   timeout: 60s
 output:
   parser: text
