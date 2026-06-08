@@ -1,0 +1,36 @@
+schema_version: 1
+id: vl.field_names
+title: GET /select/logsql/field_names
+kind: script
+risk: low
+description: >
+  List the log field names matching a query, each with a hit count. Use to
+  discover what fields exist before querying. Doubles as the pack's
+  connectivity check.
+side_effects:
+  - One read-only HTTP GET to the VictoriaLogs query API.
+  - Read-only.
+args:
+  - name: query
+    type: string
+    required: false
+    default: "*"
+    description: 'LogsQL scope, e.g. _time:1h app:api. Defaults to all logs.'
+    validation:
+      pattern: '^[\s\S]{1,1000}$'
+execution:
+  script:
+    path: scripts/vlget.sh
+    interpreter: /bin/sh
+  argv:
+    - "/select/logsql/field_names"
+    - "--data-urlencode"
+    - "query={{ args.query }}"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: All field names
+    args: {}

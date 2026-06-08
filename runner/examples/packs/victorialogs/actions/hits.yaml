@@ -1,0 +1,46 @@
+schema_version: 1
+id: vl.hits
+title: GET /select/logsql/hits
+kind: script
+risk: low
+description: >
+  Count log entries matching a LogsQL query, bucketed over time by step —
+  the histogram behind "how many errors per hour?". Bound the range with a
+  _time filter in the query.
+side_effects:
+  - One read-only HTTP GET to the VictoriaLogs query API.
+  - Read-only.
+args:
+  - name: query
+    type: string
+    required: true
+    description: 'LogsQL query to count, e.g. _time:24h error.'
+    validation:
+      pattern: '^[\s\S]{1,1000}$'
+  - name: step
+    type: string
+    required: false
+    default: "1h"
+    description: 'Bucket granularity, e.g. 5m, 1h, 1d.'
+    validation:
+      pattern: '^[0-9]{1,5}[smhdw]$'
+execution:
+  script:
+    path: scripts/vlget.sh
+    interpreter: /bin/sh
+  argv:
+    - "/select/logsql/hits"
+    - "--data-urlencode"
+    - "query={{ args.query }}"
+    - "--data-urlencode"
+    - "step={{ args.step }}"
+  timeout: 60s
+output:
+  parser: json
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: Errors per hour over the last day
+    args:
+      query: "_time:24h error"
+      step: "1h"

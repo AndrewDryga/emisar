@@ -1,0 +1,54 @@
+schema_version: 1
+id: vl.field_values
+title: GET /select/logsql/field_values
+kind: script
+risk: low
+description: >
+  List the most frequent values of one log field, each with a hit count.
+  Use to enumerate levels, namespaces, hosts, or any other dimension.
+side_effects:
+  - One read-only HTTP GET to the VictoriaLogs query API.
+  - Read-only.
+args:
+  - name: field
+    type: string
+    required: true
+    description: Field name to enumerate values for, e.g. level, app, _stream.
+    validation:
+      pattern: '^\S{1,256}$'
+  - name: query
+    type: string
+    required: false
+    default: "*"
+    description: 'LogsQL scope, e.g. _time:1h. Defaults to all logs.'
+    validation:
+      pattern: '^[\s\S]{1,1000}$'
+  - name: limit
+    type: integer
+    required: false
+    default: 100
+    description: Maximum number of values to return.
+    validation:
+      min: 1
+      max: 10000
+execution:
+  script:
+    path: scripts/vlget.sh
+    interpreter: /bin/sh
+  argv:
+    - "/select/logsql/field_values"
+    - "--data-urlencode"
+    - "query={{ args.query }}"
+    - "--data-urlencode"
+    - "field={{ args.field }}"
+    - "--data-urlencode"
+    - "limit={{ args.limit }}"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: Distinct log levels
+    args:
+      field: "level"

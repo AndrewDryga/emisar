@@ -1,0 +1,46 @@
+schema_version: 1
+id: vl.streams
+title: GET /select/logsql/streams
+kind: script
+risk: low
+description: >
+  List the log streams matching a query, each with a hit count. A stream is
+  the set of logs sharing the same stream labels (app, host, container, …).
+  Use to see which sources are sending logs.
+side_effects:
+  - One read-only HTTP GET to the VictoriaLogs query API.
+  - Read-only.
+args:
+  - name: query
+    type: string
+    required: false
+    default: "*"
+    description: 'LogsQL scope, e.g. _time:1h. Defaults to all logs.'
+    validation:
+      pattern: '^[\s\S]{1,1000}$'
+  - name: limit
+    type: integer
+    required: false
+    default: 100
+    description: Maximum number of streams to return.
+    validation:
+      min: 1
+      max: 10000
+execution:
+  script:
+    path: scripts/vlget.sh
+    interpreter: /bin/sh
+  argv:
+    - "/select/logsql/streams"
+    - "--data-urlencode"
+    - "query={{ args.query }}"
+    - "--data-urlencode"
+    - "limit={{ args.limit }}"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: Active log streams
+    args: {}

@@ -1,0 +1,47 @@
+schema_version: 1
+id: vl.stats_query_range
+title: GET /select/logsql/stats_query_range
+kind: script
+risk: low
+description: >
+  Stats over logs across a time range — a LogsQL query containing a
+  "| stats" pipe, evaluated at each step and returned in Prometheus
+  range-query (matrix) format. Use to chart an aggregate over time. Bound
+  the range with a _time filter in the query.
+side_effects:
+  - One read-only HTTP GET to the VictoriaLogs query API.
+  - Read-only.
+args:
+  - name: query
+    type: string
+    required: true
+    description: 'LogsQL with a | stats pipe, e.g. _time:6h * | stats count() logs.'
+    validation:
+      pattern: '^[\s\S]{1,1000}$'
+  - name: step
+    type: string
+    required: false
+    default: "1h"
+    description: 'Interval between points, e.g. 5m, 1h.'
+    validation:
+      pattern: '^[0-9]{1,5}[smhdw]$'
+execution:
+  script:
+    path: scripts/vlget.sh
+    interpreter: /bin/sh
+  argv:
+    - "/select/logsql/stats_query_range"
+    - "--data-urlencode"
+    - "query={{ args.query }}"
+    - "--data-urlencode"
+    - "step={{ args.step }}"
+  timeout: 120s
+output:
+  parser: json
+  max_stdout_bytes: 4194304
+  max_stderr_bytes: 8192
+examples:
+  - title: Hourly error count over 6h
+    args:
+      query: "_time:6h error | stats count() errors"
+      step: "1h"

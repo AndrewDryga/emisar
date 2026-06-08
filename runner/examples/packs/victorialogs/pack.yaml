@@ -1,0 +1,73 @@
+schema_version: 1
+
+id: victorialogs
+name: VictoriaLogs queries
+version: 0.1.0
+description: >
+  Read-only LogsQL access to VictoriaLogs over its HTTP API: search log
+  entries, hit histograms over time, stats aggregations (instant + range),
+  and field / stream discovery. Express time ranges inside the LogsQL
+  query via the _time filter. One base URL serves single-node and
+  vmauth-fronted deployments; multitenancy via optional headers.
+vendor: emisar
+homepage: https://github.com/andrewdryga/emisar
+
+requires:
+  os:
+    - linux
+  binaries:
+    - curl
+
+# `emisar pack suggest`: VictoriaLogs' own components + default port. The
+# release binary runs as victoria-logs-prod; Docker/package installs often
+# expose the short name too. Port 9428 is the reliable signal.
+detect:
+  processes:
+    - victoria-logs
+    - victoria-logs-prod
+    - vlselect
+    - vlselect-prod
+  ports:
+    - 9428
+
+setup:
+  summary: >
+    Every action calls the VictoriaLogs LogsQL HTTP API at $VL_URL via curl
+    on the runner host. Point VL_URL at the base URL (scheme + host + port);
+    each action appends /select/logsql/.... Set VL_BEARER_TOKEN if the
+    endpoint sits behind vmauth, and VL_ACCOUNT_ID / VL_PROJECT_ID to target
+    a non-default tenant.
+  env:
+    - name: VL_URL
+      required: true
+      description: >
+        VictoriaLogs base URL — scheme, host, and port, with no trailing
+        path. Behind vmauth, include whatever route prefix maps to the
+        backend.
+      example: http://victoria-logs:9428
+    - name: VL_BEARER_TOKEN
+      required: false
+      description: >
+        Optional bearer token for vmauth-protected endpoints. Sent as
+        "Authorization: Bearer <token>" over curl stdin, so it never appears
+        in the process arguments or the audit log.
+    - name: VL_ACCOUNT_ID
+      required: false
+      description: Tenant AccountID header. Defaults to 0 when unset.
+    - name: VL_PROJECT_ID
+      required: false
+      description: Tenant ProjectID header. Defaults to 0 when unset.
+  notes:
+    - "Bound queries with the LogsQL _time filter — e.g. `_time:5m error` or `_time:1h level:error` — the idiomatic VictoriaLogs way; the actions add no time range of their own. `limit` caps how many entries come back."
+    - "Tenancy: the default tenant is AccountID=0 / ProjectID=0. Set VL_ACCOUNT_ID / VL_PROJECT_ID to target another; they are sent as headers over curl stdin."
+    - "Every action is a read-only GET — none ingest, delete, or mutate logs. No token or tenant header is sent unless its env var is set."
+  verify: vl.field_names
+
+actions:
+  - actions/query.yaml
+  - actions/hits.yaml
+  - actions/stats_query.yaml
+  - actions/stats_query_range.yaml
+  - actions/field_names.yaml
+  - actions/field_values.yaml
+  - actions/streams.yaml

@@ -1,0 +1,36 @@
+schema_version: 1
+id: vl.stats_query
+title: GET /select/logsql/stats_query
+kind: script
+risk: low
+description: >
+  Instant stats over logs — a LogsQL query containing a "| stats" pipe,
+  evaluated at one point in time and returned in Prometheus instant-query
+  format. Use for totals like counts or sums grouped by a field.
+side_effects:
+  - One read-only HTTP GET to the VictoriaLogs query API.
+  - Read-only.
+args:
+  - name: query
+    type: string
+    required: true
+    description: 'LogsQL with a | stats pipe, e.g. _time:1h * | stats by (level) count().'
+    validation:
+      pattern: '^[\s\S]{1,1000}$'
+execution:
+  script:
+    path: scripts/vlget.sh
+    interpreter: /bin/sh
+  argv:
+    - "/select/logsql/stats_query"
+    - "--data-urlencode"
+    - "query={{ args.query }}"
+  timeout: 60s
+output:
+  parser: json
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: Log count by level in the last hour
+    args:
+      query: "_time:1h * | stats by (level) count() logs"
