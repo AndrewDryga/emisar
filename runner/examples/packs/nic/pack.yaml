@@ -27,10 +27,12 @@ detect:
 setup:
   summary: >
     Reads NIC driver / firmware / link state via ethtool. No credentials
-    needed. ethtool GET operations are read-only; the driver/firmware,
-    link, features, and ring reads work as any user.
+    needed, and nothing here changes NIC configuration — every action is a
+    read-only ethtool GET, which runs as the unprivileged runner user (the
+    kernel allows ethtool GETs, including statistics, without
+    CAP_NET_ADMIN).
   notes:
-    - "nic.stats (ethtool -S) returns kernel NIC counters; on older kernels that still use the ioctl path it can need CAP_NET_ADMIN — run the runner as root on those hosts, or upgrade to a kernel with ethtool netlink. The other reads are unprivileged."
+    - "Read-only by construction: the pack uses only ethtool GET flags (-i, -S, -k, -g, and bare link), never the config-changing counterparts (-K, -G, -A, -C, -s). Interface arguments are validated to start with a letter, so a value can't be slipped in as an ethtool option flag."
     - "Interface arguments are physical device names (e.g. eth0, eno1, enp24s0f0). nic.firmware scans every NIC that has a /sys/class/net/*/device link and skips virtual interfaces (lo, veth, bonds, bridges)."
   verify: nic.firmware
 

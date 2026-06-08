@@ -9,7 +9,7 @@ description: >
   packet loss that ip/ifconfig counters don't break out.
 side_effects:
   - One ethtool -S call.
-  - Read-only. May need CAP_NET_ADMIN on older (ioctl-path) kernels.
+  - Read-only (a GET; the kernel allows it without CAP_NET_ADMIN).
 args:
   - name: iface
     type: string
