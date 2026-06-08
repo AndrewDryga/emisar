@@ -56,6 +56,21 @@ defmodule Emisar.CatalogTest do
       assert {:ok, _runner} = Catalog.observe_state(runner, payload)
       assert {:ok, [_], _meta} = Catalog.list_pack_versions(system)
     end
+
+    test "commits the runner-row facts even when the catalog sync raises" do
+      runner = runner_fixture()
+
+      # A pack whose info is a string (not a map) makes the pack sync raise
+      # mid-transaction. The runner-row facts (version) are committed first
+      # in their own transaction, so they must persist anyway — and the
+      # socket must not crash (observe_state still returns {:ok, _}).
+      payload = state_payload(version: "9.9.9", packs: %{"bad" => "not-a-map"})
+
+      assert {:ok, _runner} = Catalog.observe_state(runner, payload)
+
+      {:ok, reloaded} = Emisar.Runners.peek_runner_by_id(runner.id)
+      assert reloaded.runner_version == "9.9.9"
+    end
   end
 
   describe "count_pending_pack_versions/1" do

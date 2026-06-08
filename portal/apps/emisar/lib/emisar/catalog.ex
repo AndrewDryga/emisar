@@ -23,6 +23,8 @@ defmodule Emisar.Catalog do
       * Different → keep trusted, set pending_hash. Dispatch refuses.
   """
 
+  require Logger
+
   alias Emisar.{Audit, Auth, Repo}
   alias Emisar.Auth.Subject
   alias Emisar.Runners.Runner
@@ -38,37 +40,52 @@ defmodule Emisar.Catalog do
   authenticated by the runner token. Not exposed to LV/MCP.
   """
   def observe_state(%Runner{} = runner, %{} = payload) do
-    result =
-      Repo.transaction(fn ->
-        now = DateTime.utc_now() |> DateTime.truncate(:microsecond)
-        packs = payload["packs"] || %{}
-        actions = payload["actions"] || []
+    # Commit the runner-row facts (version, group, hostname, labels, packs)
+    # FIRST, in their own transaction. They must land on every reconnect
+    # even when the heavier pack/action catalog sync below is slow, errors,
+    # or the socket dies mid-sync. Folding the row update into the same
+    # transaction as a few-hundred-action upsert meant one bad action — or a
+    # disconnect mid-sync — rolled the whole thing back, pinning the runner
+    # to a stale version/group while the catalog churned.
+    {:ok, runner} = Emisar.Runners.apply_state(runner, payload)
 
-        {:ok, runner} = Emisar.Runners.apply_state(runner, payload)
+    now = DateTime.utc_now() |> DateTime.truncate(:microsecond)
+    packs = payload["packs"] || %{}
+    actions = payload["actions"] || []
 
-        pending_before = pending_pack_count(runner.account_id)
-        Enum.each(packs, &observe_pack(runner.account_id, &1, now))
-        pending_after = pending_pack_count(runner.account_id)
+    catalog =
+      try do
+        Repo.transaction(fn ->
+          pending_before = pending_pack_count(runner.account_id)
+          Enum.each(packs, &observe_pack(runner.account_id, &1, now))
+          pending_after = pending_pack_count(runner.account_id)
 
-        seen_ids =
-          actions
-          |> Enum.map(&observe_action(runner, &1, packs, now))
-          |> Enum.reject(&is_nil/1)
+          seen_ids =
+            actions
+            |> Enum.map(&observe_action(runner, &1, packs, now))
+            |> Enum.reject(&is_nil/1)
 
-        prune_missing_actions(runner.id, seen_ids)
-        {runner, pending_before != pending_after}
-      end)
+          prune_missing_actions(runner.id, seen_ids)
+          pending_before != pending_after
+        end)
+      rescue
+        # The catalog is best-effort and re-syncs on the next runner_state;
+        # never let it crash the runner socket (which would drop + revert
+        # the connection) now that the durable row facts are already saved.
+        e -> {:error, e}
+      end
 
-    case result do
-      {:ok, {runner, pending_changed?}} ->
+    case catalog do
+      {:ok, pending_changed?} ->
         # Light up the pack-trust badge only when the pending set actually
         # moved (drift / new custom pack), and only after the commit.
         if pending_changed?, do: Emisar.PubSub.broadcast_pack_trust(runner.account_id)
-        {:ok, runner}
 
-      {:error, _} = error ->
-        error
+      {:error, reason} ->
+        Logger.warning("catalog sync for runner #{runner.id} failed: #{inspect(reason)}")
     end
+
+    {:ok, runner}
   end
 
   def observe_state(runner_id, payload) when is_binary(runner_id) do
