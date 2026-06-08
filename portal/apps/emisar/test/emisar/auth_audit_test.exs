@@ -421,6 +421,32 @@ defmodule Emisar.AuthAuditTest do
       assert event.payload["to_version"] == 2
     end
 
+    test "save_new_version accepts string-keyed form params" do
+      {_user, _account, subject} = owner_subject_fixture()
+
+      {:ok, rb} =
+        Emisar.Runbooks.create_runbook(
+          %{
+            name: "ops-#{System.unique_integer()}",
+            slug: "ops-#{System.unique_integer()}",
+            title: "Restart",
+            definition: %{"steps" => []}
+          },
+          subject
+        )
+
+      # String keys from the editor form must not collide with the
+      # programmatic version bump (this combination crashed cast on mixed keys).
+      assert {:ok, v2} =
+               Emisar.Runbooks.save_new_version(
+                 rb,
+                 %{"description" => "tweaked", "definition" => %{"steps" => []}},
+                 subject
+               )
+
+      assert v2.version == 2
+    end
+
     test "publish audits runbook.published" do
       {_user, account, subject} = owner_subject_fixture()
 

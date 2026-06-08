@@ -156,6 +156,32 @@ defmodule Emisar.AuthorizationTest do
                  subject
                )
     end
+
+    test "admin can create_runbook from string-keyed form params" do
+      account = account_fixture()
+      subject = subject_with_role(account, :admin)
+
+      # The LiveView form submits string keys; the context must not merge an
+      # atom :version into them — that produced a mixed-key map and crashed cast.
+      assert {:ok, rb} =
+               Emisar.Runbooks.create_runbook(
+                 %{
+                   "name" => "from-form",
+                   "slug" => "from-form",
+                   "title" => "From the form",
+                   "description" => "",
+                   "status" => "published",
+                   "definition" => %{
+                     "steps" => [
+                       %{"id" => "1", "action_id" => "nomad.job_status_all", "args" => %{}}
+                     ]
+                   }
+                 },
+                 subject
+               )
+
+      assert rb.version == 1
+    end
   end
 
   # -- helpers --------------------------------------------------------

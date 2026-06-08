@@ -3,13 +3,36 @@ defmodule Emisar.Runbooks.Runbook.Changeset do
   alias Emisar.Runbooks.Runbook
 
   @statuses ~w(draft published)
-  @fields ~w[name slug title description status definition version]a
+  @fields ~w[name slug title description status definition]a
 
   def create(account_id, user_id, attrs) do
     %Runbook{}
     |> cast(attrs, @fields)
     |> put_change(:account_id, account_id)
     |> put_change(:created_by_id, user_id)
+    |> put_change(:version, 1)
+    |> changeset()
+  end
+
+  @doc """
+  Builds the next version of an existing runbook: carries the prior row's
+  fields as the base, applies `attrs` on top, and bumps the version. Keeping
+  the carry-over in the struct (not a map merged with `attrs`) avoids mixing
+  atom and string keys when `attrs` comes from a form.
+  """
+  def new_version(%Runbook{} = previous, user_id, attrs) do
+    %Runbook{
+      name: previous.name,
+      slug: previous.slug,
+      title: previous.title,
+      description: previous.description,
+      definition: previous.definition,
+      status: previous.status
+    }
+    |> cast(attrs, @fields)
+    |> put_change(:account_id, previous.account_id)
+    |> put_change(:created_by_id, user_id)
+    |> put_change(:version, previous.version + 1)
     |> changeset()
   end
 

@@ -52,7 +52,7 @@ defmodule Emisar.Runbooks do
       Multi.new()
       |> Multi.insert(
         :runbook,
-        Runbook.Changeset.create(account.id, user_id, Map.put(attrs, :version, 1))
+        Runbook.Changeset.create(account.id, user_id, attrs)
       )
       |> Multi.insert(:audit, fn %{runbook: rb} ->
         Audit.changeset(rb.account_id, "runbook.created",
@@ -85,22 +85,8 @@ defmodule Emisar.Runbooks do
            ) do
       user_id = subject_user_id(subject)
 
-      next =
-        Map.merge(
-          %{
-            name: old.name,
-            slug: old.slug,
-            title: old.title,
-            description: old.description,
-            definition: old.definition,
-            version: old.version + 1,
-            status: old.status
-          },
-          attrs
-        )
-
       Multi.new()
-      |> Multi.insert(:runbook, Runbook.Changeset.create(old.account_id, user_id, next))
+      |> Multi.insert(:runbook, Runbook.Changeset.new_version(old, user_id, attrs))
       |> Multi.insert(:audit, fn %{runbook: rb} ->
         Audit.changeset(rb.account_id, "runbook.updated",
           actor_kind: "user",
