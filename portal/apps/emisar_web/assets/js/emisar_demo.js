@@ -16,6 +16,10 @@
 
 const CHAR_MS = 14
 
+// Dwell on a tab hop so the viewer registers the switch between the host
+// and the LLM panes before the next line lands.
+const TAB_SWITCH_MS = 650
+
 // Lines whose body is typed out character-by-character (the rest stream in).
 const TYPED = new Set(["srv-prompt", "cc-user"])
 // JS-only animated spinners (server-rendered hidden).
@@ -36,6 +40,9 @@ const PAUSE = {
   "cc-tool": 380,
   "cc-result": 320,
   "cc-result-cont": 220,
+  "cc-diff-note": 90,
+  "cc-diff-ctx": 90,
+  "cc-diff-add": 280,
   "cc-pending": 750,
   "cc-approved": 850
 }
@@ -107,14 +114,9 @@ export function initEmisarDemo() {
     showTab(firstTab())
 
     let i = 0
-    const next = () => {
-      if (!playing) return
-      if (i >= lines.length) { playing = false; return }
-      const line = lines[i++]
-      showTab(line.dataset.tab)
-      const kind = line.dataset.kind || ""
-      const pause = PAUSE[kind] != null ? PAUSE[kind] : 320
+    let shownTab = firstTab()
 
+    const render = (line, kind, pause) => {
       if (SPINNER.has(kind)) {
         animateSpinner(line, kind, next)
       } else if (TYPED.has(kind)) {
@@ -125,6 +127,25 @@ export function initEmisarDemo() {
         line.textContent = line.dataset.text
         scrollToEnd()
         later(pause, next)
+      }
+    }
+
+    const next = () => {
+      if (!playing) return
+      if (i >= lines.length) { playing = false; return }
+      const line = lines[i++]
+      const kind = line.dataset.kind || ""
+      const pause = PAUSE[kind] != null ? PAUSE[kind] : 320
+
+      // Switching panes? Show the new tab and dwell a beat before the line
+      // lands, so the hop between host and LLM is visible.
+      if (line.dataset.tab !== shownTab) {
+        shownTab = line.dataset.tab
+        showTab(shownTab)
+        scrollToEnd()
+        later(TAB_SWITCH_MS, () => render(line, kind, pause))
+      } else {
+        render(line, kind, pause)
       }
     }
     next()

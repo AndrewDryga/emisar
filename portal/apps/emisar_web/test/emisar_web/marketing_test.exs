@@ -104,14 +104,15 @@ defmodule EmisarWeb.MarketingTest do
     # The whole incident is server-rendered for no-JS + crawlers — install,
     # the Claude tool call, and the approval beat.
     assert html =~ ">curl -sSL https://emisar.dev/install.sh | sudo bash</div>"
-    assert html =~ "emisar · debugging.kill_pid(pid: 24317"
-    assert html =~ "⏸ pending approval — kill_pid is high-risk"
+    assert html =~ "emisar · nomad.alloc_stop(alloc:"
+    assert html =~ "⏸ pending approval — nomad.alloc_stop is high-risk"
     assert html =~ "✓ approved by you · one use · audit event recorded"
 
-    # Lines render verbatim: no template indentation leaks into the text
-    # (whitespace-pre-wrap + the typing animation would expose it), yet the
-    # intentional column-alignment spaces in the process table survive.
-    assert html =~ ">24317   782%  14:02    python /opt/jobs/reindex.py</div>"
+    # The PR diff block is server-rendered too — its why-comment plus the
+    # HCL config, with intentional indentation preserved verbatim (no
+    # template-indent leak, no whitespace collapse).
+    assert html =~ "blkid-empty → the driver auto-mkfs"
+    assert html =~ ">  node {</div>"
 
     # phx-no-format is a mix-format directive only — it must not survive into
     # the served markup.

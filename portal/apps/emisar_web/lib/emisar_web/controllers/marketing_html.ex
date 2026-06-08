@@ -86,12 +86,22 @@ defmodule EmisarWeb.MarketingHTML do
      "Bleed stopped on your one approval. A host-side fix wouldn't survive the next drain, so the durable one goes where it belongs — a Terraform PR for you to review."},
     {31, "llm", "cc-tool",
      "git · open PR \"csi: never auto-format on blkid-empty (the 33h wipe)\""},
-    {32, "llm", "cc-result",
-     "+ node { format { disabled = true } }   # refuse to mkfs a \"blank\" device"},
-    {33, "llm", "cc-result-cont",
-     "+ multipath-watchdog.nomad.hcl · format-new-volume.sh (xfs, no overwrite) · alerts/multipath.yaml"},
-    {34, "llm", "cc-text",
-     "Done — investigated through declared actions, stopped the bleed behind one approval, durable fix handed back as a diff you merge, every step on the audit trail. Honest note: emisar can't stop the driver's mkfs; it changes everything you and the agent do around the failure."}
+    {32, "llm", "cc-result", "democratic-csi-node.nomad.hcl"},
+    {33, "llm", "cc-diff-note",
+     "# the one-line fix. without it, blkid-empty → the driver auto-mkfs →"},
+    {34, "llm", "cc-diff-note",
+     "# SILENT WIPE (our 33h loss, 2026-06-04). with it, \"no filesystem\""},
+    {35, "llm", "cc-diff-note",
+     "# is a loud error, not a reformat. new LUNs are formatted via Terraform."},
+    {36, "llm", "cc-diff-ctx", "  node {"},
+    {37, "llm", "cc-diff-ctx", "    format {"},
+    {38, "llm", "cc-diff-add", "+     disabled = true"},
+    {39, "llm", "cc-diff-ctx", "    }"},
+    {40, "llm", "cc-diff-ctx", "  }"},
+    {41, "llm", "cc-result-cont",
+     "+ also: multipath-watchdog.nomad.hcl · format-new-volume.sh (xfs, no overwrite) · alerts/multipath.yaml"},
+    {42, "llm", "cc-text",
+     "Done — investigated through declared actions, stopped the bleed behind one approval, durable fix handed back as a diff you merge, every step on the audit trail."}
   ]
 
   @doc """

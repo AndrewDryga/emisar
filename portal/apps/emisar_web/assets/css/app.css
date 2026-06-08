@@ -158,6 +158,29 @@
   color: #34d399; /* emerald-400 */
 }
 
+/* PR diff card inside the Claude transcript — a little code block. Coloured
+   by kind class (the JS rewrites textContent, so inline spans wouldn't
+   survive); indented into the result column with a left rule + faint fill so
+   the lines read as one file. */
+.demo-cc-diff-note,
+.demo-cc-diff-ctx,
+.demo-cc-diff-add {
+  margin-left: 4ch;
+  padding-left: 1.25ch;
+  border-left: 2px solid #3f3f46;
+  background: rgba(255, 255, 255, 0.025);
+}
+.demo-cc-diff-note {
+  color: #6b7280; /* dim — the why-comment */
+}
+.demo-cc-diff-ctx {
+  color: #9ca3af; /* unchanged context */
+}
+.demo-cc-diff-add {
+  color: #34d399; /* emerald — the added line */
+  background: rgba(52, 211, 153, 0.09);
+}
+
 /* Claude's thinking spinner (text built by the JS; glyph coloured here). */
 .demo-cc-spin,
 .demo-cc-spin-wait {
