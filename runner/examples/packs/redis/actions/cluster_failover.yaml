@@ -31,7 +31,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "/usr/bin/redis-cli CLUSTER FAILOVER {{ args.mode }}"
+      - "redis-cli CLUSTER FAILOVER {{ args.mode }}"
   timeout: 60s
 cancel_grace: 30s
 output:

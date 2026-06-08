@@ -6,7 +6,7 @@ kind: exec
 risk: low
 
 description: >
-  Reports memory and swap usage via /usr/bin/free -m. Read-only, single
+  Reports memory and swap usage via free -m. Read-only, single
   sample. Memory state fluctuates between consecutive calls; take two
   samples a few seconds apart before drawing conclusions about pressure.
 

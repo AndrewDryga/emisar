@@ -27,9 +27,9 @@ args:
 
 execution:
   command:
-    # /usr/bin/systemctl is the canonical path on Debian/Ubuntu/RHEL.
-    # Alpine + minimal images don't ship systemd-tools and don't have
-    # this binary at all — the runner will error out cleanly there.
+    # Resolved from PATH (systemctl is under /usr/bin or /bin depending on
+    # the distro's usr-merge). Alpine + minimal images don't ship
+    # systemd-tools at all — the runner will error out cleanly there.
     binary: systemctl
     argv:
       - "status"

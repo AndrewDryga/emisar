@@ -30,7 +30,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "/usr/sbin/zpool clear {{ args.pool }} {{ args.device }}"
+      - "zpool clear {{ args.pool }} {{ args.device }}"
   timeout: 30s
 output:
   parser: text

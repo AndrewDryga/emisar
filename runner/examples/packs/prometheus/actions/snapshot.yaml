@@ -30,7 +30,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "/usr/bin/curl -sSfX POST '{{ args.target }}/api/v1/admin/tsdb/snapshot?skip_head={{ args.skip_head }}'"
+      - "curl -sSfX POST '{{ args.target }}/api/v1/admin/tsdb/snapshot?skip_head={{ args.skip_head }}'"
   timeout: 60s
 output:
   parser: json

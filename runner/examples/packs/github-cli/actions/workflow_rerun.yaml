@@ -28,7 +28,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "if [ '{{ args.failed_only }}' = 'true' ]; then /usr/bin/gh run rerun {{ args.run_id }} --failed; else /usr/bin/gh run rerun {{ args.run_id }}; fi"
+      - "if [ '{{ args.failed_only }}' = 'true' ]; then gh run rerun {{ args.run_id }} --failed; else gh run rerun {{ args.run_id }}; fi"
   timeout: 60s
 output:
   parser: text

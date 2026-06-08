@@ -89,7 +89,7 @@ execution:
         esac
         set -- "$KS"
         [ -n "$TBL" ] && set -- "$@" "$TBL"
-        exec /usr/bin/nodetool repair $flags "$@"
+        exec nodetool repair $flags "$@"
   env:
     KS: "{{ args.keyspace }}"
     TBL: "{{ args.table }}"

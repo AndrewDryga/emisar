@@ -30,7 +30,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "if [ '{{ args.inboundonly }}' = 'true' ]; then /usr/bin/curl -sSfX POST '{{ args.admin }}/drain_listeners?inboundonly'; else /usr/bin/curl -sSfX POST '{{ args.admin }}/drain_listeners'; fi"
+      - "if [ '{{ args.inboundonly }}' = 'true' ]; then curl -sSfX POST '{{ args.admin }}/drain_listeners?inboundonly'; else curl -sSfX POST '{{ args.admin }}/drain_listeners'; fi"
   timeout: 30s
 output:
   parser: text

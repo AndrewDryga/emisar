@@ -21,7 +21,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "if [ '{{ args.wait }}' = 'true' ]; then /usr/bin/cloud-init status --long --wait; else /usr/bin/cloud-init status --long; fi"
+      - "if [ '{{ args.wait }}' = 'true' ]; then cloud-init status --long --wait; else cloud-init status --long; fi"
   timeout: 300s
 output:
   parser: text

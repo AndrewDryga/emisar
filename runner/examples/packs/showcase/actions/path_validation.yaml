@@ -17,7 +17,7 @@ description: >
   and anything under /tmp/private.
 
 side_effects:
-  - Reads file metadata via /usr/bin/stat.
+  - Reads file metadata via stat.
   - Does not read file contents.
 
 args:
