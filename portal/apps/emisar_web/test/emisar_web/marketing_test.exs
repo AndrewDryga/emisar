@@ -42,6 +42,17 @@ defmodule EmisarWeb.MarketingTest do
     assert html =~ "pack trust"
     assert html =~ "source-available"
     refute html =~ "signed audit log"
+    # A signed-out visitor gets the auth CTAs, not a dashboard link.
+    refute html =~ ~s(href="/app")
+  end
+
+  test "marketing nav swaps to a Dashboard link when the visitor is signed in",
+       %{conn: conn} do
+    {conn, _user, _account} = register_and_log_in(conn)
+    html = conn |> get(~p"/") |> html_response(200)
+
+    assert html =~ "Dashboard"
+    assert html =~ ~s(href="/app")
   end
 
   test "pricing page mentions the three tiers", %{conn: conn} do

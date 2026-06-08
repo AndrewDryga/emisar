@@ -1994,11 +1994,13 @@ defmodule EmisarWeb.CoreComponents do
 
   @doc """
   Top nav for marketing pages. Pass `current` to highlight the active
-  link.
+  link, and `current_user` so a signed-in visitor sees a Dashboard link
+  instead of the Sign in / Start free CTAs.
 
-      <.marketing_nav current={:pricing} />
+      <.marketing_nav current={:pricing} current_user={@current_user} />
   """
   attr :current, :atom, default: nil
+  attr :current_user, :any, default: nil
   attr :sticky, :boolean, default: false
 
   def marketing_nav(assigns) do
@@ -2032,20 +2034,30 @@ defmodule EmisarWeb.CoreComponents do
           </.marketing_nav_link>
         </nav>
 
-        <%!-- Desktop CTAs: visible md+ --%>
+        <%!-- Desktop CTAs: visible md+. A signed-in visitor gets a
+             Dashboard link; everyone else gets Sign in / Start free. --%>
         <div class="hidden items-center gap-4 md:flex">
-          <.link
-            href={~p"/sign_in"}
-            class="whitespace-nowrap text-sm font-semibold text-zinc-100 hover:text-indigo-300"
-          >
-            Sign in
-          </.link>
-          <.link
-            href={~p"/sign_up"}
-            class="whitespace-nowrap rounded-lg bg-indigo-500 px-4 py-2 text-sm font-semibold text-zinc-950 hover:bg-indigo-400"
-          >
-            Start free
-          </.link>
+          <%= if @current_user do %>
+            <.link
+              href={~p"/app"}
+              class="inline-flex items-center gap-2 whitespace-nowrap rounded-lg bg-indigo-500 px-4 py-2 text-sm font-semibold text-zinc-950 hover:bg-indigo-400"
+            >
+              Dashboard <.icon name="hero-arrow-right" class="h-4 w-4" />
+            </.link>
+          <% else %>
+            <.link
+              href={~p"/sign_in"}
+              class="whitespace-nowrap text-sm font-semibold text-zinc-100 hover:text-indigo-300"
+            >
+              Sign in
+            </.link>
+            <.link
+              href={~p"/sign_up"}
+              class="whitespace-nowrap rounded-lg bg-indigo-500 px-4 py-2 text-sm font-semibold text-zinc-950 hover:bg-indigo-400"
+            >
+              Start free
+            </.link>
+          <% end %>
         </div>
 
         <%!-- Mobile hamburger: visible < md. Toggles the drawer
@@ -2123,18 +2135,27 @@ defmodule EmisarWeb.CoreComponents do
           </nav>
 
           <div class="space-y-3 border-t border-zinc-900 p-5">
-            <.link
-              href={~p"/sign_up"}
-              class="block w-full whitespace-nowrap rounded-lg bg-indigo-500 px-4 py-2.5 text-center text-sm font-semibold text-zinc-950 hover:bg-indigo-400"
-            >
-              Start free
-            </.link>
-            <.link
-              href={~p"/sign_in"}
-              class="block w-full whitespace-nowrap rounded-lg border border-zinc-800 px-4 py-2.5 text-center text-sm font-semibold text-zinc-100 hover:bg-zinc-900"
-            >
-              Sign in
-            </.link>
+            <%= if @current_user do %>
+              <.link
+                href={~p"/app"}
+                class="block w-full whitespace-nowrap rounded-lg bg-indigo-500 px-4 py-2.5 text-center text-sm font-semibold text-zinc-950 hover:bg-indigo-400"
+              >
+                Dashboard
+              </.link>
+            <% else %>
+              <.link
+                href={~p"/sign_up"}
+                class="block w-full whitespace-nowrap rounded-lg bg-indigo-500 px-4 py-2.5 text-center text-sm font-semibold text-zinc-950 hover:bg-indigo-400"
+              >
+                Start free
+              </.link>
+              <.link
+                href={~p"/sign_in"}
+                class="block w-full whitespace-nowrap rounded-lg border border-zinc-800 px-4 py-2.5 text-center text-sm font-semibold text-zinc-100 hover:bg-zinc-900"
+              >
+                Sign in
+              </.link>
+            <% end %>
           </div>
         </aside>
       </div>
