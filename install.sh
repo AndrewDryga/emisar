@@ -477,6 +477,19 @@ EOF
 #EMISAR_AUTH_KEY=emkey-auth-replace-me
 EOF
   fi
+
+  # Shared note (literal heredoc, no interpolation): pack credentials too.
+  cat <<'EOF'
+
+# Pack auth tokens go here too — anything a pack's actions read from the
+# environment (NOMAD_TOKEN, CONSUL_HTTP_TOKEN, PGPASSWORD, GRAFANA_TOKEN, ...).
+# Then allowlist each NAME in config.yaml under execution.inherit_env so the
+# runner forwards it into the action (it is merged with the always-on
+# PATH/LANG/LC_ALL/TERM). What a given pack needs: emisar pack info <id>.
+#
+#NOMAD_ADDR=http://127.0.0.1:4646
+#NOMAD_TOKEN=...
+EOF
 }
 
 # -----------------------------------------------------------------------
