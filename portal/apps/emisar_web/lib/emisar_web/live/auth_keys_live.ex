@@ -2,6 +2,7 @@ defmodule EmisarWeb.AuthKeysLive do
   use EmisarWeb, :live_view
 
   alias Emisar.{PubSub, Runners}
+  alias Emisar.Runners.AuthKey
   alias EmisarWeb.{LiveTable, Permissions, UrlHelpers}
   alias Phoenix.LiveView.JS
 
@@ -107,7 +108,12 @@ defmodule EmisarWeb.AuthKeysLive do
   defp reload(socket), do: load(socket, socket.assigns[:filter_params] || %{})
 
   defp load(socket, params) do
-    opts = LiveTable.params_to_opts(params)
+    # Default the Status filter to "active" so revoked keys are hidden until
+    # the operator widens it (the dropdown's "All" / "Revoked" options). Only
+    # injected when absent, so an explicit "" (All) is honored.
+    params = Map.put_new(params, "status", "active")
+    filters = AuthKey.Query.filters()
+    opts = LiveTable.params_to_opts(params, filters)
 
     case Runners.list_auth_keys(socket.assigns.current_subject, opts) do
       {:ok, auth_keys, meta} ->
@@ -115,6 +121,7 @@ defmodule EmisarWeb.AuthKeysLive do
         |> assign(:auth_keys, auth_keys)
         |> assign(:metadata, meta)
         |> assign(:filter_params, params)
+        |> assign(:filters, filters)
 
       {:error, _} ->
         load(socket, %{})
@@ -335,6 +342,7 @@ defmodule EmisarWeb.AuthKeysLive do
             path={~p"/app/settings/runners/auth-keys"}
             rows={@auth_keys}
             metadata={@metadata}
+            filters={@filters}
             filter_params={@filter_params}
             class="rounded-none border-0"
           >

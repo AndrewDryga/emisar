@@ -198,10 +198,13 @@ defmodule Emisar.Audit do
       actor_id: run.requested_by_id || run.api_key_id,
       # Authoritative for the run's own events, including the terminal ones
       # logged from the runner-socket process (no request metadata there).
+      # request_id is the action-dispatch id (req_…) — the meaningful
+      # "request" for a run — promoted to a first-class field instead of
+      # being buried in (and duplicated by) the payload.
+      request_id: run.request_id,
       mcp_session_id: run.mcp_session_id,
       payload:
         compact(%{
-          request_id: run.request_id,
           runner_id: run.runner_id,
           runbook_id: run.runbook_id,
           exit_code: run.exit_code,

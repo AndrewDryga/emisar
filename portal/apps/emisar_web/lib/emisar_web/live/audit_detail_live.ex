@@ -135,8 +135,11 @@ defmodule EmisarWeb.AuditDetailLive do
       <section class="mt-6 overflow-hidden rounded-xl border border-zinc-900">
         <header class="flex items-center justify-between border-b border-zinc-900 bg-zinc-950/60 px-4 py-2">
           <h3 class="text-xs font-semibold uppercase tracking-wider text-zinc-400">Payload</h3>
-          <span class="font-mono text-[11px] text-zinc-500">
-            event:{String.slice(@event.id, 0, 8)}…
+          <span
+            class="ml-3 min-w-0 flex-1 truncate text-right font-mono text-[11px] text-zinc-500"
+            title={@event.id}
+          >
+            event:{@event.id}
           </span>
         </header>
         <pre class="max-h-[60vh] overflow-auto bg-black p-4 font-mono text-xs leading-relaxed text-zinc-300">{pretty_payload(@event.payload)}</pre>

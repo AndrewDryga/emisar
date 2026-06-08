@@ -1,6 +1,8 @@
 defmodule Emisar.Runners.AuthKey.Query do
   use Emisar, :query
 
+  alias Emisar.Repo.Filter
+
   def all,
     do: from(auth_keys in Emisar.Runners.AuthKey, as: :auth_keys)
 
@@ -23,6 +25,33 @@ defmodule Emisar.Runners.AuthKey.Query do
 
   def ordered_by_recent(q \\ not_deleted()),
     do: order_by(q, [auth_keys: k], desc: k.inserted_at)
+
+  @impl Emisar.Repo.Query
+  def filters,
+    do: [
+      %Filter{
+        name: :status,
+        title: "Status",
+        type: {:list, :string},
+        # Single-select dropdown (LiveTable adds the "All" option that clears
+        # the filter). The list shape lets a value arrive as ["active"].
+        values: [
+          {"active", "Active"},
+          {"revoked", "Revoked"}
+        ],
+        fun: fn q, statuses ->
+          dyn =
+            cond do
+              "active" in statuses and "revoked" in statuses -> dynamic([auth_keys: k], true)
+              "revoked" in statuses -> dynamic([auth_keys: k], not is_nil(k.revoked_at))
+              "active" in statuses -> dynamic([auth_keys: k], is_nil(k.revoked_at))
+              true -> dynamic([auth_keys: k], true)
+            end
+
+          {q, dyn}
+        end
+      }
+    ]
 
   def by_key_prefix(q \\ all(), prefix),
     do: where(q, [auth_keys: k], k.key_prefix == ^prefix)

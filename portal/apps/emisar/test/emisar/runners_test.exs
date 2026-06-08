@@ -500,6 +500,30 @@ defmodule Emisar.RunnersTest do
       assert id == manual.id
     end
 
+    test "list_auth_keys status filter hides or shows revoked keys" do
+      {_account, _user, subject} = account_with_owner_subject()
+
+      {:ok, _, active} = Runners.create_auth_key(%{reusable: true}, subject)
+      {:ok, _, revoked} = Runners.create_auth_key(%{reusable: true}, subject)
+      {:ok, _} = Runners.revoke_auth_key(revoked, subject)
+
+      # No status filter → both keys.
+      assert {:ok, both, _} = Runners.list_auth_keys(subject)
+      assert length(both) == 2
+
+      # status=active → only the live key.
+      assert {:ok, [%AuthKey{id: id}], _} =
+               Runners.list_auth_keys(subject, filter: [status: ["active"]])
+
+      assert id == active.id
+
+      # status=revoked → only the revoked key.
+      assert {:ok, [%AuthKey{id: id}], _} =
+               Runners.list_auth_keys(subject, filter: [status: ["revoked"]])
+
+      assert id == revoked.id
+    end
+
     test "ring eviction caps the auto-unused set at the configured size" do
       {_account, _user, subject} = account_with_owner_subject()
 
