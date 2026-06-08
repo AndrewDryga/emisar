@@ -50,9 +50,11 @@ defmodule EmisarWeb.AuditDetailLive do
       <% posture = parse_client_posture(@event.user_agent) %>
 
       <%!-- Meta strip — consistent with run / approval / runner
-           detail. When occurred, where from, request id. Bridge
-           UAs get extra cells for client + host. --%>
-      <.meta_strip cols={if(posture.bridge?, do: 5, else: 3)}>
+           detail. When occurred, where from, request id. Bridge UAs
+           add client + host cells; an MCP session adds one more — size
+           the grid to the cells actually rendered so none wrap. --%>
+      <% cols = 3 + if(posture.bridge?, do: 2, else: 0) + if(@event.mcp_session_id, do: 1, else: 0) %>
+      <.meta_strip cols={cols}>
         <.meta_field label="When">
           <.local_time value={@event.occurred_at} class="text-zinc-200" />
         </.meta_field>
