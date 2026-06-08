@@ -382,6 +382,52 @@ defmodule EmisarWeb.McpRpcControllerTest do
       assert body["result"]["isError"] == true
       assert content_text(body) =~ "not found"
     end
+
+    test "an emo- OAuth token (the Claude/ChatGPT connector path) sees the runbook tools",
+         %{conn: conn, account: account, user: user} do
+      subject = Emisar.Fixtures.subject_for(user, account, role: :owner)
+
+      # Drive the exact OAuth flow Claude.ai / ChatGPT connectors run: register
+      # a PKCE client, issue an auth code, exchange it for an emo- access token.
+      redirect = "https://claude.ai/api/mcp/auth_callback"
+
+      {:ok, client} =
+        Emisar.OAuth.register_client(%{"client_name" => "Claude", "redirect_uris" => [redirect]})
+
+      verifier = Base.url_encode64(:crypto.strong_rand_bytes(32), padding: false)
+      challenge = Base.url_encode64(:crypto.hash(:sha256, verifier), padding: false)
+
+      {:ok, code} =
+        Emisar.OAuth.issue_code(subject, client, %{
+          "redirect_uri" => redirect,
+          "code_challenge" => challenge,
+          "code_challenge_method" => "S256",
+          "scope" => "mcp offline_access",
+          "resource" => "https://app.emisar.dev/api/mcp/rpc"
+        })
+
+      {:ok, tokens} =
+        Emisar.OAuth.exchange_code(%{
+          "code" => code,
+          "client_id" => client.id,
+          "redirect_uri" => redirect,
+          "code_verifier" => verifier
+        })
+
+      assert "emo-" <> _ = tokens.access_token
+
+      # tools/list, authenticated with the OAuth token, exposes the runbook tools.
+      names =
+        conn
+        |> put_req_header("authorization", "Bearer " <> tokens.access_token)
+        |> rpc("tools/list")
+        |> json_response(200)
+        |> get_in(["result", "tools"])
+        |> Enum.map(& &1["name"])
+
+      assert "list_runbooks" in names
+      assert "get_runbook" in names
+    end
   end
 
   defp content_text(body) do
