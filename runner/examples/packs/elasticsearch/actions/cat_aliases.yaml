@@ -13,7 +13,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "curl -sS -u \"$ELASTIC_USER:$ELASTIC_PASSWORD\" \"$ELASTIC_URL/_cat/aliases?v\""
+      - "curl -sS -u \"$ELASTIC_USER:$ELASTIC_PASSWORD\" \"${ELASTIC_URL:-http://127.0.0.1:9200}/_cat/aliases?v\""
   timeout: 15s
 output:
   parser: text

@@ -17,7 +17,10 @@
 #   VL_BEARER_TOKEN  ->  Authorization: Bearer <token>   (vmauth front)
 #   VL_ACCOUNT_ID    ->  AccountID: <id>                 (tenant; default 0)
 #   VL_PROJECT_ID    ->  ProjectID: <id>                 (tenant; default 0)
-: "${VL_URL:?set VL_URL to the VictoriaLogs base URL (scheme + host + port)}"
+#
+# VL_URL defaults to a local single-node VictoriaLogs; override it for a
+# remote or vmauth-fronted endpoint.
+VL_URL=${VL_URL:-http://127.0.0.1:9428}
 
 path=$1
 shift

@@ -19,7 +19,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "curl -sS -u \"$ELASTIC_USER:$ELASTIC_PASSWORD\" -XPOST \"$ELASTIC_URL/{{ args.index }}/_flush?pretty\""
+      - "curl -sS -u \"$ELASTIC_USER:$ELASTIC_PASSWORD\" -XPOST \"${ELASTIC_URL:-http://127.0.0.1:9200}/{{ args.index }}/_flush?pretty\""
   timeout: 5m
 output:
   parser: json

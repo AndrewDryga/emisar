@@ -18,7 +18,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "curl -sS -H \"Authorization: Bearer $GRAFANA_TOKEN\" \"$GRAFANA_URL/api/search?type=dash-db&query={{ args.query }}\""
+      - "curl -sS -H \"Authorization: Bearer $GRAFANA_TOKEN\" \"${GRAFANA_URL:-http://127.0.0.1:3000}/api/search?type=dash-db&query={{ args.query }}\""
   timeout: 30s
 output:
   parser: json

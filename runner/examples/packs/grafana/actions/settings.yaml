@@ -11,7 +11,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "curl -sS -H \"Authorization: Bearer $GRAFANA_TOKEN\" \"$GRAFANA_URL/api/admin/settings\""
+      - "curl -sS -H \"Authorization: Bearer $GRAFANA_TOKEN\" \"${GRAFANA_URL:-http://127.0.0.1:3000}/api/admin/settings\""
   timeout: 30s
 output:
   parser: json

@@ -39,7 +39,7 @@ setup:
     a non-default tenant.
   env:
     - name: VL_URL
-      required: true
+      default: http://127.0.0.1:9428
       description: >
         VictoriaLogs base URL — scheme, host, and port, with no trailing
         path. Behind vmauth, include whatever route prefix maps to the

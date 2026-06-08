@@ -33,7 +33,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "U=${W##*[0-9]}; N=${W%[smhd]}; case $U in s) M=1;; m) M=60;; h) M=3600;; d) M=86400;; esac; END=$(date -u +%s); START=$((END - N*M)); curl -sS -G --data-urlencode \"query=$Q\" --data-urlencode \"start=$START\" --data-urlencode \"end=$END\" --data-urlencode \"step=$S\" \"$PROM_URL/api/v1/query_range\""
+      - "U=${W##*[0-9]}; N=${W%[smhd]}; case $U in s) M=1;; m) M=60;; h) M=3600;; d) M=86400;; esac; END=$(date -u +%s); START=$((END - N*M)); curl -sS -G --data-urlencode \"query=$Q\" --data-urlencode \"start=$START\" --data-urlencode \"end=$END\" --data-urlencode \"step=$S\" \"${PROM_URL:-http://127.0.0.1:9090}/api/v1/query_range\""
   env:
     Q: "{{ args.query }}"
     W: "{{ args.window }}"

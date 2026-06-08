@@ -13,7 +13,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "curl -sS \"$PROM_URL/api/v1/targets\""
+      - "curl -sS \"${PROM_URL:-http://127.0.0.1:9090}/api/v1/targets\""
   timeout: 30s
 output:
   parser: json

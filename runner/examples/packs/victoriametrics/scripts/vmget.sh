@@ -17,7 +17,10 @@
 #
 # When $VM_BEARER_TOKEN is set it is streamed to curl over stdin (-H @-),
 # so the token never appears in argv, a `ps` listing, or the audit log.
-: "${VM_URL:?set VM_URL to the VictoriaMetrics query base URL (scheme + host + port + any /prometheus prefix)}"
+#
+# VM_URL defaults to a local single-node VictoriaMetrics; override it for a
+# cluster (vmselect) or a remote / vmauth-fronted endpoint.
+VM_URL=${VM_URL:-http://127.0.0.1:8428}
 
 path=$1
 shift

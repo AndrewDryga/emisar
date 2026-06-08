@@ -40,7 +40,7 @@ setup:
     endpoint sits behind vmauth or another bearer-token proxy.
   env:
     - name: VM_URL
-      required: true
+      default: http://127.0.0.1:8428
       description: >
         Query base URL — scheme, host, port, and the prefix up to (but not
         including) /api/v1. Single-node ends in /prometheus; cluster reads

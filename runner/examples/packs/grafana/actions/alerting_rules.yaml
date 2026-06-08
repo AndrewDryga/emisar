@@ -11,7 +11,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "curl -sS -H \"Authorization: Bearer $GRAFANA_TOKEN\" \"$GRAFANA_URL/api/prometheus/grafana/api/v1/rules\""
+      - "curl -sS -H \"Authorization: Bearer $GRAFANA_TOKEN\" \"${GRAFANA_URL:-http://127.0.0.1:3000}/api/prometheus/grafana/api/v1/rules\""
   timeout: 30s
 output:
   parser: json

@@ -13,7 +13,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "curl -sS -u \"$ELASTIC_USER:$ELASTIC_PASSWORD\" -XGET \"$ELASTIC_URL/_cluster/allocation/explain?pretty\""
+      - "curl -sS -u \"$ELASTIC_USER:$ELASTIC_PASSWORD\" -XGET \"${ELASTIC_URL:-http://127.0.0.1:9200}/_cluster/allocation/explain?pretty\""
   timeout: 30s
 output:
   parser: json

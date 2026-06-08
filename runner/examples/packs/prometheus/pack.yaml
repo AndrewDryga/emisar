@@ -2,7 +2,7 @@ schema_version: 1
 
 id: prometheus
 name: Prometheus operations
-version: 0.1.6
+version: 0.1.7
 description: >
   Server status, target health, alertmanager linkage, instant + range
   queries, rule listing, TSDB stats, plus admin-API actions for
@@ -32,8 +32,8 @@ setup:
     auth, so a reachable endpoint is all that is needed.
   env:
     - name: PROM_URL
-      required: true
-      description: Prometheus base URL (scheme + host + port, no trailing path).
+      default: http://127.0.0.1:9090
+      description: Prometheus base URL (scheme + host + port, no trailing path). Defaults to a local Prometheus.
       example: http://prometheus.internal:9090
   notes:
     - "No credentials are sent. If your Prometheus sits behind an auth proxy, expose it to the runner on a network path that does not require a header, or point PROM_URL at a trusted side door."
