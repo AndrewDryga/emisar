@@ -290,22 +290,21 @@ defmodule EmisarWeb.RunDetailLive do
           </h3>
           <span class="text-[11px] text-zinc-500">stderr in rose</span>
         </header>
-        <div
+        <%!-- Each chunk already carries its trailing newline (the runner
+             streams line-by-line via ReadBytes('\n')), so output is one
+             pre-formatted block with chunks as inline spans — they
+             concatenate and only the real newlines break lines. Block
+             elements or template indentation here would double the
+             spacing, since <pre> makes all whitespace significant. --%>
+        <pre
           id="run-output"
           phx-update="stream"
-          class="max-h-[60vh] min-h-[24rem] overflow-auto bg-black p-4 font-mono text-xs leading-relaxed text-zinc-300"
-        >
-          <div
+          class="max-h-[60vh] min-h-[24rem] overflow-auto whitespace-pre-wrap break-all bg-black p-4 font-mono text-xs leading-normal text-zinc-300"
+        ><span
             :for={{id, event} <- @streams.events}
             id={id}
-            class={[
-              "whitespace-pre-wrap",
-              event.stream == "stderr" && "text-rose-300"
-            ]}
-          >
-            {event_chunk(event)}
-          </div>
-        </div>
+            class={event.stream == "stderr" && "text-rose-300"}
+          >{event_chunk(event)}</span></pre>
       </section>
     </.dashboard_shell>
     """

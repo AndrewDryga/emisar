@@ -63,4 +63,41 @@ defmodule EmisarWeb.RunDetailLiveTest do
 
     refute html =~ "Requires approval"
   end
+
+  test "renders output as a single pre with chunks as inline spans (no double spacing)",
+       %{conn: conn} do
+    {conn, _user, account} = register_and_log_in(conn)
+    run = run_with(account, %{status: "success"})
+
+    {:ok, _} =
+      Runs.append_event(run, %{
+        seq: 1,
+        kind: "progress",
+        stream: "stdout",
+        payload: %{"chunk" => "first-line\n"}
+      })
+
+    # A non-output lifecycle event between chunks must not add a blank line.
+    {:ok, _} = Runs.append_event(run, %{seq: 2, kind: "transition", payload: %{"to" => "running"}})
+
+    {:ok, _} =
+      Runs.append_event(run, %{
+        seq: 3,
+        kind: "progress",
+        stream: "stderr",
+        payload: %{"chunk" => "boom-error\n"}
+      })
+
+    {:ok, _lv, html} = live(conn, ~p"/app/runs/#{run.id}")
+
+    # Terminal is one <pre>; each chunk is an inline <span> so chunks
+    # concatenate and only their own newlines break lines. Stderr is
+    # colored right on its span. Block wrappers / template indentation
+    # here would double the spacing (the reported bug).
+    assert html =~ ~r/<pre[^>]*id="run-output"/
+    assert html =~ ~r/<span[^>]*>first-line/
+    assert html =~ "boom-error"
+    assert html =~ ~r/<span[^>]*text-rose-300[^>]*>[^<]*boom-error/
+    refute html =~ ~r/<div[^>]*whitespace-pre-wrap/
+  end
 end
