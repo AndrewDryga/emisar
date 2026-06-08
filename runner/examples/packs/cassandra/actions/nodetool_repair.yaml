@@ -10,8 +10,10 @@ description: >
   reconciles data between replicas, can take hours, produces significant
   cluster-wide load, may interact poorly with TTL/tombstone-heavy tables,
   and can worsen latency on every replica it touches. Always inspect ring
-  status, compactions, disk, and logs first. Prefer mode=preview before a
-  real repair. Refuse to proceed if the ring has DN/UJ/UL/UM nodes.
+  status, compactions, disk, and logs first. Prefer mode=preview — a dry
+  run that estimates the repair without performing it (requires Cassandra
+  4.0+) — before a real repair. Refuse to proceed if the ring has
+  DN/UJ/UL/UM nodes.
 
 side_effects:
   - Repair coordinates with replicas across the cluster.
@@ -31,9 +33,10 @@ args:
   - name: table
     type: string
     required: false
-    description: Optional single table to repair.
+    default: ""
+    description: Optional single table to repair (empty = whole keyspace).
     validation:
-      pattern: "^[a-zA-Z][a-zA-Z0-9_]{0,47}$"
+      pattern: "^([a-zA-Z][a-zA-Z0-9_]{0,47})?$"
 
   - name: mode
     type: string
@@ -65,10 +68,34 @@ args:
 
 execution:
   command:
-    binary: /usr/bin/nodetool
+    binary: /bin/sh
+    # Build nodetool's flags from the (enum/boolean-validated) args, then
+    # run keyspace + optional table as positional args. Values arrive via
+    # env so nothing is interpolated into the command string. mode=preview
+    # maps to --preview (a dry run); without this wiring the args were
+    # ignored and every call ran a real repair.
     argv:
-      - "repair"
-      - "{{ args.keyspace }}"
+      - "-c"
+      - |
+        flags=""
+        case "$MODE" in
+          preview) flags="--preview" ;;
+          full) flags="-full" ;;
+        esac
+        [ "$PR" = "true" ] && flags="$flags -pr"
+        case "$PAR" in
+          sequential) flags="$flags -seq" ;;
+          dc_parallel) flags="$flags -dcpar" ;;
+        esac
+        set -- "$KS"
+        [ -n "$TBL" ] && set -- "$@" "$TBL"
+        exec /usr/bin/nodetool repair $flags "$@"
+  env:
+    KS: "{{ args.keyspace }}"
+    TBL: "{{ args.table }}"
+    MODE: "{{ args.mode }}"
+    PR: "{{ args.primary_range }}"
+    PAR: "{{ args.parallelism }}"
   timeout: 6h
   # Repair has anti-compaction + validation clean-up that benefits from
   # extra grace between SIGTERM and SIGKILL on cancel. Default runner

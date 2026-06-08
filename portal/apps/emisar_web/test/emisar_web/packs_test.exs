@@ -139,7 +139,7 @@ defmodule EmisarWeb.PacksTest do
                "sha256:e9048bcc2f6470457ff9dd7e2a2d1e3eeb0444fd09fd85f6d0ceb132216daede"
 
       assert PacksRegistry.get("cassandra").content_hash ==
-               "sha256:bd0a491e6275c9964206faa690c61c31a4d781a27ccc3b59bb4a1fbbcf3b932b"
+               "sha256:fdb0da28a25714bd567e9280c1da3a49560cd0817db052f4adffb314acad3c0c"
     end
 
     test "tarball/1 returns a gzip tarball with flat pack files" do
