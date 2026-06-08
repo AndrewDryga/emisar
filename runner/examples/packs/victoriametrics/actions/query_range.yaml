@@ -1,0 +1,56 @@
+schema_version: 1
+id: vm.query_range
+title: GET /api/v1/query_range
+kind: script
+risk: low
+description: >
+  Range PromQL/MetricsQL query against VictoriaMetrics — evaluates one
+  expression across a trailing window ending now. Use for trends and rates
+  over time. Can be heavy on high-cardinality series.
+side_effects:
+  - One read-only HTTP GET to the VictoriaMetrics query API.
+  - Reads a range of samples — may be expensive on large series.
+args:
+  - name: query
+    type: string
+    required: true
+    description: PromQL or MetricsQL expression.
+    validation:
+      pattern: '^[\s\S]{1,1000}$'
+  - name: window
+    type: string
+    required: false
+    default: "1h"
+    description: 'Trailing window ending now, e.g. 30m, 1h, 6h, 24h, 7d.'
+    validation:
+      pattern: '^[0-9]{1,5}[smhdwy]$'
+  - name: step
+    type: string
+    required: false
+    default: "60s"
+    description: 'Resolution between points, e.g. 15s, 1m, 5m.'
+    validation:
+      pattern: '^[0-9]{1,5}[smh]$'
+execution:
+  script:
+    path: scripts/vmget.sh
+    interpreter: /bin/sh
+  argv:
+    - "/api/v1/query_range"
+    - "--data-urlencode"
+    - "query={{ args.query }}"
+    - "--data-urlencode"
+    - "start=-{{ args.window }}"
+    - "--data-urlencode"
+    - "step={{ args.step }}"
+  timeout: 120s
+output:
+  parser: json
+  max_stdout_bytes: 4194304
+  max_stderr_bytes: 8192
+examples:
+  - title: 1h request rate
+    args:
+      query: "sum(rate(vm_http_requests_total[5m]))"
+      window: "1h"
+      step: "60s"

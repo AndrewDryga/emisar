@@ -1,0 +1,27 @@
+schema_version: 1
+id: vm.active_queries
+title: GET /api/v1/status/active_queries
+kind: script
+risk: low
+description: >
+  List the queries VictoriaMetrics is executing right now — their text, how
+  long they have been running, and the client address. Use to catch a
+  runaway or slow query in the act.
+side_effects:
+  - One read-only HTTP GET to the VictoriaMetrics query API.
+  - Read-only.
+args: []
+execution:
+  script:
+    path: scripts/vmget.sh
+    interpreter: /bin/sh
+  argv:
+    - "/api/v1/status/active_queries"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: Currently running queries
+    args: {}

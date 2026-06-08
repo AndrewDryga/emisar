@@ -1,0 +1,69 @@
+schema_version: 1
+
+id: victoriametrics
+name: VictoriaMetrics queries
+version: 0.1.0
+description: >
+  Read-only PromQL / MetricsQL access to VictoriaMetrics over its HTTP API:
+  instant and range queries, series and label discovery, and the
+  VM-specific status endpoints (TSDB cardinality, active queries, top
+  queries). One base URL serves single-node, cluster (vmselect), and
+  vmauth-fronted deployments.
+vendor: emisar
+homepage: https://github.com/andrewdryga/emisar
+
+requires:
+  os:
+    - linux
+  binaries:
+    - curl
+
+# `emisar pack suggest`: VM's own components + default ports. Ports are the
+# reliable signal — the release binaries run as victoria-metrics-prod /
+# vmselect-prod, but Docker and package installs often expose short names.
+detect:
+  processes:
+    - victoria-metrics
+    - victoria-metrics-prod
+    - vmselect
+    - vmselect-prod
+  ports:
+    - 8428
+    - 8481
+
+setup:
+  summary: >
+    Every action calls the VictoriaMetrics HTTP API at $VM_URL via curl on
+    the runner host. Point VM_URL at the query base URL including any
+    /prometheus (single-node) or /select/<accountID>/prometheus (cluster)
+    prefix; each action appends /api/v1/.... Set VM_BEARER_TOKEN if the
+    endpoint sits behind vmauth or another bearer-token proxy.
+  env:
+    - name: VM_URL
+      required: true
+      description: >
+        Query base URL — scheme, host, port, and the prefix up to (but not
+        including) /api/v1. Single-node ends in /prometheus; cluster reads
+        go through vmselect at /select/<accountID>/prometheus.
+      example: http://victoria-metrics:8428/prometheus
+    - name: VM_BEARER_TOKEN
+      required: false
+      description: >
+        Optional bearer token for vmauth-protected endpoints. Sent as
+        "Authorization: Bearer <token>" over curl stdin, so it never appears
+        in the process arguments or the audit log.
+  notes:
+    - "Single-node URL: http://<host>:8428/prometheus. Cluster (vmselect) reads: http://<vmselect>:8481/select/<accountID>/prometheus. Behind vmauth: use its base URL plus whatever route prefix maps to the backend."
+    - "Every action is a read-only GET — none write, delete, or mutate series. Range queries use VictoriaMetrics relative timestamps (start=-<window>, end defaults to now)."
+    - "No token is sent unless VM_BEARER_TOKEN is set. For basic-auth fronts, embed credentials in VM_URL (http://user:pass@host) or terminate auth at a trusted side door."
+  verify: vm.labels
+
+actions:
+  - actions/query_instant.yaml
+  - actions/query_range.yaml
+  - actions/series.yaml
+  - actions/labels.yaml
+  - actions/label_values.yaml
+  - actions/tsdb_status.yaml
+  - actions/active_queries.yaml
+  - actions/top_queries.yaml

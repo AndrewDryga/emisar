@@ -1,0 +1,45 @@
+schema_version: 1
+id: vm.series
+title: GET /api/v1/series
+kind: script
+risk: low
+description: >
+  List the time series matching a selector — the label sets that exist,
+  not their samples. Use to discover what is stored before writing a query.
+side_effects:
+  - One read-only HTTP GET to the VictoriaMetrics query API.
+  - Read-only.
+args:
+  - name: match
+    type: string
+    required: true
+    description: 'Series selector, e.g. {__name__=~"node_.*", job="node"}.'
+    validation:
+      pattern: '^[\s\S]{1,1000}$'
+  - name: limit
+    type: integer
+    required: false
+    default: 1000
+    description: Maximum number of series to return.
+    validation:
+      min: 1
+      max: 100000
+execution:
+  script:
+    path: scripts/vmget.sh
+    interpreter: /bin/sh
+  argv:
+    - "/api/v1/series"
+    - "--data-urlencode"
+    - "match[]={{ args.match }}"
+    - "--data-urlencode"
+    - "limit={{ args.limit }}"
+  timeout: 60s
+output:
+  parser: json
+  max_stdout_bytes: 2097152
+  max_stderr_bytes: 8192
+examples:
+  - title: All series for a metric
+    args:
+      match: "node_cpu_seconds_total"

@@ -1,0 +1,27 @@
+schema_version: 1
+id: vm.labels
+title: GET /api/v1/labels
+kind: script
+risk: low
+description: >
+  List every label name present in VictoriaMetrics over the default time
+  range. Use to discover the available dimensions. Doubles as the pack's
+  connectivity check.
+side_effects:
+  - One read-only HTTP GET to the VictoriaMetrics query API.
+  - Read-only.
+args: []
+execution:
+  script:
+    path: scripts/vmget.sh
+    interpreter: /bin/sh
+  argv:
+    - "/api/v1/labels"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: All label names
+    args: {}

@@ -1,0 +1,38 @@
+schema_version: 1
+id: vm.query_instant
+title: GET /api/v1/query
+kind: script
+risk: low
+description: >
+  Instant PromQL/MetricsQL query against VictoriaMetrics — evaluates one
+  expression at the current time. Use to answer "what is X right now?".
+side_effects:
+  - One read-only HTTP GET to the VictoriaMetrics query API.
+  - Read-only — never writes or deletes series.
+args:
+  - name: query
+    type: string
+    required: true
+    description: PromQL or MetricsQL expression to evaluate now.
+    validation:
+      pattern: '^[\s\S]{1,1000}$'
+execution:
+  script:
+    path: scripts/vmget.sh
+    interpreter: /bin/sh
+  argv:
+    - "/api/v1/query"
+    - "--data-urlencode"
+    - "query={{ args.query }}"
+  timeout: 60s
+output:
+  parser: json
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: Targets that are down
+    args:
+      query: "up == 0"
+  - title: Total scrape targets
+    args:
+      query: "count(up)"

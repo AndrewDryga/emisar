@@ -1,0 +1,37 @@
+schema_version: 1
+id: vm.top_queries
+title: GET /api/v1/status/top_queries
+kind: script
+risk: low
+description: >
+  The most frequent and most expensive queries VictoriaMetrics has seen —
+  topByCount, topByAvgDuration, and topBySumDuration. Use to find what to
+  optimize or rate-limit.
+side_effects:
+  - One read-only HTTP GET to the VictoriaMetrics query API.
+  - Read-only.
+args:
+  - name: top_n
+    type: integer
+    required: false
+    default: 20
+    description: Number of queries to return per list.
+    validation:
+      min: 1
+      max: 100
+execution:
+  script:
+    path: scripts/vmget.sh
+    interpreter: /bin/sh
+  argv:
+    - "/api/v1/status/top_queries"
+    - "--data-urlencode"
+    - "topN={{ args.top_n }}"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: Top 20 queries
+    args: {}

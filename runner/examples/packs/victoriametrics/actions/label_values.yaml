@@ -1,0 +1,33 @@
+schema_version: 1
+id: vm.label_values
+title: GET /api/v1/label/<name>/values
+kind: script
+risk: low
+description: >
+  List all values for one label. Use to enumerate jobs, instances, or any
+  other dimension before filtering a query.
+side_effects:
+  - One read-only HTTP GET to the VictoriaMetrics query API.
+  - Read-only.
+args:
+  - name: label
+    type: string
+    required: true
+    description: Label name to enumerate values for, e.g. job, instance.
+    validation:
+      pattern: '^[a-zA-Z_][a-zA-Z0-9_]*$'
+execution:
+  script:
+    path: scripts/vmget.sh
+    interpreter: /bin/sh
+  argv:
+    - "/api/v1/label/{{ args.label }}/values"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: All scrape jobs
+    args:
+      label: "job"
