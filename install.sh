@@ -636,7 +636,25 @@ drop_config_skeleton() {
     chown "root:${SERVICE_GROUP}" "${cfg}" 2>/dev/null || true
     NEEDS_CONFIGURATION="${needs}"
   else
-    log "config exists at ${cfg}; leaving untouched"
+    # Config exists — preserve the operator's file. But an explicitly
+    # passed RUNNER_GROUP is a deliberate provisioning instruction, so
+    # honor it by rewriting only the runner.group line; nothing else is
+    # touched. (EMISAR_URL / EMISAR_AUTH_KEY still apply on fresh installs
+    # only — on an existing host they may hold operator-tuned values.)
+    if [ -n "${RUNNER_GROUP:-}" ] && \
+       printf '%s' "${RUNNER_GROUP}" | grep -qE '^[A-Za-z0-9._-]+$'; then
+      if grep -qE '^[[:space:]]*group:[[:space:]]' "${cfg}"; then
+        sed -i.bak "s|^\([[:space:]]*\)group:[[:space:]].*|\1group: ${RUNNER_GROUP}|" "${cfg}"
+        rm -f "${cfg}.bak"
+        log "config exists at ${cfg}; set runner.group=${RUNNER_GROUP} (rest untouched)"
+      else
+        warn "config at ${cfg} has no 'group:' line; set runner.group by hand"
+      fi
+    elif [ -n "${RUNNER_GROUP:-}" ]; then
+      warn "RUNNER_GROUP='${RUNNER_GROUP}' has unexpected characters; not editing ${cfg}"
+    else
+      log "config exists at ${cfg}; leaving untouched"
+    fi
     NEEDS_CONFIGURATION=0
   fi
 
