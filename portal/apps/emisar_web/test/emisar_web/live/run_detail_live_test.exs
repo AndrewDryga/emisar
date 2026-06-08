@@ -6,6 +6,8 @@ defmodule EmisarWeb.RunDetailLiveTest do
   """
   use EmisarWeb.ConnCase, async: true
 
+  import Emisar.Fixtures
+
   alias Emisar.{Repo, Runs}
   alias Emisar.Runners.Runner
 
@@ -62,6 +64,19 @@ defmodule EmisarWeb.RunDetailLiveTest do
     {:ok, _lv, html} = live(conn, ~p"/app/runs/#{run.id}")
 
     refute html =~ "Requires approval"
+  end
+
+  test "names the API key that initiated an MCP run", %{conn: conn} do
+    {conn, _user, account} = register_and_log_in(conn)
+    {_raw, key} = api_key_fixture(account_id: account.id, name: "Claude Code")
+    run = run_with(account, %{source: "mcp", api_key_id: key.id})
+
+    {:ok, _lv, html} = live(conn, ~p"/app/runs/#{run.id}")
+
+    # The operator-named key is the headline initiator; the source type
+    # ("MCP / LLM") trails as context.
+    assert html =~ "Claude Code"
+    assert html =~ "MCP / LLM"
   end
 
   test "renders output as a single pre with chunks as inline spans (no double spacing)",

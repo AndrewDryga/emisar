@@ -109,8 +109,8 @@ defmodule EmisarWeb.RunsLive do
             {(run.runner && run.runner.name) || String.slice(run.runner_id, 0, 8)}
           </span>
         </:col>
-        <:col :let={run} label="Source" class="w-20">
-          <span class="text-xs text-zinc-400">{run.source}</span>
+        <:col :let={run} label="Source" class="w-28">
+          <span class="text-xs text-zinc-400">{run_actor(run)}</span>
         </:col>
         <:col :let={run} label="Status" class="w-32">
           <.status_badge status={run.status} />

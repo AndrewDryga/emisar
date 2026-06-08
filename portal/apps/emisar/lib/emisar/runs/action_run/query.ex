@@ -59,7 +59,7 @@ defmodule Emisar.Runs.ActionRun.Query do
 
   @impl Emisar.Repo.Query
   def preloads,
-    do: [runner: []]
+    do: [runner: [], api_key: []]
 
   @impl Emisar.Repo.Query
   def filters,

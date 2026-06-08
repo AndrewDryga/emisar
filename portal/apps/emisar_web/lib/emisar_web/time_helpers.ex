@@ -208,4 +208,21 @@ defmodule EmisarWeb.TimeHelpers do
 
   defp to_datetime(%DateTime{} = dt), do: dt
   defp to_datetime(%NaiveDateTime{} = ndt), do: DateTime.from_naive!(ndt, "Etc/UTC")
+
+  @doc """
+  Who initiated a run, as a label: the API key's name for MCP/LLM runs
+  (e.g. "Claude Code"), otherwise the humanized source. Requires `:api_key`
+  preloaded — an unloaded association or nil falls back to the source.
+  """
+  def run_actor(%{api_key: %{name: name}}) when is_binary(name) and name != "", do: name
+  def run_actor(%{source: source}), do: format_source(source)
+  def run_actor(_), do: "—"
+
+  @doc "Humanized run source (`mcp` → `MCP / LLM`, …)."
+  def format_source("operator"), do: "Operator"
+  def format_source("mcp"), do: "MCP / LLM"
+  def format_source("runbook"), do: "Runbook"
+  def format_source("scheduled"), do: "Scheduled"
+  def format_source(other) when is_binary(other), do: other
+  def format_source(_), do: "—"
 end

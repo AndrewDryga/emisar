@@ -117,7 +117,8 @@ defmodule EmisarWeb.RunDetailLive do
           </.link>
         </.meta_field>
         <.meta_field label="Source">
-          <span class="capitalize text-zinc-200">{format_source(@run.source)}</span>
+          <span class="text-zinc-200">{run_actor(@run)}</span>
+          <span :if={@run.api_key} class="text-zinc-500">· {format_source(@run.source)}</span>
         </.meta_field>
         <.meta_field label="Duration">
           <span class="text-zinc-200">{format_duration(@run.duration_ms)}</span>
@@ -309,13 +310,6 @@ defmodule EmisarWeb.RunDetailLive do
     </.dashboard_shell>
     """
   end
-
-  defp format_source("operator"), do: "Operator"
-  defp format_source("mcp"), do: "MCP / LLM"
-  defp format_source("runbook"), do: "Runbook"
-  defp format_source("scheduled"), do: "Scheduled"
-  defp format_source(other) when is_binary(other), do: other
-  defp format_source(_), do: "—"
 
   defp exit_code_class(0), do: "text-emerald-300"
   defp exit_code_class(code) when is_integer(code), do: "text-rose-300"

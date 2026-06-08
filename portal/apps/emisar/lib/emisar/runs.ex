@@ -28,7 +28,7 @@ defmodule Emisar.Runs do
            ) do
       ActionRun.Query.all()
       |> Authorizer.for_subject(subject)
-      |> Repo.list(ActionRun.Query, Keyword.put_new(opts, :preload, :runner))
+      |> Repo.list(ActionRun.Query, Keyword.put_new(opts, :preload, [:runner, :api_key]))
     end
   end
 
@@ -133,7 +133,7 @@ defmodule Emisar.Runs do
       ActionRun.Query.all()
       |> ActionRun.Query.by_id(id)
       |> Authorizer.for_subject(subject)
-      |> Repo.fetch(ActionRun.Query, Keyword.put_new(opts, :preload, :runner))
+      |> Repo.fetch(ActionRun.Query, Keyword.put_new(opts, :preload, [:runner, :api_key]))
     else
       false -> {:error, :not_found}
       other -> other

@@ -66,6 +66,9 @@ defmodule Emisar.Runs.ActionRun do
     belongs_to :runbook, Emisar.Runbooks.Runbook
     belongs_to :requested_by, Emisar.Accounts.User
     belongs_to :policy, Emisar.Policies.Policy
+    # api_key_id is already a field above; this reuses it so the run can
+    # name its initiator (e.g. the "Claude Code" key) without a second FK.
+    belongs_to :api_key, Emisar.ApiKeys.ApiKey, foreign_key: :api_key_id, define_field: false
 
     has_many :events, Emisar.Runs.RunEvent, foreign_key: :run_id
 
