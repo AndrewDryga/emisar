@@ -1,0 +1,18 @@
+schema_version: 1
+id: frr.route_summary
+title: vtysh -c "show ip route summary"
+kind: exec
+risk: low
+description: IP route table summary — route and FIB counts grouped by source protocol.
+side_effects: ["One vtysh show command.", "Read-only."]
+args: []
+execution:
+  command: {binary: vtysh, argv: ["-c", "show ip route summary"]}
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 32768
+  max_stderr_bytes: 8192
+examples:
+  - title: Route counts by protocol
+    args: {}

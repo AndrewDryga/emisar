@@ -1,0 +1,40 @@
+schema_version: 1
+
+id: multipath
+name: Device-mapper multipath
+version: 0.1.0
+description: >
+  Inspect device-mapper multipath: the multipath topology (multipath -ll),
+  the effective config (multipath -t), and live path + map state queried
+  from the running multipathd. Read-only.
+vendor: emisar
+homepage: https://github.com/andrewdryga/emisar
+
+requires:
+  os:
+    - linux
+  binaries:
+    - multipath
+    - multipathd
+
+# `emisar pack suggest` detection — the multipath CLI + its daemon.
+detect:
+  binaries:
+    - multipath
+  processes:
+    - multipathd
+
+setup:
+  summary: >
+    Reads the local host's multipath topology and queries the running
+    multipathd — no credentials needed. multipath and multipathd both
+    need root (device-mapper + the daemon control socket).
+  notes:
+    - "multipath and multipathd require root. The `multipathd show ...` actions query the running daemon over its control socket; if multipathd isn't running they return an error."
+  verify: multipath.topology
+
+actions:
+  - actions/topology.yaml
+  - actions/config.yaml
+  - actions/daemon_paths.yaml
+  - actions/daemon_maps.yaml

@@ -1,0 +1,18 @@
+schema_version: 1
+id: iscsi.nodes
+title: iscsiadm -m node
+kind: exec
+risk: low
+description: Configured / discovered target nodes in the initiator database.
+side_effects: ["One iscsiadm read.", "Read-only."]
+args: []
+execution:
+  command: {binary: iscsiadm, argv: ["-m", "node"]}
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 32768
+  max_stderr_bytes: 8192
+examples:
+  - title: List target nodes
+    args: {}

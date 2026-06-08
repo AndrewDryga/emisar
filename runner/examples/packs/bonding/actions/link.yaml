@@ -1,0 +1,25 @@
+schema_version: 1
+id: bonding.link
+title: ip -d link show <bond>
+kind: exec
+risk: low
+description: Link-layer + bond detail for one interface (state, MTU, mode, xmit hash, LACP rate).
+side_effects: ["One link query.", "Read-only."]
+args:
+  - name: bond
+    type: string
+    required: true
+    description: Bond interface name (e.g. bond0).
+    validation:
+      pattern: "^[a-zA-Z][a-zA-Z0-9._-]{0,14}$"
+execution:
+  command: {binary: ip, argv: ["-d", "link", "show", "{{ args.bond }}"]}
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: bond0 link detail
+    args:
+      bond: bond0

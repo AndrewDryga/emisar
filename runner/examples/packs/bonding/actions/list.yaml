@@ -1,0 +1,18 @@
+schema_version: 1
+id: bonding.list
+title: ip -d link show type bond
+kind: exec
+risk: low
+description: List bond interfaces with their link-layer and bond-mode details.
+side_effects: ["One link query.", "Read-only."]
+args: []
+execution:
+  command: {binary: ip, argv: ["-d", "link", "show", "type", "bond"]}
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 32768
+  max_stderr_bytes: 8192
+examples:
+  - title: List bonds
+    args: {}

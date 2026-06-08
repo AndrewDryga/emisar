@@ -1,0 +1,18 @@
+schema_version: 1
+id: frr.bgp_neighbors
+title: vtysh -c "show bgp neighbors"
+kind: exec
+risk: low
+description: Detailed BGP neighbor state — capabilities, timers, and message + prefix counters per peer.
+side_effects: ["One vtysh show command.", "Read-only."]
+args: []
+execution:
+  command: {binary: vtysh, argv: ["-c", "show bgp neighbors"]}
+  timeout: 20s
+output:
+  parser: text
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+examples:
+  - title: BGP neighbor detail
+    args: {}

@@ -1,0 +1,18 @@
+schema_version: 1
+id: frr.bfd_peers
+title: vtysh -c "show bfd peers"
+kind: exec
+risk: low
+description: BFD peer sessions — local/remote state (Up/Down), last diagnostic, and timers.
+side_effects: ["One vtysh show command.", "Read-only."]
+args: []
+execution:
+  command: {binary: vtysh, argv: ["-c", "show bfd peers"]}
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 131072
+  max_stderr_bytes: 8192
+examples:
+  - title: BFD peer states
+    args: {}

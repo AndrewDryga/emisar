@@ -1,0 +1,21 @@
+schema_version: 1
+id: frr.bgp_summary
+title: vtysh -c "show bgp summary"
+kind: exec
+risk: low
+description: >
+  BGP neighbor summary — per-peer state/uptime and prefix counts
+  (PfxRcd / PfxSnt). The quick "are my BGP sessions established and
+  exchanging routes?" check.
+side_effects: ["One vtysh show command.", "Read-only."]
+args: []
+execution:
+  command: {binary: vtysh, argv: ["-c", "show bgp summary"]}
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: BGP session summary
+    args: {}

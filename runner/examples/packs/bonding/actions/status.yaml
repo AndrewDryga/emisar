@@ -1,0 +1,28 @@
+schema_version: 1
+id: bonding.status
+title: cat /proc/net/bonding/<bond>
+kind: exec
+risk: low
+description: >
+  Full bond status from /proc/net/bonding/<bond> — bonding mode, MII
+  status, and for 802.3ad (LACP) the actor/partner state plus each
+  slave's link state and aggregator id.
+side_effects: ["One file read under /proc.", "Read-only."]
+args:
+  - name: bond
+    type: string
+    required: true
+    description: Bond interface name (e.g. bond0).
+    validation:
+      pattern: "^[a-zA-Z][a-zA-Z0-9._-]{0,14}$"
+execution:
+  command: {binary: cat, argv: ["/proc/net/bonding/{{ args.bond }}"]}
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: bond0 LACP + slave status
+    args:
+      bond: bond0

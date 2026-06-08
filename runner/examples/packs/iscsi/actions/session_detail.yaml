@@ -1,0 +1,20 @@
+schema_version: 1
+id: iscsi.session_detail
+title: iscsiadm -m session -P 3
+kind: exec
+risk: low
+description: >
+  Full per-session detail at print level 3 — target IQN, portal, session
+  and connection state, negotiated parameters, and the attached SCSI disks.
+side_effects: ["One iscsiadm read.", "Read-only."]
+args: []
+execution:
+  command: {binary: iscsiadm, argv: ["-m", "session", "-P", "3"]}
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+examples:
+  - title: Detailed session view
+    args: {}

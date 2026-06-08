@@ -1,0 +1,18 @@
+schema_version: 1
+id: multipath.daemon_maps
+title: multipathd show maps
+kind: exec
+risk: low
+description: Multipath maps from the running multipathd (name, wwid, path count, queueing state).
+side_effects: ["One multipathd query.", "Read-only."]
+args: []
+execution:
+  command: {binary: multipathd, argv: ["show", "maps"]}
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 131072
+  max_stderr_bytes: 8192
+examples:
+  - title: Map states
+    args: {}

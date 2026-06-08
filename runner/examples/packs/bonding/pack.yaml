@@ -1,0 +1,31 @@
+schema_version: 1
+
+id: bonding
+name: Linux network bonding
+version: 0.1.0
+description: >
+  Inspect Linux network bonding / LACP: list bond interfaces, read a
+  bond's full status from /proc/net/bonding (mode, LACP actor/partner
+  state, per-slave link status), and show link-layer details. Read-only.
+vendor: emisar
+homepage: https://github.com/andrewdryga/emisar
+
+requires:
+  os:
+    - linux
+
+# No `emisar pack suggest` signal: bonding is a kernel feature with no
+# distinctive binary, process, or port — install it on hosts that bond.
+
+setup:
+  summary: >
+    Reads the host's bonding state from /proc/net/bonding and `ip`. No
+    credentials needed; the reads work as any user.
+  notes:
+    - "Pass the bond interface name (e.g. bond0) to bonding.status / bonding.link. /proc/net/bonding/<bond> exists only when the bonding module is loaded and that bond is configured."
+  verify: bonding.list
+
+actions:
+  - actions/list.yaml
+  - actions/status.yaml
+  - actions/link.yaml

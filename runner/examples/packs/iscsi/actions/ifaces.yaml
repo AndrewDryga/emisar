@@ -1,0 +1,18 @@
+schema_version: 1
+id: iscsi.ifaces
+title: iscsiadm -m iface
+kind: exec
+risk: low
+description: Initiator interfaces (the iface bindings sessions run over).
+side_effects: ["One iscsiadm read.", "Read-only."]
+args: []
+execution:
+  command: {binary: iscsiadm, argv: ["-m", "iface"]}
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: List initiator interfaces
+    args: {}

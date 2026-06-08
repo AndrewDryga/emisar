@@ -1,0 +1,40 @@
+schema_version: 1
+
+id: frr
+name: FRRouting (FRR)
+version: 0.1.0
+description: >
+  Query the local FRRouting daemons via vtysh — BGP summary + neighbors,
+  BFD peers, IP route summary, and interface state. Read-only `show`
+  commands.
+vendor: emisar
+homepage: https://github.com/andrewdryga/emisar
+
+requires:
+  os:
+    - linux
+  binaries:
+    - vtysh
+
+# `emisar pack suggest` detection — the vtysh CLI + the FRR core daemon.
+detect:
+  binaries:
+    - vtysh
+  processes:
+    - zebra
+
+setup:
+  summary: >
+    Queries the local FRR daemons through vtysh — no credentials needed.
+    vtysh needs root or membership in the frrvty group to reach the
+    daemon vty sockets.
+  notes:
+    - "vtysh requires root or the frrvty group. Every action here is a read-only `show` command; an unconfigured protocol (no BGP, no BFD) returns an empty / 'no process' result rather than failing."
+  verify: frr.bgp_summary
+
+actions:
+  - actions/bgp_summary.yaml
+  - actions/bgp_neighbors.yaml
+  - actions/bfd_peers.yaml
+  - actions/route_summary.yaml
+  - actions/interfaces.yaml

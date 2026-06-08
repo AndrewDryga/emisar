@@ -1,0 +1,18 @@
+schema_version: 1
+id: iscsi.sessions
+title: iscsiadm -m session
+kind: exec
+risk: low
+description: Active iSCSI sessions — one line per session (transport, target IQN, sid).
+side_effects: ["One iscsiadm read.", "Read-only."]
+args: []
+execution:
+  command: {binary: iscsiadm, argv: ["-m", "session"]}
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: List active sessions
+    args: {}

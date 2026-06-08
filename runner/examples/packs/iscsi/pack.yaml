@@ -1,0 +1,39 @@
+schema_version: 1
+
+id: iscsi
+name: iSCSI initiator
+version: 0.1.0
+description: >
+  Inspect the host's iSCSI initiator (open-iscsi): active sessions,
+  per-session detail (targets, connections, negotiated parameters),
+  configured target nodes, and initiator interfaces. Read-only.
+vendor: emisar
+homepage: https://github.com/andrewdryga/emisar
+
+requires:
+  os:
+    - linux
+  binaries:
+    - iscsiadm
+
+# `emisar pack suggest` detection — the open-iscsi CLI + its daemon.
+detect:
+  binaries:
+    - iscsiadm
+  processes:
+    - iscsid
+
+setup:
+  summary: >
+    Reads the local host's iSCSI initiator state via iscsiadm — no
+    credentials needed. iscsiadm needs root (it reads /sys and the
+    initiator DB).
+  notes:
+    - "iscsiadm requires root — the detailed session view (-P 3) especially. Run the runner as root, or grant iscsiadm via sudoers/polkit."
+  verify: iscsi.sessions
+
+actions:
+  - actions/sessions.yaml
+  - actions/session_detail.yaml
+  - actions/nodes.yaml
+  - actions/ifaces.yaml

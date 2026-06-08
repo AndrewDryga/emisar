@@ -1,0 +1,21 @@
+schema_version: 1
+id: multipath.topology
+title: multipath -ll
+kind: exec
+risk: low
+description: >
+  Full multipath topology — each multipath device (wwid, alias,
+  vendor/product), its path groups, and per-path state (active/enabled,
+  dm status, path checker result).
+side_effects: ["One multipath read.", "Read-only."]
+args: []
+execution:
+  command: {binary: multipath, argv: ["-ll"]}
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+examples:
+  - title: Show multipath devices + paths
+    args: {}
