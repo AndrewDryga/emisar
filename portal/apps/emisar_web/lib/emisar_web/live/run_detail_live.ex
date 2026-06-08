@@ -117,13 +117,17 @@ defmodule EmisarWeb.RunDetailLive do
           </.link>
         </.meta_field>
         <.meta_field label="Source">
-          <span class="text-zinc-200">{run_actor(@run)}</span>
-          <span :if={client_version(@run)} class="text-zinc-400">{client_version(@run)}</span>
-          <span :if={@run.api_key} class="text-zinc-500">· {format_source(@run.source)}</span>
-        </.meta_field>
-        <.meta_field :if={@run.mcp_session_id} label="MCP session">
-          <span class="font-mono text-xs text-zinc-400" title={@run.mcp_session_id}>
-            {String.slice(@run.mcp_session_id, 0, 8)}
+          <span class="block truncate">
+            <span class="text-zinc-200">{run_actor(@run)}</span>
+            <span :if={client_version(@run)} class="text-zinc-400">{client_version(@run)}</span>
+            <span :if={@run.api_key} class="text-zinc-500">· {format_source(@run.source)}</span>
+          </span>
+          <span
+            :if={@run.mcp_session_id}
+            class="mt-0.5 block truncate font-mono text-[11px] text-zinc-500"
+            title={@run.mcp_session_id}
+          >
+            session {String.slice(@run.mcp_session_id, 0, 8)}
           </span>
         </.meta_field>
         <.meta_field label="Duration">
