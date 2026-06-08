@@ -11,7 +11,7 @@ args:
     required: true
     description: SELECT statement.
     validation:
-      pattern: "^(SELECT|select|WITH|with)[^;]{1,8000}$"
+      pattern: "^(SELECT|select|WITH|with)[^;]{1,1000}$"
 execution:
   command:
     binary: /usr/bin/psql

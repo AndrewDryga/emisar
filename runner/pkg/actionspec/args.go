@@ -2,6 +2,7 @@ package actionspec
 
 import (
 	"fmt"
+	"regexp"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -75,6 +76,16 @@ func (a Arg) Validate() error {
 	}
 	if a.Required && a.Default != nil {
 		return fmt.Errorf("arg %s: required args must not specify default", a.Name)
+	}
+	// Compile the pattern here so an uncompilable regex fails `pack validate`
+	// at authoring time, not at execution. The runtime validator (which
+	// rejects the arg) uses the same regexp engine, and Go caps a repeat
+	// bound at 1000 — e.g. `.{0,2048}` is a compile error, so without this
+	// check such an action loads fine yet can never run.
+	if a.Validation != nil && a.Validation.Pattern != "" {
+		if _, err := regexp.Compile(a.Validation.Pattern); err != nil {
+			return fmt.Errorf("arg %s: invalid validation.pattern %q: %w", a.Name, a.Validation.Pattern, err)
+		}
 	}
 	return nil
 }

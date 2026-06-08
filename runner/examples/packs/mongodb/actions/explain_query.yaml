@@ -26,7 +26,7 @@ args:
     default: "{}"
     description: JSON filter document.
     validation:
-      pattern: "^.{0,2048}$"
+      pattern: "^.{0,1000}$"
 execution:
   command:
     binary: /bin/sh

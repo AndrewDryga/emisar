@@ -307,6 +307,11 @@ func TestArg_Validate(t *testing.T) {
 		{"required with default", Arg{Name: "x", Type: ArgString, Required: true, Default: "y"}, false},
 		{"valid", Arg{Name: "x", Type: ArgString}, true},
 		{"valid with default", Arg{Name: "x", Type: ArgString, Default: "y"}, true},
+		{"valid pattern", Arg{Name: "x", Type: ArgString, Validation: &Validation{Pattern: "^.{0,1000}$"}}, true},
+		// Go caps a repeat bound at 1000; a larger one compiles fine in YAML
+		// but is rejected by regexp.Compile, so the action could never run.
+		{"oversized repeat pattern", Arg{Name: "x", Type: ArgString, Validation: &Validation{Pattern: "^.{0,2048}$"}}, false},
+		{"malformed pattern", Arg{Name: "x", Type: ArgString, Validation: &Validation{Pattern: "^[a-z"}}, false},
 	}
 	for _, c := range cases {
 		err := c.arg.Validate()

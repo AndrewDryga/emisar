@@ -13,7 +13,7 @@ args:
     required: true
     description: PromQL expression.
     validation:
-      pattern: "^.{1,2048}$"
+      pattern: "^.{1,1000}$"
   - name: window
     type: string
     required: false
