@@ -93,7 +93,8 @@ defmodule EmisarWeb.RunDetailLiveTest do
       })
 
     # A non-output lifecycle event between chunks must not add a blank line.
-    {:ok, _} = Runs.append_event(run, %{seq: 2, kind: "transition", payload: %{"to" => "running"}})
+    {:ok, _} =
+      Runs.append_event(run, %{seq: 2, kind: "transition", payload: %{"to" => "running"}})
 
     {:ok, _} =
       Runs.append_event(run, %{
