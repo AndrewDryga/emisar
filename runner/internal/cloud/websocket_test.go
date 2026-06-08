@@ -253,6 +253,106 @@ func TestWebsocketDialerReusesCachedToken(t *testing.T) {
 	srvConn.Close(websocket.StatusNormalClosure, "")
 }
 
+func TestWebsocketDialerReregistersWhenAuthKeyRotated(t *testing.T) {
+	fc, srv := newFakeCloud(t)
+
+	dir := t.TempDir()
+	tokenPath := filepath.Join(dir, "token.json")
+
+	// A token minted under a *different* auth key: the runner was pointed at
+	// a new account and EMISAR_AUTH_KEY was swapped under it. The cached
+	// token is still well-formed, but its key fingerprint no longer matches.
+	seeded, _ := json.Marshal(map[string]string{
+		"token":     "token-from-old-account",
+		"runner_id": "agt_old",
+		"key_fp":    keyFingerprint("emkey-auth-OLD-account"),
+	})
+	if err := os.WriteFile(tokenPath, seeded, 0o600); err != nil {
+		t.Fatalf("seed token: %v", err)
+	}
+
+	d := &WebsocketDialer{
+		URL:       srv.URL,
+		AuthKey:   fc.authKey, // the new account's key
+		TokenPath: tokenPath,
+		Hostname:  "test-host",
+		Group:     "default",
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	conn, _, err := d.Dial(ctx)
+	if err != nil {
+		t.Fatalf("Dial: %v", err)
+	}
+	defer conn.Close()
+
+	if fc.registerSeen != 1 {
+		t.Errorf("register hit %d times, want 1 (auth key rotated → re-register)", fc.registerSeen)
+	}
+
+	// The token file is rewritten with the freshly minted token and stamped
+	// with the new key's fingerprint, so the next boot reuses it.
+	body, _ := os.ReadFile(tokenPath)
+	var stored struct {
+		Token string `json:"token"`
+		KeyFP string `json:"key_fp"`
+	}
+	_ = json.Unmarshal(body, &stored)
+	if stored.Token != fc.mintedToken {
+		t.Errorf("stored token = %q, want %q", stored.Token, fc.mintedToken)
+	}
+	if stored.KeyFP != keyFingerprint(fc.authKey) {
+		t.Errorf("stored key_fp = %q, want fingerprint of the new key", stored.KeyFP)
+	}
+
+	srvConn := <-fc.wsAccepted
+	srvConn.Close(websocket.StatusNormalClosure, "")
+}
+
+func TestWebsocketDialerReusesTokenWhenAuthKeyUnchanged(t *testing.T) {
+	fc, srv := newFakeCloud(t)
+
+	dir := t.TempDir()
+	tokenPath := filepath.Join(dir, "token.json")
+
+	// Token stamped with the same key the dialer is configured with — a
+	// normal restart, no re-register.
+	seeded, _ := json.Marshal(map[string]string{
+		"token":     fc.mintedToken,
+		"runner_id": "agt_cached",
+		"key_fp":    keyFingerprint(fc.authKey),
+	})
+	if err := os.WriteFile(tokenPath, seeded, 0o600); err != nil {
+		t.Fatalf("seed token: %v", err)
+	}
+
+	d := &WebsocketDialer{
+		URL:       srv.URL,
+		AuthKey:   fc.authKey,
+		TokenPath: tokenPath,
+		Hostname:  "test-host",
+		Group:     "default",
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	conn, _, err := d.Dial(ctx)
+	if err != nil {
+		t.Fatalf("Dial: %v", err)
+	}
+	defer conn.Close()
+
+	if fc.registerSeen != 0 {
+		t.Errorf("register hit %d times, want 0 (same key → reuse token)", fc.registerSeen)
+	}
+
+	srvConn := <-fc.wsAccepted
+	srvConn.Close(websocket.StatusNormalClosure, "")
+}
+
 func TestWebsocketDialer401OnRegisterIsUnauthorized(t *testing.T) {
 	fc, srv := newFakeCloud(t)
 

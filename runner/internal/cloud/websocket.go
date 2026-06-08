@@ -2,6 +2,8 @@ package cloud
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -126,11 +128,26 @@ func (d *WebsocketDialer) Dial(ctx context.Context) (Conn, string, error) {
 type agentToken struct {
 	Raw     string
 	AgentID string
+	// KeyFP fingerprints the auth key that minted this token, so a later
+	// boot can tell when the operator swapped the key under it.
+	KeyFP string
 }
 
 func (d *WebsocketDialer) loadOrMintToken(ctx context.Context) (agentToken, error) {
 	if existing, err := d.readToken(); err == nil && existing.Raw != "" {
-		return existing, nil
+		// Reuse the cached token unless the operator has rotated the auth
+		// key under it (e.g. moving the runner to another account): a
+		// configured key whose fingerprint no longer matches the one stamped
+		// on the token means re-register with the new key. An empty key
+		// (operator unset it after first boot) or an unstamped legacy token
+		// keeps the old reuse-always behavior.
+		if d.AuthKey == "" || existing.KeyFP == "" || existing.KeyFP == keyFingerprint(d.AuthKey) {
+			return existing, nil
+		}
+		d.logger().Info("cloud.auth_key_rotated",
+			"path", d.TokenPath,
+			"detail", "configured auth key no longer matches the cached token; re-registering")
+		_ = os.Remove(d.TokenPath)
 	}
 
 	if d.AuthKey == "" {
@@ -141,6 +158,7 @@ func (d *WebsocketDialer) loadOrMintToken(ctx context.Context) (agentToken, erro
 	if err != nil {
 		return agentToken{}, err
 	}
+	token.KeyFP = keyFingerprint(d.AuthKey)
 
 	if err := d.writeToken(token); err != nil {
 		// Non-fatal: we proceed with the in-memory token but log that
@@ -167,6 +185,7 @@ func (d *WebsocketDialer) readToken() (agentToken, error) {
 		// dev installs with `agent_id` on disk. Prefer the new name.
 		RunnerID    string `json:"runner_id"`
 		LegacyAgent string `json:"agent_id"`
+		KeyFP       string `json:"key_fp"`
 	}
 
 	if err := json.Unmarshal(bytes, &stored); err != nil {
@@ -183,7 +202,7 @@ func (d *WebsocketDialer) readToken() (agentToken, error) {
 	if id == "" {
 		id = stored.LegacyAgent
 	}
-	return agentToken{Raw: stored.Token, AgentID: id}, nil
+	return agentToken{Raw: stored.Token, AgentID: id, KeyFP: stored.KeyFP}, nil
 }
 
 func (d *WebsocketDialer) writeToken(t agentToken) error {
@@ -198,7 +217,8 @@ func (d *WebsocketDialer) writeToken(t agentToken) error {
 	body, err := json.Marshal(struct {
 		Token   string `json:"token"`
 		AgentID string `json:"runner_id"`
-	}{t.Raw, t.AgentID})
+		KeyFP   string `json:"key_fp,omitempty"`
+	}{t.Raw, t.AgentID, t.KeyFP})
 	if err != nil {
 		return err
 	}
@@ -210,6 +230,16 @@ func (d *WebsocketDialer) writeToken(t agentToken) error {
 		return err
 	}
 	return os.Rename(tmp, d.TokenPath)
+}
+
+// keyFingerprint is a short, one-way fingerprint of the bootstrap auth
+// key, stamped into the token file so a later boot can detect that the
+// operator swapped the key under the runner (e.g. moving it to another
+// account). Not a secret and not reversible — 8 bytes of SHA-256 is
+// ample to tell one key from another.
+func keyFingerprint(authKey string) string {
+	sum := sha256.Sum256([]byte(authKey))
+	return hex.EncodeToString(sum[:8])
 }
 
 // -- Register --------------------------------------------------------
