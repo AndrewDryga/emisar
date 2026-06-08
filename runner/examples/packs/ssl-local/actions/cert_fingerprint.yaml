@@ -16,7 +16,7 @@ args:
       pattern: "^/[a-zA-Z0-9_./\\-]{1,512}$"
 execution:
   command:
-    binary: /usr/bin/openssl
+    binary: openssl
     argv:
       - "x509"
       - "-in"

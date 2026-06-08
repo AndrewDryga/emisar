@@ -34,7 +34,7 @@ args:
 
 execution:
   command:
-    binary: /bin/ping
+    binary: ping
     argv:
       - "-c"
       - "{{ args.count }}"

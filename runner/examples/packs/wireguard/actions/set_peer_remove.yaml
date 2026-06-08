@@ -26,7 +26,7 @@ args:
       pattern: "^[A-Za-z0-9+/]{43}=$"
 execution:
   command:
-    binary: /usr/bin/wg
+    binary: wg
     argv: ["set", "{{ args.iface }}", "peer", "{{ args.pubkey }}", "remove"]
   timeout: 15s
 output:

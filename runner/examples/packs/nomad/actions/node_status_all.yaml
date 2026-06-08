@@ -7,7 +7,7 @@ description: All clients (nodes) with status, datacenter, drain state, eligibili
 side_effects: ["One API call.", "Read-only."]
 args: []
 execution:
-  command: {binary: /usr/bin/nomad, argv: ["node", "status", "-verbose"]}
+  command: {binary: nomad, argv: ["node", "status", "-verbose"]}
   timeout: 30s
 output:
   parser: text

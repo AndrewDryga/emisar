@@ -7,7 +7,7 @@ description: All ACL policies.
 side_effects: ["One ACL request.", "Read-only."]
 args: []
 execution:
-  command: {binary: /usr/bin/consul, argv: ["acl", "policy", "list"]}
+  command: {binary: consul, argv: ["acl", "policy", "list"]}
   timeout: 15s
 output:
   parser: text

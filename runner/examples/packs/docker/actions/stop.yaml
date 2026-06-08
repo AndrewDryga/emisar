@@ -25,7 +25,7 @@ args:
       max: 600
 execution:
   command:
-    binary: /usr/bin/docker
+    binary: docker
     argv:
       - "stop"
       - "-t"

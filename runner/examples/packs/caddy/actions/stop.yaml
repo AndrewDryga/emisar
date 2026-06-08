@@ -16,7 +16,7 @@ side_effects:
 args: []
 execution:
   command:
-    binary: /usr/bin/caddy
+    binary: caddy
     argv: ["stop"]
   timeout: 30s
 cancel_grace: 10s

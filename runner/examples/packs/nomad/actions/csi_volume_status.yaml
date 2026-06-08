@@ -13,7 +13,7 @@ args:
     validation:
       pattern: "^[a-zA-Z0-9_\\-]{1,128}$"
 execution:
-  command: {binary: /usr/bin/nomad, argv: ["volume", "status", "{{ args.volume_id }}"]}
+  command: {binary: nomad, argv: ["volume", "status", "{{ args.volume_id }}"]}
   timeout: 30s
 output:
   parser: text

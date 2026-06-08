@@ -7,7 +7,7 @@ description: Per-peer gossip state — schema version, status, load, dc, rack, g
 side_effects: ["One JMX call.", "Read-only."]
 args: []
 execution:
-  command: {binary: /usr/bin/nodetool, argv: ["gossipinfo"]}
+  command: {binary: nodetool, argv: ["gossipinfo"]}
   timeout: 30s
 output:
   parser: text

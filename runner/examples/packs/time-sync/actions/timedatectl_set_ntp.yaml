@@ -16,7 +16,7 @@ args:
     description: Enable (true) or disable (false) NTP.
 execution:
   command:
-    binary: /usr/bin/timedatectl
+    binary: timedatectl
     argv: ["set-ntp", "{{ args.enabled }}"]
   timeout: 30s
 output:

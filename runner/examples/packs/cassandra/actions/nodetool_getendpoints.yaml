@@ -25,7 +25,7 @@ args:
     validation:
       pattern: "^[a-zA-Z0-9_\\-:.]{1,256}$"
 execution:
-  command: {binary: /usr/bin/nodetool, argv: ["getendpoints", "{{ args.keyspace }}", "{{ args.table }}", "{{ args.key }}"]}
+  command: {binary: nodetool, argv: ["getendpoints", "{{ args.keyspace }}", "{{ args.table }}", "{{ args.key }}"]}
   timeout: 30s
 output:
   parser: text

@@ -22,7 +22,7 @@ args:
       max: 10000
 execution:
   command:
-    binary: /usr/bin/podman
+    binary: podman
     argv: ["logs", "--tail", "{{ args.tail }}", "{{ args.container }}"]
   timeout: 30s
 output:

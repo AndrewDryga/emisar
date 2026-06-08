@@ -19,7 +19,7 @@ args:
       pattern: "^[a-zA-Z0-9_\\-]{1,15}$"
 execution:
   command:
-    binary: /usr/bin/wg-quick
+    binary: wg-quick
     argv: ["up", "{{ args.iface }}"]
   timeout: 30s
 output:

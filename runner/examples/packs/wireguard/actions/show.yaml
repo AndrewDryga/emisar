@@ -7,7 +7,7 @@ description: All interfaces with peers + endpoints + last-handshake.
 side_effects: ["One netlink query.", "Read-only."]
 args: []
 execution:
-  command: {binary: /usr/bin/wg, argv: ["show"]}
+  command: {binary: wg, argv: ["show"]}
   timeout: 15s
 output:
   parser: text

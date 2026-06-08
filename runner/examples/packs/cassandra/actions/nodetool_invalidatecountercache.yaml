@@ -7,7 +7,7 @@ description: Drops the counter cache.
 side_effects: ["Counter cache cleared.", "Counter reads pay cold-cache cost."]
 args: []
 execution:
-  command: {binary: /usr/bin/nodetool, argv: ["invalidatecountercache"]}
+  command: {binary: nodetool, argv: ["invalidatecountercache"]}
   timeout: 15s
 output:
   parser: text

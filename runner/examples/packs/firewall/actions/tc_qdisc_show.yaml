@@ -10,7 +10,7 @@ side_effects:
 args: []
 execution:
   command:
-    binary: /sbin/tc
+    binary: tc
     argv: ["-s", "qdisc", "show"]
   timeout: 30s
 output:

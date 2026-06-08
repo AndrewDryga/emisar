@@ -25,7 +25,7 @@ args:
       max: 30
 execution:
   command:
-    binary: /usr/bin/mtr
+    binary: mtr
     argv:
       - "--report"
       - "--report-cycles={{ args.cycles }}"

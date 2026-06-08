@@ -17,7 +17,7 @@ args:
       pattern: "^/[a-zA-Z0-9_./\\-]{1,512}$"
 execution:
   command:
-    binary: /usr/bin/caddy
+    binary: caddy
     argv: ["reload", "--config", "{{ args.file }}"]
   timeout: 60s
 output:

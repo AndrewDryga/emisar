@@ -7,7 +7,7 @@ description: Currently-exported NFS shares + options.
 side_effects: ["One exportfs call.", "Read-only."]
 args: []
 execution:
-  command: {binary: /usr/sbin/exportfs, argv: ["-v"]}
+  command: {binary: exportfs, argv: ["-v"]}
   timeout: 15s
 output:
   parser: text

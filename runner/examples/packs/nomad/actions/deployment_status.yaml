@@ -13,7 +13,7 @@ args:
     validation:
       pattern: "^[a-fA-F0-9\\-]{4,36}$"
 execution:
-  command: {binary: /usr/bin/nomad, argv: ["deployment", "status", "-verbose", "{{ args.deployment_id }}"]}
+  command: {binary: nomad, argv: ["deployment", "status", "-verbose", "{{ args.deployment_id }}"]}
   timeout: 30s
 output:
   parser: text

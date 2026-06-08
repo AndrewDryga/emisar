@@ -25,7 +25,7 @@ args:
 
 execution:
   command:
-    binary: /bin/ps
+    binary: ps
     argv:
       - "-L"
       - "-p"

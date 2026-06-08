@@ -11,7 +11,7 @@ side_effects:
   - Only restart restores the node.
 args: []
 execution:
-  command: {binary: /usr/bin/nodetool, argv: ["drain"]}
+  command: {binary: nodetool, argv: ["drain"]}
   timeout: 1h
 cancel_grace: 5m
 output:

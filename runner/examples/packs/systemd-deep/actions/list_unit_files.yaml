@@ -10,7 +10,7 @@ side_effects:
 args: []
 execution:
   command:
-    binary: /bin/systemctl
+    binary: systemctl
     argv: ["list-unit-files", "--type=service", "--no-pager", "--no-legend"]
   timeout: 15s
 output:

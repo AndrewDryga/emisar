@@ -7,7 +7,7 @@ description: All loaded php.ini paths + their contents path.
 side_effects: ["One forked process.", "Read-only."]
 args: []
 execution:
-  command: {binary: /usr/bin/php, argv: ["--ini"]}
+  command: {binary: php, argv: ["--ini"]}
   timeout: 15s
 output:
   parser: text

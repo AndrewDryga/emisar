@@ -20,7 +20,7 @@ args:
       max: 16383
 execution:
   command:
-    binary: /usr/bin/redis-cli
+    binary: redis-cli
     argv: ["CLUSTER", "COUNTKEYSINSLOT", "{{ args.slot }}"]
   timeout: 10s
 output:

@@ -11,7 +11,7 @@ side_effects:
 args: []
 execution:
   command:
-    binary: /usr/bin/docker
+    binary: docker
     argv: ["info"]
   timeout: 15s
 output:

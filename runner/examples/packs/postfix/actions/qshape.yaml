@@ -15,7 +15,7 @@ args:
       enum: ["incoming", "active", "deferred", "hold"]
 execution:
   command:
-    binary: /usr/sbin/qshape
+    binary: qshape
     argv: ["{{ args.queue }}"]
   timeout: 30s
 output:

@@ -24,7 +24,7 @@ args:
       max: 10000
 execution:
   command:
-    binary: /usr/bin/head
+    binary: head
     argv:
       - "-n"
       - "{{ args.lines }}"

@@ -18,7 +18,7 @@ args: []
 
 execution:
   command:
-    binary: /usr/bin/df
+    binary: df
     argv:
       - "-hT"
   timeout: 10s

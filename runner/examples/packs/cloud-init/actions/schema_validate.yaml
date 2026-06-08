@@ -13,7 +13,7 @@ side_effects:
 args: []
 execution:
   command:
-    binary: /usr/bin/cloud-init
+    binary: cloud-init
     argv: ["schema", "--system"]
   timeout: 30s
 output:

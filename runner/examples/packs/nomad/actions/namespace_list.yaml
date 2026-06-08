@@ -7,7 +7,7 @@ description: All namespaces in the cluster.
 side_effects: ["One API call.", "Read-only."]
 args: []
 execution:
-  command: {binary: /usr/bin/nomad, argv: ["namespace", "list"]}
+  command: {binary: nomad, argv: ["namespace", "list"]}
   timeout: 15s
 output:
   parser: text

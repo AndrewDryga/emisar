@@ -16,7 +16,7 @@ side_effects:
 args: []
 execution:
   command:
-    binary: /usr/bin/chronyc
+    binary: chronyc
     argv: ["makestep"]
   timeout: 30s
 output:

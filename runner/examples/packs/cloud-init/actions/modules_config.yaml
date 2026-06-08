@@ -16,7 +16,7 @@ side_effects:
 args: []
 execution:
   command:
-    binary: /usr/bin/cloud-init
+    binary: cloud-init
     argv: ["modules", "--mode=config"]
   timeout: 600s
 cancel_grace: 60s

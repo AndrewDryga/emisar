@@ -16,7 +16,7 @@ args:
     validation:
       pattern: "^[0-9]{1,3}(\\.[0-9]{1,3}){3}$"
 execution:
-  command: {binary: /usr/bin/nodetool, argv: ["assassinate", "{{ args.address }}"]}
+  command: {binary: nodetool, argv: ["assassinate", "{{ args.address }}"]}
   timeout: 5m
 output:
   parser: text

@@ -10,7 +10,7 @@ side_effects:
 args: []
 execution:
   command:
-    binary: /usr/sbin/iptables
+    binary: iptables
     argv: ["-L", "-nv", "--line-numbers", "-t", "filter"]
   timeout: 30s
 output:

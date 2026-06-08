@@ -24,7 +24,7 @@ args:
 
 execution:
   command:
-    binary: /usr/bin/docker
+    binary: docker
     argv:
       - "inspect"
       - "{{ args.container }}"

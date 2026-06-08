@@ -18,7 +18,7 @@ args:
       max: 500
 execution:
   command:
-    binary: /usr/bin/mysql
+    binary: mysql
     argv:
       - "-e"
       - "SELECT table_schema, table_name, table_rows, ROUND(data_length/1024/1024, 2) AS data_mb, ROUND(index_length/1024/1024, 2) AS idx_mb, ROUND((data_length+index_length)/1024/1024, 2) AS total_mb FROM information_schema.tables WHERE table_schema NOT IN ('mysql','information_schema','performance_schema','sys') ORDER BY data_length+index_length DESC LIMIT {{ args.limit }};"

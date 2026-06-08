@@ -35,7 +35,7 @@ args:
 
 execution:
   command:
-    binary: /bin/df
+    binary: df
     argv:
       - "-P"
       - "-h"

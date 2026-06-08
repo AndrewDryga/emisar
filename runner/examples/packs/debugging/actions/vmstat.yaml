@@ -27,7 +27,7 @@ args:
 
 execution:
   command:
-    binary: /usr/bin/vmstat
+    binary: vmstat
     argv:
       - "1"
       - "{{ args.samples }}"

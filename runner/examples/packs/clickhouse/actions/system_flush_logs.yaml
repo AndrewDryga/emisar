@@ -12,7 +12,7 @@ side_effects:
 args: []
 execution:
   command:
-    binary: /usr/bin/clickhouse-client
+    binary: clickhouse-client
     argv: ["--query", "SYSTEM FLUSH LOGS"]
   timeout: 30s
 output:

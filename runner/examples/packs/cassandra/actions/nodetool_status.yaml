@@ -38,7 +38,7 @@ args:
 
 execution:
   command:
-    binary: /usr/bin/nodetool
+    binary: nodetool
     argv:
       - "-h"
       - "{{ args.host }}"

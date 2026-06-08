@@ -7,7 +7,7 @@ description: Exports as seen via rpcbind (what NFS clients discover).
 side_effects: ["One rpcbind query.", "Read-only."]
 args: []
 execution:
-  command: {binary: /usr/sbin/showmount, argv: ["-e", "127.0.0.1"]}
+  command: {binary: showmount, argv: ["-e", "127.0.0.1"]}
   timeout: 30s
 output:
   parser: text

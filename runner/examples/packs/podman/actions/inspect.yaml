@@ -13,7 +13,7 @@ args:
     validation:
       pattern: "^[a-zA-Z0-9_.\\-]{1,64}$"
 execution:
-  command: {binary: /usr/bin/podman, argv: ["inspect", "{{ args.container }}"]}
+  command: {binary: podman, argv: ["inspect", "{{ args.container }}"]}
   timeout: 30s
 output:
   parser: json

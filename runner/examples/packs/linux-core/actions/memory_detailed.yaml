@@ -18,7 +18,7 @@ args: []
 
 execution:
   command:
-    binary: /bin/cat
+    binary: cat
     argv:
       - "/proc/meminfo"
   timeout: 5s

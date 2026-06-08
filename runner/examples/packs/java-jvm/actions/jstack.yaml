@@ -17,7 +17,7 @@ args:
       max: 4194304
 execution:
   command:
-    binary: /usr/bin/jstack
+    binary: jstack
     argv: ["-l", "{{ args.pid }}"]
   timeout: 30s
 output:

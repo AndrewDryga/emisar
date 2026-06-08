@@ -11,7 +11,7 @@ side_effects:
 args: []
 execution:
   command:
-    binary: /usr/sbin/nginx
+    binary: nginx
     argv: ["-s", "quit"]
   timeout: 30s
 output:

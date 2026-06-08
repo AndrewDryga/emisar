@@ -23,7 +23,7 @@ args:
       max: 1000000
 execution:
   command:
-    binary: /usr/bin/nomad
+    binary: nomad
     argv: ["job", "revert", "{{ args.job }}", "{{ args.version }}"]
   timeout: 60s
 output:

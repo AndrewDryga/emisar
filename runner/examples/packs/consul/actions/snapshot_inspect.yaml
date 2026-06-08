@@ -13,7 +13,7 @@ args:
     validation:
       pattern: "^/[a-zA-Z0-9_./\\-]{1,512}\\.snap$"
 execution:
-  command: {binary: /usr/bin/consul, argv: ["snapshot", "inspect", "{{ args.path }}"]}
+  command: {binary: consul, argv: ["snapshot", "inspect", "{{ args.path }}"]}
   timeout: 60s
 output:
   parser: text

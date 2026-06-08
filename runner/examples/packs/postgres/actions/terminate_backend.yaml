@@ -18,7 +18,7 @@ args:
       max: 4194304
 execution:
   command:
-    binary: /usr/bin/psql
+    binary: psql
     argv:
       - "-XAt"
       - "-c"

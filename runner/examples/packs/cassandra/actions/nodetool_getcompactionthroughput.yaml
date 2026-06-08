@@ -7,7 +7,7 @@ description: Current compaction throughput cap (MB/s; 0 = unlimited).
 side_effects: ["One JMX call.", "Read-only."]
 args: []
 execution:
-  command: {binary: /usr/bin/nodetool, argv: ["getcompactionthroughput"]}
+  command: {binary: nodetool, argv: ["getcompactionthroughput"]}
   timeout: 15s
 output:
   parser: text

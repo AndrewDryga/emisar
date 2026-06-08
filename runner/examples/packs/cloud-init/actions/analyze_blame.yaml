@@ -12,7 +12,7 @@ side_effects:
 args: []
 execution:
   command:
-    binary: /usr/bin/cloud-init
+    binary: cloud-init
     argv: ["analyze", "blame"]
   timeout: 30s
 output:

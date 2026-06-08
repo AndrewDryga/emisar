@@ -18,7 +18,7 @@ args:
       pattern: "^[a-z0-9\\-_]{1,32}$"
 execution:
   command:
-    binary: /usr/bin/redis-cli
+    binary: redis-cli
     argv: ["LATENCY", "HISTORY", "{{ args.event }}"]
   timeout: 10s
 output:

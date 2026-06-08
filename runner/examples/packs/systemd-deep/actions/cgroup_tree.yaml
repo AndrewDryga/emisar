@@ -10,7 +10,7 @@ side_effects:
 args: []
 execution:
   command:
-    binary: /bin/systemd-cgls
+    binary: systemd-cgls
     argv: ["--no-pager"]
   timeout: 15s
 output:

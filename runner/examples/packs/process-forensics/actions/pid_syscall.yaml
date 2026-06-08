@@ -17,7 +17,7 @@ args:
       max: 4194304
 execution:
   command:
-    binary: /bin/cat
+    binary: cat
     argv:
       - "/proc/{{ args.pid }}/syscall"
   timeout: 15s

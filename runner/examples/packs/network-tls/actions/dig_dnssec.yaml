@@ -16,7 +16,7 @@ args:
       pattern: "^[a-zA-Z0-9.\\-_]{1,253}$"
 execution:
   command:
-    binary: /usr/bin/dig
+    binary: dig
     argv: ["+dnssec", "{{ args.name }}"]
   timeout: 15s
 output:

@@ -7,7 +7,7 @@ description: All ACL policy names.
 side_effects: ["One API call.", "Read-only."]
 args: []
 execution:
-  command: {binary: /usr/bin/nomad, argv: ["acl", "policy", "list"]}
+  command: {binary: nomad, argv: ["acl", "policy", "list"]}
   timeout: 15s
 output:
   parser: text

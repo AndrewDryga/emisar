@@ -19,7 +19,7 @@ args:
       max: 200
 execution:
   command:
-    binary: /usr/bin/mysql
+    binary: mysql
     argv:
       - "-e"
       - "SELECT COUNT_STAR AS calls, ROUND(AVG_TIMER_WAIT/1e9, 2) AS avg_ms, ROUND(SUM_TIMER_WAIT/1e9, 2) AS total_ms, LEFT(DIGEST_TEXT, 200) AS query FROM performance_schema.events_statements_summary_by_digest WHERE DIGEST_TEXT IS NOT NULL ORDER BY AVG_TIMER_WAIT DESC LIMIT {{ args.limit }};"

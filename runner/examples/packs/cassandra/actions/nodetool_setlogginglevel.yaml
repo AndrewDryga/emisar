@@ -21,7 +21,7 @@ args:
     validation:
       enum: ["TRACE", "DEBUG", "INFO", "WARN", "ERROR", "OFF"]
 execution:
-  command: {binary: /usr/bin/nodetool, argv: ["setlogginglevel", "{{ args.logger }}", "{{ args.level }}"]}
+  command: {binary: nodetool, argv: ["setlogginglevel", "{{ args.logger }}", "{{ args.level }}"]}
   timeout: 15s
 output:
   parser: text

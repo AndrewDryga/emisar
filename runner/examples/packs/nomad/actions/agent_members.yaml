@@ -7,7 +7,7 @@ description: Serf gossip pool members.
 side_effects: ["One API call.", "Read-only."]
 args: []
 execution:
-  command: {binary: /usr/bin/nomad, argv: ["server", "members", "-detailed"]}
+  command: {binary: nomad, argv: ["server", "members", "-detailed"]}
   timeout: 15s
 output:
   parser: text

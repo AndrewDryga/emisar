@@ -15,7 +15,7 @@ args:
     validation:
       pattern: "^[a-zA-Z0-9_.+\\-]{1,128}$"
 execution:
-  command: {binary: /usr/bin/dnf, argv: ["remove", "-y", "{{ args.package }}"]}
+  command: {binary: dnf, argv: ["remove", "-y", "{{ args.package }}"]}
   timeout: 10m
 output:
   parser: text

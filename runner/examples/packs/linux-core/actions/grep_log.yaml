@@ -47,7 +47,7 @@ args:
 
 execution:
   command:
-    binary: /bin/grep
+    binary: grep
     # -m N (short form) is accepted by both GNU and BusyBox grep; the
     # long form --max-count= is GNU-only and breaks on Alpine hosts.
     argv:

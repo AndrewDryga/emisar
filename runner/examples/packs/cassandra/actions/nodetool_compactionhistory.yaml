@@ -7,7 +7,7 @@ description: Last few compactions with bytes-in/out, duration, and dropped tombs
 side_effects: ["One JMX call.", "Read-only."]
 args: []
 execution:
-  command: {binary: /usr/bin/nodetool, argv: ["compactionhistory"]}
+  command: {binary: nodetool, argv: ["compactionhistory"]}
   timeout: 60s
 output:
   parser: text

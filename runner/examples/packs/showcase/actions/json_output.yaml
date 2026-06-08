@@ -31,7 +31,7 @@ args:
 
 execution:
   command:
-    binary: /bin/echo
+    binary: echo
     # /bin/echo emits a one-line JSON payload that includes a fake
     # session token to demonstrate the action-local redaction rule.
     argv:

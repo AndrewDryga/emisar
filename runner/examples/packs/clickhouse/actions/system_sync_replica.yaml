@@ -19,7 +19,7 @@ args:
       pattern: "^[a-zA-Z0-9_]{1,64}\\.[a-zA-Z0-9_]{1,128}$"
 execution:
   command:
-    binary: /usr/bin/clickhouse-client
+    binary: clickhouse-client
     argv: ["--query", "SYSTEM SYNC REPLICA {{ args.table }}"]
   timeout: 600s
 cancel_grace: 30s

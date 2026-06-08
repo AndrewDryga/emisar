@@ -21,7 +21,7 @@ args:
       pattern: "^[a-zA-Z0-9@_\\-.]{1,128}$"
 execution:
   command:
-    binary: /usr/bin/systemctl
+    binary: systemctl
     argv: ["restart", "{{ args.unit }}"]
   timeout: 120s
 cancel_grace: 30s

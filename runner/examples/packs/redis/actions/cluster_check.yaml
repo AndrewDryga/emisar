@@ -28,7 +28,7 @@ args:
       max: 65535
 execution:
   command:
-    binary: /usr/bin/redis-cli
+    binary: redis-cli
     argv: ["--cluster", "check", "{{ args.host }}:{{ args.port }}"]
   timeout: 60s
 output:

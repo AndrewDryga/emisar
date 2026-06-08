@@ -10,7 +10,7 @@ side_effects:
 args: []
 execution:
   command:
-    binary: /usr/bin/mysql
+    binary: mysql
     argv:
       - "-e"
       - "SELECT user, host, plugin, account_locked, password_last_changed FROM mysql.user ORDER BY user, host"

@@ -19,7 +19,7 @@ args: []
 
 execution:
   command:
-    binary: /usr/bin/lscpu
+    binary: lscpu
     argv: []
   timeout: 10s
 

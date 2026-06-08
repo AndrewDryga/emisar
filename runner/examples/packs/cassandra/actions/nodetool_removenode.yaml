@@ -16,7 +16,7 @@ args:
     validation:
       pattern: "^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$"
 execution:
-  command: {binary: /usr/bin/nodetool, argv: ["removenode", "{{ args.host_id }}"]}
+  command: {binary: nodetool, argv: ["removenode", "{{ args.host_id }}"]}
   timeout: 24h
 cancel_grace: 10m
 output:

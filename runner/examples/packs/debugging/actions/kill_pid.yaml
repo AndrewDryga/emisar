@@ -36,7 +36,7 @@ args:
         - SIGQUIT
 execution:
   command:
-    binary: /bin/kill
+    binary: kill
     argv: ["-s", "{{ args.signal }}", "{{ args.pid }}"]
   timeout: 10s
 output:

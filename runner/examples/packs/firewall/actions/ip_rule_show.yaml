@@ -10,7 +10,7 @@ side_effects:
 args: []
 execution:
   command:
-    binary: /sbin/ip
+    binary: ip
     argv: ["rule", "show"]
   timeout: 15s
 output:

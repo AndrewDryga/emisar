@@ -20,7 +20,7 @@ args: []
 
 execution:
   command:
-    binary: /usr/sbin/nginx
+    binary: nginx
     argv:
       - "-s"
       - "reload"

@@ -16,7 +16,7 @@ args:
       min: 0
       max: 10000
 execution:
-  command: {binary: /usr/bin/nodetool, argv: ["setcompactionthroughput", "{{ args.mb_per_sec }}"]}
+  command: {binary: nodetool, argv: ["setcompactionthroughput", "{{ args.mb_per_sec }}"]}
   timeout: 15s
 output:
   parser: text

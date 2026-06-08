@@ -21,7 +21,7 @@ args:
       max: 10000
 execution:
   command:
-    binary: /bin/journalctl
+    binary: journalctl
     argv:
       - "-u"
       - "cloud-init"

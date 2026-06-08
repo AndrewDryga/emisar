@@ -11,7 +11,7 @@ side_effects:
   - Can take many hours on big datasets.
 args: []
 execution:
-  command: {binary: /usr/bin/nodetool, argv: ["decommission"]}
+  command: {binary: nodetool, argv: ["decommission"]}
   timeout: 24h
 cancel_grace: 10m
 output:

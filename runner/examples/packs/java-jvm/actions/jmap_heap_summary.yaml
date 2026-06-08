@@ -17,7 +17,7 @@ args:
       max: 4194304
 execution:
   command:
-    binary: /usr/bin/jmap
+    binary: jmap
     argv: ["-heap", "{{ args.pid }}"]
   timeout: 30s
 output:

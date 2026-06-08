@@ -20,7 +20,7 @@ args:
       pattern: "^https?://[a-zA-Z0-9._:\\-]{1,253}(:[0-9]{1,5})?$"
 execution:
   command:
-    binary: /usr/bin/curl
+    binary: curl
     argv: ["-sSfX", "POST", "{{ args.target }}/api/v1/admin/tsdb/clean_tombstones"]
   timeout: 120s
 output:

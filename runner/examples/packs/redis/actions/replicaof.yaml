@@ -27,7 +27,7 @@ args:
       pattern: "^([1-9][0-9]{0,4}|ONE)$"
 execution:
   command:
-    binary: /usr/bin/redis-cli
+    binary: redis-cli
     argv: ["REPLICAOF", "{{ args.host }}", "{{ args.port }}"]
   timeout: 15s
 output:

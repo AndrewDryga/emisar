@@ -27,7 +27,7 @@ args:
       pattern: "^[a-zA-Z0-9_:.,\\-/= ]{1,256}$"
 execution:
   command:
-    binary: /usr/sbin/sysctl
+    binary: sysctl
     argv: ["-w", "{{ args.key }}={{ args.value }}"]
   timeout: 10s
 output:

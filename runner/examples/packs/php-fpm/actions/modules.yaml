@@ -7,7 +7,7 @@ description: All loaded extensions.
 side_effects: ["One forked process.", "Read-only."]
 args: []
 execution:
-  command: {binary: /usr/bin/php, argv: ["-m"]}
+  command: {binary: php, argv: ["-m"]}
   timeout: 15s
 output:
   parser: text

@@ -7,7 +7,7 @@ description: Disk usage by images / containers / volumes.
 side_effects: ["One CLI call.", "Read-only."]
 args: []
 execution:
-  command: {binary: /usr/bin/podman, argv: ["system", "df"]}
+  command: {binary: podman, argv: ["system", "df"]}
   timeout: 30s
 output:
   parser: text

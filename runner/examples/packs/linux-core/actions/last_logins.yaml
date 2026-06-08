@@ -25,7 +25,7 @@ args:
 
 execution:
   command:
-    binary: /usr/bin/last
+    binary: last
     argv:
       - "-F"
       - "-n"

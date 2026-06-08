@@ -2,7 +2,7 @@ schema_version: 1
 
 id: bind
 name: BIND DNS server
-version: 0.1.3
+version: 0.1.4
 description: >
   Authoritative/recursive BIND ops: rndc status + stats, zone validation,
   cache inspection, local resolution probes, plus narrow operator actions

@@ -2,7 +2,7 @@ schema_version: 1
 
 id: network-tls
 name: Network + TLS diagnostics
-version: 0.1.1
+version: 0.1.2
 description: >
   DNS lookups, reachability probes, TLS certificate inspection, and
   HTTP timing tests. All read-only. Use for "is X reachable?" and

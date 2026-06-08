@@ -19,7 +19,7 @@ args:
       pattern: "^[A-Za-z0-9_:.\\-*?{}@#/=+]{1,256}$"
 execution:
   command:
-    binary: /usr/bin/redis-cli
+    binary: redis-cli
     argv: ["PUBSUB", "CHANNELS", "{{ args.pattern }}"]
   timeout: 10s
 output:

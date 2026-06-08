@@ -7,7 +7,7 @@ description: Verifies every installed file's checksum / size / perms against the
 side_effects: ["Reads every package's files for verification — IO-heavy.", "Read-only."]
 args: []
 execution:
-  command: {binary: /usr/bin/rpm, argv: ["-Va"]}
+  command: {binary: rpm, argv: ["-Va"]}
   timeout: 30m
 output:
   parser: text

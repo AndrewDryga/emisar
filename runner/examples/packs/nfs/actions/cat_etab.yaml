@@ -7,7 +7,7 @@ description: Effective export table (what kernel actually serves).
 side_effects: ["One file read.", "Read-only."]
 args: []
 execution:
-  command: {binary: /bin/cat, argv: ["/var/lib/nfs/etab"]}
+  command: {binary: cat, argv: ["/var/lib/nfs/etab"]}
   timeout: 15s
 output:
   parser: text

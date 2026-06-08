@@ -7,7 +7,7 @@ description: Podman binary + API + runtime versions.
 side_effects: ["One CLI call.", "Read-only."]
 args: []
 execution:
-  command: {binary: /usr/bin/podman, argv: ["version", "--format", "json"]}
+  command: {binary: podman, argv: ["version", "--format", "json"]}
   timeout: 15s
 output:
   parser: json

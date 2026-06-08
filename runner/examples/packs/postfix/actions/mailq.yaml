@@ -7,7 +7,7 @@ description: Postfix mail queue — pending, deferred, hold counts.
 side_effects: ["One mailq call.", "Read-only."]
 args: []
 execution:
-  command: {binary: /usr/bin/mailq, argv: []}
+  command: {binary: mailq, argv: []}
   timeout: 30s
 output:
   parser: text

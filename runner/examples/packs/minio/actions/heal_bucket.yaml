@@ -26,7 +26,7 @@ args:
       pattern: "^[a-z0-9.\\-]{3,63}$"
 execution:
   command:
-    binary: /usr/local/bin/mc
+    binary: mc
     argv: ["admin", "heal", "-r", "{{ args.alias }}/{{ args.bucket }}"]
   timeout: 3600s
 cancel_grace: 60s

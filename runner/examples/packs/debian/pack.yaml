@@ -2,7 +2,7 @@ schema_version: 1
 
 id: debian
 name: Debian/Ubuntu package operations
-version: 0.1.1
+version: 0.1.2
 description: >
   Operator pack for Debian/Ubuntu hosts. Read-only inventory and
   patching diagnostics, plus narrow apt install/remove actions for a

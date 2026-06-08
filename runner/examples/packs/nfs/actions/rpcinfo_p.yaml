@@ -7,7 +7,7 @@ description: RPC services registered with rpcbind.
 side_effects: ["One rpcbind query.", "Read-only."]
 args: []
 execution:
-  command: {binary: /usr/sbin/rpcinfo, argv: ["-p"]}
+  command: {binary: rpcinfo, argv: ["-p"]}
   timeout: 15s
 output:
   parser: text

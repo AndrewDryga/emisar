@@ -14,7 +14,7 @@ side_effects:
 args: []
 execution:
   command:
-    binary: /usr/sbin/rabbitmqctl
+    binary: rabbitmqctl
     argv: ["stop_app"]
   timeout: 60s
 cancel_grace: 30s

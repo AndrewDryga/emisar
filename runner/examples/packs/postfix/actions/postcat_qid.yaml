@@ -14,7 +14,7 @@ args:
       pattern: "^[A-F0-9]{6,20}$"
 execution:
   command:
-    binary: /usr/sbin/postcat
+    binary: postcat
     argv: ["-q", "{{ args.queue_id }}"]
   timeout: 30s
 output:

@@ -10,7 +10,7 @@ side_effects:
 args: []
 execution:
   command:
-    binary: /usr/sbin/nft
+    binary: nft
     argv: ["list", "ruleset"]
   timeout: 30s
 output:

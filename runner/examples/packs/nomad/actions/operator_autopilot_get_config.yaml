@@ -7,7 +7,7 @@ description: Autopilot configuration (dead-server cleanup, redundancy zones, ser
 side_effects: ["One API call.", "Read-only."]
 args: []
 execution:
-  command: {binary: /usr/bin/nomad, argv: ["operator", "autopilot", "get-config"]}
+  command: {binary: nomad, argv: ["operator", "autopilot", "get-config"]}
   timeout: 15s
 output:
   parser: text

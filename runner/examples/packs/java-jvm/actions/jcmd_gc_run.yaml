@@ -21,7 +21,7 @@ args:
       max: 4194304
 execution:
   command:
-    binary: /usr/bin/jcmd
+    binary: jcmd
     argv: ["{{ args.pid }}", "GC.run"]
   timeout: 60s
 cancel_grace: 30s

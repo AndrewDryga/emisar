@@ -7,7 +7,7 @@ description: All local images.
 side_effects: ["One CLI call.", "Read-only."]
 args: []
 execution:
-  command: {binary: /usr/bin/podman, argv: ["images", "--format", "json"]}
+  command: {binary: podman, argv: ["images", "--format", "json"]}
   timeout: 30s
 output:
   parser: json

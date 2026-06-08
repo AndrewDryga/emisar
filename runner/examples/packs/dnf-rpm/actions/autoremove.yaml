@@ -15,7 +15,7 @@ side_effects:
 args: []
 execution:
   command:
-    binary: /usr/bin/dnf
+    binary: dnf
     argv: ["autoremove", "-y"]
   timeout: 600s
 cancel_grace: 60s

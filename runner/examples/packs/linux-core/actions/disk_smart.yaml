@@ -26,7 +26,7 @@ args:
 
 execution:
   command:
-    binary: /usr/sbin/smartctl
+    binary: smartctl
     argv:
       - "-H"
       - "-A"

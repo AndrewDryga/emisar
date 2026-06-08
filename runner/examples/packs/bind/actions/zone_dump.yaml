@@ -14,7 +14,7 @@ args:
       pattern: "^[a-zA-Z0-9.\\-]{1,253}$"
 execution:
   command:
-    binary: /usr/bin/dig
+    binary: dig
     argv: ["@127.0.0.1", "{{ args.zone }}", "AXFR"]
   timeout: 60s
 output:

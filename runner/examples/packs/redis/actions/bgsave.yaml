@@ -14,7 +14,7 @@ side_effects:
 args: []
 execution:
   command:
-    binary: /usr/bin/redis-cli
+    binary: redis-cli
     argv: ["BGSAVE"]
   timeout: 15s
 output:

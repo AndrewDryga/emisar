@@ -9,7 +9,7 @@ side_effects:
   - Next operation downloads fresh metadata (one-time slowdown).
 args: []
 execution:
-  command: {binary: /usr/bin/dnf, argv: ["clean", "metadata"]}
+  command: {binary: dnf, argv: ["clean", "metadata"]}
   timeout: 60s
 output:
   parser: text

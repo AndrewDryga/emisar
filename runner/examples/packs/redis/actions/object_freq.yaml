@@ -19,7 +19,7 @@ args:
       pattern: "^[A-Za-z0-9_:.\\-{}@#/=+]{1,512}$"
 execution:
   command:
-    binary: /usr/bin/redis-cli
+    binary: redis-cli
     argv: ["OBJECT", "FREQ", "{{ args.key }}"]
   timeout: 5s
 output:

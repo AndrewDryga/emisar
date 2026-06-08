@@ -18,7 +18,7 @@ args:
       pattern: "^(SELECT|select|WITH|with)[^;]{1,1000}$"
 execution:
   command:
-    binary: /usr/bin/psql
+    binary: psql
     argv:
       - "-XAt"
       - "-c"

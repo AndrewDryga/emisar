@@ -17,7 +17,7 @@ args:
       max: 4194304
 execution:
   command:
-    binary: /usr/bin/jstat
+    binary: jstat
     argv: ["-gc", "{{ args.pid }}", "1s", "10"]
   timeout: 30s
 output:

@@ -7,7 +7,7 @@ description: Coordinator-side read/write latency histograms — what clients act
 side_effects: ["One JMX call.", "Read-only."]
 args: []
 execution:
-  command: {binary: /usr/bin/nodetool, argv: ["proxyhistograms"]}
+  command: {binary: nodetool, argv: ["proxyhistograms"]}
   timeout: 30s
 output:
   parser: text

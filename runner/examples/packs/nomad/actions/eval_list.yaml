@@ -7,7 +7,7 @@ description: All recent evaluations across the cluster.
 side_effects: ["One API call.", "Read-only."]
 args: []
 execution:
-  command: {binary: /usr/bin/nomad, argv: ["eval", "list", "-verbose"]}
+  command: {binary: nomad, argv: ["eval", "list", "-verbose"]}
   timeout: 30s
 output:
   parser: text

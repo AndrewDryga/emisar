@@ -14,7 +14,7 @@ side_effects:
 args: []
 execution:
   command:
-    binary: /usr/bin/cloud-init
+    binary: cloud-init
     argv: ["init", "--local"]
   timeout: 300s
 cancel_grace: 30s

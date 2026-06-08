@@ -15,7 +15,7 @@ args:
     validation:
       pattern: "^[a-fA-F0-9\\-]{4,36}$"
 execution:
-  command: {binary: /usr/bin/nomad, argv: ["alloc", "stop", "{{ args.alloc_id }}"]}
+  command: {binary: nomad, argv: ["alloc", "stop", "{{ args.alloc_id }}"]}
   timeout: 60s
 output:
   parser: text

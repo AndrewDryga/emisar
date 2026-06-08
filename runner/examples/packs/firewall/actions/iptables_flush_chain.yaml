@@ -21,7 +21,7 @@ args:
       pattern: "^[A-Z][A-Z0-9_\\-]{0,31}$"
 execution:
   command:
-    binary: /usr/sbin/iptables
+    binary: iptables
     argv: ["-F", "{{ args.chain }}"]
   timeout: 15s
 cancel_grace: 5s

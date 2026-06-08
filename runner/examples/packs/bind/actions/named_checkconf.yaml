@@ -7,7 +7,7 @@ description: Validates named.conf syntax. Run before any rndc reload.
 side_effects: ["Reads named.conf.", "Read-only."]
 args: []
 execution:
-  command: {binary: /usr/sbin/named-checkconf, argv: []}
+  command: {binary: named-checkconf, argv: []}
   timeout: 15s
 output:
   parser: text

@@ -7,7 +7,7 @@ description: Validates Postfix configuration files.
 side_effects: ["Reads main.cf + master.cf.", "Read-only."]
 args: []
 execution:
-  command: {binary: /usr/sbin/postfix, argv: ["check"]}
+  command: {binary: postfix, argv: ["check"]}
   timeout: 15s
 output:
   parser: text

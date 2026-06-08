@@ -9,7 +9,7 @@ side_effects:
   - Brief stall possible on existing NFS clients.
 args: []
 execution:
-  command: {binary: /usr/sbin/exportfs, argv: ["-r"]}
+  command: {binary: exportfs, argv: ["-r"]}
   timeout: 30s
 output:
   parser: text

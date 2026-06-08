@@ -16,7 +16,7 @@ args:
       pattern: "^[a-zA-Z0-9@:_.\\-]{1,128}$"
 execution:
   command:
-    binary: /bin/systemctl
+    binary: systemctl
     argv: ["show", "{{ args.unit }}", "--no-pager"]
   timeout: 10s
 output:

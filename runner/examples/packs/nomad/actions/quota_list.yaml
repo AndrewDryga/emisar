@@ -7,7 +7,7 @@ description: Resource quotas (Enterprise feature).
 side_effects: ["One API call.", "Read-only."]
 args: []
 execution:
-  command: {binary: /usr/bin/nomad, argv: ["quota", "list"]}
+  command: {binary: nomad, argv: ["quota", "list"]}
   timeout: 15s
 output:
   parser: text

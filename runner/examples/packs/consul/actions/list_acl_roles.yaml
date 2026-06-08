@@ -7,7 +7,7 @@ description: All ACL roles (groups of policies).
 side_effects: ["One ACL request.", "Read-only."]
 args: []
 execution:
-  command: {binary: /usr/bin/consul, argv: ["acl", "role", "list"]}
+  command: {binary: consul, argv: ["acl", "role", "list"]}
   timeout: 15s
 output:
   parser: text

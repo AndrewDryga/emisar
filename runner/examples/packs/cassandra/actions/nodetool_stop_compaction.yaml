@@ -15,7 +15,7 @@ args:
     validation:
       enum: ["COMPACTION", "VALIDATION", "CLEANUP", "SCRUB", "VERIFY", "INDEX_BUILD", "VIEW_BUILD", "ANTICOMPACTION"]
 execution:
-  command: {binary: /usr/bin/nodetool, argv: ["stop", "{{ args.operation }}"]}
+  command: {binary: nodetool, argv: ["stop", "{{ args.operation }}"]}
   timeout: 30s
 output:
   parser: text

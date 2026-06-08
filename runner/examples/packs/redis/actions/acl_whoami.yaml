@@ -12,7 +12,7 @@ side_effects:
 args: []
 execution:
   command:
-    binary: /usr/bin/redis-cli
+    binary: redis-cli
     argv: ["ACL", "WHOAMI"]
   timeout: 5s
 output:

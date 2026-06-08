@@ -29,7 +29,7 @@ args:
       max: 10000
 execution:
   command:
-    binary: /usr/bin/nomad
+    binary: nomad
     argv: ["job", "scale", "{{ args.job }}", "{{ args.group }}", "{{ args.count }}"]
   timeout: 5m
 output:

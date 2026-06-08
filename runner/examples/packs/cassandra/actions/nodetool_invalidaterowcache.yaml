@@ -7,7 +7,7 @@ description: Drops the row cache.
 side_effects: ["Row cache cleared.", "Next reads pay cold-cache cost."]
 args: []
 execution:
-  command: {binary: /usr/bin/nodetool, argv: ["invalidaterowcache"]}
+  command: {binary: nodetool, argv: ["invalidaterowcache"]}
   timeout: 15s
 output:
   parser: text

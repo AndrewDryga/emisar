@@ -35,7 +35,7 @@ args:
       max: 10000
 execution:
   command:
-    binary: /usr/bin/redis-cli
+    binary: redis-cli
     argv: ["SCAN", "{{ args.cursor }}", "MATCH", "{{ args.match }}", "COUNT", "{{ args.count }}"]
   timeout: 30s
 output:

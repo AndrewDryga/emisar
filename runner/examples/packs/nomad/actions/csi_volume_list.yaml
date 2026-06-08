@@ -7,7 +7,7 @@ description: All registered CSI volumes with claim count + state.
 side_effects: ["One API call.", "Read-only."]
 args: []
 execution:
-  command: {binary: /usr/bin/nomad, argv: ["volume", "status"]}
+  command: {binary: nomad, argv: ["volume", "status"]}
   timeout: 30s
 output:
   parser: text

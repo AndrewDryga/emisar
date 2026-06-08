@@ -7,7 +7,7 @@ description: Daemon version.
 side_effects: ["One fail2ban call.", "Read-only."]
 args: []
 execution:
-  command: {binary: /usr/bin/fail2ban-client, argv: ["version"]}
+  command: {binary: fail2ban-client, argv: ["version"]}
   timeout: 15s
 output:
   parser: text

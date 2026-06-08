@@ -7,7 +7,7 @@ description: One-shot CPU/mem/net/io stats for all containers.
 side_effects: ["One CLI call.", "Read-only."]
 args: []
 execution:
-  command: {binary: /usr/bin/podman, argv: ["stats", "--no-stream", "--format", "json"]}
+  command: {binary: podman, argv: ["stats", "--no-stream", "--format", "json"]}
   timeout: 30s
 output:
   parser: json

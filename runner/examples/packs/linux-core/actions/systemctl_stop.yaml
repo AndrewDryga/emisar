@@ -24,7 +24,7 @@ args:
 
 execution:
   command:
-    binary: /bin/systemctl
+    binary: systemctl
     argv:
       - "stop"
       - "--no-block"

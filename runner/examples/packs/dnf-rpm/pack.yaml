@@ -2,7 +2,7 @@ schema_version: 1
 
 id: dnf-rpm
 name: RHEL/Fedora package ops
-version: 0.1.3
+version: 0.1.4
 description: >
   Counterpart to the `debian` pack for RHEL/CentOS/Fedora/Alma/Rocky:
   rpm inventory, dnf check-update, narrow install/remove actions for a

@@ -16,7 +16,7 @@ args:
       pattern: "^/[a-zA-Z0-9_./\\-]{0,512}$"
 execution:
   command:
-    binary: /usr/bin/stat
+    binary: stat
     argv:
       - "{{ args.path }}"
   timeout: 15s

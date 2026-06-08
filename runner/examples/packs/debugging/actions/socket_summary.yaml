@@ -18,7 +18,7 @@ args: []
 
 execution:
   command:
-    binary: /usr/bin/ss
+    binary: ss
     argv:
       - "-s"
   timeout: 5s

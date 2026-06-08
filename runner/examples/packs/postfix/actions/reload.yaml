@@ -12,7 +12,7 @@ side_effects:
 args: []
 execution:
   command:
-    binary: /usr/sbin/postfix
+    binary: postfix
     argv: ["reload"]
   timeout: 30s
 output:

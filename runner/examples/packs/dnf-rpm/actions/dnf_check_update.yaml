@@ -7,7 +7,7 @@ description: Available updates. Exits 100 if updates available — non-zero IS t
 side_effects: ["Refreshes metadata cache from configured repos.", "Read-only — no install."]
 args: []
 execution:
-  command: {binary: /usr/bin/dnf, argv: ["check-update"]}
+  command: {binary: dnf, argv: ["check-update"]}
   timeout: 5m
 output:
   parser: text

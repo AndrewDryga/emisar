@@ -14,7 +14,7 @@ args:
       pattern: "^[a-zA-Z0-9.\\-]{1,253}$"
 execution:
   command:
-    binary: /usr/sbin/rndc
+    binary: rndc
     argv: ["thaw", "{{ args.zone }}"]
   timeout: 15s
 output:

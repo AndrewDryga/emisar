@@ -19,7 +19,7 @@ args: []
 
 execution:
   command:
-    binary: /usr/bin/nodetool
+    binary: nodetool
     argv:
       - "compactionstats"
   timeout: 30s

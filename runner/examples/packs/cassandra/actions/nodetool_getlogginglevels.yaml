@@ -7,7 +7,7 @@ description: Current per-logger levels.
 side_effects: ["One JMX call.", "Read-only."]
 args: []
 execution:
-  command: {binary: /usr/bin/nodetool, argv: ["getlogginglevels"]}
+  command: {binary: nodetool, argv: ["getlogginglevels"]}
   timeout: 15s
 output:
   parser: text

@@ -28,7 +28,7 @@ args:
       max: 15
 execution:
   command:
-    binary: /usr/bin/redis-cli
+    binary: redis-cli
     argv: ["SWAPDB", "{{ args.i }}", "{{ args.j }}"]
   timeout: 10s
 output:

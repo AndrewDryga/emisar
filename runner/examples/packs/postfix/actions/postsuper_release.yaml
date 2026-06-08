@@ -18,7 +18,7 @@ args:
       pattern: "^[A-F0-9]{8,20}$"
 execution:
   command:
-    binary: /usr/sbin/postsuper
+    binary: postsuper
     argv: ["-H", "{{ args.qid }}"]
   timeout: 15s
 output:

@@ -9,7 +9,7 @@ side_effects:
   - Next reads must do bloom-filter + summary + index lookups.
 args: []
 execution:
-  command: {binary: /usr/bin/nodetool, argv: ["invalidatekeycache"]}
+  command: {binary: nodetool, argv: ["invalidatekeycache"]}
   timeout: 15s
 output:
   parser: text

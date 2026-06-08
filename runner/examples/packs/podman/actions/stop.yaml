@@ -15,7 +15,7 @@ args:
     validation:
       pattern: "^[a-zA-Z0-9_.\\-]{1,64}$"
 execution:
-  command: {binary: /usr/bin/podman, argv: ["stop", "{{ args.container }}"]}
+  command: {binary: podman, argv: ["stop", "{{ args.container }}"]}
   timeout: 2m
 output:
   parser: text

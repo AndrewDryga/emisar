@@ -10,7 +10,7 @@ side_effects:
 args: []
 execution:
   command:
-    binary: /usr/bin/mysql
+    binary: mysql
     argv: ["-e", "SHOW OPEN TABLES"]
   timeout: 15s
 output:

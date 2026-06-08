@@ -22,7 +22,7 @@ args:
         - ASYNC
 execution:
   command:
-    binary: /usr/bin/redis-cli
+    binary: redis-cli
     argv: ["FLUSHALL", "{{ args.mode }}"]
   timeout: 60s
 cancel_grace: 10s

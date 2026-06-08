@@ -10,7 +10,7 @@ side_effects:
   - Bind address, encryption keys, etc., remain at boot values.
 args: []
 execution:
-  command: {binary: /usr/bin/consul, argv: ["reload"]}
+  command: {binary: consul, argv: ["reload"]}
   timeout: 30s
 output:
   parser: text

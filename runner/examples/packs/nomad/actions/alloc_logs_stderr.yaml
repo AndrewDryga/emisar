@@ -28,7 +28,7 @@ args:
       max: 10000
 execution:
   command:
-    binary: /usr/bin/nomad
+    binary: nomad
     argv: ["alloc", "logs", "-stderr", "-tail", "-n", "{{ args.tail }}", "{{ args.alloc_id }}", "{{ args.task }}"]
   timeout: 30s
 output:

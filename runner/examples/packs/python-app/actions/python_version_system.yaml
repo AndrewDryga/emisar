@@ -7,7 +7,7 @@ description: System python interpreter version.
 side_effects: ["One forked process.", "Read-only."]
 args: []
 execution:
-  command: {binary: /usr/bin/python3, argv: ["--version"]}
+  command: {binary: python3, argv: ["--version"]}
   timeout: 15s
 output:
   parser: text

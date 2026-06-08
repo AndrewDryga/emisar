@@ -7,7 +7,7 @@ description: Recent dnf transactions (installs / removes / updates).
 side_effects: ["One dnf history read.", "Read-only."]
 args: []
 execution:
-  command: {binary: /usr/bin/dnf, argv: ["history"]}
+  command: {binary: dnf, argv: ["history"]}
   timeout: 30s
 output:
   parser: text

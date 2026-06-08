@@ -7,7 +7,7 @@ description: 'Raft peer state — voter status, suffrage, address.'
 side_effects: ["One API call.", "Read-only."]
 args: []
 execution:
-  command: {binary: /usr/bin/nomad, argv: ["operator", "raft", "list-peers"]}
+  command: {binary: nomad, argv: ["operator", "raft", "list-peers"]}
   timeout: 15s
 output:
   parser: text

@@ -23,7 +23,7 @@ args:
       pattern: "^[a-zA-Z_][a-zA-Z0-9_]{0,62}$"
 execution:
   command:
-    binary: /usr/bin/psql
+    binary: psql
     argv:
       - "-XAt"
       - "-c"

@@ -21,7 +21,7 @@ args:
       enum: ["A", "AAAA", "MX", "NS", "TXT", "CNAME", "SOA", "PTR", "SRV", "CAA", "ANY"]
 execution:
   command:
-    binary: /usr/bin/dig
+    binary: dig
     argv: ["@127.0.0.1", "{{ args.name }}", "{{ args.type }}", "+short"]
   timeout: 15s
 output:

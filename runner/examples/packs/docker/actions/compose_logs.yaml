@@ -30,7 +30,7 @@ args:
       max: 5000
 execution:
   command:
-    binary: /usr/bin/docker
+    binary: docker
     argv:
       - "compose"
       - "-f"

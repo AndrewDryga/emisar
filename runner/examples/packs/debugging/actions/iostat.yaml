@@ -28,7 +28,7 @@ args:
 
 execution:
   command:
-    binary: /usr/bin/iostat
+    binary: iostat
     argv:
       - "-xz"
       - "1"

@@ -23,7 +23,7 @@ args:
       pattern: "^[a-zA-Z_][a-zA-Z0-9_]{0,63}$"
 execution:
   command:
-    binary: /usr/bin/mysql
+    binary: mysql
     argv:
       - "-e"
       - "OPTIMIZE TABLE `{{ args.database }}`.`{{ args.table }}`"

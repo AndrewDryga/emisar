@@ -7,7 +7,7 @@ description: Current concurrent_compactors setting.
 side_effects: ["One JMX call.", "Read-only."]
 args: []
 execution:
-  command: {binary: /usr/bin/nodetool, argv: ["getconcurrentcompactors"]}
+  command: {binary: nodetool, argv: ["getconcurrentcompactors"]}
   timeout: 15s
 output:
   parser: text

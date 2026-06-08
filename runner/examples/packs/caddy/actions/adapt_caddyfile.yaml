@@ -15,7 +15,7 @@ args:
       pattern: "^/[a-zA-Z0-9_./\\-]{1,512}$"
 execution:
   command:
-    binary: /usr/bin/caddy
+    binary: caddy
     argv: ["adapt", "--config", "{{ args.file }}", "--pretty"]
   timeout: 30s
 output:

@@ -22,7 +22,7 @@ args:
       pattern: "^[a-fA-F0-9:.]{2,45}$"
 execution:
   command:
-    binary: /usr/bin/fail2ban-client
+    binary: fail2ban-client
     argv: ["set", "{{ args.jail }}", "unbanip", "{{ args.ip }}"]
   timeout: 15s
 output:

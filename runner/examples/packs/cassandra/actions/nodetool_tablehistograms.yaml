@@ -19,7 +19,7 @@ args:
     validation:
       pattern: "^[a-zA-Z][a-zA-Z0-9_]{0,47}$"
 execution:
-  command: {binary: /usr/bin/nodetool, argv: ["tablehistograms", "{{ args.keyspace }}", "{{ args.table }}"]}
+  command: {binary: nodetool, argv: ["tablehistograms", "{{ args.keyspace }}", "{{ args.table }}"]}
   timeout: 30s
 output:
   parser: text

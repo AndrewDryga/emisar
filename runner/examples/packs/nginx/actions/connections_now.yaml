@@ -18,7 +18,7 @@ args:
       pattern: "^https?://[a-zA-Z0-9.:/_\\-]+$"
 execution:
   command:
-    binary: /usr/bin/curl
+    binary: curl
     argv:
       - "-fsS"
       - "--max-time"

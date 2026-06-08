@@ -10,7 +10,7 @@ side_effects:
 args: []
 execution:
   command:
-    binary: /usr/bin/mysql
+    binary: mysql
     argv:
       - "-e"
       - "SELECT object_schema, object_name, count_read, count_write, ROUND(sum_timer_wait/1e9, 2) AS total_ms FROM performance_schema.table_io_waits_summary_by_table WHERE object_schema NOT IN ('mysql','performance_schema') ORDER BY sum_timer_wait DESC LIMIT 30;"

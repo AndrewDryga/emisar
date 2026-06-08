@@ -21,7 +21,7 @@ args: []
 
 execution:
   command:
-    binary: /usr/bin/apt-get
+    binary: apt-get
     argv:
       - "autoremove"
       - "-y"

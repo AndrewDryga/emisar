@@ -10,7 +10,7 @@ side_effects:
 args: []
 execution:
   command:
-    binary: /usr/bin/mysql
+    binary: mysql
     argv:
       - "-NBe"
       - "SELECT VERSION(); SHOW STATUS LIKE 'Uptime';"

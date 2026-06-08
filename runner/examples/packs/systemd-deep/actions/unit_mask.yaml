@@ -19,7 +19,7 @@ args:
       pattern: "^[a-zA-Z0-9@_\\-.]{1,128}$"
 execution:
   command:
-    binary: /usr/bin/systemctl
+    binary: systemctl
     argv: ["mask", "{{ args.unit }}"]
   timeout: 30s
 output:

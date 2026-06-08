@@ -32,7 +32,7 @@ args:
       max: 20
 execution:
   command:
-    binary: /usr/bin/find
+    binary: find
     argv:
       - "{{ args.path }}"
       - "-maxdepth"

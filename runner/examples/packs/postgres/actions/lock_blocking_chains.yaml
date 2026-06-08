@@ -8,7 +8,7 @@ side_effects: ["One SELECT joining pg_locks.", "Read-only."]
 args: []
 execution:
   command:
-    binary: /usr/bin/psql
+    binary: psql
     argv:
       - "-XAt"
       - "-c"

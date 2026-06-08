@@ -20,7 +20,7 @@ args:
       pattern: "^/[a-zA-Z0-9_./\\-]{1,512}$"
 execution:
   command:
-    binary: /usr/sbin/named-checkzone
+    binary: named-checkzone
     argv: ["{{ args.zone }}", "{{ args.file }}"]
   timeout: 30s
 output:

@@ -19,7 +19,7 @@ args:
       max: 4194304
 execution:
   command:
-    binary: /usr/bin/jmap
+    binary: jmap
     argv:
       - "-dump:live,format=b,file=/tmp/{{ args.pid }}-heap.hprof"
       - "{{ args.pid }}"

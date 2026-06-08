@@ -10,7 +10,7 @@ side_effects:
 args: []
 execution:
   command:
-    binary: /bin/journalctl
+    binary: journalctl
     argv: ["--disk-usage"]
   timeout: 10s
 output:

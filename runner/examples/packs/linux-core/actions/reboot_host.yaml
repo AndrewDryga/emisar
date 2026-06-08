@@ -27,7 +27,7 @@ args:
 
 execution:
   command:
-    binary: /sbin/shutdown
+    binary: shutdown
     argv:
       - "-r"
       - "+1"

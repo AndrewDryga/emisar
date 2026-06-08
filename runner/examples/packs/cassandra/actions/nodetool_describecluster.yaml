@@ -7,7 +7,7 @@ description: 'Cluster name, partitioner, snitch, and schema versions per host. S
 side_effects: ["One JMX call.", "Read-only."]
 args: []
 execution:
-  command: {binary: /usr/bin/nodetool, argv: ["describecluster"]}
+  command: {binary: nodetool, argv: ["describecluster"]}
   timeout: 30s
 output:
   parser: text

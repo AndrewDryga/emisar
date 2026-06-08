@@ -18,7 +18,7 @@ args:
     validation:
       pattern: "^/[a-zA-Z0-9_./\\-]{1,512}\\.snap$"
 execution:
-  command: {binary: /usr/bin/consul, argv: ["snapshot", "restore", "{{ args.path }}"]}
+  command: {binary: consul, argv: ["snapshot", "restore", "{{ args.path }}"]}
   timeout: 30m
 cancel_grace: 5m
 output:

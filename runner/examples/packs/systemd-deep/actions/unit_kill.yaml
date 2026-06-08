@@ -33,7 +33,7 @@ args:
         - SIGQUIT
 execution:
   command:
-    binary: /usr/bin/systemctl
+    binary: systemctl
     argv: ["kill", "-s", "{{ args.signal }}", "{{ args.unit }}"]
   timeout: 30s
 output:

@@ -30,7 +30,7 @@ args:
         - "once"
 execution:
   command:
-    binary: /usr/bin/cloud-init
+    binary: cloud-init
     argv: ["single", "--name={{ args.module }}", "--frequency={{ args.frequency }}"]
   timeout: 300s
 cancel_grace: 30s

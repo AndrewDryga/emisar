@@ -9,7 +9,7 @@ side_effects:
   - Frees Raft / state-store space.
 args: []
 execution:
-  command: {binary: /usr/bin/nomad, argv: ["system", "gc"]}
+  command: {binary: nomad, argv: ["system", "gc"]}
   timeout: 5m
 output:
   parser: text

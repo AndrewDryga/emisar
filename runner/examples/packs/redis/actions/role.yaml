@@ -14,7 +14,7 @@ side_effects:
 args: []
 execution:
   command:
-    binary: /usr/bin/redis-cli
+    binary: redis-cli
     argv: ["ROLE"]
   timeout: 5s
 output:

@@ -10,7 +10,7 @@ side_effects:
 args: []
 execution:
   command:
-    binary: /usr/bin/chronyc
+    binary: chronyc
     argv: ["tracking"]
   timeout: 15s
 output:

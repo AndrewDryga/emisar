@@ -10,7 +10,7 @@ side_effects:
 args: []
 execution:
   command:
-    binary: /usr/bin/docker
+    binary: docker
     argv: ["volume", "ls"]
   timeout: 10s
 output:

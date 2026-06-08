@@ -7,7 +7,7 @@ description: All jobs with type, priority, status, submit time.
 side_effects: ["One API call.", "Read-only."]
 args: []
 execution:
-  command: {binary: /usr/bin/nomad, argv: ["job", "status"]}
+  command: {binary: nomad, argv: ["job", "status"]}
   timeout: 30s
 output:
   parser: text

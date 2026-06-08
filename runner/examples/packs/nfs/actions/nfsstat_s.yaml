@@ -7,7 +7,7 @@ description: Server-side RPC + NFS op counts.
 side_effects: ["One nfsstat call.", "Read-only."]
 args: []
 execution:
-  command: {binary: /usr/sbin/nfsstat, argv: ["-s"]}
+  command: {binary: nfsstat, argv: ["-s"]}
   timeout: 15s
 output:
   parser: text

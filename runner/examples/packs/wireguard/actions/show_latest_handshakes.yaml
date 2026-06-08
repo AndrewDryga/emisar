@@ -7,7 +7,7 @@ description: Per-peer epoch of last handshake. 0 means never seen.
 side_effects: ["One netlink query.", "Read-only."]
 args: []
 execution:
-  command: {binary: /usr/bin/wg, argv: ["show", "all", "latest-handshakes"]}
+  command: {binary: wg, argv: ["show", "all", "latest-handshakes"]}
   timeout: 15s
 output:
   parser: text

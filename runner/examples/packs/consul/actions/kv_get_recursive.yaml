@@ -13,7 +13,7 @@ args:
     validation:
       pattern: "^[a-zA-Z0-9_./\\-]{1,256}$"
 execution:
-  command: {binary: /usr/bin/consul, argv: ["kv", "get", "-recurse", "{{ args.prefix }}"]}
+  command: {binary: consul, argv: ["kv", "get", "-recurse", "{{ args.prefix }}"]}
   timeout: 60s
 output:
   parser: text

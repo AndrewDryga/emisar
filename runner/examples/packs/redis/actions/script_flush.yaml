@@ -22,7 +22,7 @@ args:
         - ASYNC
 execution:
   command:
-    binary: /usr/bin/redis-cli
+    binary: redis-cli
     argv: ["SCRIPT", "FLUSH", "{{ args.mode }}"]
   timeout: 30s
 output:

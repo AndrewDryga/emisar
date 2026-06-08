@@ -15,7 +15,7 @@ side_effects:
 args: []
 execution:
   command:
-    binary: /usr/bin/vault
+    binary: vault
     argv: ["operator", "seal"]
   timeout: 30s
 output:

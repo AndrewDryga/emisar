@@ -7,7 +7,7 @@ description: Per-agent stats — runtime, raft, serf, vault, consul subsystems.
 side_effects: ["One API call.", "Read-only."]
 args: []
 execution:
-  command: {binary: /usr/bin/nomad, argv: ["agent-info"]}
+  command: {binary: nomad, argv: ["agent-info"]}
   timeout: 15s
 output:
   parser: text

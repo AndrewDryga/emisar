@@ -10,7 +10,7 @@ side_effects:
 args: []
 execution:
   command:
-    binary: /usr/bin/ntpq
+    binary: ntpq
     argv: ["-pn"]
   timeout: 15s
 output:

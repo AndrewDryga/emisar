@@ -63,7 +63,7 @@ args:
 
 execution:
   command:
-    binary: /usr/bin/journalctl
+    binary: journalctl
     argv:
       - "-u"
       - "{{ args.unit }}"

@@ -12,7 +12,7 @@ side_effects:
 args: []
 execution:
   command:
-    binary: /usr/sbin/rabbitmqctl
+    binary: rabbitmqctl
     argv: ["start_app"]
   timeout: 60s
 output:

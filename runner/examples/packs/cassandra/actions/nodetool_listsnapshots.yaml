@@ -7,7 +7,7 @@ description: All snapshots on this node with size + creation timestamp.
 side_effects: ["Reads disk metadata.", "Read-only."]
 args: []
 execution:
-  command: {binary: /usr/bin/nodetool, argv: ["listsnapshots"]}
+  command: {binary: nodetool, argv: ["listsnapshots"]}
   timeout: 60s
 output:
   parser: text

@@ -20,7 +20,7 @@ args:
       pattern: "^[a-zA-Z0-9_\\-]{1,64}$"
 execution:
   command:
-    binary: /usr/local/bin/mc
+    binary: mc
     argv: ["admin", "service", "restart", "{{ args.alias }}"]
   timeout: 600s
 cancel_grace: 60s

@@ -24,7 +24,7 @@ args:
       pattern: "^.{1,255}$"
 execution:
   command:
-    binary: /usr/bin/consul
+    binary: consul
     argv: ["maint", "-enable", "-service", "{{ args.service_id }}", "-reason", "{{ args.reason }}"]
   timeout: 15s
 output:

@@ -11,7 +11,7 @@ side_effects:
 args: []
 execution:
   command:
-    binary: /usr/bin/mysql
+    binary: mysql
     argv:
       - "-e"
       - "SELECT r.trx_id AS waiting_trx, r.trx_mysql_thread_id AS waiting_thread, r.trx_query AS waiting_query, b.trx_id AS blocking_trx, b.trx_mysql_thread_id AS blocking_thread, b.trx_query AS blocking_query FROM performance_schema.data_lock_waits w JOIN information_schema.innodb_trx r ON w.REQUESTING_ENGINE_TRANSACTION_ID = r.trx_id JOIN information_schema.innodb_trx b ON w.BLOCKING_ENGINE_TRANSACTION_ID = b.trx_id;"

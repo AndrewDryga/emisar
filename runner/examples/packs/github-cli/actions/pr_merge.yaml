@@ -32,7 +32,7 @@ args:
         - rebase
 execution:
   command:
-    binary: /usr/bin/gh
+    binary: gh
     argv: ["pr", "merge", "{{ args.pr }}", "--{{ args.method }}"]
   timeout: 60s
 output:

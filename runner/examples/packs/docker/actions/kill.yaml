@@ -24,7 +24,7 @@ args:
       enum: [KILL, TERM, HUP, USR1, USR2, INT, QUIT]
 execution:
   command:
-    binary: /usr/bin/docker
+    binary: docker
     argv:
       - "kill"
       - "--signal"

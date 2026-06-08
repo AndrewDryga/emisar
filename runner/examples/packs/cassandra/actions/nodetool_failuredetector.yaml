@@ -7,7 +7,7 @@ description: Phi accrual failure detector scores per peer. Phi > 8 ≈ marked do
 side_effects: ["One JMX call.", "Read-only."]
 args: []
 execution:
-  command: {binary: /usr/bin/nodetool, argv: ["failuredetector"]}
+  command: {binary: nodetool, argv: ["failuredetector"]}
   timeout: 30s
 output:
   parser: text

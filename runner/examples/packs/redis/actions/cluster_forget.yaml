@@ -21,7 +21,7 @@ args:
       pattern: "^[a-f0-9]{40}$"
 execution:
   command:
-    binary: /usr/bin/redis-cli
+    binary: redis-cli
     argv: ["CLUSTER", "FORGET", "{{ args.node_id }}"]
   timeout: 10s
 output:

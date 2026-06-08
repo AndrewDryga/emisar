@@ -13,7 +13,7 @@ args:
     validation:
       pattern: "^[a-zA-Z0-9_.+\\-]{1,128}$"
 execution:
-  command: {binary: /usr/bin/rpm, argv: ["-qi", "{{ args.package }}"]}
+  command: {binary: rpm, argv: ["-qi", "{{ args.package }}"]}
   timeout: 15s
 output:
   parser: text

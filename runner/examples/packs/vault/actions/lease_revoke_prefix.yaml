@@ -20,7 +20,7 @@ args:
       pattern: "^[a-zA-Z0-9_./\\-]{1,256}$"
 execution:
   command:
-    binary: /usr/bin/vault
+    binary: vault
     argv: ["lease", "revoke", "-prefix", "{{ args.prefix }}"]
   timeout: 120s
 cancel_grace: 30s

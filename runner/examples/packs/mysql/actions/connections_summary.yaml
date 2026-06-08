@@ -10,7 +10,7 @@ side_effects:
 args: []
 execution:
   command:
-    binary: /usr/bin/mysql
+    binary: mysql
     argv:
       - "-e"
       - "SHOW GLOBAL STATUS LIKE 'Threads_%'; SHOW GLOBAL VARIABLES LIKE 'max_connections'; SELECT SUBSTRING_INDEX(host, ':', 1) AS client, count(*) AS conns FROM information_schema.processlist GROUP BY client ORDER BY conns DESC;"

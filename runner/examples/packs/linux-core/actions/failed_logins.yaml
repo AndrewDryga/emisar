@@ -27,7 +27,7 @@ args:
 
 execution:
   command:
-    binary: /usr/bin/lastb
+    binary: lastb
     argv:
       - "-F"
       - "-n"

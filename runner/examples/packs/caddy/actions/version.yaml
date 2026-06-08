@@ -7,7 +7,7 @@ description: Caddy binary version + build info.
 side_effects: ["One forked process.", "Read-only."]
 args: []
 execution:
-  command: {binary: /usr/bin/caddy, argv: ["version"]}
+  command: {binary: caddy, argv: ["version"]}
   timeout: 15s
 output:
   parser: text

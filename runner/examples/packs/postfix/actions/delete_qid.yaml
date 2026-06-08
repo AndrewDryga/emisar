@@ -16,7 +16,7 @@ args:
       pattern: "^[A-F0-9]{6,20}$"
 execution:
   command:
-    binary: /usr/sbin/postsuper
+    binary: postsuper
     argv: ["-d", "{{ args.queue_id }}"]
   timeout: 30s
 output:

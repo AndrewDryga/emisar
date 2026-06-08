@@ -35,7 +35,7 @@ args:
 
 execution:
   command:
-    binary: /usr/bin/docker
+    binary: docker
     argv:
       - "restart"
       - "-t"

@@ -7,7 +7,7 @@ description: PHP version + SAPI + Zend Engine version.
 side_effects: ["One forked process.", "Read-only."]
 args: []
 execution:
-  command: {binary: /usr/bin/php, argv: ["-v"]}
+  command: {binary: php, argv: ["-v"]}
   timeout: 15s
 output:
   parser: text

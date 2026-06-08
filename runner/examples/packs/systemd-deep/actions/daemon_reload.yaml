@@ -13,7 +13,7 @@ side_effects:
 args: []
 execution:
   command:
-    binary: /usr/bin/systemctl
+    binary: systemctl
     argv: ["daemon-reload"]
   timeout: 30s
 output:

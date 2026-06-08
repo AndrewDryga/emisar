@@ -27,7 +27,7 @@ args:
       pattern: "^[a-zA-Z0-9_./\\-]{1,128}$"
 execution:
   command:
-    binary: /usr/bin/gh
+    binary: gh
     argv: ["workflow", "run", "{{ args.workflow }}", "--ref", "{{ args.ref }}"]
   timeout: 60s
 output:

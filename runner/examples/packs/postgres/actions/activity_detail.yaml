@@ -8,7 +8,7 @@ side_effects: ["One SELECT against pg_stat_activity.", "No locks."]
 args: []
 execution:
   command:
-    binary: /usr/bin/psql
+    binary: psql
     argv:
       - "-XAt"
       - "-c"

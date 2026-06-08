@@ -17,7 +17,7 @@ args:
       pattern: "^/[A-Za-z0-9._/-]{1,256}$"
 execution:
   command:
-    binary: /usr/bin/docker
+    binary: docker
     argv:
       - "compose"
       - "-f"

@@ -16,7 +16,7 @@ args:
       pattern: "^https?://[a-zA-Z0-9.:/_\\-?=&%+]{1,512}$"
 execution:
   command:
-    binary: /usr/bin/curl
+    binary: curl
     argv:
       - "-sIL"
       - "--max-time"

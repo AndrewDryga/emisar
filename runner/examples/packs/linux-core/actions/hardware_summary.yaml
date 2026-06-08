@@ -19,7 +19,7 @@ args: []
 
 execution:
   command:
-    binary: /usr/sbin/dmidecode
+    binary: dmidecode
     argv:
       - "-t"
       - "system"

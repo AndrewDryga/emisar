@@ -2,7 +2,7 @@ schema_version: 1
 
 id: ssl-local
 name: Local SSL/TLS cert inspection
-version: 0.1.1
+version: 0.1.2
 description: >
   Inspect TLS certificates and keys on the local filesystem — find PEMs
   under a path, dump x509 details, check chain, verify private-key match,

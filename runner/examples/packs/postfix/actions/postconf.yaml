@@ -7,7 +7,7 @@ description: Non-default Postfix config.
 side_effects: ["One postconf call.", "Read-only."]
 args: []
 execution:
-  command: {binary: /usr/sbin/postconf, argv: ["-n"]}
+  command: {binary: postconf, argv: ["-n"]}
   timeout: 15s
 output:
   parser: text

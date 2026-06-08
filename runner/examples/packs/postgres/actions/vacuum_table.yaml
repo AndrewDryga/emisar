@@ -28,7 +28,7 @@ args:
     description: Also run ANALYZE.
 execution:
   command:
-    binary: /usr/bin/psql
+    binary: psql
     argv:
       - "-XAt"
       - "-c"

@@ -22,7 +22,7 @@ args:
       max: 10000
 execution:
   command:
-    binary: /usr/bin/redis-cli
+    binary: redis-cli
     argv: ["CLIENT", "PAUSE", "{{ args.ms }}"]
   timeout: 30s
 output:

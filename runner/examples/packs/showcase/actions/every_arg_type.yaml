@@ -92,7 +92,7 @@ args:
 
 execution:
   command:
-    binary: /bin/echo
+    binary: echo
     argv:
       - "mode={{ args.mode }}"
       - "id_token={{ args.id_token }}"

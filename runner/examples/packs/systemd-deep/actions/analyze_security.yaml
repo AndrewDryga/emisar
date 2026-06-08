@@ -16,7 +16,7 @@ args:
       pattern: "^[a-zA-Z0-9@:_.\\-]{1,128}$"
 execution:
   command:
-    binary: /bin/systemd-analyze
+    binary: systemd-analyze
     argv: ["security", "{{ args.unit }}"]
   timeout: 15s
 output:

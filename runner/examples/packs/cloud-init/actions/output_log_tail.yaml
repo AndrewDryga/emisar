@@ -21,7 +21,7 @@ args:
       max: 10000
 execution:
   command:
-    binary: /usr/bin/tail
+    binary: tail
     argv: ["-n", "{{ args.lines }}", "/var/log/cloud-init-output.log"]
   timeout: 15s
 output:

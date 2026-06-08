@@ -19,7 +19,7 @@ args:
       pattern: "^([A-F0-9]{8,20}|ALL)$"
 execution:
   command:
-    binary: /usr/sbin/postsuper
+    binary: postsuper
     argv: ["-r", "{{ args.qid }}"]
   timeout: 60s
 output:

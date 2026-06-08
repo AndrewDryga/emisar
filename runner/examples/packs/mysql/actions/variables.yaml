@@ -17,7 +17,7 @@ args:
       pattern: "^[a-zA-Z0-9_%]{1,64}$"
 execution:
   command:
-    binary: /usr/bin/mysql
+    binary: mysql
     argv:
       - "-e"
       - "SHOW GLOBAL VARIABLES LIKE '{{ args.pattern }}'"

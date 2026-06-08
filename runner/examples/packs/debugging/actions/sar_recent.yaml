@@ -19,7 +19,7 @@ args: []
 
 execution:
   command:
-    binary: /usr/bin/sar
+    binary: sar
     argv:
       - "-u"
       - "5"

@@ -10,7 +10,7 @@ side_effects:
 args: []
 execution:
   command:
-    binary: /bin/systemd-cgtop
+    binary: systemd-cgtop
     argv: ["-b", "-n", "3"]
   timeout: 30s
 output:

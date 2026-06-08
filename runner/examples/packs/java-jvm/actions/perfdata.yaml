@@ -17,7 +17,7 @@ args:
       max: 4194304
 execution:
   command:
-    binary: /usr/bin/jcmd
+    binary: jcmd
     argv: ["{{ args.pid }}", "PerfCounter.print"]
   timeout: 15s
 output:

@@ -17,7 +17,7 @@ args:
       max: 4194304
 execution:
   command:
-    binary: /usr/bin/lsof
+    binary: lsof
     argv:
       - "-p"
       - "{{ args.pid }}"

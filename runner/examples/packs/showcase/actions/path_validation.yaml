@@ -48,7 +48,7 @@ args:
 
 execution:
   command:
-    binary: /usr/bin/stat
+    binary: stat
     argv:
       - "{{ args.file }}"
       - "{{ args.extras }}"

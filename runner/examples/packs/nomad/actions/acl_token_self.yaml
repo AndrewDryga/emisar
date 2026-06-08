@@ -7,7 +7,7 @@ description: The runner's own token — name, type, policies, expiration.
 side_effects: ["One API call.", "Read-only."]
 args: []
 execution:
-  command: {binary: /usr/bin/nomad, argv: ["acl", "token", "self"]}
+  command: {binary: nomad, argv: ["acl", "token", "self"]}
   timeout: 15s
 output:
   parser: text

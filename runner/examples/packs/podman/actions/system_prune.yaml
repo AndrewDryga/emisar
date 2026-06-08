@@ -9,7 +9,7 @@ side_effects:
   - Dangling images + unused networks removed.
 args: []
 execution:
-  command: {binary: /usr/bin/podman, argv: ["system", "prune", "-f"]}
+  command: {binary: podman, argv: ["system", "prune", "-f"]}
   timeout: 5m
 output:
   parser: text

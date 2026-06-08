@@ -10,7 +10,7 @@ side_effects:
 args: []
 execution:
   command:
-    binary: /bin/systemctl
+    binary: systemctl
     argv: ["list-sockets", "--no-pager", "--no-legend"]
   timeout: 10s
 output:

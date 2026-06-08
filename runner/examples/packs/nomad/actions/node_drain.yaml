@@ -24,7 +24,7 @@ args:
       pattern: "^[0-9]{1,4}[smh]$"
 execution:
   command:
-    binary: /usr/bin/nomad
+    binary: nomad
     argv: ["node", "drain", "-enable", "-deadline", "{{ args.deadline }}", "-yes", "{{ args.node_id }}"]
   timeout: 2h
 cancel_grace: 5m

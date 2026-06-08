@@ -7,7 +7,7 @@ description: Named version, uptime, zone count, configured vs current settings.
 side_effects: ["One rndc call.", "Read-only."]
 args: []
 execution:
-  command: {binary: /usr/sbin/rndc, argv: ["status"]}
+  command: {binary: rndc, argv: ["status"]}
   timeout: 15s
 output:
   parser: text

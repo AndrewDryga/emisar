@@ -20,7 +20,7 @@ args:
       max: 9999999
 execution:
   command:
-    binary: /usr/bin/gh
+    binary: gh
     argv: ["pr", "close", "{{ args.pr }}"]
   timeout: 30s
 output:

@@ -7,7 +7,7 @@ description: 'Streaming + read repair stats: completed/pending bytes, files tran
 side_effects: ["One JMX call.", "Read-only."]
 args: []
 execution:
-  command: {binary: /usr/bin/nodetool, argv: ["netstats"]}
+  command: {binary: nodetool, argv: ["netstats"]}
   timeout: 30s
 output:
   parser: text

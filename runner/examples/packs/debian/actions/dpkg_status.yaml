@@ -23,7 +23,7 @@ args:
 
 execution:
   command:
-    binary: /usr/bin/dpkg
+    binary: dpkg
     argv:
       - "-s"
       - "{{ args.package }}"

@@ -20,7 +20,7 @@ args: []
 
 execution:
   command:
-    binary: /usr/bin/nodetool
+    binary: nodetool
     argv:
       - "tpstats"
   timeout: 30s

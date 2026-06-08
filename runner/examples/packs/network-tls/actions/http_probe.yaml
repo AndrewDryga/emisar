@@ -25,7 +25,7 @@ args:
       max: 60
 execution:
   command:
-    binary: /usr/bin/curl
+    binary: curl
     argv:
       - "-sS"
       - "-o"

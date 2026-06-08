@@ -28,7 +28,7 @@ args:
 
 execution:
   command:
-    binary: /usr/bin/apt-get
+    binary: apt-get
     argv:
       - "install"
       - "-y"

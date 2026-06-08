@@ -7,7 +7,7 @@ description: All installed RPMs.
 side_effects: ["One rpmdb read.", "Read-only."]
 args: []
 execution:
-  command: {binary: /usr/bin/rpm, argv: ["-qa"]}
+  command: {binary: rpm, argv: ["-qa"]}
   timeout: 30s
 output:
   parser: text

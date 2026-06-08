@@ -9,7 +9,7 @@ side_effects:
   - Downstream MTAs see a burst of connection attempts.
 args: []
 execution:
-  command: {binary: /usr/sbin/postqueue, argv: ["-f"]}
+  command: {binary: postqueue, argv: ["-f"]}
   timeout: 30s
 output:
   parser: text

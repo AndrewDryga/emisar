@@ -17,7 +17,7 @@ args:
       pattern: "^[a-zA-Z0-9_./@:\\-]{1,256}$"
 execution:
   command:
-    binary: /usr/bin/docker
+    binary: docker
     argv:
       - "history"
       - "--no-trunc"

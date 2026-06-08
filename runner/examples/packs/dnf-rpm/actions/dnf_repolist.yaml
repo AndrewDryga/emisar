@@ -7,7 +7,7 @@ description: Enabled repositories with package counts.
 side_effects: ["One repo metadata read.", "Read-only."]
 args: []
 execution:
-  command: {binary: /usr/bin/dnf, argv: ["repolist", "-v"]}
+  command: {binary: dnf, argv: ["repolist", "-v"]}
   timeout: 60s
 output:
   parser: text

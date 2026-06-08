@@ -26,7 +26,7 @@ args:
 
 execution:
   command:
-    binary: /usr/bin/curl
+    binary: curl
     argv:
       - "-fsS"
       - "--max-time"

@@ -27,7 +27,7 @@ args:
       pattern: "^[a-zA-Z0-9_.\\-:]{1,64}$"
 execution:
   command:
-    binary: /usr/sbin/zfs
+    binary: zfs
     argv: ["destroy", "{{ args.dataset }}@{{ args.snap }}"]
   timeout: 120s
 output:

@@ -14,7 +14,7 @@ side_effects:
 args: []
 execution:
   command:
-    binary: /bin/cat
+    binary: cat
     argv: ["/var/lib/cloud/instance/user-data.txt"]
   timeout: 5s
 output:

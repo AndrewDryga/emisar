@@ -7,7 +7,7 @@ description: All containers (running + stopped).
 side_effects: ["One CLI call.", "Read-only."]
 args: []
 execution:
-  command: {binary: /usr/bin/podman, argv: ["ps", "-a", "--format", "json"]}
+  command: {binary: podman, argv: ["ps", "-a", "--format", "json"]}
   timeout: 30s
 output:
   parser: json
