@@ -13,7 +13,7 @@ defmodule EmisarWeb.Mcp.Service do
   modules — `Catalog`, `Runners`, `Runs`, `Accounts`.
   """
 
-  alias Emisar.{Accounts, Catalog, Runners, Runs}
+  alias Emisar.{Accounts, Catalog, Runbooks, Runners, Runs}
   alias EmisarWeb.Mcp.{Idempotency, ToolSchema}
 
   # Same caps the REST handlers use; keep them in lockstep so
@@ -93,6 +93,126 @@ defmodule EmisarWeb.Mcp.Service do
       }
     end)
   end
+
+  # -- Runbooks (read-only) -------------------------------------------
+
+  @doc """
+  Published runbooks for the account — latest version per slug, as
+  summary maps. The MCP exposes these read-only so an LLM can follow a
+  runbook by dispatching its steps itself; the cloud never runs them.
+  """
+  @spec list_runbooks(Plug.Conn.t()) :: {:ok, [map()]} | {:error, :unauthorized}
+  def list_runbooks(conn) do
+    subject = conn.assigns.current_subject
+
+    case Runbooks.list_runbooks(subject, page: [limit: 1000]) do
+      {:ok, runbooks, _meta} ->
+        summaries =
+          runbooks
+          |> published_latest_per_slug()
+          |> Enum.map(&runbook_summary/1)
+          |> Enum.sort_by(& &1.slug)
+
+        {:ok, summaries}
+
+      {:error, :unauthorized} ->
+        {:error, :unauthorized}
+    end
+  end
+
+  @doc """
+  One published runbook's full definition, by slug (or id), with each
+  step's runner selector resolved to current runner names so the LLM can
+  dispatch directly. `{:error, :not_found}` if no published runbook matches.
+  """
+  @spec get_runbook(Plug.Conn.t(), String.t()) ::
+          {:ok, map()} | {:error, :not_found | :unauthorized}
+  def get_runbook(conn, slug_or_id) do
+    subject = conn.assigns.current_subject
+
+    case Runbooks.list_runbooks(subject, page: [limit: 1000]) do
+      {:ok, runbooks, _meta} ->
+        case find_runbook(published_latest_per_slug(runbooks), slug_or_id) do
+          nil ->
+            {:error, :not_found}
+
+          rb ->
+            {:ok, runners} = Runners.list_all_runners_for_account(subject)
+            {:ok, runbook_detail(rb, runners)}
+        end
+
+      {:error, :unauthorized} ->
+        {:error, :unauthorized}
+    end
+  end
+
+  defp published_latest_per_slug(runbooks) do
+    runbooks
+    |> Enum.filter(&(&1.status == "published"))
+    |> Enum.group_by(& &1.slug)
+    |> Enum.map(fn {_slug, versions} -> Enum.max_by(versions, & &1.version) end)
+  end
+
+  defp find_runbook(runbooks, slug_or_id) do
+    Enum.find(runbooks, &(&1.slug == slug_or_id)) ||
+      Enum.find(runbooks, &(&1.id == slug_or_id))
+  end
+
+  defp runbook_summary(rb) do
+    steps = runbook_steps(rb)
+
+    %{
+      slug: rb.slug,
+      title: rb.title,
+      version: rb.version,
+      description: nil_if_blank(rb.description),
+      steps: length(steps),
+      actions:
+        steps |> Enum.map(&Map.get(&1, "action_id")) |> Enum.reject(&blank?/1) |> Enum.uniq()
+    }
+  end
+
+  defp runbook_detail(rb, runners) do
+    %{
+      slug: rb.slug,
+      title: rb.title,
+      version: rb.version,
+      description: nil_if_blank(rb.description),
+      steps: rb |> runbook_steps() |> Enum.map(&runbook_step(&1, runners))
+    }
+  end
+
+  defp runbook_step(step, runners) do
+    {by, values} = runbook_selector(Map.get(step, "runner_selector"))
+
+    %{
+      id: Map.get(step, "id"),
+      action_id: Map.get(step, "action_id"),
+      args: Map.get(step, "args") || %{},
+      target: %{by: by, values: values, runners: resolve_targets(by, values, runners)}
+    }
+  end
+
+  defp resolve_targets("runner_id", ids, runners),
+    do: runners |> Enum.filter(&(&1.id in ids)) |> Enum.map(& &1.name)
+
+  defp resolve_targets(_group, groups, runners),
+    do: runners |> Enum.filter(&(&1.group in groups)) |> Enum.map(& &1.name) |> Enum.uniq()
+
+  # Accepts the list shape (%{"group" => ["a"]}) and the older single-value
+  # shape (%{"group" => "a"}), always returning {kind, [values]}.
+  defp runbook_selector(%{"group" => v}), do: {"group", normalize_targets(v)}
+  defp runbook_selector(%{"runner_id" => v}), do: {"runner_id", normalize_targets(v)}
+  defp runbook_selector(_), do: {"group", []}
+
+  defp normalize_targets(v) when is_list(v), do: Enum.filter(v, &(is_binary(&1) and &1 != ""))
+  defp normalize_targets(v) when is_binary(v) and v != "", do: [v]
+  defp normalize_targets(_), do: []
+
+  defp runbook_steps(rb), do: get_in(rb.definition || %{}, ["steps"]) || []
+
+  defp blank?(s), do: s in [nil, ""]
+  defp nil_if_blank(s), do: if(blank?(s), do: nil, else: s)
 
   # -- Dispatch --------------------------------------------------------
 

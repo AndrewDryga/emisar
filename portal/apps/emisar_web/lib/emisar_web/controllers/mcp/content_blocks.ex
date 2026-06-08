@@ -48,6 +48,77 @@ defmodule EmisarWeb.Mcp.ContentBlocks do
     }
   end
 
+  @doc "Synthetic tool descriptor for `list_runbooks` (read-only)."
+  @spec list_runbooks_tool() :: map()
+  def list_runbooks_tool do
+    %{
+      name: "list_runbooks",
+      description:
+        "List this account's published runbooks. A runbook is a saved, ordered sequence of " <>
+          "action steps (a playbook/checklist). This server does NOT execute runbooks — use this " <>
+          "to discover them, then call `get_runbook` to read a runbook's steps and run them " <>
+          "yourself with the normal action tools. Read-only.",
+      inputSchema: %{
+        "$schema" => "https://json-schema.org/draft/2020-12/schema",
+        "type" => "object",
+        "additionalProperties" => false,
+        "properties" => %{}
+      }
+    }
+  end
+
+  @doc "Synthetic tool descriptor for `get_runbook` (read-only)."
+  @spec get_runbook_tool() :: map()
+  def get_runbook_tool do
+    %{
+      name: "get_runbook",
+      description:
+        "Read one published runbook's full definition: its ordered steps, each with an " <>
+          "`action_id`, the `args` to pass, and the runner `target` (resolved to current runner " <>
+          "names). This server does NOT run the runbook — execute it yourself by dispatching each " <>
+          "step's action in order with the given args, targeting the listed runners " <>
+          "(pass `runners: [...]`), honoring each action's normal risk/approval. Read-only.",
+      inputSchema: %{
+        "$schema" => "https://json-schema.org/draft/2020-12/schema",
+        "type" => "object",
+        "additionalProperties" => false,
+        "required" => ["runbook"],
+        "properties" => %{
+          "runbook" => %{
+            "type" => "string",
+            "description" => "The runbook slug (from list_runbooks) or its id."
+          }
+        }
+      }
+    }
+  end
+
+  @doc "Render the `list_runbooks` summaries: a short intro plus the runbooks as JSON."
+  @spec from_runbook_list([map()]) :: {[map()], boolean()}
+  def from_runbook_list(summaries) when is_list(summaries) do
+    intro =
+      if summaries == [],
+        do: "No published runbooks in this account yet.",
+        else:
+          "#{length(summaries)} published runbook(s). Call `get_runbook` with a slug to read its " <>
+            "steps, then run them yourself by dispatching each step's action."
+
+    {[text_block(intro), text_block(Jason.encode!(summaries, pretty: true))], false}
+  end
+
+  @doc "Render one `get_runbook` detail: how-to-execute guidance plus the definition as JSON."
+  @spec from_runbook_detail(map()) :: {[map()], boolean()}
+  def from_runbook_detail(detail) when is_map(detail) do
+    guidance =
+      "Runbook `#{detail.slug}` v#{detail.version}. This server will NOT run it — execute the " <>
+        "steps yourself, in order: for each step call its `action_id` with `args`, targeting the " <>
+        "runners in `target.runners` (pass `runners: [...]`). If `target.runners` is empty, none " <>
+        "currently match the selector — pick a runner from tools/list. Honor each action's normal " <>
+        "risk/approval (a high-risk step may return pending_approval; use wait_for_run as usual)."
+
+    {[text_block(guidance), text_block(Jason.encode!(detail, pretty: true))], false}
+  end
+
   @doc """
   Render the `runs` array from dispatch_tool as MCP content blocks.
   Returns `{blocks, any_error?}`. `multi` is true when there's more than

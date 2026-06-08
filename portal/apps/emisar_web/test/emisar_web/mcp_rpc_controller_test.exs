@@ -298,4 +298,95 @@ defmodule EmisarWeb.McpRpcControllerTest do
       assert body["error"]["code"] == -32601
     end
   end
+
+  describe "runbook tools" do
+    test "tools/list includes the read-only runbook tools",
+         %{conn: conn, account: account, user: user} do
+      raw = make_api_key!(account, user)
+
+      names =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> rpc("tools/list")
+        |> json_response(200)
+        |> get_in(["result", "tools"])
+        |> Enum.map(& &1["name"])
+
+      assert "list_runbooks" in names
+      assert "get_runbook" in names
+    end
+
+    test "list_runbooks + get_runbook expose a published runbook with resolved runner names",
+         %{conn: conn, account: account, user: user} do
+      make_runner!(account, name: "edge-1", group: "edge-eu")
+      subject = Emisar.Fixtures.subject_for(user, account, role: :owner)
+
+      {:ok, rb} =
+        Emisar.Runbooks.create_runbook(
+          %{
+            "title" => "EU health",
+            "name" => "EU health",
+            "slug" => "eu-health",
+            "definition" => %{
+              "steps" => [
+                %{
+                  "id" => "uptime",
+                  "action_id" => "linux.uptime",
+                  "args" => %{"window" => "5m"},
+                  "runner_selector" => %{"group" => ["edge-eu"]}
+                }
+              ]
+            }
+          },
+          subject
+        )
+
+      {:ok, _} = Emisar.Runbooks.publish(rb, subject)
+
+      raw = make_api_key!(account, user)
+      auth = fn c -> put_req_header(c, "authorization", "Bearer " <> raw) end
+
+      list_text =
+        conn
+        |> auth.()
+        |> rpc("tools/call", %{"name" => "list_runbooks", "arguments" => %{}})
+        |> json_response(200)
+        |> content_text()
+
+      assert list_text =~ "eu-health"
+
+      detail =
+        conn
+        |> auth.()
+        |> rpc("tools/call", %{"name" => "get_runbook", "arguments" => %{"runbook" => "eu-health"}})
+        |> json_response(200)
+
+      assert detail["result"]["isError"] == false
+      text = content_text(detail)
+      assert text =~ "linux.uptime"
+      # The group selector is resolved to the connected runner's name.
+      assert text =~ "edge-1"
+      assert text =~ "window"
+    end
+
+    test "get_runbook reports a clear error for an unknown slug",
+         %{conn: conn, account: account, user: user} do
+      raw = make_api_key!(account, user)
+
+      body =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> rpc("tools/call", %{"name" => "get_runbook", "arguments" => %{"runbook" => "nope"}})
+        |> json_response(200)
+
+      assert body["result"]["isError"] == true
+      assert content_text(body) =~ "not found"
+    end
+  end
+
+  defp content_text(body) do
+    body
+    |> get_in(["result", "content"])
+    |> Enum.map_join("\n", & &1["text"])
+  end
 end

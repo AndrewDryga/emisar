@@ -9,7 +9,8 @@ defmodule EmisarWeb.McpRpcController do
     * `initialize`        — capabilities + protocolVersion + serverInfo
     * `ping`              — `{}`
     * `tools/list`        — every action the API key can dispatch, plus
-                            the synthetic `wait_for_run` tool
+                            the synthetic `wait_for_run`, `list_runbooks`,
+                            and `get_runbook` tools
     * `tools/call`        — dispatch a run; result is `{content, isError}`
                             in MCP content-block shape
     * `notifications/*`   — silently dropped (per JSON-RPC notifications)
@@ -78,7 +79,14 @@ defmodule EmisarWeb.McpRpcController do
 
   defp dispatch(conn, "tools/list", _params) do
     with :ok <- require_scope(conn, "actions:read") do
-      tools = Service.list_tools(conn) ++ [ContentBlocks.wait_for_run_tool()]
+      tools =
+        Service.list_tools(conn) ++
+          [
+            ContentBlocks.wait_for_run_tool(),
+            ContentBlocks.list_runbooks_tool(),
+            ContentBlocks.get_runbook_tool()
+          ]
+
       {:ok, %{tools: tools}}
     end
   end
@@ -94,6 +102,16 @@ defmodule EmisarWeb.McpRpcController do
       name == "wait_for_run" ->
         with :ok <- require_scope(conn, "actions:read") do
           handle_wait_for_run(conn, args)
+        end
+
+      name == "list_runbooks" ->
+        with :ok <- require_scope(conn, "actions:read") do
+          handle_list_runbooks(conn)
+        end
+
+      name == "get_runbook" ->
+        with :ok <- require_scope(conn, "actions:read") do
+          handle_get_runbook(conn, args)
         end
 
       true ->
@@ -240,6 +258,57 @@ defmodule EmisarWeb.McpRpcController do
                 {:ok, %{content: content, isError: true}}
             end
         end
+    end
+  end
+
+  # -- Runbooks (read-only) -------------------------------------------
+
+  defp handle_list_runbooks(conn) do
+    case Service.list_runbooks(conn) do
+      {:ok, summaries} ->
+        {content, is_err} = ContentBlocks.from_runbook_list(summaries)
+        {:ok, %{content: content, isError: is_err}}
+
+      {:error, :unauthorized} ->
+        {content, _} =
+          ContentBlocks.error_content("Not allowed", "This API key can't read runbooks.")
+
+        {:ok, %{content: content, isError: true}}
+    end
+  end
+
+  defp handle_get_runbook(conn, args) do
+    case Map.get(args, "runbook") do
+      slug when is_binary(slug) and slug != "" ->
+        case Service.get_runbook(conn, slug) do
+          {:ok, detail} ->
+            {content, is_err} = ContentBlocks.from_runbook_detail(detail)
+            {:ok, %{content: content, isError: is_err}}
+
+          {:error, :not_found} ->
+            {content, _} =
+              ContentBlocks.error_content(
+                "Runbook not found",
+                "No published runbook with slug or id `#{slug}`. Call list_runbooks to see them."
+              )
+
+            {:ok, %{content: content, isError: true}}
+
+          {:error, :unauthorized} ->
+            {content, _} =
+              ContentBlocks.error_content("Not allowed", "This API key can't read runbooks.")
+
+            {:ok, %{content: content, isError: true}}
+        end
+
+      _ ->
+        {content, _} =
+          ContentBlocks.error_content(
+            "Bad arguments",
+            "get_runbook requires `runbook` (a slug or id string)."
+          )
+
+        {:ok, %{content: content, isError: true}}
     end
   end
 
