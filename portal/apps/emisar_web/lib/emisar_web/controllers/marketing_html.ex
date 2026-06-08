@@ -15,8 +15,9 @@ defmodule EmisarWeb.MarketingHTML do
   def action_icon("script"), do: "hero-code-bracket"
   def action_icon(_), do: "hero-cube"
 
-  # The home page "watch emisar work" terminal. One incident, told as an
-  # ordered transcript across two tabs: the host (real shell + Go-runner
+  # The home page "watch emisar work" terminal. One incident — a CSI driver
+  # reformats a live LUN and wipes 33h of metrics — told as an ordered
+  # transcript across two tabs: the host (nomad-hvn03: real shell + Go-runner
   # output) and the LLM (a faithful Claude Code session). `data-seq` is
   # the play order that `assets/js/emisar_demo.js` reads; per-kind styling
   # (the prompt, `[install]`, the ⏺/⎿ glyphs, colors, indents) lives in
@@ -27,57 +28,70 @@ defmodule EmisarWeb.MarketingHTML do
   # so no-JS visitors and crawlers skip them; their text is the gerund the
   # spinner shows.
   @demo_lines [
-    # --- Host: degraded, then install the runner -------------------
+    # --- Host: a storage node on the fleet, one curl to connect ------
     {1, "server", "srv-comment",
-     "# prod-api-3 · Ubuntu 22.04 · api.service degraded — 502s climbing, load high"},
+     "# nomad-hvn03 · Dell R640 · Pure FlashArray //M50 over iSCSI multipath · democratic-csi"},
     {2, "server", "srv-prompt", "curl -sSL https://emisar.dev/install.sh | sudo bash"},
-    {3, "server", "srv-install", "install target: linux/amd64 via systemd"},
-    {4, "server", "srv-install", "downloading emisar-v0.2.0-linux-amd64.tar.gz"},
-    {5, "server", "srv-install", "checksum verified  sha256:9f2c1e7b4a0d…"},
-    {6, "server", "srv-install", "installing binary to /usr/local/bin/emisar"},
-    {7, "server", "srv-install", "installed: emisar v0.2.0"},
-    {8, "server", "srv-install", "starting emisar.service"},
-    {9, "server", "srv-banner",
-     "emisar connecting to wss://app.emisar.dev/runner (group=default packs=2 actions=96)"},
-    {10, "server", "srv-ok", "runner online · prod-api-3 · advertising 96 actions"},
+    {3, "server", "srv-install", "downloading emisar-v0.2.0-linux-amd64.tar.gz"},
+    {4, "server", "srv-install", "checksum verified  sha256:9f2c1e7b4a0d…  ·  installed v0.2.0"},
+    {5, "server", "srv-banner",
+     "emisar connecting to wss://app.emisar.dev/runner (group=storage packs=storage,nomad,debugging,docker)"},
+    {6, "server", "srv-ok", "runner online · nomad-hvn03 · advertising 58 actions"},
 
-    # --- Claude Code: investigate ----------------------------------
-    {11, "llm", "cc-meta", "emisar MCP connected · 96 tools · scoped to prod-api-3"},
-    {12, "llm", "cc-user",
-     "prod-api-3 is throwing 502s and the load is through the roof. what's going on?"},
-    {13, "llm", "cc-spin", "Triaging"},
-    {14, "llm", "cc-text", "On it — pulling the host's vitals through emisar."},
-    {15, "llm", "cc-tool", "emisar · debugging.loadavg(reason: \"triage 502s on prod-api-3\")"},
-    {16, "llm", "cc-result", "load average: 38.21, 31.40, 18.92   (8 cores)"},
+    # --- Claude Code: the alarm, then investigate through emisar -----
+    {7, "llm", "cc-meta", "emisar MCP connected · 58 tools · scoped to nomad-hvn03"},
+    {8, "llm", "cc-user",
+     "grafana shows the last 7 days of metrics flat — only the last 12 minutes are alive. the process is healthy and ingesting. where did 33 hours of data go?"},
+    {9, "llm", "cc-spin", "Investigating"},
+    {10, "llm", "cc-text",
+     "That pattern means the storage moved out from under VictoriaMetrics. I'll walk the layers through emisar — declared actions, no SSH."},
+    {11, "llm", "cc-tool",
+     "emisar · storage.csi_volume_ls(volume: \"vm-data\", reason: \"inspect the LUN behind VictoriaMetrics\")"},
+    {12, "llm", "cc-result", "drwx------ 2 root root 16384 lost+found"},
+    {13, "llm", "cc-result-cont",
+     "# a fresh ext4, born 30 minutes ago — the 33h of history isn't on it"},
+    {14, "llm", "cc-tool",
+     "emisar · debugging.dmesg_tail(lines: 400, reason: \"what happened at mount time?\")"},
+    {15, "llm", "cc-result",
+     "13:11:03  device-mapper: multipath 254:3: queue_if_no_path enabled"},
+    {16, "llm", "cc-result-cont",
+     "13:11:09  EXT4-fs (dm-3): mounted filesystem clean   # 6 seconds, no active path group"},
     {17, "llm", "cc-tool",
-     "emisar · debugging.processes_top(sort: \"cpu\", reason: \"find the CPU hog\")"},
-    {18, "llm", "cc-result", "PID     %CPU  STARTED  COMMAND"},
-    {19, "llm", "cc-result-cont", "24317   782%  14:02    python /opt/jobs/reindex.py"},
-    {20, "llm", "cc-result-cont", "880      6%   Apr18    postgres: api"},
-    {21, "llm", "cc-spin", "Analyzing"},
-    {22, "llm", "cc-text",
-     "Found it — a runaway reindex job (pid 24317) has pinned all 8 cores since 14:02, starving api.service. I'll terminate it."},
-    {23, "llm", "cc-tool",
-     "emisar · debugging.kill_pid(pid: 24317, reason: \"runaway reindex starving prod-api-3\")"},
-    {24, "llm", "cc-pending",
-     "⏸ pending approval — kill_pid is high-risk; a human approves in the portal"},
-    {25, "llm", "cc-spin-wait", "Waiting for approval"},
-    {26, "llm", "cc-approved", "✓ approved by you · one use · audit event recorded"},
+     "emisar · docker.logs(container: \"democratic-csi\", lines: 2000, reason: \"did the driver format it?\")"},
+    {18, "llm", "cc-result", "GetDiskFormat /dev/mapper/3624…265c → blkid output=\"\" (empty)"},
+    {19, "llm", "cc-result-cont",
+     "\"unformatted\" → mkfs.ext4 -F /dev/mapper/3624… → \"successfully formatted\"   # over a live LUN"},
+    {20, "llm", "cc-spin", "Analyzing"},
+    {21, "llm", "cc-text",
+     "Root cause: a multipath path-group race. On migration every path came up queue-ready but none active — blkid read empty, democratic-csi took \"empty\" for \"unformatted\" and ran mkfs over the live LUN. It's kubernetes#95183. VictoriaMetrics is writing fresh parts over the old blocks now — I need to stop it."},
 
-    # --- Host: the runner executes the approved action -------------
+    # --- Claude Code: stop the bleed — one approval -----------------
+    {22, "llm", "cc-tool",
+     "emisar · nomad.alloc_stop(alloc: \"a1b2c3d4\", reason: \"CSI reformatted a live LUN — halt writes to preserve recoverable blocks\")"},
+    {23, "llm", "cc-pending",
+     "⏸ pending approval — nomad.alloc_stop is high-risk; a human approves in the portal"},
+    {24, "llm", "cc-spin-wait", "Waiting for approval"},
+    {25, "llm", "cc-approved", "✓ approved by you · one use · audit event recorded"},
+
+    # --- Host: the runner executes the approved stop ----------------
+    {26, "server", "srv-log",
+     "level=INFO msg=\"run dispatched\" action=nomad.alloc_stop run=run_5d36c9 via=approval"},
     {27, "server", "srv-log",
-     "level=INFO msg=\"run dispatched\" action=debugging.kill_pid run=run_8f3a2c via=approval"},
-    {28, "server", "srv-log",
-     "level=INFO msg=\"run complete\" action=debugging.kill_pid exit=0 dur=0.41s"},
+     "level=INFO msg=\"run complete\" action=nomad.alloc_stop exit=0 dur=0.38s"},
 
-    # --- Claude Code: confirm + wrap up ----------------------------
-    {29, "llm", "cc-result", "[24317] SIGTERM → python /opt/jobs/reindex.py  (terminated)"},
-    {30, "llm", "cc-spin", "Verifying"},
+    # --- Claude Code: confirm, then codify the fix as a PR ----------
+    {28, "llm", "cc-result", "alloc a1b2c3d4 stopped · writes halted · LUN frozen for forensics"},
+    {29, "llm", "cc-spin", "Writing the fix"},
+    {30, "llm", "cc-text",
+     "Bleed stopped on your one approval. A host-side fix wouldn't survive the next drain, so the durable one goes where it belongs — a Terraform PR for you to review."},
     {31, "llm", "cc-tool",
-     "emisar · debugging.loadavg(reason: \"confirm prod-api-3 recovered\")"},
-    {32, "llm", "cc-result", "load average: 1.07, 4.90, 12.30   (8 cores)"},
-    {33, "llm", "cc-text",
-     "Done — load's back to ~1.0 and prod-api-3 is serving 200s again. The kill is on the record in the audit trail, tied to your approval."}
+     "git · open PR \"csi: never auto-format on blkid-empty (the 33h wipe)\""},
+    {32, "llm", "cc-result",
+     "+ node { format { disabled = true } }   # refuse to mkfs a \"blank\" device"},
+    {33, "llm", "cc-result-cont",
+     "+ multipath-watchdog.nomad.hcl · format-new-volume.sh (xfs, no overwrite) · alerts/multipath.yaml"},
+    {34, "llm", "cc-text",
+     "Done — investigated through declared actions, stopped the bleed behind one approval, durable fix handed back as a diff you merge, every step on the audit trail. Honest note: emisar can't stop the driver's mkfs; it changes everything you and the agent do around the failure."}
   ]
 
   @doc """
@@ -113,7 +127,7 @@ defmodule EmisarWeb.MarketingHTML do
             aria-selected="true"
             class="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 font-mono text-xs text-zinc-500 transition hover:text-zinc-300 aria-selected:bg-zinc-800/80 aria-selected:text-zinc-100"
           >
-            <.icon name="hero-server-stack" class="h-3.5 w-3.5" /> prod-api-3
+            <.icon name="hero-server-stack" class="h-3.5 w-3.5" /> nomad-hvn03
           </button>
           <button
             type="button"
