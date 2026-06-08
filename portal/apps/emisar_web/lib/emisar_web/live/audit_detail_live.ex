@@ -62,6 +62,9 @@ defmodule EmisarWeb.AuditDetailLive do
         <.meta_field label="Request ID">
           <span class="font-mono text-xs text-zinc-400">{@event.request_id || "—"}</span>
         </.meta_field>
+        <.meta_field :if={@event.mcp_session_id} label="MCP session">
+          <span class="font-mono text-xs text-zinc-400">{@event.mcp_session_id}</span>
+        </.meta_field>
         <.meta_field :if={posture.bridge?} label="Client">
           <span class="text-xs text-zinc-200">{posture.client || "—"}</span>
         </.meta_field>

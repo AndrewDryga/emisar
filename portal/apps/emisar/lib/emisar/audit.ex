@@ -45,7 +45,7 @@ defmodule Emisar.Audit do
   def put_request_metadata(%{} = meta) do
     cleaned =
       meta
-      |> Map.take([:ip_address, :user_agent, :request_id])
+      |> Map.take([:ip_address, :user_agent, :request_id, :mcp_session_id])
       |> Enum.reject(fn {_, v} -> is_nil(v) end)
       |> Map.new()
 
@@ -196,6 +196,9 @@ defmodule Emisar.Audit do
       subject_label: run.action_id,
       actor_kind: actor_kind(run),
       actor_id: run.requested_by_id || run.api_key_id,
+      # Authoritative for the run's own events, including the terminal ones
+      # logged from the runner-socket process (no request metadata there).
+      mcp_session_id: run.mcp_session_id,
       payload:
         compact(%{
           request_id: run.request_id,

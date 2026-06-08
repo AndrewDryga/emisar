@@ -41,6 +41,7 @@ defmodule EmisarWeb.McpRpcController do
   def handle(conn, %{"jsonrpc" => "2.0", "method" => method} = req) do
     id = Map.get(req, "id")
     params = Map.get(req, "params") || %{}
+    conn = maybe_emit_session_id(conn, method)
 
     case dispatch(conn, method, params) do
       :no_reply ->
@@ -157,7 +158,8 @@ defmodule EmisarWeb.McpRpcController do
       runner_names: runner_names,
       reason: reason,
       wait_ms: wait_ms,
-      idempotency_key: idempotency_key
+      idempotency_key: idempotency_key,
+      mcp_session_id: req_session_id(conn)
     }
 
     case Service.dispatch_tool(conn, name, action_args, opts) do
@@ -371,6 +373,24 @@ defmodule EmisarWeb.McpRpcController do
     case Application.spec(:emisar_web, :vsn) do
       nil -> "dev"
       v -> to_string(v)
+    end
+  end
+
+  # MCP Streamable-HTTP session id. At `initialize` we hand the client a
+  # session id (reusing one it already sent) via the Mcp-Session-Id response
+  # header; the client echoes it on later requests, which we record on runs
+  # + audit events for session correlation.
+  defp maybe_emit_session_id(conn, "initialize") do
+    session_id = req_session_id(conn) || Ecto.UUID.generate()
+    put_resp_header(conn, "mcp-session-id", session_id)
+  end
+
+  defp maybe_emit_session_id(conn, _method), do: conn
+
+  defp req_session_id(conn) do
+    case get_req_header(conn, "mcp-session-id") do
+      [v | _] when is_binary(v) and v != "" -> v
+      _ -> nil
     end
   end
 

@@ -31,6 +31,9 @@ defmodule Emisar.Runs.ActionRun do
     # MCP clientInfo snapshot at dispatch time (e.g. %{"name" => "Claude
     # Code", "version" => "1.2.3"}); empty for non-MCP runs.
     field :client_info, :map, default: %{}
+    # MCP Streamable-HTTP session id (Mcp-Session-Id), for correlating the
+    # runs from one session; nil for non-MCP runs.
+    field :mcp_session_id, :string
 
     field :policy_decision, :string
     field :policy_reason, :string

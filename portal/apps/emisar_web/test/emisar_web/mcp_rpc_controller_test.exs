@@ -8,7 +8,7 @@ defmodule EmisarWeb.McpRpcControllerTest do
 
   use EmisarWeb.ConnCase, async: true
 
-  alias Emisar.{Accounts, ApiKeys, Policies, Repo, Runners}
+  alias Emisar.{Accounts, ApiKeys, Policies, Repo, Runs, Runners}
   alias Emisar.Catalog.RunnerAction
   alias Emisar.Runners.Runner
 
@@ -189,6 +189,27 @@ defmodule EmisarWeb.McpRpcControllerTest do
       # Only the known string fields are kept; unknown keys are dropped.
       assert reloaded.last_client_info == %{"name" => "Claude Code", "version" => "1.2.3"}
     end
+
+    test "hands the client an Mcp-Session-Id (reusing one it already sent)",
+         %{conn: conn, account: account, user: user} do
+      raw = make_api_key!(account, user)
+
+      fresh =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> rpc("initialize")
+
+      assert [generated] = get_resp_header(fresh, "mcp-session-id")
+      assert generated != ""
+
+      reused =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> put_req_header("mcp-session-id", "existing-sess-123")
+        |> rpc("initialize")
+
+      assert get_resp_header(reused, "mcp-session-id") == ["existing-sess-123"]
+    end
   end
 
   describe "ping" do
@@ -259,6 +280,26 @@ defmodule EmisarWeb.McpRpcControllerTest do
 
       assert is_list(body["result"]["content"])
       assert body["result"]["isError"] == false
+    end
+
+    test "records the Mcp-Session-Id header on the dispatched run",
+         %{conn: conn, account: account, user: user} do
+      runner = make_runner!(account, name: "host-1")
+      advertise_action!(runner, action_id: "linux.uptime", risk: "low")
+      raw = make_api_key!(account, user)
+      subject = Emisar.Fixtures.subject_for(user, account, role: :owner)
+
+      conn
+      |> put_req_header("authorization", "Bearer " <> raw)
+      |> put_req_header("mcp-session-id", "sess-abc-123")
+      |> rpc("tools/call", %{
+        "name" => "linux.uptime",
+        "arguments" => %{"runner" => "host-1", "reason" => "smoke", "wait" => "0"}
+      })
+      |> json_response(200)
+
+      {:ok, [run], _meta} = Runs.list_runs(subject)
+      assert run.mcp_session_id == "sess-abc-123"
     end
 
     test "unknown action returns isError content block",

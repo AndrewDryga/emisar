@@ -22,7 +22,8 @@ defmodule Emisar.AuditTest do
       Audit.put_request_metadata(%{
         ip_address: "10.0.0.42",
         user_agent: "curl/8.5.0",
-        request_id: "req_abc"
+        request_id: "req_abc",
+        mcp_session_id: "sess_xyz"
       })
 
       {:ok, event} = Audit.log(account.id, "audit.test", actor_kind: "system")
@@ -30,6 +31,7 @@ defmodule Emisar.AuditTest do
       assert event.ip_address == "10.0.0.42"
       assert event.user_agent == "curl/8.5.0"
       assert event.request_id == "req_abc"
+      assert event.mcp_session_id == "sess_xyz"
     end
 
     test "explicit attrs win over process metadata" do

@@ -121,6 +121,11 @@ defmodule EmisarWeb.RunDetailLive do
           <span :if={client_version(@run)} class="text-zinc-400">{client_version(@run)}</span>
           <span :if={@run.api_key} class="text-zinc-500">· {format_source(@run.source)}</span>
         </.meta_field>
+        <.meta_field :if={@run.mcp_session_id} label="MCP session">
+          <span class="font-mono text-xs text-zinc-400" title={@run.mcp_session_id}>
+            {String.slice(@run.mcp_session_id, 0, 8)}
+          </span>
+        </.meta_field>
         <.meta_field label="Duration">
           <span class="text-zinc-200">{format_duration(@run.duration_ms)}</span>
         </.meta_field>

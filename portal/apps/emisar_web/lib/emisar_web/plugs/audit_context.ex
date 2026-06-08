@@ -23,7 +23,8 @@ defmodule EmisarWeb.Plugs.AuditContext do
     Emisar.Audit.put_request_metadata(%{
       ip_address: format_ip(conn.remote_ip),
       user_agent: header(conn, "user-agent"),
-      request_id: Logger.metadata()[:request_id]
+      request_id: Logger.metadata()[:request_id],
+      mcp_session_id: header(conn, "mcp-session-id")
     })
 
     conn

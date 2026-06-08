@@ -17,6 +17,7 @@ defmodule Emisar.Audit.Event.Changeset do
       :ip_address,
       :user_agent,
       :request_id,
+      :mcp_session_id,
       :payload
     ])
     |> validate_required([:account_id, :occurred_at, :event_type])

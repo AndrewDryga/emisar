@@ -247,6 +247,7 @@ defmodule EmisarWeb.Mcp.Service do
     reason = Map.get(opts, :reason)
     idempotency_key = Map.get(opts, :idempotency_key)
     wait_ms = Map.get(opts, :wait_ms, 0)
+    mcp_session_id = Map.get(opts, :mcp_session_id)
 
     with {:ok, resolved} <- resolve_runners(subject, api_key, action_id, runner_names) do
       runners_by_id = fetch_runners_by_id(subject, Enum.map(resolved, fn {_, id} -> id end))
@@ -263,6 +264,7 @@ defmodule EmisarWeb.Mcp.Service do
             source: "mcp",
             api_key_id: api_key.id,
             client_info: api_key.last_client_info || %{},
+            mcp_session_id: mcp_session_id,
             idempotency_key: per_runner_key,
             requested_by_membership_id: api_key.created_by_membership_id
           }
