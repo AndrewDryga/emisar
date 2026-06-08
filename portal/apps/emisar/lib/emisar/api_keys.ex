@@ -301,6 +301,23 @@ defmodule Emisar.ApiKeys do
     end
   end
 
+  @doc """
+  Records the MCP clientInfo a key reported at `initialize` so later runs
+  can name the client (e.g. "Claude Code").
+
+  Internal — called from the MCP controller after the auth plug resolved
+  the key; `info` must already be sanitized to a small string map. The
+  caller treats it as best-effort (a failure must not break the
+  handshake).
+  """
+  def record_client_info(%ApiKey{} = key, info) when is_map(info) do
+    key
+    |> ApiKey.Changeset.record_client_info(info)
+    |> Repo.update()
+  end
+
+  def record_client_info(_key, _info), do: {:error, :invalid}
+
   # -- Helpers ---------------------------------------------------------
 
   defp mint_secret do

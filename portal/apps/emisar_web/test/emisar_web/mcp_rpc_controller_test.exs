@@ -167,6 +167,28 @@ defmodule EmisarWeb.McpRpcControllerTest do
       assert instructions =~ "emisar.dev/packs"
       assert instructions =~ "pack install"
     end
+
+    test "captures the client's name + version from clientInfo (sanitized)",
+         %{conn: conn, account: account, user: user} do
+      subject = Emisar.Fixtures.subject_for(user, account, role: :owner)
+
+      {:ok, raw, key} =
+        ApiKeys.create_key(
+          %{name: "generic-key", scopes: ["actions:read", "actions:execute"]},
+          subject
+        )
+
+      conn
+      |> put_req_header("authorization", "Bearer " <> raw)
+      |> rpc("initialize", %{
+        "clientInfo" => %{"name" => "Claude Code", "version" => "1.2.3", "junk" => "drop me"}
+      })
+      |> json_response(200)
+
+      {:ok, reloaded} = ApiKeys.fetch_api_key_by_id(key.id, subject)
+      # Only the known string fields are kept; unknown keys are dropped.
+      assert reloaded.last_client_info == %{"name" => "Claude Code", "version" => "1.2.3"}
+    end
   end
 
   describe "ping" do

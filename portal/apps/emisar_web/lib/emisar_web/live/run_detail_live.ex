@@ -118,6 +118,7 @@ defmodule EmisarWeb.RunDetailLive do
         </.meta_field>
         <.meta_field label="Source">
           <span class="text-zinc-200">{run_actor(@run)}</span>
+          <span :if={client_version(@run)} class="text-zinc-400">{client_version(@run)}</span>
           <span :if={@run.api_key} class="text-zinc-500">· {format_source(@run.source)}</span>
         </.meta_field>
         <.meta_field label="Duration">

@@ -79,6 +79,24 @@ defmodule EmisarWeb.RunDetailLiveTest do
     assert html =~ "MCP / LLM"
   end
 
+  test "prefers the MCP client name + version over a generic key name", %{conn: conn} do
+    {conn, _user, account} = register_and_log_in(conn)
+    {_raw, key} = api_key_fixture(account_id: account.id, name: "prod-mcp")
+
+    run =
+      run_with(account, %{
+        source: "mcp",
+        api_key_id: key.id,
+        client_info: %{"name" => "Claude Code", "version" => "1.2.3"}
+      })
+
+    {:ok, _lv, html} = live(conn, ~p"/app/runs/#{run.id}")
+
+    assert html =~ "Claude Code"
+    assert html =~ "1.2.3"
+    refute html =~ "prod-mcp"
+  end
+
   test "renders output as a single pre with chunks as inline spans (no double spacing)",
        %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)

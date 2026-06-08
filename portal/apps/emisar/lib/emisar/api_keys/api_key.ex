@@ -23,6 +23,10 @@ defmodule Emisar.ApiKeys.ApiKey do
     field :revoked_at, :utc_datetime_usec
     field :deleted_at, :utc_datetime_usec
 
+    # Latest MCP clientInfo this key reported at `initialize` — snapshotted
+    # onto each run dispatched afterward so the UI can name the client.
+    field :last_client_info, :map, default: %{}
+
     # Set when the Agents page auto-mints this key for the snippet.
     # Cleared the moment an LLM successfully authenticates with it on
     # the MCP HTTP endpoint (at which point the key becomes a

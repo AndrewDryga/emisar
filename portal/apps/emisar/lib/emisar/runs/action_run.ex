@@ -28,6 +28,9 @@ defmodule Emisar.Runs.ActionRun do
     field :args, :map, default: %{}
     field :args_sha256, :string
     field :opts, :map, default: %{}
+    # MCP clientInfo snapshot at dispatch time (e.g. %{"name" => "Claude
+    # Code", "version" => "1.2.3"}); empty for non-MCP runs.
+    field :client_info, :map, default: %{}
 
     field :policy_decision, :string
     field :policy_reason, :string

@@ -47,6 +47,11 @@ defmodule Emisar.ApiKeys.ApiKey.Changeset do
     change(key, last_used_at: now(), auto_generated_at: nil)
   end
 
+  # The MCP `initialize` clientInfo for this key — already sanitized by the
+  # caller to a small string map. Snapshotted onto runs dispatched after.
+  def record_client_info(%ApiKey{} = key, info) when is_map(info),
+    do: change(key, last_client_info: info)
+
   def revoke(%ApiKey{} = key, by_user_id) do
     change(key, revoked_at: now(), revoked_by_id: by_user_id)
   end

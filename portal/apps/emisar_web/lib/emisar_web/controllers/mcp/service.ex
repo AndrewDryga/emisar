@@ -262,6 +262,7 @@ defmodule EmisarWeb.Mcp.Service do
             reason: reason,
             source: "mcp",
             api_key_id: api_key.id,
+            client_info: api_key.last_client_info || %{},
             idempotency_key: per_runner_key,
             requested_by_membership_id: api_key.created_by_membership_id
           }

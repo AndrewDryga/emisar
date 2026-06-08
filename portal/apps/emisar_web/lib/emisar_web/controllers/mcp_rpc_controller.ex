@@ -29,6 +29,7 @@ defmodule EmisarWeb.McpRpcController do
 
   use EmisarWeb, :controller
 
+  alias Emisar.ApiKeys
   alias EmisarWeb.Mcp.{Auth, ContentBlocks, Idempotency, Instructions, Service}
 
   @protocol_version "2024-11-05"
@@ -65,7 +66,9 @@ defmodule EmisarWeb.McpRpcController do
 
   # -- Method dispatch ------------------------------------------------
 
-  defp dispatch(_conn, "initialize", _params) do
+  defp dispatch(conn, "initialize", params) do
+    capture_client_info(conn, params)
+
     {:ok,
      %{
        protocolVersion: @protocol_version,
@@ -370,4 +373,41 @@ defmodule EmisarWeb.McpRpcController do
       v -> to_string(v)
     end
   end
+
+  # clientInfo is client-supplied at `initialize`. Snapshot the known
+  # string fields against the authenticated key so runs dispatched after
+  # can name the client. Best-effort — never affects the handshake reply.
+  defp capture_client_info(conn, params) do
+    key = conn.assigns[:api_key]
+    info = sanitize_client_info(Map.get(params, "clientInfo"))
+
+    if not is_nil(key) and is_map(info), do: ApiKeys.record_client_info(key, info)
+    :ok
+  end
+
+  defp sanitize_client_info(%{} = info) do
+    clean =
+      %{
+        "name" => clip_client_field(info["name"]),
+        "version" => clip_client_field(info["version"]),
+        "title" => clip_client_field(info["title"])
+      }
+      |> Enum.reject(fn {_k, v} -> is_nil(v) end)
+      |> Map.new()
+
+    # Only record when there's an actual name, so empty/garbage clientInfo
+    # never clobbers a good prior value.
+    if Map.has_key?(clean, "name"), do: clean, else: nil
+  end
+
+  defp sanitize_client_info(_), do: nil
+
+  defp clip_client_field(s) when is_binary(s) do
+    case String.trim(s) do
+      "" -> nil
+      trimmed -> String.slice(trimmed, 0, 200)
+    end
+  end
+
+  defp clip_client_field(_), do: nil
 end
