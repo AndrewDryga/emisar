@@ -8,10 +8,12 @@ risk: low
 description: >
   Filters dmesg for OOM-killer events. Returns the kernel log lines
   showing process id, name, RSS, and OOM score for every killed
-  process. The "why did mysqld vanish?" answer. Read-only.
+  process. The "why did mysqld vanish?" answer. Falls back to
+  `journalctl -k` when dmesg is not permitted (needs CAP_SYSLOG / root,
+  or journal read access via systemd-journal / adm). Read-only.
 
 side_effects:
-  - One dmesg invocation.
+  - One dmesg (or journalctl -k) invocation.
   - Read-only.
 
 args: []
@@ -21,7 +23,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "dmesg -T | grep -i -E 'oom|killed process|out of memory' | tail -30"
+      - "{ dmesg -T 2>/dev/null || journalctl -k --no-pager; } | grep -i -E 'oom|killed process|out of memory' | tail -30"
   timeout: 15s
 
 output:

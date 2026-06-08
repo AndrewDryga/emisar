@@ -3,7 +3,10 @@ id: net.http_headers
 title: HTTP response headers (curl -I)
 kind: exec
 risk: low
-description: Dumps response headers from a URL, following redirects. Use to confirm cache-control / hsts / set-cookie / cors setup.
+description: >
+  Dumps response headers from a URL, following redirects. Use to confirm
+  cache-control / hsts / set-cookie / cors setup. Set insecure=true to
+  skip TLS verification for an internal or self-signed certificate.
 side_effects:
   - One curl HEAD request.
   - Read-only.
@@ -14,14 +17,20 @@ args:
     description: URL.
     validation:
       pattern: "^https?://[a-zA-Z0-9.:/_\\-?=&%+]{1,512}$"
+  - name: insecure
+    type: boolean
+    required: false
+    default: false
+    description: Skip TLS certificate verification (curl -k). Use for internal or self-signed certs.
 execution:
   command:
-    binary: curl
+    binary: /bin/sh
     argv:
-      - "-sIL"
-      - "--max-time"
-      - "10"
-      - "{{ args.url }}"
+      - "-c"
+      - 'set --; [ "$INSECURE" = "true" ] && set -- -k; exec curl -sIL "$@" --max-time 10 "$URL"'
+  env:
+    URL: "{{ args.url }}"
+    INSECURE: "{{ args.insecure }}"
   timeout: 30s
 output:
   parser: text

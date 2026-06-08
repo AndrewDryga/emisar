@@ -25,6 +25,11 @@ cases:
   args:
     url: https://example.com/
   expect_exit: 0
+- action: net.http_probe
+  args:
+    url: https://example.com/
+    insecure: true
+  expect_exit: 0
 - action: net.ipinfo_lookup
   args:
     ip: 1.1.1.1

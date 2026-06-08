@@ -1,11 +1,14 @@
 schema_version: 1
 id: consul.leader
-title: consul operator raft list-peers
+title: GET /v1/status/leader
 kind: exec
 risk: low
-description: Current Raft leader address.
+description: >
+  Current Raft leader address for this datacenter. Reads the status
+  endpoint, which is not ACL-gated, so it answers "is there a leader?"
+  even when no CONSUL_HTTP_TOKEN is set.
 side_effects:
-  - One agent call.
+  - One API call.
   - Read-only.
 args: []
 execution:
@@ -13,12 +16,12 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "consul info | grep -E 'leader|leader_addr' | head -10"
+      - "curl -sS -H \"X-Consul-Token: $CONSUL_HTTP_TOKEN\" \"${CONSUL_HTTP_ADDR:-http://127.0.0.1:8500}/v1/status/leader\""
   timeout: 15s
 output:
-  parser: text
+  parser: json
   max_stdout_bytes: 4096
   max_stderr_bytes: 8192
 examples:
-  - title: Leader
+  - title: Leader address
     args: {}

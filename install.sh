@@ -556,18 +556,33 @@ download_release() {
 
 ensure_user_linux() {
   if id "${SERVICE_USER}" >/dev/null 2>&1; then
-    return 0
-  fi
-  log "creating system user ${SERVICE_USER}"
-  if command -v useradd >/dev/null 2>&1; then
+    : # already exists
+  elif command -v useradd >/dev/null 2>&1; then
+    log "creating system user ${SERVICE_USER}"
     useradd --system --no-create-home --shell /usr/sbin/nologin \
       --home-dir "${DATA_DIR}" "${SERVICE_USER}"
   elif command -v adduser >/dev/null 2>&1; then
     # BusyBox/Alpine fallback.
+    log "creating system user ${SERVICE_USER}"
     adduser -S -D -H -h "${DATA_DIR}" -s /sbin/nologin "${SERVICE_USER}"
   else
     die "neither useradd nor adduser available; cannot create service user"
   fi
+
+  # Grant read access to the system journal and /var/log so the log
+  # diagnostics work without running as root: journalctl/journalctl_grep,
+  # tail_log/grep_log, failed_logins, and the dmesg actions' journalctl -k
+  # fallback. Read-only group membership; best-effort and idempotent —
+  # skip any group this distro doesn't define. A running service picks the
+  # groups up on the post-install restart.
+  for grp in systemd-journal adm; do
+    grep -q "^${grp}:" /etc/group 2>/dev/null || continue
+    if command -v usermod >/dev/null 2>&1; then
+      usermod -aG "${grp}" "${SERVICE_USER}" 2>/dev/null || true
+    elif command -v addgroup >/dev/null 2>&1; then
+      addgroup "${SERVICE_USER}" "${grp}" 2>/dev/null || true
+    fi
+  done
 }
 
 ensure_user_macos() {

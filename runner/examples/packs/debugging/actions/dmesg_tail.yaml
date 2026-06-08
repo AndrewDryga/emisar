@@ -7,12 +7,14 @@ risk: low
 
 description: >
   Returns the last N kernel log lines. Surfaces OOM kills, hardware
-  errors, network link flaps, and dropped packets. On modern hosts
-  this requires CAP_SYSLOG (or the runner running as root or in the
-  systemd-journal group). Read-only.
+  errors, network link flaps, and dropped packets. Reads the kernel ring
+  buffer via dmesg; when that is not permitted (modern kernels gate it
+  behind CAP_SYSLOG) it falls back to `journalctl -k`, which works when
+  the runner can read the journal (root, or a member of systemd-journal /
+  adm). Read-only.
 
 side_effects:
-  - One dmesg invocation.
+  - One dmesg (or journalctl -k) invocation.
   - Read-only.
 
 args:
@@ -30,7 +32,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "dmesg -T | tail -n {{ args.lines }}"
+      - "{ dmesg -T 2>/dev/null || journalctl -k --no-pager -n {{ args.lines }}; } | tail -n {{ args.lines }}"
   timeout: 15s
 
 output:

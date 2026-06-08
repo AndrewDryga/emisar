@@ -2,7 +2,7 @@ schema_version: 1
 
 id: debugging
 name: Linux debugging toolkit
-version: 0.2.4
+version: 0.2.5
 description: >
   General-purpose Linux diagnostics + low-level remediation: process
   and memory tops, vmstat/iostat snapshots, socket inventories,

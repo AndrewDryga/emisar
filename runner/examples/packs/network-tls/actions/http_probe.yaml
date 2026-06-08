@@ -4,9 +4,13 @@ title: HTTP probe with timing
 kind: exec
 risk: low
 description: >
-  Probes a URL with curl, returning HTTP status, DNS / TCP / TLS / total timings, and bytes transferred. Use as a synthetic check.
+  Probes a URL with curl, returning HTTP status, DNS / TCP / TLS / total
+  timings, and bytes transferred. Use as a synthetic check. Set
+  insecure=true to skip TLS verification when the endpoint serves an
+  internal or self-signed certificate (otherwise such a probe reports
+  http_code=000).
 side_effects:
-  - Outbound HTTPS to the URL.
+  - Outbound HTTP(S) to the URL.
   - Read-only.
 args:
   - name: url
@@ -23,18 +27,21 @@ args:
     validation:
       min: 1
       max: 60
+  - name: insecure
+    type: boolean
+    required: false
+    default: false
+    description: Skip TLS certificate verification (curl -k). Use for internal or self-signed certs.
 execution:
   command:
-    binary: curl
+    binary: /bin/sh
     argv:
-      - "-sS"
-      - "-o"
-      - "/dev/null"
-      - "--max-time"
-      - "{{ args.max_time }}"
-      - "-w"
-      - "http_code=%{http_code}\\nlookup=%{time_namelookup}\\nconnect=%{time_connect}\\nappconnect=%{time_appconnect}\\nstarttransfer=%{time_starttransfer}\\ntotal=%{time_total}\\nsize=%{size_download}\\n"
-      - "{{ args.url }}"
+      - "-c"
+      - 'set --; [ "$INSECURE" = "true" ] && set -- -k; exec curl -sS "$@" -o /dev/null --max-time "$MAX_TIME" -w "http_code=%{http_code}\nlookup=%{time_namelookup}\nconnect=%{time_connect}\nappconnect=%{time_appconnect}\nstarttransfer=%{time_starttransfer}\ntotal=%{time_total}\nsize=%{size_download}\n" "$URL"'
+  env:
+    URL: "{{ args.url }}"
+    MAX_TIME: "{{ args.max_time }}"
+    INSECURE: "{{ args.insecure }}"
   timeout: 90s
 output:
   parser: text
@@ -44,3 +51,7 @@ examples:
   - title: Probe example.com
     args:
       url: "https://example.com/"
+  - title: Probe an internal endpoint with a self-signed cert
+    args:
+      url: "https://10.0.0.5:8443/healthz"
+      insecure: true
