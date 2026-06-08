@@ -359,10 +359,17 @@ defmodule Emisar.Runners do
       labels: payload["labels"] || runner.labels,
       runner_version: payload["version"] || runner.runner_version,
       packs: payload["packs"] || runner.packs,
-      external_id: payload["runner_id"] || runner.external_id
+      external_id: payload["runner_id"] || runner.external_id,
+      # A config `runner.group` rename reaches the cloud here, on reconnect —
+      # so update it. Keep the existing group when the payload's is missing or
+      # blank (never wipe a runner's group to "").
+      group: nonblank(payload["group"]) || runner.group
     })
     |> Repo.update()
   end
+
+  defp nonblank(s) when is_binary(s) and s != "", do: s
+  defp nonblank(_), do: nil
 
   @doc """
   Internal — called by the runner socket on connect. Tracks the socket

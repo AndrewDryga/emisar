@@ -86,7 +86,10 @@ defmodule Emisar.Runners.Runner.Changeset do
     # payload (the runner may serialize it as JSON null on the wire,
     # which Ecto's cast would write through as nil and trip the
     # NOT NULL constraint).
-    cast(runner, attrs, [:hostname, :labels, :runner_version, :packs])
+    # `group` is included so a config `runner.group` rename propagates on the
+    # next reconnect; the caller only passes a non-blank value (otherwise the
+    # existing group is kept), so this never wipes a group to "".
+    cast(runner, attrs, [:hostname, :labels, :runner_version, :packs, :group])
   end
 
   # Connect/disconnect stamp the durable "last seen" history only.

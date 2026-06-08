@@ -668,4 +668,31 @@ defmodule Emisar.RunnersTest do
       assert {:error, :over_limit, "legacy-pro", 3} = Billing.check_limit(legacy, :runners)
     end
   end
+
+  describe "apply_state/2 — group" do
+    test "a config runner.group rename propagates on the next reconnect" do
+      account = account_fixture()
+      runner = runner_fixture(account_id: account.id, group: "old-group")
+
+      {:ok, updated} =
+        Runners.apply_state(runner, %{
+          "group" => "new-group",
+          "hostname" => "h1",
+          "packs" => %{}
+        })
+
+      assert updated.group == "new-group"
+    end
+
+    test "keeps the existing group when the payload's group is blank or missing" do
+      account = account_fixture()
+      runner = runner_fixture(account_id: account.id, group: "keep-me")
+
+      assert {:ok, blank} = Runners.apply_state(runner, %{"group" => ""})
+      assert blank.group == "keep-me"
+
+      assert {:ok, missing} = Runners.apply_state(runner, %{"hostname" => "h2"})
+      assert missing.group == "keep-me"
+    end
+  end
 end
