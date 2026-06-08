@@ -1,0 +1,27 @@
+schema_version: 1
+id: pfsense.interface_status
+title: GET /api/v2/status/interfaces
+kind: script
+risk: low
+description: >
+  Per-interface live status — link state, IPv4/IPv6 addresses, media, and
+  in/out packet + byte + error counters. Use to spot a down WAN or errors.
+side_effects:
+  - One read-only HTTP GET to the pfSense REST API.
+  - Read-only.
+args: []
+execution:
+  script:
+    path: scripts/pfreq.sh
+    interpreter: /bin/sh
+  argv:
+    - "GET"
+    - "/api/v2/status/interfaces"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: Interface status
+    args: {}

@@ -1,0 +1,27 @@
+schema_version: 1
+id: pfsense.service_status
+title: GET /api/v2/status/services
+kind: script
+risk: low
+description: >
+  All pfSense services with their enabled flag and running state (unbound,
+  dhcpd/kea, openvpn, ipsec, dpinger, …). Use to find a stopped service.
+side_effects:
+  - One read-only HTTP GET to the pfSense REST API.
+  - Read-only.
+args: []
+execution:
+  script:
+    path: scripts/pfreq.sh
+    interpreter: /bin/sh
+  argv:
+    - "GET"
+    - "/api/v2/status/services"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: Service status
+    args: {}

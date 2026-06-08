@@ -1,0 +1,27 @@
+schema_version: 1
+id: pfsense.arp_table
+title: GET /api/v2/diagnostics/arp_table
+kind: script
+risk: low
+description: >
+  The ARP table — IP ↔ MAC ↔ interface, with hostname and expiry. Use to
+  confirm a host is on the network and which interface it is on.
+side_effects:
+  - One read-only HTTP GET to the pfSense REST API.
+  - Read-only.
+args: []
+execution:
+  script:
+    path: scripts/pfreq.sh
+    interpreter: /bin/sh
+  argv:
+    - "GET"
+    - "/api/v2/diagnostics/arp_table"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: ARP table
+    args: {}

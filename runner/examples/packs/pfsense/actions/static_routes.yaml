@@ -1,0 +1,27 @@
+schema_version: 1
+id: pfsense.static_routes
+title: GET /api/v2/routing/static_routes
+kind: script
+risk: low
+description: >
+  Configured static routes — destination network, gateway, and description.
+  Use to check routing for a reachability problem.
+side_effects:
+  - One read-only HTTP GET to the pfSense REST API.
+  - Read-only.
+args: []
+execution:
+  script:
+    path: scripts/pfreq.sh
+    interpreter: /bin/sh
+  argv:
+    - "GET"
+    - "/api/v2/routing/static_routes"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: Static routes
+    args: {}

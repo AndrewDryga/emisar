@@ -1,0 +1,77 @@
+schema_version: 1
+
+id: pfsense
+name: pfSense firewall
+version: 0.1.0
+description: >
+  Operate a pfSense firewall over its REST API: read firewall rules, NAT,
+  aliases, interface / gateway / service / VPN status, DHCP leases, routes,
+  ARP, CARP, and logs, plus a few gated mutators (apply filter, flush
+  states, restart a service, reboot). Uses the community pfSense-pkg-RESTAPI
+  package (/api/v2), which runs on the firewall and works across CE and Plus.
+vendor: emisar
+homepage: https://github.com/andrewdryga/emisar
+
+requires:
+  os:
+    - linux
+  binaries:
+    - curl
+
+# No detect block: the API is reached remotely over HTTPS, so there is no
+# local signal on the runner host to suggest this pack on.
+
+setup:
+  summary: >
+    Every action calls the pfSense REST API at $PFSENSE_URL via curl, sending
+    $PFSENSE_API_KEY as the X-API-Key header. Install the community
+    pfSense-pkg-RESTAPI package on the firewall (System → Package Manager),
+    mint a key under System → REST API → Keys, and point PFSENSE_URL at the
+    firewall's GUI URL.
+  env:
+    - name: PFSENSE_URL
+      default: https://192.168.1.1
+      description: >
+        Firewall GUI / API base URL — scheme, host, and port if non-default.
+        The API is served on the same TLS + port as the webConfigurator.
+      example: https://fw1.internal
+    - name: PFSENSE_API_KEY
+      required: true
+      description: >
+        REST API key (System → REST API → Keys). Sent as the X-API-Key
+        header over curl stdin, so it never appears in the process arguments
+        or the audit log. Use a least-privilege, read-only key.
+    - name: PFSENSE_INSECURE
+      required: false
+      description: >
+        Set to "true" to skip TLS verification — needed for the default
+        self-signed GUI certificate. Prefer pinning a CA via CURL_CA_BUNDLE.
+  notes:
+    - "Requires the community REST API package (pfSense-pkg-RESTAPI, /api/v2) installed on the firewall — not Netgate's Nexus controller API. The package's read_only switch (System → REST API) forces the whole API GET-only; pair it with a read-only key for a diagnostics deployment."
+    - "TLS is verified by default. pfSense ships a self-signed GUI cert, so set PFSENSE_INSECURE=true, or set CURL_CA_BUNDLE to a CA file (curl reads it natively) to verify properly."
+    - "Reads that could expose secrets (users, certificate private keys, IPsec phase configs) are intentionally omitted. The mutators are risk-gated; reboot is critical."
+  verify: pfsense.version
+
+actions:
+  - actions/system_status.yaml
+  - actions/version.yaml
+  - actions/firewall_rules.yaml
+  - actions/nat_port_forwards.yaml
+  - actions/nat_outbound.yaml
+  - actions/aliases.yaml
+  - actions/states_size.yaml
+  - actions/interface_status.yaml
+  - actions/gateway_status.yaml
+  - actions/static_routes.yaml
+  - actions/arp_table.yaml
+  - actions/service_status.yaml
+  - actions/dhcp_leases.yaml
+  - actions/openvpn_status.yaml
+  - actions/ipsec_status.yaml
+  - actions/carp_status.yaml
+  - actions/firewall_log.yaml
+  - actions/system_log.yaml
+  - actions/apply_filter.yaml
+  - actions/flush_states.yaml
+  - actions/restart_service.yaml
+  - actions/reboot.yaml

@@ -1,0 +1,28 @@
+schema_version: 1
+id: pfsense.apply_filter
+title: POST /api/v2/firewall/apply
+kind: script
+risk: medium
+description: >
+  Apply staged firewall changes — reloads the pf filter so pending rule,
+  NAT, or alias edits take effect. Idempotent and low blast radius, but it
+  does push whatever is currently staged into the live ruleset.
+side_effects:
+  - Reloads the firewall filter (brief).
+  - Applies any staged firewall configuration changes to the live ruleset.
+args: []
+execution:
+  script:
+    path: scripts/pfreq.sh
+    interpreter: /bin/sh
+  argv:
+    - "POST"
+    - "/api/v2/firewall/apply"
+  timeout: 60s
+output:
+  parser: json
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: Apply staged firewall changes
+    args: {}

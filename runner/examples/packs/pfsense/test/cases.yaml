@@ -1,0 +1,79 @@
+defaults:
+  env:
+    PFSENSE_URL: https://pfsense
+    PFSENSE_API_KEY: test-key
+    PFSENSE_INSECURE: "true"
+cases:
+- action: pfsense.version
+  args: {}
+  expect_exit: 0
+- action: pfsense.system_status
+  args: {}
+  expect_exit: 0
+- action: pfsense.firewall_rules
+  args: {}
+  expect_exit: 0
+- action: pfsense.nat_port_forwards
+  args: {}
+  expect_exit: 0
+- action: pfsense.nat_outbound
+  args: {}
+  expect_exit: 0
+- action: pfsense.aliases
+  args: {}
+  expect_exit: 0
+- action: pfsense.states_size
+  args: {}
+  expect_exit: 0
+- action: pfsense.interface_status
+  args: {}
+  expect_exit: 0
+- action: pfsense.gateway_status
+  args: {}
+  expect_exit: 0
+- action: pfsense.static_routes
+  args: {}
+  expect_exit: 0
+- action: pfsense.arp_table
+  args: {}
+  expect_exit: 0
+- action: pfsense.service_status
+  args: {}
+  expect_exit: 0
+- action: pfsense.dhcp_leases
+  args: {}
+  expect_exit: 0
+- action: pfsense.openvpn_status
+  args: {}
+  expect_exit: 0
+- action: pfsense.ipsec_status
+  args: {}
+  expect_exit: 0
+- action: pfsense.carp_status
+  args: {}
+  expect_exit: 0
+- action: pfsense.firewall_log
+  args:
+    limit: 50
+  expect_exit: 0
+- action: pfsense.system_log
+  args:
+    limit: 50
+  expect_exit: 0
+- action: pfsense.apply_filter
+  args: {}
+  expect_exit: 0
+  skip: mutator skipped by default (medium)
+- action: pfsense.flush_states
+  args: {}
+  expect_exit: 0
+  skip: mutator skipped by default (high)
+- action: pfsense.restart_service
+  args:
+    service: unbound
+  expect_exit: 0
+  skip: mutator skipped by default (high)
+- action: pfsense.reboot
+  args: {}
+  expect_exit: 0
+  skip: mutator skipped by default (critical)

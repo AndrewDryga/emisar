@@ -1,0 +1,27 @@
+schema_version: 1
+id: pfsense.aliases
+title: GET /api/v2/firewall/aliases
+kind: script
+risk: low
+description: >
+  Firewall aliases (named host / network / port groups) and their members.
+  Use to see which IPs a block/allow list currently contains.
+side_effects:
+  - One read-only HTTP GET to the pfSense REST API.
+  - Read-only.
+args: []
+execution:
+  script:
+    path: scripts/pfreq.sh
+    interpreter: /bin/sh
+  argv:
+    - "GET"
+    - "/api/v2/firewall/aliases"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: All aliases
+    args: {}

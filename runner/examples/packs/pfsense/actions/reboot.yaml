@@ -1,0 +1,28 @@
+schema_version: 1
+id: pfsense.reboot
+title: POST /api/v2/diagnostics/reboot
+kind: script
+risk: critical
+description: >
+  Reboot the firewall. All traffic through the box stops until it finishes
+  booting, and there is no remote undo. Use only when a reboot is genuinely
+  required.
+side_effects:
+  - Reboots the firewall.
+  - All traffic through the firewall stops until the boot completes.
+args: []
+execution:
+  script:
+    path: scripts/pfreq.sh
+    interpreter: /bin/sh
+  argv:
+    - "POST"
+    - "/api/v2/diagnostics/reboot"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: Reboot the firewall
+    args: {}

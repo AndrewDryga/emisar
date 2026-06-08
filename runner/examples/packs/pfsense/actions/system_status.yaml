@@ -1,0 +1,28 @@
+schema_version: 1
+id: pfsense.system_status
+title: GET /api/v2/status/system
+kind: script
+risk: low
+description: >
+  Firewall system health — version, uptime, CPU model/usage/load, memory,
+  swap, mbuf and disk usage, and temperature. The first stop for "how is the
+  box doing?".
+side_effects:
+  - One read-only HTTP GET to the pfSense REST API.
+  - Read-only.
+args: []
+execution:
+  script:
+    path: scripts/pfreq.sh
+    interpreter: /bin/sh
+  argv:
+    - "GET"
+    - "/api/v2/status/system"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: System health
+    args: {}

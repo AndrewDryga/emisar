@@ -1,0 +1,28 @@
+schema_version: 1
+id: pfsense.openvpn_status
+title: GET /api/v2/status/openvpn/servers
+kind: script
+risk: low
+description: >
+  OpenVPN server status — each server and its connected clients (common
+  name, real address, bytes in/out, connected-since). Use to see who is on
+  the VPN.
+side_effects:
+  - One read-only HTTP GET to the pfSense REST API.
+  - Read-only.
+args: []
+execution:
+  script:
+    path: scripts/pfreq.sh
+    interpreter: /bin/sh
+  argv:
+    - "GET"
+    - "/api/v2/status/openvpn/servers"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: OpenVPN status
+    args: {}

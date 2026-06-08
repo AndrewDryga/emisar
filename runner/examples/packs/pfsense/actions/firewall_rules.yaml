@@ -1,0 +1,27 @@
+schema_version: 1
+id: pfsense.firewall_rules
+title: GET /api/v2/firewall/rules
+kind: script
+risk: low
+description: >
+  All configured firewall filter rules, in order, with interface, action,
+  source, destination, and description. Use to see what is allowed or blocked.
+side_effects:
+  - One read-only HTTP GET to the pfSense REST API.
+  - Read-only.
+args: []
+execution:
+  script:
+    path: scripts/pfreq.sh
+    interpreter: /bin/sh
+  argv:
+    - "GET"
+    - "/api/v2/firewall/rules"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 2097152
+  max_stderr_bytes: 8192
+examples:
+  - title: All filter rules
+    args: {}

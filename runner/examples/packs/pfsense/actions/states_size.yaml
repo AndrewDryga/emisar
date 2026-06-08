@@ -1,0 +1,27 @@
+schema_version: 1
+id: pfsense.states_size
+title: GET /api/v2/firewall/states/size
+kind: script
+risk: low
+description: >
+  Current firewall state-table count and the configured maximum. Use to
+  watch for state exhaustion. Cheap — does not dump the whole table.
+side_effects:
+  - One read-only HTTP GET to the pfSense REST API.
+  - Read-only.
+args: []
+execution:
+  script:
+    path: scripts/pfreq.sh
+    interpreter: /bin/sh
+  argv:
+    - "GET"
+    - "/api/v2/firewall/states/size"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: State table count vs max
+    args: {}

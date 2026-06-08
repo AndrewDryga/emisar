@@ -1,0 +1,28 @@
+schema_version: 1
+id: pfsense.flush_states
+title: DELETE /api/v2/firewall/states
+kind: script
+risk: high
+description: >
+  Flush the entire firewall state table — drops every tracked connection
+  through the firewall. Existing sessions must re-establish. Use to clear a
+  stuck state table or force traffic to re-evaluate against new rules.
+side_effects:
+  - Clears the entire pf state table.
+  - Every active connection through the firewall is dropped and must reconnect.
+args: []
+execution:
+  script:
+    path: scripts/pfreq.sh
+    interpreter: /bin/sh
+  argv:
+    - "DELETE"
+    - "/api/v2/firewall/states"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: Flush the state table
+    args: {}
