@@ -2,7 +2,7 @@ schema_version: 1
 
 id: postfix
 name: Postfix mail server
-version: 0.1.2
+version: 0.1.3
 description: >
   Queue inspection, config dump, log tailing, plus narrow operator
   actions (flush, requeue, delete-by-queue-id). All queue mutators are
@@ -15,10 +15,12 @@ requires:
   os:
     - linux
 
-# `emisar pack suggest` detection — default process names / ports.
+# `emisar pack suggest` detection: a postfix-specific CLI. The master
+# process is generically named `master`, and :25 is shared by every MTA —
+# neither discriminates postfix, so detect by a postfix-only binary.
 detect:
-  ports:
-    - 25
+  binaries:
+    - postqueue
 
 setup:
   summary: >

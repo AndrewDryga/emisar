@@ -2,7 +2,7 @@ schema_version: 1
 
 id: apache-httpd
 name: Apache HTTPD operations
-version: 0.1.2
+version: 0.1.3
 description: >
   Apache version, modules, mod_status snapshot, config syntax check,
   vhost dump, error/access log tails, plus narrow mutators (graceful
@@ -23,9 +23,6 @@ detect:
   processes:
     - httpd
     - apache2
-  ports:
-    - 80
-    - 443
 
 setup:
   summary: >

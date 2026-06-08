@@ -2,7 +2,7 @@ schema_version: 1
 
 id: cassandra
 name: Cassandra operations
-version: 0.4.2
+version: 0.4.3
 description: >
   Deep Cassandra ops via nodetool + cqlsh: topology (status, ring,
   gossip, describering, failure detector), health (tpstats, netstats,
@@ -24,7 +24,6 @@ requires:
 detect:
   ports:
     - 9042
-    - 7000
 
 setup:
   summary: >

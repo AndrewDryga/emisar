@@ -2,7 +2,7 @@ schema_version: 1
 
 id: clickhouse
 name: ClickHouse analytics DB
-version: 0.1.2
+version: 0.1.3
 description: >
   ClickHouse server + table introspection plus narrow mutators
   (OPTIMIZE, KILL QUERY, SYSTEM RELOAD CONFIG). Auth via CH_HOST +
@@ -23,7 +23,6 @@ detect:
     - clickhouse-server
   ports:
     - 8123
-    - 9000
 
 setup:
   summary: >

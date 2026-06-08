@@ -2,7 +2,7 @@ schema_version: 1
 
 id: grafana
 name: Grafana
-version: 0.1.2
+version: 0.1.3
 description: >
   Grafana admin-API ops — datasource health, dashboard listings, alert
   state, user list, version, settings. Read-only. Auth via GRAFANA_URL
@@ -23,8 +23,6 @@ detect:
   processes:
     - grafana-server
     - grafana
-  ports:
-    - 3000
 
 setup:
   summary: >

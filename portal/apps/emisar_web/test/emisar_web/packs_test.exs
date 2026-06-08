@@ -112,7 +112,8 @@ defmodule EmisarWeb.PacksTest do
       grafana = by_id["grafana"]
       assert grafana.detect.binaries == []
       assert "grafana-server" in grafana.detect.processes
-      assert 3000 in grafana.detect.ports
+      # grafana detects by process only — :3000 is shared with Node/dev apps.
+      assert grafana.detect.ports == []
 
       # consul: no detect block → binaries derived from requires (consul,
       # which is service-specific, survives; a generic helper would not).
@@ -138,7 +139,7 @@ defmodule EmisarWeb.PacksTest do
                "sha256:e9048bcc2f6470457ff9dd7e2a2d1e3eeb0444fd09fd85f6d0ceb132216daede"
 
       assert PacksRegistry.get("cassandra").content_hash ==
-               "sha256:2be5ccf112938c4293d53118dbfd2a03592f2cf006e1892fda60bd66e41a8927"
+               "sha256:bd0a491e6275c9964206faa690c61c31a4d781a27ccc3b59bb4a1fbbcf3b932b"
     end
 
     test "tarball/1 returns a gzip tarball with flat pack files" do
@@ -179,7 +180,7 @@ defmodule EmisarWeb.PacksTest do
       refute "cloudflare" in ids
 
       grafana = Enum.find(body["packs"], &(&1["id"] == "grafana"))
-      assert grafana["detect"]["ports"] == [3000]
+      assert grafana["detect"]["ports"] == []
       assert "grafana-server" in grafana["detect"]["processes"]
       assert grafana["detect"]["binaries"] == []
       # Lean: suggestion doesn't need the hash/tarball/description.

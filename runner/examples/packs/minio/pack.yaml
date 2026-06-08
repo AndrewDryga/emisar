@@ -1,7 +1,7 @@
 schema_version: 1
 id: minio
 name: MinIO operations
-version: 0.1.2
+version: 0.1.3
 description: >
   Cluster + bucket + user introspection plus operator surface (user
   enable/disable, bucket heal, cluster service restart). Talks to mc
@@ -17,8 +17,6 @@ requires:
 detect:
   processes:
     - minio
-  ports:
-    - 9000
 
 setup:
   summary: >
