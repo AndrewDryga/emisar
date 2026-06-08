@@ -2,18 +2,18 @@ schema_version: 1
 id: postgres.explain_analyze
 title: EXPLAIN ANALYZE (FORMAT JSON) <query>
 kind: exec
-risk: medium
+risk: high
 description: >
-  Runs EXPLAIN ANALYZE. The query IS executed (with timing). Use ONLY on read-only queries — pattern-limits to SELECT/WITH but does not guarantee no side effects on functions called.
+  Runs EXPLAIN ANALYZE — the query IS executed (with timing). Forced into a read-only transaction (default_transaction_read_only=on) so data-modifying CTEs and volatile writes are rejected by the server, but the read still runs and can be expensive. High-risk because it executes an arbitrary operator-supplied query on the live database; use explain_query for a plan without execution.
 side_effects:
-  - Query is executed with timing instrumentation.
-  - Slower than EXPLAIN-only.
-  - If the query has volatile functions, those side effects happen.
+  - Query is executed with timing instrumentation, inside a read-only transaction.
+  - Slower than EXPLAIN-only; a heavy query loads the server for up to the timeout.
+  - Data-modifying statements and CTEs (INSERT/UPDATE/DELETE) are rejected by the read-only transaction.
 args:
   - name: query
     type: string
     required: true
-    description: SELECT or WITH statement.
+    description: SELECT or WITH statement (executed read-only).
     validation:
       pattern: "^(SELECT|select|WITH|with)[^;]{1,8000}$"
 execution:
@@ -23,6 +23,8 @@ execution:
       - "-XAt"
       - "-c"
       - "EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) {{ args.query }}"
+  env:
+    PGOPTIONS: "-c default_transaction_read_only=on"
   timeout: 5m
 output:
   parser: json

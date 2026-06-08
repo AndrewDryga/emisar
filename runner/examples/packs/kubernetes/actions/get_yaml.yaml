@@ -4,7 +4,7 @@ title: Get resource YAML
 kind: exec
 risk: low
 description: >
-  Returns the full YAML definition of one resource. Kind argument is restricted to a safe enum to prevent reading arbitrary CRDs of unknown size.
+  Returns the full YAML definition of one resource. Kind is restricted to a safe enum that excludes secrets and configmaps (their .data carries credentials) and arbitrary CRDs of unknown size — read those via a dedicated higher-risk action, not this auto-allowed one.
 side_effects:
   - One kubectl get invocation.
   - Read-only.
@@ -20,7 +20,7 @@ args:
     required: true
     description: Resource kind.
     validation:
-      enum: [pod, deployment, statefulset, daemonset, service, ingress, configmap, secret, pvc, hpa, cronjob, job]
+      enum: [pod, deployment, statefulset, daemonset, service, ingress, pvc, hpa, cronjob, job]
   - name: name
     type: string
     required: true

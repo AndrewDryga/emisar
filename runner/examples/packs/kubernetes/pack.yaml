@@ -2,7 +2,7 @@ schema_version: 1
 
 id: kubernetes
 name: Kubernetes operations pack
-version: 0.1.1
+version: 0.1.2
 description: >
   Operator pack for Kubernetes clusters: discovery (pods, nodes,
   services, deployments), deep introspection (describe, logs, events),
