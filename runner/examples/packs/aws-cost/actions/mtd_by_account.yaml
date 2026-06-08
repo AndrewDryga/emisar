@@ -11,7 +11,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "START=$(date -u +%Y-%m-01); END=$(date -u +%Y-%m-%d); aws ce get-cost-and-usage --time-period Start=$START,End=$END --granularity MONTHLY --metrics UnblendedCost --group-by Type=DIMENSION,Key=LINKED_ACCOUNT --output json"
+      - "START=$(date -u +%Y-%m-01); END=$(date -u -d tomorrow +%Y-%m-%d); aws ce get-cost-and-usage --time-period Start=$START,End=$END --granularity MONTHLY --metrics UnblendedCost --group-by Type=DIMENSION,Key=LINKED_ACCOUNT --output json"
   timeout: 60s
 output:
   parser: json

@@ -1,9 +1,12 @@
 schema_version: 1
 id: cf.firewall_rules
-title: GET /zones/<id>/firewall/rules
+title: GET /zones/<id>/rulesets/phases/http_request_firewall_custom/entrypoint
 kind: exec
 risk: low
-description: All zone firewall rules.
+description: >
+  Zone WAF custom rules — the entrypoint ruleset for the
+  http_request_firewall_custom phase. Replaces the legacy /firewall/rules
+  API, which Cloudflare sunset on 2025-06-15.
 side_effects:
   - One API request.
   - Read-only.
@@ -19,7 +22,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "curl -sS \"https://api.cloudflare.com/client/v4/zones/{{ args.zone_id }}/firewall/rules\" -H \"Authorization: Bearer $CF_API_TOKEN\""
+      - "curl -sS \"https://api.cloudflare.com/client/v4/zones/{{ args.zone_id }}/rulesets/phases/http_request_firewall_custom/entrypoint\" -H \"Authorization: Bearer $CF_API_TOKEN\""
   timeout: 30s
 output:
   parser: json

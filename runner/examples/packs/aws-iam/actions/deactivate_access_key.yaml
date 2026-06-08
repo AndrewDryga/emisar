@@ -27,7 +27,7 @@ args:
       pattern: "^[A-Z0-9]{16,128}$"
 execution:
   command:
-    binary: /usr/local/bin/aws
+    binary: aws
     argv:
       - "iam"
       - "update-access-key"
