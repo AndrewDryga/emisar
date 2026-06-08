@@ -30,7 +30,8 @@ setup:
     multipathd — no credentials needed. multipath and multipathd both
     need root (device-mapper + the daemon control socket).
   notes:
-    - "multipath and multipathd require root. The `multipathd show ...` actions query the running daemon over its control socket; if multipathd isn't running they return an error."
+    - "multipath and multipathd need real root — device-mapper ioctls and multipathd's root-only control socket, with no group or capability that delegates them. The actions exec the binaries directly and the runner has no privilege escalation, so run the runner as root on multipath hosts (a `systemctl edit emisar` drop-in with `[Service]` / `User=root` / `Group=root`, then daemon-reload + restart)."
+    - "The `multipathd show ...` actions query the running daemon over its control socket; if multipathd isn't running they return an error."
   verify: multipath.topology
 
 actions:

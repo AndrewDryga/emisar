@@ -29,7 +29,8 @@ setup:
     credentials needed. iscsiadm needs root (it reads /sys and the
     initiator DB).
   notes:
-    - "iscsiadm requires root — the detailed session view (-P 3) especially. Run the runner as root, or grant iscsiadm via sudoers/polkit."
+    - "iscsiadm needs real root (netlink, /sys, the initiator DB) — no group or capability delegates it, and the -P 3 session detail especially. The actions exec iscsiadm directly and the runner has no privilege escalation, so the runner must run as root on iSCSI hosts. Set it with a drop-in: `systemctl edit emisar` adding `[Service]` / `User=root` / `Group=root`, then `systemctl daemon-reload && systemctl restart emisar`."
+    - "Running as root applies to every action on that host, not just these; on a dedicated storage host that's expected, and the cloud policy + approval gates still govern what runs."
   verify: iscsi.sessions
 
 actions:

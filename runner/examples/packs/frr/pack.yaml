@@ -29,7 +29,8 @@ setup:
     vtysh needs root or membership in the frrvty group to reach the
     daemon vty sockets.
   notes:
-    - "vtysh requires root or the frrvty group. Every action here is a read-only `show` command; an unconfigured protocol (no BGP, no BFD) returns an empty / 'no process' result rather than failing."
+    - "Prefer the frrvty group over root: vtysh reads the daemon vty sockets, which FRR group-owns by frrvty. Add the runner user and restart so the membership takes effect — `usermod -aG frrvty emisar` (add `frr` too if your build has no separate vty group), then `systemctl restart emisar` (restart, not reload). Root also works but isn't needed."
+    - "Every action here is a read-only `show` command; an unconfigured protocol (no BGP, no BFD) returns an empty / 'no process' result rather than failing."
   verify: frr.bgp_summary
 
 actions:
