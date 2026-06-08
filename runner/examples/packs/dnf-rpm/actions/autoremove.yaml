@@ -2,7 +2,7 @@ schema_version: 1
 id: dnf.autoremove
 title: dnf autoremove -y
 kind: exec
-risk: medium
+risk: high
 description: >
   Remove packages installed as dependencies that are no longer
   required by any installed package. Useful for /var/cache cleanup

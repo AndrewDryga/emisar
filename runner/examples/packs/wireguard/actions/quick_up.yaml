@@ -2,7 +2,7 @@ schema_version: 1
 id: wg.quick_up
 title: wg-quick up <iface>
 kind: exec
-risk: medium
+risk: high
 description: >
   Bring up a WireGuard interface defined in /etc/wireguard/<iface>.conf.
   Applies the address, peers, and PostUp rules.

@@ -2,7 +2,7 @@ schema_version: 1
 id: consul.destroy_session
 title: PUT /v1/session/destroy/<id>
 kind: exec
-risk: medium
+risk: high
 description: Destroys one session. Any locks held are released; KV entries with release behavior are unlocked.
 side_effects:
   - Session is destroyed immediately.

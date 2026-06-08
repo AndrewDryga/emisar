@@ -2,7 +2,7 @@ schema_version: 1
 id: time.timedatectl_set_ntp
 title: timedatectl set-ntp <bool>
 kind: exec
-risk: medium
+risk: high
 description: >
   Enable or disable NTP synchronization. Disabling is rare —
   primarily for offline testing.

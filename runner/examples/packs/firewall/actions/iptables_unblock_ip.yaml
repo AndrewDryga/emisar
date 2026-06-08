@@ -2,7 +2,7 @@ schema_version: 1
 id: fw.iptables_unblock_ip
 title: iptables -D INPUT -s <ip> -j DROP
 kind: exec
-risk: medium
+risk: high
 description: >
   Remove a previously-inserted DROP rule for one IP. Use to undo a
   manual block. Matches the rule by literal -s/-j signature; if the

@@ -2,7 +2,7 @@ schema_version: 1
 id: debugging.drop_caches
 title: echo <n> > /proc/sys/vm/drop_caches
 kind: exec
-risk: medium
+risk: high
 description: >
   Force the kernel to drop pagecache / dentries / inodes. Use only
   when a benchmark or memory-fragmentation test requires a cold

@@ -2,12 +2,13 @@ schema_version: 1
 
 id: postfix
 name: Postfix mail server
-version: 0.1.3
+version: 0.1.4
 description: >
   Queue inspection, config dump, log tailing, plus narrow operator
-  actions (flush, requeue, delete-by-queue-id). All queue mutators are
-  high-risk and audited. Postfix uid must own the runner OR runner must
-  be in the postdrop group.
+  actions (flush, requeue, delete-by-queue-id). These mutators are high-
+  or critical-risk; the reversible hold/release pause is medium. All are
+  audited. Postfix uid must own the runner OR runner must be in the
+  postdrop group.
 vendor: emisar
 homepage: https://github.com/andrewdryga/emisar
 

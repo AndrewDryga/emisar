@@ -2,7 +2,7 @@ schema_version: 1
 id: prom.clean_tombstones
 title: POST /api/v1/admin/tsdb/clean_tombstones
 kind: exec
-risk: medium
+risk: high
 description: >
   Reclaim disk space after a delete_series call. Tombstones are
   removed and the data they marked is permanently deleted.

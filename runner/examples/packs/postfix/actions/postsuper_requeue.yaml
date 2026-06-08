@@ -2,7 +2,7 @@ schema_version: 1
 id: postfix.postsuper_requeue
 title: postsuper -r <qid|ALL>
 kind: exec
-risk: medium
+risk: high
 description: >
   Re-queue one message (or ALL deferred). The message is re-classified
   from the deferred queue back to active, retrying delivery.

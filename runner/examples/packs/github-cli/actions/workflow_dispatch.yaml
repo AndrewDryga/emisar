@@ -2,7 +2,7 @@ schema_version: 1
 id: gh.workflow_dispatch
 title: gh workflow run <workflow>
 kind: exec
-risk: medium
+risk: high
 description: >
   Trigger a workflow that supports workflow_dispatch. Pass ref + JSON
   inputs. Used for ad-hoc deploys, scripted rollbacks, or manual
