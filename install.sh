@@ -22,6 +22,9 @@
 #   curl -sSL https://.../install.sh | sudo bash -s -- --version runner-v0.3.0
 #   curl -sSL https://.../install.sh | sudo bash -s -- --version 0.3.0
 #
+#   # Unattended (no prompts) with a fixed pack set — for CI / cloud-init:
+#   curl -sSL https://.../install.sh | sudo bash -s -- --yes --packs linux-core,postgres,redis
+#
 #   # Uninstall:
 #   sudo bash install.sh --uninstall
 #
@@ -44,6 +47,7 @@ LOG_DIR="${LOG_DIR:-/var/log/emisar}"
 SERVICE_USER="${SERVICE_USER:-emisar}"
 SERVICE_GROUP="${SERVICE_GROUP:-emisar}"
 ASSUME_YES="${ASSUME_YES:-0}"
+PRE_PACKS="${EMISAR_PACKS:-}"     # explicit packs to install (--packs); skips host detection
 NO_START="${NO_START:-0}"
 NO_SERVICE="${NO_SERVICE:-0}"     # skip user + service unit + activation
 MODE="install"                    # install|uninstall
@@ -52,7 +56,7 @@ usage() {
   cat <<'USAGE'
 emisar installer
 
-Usage: install.sh [--version TAG] [--uninstall] [--no-start] [--yes]
+Usage: install.sh [--version TAG] [--uninstall] [--no-start] [--yes] [--packs LIST]
 
 Flags:
   --version TAG      Install a specific runner release tag. Default: latest.
@@ -73,13 +77,18 @@ Flags:
   --data-dir DIR     Data dir (default /var/lib/emisar)
   --log-dir DIR      Log dir (default /var/log/emisar)
   --user NAME        Service user (default emisar)
-  --yes              Skip confirmation prompts.
+  --yes              Skip confirmation prompts (also auto-accepts the
+                     host-matched packs the installer would ask about).
+  --packs LIST       Comma/space-separated packs to install up front, e.g.
+                     --packs redis,postgres. Installs exactly these — no
+                     host detection, no prompt — from the bundle if present,
+                     else the registry. For unattended provisioning.
   --help             This message.
 
 Env vars accepted: VERSION, BIN_DIR, ETC_DIR, DATA_DIR, LOG_DIR,
-SERVICE_USER, SERVICE_GROUP, ASSUME_YES, NO_START, NO_SERVICE,
-EMISAR_REPO, EMISAR_URL, EMISAR_AUTH_KEY, RUNNER_GROUP, RUNNER_ROLE,
-RUNNER_ENVIRONMENT.
+SERVICE_USER, SERVICE_GROUP, ASSUME_YES, EMISAR_PACKS, NO_START,
+NO_SERVICE, EMISAR_REPO, EMISAR_URL, EMISAR_AUTH_KEY, RUNNER_GROUP,
+RUNNER_ROLE, RUNNER_ENVIRONMENT.
 
 EMISAR_URL + EMISAR_AUTH_KEY are baked into config.yaml + runner.env
 at install time so the runner boots without a follow-up edit.
@@ -114,6 +123,7 @@ while [ $# -gt 0 ]; do
     --log-dir) LOG_DIR="$2"; shift 2;;
     --user) SERVICE_USER="$2"; SERVICE_GROUP="$2"; shift 2;;
     --yes|-y) ASSUME_YES=1; shift;;
+    --packs) PRE_PACKS="$2"; shift 2;;
     --help|-h) usage; exit 0;;
     *) echo "unknown flag: $1" >&2; usage >&2; exit 2;;
   esac
@@ -724,6 +734,42 @@ install_suggested_packs() {
   fi
 }
 
+# install_named_packs installs an explicit, operator-given pack list
+# (--packs / EMISAR_PACKS): no host detection, no prompt. Each name is
+# installed from the bundle if present (offline), else fetched from the
+# registry. Invalid names and individual failures warn but never abort.
+install_named_packs() {
+  local bundle="$1/packs"
+  local dst="${ETC_DIR}/packs"
+  mkdir -p "${dst}"
+
+  local p src origin
+  for p in $(printf '%s' "${PRE_PACKS}" | tr ',' ' '); do
+    # A pack name is a single path segment; reject anything that could
+    # escape the bundle dir or malform the registry URL (we run as root).
+    case "${p}" in
+      ''|.|..|-*|.*|*..*|*[!a-zA-Z0-9._-]*)
+        warn "skipping invalid pack name '${p}'"; continue;;
+    esac
+
+    if [ -d "${bundle}/${p}" ]; then
+      src="${bundle}/${p}"; origin="bundled"
+    else
+      src="${p}"; origin="registry"
+    fi
+
+    if "${BIN_DIR}/emisar" pack install "${src}" --dest "${dst}" --force >/dev/null 2>&1; then
+      log "installed pack ${p} (${origin})"
+    else
+      warn "failed to install pack ${p} (${origin}) — continuing"
+    fi
+  done
+
+  if [ "${OS}" = "linux" ] && [ "${INIT}" != "none" ]; then
+    chown -R "${SERVICE_USER}:${SERVICE_GROUP}" "${dst}" 2>/dev/null || true
+  fi
+}
+
 install_systemd() {
   local unit="/etc/systemd/system/emisar.service"
   log "writing ${unit}"
@@ -842,8 +888,12 @@ do_install() {
 
   ensure_dirs
   install_binary "${extracted}"
-  install_default_packs "${extracted}"
-  install_suggested_packs
+  if [ -n "${PRE_PACKS}" ]; then
+    install_named_packs "${extracted}"
+  else
+    install_default_packs "${extracted}"
+    install_suggested_packs
+  fi
   drop_config_skeleton
 
   case "${INIT}" in
