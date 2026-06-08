@@ -356,13 +356,16 @@ defmodule EmisarWeb.AgentsLive do
     end
   end
 
-  # The MCP client a key reported at `initialize` (clientInfo): "name" with
-  # "version" appended when present. nil until a client has connected.
-  defp reported_client(%ApiKey{last_client_info: %{"name" => name} = info})
-       when is_binary(name) and name != "" do
-    case info["version"] do
-      v when is_binary(v) and v != "" -> "#{name} #{v}"
-      _ -> name
+  # The MCP client a key reported at `initialize` (clientInfo): prefer the
+  # human-readable "title" over the machine "name", with "version" appended
+  # when present. nil until a client has connected.
+  defp reported_client(%ApiKey{last_client_info: %{} = info}) do
+    label = info["title"] || info["name"]
+
+    cond do
+      not (is_binary(label) and label != "") -> nil
+      is_binary(info["version"]) and info["version"] != "" -> "#{label} #{info["version"]}"
+      true -> label
     end
   end
 
