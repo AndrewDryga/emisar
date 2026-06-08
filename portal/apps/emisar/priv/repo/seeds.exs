@@ -146,12 +146,12 @@ unless (
             %{
               "id" => "uptime",
               "action_id" => "linux.uptime",
-              "runner_selector" => %{"group" => "edge-eu"}
+              "runner_selector" => %{"group" => ["edge-eu"]}
             },
             %{
               "id" => "disk",
               "action_id" => "linux.disk_usage",
-              "runner_selector" => %{"group" => "edge-eu"}
+              "runner_selector" => %{"group" => ["edge-eu"]}
             }
           ]
         }

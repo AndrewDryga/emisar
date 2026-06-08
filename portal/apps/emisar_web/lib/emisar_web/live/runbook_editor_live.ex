@@ -9,7 +9,7 @@ defmodule EmisarWeb.RunbookEditorLive do
   """
   use EmisarWeb, :live_view
 
-  alias Emisar.{Catalog, Runbooks}
+  alias Emisar.{Catalog, Runbooks, Runners}
   alias Emisar.Runbooks.Runbook
   alias EmisarWeb.Permissions
 
@@ -77,9 +77,26 @@ defmodule EmisarWeb.RunbookEditorLive do
       end)
       |> Map.new(fn {id, set} -> {id, set |> MapSet.to_list() |> Enum.sort()} end)
 
+    # Options for the runner-target picker. Fail soft to empty lists if the
+    # subject can't view runners — they can still author by typing, and the
+    # picker just shows its "none yet" hint.
+    runners =
+      case Runners.list_all_runners_for_account(socket.assigns.current_subject) do
+        {:ok, rs} -> rs
+        _ -> []
+      end
+
+    groups =
+      case Runners.list_group_summaries(socket.assigns.current_subject) do
+        {:ok, rows} -> rows |> Enum.map(&elem(&1, 0)) |> Enum.reject(&is_nil/1) |> Enum.sort()
+        _ -> []
+      end
+
     socket
     |> assign(:catalog_actions, actions)
     |> assign(:args_by_action, args_by_action)
+    |> assign(:runners, runners)
+    |> assign(:groups, groups)
   end
 
   # -- Events ---------------------------------------------------------
@@ -95,17 +112,23 @@ defmodule EmisarWeb.RunbookEditorLive do
   def handle_event("step_change", %{"index" => idx} = params, socket) do
     i = String.to_integer(idx)
 
-    # Form input is named `step_id` to avoid collision with the form
-    # element's HTML id — remap to the canonical "id" key here.
-    params =
-      params
-      |> Map.put("id", params["step_id"] || params["id"])
-      |> Map.take(~w(id action_id selector_kind selector_value))
-
     steps =
       List.update_at(socket.assigns.steps, i, fn step ->
+        kind = params["selector_kind"] || step["selector_kind"]
+
+        # Switching the kind (group ↔ runner) swaps the option set, so values
+        # selected against the old set no longer apply — drop them. An empty
+        # <select multiple> posts no key at all, so default to [].
+        values =
+          if kind == step["selector_kind"], do: List.wrap(params["selector_values"]), else: []
+
         step
-        |> Map.merge(params)
+        # Form input is named `step_id` to avoid colliding with the form
+        # element's HTML id — remap to the canonical "id" key here.
+        |> Map.put("id", params["step_id"] || step["id"])
+        |> Map.put("action_id", params["action_id"] || step["action_id"])
+        |> Map.put("selector_kind", kind)
+        |> Map.put("selector_values", values)
         |> maybe_autoderive_step_id(step)
       end)
 
@@ -279,27 +302,33 @@ defmodule EmisarWeb.RunbookEditorLive do
       "type" => "action",
       "action_id" => "",
       "selector_kind" => "group",
-      "selector_value" => "",
+      "selector_values" => [],
       "args" => []
     }
 
   # JSON → editor state
   defp from_raw_step(raw) when is_map(raw) do
-    {kind, val} = selector_to_pair(raw["runner_selector"])
+    {kind, values} = selector_to_pair(raw["runner_selector"])
 
     %{
       "id" => raw["id"] || "step",
       "type" => "action",
       "action_id" => raw["action_id"] || "",
       "selector_kind" => kind,
-      "selector_value" => val,
+      "selector_values" => values,
       "args" => args_to_pairs(raw["args"] || %{})
     }
   end
 
-  defp selector_to_pair(%{"group" => g}) when is_binary(g), do: {"group", g}
-  defp selector_to_pair(%{"runner_id" => r}) when is_binary(r), do: {"runner_id", r}
-  defp selector_to_pair(_), do: {"group", ""}
+  # Accepts both the current list shape (%{"group" => ["a", "b"]}) and the
+  # earlier single-value shape (%{"group" => "a"}), normalising to a list.
+  defp selector_to_pair(%{"group" => v}), do: {"group", normalize_targets(v)}
+  defp selector_to_pair(%{"runner_id" => v}), do: {"runner_id", normalize_targets(v)}
+  defp selector_to_pair(_), do: {"group", []}
+
+  defp normalize_targets(v) when is_list(v), do: Enum.filter(v, &(is_binary(&1) and &1 != ""))
+  defp normalize_targets(v) when is_binary(v) and v != "", do: [v]
+  defp normalize_targets(_), do: []
 
   defp args_to_pairs(%{} = m) do
     Enum.map(m, fn {k, v} -> %{"key" => k, "value" => to_string(v)} end)
@@ -310,7 +339,7 @@ defmodule EmisarWeb.RunbookEditorLive do
     %{
       "id" => step["id"],
       "action_id" => step["action_id"],
-      "runner_selector" => %{step["selector_kind"] => step["selector_value"]},
+      "runner_selector" => %{step["selector_kind"] => step["selector_values"] || []},
       "args" => pairs_to_args(step["args"] || [])
     }
   end
@@ -398,6 +427,8 @@ defmodule EmisarWeb.RunbookEditorLive do
                 index={idx}
                 total={length(@steps)}
                 args_by_action={@args_by_action}
+                groups={@groups}
+                runners={@runners}
               />
             <% end %>
 
@@ -496,6 +527,8 @@ defmodule EmisarWeb.RunbookEditorLive do
   attr :index, :integer, required: true
   attr :total, :integer, required: true
   attr :args_by_action, :map, required: true
+  attr :groups, :list, required: true
+  attr :runners, :list, required: true
 
   defp step_card(assigns) do
     ~H"""
@@ -589,26 +622,38 @@ defmodule EmisarWeb.RunbookEditorLive do
                 group
               </option>
               <option value="runner_id" selected={@step["selector_kind"] == "runner_id"}>
-                runner id
+                runner
               </option>
             </select>
           </div>
           <div class="sm:col-span-2">
             <label class="block text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
-              Value
+              Targets
+              <span class="ml-1 text-[9px] font-normal normal-case tracking-normal text-zinc-600">
+                — ⌘/Ctrl-click to pick more than one
+              </span>
             </label>
-            <input
-              type="text"
-              name="selector_value"
-              value={@step["selector_value"]}
-              placeholder={
-                if(@step["selector_kind"] == "runner_id",
-                  do: "runner UUID",
-                  else: "e.g. cassandra-us-east1"
-                )
-              }
-              class={input_class()}
-            />
+            <% options =
+              selector_options(
+                @step["selector_kind"],
+                @groups,
+                @runners,
+                @step["selector_values"] || []
+              ) %>
+            <select name="selector_values[]" multiple size="4" class={[input_class(), "py-1"]}>
+              <option
+                :for={{label, value} <- options}
+                value={value}
+                selected={value in (@step["selector_values"] || [])}
+              >
+                {label}
+              </option>
+            </select>
+            <p :if={options == []} class="mt-1 text-[11px] text-zinc-500">
+              {if @step["selector_kind"] == "runner_id",
+                do: "No runners connected yet.",
+                else: "No runner groups yet."}
+            </p>
           </div>
         </div>
       </form>
@@ -710,5 +755,24 @@ defmodule EmisarWeb.RunbookEditorLive do
 
   defp datalist_id(action_id) when is_binary(action_id) do
     String.replace(action_id, ~r/[^a-zA-Z0-9_-]/, "_")
+  end
+
+  # Options ({label, value}) for the runner-target multi-select. Always
+  # includes any currently selected value that isn't in the live set (a group
+  # whose runners all disconnected, say) so an existing selection is never
+  # silently dropped on the next save.
+  defp selector_options("runner_id", _groups, runners, selected) do
+    known = Enum.map(runners, &{runner_label(&1), &1.id})
+    known_ids = Enum.map(runners, & &1.id)
+    known ++ for(v <- selected, v not in known_ids, do: {v, v})
+  end
+
+  defp selector_options(_group, groups, _runners, selected) do
+    (groups ++ selected) |> Enum.uniq() |> Enum.map(&{&1, &1})
+  end
+
+  defp runner_label(r) do
+    base = r.name || r.external_id || r.id
+    if r.group, do: "#{base} · #{r.group}", else: base
   end
 end

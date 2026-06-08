@@ -40,7 +40,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
         "step_id" => "step123",
         "action_id" => "linux.uptime",
         "selector_kind" => "group",
-        "selector_value" => "linux"
+        "selector_values" => ["linux"]
       })
 
       html2 = render(lv)
@@ -58,7 +58,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
         "step_id" => "disk_check",
         "action_id" => "",
         "selector_kind" => "group",
-        "selector_value" => ""
+        "selector_values" => []
       })
 
       # Then picks an action — id should NOT be overwritten.
@@ -67,12 +67,45 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
         "step_id" => "disk_check",
         "action_id" => "linux.df",
         "selector_kind" => "group",
-        "selector_value" => "linux"
+        "selector_values" => ["linux"]
       })
 
       html = render(lv)
       assert html =~ ~s(value="disk_check")
       refute html =~ ~s(value="linux_df")
+    end
+
+    test "runner targets are a multi-select of the account's groups, saved as a list", %{
+      conn: conn
+    } do
+      {conn, _user, account} = register_and_log_in(conn)
+      Emisar.Fixtures.runner_fixture(account_id: account.id, group: "edge-eu")
+      Emisar.Fixtures.runner_fixture(account_id: account.id, group: "edge-us")
+
+      {:ok, lv, html} = live(conn, ~p"/app/runbooks/new")
+
+      # The target picker is a <select multiple> listing the account's groups,
+      # not a free-text input.
+      assert html =~ ~s(name="selector_values[]")
+      assert html =~ "multiple"
+      assert html =~ "edge-eu"
+      assert html =~ "edge-us"
+
+      render_change(lv, "meta_change", %{"title" => "Fleet check"})
+
+      render_change(lv, "step_change", %{
+        "index" => "0",
+        "step_id" => "check",
+        "action_id" => "linux.uptime",
+        "selector_kind" => "group",
+        "selector_values" => ["edge-eu", "edge-us"]
+      })
+
+      assert {:error, {:live_redirect, %{to: "/app/runbooks"}}} = render_click(lv, "save", %{})
+
+      assert [runbook] = Emisar.Repo.all(Emisar.Runbooks.Runbook)
+      step = hd(runbook.definition["steps"])
+      assert step["runner_selector"] == %{"group" => ["edge-eu", "edge-us"]}
     end
   end
 
