@@ -1,0 +1,28 @@
+schema_version: 1
+id: nic.driver_info
+title: ethtool -i <iface>
+kind: exec
+risk: low
+description: >
+  Full driver info for one NIC — driver, driver version,
+  firmware-version, expansion-ROM version, bus-info, and the supports-*
+  capability flags.
+side_effects: ["One ethtool -i call.", "Read-only."]
+args:
+  - name: iface
+    type: string
+    required: true
+    description: Interface name (e.g. eth0, eno1, enp24s0f0).
+    validation:
+      pattern: "^[a-zA-Z][a-zA-Z0-9._-]{0,14}$"
+execution:
+  command: {binary: ethtool, argv: ["-i", "{{ args.iface }}"]}
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Driver info for eth0
+    args:
+      iface: eth0

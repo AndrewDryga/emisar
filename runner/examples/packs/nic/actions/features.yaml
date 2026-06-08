@@ -1,0 +1,28 @@
+schema_version: 1
+id: nic.features
+title: ethtool -k <iface>
+kind: exec
+risk: low
+description: >
+  Offload feature state for one NIC — checksum offload, GRO/GSO/TSO,
+  scatter-gather, RX/TX hashing, and which are fixed vs tunable. Useful
+  when chasing throughput or checksum-related issues.
+side_effects: ["One ethtool -k call.", "Read-only."]
+args:
+  - name: iface
+    type: string
+    required: true
+    description: Interface name (e.g. eth0, eno1, enp24s0f0).
+    validation:
+      pattern: "^[a-zA-Z][a-zA-Z0-9._-]{0,14}$"
+execution:
+  command: {binary: ethtool, argv: ["-k", "{{ args.iface }}"]}
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 32768
+  max_stderr_bytes: 8192
+examples:
+  - title: Offload features for eth0
+    args:
+      iface: eth0

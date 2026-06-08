@@ -1,0 +1,28 @@
+schema_version: 1
+id: nic.link
+title: ethtool <iface>
+kind: exec
+risk: low
+description: >
+  Link settings for one NIC — negotiated speed and duplex, autoneg,
+  port/medium, and the link-detected flag. The "is this NIC up and at the
+  speed I expect?" check.
+side_effects: ["One ethtool call.", "Read-only."]
+args:
+  - name: iface
+    type: string
+    required: true
+    description: Interface name (e.g. eth0, eno1, enp24s0f0).
+    validation:
+      pattern: "^[a-zA-Z][a-zA-Z0-9._-]{0,14}$"
+execution:
+  command: {binary: ethtool, argv: ["{{ args.iface }}"]}
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Link state for eth0
+    args:
+      iface: eth0

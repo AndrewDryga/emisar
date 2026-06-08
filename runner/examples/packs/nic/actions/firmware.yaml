@@ -1,0 +1,40 @@
+schema_version: 1
+id: nic.firmware
+title: NIC driver + firmware versions (all interfaces)
+kind: exec
+risk: low
+description: >
+  Driver, driver version, firmware-version, and PCI bus address for every
+  physical NIC on the host — one line each, from `ethtool -i`. Optionally
+  filter to a single driver (e.g. i40e). The fleet "what firmware is each
+  NIC running?" check.
+side_effects:
+  - One `ethtool -i` per physical NIC.
+  - Read-only.
+args:
+  - name: driver
+    type: string
+    required: false
+    default: ""
+    description: Only report NICs using this driver (e.g. i40e). Empty = all drivers.
+    validation:
+      pattern: "^[a-zA-Z0-9._-]{0,32}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - 'for d in /sys/class/net/*; do iface=${d##*/}; [ -e "$d/device" ] || continue; info=$(ethtool -i "$iface" 2>/dev/null) || continue; drv=$(printf "%s\n" "$info" | sed -n "s/^driver: //p"); [ -n "$DRIVER" ] && [ "$drv" != "$DRIVER" ] && continue; ver=$(printf "%s\n" "$info" | sed -n "s/^version: //p"); fw=$(printf "%s\n" "$info" | sed -n "s/^firmware-version: //p"); bus=$(printf "%s\n" "$info" | sed -n "s/^bus-info: //p"); printf "%-14s driver=%-10s version=%-16s firmware=%-26s bus=%s\n" "$iface" "$drv" "$ver" "$fw" "$bus"; done'
+  env:
+    DRIVER: "{{ args.driver }}"
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: All NICs
+    args: {}
+  - title: Only i40e NICs
+    args:
+      driver: i40e

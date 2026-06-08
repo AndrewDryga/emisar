@@ -1,0 +1,30 @@
+schema_version: 1
+id: nic.stats
+title: ethtool -S <iface>
+kind: exec
+risk: low
+description: >
+  Hardware + driver counters for one NIC — per-queue and total rx/tx
+  packets, bytes, errors, drops, and discards. The place to look for
+  packet loss that ip/ifconfig counters don't break out.
+side_effects:
+  - One ethtool -S call.
+  - Read-only. May need CAP_NET_ADMIN on older (ioctl-path) kernels.
+args:
+  - name: iface
+    type: string
+    required: true
+    description: Interface name (e.g. eth0, eno1, enp24s0f0).
+    validation:
+      pattern: "^[a-zA-Z][a-zA-Z0-9._-]{0,14}$"
+execution:
+  command: {binary: ethtool, argv: ["-S", "{{ args.iface }}"]}
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 131072
+  max_stderr_bytes: 8192
+examples:
+  - title: Counters for eth0
+    args:
+      iface: eth0

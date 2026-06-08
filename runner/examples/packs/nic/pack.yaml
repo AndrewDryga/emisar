@@ -1,0 +1,43 @@
+schema_version: 1
+
+id: nic
+name: NIC / ethtool diagnostics
+version: 0.1.0
+description: >
+  Inspect physical network interface cards via ethtool: driver and
+  firmware versions across every NIC (the "what firmware is my i40e fleet
+  running?" check), plus per-interface link settings, hardware counters,
+  offload features, and ring-buffer sizes. Read-only — no ethtool SET
+  operations.
+vendor: emisar
+homepage: https://github.com/andrewdryga/emisar
+
+requires:
+  os:
+    - linux
+  binaries:
+    - ethtool
+
+# `emisar pack suggest` detection — ethtool is the tool these actions
+# wrap; suggest the pack on hosts that have it installed.
+detect:
+  binaries:
+    - ethtool
+
+setup:
+  summary: >
+    Reads NIC driver / firmware / link state via ethtool. No credentials
+    needed. ethtool GET operations are read-only; the driver/firmware,
+    link, features, and ring reads work as any user.
+  notes:
+    - "nic.stats (ethtool -S) returns kernel NIC counters; on older kernels that still use the ioctl path it can need CAP_NET_ADMIN — run the runner as root on those hosts, or upgrade to a kernel with ethtool netlink. The other reads are unprivileged."
+    - "Interface arguments are physical device names (e.g. eth0, eno1, enp24s0f0). nic.firmware scans every NIC that has a /sys/class/net/*/device link and skips virtual interfaces (lo, veth, bonds, bridges)."
+  verify: nic.firmware
+
+actions:
+  - actions/firmware.yaml
+  - actions/driver_info.yaml
+  - actions/link.yaml
+  - actions/stats.yaml
+  - actions/features.yaml
+  - actions/ring.yaml
