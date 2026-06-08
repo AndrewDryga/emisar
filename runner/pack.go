@@ -401,11 +401,17 @@ func copyTree(src, dst string) error {
 		out := filepath.Join(dst, rel)
 
 		if d.IsDir() {
-			info, err := d.Info()
-			if err != nil {
+			// 0755, not the source dir's mode: a pack fetched over the network
+			// lands in an os.MkdirTemp dir (0700), and preserving that would
+			// leave the installed pack unreadable to a non-root runner service
+			// user whenever `pack install`/`pack update` runs under sudo (the
+			// reported "only 2 of N packs loaded" bug). Chmod also defeats a
+			// restrictive umask. Pack content is public, so world-readable +
+			// traversable is correct.
+			if err := os.MkdirAll(out, 0o755); err != nil {
 				return err
 			}
-			return os.MkdirAll(out, info.Mode().Perm())
+			return os.Chmod(out, 0o755)
 		}
 		if !d.Type().IsRegular() {
 			return fmt.Errorf("refusing to copy non-regular file %s", rel)
@@ -427,7 +433,14 @@ func copyFile(src, dst string, d os.DirEntry) error {
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 		return err
 	}
-	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, info.Mode().Perm())
+	// World-readable (0644), preserving the executable bit for scripts, so the
+	// runner's service user can read the pack no matter who installed it. An
+	// explicit Chmod after write defeats a restrictive umask.
+	mode := os.FileMode(0o644)
+	if info.Mode()&0o111 != 0 {
+		mode = 0o755
+	}
+	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, mode)
 	if err != nil {
 		return err
 	}
@@ -435,7 +448,10 @@ func copyFile(src, dst string, d os.DirEntry) error {
 		out.Close()
 		return err
 	}
-	return out.Close()
+	if err := out.Close(); err != nil {
+		return err
+	}
+	return os.Chmod(dst, mode)
 }
 
 // normalizeHash strips an optional "sha256:" prefix and lowercases.
