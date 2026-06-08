@@ -112,10 +112,11 @@ func boot() (*runtime, error) {
 		return nil, err
 	}
 
+	// Operator inherit_env extends the always-on defaults (PATH, locale) — it
+	// does not replace them, so adding e.g. NOMAD_TOKEN can't drop PATH and
+	// break binary resolution.
 	exec := executor.New()
-	if len(cfg.Execution.InheritEnv) > 0 {
-		exec.InheritEnv = cfg.Execution.InheritEnv
-	}
+	exec.AllowInheritEnv(cfg.Execution.InheritEnv...)
 
 	admit, err := admission.New(cfg.Admission.Allow, cfg.Admission.Deny)
 	if err != nil {

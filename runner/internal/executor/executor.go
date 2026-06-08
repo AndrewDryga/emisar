@@ -64,11 +64,37 @@ type Executor struct {
 	InheritEnv []string
 }
 
-// DefaultInheritEnv is the allowlist of inherited env vars.
+// DefaultInheritEnv is the always-on allowlist of inherited env vars: the
+// minimum any action needs — PATH (so binaries resolve) and locale. Operator
+// config extends this via AllowInheritEnv; it never replaces it.
 var DefaultInheritEnv = []string{"PATH", "LANG", "LC_ALL", "TERM"}
 
-// New returns an Executor with DefaultInheritEnv.
-func New() *Executor { return &Executor{InheritEnv: DefaultInheritEnv} }
+// New returns an Executor seeded with a copy of DefaultInheritEnv. The copy
+// keeps callers (and AllowInheritEnv) from mutating the package-level slice.
+func New() *Executor {
+	return &Executor{InheritEnv: append([]string(nil), DefaultInheritEnv...)}
+}
+
+// AllowInheritEnv adds env var names to the inherit allowlist on top of what's
+// already there (deduped, order preserved). Operator-configured inherit_env
+// extends the defaults rather than replacing them, so adding a var like
+// NOMAD_TOKEN can never silently drop PATH and break binary resolution.
+func (e *Executor) AllowInheritEnv(keys ...string) {
+	seen := make(map[string]struct{}, len(e.InheritEnv))
+	for _, k := range e.InheritEnv {
+		seen[k] = struct{}{}
+	}
+	for _, k := range keys {
+		if k == "" {
+			continue
+		}
+		if _, ok := seen[k]; ok {
+			continue
+		}
+		seen[k] = struct{}{}
+		e.InheritEnv = append(e.InheritEnv, k)
+	}
+}
 
 // Execute runs p under its limits. Returns nil error only when the executor
 // itself cannot start the call; process non-zero exits and timeouts are

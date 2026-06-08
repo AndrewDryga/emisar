@@ -263,3 +263,49 @@ func TestExecutor_StreamingTruncatesAtLimit(t *testing.T) {
 		t.Fatalf("StdoutBytes should reflect full output, got %d", res.StdoutBytes)
 	}
 }
+
+func TestAllowInheritEnv_ExtendsDefaultsAndDedups(t *testing.T) {
+	e := New()
+	e.AllowInheritEnv("NOMAD_ADDR", "NOMAD_TOKEN", "PATH", "")
+
+	has := func(k string) bool {
+		for _, v := range e.InheritEnv {
+			if v == k {
+				return true
+			}
+		}
+		return false
+	}
+	count := func(k string) int {
+		n := 0
+		for _, v := range e.InheritEnv {
+			if v == k {
+				n++
+			}
+		}
+		return n
+	}
+
+	// Adding a var must NOT drop the always-on defaults (the PATH footgun).
+	for _, d := range DefaultInheritEnv {
+		if !has(d) {
+			t.Errorf("default %q dropped from inherit list: %v", d, e.InheritEnv)
+		}
+	}
+	// Configured vars are added; a duplicate of a default isn't repeated; the
+	// empty name is ignored.
+	if !has("NOMAD_ADDR") || !has("NOMAD_TOKEN") {
+		t.Errorf("configured vars missing: %v", e.InheritEnv)
+	}
+	if count("PATH") != 1 {
+		t.Errorf("PATH should appear once, got %d: %v", count("PATH"), e.InheritEnv)
+	}
+	if has("") {
+		t.Errorf("empty var name should be filtered: %v", e.InheritEnv)
+	}
+
+	// New() copies DefaultInheritEnv, so none of this mutates the global.
+	if len(DefaultInheritEnv) != 4 {
+		t.Errorf("DefaultInheritEnv was mutated: %v", DefaultInheritEnv)
+	}
+}

@@ -437,6 +437,12 @@ execution:
   # SIGTERM->SIGKILL window when cancelling an action. Per-action
   # override via execution.cancel_grace on the action YAML.
   cancel_grace: 30s
+  # Extra host env vars to forward into actions, on top of the always-on
+  # PATH/LANG/LC_ALL/TERM. Add the ones a pack's auth needs (see the pack's
+  # setup notes) and set their values in ${ETC_DIR}/runner.env. e.g.:
+  #   inherit_env:
+  #     - NOMAD_ADDR
+  #     - NOMAD_TOKEN
 
 events:
   jsonl_path: ${LOG_DIR}/events.jsonl
