@@ -358,7 +358,10 @@ defmodule EmisarWeb.McpRpcControllerTest do
       detail =
         conn
         |> auth.()
-        |> rpc("tools/call", %{"name" => "get_runbook", "arguments" => %{"runbook" => "eu-health"}})
+        |> rpc("tools/call", %{
+          "name" => "get_runbook",
+          "arguments" => %{"runbook" => "eu-health"}
+        })
         |> json_response(200)
 
       assert detail["result"]["isError"] == false
