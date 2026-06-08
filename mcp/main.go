@@ -117,6 +117,10 @@ type bridge struct {
 	apiKey    string
 	userAgent string
 	client    *http.Client
+	// sessionID identifies this bridge process. It doubles as the MCP
+	// session id (sent as Mcp-Session-Id) and the namespace for
+	// idempotency keys, so a session's runs correlate and resent frames
+	// collapse to one run.
 	sessionID string
 }
 
@@ -169,6 +173,13 @@ func (b *bridge) forward(frame []byte) ([]byte, error) {
 	req.Header.Set("Authorization", "Bearer "+b.apiKey)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", b.userAgent)
+
+	// MCP session id. One bridge process = one client session, so the
+	// per-process id is the session boundary. The portal reuses it at
+	// `initialize` and records it on each run + audit event, so a session's
+	// actions can be correlated (stdio clients can't echo a server-issued
+	// Mcp-Session-Id, so we supply our own).
+	req.Header.Set("Mcp-Session-Id", b.sessionID)
 
 	// Idempotency key: stable per (process, request-id) so resends
 	// of the same JSON-RPC frame collapse to a single run on the
@@ -256,9 +267,10 @@ func buildUserAgent() string {
 	return fmt.Sprintf("%s/%s (client=%s; host=%s)", bridgeName, Version, client, host)
 }
 
-// newSessionID returns an 8-byte hex nonce that namespaces this
-// process's idempotency keys. Two unrelated bridge processes never
-// alias each other's request ids; the same process's resend of a
+// newSessionID returns an 8-byte hex nonce identifying this bridge
+// process. It serves as the MCP session id (Mcp-Session-Id) and
+// namespaces idempotency keys: two unrelated bridge processes never
+// alias each other's request ids, and the same process's resend of a
 // frame collapses to one run.
 func newSessionID() string {
 	var b [8]byte

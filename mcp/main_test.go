@@ -105,6 +105,28 @@ func TestForward_SetsAuthAndUserAgentAndIdempotencyHeaders(t *testing.T) {
 	}
 }
 
+func TestForward_SetsMcpSessionIDHeader(t *testing.T) {
+	var gotSession string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotSession = r.Header.Get("Mcp-Session-Id")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":"ok"}`))
+	}))
+	defer srv.Close()
+
+	b := newTestBridge(srv)
+
+	// Every forwarded frame carries the per-process session id so the
+	// portal can stamp it on the run + audit event. stdio clients can't
+	// echo a server-issued Mcp-Session-Id, so the bridge supplies its own.
+	if _, err := b.forward([]byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call"}`)); err != nil {
+		t.Fatalf("forward: %v", err)
+	}
+	if gotSession != "sess" {
+		t.Errorf("Mcp-Session-Id = %q, want %q", gotSession, "sess")
+	}
+}
+
 func TestForward_OmitsIdempotencyHeaderForNotifications(t *testing.T) {
 	var hadIdem bool
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
