@@ -423,16 +423,16 @@ defmodule Emisar.Accounts do
     end
   end
 
-  defp disconnect_user_sessions(%Membership{} = target) do
-    case fetch_user_by_id(target.user_id) do
+  defp disconnect_user_sessions(%Membership{} = membership) do
+    case fetch_user_by_id(membership.user_id) do
       {:ok, user} ->
         Emisar.Auth.disconnect_and_revoke_all_sessions(user)
         :ok
 
       {:error, reason} ->
         Logger.warning("suspend_membership_user_missing",
-          user_id: target.user_id,
-          membership_id: target.id,
+          user_id: membership.user_id,
+          membership_id: membership.id,
           reason: inspect(reason)
         )
 
