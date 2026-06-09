@@ -153,8 +153,7 @@ defmodule Emisar.AccountsTest do
               %{
                 membership: %Membership{role: :admin},
                 user: %User{} = u,
-                invitation_token: token,
-                created?: true
+                invitation_token: token
               }} =
                Accounts.invite_user_to_account(email, "admin", subject)
 
@@ -170,7 +169,7 @@ defmodule Emisar.AccountsTest do
       _ = membership_fixture(account_id: account.id, user_id: inviter.id, role: "owner")
       subject = subject_for(inviter, account, role: :owner)
 
-      assert {:ok, %{user: %User{id: id}, created?: false}} =
+      assert {:ok, %{user: %User{id: id}}} =
                Accounts.invite_user_to_account(existing.email, "operator", subject)
 
       assert id == existing.id

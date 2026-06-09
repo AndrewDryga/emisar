@@ -20,8 +20,7 @@ defmodule Emisar.InvitationTest do
               %{
                 membership: membership,
                 user: invitee,
-                invitation_token: token,
-                created?: true
+                invitation_token: token
               }} = Accounts.invite_user_to_account("new@example.test", "admin", subject)
 
       assert invitee.email == "new@example.test"
@@ -37,7 +36,7 @@ defmodule Emisar.InvitationTest do
       {_inviter, subject} = inviter_subject(account)
       existing = user_fixture(email: "alice@example.test")
 
-      assert {:ok, %{user: invitee, created?: false}} =
+      assert {:ok, %{user: invitee}} =
                Accounts.invite_user_to_account("alice@example.test", "operator", subject)
 
       assert invitee.id == existing.id

@@ -640,8 +640,8 @@ defmodule Emisar.Accounts do
   If no user with that email exists, a placeholder user is created
   (unconfirmed, no password) so we have something to hang the
   membership and invitation token off of. Returns
-  `{:ok, %{membership: m, user: u, invitation_token: token, created?: bool}}`
-  on success.
+  `{:ok, %{membership: m, user: u, invitation_token: token}}` on success,
+  or `{:error, :already_member}` if the user already belongs to the account.
 
   The caller is responsible for sending the invitation email; this
   context only persists the records and mints the token.
@@ -654,7 +654,7 @@ defmodule Emisar.Accounts do
 
       Multi.new()
       |> Multi.run(:user, fn _repo, _changes -> fetch_or_create_user(email) end)
-      |> Multi.insert(:membership, fn %{user: {user, _created?}} ->
+      |> Multi.insert(:membership, fn %{user: user} ->
         Membership.Changeset.create(%{
           account_id: account_id,
           user_id: user.id,
@@ -663,14 +663,13 @@ defmodule Emisar.Accounts do
           invitation_token: token
         })
       end)
-      |> Multi.insert(:audit, fn %{user: {user, _created?}} ->
+      |> Multi.insert(:audit, fn %{user: user} ->
         Audit.Events.user_invited(subject, user, role)
       end)
       |> Repo.commit_multi()
       |> case do
-        {:ok, %{user: {user, created?}, membership: membership}} ->
-          {:ok,
-           %{membership: membership, user: user, invitation_token: token, created?: created?}}
+        {:ok, %{user: user, membership: membership}} ->
+          {:ok, %{membership: membership, user: user, invitation_token: token}}
 
         # The partial unique index on (account_id, user_id) is the source of
         # truth for "already a member" — let the insert hit it instead of a
@@ -687,16 +686,12 @@ defmodule Emisar.Accounts do
   end
 
   # Fetch the user by email, or create a placeholder (unconfirmed, no
-  # password) so the invitation has a record to hang off. Returns
-  # `{user, created?}` so the caller can tell a fresh invite from a re-add.
+  # password) so the invitation has a record to hang off. An unmatched
+  # `{:ok, user}` from the fetch passes straight through the `with`.
   defp fetch_or_create_user(email) do
-    with {:error, :not_found} <- fetch_user_by_email(email),
-         changeset = User.Changeset.registration(%User{}, %{email: email}, hash_password: false),
-         {:ok, user} <- Repo.insert(changeset) do
-      {:ok, {user, true}}
-    else
-      {:ok, user} -> {:ok, {user, false}}
-      {:error, changeset} -> {:error, changeset}
+    with {:error, :not_found} <- fetch_user_by_email(email) do
+      changeset = User.Changeset.registration(%User{}, %{email: email}, hash_password: false)
+      Repo.insert(changeset)
     end
   end
 
