@@ -51,6 +51,35 @@ defmodule Emisar.Accounts.Membership.Query do
     |> where([accounts: a], is_nil(a.deleted_at))
   end
 
+  @doc """
+  Inner-join and preload the membership's (non-deleted) account in the
+  same query, so a list is fetched in one shot. Idempotent via
+  `with_named_binding/3`; a membership whose account is soft-deleted is
+  dropped (inner join to `not_deleted/0`).
+  """
+  def with_preloaded_account(queryable) do
+    with_named_binding(queryable, :account, fn queryable, binding ->
+      queryable
+      |> join(:inner, [memberships: m], account in ^Emisar.Accounts.Account.Query.not_deleted(),
+        on: m.account_id == account.id,
+        as: ^binding
+      )
+      |> preload([memberships: m, account: account], account: account)
+    end)
+  end
+
+  @doc "Inner-join and preload the membership's (non-deleted) user. See `with_preloaded_account/1`."
+  def with_preloaded_user(queryable) do
+    with_named_binding(queryable, :user, fn queryable, binding ->
+      queryable
+      |> join(:inner, [memberships: m], user in ^Emisar.Accounts.User.Query.not_deleted(),
+        on: m.user_id == user.id,
+        as: ^binding
+      )
+      |> preload([memberships: m, user: user], user: user)
+    end)
+  end
+
   # -- Pagination + preloads -------------------------------------------
 
   @impl Emisar.Repo.Query

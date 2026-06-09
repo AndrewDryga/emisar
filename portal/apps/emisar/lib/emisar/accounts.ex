@@ -212,11 +212,11 @@ defmodule Emisar.Accounts do
              Authorizer.view_own_account_permission()
            ),
          :ok <- Subject.ensure_in_account(subject, account_id, :unauthorized) do
-      opts = Keyword.put_new(opts, :preload, [:account, :user])
-
       Membership.Query.not_deleted()
       |> Membership.Query.by_account_id(account_id)
       |> Authorizer.for_subject(subject)
+      |> Membership.Query.with_preloaded_account()
+      |> Membership.Query.with_preloaded_user()
       |> Repo.list(Membership.Query, opts)
     end
   end

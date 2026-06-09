@@ -141,7 +141,7 @@ defmodule Emisar.Runners do
 
   # Connection-state filtering needs the live presence id set, which the
   # DB can't see — resolve it here and hand it to the Query as IN/NOT IN
-  # id lists (Firezone's pattern). Scoped to the subject's account.
+  # id lists. Scoped to the subject's account.
   defp maybe_by_connection(query, _subject, status) when status in [nil, []], do: query
 
   defp maybe_by_connection(query, %Subject{account: %{id: account_id}}, status) do
@@ -449,7 +449,7 @@ defmodule Emisar.Runners do
   # Fill the virtual online?/action_load/last_heartbeat_at fields from
   # presence so read callers get connection state without a second
   # lookup. Grouped by account_id so a multi-account listing decorates
-  # correctly. Mirrors Firezone's preload_presence.
+  # correctly.
   defp decorate_result({:ok, runners, metadata}),
     do: {:ok, decorate_connection(runners), metadata}
 

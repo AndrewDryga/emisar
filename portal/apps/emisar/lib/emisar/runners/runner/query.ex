@@ -33,10 +33,9 @@ defmodule Emisar.Runners.Runner.Query do
   @doc """
   Filter by derived connection state. `online_ids` is the set of runner
   ids currently tracked in `Emisar.Runners.Presence` — the DB can't see
-  presence, so the context resolves the ids and hands them in (Firezone's
-  pattern). `statuses` is any of `"connected"`, `"disconnected"`,
-  `"pending"`, `"disabled"`, ORed together. An empty `statuses` list
-  matches nothing.
+  presence, so the context resolves the ids and hands them in. `statuses`
+  is any of `"connected"`, `"disconnected"`, `"pending"`, `"disabled"`,
+  ORed together. An empty `statuses` list matches nothing.
   """
   def by_connection(q \\ all(), statuses, online_ids) when is_list(statuses) do
     # Clauses mirror `Emisar.Runners.connection_state/1`'s precedence
