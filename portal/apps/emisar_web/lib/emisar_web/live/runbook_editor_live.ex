@@ -297,18 +297,9 @@ defmodule EmisarWeb.RunbookEditorLive do
 
   defp derive_slug(slug, title) do
     case String.trim(slug || "") do
-      "" -> slugify(title)
+      "" -> Emisar.Slug.slugify(title, max_length: 79)
       s -> s
     end
-  end
-
-  defp slugify(title) do
-    title
-    |> to_string()
-    |> String.downcase()
-    |> String.replace(~r/[^a-z0-9]+/, "-")
-    |> String.trim("-")
-    |> String.slice(0, 79)
   end
 
   defp assign_form(socket, %Ecto.Changeset{} = changeset) do

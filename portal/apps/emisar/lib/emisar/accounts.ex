@@ -8,7 +8,7 @@ defmodule Emisar.Accounts do
   """
 
   alias Ecto.Multi
-  alias Emisar.{Audit, Auth, Repo}
+  alias Emisar.{Audit, Auth, Repo, Slug}
   alias Emisar.Accounts.{Account, Authorizer, Membership, User, UserRunnerScope}
   alias Emisar.Auth.Subject
 
@@ -189,7 +189,7 @@ defmodule Emisar.Accounts do
   appends `-1`, `-2`, … until free.
   """
   def suggest_unique_slug(name) do
-    base = slugify(name)
+    base = Slug.slugify(name, max_length: 60, default: "team")
     do_suggest(base, 0)
   end
 
@@ -199,17 +199,6 @@ defmodule Emisar.Accounts do
     case fetch_account_by_slug(candidate) do
       {:ok, _} -> do_suggest(base, n + 1)
       {:error, :not_found} -> candidate
-    end
-  end
-
-  defp slugify(name) do
-    name
-    |> String.downcase()
-    |> String.replace(~r/[^a-z0-9]+/, "-")
-    |> String.trim("-")
-    |> case do
-      "" -> "team"
-      s -> String.slice(s, 0, 60)
     end
   end
 

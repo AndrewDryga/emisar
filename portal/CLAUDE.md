@@ -35,6 +35,7 @@ Lower-stakes taste calls. Not Iron Laws, but the defaults. **The user adds to th
 - A read a transaction depends on goes *inside* the `Multi` as a `Multi.run` step (later steps read it from `changes`), not eagerly before `Multi.new()`. It stays in the transaction's snapshot and a missing row becomes `{:error, …}` instead of a raise.
 - Errors are values (`{:error, reason}`), not exceptions, on any path a caller can hit. `!`-raising variants only behind a proven invariant.
 - Don't wrap a single delegating call in its own named function — inline it. A `defp foo(a, b), do: Bar.foo(a, b)` earns a name only when it adds meaning the call site lacks; otherwise the indirection just costs a jump. Keep the *why* comment at the call site.
+- A pure helper used in more than one place is its own small module with unit tests (e.g. `Emisar.Slug`), not a `defp` copy-pasted between call sites. Take options for the per-caller differences instead of forking the logic.
 
 ---
 
