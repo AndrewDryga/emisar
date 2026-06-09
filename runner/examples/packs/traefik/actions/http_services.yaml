@@ -1,0 +1,28 @@
+schema_version: 1
+id: traefik.http_services
+title: GET /api/http/services
+kind: script
+risk: low
+description: >
+  Every HTTP service with its load-balancer config, status, error[], and
+  serverStatus — a per-backend map of URL to "UP"/"DOWN". This is the
+  "which upstream is down?" read: a service with a DOWN server (or a
+  non-"enabled" status) is failing health checks.
+side_effects:
+  - One read-only HTTP GET to the Traefik API.
+  - Read-only.
+args: []
+execution:
+  script:
+    path: scripts/trget.sh
+    interpreter: /bin/sh
+  argv:
+    - "/api/http/services"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 4194304
+  max_stderr_bytes: 8192
+examples:
+  - title: All HTTP services (+ serverStatus UP/DOWN)
+    args: {}

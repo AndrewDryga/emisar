@@ -1,0 +1,27 @@
+schema_version: 1
+id: zot.catalog
+title: GET /v2/_catalog
+kind: script
+risk: low
+description: >
+  Lists the repositories in the registry. Large registries paginate via the
+  ?n=<count>&last=<repo> query parameters; this returns the first page. Use to
+  inventory what is stored. Read-only.
+side_effects:
+  - One read-only HTTP GET to the zot /v2/_catalog endpoint.
+  - Read-only — never pushes or deletes.
+execution:
+  script:
+    path: scripts/zotget.sh
+    interpreter: /bin/sh
+  argv:
+    - "GET"
+    - "/v2/_catalog"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: List repositories
+    args: {}

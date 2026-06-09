@@ -1,0 +1,33 @@
+schema_version: 1
+id: zot.search
+title: POST /v2/_zot/ext/search (repo inventory + vuln summary)
+kind: script
+risk: low
+description: >
+  Repository inventory with per-repo storage size and a newest-image
+  vulnerability summary, via the zot search GraphQL extension. This is how you
+  get per-repo storage size + CVE summary — zot has no plain storage-usage
+  endpoint, and garbage collection is not inspectable over HTTP. The GraphQL
+  query is read-only (a RepoListWithNewestImage read). Read-only.
+side_effects:
+  - One read-only HTTP POST to the zot /v2/_zot/ext/search GraphQL endpoint.
+  - Read-only — the query only reads; it never pushes, deletes, or mutates.
+execution:
+  script:
+    path: scripts/zotget.sh
+    interpreter: /bin/sh
+  argv:
+    - "POST"
+    - "/v2/_zot/ext/search"
+    - "-H"
+    - "Content-Type: application/json"
+    - "--data"
+    - "{\"query\":\"{ RepoListWithNewestImage(requestedPage:{limit:50,offset:0,sortBy:UPDATE_TIME}){Results{Name Size LastUpdated NewestImage{Tag Digest Size Vulnerabilities{Count MaxSeverity}}}} }\"}"
+  timeout: 60s
+output:
+  parser: json
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: Repo inventory with size and newest-image vuln summary
+    args: {}

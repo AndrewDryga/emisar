@@ -1,0 +1,40 @@
+schema_version: 1
+id: tailscale.ping
+title: tailscale ping <host>
+kind: exec
+risk: low
+description: >
+  Ping a tailnet peer over Tailscale and report the path (direct vs DERP)
+  and latency. Terminates on its own — the bounded count (default 5, max
+  20) means it stops after that many replies or attempts.
+side_effects: ["Sends Tailscale ping probes to one peer.", "Read-only."]
+args:
+  - name: host
+    type: string
+    required: true
+    description: Peer to ping — a tailnet hostname, MagicDNS name, or Tailscale IP.
+    validation:
+      pattern: "^[A-Za-z0-9._:-]{1,128}$"
+  - name: count
+    type: integer
+    required: false
+    default: 5
+    description: Number of pings to send (1-20).
+    validation:
+      min: 1
+      max: 20
+execution:
+  command: {binary: tailscale, argv: ["ping", "--c", "{{ args.count }}", "{{ args.host }}"]}
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Ping a peer by MagicDNS name
+    args:
+      host: db-1
+  - title: Ping a peer ten times
+    args:
+      host: 100.101.102.103
+      count: 10

@@ -1,0 +1,28 @@
+schema_version: 1
+id: pure.hardware
+title: GET /hardware
+kind: script
+risk: low
+description: >
+  Physical component health — chassis, power supplies, fans, temperature
+  sensors, and other hardware items, each with its status and (where
+  applicable) reading. Use to find a failed PSU/fan or a hot sensor. Returns
+  {items:[...], more_items_remaining, ...}, one item per component.
+side_effects:
+  - One read-only HTTP GET to the FlashArray REST API.
+  - Read-only — never writes or mutates array state.
+args: []
+execution:
+  script:
+    path: scripts/pureget.sh
+    interpreter: /bin/sh
+  argv:
+    - "/hardware"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: Chassis / PSU / fan / temperature health
+    args: {}

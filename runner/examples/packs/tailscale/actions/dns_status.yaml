@@ -1,0 +1,20 @@
+schema_version: 1
+id: tailscale.dns_status
+title: tailscale dns status
+kind: exec
+risk: low
+description: >
+  MagicDNS and DNS configuration for this node — nameservers, search
+  domains, split-DNS routes, and whether MagicDNS is enabled.
+side_effects: ["One tailscale read.", "Read-only."]
+args: []
+execution:
+  command: {binary: tailscale, argv: ["dns", "status"]}
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 32768
+  max_stderr_bytes: 8192
+examples:
+  - title: MagicDNS / DNS configuration
+    args: {}

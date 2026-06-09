@@ -1,0 +1,26 @@
+schema_version: 1
+id: typesense.metrics
+title: GET /metrics.json
+kind: script
+risk: low
+description: >
+  System and process metrics for the node — CPU utilization, memory usage,
+  and disk usage. Use to see whether the node is resource-constrained.
+  Requires the admin API key.
+side_effects:
+  - One read-only HTTP GET to the Typesense /metrics.json endpoint.
+  - Read-only — never writes or mutates data.
+execution:
+  script:
+    path: scripts/tsget.sh
+    interpreter: /bin/sh
+  argv:
+    - "/metrics.json"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+examples:
+  - title: Current system/process metrics
+    args: {}

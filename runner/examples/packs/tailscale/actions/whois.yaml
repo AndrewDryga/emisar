@@ -1,0 +1,27 @@
+schema_version: 1
+id: tailscale.whois
+title: tailscale whois --json <ip>
+kind: exec
+risk: low
+description: >
+  Identify which tailnet node and user own a Tailscale IP — returns the
+  node, user, and capabilities as JSON.
+side_effects: ["One tailscale read.", "Read-only."]
+args:
+  - name: ip
+    type: string
+    required: true
+    description: Tailscale IP (IPv4 or IPv6) to look up.
+    validation:
+      pattern: "^[0-9a-fA-F:.]{2,64}$"
+execution:
+  command: {binary: tailscale, argv: ["whois", "--json", "{{ args.ip }}"]}
+  timeout: 15s
+output:
+  parser: json
+  max_stdout_bytes: 32768
+  max_stderr_bytes: 8192
+examples:
+  - title: Who owns this tailnet IP
+    args:
+      ip: 100.101.102.103

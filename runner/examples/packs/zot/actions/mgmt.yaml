@@ -1,0 +1,28 @@
+schema_version: 1
+id: zot.mgmt
+title: GET /v2/_zot/ext/mgmt
+kind: script
+risk: low
+description: >
+  Registry configuration and health via the zot mgmt extension — the active
+  config (extensions enabled, storage settings) and a health summary. The
+  mgmt extension is on by default in the full build but requires auth and is
+  denied to anonymous clients, so set ZOT_BASICAUTH. Read-only.
+side_effects:
+  - One read-only HTTP GET to the zot /v2/_zot/ext/mgmt endpoint.
+  - Read-only — never pushes or deletes.
+execution:
+  script:
+    path: scripts/zotget.sh
+    interpreter: /bin/sh
+  argv:
+    - "GET"
+    - "/v2/_zot/ext/mgmt"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+examples:
+  - title: Read registry config and health
+    args: {}

@@ -1,0 +1,28 @@
+schema_version: 1
+id: pure.volumes_space
+title: GET /volumes/space
+kind: script
+risk: low
+description: >
+  Per-volume space accounting — for each volume, the physical space used by
+  its unique data and by snapshots, plus its data-reduction and total-reduction
+  ratios. Use to find which volumes consume the most capacity. Returns
+  {items:[...], more_items_remaining, ...}, one item per volume.
+side_effects:
+  - One read-only HTTP GET to the FlashArray REST API.
+  - Read-only — never writes or mutates array state.
+args: []
+execution:
+  script:
+    path: scripts/pureget.sh
+    interpreter: /bin/sh
+  argv:
+    - "/volumes/space"
+  timeout: 60s
+output:
+  parser: json
+  max_stdout_bytes: 4194304
+  max_stderr_bytes: 8192
+examples:
+  - title: Per-volume used / snapshot / data-reduction
+    args: {}

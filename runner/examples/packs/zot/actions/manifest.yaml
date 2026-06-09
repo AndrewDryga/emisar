@@ -1,0 +1,44 @@
+schema_version: 1
+id: zot.manifest
+title: GET /v2/{repo}/manifests/{reference}
+kind: script
+risk: low
+description: >
+  Reads the image manifest for a repository at a given reference (a tag or a
+  digest). Returns the layer/config descriptors and annotations for that
+  image. Read-only.
+side_effects:
+  - One read-only HTTP GET to the zot /v2/{repo}/manifests/{reference} endpoint.
+  - Read-only — never pushes or deletes.
+args:
+  - name: repo
+    type: string
+    required: true
+    description: Repository name (may include a namespace path).
+    validation:
+      pattern: '^[a-z0-9._/-]{1,256}$'
+  - name: reference
+    type: string
+    required: true
+    description: A tag or a digest (e.g. latest or sha256:...).
+    validation:
+      pattern: '^[A-Za-z0-9._:@-]{1,256}$'
+execution:
+  script:
+    path: scripts/zotget.sh
+    interpreter: /bin/sh
+  argv:
+    - "GET"
+    - "/v2/{{ args.repo }}/manifests/{{ args.reference }}"
+    - "-H"
+    - "Accept: application/vnd.oci.image.manifest.v1+json"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: Manifest for library/alpine:latest
+    args:
+      repo: library/alpine
+      reference: latest

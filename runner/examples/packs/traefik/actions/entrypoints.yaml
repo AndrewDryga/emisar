@@ -1,0 +1,27 @@
+schema_version: 1
+id: traefik.entrypoints
+title: GET /api/entrypoints
+kind: script
+risk: low
+description: >
+  All configured entrypoints — name, listen address/port, and transport
+  settings (timeouts, HTTP/2, TLS defaults). Use to confirm the front door
+  is listening where you expect (web :80, websecure :443, etc.).
+side_effects:
+  - One read-only HTTP GET to the Traefik API.
+  - Read-only.
+args: []
+execution:
+  script:
+    path: scripts/trget.sh
+    interpreter: /bin/sh
+  argv:
+    - "/api/entrypoints"
+  timeout: 15s
+output:
+  parser: json
+  max_stdout_bytes: 131072
+  max_stderr_bytes: 8192
+examples:
+  - title: All entrypoints + addresses
+    args: {}

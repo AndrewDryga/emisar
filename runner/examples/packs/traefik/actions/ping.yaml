@@ -1,0 +1,28 @@
+schema_version: 1
+id: traefik.ping
+title: GET /ping
+kind: script
+risk: low
+description: >
+  Liveness probe. Returns 200 with body "OK" when healthy, or the configured
+  terminating status (default 503) during graceful shutdown. Requires
+  --ping=true; served on the ping entrypoint (the traefik entrypoint / :8080
+  by default, unless moved to a dedicated one — point TRAEFIK_URL at it then).
+side_effects:
+  - One read-only HTTP GET to the Traefik ping endpoint.
+  - Read-only.
+args: []
+execution:
+  script:
+    path: scripts/trget.sh
+    interpreter: /bin/sh
+  argv:
+    - "/ping"
+  timeout: 10s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Liveness check
+    args: {}

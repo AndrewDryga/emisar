@@ -1,0 +1,20 @@
+schema_version: 1
+id: tailscale.status
+title: tailscale status --json
+kind: exec
+risk: low
+description: >
+  Tailnet status as JSON — the peer/online map: Self, Peer{}, Online,
+  ExitNodeStatus, TailscaleIPs, and Health.
+side_effects: ["One tailscale read.", "Read-only."]
+args: []
+execution:
+  command: {binary: tailscale, argv: ["status", "--json"]}
+  timeout: 15s
+output:
+  parser: json
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+examples:
+  - title: Full tailnet status
+    args: {}

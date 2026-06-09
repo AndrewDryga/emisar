@@ -1,0 +1,43 @@
+schema_version: 1
+id: typesense.slow_requests
+title: Recent slow requests from the server log
+kind: exec
+risk: low
+description: >
+  Typesense has no slow-query endpoint — slow requests are written to the
+  server log prefixed "SLOW REQUEST" (enable with
+  --log-slow-requests-time-ms). This greps the log for those lines and tails
+  the most recent ones. Read-only.
+side_effects:
+  - Reads the Typesense server log file.
+  - Read-only.
+args:
+  - name: log_path
+    type: string
+    required: false
+    default: /var/log/typesense/typesense.log
+    description: Typesense server log path.
+    validation:
+      pattern: '^/[A-Za-z0-9._/-]{1,256}$'
+  - name: lines
+    type: integer
+    required: false
+    default: 100
+    description: How many recent slow-request lines.
+    validation:
+      min: 1
+      max: 5000
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "grep -F 'SLOW REQUEST' {{ args.log_path }} | tail -n {{ args.lines }}"
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 16384
+examples:
+  - title: Last 100 slow requests
+    args: {}

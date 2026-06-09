@@ -1,0 +1,30 @@
+schema_version: 1
+id: pure.alerts
+title: GET /alerts
+kind: script
+risk: low
+description: >
+  Open (unresolved) array alerts, filtered to state='open' — each with its
+  severity (info / warning / critical), component, and summary. Use to answer
+  "what is the array complaining about right now?". Returns
+  {items:[...], more_items_remaining, ...}, one item per open alert.
+side_effects:
+  - One read-only HTTP GET to the FlashArray REST API.
+  - Read-only — never writes, acknowledges, or clears alerts.
+args: []
+execution:
+  script:
+    path: scripts/pureget.sh
+    interpreter: /bin/sh
+  argv:
+    - "/alerts"
+    - "--data-urlencode"
+    - "filter=state='open'"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: All open alerts (by severity)
+    args: {}

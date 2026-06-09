@@ -1,0 +1,42 @@
+schema_version: 1
+id: traefik.log_grep_5xx
+title: Recent 5xx responses from access log
+kind: exec
+risk: low
+description: >
+  Greps the Traefik access log for 5xx responses and tails the most recent —
+  the front-door view of backend failures. Matches both the JSON format
+  (DownstreamStatus field) and the default CLF format. Read-only.
+side_effects:
+  - Reads the Traefik access log.
+  - Read-only.
+args:
+  - name: lines
+    type: integer
+    required: false
+    default: 100
+    description: How many recent 5xx lines to return.
+    validation:
+      min: 1
+      max: 5000
+  - name: log_path
+    type: string
+    required: false
+    default: /var/log/traefik/access.log
+    description: Access log path.
+    validation:
+      pattern: "^/[A-Za-z0-9._/-]{1,256}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "grep -E '(\"DownstreamStatus\":5[0-9][0-9]| 5[0-9][0-9] )' {{ args.log_path }} | tail -n {{ args.lines }}"
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 16384
+examples:
+  - title: Last 100 5xx
+    args: {}

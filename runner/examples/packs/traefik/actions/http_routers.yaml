@@ -1,0 +1,29 @@
+schema_version: 1
+id: traefik.http_routers
+title: GET /api/http/routers
+kind: script
+risk: low
+description: >
+  Every HTTP router with its rule, entrypoints, service, middlewares, TLS
+  config, and — critically — its status ("enabled" | "warning" | "disabled")
+  and error[] list. To find broken routing, look for any router whose status
+  is not "enabled" and read its error[]. Names are "<name>@<provider>"
+  (e.g. my-router@docker).
+side_effects:
+  - One read-only HTTP GET to the Traefik API.
+  - Read-only.
+args: []
+execution:
+  script:
+    path: scripts/trget.sh
+    interpreter: /bin/sh
+  argv:
+    - "/api/http/routers"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 4194304
+  max_stderr_bytes: 8192
+examples:
+  - title: All HTTP routers (+ status/error)
+    args: {}

@@ -1,0 +1,30 @@
+schema_version: 1
+id: vector.component_metrics
+title: POST /graphql (component metrics)
+kind: exec
+risk: low
+description: >
+  Per-component throughput from the Vector GraphQL API: received and sent
+  event totals for every source, transform, and sink, plus sent-bytes for
+  sinks. GraphQL API — Vector <= 0.54 ONLY. On Vector >= 0.55 (gRPC
+  migration, April 2026) the /graphql endpoint was REMOVED and this returns
+  404; run vector.version first and, if >= 0.55, use gRPC tooling instead.
+  Requires api.enabled=true; binds 127.0.0.1:8686.
+side_effects:
+  - One read-only GraphQL POST (a query, not a mutation) to the local Vector API.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "curl -sS -X POST \"${VECTOR_API:-http://127.0.0.1:8686}/graphql\" -H 'Content-Type: application/json' --data '{\"query\":\"query { sources { edges { node { componentId metrics { receivedEventsTotal { receivedEventsTotal } sentEventsTotal { sentEventsTotal } } } } } transforms { edges { node { componentId metrics { receivedEventsTotal { receivedEventsTotal } sentEventsTotal { sentEventsTotal } } } } } sinks { edges { node { componentId metrics { receivedEventsTotal { receivedEventsTotal } sentEventsTotal { sentEventsTotal } sentBytesTotal { sentBytesTotal } } } } } }\"}'"
+  timeout: 20s
+output:
+  parser: json
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: Per-component event + byte totals (Vector <= 0.54)
+    args: {}

@@ -1,0 +1,27 @@
+schema_version: 1
+id: traefik.tcp_routers
+title: GET /api/tcp/routers
+kind: script
+risk: low
+description: >
+  Every TCP router with its rule (HostSNI/...), entrypoints, service, TLS
+  passthrough config, status, and error[]. Use for TCP/SNI routing (databases,
+  message brokers, raw TLS) the same way http_routers covers HTTP.
+side_effects:
+  - One read-only HTTP GET to the Traefik API.
+  - Read-only.
+args: []
+execution:
+  script:
+    path: scripts/trget.sh
+    interpreter: /bin/sh
+  argv:
+    - "/api/tcp/routers"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: All TCP routers
+    args: {}

@@ -1,0 +1,50 @@
+schema_version: 1
+
+id: tailscale
+name: Tailscale
+version: 0.1.0
+description: >
+  Inspect the host's Tailscale node via the tailscale CLI: tailnet
+  status and peer/online map, network connectivity (netcheck DERP
+  latency, port-mapping), ping to peers, whois lookups, this node's
+  tailnet IPs, version, available exit nodes, MagicDNS/DNS config, and
+  the current prefs (advertised routes, configured exit node).
+  Read-only.
+vendor: emisar
+homepage: https://github.com/andrewdryga/emisar
+
+requires:
+  os:
+    - linux
+  binaries:
+    - tailscale
+
+# `emisar pack suggest` detection — the tailscale CLI + its daemon.
+# No ports: the CLI talks to tailscaled over a local unix socket, not TCP.
+detect:
+  binaries:
+    - tailscale
+  processes:
+    - tailscaled
+
+setup:
+  summary: >
+    Reads the local host's Tailscale state via the tailscale CLI — no
+    credentials needed. The CLI talks to tailscaled's LocalAPI over a
+    local unix socket, so the runner needs permission to that socket.
+  notes:
+    - "Every action in this pack is read-only — it only reads tailnet/node state and never changes configuration, routes, or the exit node."
+    - "The tailscale CLI talks to tailscaled's LocalAPI over a local unix socket (mode 0600). The runner must therefore run as root or as the configured tailscale operator user (set via `tailscale set --operator=<user>`), otherwise commands fail with a permission error. Set the runner's user with a drop-in: `systemctl edit emisar` adding `[Service]` / `User=root` / `Group=root`, then `systemctl daemon-reload && systemctl restart emisar`."
+    - "TLS cert expiry is intentionally NOT in this pack: `tailscale cert` issues/renews a certificate (a mutator), so it would not be read-only. To check a cert's expiry read-only, use emisar's `ssl-local` or `network-tls` pack instead."
+  verify: tailscale.version
+
+actions:
+  - actions/status.yaml
+  - actions/netcheck.yaml
+  - actions/ping.yaml
+  - actions/whois.yaml
+  - actions/ip.yaml
+  - actions/version.yaml
+  - actions/exit_node_list.yaml
+  - actions/dns_status.yaml
+  - actions/debug_prefs.yaml

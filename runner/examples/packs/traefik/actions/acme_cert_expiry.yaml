@@ -1,0 +1,37 @@
+schema_version: 1
+id: traefik.acme_cert_expiry
+title: ACME certificate expiry (from acme.json)
+kind: exec
+risk: low
+description: >
+  For each ACME/Let's Encrypt certificate in acme.json, prints the domain and
+  its notAfter expiry date. Decodes only the public certificate (base64 PEM)
+  through openssl — never touches the private key. Traefik auto-renews 30 days
+  out, so anything closer than that which is NOT renewing is the thing to
+  investigate. Read-only.
+side_effects:
+  - Reads the acme.json storage file (public certificate fields only).
+  - Read-only.
+args:
+  - name: acme_path
+    type: string
+    required: false
+    default: /etc/traefik/acme.json
+    description: Path to Traefik's ACME storage file.
+    validation:
+      pattern: "^/[A-Za-z0-9._/-]{1,256}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - |
+        jq -r 'to_entries[].value.Certificates[]? | "\(.domain.main) \(.certificate)"' {{ args.acme_path }} | while read -r dom cert; do exp=$(printf '%s' "$cert" | base64 -d 2>/dev/null | openssl x509 -noout -enddate 2>/dev/null | cut -d= -f2); printf '%s\texpires %s\n' "$dom" "${exp:-<unreadable>}"; done
+  timeout: 20s
+output:
+  parser: text
+  max_stdout_bytes: 131072
+  max_stderr_bytes: 8192
+examples:
+  - title: Per-domain cert expiry
+    args: {}

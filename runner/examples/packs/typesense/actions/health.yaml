@@ -1,0 +1,26 @@
+schema_version: 1
+id: typesense.health
+title: GET /health
+kind: script
+risk: low
+description: >
+  Liveness check for the Typesense node. Returns {"ok": true} when healthy,
+  and surfaces resource-exhaustion states (out of memory, out of disk) when
+  the node has stopped accepting writes. No API key required.
+side_effects:
+  - One read-only HTTP GET to the Typesense /health endpoint.
+  - Read-only — never writes or mutates data.
+execution:
+  script:
+    path: scripts/tsget.sh
+    interpreter: /bin/sh
+  argv:
+    - "/health"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Check node health
+    args: {}

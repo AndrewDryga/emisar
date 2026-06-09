@@ -1,0 +1,28 @@
+schema_version: 1
+id: pure.arrays
+title: GET /arrays
+kind: script
+risk: low
+description: >
+  Array identity and top-line health — array name, id, Purity//FA OS version,
+  and the headline capacity fields. The starting point for "which array is
+  this and is it healthy?". Returns {items:[...], more_items_remaining, ...};
+  one item per array.
+side_effects:
+  - One read-only HTTP GET to the FlashArray REST API.
+  - Read-only — never writes or mutates array state.
+args: []
+execution:
+  script:
+    path: scripts/pureget.sh
+    interpreter: /bin/sh
+  argv:
+    - "/arrays"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: Array identity and capacity
+    args: {}

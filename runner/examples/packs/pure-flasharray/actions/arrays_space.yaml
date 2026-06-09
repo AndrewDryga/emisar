@@ -1,0 +1,28 @@
+schema_version: 1
+id: pure.arrays_space
+title: GET /arrays/space
+kind: script
+risk: low
+description: >
+  Array-wide space accounting — total and used capacity, plus the data
+  reduction and thin-provisioning ratios behind it. Use to answer "how full
+  is the array and what is the effective reduction?". Returns
+  {items:[...], more_items_remaining, ...} with a space breakdown per array.
+side_effects:
+  - One read-only HTTP GET to the FlashArray REST API.
+  - Read-only — never writes or mutates array state.
+args: []
+execution:
+  script:
+    path: scripts/pureget.sh
+    interpreter: /bin/sh
+  argv:
+    - "/arrays/space"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: Array capacity and data-reduction
+    args: {}

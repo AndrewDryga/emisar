@@ -1,0 +1,28 @@
+schema_version: 1
+id: pure.ports
+title: GET /ports
+kind: script
+risk: low
+description: >
+  Target-port identities — the array-side iSCSI IQNs, Fibre Channel WWNs, and
+  NVMe NQNs, with iSCSI portal IPs where applicable. Use to learn what
+  addresses a host should be connecting to. Returns
+  {items:[...], more_items_remaining, ...}, one item per target port.
+side_effects:
+  - One read-only HTTP GET to the FlashArray REST API.
+  - Read-only — never writes or mutates array state.
+args: []
+execution:
+  script:
+    path: scripts/pureget.sh
+    interpreter: /bin/sh
+  argv:
+    - "/ports"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: iSCSI / FC / NVMe target port identities
+    args: {}

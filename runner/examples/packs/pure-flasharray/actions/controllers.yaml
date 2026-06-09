@@ -1,0 +1,28 @@
+schema_version: 1
+id: pure.controllers
+title: GET /controllers
+kind: script
+risk: low
+description: >
+  The array's controllers — for each, its mode (primary / secondary), model,
+  running Purity//FA version, and status. Use to confirm the HA pair is
+  healthy and which controller is primary. Returns
+  {items:[...], more_items_remaining, ...}, one item per controller.
+side_effects:
+  - One read-only HTTP GET to the FlashArray REST API.
+  - Read-only — never writes or mutates array state.
+args: []
+execution:
+  script:
+    path: scripts/pureget.sh
+    interpreter: /bin/sh
+  argv:
+    - "/controllers"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: Controller mode / model / version / status
+    args: {}

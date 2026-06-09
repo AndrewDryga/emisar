@@ -1,0 +1,28 @@
+schema_version: 1
+id: pure.arrays_performance
+title: GET /arrays/performance
+kind: script
+risk: low
+description: >
+  Array-wide performance — the latest sample of read/write/mirrored latency,
+  IOPS, and bandwidth. Use to answer "is the array slow right now?". Returns
+  {items:[...], more_items_remaining, ...}; the single item is the most recent
+  real-time sample for the array.
+side_effects:
+  - One read-only HTTP GET to the FlashArray REST API.
+  - Read-only — never writes or mutates array state.
+args: []
+execution:
+  script:
+    path: scripts/pureget.sh
+    interpreter: /bin/sh
+  argv:
+    - "/arrays/performance"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: Latest array latency / IOPS / bandwidth
+    args: {}

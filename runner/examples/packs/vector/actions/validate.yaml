@@ -1,0 +1,36 @@
+schema_version: 1
+id: vector.validate
+title: vector validate --no-environment
+kind: exec
+risk: low
+description: >
+  Offline syntax + topology validation of a Vector config file. Runs with
+  --no-environment, so it checks structure only and skips all network sink
+  healthchecks and environment probing — it never connects to anything.
+  Talks only to the local binary — needs no API.
+side_effects:
+  - Reads and parses a Vector config file on the runner host.
+  - Read-only — no network healthchecks (--no-environment), no reload.
+args:
+  - name: config_path
+    type: string
+    required: false
+    default: "/etc/vector/vector.yaml"
+    description: Path to the Vector config file to validate.
+    validation:
+      pattern: '^/[A-Za-z0-9._/-]{1,256}$'
+execution:
+  command:
+    binary: vector
+    argv: ["validate", "--no-environment", "{{ args.config_path }}"]
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 16384
+examples:
+  - title: Validate the default config
+    args: {}
+  - title: Validate a specific config file
+    args:
+      config_path: "/etc/vector/pipelines/api.yaml"

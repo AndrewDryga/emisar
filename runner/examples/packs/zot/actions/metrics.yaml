@@ -1,0 +1,28 @@
+schema_version: 1
+id: zot.metrics
+title: GET /metrics
+kind: script
+risk: low
+description: >
+  Prometheus-format metrics for the registry via the zot metrics extension —
+  request counts, storage, and runtime gauges. Requires the full (extended)
+  build with the metrics extension enabled in config, and typically auth
+  (set ZOT_BASICAUTH). Read-only.
+side_effects:
+  - One read-only HTTP GET to the zot /metrics endpoint.
+  - Read-only — never pushes or deletes.
+execution:
+  script:
+    path: scripts/zotget.sh
+    interpreter: /bin/sh
+  argv:
+    - "GET"
+    - "/metrics"
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: Scrape Prometheus metrics
+    args: {}

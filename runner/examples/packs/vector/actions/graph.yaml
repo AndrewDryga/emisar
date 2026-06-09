@@ -1,0 +1,22 @@
+schema_version: 1
+id: vector.graph
+title: vector graph
+kind: exec
+risk: low
+description: >
+  Render the configured Vector topology as a Graphviz DOT graph — the
+  source -> transform -> sink wiring read from the config file. Offline:
+  reads the config, emits DOT, connects to nothing. Pipe the output to
+  `dot` to draw it. Talks only to the local binary — needs no API.
+side_effects: ["Reads the Vector config and emits its topology as DOT.", "Read-only."]
+args: []
+execution:
+  command: {binary: vector, argv: ["graph"]}
+  timeout: 20s
+output:
+  parser: text
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+examples:
+  - title: Topology as Graphviz DOT
+    args: {}

@@ -1,0 +1,27 @@
+schema_version: 1
+id: typesense.stats
+title: GET /stats.json
+kind: script
+risk: low
+description: >
+  Per-endpoint request statistics over the last 10 seconds —
+  requests-per-second counters and latency_ms breakdowns per API path. Use to
+  see which endpoints are hot and how slow they are right now. Requires the
+  admin API key.
+side_effects:
+  - One read-only HTTP GET to the Typesense /stats.json endpoint.
+  - Read-only — never writes or mutates data.
+execution:
+  script:
+    path: scripts/tsget.sh
+    interpreter: /bin/sh
+  argv:
+    - "/stats.json"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+examples:
+  - title: Current per-endpoint request stats
+    args: {}

@@ -1,0 +1,63 @@
+schema_version: 1
+
+id: zot
+name: zot OCI registry
+version: 0.1.0
+description: >
+  Read-only inspection of a zot OCI registry over its HTTP API: the OCI
+  distribution endpoints (version check, catalog, tags, manifests) plus the
+  zot extensions — registry config/health (mgmt), Prometheus metrics, and a
+  GraphQL search query that returns per-repo size and a newest-image
+  vulnerability summary. Optional basic-auth credentials are streamed over
+  curl stdin; many zot deployments allow anonymous read.
+vendor: emisar
+homepage: https://github.com/andrewdryga/emisar
+
+requires:
+  os:
+    - linux
+  binaries:
+    - curl
+
+# `emisar pack suggest`: the zot server process + default registry port. The
+# binary runs as zot; the port is the reliable signal.
+detect:
+  processes:
+    - zot
+  ports:
+    - 5000
+
+setup:
+  summary: >
+    Every action calls the zot HTTP API at $ZOT_URL via curl on the runner
+    host. Optional basic-auth credentials "user:password" are read from
+    $ZOT_BASICAUTH, base64-encoded, and sent as an Authorization header over
+    curl stdin, so they never appear in the process arguments or the audit
+    log.
+  env:
+    - name: ZOT_URL
+      default: http://127.0.0.1:5000
+      description: >
+        Base URL of the zot registry — scheme, host, and port. Each action
+        appends its path (e.g. /v2/, /v2/_catalog).
+      example: http://zot:5000
+    - name: ZOT_BASICAUTH
+      required: false
+      description: >
+        Optional user:password for registries that require auth; base64-encoded
+        and sent as an Authorization header over curl stdin, never argv. Leave
+        unset for anonymous-read registries.
+  notes:
+    - "Every action is read-only: GET, plus POST only to the read-only search GraphQL extension. Push/delete of manifests and blobs, and userprefs writes, are deliberately excluded."
+    - "The search/mgmt/metrics extensions require the full (extended) zot build — search/ui/mgmt are on by default; metrics must be enabled in config."
+    - "mgmt and metrics typically require auth and are denied to anonymous clients; set ZOT_BASICAUTH for those."
+  verify: zot.v2_base
+
+actions:
+  - actions/v2_base.yaml
+  - actions/catalog.yaml
+  - actions/tags.yaml
+  - actions/manifest.yaml
+  - actions/mgmt.yaml
+  - actions/metrics.yaml
+  - actions/search.yaml

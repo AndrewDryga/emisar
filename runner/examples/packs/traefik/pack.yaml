@@ -1,0 +1,81 @@
+schema_version: 1
+
+id: traefik
+name: Traefik ingress / reverse proxy
+version: 0.1.0
+description: >
+  Read-only visibility into a Traefik (v2/v3) edge router over its HTTP API:
+  the overview, entrypoints, and the full HTTP/TCP/UDP router + service +
+  middleware inventory (each carrying its status and error list, so you can
+  see which router is broken), the raw dynamic-config dump, version, liveness
+  ping, and Prometheus metrics. ACME/Let's Encrypt certificate state is read
+  from the on-disk acme.json (no API exposes it), and access-log 4xx/5xx
+  tails mirror the nginx pack. Default API at http://127.0.0.1:8080
+  (api.insecure mode); override via TRAEFIK_URL.
+vendor: emisar
+homepage: https://github.com/andrewdryga/emisar
+
+requires:
+  os:
+    - linux
+  binaries:
+    - curl
+    - jq
+    - openssl
+
+# `emisar pack suggest`: the traefik process + the dashboard/api entrypoint.
+# :80/:443 are the conventional web/websecure entrypoints; :8080 is the
+# dashboard+API (api.insecure) and the default home of /ping and /metrics.
+detect:
+  processes:
+    - traefik
+  ports:
+    - 8080
+
+setup:
+  summary: >
+    The API actions call the Traefik HTTP API at $TRAEFIK_URL via curl on the
+    runner host. The OSS API is read-only (GET-only) by design. ACME cert
+    state and access logs are read from local files, not the API.
+  env:
+    - name: TRAEFIK_URL
+      default: http://127.0.0.1:8080
+      description: >
+        Base URL of the Traefik API entrypoint — scheme, host, port. In
+        api.insecure mode this is the dashboard entrypoint on :8080; in
+        production it is whatever entrypoint your api@internal router binds.
+      example: http://127.0.0.1:8080
+    - name: TRAEFIK_BASICAUTH
+      required: false
+      description: >
+        Optional "user:password" for a production API behind a basicAuth
+        middleware. Base64-encoded and sent as an Authorization header over
+        curl stdin, so it never appears in the process arguments or audit log.
+    - name: TRAEFIK_INSECURE
+      required: false
+      description: Set to "true" to skip TLS verification when the API is served over https with a self-signed certificate.
+  notes:
+    - "Enable the API to use this pack: --api=true (production, behind a router + auth) or --api.insecure=true (exposes it unauthenticated on the :8080 traefik entrypoint — dev only)."
+    - "Every API action is a read-only GET. The OSS Traefik API has no write endpoints; config changes only happen through providers (file/docker/k8s), never the API."
+    - "Per-router health: each router/service object carries status (enabled | warning | disabled) and an error[] list. Filter for status != enabled to find broken routing. Services also expose serverStatus (per-backend UP/DOWN)."
+    - "ACME certificate material lives only in the acme.json storage file (mode 0600), never the API. The acme_* actions read it locally; the runner user must be able to read that file."
+    - "/ping and /metrics default to the :8080 traefik entrypoint but are often moved to a dedicated entrypoint — point the action's url/path at it if so."
+  verify: traefik.version
+
+actions:
+  - actions/version.yaml
+  - actions/overview.yaml
+  - actions/entrypoints.yaml
+  - actions/http_routers.yaml
+  - actions/http_services.yaml
+  - actions/http_middlewares.yaml
+  - actions/tcp_routers.yaml
+  - actions/tcp_services.yaml
+  - actions/udp_routers.yaml
+  - actions/rawdata.yaml
+  - actions/ping.yaml
+  - actions/metrics.yaml
+  - actions/acme_domains.yaml
+  - actions/acme_cert_expiry.yaml
+  - actions/log_grep_4xx.yaml
+  - actions/log_grep_5xx.yaml

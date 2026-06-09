@@ -1,0 +1,36 @@
+schema_version: 1
+id: traefik.acme_domains
+title: ACME certificate domains (from acme.json)
+kind: exec
+risk: low
+description: >
+  Lists the domains (CN + SANs) Traefik holds ACME/Let's Encrypt certificates
+  for, read from the on-disk acme.json storage (no API exposes cert state).
+  Reads only the domain fields — never the certificate or private-key
+  material. Use to confirm a hostname actually has an issued cert.
+side_effects:
+  - Reads the acme.json storage file (domain fields only).
+  - Read-only.
+args:
+  - name: acme_path
+    type: string
+    required: false
+    default: /etc/traefik/acme.json
+    description: Path to Traefik's ACME storage file. Common locations are /etc/traefik/acme.json, /letsencrypt/acme.json, or ./acme.json.
+    validation:
+      pattern: "^/[A-Za-z0-9._/-]{1,256}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - |
+        jq -r 'to_entries[].value.Certificates[]? | (([.domain.main] + (.domain.sans // [])) | join(", "))' {{ args.acme_path }}
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 131072
+  max_stderr_bytes: 8192
+examples:
+  - title: Domains with issued certs
+    args: {}

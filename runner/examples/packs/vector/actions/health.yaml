@@ -1,0 +1,27 @@
+schema_version: 1
+id: vector.health
+title: GET /health
+kind: exec
+risk: low
+description: >
+  Liveness probe for the local Vector API. Returns {"ok":true} (HTTP 200)
+  when serving, or {"ok":false} (HTTP 503) while draining/shutting down.
+  Works on ANY Vector version — this endpoint survived the v0.55 gRPC
+  migration. Requires api.enabled=true in the Vector config; binds
+  127.0.0.1:8686.
+side_effects: ["One read-only HTTP GET to the local Vector API.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "curl -sS \"${VECTOR_API:-http://127.0.0.1:8686}/health\""
+  timeout: 15s
+output:
+  parser: json
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Is Vector serving?
+    args: {}

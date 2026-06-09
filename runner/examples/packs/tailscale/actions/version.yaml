@@ -1,0 +1,18 @@
+schema_version: 1
+id: tailscale.version
+title: tailscale version --json
+kind: exec
+risk: low
+description: Tailscale client version and build info as JSON.
+side_effects: ["One tailscale read.", "Read-only."]
+args: []
+execution:
+  command: {binary: tailscale, argv: ["version", "--json"]}
+  timeout: 15s
+output:
+  parser: json
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Client version and build info
+    args: {}

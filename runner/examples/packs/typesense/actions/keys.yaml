@@ -1,0 +1,28 @@
+schema_version: 1
+id: typesense.keys
+title: GET /keys
+kind: script
+risk: low
+description: >
+  Lists API key metadata — the key prefix, description, scoped actions, and
+  collections each key may access. The secret value is never returned; only
+  which keys exist and what they are allowed to do. Sensitive: it discloses
+  the set of credentials configured on the node. Requires the admin API key.
+side_effects:
+  - One read-only HTTP GET to the Typesense /keys endpoint.
+  - Read-only — never writes or mutates data.
+  - Returns key metadata only (prefixes and scopes); secrets are not exposed.
+execution:
+  script:
+    path: scripts/tsget.sh
+    interpreter: /bin/sh
+  argv:
+    - "/keys"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+examples:
+  - title: List API key metadata
+    args: {}

@@ -1,0 +1,68 @@
+schema_version: 1
+id: vector.tap
+title: vector tap --outputs-of
+kind: exec
+risk: low
+description: >
+  Sample live events flowing OUT of a named component for a bounded
+  window, as JSON, then auto-exit. The run terminates after duration_ms —
+  NOT on --limit alone, which caps events PER sampling interval, not total,
+  so without a duration a tap can run indefinitely. Adds slight overhead on
+  the running Vector instance while sampling. Connects to the local API
+  (tap is API-backed); component is matched against configured component
+  IDs and supports glob patterns.
+side_effects:
+  - Subscribes to a component's output stream on the local Vector instance.
+  - Slight runtime overhead while sampling; auto-exits after duration_ms.
+  - Read-only — observes events, never modifies the pipeline.
+args:
+  - name: component
+    type: string
+    required: true
+    description: Component ID (or glob) whose outputs to tap, e.g. parse_json or "transform_*".
+    validation:
+      pattern: '^[A-Za-z0-9._*-]{1,128}$'
+  - name: duration_ms
+    type: integer
+    required: false
+    default: 2000
+    description: How long to sample before auto-exiting, in milliseconds. This is what bounds the run.
+    validation:
+      min: 100
+      max: 10000
+  - name: limit
+    type: integer
+    required: false
+    default: 100
+    description: Max events per sampling interval (per-interval cap, NOT a total — duration_ms bounds the run).
+    validation:
+      min: 1
+      max: 1000
+execution:
+  command:
+    binary: vector
+    argv:
+      - "tap"
+      - "--duration_ms"
+      - "{{ args.duration_ms }}"
+      - "--limit"
+      - "{{ args.limit }}"
+      - "--quiet"
+      - "--format"
+      - "json"
+      - "--outputs-of"
+      - "{{ args.component }}"
+  timeout: 20s
+output:
+  parser: json
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: Sample one transform's output for 2s
+    args:
+      component: "parse_json"
+  - title: Sample a sink's input briefly with a small per-interval cap
+    args:
+      component: "datadog_logs"
+      duration_ms: 1000
+      limit: 20

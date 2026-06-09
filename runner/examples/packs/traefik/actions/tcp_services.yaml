@@ -1,0 +1,26 @@
+schema_version: 1
+id: traefik.tcp_services
+title: GET /api/tcp/services
+kind: script
+risk: low
+description: >
+  Every TCP service with its load-balancer/weighted config, status, and
+  error[]. The TCP counterpart to http_services.
+side_effects:
+  - One read-only HTTP GET to the Traefik API.
+  - Read-only.
+args: []
+execution:
+  script:
+    path: scripts/trget.sh
+    interpreter: /bin/sh
+  argv:
+    - "/api/tcp/services"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: All TCP services
+    args: {}

@@ -1,0 +1,63 @@
+schema_version: 1
+
+id: typesense
+name: Typesense search
+version: 0.1.0
+description: >
+  Read-only diagnostics for a Typesense search node over its HTTP API:
+  health and node/raft state, per-endpoint request stats and system
+  metrics, the collection catalog and individual schemas, API-key metadata,
+  and a tail of slow requests from the server log. One admin API key,
+  streamed over curl stdin, unlocks the stats/metrics/debug endpoints a
+  search-only key cannot read.
+vendor: emisar
+homepage: https://github.com/andrewdryga/emisar
+
+requires:
+  os:
+    - linux
+  binaries:
+    - curl
+
+# `emisar pack suggest`: Typesense's server process + default API port. The
+# release binary runs as typesense-server; the port is the reliable signal.
+detect:
+  processes:
+    - typesense-server
+  ports:
+    - 8108
+
+setup:
+  summary: >
+    Every action calls the Typesense HTTP API at $TYPESENSE_URL via curl on
+    the runner host, or tails the server log. The admin API key is read from
+    $TYPESENSE_API_KEY and sent as X-TYPESENSE-API-KEY over curl stdin, so it
+    never appears in the process arguments or the audit log.
+  env:
+    - name: TYPESENSE_URL
+      default: http://127.0.0.1:8108
+      description: >
+        Base URL of the Typesense node — scheme, host, and port. Each action
+        appends its path (e.g. /collections, /stats.json).
+      example: http://typesense:8108
+    - name: TYPESENSE_API_KEY
+      required: false
+      description: >
+        Admin API key; sent as X-TYPESENSE-API-KEY over curl stdin, never
+        argv. Most diagnostic endpoints need the admin key — a search-only
+        key cannot read stats/metrics/debug.
+  notes:
+    - "Every action is a read-only GET. /health needs no key; the rest expect the admin key in TYPESENSE_API_KEY."
+    - "Mutating operations are deliberately excluded: POST /config, /operations/snapshot, /operations/vote, /operations/db/compact, and /operations/cache/clear are not part of this pack."
+    - "Typesense has no slow-query endpoint — slow requests are written to the server log (enable with --log-slow-requests-time-ms) and read via the slow_requests action."
+  verify: typesense.health
+
+actions:
+  - actions/health.yaml
+  - actions/debug.yaml
+  - actions/stats.yaml
+  - actions/metrics.yaml
+  - actions/collections.yaml
+  - actions/collection.yaml
+  - actions/keys.yaml
+  - actions/slow_requests.yaml

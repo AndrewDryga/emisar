@@ -1,0 +1,29 @@
+schema_version: 1
+id: traefik.rawdata
+title: GET /api/rawdata
+kind: script
+risk: low
+description: >
+  The complete dynamic configuration as Traefik currently sees it — all
+  routers, services, and middlewares across HTTP/TCP/UDP, each with its
+  errors, plus the "usedBy" dependency graph tying routers to services and
+  middlewares. The single most complete read for "what is the actual live
+  config and what depends on what?". Larger than the per-kind endpoints.
+side_effects:
+  - One read-only HTTP GET to the Traefik API.
+  - Read-only.
+args: []
+execution:
+  script:
+    path: scripts/trget.sh
+    interpreter: /bin/sh
+  argv:
+    - "/api/rawdata"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 8388608
+  max_stderr_bytes: 8192
+examples:
+  - title: Full live dynamic config + dependency graph
+    args: {}

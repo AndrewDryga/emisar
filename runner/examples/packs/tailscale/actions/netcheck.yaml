@@ -1,0 +1,20 @@
+schema_version: 1
+id: tailscale.netcheck
+title: tailscale netcheck --format=json
+kind: exec
+risk: low
+description: >
+  Network connectivity report as JSON — DERP latency, UDP reachability,
+  IPv4/IPv6 support, port-mapping (UPnP/PMP/PCP), and PreferredDERP.
+side_effects: ["One tailscale read.", "Read-only — probes connectivity, changes nothing."]
+args: []
+execution:
+  command: {binary: tailscale, argv: ["netcheck", "--format=json"]}
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Connectivity report
+    args: {}

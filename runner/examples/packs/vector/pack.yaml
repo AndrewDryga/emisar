@@ -1,0 +1,54 @@
+schema_version: 1
+
+id: vector
+name: Vector observability pipeline
+version: 0.1.0
+description: >
+  Read-only ops for a Vector (vector.dev) pipeline running on the runner
+  host: version + compiled-component inventory, offline config validation,
+  the configured topology as Graphviz DOT, a bounded live event tap, plus
+  health and per-component throughput reads over the local API. CLI
+  subcommands talk to the local binary; the API reads hit 127.0.0.1:8686.
+vendor: emisar
+homepage: https://github.com/andrewdryga/emisar
+
+requires:
+  os:
+    - linux
+  binaries:
+    - vector
+    - curl
+
+# `emisar pack suggest` detection: the Vector process + its default API port.
+detect:
+  processes:
+    - vector
+  ports:
+    - 8686
+
+setup:
+  summary: >
+    Drives the local Vector instance on the runner host: the CLI actions
+    invoke the `vector` binary directly, and the health / metrics reads call
+    Vector's HTTP API at $VECTOR_API (default 127.0.0.1:8686). No
+    credentials — the API is unauthenticated and binds loopback only.
+  env:
+    - name: VECTOR_API
+      default: "http://127.0.0.1:8686"
+      description: >
+        Vector GraphQL/health API base URL; requires api.enabled=true in the
+        Vector config.
+  notes:
+    - "The HTTP API is unauthenticated and binds 127.0.0.1:8686 only when `api.enabled = true` in the Vector config. The CLI actions (version, list, validate, graph, tap) do not need it — they talk to the local binary and work whether or not the API is on."
+    - "VERSION CAVEAT: Vector's observability API was GraphQL (`/graphql`, `/playground`) through v0.54, then migrated to gRPC in v0.55 (April 2026), which REMOVED both. So the CLI subcommands work on ANY version, plain `GET /health` works on ANY version, but the raw GraphQL component_metrics action only works on Vector <= 0.54 (it 404s on >= 0.55). Run `vector.version` first; on >= 0.55 use gRPC tooling for component metrics instead."
+    - "Every action is read-only — none start, stop, reload, or reconfigure Vector. `tap` adds slight overhead on the running instance while sampling, then auto-exits."
+  verify: vector.health
+
+actions:
+  - actions/health.yaml
+  - actions/version.yaml
+  - actions/list.yaml
+  - actions/validate.yaml
+  - actions/graph.yaml
+  - actions/tap.yaml
+  - actions/component_metrics.yaml

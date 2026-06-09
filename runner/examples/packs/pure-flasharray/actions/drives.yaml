@@ -1,0 +1,28 @@
+schema_version: 1
+id: pure.drives
+title: GET /drives
+kind: script
+risk: low
+description: >
+  Flash and NVRAM modules — for each drive, its type, capacity, and status
+  (healthy / unhealthy / evacuating / unused). Use to find a failed or
+  evacuating module. Returns {items:[...], more_items_remaining, ...}, one
+  item per drive.
+side_effects:
+  - One read-only HTTP GET to the FlashArray REST API.
+  - Read-only — never writes or mutates array state.
+args: []
+execution:
+  script:
+    path: scripts/pureget.sh
+    interpreter: /bin/sh
+  argv:
+    - "/drives"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: Flash / NVRAM module status
+    args: {}

@@ -1,0 +1,67 @@
+schema_version: 1
+
+id: pure-flasharray
+name: Pure Storage FlashArray (Purity//FA REST)
+version: 0.1.0
+description: >
+  Read-only access to a Pure Storage FlashArray over its Purity//FA REST API
+  2.x: array identity / capacity / performance, alerts, controller and
+  hardware / drive health, volumes and per-volume space, the host -> volume
+  -> LUN connection map, host and target-port identities, per-controller
+  network interface state, and replication / array-connection status. Drives
+  a remote array via curl; every call is a GET.
+vendor: emisar
+homepage: https://github.com/andrewdryga/emisar
+
+requires:
+  os:
+    - linux
+  binaries:
+    - curl
+
+# No detect block: the array is reached remotely over HTTPS, so there is no
+# local signal on the runner host to suggest this pack on.
+
+setup:
+  summary: >
+    Every action calls the FlashArray REST API 2.x at $PURE_URL via curl on
+    the runner host. The array uses a two-step auth: the API token in
+    $PURE_API_TOKEN is exchanged at /login for a short-lived session token,
+    which is then sent on the read. Point PURE_URL at the array management
+    endpoint and issue PURE_API_TOKEN for a readonly-role array user.
+  env:
+    - name: PURE_URL
+      default: https://192.168.1.1
+      description: >
+        Array management endpoint — scheme + host[:port].
+      example: https://flasharray1.internal
+    - name: PURE_API_TOKEN
+      required: false
+      description: >
+        FlashArray API token for a readonly-role user; sent as the api-token
+        header over curl stdin, never in argv or the audit log.
+    - name: PURE_INSECURE
+      required: false
+      description: >
+        true to skip TLS verification of the array's self-signed certificate.
+  notes:
+    - "Every action is a read-only GET — none write, delete, or mutate array state."
+    - "Issue the token from a readonly-role array user (Settings -> Users) as defense-in-depth, so the credential itself cannot change anything even though the pack only ever issues GETs."
+    - "The session token auto-expires after ~30 min of inactivity; the script re-logins on every call, so there is no session to manage."
+  verify: pure.arrays
+
+actions:
+  - actions/arrays.yaml
+  - actions/arrays_space.yaml
+  - actions/arrays_performance.yaml
+  - actions/alerts.yaml
+  - actions/controllers.yaml
+  - actions/hardware.yaml
+  - actions/drives.yaml
+  - actions/volumes.yaml
+  - actions/volumes_space.yaml
+  - actions/connections.yaml
+  - actions/hosts.yaml
+  - actions/ports.yaml
+  - actions/network_interfaces.yaml
+  - actions/array_connections.yaml

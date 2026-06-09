@@ -1,0 +1,29 @@
+schema_version: 1
+id: pure.network_interfaces
+title: GET /network-interfaces
+kind: script
+risk: low
+description: >
+  Per-controller network interfaces — each interface's enabled / up-or-down
+  state, speed, address, and the services it carries (management, iSCSI,
+  replication, NVMe-oF). Use this to answer "is the target port up?" before
+  chasing a host-side path problem. Returns
+  {items:[...], more_items_remaining, ...}, one item per interface.
+side_effects:
+  - One read-only HTTP GET to the FlashArray REST API.
+  - Read-only — never writes or mutates array state.
+args: []
+execution:
+  script:
+    path: scripts/pureget.sh
+    interpreter: /bin/sh
+  argv:
+    - "/network-interfaces"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: Interface up/down state, speed, services
+    args: {}

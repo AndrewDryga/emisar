@@ -1,0 +1,30 @@
+schema_version: 1
+id: pure.connections
+title: GET /connections
+kind: script
+risk: low
+description: >
+  THE host -> volume -> LUN map: every connection between a host (or host
+  group) and a volume, with the LUN the volume is presented at. This is the
+  authoritative answer to "which host sees which volume, at which LUN?" — the
+  first stop for any "my server can't see its LUN" or "is this volume even
+  mapped?" question. Returns {items:[...], more_items_remaining, ...}, one
+  item per host/volume connection; can be large on a busy array.
+side_effects:
+  - One read-only HTTP GET to the FlashArray REST API.
+  - Read-only — never writes or mutates array state.
+args: []
+execution:
+  script:
+    path: scripts/pureget.sh
+    interpreter: /bin/sh
+  argv:
+    - "/connections"
+  timeout: 60s
+output:
+  parser: json
+  max_stdout_bytes: 4194304
+  max_stderr_bytes: 8192
+examples:
+  - title: Full host -> volume -> LUN map
+    args: {}

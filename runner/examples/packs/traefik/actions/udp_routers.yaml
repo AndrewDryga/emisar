@@ -1,0 +1,27 @@
+schema_version: 1
+id: traefik.udp_routers
+title: GET /api/udp/routers
+kind: script
+risk: low
+description: >
+  Every UDP router (and its service binding) with status and error[]. Use for
+  UDP entrypoints (DNS, QUIC, syslog) routing visibility. Pair with
+  /api/udp/services via rawdata if you need the service side.
+side_effects:
+  - One read-only HTTP GET to the Traefik API.
+  - Read-only.
+args: []
+execution:
+  script:
+    path: scripts/trget.sh
+    interpreter: /bin/sh
+  argv:
+    - "/api/udp/routers"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: All UDP routers
+    args: {}

@@ -1,0 +1,26 @@
+schema_version: 1
+id: traefik.version
+title: GET /api/version
+kind: script
+risk: low
+description: >
+  Traefik version, codename, and build/start date. Use to confirm which
+  release is running (v2 vs v3 behaviour) and that the API answers.
+side_effects:
+  - One read-only HTTP GET to the Traefik API.
+  - Read-only.
+args: []
+execution:
+  script:
+    path: scripts/trget.sh
+    interpreter: /bin/sh
+  argv:
+    - "/api/version"
+  timeout: 15s
+output:
+  parser: json
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Version + codename
+    args: {}

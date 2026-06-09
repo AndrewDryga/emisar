@@ -1,0 +1,21 @@
+schema_version: 1
+id: tailscale.debug_prefs
+title: tailscale debug prefs
+kind: exec
+risk: low
+description: >
+  Current node prefs as JSON, including AdvertiseRoutes (this node's
+  advertised subnet routes) and ExitNodeIP/ExitNodeID (the configured
+  exit node, if any). Read-only print of the in-memory prefs.
+side_effects: ["One tailscale read.", "Read-only — prints prefs, changes nothing."]
+args: []
+execution:
+  command: {binary: tailscale, argv: ["debug", "prefs"]}
+  timeout: 15s
+output:
+  parser: json
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Current prefs (advertised routes, configured exit node)
+    args: {}

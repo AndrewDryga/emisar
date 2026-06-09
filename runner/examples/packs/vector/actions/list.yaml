@@ -1,0 +1,22 @@
+schema_version: 1
+id: vector.list
+title: vector list --format json
+kind: exec
+risk: low
+description: >
+  List the sources, transforms, and sinks compiled into this Vector
+  binary, as JSON. This is the static component catalog of the build — not
+  the running topology (use vector.graph for what is actually configured).
+  Talks only to the local binary — needs no API.
+side_effects: ["Reads the local Vector binary's component list.", "Read-only."]
+args: []
+execution:
+  command: {binary: vector, argv: ["list", "--format", "json"]}
+  timeout: 15s
+output:
+  parser: json
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+examples:
+  - title: Components compiled into the binary
+    args: {}

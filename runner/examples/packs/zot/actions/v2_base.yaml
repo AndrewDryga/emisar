@@ -1,0 +1,27 @@
+schema_version: 1
+id: zot.v2_base
+title: GET /v2/
+kind: script
+risk: low
+description: >
+  OCI distribution base endpoint. A 200 confirms the registry is up and
+  speaking the v2 API, and the response advertises the supported
+  distribution-spec version. Use as a reachability/version check.
+side_effects:
+  - One read-only HTTP GET to the zot /v2/ endpoint.
+  - Read-only — never pushes or deletes.
+execution:
+  script:
+    path: scripts/zotget.sh
+    interpreter: /bin/sh
+  argv:
+    - "GET"
+    - "/v2/"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Base/version check
+    args: {}

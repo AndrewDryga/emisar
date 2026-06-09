@@ -1,0 +1,26 @@
+schema_version: 1
+id: typesense.collections
+title: GET /collections
+kind: script
+risk: low
+description: >
+  Lists all collections on the node with their full schemas and document
+  counts. Use to inventory what is indexed and how big each collection is.
+  Requires the admin API key.
+side_effects:
+  - One read-only HTTP GET to the Typesense /collections endpoint.
+  - Read-only — never writes or mutates data.
+execution:
+  script:
+    path: scripts/tsget.sh
+    interpreter: /bin/sh
+  argv:
+    - "/collections"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: List all collections
+    args: {}

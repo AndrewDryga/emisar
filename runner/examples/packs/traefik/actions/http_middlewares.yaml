@@ -1,0 +1,27 @@
+schema_version: 1
+id: traefik.http_middlewares
+title: GET /api/http/middlewares
+kind: script
+risk: low
+description: >
+  Every HTTP middleware (auth, rate-limit, headers, redirects, retries,
+  circuit-breaker, etc.) with its config, status, and error[]. Use to confirm
+  a middleware is configured as expected and not in error.
+side_effects:
+  - One read-only HTTP GET to the Traefik API.
+  - Read-only.
+args: []
+execution:
+  script:
+    path: scripts/trget.sh
+    interpreter: /bin/sh
+  argv:
+    - "/api/http/middlewares"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: All HTTP middlewares
+    args: {}
