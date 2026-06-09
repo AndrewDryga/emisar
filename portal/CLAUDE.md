@@ -229,6 +229,7 @@ Rules:
 - `not_deleted/1` is the standard partial-index-friendly soft-delete filter; pair it with the changeset's `delete/1` (`deleted_at`).
 - `cursor_fields/0` and `filters/0` are `Emisar.Repo.Query` callbacks; declare them when the context paginates or filters via `Repo.list/3`.
 - `preloads/0` entries use the `{scope_query, nested_preloads}` tuple — `account: {Account.Query.not_deleted(), Account.Query.preloads()}` — so the associated schema's own `preloads/0` cascades and deep nesting composes. Any query module reachable as a preload declares its own `preloads/0` (even `do: []`) so callers can compose that tuple.
+- For a belongs_to a list pipeline always loads, expose **two** helpers, not one: `with_joined_X/1` (idempotent `with_named_binding/3` + inner join scoped to the assoc's `not_deleted/0`) and `with_preloaded_X/1` (`queryable |> with_joined_X() |> preload(...)`). Keeping the join separate lets it be reused to filter on the joined columns; putting `preload` *outside* the idempotency block means it still applies when the join already exists.
 - Cross-table label helpers belong here too: `select_labels(queryable, ids, field)` (used by Audit).
 - A helper whose name implies a position (`latest`, `oldest`, `top_n`) owns both its `order_by` and its `limit` — callers shouldn't have to remember to order first for the limit to mean anything.
 - No `Repo.*` calls in Query modules. They build queryables; the context calls Repo.
