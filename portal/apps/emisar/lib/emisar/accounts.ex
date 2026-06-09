@@ -276,15 +276,6 @@ defmodule Emisar.Accounts do
     Repo.exists?(base) and not Repo.exists?(Membership.Query.not_disabled(base))
   end
 
-  # Internal write — the invite flow (already authorized via
-  # invite_member_permission) is the only caller. Not a public API:
-  # there's no Subject gate here, so it must never be reachable from
-  # LiveView/controllers/MCP. Fixtures build memberships directly.
-  defp create_membership(attrs) do
-    Membership.Changeset.create(attrs)
-    |> Repo.insert()
-  end
-
   @doc """
   Update a membership's role with hierarchy invariants.
 
@@ -669,42 +660,54 @@ defmodule Emisar.Accounts do
          :ok <- ensure_invite_role_allowed(role, subject) do
       email = String.downcase(String.trim(email))
       token = invitation_token()
-      invited_by_id = subject.actor.id
 
-      Repo.transaction(fn ->
-        {user, created?} =
-          case fetch_user_by_email(email) do
-            {:ok, u} ->
-              {u, false}
-
-            {:error, :not_found} ->
-              {:ok, u} =
-                %User{}
-                |> User.Changeset.registration(%{email: email}, hash_password: false)
-                |> Repo.insert()
-
-              {u, true}
-          end
-
+      Multi.new()
+      |> Multi.run(:user, fn _repo, _changes -> fetch_or_create_user(email) end)
+      |> Multi.run(:ensure_not_member, fn _repo, %{user: {user, _created?}} ->
         case peek_membership(account_id, user.id) do
-          nil ->
-            {:ok, membership} =
-              create_membership(%{
-                account_id: account_id,
-                user_id: user.id,
-                role: role,
-                invited_by_id: invited_by_id,
-                invitation_token: token
-              })
-
-            Audit.Events.user_invited(subject, user, role) |> Repo.insert()
-
-            %{membership: membership, user: user, invitation_token: token, created?: created?}
-
-          %Membership{} ->
-            Repo.rollback(:already_member)
+          nil -> {:ok, nil}
+          %Membership{} -> {:error, :already_member}
         end
       end)
+      |> Multi.insert(:membership, fn %{user: {user, _created?}} ->
+        Membership.Changeset.create(%{
+          account_id: account_id,
+          user_id: user.id,
+          role: role,
+          invited_by_id: subject.actor.id,
+          invitation_token: token
+        })
+      end)
+      |> Multi.insert(:audit, fn %{user: {user, _created?}} ->
+        Audit.Events.user_invited(subject, user, role)
+      end)
+      |> Repo.commit_multi()
+      |> case do
+        {:ok, %{user: {user, created?}, membership: membership}} ->
+          {:ok,
+           %{membership: membership, user: user, invitation_token: token, created?: created?}}
+
+        {:error, reason} ->
+          {:error, reason}
+      end
+    end
+  end
+
+  # Fetch the user by email, or create a placeholder (unconfirmed, no
+  # password) so the invitation has a record to hang off. Returns
+  # `{user, created?}` so the caller can tell a fresh invite from a re-add.
+  defp fetch_or_create_user(email) do
+    case fetch_user_by_email(email) do
+      {:ok, user} ->
+        {:ok, {user, false}}
+
+      {:error, :not_found} ->
+        with {:ok, user} <-
+               %User{}
+               |> User.Changeset.registration(%{email: email}, hash_password: false)
+               |> Repo.insert() do
+          {:ok, {user, true}}
+        end
     end
   end
 
