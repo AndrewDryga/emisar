@@ -655,9 +655,7 @@ defmodule Emisar.Accounts do
   """
   def invite_user_to_account(email, role, %Subject{account: %Account{id: account_id}} = subject)
       when is_binary(email) and is_binary(role) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.invite_member_permission()),
-         :ok <- ensure_invite_role_allowed(role, subject) do
+    with :ok <- ensure_invite_permitted(role, subject) do
       email = String.downcase(String.trim(email))
       token = invitation_token()
 
@@ -711,15 +709,18 @@ defmodule Emisar.Accounts do
     end
   end
 
-  # An admin can invite anybody except an owner; only a subject holding
-  # manage_owners (i.e. an owner) can mint an owner. Mirrors the
-  # role-change guard so the two paths stay consistent.
-  defp ensure_invite_role_allowed(role, %Subject{} = subject) do
-    if normalize_role(role) == :owner and not can_manage_owners?(subject) do
-      {:error, :owner_required}
-    else
-      :ok
-    end
+  # Field-aware permission: every invite needs invite_member, and inviting
+  # an owner additionally needs the owner-only manage_owners — so an admin
+  # can invite anyone except an owner. Same shape as update_account/3.
+  defp ensure_invite_permitted(role, %Subject{} = subject) do
+    required =
+      if normalize_role(role) == :owner do
+        [Authorizer.invite_member_permission(), Authorizer.manage_owners_permission()]
+      else
+        [Authorizer.invite_member_permission()]
+      end
+
+    Auth.Authorizer.ensure_has_permissions(subject, required)
   end
 
   defp invitation_token do
