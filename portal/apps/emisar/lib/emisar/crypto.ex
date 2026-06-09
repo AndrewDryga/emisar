@@ -26,6 +26,16 @@ defmodule Emisar.Crypto do
   def random_secret(bytes \\ @secret_bytes) when is_integer(bytes) and bytes > 0,
     do: :crypto.strong_rand_bytes(bytes) |> Base.url_encode64(padding: false)
 
+  # Invitation links carry a 24-byte (192-bit) opaque token in the URL.
+  @invite_token_bytes 24
+
+  @doc """
+  Opaque secret for a membership invitation link — carried in the invite
+  URL and matched back on acceptance. Defined here so the token's length
+  and encoding stay a crypto concern, not the inviting context's.
+  """
+  def user_invite_token, do: random_secret(@invite_token_bytes)
+
   @doc """
   sha256 of a raw secret, as a 32-byte binary — the at-rest form. Store
   this, never the raw secret.

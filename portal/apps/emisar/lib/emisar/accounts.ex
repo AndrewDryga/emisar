@@ -650,7 +650,7 @@ defmodule Emisar.Accounts do
       when is_binary(email) and is_binary(role) do
     with :ok <- ensure_invite_permitted(role, subject) do
       email = String.downcase(String.trim(email))
-      token = Crypto.random_secret(24)
+      token = Crypto.user_invite_token()
 
       Multi.new()
       |> Multi.run(:user, fn _repo, _changes -> fetch_or_create_user(email) end)
