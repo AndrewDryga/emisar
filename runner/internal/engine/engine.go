@@ -14,6 +14,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"os"
 	"sort"
 	"strings"
 	"sync"
@@ -296,6 +297,15 @@ func (e *Engine) Run(ctx context.Context, req Request) (*Result, error) {
 			return e.emitExecError(ctx, req, act, cleanArgs, now,
 				fmt.Errorf("script for action %s missing from registry", act.ID))
 		}
+		// Re-verify the script bytes against the hash the loader recorded when
+		// the pack was loaded and trusted, as close to exec as we can get. The
+		// pack hash is the unit of trust (cloud refuses untrusted packs); if the
+		// file on disk changed since load — a TOCTOU swap by anything with write
+		// access to the pack dir — the trusted hash no longer describes what
+		// we'd run. Refuse rather than execute unreviewed bytes.
+		if err := verifyScriptSHA(si); err != nil {
+			return e.emitExecError(ctx, req, act, cleanArgs, now, err)
+		}
 		scriptSHA = si.SHA256
 		plan = executor.PlanForScript(act, si.Path, si.SHA256, renderedArgv, envRendered, limits)
 	}
@@ -566,6 +576,31 @@ func shellQuote(s string) string {
 		return s
 	}
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// verifyScriptSHA re-hashes the on-disk script and compares it to the hash the
+// pack loader recorded at trust time, closing the gap between "the bytes we
+// trust" and "the bytes we execute". A mismatch means the file changed after
+// the pack was loaded. An empty recorded hash means checksums were disabled at
+// load (an explicit operator opt-out), so there is nothing to verify against.
+//
+// This shrinks the TOCTOU window from load-to-exec down to hash-to-exec; a
+// truly atomic guarantee would need fexecve of an already-open fd, which Go
+// does not expose portably.
+func verifyScriptSHA(si packs.ScriptInfo) error {
+	if si.SHA256 == "" {
+		return nil
+	}
+	data, err := os.ReadFile(si.Path)
+	if err != nil {
+		return fmt.Errorf("re-read script for integrity check: %w", err)
+	}
+	sum := sha256.Sum256(data)
+	if got := hex.EncodeToString(sum[:]); got != si.SHA256 {
+		return fmt.Errorf("script %s changed on disk since the pack was trusted "+
+			"(sha256 %s != trusted %s); refusing to execute", si.Path, got, si.SHA256)
+	}
+	return nil
 }
 
 // combinedRedactor merges the action's redaction rules into the global ones.

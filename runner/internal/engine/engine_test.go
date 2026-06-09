@@ -552,3 +552,130 @@ func TestEngine_StreamingRedactsMultiLineSecret(t *testing.T) {
 		}
 	}
 }
+
+const scriptRunAction = `
+schema_version: 1
+id: t.run
+title: Run a script
+kind: script
+risk: low
+description: d
+side_effects: [none]
+args: []
+execution:
+  script:
+    path: scripts/run.sh
+    interpreter: /bin/sh
+  argv: []
+  timeout: 5s
+output:
+  parser: text
+  max_stdout_bytes: 1024
+  max_stderr_bytes: 1024
+`
+
+// setupScriptEngine builds an engine serving a single script-kind action whose
+// payload lives at <root>/p/scripts/run.sh, and returns the engine and that
+// script's absolute path so a test can tamper with it on disk. opts controls
+// whether the loader records the script checksum.
+func setupScriptEngine(t *testing.T, opts packs.LoadOptions) (*Engine, *audit.Journal, string) {
+	t.Helper()
+	root := t.TempDir()
+	must := func(err error) {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	must(os.MkdirAll(filepath.Join(root, "p", "actions"), 0o755))
+	must(os.MkdirAll(filepath.Join(root, "p", "scripts"), 0o755))
+	must(os.WriteFile(filepath.Join(root, "p", "pack.yaml"), []byte(`schema_version: 1
+id: t
+name: t
+version: 0.0.1
+description: t
+actions:
+  - actions/run.yaml
+`), 0o644))
+	must(os.WriteFile(filepath.Join(root, "p", "actions", "run.yaml"), []byte(scriptRunAction), 0o644))
+	scriptPath := filepath.Join(root, "p", "scripts", "run.sh")
+	must(os.WriteFile(scriptPath, []byte("#!/bin/sh\necho original\n"), 0o755))
+
+	reg, err := packs.LoadAll([]string{root}, opts)
+	must(err)
+	sink, err := audit.OpenJSONL(filepath.Join(root, "events.jsonl"), audit.JSONLOptions{})
+	must(err)
+	j := audit.New(audit.Defaults{AgentID: "test", Group: "test"}, sink)
+	e := New(Config{
+		Registry:     reg,
+		Executor:     executor.New(),
+		Journal:      j,
+		Redactor:     redact.Empty(),
+		PreviewBytes: 256,
+		PackDirs:     []string{root},
+	})
+	return e, j, scriptPath
+}
+
+// TestEngine_ScriptTamperRefusedAtDispatch — a script whose bytes change on
+// disk after the pack was loaded/trusted must be refused at the next dispatch,
+// not executed. Guards the load-to-exec TOCTOU on script payloads.
+func TestEngine_ScriptTamperRefusedAtDispatch(t *testing.T) {
+	e, j, scriptPath := setupScriptEngine(t, packs.LoadOptions{})
+	defer j.Close()
+
+	// First dispatch runs the trusted bytes.
+	res, err := e.Run(context.Background(), Request{ActionID: "t.run", Reason: "test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Status != StatusSuccess {
+		t.Fatalf("trusted script should run: status=%s reason=%s", res.Status, res.Reason)
+	}
+	if !strings.Contains(res.Stdout, "original") {
+		t.Fatalf("unexpected stdout: %q", res.Stdout)
+	}
+
+	// Swap the script on disk WITHOUT reloading — the registry keeps the
+	// trusted hash, mirroring an attacker editing the file post-trust.
+	if err := os.WriteFile(scriptPath, []byte("#!/bin/sh\necho TAMPERED\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err = e.Run(context.Background(), Request{ActionID: "t.run", Reason: "test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Status != StatusError {
+		t.Fatalf("tampered script must be refused, got status=%s stdout=%q", res.Status, res.Stdout)
+	}
+	if !strings.Contains(res.Reason, "changed on disk") {
+		t.Fatalf("expected a tamper reason, got %q", res.Reason)
+	}
+	if strings.Contains(res.Stdout, "TAMPERED") {
+		t.Fatal("tampered script must not have executed")
+	}
+}
+
+// TestEngine_ScriptChecksumSkipRunsAnyBytes — with checksums disabled at load
+// (an explicit operator opt-out), there is no recorded hash to verify against,
+// so a post-load edit runs. Confirms the opt-out path and that the verifier
+// no-ops on an empty recorded hash rather than failing closed and breaking
+// script execution entirely.
+func TestEngine_ScriptChecksumSkipRunsAnyBytes(t *testing.T) {
+	e, j, scriptPath := setupScriptEngine(t, packs.LoadOptions{SkipScriptChecksum: true})
+	defer j.Close()
+
+	if err := os.WriteFile(scriptPath, []byte("#!/bin/sh\necho EDITED\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	res, err := e.Run(context.Background(), Request{ActionID: "t.run", Reason: "test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Status != StatusSuccess {
+		t.Fatalf("with checksums disabled the script should run: status=%s reason=%s", res.Status, res.Reason)
+	}
+	if !strings.Contains(res.Stdout, "EDITED") {
+		t.Fatalf("expected the edited script to run, got %q", res.Stdout)
+	}
+}
