@@ -23,6 +23,7 @@ These shape every change. When a decision isn't covered by an Iron Law, decide w
 Lower-stakes taste calls. Not Iron Laws, but the defaults. **The user adds to this list over time — append, don't rewrite.**
 
 - Pipe into the data; don't nest calls. A function reads top-to-bottom as a pipeline (`Query.not_deleted() |> Authorizer.for_subject(subject) |> Repo.list(...)`).
+- Keep a pipeline's anonymous-function steps visually uniform: if any step's `fn` must wrap (body and `end` on their own lines, because it's too long to inline), hand-wrap the short ones too rather than leaving them inline. `mix format` preserves a hand-wrapped short `fn`, so the whole `Multi`/pipeline reads as one shape instead of a ragged mix of inline and block closures.
 - `with` for the happy path; let the `else` carry the error shapes. Don't pyramid `case`.
 - Name by intent, not by type. `expire_overdue_requests`, not `update_requests`. Boolean-returning fns end in `?`.
 - Spell variables out: `changeset`, not `cs`. A struct-typed binding takes the schema's own name — `%Membership{} = membership`, not `m`/`target`. Reach for a qualified name (`target_membership`) only to disambiguate two bindings of the same type.
