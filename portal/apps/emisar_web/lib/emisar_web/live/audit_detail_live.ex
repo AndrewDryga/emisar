@@ -44,6 +44,11 @@ defmodule EmisarWeb.AuditDetailLive do
     >
       <:title>
         <.back_link navigate={~p"/app/audit"}>Audit log</.back_link>
+        <span
+          class={["mr-2 inline-block h-2 w-2 rounded-full align-middle", tone_dot(@event.event_type)]}
+          aria-hidden="true"
+        >
+        </span>
         <span class="font-semibold">{format_event_type(@event.event_type)}</span>
         <span class="ml-2 font-mono text-xs font-normal text-zinc-500">{@event.event_type}</span>
       </:title>
@@ -153,6 +158,17 @@ defmodule EmisarWeb.AuditDetailLive do
   defp pretty_payload(nil), do: "{}"
   defp pretty_payload(map) when is_map(map), do: Jason.encode!(map, pretty: true)
   defp pretty_payload(other), do: inspect(other)
+
+  # Outcome dot in the title, matching the audit list — failures rose,
+  # denials/removals amber, routine neutral. `event_tone/1` (TimeHelpers)
+  # owns the classification.
+  defp tone_dot(event_type) do
+    case event_tone(event_type) do
+      :danger -> "bg-rose-400"
+      :warn -> "bg-amber-400"
+      :neutral -> "bg-zinc-700"
+    end
+  end
 
   # -- policy.updated diff renderer ---------------------------------
 

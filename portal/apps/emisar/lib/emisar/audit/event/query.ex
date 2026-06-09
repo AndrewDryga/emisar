@@ -32,6 +32,7 @@ defmodule Emisar.Audit.Event.Query do
     {"runner.connected", "Runner connected"},
     {"runner.disconnected", "Runner disconnected"},
     {"runner.disabled", "Runner disabled"},
+    {"runner.enabled", "Runner enabled"},
     {"runner.deleted", "Runner deleted"},
     {"runner.error", "Runner error"},
     {"auth_key.created", "Auth key created"},
@@ -43,6 +44,7 @@ defmodule Emisar.Audit.Event.Query do
     {"user.signed_up", "User signed up"},
     {"user.signed_in", "User signed in"},
     {"user.signed_out", "User signed out"},
+    {"session.account_switched", "Account switched"},
     {"user.sign_in_failed", "Sign-in failed"},
     {"user.invited", "User invited"},
     {"user.invitation_accepted", "User accepted invitation"},
@@ -113,6 +115,7 @@ defmodule Emisar.Audit.Event.Query do
        {"runner.connected", "Connected"},
        {"runner.disconnected", "Disconnected"},
        {"runner.disabled", "Disabled"},
+       {"runner.enabled", "Enabled"},
        {"runner.deleted", "Deleted"},
        {"runner.error", "Error"}
      ]},
@@ -133,6 +136,7 @@ defmodule Emisar.Audit.Event.Query do
        {"user.signed_up", "Signed up"},
        {"user.signed_in", "Signed in"},
        {"user.signed_out", "Signed out"},
+       {"session.account_switched", "Switched account"},
        {"user.sign_in_failed", "Sign-in failed"},
        {"user.magic_link_issued", "Magic link issued"},
        {"user.email_confirmed", "Email confirmed"}
@@ -294,6 +298,8 @@ defmodule Emisar.Audit.Event.Query do
           {"user", "User"},
           {"api_key", "API key"},
           {"runner", "Runner"},
+          {"runbook", "Runbook"},
+          {"scheduler", "Scheduler"},
           {"system", "System"}
         ],
         fun: fn q, kinds -> {q, dynamic([events: e], e.actor_kind in ^kinds)} end
@@ -318,7 +324,7 @@ defmodule Emisar.Audit.Event.Query do
       },
       %Filter{
         name: :hide_noise,
-        title: "Hide run lifecycle",
+        title: "Hide noisy events",
         type: :boolean,
         fun: fn q, true ->
           {q, dynamic([events: e], e.event_type not in ^@noisy_event_types)}

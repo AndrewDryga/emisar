@@ -136,12 +136,21 @@ defmodule EmisarWeb.AuditLive do
           <.local_time value={ev.occurred_at} class="text-xs text-zinc-400" />
         </:col>
         <:col :let={ev} label="Event">
-          <div class="text-sm text-zinc-200">{format_event_type(ev.event_type)}</div>
-          <div class="font-mono text-[10px] text-zinc-500">{ev.event_type}</div>
-          <.event_summary :let={pair} pairs={AuditSummary.summary_pairs(ev)}>
-            <span class="font-mono text-zinc-400">{elem(pair, 0)}:</span>
-            <span class="text-zinc-300">{elem(pair, 1)}</span>
-          </.event_summary>
+          <div class="flex items-start gap-2">
+            <span
+              class={["mt-1.5 h-1.5 w-1.5 flex-none rounded-full", tone_dot(ev.event_type)]}
+              aria-hidden="true"
+            >
+            </span>
+            <div class="min-w-0">
+              <div class="text-sm text-zinc-200">{format_event_type(ev.event_type)}</div>
+              <div class="font-mono text-[10px] text-zinc-500">{ev.event_type}</div>
+              <.event_summary :let={pair} pairs={AuditSummary.summary_pairs(ev)}>
+                <span class="font-mono text-zinc-400">{elem(pair, 0)}:</span>
+                <span class="text-zinc-300">{elem(pair, 1)}</span>
+              </.event_summary>
+            </div>
+          </div>
         </:col>
         <:col :let={ev} label="Actor">
           <.ref kind={ev.actor_kind} id={ev.actor_id} label={ev.actor_label} refs={@refs} />
@@ -366,6 +375,17 @@ defmodule EmisarWeb.AuditLive do
   defp kindless_label("scheduler"), do: "Scheduler"
   defp kindless_label("runbook"), do: "Runbook"
 
+  # Colour for the leading outcome dot in the Event column — failures rose,
+  # denials/removals amber, routine events a muted neutral. Keyed off
+  # `event_tone/1` so the classification lives in one place (TimeHelpers).
+  defp tone_dot(event_type) do
+    case event_tone(event_type) do
+      :danger -> "bg-rose-400"
+      :warn -> "bg-amber-400"
+      :neutral -> "bg-zinc-700"
+    end
+  end
+
   # Look up the live label from `refs` first (the freshest); fall back
   # to the label that was stamped on the event at write time; finally
   # to a short slice of the UUID. The event might predate any rename,
@@ -394,9 +414,6 @@ defmodule EmisarWeb.AuditLive do
   defp ref_path("runner", id) when is_binary(id), do: ~p"/app/runners/#{id}"
   defp ref_path("action_run", id) when is_binary(id), do: ~p"/app/runs/#{id}"
   defp ref_path("approval_request", id) when is_binary(id), do: ~p"/app/approvals/#{id}"
-  # Runbooks have an edit route but no detail page; route to the edit
-  # page so the operator can see the current state of the runbook the
-  # event references.
   # Runbooks have an edit route but no detail page; route to the edit
   # page so the operator can see the current state of the runbook the
   # event references.

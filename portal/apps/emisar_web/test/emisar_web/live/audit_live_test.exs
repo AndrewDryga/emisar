@@ -50,6 +50,25 @@ defmodule EmisarWeb.AuditLiveTest do
       assert html =~ ~p"/app/runners/#{runner.id}"
     end
 
+    test "rows carry an outcome dot — rose for failures, amber for denials, neutral for routine",
+         %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+
+      for {type, subject_kind} <- [
+            {"user.sign_in_failed", "user"},
+            {"approval.denied", "approval_request"},
+            {"runner.connected", "runner"}
+          ] do
+        {:ok, _} = Audit.log(account.id, type, subject_kind: subject_kind, subject_label: "x")
+      end
+
+      {:ok, _lv, html} = live(conn, ~p"/app/audit")
+
+      assert html =~ "bg-rose-400"
+      assert html =~ "bg-amber-400"
+      assert html =~ "bg-zinc-700"
+    end
+
     test "label updates reflect on next load (no stale snapshot)", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
 

@@ -71,6 +71,9 @@ defmodule EmisarWeb.AuditSummary do
     end
   end
 
+  defp summarize("session.account_switched", p),
+    do: pairs(role: get(p, :role))
+
   defp summarize("user.sign_in_failed", p),
     do: pairs(reason: get(p, :reason))
 

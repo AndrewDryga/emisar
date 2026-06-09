@@ -149,4 +149,15 @@ defmodule EmisarWeb.AuditSummaryTest do
                AuditSummary.summary_pairs(ev("user.signed_in", %{method: "password"}))
     end
   end
+
+  describe "session.account_switched" do
+    test "shows the role in the switched-to account" do
+      assert [{"role", "admin"}] =
+               AuditSummary.summary_pairs(ev("session.account_switched", %{"role" => "admin"}))
+    end
+
+    test "no chip when role is absent" do
+      assert [] = AuditSummary.summary_pairs(ev("session.account_switched", %{}))
+    end
+  end
 end
