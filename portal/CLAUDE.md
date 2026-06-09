@@ -326,6 +326,7 @@ end
 - The four **membership** roles (`:owner`/`:admin`/`:operator`/`:viewer`) are defined once in `Emisar.Auth.Role` — the single source for the `Membership` `Ecto.Enum`, the rank/`at_least?` hierarchy, and the team UI's role list. Never re-list them in a schema, changeset, or LiveView.
 - **Authorize by permission, not role name.** A context must never branch on `subject.role` to gate an action (`subject.role != :owner` is a smell) — add a permission (e.g. `manage_owners_permission`, held by owner + system only) and check `Auth.Authorizer.has_permission?/2`. Comparing a *data* role value (`target.role == :owner`) is fine; gating the *actor's* capability by role name is not.
 - `for_subject/2` is the **row-scoping** authorizer — it composes onto whatever query the context built. Use the Query module helpers; do not write raw `where` here. Keep the three clauses: `:system` (bypass), account-scoped, and the `_` fallback.
+- ⚠️ Because `for_subject/2` **bypasses** scoping for `:system`, a read that takes an explicit account *and* may be called with a `:system` subject (a worker, a fan-out) must scope by that account itself — `Query.by_account_id(account_id) |> for_subject(subject)` — and verify access with `Subject.ensure_in_account/3`. Relying on `for_subject` alone lets the system subject read every account (this is what broke the approval-notification fan-out).
 - `Emisar.Auth.Authorizer.permissions_for/1` unions every per-context Authorizer's role list — that union builds the `%Subject{}.permissions` MapSet.
 
 ### 6. Web layer

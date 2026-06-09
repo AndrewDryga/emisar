@@ -290,7 +290,11 @@ defmodule EmisarWeb.TeamLive do
   defp load(socket, params) do
     opts = LiveTable.params_to_opts(params)
 
-    case Accounts.list_memberships_for_account(socket.assigns.current_subject, opts) do
+    case Accounts.list_memberships_for_account(
+           socket.assigns.current_account,
+           socket.assigns.current_subject,
+           opts
+         ) do
       {:ok, memberships, meta} ->
         scopes_by_membership =
           memberships

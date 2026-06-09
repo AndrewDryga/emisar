@@ -447,4 +447,33 @@ defmodule Emisar.AccountsTest do
       assert only.user_id == live_user.id
     end
   end
+
+  describe "list_memberships_for_account/3" do
+    test "lists the account's members for a member subject" do
+      {_owner, account, subject} = owner_subject_fixture()
+      _second = membership_fixture(account_id: account.id)
+
+      assert {:ok, memberships, _} = Accounts.list_memberships_for_account(account, subject)
+      assert length(memberships) == 2
+    end
+
+    test "a :system subject is scoped to the given account, not every account" do
+      {_owner_a, account_a, _} = owner_subject_fixture()
+      {_owner_b, account_b, _} = owner_subject_fixture()
+      _other = membership_fixture(account_id: account_b.id)
+
+      assert {:ok, memberships, _} =
+               Accounts.list_memberships_for_account(account_a, Emisar.Auth.Subject.system())
+
+      assert memberships |> Enum.map(& &1.account_id) |> Enum.uniq() == [account_a.id]
+    end
+
+    test "a subject cannot list another account's memberships" do
+      {_owner_a, _account_a, subject_a} = owner_subject_fixture()
+      {_owner_b, account_b, _} = owner_subject_fixture()
+
+      assert {:error, :unauthorized} =
+               Accounts.list_memberships_for_account(account_b, subject_a)
+    end
+  end
 end

@@ -202,29 +202,31 @@ defmodule Emisar.Approvals do
     account = Emisar.Accounts.fetch_account_by_id!(req.account_id)
     system = Subject.system(account)
 
-    notify_approvers_pages(system, req, run, requested_by_id, nil)
+    notify_approvers_pages(account, system, req, run, requested_by_id, nil)
   end
 
   # Cursor-walk the membership pages so accounts with >100 admins still
   # get full coverage — earlier code capped at a single 100-row page,
   # silently skipping everyone after.
-  defp notify_approvers_pages(system, req, run, requested_by_id, cursor) do
+  defp notify_approvers_pages(account, system, req, run, requested_by_id, cursor) do
     page_opts =
       [limit: @notify_page_size]
       |> then(fn opts -> if cursor, do: Keyword.put(opts, :cursor, cursor), else: opts end)
 
     {:ok, memberships, %{next_page_cursor: next}} =
-      Emisar.Accounts.list_memberships_for_account(system, page: page_opts)
+      Emisar.Accounts.list_memberships_for_account(account, system, page: page_opts)
 
     memberships
     |> Enum.filter(fn m ->
       # Viewers can't decide so don't get pinged; the user who triggered
       # the request is excluded since they already saw it in the UI.
-      m.role in ~w(owner admin operator) and m.user_id != requested_by_id
+      m.role in [:owner, :admin, :operator] and m.user_id != requested_by_id
     end)
     |> Enum.each(&deliver_approval_email(&1, req, run))
 
-    if next, do: notify_approvers_pages(system, req, run, requested_by_id, next), else: :ok
+    if next,
+      do: notify_approvers_pages(account, system, req, run, requested_by_id, next),
+      else: :ok
   end
 
   defp deliver_approval_email(m, req, run) do

@@ -28,7 +28,7 @@ defmodule EmisarWeb.DashboardLive do
     {:ok, runners} = Runners.list_all_runners_for_account(subject)
     {:ok, pending, _} = Approvals.list_pending_approval_requests(subject)
     {:ok, api_keys, _} = ApiKeys.list_api_keys_for_account(subject)
-    memberships = list_memberships(subject)
+    memberships = list_memberships(account, subject)
 
     socket
     |> assign(:page_title, "Dashboard")
@@ -44,8 +44,8 @@ defmodule EmisarWeb.DashboardLive do
     |> assign(:pending_packs_count, Catalog.count_pending_pack_versions(subject))
   end
 
-  defp list_memberships(subject) do
-    case Emisar.Accounts.list_memberships_for_account(subject) do
+  defp list_memberships(account, subject) do
+    case Emisar.Accounts.list_memberships_for_account(account, subject) do
       {:ok, list, _} -> list
       _ -> []
     end

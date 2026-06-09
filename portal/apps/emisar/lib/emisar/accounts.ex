@@ -196,15 +196,26 @@ defmodule Emisar.Accounts do
 
   # -- Memberships ------------------------------------------------------
 
-  def list_memberships_for_account(%Subject{} = subject, opts \\ []) do
+  @doc """
+  Memberships of `account` (the team page). The subject must have access
+  to the account — a member of it, or `:system`.
+
+  Scopes by the **explicit** account id, not just `Authorizer.for_subject/2`:
+  a `:system` subject bypasses that scoping, so a background fan-out (e.g.
+  approval notifications) would otherwise list every account's members
+  instead of this one's.
+  """
+  def list_memberships_for_account(%Account{id: account_id}, %Subject{} = subject, opts \\ []) do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(
              subject,
              Authorizer.view_own_account_permission()
-           ) do
+           ),
+         :ok <- Subject.ensure_in_account(subject, account_id, :unauthorized) do
       opts = Keyword.put_new(opts, :preload, [:account, :user])
 
       Membership.Query.all()
+      |> Membership.Query.by_account_id(account_id)
       |> Authorizer.for_subject(subject)
       |> Repo.list(Membership.Query, opts)
     end

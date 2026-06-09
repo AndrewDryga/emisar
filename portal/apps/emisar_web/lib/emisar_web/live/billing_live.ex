@@ -82,7 +82,11 @@ defmodule EmisarWeb.BillingLive do
   end
 
   defp member_count(socket) do
-    case Accounts.list_memberships_for_account(socket.assigns.current_subject, page: [limit: 100]) do
+    case Accounts.list_memberships_for_account(
+           socket.assigns.current_account,
+           socket.assigns.current_subject,
+           page: [limit: 100]
+         ) do
       {:ok, _list, %{count: count}} when is_integer(count) -> count
       _ -> 0
     end
