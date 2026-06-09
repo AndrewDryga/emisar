@@ -75,8 +75,11 @@ defmodule Emisar.Accounts do
     |> Multi.insert(:membership, fn %{account: account} ->
       Membership.Changeset.create(%{account_id: account.id, user_id: user.id, role: "owner"})
     end)
+    # Workspace gets the v2 conservative default policy on creation.
+    # Without this, `Policies.evaluate(nil, ...)` would default-deny
+    # every dispatch — which is correct but unhelpful as a first run.
     |> Multi.run(:policy, fn _repo, %{account: account} ->
-      seed_default_policy(account.id, user.id)
+      Emisar.Policies.seed_policy(account.id, user.id)
     end)
     |> Multi.insert(:account_created, fn %{account: account} ->
       Audit.changeset(account.id, "account.created",
@@ -102,13 +105,6 @@ defmodule Emisar.Accounts do
       {:ok, %{account: account}} -> {:ok, account}
       {:error, reason} -> {:error, reason}
     end
-  end
-
-  # Workspace gets the v2 conservative default policy on creation.
-  # Without this, `Policies.evaluate(nil, ...)` would default-deny
-  # every dispatch — which is correct but unhelpful as a first run.
-  defp seed_default_policy(account_id, user_id) do
-    Emisar.Policies.seed_policy(account_id, user_id)
   end
 
   def update_account(%Account{} = account, attrs, %Subject{} = subject) do
