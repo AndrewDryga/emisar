@@ -24,7 +24,8 @@ Lower-stakes taste calls. Not Iron Laws, but the defaults. **The user adds to th
 
 - Pipe into the data; don't nest calls. A function reads top-to-bottom as a pipeline (`Query.not_deleted() |> Authorizer.for_subject(subject) |> Repo.list(...)`).
 - Keep a pipeline's anonymous-function steps visually uniform: if any step's `fn` must wrap (body and `end` on their own lines, because it's too long to inline), hand-wrap the short ones too rather than leaving them inline. `mix format` preserves a hand-wrapped short `fn`, so the whole `Multi`/pipeline reads as one shape instead of a ragged mix of inline and block closures.
-- `with` for the happy path; let the `else` carry the error shapes. Don't pyramid `case`.
+- `with` for the happy path; let the `else` carry the error shapes. Don't pyramid `case`. Prefer one flat `with` over a `case` whose branch opens another `with` — fold the inner steps up as more `<-` clauses.
+- No multiline pipe in the *head* of a `with`/`case`/`if` clause (the expression being matched). If it needs `a |> b |> c` across lines, bind it first — a `name = expr` step inside the `with`, or a line above — and match the short name. `with {:ok, u} <- %X{} |> Changeset.f(attrs) |> Repo.insert() do` spanning three lines is a readability tax; `with cs = Changeset.f(%X{}, attrs), {:ok, u} <- Repo.insert(cs) do` reads flat.
 - Name by intent, not by type. `expire_overdue_requests`, not `update_requests`. Boolean-returning fns end in `?`.
 - Spell variables out: `changeset`, not `cs`. A struct-typed binding takes the schema's own name — `%Membership{} = membership`, not `m`/`target`. Reach for a qualified name (`target_membership`) only to disambiguate two bindings of the same type.
 - Pattern-match struct arguments by their struct in the function head — `create_request(%Runs.ActionRun{} = run, …)`, not a bare `run`. The head documents the contract and guards the type.

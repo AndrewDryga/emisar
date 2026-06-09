@@ -695,17 +695,13 @@ defmodule Emisar.Accounts do
   # password) so the invitation has a record to hang off. Returns
   # `{user, created?}` so the caller can tell a fresh invite from a re-add.
   defp fetch_or_create_user(email) do
-    case fetch_user_by_email(email) do
-      {:ok, user} ->
-        {:ok, {user, false}}
-
-      {:error, :not_found} ->
-        with {:ok, user} <-
-               %User{}
-               |> User.Changeset.registration(%{email: email}, hash_password: false)
-               |> Repo.insert() do
-          {:ok, {user, true}}
-        end
+    with {:error, :not_found} <- fetch_user_by_email(email),
+         changeset = User.Changeset.registration(%User{}, %{email: email}, hash_password: false),
+         {:ok, user} <- Repo.insert(changeset) do
+      {:ok, {user, true}}
+    else
+      {:ok, user} -> {:ok, {user, false}}
+      {:error, changeset} -> {:error, changeset}
     end
   end
 
