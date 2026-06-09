@@ -24,7 +24,6 @@ defmodule Emisar.Approvals do
   alias Emisar.{Audit, Auth, PubSub, Repo, Runs}
   alias Emisar.Approvals.{Authorizer, Grant, Request}
   alias Emisar.Auth.Subject
-  alias Emisar.Runs.ActionRun
 
   def list_pending_approval_requests(%Subject{} = subject, opts \\ []) do
     with :ok <-
@@ -136,7 +135,7 @@ defmodule Emisar.Approvals do
   `Runs.dispatch_run` which has already authorized via its own Subject.
   `requested_by_id` is whoever asked for the run (user, api_key, etc).
   """
-  def create_request(run, requested_by_id, reason \\ nil) do
+  def create_request(%Runs.ActionRun{} = run, requested_by_id, reason \\ nil) do
     now = DateTime.utc_now() |> DateTime.truncate(:microsecond)
     expires_at = DateTime.add(now, @default_pending_ttl_hours * @one_hour_seconds, :second)
 
@@ -406,9 +405,9 @@ defmodule Emisar.Approvals do
   end
 
   defp fetch_run!(run_id) do
-    ActionRun.Query.all()
-    |> ActionRun.Query.by_id(run_id)
-    |> Repo.fetch!(ActionRun.Query)
+    Runs.ActionRun.Query.all()
+    |> Runs.ActionRun.Query.by_id(run_id)
+    |> Repo.fetch!(Runs.ActionRun.Query)
   end
 
   defp tap_broadcast({:ok, %Request{} = r} = result) do
@@ -652,11 +651,13 @@ defmodule Emisar.Approvals do
         |> Repo.update_all([])
 
       if affected == 1 do
-        case ActionRun.Query.all() |> ActionRun.Query.by_id(req.run_id) |> Repo.peek() do
+        case Runs.ActionRun.Query.all()
+             |> Runs.ActionRun.Query.by_id(req.run_id)
+             |> Repo.peek() do
           nil ->
             :ok
 
-          %ActionRun{} = run ->
+          %Runs.ActionRun{} = run ->
             # Roll back the whole expiry on a failed cancel so the request
             # stays pending and the next sweep retries it — otherwise the
             # request flips to `expired` while its run is still live, and the

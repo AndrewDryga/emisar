@@ -26,6 +26,8 @@ Lower-stakes taste calls. Not Iron Laws, but the defaults. **The user adds to th
 - `with` for the happy path; let the `else` carry the error shapes. Don't pyramid `case`.
 - Name by intent, not by type. `expire_overdue_requests`, not `update_requests`. Boolean-returning fns end in `?`.
 - Spell variables out: `changeset`, not `cs`. A struct-typed binding takes the schema's own name — `%Membership{} = membership`, not `m`/`target`. Reach for a qualified name (`target_membership`) only to disambiguate two bindings of the same type.
+- Pattern-match struct arguments by their struct in the function head — `create_request(%Runs.ActionRun{} = run, …)`, not a bare `run`. The head documents the contract and guards the type.
+- Reference **another** context's modules through its top-level alias — `alias Emisar.Runs` then `Runs.ActionRun`, never `alias Emisar.Runs.ActionRun`. It keeps obvious which context a schema belongs to. (Aliasing your *own* context's submodules — `Grant`, `Request` — directly is fine. `Emisar.Auth.Subject`, the universal auth carrier, is the one cross-context exception we alias directly everywhere.)
 - One public function = one job. If a context function has an `opts` flag that changes *what it does* (not just filtering), it's two functions.
 - Small modules over big ones, but never a module per function. Follow the standard split (context / schema / query / changeset / authorizer) and stop there.
 - Comments explain *why*, never *what*. The code says what. If you're tempted to narrate the what, the code isn't readable enough yet.
