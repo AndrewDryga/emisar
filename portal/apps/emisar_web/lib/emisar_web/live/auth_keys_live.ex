@@ -112,10 +112,16 @@ defmodule EmisarWeb.AuthKeysLive do
   defp reload(socket), do: load(socket, socket.assigns[:filter_params] || %{})
 
   defp load(socket, params) do
-    # Default the Status filter to "active" so revoked keys are hidden until
-    # the operator widens it (the dropdown's "All" / "Revoked" options). Only
-    # injected when absent, so an explicit "" (All) is honored.
-    params = Map.put_new(params, "status", "active")
+    # Hide revoked keys by default — but only on the first load (a fresh visit).
+    # LiveTable strips the dropdown's empty "All" value out of the URL, so once
+    # the operator has touched the filter we can't tell "All" from "unset" by
+    # the params alone: treat an absent status as their "All" rather than
+    # snapping back to "active". `filter_params` is unset until the first load.
+    params =
+      if socket.assigns[:filter_params],
+        do: params,
+        else: Map.put_new(params, "status", "active")
+
     filters = AuthKey.Query.filters()
     opts = LiveTable.params_to_opts(params, filters)
 
