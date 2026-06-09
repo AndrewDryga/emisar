@@ -74,7 +74,7 @@ defmodule EmisarWeb.AuditDetailLive do
            the reader to mentally pair two separate cards. The actor's
            device, MCP session, and MCP client all ride on the actor
            card — they describe who acted, not the event in general. --%>
-      <div class="mt-4 flex flex-col items-stretch gap-3 sm:flex-row sm:items-center">
+      <div class="mt-4 flex flex-col items-stretch gap-3 sm:flex-row sm:items-stretch">
         <.entity_card
           role="Actor"
           kind={@event.actor_kind}
@@ -85,6 +85,7 @@ defmodule EmisarWeb.AuditDetailLive do
           mcp_session={@event.mcp_session_id}
           mcp_client={if posture.bridge?, do: posture.client}
           mcp_client_host={if posture.bridge?, do: posture.host}
+          mcp_client_os={if posture.bridge?, do: posture.os}
         />
         <div class="hidden flex-none items-center sm:flex">
           <.icon name="hero-arrow-right" class="h-5 w-5 text-zinc-700" />
@@ -283,6 +284,7 @@ defmodule EmisarWeb.AuditDetailLive do
   attr :mcp_session, :string, default: nil
   attr :mcp_client, :string, default: nil
   attr :mcp_client_host, :string, default: nil
+  attr :mcp_client_os, :string, default: nil
 
   defp entity_card(%{kind: nil} = assigns) do
     ~H"""
@@ -325,6 +327,9 @@ defmodule EmisarWeb.AuditDetailLive do
           <span class="truncate" title={@mcp_client_host}>
             MCP client: {@mcp_client}<span :if={@mcp_client_host} class="text-zinc-500">
               · {@mcp_client_host}</span>
+            <span :if={@mcp_client_os} class="text-zinc-500">
+              · {@mcp_client_os}
+            </span>
           </span>
         </p>
         <p :if={@mcp_session} class="truncate font-mono text-[10px] text-zinc-500">
@@ -401,7 +406,8 @@ defmodule EmisarWeb.AuditDetailLive do
   # `Mozilla/...` from browsers, nil), `:bridge?` is false and the
   # detail page hides the Client/Host/MCP-bridge cells — they would
   # otherwise misattribute the runner's HTTP UA as an "MCP bridge".
-  defp parse_client_posture(nil), do: %{bridge?: false, client: nil, host: nil, bridge: nil}
+  defp parse_client_posture(nil),
+    do: %{bridge?: false, client: nil, host: nil, os: nil, bridge: nil}
 
   defp parse_client_posture(ua) when is_binary(ua) do
     parens =
@@ -439,7 +445,8 @@ defmodule EmisarWeb.AuditDetailLive do
       bridge?: is_bridge,
       bridge: if(is_bridge, do: bridge_token),
       client: Map.get(fields, "client"),
-      host: Map.get(fields, "host")
+      host: Map.get(fields, "host"),
+      os: Map.get(fields, "os")
     }
   end
 end

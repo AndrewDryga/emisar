@@ -38,6 +38,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"runtime"
 	"strings"
 	"time"
 )
@@ -252,9 +253,9 @@ func (b *bridge) idempotencyKey(frame []byte) string {
 }
 
 // buildUserAgent stamps every cloud request with structured client +
-// host posture. The portal's audit pipeline extracts these from the
-// User-Agent header so each audit row carries "client=claude-desktop"
-// + "host=…" instead of "some MCP call from <IP>".
+// host + os posture. The portal's audit pipeline extracts these from the
+// User-Agent header so each audit row carries "client=claude-desktop;
+// host=…; os=darwin" instead of "some MCP call from <IP>".
 func buildUserAgent() string {
 	client := os.Getenv("EMISAR_CLIENT")
 	if client == "" {
@@ -264,7 +265,7 @@ func buildUserAgent() string {
 	if err != nil || host == "" {
 		host = "unknown"
 	}
-	return fmt.Sprintf("%s/%s (client=%s; host=%s)", bridgeName, Version, client, host)
+	return fmt.Sprintf("%s/%s (client=%s; host=%s; os=%s)", bridgeName, Version, client, host, runtime.GOOS)
 }
 
 // newSessionID returns an 8-byte hex nonce identifying this bridge

@@ -127,7 +127,7 @@ defmodule EmisarWeb.AuditLiveTest do
       assert html =~ ~p"/app/agents"
     end
 
-    test "parses bridge user agent into client + host posture fields", %{conn: conn} do
+    test "parses bridge user agent into client + host + os posture fields", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
 
       {:ok, event} =
@@ -137,13 +137,15 @@ defmodule EmisarWeb.AuditLiveTest do
           subject_kind: "action_run",
           subject_label: "linux.uptime",
           ip_address: "127.0.0.1",
-          user_agent: "emisar-mcp/dev (client=claude-desktop; host=andrews-mbp.local)"
+          user_agent: "emisar-mcp/dev (client=claude-desktop; host=andrews-mbp.local; os=darwin)"
         )
 
       {:ok, _lv, html} = live(conn, ~p"/app/audit/#{event.id}")
 
       assert html =~ "claude-desktop"
       assert html =~ "andrews-mbp.local"
+      # The host's OS, parsed from the same UA posture block.
+      assert html =~ "darwin"
       assert html =~ "emisar-mcp/dev"
       # The raw UA is still shown below the cards for forensics.
       assert html =~ "emisar-mcp/dev (client=claude-desktop"

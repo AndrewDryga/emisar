@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -270,6 +271,9 @@ func TestBuildUserAgent_ContainsBridgeAndClient(t *testing.T) {
 	}
 	if !strings.Contains(ua, "host=") {
 		t.Errorf("UA should include host=…, got %q", ua)
+	}
+	if !strings.Contains(ua, "os="+runtime.GOOS) {
+		t.Errorf("UA should include os=%s, got %q", runtime.GOOS, ua)
 	}
 }
 
