@@ -214,7 +214,7 @@ defmodule Emisar.Accounts do
          :ok <- Subject.ensure_in_account(subject, account_id, :unauthorized) do
       opts = Keyword.put_new(opts, :preload, [:account, :user])
 
-      Membership.Query.all()
+      Membership.Query.not_deleted()
       |> Membership.Query.by_account_id(account_id)
       |> Authorizer.for_subject(subject)
       |> Repo.list(Membership.Query, opts)
@@ -223,7 +223,7 @@ defmodule Emisar.Accounts do
 
   # Internal helper for permission checks that operate on nil-or-struct.
   defp peek_membership(account_id, user_id) do
-    Membership.Query.all()
+    Membership.Query.not_deleted()
     |> Membership.Query.by_account_and_user(account_id, user_id)
     |> Repo.peek()
   end
@@ -244,7 +244,7 @@ defmodule Emisar.Accounts do
         {:ok, membership}
 
       {:error, :not_found} ->
-        Membership.Query.all()
+        Membership.Query.not_deleted()
         |> Membership.Query.by_user_id(user_id)
         |> Membership.Query.not_disabled()
         |> Membership.Query.for_active_account()
@@ -257,7 +257,7 @@ defmodule Emisar.Accounts do
 
   defp maybe_fetch_session_membership(user_id, account_id) when is_binary(account_id) do
     if Repo.valid_uuid?(account_id) do
-      Membership.Query.all()
+      Membership.Query.not_deleted()
       |> Membership.Query.by_account_and_user(account_id, user_id)
       |> Membership.Query.not_disabled()
       |> Membership.Query.for_active_account()
@@ -276,7 +276,7 @@ defmodule Emisar.Accounts do
   onboarding.
   """
   def all_memberships_suspended?(%User{id: user_id}) do
-    base = Membership.Query.all() |> Membership.Query.by_user_id(user_id)
+    base = Membership.Query.not_deleted() |> Membership.Query.by_user_id(user_id)
     Repo.exists?(base) and not Repo.exists?(Membership.Query.not_disabled(base))
   end
 
@@ -633,7 +633,7 @@ defmodule Emisar.Accounts do
   # invariant — a suspended owner can't sign in or act, so they don't
   # protect against the account losing its last working admin.
   defp count_owners(account_id) do
-    Membership.Query.all()
+    Membership.Query.not_deleted()
     |> Membership.Query.by_account_id(account_id)
     |> Membership.Query.by_role(:owner)
     |> Membership.Query.not_disabled()
@@ -734,7 +734,7 @@ defmodule Emisar.Accounts do
   has signed in / chosen an account.
   """
   def fetch_invitation_by_token(token) when is_binary(token) and byte_size(token) > 0 do
-    Membership.Query.all()
+    Membership.Query.not_deleted()
     |> Membership.Query.by_invitation_token(token)
     |> Membership.Query.pending_invitation()
     |> Repo.fetch(Membership.Query, preload: [:account, :user])
@@ -801,7 +801,7 @@ defmodule Emisar.Accounts do
 
   def fetch_user_by_id(id) do
     if Repo.valid_uuid?(id) do
-      User.Query.all()
+      User.Query.not_deleted()
       |> User.Query.by_id(id)
       |> Repo.fetch(User.Query)
     else
@@ -810,13 +810,13 @@ defmodule Emisar.Accounts do
   end
 
   def fetch_user_by_id!(id) do
-    User.Query.all()
+    User.Query.not_deleted()
     |> User.Query.by_id(id)
     |> Repo.fetch!(User.Query)
   end
 
   def fetch_user_by_email(email) when is_binary(email) do
-    User.Query.all()
+    User.Query.not_deleted()
     |> User.Query.by_email(email)
     |> Repo.fetch(User.Query)
   end
@@ -936,7 +936,7 @@ defmodule Emisar.Accounts do
         %{}
 
       ids ->
-        User.Query.all()
+        User.Query.not_deleted()
         |> User.Query.by_ids(ids)
         |> Repo.all()
         |> Map.new(fn u -> {u.id, u.full_name || u.email} end)

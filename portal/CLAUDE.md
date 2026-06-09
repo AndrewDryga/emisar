@@ -151,6 +151,8 @@ Context modules are the **only** public surface that LiveView, controllers, chan
 
 **The hard line: the *queryable* must come from a Query module.** `Repo.all(Schema.Query.not_deleted())` is fine. `Repo.all(from s in Schema, ...)` is not — write `Schema.Query.matching(...)` and use that instead.
 
+**Soft-delete default:** start every read pipeline at `Schema.Query.not_deleted()`, not `all()` — tombstoned rows are excluded unless you *explicitly* need them (use `all()` then, with a why-comment). `not_deleted/1` defaults its first arg to `all()`, so it's the natural chain head (`Membership.Query.not_deleted() |> Membership.Query.by_account_id(id)`). A schema with no `deleted_at` has no `not_deleted/1` — start at `all()` there.
+
 Canonical context-function shape:
 
 ```elixir
