@@ -335,73 +335,70 @@ defmodule EmisarWeb.AuthKeysLive do
           </.simple_form>
         </section>
 
-        <%!-- Key list — uses the LiveTable :cards shell so paginator,
-             empty state, and (future) filter form all match the rest
-             of the portal. The list_section wrapper supplies the title
-             bar + count chip; LiveTable owns everything below it. --%>
-        <.list_section title="Auth keys" count={@metadata.count} noun="key">
-          <LiveTable.live_table
-            layout={:cards}
-            id="auth-keys"
-            path={~p"/app/settings/runners/auth-keys"}
-            rows={@auth_keys}
-            metadata={@metadata}
-            filters={@filters}
-            filter_params={@filter_params}
-            class="rounded-none border-0"
-          >
-            <:item :let={key}>
-              <li class="flex items-start gap-4 px-5 py-4">
-                <span class="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-zinc-900 text-zinc-400">
-                  <.icon name="hero-key" class="h-4 w-4" />
-                </span>
+        <%!-- Key list — the LiveTable :cards shell renders the filter row, the
+             bordered card list, and the count in its paginator footer, so this
+             page matches audit / runs. The page heading is the dashboard_shell
+             <:title> above — no extra section card around it. --%>
+        <LiveTable.live_table
+          layout={:cards}
+          id="auth-keys"
+          path={~p"/app/settings/runners/auth-keys"}
+          rows={@auth_keys}
+          metadata={@metadata}
+          filters={@filters}
+          filter_params={@filter_params}
+        >
+          <:item :let={key}>
+            <li class="flex items-start gap-4 px-5 py-4">
+              <span class="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-zinc-900 text-zinc-400">
+                <.icon name="hero-key" class="h-4 w-4" />
+              </span>
 
-                <div class="min-w-0 flex-1">
-                  <div class="flex flex-wrap items-center gap-2">
-                    <span class="truncate font-medium text-zinc-100">
-                      {key.description || "(no description)"}
-                    </span>
-                    <.chip>group: {key.group || "default"}</.chip>
-                    <.chip :if={key.reusable} tone={:emerald}>Reusable</.chip>
-                    <.chip :if={not key.reusable}>Single-use</.chip>
-                    <.chip :if={key.revoked_at} tone={:rose}>Revoked</.chip>
-                  </div>
-                  <div class="mt-1 truncate font-mono text-[11px] text-zinc-500">
-                    {key.key_prefix}… · {key.uses_count} {if key.uses_count == 1,
-                      do: "use",
-                      else: "uses"} ·
-                    last used {last_used(key.last_used_at)}
-                    <span :if={key.created_by}>· by {key.created_by.email}</span>
-                  </div>
-                </div>
-
-                <button
-                  :if={is_nil(key.revoked_at) and Permissions.can?(assigns, :manage_auth_keys)}
-                  phx-click="revoke"
-                  phx-value-id={key.id}
-                  data-confirm="Revoke this auth key? Existing runners aren't affected; new registrations will fail."
-                  class="shrink-0 rounded-lg border border-rose-500/40 px-2.5 py-1 text-xs font-medium text-rose-200 hover:bg-rose-500/10"
-                >
-                  Revoke
-                </button>
-              </li>
-            </:item>
-            <:empty>
-              <div class="mx-auto max-w-md">
-                <.icon name="hero-key" class="mx-auto h-8 w-8 text-zinc-700" />
-                <p class="mt-3 text-zinc-300">No auth keys yet.</p>
-                <p class="mt-1 text-xs leading-relaxed text-zinc-500">
-                  Auth keys are the bearer secret a fresh runner uses to register
-                  with cloud. Click
-                  <span class="rounded bg-zinc-900 px-1.5 py-0.5 text-[11px] font-medium text-zinc-300">
-                    New key
+              <div class="min-w-0 flex-1">
+                <div class="flex flex-wrap items-center gap-2">
+                  <span class="truncate font-medium text-zinc-100">
+                    {key.description || "(no description)"}
                   </span>
-                  above, then run the install command on the host.
-                </p>
+                  <.chip>group: {key.group || "default"}</.chip>
+                  <.chip :if={key.reusable} tone={:emerald}>Reusable</.chip>
+                  <.chip :if={not key.reusable}>Single-use</.chip>
+                  <.chip :if={key.revoked_at} tone={:rose}>Revoked</.chip>
+                </div>
+                <div class="mt-1 truncate font-mono text-[11px] text-zinc-500">
+                  {key.key_prefix}… · {key.uses_count} {if key.uses_count == 1,
+                    do: "use",
+                    else: "uses"} ·
+                  last used {last_used(key.last_used_at)}
+                  <span :if={key.created_by}>· by {key.created_by.email}</span>
+                </div>
               </div>
-            </:empty>
-          </LiveTable.live_table>
-        </.list_section>
+
+              <button
+                :if={is_nil(key.revoked_at) and Permissions.can?(assigns, :manage_auth_keys)}
+                phx-click="revoke"
+                phx-value-id={key.id}
+                data-confirm="Revoke this auth key? Existing runners aren't affected; new registrations will fail."
+                class="shrink-0 rounded-lg border border-rose-500/40 px-2.5 py-1 text-xs font-medium text-rose-200 hover:bg-rose-500/10"
+              >
+                Revoke
+              </button>
+            </li>
+          </:item>
+          <:empty>
+            <div class="mx-auto max-w-md">
+              <.icon name="hero-key" class="mx-auto h-8 w-8 text-zinc-700" />
+              <p class="mt-3 text-zinc-300">No auth keys yet.</p>
+              <p class="mt-1 text-xs leading-relaxed text-zinc-500">
+                Auth keys are the bearer secret a fresh runner uses to register
+                with cloud. Click
+                <span class="rounded bg-zinc-900 px-1.5 py-0.5 text-[11px] font-medium text-zinc-300">
+                  New key
+                </span>
+                above, then run the install command on the host.
+              </p>
+            </div>
+          </:empty>
+        </LiveTable.live_table>
 
         <p :if={not Permissions.can?(assigns, :manage_auth_keys)} class="text-xs text-zinc-500">
           Only owners and admins can issue or revoke auth keys.
