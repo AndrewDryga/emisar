@@ -22,7 +22,7 @@ defmodule EmisarWeb.AuthKeysLive do
      # IL-18: only hit the billing read on the connected mount; the
      # cap-warning banner just stays hidden until it loads.
      |> assign(:billing, connected?(socket) && fetch_billing(socket))
-     |> assign_form(default_params())}
+     |> assign_form(Runners.change_auth_key(%{"group" => "default"}))}
   end
 
   def handle_params(params, _uri, socket) do
@@ -45,7 +45,8 @@ defmodule EmisarWeb.AuthKeysLive do
   end
 
   def handle_event("validate", %{"auth_key" => params}, socket) do
-    {:noreply, assign_form(socket, params)}
+    changeset = Runners.change_auth_key(params) |> Map.put(:action, :validate)
+    {:noreply, assign_form(socket, changeset)}
   end
 
   def handle_event("create", %{"auth_key" => params}, socket) do
@@ -68,28 +69,33 @@ defmodule EmisarWeb.AuthKeysLive do
   end
 
   defp do_create(socket, params) do
-    attrs =
-      %{}
-      |> put_if_present(:description, params["description"])
-      |> put_if_present(:group, params["group"])
-      |> Map.put(:reusable, truthy?(params["reusable"]))
-      |> put_expires(params["expires_at"])
-      |> put_max_uses(params["max_uses"])
+    changeset = Runners.change_auth_key(params)
 
-    case Runners.create_auth_key(attrs, socket.assigns.current_subject) do
-      {:ok, raw, key} ->
-        {:noreply,
-         socket
-         |> put_flash(:info, "Auth key created. Copy it now — you won't see it again.")
-         |> assign(:new_secret, raw)
-         |> assign(:new_key, key)
-         |> assign_form(default_params())
-         |> reload()}
+    if changeset.valid? do
+      attrs =
+        %{}
+        |> put_if_present(:description, params["description"])
+        |> put_if_present(:group, params["group"])
+        |> Map.put(:reusable, truthy?(params["reusable"]))
+        |> put_expires(params["expires_at"])
+        |> put_max_uses(params["max_uses"])
 
-      {:error, changeset} ->
-        {:noreply,
-         socket
-         |> put_flash(:error, "Could not create key: #{humanize_errors(changeset)}")}
+      case Runners.create_auth_key(attrs, socket.assigns.current_subject) do
+        {:ok, raw, key} ->
+          {:noreply,
+           socket
+           |> put_flash(:info, "Auth key created. Copy it now — you won't see it again.")
+           |> assign(:new_secret, raw)
+           |> assign(:new_key, key)
+           |> assign_form(Runners.change_auth_key(%{"group" => "default"}))
+           |> reload()}
+
+        # Field errors (e.g. a DB constraint) render inline on the form.
+        {:error, %Ecto.Changeset{} = changeset} ->
+          {:noreply, assign_form(socket, changeset)}
+      end
+    else
+      {:noreply, assign_form(socket, Map.put(changeset, :action, :insert))}
     end
   end
 
@@ -138,16 +144,6 @@ defmodule EmisarWeb.AuthKeysLive do
     end
   end
 
-  defp default_params do
-    %{
-      "description" => "",
-      "group" => "default",
-      "reusable" => "false",
-      "expires_at" => "",
-      "max_uses" => ""
-    }
-  end
-
   # Only set max_uses when reusable AND a positive integer was typed —
   # single-use keys ignore it (they self-cap at 1 via the schema), and
   # an empty string means "unlimited within the reusable window".
@@ -160,8 +156,8 @@ defmodule EmisarWeb.AuthKeysLive do
     end
   end
 
-  defp assign_form(socket, params) do
-    assign(socket, :form, to_form(params, as: "auth_key"))
+  defp assign_form(socket, %Ecto.Changeset{} = changeset) do
+    assign(socket, :form, to_form(changeset, as: "auth_key"))
   end
 
   defp put_if_present(map, _key, nil), do: map

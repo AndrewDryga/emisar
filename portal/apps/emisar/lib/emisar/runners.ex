@@ -514,6 +514,13 @@ defmodule Emisar.Runners do
     end
   end
 
+  @doc """
+  Changeset for the auth-key create form (operator-facing fields, no secret
+  minted). Drives `phx-change` validation + inline field errors in the
+  LiveView; the real key is minted by `create_auth_key/2`.
+  """
+  def change_auth_key(attrs \\ %{}), do: AuthKey.Changeset.form(attrs)
+
   def create_auth_key(attrs, %Subject{account: account} = subject) do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(

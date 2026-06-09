@@ -37,4 +37,21 @@ defmodule EmisarWeb.AuthKeysLiveTest do
     assert html =~ "live-key-aaa"
     assert html =~ "dead-key-zzz"
   end
+
+  test "create form shows validation errors inline on the field, not in a flash", %{conn: conn} do
+    {conn, _user, _account} = register_and_log_in(conn)
+    {:ok, lv, _html} = live(conn, ~p"/app/settings/runners/auth-keys")
+
+    too_long = String.duplicate("x", 201)
+
+    html =
+      lv
+      |> form("#auth_key_form", %{"auth_key" => %{"description" => too_long}})
+      |> render_submit()
+
+    # Inline field error (rendered by <.input>/<.error> under the input)…
+    assert html =~ "should be at most 200 character(s)"
+    # …and no flash banner with a humanized changeset dump.
+    refute html =~ "Could not create key"
+  end
 end

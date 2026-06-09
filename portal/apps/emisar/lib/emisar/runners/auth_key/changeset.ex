@@ -8,6 +8,23 @@ defmodule Emisar.Runners.AuthKey.Changeset do
   use Emisar, :changeset
   alias Emisar.Runners.AuthKey
 
+  @doc """
+  Validation-only changeset for the operator create form. Casts the
+  operator-facing fields and runs the same field validations as `create/5`,
+  but mints no secret — so the LiveView can drive `phx-change` validation and
+  render inline field errors without generating a key on every keystroke.
+  `expires_at` is left out of the cast: the datetime-local input emits
+  `YYYY-MM-DDTHH:MM` (no seconds/zone), which Ecto can't cast to
+  `:utc_datetime_usec`; it round-trips for redisplay via the changeset params
+  and is parsed when the key is actually created.
+  """
+  def form(attrs \\ %{}) do
+    %AuthKey{}
+    |> cast(attrs, [:description, :group, :reusable, :max_uses])
+    |> validate_length(:description, max: 200)
+    |> validate_number(:max_uses, greater_than: 0)
+  end
+
   def create(account_id, user_id, prefix, hash, attrs) do
     %AuthKey{}
     |> cast(attrs, [:description, :group, :reusable, :max_uses, :expires_at])
