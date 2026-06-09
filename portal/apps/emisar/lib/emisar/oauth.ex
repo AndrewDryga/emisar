@@ -94,11 +94,11 @@ defmodule Emisar.OAuth do
         {:ok, key} =
           ApiKeys.create_backing_key(account.id, user_id, membership_id, key_name)
 
-        raw = "emoc-" <> rand()
+        raw = "emoc-" <> Crypto.random_secret()
 
         {:ok, _code} =
           %{
-            code_hash: hash(raw),
+            code_hash: Crypto.hash(raw),
             client_id: client.id,
             account_id: account.id,
             membership_id: membership_id,
@@ -137,7 +137,7 @@ defmodule Emisar.OAuth do
     Repo.transaction(fn ->
       with %AuthorizationCode{} = code <-
              AuthorizationCode.Query.all()
-             |> AuthorizationCode.Query.by_code_hash(hash(raw_code))
+             |> AuthorizationCode.Query.by_code_hash(Crypto.hash(raw_code))
              |> AuthorizationCode.Query.lock_for_update()
              |> Repo.peek(),
            :ok <- check_code_live(code),
@@ -169,7 +169,7 @@ defmodule Emisar.OAuth do
       with %Token{} = tok <-
              Token.Query.all()
              |> Token.Query.not_revoked()
-             |> Token.Query.by_refresh_hash(hash(raw))
+             |> Token.Query.by_refresh_hash(Crypto.hash(raw))
              |> Repo.peek(),
            :ok <- check(tok.client_id == client_id, :invalid_grant),
            :ok <- check(live?(tok.refresh_expires_at), :invalid_grant) do
@@ -207,7 +207,7 @@ defmodule Emisar.OAuth do
     with %Token{} = tok <-
            Token.Query.all()
            |> Token.Query.not_revoked()
-           |> Token.Query.by_access_hash(hash(raw))
+           |> Token.Query.by_access_hash(Crypto.hash(raw))
            |> Repo.peek(),
          true <- live?(tok.access_expires_at),
          key when not is_nil(key) <- ApiKeys.peek_api_key_by_id(tok.api_key_id),
@@ -226,14 +226,14 @@ defmodule Emisar.OAuth do
   # -- Internal -------------------------------------------------------
 
   defp mint_token_pair!(src) do
-    access = "emo-" <> rand()
+    access = "emo-" <> Crypto.random_secret()
     offline? = String.contains?(src.scope || "", "offline_access")
-    refresh = if offline?, do: "emor-" <> rand(), else: nil
+    refresh = if offline?, do: "emor-" <> Crypto.random_secret(), else: nil
 
     {:ok, _token} =
       %{
-        access_token_hash: hash(access),
-        refresh_token_hash: refresh && hash(refresh),
+        access_token_hash: Crypto.hash(access),
+        refresh_token_hash: refresh && Crypto.hash(refresh),
         client_id: src.client_id,
         account_id: src.account_id,
         membership_id: src.membership_id,
@@ -265,7 +265,7 @@ defmodule Emisar.OAuth do
          %AuthorizationCode{code_challenge: challenge, code_challenge_method: "S256"},
          verifier
        ) do
-    computed = Base.url_encode64(:crypto.hash(:sha256, verifier), padding: false)
+    computed = Base.url_encode64(Crypto.hash(verifier), padding: false)
     constant_eq(computed, challenge)
   end
 
@@ -290,8 +290,5 @@ defmodule Emisar.OAuth do
 
   defp live?(nil), do: false
   defp live?(%DateTime{} = at), do: DateTime.compare(at, DateTime.utc_now()) == :gt
-
-  defp rand, do: :crypto.strong_rand_bytes(32) |> Base.url_encode64(padding: false)
-  defp hash(raw), do: :crypto.hash(:sha256, raw)
   defp secs_from_now(s), do: DateTime.add(DateTime.utc_now(), s, :second)
 end

@@ -16,13 +16,12 @@ defmodule Emisar.ApiKeys do
   """
 
   alias Ecto.Multi
-  alias Emisar.{Audit, Auth, Repo}
+  alias Emisar.{Audit, Auth, Crypto, Repo}
   alias Emisar.ApiKeys.{ApiKey, Authorizer}
   alias Emisar.Auth.Subject
 
   # 4 chars for "emk-" + 8 random chars => 12-char prefix.
   @prefix_size 12
-  @secret_size 32
 
   # Keys minted within this window are protected from eviction even
   # when the ring is full — buffer for the "user copied the snippet →
@@ -100,7 +99,7 @@ defmodule Emisar.ApiKeys do
       account_id = account.id
       user_id = Subject.actor_id(subject)
       membership_id = subject.membership_id
-      {raw, prefix, hash} = mint_secret()
+      {raw, prefix, hash} = Crypto.mint("emk-", @prefix_size)
 
       changeset =
         ApiKey.Changeset.create(account_id, user_id, membership_id, prefix, hash, attrs)
@@ -159,7 +158,7 @@ defmodule Emisar.ApiKeys do
       runner_filter = opts[:runner_filter] || []
       runner_group_filter = opts[:runner_group_filter] || []
 
-      {raw, prefix, hash} = mint_secret()
+      {raw, prefix, hash} = Crypto.mint("emk-", @prefix_size)
 
       Repo.transaction(fn ->
         {:ok, key} =
@@ -231,11 +230,11 @@ defmodule Emisar.ApiKeys do
       nil
     else
       prefix = String.slice(raw, 0, @prefix_size)
-      hash = :crypto.hash(:sha256, raw)
+      hash = Crypto.hash(raw)
 
       with %ApiKey{} = key <-
              ApiKey.Query.all() |> ApiKey.Query.by_key_prefix(prefix) |> Repo.peek(),
-           true <- secure_compare(key.key_hash, hash),
+           true <- Crypto.secure_compare(key.key_hash, hash),
            true <- ApiKey.usable?(key) do
         was_auto? = ApiKey.auto_unused?(key)
 
@@ -279,7 +278,7 @@ defmodule Emisar.ApiKeys do
   the operator's consent is the authorization. Returns `{:ok, key}`.
   """
   def create_backing_key(account_id, user_id, membership_id, name) do
-    {_raw, prefix, hash} = mint_secret()
+    {_raw, prefix, hash} = Crypto.mint("emk-", @prefix_size)
 
     ApiKey.Changeset.create(account_id, user_id, membership_id, prefix, hash, %{
       name: name,
@@ -317,13 +316,4 @@ defmodule Emisar.ApiKeys do
   end
 
   def record_client_info(_key, _info), do: {:error, :invalid}
-
-  # -- Helpers ---------------------------------------------------------
-
-  defp mint_secret do
-    raw = "emk-" <> (:crypto.strong_rand_bytes(@secret_size) |> Base.url_encode64(padding: false))
-    {raw, String.slice(raw, 0, @prefix_size), :crypto.hash(:sha256, raw)}
-  end
-
-  defdelegate secure_compare(a, b), to: Emisar.Crypto
 end

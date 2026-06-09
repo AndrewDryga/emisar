@@ -19,7 +19,7 @@ defmodule Emisar.Runners do
   """
 
   alias Ecto.Multi
-  alias Emisar.{Audit, Auth, Repo}
+  alias Emisar.{Audit, Auth, Crypto, Repo}
   alias Emisar.Auth.Subject
   alias Emisar.Runners.{Authorizer, AuthKey, EventCursor, Presence, Runner, Token}
 
@@ -29,7 +29,6 @@ defmodule Emisar.Runners do
   @auth_key_prefix_size 27
   # 7 chars for "rnrtok-" + 5 random.
   @token_prefix_size 12
-  @key_secret_size 32
 
   # Per-account ring cap for auto-generated, unused install keys.
   # Dashboard mounts mint into the ring; when capacity is exceeded the
@@ -523,7 +522,7 @@ defmodule Emisar.Runners do
            ) do
       account_id = account.id
       user_id = Subject.actor_id(subject)
-      {raw, prefix, hash} = mint_secret("emkey-auth-", @auth_key_prefix_size)
+      {raw, prefix, hash} = Crypto.mint("emkey-auth-", @auth_key_prefix_size)
 
       Multi.new()
       |> Multi.insert(:key, AuthKey.Changeset.create(account_id, user_id, prefix, hash, attrs))
@@ -557,7 +556,7 @@ defmodule Emisar.Runners do
   def create_auth_key_with_secret(raw, account_id, user_id, attrs \\ %{})
       when is_binary(raw) and byte_size(raw) >= @auth_key_prefix_size do
     prefix = String.slice(raw, 0, @auth_key_prefix_size)
-    hash = :crypto.hash(:sha256, raw)
+    hash = Crypto.hash(raw)
 
     AuthKey.Changeset.create(account_id, user_id, prefix, hash, attrs)
     |> Repo.insert()
@@ -583,7 +582,7 @@ defmodule Emisar.Runners do
       cap = opts[:ring_cap] || @install_ring_cap
       grace_s = opts[:eviction_grace_seconds] || @install_eviction_grace_seconds
 
-      {raw, prefix, hash} = mint_secret("emkey-auth-", @auth_key_prefix_size)
+      {raw, prefix, hash} = Crypto.mint("emkey-auth-", @auth_key_prefix_size)
 
       Repo.transaction(fn ->
         # Insert first, then evict — so the account never momentarily has
@@ -656,7 +655,7 @@ defmodule Emisar.Runners do
     if String.length(raw) < @auth_key_prefix_size do
       nil
     else
-      hash = :crypto.hash(:sha256, raw)
+      hash = Crypto.hash(raw)
       peek_by_prefix(raw, hash, @auth_key_prefix_size)
     end
   end
@@ -669,7 +668,7 @@ defmodule Emisar.Runners do
 
       with %AuthKey{} = key <-
              AuthKey.Query.all() |> AuthKey.Query.by_key_prefix(prefix) |> Repo.peek(),
-           true <- secure_compare(key.key_hash, hash),
+           true <- Crypto.secure_compare(key.key_hash, hash),
            true <- AuthKey.usable?(key) do
         key
       else
@@ -686,7 +685,7 @@ defmodule Emisar.Runners do
   registration flow.
   """
   def mint_runner_token(%Runner{} = runner, issued_via_key_id \\ nil) do
-    {raw, prefix, hash} = mint_secret("rnrtok-", @token_prefix_size)
+    {raw, prefix, hash} = Crypto.mint("rnrtok-", @token_prefix_size)
 
     {:ok, token} =
       Token.Changeset.create(runner.id, issued_via_key_id, prefix, hash)
@@ -705,11 +704,11 @@ defmodule Emisar.Runners do
       {:error, :token_invalid}
     else
       prefix = String.slice(raw, 0, @token_prefix_size)
-      hash = :crypto.hash(:sha256, raw)
+      hash = Crypto.hash(raw)
 
       with %Token{} = token <-
              Token.Query.all() |> Token.Query.by_prefix(prefix) |> Repo.peek(),
-           true <- secure_compare(token.token_hash, hash),
+           true <- Crypto.secure_compare(token.token_hash, hash),
            true <- Token.usable?(token),
            %Runner{disabled_at: nil, deleted_at: nil} = runner <-
              Runner.Query.all() |> Runner.Query.by_id(token.runner_id) |> Repo.peek() do
@@ -919,14 +918,4 @@ defmodule Emisar.Runners do
     |> EventCursor.Query.by_event_id(event_id)
     |> Repo.exists?()
   end
-
-  # -- Helpers ---------------------------------------------------------
-
-  defp mint_secret(prefix, expected_prefix_size) do
-    rand = :crypto.strong_rand_bytes(@key_secret_size) |> Base.url_encode64(padding: false)
-    raw = prefix <> rand
-    {raw, String.slice(raw, 0, expected_prefix_size), :crypto.hash(:sha256, raw)}
-  end
-
-  defdelegate secure_compare(a, b), to: Emisar.Crypto
 end
