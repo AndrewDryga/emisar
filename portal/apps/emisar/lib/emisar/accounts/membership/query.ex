@@ -60,7 +60,12 @@ defmodule Emisar.Accounts.Membership.Query do
   def cursor_fields,
     do: [{:memberships, :desc, :inserted_at}, {:memberships, :asc, :id}]
 
+  # Explicit not_deleted preload queries so a membership never resolves a
+  # soft-deleted account or user.
   @impl Emisar.Repo.Query
   def preloads,
-    do: [account: [], user: []]
+    do: [
+      account: Emisar.Accounts.Account.Query.not_deleted(),
+      user: Emisar.Accounts.User.Query.not_deleted()
+    ]
 end

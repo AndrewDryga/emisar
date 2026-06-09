@@ -15,9 +15,11 @@ defmodule Emisar.Accounts.Account do
     field :require_mfa, :boolean, default: false
     field :deleted_at, :utc_datetime_usec
 
-    has_many :memberships, Emisar.Accounts.Membership
+    # Soft-deletable associations skip tombstoned rows by default, so a
+    # preload never surfaces a deleted membership/runner.
+    has_many :memberships, Emisar.Accounts.Membership, where: [deleted_at: nil]
     has_many :users, through: [:memberships, :user]
-    has_many :runners, Emisar.Runners.Runner
+    has_many :runners, Emisar.Runners.Runner, where: [deleted_at: nil]
     has_one :subscription, Emisar.Billing.Subscription
 
     timestamps()

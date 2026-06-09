@@ -244,6 +244,7 @@ end
 - Field declarations only. Associations only. That's it.
 - Separate logical field groups with a blank line (identity / credentials / feature-X / flags) so a long schema scans at a glance. Keep associations and `timestamps()` in their own trailing groups.
 - Use `Ecto.Enum` (`field :kind, Ecto.Enum, values: [:a, :b]`) for any fixed string-set field — never `:string` + a `@valid_types` list + a `validate_inclusion` in the changeset. The enum casts to atoms, validates inclusion on cast for free, and keeps the DB value as the string form. Match on the atoms (`:group`), not strings.
+- **Soft-deletes never leak through preloads.** An association whose target schema has `deleted_at` carries `where: [deleted_at: nil]` (`has_many :memberships, Membership, where: [deleted_at: nil]`) so a preload skips tombstoned rows. `through:` associations can't take `:where` — they filter via the associations they traverse. Mirror it in the Query module's `preloads/0`: declare the assoc as the `Schema.Query.not_deleted()` query, not a bare `[]`, so the filter is explicit at the preload site too (`Emisar.Repo.Preloader` hands both the bare-preload and query-override paths to `Ecto.Repo.preload`, which honors the association `:where`).
 
 ### 4. Changeset modules (`lib/emisar/<context>/<schema>/changeset.ex`)
 

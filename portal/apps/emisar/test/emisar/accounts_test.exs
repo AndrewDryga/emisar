@@ -425,4 +425,24 @@ defmodule Emisar.AccountsTest do
       assert Enum.any?(events, &(&1.event_type == "user.password_reset_forced"))
     end
   end
+
+  describe "soft-deleted associations are excluded from preloads" do
+    test "account preload skips a soft-deleted membership (preloader honors :where)" do
+      account = account_fixture()
+      live_user = user_fixture()
+      doomed_user = user_fixture()
+      _live = membership_fixture(account_id: account.id, user_id: live_user.id)
+      doomed = membership_fixture(account_id: account.id, user_id: doomed_user.id)
+
+      {:ok, _} = doomed |> Membership.Changeset.delete() |> Emisar.Repo.update()
+
+      {:ok, loaded} =
+        Account.Query.not_deleted()
+        |> Account.Query.by_id(account.id)
+        |> Emisar.Repo.fetch(Account.Query, preload: [:memberships])
+
+      assert [%Membership{} = only] = loaded.memberships
+      assert only.user_id == live_user.id
+    end
+  end
 end
