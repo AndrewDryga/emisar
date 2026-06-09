@@ -170,7 +170,8 @@ end
   - ✅ `list_events(%Subject{} = subject, opts \\ [])` (subject is the only required arg)
   - ✅ `update_rules(%Policy{} = policy, rules, %Subject{} = subject)`
   - ❌ `fetch_event_by_id(%Subject{} = subject, id)` — id is required and comes after subject
-- This holds for **side-effect actions too**, not just row reads/writes. Any action a signed-in user triggers takes the `%Subject{}` and verifies it owns the target — e.g. `Auth.revoke_and_disconnect_other_sessions!/3` checks the subject's actor is the user whose sessions it's killing. A `!`/no-row-returned helper is not exempt; if an authed user initiated it, the subject flows down the call chain.
+- This holds for **side-effect actions too**, not just row reads/writes — a `!`/no-row-returned helper an authed user triggers still takes the `%Subject{}` and the subject flows down the call chain.
+- For a **self-service** action (a user acting on their own data), read the user from `subject.actor`; don't also accept it as a separate arg. `revoke_and_disconnect_other_sessions!(keep_token, %Subject{actor: %User{} = user})`, not `(user, keep_token, subject)`. Passing both is redundant and invites a mismatch you then have to guard against.
 - Internal helpers called from sibling contexts that have already authorized may take an account_id / actor_id instead. Name them so it's obvious (`fetch_policy_for_account!/1`, `dispatch_runbook/4`), keep them private or moduledoc-marked "internal", and never expose them to LiveView/controllers/MCP.
 - `Authorizer.for_subject(query, subject)` is **always** in the pipeline immediately before `Repo.fetch/list/fetch_and_update`. It is the second authorization gate (permission check + row scoping).
 - `Auth.Authorizer.ensure_has_permissions/2` accepts a single permission, a list (all required), or `{:one_of, [perms]}` (any one).

@@ -132,26 +132,16 @@ defmodule Emisar.Auth do
   broadcasts a disconnect to each of those sessions' LiveView sockets.
   Returns the count of sessions terminated.
 
-  An authed-user action: the `%Subject{}` must own the sessions (its
-  actor is `user`, or it is `:system`).
+  Self-service only: the user signing out is the subject's own actor, so
+  it's read from the `%Subject{}` rather than passed separately — there's
+  no way to revoke anyone else's sessions through this path.
   """
-  def revoke_and_disconnect_other_sessions!(%User{} = user, keep_token, %Subject{} = subject)
+  def revoke_and_disconnect_other_sessions!(keep_token, %Subject{actor: %User{} = user})
       when is_binary(keep_token) do
-    ensure_subject_owns_sessions!(subject, user)
     keep_digest = :crypto.hash(:sha256, keep_token)
     broadcast_disconnect_for_user(user, except: keep_digest)
     revoke_other_sessions!(user, keep_token)
   end
-
-  # Session revocation is self-service: a subject may only sign its own
-  # other devices out (system bypasses for internal flows). The caller
-  # always passes the signed-in user's own subject, so a mismatch is a
-  # programming error, not a runtime condition — hence the raise.
-  defp ensure_subject_owns_sessions!(%Subject{actor: :system}, %User{}), do: :ok
-  defp ensure_subject_owns_sessions!(%Subject{actor: %User{id: id}}, %User{id: id}), do: :ok
-
-  defp ensure_subject_owns_sessions!(%Subject{}, %User{}),
-    do: raise(ArgumentError, "subject may only revoke its own sessions")
 
   @doc """
   Broadcasts a per-session "disconnect" message to every active

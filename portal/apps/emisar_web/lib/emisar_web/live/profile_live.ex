@@ -136,7 +136,7 @@ defmodule EmisarWeb.ProfileLive do
           # every other device immediately, both at the DB layer (cookie no
           # longer resolves) and over PubSub (open LV tabs hard-disconnect).
           if is_binary(current_token) do
-            _ = Auth.revoke_and_disconnect_other_sessions!(user, current_token, subject)
+            _ = Auth.revoke_and_disconnect_other_sessions!(current_token, subject)
           end
 
           {:noreply,
@@ -170,9 +170,8 @@ defmodule EmisarWeb.ProfileLive do
   end
 
   def handle_event("revoke_other_sessions", _params, socket) do
-    user = socket.assigns.current_user
     keep = socket.assigns.current_session_token
-    n = Auth.revoke_and_disconnect_other_sessions!(user, keep, socket.assigns.current_subject)
+    n = Auth.revoke_and_disconnect_other_sessions!(keep, socket.assigns.current_subject)
 
     msg =
       case n do
