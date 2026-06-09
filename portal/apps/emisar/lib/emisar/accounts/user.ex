@@ -3,7 +3,6 @@ defmodule Emisar.Accounts.User do
   Users are identities that can sign in to the cloud UI. A user has
   one or more `Membership`s in accounts.
   """
-
   use Emisar, :schema
 
   schema "users" do
