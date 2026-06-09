@@ -4,50 +4,50 @@ defmodule Emisar.Accounts.Membership.Query do
   def all,
     do: from(memberships in Emisar.Accounts.Membership, as: :memberships)
 
-  def not_deleted(q \\ all()),
-    do: where(q, [memberships: m], is_nil(m.deleted_at))
+  def not_deleted(queryable \\ all()),
+    do: where(queryable, [memberships: m], is_nil(m.deleted_at))
 
-  def not_disabled(q \\ all()),
-    do: where(q, [memberships: m], is_nil(m.disabled_at))
+  def not_disabled(queryable \\ all()),
+    do: where(queryable, [memberships: m], is_nil(m.disabled_at))
 
-  def by_id(q, id),
-    do: where(q, [memberships: m], m.id == ^id)
+  def by_id(queryable, id),
+    do: where(queryable, [memberships: m], m.id == ^id)
 
-  def by_account_id(q, account_id),
-    do: where(q, [memberships: m], m.account_id == ^account_id)
+  def by_account_id(queryable, account_id),
+    do: where(queryable, [memberships: m], m.account_id == ^account_id)
 
-  def by_user_id(q, user_id),
-    do: where(q, [memberships: m], m.user_id == ^user_id)
+  def by_user_id(queryable, user_id),
+    do: where(queryable, [memberships: m], m.user_id == ^user_id)
 
-  def by_role(q, role),
-    do: where(q, [memberships: m], m.role == ^role)
+  def by_role(queryable, role),
+    do: where(queryable, [memberships: m], m.role == ^role)
 
-  def by_roles(q, roles) when is_list(roles),
-    do: where(q, [memberships: m], m.role in ^roles)
+  def by_roles(queryable, roles) when is_list(roles),
+    do: where(queryable, [memberships: m], m.role in ^roles)
 
-  def by_account_and_user(q, account_id, user_id) do
-    q
+  def by_account_and_user(queryable, account_id, user_id) do
+    queryable
     |> where([memberships: m], m.account_id == ^account_id and m.user_id == ^user_id)
   end
 
-  def by_invitation_token(q, token),
-    do: where(q, [memberships: m], m.invitation_token == ^token)
+  def by_invitation_token(queryable, token),
+    do: where(queryable, [memberships: m], m.invitation_token == ^token)
 
-  def pending_invitation(q),
-    do: where(q, [memberships: m], is_nil(m.invitation_accepted_at))
+  def pending_invitation(queryable),
+    do: where(queryable, [memberships: m], is_nil(m.invitation_accepted_at))
 
-  def ordered_by_recent(q),
-    do: order_by(q, [memberships: m], desc: m.inserted_at)
+  def ordered_by_recent(queryable),
+    do: order_by(queryable, [memberships: m], desc: m.inserted_at)
 
-  def latest(q), do: limit(q, 1)
+  def latest(queryable), do: limit(queryable, 1)
 
   @doc """
   Restrict to memberships whose account is not soft-deleted. Used by
   the account picker so a user can't pick a tenant that's been
   deleted out from under them.
   """
-  def for_active_account(q) do
-    q
+  def for_active_account(queryable) do
+    queryable
     |> join(:inner, [memberships: m], a in Emisar.Accounts.Account,
       on: a.id == m.account_id,
       as: :accounts

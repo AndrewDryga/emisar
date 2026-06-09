@@ -4,28 +4,28 @@ defmodule Emisar.Accounts.Account.Query do
   def all,
     do: from(accounts in Emisar.Accounts.Account, as: :accounts)
 
-  def not_deleted(q \\ all()),
-    do: where(q, [accounts: a], is_nil(a.deleted_at))
+  def not_deleted(queryable \\ all()),
+    do: where(queryable, [accounts: a], is_nil(a.deleted_at))
 
-  def by_id(q, id),
-    do: where(q, [accounts: a], a.id == ^id)
+  def by_id(queryable, id),
+    do: where(queryable, [accounts: a], a.id == ^id)
 
-  def by_slug(q, slug),
-    do: where(q, [accounts: a], a.slug == ^slug)
+  def by_slug(queryable, slug),
+    do: where(queryable, [accounts: a], a.slug == ^slug)
 
-  def by_paddle_customer_id(q, cid),
-    do: where(q, [accounts: a], a.paddle_customer_id == ^cid)
+  def by_paddle_customer_id(queryable, cid),
+    do: where(queryable, [accounts: a], a.paddle_customer_id == ^cid)
 
-  def ordered_by_name(q),
-    do: order_by(q, [accounts: a], asc: a.name)
+  def ordered_by_name(queryable),
+    do: order_by(queryable, [accounts: a], asc: a.name)
 
   @doc """
   Restrict to accounts the given user is a (non-suspended) member of.
   Used by the "switch account" picker — a suspended user is not shown
   as a member of the tenant that suspended them.
   """
-  def with_active_member(q, user_id) do
-    q
+  def with_active_member(queryable, user_id) do
+    queryable
     |> join(:inner, [accounts: a], m in Emisar.Accounts.Membership,
       on: m.account_id == a.id,
       as: :memberships
