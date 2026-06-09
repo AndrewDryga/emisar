@@ -54,12 +54,10 @@ defmodule EmisarWeb.AuditDetailLive do
       </:title>
       <% posture = parse_client_posture(@event.user_agent) %>
 
-      <%!-- Meta strip — consistent with run / approval / runner
-           detail. When occurred, where from, request id. Bridge UAs
-           add client + host cells; an MCP session adds one more — size
-           the grid to the cells actually rendered so none wrap. --%>
-      <% cols = 3 + if(posture.bridge?, do: 2, else: 0) + if(@event.mcp_session_id, do: 1, else: 0) %>
-      <.meta_strip cols={cols}>
+      <%!-- Meta strip — when it occurred, where from, request id. The MCP
+           session + client info moved onto the Actor card below: they
+           describe the actor that did this, not the event in general. --%>
+      <.meta_strip cols={3}>
         <.meta_field label="When">
           <.local_time value={@event.occurred_at} class="text-zinc-200" />
         </.meta_field>
@@ -69,22 +67,13 @@ defmodule EmisarWeb.AuditDetailLive do
         <.meta_field label="Request ID">
           <span class="font-mono text-xs text-zinc-400">{@event.request_id || "—"}</span>
         </.meta_field>
-        <.meta_field :if={@event.mcp_session_id} label="MCP session">
-          <span class="font-mono text-xs text-zinc-400">{@event.mcp_session_id}</span>
-        </.meta_field>
-        <.meta_field :if={posture.bridge?} label="Client">
-          <span class="text-xs text-zinc-200">{posture.client || "—"}</span>
-        </.meta_field>
-        <.meta_field :if={posture.bridge?} label="Client host">
-          <span class="font-mono text-xs text-zinc-300">{posture.host || "—"}</span>
-        </.meta_field>
       </.meta_strip>
 
       <%!-- Actor → Subject row. The arrow makes the relationship
            visual ("user X acted ON runner Y") instead of forcing
-           the reader to mentally pair two separate cards. The
-           User-Agent rides on the actor card — it describes the
-           actor's device, not the event in general. --%>
+           the reader to mentally pair two separate cards. The actor's
+           device, MCP session, and MCP client all ride on the actor
+           card — they describe who acted, not the event in general. --%>
       <div class="mt-4 flex flex-col items-stretch gap-3 sm:flex-row sm:items-center">
         <.entity_card
           role="Actor"
@@ -93,6 +82,9 @@ defmodule EmisarWeb.AuditDetailLive do
           label={@event.actor_label}
           refs={@refs}
           user_agent={@event.user_agent}
+          mcp_session={@event.mcp_session_id}
+          mcp_client={if posture.bridge?, do: posture.client}
+          mcp_client_host={if posture.bridge?, do: posture.host}
         />
         <div class="hidden flex-none items-center sm:flex">
           <.icon name="hero-arrow-right" class="h-5 w-5 text-zinc-700" />
@@ -288,6 +280,9 @@ defmodule EmisarWeb.AuditDetailLive do
   attr :label, :string, default: nil
   attr :refs, :map, default: %{}
   attr :user_agent, :string, default: nil
+  attr :mcp_session, :string, default: nil
+  attr :mcp_client, :string, default: nil
+  attr :mcp_client_host, :string, default: nil
 
   defp entity_card(%{kind: nil} = assigns) do
     ~H"""
@@ -318,6 +313,24 @@ defmodule EmisarWeb.AuditDetailLive do
         <.icon name={device_icon(@user_agent)} class="h-3 w-3 shrink-0 text-zinc-600" />
         <span class="truncate">{device_label(@user_agent)}</span>
       </p>
+      <%!-- MCP coordinates for this actor: the client the LLM connected
+           through (bridge only) and the session it was on. They belong to
+           the actor, so they live here rather than in the event meta strip. --%>
+      <div
+        :if={@mcp_client || @mcp_session}
+        class="mt-2 space-y-1 border-t border-zinc-900 pt-2 text-[11px]"
+      >
+        <p :if={@mcp_client} class="flex items-center gap-1.5 truncate text-zinc-400">
+          <.icon name="hero-cpu-chip" class="h-3 w-3 shrink-0 text-zinc-600" />
+          <span class="truncate" title={@mcp_client_host}>
+            MCP client: {@mcp_client}<span :if={@mcp_client_host} class="text-zinc-500">
+              · {@mcp_client_host}</span>
+          </span>
+        </p>
+        <p :if={@mcp_session} class="truncate font-mono text-[10px] text-zinc-500">
+          MCP session <span class="text-zinc-400">{@mcp_session}</span>
+        </p>
+      </div>
     </div>
     """
   end

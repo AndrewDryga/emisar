@@ -254,32 +254,21 @@ defmodule EmisarWeb.LiveTable do
 
   defp filter_form(assigns) do
     ~H"""
-    <form
-      id={@id}
-      method="get"
-      action={@path}
-      class="flex flex-wrap items-end gap-3 rounded-lg border border-zinc-800 bg-zinc-900/30 p-3"
-    >
+    <form id={@id} phx-change="filter" phx-submit="filter" class="flex flex-wrap items-end gap-3">
       <.filter_input
         :for={filter <- @filters}
         filter={filter}
         value={Map.get(@params, to_string(filter.name))}
       />
-      <div class="flex gap-2">
-        <button
-          type="submit"
-          class="rounded-lg bg-indigo-500 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-400"
-        >
-          Apply
-        </button>
-        <.link
-          :if={has_active_filters?(@params, @filters)}
-          href={@path}
-          class="rounded-lg border border-zinc-700 px-3 py-1.5 text-xs font-medium text-zinc-300 hover:bg-zinc-900"
-        >
-          Clear
-        </.link>
-      </div>
+      <.link
+        :if={has_active_filters?(@params, @filters)}
+        patch={@path}
+        title="Clear filters"
+        aria-label="Clear filters"
+        class="inline-flex h-[34px] w-[34px] items-center justify-center rounded-lg text-lg leading-none text-zinc-500 hover:bg-zinc-900 hover:text-zinc-300"
+      >
+        &times;
+      </.link>
     </form>
     """
   end
@@ -298,7 +287,7 @@ defmodule EmisarWeb.LiveTable do
       <span class="mb-1">{@filter.title}</span>
       <select
         name={"#{@filter.name}"}
-        class="rounded-lg border border-zinc-700 bg-zinc-950 px-2 py-1.5 text-xs text-zinc-200"
+        class="rounded-lg border border-zinc-700 bg-zinc-950 py-1.5 pl-2.5 pr-8 text-xs text-zinc-200"
       >
         <option value="">All</option>
         <%= for {group_label, options} <- @groups do %>
@@ -345,6 +334,7 @@ defmodule EmisarWeb.LiveTable do
         type="text"
         name={@filter.name}
         value={@value}
+        phx-debounce="300"
         class="rounded-lg border border-zinc-700 bg-zinc-950 px-2 py-1.5 text-xs text-zinc-200"
       />
     </label>
@@ -473,6 +463,32 @@ defmodule EmisarWeb.LiveTable do
       end
 
     [filter: filter_kv, page: page_kv]
+  end
+
+  @doc """
+  Patch to the filtered URL from a `phx-change` on the filter form.
+
+  The component is state-free, so the host LiveView owns the patch and its
+  route. Wire it with a one-liner:
+
+      def handle_event("filter", params, socket) do
+        {:noreply, LiveTable.apply_filter(socket, ~p"/app/things", params)}
+      end
+
+  Empty values are dropped (so clearing a filter leaves the URL), the
+  phx-change `_target` marker is stripped, and `handle_params/3` re-loads
+  from the patched params as usual. Filtering on change resets to page 1
+  by design — the cursor params aren't carried over.
+  """
+  def apply_filter(socket, path, params) when is_map(params) do
+    query =
+      params
+      |> Map.drop(["_target"])
+      |> Enum.reject(fn {_k, v} -> v in [nil, ""] end)
+      |> URI.encode_query()
+
+    to = if query == "", do: path, else: "#{path}?#{query}"
+    Phoenix.LiveView.push_patch(socket, to: to)
   end
 
   defp cast_filter_value(%Filter{type: {:list, _}}, value) when is_binary(value),

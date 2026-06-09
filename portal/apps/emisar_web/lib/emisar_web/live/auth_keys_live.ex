@@ -63,6 +63,10 @@ defmodule EmisarWeb.AuthKeysLive do
     Permissions.gated(socket, :manage_auth_keys, fn s -> do_revoke(s, id) end)
   end
 
+  def handle_event("filter", params, socket) do
+    {:noreply, LiveTable.apply_filter(socket, ~p"/app/settings/runners/auth-keys", params)}
+  end
+
   defp do_create(socket, params) do
     attrs =
       %{}

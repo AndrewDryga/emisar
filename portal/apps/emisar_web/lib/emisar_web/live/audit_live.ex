@@ -82,6 +82,10 @@ defmodule EmisarWeb.AuditLive do
   def handle_event("dismiss_export_secret", _params, socket),
     do: {:noreply, assign(socket, :export_secret, nil)}
 
+  def handle_event("filter", params, socket) do
+    {:noreply, LiveTable.apply_filter(socket, ~p"/app/audit", params)}
+  end
+
   defp assign_export_keys(socket) do
     case ApiKeys.list_audit_export_keys_for_account(socket.assigns.current_subject, page_size: 50) do
       {:ok, keys, _meta} -> assign(socket, :export_keys, keys)

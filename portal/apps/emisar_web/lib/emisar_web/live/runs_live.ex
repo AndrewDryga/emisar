@@ -23,6 +23,10 @@ defmodule EmisarWeb.RunsLive do
     {:noreply, load_runs(socket, params)}
   end
 
+  def handle_event("filter", params, socket) do
+    {:noreply, LiveTable.apply_filter(socket, ~p"/app/runs", params)}
+  end
+
   def handle_info({_event, _}, socket) do
     # PubSub-driven refresh — re-run the current filter/page.
     {:noreply, load_runs(socket, socket.assigns.filter_params)}
