@@ -57,6 +57,16 @@ func Render(tmpl string, args map[string]any) (string, error) {
 // single "{{ args.x }}" with no surrounding text and that resolves to an
 // array is expanded into multiple argv elements. All other elements are
 // rendered as scalar strings.
+//
+// Option-injection note: a whole-expression element like "{{ args.target }}"
+// becomes its own argv token, so a value beginning with "-" reaches the target
+// binary as a flag, not a positional (argv arrays prevent SHELL injection, not
+// the target's own option parsing — e.g. a curl URL of "-o/etc/x"). The runner
+// can't reject leading dashes globally (negative numbers and intentional flags
+// are legitimate), so the mitigation is per action at authoring time: place a
+// literal "--" end-of-options marker before user-controlled positionals
+// (["curl", "--", "{{ args.url }}"]) and/or constrain the arg with a
+// validation.pattern. Keep this in mind when reviewing exec-kind packs.
 func RenderArgv(argv []string, args map[string]any) ([]string, error) {
 	out := make([]string, 0, len(argv))
 	for _, raw := range argv {
