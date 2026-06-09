@@ -116,6 +116,22 @@ defmodule Emisar.RunsTest do
                      500
     end
 
+    test "a viewer (view-only) is refused — dispatch executes infra, so it gates on :dispatch" do
+      # A viewer holds only `view_runs_permission`; dispatching is the
+      # most dangerous write in the system (it runs real infra), so the
+      # permission gate must reject before any runner/policy lookup.
+      account = account_fixture()
+      runner = runner_fixture(account_id: account.id)
+      _ = action_fixture(runner: runner, action_id: "linux.uptime", risk: "low")
+      _ = policy_fixture(account_id: account.id)
+      viewer = user_fixture()
+      _ = membership_fixture(account_id: account.id, user_id: viewer.id, role: "viewer")
+      subject = subject_for(viewer, account, role: :viewer)
+
+      assert {:error, :unauthorized} =
+               Runs.dispatch_run(base_attrs(account.id, runner.id), subject)
+    end
+
     test "audits only the policy decision + terminal outcome, decision first" do
       account = account_fixture()
       runner = runner_fixture(account_id: account.id)
@@ -552,6 +568,30 @@ defmodule Emisar.RunsTest do
       assert_receive {:run_updated,
                       %ActionRun{status: "cancelled", runner: %Emisar.Runners.Runner{}}},
                      500
+    end
+
+    test "a viewer (no cancel permission) is refused with :unauthorized" do
+      account = account_fixture()
+      runner = runner_fixture(account_id: account.id)
+      viewer = user_fixture()
+      _ = membership_fixture(account_id: account.id, user_id: viewer.id, role: "viewer")
+      subject = subject_for(viewer, account, role: :viewer)
+      {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
+
+      assert {:error, :unauthorized} = Runs.cancel_run(run, subject, "no rights")
+    end
+
+    test "an owner of account B cannot cancel account A's run (cross-account → :not_found)" do
+      account_a = account_fixture()
+      runner_a = runner_fixture(account_id: account_a.id)
+      {:ok, run_a} = Runs.create_run(base_attrs(account_a.id, runner_a.id))
+
+      account_b = account_fixture()
+      owner_b = user_fixture()
+      _ = membership_fixture(account_id: account_b.id, user_id: owner_b.id, role: "owner")
+      subject_b = subject_for(owner_b, account_b, role: :owner)
+
+      assert {:error, :not_found} = Runs.cancel_run(run_a, subject_b, "wrong account")
     end
   end
 

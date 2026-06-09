@@ -72,6 +72,10 @@ defmodule Emisar.AuditTest do
     test "returns live labels for users, runners, and api keys", %{} do
       account = account_fixture()
       user = user_fixture()
+      # User labels scope through membership — stamp the membership the real
+      # write path would have created. Owner role so api_key_fixture's
+      # owner-subject can mint (subject_for reads the persisted membership role).
+      _ = membership_fixture(account_id: account.id, user_id: user.id, role: "owner")
       runner = runner_fixture(account_id: account.id, name: "db-prod-01")
       {_raw, api_key} = api_key_fixture(account_id: account.id, created_by_id: user.id)
 
@@ -115,6 +119,30 @@ defmodule Emisar.AuditTest do
       refs = Audit.resolve_references([event])
 
       refute Map.has_key?(refs["user"], ghost_id)
+    end
+
+    test "an id stamped from another account does not resolve (account-scoped)" do
+      account_a = account_fixture()
+      account_b = account_fixture()
+
+      # A runner + user that genuinely live in account B.
+      runner_b = runner_fixture(account_id: account_b.id, name: "b-runner")
+      user_b = user_fixture()
+      _ = membership_fixture(account_id: account_b.id, user_id: user_b.id)
+
+      # A mis-stamped audit row in account A pointing at B's ids.
+      {:ok, event} =
+        Audit.log(account_a.id, "cross.account",
+          actor_kind: "user",
+          actor_id: user_b.id,
+          subject_kind: "runner",
+          subject_id: runner_b.id
+        )
+
+      refs = Audit.resolve_references([event])
+
+      refute Map.has_key?(refs["user"], user_b.id)
+      refute Map.has_key?(refs["runner"], runner_b.id)
     end
   end
 

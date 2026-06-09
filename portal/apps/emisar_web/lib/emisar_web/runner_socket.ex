@@ -48,6 +48,7 @@ defmodule EmisarWeb.RunnerSocket do
       token_id: token.id,
       seen_request_ids: :queue.new(),
       seen_request_set: MapSet.new(),
+      seen_request_count: 0,
       heartbeat_ref: schedule_heartbeat_timeout()
     }
 
@@ -221,20 +222,23 @@ defmodule EmisarWeb.RunnerSocket do
     if already_seen?(msg["request_id"], state) do
       {:push, ack_result_frame(msg["request_id"]), state}
     else
-      state = remember_request(msg["request_id"], state)
-
       case Runs.finalize_from_result(state.runner_id, msg) do
         {:ok, _run} ->
-          {:push, ack_result_frame(msg["request_id"]), state}
+          # Remember only AFTER the result is durably persisted, so a transient
+          # finalize failure (below) leaves the request un-acked and the
+          # runner's retry re-finalizes instead of being silently deduped.
+          {:push, ack_result_frame(msg["request_id"]), remember_request(msg["request_id"], state)}
 
         {:error, :unknown_request_id} ->
           Logger.warning(
             "runner #{state.runner_id} sent result for unknown/foreign request_id #{msg["request_id"]}"
           )
 
-          {:push, ack_result_frame(msg["request_id"]), state}
+          # Genuinely terminal (no matching run) — remember so we don't reprocess.
+          {:push, ack_result_frame(msg["request_id"]), remember_request(msg["request_id"], state)}
 
         {:error, reason} ->
+          # Transient persist failure — do NOT remember; the runner retries.
           Logger.error("finalize_from_result failed: #{inspect(reason)}")
           {:push, error_frame(msg["request_id"], "finalize_failed", inspect(reason)), state}
       end
@@ -303,7 +307,9 @@ defmodule EmisarWeb.RunnerSocket do
 
   # request_id dedup: bounded FIFO + Set for O(1) membership. Keeps the
   # most recent 5_000 IDs in memory — enough for ack-replay storms during
-  # reconnect, not enough to bloat a long-lived socket process.
+  # reconnect, not enough to bloat a long-lived socket process. The count
+  # is tracked in state (not `:queue.len/1`, which is O(n)) so eviction
+  # stays O(1) on a long-lived socket past capacity.
   @dedup_capacity 5_000
 
   defp already_seen?(nil, _state), do: false
@@ -320,12 +326,19 @@ defmodule EmisarWeb.RunnerSocket do
     else
       q = :queue.in(request_id, state.seen_request_ids)
       set = MapSet.put(state.seen_request_set, request_id)
+      count = state.seen_request_count + 1
 
-      if :queue.len(q) > @dedup_capacity do
+      if count > @dedup_capacity do
         {{:value, evict}, q2} = :queue.out(q)
-        %{state | seen_request_ids: q2, seen_request_set: MapSet.delete(set, evict)}
+
+        %{
+          state
+          | seen_request_ids: q2,
+            seen_request_set: MapSet.delete(set, evict),
+            seen_request_count: count - 1
+        }
       else
-        %{state | seen_request_ids: q, seen_request_set: set}
+        %{state | seen_request_ids: q, seen_request_set: set, seen_request_count: count}
       end
     end
   end

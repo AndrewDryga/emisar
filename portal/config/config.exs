@@ -49,6 +49,9 @@ config :emisar, Oban,
     {Oban.Plugins.Cron,
      crontab: [
        {"@daily", Emisar.Workers.AuditRetention},
+       # Staggered 15 min after AuditRetention so the two audit-queue
+       # sweeps don't contend on the same midnight tick.
+       {"15 0 * * *", Emisar.Workers.ActionRunEventRetention},
        {"*/5 * * * *", Emisar.Workers.ApprovalExpiry},
        # Every minute — picks up runs that have been pending/sent past
        # the 2-min grace window and forces them to a terminal state.

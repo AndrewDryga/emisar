@@ -118,6 +118,9 @@ defmodule Emisar.Auth.Subject do
   def actor_kind(%__MODULE__{actor: %User{}}), do: "user"
   def actor_kind(%__MODULE__{actor: %Emisar.ApiKeys.ApiKey{}}), do: "api_key"
   def actor_kind(%__MODULE__{actor: %Emisar.Runners.Runner{}}), do: "runner"
+  # Defensive fallback: an actor-less subject (anonymous bootstrap) is a system
+  # actor rather than a FunctionClauseError downstream.
+  def actor_kind(%__MODULE__{}), do: "system"
 
   @doc """
   The actor's id (nil for `:system` actors, which have no row).

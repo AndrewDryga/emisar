@@ -36,6 +36,19 @@ defmodule Emisar.Runs.ActionRun.Query do
   def queued_before(q, %DateTime{} = ts),
     do: where(q, [runs: r], r.queued_at < ^ts)
 
+  @doc """
+  Id-only projection of runs that reached a terminal state before `ts`.
+  Built for use as a subquery by `RunEvent.Query.with_run_finished_before/2`
+  (the action-run-event retention sweep) — `finished_at` is the
+  authoritative "this run is old" signal, so still-running / never-
+  finished runs (null `finished_at`) are excluded.
+  """
+  def finished_before_ids(q \\ all(), %DateTime{} = ts) do
+    q
+    |> where([runs: r], not is_nil(r.finished_at) and r.finished_at < ^ts)
+    |> select([runs: r], r.id)
+  end
+
   def by_action_id(q, action_id),
     do: where(q, [runs: r], r.action_id == ^action_id)
 

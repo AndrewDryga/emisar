@@ -344,8 +344,18 @@ defmodule Emisar.Audit do
   ids are trusted (they were stamped on the audit row at write time
   inside an already-authorized parent transaction); we only project
   display labels.
+
+  Both call sites pass an already-account-scoped, single-account event
+  list (one page of the audit log, or one event). Label lookups are
+  therefore additionally scoped to that account: a mis-stamped id can't
+  resolve a name/email belonging to another account (defense-in-depth).
+  Correctly-scoped ids are unaffected. Mixed-account input degrades to
+  the first account's scope rather than leaking, but isn't a supported
+  shape.
   """
   def resolve_references(events) when is_list(events) do
+    account_id = events |> Enum.map(& &1.account_id) |> List.first()
+
     ids_by_kind =
       events
       |> Enum.flat_map(fn ev ->
@@ -356,26 +366,47 @@ defmodule Emisar.Audit do
       |> Enum.group_by(fn {kind, _} -> kind end, fn {_, id} -> id end)
 
     %{
-      "user" => fetch_labels(Emisar.Accounts.User.Query, ids_by_kind, "user", :email),
-      "runner" => fetch_labels(Emisar.Runners.Runner.Query, ids_by_kind, "runner", :name),
-      "api_key" => fetch_labels(Emisar.ApiKeys.ApiKey.Query, ids_by_kind, "api_key", :name),
+      # Users belong to accounts via memberships, not a column, so they
+      # scope through the membership join rather than `by_account_id`.
+      "user" =>
+        fetch_labels(Emisar.Accounts.User.Query, ids_by_kind, "user", :email, fn q ->
+          Emisar.Accounts.User.Query.members_of_account(q, account_id)
+        end),
+      "runner" =>
+        fetch_labels(Emisar.Runners.Runner.Query, ids_by_kind, "runner", :name, fn q ->
+          Emisar.Runners.Runner.Query.by_account_id(q, account_id)
+        end),
+      "api_key" =>
+        fetch_labels(Emisar.ApiKeys.ApiKey.Query, ids_by_kind, "api_key", :name, fn q ->
+          Emisar.ApiKeys.ApiKey.Query.by_account_id(q, account_id)
+        end),
       "auth_key" =>
-        fetch_labels(Emisar.Runners.AuthKey.Query, ids_by_kind, "auth_key", :description),
+        fetch_labels(Emisar.Runners.AuthKey.Query, ids_by_kind, "auth_key", :description, fn q ->
+          Emisar.Runners.AuthKey.Query.by_account_id(q, account_id)
+        end),
       "action_run" =>
-        fetch_labels(Emisar.Runs.ActionRun.Query, ids_by_kind, "action_run", :action_id),
+        fetch_labels(Emisar.Runs.ActionRun.Query, ids_by_kind, "action_run", :action_id, fn q ->
+          Emisar.Runs.ActionRun.Query.by_account_id(q, account_id)
+        end),
       "approval_request" =>
-        fetch_labels(Emisar.Approvals.Request.Query, ids_by_kind, "approval_request", :id),
-      "runbook" => fetch_labels(Emisar.Runbooks.Runbook.Query, ids_by_kind, "runbook", :title)
+        fetch_labels(Emisar.Approvals.Request.Query, ids_by_kind, "approval_request", :id, fn q ->
+          Emisar.Approvals.Request.Query.by_account_id(q, account_id)
+        end),
+      "runbook" =>
+        fetch_labels(Emisar.Runbooks.Runbook.Query, ids_by_kind, "runbook", :title, fn q ->
+          Emisar.Runbooks.Runbook.Query.by_account_id(q, account_id)
+        end)
     }
   end
 
-  defp fetch_labels(query_module, ids_by_kind, kind, field) do
+  defp fetch_labels(query_module, ids_by_kind, kind, field, scope) do
     case Map.get(ids_by_kind, kind, []) do
       [] ->
         %{}
 
       ids ->
         query_module.all()
+        |> scope.()
         |> query_module.select_labels(ids, field)
         |> Repo.all()
         |> Map.new()

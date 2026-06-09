@@ -766,13 +766,21 @@ defmodule Emisar.Runs do
   end
 
   defp transition(%ActionRun{} = run, status, attrs) do
-    Multi.new()
-    |> Multi.update(:run, ActionRun.Changeset.transition(run, status, attrs))
-    |> put_run_audit_event()
-    |> Repo.commit_multi(after_commit: fn %{run: run} -> PubSub.broadcast_run(run) end)
-    |> case do
-      {:ok, %{run: run}} -> {:ok, run}
-      {:error, _} = err -> err
+    if ActionRun.terminal?(run.status) do
+      # Idempotent guard: a late or duplicate runner result — e.g. one racing
+      # an operator cancel or a dispatch-timeout that already set the run
+      # terminal — must not overwrite the terminal status, and (critically)
+      # must not re-advance a runbook to its next step. The run is final.
+      {:ok, run}
+    else
+      Multi.new()
+      |> Multi.update(:run, ActionRun.Changeset.transition(run, status, attrs))
+      |> put_run_audit_event()
+      |> Repo.commit_multi(after_commit: fn %{run: run} -> PubSub.broadcast_run(run) end)
+      |> case do
+        {:ok, %{run: run}} -> {:ok, run}
+        {:error, _} = err -> err
+      end
     end
   end
 

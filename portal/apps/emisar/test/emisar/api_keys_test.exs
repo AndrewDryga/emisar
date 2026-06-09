@@ -47,6 +47,32 @@ defmodule Emisar.ApiKeysTest do
 
       assert "has an invalid entry" in errors_on(cs).scopes
     end
+
+    test "an operator (no manage_api_keys permission) is refused with :unauthorized" do
+      # A custom key mints an execute-capable MCP credential, so it gates
+      # on `manage_api_keys` — which operators lack (they may only mint
+      # the pre-scoped quick key via `mint_quick_key/1`).
+      account = account_fixture()
+      operator = user_fixture()
+      _ = membership_fixture(account_id: account.id, user_id: operator.id, role: "operator")
+      subject = subject_for(operator, account, role: :operator)
+
+      assert {:error, :unauthorized} =
+               ApiKeys.create_key(%{name: "ci", scopes: ["actions:read"]}, subject)
+    end
+  end
+
+  describe "mint_quick_key/1" do
+    test "a viewer (no issue_quick_key permission) is refused with :unauthorized" do
+      # Operators CAN mint the quick key; only viewers are below the
+      # `issue_quick` line, so the denial subject must be a viewer.
+      account = account_fixture()
+      viewer = user_fixture()
+      _ = membership_fixture(account_id: account.id, user_id: viewer.id, role: "viewer")
+      subject = subject_for(viewer, account, role: :viewer)
+
+      assert {:error, :unauthorized} = ApiKeys.mint_quick_key(subject)
+    end
   end
 
   describe "peek_api_key_by_secret/1" do
@@ -83,6 +109,27 @@ defmodule Emisar.ApiKeysTest do
 
       assert id == user.id
       assert Repo.reload!(key).revoked_at
+    end
+
+    test "an operator (no manage_api_keys permission) is refused with :unauthorized" do
+      account = account_fixture()
+      {_raw, key} = api_key_fixture(account_id: account.id)
+      operator = user_fixture()
+      _ = membership_fixture(account_id: account.id, user_id: operator.id, role: "operator")
+      subject = subject_for(operator, account, role: :operator)
+
+      assert {:error, :unauthorized} = ApiKeys.revoke_api_key(key, subject)
+      refute Repo.reload!(key).revoked_at
+    end
+
+    test "an owner of account B cannot revoke account A's key (cross-account → :not_found)" do
+      account_a = account_fixture()
+      {_raw, key_a} = api_key_fixture(account_id: account_a.id)
+
+      {_user_b, _account_b, subject_b} = owner_subject_pair()
+
+      assert {:error, :not_found} = ApiKeys.revoke_api_key(key_a, subject_b)
+      refute Repo.reload!(key_a).revoked_at
     end
   end
 end

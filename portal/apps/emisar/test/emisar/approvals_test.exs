@@ -58,6 +58,31 @@ defmodule Emisar.ApprovalsTest do
                &(&1.event_type == "approval.approved")
              )
     end
+
+    test "a viewer (cannot decide) is refused with :unauthorized" do
+      {account, run} = run_fixture()
+      decider = operator_subject(account)
+      {:ok, req} = Approvals.create_request(run, decider.actor.id, "needs approve")
+
+      viewer = user_fixture()
+      _ = membership_fixture(account_id: account.id, user_id: viewer.id, role: "viewer")
+      viewer_subject = subject_for(viewer, account, role: :viewer)
+
+      assert {:error, :unauthorized} = Approvals.approve_request(req, viewer_subject, "no rights")
+    end
+
+    test "an owner of account B cannot approve account A's request (cross-account → :not_found)" do
+      {account_a, run_a} = run_fixture()
+      decider_a = operator_subject(account_a)
+      {:ok, req_a} = Approvals.create_request(run_a, decider_a.actor.id, "needs approve")
+
+      account_b = account_fixture()
+      owner_b = user_fixture()
+      _ = membership_fixture(account_id: account_b.id, user_id: owner_b.id, role: "owner")
+      subject_b = subject_for(owner_b, account_b, role: :owner)
+
+      assert {:error, :not_found} = Approvals.approve_request(req_a, subject_b, "wrong account")
+    end
   end
 
   describe "deny_request/3" do
@@ -74,6 +99,31 @@ defmodule Emisar.ApprovalsTest do
                |> elem(1),
                &(&1.event_type == "approval.denied")
              )
+    end
+
+    test "a viewer (cannot decide) is refused with :unauthorized" do
+      {account, run} = run_fixture()
+      decider = operator_subject(account)
+      {:ok, req} = Approvals.create_request(run, decider.actor.id, "needs approve")
+
+      viewer = user_fixture()
+      _ = membership_fixture(account_id: account.id, user_id: viewer.id, role: "viewer")
+      viewer_subject = subject_for(viewer, account, role: :viewer)
+
+      assert {:error, :unauthorized} = Approvals.deny_request(req, viewer_subject, "no rights")
+    end
+
+    test "an owner of account B cannot deny account A's request (cross-account → :not_found)" do
+      {account_a, run_a} = run_fixture()
+      decider_a = operator_subject(account_a)
+      {:ok, req_a} = Approvals.create_request(run_a, decider_a.actor.id, "needs approve")
+
+      account_b = account_fixture()
+      owner_b = user_fixture()
+      _ = membership_fixture(account_id: account_b.id, user_id: owner_b.id, role: "owner")
+      subject_b = subject_for(owner_b, account_b, role: :owner)
+
+      assert {:error, :not_found} = Approvals.deny_request(req_a, subject_b, "wrong account")
     end
   end
 
@@ -266,6 +316,35 @@ defmodule Emisar.ApprovalsTest do
 
       assert %Grant{} = Approvals.peek_matching_grant(key_a.id, "x", nil, "sha")
       assert Approvals.peek_matching_grant(key_b.id, "x", nil, "sha") == nil
+    end
+  end
+
+  describe "revoke_grant/2" do
+    test "an operator (no manage_grants permission) is refused with :unauthorized" do
+      account = account_fixture()
+      user = user_fixture()
+      {_, key} = api_key_fixture(account_id: account.id, created_by_id: user.id)
+      g = insert_grant(account, key, action_id: "x", granted_by_id: user.id)
+
+      operator = user_fixture()
+      _ = membership_fixture(account_id: account.id, user_id: operator.id, role: "operator")
+      operator_subject = subject_for(operator, account, role: :operator)
+
+      assert {:error, :unauthorized} = Approvals.revoke_grant(g, operator_subject)
+    end
+
+    test "an owner of account B cannot revoke account A's grant (cross-account → :not_found)" do
+      account_a = account_fixture()
+      user_a = user_fixture()
+      {_, key_a} = api_key_fixture(account_id: account_a.id, created_by_id: user_a.id)
+      g_a = insert_grant(account_a, key_a, action_id: "x", granted_by_id: user_a.id)
+
+      account_b = account_fixture()
+      owner_b = user_fixture()
+      _ = membership_fixture(account_id: account_b.id, user_id: owner_b.id, role: "owner")
+      subject_b = subject_for(owner_b, account_b, role: :owner)
+
+      assert {:error, :not_found} = Approvals.revoke_grant(g_a, subject_b)
     end
   end
 

@@ -48,6 +48,20 @@ defmodule Emisar.RunnerScopesTest do
       assert {:error, %Ecto.Changeset{}} =
                Accounts.replace_runner_scopes(membership, [{"bogus", "x"}], subject)
     end
+
+    test "an operator (no manage_team permission) cannot widen scope → :unauthorized" do
+      # Runner ACLs are a team-management privilege: a non-admin must not
+      # be able to broaden their own (or anyone's) scope.
+      {account, _user, owner_subject} = account_with_owner()
+      {:ok, membership} = Accounts.fetch_membership_for_session(owner_subject.actor, nil)
+
+      operator = user_fixture()
+      _ = membership_fixture(account_id: account.id, user_id: operator.id, role: "operator")
+      operator_subject = subject_for(operator, account, role: :operator)
+
+      assert {:error, :unauthorized} =
+               Accounts.replace_runner_scopes(membership, [{"group", "dba"}], operator_subject)
+    end
   end
 
   describe "Runners.list_runners_for_account/2 with :membership_id" do

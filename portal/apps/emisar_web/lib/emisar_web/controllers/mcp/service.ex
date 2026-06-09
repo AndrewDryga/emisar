@@ -336,7 +336,9 @@ defmodule EmisarWeb.Mcp.Service do
   def parse_wait("", _max_ms), do: {:ok, 0}
 
   def parse_wait(s, max_ms) when is_binary(s) do
-    case Regex.run(~r/^(\d+)(ms|s|m)?$/, s) do
+    # `\d{1,8}` caps the magnitude (~27h, far past max_ms) so a `wait=<huge>`
+    # can't allocate a giant bignum before the clamp; longer input is rejected.
+    case Regex.run(~r/^(\d{1,8})(ms|s|m)?$/, s) do
       [_, num, unit] ->
         ms = String.to_integer(num) * unit_to_ms(unit)
         {:ok, min(ms, max_ms)}

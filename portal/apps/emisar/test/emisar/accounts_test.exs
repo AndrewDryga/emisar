@@ -254,6 +254,37 @@ defmodule Emisar.AccountsTest do
     end
   end
 
+  describe "delete_membership/3" do
+    test "owner can remove a non-owner member" do
+      account = account_fixture()
+      owner = user_fixture()
+      _ = membership_fixture(account_id: account.id, user_id: owner.id, role: "owner")
+      target_user = user_fixture()
+
+      target =
+        membership_fixture(account_id: account.id, user_id: target_user.id, role: "operator")
+
+      subject = subject_for(owner, account, role: :owner)
+
+      assert {:ok, %Membership{}} = Accounts.delete_membership(target, subject)
+    end
+
+    test "an operator (no manage_team permission) cannot remove a member → :unauthorized" do
+      account = account_fixture()
+      target_user = user_fixture()
+      target = membership_fixture(account_id: account.id, user_id: target_user.id, role: "viewer")
+
+      operator = user_fixture()
+      _ = membership_fixture(account_id: account.id, user_id: operator.id, role: "operator")
+      operator_subject = subject_for(operator, account, role: :operator)
+
+      assert {:error, :unauthorized} = Accounts.delete_membership(target, operator_subject)
+      # The target membership is still present.
+      assert {:ok, %Membership{}} =
+               Accounts.fetch_membership_by_account_and_user(account.id, target_user.id)
+    end
+  end
+
   describe "update_user_email/4" do
     test "updates the email when the current password verifies" do
       password = "current-password-12-chars"
