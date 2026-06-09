@@ -10,7 +10,7 @@ defmodule Emisar.Accounts do
   alias Ecto.Multi
   alias Emisar.{Audit, Auth, Repo, Slug}
   alias Emisar.Accounts.{Account, Authorizer, Membership, User, UserRunnerScope}
-  alias Emisar.Auth.Subject
+  alias Emisar.Auth.{Role, Subject}
 
   require Logger
 
@@ -75,7 +75,7 @@ defmodule Emisar.Accounts do
     Multi.new()
     |> Multi.insert(:account, Account.Changeset.create(account_attrs))
     |> Multi.insert(:membership, fn %{account: account} ->
-      Membership.Changeset.create(%{account_id: account.id, user_id: user.id, role: "owner"})
+      Membership.Changeset.create(%{account_id: account.id, user_id: user.id, role: :owner})
     end)
     # Workspace gets the v2 conservative default policy on creation.
     # Without this, `Policies.evaluate(nil, ...)` would default-deny
@@ -328,26 +328,25 @@ defmodule Emisar.Accounts do
   end
 
   defp ensure_role_change_allowed(%Membership{} = target, new_role, %Subject{} = subject) do
-    actor_user_id = subject.actor.id
-    actor_role = subject.role
+    new_role = normalize_role(new_role)
 
     cond do
       # Self-promotion is never allowed (an admin cannot promote themselves
       # to owner; an operator cannot promote themselves to admin).
-      target.user_id == actor_user_id and target.role != new_role and
-          role_rank(new_role) < role_rank(target.role) ->
+      target.user_id == subject.actor.id and target.role != new_role and
+          Role.at_least?(new_role, target.role) ->
         {:error, :cannot_self_promote}
 
       # Only owners can grant the owner role.
-      new_role == "owner" and actor_role != :owner ->
+      new_role == :owner and not can_manage_owners?(subject) ->
         {:error, :owner_required}
 
       # Only owners can take the owner role away from someone.
-      target.role == "owner" and actor_role != :owner ->
+      target.role == :owner and not can_manage_owners?(subject) ->
         {:error, :owner_required}
 
       # Don't demote the last owner.
-      target.role == "owner" and new_role != "owner" and
+      target.role == :owner and new_role != :owner and
           count_owners(target.account_id) <= 1 ->
         {:error, :last_owner}
 
@@ -601,13 +600,11 @@ defmodule Emisar.Accounts do
   # the right to manage_team in general; this enforces "can't shoot
   # yourself in the foot" and "can't pin owners around if you're not one".
   defp ensure_can_modify_membership(%Membership{} = target, %Subject{} = subject) do
-    actor_user_id = subject.actor.id
-
     cond do
-      target.user_id == actor_user_id ->
+      target.user_id == subject.actor.id ->
         {:error, :cannot_modify_self}
 
-      target.role == "owner" and subject.role != :owner ->
+      target.role == :owner and not can_manage_owners?(subject) ->
         {:error, :owner_required}
 
       true ->
@@ -615,7 +612,7 @@ defmodule Emisar.Accounts do
     end
   end
 
-  defp ensure_not_last_owner_change(%Membership{role: "owner"} = target, _action) do
+  defp ensure_not_last_owner_change(%Membership{role: :owner} = target, _action) do
     if count_owners(target.account_id) <= 1 do
       {:error, :last_owner}
     else
@@ -659,10 +656,10 @@ defmodule Emisar.Accounts do
 
   defp ensure_delete_membership_allowed(%Membership{} = target, %Subject{} = subject) do
     cond do
-      target.role == "owner" and subject.role != :owner ->
+      target.role == :owner and not can_manage_owners?(subject) ->
         {:error, :owner_required}
 
-      target.role == "owner" and count_owners(target.account_id) <= 1 ->
+      target.role == :owner and count_owners(target.account_id) <= 1 ->
         {:error, :last_owner}
 
       true ->
@@ -676,16 +673,24 @@ defmodule Emisar.Accounts do
   defp count_owners(account_id) do
     Membership.Query.all()
     |> Membership.Query.by_account_id(account_id)
-    |> Membership.Query.by_role("owner")
+    |> Membership.Query.by_role(:owner)
     |> Membership.Query.not_disabled()
     |> Repo.aggregate(:count, :id)
   end
 
-  defp role_rank("owner"), do: 0
-  defp role_rank("admin"), do: 1
-  defp role_rank("operator"), do: 2
-  defp role_rank("viewer"), do: 3
-  defp role_rank(_), do: 99
+  # Owner-only capability, checked by permission rather than role name.
+  defp can_manage_owners?(%Subject{} = subject),
+    do: Auth.Authorizer.has_permission?(subject, Authorizer.manage_owners_permission())
+
+  # Coerce a role name to a known atom for guard comparisons; nil for an
+  # unrecognized value (which then falls through to the changeset, where
+  # Ecto.Enum rejects it with "is invalid").
+  defp normalize_role(role) do
+    case Role.cast(role) do
+      {:ok, role} -> role
+      :error -> nil
+    end
+  end
 
   @doc """
   Invites a user (by email) into the account with the given role.
@@ -752,12 +757,16 @@ defmodule Emisar.Accounts do
     end
   end
 
-  # An admin can invite anybody except an owner; only an owner can mint
-  # an owner. Mirrors the role-change guard so the two paths are
-  # consistent.
-  defp ensure_invite_role_allowed("owner", %Subject{role: :owner}), do: :ok
-  defp ensure_invite_role_allowed("owner", _subject), do: {:error, :owner_required}
-  defp ensure_invite_role_allowed(_role, _subject), do: :ok
+  # An admin can invite anybody except an owner; only a subject holding
+  # manage_owners (i.e. an owner) can mint an owner. Mirrors the
+  # role-change guard so the two paths stay consistent.
+  defp ensure_invite_role_allowed(role, %Subject{} = subject) do
+    if normalize_role(role) == :owner and not can_manage_owners?(subject) do
+      {:error, :owner_required}
+    else
+      :ok
+    end
+  end
 
   defp invitation_token do
     :crypto.strong_rand_bytes(24) |> Base.url_encode64(padding: false)

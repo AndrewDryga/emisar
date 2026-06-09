@@ -6,7 +6,9 @@ defmodule EmisarWeb.TeamLive do
   alias EmisarWeb.{LiveTable, Permissions}
   alias Phoenix.LiveView.JS
 
-  @roles ~w(owner admin operator viewer)
+  # String forms of the canonical role enum — the invite/role forms work
+  # in strings (HTTP params); membership.role itself is an atom.
+  @roles Enum.map(Emisar.Auth.Role.all(), &Atom.to_string/1)
 
   def mount(_params, _session, socket) do
     if connected?(socket),
@@ -64,7 +66,7 @@ defmodule EmisarWeb.TeamLive do
     value = not socket.assigns.current_account.require_mfa
 
     cond do
-      socket.assigns.current_role != "owner" ->
+      socket.assigns.current_role != :owner ->
         {:noreply, put_flash(socket, :error, "Only the account owner can change this setting.")}
 
       # Prevent owners from locking themselves out — if they don't have
@@ -409,7 +411,7 @@ defmodule EmisarWeb.TeamLive do
             </div>
 
             <%= cond do %>
-              <% @current_role == "owner" -> %>
+              <% @current_role == :owner -> %>
                 <button
                   type="button"
                   phx-click="toggle_require_mfa"
@@ -602,14 +604,14 @@ defmodule EmisarWeb.TeamLive do
                       name="role"
                       class="rounded-lg border-0 bg-zinc-900 px-2 py-1 text-xs text-zinc-200 ring-1 ring-zinc-800 focus:ring-indigo-500"
                     >
-                      <option :for={r <- @roles} value={r} selected={m.role == r}>
+                      <option :for={r <- @roles} value={r} selected={to_string(m.role) == r}>
                         {String.capitalize(r)}
                       </option>
                     </select>
                   </form>
                 <% else %>
                   <span class="shrink-0 rounded-md bg-zinc-900 px-2 py-1 text-xs font-medium text-zinc-300 ring-1 ring-zinc-800">
-                    {String.capitalize(m.role)}
+                    {String.capitalize(to_string(m.role))}
                   </span>
                 <% end %>
 
@@ -896,7 +898,7 @@ defmodule EmisarWeb.TeamLive do
     """
   end
 
-  defp self_owner?(%Membership{user_id: uid, role: "owner"}, user_id) when uid == user_id,
+  defp self_owner?(%Membership{user_id: uid, role: :owner}, user_id) when uid == user_id,
     do: true
 
   defp self_owner?(_, _), do: false

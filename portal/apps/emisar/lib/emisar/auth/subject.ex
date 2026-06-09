@@ -20,6 +20,7 @@ defmodule Emisar.Auth.Subject do
   """
 
   alias Emisar.Accounts.{Account, Membership, User}
+  alias Emisar.Auth.Role
 
   @type role :: :owner | :admin | :operator | :viewer | :api_client | :runner | :system
   @type permission :: {module(), atom()}
@@ -101,12 +102,14 @@ defmodule Emisar.Auth.Subject do
     }
   end
 
-  defp role_atom("owner"), do: :owner
-  defp role_atom("admin"), do: :admin
-  defp role_atom("operator"), do: :operator
-  defp role_atom("viewer"), do: :viewer
-  defp role_atom(other) when is_atom(other), do: other
-  defp role_atom(_), do: :viewer
+  # Coerce a membership's role into a known role atom. Unknown values
+  # fall back to the least-privileged role (default-deny posture).
+  defp role_atom(role) do
+    case Role.cast(role) do
+      {:ok, role} -> role
+      :error -> :viewer
+    end
+  end
 
   # -- Helpers used by every context's `ensure_X_in_subject_account` -
 

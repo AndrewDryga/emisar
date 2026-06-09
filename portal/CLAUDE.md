@@ -317,6 +317,8 @@ end
 
 - Permissions are built with **`build(Schema, :verb)`** and exposed via per-permission accessor functions (`view_runbooks_permission/0`) so callers never construct a permission inline.
 - Roles in this codebase: `:owner`, `:admin`, `:operator`, `:viewer`, `:api_client`, `:system`. Every authorizer must clause all of them (plus a `_ -> []` catch-all).
+- The four **membership** roles (`:owner`/`:admin`/`:operator`/`:viewer`) are defined once in `Emisar.Auth.Role` — the single source for the `Membership` `Ecto.Enum`, the rank/`at_least?` hierarchy, and the team UI's role list. Never re-list them in a schema, changeset, or LiveView.
+- **Authorize by permission, not role name.** A context must never branch on `subject.role` to gate an action (`subject.role != :owner` is a smell) — add a permission (e.g. `manage_owners_permission`, held by owner + system only) and check `Auth.Authorizer.has_permission?/2`. Comparing a *data* role value (`target.role == :owner`) is fine; gating the *actor's* capability by role name is not.
 - `for_subject/2` is the **row-scoping** authorizer — it composes onto whatever query the context built. Use the Query module helpers; do not write raw `where` here. Keep the three clauses: `:system` (bypass), account-scoped, and the `_` fallback.
 - `Emisar.Auth.Authorizer.permissions_for/1` unions every per-context Authorizer's role list — that union builds the `%Subject{}.permissions` MapSet.
 

@@ -60,7 +60,7 @@ defmodule Emisar.AccountsTest do
                  user
                )
 
-      assert %Membership{role: "owner"} = fetch_membership(account.id, user.id)
+      assert %Membership{role: :owner} = fetch_membership(account.id, user.id)
     end
 
     test "rolls back when the account changeset is invalid" do
@@ -149,7 +149,7 @@ defmodule Emisar.AccountsTest do
 
       assert {:ok,
               %{
-                membership: %Membership{role: "admin"},
+                membership: %Membership{role: :admin},
                 user: %User{} = u,
                 invitation_token: token,
                 created?: true
@@ -236,7 +236,7 @@ defmodule Emisar.AccountsTest do
       m = membership_fixture(account_id: account.id, user_id: target_user.id, role: "operator")
       subject = subject_for(owner, account, role: :owner)
 
-      assert {:ok, %Membership{role: "admin"}} =
+      assert {:ok, %Membership{role: :admin}} =
                Accounts.update_membership_role(m, "admin", subject)
     end
 

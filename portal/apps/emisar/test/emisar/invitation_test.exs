@@ -27,7 +27,7 @@ defmodule Emisar.InvitationTest do
       assert invitee.email == "new@example.test"
       assert is_binary(token)
       assert byte_size(token) > 16
-      assert membership.role == "admin"
+      assert membership.role == :admin
       assert membership.invitation_token == token
       assert is_nil(membership.invitation_accepted_at)
     end

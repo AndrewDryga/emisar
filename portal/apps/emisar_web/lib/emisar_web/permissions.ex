@@ -29,28 +29,28 @@ defmodule EmisarWeb.Permissions do
   end
 
   # owner-only
-  defp allow?("owner", :manage_billing), do: true
-  defp allow?("owner", :manage_subscription), do: true
+  defp allow?(:owner, :manage_billing), do: true
+  defp allow?(:owner, :manage_subscription), do: true
 
   # admin+
-  defp allow?(role, :manage_team) when role in ~w(owner admin), do: true
-  defp allow?(role, :manage_auth_keys) when role in ~w(owner admin), do: true
-  defp allow?(role, :manage_api_keys) when role in ~w(owner admin), do: true
-  defp allow?(role, :manage_policies) when role in ~w(owner admin), do: true
-  defp allow?(role, :manage_runbooks) when role in ~w(owner admin), do: true
-  defp allow?(role, :manage_runners) when role in ~w(owner admin), do: true
-  defp allow?(role, :manage_packs) when role in ~w(owner admin), do: true
+  defp allow?(role, :manage_team) when role in [:owner, :admin], do: true
+  defp allow?(role, :manage_auth_keys) when role in [:owner, :admin], do: true
+  defp allow?(role, :manage_api_keys) when role in [:owner, :admin], do: true
+  defp allow?(role, :manage_policies) when role in [:owner, :admin], do: true
+  defp allow?(role, :manage_runbooks) when role in [:owner, :admin], do: true
+  defp allow?(role, :manage_runners) when role in [:owner, :admin], do: true
+  defp allow?(role, :manage_packs) when role in [:owner, :admin], do: true
 
   # operator+
-  defp allow?(role, :dispatch_run) when role in ~w(owner admin operator), do: true
-  defp allow?(role, :cancel_run) when role in ~w(owner admin operator), do: true
-  defp allow?(role, :decide_approval) when role in ~w(owner admin operator), do: true
-  defp allow?(role, :execute_runbook) when role in ~w(owner admin operator), do: true
+  defp allow?(role, :dispatch_run) when role in [:owner, :admin, :operator], do: true
+  defp allow?(role, :cancel_run) when role in [:owner, :admin, :operator], do: true
+  defp allow?(role, :decide_approval) when role in [:owner, :admin, :operator], do: true
+  defp allow?(role, :execute_runbook) when role in [:owner, :admin, :operator], do: true
 
   # viewer+
-  defp allow?(role, :view) when role in ~w(owner admin operator viewer), do: true
-  defp allow?(role, :view_audit) when role in ~w(owner admin operator viewer), do: true
-  defp allow?(role, :edit_own_profile) when role in ~w(owner admin operator viewer), do: true
+  defp allow?(role, :view) when role in [:owner, :admin, :operator, :viewer], do: true
+  defp allow?(role, :view_audit) when role in [:owner, :admin, :operator, :viewer], do: true
+  defp allow?(role, :edit_own_profile) when role in [:owner, :admin, :operator, :viewer], do: true
 
   # default-deny
   defp allow?(_role, _action), do: false
