@@ -6,7 +6,7 @@ defmodule Emisar.MfaEnforcementTest do
   alias Emisar.{Accounts, Repo}
   alias Emisar.Accounts.{Account, User}
 
-  describe "update_account_require_mfa/3" do
+  describe "update_account/3 (require_mfa)" do
     test "owner can enable; flips the column" do
       user = user_fixture()
 
@@ -19,10 +19,10 @@ defmodule Emisar.MfaEnforcementTest do
       refute account.require_mfa
       owner_subject = subject_for(user, account, role: :owner)
 
-      {:ok, account} = Accounts.update_account_require_mfa(account, true, owner_subject)
+      {:ok, account} = Accounts.update_account(account, %{require_mfa: true}, owner_subject)
       assert account.require_mfa
 
-      {:ok, account} = Accounts.update_account_require_mfa(account, false, owner_subject)
+      {:ok, account} = Accounts.update_account(account, %{require_mfa: false}, owner_subject)
       refute account.require_mfa
     end
 
@@ -47,7 +47,7 @@ defmodule Emisar.MfaEnforcementTest do
       admin_subject = subject_for(admin_user, account, role: :admin)
 
       assert {:error, :unauthorized} =
-               Accounts.update_account_require_mfa(account, true, admin_subject)
+               Accounts.update_account(account, %{require_mfa: true}, admin_subject)
     end
   end
 

@@ -109,24 +109,29 @@ defmodule Emisar.Accounts do
     end
   end
 
+  @doc """
+  Update an account's settings. The required permission is **field-aware**:
+  changing a security setting (`require_mfa`) needs the owner-only
+  `manage_security_settings` permission, while renaming/rebranding only
+  needs `manage_own_account` (owner + admin). This stops an admin from
+  turning OFF account-wide MFA enforcement — a security downgrade only an
+  owner should make.
+
+  When `require_mfa` is flipped on, every signed-in user without
+  `mfa_enabled_at` is funneled to MFA setup by
+  `EmisarWeb.UserAuth.on_mount(:ensure_mfa_compliant)` until they enroll
+  (owners included). A security change is audited as `account.require_mfa_set`,
+  everything else as `account.updated`.
+  """
   def update_account(%Account{} = account, attrs, %Subject{} = subject) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.manage_own_account_permission()
-           ),
+    changeset = Account.Changeset.update(account, attrs)
+
+    with :ok <- ensure_account_changes_permitted(changeset, subject),
          :ok <- ensure_subject_owns_account(subject, account) do
       Multi.new()
-      |> Multi.update(:account, Account.Changeset.update(account, attrs))
+      |> Multi.update(:account, changeset)
       |> Multi.insert(:audit, fn %{account: updated} ->
-        Audit.changeset(updated.id, "account.updated",
-          actor_kind: "user",
-          actor_id: subject.actor.id,
-          subject_kind: "account",
-          subject_id: updated.id,
-          subject_label: updated.name,
-          payload: %{name: updated.name, slug: updated.slug}
-        )
+        account_update_audit(updated, changeset, subject)
       end)
       |> Repo.commit_multi()
       |> case do
@@ -141,38 +146,43 @@ defmodule Emisar.Accounts do
     Account.Changeset.update(account, attrs)
   end
 
-  @doc """
-  Owner-only toggle for account-wide MFA enforcement. When flipped on,
-  every signed-in user without `mfa_enabled_at` is funneled to the
-  profile MFA-setup page by `EmisarWeb.UserAuth.on_mount(:ensure_mfa_compliant)`
-  until they enroll. Owners are explicitly NOT exempt — if you're the
-  one turning this on, you've already enrolled yourself (the UI gates
-  the toggle behind that). Audited as `account.require_mfa_set`.
-  """
-  def update_account_require_mfa(%Account{} = account, value, %Subject{} = subject)
-      when is_boolean(value) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.manage_security_settings_permission()
-           ),
-         :ok <- ensure_subject_owns_account(subject, account) do
-      Multi.new()
-      |> Multi.update(:account, Account.Changeset.update_security(account, %{require_mfa: value}))
-      |> Multi.insert(:audit, fn %{account: updated} ->
-        Audit.changeset(updated.id, "account.require_mfa_set",
-          actor_kind: "user",
-          actor_id: subject.actor.id,
-          subject_kind: "account",
-          subject_id: updated.id,
-          payload: %{require_mfa: value}
-        )
-      end)
-      |> Repo.commit_multi()
-      |> case do
-        {:ok, %{account: updated}} -> {:ok, updated}
-        {:error, reason} -> {:error, reason}
+  # Field-aware authorization: a security-setting change requires the
+  # owner-only permission on top of manage_own_account; a plain
+  # rename/rebrand only needs manage_own_account.
+  defp ensure_account_changes_permitted(%Ecto.Changeset{} = changeset, %Subject{} = subject) do
+    required =
+      if Map.has_key?(changeset.changes, :require_mfa) do
+        [
+          Authorizer.manage_own_account_permission(),
+          Authorizer.manage_security_settings_permission()
+        ]
+      else
+        [Authorizer.manage_own_account_permission()]
       end
+
+    Auth.Authorizer.ensure_has_permissions(subject, required)
+  end
+
+  # A require_mfa change is a security event; everything else is a plain
+  # account.updated. The UI never changes both in one request.
+  defp account_update_audit(%Account{} = account, %Ecto.Changeset{} = changeset, %Subject{} = subject) do
+    if Map.has_key?(changeset.changes, :require_mfa) do
+      Audit.changeset(account.id, "account.require_mfa_set",
+        actor_kind: "user",
+        actor_id: subject.actor.id,
+        subject_kind: "account",
+        subject_id: account.id,
+        payload: %{require_mfa: account.require_mfa}
+      )
+    else
+      Audit.changeset(account.id, "account.updated",
+        actor_kind: "user",
+        actor_id: subject.actor.id,
+        subject_kind: "account",
+        subject_id: account.id,
+        subject_label: account.name,
+        payload: %{name: account.name, slug: account.slug}
+      )
     end
   end
 

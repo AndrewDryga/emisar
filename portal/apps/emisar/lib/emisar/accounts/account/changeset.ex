@@ -3,24 +3,20 @@ defmodule Emisar.Accounts.Account.Changeset do
   alias Emisar.Accounts.Account
 
   @plans ~w(free team enterprise)
-  @fields ~w[name slug plan paddle_customer_id]a
+  @create_fields ~w[name slug plan paddle_customer_id]a
+  # update/2 may also flip the security settings (require_mfa); the
+  # context's field-aware permission check (Accounts.update_account/3)
+  # decides who may change which field.
+  @update_fields ~w[name slug plan paddle_customer_id require_mfa]a
 
   def create(attrs) do
     %Account{}
-    |> cast(attrs, @fields)
+    |> cast(attrs, @create_fields)
     |> changeset()
   end
 
   def update(%Account{} = account, attrs) do
-    account |> cast(attrs, @fields) |> changeset()
-  end
-
-  # Targeted update for security settings — owner-only, gated at the
-  # context layer. Kept separate from `update/2` so the broad field
-  # whitelist there can't accidentally let an admin flip require_mfa
-  # by smuggling the param in.
-  def update_security(%Account{} = account, attrs) do
-    account |> cast(attrs, [:require_mfa])
+    account |> cast(attrs, @update_fields) |> changeset()
   end
 
   def delete(%Account{} = account), do: change(account, deleted_at: now())

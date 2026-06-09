@@ -81,9 +81,9 @@ defmodule EmisarWeb.TeamLive do
          )}
 
       true ->
-        case Accounts.update_account_require_mfa(
+        case Accounts.update_account(
                socket.assigns.current_account,
-               value,
+               %{require_mfa: value},
                socket.assigns.current_subject
              ) do
           {:ok, account} ->
