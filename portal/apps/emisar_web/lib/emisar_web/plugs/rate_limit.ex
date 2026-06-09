@@ -74,16 +74,16 @@ defmodule EmisarWeb.Plugs.RateLimit do
 
   defp key_for(conn, :ip), do: client_ip(conn)
 
-  # The app sits behind fly-proxy, which sets x-forwarded-for (and which
-  # force_ssl already trusts via x-forwarded-proto). Use the first hop as the
-  # client; fall back to the socket peer in dev / direct connections.
+  # The app sits behind fly-proxy, which stamps the true client IP into
+  # `Fly-Client-IP` (and overwrites any client-supplied value, so it can't be
+  # forged). We deliberately do NOT trust `X-Forwarded-For`: fly *appends* the
+  # real client to it, so its leftmost entry is attacker-controlled — keying on
+  # that would let a caller rotate the bucket and walk straight past the limit.
+  # Fall back to the socket peer for dev / direct connections.
   defp client_ip(conn) do
-    case get_req_header(conn, "x-forwarded-for") do
-      [forwarded | _] ->
-        forwarded |> String.split(",") |> List.first() |> String.trim()
-
-      [] ->
-        conn.remote_ip |> :inet.ntoa() |> to_string()
+    case get_req_header(conn, "fly-client-ip") do
+      [ip | _] -> ip
+      [] -> conn.remote_ip |> :inet.ntoa() |> to_string()
     end
   end
 end

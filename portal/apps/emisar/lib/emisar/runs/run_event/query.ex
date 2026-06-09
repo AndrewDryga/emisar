@@ -31,6 +31,23 @@ defmodule Emisar.Runs.RunEvent.Query do
     where(q, [events: e], e.run_id in subquery(finished_run_ids))
   end
 
+  @doc """
+  A page of prunable event ids — events whose parent run finished before
+  `cutoff`, scoped to `account_id`, capped at `limit`. Drives the retention
+  worker's batched delete so a large backlog never becomes one long-locking
+  `DELETE`.
+  """
+  def prunable_ids(account_id, %DateTime{} = cutoff, limit) when is_integer(limit) do
+    all()
+    |> by_account_id(account_id)
+    |> with_run_finished_before(cutoff)
+    |> limit(^limit)
+    |> select([events: e], e.id)
+  end
+
+  def by_ids(q \\ all(), ids) when is_list(ids),
+    do: where(q, [events: e], e.id in ^ids)
+
   def by_kind(q, kind),
     do: where(q, [events: e], e.kind == ^kind)
 

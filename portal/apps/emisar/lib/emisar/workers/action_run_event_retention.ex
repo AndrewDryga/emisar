@@ -19,6 +19,13 @@ defmodule Emisar.Workers.ActionRunEventRetention do
   alias Emisar.Billing
   alias Emisar.Runs.RunEvent
 
+  require Logger
+
+  # A single account can carry a huge backlog (thousands of progress chunks per
+  # streaming run), so we delete in bounded batches by id rather than one
+  # unbounded DELETE that would take a long lock and bloat the table.
+  @batch_size 5_000
+
   @impl true
   def perform(%Oban.Job{}) do
     Account.Query.all()
@@ -30,18 +37,28 @@ defmodule Emisar.Workers.ActionRunEventRetention do
 
   defp prune_account(%Account{} = account) do
     plan = Billing.plan(account.plan) || Billing.plan("free")
-    days = plan.audit_retention_days
-    cutoff = DateTime.utc_now() |> DateTime.add(-days * 86_400, :second)
+    cutoff = DateTime.utc_now() |> DateTime.add(-plan.audit_retention_days * 86_400, :second)
 
-    {n, _} =
-      RunEvent.Query.all()
-      |> RunEvent.Query.by_account_id(account.id)
-      |> RunEvent.Query.with_run_finished_before(cutoff)
-      |> Repo.delete_all()
+    pruned = delete_in_batches(account.id, cutoff, 0)
 
-    if n > 0 do
-      require Logger
-      Logger.info("action_run_event retention: pruned #{n} events from account #{account.id}")
+    if pruned > 0 do
+      Logger.info(
+        "action_run_event retention: pruned #{pruned} events from account #{account.id}"
+      )
+    end
+  end
+
+  # Delete ≤ @batch_size prunable events by id, looping until a batch comes back
+  # short (the prunable set is drained). Stable across iterations: new events
+  # are only ever written for current runs, never for already-finished ones.
+  defp delete_in_batches(account_id, cutoff, total) do
+    ids = RunEvent.Query.prunable_ids(account_id, cutoff, @batch_size) |> Repo.all()
+    {n, _} = RunEvent.Query.by_ids(ids) |> Repo.delete_all()
+
+    if length(ids) < @batch_size do
+      total + n
+    else
+      delete_in_batches(account_id, cutoff, total + n)
     end
   end
 end
