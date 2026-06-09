@@ -221,9 +221,11 @@ defmodule Emisar.Accounts do
              subject,
              Authorizer.view_own_account_permission()
            ) do
+      opts = Keyword.put_new(opts, :preload, [:account, :user])
+
       Membership.Query.all()
       |> Authorizer.for_subject(subject)
-      |> Repo.list(Membership.Query, Keyword.put_new(opts, :preload, [:account, :user]))
+      |> Repo.list(Membership.Query, opts)
     end
   end
 
