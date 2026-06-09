@@ -44,7 +44,7 @@ defmodule EmisarWeb.MarketingHTML do
      "grafana shows the last 7 days of metrics flat — only the last 12 minutes are alive. the process is healthy and ingesting. where did 33 hours of data go?"},
     {9, "llm", "cc-spin", "Investigating"},
     {10, "llm", "cc-text",
-     "That pattern means the storage moved out from under VictoriaMetrics. I'll walk the layers through emisar — declared actions, no SSH."},
+     "The last 12 minutes on top of a flat week means VictoriaMetrics came back on fresh storage — something happened to its old volume. Let me trace it: the LUN, then the kernel log at mount time, then the CSI driver."},
     {11, "llm", "cc-tool",
      "emisar · storage.csi_volume_ls(volume: \"vm-data\", reason: \"inspect the LUN behind VictoriaMetrics\")"},
     {12, "llm", "cc-result", "drwx------ 2 root root 16384 lost+found"},
@@ -83,7 +83,7 @@ defmodule EmisarWeb.MarketingHTML do
     {28, "llm", "cc-result", "alloc a1b2c3d4 stopped · writes halted · LUN frozen for forensics"},
     {29, "llm", "cc-spin", "Writing the fix"},
     {30, "llm", "cc-text",
-     "Bleed stopped on your one approval. A host-side fix wouldn't survive the next drain, so the durable one goes where it belongs — a Terraform PR for you to review."},
+     "Writes are halted. A fix on the host won't survive the next node drain — it has to live in Terraform. Opening a PR against the infra repo."},
     {31, "llm", "cc-tool",
      "git · open PR \"csi: never auto-format on blkid-empty (the 33h wipe)\""},
     {32, "llm", "cc-result", "democratic-csi-node.nomad.hcl"},
@@ -101,7 +101,7 @@ defmodule EmisarWeb.MarketingHTML do
     {41, "llm", "cc-result-cont",
      "+ also: multipath-watchdog.nomad.hcl · format-new-volume.sh (xfs, no overwrite) · alerts/multipath.yaml"},
     {42, "llm", "cc-text",
-     "Done — investigated through declared actions, stopped the bleed behind one approval, durable fix handed back as a diff you merge, every step on the audit trail."}
+     "The 33 hours aren't coming back — the LUN was reformatted and overwritten before we stopped the writes. What's done: writes halted, the disk frozen for forensics, and a PR that turns a blkid-empty read into a loud failure instead of a silent mkfs. Merge it before the next drain."}
   ]
 
   @doc """

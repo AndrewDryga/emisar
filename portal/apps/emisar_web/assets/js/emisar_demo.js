@@ -16,9 +16,11 @@
 
 const CHAR_MS = 14
 
-// Dwell on a tab hop so the viewer registers the switch between the host
-// and the LLM panes before the next line lands.
-const TAB_SWITCH_MS = 650
+// A tab hop needs real time: first hold on the current pane so the viewer
+// finishes reading it, then switch and let the new pane settle before the
+// next line lands. A single 650ms beat read too fast to follow.
+const TAB_HOLD_MS = 1300
+const TAB_SETTLE_MS = 750
 
 // Lines whose body is typed out character-by-character (the rest stream in).
 const TYPED = new Set(["srv-prompt", "cc-user"])
@@ -137,13 +139,17 @@ export function initEmisarDemo() {
       const kind = line.dataset.kind || ""
       const pause = PAUSE[kind] != null ? PAUSE[kind] : 320
 
-      // Switching panes? Show the new tab and dwell a beat before the line
-      // lands, so the hop between host and LLM is visible.
+      // Switching panes? Hold on the current pane so the viewer can finish
+      // reading it, then switch and let the new pane settle before the line
+      // lands — otherwise the story yanks away mid-sentence.
       if (line.dataset.tab !== shownTab) {
-        shownTab = line.dataset.tab
-        showTab(shownTab)
-        scrollToEnd()
-        later(TAB_SWITCH_MS, () => render(line, kind, pause))
+        later(TAB_HOLD_MS, () => {
+          if (!playing) return
+          shownTab = line.dataset.tab
+          showTab(shownTab)
+          scrollToEnd()
+          later(TAB_SETTLE_MS, () => render(line, kind, pause))
+        })
       } else {
         render(line, kind, pause)
       }
