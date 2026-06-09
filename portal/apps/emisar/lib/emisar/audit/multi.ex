@@ -13,7 +13,7 @@ defmodule Emisar.Audit.Multi do
   """
 
   alias Ecto.Multi
-  alias Emisar.{Accounts, Audit}
+  alias Emisar.Audit
   alias Emisar.Accounts.User
 
   @doc """
@@ -70,25 +70,11 @@ defmodule Emisar.Audit.Multi do
 
     Multi.run(multi, name, fn _repo, changes ->
       resolved_user = user_fn.(changes)
+      attrs = extra |> maybe_put_payload(payload_fn, changes) |> Map.new()
 
-      case Accounts.fetch_membership_for_session(resolved_user, nil) do
-        {:ok, membership} ->
-          attrs =
-            [
-              actor_kind: "user",
-              actor_id: resolved_user.id,
-              subject_kind: "user",
-              subject_id: resolved_user.id,
-              subject_label: resolved_user.email
-            ]
-            |> Keyword.merge(extra)
-            |> maybe_put_payload(payload_fn, changes)
-
-          Audit.changeset(membership.account_id, event_type, Map.new(attrs))
-          |> Emisar.Repo.insert()
-
-        {:error, :not_found} ->
-          {:ok, nil}
+      case Audit.user_changeset(resolved_user, event_type, attrs) do
+        %Ecto.Changeset{} = changeset -> Emisar.Repo.insert(changeset)
+        nil -> {:ok, nil}
       end
     end)
   end

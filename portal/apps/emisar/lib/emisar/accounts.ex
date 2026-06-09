@@ -949,17 +949,17 @@ defmodule Emisar.Accounts do
   Update the caller's own profile fields. Self-service — the user is the
   subject's own actor; admins use `update_user_as_admin/3` for teammates.
   """
-  def update_user_profile(attrs, %Subject{actor: %User{} = user}) do
-    Multi.new()
-    |> Multi.update(:user, User.Changeset.profile(user, attrs))
-    |> Audit.Multi.log_for_user(:audit, user, "user.profile_updated",
-      payload_fn: fn %{user: updated} -> %{full_name: updated.full_name} end
+  def update_user_profile(attrs, %Subject{actor: %User{id: user_id}}) do
+    User.Query.not_deleted()
+    |> User.Query.by_id(user_id)
+    |> Repo.fetch_and_update(User.Query,
+      with: &User.Changeset.profile(&1, attrs),
+      audit: fn updated ->
+        Audit.user_changeset(updated, "user.profile_updated",
+          payload: %{full_name: updated.full_name}
+        )
+      end
     )
-    |> Repo.commit_multi()
-    |> case do
-      {:ok, %{user: updated}} -> {:ok, updated}
-      {:error, reason} -> {:error, reason}
-    end
   end
 
   @doc """

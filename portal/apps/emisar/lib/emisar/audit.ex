@@ -159,6 +159,21 @@ defmodule Emisar.Audit do
    subject_id: user.id, subject_label: user.email`).
   """
   def log_for_user(%Emisar.Accounts.User{} = user, event_type, attrs \\ %{}) do
+    case user_changeset(user, event_type, attrs) do
+      %Ecto.Changeset{} = changeset -> Repo.insert(changeset)
+      nil -> :ok
+    end
+  end
+
+  @doc """
+  Audit-event changeset for a user-scoped event, with the user's primary
+  membership resolved to `account_id`. Build-only (no insert) so it
+  composes into a parent transaction — `Repo.fetch_and_update`'s `:audit`
+  and the `Audit.Multi` helpers insert it atomically with the mutation.
+  Returns `nil` (treated as "skip") when the user has no active membership.
+  Same defaults + override semantics as `log_for_user/3`.
+  """
+  def user_changeset(%Emisar.Accounts.User{} = user, event_type, attrs \\ %{}) do
     case Emisar.Accounts.fetch_membership_for_session(user, nil) do
       {:ok, membership} ->
         defaults = %{
@@ -169,10 +184,10 @@ defmodule Emisar.Audit do
           subject_label: user.email
         }
 
-        log(membership.account_id, event_type, Map.merge(defaults, normalize(attrs)))
+        changeset(membership.account_id, event_type, Map.merge(defaults, normalize(attrs)))
 
       {:error, :not_found} ->
-        :ok
+        nil
     end
   end
 
