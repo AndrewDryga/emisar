@@ -1,67 +1,94 @@
 defmodule EmisarWeb.Permissions do
   @moduledoc """
-  Role-based authorization for LiveView event handlers and template
-  visibility. The role hierarchy is owner > admin > operator > viewer.
+  Permission-based authorization for LiveView event handlers and template
+  visibility.
 
       can?(socket, :manage_team)
       can?(socket, :dispatch_run)
 
-  Each rule is matched against `socket.assigns.current_membership.role`.
-  Missing membership → no permissions. The fallback `_` clause returns
-  `false` so anything new defaults to deny until we add it.
+  Each UI action maps to the backend permission it requires; the check is a
+  membership of the caller's permission set. The role → permission mapping
+  itself lives once, in the context Authorizers — this module never branches
+  on a role name, so it can't drift from the backend the way a duplicated
+  role table would.
+
+  Reads `current_subject` (its permissions are computed once at mount) when
+  present, falling back to `permissions_for(current_membership.role)`. Missing
+  both → no permissions. An unknown action maps to no permission, so anything
+  new defaults to deny until it's added here.
   """
 
-  alias Emisar.Accounts.Membership
+  alias Emisar.Auth.{Authorizer, Subject}
 
-  @type socket_or_assigns ::
-          %{assigns: %{current_membership: Membership.t() | nil}}
-          | %{current_membership: Membership.t() | nil}
+  alias Emisar.{
+    Accounts,
+    ApiKeys,
+    Approvals,
+    Audit,
+    Billing,
+    Catalog,
+    Policies,
+    Runbooks,
+    Runners,
+    Runs
+  }
+
+  alias Emisar.Accounts.Membership
 
   # -- Permission catalogue -------------------------------------------
 
   @doc """
-  Returns true if the caller may perform `action`. The caller must have
-  loaded `current_membership` (the UserAuth plug does this for /app routes).
+  Returns true if the caller's permissions include the one `action` requires.
+  The caller must have a `current_subject` or `current_membership` in assigns
+  (the UserAuth plug loads these for /app routes).
   """
   def can?(socket_or_assigns, action) do
-    role = role(socket_or_assigns)
-    role && allow?(role, action)
+    permission = permission_for(action)
+    permissions = permissions(socket_or_assigns)
+
+    not is_nil(permission) and not is_nil(permissions) and
+      MapSet.member?(permissions, permission)
   end
 
-  # owner-only
-  defp allow?(:owner, :manage_billing), do: true
-  defp allow?(:owner, :manage_subscription), do: true
+  # UI verb → the backend permission it requires. The role coverage of each
+  # permission is defined by the context Authorizers' list_permissions_for_role/1.
+  defp permission_for(:manage_billing), do: Billing.Authorizer.manage_billing_permission()
+  defp permission_for(:manage_subscription), do: Billing.Authorizer.manage_billing_permission()
 
-  # admin+
-  defp allow?(role, :manage_team) when role in [:owner, :admin], do: true
-  defp allow?(role, :manage_auth_keys) when role in [:owner, :admin], do: true
-  defp allow?(role, :manage_api_keys) when role in [:owner, :admin], do: true
-  defp allow?(role, :manage_policies) when role in [:owner, :admin], do: true
-  defp allow?(role, :manage_runbooks) when role in [:owner, :admin], do: true
-  defp allow?(role, :manage_runners) when role in [:owner, :admin], do: true
-  defp allow?(role, :manage_packs) when role in [:owner, :admin], do: true
+  defp permission_for(:manage_account_security),
+    do: Accounts.Authorizer.manage_security_settings_permission()
 
-  # operator+
-  defp allow?(role, :dispatch_run) when role in [:owner, :admin, :operator], do: true
-  defp allow?(role, :cancel_run) when role in [:owner, :admin, :operator], do: true
-  defp allow?(role, :decide_approval) when role in [:owner, :admin, :operator], do: true
-  defp allow?(role, :execute_runbook) when role in [:owner, :admin, :operator], do: true
-
-  # viewer+
-  defp allow?(role, :view) when role in [:owner, :admin, :operator, :viewer], do: true
-  defp allow?(role, :view_audit) when role in [:owner, :admin, :operator, :viewer], do: true
-  defp allow?(role, :edit_own_profile) when role in [:owner, :admin, :operator, :viewer], do: true
-
-  # default-deny
-  defp allow?(_role, _action), do: false
+  defp permission_for(:manage_team), do: Accounts.Authorizer.manage_team_permission()
+  defp permission_for(:manage_auth_keys), do: Runners.Authorizer.manage_auth_keys_permission()
+  defp permission_for(:manage_api_keys), do: ApiKeys.Authorizer.manage_api_keys_permission()
+  defp permission_for(:manage_policies), do: Policies.Authorizer.manage_policies_permission()
+  defp permission_for(:manage_runbooks), do: Runbooks.Authorizer.manage_runbooks_permission()
+  defp permission_for(:manage_runners), do: Runners.Authorizer.manage_runners_permission()
+  defp permission_for(:manage_packs), do: Catalog.Authorizer.manage_catalog_permission()
+  defp permission_for(:dispatch_run), do: Runs.Authorizer.dispatch_run_permission()
+  defp permission_for(:cancel_run), do: Runs.Authorizer.cancel_run_permission()
+  defp permission_for(:decide_approval), do: Approvals.Authorizer.decide_approval_permission()
+  defp permission_for(:execute_runbook), do: Runs.Authorizer.dispatch_run_permission()
+  defp permission_for(:view), do: Accounts.Authorizer.view_own_account_permission()
+  defp permission_for(:view_audit), do: Audit.Authorizer.view_audit_permission()
+  defp permission_for(:edit_own_profile), do: Accounts.Authorizer.edit_own_profile_permission()
+  defp permission_for(_), do: nil
 
   # -- Internals ------------------------------------------------------
 
-  defp role(%{assigns: %{current_membership: %Membership{role: r}}}), do: r
-  defp role(%{current_membership: %Membership{role: r}}), do: r
-  defp role(_), do: nil
+  defp permissions(%{assigns: assigns}), do: permissions(assigns)
+  defp permissions(%{current_subject: %Subject{permissions: perms}}), do: perms
+
+  defp permissions(%{current_membership: %Membership{role: role}}),
+    do: Authorizer.permissions_for(role)
+
+  defp permissions(_), do: nil
 
   defp denial_message(:manage_billing), do: "Only owners can manage billing."
+
+  defp denial_message(:manage_account_security),
+    do: "Only the account owner can change security settings."
+
   defp denial_message(:manage_subscription), do: "Only owners can change the subscription."
   defp denial_message(:manage_team), do: "Only owners and admins can manage the team."
   defp denial_message(:manage_auth_keys), do: "Only owners and admins can manage auth keys."

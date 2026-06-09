@@ -66,7 +66,7 @@ defmodule EmisarWeb.TeamLive do
     value = not socket.assigns.current_account.require_mfa
 
     cond do
-      socket.assigns.current_role != :owner ->
+      not Permissions.can?(socket, :manage_account_security) ->
         {:noreply, put_flash(socket, :error, "Only the account owner can change this setting.")}
 
       # Prevent owners from locking themselves out — if they don't have
@@ -417,7 +417,7 @@ defmodule EmisarWeb.TeamLive do
             </div>
 
             <%= cond do %>
-              <% @current_role == :owner -> %>
+              <% Permissions.can?(assigns, :manage_account_security) -> %>
                 <button
                   type="button"
                   phx-click="toggle_require_mfa"
