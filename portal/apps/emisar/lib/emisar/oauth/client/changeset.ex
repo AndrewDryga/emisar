@@ -13,6 +13,7 @@ defmodule Emisar.OAuth.Client.Changeset do
   def register(attrs) do
     %Client{}
     |> cast(attrs, @cast_fields)
+    |> validate_length(:client_name, max: 200)
     |> validate_redirect_uris()
   end
 

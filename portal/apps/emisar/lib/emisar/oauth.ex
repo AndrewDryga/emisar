@@ -18,7 +18,7 @@ defmodule Emisar.OAuth do
     * refresh token      — `emor-…`  (30 days, rotated on use)
   """
   alias Emisar.{Accounts, ApiKeys, Crypto, Repo}
-  alias Emisar.Auth.Subject
+  alias Emisar.Auth.{Authorizer, Subject}
   alias Emisar.OAuth.{AuthorizationCode, Client, Token}
 
   @code_ttl_s 60
@@ -75,36 +75,47 @@ defmodule Emisar.OAuth do
   @spec issue_code(Subject.t(), Client.t(), map()) ::
           {:ok, String.t()} | {:error, term()}
   def issue_code(%Subject{} = subject, %Client{} = client, params) do
-    account = subject.account
-    user_id = Subject.actor_id(subject)
-    membership_id = subject.membership_id
-    key_name = "#{client.client_name || "MCP client"} (OAuth)"
+    # The backing key carries actions:read + actions:execute, so consenting
+    # is exactly as privileged as minting an API key. Gate it on the same
+    # permission the manual key-issue path requires — otherwise a read-only
+    # viewer could walk the consent flow into an execute-capable token they
+    # could never mint in-product (privilege escalation).
+    with :ok <-
+           Authorizer.ensure_has_permissions(
+             subject,
+             ApiKeys.Authorizer.issue_quick_key_permission()
+           ) do
+      account = subject.account
+      user_id = Subject.actor_id(subject)
+      membership_id = subject.membership_id
+      key_name = "#{client.client_name || "MCP client"} (OAuth)"
 
-    Repo.transaction(fn ->
-      {:ok, key} =
-        ApiKeys.create_backing_key(account.id, user_id, membership_id, key_name)
+      Repo.transaction(fn ->
+        {:ok, key} =
+          ApiKeys.create_backing_key(account.id, user_id, membership_id, key_name)
 
-      raw = "emoc-" <> rand()
+        raw = "emoc-" <> rand()
 
-      {:ok, _code} =
-        %{
-          code_hash: hash(raw),
-          client_id: client.id,
-          account_id: account.id,
-          membership_id: membership_id,
-          api_key_id: key.id,
-          redirect_uri: params["redirect_uri"],
-          code_challenge: params["code_challenge"],
-          code_challenge_method: params["code_challenge_method"] || "S256",
-          scope: params["scope"] || "mcp offline_access",
-          resource: params["resource"],
-          expires_at: secs_from_now(@code_ttl_s)
-        }
-        |> AuthorizationCode.Changeset.create()
-        |> Repo.insert()
+        {:ok, _code} =
+          %{
+            code_hash: hash(raw),
+            client_id: client.id,
+            account_id: account.id,
+            membership_id: membership_id,
+            api_key_id: key.id,
+            redirect_uri: params["redirect_uri"],
+            code_challenge: params["code_challenge"],
+            code_challenge_method: params["code_challenge_method"] || "S256",
+            scope: params["scope"] || "mcp offline_access",
+            resource: params["resource"],
+            expires_at: secs_from_now(@code_ttl_s)
+          }
+          |> AuthorizationCode.Changeset.create()
+          |> Repo.insert()
 
-      raw
-    end)
+        raw
+      end)
+    end
   end
 
   # -- Token endpoint -------------------------------------------------
@@ -127,6 +138,7 @@ defmodule Emisar.OAuth do
       with %AuthorizationCode{} = code <-
              AuthorizationCode.Query.all()
              |> AuthorizationCode.Query.by_code_hash(hash(raw_code))
+             |> AuthorizationCode.Query.lock_for_update()
              |> Repo.peek(),
            :ok <- check_code_live(code),
            :ok <- check(code.client_id == client_id, :invalid_grant),

@@ -65,6 +65,26 @@ defmodule Emisar.OAuthTest do
     end
   end
 
+  describe "issue_code/3 authorization gate" do
+    test "a read-only viewer cannot consent — the OAuth flow can't mint an execute token they couldn't issue manually" do
+      {_owner, account, _subject} = owner_subject_fixture()
+      client = register!()
+      {_verifier, challenge} = pkce()
+      # A viewer has view_api_keys but not issue_quick_key, so they can't mint
+      # an API key in-product — and must not be able to via consent either.
+      viewer = subject_for(user_fixture(), account, role: :viewer)
+
+      assert {:error, :unauthorized} =
+               OAuth.issue_code(viewer, client, %{
+                 "redirect_uri" => @redirect,
+                 "code_challenge" => challenge,
+                 "code_challenge_method" => "S256",
+                 "scope" => "mcp offline_access",
+                 "resource" => @resource
+               })
+    end
+  end
+
   describe "authorization-code flow" do
     setup do
       {_user, account, subject} = owner_subject_fixture()

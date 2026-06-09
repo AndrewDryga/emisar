@@ -13,6 +13,8 @@ defmodule EmisarWeb.Mcp.Service do
   modules — `Catalog`, `Runners`, `Runs`, `Accounts`.
   """
 
+  require Logger
+
   alias Emisar.{Accounts, Catalog, Runbooks, Runners, Runs}
   alias EmisarWeb.Mcp.{Idempotency, ToolSchema}
 
@@ -696,16 +698,21 @@ defmodule EmisarWeb.Mcp.Service do
   defp runner_result_to_json({name, {:error, code}, _runner}, _subject) when is_atom(code),
     do: error_payload(name, code)
 
-  defp runner_result_to_json({name, other, _runner}, _subject),
-    do: %{
+  defp runner_result_to_json({name, other, _runner}, _subject) do
+    # Log the unknown term server-side for debugging, but never reflect the
+    # internal shape back to the LLM/client — it could carry internal ids or
+    # struct fields. Static message only.
+    Logger.error("MCP dispatch: unrecognized runner result for #{name}: #{inspect(other)}")
+
+    %{
       runner: name,
       status: "error",
       error: "unknown",
-      details: inspect(other),
       message:
-        "Unrecognized error from the cloud. Report the `details` string to Emisar support; " <>
-          "the LLM can't recover from this on its own."
+        "Unrecognized error from the cloud — the LLM can't recover from this on its own. " <>
+          "Report it to Emisar support."
     }
+  end
 
   defp maybe_offline_warning(payload, nil), do: payload
 

@@ -32,6 +32,7 @@ defmodule EmisarWeb.McpController do
   """
 
   use EmisarWeb, :controller
+  require Logger
 
   alias Emisar.{Accounts, Catalog, Runners, Runs}
   alias EmisarWeb.Mcp.{Auth, Idempotency, ToolSchema}
@@ -728,19 +729,22 @@ defmodule EmisarWeb.McpController do
   defp runner_result_to_json({name, {:error, code}, _runner}, _subject) when is_atom(code),
     do: error_payload(name, code)
 
-  # Last-resort catchall — emits the term as text so logs still capture
-  # the unknown shape, but with a clear instruction that this case
-  # needs an Emisar-side fix rather than something the LLM can resolve.
-  defp runner_result_to_json({name, other, _runner}, _subject),
-    do: %{
+  # Last-resort catchall — log the unknown term server-side for debugging,
+  # but never reflect the internal shape back to the LLM/client (it could
+  # carry internal ids/struct fields). This case needs an Emisar-side fix,
+  # not something the LLM can resolve.
+  defp runner_result_to_json({name, other, _runner}, _subject) do
+    Logger.error("MCP dispatch: unrecognized runner result for #{name}: #{inspect(other)}")
+
+    %{
       runner: name,
       status: "error",
       error: "unknown",
-      details: inspect(other),
       message:
-        "Unrecognized error from the cloud. Report the `details` string to Emisar support; " <>
-          "the LLM can't recover from this on its own."
+        "Unrecognized error from the cloud — the LLM can't recover from this on its own. " <>
+          "Report it to Emisar support."
     }
+  end
 
   # A successfully-queued run against an offline runner sits in :pending
   # until the runner reconnects. Surface that so the LLM warns the user

@@ -84,6 +84,13 @@ defmodule EmisarWeb.OAuthController do
             {:ok, code} ->
               redirect_back(conn, redirect_uri, %{code: code, state: state})
 
+            {:error, :unauthorized} ->
+              render_invalid(
+                conn,
+                "Your role can't connect an MCP client. Connecting one mints an API key, " <>
+                  "which requires key-issue permission — ask an account admin to connect it."
+              )
+
             {:error, _reason} ->
               redirect_error(conn, redirect_uri, "server_error", state)
           end
