@@ -839,10 +839,10 @@ defmodule Emisar.Accounts do
     now = DateTime.utc_now() |> DateTime.truncate(:microsecond)
 
     Multi.new()
-    |> Multi.update(
-      :user,
-      User.Changeset.registration(fetch_user_by_id!(membership.user_id), user_attrs)
-    )
+    |> Multi.run(:existing_user, fn _repo, _changes -> fetch_user_by_id(membership.user_id) end)
+    |> Multi.update(:user, fn %{existing_user: existing_user} ->
+      User.Changeset.registration(existing_user, user_attrs)
+    end)
     |> Multi.update(:confirmed_user, fn %{user: u} -> User.Changeset.confirm(u) end)
     |> Multi.update(
       :membership,
