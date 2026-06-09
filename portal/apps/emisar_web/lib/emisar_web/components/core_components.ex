@@ -2276,7 +2276,7 @@ defmodule EmisarWeb.CoreComponents do
 
           <div class="grid grid-cols-2 gap-8 sm:grid-cols-3 lg:col-span-3 lg:grid-cols-5">
             <div>
-              <h4 class="text-xs font-semibold uppercase tracking-wider text-zinc-400">Product</h4>
+              <h2 class="text-xs font-semibold uppercase tracking-wider text-zinc-400">Product</h2>
               <ul class="mt-4 space-y-3 text-sm">
                 <li>
                   <.link href={~p"/packs"} class="text-zinc-400 hover:text-zinc-100">Packs</.link>
@@ -2306,7 +2306,7 @@ defmodule EmisarWeb.CoreComponents do
             </div>
 
             <div>
-              <h4 class="text-xs font-semibold uppercase tracking-wider text-zinc-400">Use cases</h4>
+              <h2 class="text-xs font-semibold uppercase tracking-wider text-zinc-400">Use cases</h2>
               <ul class="mt-4 space-y-3 text-sm">
                 <li>
                   <.link href={~p"/use-cases/cassandra-ops"} class="text-zinc-400 hover:text-zinc-100">
@@ -2330,7 +2330,7 @@ defmodule EmisarWeb.CoreComponents do
             </div>
 
             <div>
-              <h4 class="text-xs font-semibold uppercase tracking-wider text-zinc-400">Compare</h4>
+              <h2 class="text-xs font-semibold uppercase tracking-wider text-zinc-400">Compare</h2>
               <ul class="mt-4 space-y-3 text-sm">
                 <li>
                   <.link href={~p"/compare/raw-ssh-for-ai"} class="text-zinc-400 hover:text-zinc-100">
@@ -2349,7 +2349,7 @@ defmodule EmisarWeb.CoreComponents do
             </div>
 
             <div>
-              <h4 class="text-xs font-semibold uppercase tracking-wider text-zinc-400">Company</h4>
+              <h2 class="text-xs font-semibold uppercase tracking-wider text-zinc-400">Company</h2>
               <ul class="mt-4 space-y-3 text-sm">
                 <li>
                   <.link href={~p"/about"} class="text-zinc-400 hover:text-zinc-100">About</.link>
@@ -2385,7 +2385,7 @@ defmodule EmisarWeb.CoreComponents do
             </div>
 
             <div>
-              <h4 class="text-xs font-semibold uppercase tracking-wider text-zinc-400">Legal</h4>
+              <h2 class="text-xs font-semibold uppercase tracking-wider text-zinc-400">Legal</h2>
               <ul class="mt-4 space-y-3 text-sm">
                 <li>
                   <.link href={~p"/privacy"} class="text-zinc-400 hover:text-zinc-100">Privacy</.link>
