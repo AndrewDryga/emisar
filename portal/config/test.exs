@@ -66,3 +66,8 @@ config :emisar_web, enable_prometheus_exporter: false
 # Disable Sentry uploads in tests — no DSN means the client short-
 # circuits before any HTTP call.
 config :sentry, dsn: nil
+
+# Rate limiting is disabled in tests so the fast suite doesn't trip the
+# shared fixed-window counters; `EmisarWeb.RateLimiter.check/3` is unit-tested
+# directly instead (see rate_limiter_test.exs).
+config :emisar_web, rate_limit_enabled: false

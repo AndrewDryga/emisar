@@ -35,6 +35,10 @@ defmodule EmisarWeb.McpRpcController do
   @protocol_version "2024-11-05"
   @server_name "emisar"
 
+  # A leaked key is the abuse vector — cap per key (falls back to IP for
+  # unauthenticated hammering). 300/min is generous for a real LLM agent.
+  plug EmisarWeb.Plugs.RateLimit, bucket: "mcp", limit: 300, window_ms: 60_000, by: :bearer
+
   plug :authenticate
 
   # POST /api/mcp/rpc

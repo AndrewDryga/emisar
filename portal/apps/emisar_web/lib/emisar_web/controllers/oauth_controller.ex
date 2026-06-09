@@ -26,6 +26,14 @@ defmodule EmisarWeb.OAuthController do
   # Auth surface — keep it out of search indexes.
   plug :put_noindex when action in [:authorize, :authorize_submit]
 
+  # Unauthenticated, abuse-prone: /register INSERTs a client row per call and
+  # /token is a credential-exchange brute-force surface. Cap per IP.
+  plug EmisarWeb.Plugs.RateLimit,
+       [bucket: "oauth_register", limit: 20, window_ms: 3_600_000] when action == :register
+
+  plug EmisarWeb.Plugs.RateLimit,
+       [bucket: "oauth_token", limit: 60, window_ms: 60_000] when action == :token
+
   defp put_noindex(conn, _opts), do: assign(conn, :noindex, true)
 
   # -- Dynamic Client Registration (RFC 7591) -------------------------

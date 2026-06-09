@@ -41,6 +41,10 @@ defmodule EmisarWeb.McpController do
 
   alias EmisarWeb.Mcp.{Auth, Idempotency, Service}
 
+  # A leaked key is the abuse vector — cap per key (falls back to IP for
+  # unauthenticated hammering). 300/min is generous for a real LLM agent.
+  plug EmisarWeb.Plugs.RateLimit, bucket: "mcp", limit: 300, window_ms: 60_000, by: :bearer
+
   plug :authenticate
   plug :require_scope, "actions:read" when action in [:list_runners, :list_tools, :get_run]
   plug :require_scope, "actions:execute" when action in [:run_tool]

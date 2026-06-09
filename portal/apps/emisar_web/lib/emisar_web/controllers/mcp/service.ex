@@ -23,7 +23,9 @@ defmodule EmisarWeb.Mcp.Service do
   # JSON-RPC equivalent.
   @max_runners_per_call 16
   @max_wait_ms 60_000
-  @max_get_run_wait_ms 300_000
+  # Cap a long-poll at 90s so a `wait_for_run` can't pin a request process for
+  # five minutes; clients re-poll if the run is still running.
+  @max_get_run_wait_ms 90_000
   @poll_interval_ms 200
 
   @terminal_statuses ~w(success failed error validation_failed unknown_action cancelled timed_out denied)
