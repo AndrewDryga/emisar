@@ -22,9 +22,6 @@ defmodule Emisar.Accounts.Membership.Query do
   def by_role(queryable, role),
     do: where(queryable, [memberships: m], m.role == ^role)
 
-  def by_roles(queryable, roles) when is_list(roles),
-    do: where(queryable, [memberships: m], m.role in ^roles)
-
   def by_account_and_user(queryable, account_id, user_id) do
     queryable
     |> where([memberships: m], m.account_id == ^account_id and m.user_id == ^user_id)
