@@ -285,32 +285,32 @@ defmodule Emisar.AccountsTest do
     end
   end
 
-  describe "update_user_email/4" do
+  describe "update_user_email/3" do
     test "updates the email when the current password verifies" do
       password = "current-password-12-chars"
       user = user_fixture(password: password)
-      subject = Emisar.Auth.Subject.system()
+      subject = %Emisar.Auth.Subject{actor: user}
 
       new = "new-#{System.unique_integer([:positive])}@example.test"
-      assert {:ok, updated} = Accounts.update_user_email(user, new, password, subject)
+      assert {:ok, updated} = Accounts.update_user_email(new, password, subject)
       assert updated.email == new
     end
 
     test "refuses when the current password is wrong" do
       user = user_fixture()
-      subject = Emisar.Auth.Subject.system()
+      subject = %Emisar.Auth.Subject{actor: user}
 
       assert {:error, :invalid_current_password} =
-               Accounts.update_user_email(user, "x@y.test", "not-the-password", subject)
+               Accounts.update_user_email("x@y.test", "not-the-password", subject)
     end
 
     test "rejects a malformed email even with the right password" do
       password = "right-password-12-chars"
       user = user_fixture(password: password)
-      subject = Emisar.Auth.Subject.system()
+      subject = %Emisar.Auth.Subject{actor: user}
 
       assert {:error, %Ecto.Changeset{}} =
-               Accounts.update_user_email(user, "not-an-email", password, subject)
+               Accounts.update_user_email("not-an-email", password, subject)
     end
   end
 

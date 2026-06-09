@@ -59,11 +59,7 @@ defmodule EmisarWeb.ProfileLive do
   end
 
   def handle_event("save_profile", %{"profile" => params}, socket) do
-    case Accounts.update_user_profile(
-           socket.assigns.current_user,
-           params,
-           socket.assigns.current_subject
-         ) do
+    case Accounts.update_user_profile(params, socket.assigns.current_subject) do
       {:ok, updated} ->
         {:noreply,
          socket
@@ -86,11 +82,10 @@ defmodule EmisarWeb.ProfileLive do
   end
 
   def handle_event("save_email", %{"email" => params}, socket) do
-    user = socket.assigns.current_user
     new_email = String.trim(params["email"] || "")
     current = params["current_password"] || ""
 
-    case Accounts.update_user_email(user, new_email, current, socket.assigns.current_subject) do
+    case Accounts.update_user_email(new_email, current, socket.assigns.current_subject) do
       {:ok, updated} ->
         {:noreply,
          socket
@@ -130,7 +125,7 @@ defmodule EmisarWeb.ProfileLive do
     changeset = Accounts.change_user_password_form(user, params)
 
     if changeset.valid? do
-      case Accounts.change_user_password(user, current, new, subject) do
+      case Accounts.change_user_password(current, new, subject) do
         {:ok, _updated} ->
           # A successful password change blows the old credential — log out
           # every other device immediately, both at the DB layer (cookie no

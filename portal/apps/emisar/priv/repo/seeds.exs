@@ -59,7 +59,7 @@ user =
       u
 
     {:ok, %User{full_name: nil} = u} ->
-      {:ok, u} = Accounts.update_user_profile(u, %{full_name: "Demo User"}, Subject.system())
+      {:ok, u} = Accounts.update_user_profile(%{full_name: "Demo User"}, %Subject{actor: u})
       u
 
     {:ok, %User{} = u} ->
@@ -114,7 +114,7 @@ invite_member = fn email, full_name, role ->
       {:ok, %{user: invited, membership: m}} =
         Accounts.invite_user_to_account(email, role, owner_subject)
 
-      {:ok, _u} = Accounts.update_user_profile(invited, %{full_name: full_name}, system_subject)
+      {:ok, _u} = Accounts.update_user_profile(%{full_name: full_name}, %Subject{actor: invited})
       {:ok, confirmed} = Accounts.confirm_user(invited)
       {:ok, _m} = Accounts.mark_invitation_accepted(m)
       confirmed

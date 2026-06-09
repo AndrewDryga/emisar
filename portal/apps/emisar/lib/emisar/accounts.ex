@@ -950,57 +950,53 @@ defmodule Emisar.Accounts do
   end
 
   @doc """
-  Update the caller's own profile fields. Subject must match the user
-  being edited — admins use `update_user_as_admin/3` to edit teammates.
+  Update the caller's own profile fields. Self-service — the user is the
+  subject's own actor; admins use `update_user_as_admin/3` for teammates.
   """
-  def update_user_profile(%User{} = user, attrs, %Subject{} = subject) do
-    with :ok <- ensure_subject_is_user(subject, user) do
+  def update_user_profile(attrs, %Subject{actor: %User{} = user}) do
+    Multi.new()
+    |> Multi.update(:user, User.Changeset.profile(user, attrs))
+    |> Audit.Multi.log_for_user(:audit, user, "user.profile_updated",
+      payload_fn: fn %{user: updated} -> %{full_name: updated.full_name} end
+    )
+    |> Repo.commit_multi()
+    |> case do
+      {:ok, %{user: updated}} -> {:ok, updated}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  @doc """
+  Change the caller's own sign-in email after verifying their current
+  password. Returns `{:ok, user} | {:error, :invalid_current_password}
+  | {:error, %Ecto.Changeset{}}`. Self-service — the user is the subject's
+  own actor; the current-password check is the proof-of-control gate.
+
+  Audits success (`user.email_changed`) with both addresses for traceability,
+  and failed-password attempts (`user.email_change_failed`) since wrong-password
+  on the email-change form is a credential probe worth seeing.
+  """
+  def update_user_email(new_email, current_password, %Subject{actor: %User{} = user})
+      when is_binary(new_email) and is_binary(current_password) do
+    if User.valid_password?(user, current_password) do
       Multi.new()
-      |> Multi.update(:user, User.Changeset.profile(user, attrs))
-      |> Audit.Multi.log_for_user(:audit, user, "user.profile_updated",
-        payload_fn: fn %{user: updated} -> %{full_name: updated.full_name} end
+      |> Multi.update(:user, User.Changeset.email(user, %{email: new_email}))
+      |> Audit.Multi.log_for_user(:audit, user, "user.email_changed",
+        payload_fn: fn %{user: updated} -> %{from: user.email, to: updated.email} end
       )
       |> Repo.commit_multi()
       |> case do
         {:ok, %{user: updated}} -> {:ok, updated}
         {:error, reason} -> {:error, reason}
       end
-    end
-  end
+    else
+      # Failed-credential probe — audit it standalone since there's no
+      # parent mutation to bundle with.
+      Audit.log_for_user(user, "user.email_change_failed",
+        payload: %{reason: "invalid_current_password"}
+      )
 
-  @doc """
-  Change the user's sign-in email after verifying their current
-  password. Returns `{:ok, user} | {:error, :invalid_current_password}
-  | {:error, %Ecto.Changeset{}}`. Subject must match the user being
-  edited — the current-password check is the proof-of-control gate.
-
-  Audits success (`user.email_changed`) with both addresses for traceability,
-  and failed-password attempts (`user.email_change_failed`) since wrong-password
-  on the email-change form is a credential probe worth seeing.
-  """
-  def update_user_email(%User{} = user, new_email, current_password, %Subject{} = subject)
-      when is_binary(new_email) and is_binary(current_password) do
-    with :ok <- ensure_subject_is_user(subject, user) do
-      if User.valid_password?(user, current_password) do
-        Multi.new()
-        |> Multi.update(:user, User.Changeset.email(user, %{email: new_email}))
-        |> Audit.Multi.log_for_user(:audit, user, "user.email_changed",
-          payload_fn: fn %{user: updated} -> %{from: user.email, to: updated.email} end
-        )
-        |> Repo.commit_multi()
-        |> case do
-          {:ok, %{user: updated}} -> {:ok, updated}
-          {:error, reason} -> {:error, reason}
-        end
-      else
-        # Failed-credential probe — audit it standalone since there's no
-        # parent mutation to bundle with.
-        Audit.log_for_user(user, "user.email_change_failed",
-          payload: %{reason: "invalid_current_password"}
-        )
-
-        {:error, :invalid_current_password}
-      end
+      {:error, :invalid_current_password}
     end
   end
 
@@ -1016,14 +1012,14 @@ defmodule Emisar.Accounts do
 
   The caller is responsible for revoking other sessions after success —
   a successful password change implies "the old credential is blown",
-  so every other device should sign out. Subject must match the user.
+  so every other device should sign out. Self-service — the user is the
+  subject's own actor.
   """
   @password_min_length 12
 
-  def change_user_password(%User{} = user, current_password, new_password, %Subject{} = subject)
+  def change_user_password(current_password, new_password, %Subject{actor: %User{} = user})
       when is_binary(current_password) and is_binary(new_password) do
-    with :ok <- ensure_subject_is_user(subject, user),
-         :ok <- ensure_password_length(new_password),
+    with :ok <- ensure_password_length(new_password),
          :ok <- ensure_current_password(user, current_password) do
       Multi.new()
       |> Multi.update(:user, User.Changeset.password(user, %{password: new_password}))
@@ -1051,13 +1047,6 @@ defmodule Emisar.Accounts do
       {:error, :invalid_current_password}
     end
   end
-
-  defp ensure_subject_is_user(%Subject{actor: :system}, %User{}), do: :ok
-
-  defp ensure_subject_is_user(%Subject{actor: %User{id: id}}, %User{id: id}),
-    do: :ok
-
-  defp ensure_subject_is_user(_subject, _user), do: {:error, :unauthorized}
 
   def confirm_user(%User{} = user) do
     user |> User.Changeset.confirm() |> Repo.update()
