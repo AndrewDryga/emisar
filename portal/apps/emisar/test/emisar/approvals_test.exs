@@ -359,6 +359,35 @@ defmodule Emisar.ApprovalsTest do
       assert g.last_used_at != nil
     end
 
+    test "honors the operator's max_uses cap on the minted grant" do
+      account = account_fixture()
+      user = user_fixture()
+      _ = membership_fixture(account_id: account.id, user_id: user.id, role: "owner")
+      subject = subject_for(user, account, role: :owner)
+      {_, key} = api_key_fixture(account_id: account.id, created_by_id: user.id)
+      runner = runner_fixture(account_id: account.id)
+
+      {:ok, run} =
+        Runs.create_run(%{
+          account_id: account.id,
+          runner_id: runner.id,
+          action_id: "linux.uptime",
+          source: "mcp",
+          api_key_id: key.id,
+          args: %{},
+          args_sha256: "abc123"
+        })
+
+      {:ok, req} = Approvals.create_request(run, user.id, "x")
+
+      {:ok, _} = Approvals.approve_request(req, subject, nil, duration: :one_day, max_uses: 5)
+
+      # Regression: approve_request used to drop :max_uses from grant_attrs,
+      # minting an UNCAPPED grant even when the operator set a cap.
+      {:ok, [g], _} = Approvals.list_grants_for_api_key(key.id)
+      assert g.max_uses == 5
+    end
+
     test "preloads the originating run so the UI can show the locked args" do
       account = account_fixture()
       user = user_fixture()

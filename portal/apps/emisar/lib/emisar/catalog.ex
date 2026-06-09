@@ -116,7 +116,7 @@ defmodule Emisar.Catalog do
 
   # -- Pack-version pinning --------------------------------------------
 
-  defp observe_pack(account_id, {pack_id, info}, now) do
+  defp observe_pack(account_id, {pack_id, info}, now) when is_map(info) do
     version = info["version"] || "unknown"
     advertised = info["hash"]
 
@@ -131,6 +131,11 @@ defmodule Emisar.Catalog do
       %PackVersion{} = pv -> maybe_mark_pending(pv, advertised, now)
     end
   end
+
+  # Skip a malformed (non-map) pack advertisement rather than letting
+  # `info["version"]` raise and abort the whole sync (the valid packs +
+  # actions in the same batch should still persist).
+  defp observe_pack(_account_id, _entry, _now), do: :ok
 
   # First sight of (account, pack_id, version). Behavior depends on
   # whether we ship a baseline hash for this (pack_id, version):
@@ -469,9 +474,18 @@ defmodule Emisar.Catalog do
 
   # -- Action upsert ---------------------------------------------------
 
-  defp observe_action(%Runner{} = runner, descriptor, packs, now) do
+  defp observe_action(%Runner{} = runner, descriptor, packs, now) when is_map(descriptor) do
     pack_id = descriptor["pack_id"]
-    pack_version = packs[pack_id]["version"]
+
+    # `packs` is untrusted runner-advertised state: a descriptor can name a
+    # pack_id that isn't in the packs map, or map to a non-map. Pull the
+    # version defensively so one malformed descriptor doesn't abort the whole
+    # batch's action upsert (vs. `packs[pack_id]["version"]` raising BadMapError).
+    pack_version =
+      case packs[pack_id] do
+        %{"version" => v} -> v
+        _ -> nil
+      end
 
     attrs = %{
       account_id: runner.account_id,
@@ -518,6 +532,11 @@ defmodule Emisar.Catalog do
         end
     end
   end
+
+  # A runner can advertise a malformed (non-map) action descriptor; skip it
+  # (the caller rejects nils) rather than letting `descriptor["id"]` raise and
+  # abort the whole batch's action upsert.
+  defp observe_action(_runner, _descriptor, _packs, _now), do: nil
 
   defp prune_missing_actions(_runner_id, []), do: :ok
 

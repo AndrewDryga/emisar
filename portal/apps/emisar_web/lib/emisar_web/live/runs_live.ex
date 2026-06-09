@@ -28,6 +28,10 @@ defmodule EmisarWeb.RunsLive do
     {:noreply, load_runs(socket, socket.assigns.filter_params)}
   end
 
+  # Total catch-all: the badge hooks forward account-topic broadcasts to every
+  # authenticated LV, so any other shape must be ignored, not crash.
+  def handle_info(_msg, socket), do: {:noreply, socket}
+
   defp load_runs(socket, params) do
     filters = ActionRun.Query.filters()
     opts = LiveTable.params_to_opts(params, filters)

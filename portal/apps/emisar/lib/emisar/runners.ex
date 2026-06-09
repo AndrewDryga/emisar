@@ -745,76 +745,83 @@ defmodule Emisar.Runners do
     account = Emisar.Accounts.fetch_account_by_id!(key.account_id)
     was_auto? = AuthKey.auto_unused?(key)
 
-    case Emisar.Billing.check_limit(account, :runners) do
-      :ok ->
-        Repo.transaction(fn ->
-          # Atomically claim a use of this auth key. The conditional
-          # UPDATE only succeeds if the key is still in a usable state
-          # AT the moment of the update — defeating the race where two
-          # concurrent registrations both see uses_count = 0.
-          case consume_auth_key(key) do
-            :ok -> :ok
-            {:error, reason} -> Repo.rollback(reason)
-          end
+    Repo.transaction(fn ->
+      # Atomically claim a use of this auth key. The conditional
+      # UPDATE only succeeds if the key is still in a usable state
+      # AT the moment of the update — defeating the race where two
+      # concurrent registrations both see uses_count = 0.
+      case consume_auth_key(key) do
+        :ok -> :ok
+        {:error, reason} -> Repo.rollback(reason)
+      end
 
-          # Surface the auto→permanent promotion. The mint itself was
-          # deliberately silent (would flood the log with noise), so
-          # binding is where this key first becomes visible.
-          if was_auto? do
-            Audit.log(key.account_id, "auth_key.bound",
-              actor_kind: "system",
-              subject_kind: "auth_key",
-              subject_id: key.id,
-              payload: %{prefix: key.key_prefix, auto: true}
-            )
-          end
+      # Surface the auto→permanent promotion. The mint itself was
+      # deliberately silent (would flood the log with noise), so
+      # binding is where this key first becomes visible.
+      if was_auto? do
+        Audit.log(key.account_id, "auth_key.bound",
+          actor_kind: "system",
+          subject_kind: "auth_key",
+          subject_id: key.id,
+          payload: %{prefix: key.key_prefix, auto: true}
+        )
+      end
 
-          # Identity is (account, external_id) — the stable id the runner
-          # persists and sends. Reuse the existing row on reconnect;
-          # otherwise insert. Names are display-only and may repeat across
-          # runners, so external_id is the only uniqueness here. A blank id
-          # (older runner that doesn't send one) gets a server-minted UUID
-          # — never treated as a shared empty-string key.
-          external_id =
-            case attrs[:external_id] do
-              id when is_binary(id) and id != "" -> id
-              _ -> Ecto.UUID.generate()
-            end
-
-          {runner, fresh?} =
-            case fetch_runner_by_external_id_for_account(external_id, key.account_id) do
-              {:ok, %Runner{} = existing} -> {existing, false}
-              {:error, :not_found} -> insert_runner!(key, attrs, external_id)
-            end
-
-          if fresh? do
-            Audit.log(runner.account_id, "runner.registered",
-              actor_kind: "runner",
-              actor_id: runner.id,
-              actor_label: runner.name,
-              subject_kind: "runner",
-              subject_id: runner.id,
-              subject_label: runner.name,
-              payload: %{
-                external_id: runner.external_id,
-                group: runner.group,
-                hostname: runner.hostname,
-                auth_key_id: key.id
-              }
-            )
-          end
-
-          {raw_token, token} = mint_runner_token(runner, key.id)
-          {runner, token, raw_token}
-        end)
-        |> case do
-          {:ok, {runner, token, raw_token}} -> {:ok, runner, token, raw_token}
-          {:error, {:runner_name_taken, name}} -> {:error, :runner_name_taken, name}
-          {:error, reason} -> {:error, reason}
+      # Identity is (account, external_id) — the stable id the runner
+      # persists and sends. Reuse the existing row on reconnect;
+      # otherwise insert. Names are display-only and may repeat across
+      # runners, so external_id is the only uniqueness here. A blank id
+      # (older runner that doesn't send one) gets a server-minted UUID
+      # — never treated as a shared empty-string key.
+      external_id =
+        case attrs[:external_id] do
+          id when is_binary(id) and id != "" -> id
+          _ -> Ecto.UUID.generate()
         end
 
-      {:error, :over_limit, plan, limit} ->
-        {:error, :over_limit, plan, limit}
+      # The plan's runner-count limit is enforced only when adding a NEW
+      # seat, on the fresh-insert branch and before the row exists (so the
+      # count excludes it). A reconnecting runner — e.g. one that lost its
+      # token on a redeploy and re-registers via its auth key — is already
+      # counted, so checking the limit for it would lock an operator out of
+      # their own fleet at the plan ceiling.
+      {runner, fresh?} =
+        case fetch_runner_by_external_id_for_account(external_id, key.account_id) do
+          {:ok, %Runner{} = existing} ->
+            {existing, false}
+
+          {:error, :not_found} ->
+            case Emisar.Billing.check_limit(account, :runners) do
+              :ok -> insert_runner!(key, attrs, external_id)
+              {:error, :over_limit, plan, limit} -> Repo.rollback({:over_limit, plan, limit})
+            end
+        end
+
+      if fresh? do
+        Audit.log(runner.account_id, "runner.registered",
+          actor_kind: "runner",
+          actor_id: runner.id,
+          actor_label: runner.name,
+          subject_kind: "runner",
+          subject_id: runner.id,
+          subject_label: runner.name,
+          payload: %{
+            external_id: runner.external_id,
+            group: runner.group,
+            hostname: runner.hostname,
+            auth_key_id: key.id
+          }
+        )
+      end
+
+      {raw_token, token} = mint_runner_token(runner, key.id)
+      {runner, token, raw_token}
+    end)
+    |> case do
+      {:ok, {runner, token, raw_token}} -> {:ok, runner, token, raw_token}
+      {:error, {:over_limit, plan, limit}} -> {:error, :over_limit, plan, limit}
+      {:error, {:runner_name_taken, name}} -> {:error, :runner_name_taken, name}
+      {:error, reason} -> {:error, reason}
     end
   end
 

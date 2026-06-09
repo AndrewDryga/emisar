@@ -226,6 +226,32 @@ defmodule Emisar.RunnersTest do
                Runners.register_via_auth_key(raw, %{group: "demo"})
     end
 
+    test "a reconnecting runner at the plan cap still registers (its seat is already counted)" do
+      # `free` caps runners at 3. Fill the account to the cap, with one runner
+      # registered via a stable external_id so we can reconnect it.
+      account = account_fixture(plan: "free")
+      user = user_fixture()
+
+      {raw, _key} =
+        auth_key_fixture(account_id: account.id, created_by_id: user.id, reusable: true)
+
+      assert {:ok, %Runner{}, _, _} =
+               Runners.register_via_auth_key(raw, %{external_id: "ext-keep", group: "g"})
+
+      _ = runner_fixture(account_id: account.id)
+      _ = runner_fixture(account_id: account.id)
+
+      # Now at 3/3. Re-registering the SAME runner (e.g. it lost its token on a
+      # redeploy) must NOT be blocked by its own seat — regression for the
+      # limit check running before the reconnect-vs-fresh decision.
+      assert {:ok, %Runner{}, _, _} =
+               Runners.register_via_auth_key(raw, %{external_id: "ext-keep", group: "g"})
+
+      # ...but a genuinely NEW runner at the cap is still refused.
+      assert {:error, :over_limit, "free", 3} =
+               Runners.register_via_auth_key(raw, %{external_id: "ext-new", group: "g"})
+    end
+
     test "returns :auth_key_invalid for an unknown raw secret" do
       assert {:error, :auth_key_invalid} =
                Runners.register_via_auth_key("emkey-auth-garbage", %{})

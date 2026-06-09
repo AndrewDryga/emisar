@@ -18,6 +18,9 @@ defmodule EmisarWeb.DashboardLive do
 
   def handle_info(%{event: "presence_diff"}, socket), do: {:noreply, load(socket)}
   def handle_info({_event, _struct}, socket), do: {:noreply, load(socket)}
+  # Total catch-all: the badge hooks forward account-topic broadcasts to every
+  # authenticated LV, so any other shape must be ignored, not crash.
+  def handle_info(_msg, socket), do: {:noreply, socket}
 
   defp load(socket) do
     account = socket.assigns.current_account

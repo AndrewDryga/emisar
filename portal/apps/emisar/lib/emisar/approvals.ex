@@ -263,10 +263,12 @@ defmodule Emisar.Approvals do
   durable `Grant` alongside the approval so future identical calls can
   bypass the gate:
 
-    * `:duration` — `:once` (no grant), `:one_hour`, `:one_day`, or
-      `:indefinite`. Default: `:once`.
+    * `:duration` — `:once` (no grant), `:one_hour`, `:one_day`,
+      `:thirty_days`, or `:ninety_days`. Default: `:once`.
     * `:scope`    — `:exact_args` (locks args fingerprint) or
       `:any_args` (any args for this action). Default: `:exact_args`.
+    * `:max_uses` — for a windowed duration, cap on total executions
+      (nil = unlimited within the window); `:once` is always one use.
   """
   def approve_request(req, subject, reason \\ nil, opts \\ [])
 
@@ -287,7 +289,8 @@ defmodule Emisar.Approvals do
 
               grant_attrs = %{
                 duration: Keyword.get(opts, :duration, :once),
-                scope: Keyword.get(opts, :scope, :exact_args)
+                scope: Keyword.get(opts, :scope, :exact_args),
+                max_uses: Keyword.get(opts, :max_uses)
               }
 
               grant =
