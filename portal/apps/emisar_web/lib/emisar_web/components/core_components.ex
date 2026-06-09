@@ -2424,7 +2424,7 @@ defmodule EmisarWeb.CoreComponents do
         </div>
 
         <div class="mt-12 flex items-center justify-between border-t border-zinc-900 pt-8 text-xs text-zinc-500">
-          <span>© {Date.utc_today().year} emisar. All rights reserved.</span>
+          <span>© {Date.utc_today().year} Andrii Dryga. All rights reserved.</span>
           <span>v{@app_version} — built in Elixir</span>
         </div>
       </div>

@@ -34,7 +34,7 @@
         tiers, shipped on emisar's Free plan.
       </p>
       <div class="mt-8 flex flex-wrap gap-2">
-        <%= for chip <- ["Least agency, by contract", "Human approval for high-risk actions", "Immutable, hash-chained audit", "Built for \"assume breach\""] do %>
+        <%= for chip <- ["Least agency, by contract", "Human approval for high-risk actions", "Tamper-evident, hash-chained audit", "Built for \"assume breach\""] do %>
           <span class="inline-flex items-center gap-1.5 rounded-full border border-zinc-800 bg-zinc-950/60 px-3 py-1 text-xs font-medium text-zinc-300">
             <.icon name="hero-check" class="h-3.5 w-3.5 text-indigo-400" />{chip}
           </span>
@@ -113,7 +113,7 @@
                 {"Version-controlled, integrity-checked configuration", "Enterprise",
                  "Packs are versioned, content-addressed YAML. A changed hash blocks dispatch until an admin trusts it; the runner recomputes the hash and refuses a mismatch."},
                 {"Immutable audit trail", "Enterprise",
-                 "Every action is recorded to the searchable portal audit — the cloud system of record — and to an append-only, hash-chained JSONL journal on the host, where each line carries the prior line's SHA-256 so emisar audit verify catches any tampered or removed entry."},
+                 "Every action is recorded to the searchable portal audit — the cloud system of record — and to an append-only, hash-chained JSONL journal on the host, where each line carries the prior line's SHA-256 so emisar audit verify catches any edited entry or break in the chain."},
                 {"Human-in-the-loop approval for high-risk actions", "Advanced",
                  "Risk-tiered policy holds destructive actions for a person. The approver sees the actor, the args, the target host, and the rule that fired — one click to allow or deny, recorded forever."},
                 {"Just-in-time / just-enough access", "Advanced",
