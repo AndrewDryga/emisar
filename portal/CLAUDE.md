@@ -238,6 +238,7 @@ Rules:
 - **Join direction follows the association's cardinality/optionality:** `:inner` for a required belongs_to (a row whose assoc is missing or deleted shouldn't appear — e.g. a membership's account/user); `:left` for a has_many or optional assoc (keep the parent even with zero children — e.g. an account preloading its memberships still shows when it has none). **Either way the join is scoped to `not_deleted/0`** — soft-deleted records never leak into the preload regardless of direction.
 - Cross-table label helpers belong here too: `select_labels(queryable, ids, field)` (used by Audit).
 - A helper whose name implies a position (`latest`, `oldest`, `top_n`) owns both its `order_by` and its `limit` — callers shouldn't have to remember to order first for the limit to mean anything.
+- Name order helpers after the columns they sort by — `ordered_by_type_and_value`, `ordered_by_group_name`, not a bare `ordered`. The ordering is then visible at the call site and flags where a matching DB index (incl. its direction) is needed.
 - No `Repo.*` calls in Query modules. They build queryables; the context calls Repo.
 
 ### 3. Schema modules

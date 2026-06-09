@@ -835,7 +835,7 @@ defmodule Emisar.Accounts do
   """
   def runner_scopes_for_membership(membership_id) when is_binary(membership_id) do
     UserRunnerScope.Query.by_membership_id(membership_id)
-    |> UserRunnerScope.Query.ordered()
+    |> UserRunnerScope.Query.ordered_by_type_and_value()
     |> Repo.all()
   end
 
@@ -890,7 +890,7 @@ defmodule Emisar.Accounts do
 
       ids ->
         UserRunnerScope.Query.by_membership_ids(ids)
-        |> UserRunnerScope.Query.ordered()
+        |> UserRunnerScope.Query.ordered_by_type_and_value()
         |> Repo.all()
         |> Enum.group_by(& &1.membership_id)
     end
