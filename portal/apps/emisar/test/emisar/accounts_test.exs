@@ -70,8 +70,10 @@ defmodule Emisar.AccountsTest do
       assert {:error, %Ecto.Changeset{}} =
                Accounts.create_account_with_owner(%{name: "x", slug: "x"}, user)
 
-      # No partial membership stuck around.
-      assert {:ok, [], _} = Accounts.list_accounts_for_user(user)
+      # No partial membership stuck around. The user has no account yet, so
+      # the picker subject is built straight from the actor (account nil).
+      subject = %Emisar.Auth.Subject{actor: user}
+      assert {:ok, [], _} = Accounts.list_accounts_for_user(subject)
     end
   end
 

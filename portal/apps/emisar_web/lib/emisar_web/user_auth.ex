@@ -494,9 +494,8 @@ defmodule EmisarWeb.UserAuth do
               {nil, nil, nil, []}
 
             {:ok, membership} ->
-              {membership.account, membership,
-               Subject.for_user(user, membership.account, membership, %{}),
-               load_switchable_accounts(user)}
+              subject = Subject.for_user(user, membership.account, membership, %{})
+              {membership.account, membership, subject, load_switchable_accounts(subject)}
           end
       end
 
@@ -507,11 +506,11 @@ defmodule EmisarWeb.UserAuth do
     |> Phoenix.Component.assign_new(:switchable_accounts, fn -> switchable end)
   end
 
-  # All non-suspended accounts the user can mount. Used by the sidebar
-  # account switcher; cheap (one indexed lookup) so it's fine to fetch
-  # on every LV mount.
-  defp load_switchable_accounts(user) do
-    case Accounts.list_accounts_for_user(user, page_size: 100) do
+  # All non-suspended accounts the subject's user can mount. Used by the
+  # sidebar account switcher; cheap (one indexed lookup) so it's fine to
+  # fetch on every LV mount.
+  defp load_switchable_accounts(subject) do
+    case Accounts.list_accounts_for_user(subject, page_size: 100) do
       {:ok, accounts, _meta} -> accounts
       _ -> []
     end

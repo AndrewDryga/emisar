@@ -46,13 +46,17 @@ defmodule Emisar.Accounts do
   end
 
   @doc """
-  Accounts the user is a (non-suspended) member of, name-ordered.
-  Returns `{:ok, [account], %Paginator.Metadata{}}` per the context-
-  function convention. Pre-Subject lookup — called from the account
-  picker before a Subject exists (the user just signed in and the
-  picker decides which tenant to mount).
+  Accounts the subject's user is a (non-suspended) member of,
+  name-ordered. Returns `{:ok, [account], %Paginator.Metadata{}}`. Drives
+  the account picker.
+
+  Deliberately **cross-account**: it lists every tenant the user belongs
+  to, so it scopes by the subject's own actor id rather than running
+  `Authorizer.for_subject/2` (which would narrow to a single account).
+  The subject's user is the only authorization that applies — you can
+  only ever list your own memberships.
   """
-  def list_accounts_for_user(%User{id: user_id}, opts \\ []) do
+  def list_accounts_for_user(%Subject{actor: %User{id: user_id}}, opts \\ []) do
     Account.Query.not_deleted()
     |> Account.Query.with_active_member(user_id)
     |> Account.Query.ordered_by_name()
