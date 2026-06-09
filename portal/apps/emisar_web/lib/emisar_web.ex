@@ -56,6 +56,10 @@ defmodule EmisarWeb do
       use Phoenix.LiveView,
         layout: {EmisarWeb.Layouts, :app}
 
+      # Serve the full app.js (LiveSocket + hooks) on every LiveView; the
+      # static marketing pages get the lean marketing.js. See the hook.
+      on_mount {EmisarWeb.UserAuth, :assign_app_bundle}
+
       unquote(html_helpers())
     end
   end

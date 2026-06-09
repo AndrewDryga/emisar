@@ -65,7 +65,16 @@
     <link rel="icon" type="image/svg+xml" href={~p"/images/emisar-icon.svg"} />
     <link rel="alternate icon" type="image/x-icon" href={~p"/favicon.ico"} />
     <link phx-track-static rel="stylesheet" href={~p"/assets/app.css"} />
-    <script defer phx-track-static type="text/javascript" src={~p"/assets/app.js"}>
+    <%!-- LiveView pages need app.js (LiveSocket + hooks); the static,
+          server-rendered marketing pages load only the lean marketing.js.
+          `@app_js?` is set by the global LiveView on_mount hook, so it's
+          present on every live render and absent on controller renders. --%>
+    <script
+      defer
+      phx-track-static
+      type="text/javascript"
+      src={if assigns[:app_js?], do: ~p"/assets/app.js", else: ~p"/assets/marketing.js"}
+    >
     </script>
   </head>
   <body class="h-full bg-zinc-950 text-zinc-100 antialiased">

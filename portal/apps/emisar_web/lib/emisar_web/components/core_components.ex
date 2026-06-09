@@ -1531,9 +1531,10 @@ defmodule EmisarWeb.CoreComponents do
   Copy-to-clipboard button.
 
   CSP-safe + works on both LiveView and controller-rendered pages.
-  Uses the delegated `[data-copy]` click listener in `assets/js/app.js`
-  (no inline `onclick` — those get stripped by CSP in prod, which is
-  why every Copy button across the portal was silently broken).
+  Uses the delegated `[data-copy]` click listener in `assets/js/copy.js`
+  (shared by the app + marketing bundles; no inline `onclick` — those get
+  stripped by CSP in prod, which is why every Copy button across the
+  portal was silently broken).
 
   Pass exactly one of:
     * `target` — CSS selector of the element whose `.innerText` to copy

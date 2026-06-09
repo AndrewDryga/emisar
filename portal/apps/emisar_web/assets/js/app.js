@@ -1,19 +1,10 @@
+// JS bundle for the authenticated console (every LiveView render). The
+// static marketing site loads the much leaner `marketing.js` instead —
+// see that file and `root.html.heex` for how the bundle is chosen.
+//
 // If you want to use Phoenix channels, run `mix help phx.gen.channel`
 // to get started and then uncomment the line below.
 // import "./user_socket.js"
-
-// You can include dependencies in two ways.
-//
-// The simplest option is to put them in assets/vendor and
-// import them using relative paths:
-//
-//     import "../vendor/some-package.js"
-//
-// Alternatively, you can `npm install some-package --prefix assets` and import
-// them using a path starting with the package name:
-//
-//     import "some-package"
-//
 
 // Include phoenix_html to handle method=PUT/DELETE in forms and buttons.
 import "phoenix_html"
@@ -21,7 +12,7 @@ import "phoenix_html"
 import {Socket} from "phoenix"
 import {LiveSocket} from "phoenix_live_view"
 import topbar from "../vendor/topbar"
-import {initEmisarDemo} from "./emisar_demo.js"
+import {setupCopyToClipboardDelegation} from "./copy.js"
 
 // `<time>` element formatter. The server renders a UTC fallback into
 // `textContent` (so non-JS users see something) and stamps the ISO
@@ -92,97 +83,14 @@ function formatAbsolute(dt, sameYear, short = false) {
   return dt.toLocaleString(undefined, opts)
 }
 
-// Clipboard copy. We use a delegated document-level click listener
-// rather than a Phoenix hook for two reasons:
-//
-//   1. CSP forbids inline `onclick` handlers — historically every
-//      Copy button broke silently because the inline handler was
-//      stripped by the CSP middleware in prod.
-//   2. The CSP-safe alternative (`phx-hook`) only attaches to
-//      elements inside a LiveView container. Marketing pages
-//      (controller-rendered: pack detail, install snippets, …) have
-//      no LiveSocket, so a hook there is dead too.
-//
-// The button just needs `data-copy="#some-id"` (id of the element
-// whose textContent to grab) OR `data-copy-text="literal string"`.
-// Optional `data-copy-label-copied="Copied!"` overrides the flash
-// label; otherwise it flips to "Copied" for 1.5s.
-function setupCopyToClipboardDelegation() {
-  async function tryWriteToClipboard(text) {
-    try {
-      if (navigator.clipboard && window.isSecureContext) {
-        await navigator.clipboard.writeText(text)
-        return true
-      }
-    } catch (_e) { /* fall through */ }
-
-    // Fallback for non-secure contexts (dev over plain http, some
-    // embedded webviews). Off-screen textarea + execCommand("copy").
-    const ta = document.createElement("textarea")
-    ta.value = text
-    ta.setAttribute("readonly", "")
-    ta.style.position = "fixed"
-    ta.style.top = "-1000px"
-    document.body.appendChild(ta)
-    ta.select()
-    let ok = false
-    try { ok = document.execCommand("copy") } catch (_e) {}
-    document.body.removeChild(ta)
-    return ok
-  }
-
-  function resolveText(btn) {
-    if (btn.dataset.copyText != null) return btn.dataset.copyText
-    const sel = btn.dataset.copy
-    if (!sel) return null
-    const target = document.querySelector(sel)
-    if (!target) return null
-    // Strip the first content line's indentation (HEEx template
-    // whitespace) and the same prefix from later lines, so a multi-line
-    // snippet copies without the template's leading indentation, then
-    // drop trailing whitespace. This CANNOT tell template indent from an
-    // intentional leading space, so leading-whitespace-significant
-    // content (e.g. a ` curl …` command relying on
-    // HISTCONTROL=ignorespace to skip shell history) must be copied via
-    // `data-copy-text` (the literal-string path above), not a selector.
-    const raw = target.innerText
-    const lines = raw.replace(/\s+$/, "").split("\n")
-    while (lines.length && lines[0].trim() === "") lines.shift()
-    if (!lines.length) return ""
-    // Strip the indentation of the first content line, then apply the
-    // same strip to every subsequent line (so a multi-line snippet
-    // keeps its relative indentation).
-    const indent = lines[0].match(/^[ \t]*/)[0]
-    return lines.map(l => l.startsWith(indent) ? l.slice(indent.length) : l).join("\n")
-  }
-
-  function flashCopied(btn) {
-    const original = btn.innerText
-    btn.innerText = btn.dataset.copyLabelCopied || "Copied"
-    if (btn._copyTimer) clearTimeout(btn._copyTimer)
-    btn._copyTimer = setTimeout(() => { btn.innerText = original }, 1500)
-  }
-
-  document.addEventListener("click", async (e) => {
-    // Closest so clicks on a nested icon/span inside the button still fire.
-    const btn = e.target.closest("[data-copy], [data-copy-text]")
-    if (!btn) return
-    e.preventDefault()
-    const text = resolveText(btn)
-    if (text == null || text === "") return
-    if (await tryWriteToClipboard(text)) flashCopied(btn)
-  })
-}
+// CSP-safe Copy buttons (`data-copy` / `data-copy-text`). Shared with the
+// marketing bundle; see copy.js for why it's a delegated listener.
 setupCopyToClipboardDelegation()
-
-// Animate the "watch emisar work" terminal on the marketing home page.
-// No-op on every page that doesn't render it.
-initEmisarDemo()
 
 // Phoenix hook kept for back-compat with the MFA recovery codes panel
 // which uses `phx-hook="CopyToClipboard"` and the older
 // `data-clipboard-*` attribute names. New code should prefer the
-// delegated `data-copy` pattern above so it works on marketing pages
+// delegated `data-copy` pattern (copy.js) so it works on marketing pages
 // too. Body is identical to the delegated path.
 const CopyToClipboard = {
   mounted() {
@@ -254,4 +162,3 @@ liveSocket.connect()
 // >> liveSocket.enableLatencySim(1000)  // enabled for duration of browser session
 // >> liveSocket.disableLatencySim()
 window.liveSocket = liveSocket
-

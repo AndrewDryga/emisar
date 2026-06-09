@@ -266,6 +266,14 @@ defmodule EmisarWeb.UserAuth do
 
   # -- LiveView on_mount hooks ----------------------------------------
 
+  # Flags that this render needs the full `app.js` (LiveSocket + hooks).
+  # Attached to every LiveView via `EmisarWeb.live_view/0`, so the dead
+  # render carries `@app_js?` up to `root.html.heex`; controller-rendered
+  # marketing pages never set it and get the lean `marketing.js` instead.
+  def on_mount(:assign_app_bundle, _params, _session, socket) do
+    {:cont, Phoenix.Component.assign(socket, :app_js?, true)}
+  end
+
   def on_mount(:mount_current_user, _params, session, socket) do
     {:cont, mount_current_user(session, socket)}
   end
