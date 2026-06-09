@@ -8,7 +8,7 @@ defmodule Emisar.Accounts do
   """
 
   alias Ecto.Multi
-  alias Emisar.{Audit, Auth, Repo, Slug}
+  alias Emisar.{Audit, Auth, Crypto, Repo, Slug}
   alias Emisar.Accounts.{Account, Authorizer, Membership, User, UserRunnerScope}
   alias Emisar.Auth.{Role, Subject}
 
@@ -657,7 +657,7 @@ defmodule Emisar.Accounts do
       when is_binary(email) and is_binary(role) do
     with :ok <- ensure_invite_permitted(role, subject) do
       email = String.downcase(String.trim(email))
-      token = invitation_token()
+      token = Crypto.random_secret(24)
 
       Multi.new()
       |> Multi.run(:user, fn _repo, _changes -> fetch_or_create_user(email) end)
@@ -721,10 +721,6 @@ defmodule Emisar.Accounts do
       end
 
     Auth.Authorizer.ensure_has_permissions(subject, required)
-  end
-
-  defp invitation_token do
-    :crypto.strong_rand_bytes(24) |> Base.url_encode64(padding: false)
   end
 
   @doc """
