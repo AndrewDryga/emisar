@@ -29,15 +29,21 @@ defmodule Emisar.Fixtures do
     context = opts[:context] || %{}
 
     membership =
-      case Accounts.fetch_membership_by_account_and_user(account.id, user.id) do
-        {:ok, m} ->
-          m
-
-        {:error, :not_found} ->
-          %Membership{role: Atom.to_string(role), user_id: user.id, account_id: account.id}
-      end
+      fetch_membership(account.id, user.id) ||
+        %Membership{role: Atom.to_string(role), user_id: user.id, account_id: account.id}
 
     Subject.for_user(user, account, membership, context)
+  end
+
+  @doc """
+  Test inspector: the membership joining `account_id` + `user_id`, or
+  `nil`. Lets a test read post-mutation membership state without the
+  production context exposing a fixture-only lookup.
+  """
+  def fetch_membership(account_id, user_id) do
+    Membership.Query.all()
+    |> Membership.Query.by_account_and_user(account_id, user_id)
+    |> Repo.peek()
   end
 
   @doc "Subject for a fresh user + account pair as the account owner."

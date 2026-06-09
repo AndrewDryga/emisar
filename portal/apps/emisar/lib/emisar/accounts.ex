@@ -218,18 +218,6 @@ defmodule Emisar.Accounts do
     end
   end
 
-  @doc """
-  Internal cross-context lookup by (account_id, user_id). Used by
-  fixtures and accounts_test to inspect post-mutation state; no
-  Subject because both ids are opaque references the caller has
-  already proven access to.
-  """
-  def fetch_membership_by_account_and_user(account_id, user_id) do
-    Membership.Query.all()
-    |> Membership.Query.by_account_and_user(account_id, user_id)
-    |> Repo.fetch(Membership.Query)
-  end
-
   # Internal helper for permission checks that operate on nil-or-struct.
   defp peek_membership(account_id, user_id) do
     Membership.Query.all()

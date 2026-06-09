@@ -60,8 +60,7 @@ defmodule Emisar.AccountsTest do
                  user
                )
 
-      assert {:ok, %Membership{role: "owner"}} =
-               Accounts.fetch_membership_by_account_and_user(account.id, user.id)
+      assert %Membership{role: "owner"} = fetch_membership(account.id, user.id)
     end
 
     test "rolls back when the account changeset is invalid" do
@@ -280,8 +279,7 @@ defmodule Emisar.AccountsTest do
 
       assert {:error, :unauthorized} = Accounts.delete_membership(target, operator_subject)
       # The target membership is still present.
-      assert {:ok, %Membership{}} =
-               Accounts.fetch_membership_by_account_and_user(account.id, target_user.id)
+      assert %Membership{} = fetch_membership(account.id, target_user.id)
     end
   end
 
