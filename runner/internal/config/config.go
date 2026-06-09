@@ -126,6 +126,18 @@ func (c *Config) Validate() error {
 		if c.Cloud.AuthKeyEnv == "" {
 			return fmt.Errorf("config: cloud.auth_key_env required when cloud.url is set")
 		}
+		// The bootstrap auth key must never reach a child process's environment
+		// (readable via /proc/<pid>/environ, crash dumps, child logs). Refuse an
+		// inherit_env that would leak it into every action the runner spawns.
+		for _, name := range c.Execution.InheritEnv {
+			if name == c.Cloud.AuthKeyEnv {
+				return fmt.Errorf(
+					"config: execution.inherit_env must not include the auth key var %q — "+
+						"it would leak the bootstrap secret into every action's environment",
+					name,
+				)
+			}
+		}
 		if err := c.validateCloudTransportSecurity(); err != nil {
 			return err
 		}

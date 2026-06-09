@@ -2,6 +2,7 @@ package actionspec
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 )
 
@@ -299,6 +300,14 @@ func (r RedactionRule) Validate() error {
 	case "regex":
 		if r.Pattern == "" {
 			return fmt.Errorf("redaction rule %s: regex requires pattern", r.Name)
+		}
+		// Compile here so an uncompilable redaction pattern fails `pack
+		// validate` at authoring time. Otherwise the action loads, then at
+		// runtime the combined redactor's CompileAll fails and silently falls
+		// back to the global rules only — dropping this rule and leaking the
+		// exact output it was meant to mask (fail-open). Fail closed instead.
+		if _, err := regexp.Compile(r.Pattern); err != nil {
+			return fmt.Errorf("redaction rule %s: invalid pattern %q: %w", r.Name, r.Pattern, err)
 		}
 	case "literal":
 		if r.Literal == "" {

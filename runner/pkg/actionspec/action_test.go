@@ -185,6 +185,10 @@ func TestRedactionRule_Validate(t *testing.T) {
 		{"empty type", RedactionRule{Name: "r"}, false},
 		{"valid regex", RedactionRule{Name: "r", Type: "regex", Pattern: "x"}, true},
 		{"valid literal", RedactionRule{Name: "r", Type: "literal", Literal: "x"}, true},
+		// An uncompilable redaction pattern must fail at load (fail closed) —
+		// otherwise the combined redactor silently drops the rule at runtime.
+		{"uncompilable regex", RedactionRule{Name: "r", Type: "regex", Pattern: "(unclosed"}, false},
+		{"oversized repeat", RedactionRule{Name: "r", Type: "regex", Pattern: ".{0,2048}"}, false},
 	}
 	for _, c := range cases {
 		err := c.rule.Validate()
@@ -194,6 +198,28 @@ func TestRedactionRule_Validate(t *testing.T) {
 		if !c.ok && err == nil {
 			t.Errorf("%s: should fail", c.name)
 		}
+	}
+}
+
+func TestArg_Validate_PatternRequiresStringType(t *testing.T) {
+	pat := &Validation{Pattern: "^[a-z]+$"}
+
+	for _, ty := range []ArgType{ArgString, ArgPath} {
+		if err := (Arg{Name: "a", Type: ty, Validation: pat}).Validate(); err != nil {
+			t.Errorf("pattern on %s should be valid: %v", ty, err)
+		}
+	}
+
+	// On a non-string arg the pattern can never match, so the action would
+	// load yet be permanently unrunnable — reject it at load.
+	for _, ty := range []ArgType{ArgInteger, ArgNumber, ArgBoolean, ArgStringArray, ArgIntegerArray} {
+		if err := (Arg{Name: "a", Type: ty, Validation: pat}).Validate(); err == nil {
+			t.Errorf("pattern on %s should be rejected at load", ty)
+		}
+	}
+
+	if err := (Arg{Name: "a", Type: ArgString, Validation: &Validation{Pattern: "(bad"}}).Validate(); err == nil {
+		t.Error("uncompilable pattern should still be rejected")
 	}
 }
 

@@ -234,3 +234,42 @@ func TestChain_TailTruncationIsNotDetected(t *testing.T) {
 			"VerifyChain should return nil, got %v", err)
 	}
 }
+
+// TestChain_HealsTornFinalWrite — a crash mid-write leaves a partial,
+// non-newline-terminated final line. Re-opening must drop it so the chain
+// continues from clean bytes instead of gluing the next event onto garbage.
+func TestChain_HealsTornFinalWrite(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "events.jsonl")
+	writeN(t, path, 3) // three clean events
+
+	// Simulate the torn write: append a partial line with no trailing '\n'.
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.WriteString(`{"type":"execution.completed","prev_hash":"deadbeef`); err != nil {
+		t.Fatal(err)
+	}
+	_ = f.Close()
+
+	// The torn file does not verify...
+	if err := VerifyChain(path); err == nil {
+		t.Fatal("expected the torn file to fail verify before healing")
+	}
+
+	// ...but re-opening (inside writeN) heals it, then appends one more event.
+	writeN(t, path, 1)
+
+	if err := VerifyChain(path); err != nil {
+		t.Fatalf("chain should verify after healing the torn tail, got %v", err)
+	}
+
+	// 3 original + 1 new = 4 clean lines; the partial is gone.
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Count(string(body), "\n"); got != 4 {
+		t.Fatalf("expected 4 healed lines, got %d:\n%s", got, body)
+	}
+}

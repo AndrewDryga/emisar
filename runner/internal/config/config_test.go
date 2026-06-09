@@ -63,3 +63,30 @@ func TestLoad_RejectsPlaintextNonLoopbackCloudURL(t *testing.T) {
 		t.Fatalf("allow_insecure: true should permit the cleartext URL, got %v", err)
 	}
 }
+
+func TestValidate_RejectsAuthKeyVarInInheritEnv(t *testing.T) {
+	base := func() *Config {
+		return &Config{
+			SchemaVersion: SchemaVersion,
+			Runner:        Runner{Group: "g"},
+			Cloud:         Cloud{URL: "wss://cloud.example.com/runner", AuthKeyEnv: "EMISAR_AUTH_KEY"},
+			Events:        Events{JSONLPath: "/tmp/events.jsonl"},
+		}
+	}
+
+	// Listing the auth-key var in inherit_env would leak the bootstrap secret
+	// into every action's environment — must be rejected.
+	cfg := base()
+	cfg.Execution.InheritEnv = []string{"NOMAD_ADDR", "EMISAR_AUTH_KEY"}
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("inherit_env including the auth key var must be rejected")
+	}
+
+	// The same config without the overlap validates — proving the rejection is
+	// the overlap specifically, not some other missing field.
+	cfg = base()
+	cfg.Execution.InheritEnv = []string{"NOMAD_ADDR"}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("config without the overlap should validate, got %v", err)
+	}
+}

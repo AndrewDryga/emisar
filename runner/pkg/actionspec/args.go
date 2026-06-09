@@ -83,6 +83,13 @@ func (a Arg) Validate() error {
 	// bound at 1000 — e.g. `.{0,2048}` is a compile error, so without this
 	// check such an action loads fine yet can never run.
 	if a.Validation != nil && a.Validation.Pattern != "" {
+		// A pattern only matches string-ish values; on a numeric/boolean/array
+		// arg the runtime validator rejects it on every dispatch, so the action
+		// would load yet be permanently unrunnable. Catch it at authoring time.
+		if a.Type != ArgString && a.Type != ArgPath {
+			return fmt.Errorf("arg %s: validation.pattern is only valid on string/path args, not %q", a.Name, a.Type)
+		}
+
 		if _, err := regexp.Compile(a.Validation.Pattern); err != nil {
 			return fmt.Errorf("arg %s: invalid validation.pattern %q: %w", a.Name, a.Validation.Pattern, err)
 		}

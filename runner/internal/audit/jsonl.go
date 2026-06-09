@@ -2,6 +2,7 @@ package audit
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -52,6 +53,14 @@ func OpenJSONL(path string, opts JSONLOptions) (*JSONLSink, error) {
 			return nil, fmt.Errorf("audit: create dir: %w", err)
 		}
 	}
+	// Heal a torn final write before appending. A crash between writing an
+	// event's bytes and its trailing newline leaves a partial line; O_APPEND
+	// would then glue the next event onto those bytes (one corrupt line) and
+	// seedLastHashLocked would seed the chain from garbage, so `audit verify`
+	// fails forever. Drop the partial tail so we resume from a clean line.
+	if err := healTornTail(path); err != nil {
+		return nil, fmt.Errorf("audit: heal torn tail: %w", err)
+	}
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
 		return nil, fmt.Errorf("audit: open jsonl: %w", err)
@@ -69,6 +78,27 @@ func OpenJSONL(path string, opts JSONLOptions) (*JSONLSink, error) {
 		return nil, fmt.Errorf("audit: seed chain: %w", err)
 	}
 	return sink, nil
+}
+
+// healTornTail truncates a non-newline-terminated final line (a torn write
+// from a crash) back to the last complete line, so the append-only chain
+// resumes from valid bytes. No-op for a missing, empty, or cleanly-terminated
+// file. The log is size-bounded by rotation, so reading it whole is fine.
+func healTornTail(path string) error {
+	data, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if len(data) == 0 || data[len(data)-1] == '\n' {
+		return nil
+	}
+	// LastIndexByte returns -1 when there's no newline (the whole file is one
+	// torn line); +1 then truncates to 0 — dropping it entirely.
+	cut := bytes.LastIndexByte(data, '\n') + 1
+	return os.Truncate(path, int64(cut))
 }
 
 // seedLastHashLocked reads the file and computes the sha256 of the last

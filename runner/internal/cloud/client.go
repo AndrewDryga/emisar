@@ -317,6 +317,32 @@ func (c *Client) enqueueTransient(requestID string, msg any) {
 // signal a re-advertisement so cloud sees the new hash and flips the
 // pack to pending in the trust UI.
 func (c *Client) handleRun(ctx context.Context, s *runState, m RunActionMsg) {
+	// A panic in one dispatch must not crash the runner — that would kill every
+	// other in-flight action and the session. Recover, log it, and degrade to a
+	// single failed result so the cloud still sees an outcome and the run never
+	// hangs. The panic value is logged locally but never sent to the cloud.
+	defer func() {
+		if r := recover(); r != nil {
+			c.opts.Logger.Error("cloud.run_panic",
+				"request_id", m.RequestID,
+				"action_id", m.ActionID,
+				"panic", fmt.Sprintf("%v", r),
+			)
+			s.mu.Lock()
+			already := s.finished
+			s.finished = true
+			s.mu.Unlock()
+
+			if !already {
+				c.enqueue(s, ErrorMsg{
+					Envelope: Envelope{Type: MsgError, ProtocolVersion: ProtocolVersion, RequestID: m.RequestID},
+					Code:     "engine_panic",
+					Message:  "the runner hit an internal error handling this action",
+				}, never)
+			}
+		}
+	}()
+
 	c.opts.Logger.Info("cloud.run_started",
 		"request_id", m.RequestID,
 		"action_id", m.ActionID,
