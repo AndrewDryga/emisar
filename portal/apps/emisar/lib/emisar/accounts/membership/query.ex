@@ -36,10 +36,9 @@ defmodule Emisar.Accounts.Membership.Query do
   def pending_invitation(queryable),
     do: where(queryable, [memberships: m], is_nil(m.invitation_accepted_at))
 
-  def ordered_by_recent(queryable),
-    do: order_by(queryable, [memberships: m], desc: m.inserted_at)
-
-  def latest(queryable), do: limit(queryable, 1)
+  @doc "Most-recently-joined membership only — orders and limits in one step."
+  def latest(queryable),
+    do: queryable |> order_by([memberships: m], desc: m.inserted_at) |> limit(1)
 
   @doc """
   Restrict to memberships whose account is not soft-deleted. Used by

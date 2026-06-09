@@ -268,7 +268,6 @@ defmodule Emisar.Accounts do
         |> Membership.Query.by_user_id(user_id)
         |> Membership.Query.not_disabled()
         |> Membership.Query.for_active_account()
-        |> Membership.Query.ordered_by_recent()
         |> Membership.Query.latest()
         |> Repo.fetch(Membership.Query, preload: [:account, :user])
     end

@@ -216,7 +216,8 @@ Rules:
 - Use **named bindings** (`as: :runbooks`, `as: :requests`) so later helpers don't break when an upstream caller already added a `join`. Reference by `[runbooks: r]`, not positionally.
 - `not_deleted/1` is the standard partial-index-friendly soft-delete filter; pair it with the changeset's `delete/1` (`deleted_at`).
 - `cursor_fields/0` and `filters/0` are `Emisar.Repo.Query` callbacks; declare them when the context paginates or filters via `Repo.list/3`.
-- Cross-table label helpers belong here too: `select_labels(q, ids, field)` (used by Audit).
+- Cross-table label helpers belong here too: `select_labels(queryable, ids, field)` (used by Audit).
+- A helper whose name implies a position (`latest`, `oldest`, `top_n`) owns both its `order_by` and its `limit` — callers shouldn't have to remember to order first for the limit to mean anything.
 - No `Repo.*` calls in Query modules. They build queryables; the context calls Repo.
 
 ### 3. Schema modules
