@@ -278,48 +278,46 @@ defmodule EmisarWeb.ApprovalsLive do
             filter_params={@filter_params}
           >
             <:item :let={g}>
-              <li class="flex items-start gap-4 px-5 py-3">
-                <span class="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-zinc-900 text-zinc-400">
-                  <.icon name="hero-key" class="h-3.5 w-3.5" />
-                </span>
-
-                <div class="min-w-0 flex-1">
-                  <div class="flex flex-wrap items-center gap-2">
-                    <span class="truncate font-mono text-sm text-zinc-100">{g.action_id}</span>
-                    <.chip>runner: {if g.runner, do: g.runner.name, else: "any"}</.chip>
-                    <.chip>args: {if g.args_sha256, do: "exact", else: "any"}</.chip>
-                    <.chip :if={g.expires_at == nil} tone={:rose}>No expiry</.chip>
-                  </div>
-
+              <.list_row icon="hero-key" class="py-3">
+                <:title>
+                  <span class="truncate font-mono text-sm text-zinc-100">{g.action_id}</span>
+                </:title>
+                <:chips>
+                  <.chip>runner: {if g.runner, do: g.runner.name, else: "any"}</.chip>
+                  <.chip>args: {if g.args_sha256, do: "exact", else: "any"}</.chip>
+                  <.chip :if={g.expires_at == nil} tone={:rose}>No expiry</.chip>
+                </:chips>
+                <:meta>
                   <div
                     :if={grant_args_line(g)}
-                    class="mt-1 truncate font-mono text-xs text-zinc-400"
+                    class="truncate font-mono text-zinc-400"
                     title={grant_args_line(g)}
                   >
                     {grant_args_line(g)}
                   </div>
 
-                  <div class="mt-1 truncate text-xs text-zinc-500">
+                  <div class="mt-1 truncate">
                     via {grant_key_label(g)}
                     <span :if={g.granted_by}>· granted by {g.granted_by.email}</span>
                     · {format_uses(g)}
                   </div>
 
-                  <div class="mt-0.5 text-xs text-zinc-500">
+                  <div class="mt-0.5">
                     {expires_label(g)} · last used {last_used(g.last_used_at)}
                   </div>
-                </div>
-
-                <button
-                  :if={Permissions.can?(assigns, :decide_approval)}
-                  phx-click="revoke_grant"
-                  phx-value-id={g.id}
-                  data-confirm={"Revoke this grant? Calls to #{g.action_id} from #{(g.api_key && g.api_key.name) || "the key"} will require fresh approval."}
-                  class="shrink-0 rounded-lg border border-rose-500/40 px-2.5 py-1 text-xs font-medium text-rose-200 hover:bg-rose-500/10"
-                >
-                  Revoke
-                </button>
-              </li>
+                </:meta>
+                <:actions>
+                  <button
+                    :if={Permissions.can?(assigns, :decide_approval)}
+                    phx-click="revoke_grant"
+                    phx-value-id={g.id}
+                    data-confirm={"Revoke this grant? Calls to #{g.action_id} from #{(g.api_key && g.api_key.name) || "the key"} will require fresh approval."}
+                    class="rounded-lg border border-rose-500/40 px-2.5 py-1 text-xs font-medium text-rose-200 hover:bg-rose-500/10"
+                  >
+                    Revoke
+                  </button>
+                </:actions>
+              </.list_row>
             </:item>
             <:empty>
               <div class="mx-auto max-w-md">

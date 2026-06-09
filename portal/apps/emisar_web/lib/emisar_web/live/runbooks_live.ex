@@ -83,41 +83,35 @@ defmodule EmisarWeb.RunbooksLive do
               class="rounded-none border-0"
             >
               <:item :let={rb}>
-                <li class="flex items-start gap-4 px-5 py-4">
-                  <span class="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-zinc-900 text-zinc-400">
-                    <.icon name="hero-book-open" class="h-4 w-4" />
-                  </span>
-
-                  <div class="min-w-0 flex-1">
-                    <%!-- Row 1: title (link to editor) + status pill + version --%>
-                    <div class="flex flex-wrap items-center gap-2">
-                      <.link
-                        navigate={~p"/app/runbooks/#{rb.id}/edit"}
-                        class="truncate font-medium text-zinc-100 hover:text-indigo-300"
-                      >
-                        {rb.title}
-                      </.link>
-                      <.status_badge status={rb.status} />
-                      <span class="font-mono text-[11px] text-zinc-500">v{rb.version}</span>
-                    </div>
-
+                <.list_row icon="hero-book-open">
+                  <%!-- Row 1: title (link to editor) + status pill + version --%>
+                  <:title>
+                    <.link
+                      navigate={~p"/app/runbooks/#{rb.id}/edit"}
+                      class="truncate font-medium text-zinc-100 hover:text-indigo-300"
+                    >
+                      {rb.title}
+                    </.link>
+                    <.status_badge status={rb.status} />
+                    <span class="font-mono text-[11px] text-zinc-500">v{rb.version}</span>
+                  </:title>
+                  <:meta>
                     <%!-- Row 2: description preview + slug --%>
-                    <div class="mt-1 truncate text-xs text-zinc-500">
-                      <span :if={rb.description && rb.description != ""}>
-                        {preview(rb.description)} ·
-                      </span>
-                      <span class="font-mono">{rb.slug}</span>
-                    </div>
-                  </div>
-
-                  <.link
-                    :if={rb.status == "published"}
-                    navigate={~p"/app/runbooks/#{rb.id}/run"}
-                    class="shrink-0 rounded-lg bg-indigo-500/10 px-2.5 py-1 text-xs font-semibold text-indigo-300 ring-1 ring-indigo-500/30 hover:bg-indigo-500/20"
-                  >
-                    Run →
-                  </.link>
-                </li>
+                    <span :if={rb.description && rb.description != ""}>
+                      {preview(rb.description)} ·
+                    </span>
+                    <span class="font-mono">{rb.slug}</span>
+                  </:meta>
+                  <:actions>
+                    <.link
+                      :if={rb.status == "published"}
+                      navigate={~p"/app/runbooks/#{rb.id}/run"}
+                      class="rounded-lg bg-indigo-500/10 px-2.5 py-1 text-xs font-semibold text-indigo-300 ring-1 ring-indigo-500/30 hover:bg-indigo-500/20"
+                    >
+                      Run →
+                    </.link>
+                  </:actions>
+                </.list_row>
               </:item>
             </LiveTable.live_table>
           </.list_section>

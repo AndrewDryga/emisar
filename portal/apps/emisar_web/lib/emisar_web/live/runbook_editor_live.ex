@@ -57,7 +57,25 @@ defmodule EmisarWeb.RunbookEditorLive do
     end
   end
 
+  # The catalog/runner reads are the heavy part of this mount — the
+  # action list is the COMPLETE per-account catalog (hundreds of rows),
+  # plus a runner list and group summaries. `mount` runs twice (dead
+  # render + connected mount), so gate the reads behind `connected?/1`
+  # (IL-18): the dead pass renders the editor with empty autocomplete
+  # datalists, the connected pass populates them.
   defp assign_catalog(socket) do
+    if connected?(socket) do
+      load_catalog(socket)
+    else
+      socket
+      |> assign(:catalog_actions, [])
+      |> assign(:args_by_action, %{})
+      |> assign(:runners, [])
+      |> assign(:groups, [])
+    end
+  end
+
+  defp load_catalog(socket) do
     # The step picker needs every advertised action selectable, not a
     # paginated page — a catalog with >35 actions must not silently hide
     # the rest. (Same complete-set read MCP uses; the UI list pages stay

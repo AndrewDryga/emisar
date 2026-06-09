@@ -596,21 +596,18 @@ defmodule EmisarWeb.AgentsLive do
           class="rounded-none border-0 border-t border-zinc-900"
         >
           <:item :let={key}>
-            <li class="flex items-start gap-4 px-5 py-4">
-              <span class="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-zinc-900 text-zinc-400">
-                <.icon name={agent_icon(key.name)} class="h-4 w-4" />
-              </span>
-
-              <div class="min-w-0 flex-1">
-                <%!-- Row 1: name + status pill + scope chips --%>
-                <div class="flex flex-wrap items-center gap-2">
-                  <span class="truncate font-medium text-zinc-100">{key.name}</span>
-                  <.client_status_pill key={key} />
-                  <.chip :for={scope <- key.scopes || []} tone={:indigo} mono>{scope}</.chip>
-                </div>
-
+            <.list_row icon={agent_icon(key.name)}>
+              <%!-- Row 1: name + status pill --%>
+              <:title>
+                <span class="truncate font-medium text-zinc-100">{key.name}</span>
+                <.client_status_pill key={key} />
+              </:title>
+              <:chips>
+                <.chip :for={scope <- key.scopes || []} tone={:indigo} mono>{scope}</.chip>
+              </:chips>
+              <:meta>
                 <%!-- Row 2: prefix + scope (runners + groups) + last call --%>
-                <div class="mt-1 truncate font-mono text-[11px] text-zinc-500">
+                <div class="truncate font-mono text-[11px]">
                   {key.key_prefix}…
                   · {format_key_scope(key, @runners)} · last call {last_used(key.last_used_at)}
                   <span :if={key.created_by}>· by {key.created_by.email}</span>
@@ -619,21 +616,22 @@ defmodule EmisarWeb.AgentsLive do
                 <%!-- Row 3: the MCP client this key reported at `initialize`
                      (clientInfo) — what's actually talking, vs the operator
                      name above. Only shown once a client has connected. --%>
-                <div :if={reported_client(key)} class="mt-0.5 truncate text-[11px] text-zinc-500">
+                <div :if={reported_client(key)} class="mt-0.5 truncate text-[11px]">
                   client <span class="text-zinc-300">{reported_client(key)}</span>
                 </div>
-              </div>
-
-              <button
-                :if={is_nil(key.revoked_at) and Permissions.can?(assigns, :manage_api_keys)}
-                phx-click="revoke"
-                phx-value-id={key.id}
-                data-confirm="Revoke this API key? The connected client will get 401s on its next call."
-                class="shrink-0 rounded-lg border border-rose-500/40 px-2.5 py-1 text-xs font-medium text-rose-200 hover:bg-rose-500/10"
-              >
-                Revoke
-              </button>
-            </li>
+              </:meta>
+              <:actions>
+                <button
+                  :if={is_nil(key.revoked_at) and Permissions.can?(assigns, :manage_api_keys)}
+                  phx-click="revoke"
+                  phx-value-id={key.id}
+                  data-confirm="Revoke this API key? The connected client will get 401s on its next call."
+                  class="rounded-lg border border-rose-500/40 px-2.5 py-1 text-xs font-medium text-rose-200 hover:bg-rose-500/10"
+                >
+                  Revoke
+                </button>
+              </:actions>
+            </.list_row>
           </:item>
           <:empty>
             <div class="mx-auto max-w-md">

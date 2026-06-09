@@ -39,6 +39,7 @@ defmodule EmisarWeb.Permissions do
   defp allow?(role, :manage_policies) when role in ~w(owner admin), do: true
   defp allow?(role, :manage_runbooks) when role in ~w(owner admin), do: true
   defp allow?(role, :manage_runners) when role in ~w(owner admin), do: true
+  defp allow?(role, :manage_packs) when role in ~w(owner admin), do: true
 
   # operator+
   defp allow?(role, :dispatch_run) when role in ~w(owner admin operator), do: true
@@ -68,6 +69,7 @@ defmodule EmisarWeb.Permissions do
   defp denial_message(:manage_policies), do: "Only owners and admins can manage policies."
   defp denial_message(:manage_runbooks), do: "Only owners and admins can manage runbooks."
   defp denial_message(:manage_runners), do: "Only owners and admins can manage runners."
+  defp denial_message(:manage_packs), do: "Only owners and admins can manage packs."
   defp denial_message(:dispatch_run), do: "Viewers can't dispatch runs."
   defp denial_message(:cancel_run), do: "Viewers can't cancel runs."
   defp denial_message(:decide_approval), do: "Viewers can't decide approvals."

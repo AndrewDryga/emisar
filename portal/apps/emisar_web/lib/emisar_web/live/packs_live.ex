@@ -23,43 +23,51 @@ defmodule EmisarWeb.PacksLive do
   use EmisarWeb, :live_view
 
   alias Emisar.Catalog
+  alias EmisarWeb.Permissions
 
   def mount(_params, _session, socket) do
+    socket = assign(socket, :page_title, "Packs")
+
     if connected?(socket) do
-      {:ok, load_packs(socket) |> assign(:loading?, false)}
+      {:ok, socket |> load_packs() |> assign(:loading?, false)}
     else
+      # `mount` runs twice (dead render + connected mount) — the pack list
+      # is up to 500 rows, so defer the read to the connected pass (IL-18)
+      # and render an empty stream + loading shimmer on the dead one.
       {:ok,
        socket
-       |> assign(:page_title, "Packs")
        |> assign(:loading?, true)
-       |> assign(:rows, [])
-       |> assign(:packs, [])
-       |> assign(:pending_count, 0)}
+       |> assign(:pack_count, 0)
+       |> assign(:pending_count, 0)
+       |> stream(:packs, [])}
     end
   end
 
+  # Each stream entry is one pack group: `%{id: pack_id, versions: [...]}`.
+  # The list is held by the stream (bounded socket memory), not a plain
+  # assign. `reset: true` replaces the whole set on the connected mount and
+  # after a mutation reload; targeted Trust/Reject updates a single group
+  # via `stream_insert`/`stream_delete` (see `restream_pack/2`).
   defp load_packs(socket) do
+    rows = fetch_rows(socket)
+    pending = Enum.count(rows, &(&1.trust_state == "pending"))
+    groups = group_by_pack(rows)
+
+    socket
+    |> assign(:pack_count, length(groups))
+    |> assign(:pending_count, pending)
+    # Keep the sidebar badge in step after Trust/Reject on this page.
+    |> assign(:pending_packs_count, pending)
+    |> stream(:packs, groups, reset: true)
+  end
+
+  defp fetch_rows(socket) do
     case Catalog.list_pack_versions(socket.assigns.current_subject,
            order_by: [{:packs, :asc, :pack_id}, {:packs, :asc, :version}],
            page: [limit: 500]
          ) do
-      {:ok, rows, _meta} ->
-        pending = Enum.count(rows, &(&1.trust_state == "pending"))
-
-        socket
-        |> assign(:page_title, "Packs")
-        |> assign(:rows, rows)
-        |> assign(:packs, group_by_pack(rows))
-        |> assign(:pending_count, pending)
-        # Keep the sidebar badge in step after Trust/Reject on this page.
-        |> assign(:pending_packs_count, pending)
-
-      {:error, _} ->
-        socket
-        |> assign(:page_title, "Packs")
-        |> assign(:rows, [])
-        |> assign(:packs, [])
-        |> assign(:pending_count, 0)
+      {:ok, rows, _meta} -> rows
+      {:error, _} -> []
     end
   end
 
@@ -69,7 +77,7 @@ defmodule EmisarWeb.PacksLive do
         {:noreply,
          socket
          |> put_flash(:info, "Trusted #{pv.pack_id} v#{pv.version}.")
-         |> load_packs()}
+         |> restream_pack(pv.pack_id)}
 
       {:error, :not_pending} ->
         {:noreply, put_flash(socket, :error, "Nothing pending on that pack.")}
@@ -91,7 +99,7 @@ defmodule EmisarWeb.PacksLive do
            :info,
            "Rejected drift on #{pv.pack_id} v#{pv.version}. The runner advertising the new hash will re-broadcast — if it's still set, this will re-surface."
          )
-         |> load_packs()}
+         |> restream_pack(pv.pack_id)}
 
       {:error, :not_pending} ->
         {:noreply, put_flash(socket, :error, "Nothing pending on that pack.")}
@@ -101,6 +109,30 @@ defmodule EmisarWeb.PacksLive do
 
       {:error, _} ->
         {:noreply, put_flash(socket, :error, "Could not reject pack — try again.")}
+    end
+  end
+
+  # After a Trust/Reject, recompute just the affected pack group and update
+  # the stream in place: `stream_delete` if every version of the pack is
+  # gone (a never-trusted custom pack's only version was Rejected → its row
+  # is deleted), otherwise `stream_insert` the regrouped versions. The
+  # `pending_count` (and sidebar badge) are recomputed from the full set.
+  defp restream_pack(socket, pack_id) do
+    rows = fetch_rows(socket)
+    pending = Enum.count(rows, &(&1.trust_state == "pending"))
+    pack_count = rows |> Enum.map(& &1.pack_id) |> Enum.uniq() |> length()
+    versions = rows |> Enum.filter(&(&1.pack_id == pack_id)) |> sort_versions()
+
+    socket =
+      socket
+      |> assign(:pack_count, pack_count)
+      |> assign(:pending_count, pending)
+      |> assign(:pending_packs_count, pending)
+
+    if versions == [] do
+      stream_delete(socket, :packs, %{id: pack_id})
+    else
+      stream_insert(socket, :packs, %{id: pack_id, versions: versions})
     end
   end
 
@@ -144,7 +176,7 @@ defmodule EmisarWeb.PacksLive do
       <.loading_state :if={@loading?} />
 
       <div
-        :if={@packs == [] and not @loading?}
+        :if={@pack_count == 0 and not @loading?}
         class="mt-8 rounded-xl border border-dashed border-zinc-800 p-10 text-center"
       >
         <.icon name="hero-cube" class="mx-auto h-8 w-8 text-zinc-700" />
@@ -154,21 +186,20 @@ defmodule EmisarWeb.PacksLive do
         </p>
       </div>
 
-      <ul class="mt-6 space-y-4">
+      <ul id="packs" phx-update="stream" class="mt-6 space-y-4">
         <li
-          :for={{pack_id, versions} <- @packs}
+          :for={{dom_id, pack} <- @streams.packs}
+          id={dom_id}
           class="overflow-hidden rounded-xl border border-zinc-900 bg-zinc-950/40"
         >
           <header class="flex items-center justify-between gap-4 border-b border-zinc-900 px-5 py-3">
             <div class="flex items-center gap-2">
               <.icon name="hero-cube" class="h-4 w-4 text-zinc-500" />
-              <h2 class="font-mono text-sm text-zinc-100">{pack_id}</h2>
+              <h2 class="font-mono text-sm text-zinc-100">{pack.id}</h2>
               <span class="text-xs text-zinc-500">·</span>
-              <span class="text-xs text-zinc-500">
-                {length(versions)} {if length(versions) == 1, do: "version", else: "versions"}
-              </span>
+              <span class="text-xs text-zinc-500">{version_count_label(pack.versions)}</span>
               <span
-                :if={any_pending?(versions)}
+                :if={any_pending?(pack.versions)}
                 class="ml-2 rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-amber-200 ring-1 ring-amber-500/30"
               >
                 Pending
@@ -177,7 +208,7 @@ defmodule EmisarWeb.PacksLive do
           </header>
 
           <ul class="divide-y divide-zinc-900">
-            <li :for={v <- versions} class="flex flex-col gap-3 px-5 py-3">
+            <li :for={v <- pack.versions} class="flex flex-col gap-3 px-5 py-3">
               <div class="flex items-center justify-between gap-4">
                 <div class="flex items-center gap-3 min-w-0">
                   <span class="rounded bg-zinc-900 px-1.5 py-0.5 font-mono text-xs text-zinc-200">
@@ -215,13 +246,13 @@ defmodule EmisarWeb.PacksLive do
                 class="rounded border border-amber-800/60 bg-amber-950/30 p-3"
               >
                 <p :if={is_nil(v.hash)} class="text-xs text-amber-100/90">
-                  A runner advertised <code>{pack_id}</code> v{v.version} — a
+                  A runner advertised <code>{pack.id}</code> v{v.version} — a
                   pack we don't ship a baseline for. Dispatch is blocked
                   until you approve its contents.
                 </p>
                 <p :if={not is_nil(v.hash)} class="text-xs text-amber-100/90">
                   A runner is advertising a different hash. Dispatch is blocked
-                  for <code>{pack_id}</code> v{v.version} until you decide.
+                  for <code>{pack.id}</code> v{v.version} until you decide.
                 </p>
                 <dl class="mt-2 grid grid-cols-[max-content,1fr] gap-x-3 gap-y-0.5 text-[11px]">
                   <dt class="font-mono text-zinc-500">trusted:</dt>
@@ -229,15 +260,24 @@ defmodule EmisarWeb.PacksLive do
                   <dt class="font-mono text-zinc-500">advertising:</dt>
                   <dd class="font-mono text-amber-300 break-all">{v.pending_hash || "—"}</dd>
                 </dl>
-                <div class="mt-3 flex flex-wrap gap-2">
+                <%!-- Trust/Reject mutate authorization state — owner/admin
+                     only. The context gate (manage_catalog) is defense in
+                     depth; hide the buttons for viewers/operators too so
+                     they aren't offered an action that always denies. The
+                     pending banner above stays visible to everyone — it
+                     explains WHY dispatch is blocked. --%>
+                <div
+                  :if={Permissions.can?(assigns, :manage_packs)}
+                  class="mt-3 flex flex-wrap gap-2"
+                >
                   <button
                     phx-click="trust"
                     phx-value-id={v.id}
                     data-confirm={
                       if is_nil(v.hash) do
-                        "Approve #{pack_id} v#{v.version}? Cloud will allow its actions to run against the advertised contents."
+                        "Approve #{pack.id} v#{v.version}? Cloud will allow its actions to run against the advertised contents."
                       else
-                        "Adopt the new hash as trusted for #{pack_id} v#{v.version}? Future dispatches will authorize against the advertised contents."
+                        "Adopt the new hash as trusted for #{pack.id} v#{v.version}? Future dispatches will authorize against the advertised contents."
                       end
                     }
                     class="rounded bg-amber-500 px-3 py-1 text-xs font-semibold text-amber-950 hover:bg-amber-400"
@@ -271,14 +311,19 @@ defmodule EmisarWeb.PacksLive do
   defp group_by_pack(rows) do
     rows
     |> Enum.group_by(& &1.pack_id)
-    |> Enum.map(fn {pack_id, vs} ->
-      sorted = Enum.sort_by(vs, & &1.last_seen_at, {:desc, DateTime})
-      {pack_id, sorted}
-    end)
-    |> Enum.sort_by(fn {pack_id, _} -> pack_id end)
+    |> Enum.map(fn {pack_id, vs} -> %{id: pack_id, versions: sort_versions(vs)} end)
+    |> Enum.sort_by(& &1.id)
   end
 
+  defp sort_versions(versions),
+    do: Enum.sort_by(versions, & &1.last_seen_at, {:desc, DateTime})
+
   defp any_pending?(versions), do: Enum.any?(versions, &(&1.trust_state == "pending"))
+
+  defp version_count_label(versions) do
+    n = length(versions)
+    "#{n} #{if n == 1, do: "version", else: "versions"}"
+  end
 
   defp short_hash(nil), do: "—"
   defp short_hash(h) when is_binary(h), do: String.slice(h, 0, 12)

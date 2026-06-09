@@ -15,11 +15,11 @@ defmodule EmisarWeb.RunNewLive do
       {:ok, action} ->
         args_schema = action.args_schema["args"] || []
 
-        runner =
-          case Runners.fetch_runner_by_id(runner_id, socket.assigns.current_subject) do
-            {:ok, r} -> r
-            {:error, :not_found} -> nil
-          end
+        # The action fetch above gates render/redirect, so it stays in
+        # mount. The runner is only used to label the page (its name in
+        # the breadcrumb) — defer it behind `connected?/1` so it doesn't
+        # run twice (IL-18). The dead pass shows the "Runner" fallback.
+        runner = if connected?(socket), do: lookup_runner(runner_id, socket), else: nil
 
         {:ok,
          socket
@@ -30,6 +30,13 @@ defmodule EmisarWeb.RunNewLive do
          |> assign(:args_schema, args_schema)
          |> assign_form(initial_args(args_schema))
          |> assign(:reason, "")}
+    end
+  end
+
+  defp lookup_runner(runner_id, socket) do
+    case Runners.fetch_runner_by_id(runner_id, socket.assigns.current_subject) do
+      {:ok, r} -> r
+      {:error, :not_found} -> nil
     end
   end
 

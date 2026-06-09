@@ -7,18 +7,23 @@ defmodule EmisarWeb.RunbookRunLive do
   def mount(%{"id" => id}, _session, socket) do
     case Runbooks.fetch_runbook_by_id(id, socket.assigns.current_subject) do
       {:ok, runbook} ->
-        {:ok, runners, _} = Runners.list_runners_for_account(socket.assigns.current_subject)
-        steps = Runbooks.expand(runbook)
+        # The runbook fetch above gates render/redirect, so it stays in
+        # mount. The runner list + step expansion are heavier reads only
+        # the connected page needs — defer them behind `connected?/1` so
+        # they don't run twice (IL-18). The dead pass renders an empty
+        # plan + runner select.
+        socket =
+          socket
+          |> assign(:page_title, "Run #{runbook.title}")
+          |> assign(:runbook, runbook)
+          |> assign(:reason, "")
+          |> assign(:errors, %{})
 
-        {:ok,
-         socket
-         |> assign(:page_title, "Run #{runbook.title}")
-         |> assign(:runbook, runbook)
-         |> assign(:runners, runners)
-         |> assign(:steps, steps)
-         |> assign(:runner_id, default_runner_id(runners))
-         |> assign(:reason, "")
-         |> assign(:errors, %{})}
+        if connected?(socket) do
+          {:ok, load_run_form(socket, runbook)}
+        else
+          {:ok, empty_run_form(socket)}
+        end
 
       {:error, _} ->
         {:ok,
@@ -26,6 +31,22 @@ defmodule EmisarWeb.RunbookRunLive do
          |> put_flash(:error, "Runbook not found.")
          |> push_navigate(to: ~p"/app/runbooks")}
     end
+  end
+
+  defp load_run_form(socket, runbook) do
+    {:ok, runners, _} = Runners.list_runners_for_account(socket.assigns.current_subject)
+
+    socket
+    |> assign(:runners, runners)
+    |> assign(:steps, Runbooks.expand(runbook))
+    |> assign(:runner_id, default_runner_id(runners))
+  end
+
+  defp empty_run_form(socket) do
+    socket
+    |> assign(:runners, [])
+    |> assign(:steps, [])
+    |> assign(:runner_id, nil)
   end
 
   defp default_runner_id([]), do: nil
