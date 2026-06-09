@@ -141,6 +141,26 @@ defmodule EmisarWeb.PoliciesLiveTest do
       assert html =~ ~s(value="second")
     end
 
+    test "a valid edit saves cleanly — the rules error is a defensive inline net, never a flash",
+         %{conn: conn} do
+      {conn, _user, _account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/app/policies")
+
+      # The tier defaults are constrained <select>s and form_change auto-enforces
+      # monotonicity, so the UI can't produce an invalid policy — a valid edit
+      # saves cleanly. The changeset's `:rules` error is rendered inline on the
+      # form (a server-side safety net), never dumped into a flash.
+      html =
+        lv
+        |> form("#policy-form", %{"policy" => %{"defaults" => %{"medium" => "require_approval"}}})
+        |> render_submit()
+
+      assert html =~ "Policy saved."
+      refute html =~ "Could not save policy"
+      # The inline error slot exists in the template but stays empty on success.
+      refute html =~ "higher-risk tiers must be at least as restrictive"
+    end
+
     test "loading an existing policy reflects its defaults + overrides in the form", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
 

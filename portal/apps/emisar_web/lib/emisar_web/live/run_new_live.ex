@@ -28,7 +28,7 @@ defmodule EmisarWeb.RunNewLive do
          |> assign(:runner_id, runner_id)
          |> assign(:runner, runner)
          |> assign(:args_schema, args_schema)
-         |> assign(:form, to_form(initial_args(args_schema), as: "args"))
+         |> assign_form(initial_args(args_schema))
          |> assign(:reason, "")}
     end
   end
@@ -41,7 +41,7 @@ defmodule EmisarWeb.RunNewLive do
 
     {:noreply,
      socket
-     |> assign(:form, to_form(args, as: "args"))
+     |> assign_form(args, arg_errors(args, socket.assigns.args_schema))
      |> assign(:reason, params["reason"] || socket.assigns.reason)}
   end
 
@@ -67,8 +67,10 @@ defmodule EmisarWeb.RunNewLive do
 
   defp do_dispatch_with_reason(socket, raw_args, reason) do
     case coerce_args(raw_args, socket.assigns.args_schema) do
-      {:error, msg} ->
-        {:noreply, put_flash(socket, :error, "Invalid: #{msg}")}
+      # Bad/missing args render inline under the offending fields (rose
+      # border) via the form's per-arg errors — not a flash banner.
+      {:error, errors} ->
+        {:noreply, assign_form(socket, raw_args, errors)}
 
       {:ok, args} ->
         attrs = %{
@@ -122,8 +124,14 @@ defmodule EmisarWeb.RunNewLive do
                "This runner no longer advertises that action — reload the page and pick a current one."
              )}
 
-          {:error, %Ecto.Changeset{} = changeset} ->
-            {:noreply, put_flash(socket, :error, "Invalid: #{humanize_errors(changeset)}")}
+          # The run record itself was rejected (its fields key to the
+          # dispatch envelope — runner_id, source, … — not to the action's
+          # arguments, so there's no per-arg input to pin these on). A
+          # concise flash is correct here; the inline arg errors above
+          # already caught anything the operator can fix in a field.
+          {:error, %Ecto.Changeset{}} ->
+            {:noreply,
+             put_flash(socket, :error, "Could not dispatch the run — reload and try again.")}
 
           # Don't swallow an unexpected error into "Something went wrong" —
           # surface the actual code so the operator (and the logs) can act.
@@ -296,6 +304,24 @@ defmodule EmisarWeb.RunNewLive do
     """
   end
 
+  # -- form ------------------------------------------------------------
+  #
+  # The inputs are dynamic — one per declared action arg — so the form is
+  # backed by the raw string param map (binary keys), not an Ecto schema
+  # or schemaless changeset: the arg names are runtime strings, and
+  # turning them into the atom keys a changeset needs would mean
+  # `String.to_atom/1` on runner/pack-advertised input (IL-14). Instead we
+  # hand `to_form` the params plus an `errors` keyword keyed by those same
+  # binary arg names; `<.input field={@form[name]}>` then renders each
+  # error inline under its field with the rose border, exactly as a
+  # changeset-backed form would. (`<.input>` shows an error only for a
+  # field the client actually submitted/touched — `used_input?/1` — so an
+  # untouched field stays quiet until submit.)
+
+  defp assign_form(socket, params, errors \\ []) do
+    assign(socket, :form, to_form(params, as: "args", errors: errors))
+  end
+
   # -- initial values --------------------------------------------------
 
   defp initial_args(schema) do
@@ -329,18 +355,34 @@ defmodule EmisarWeb.RunNewLive do
   # The form always submits string values. We parse them into the shapes
   # the runner's validator expects, per the declared arg type. Missing
   # required args become an error here so we don't dispatch a bad run.
+  #
+  # Errors come back keyed by arg name as `{msg, opts}` tuples — the exact
+  # shape `<.input field={@form[name]}>` renders inline (rose border +
+  # message under the field). We collect *every* bad arg, not just the
+  # first, so the operator sees all of them in one pass.
 
   defp coerce_args(raw, schema) do
-    Enum.reduce_while(schema, {:ok, %{}}, fn arg, {:ok, acc} ->
-      name = arg["name"]
-      value = Map.get(raw, name)
+    {ok, errors} =
+      Enum.reduce(schema, {%{}, []}, fn arg, {acc, errs} ->
+        name = arg["name"]
 
-      case coerce_one(arg, value) do
-        :skip -> {:cont, {:ok, acc}}
-        {:ok, parsed} -> {:cont, {:ok, Map.put(acc, name, parsed)}}
-        {:error, reason} -> {:halt, {:error, "#{name}: #{reason}"}}
-      end
-    end)
+        case coerce_one(arg, Map.get(raw, name)) do
+          :skip -> {acc, errs}
+          {:ok, parsed} -> {Map.put(acc, name, parsed), errs}
+          {:error, reason} -> {acc, [{name, {reason, []}} | errs]}
+        end
+      end)
+
+    if errors == [], do: {:ok, ok}, else: {:error, Enum.reverse(errors)}
+  end
+
+  # Field errors for `phx-change` validation — same coercion, but we only
+  # want the error list (the coerced values are recomputed on submit).
+  defp arg_errors(raw, schema) do
+    case coerce_args(raw, schema) do
+      {:ok, _} -> []
+      {:error, errors} -> errors
+    end
   end
 
   # Missing or blank optional → skip. Missing required → error.

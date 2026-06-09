@@ -6,6 +6,20 @@ defmodule Emisar.Policies.Policy.Changeset do
   @valid_tiers ~w(low medium high critical)
   @valid_decisions ~w(allow require_approval deny)
 
+  @doc """
+  Validation-only changeset for the policy editor form. Casts the
+  assembled `rules` map and runs the same `validate_rules/1` checks as
+  `create/1` + `update/1`, so the LiveView can back its form with a
+  changeset and render the rules-level error inline (rose border + message)
+  instead of a flash. Persists nothing; the real write goes through
+  `Policies.save_rules/2`.
+  """
+  def form(rules) do
+    %Policy{}
+    |> cast(%{rules: rules}, [:rules])
+    |> validate_rules()
+  end
+
   def create(attrs) do
     %Policy{}
     |> cast(attrs, [:account_id, :rules, :updated_by_id])

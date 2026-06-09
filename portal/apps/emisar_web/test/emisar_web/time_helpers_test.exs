@@ -17,29 +17,6 @@ defmodule EmisarWeb.TimeHelpersTest do
     end
   end
 
-  describe "humanize_errors/1" do
-    test "renders a changeset's errors as a single human string" do
-      changeset = %Ecto.Changeset{
-        errors: [
-          email: {"can't be blank", []},
-          password: {"should be at least %{count} characters", [count: 12]}
-        ]
-      }
-
-      msg = humanize_errors(changeset)
-      assert msg =~ "email"
-      assert msg =~ "can't be blank"
-      assert msg =~ "password"
-      # `%{count}` interpolation happens — the user shouldn't see the literal.
-      refute msg =~ "%{count}"
-      assert msg =~ "12"
-    end
-
-    test "non-changeset input falls back to a safe default" do
-      assert humanize_errors(:something_unexpected) == "Something went wrong"
-    end
-  end
-
   describe "event_tone/1" do
     test "failures and errors are :danger" do
       for t <- ~w[user.sign_in_failed user.mfa_failed user.password_change_failed

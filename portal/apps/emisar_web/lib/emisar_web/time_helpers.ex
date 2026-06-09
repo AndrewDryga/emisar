@@ -95,34 +95,6 @@ defmodule EmisarWeb.TimeHelpers do
   def format_json(map), do: Jason.encode!(map, pretty: true)
 
   @doc """
-  Humanizes an Ecto.Changeset (or a list of `{field, {msg, opts}}` errors)
-  into a readable string for flash messages. Replaces ad-hoc
-  `inspect(changeset.errors)` which leaks raw Elixir syntax to the user
-  (e.g. `[email: {"can't be blank", []}]`).
-
-      iex> humanize_errors(%Ecto.Changeset{errors: [email: {"can't be blank", []}]})
-      "email can't be blank"
-  """
-  def humanize_errors(%Ecto.Changeset{errors: errors}), do: humanize_errors(errors)
-
-  def humanize_errors(errors) when is_list(errors) do
-    errors
-    |> Enum.map(fn {field, {msg, opts}} ->
-      # Substitute %{count}-style template variables from opts the
-      # same way Ecto's traverse_errors/2 does.
-      msg =
-        Enum.reduce(opts, msg, fn {key, value}, acc ->
-          String.replace(acc, "%{#{key}}", to_string(value))
-        end)
-
-      "#{field} #{msg}"
-    end)
-    |> Enum.join("; ")
-  end
-
-  def humanize_errors(_), do: "Something went wrong"
-
-  @doc """
   Friendly label for an audit event type. `runner.connected` →
   `"Runner connected"`. Unknown types are best-effort humanized
   (replace `_`/`.` with space, capitalize first word) so a new event

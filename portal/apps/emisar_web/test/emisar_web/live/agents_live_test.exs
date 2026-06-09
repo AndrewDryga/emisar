@@ -218,6 +218,29 @@ defmodule EmisarWeb.AgentsLiveTest do
       assert html =~ "NeverBot"
     end
 
+    test "custom-key form shows validation errors inline on the field, not in a flash",
+         %{conn: conn} do
+      {conn, _user, _account} = register_and_log_in(conn)
+      {:ok, lv, _} = live(conn, ~p"/app/agents")
+
+      # The custom-key builder form only renders after the Custom tab is
+      # picked (no quick-mint on that tab).
+      lv |> render_click("select_client", %{"client" => "custom"})
+
+      html =
+        lv
+        |> form("#api_key_form", %{"api_key" => %{"name" => ""}})
+        |> render_submit()
+
+      # Inline field error rendered by <.input>/<.error> under the name
+      # input…
+      assert html =~ "can&#39;t be blank" or html =~ "can't be blank"
+      # …and no flash banner dumping a humanized changeset.
+      refute html =~ "Could not create key"
+      # No key was persisted on the invalid submit.
+      assert Repo.all(ApiKey) == []
+    end
+
     test "survives an account-topic broadcast it doesn't render", %{conn: conn} do
       {conn, _user, _account} = register_and_log_in(conn)
       {:ok, lv, _} = live(conn, ~p"/app/agents")

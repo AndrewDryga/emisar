@@ -27,10 +27,14 @@ defmodule EmisarWeb.PoliciesLive do
 
     rules = (policy && policy.rules) || Policies.default_rules()
 
+    defaults = normalize_defaults(rules["defaults"])
+    overrides = normalize_overrides(rules["overrides"])
+
     socket
     |> assign(:policy, policy)
-    |> assign(:defaults, normalize_defaults(rules["defaults"]))
-    |> assign(:overrides, normalize_overrides(rules["overrides"]))
+    |> assign(:defaults, defaults)
+    |> assign(:overrides, overrides)
+    |> assign_form(Policies.change_policy(to_rules(defaults, overrides)))
   end
 
   # -- Events ---------------------------------------------------------
@@ -42,7 +46,13 @@ defmodule EmisarWeb.PoliciesLive do
       |> enforce_monotonic_defaults()
 
     overrides = merge_overrides(socket.assigns.overrides, params["overrides"] || [])
-    {:noreply, socket |> assign(:defaults, defaults) |> assign(:overrides, overrides)}
+    changeset = Map.put(Policies.change_policy(to_rules(defaults, overrides)), :action, :validate)
+
+    {:noreply,
+     socket
+     |> assign(:defaults, defaults)
+     |> assign(:overrides, overrides)
+     |> assign_form(changeset)}
   end
 
   def handle_event("form_change", _params, socket), do: {:noreply, socket}
@@ -72,7 +82,7 @@ defmodule EmisarWeb.PoliciesLive do
           {:noreply, s |> put_flash(:info, "Policy saved.") |> load()}
 
         {:error, %Ecto.Changeset{} = cs} ->
-          {:noreply, put_flash(s, :error, "Could not save policy: #{format_errors(cs)}")}
+          {:noreply, assign_form(s, Map.put(cs, :action, :validate))}
       end
     end)
   end
@@ -198,8 +208,8 @@ defmodule EmisarWeb.PoliciesLive do
   defp blank?(s) when is_binary(s), do: String.trim(s) == ""
   defp blank?(_), do: false
 
-  defp format_errors(%Ecto.Changeset{errors: errors}) do
-    errors |> Enum.map(fn {field, {msg, _}} -> "#{field}: #{msg}" end) |> Enum.join("; ")
+  defp assign_form(socket, %Ecto.Changeset{} = changeset) do
+    assign(socket, :form, to_form(changeset, as: "policy"))
   end
 
   # -- Render ---------------------------------------------------------
@@ -234,6 +244,20 @@ defmodule EmisarWeb.PoliciesLive do
         </section>
 
         <form id="policy-form" phx-change="form_change" phx-submit="save" class="space-y-6">
+          <%!-- The policy is structured data (tier defaults + overrides) assembled
+               server-side into a single `rules` map, so every changeset error keys
+               to `:rules` rather than a single input. Render it inline at the top of
+               the form — rose-bordered, under the fields it concerns — not a flash. --%>
+          <div
+            :for={{msg, _opts} <- @form[:rules].errors}
+            class="rounded-lg border border-rose-500/40 bg-rose-500/5 px-4 py-3"
+          >
+            <p class="flex items-start gap-1.5 text-sm text-rose-400">
+              <.icon name="hero-exclamation-circle-mini" class="mt-0.5 h-4 w-4 flex-none" />
+              <span>{msg}</span>
+            </p>
+          </div>
+
           <section class="rounded-xl border border-zinc-900 bg-zinc-950/40 p-5">
             <header>
               <h2 class="text-base font-semibold text-zinc-100">Risk-tier defaults</h2>

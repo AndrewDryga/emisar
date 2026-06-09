@@ -19,6 +19,24 @@ defmodule EmisarWeb.TeamLiveTest do
     end
   end
 
+  describe "invite form validation" do
+    test "an invalid email renders inline on the field, not in a flash", %{conn: conn} do
+      {conn, _user, _account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/app/settings/team")
+
+      html =
+        lv
+        |> form("#invite_form", %{"invite" => %{"email" => "not-an-email", "role" => "operator"}})
+        |> render_submit()
+
+      # Inline field error (rendered by <.input>/<.error> under the input)…
+      assert html =~ "must have the @ sign and no spaces"
+      # …and no flash banner — the bad address never reaches the mailer.
+      refute html =~ "Could not send invitation"
+      refute html =~ "Invited not-an-email"
+    end
+  end
+
   describe "resend confirmation (self)" do
     test "an unconfirmed user can resend their own confirmation email", %{conn: conn} do
       {conn, user, _account} = register_and_log_in(conn)

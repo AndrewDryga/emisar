@@ -90,6 +90,14 @@ defmodule Emisar.ApiKeys do
 
   # -- Mutations -------------------------------------------------------
 
+  @doc """
+  Validation-only changeset for the create-key form. Pure helper — no
+  secret minted, no DB touched, no subject — so a LiveView can drive
+  `phx-change` validation and render inline field errors. Submitting
+  the validated attrs still goes through `create_key/2`.
+  """
+  def change_key(attrs \\ %{}), do: ApiKey.Changeset.form(attrs)
+
   def create_key(attrs, %Subject{account: account} = subject) do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(

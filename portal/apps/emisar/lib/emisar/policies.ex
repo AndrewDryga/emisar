@@ -63,6 +63,14 @@ defmodule Emisar.Policies do
   def decision_rank("deny"), do: 2
   def decision_rank(_), do: 0
 
+  @doc """
+  Changeset for the policy editor form (no Subject — like
+  `Accounts.change_user`). Validates the assembled `rules` map so the
+  LiveView can render the rules-level error inline; the persisted write
+  still goes through `save_rules/2`.
+  """
+  def change_policy(rules \\ @default_rules), do: Policy.Changeset.form(rules)
+
   # -- Subject-gated CRUD ---------------------------------------------
 
   def fetch_policy(%Subject{} = subject) do

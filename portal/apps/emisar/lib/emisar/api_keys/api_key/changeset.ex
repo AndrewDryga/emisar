@@ -7,6 +7,24 @@ defmodule Emisar.ApiKeys.ApiKey.Changeset do
   # silently couldn't do anything. Drop until we ship the endpoint.
   @valid_scopes ~w(actions:read actions:execute audit:read)
 
+  @doc """
+  Validation-only changeset for the operator create form. Casts the
+  operator-facing fields and runs the same `name` validations as
+  `create/6`, but mints no secret and touches no DB — so the LiveView
+  can drive `phx-change` validation and render inline field errors
+  without generating a key on every keystroke. `expires_at` is left
+  out of the cast: the datetime-local input emits `YYYY-MM-DDTHH:MM`
+  (no seconds/zone), which Ecto can't cast to `:utc_datetime_usec`; it
+  round-trips for redisplay via the changeset params and is parsed when
+  the key is actually created.
+  """
+  def form(attrs \\ %{}) do
+    %ApiKey{}
+    |> cast(attrs, [:name, :description])
+    |> validate_required([:name])
+    |> validate_length(:name, min: 1, max: 80)
+  end
+
   def create(account_id, user_id, membership_id, prefix, hash, attrs) do
     %ApiKey{}
     |> cast(attrs, [

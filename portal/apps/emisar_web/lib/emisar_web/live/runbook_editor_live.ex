@@ -25,6 +25,7 @@ defmodule EmisarWeb.RunbookEditorLive do
     |> assign(:slug, "")
     |> assign(:description, "")
     |> assign(:steps, [example_action_step()])
+    |> assign_form(Runbooks.change_runbook())
     |> assign_catalog()
   end
 
@@ -40,6 +41,13 @@ defmodule EmisarWeb.RunbookEditorLive do
         |> assign(:slug, runbook.slug || "")
         |> assign(:description, runbook.description || "")
         |> assign(:steps, Enum.map(raw_steps, &from_raw_step/1))
+        |> assign_form(
+          Runbooks.change_runbook(%{
+            "title" => runbook.title,
+            "slug" => runbook.slug,
+            "description" => runbook.description
+          })
+        )
         |> assign_catalog()
 
       {:error, _} ->
@@ -102,11 +110,20 @@ defmodule EmisarWeb.RunbookEditorLive do
   # -- Events ---------------------------------------------------------
 
   def handle_event("meta_change", params, socket) do
+    title = params["title"] || socket.assigns.title
+    slug = params["slug"] || socket.assigns.slug
+    description = params["description"] || socket.assigns.description
+
+    changeset =
+      Runbooks.change_runbook(%{"title" => title, "slug" => slug, "description" => description})
+      |> Map.put(:action, :validate)
+
     {:noreply,
      socket
-     |> assign(:title, params["title"] || socket.assigns.title)
-     |> assign(:slug, params["slug"] || socket.assigns.slug)
-     |> assign(:description, params["description"] || socket.assigns.description)}
+     |> assign(:title, title)
+     |> assign(:slug, slug)
+     |> assign(:description, description)
+     |> assign_form(changeset)}
   end
 
   def handle_event("step_change", %{"index" => idx} = params, socket) do
@@ -226,8 +243,11 @@ defmodule EmisarWeb.RunbookEditorLive do
        |> put_flash(:info, success_message(runbook, publish?))
        |> push_navigate(to: ~p"/app/runbooks")}
     else
+      # Field errors (blank title, bad slug) render inline under their inputs;
+      # a structural `definition` error has no input to bind to, so it surfaces
+      # as a concise message above the Steps list (see render/1).
       {:error, %Ecto.Changeset{} = cs} ->
-        {:noreply, put_flash(socket, :error, "Could not save runbook: #{format_errors(cs)}")}
+        {:noreply, assign_form(socket, Map.put(cs, :action, :insert))}
     end
   end
 
@@ -262,10 +282,8 @@ defmodule EmisarWeb.RunbookEditorLive do
     |> String.slice(0, 79)
   end
 
-  defp format_errors(%Ecto.Changeset{errors: errors}) do
-    errors
-    |> Enum.map(fn {field, {msg, _}} -> "#{field}: #{msg}" end)
-    |> Enum.join("; ")
+  defp assign_form(socket, %Ecto.Changeset{} = changeset) do
+    assign(socket, :form, to_form(changeset, as: "runbook"))
   end
 
   # Auto-derive Step ID from the chosen Action whenever the user
@@ -400,6 +418,17 @@ defmodule EmisarWeb.RunbookEditorLive do
           </header>
 
           <div class="space-y-3 p-5">
+            <%!-- A structural save error (e.g. a blank/invalid `definition`)
+                 has no metadata input to bind to, so it surfaces here on the
+                 Steps panel rather than in a top flash banner. --%>
+            <p
+              :if={msg = save_error_message(@form)}
+              class="flex items-center gap-1.5 rounded-lg border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-sm text-rose-200"
+            >
+              <.icon name="hero-exclamation-circle-mini" class="h-4 w-4 flex-none" />
+              {msg}
+            </p>
+
             <div
               :if={@steps == []}
               class="rounded-lg border border-dashed border-zinc-800 p-8 text-center text-xs text-zinc-500"
@@ -467,8 +496,9 @@ defmodule EmisarWeb.RunbookEditorLive do
                   value={@title}
                   required
                   placeholder="e.g. Cassandra: rolling repair"
-                  class={input_class()}
+                  class={input_class(field_errors(@form, :title))}
                 />
+                <.error :for={msg <- field_errors(@form, :title)}>{msg}</.error>
               </div>
 
               <div>
@@ -484,8 +514,9 @@ defmodule EmisarWeb.RunbookEditorLive do
                   name="slug"
                   value={@slug}
                   placeholder="auto from title"
-                  class={[input_class(), "font-mono text-xs"]}
+                  class={[input_class(field_errors(@form, :slug)), "font-mono text-xs"]}
                 />
+                <.error :for={msg <- field_errors(@form, :slug)}>{msg}</.error>
               </div>
 
               <div>
@@ -746,6 +777,36 @@ defmodule EmisarWeb.RunbookEditorLive do
 
   defp input_class do
     "mt-1 block w-full rounded-lg border-0 bg-zinc-900 px-2 py-1.5 text-sm text-zinc-100 ring-1 ring-zinc-800 focus:ring-indigo-500"
+  end
+
+  # Metadata-field input classes with the rose ring when the field has a
+  # validation error — same border-highlight treatment `<.input>` applies.
+  defp input_class([]), do: input_class()
+
+  defp input_class([_ | _]) do
+    "mt-1 block w-full rounded-lg border-0 bg-zinc-900 px-2 py-1.5 text-sm text-zinc-100 " <>
+      "ring-1 ring-rose-500/50 focus:ring-rose-500"
+  end
+
+  # Translated errors for one metadata form field, mirroring `<.input>`:
+  # only shown once the changeset carries an `:action` (post validate/submit),
+  # so a fresh form paints no errors.
+  defp field_errors(%Phoenix.HTML.Form{source: %Ecto.Changeset{action: nil}}, _field), do: []
+
+  defp field_errors(form, field) do
+    form[field].errors |> Enum.map(&translate_error/1)
+  end
+
+  # A `definition` error comes from the structured step builder, not a metadata
+  # input — surface it as one concise line on the Steps panel. nil → nothing to
+  # show (no save attempted, or only field errors that already render inline).
+  defp save_error_message(%Phoenix.HTML.Form{source: %Ecto.Changeset{action: nil}}), do: nil
+
+  defp save_error_message(form) do
+    case field_errors(form, :definition) do
+      [msg | _] -> "Steps: #{msg}"
+      [] -> nil
+    end
   end
 
   # `<datalist id="...">` ids should be safe for HTML attributes. Action

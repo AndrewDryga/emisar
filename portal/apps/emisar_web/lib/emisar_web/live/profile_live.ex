@@ -50,7 +50,12 @@ defmodule EmisarWeb.ProfileLive do
   defp current_session_digest(token) when is_binary(token), do: :crypto.hash(:sha256, token)
 
   def handle_event("validate_profile", %{"profile" => params}, socket) do
-    {:noreply, assign(socket, :profile_form, to_form(params, as: "profile"))}
+    changeset =
+      socket.assigns.current_user
+      |> Accounts.change_user(params)
+      |> Map.put(:action, :validate)
+
+    {:noreply, assign(socket, :profile_form, to_form(changeset, as: "profile"))}
   end
 
   def handle_event("save_profile", %{"profile" => params}, socket) do
@@ -69,6 +74,15 @@ defmodule EmisarWeb.ProfileLive do
       {:error, changeset} ->
         {:noreply, assign(socket, :profile_form, to_form(changeset, as: "profile"))}
     end
+  end
+
+  def handle_event("validate_email", %{"email" => params}, socket) do
+    changeset =
+      socket.assigns.current_user
+      |> Accounts.change_user(%{"email" => params["email"] || ""})
+      |> Map.put(:action, :validate)
+
+    {:noreply, assign(socket, :email_form, to_form(changeset, as: "email"))}
   end
 
   def handle_event("save_email", %{"email" => params}, socket) do
@@ -92,6 +106,15 @@ defmodule EmisarWeb.ProfileLive do
     end
   end
 
+  def handle_event("validate_password", %{"password" => params}, socket) do
+    changeset =
+      socket.assigns.current_user
+      |> Accounts.change_user_password_form(params)
+      |> Map.put(:action, :validate)
+
+    {:noreply, assign(socket, :password_form, to_form(changeset, as: "password"))}
+  end
+
   def handle_event("change_password", %{"password" => params}, socket) do
     user = socket.assigns.current_user
     subject = socket.assigns.current_subject
@@ -99,37 +122,38 @@ defmodule EmisarWeb.ProfileLive do
 
     current = params["current_password"] || ""
     new = params["password"] || ""
-    confirm = params["password_confirmation"] || ""
 
-    cond do
-      new != confirm ->
-        {:noreply, put_flash(socket, :error, "New passwords don't match.")}
+    # Length + confirmation-mismatch are field errors on the password form —
+    # render them inline (border + message) instead of a flash. The
+    # current-password challenge isn't a field of the password schema; a
+    # wrong one stays a concise flash.
+    changeset = Accounts.change_user_password_form(user, params)
 
-      true ->
-        case Accounts.change_user_password(user, current, new, subject) do
-          {:ok, _updated} ->
-            # A successful password change blows the old credential — log out
-            # every other device immediately, both at the DB layer (cookie no
-            # longer resolves) and over PubSub (open LV tabs hard-disconnect).
-            if is_binary(current_token) do
-              _ = Auth.revoke_and_disconnect_other_sessions!(user, current_token)
-            end
+    if changeset.valid? do
+      case Accounts.change_user_password(user, current, new, subject) do
+        {:ok, _updated} ->
+          # A successful password change blows the old credential — log out
+          # every other device immediately, both at the DB layer (cookie no
+          # longer resolves) and over PubSub (open LV tabs hard-disconnect).
+          if is_binary(current_token) do
+            _ = Auth.revoke_and_disconnect_other_sessions!(user, current_token)
+          end
 
-            {:noreply,
-             socket
-             |> put_flash(:info, "Password updated. Other devices were signed out.")
-             |> assign_password_form()
-             |> load_sessions()}
+          {:noreply,
+           socket
+           |> put_flash(:info, "Password updated. Other devices were signed out.")
+           |> assign_password_form()
+           |> load_sessions()}
 
-          {:error, :invalid_current_password} ->
-            {:noreply, put_flash(socket, :error, "Current password is incorrect.")}
+        {:error, :invalid_current_password} ->
+          {:noreply, put_flash(socket, :error, "Current password is incorrect.")}
 
-          {:error, :password_too_short} ->
-            {:noreply, put_flash(socket, :error, "Use at least 12 characters.")}
-
-          {:error, _cs} ->
-            {:noreply, put_flash(socket, :error, "Could not update password.")}
-        end
+        {:error, _cs} ->
+          {:noreply, put_flash(socket, :error, "Could not update password.")}
+      end
+    else
+      changeset = Map.put(changeset, :action, :validate)
+      {:noreply, assign(socket, :password_form, to_form(changeset, as: "password"))}
     end
   end
 
@@ -275,17 +299,18 @@ defmodule EmisarWeb.ProfileLive do
   end
 
   defp assign_profile_form(socket, user) do
-    assign(socket, :profile_form, to_form(%{"full_name" => user.full_name || ""}, as: "profile"))
+    changeset = Accounts.change_user(user, %{"full_name" => user.full_name || ""})
+    assign(socket, :profile_form, to_form(changeset, as: "profile"))
   end
 
   defp assign_email_form(socket, user) do
-    params = %{"email" => user.email || "", "current_password" => ""}
-    assign(socket, :email_form, to_form(params, as: "email"))
+    changeset = Accounts.change_user(user, %{"email" => user.email || ""})
+    assign(socket, :email_form, to_form(changeset, as: "email"))
   end
 
   defp assign_password_form(socket) do
-    params = %{"current_password" => "", "password" => "", "password_confirmation" => ""}
-    assign(socket, :password_form, to_form(params, as: "password"))
+    changeset = Accounts.change_user_password_form(socket.assigns.current_user)
+    assign(socket, :password_form, to_form(changeset, as: "password"))
   end
 
   defp assign_mfa_form(socket) do
@@ -383,7 +408,12 @@ defmodule EmisarWeb.ProfileLive do
           title="Email"
           hint="Used to sign in. Requires your current password to change."
         >
-          <.simple_form for={@email_form} id="email_form" phx-submit="save_email">
+          <.simple_form
+            for={@email_form}
+            id="email_form"
+            phx-change="validate_email"
+            phx-submit="save_email"
+          >
             <.input
               field={@email_form[:email]}
               type="email"
@@ -408,7 +438,12 @@ defmodule EmisarWeb.ProfileLive do
           title="Password"
           hint="Use 12+ characters. Other sessions stay signed in — sign them out below if you suspect a leak."
         >
-          <.simple_form for={@password_form} id="password_form" phx-submit="change_password">
+          <.simple_form
+            for={@password_form}
+            id="password_form"
+            phx-change="validate_password"
+            phx-submit="change_password"
+          >
             <.input
               field={@password_form[:current_password]}
               type="password"

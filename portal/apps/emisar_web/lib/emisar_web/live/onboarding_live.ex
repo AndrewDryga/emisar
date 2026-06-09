@@ -11,6 +11,7 @@ defmodule EmisarWeb.OnboardingLive do
   use EmisarWeb, :live_view
 
   alias Emisar.Accounts
+  alias Emisar.Accounts.Account
 
   def mount(_params, _session, socket) do
     {:ok,
@@ -18,7 +19,7 @@ defmodule EmisarWeb.OnboardingLive do
      |> assign(:page_title, "Set up your workspace")
      |> assign(:trigger_submit, false)
      |> assign(:created_account_id, "")
-     |> assign(:form, to_form(%{"name" => "", "plan" => "free"}, as: "account"))}
+     |> assign_form(Accounts.change_account(%Account{}, %{"plan" => "free"}))}
   end
 
   def render(assigns) do
@@ -37,6 +38,7 @@ defmodule EmisarWeb.OnboardingLive do
         <.simple_form
           for={@form}
           id="onboarding_form"
+          phx-change="validate"
           phx-submit="create"
           phx-trigger-action={@trigger_submit}
           action={~p"/app/accounts/switch"}
@@ -66,6 +68,15 @@ defmodule EmisarWeb.OnboardingLive do
     """
   end
 
+  def handle_event("validate", %{"account" => params}, socket) do
+    changeset =
+      %Account{}
+      |> Accounts.change_account(params)
+      |> Map.put(:action, :validate)
+
+    {:noreply, assign_form(socket, changeset)}
+  end
+
   def handle_event("create", %{"account" => %{"name" => name}}, socket) do
     user = socket.assigns.current_user
 
@@ -83,8 +94,13 @@ defmodule EmisarWeb.OnboardingLive do
          |> assign(:created_account_id, account.id)
          |> assign(:trigger_submit, true)}
 
-      {:error, _changeset} ->
-        {:noreply, put_flash(socket, :error, "Unable to create. Try a different name.")}
+      # A blank/invalid name renders inline on the name field; the slug is
+      # derived on submit, so its error (if any) has no input to attach to.
+      {:error, %Ecto.Changeset{} = changeset} ->
+        {:noreply, assign_form(socket, Map.put(changeset, :action, :insert))}
     end
   end
+
+  defp assign_form(socket, %Ecto.Changeset{} = changeset),
+    do: assign(socket, :form, to_form(changeset, as: "account"))
 end

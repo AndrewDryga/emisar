@@ -17,7 +17,8 @@ defmodule EmisarWeb.RunbookRunLive do
          |> assign(:runners, runners)
          |> assign(:steps, steps)
          |> assign(:runner_id, default_runner_id(runners))
-         |> assign(:reason, "")}
+         |> assign(:reason, "")
+         |> assign(:errors, %{})}
 
       {:error, _} ->
         {:ok,
@@ -30,7 +31,39 @@ defmodule EmisarWeb.RunbookRunLive do
   defp default_runner_id([]), do: nil
   defp default_runner_id([%{id: id} | _]), do: id
 
-  defp format_reason(%Ecto.Changeset{} = cs), do: humanize_errors(cs)
+  # Per-field validation of the operator-entered run parameters. Keyed by the
+  # form field so the LiveView can render each message inline under its input.
+  defp run_param_errors(runner_id, reason) do
+    %{}
+    |> put_error(:runner_id, runner_id in [nil, ""], "Pick a runner to execute this runbook on.")
+    |> put_error(
+      :reason,
+      String.trim(reason || "") == "",
+      "Reason is required — describe why you're running this runbook."
+    )
+  end
+
+  defp put_error(errors, _field, false, _msg), do: errors
+  defp put_error(errors, field, true, msg), do: Map.put(errors, field, msg)
+
+  # Drop a field's inline error once it's been filled in — leaves any still-
+  # blank field's error in place so a partial fix doesn't hide the rest.
+  defp clear_resolved_errors(errors, runner_id, reason) do
+    resolved = run_param_errors(runner_id, reason)
+    Map.filter(errors, fn {field, _msg} -> Map.has_key?(resolved, field) end)
+  end
+
+  # Dispatch-field classes, swapping in the rose ring when the field has an
+  # inline error — same border-highlight treatment `<.input>` applies.
+  @field_base "mt-2 block w-full rounded-lg border-0 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-100 ring-1 ring-inset focus:ring-2"
+
+  defp field_class(nil), do: [@field_base, "ring-zinc-800 focus:ring-indigo-500"]
+  defp field_class(_error), do: [@field_base, "ring-rose-500/50 focus:ring-rose-500"]
+
+  # Genuine, non-field dispatch failures (policy denial, runner offline, a
+  # run-row constraint) are surfaced in a concise flash — they aren't a single
+  # input the operator can correct in place.
+  defp format_reason(%Ecto.Changeset{}), do: "the run could not be created"
   defp format_reason(reason) when is_binary(reason), do: reason
 
   defp format_reason(reason) when is_atom(reason),
@@ -39,10 +72,17 @@ defmodule EmisarWeb.RunbookRunLive do
   defp format_reason(_), do: "unknown error"
 
   def handle_event("validate", params, socket) do
+    runner_id = params["runner_id"] || socket.assigns.runner_id
+    reason = params["reason"] || socket.assigns.reason
+
     {:noreply,
      socket
-     |> assign(:runner_id, params["runner_id"] || socket.assigns.runner_id)
-     |> assign(:reason, params["reason"] || socket.assigns.reason)}
+     |> assign(:runner_id, runner_id)
+     |> assign(:reason, reason)
+     # Clear each field's error as soon as the operator fills it in. We only
+     # *remove* errors here (never add) — a blank field shouldn't show "required"
+     # until the operator actually tries to dispatch.
+     |> assign(:errors, clear_resolved_errors(socket.assigns.errors, runner_id, reason))}
   end
 
   def handle_event("dispatch", params, socket) do
@@ -54,43 +94,38 @@ defmodule EmisarWeb.RunbookRunLive do
   defp do_dispatch(socket, params) do
     runner_id = params["runner_id"] || socket.assigns.runner_id
     reason = (params["reason"] || socket.assigns.reason || "") |> String.trim()
+    errors = run_param_errors(runner_id, reason)
 
-    cond do
-      runner_id in [nil, ""] ->
-        {:noreply, put_flash(socket, :error, "Pick a runner to execute this runbook on.")}
+    # Missing runner / reason are validations of operator-entered run parameters,
+    # so they render inline under their field, not in a flash.
+    if errors != %{} do
+      {:noreply, socket |> assign(:reason, reason) |> assign(:errors, errors)}
+    else
+      case Runbooks.dispatch_runbook(
+             socket.assigns.runbook,
+             runner_id,
+             reason,
+             socket.assigns.current_subject
+           ) do
+        {:ok, _status, first_run} ->
+          {:noreply,
+           socket
+           |> put_flash(:info, "Runbook started. Step 1 dispatched.")
+           |> push_navigate(to: ~p"/app/runs/#{first_run.id}")}
 
-      reason == "" ->
-        {:noreply,
-         socket
-         |> assign(:reason, reason)
-         |> put_flash(:error, "Reason is required — describe why you're running this runbook.")}
+        {:error, :denied_by_policy, policy_reason} ->
+          {:noreply, put_flash(socket, :error, "Step 1 denied by policy: #{policy_reason}")}
 
-      true ->
-        case Runbooks.dispatch_runbook(
-               socket.assigns.runbook,
-               runner_id,
-               reason,
-               socket.assigns.current_subject
-             ) do
-          {:ok, _status, first_run} ->
-            {:noreply,
-             socket
-             |> put_flash(:info, "Runbook started. Step 1 dispatched.")
-             |> push_navigate(to: ~p"/app/runs/#{first_run.id}")}
+        {:error, :empty_runbook} ->
+          {:noreply, put_flash(socket, :error, "Runbook has no steps to run.")}
 
-          {:error, :denied_by_policy, policy_reason} ->
-            {:noreply, put_flash(socket, :error, "Step 1 denied by policy: #{policy_reason}")}
+        {:error, reason} ->
+          {:noreply,
+           put_flash(socket, :error, "Could not start runbook: #{format_reason(reason)}")}
 
-          {:error, :empty_runbook} ->
-            {:noreply, put_flash(socket, :error, "Runbook has no steps to run.")}
-
-          {:error, reason} ->
-            {:noreply,
-             put_flash(socket, :error, "Could not start runbook: #{format_reason(reason)}")}
-
-          _other ->
-            {:noreply, put_flash(socket, :error, "Could not start runbook. Try again.")}
-        end
+        _other ->
+          {:noreply, put_flash(socket, :error, "Could not start runbook. Try again.")}
+      end
     end
   end
 
@@ -173,14 +208,12 @@ defmodule EmisarWeb.RunbookRunLive do
                   No runners registered. Connect one first.
                 </p>
               <% else %>
-                <select
-                  name="runner_id"
-                  class="mt-2 block w-full rounded-lg border-0 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-100 ring-1 ring-inset ring-zinc-800 focus:ring-2 focus:ring-indigo-500"
-                >
+                <select name="runner_id" class={field_class(@errors[:runner_id])}>
                   <option :for={r <- @runners} value={r.id} selected={r.id == @runner_id}>
                     {r.name} ({r.group})
                   </option>
                 </select>
+                <.error :if={@errors[:runner_id]}>{@errors[:runner_id]}</.error>
               <% end %>
             </div>
 
@@ -191,8 +224,9 @@ defmodule EmisarWeb.RunbookRunLive do
                 rows="2"
                 required
                 placeholder="Why are you running this runbook now?"
-                class="mt-2 block w-full rounded-lg border-0 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-100 ring-1 ring-inset ring-zinc-800 focus:ring-2 focus:ring-indigo-500"
+                class={field_class(@errors[:reason])}
               ><%= @reason %></textarea>
+              <.error :if={@errors[:reason]}>{@errors[:reason]}</.error>
               <p class="mt-1 text-xs text-zinc-500">Logged in audit + propagated to every step.</p>
             </div>
 

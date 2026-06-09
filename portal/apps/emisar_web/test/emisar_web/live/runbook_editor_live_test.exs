@@ -109,6 +109,37 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
     end
   end
 
+  describe "metadata validation" do
+    test "blank title shows an inline field error on save, not a flash", %{conn: conn} do
+      {conn, _user, _account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/app/runbooks/new")
+
+      # Title starts blank; saving fails the changeset's title requirement. The
+      # error renders inline under the Title input via <.error>…
+      html = render_click(lv, "save", %{})
+      assert html =~ "can&#39;t be blank" or html =~ "can't be blank"
+
+      # …and the old humanized flash dump is gone.
+      refute html =~ "Could not save runbook"
+
+      # No runbook was persisted.
+      assert Emisar.Repo.all(Emisar.Runbooks.Runbook) == []
+    end
+
+    test "an invalid slug shows an inline error live on change", %{conn: conn} do
+      {conn, _user, _account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/app/runbooks/new")
+
+      # Slugs must start with a lowercase letter — an UPPERCASE value is
+      # rejected and surfaces inline as the operator types, before any save.
+      html =
+        render_change(lv, "meta_change", %{"title" => "Repair", "slug" => "BAD SLUG"})
+
+      assert html =~ "has invalid format"
+      refute html =~ "Could not save runbook"
+    end
+  end
+
   defp count_step_cards(html) do
     html
     |> String.split("phx-change=\"step_change\"")

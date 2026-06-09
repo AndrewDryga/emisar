@@ -19,7 +19,7 @@ defmodule EmisarWeb.TeamLive do
      |> assign(:editing_id, nil)
      |> assign(:edit_form, nil)
      |> assign(:scope_editing_id, nil)
-     |> assign_form(default_params())}
+     |> assign_form(invite_changeset())}
   end
 
   def handle_params(params, _uri, socket) do
@@ -127,7 +127,6 @@ defmodule EmisarWeb.TeamLive do
     with_membership(socket, id, fn m ->
       case Accounts.update_user_as_admin(m, params, socket.assigns.current_subject) do
         {:ok, _user} -> {:ok, "Member updated."}
-        {:error, %Ecto.Changeset{} = cs} -> {:error, "Couldn't update: #{humanize_errors(cs)}"}
         {:error, reason} -> {:error, error_message(reason)}
       end
     end)
@@ -135,24 +134,22 @@ defmodule EmisarWeb.TeamLive do
   end
 
   def handle_event("validate", %{"invite" => params}, socket) do
-    {:noreply, assign_form(socket, params)}
+    changeset = invite_changeset(params) |> Map.put(:action, :validate)
+    {:noreply, assign_form(socket, changeset)}
   end
 
   def handle_event("invite", %{"invite" => params}, socket) do
-    email = String.trim(params["email"] || "")
-    role = params["role"] || "operator"
+    changeset = invite_changeset(params)
 
     cond do
       not can_manage?(socket) ->
         {:noreply, put_flash(socket, :error, "Only owners and admins can invite members.")}
 
-      email == "" ->
-        {:noreply, put_flash(socket, :error, "Email is required.")}
-
-      role not in @roles ->
-        {:noreply, put_flash(socket, :error, "Unknown role.")}
+      not changeset.valid? ->
+        {:noreply, assign_form(socket, Map.put(changeset, :action, :insert))}
 
       :else ->
+        %{email: email, role: role} = Ecto.Changeset.apply_changes(changeset)
         do_invite(socket, email, role)
     end
   end
@@ -277,7 +274,7 @@ defmodule EmisarWeb.TeamLive do
         {:noreply,
          socket
          |> put_flash(:info, "Invited #{email}.")
-         |> assign_form(default_params())
+         |> assign_form(invite_changeset())
          |> reload()}
 
       {:error, :already_member} ->
@@ -351,10 +348,23 @@ defmodule EmisarWeb.TeamLive do
   # full socket.
   defp can_manage?(socket_or_assigns), do: Permissions.can?(socket_or_assigns, :manage_team)
 
-  defp default_params, do: %{"email" => "", "role" => "operator"}
+  # Schemaless validation changeset for the invite form. The invite itself
+  # is created by `Accounts.invite_user_to_account/3`; this only drives
+  # `phx-change` validation + inline field errors (email format, role) so
+  # bad input lands under the input instead of in a flash banner.
+  defp invite_changeset(params \\ %{}) do
+    {%{role: "operator"}, %{email: :string, role: :string}}
+    |> Ecto.Changeset.cast(params, [:email, :role])
+    |> Ecto.Changeset.update_change(:email, &String.trim/1)
+    |> Ecto.Changeset.validate_required([:email])
+    |> Ecto.Changeset.validate_format(:email, ~r/^[^\s]+@[^\s]+$/,
+      message: "must have the @ sign and no spaces"
+    )
+    |> Ecto.Changeset.validate_inclusion(:role, @roles)
+  end
 
-  defp assign_form(socket, params) do
-    assign(socket, :form, to_form(params, as: "invite"))
+  defp assign_form(socket, %Ecto.Changeset{} = changeset) do
+    assign(socket, :form, to_form(changeset, as: "invite"))
   end
 
   def render(assigns) do

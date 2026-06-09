@@ -31,7 +31,7 @@ defmodule EmisarWeb.AcceptInvitationLive do
          |> assign(:membership, membership)
          |> assign(:token, token)
          |> assign(:trigger_submit, false)
-         |> assign(:form, to_form(%{"full_name" => "", "password" => ""}, as: "user"))
+         |> assign_form(Accounts.change_user(membership.user))
          |> assign(:state, derive_state(socket, membership))}
     end
   end
@@ -64,6 +64,7 @@ defmodule EmisarWeb.AcceptInvitationLive do
         id="accept_form"
         action={~p"/sign_in?_action=invitation_accepted"}
         method="post"
+        phx-change="validate"
         phx-submit="accept"
         phx-trigger-action={@trigger_submit}
       >
@@ -139,6 +140,18 @@ defmodule EmisarWeb.AcceptInvitationLive do
     """
   end
 
+  def handle_event("validate", %{"user" => params}, socket) do
+    changeset =
+      socket.assigns.membership.user
+      |> Accounts.change_user(%{
+        "full_name" => params["full_name"] || "",
+        "password" => params["password"] || ""
+      })
+      |> Map.put(:action, :validate)
+
+    {:noreply, assign_form(socket, changeset)}
+  end
+
   def handle_event("accept", %{"user" => user_params}, socket) do
     attrs = %{
       "full_name" => user_params["full_name"] || "",
@@ -149,8 +162,9 @@ defmodule EmisarWeb.AcceptInvitationLive do
       {:ok, _} ->
         {:noreply, assign(socket, :trigger_submit, true)}
 
+      # Field errors (e.g. a too-short password) render inline on the form.
       {:error, %Ecto.Changeset{} = cs} ->
-        {:noreply, put_flash(socket, :error, "Could not accept: #{format_errors(cs)}")}
+        {:noreply, assign_form(socket, Map.put(cs, :action, :insert))}
 
       {:error, _other} ->
         {:noreply, put_flash(socket, :error, "Could not accept the invitation.")}
@@ -176,7 +190,6 @@ defmodule EmisarWeb.AcceptInvitationLive do
     end
   end
 
-  defp format_errors(cs) do
-    Enum.map_join(cs.errors, ", ", fn {field, {msg, _opts}} -> "#{field} #{msg}" end)
-  end
+  defp assign_form(socket, %Ecto.Changeset{} = changeset),
+    do: assign(socket, :form, to_form(changeset, as: "user"))
 end

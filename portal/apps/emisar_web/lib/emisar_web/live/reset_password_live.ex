@@ -2,6 +2,7 @@ defmodule EmisarWeb.ResetPasswordLive do
   use EmisarWeb, :live_view
 
   alias Emisar.{Accounts, Auth, Mailers}
+  alias Emisar.Accounts.User
 
   def mount(params, _session, socket) do
     socket =
@@ -9,11 +10,8 @@ defmodule EmisarWeb.ResetPasswordLive do
       |> assign(:page_title, "Reset your password")
       |> assign(:sent_to, nil)
       |> assign(:reset_token, params["token"])
-      |> assign(:request_form, to_form(%{"email" => ""}, as: "user"))
-      |> assign(
-        :reset_form,
-        to_form(%{"password" => "", "password_confirmation" => ""}, as: "user")
-      )
+      |> assign(:request_form, to_form(Accounts.change_user(%User{}), as: "user"))
+      |> assign(:reset_form, to_form(Accounts.change_user_password_form(%User{}), as: "user"))
 
     {:ok, socket}
   end
@@ -25,7 +23,12 @@ defmodule EmisarWeb.ResetPasswordLive do
         Use at least 12 characters. Mix in numbers or symbols for extra safety.
       </p>
 
-      <.simple_form for={@reset_form} id="reset_form" phx-submit="reset">
+      <.simple_form
+        for={@reset_form}
+        id="reset_form"
+        phx-change="validate_reset"
+        phx-submit="reset"
+      >
         <.input
           field={@reset_form[:password]}
           type="password"
@@ -71,7 +74,12 @@ defmodule EmisarWeb.ResetPasswordLive do
           Enter the email on your account. We'll send a reset link if it exists.
         </p>
 
-        <.simple_form for={@request_form} id="request_form" phx-submit="request">
+        <.simple_form
+          for={@request_form}
+          id="request_form"
+          phx-change="validate_request"
+          phx-submit="request"
+        >
           <.input field={@request_form[:email]} type="email" label="Work email" required />
 
           <:actions>
@@ -94,7 +102,25 @@ defmodule EmisarWeb.ResetPasswordLive do
     {:noreply,
      socket
      |> assign(:sent_to, nil)
-     |> assign(:request_form, to_form(%{"email" => ""}, as: "user"))}
+     |> assign(:request_form, to_form(Accounts.change_user(%User{}), as: "user"))}
+  end
+
+  def handle_event("validate_request", %{"user" => params}, socket) do
+    changeset =
+      %User{}
+      |> Accounts.change_user(%{"email" => params["email"] || ""})
+      |> Map.put(:action, :validate)
+
+    {:noreply, assign(socket, :request_form, to_form(changeset, as: "user"))}
+  end
+
+  def handle_event("validate_reset", %{"user" => params}, socket) do
+    changeset =
+      %User{}
+      |> Accounts.change_user_password_form(params)
+      |> Map.put(:action, :validate)
+
+    {:noreply, assign(socket, :reset_form, to_form(changeset, as: "user"))}
   end
 
   def handle_event("request", %{"user" => %{"email" => email}}, socket) do
@@ -110,32 +136,28 @@ defmodule EmisarWeb.ResetPasswordLive do
     {:noreply, assign(socket, :sent_to, email)}
   end
 
-  def handle_event(
-        "reset",
-        %{"user" => %{"password" => password, "password_confirmation" => confirmation}},
-        socket
-      ) do
-    cond do
-      password != confirmation ->
-        {:noreply, put_flash(socket, :error, "Passwords don't match.")}
+  def handle_event("reset", %{"user" => %{"password" => password} = params}, socket) do
+    # Length + confirmation-mismatch are field errors — render them inline
+    # (border + message) on the right input instead of a flash.
+    changeset = Accounts.change_user_password_form(%User{}, params)
 
-      String.length(password) < 12 ->
-        {:noreply, put_flash(socket, :error, "Use at least 12 characters.")}
+    if changeset.valid? do
+      case Auth.reset_user_password(socket.assigns.reset_token, password) do
+        {:ok, _user} ->
+          {:noreply,
+           socket
+           |> put_flash(:info, "Password updated. Sign in below.")
+           |> push_navigate(to: ~p"/sign_in")}
 
-      true ->
-        case Auth.reset_user_password(socket.assigns.reset_token, password) do
-          {:ok, _user} ->
-            {:noreply,
-             socket
-             |> put_flash(:info, "Password updated. Sign in below.")
-             |> push_navigate(to: ~p"/sign_in")}
-
-          {:error, _} ->
-            {:noreply,
-             socket
-             |> put_flash(:error, "That link expired. Request a new one.")
-             |> push_navigate(to: ~p"/reset_password")}
-        end
+        {:error, _} ->
+          {:noreply,
+           socket
+           |> put_flash(:error, "That link expired. Request a new one.")
+           |> push_navigate(to: ~p"/reset_password")}
+      end
+    else
+      {:noreply,
+       assign(socket, :reset_form, to_form(Map.put(changeset, :action, :insert), as: "user"))}
     end
   end
 end

@@ -69,7 +69,7 @@ defmodule EmisarWeb.AgentsLive do
      |> assign(:quick_secret, nil)
      |> assign(:selected_client, nil)
      |> assign(:base_url, UrlHelpers.derive_base_url(socket))
-     |> assign_form(default_params())}
+     |> assign_form(ApiKeys.change_key(default_params()))}
   end
 
   def handle_params(params, _uri, socket) do
@@ -137,7 +137,8 @@ defmodule EmisarWeb.AgentsLive do
   end
 
   def handle_event("validate", %{"api_key" => params}, socket) do
-    {:noreply, assign_form(socket, params)}
+    changeset = ApiKeys.change_key(params) |> Map.put(:action, :validate)
+    {:noreply, assign_form(socket, changeset)}
   end
 
   def handle_event("create", %{"api_key" => params}, socket) do
@@ -182,12 +183,13 @@ defmodule EmisarWeb.AgentsLive do
          socket
          |> assign(:quick_secret, raw)
          |> assign(:show_advanced, false)
-         |> assign_form(default_params())
+         |> assign_form(ApiKeys.change_key(default_params()))
          |> reload()}
 
-      {:error, changeset} ->
-        {:noreply,
-         put_flash(socket, :error, "Could not create key: #{humanize_errors(changeset)}")}
+      # Field errors (required name, length, or a DB constraint) render
+      # inline on the form via <.input>/<.error> — no flash dump.
+      {:error, %Ecto.Changeset{} = changeset} ->
+        {:noreply, assign_form(socket, changeset)}
     end
   end
 
@@ -297,11 +299,17 @@ defmodule EmisarWeb.AgentsLive do
 
   defp selected_runner_groups(_, _), do: []
 
-  defp assign_form(socket, params) do
+  # Reads the scope selection back out of `changeset.params` — the full
+  # string-keyed map handed to `cast`. `runner_filter` /
+  # `runner_group_filter` aren't cast fields (they're posted as hidden
+  # inputs and applied at create time), but `cast` keeps every submitted
+  # string key in `params`, so the scope state still round-trips here.
+  defp assign_form(socket, %Ecto.Changeset{} = changeset) do
     runners = socket.assigns[:runners] || []
+    params = changeset.params || %{}
 
     socket
-    |> assign(:form, to_form(params, as: "api_key"))
+    |> assign(:form, to_form(changeset, as: "api_key"))
     |> assign(:selected_runner_ids, selected_runner_ids(params, runners))
     |> assign(:selected_runner_groups, selected_runner_groups(params, runners))
   end

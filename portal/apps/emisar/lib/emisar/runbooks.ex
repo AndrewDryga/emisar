@@ -39,6 +39,14 @@ defmodule Emisar.Runbooks do
     end
   end
 
+  @doc """
+  Changeset for the runbook editor's metadata form (title/slug/description).
+  Drives `phx-change` validation + inline field errors in the LiveView; the
+  row itself is persisted by `create_runbook/2` / `save_new_version/3`, which
+  also validate the structured `definition`.
+  """
+  def change_runbook(attrs \\ %{}), do: Runbook.Changeset.form(attrs)
+
   # -- Mutations -------------------------------------------------------
 
   def create_runbook(attrs, %Subject{account: account} = subject) do
