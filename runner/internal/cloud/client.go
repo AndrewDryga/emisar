@@ -72,6 +72,12 @@ type Client struct {
 	// non-blocking send and readvertiseLoop drains it. Buffered size 1,
 	// so many calls between drains collapse into a single extra send.
 	readvertise chan struct{}
+
+	// wake is the same coalescing-signal pattern for the sender: enqueue
+	// pokes it so senderLoop drains immediately instead of waking on a
+	// fixed poll. Buffered size 1 — many enqueues between drains collapse
+	// into one wake, and senderLoop drains every run's outbox per wake.
+	wake chan struct{}
 }
 
 // runState is the per-request outbox. handleRun appends to it; the
@@ -121,6 +127,17 @@ func NewClient(d Dialer, opts Options) *Client {
 		runs:        map[string]*runState{},
 		dedup:       newDedupRing(opts.DedupRingSize),
 		readvertise: make(chan struct{}, 1),
+		wake:        make(chan struct{}, 1),
+	}
+}
+
+// signalSend pokes the sender loop after a message is enqueued. Non-blocking
+// and coalesced: if a wake is already pending, this is a no-op (the sender
+// drains all outboxes per wake, so one signal covers any number of enqueues).
+func (c *Client) signalSend() {
+	select {
+	case c.wake <- struct{}{}:
+	default:
 	}
 }
 
@@ -146,7 +163,15 @@ func (c *Client) Run(ctx context.Context) error {
 			return err
 		}
 		connected, err := c.runSession(ctx)
-		if errors.Is(err, context.Canceled) || ctx.Err() != nil {
+		// Only a cancelled PARENT context means "shut the client down". A
+		// session that ended on its own — sender or heartbeat hit a write
+		// error and tripped sessionCancel, which surfaces as the receiver's
+		// Recv returning context.Canceled — must reconnect, not terminate.
+		// Keying off errors.Is(err, context.Canceled) conflated the two and
+		// made a writer-side disconnect kill the whole runner (and all its
+		// in-flight runs) instead of reconnecting; which path won was a race
+		// between the reader and writer noticing the drop first.
+		if ctx.Err() != nil {
 			c.cancelAllRuns()
 			return ctx.Err()
 		}
@@ -302,10 +327,12 @@ func (c *Client) enqueueTransient(requestID string, msg any) {
 		existing.mu.Lock()
 		existing.pending = append(existing.pending, msg)
 		existing.mu.Unlock()
+		c.signalSend()
 		return
 	}
 	c.runs[requestID] = s
 	c.mu.Unlock()
+	c.signalSend()
 }
 
 // handleRun executes the action and enqueues progress + result messages
@@ -532,12 +559,13 @@ const (
 // never dropped — they push out older progress chunks if needed.
 func (c *Client) enqueue(s *runState, msg any, policy dropPolicy) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	if len(s.pending) >= c.opts.MaxPendingPerRun && policy == dropOldestProgress {
 		s.pending = s.pending[1:]
 		s.dropped++
 	}
 	s.pending = append(s.pending, msg)
+	s.mu.Unlock()
+	c.signalSend()
 }
 
 // senderLoop runs for the duration of one websocket session. It drains
@@ -546,8 +574,15 @@ func (c *Client) enqueue(s *runState, msg any, policy dropPolicy) {
 // spawn a fresh senderLoop that resumes from the same state.
 func (c *Client) senderLoop(ctx context.Context, sessionCancel context.CancelFunc, conn Conn) {
 	defer sessionCancel()
-	ticker := time.NewTicker(25 * time.Millisecond)
-	defer ticker.Stop()
+	// Drain on each enqueue signal rather than polling at a fixed rate: at
+	// idle this parks instead of waking 40×/s, and an outbound message (a
+	// streamed progress chunk, a result) goes out immediately instead of
+	// waiting up to a poll interval. The backstop ticker is a safety net —
+	// liveness never depends on a signal arriving, so a missed wake only ever
+	// adds at most one backstop interval of latency, never wedges the queue.
+	const backstop = time.Second
+	t := time.NewTicker(backstop)
+	defer t.Stop()
 	for {
 		if err := c.drainOnce(ctx, conn); err != nil {
 			c.opts.Logger.Warn("cloud.sender_failed", "error", err)
@@ -556,7 +591,8 @@ func (c *Client) senderLoop(ctx context.Context, sessionCancel context.CancelFun
 		select {
 		case <-ctx.Done():
 			return
-		case <-ticker.C:
+		case <-c.wake:
+		case <-t.C:
 		}
 	}
 }

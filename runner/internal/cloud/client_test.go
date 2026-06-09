@@ -30,6 +30,11 @@ type fakeConn struct {
 	in       chan []byte
 	closedCh chan struct{}
 	closed   atomic.Bool
+	// failResults makes Send reject ActionResultMsg with an error, simulating
+	// a connection that dies just as the terminal result goes out. Lets a test
+	// force a result to stay queued for replay deterministically, without
+	// racing the sender's wake-up.
+	failResults atomic.Bool
 }
 
 func newFakeConn() *fakeConn {
@@ -42,6 +47,11 @@ func newFakeConn() *fakeConn {
 func (c *fakeConn) Send(ctx context.Context, msg any) error {
 	if c.closed.Load() {
 		return io.ErrClosedPipe
+	}
+	if c.failResults.Load() {
+		if _, ok := msg.(ActionResultMsg); ok {
+			return io.ErrClosedPipe
+		}
 	}
 	c.mu.Lock()
 	c.sent = append(c.sent, msg)
@@ -359,22 +369,29 @@ func TestClient_ReplaysResultAcrossReconnect(t *testing.T) {
 		<-done
 	})
 
-	// Kick off an echo, then drop conn1 immediately. Echo is fast, but
-	// the senderLoop polls every 25ms — there is a meaningful window
-	// during which the result is enqueued but unsent. We close conn1
-	// from a goroutine ~10ms in to maximise the chance of catching it.
+	// Make conn1 reject the terminal result the moment the sender tries to
+	// ship it. This deterministically leaves the result queued at disconnect —
+	// no dependence on poll/send timing — so we exercise the replay path
+	// rather than racing it. (Progress and runner_state still go out on conn1;
+	// only the result is refused, which fails the sender and ends the session.)
+	conn1.failResults.Store(true)
 	sendRunAction(t, conn1, "req_replay", "t.echo", map[string]any{"msg": "across"})
-
-	go func() {
-		time.Sleep(5 * time.Millisecond)
-		conn1.Close()
-	}()
 
 	// The client should fail conn1's sender, back off briefly, dial
 	// conn2, send runner_state, then replay the queued result on conn2.
 	res := waitForResult(t, conn2, "req_replay", 3*time.Second)
 	if res["status"] != "success" {
 		t.Fatalf("status=%v reason=%v", res["status"], res["reason"])
+	}
+
+	// A sender-side disconnect must reconnect, not terminate the client: the
+	// session ends via sessionCancel, whose context.Canceled was once mistaken
+	// for a parent shutdown and tore the whole client down. Run must still be
+	// blocking here.
+	select {
+	case err := <-done:
+		t.Fatalf("client exited after a sender failure instead of reconnecting: %v", err)
+	default:
 	}
 
 	// The original connection must NOT have received the result.
