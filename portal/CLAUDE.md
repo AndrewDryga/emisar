@@ -29,6 +29,7 @@ Lower-stakes taste calls. Not Iron Laws, but the defaults. **The user adds to th
 - One public function = one job. If a context function has an `opts` flag that changes *what it does* (not just filtering), it's two functions.
 - Small modules over big ones, but never a module per function. Follow the standard split (context / schema / query / changeset / authorizer) and stop there.
 - Comments explain *why*, never *what*. The code says what. If you're tempted to narrate the what, the code isn't readable enough yet.
+- All `use` / `import` / `alias` / `require` go at the very top of the module — never inside a function body or partway down the file.
 - Errors are values (`{:error, reason}`), not exceptions, on any path a caller can hit. `!`-raising variants only behind a proven invariant.
 - Don't wrap a single delegating call in its own named function — inline it. A `defp foo(a, b), do: Bar.foo(a, b)` earns a name only when it adds meaning the call site lacks; otherwise the indirection just costs a jump. Keep the *why* comment at the call site.
 

@@ -9,8 +9,10 @@ defmodule Emisar.Accounts do
 
   alias Ecto.Multi
   alias Emisar.{Audit, Auth, Repo}
-  alias Emisar.Accounts.{Account, Authorizer, Membership, User}
+  alias Emisar.Accounts.{Account, Authorizer, Membership, User, UserRunnerScope}
   alias Emisar.Auth.Subject
+
+  require Logger
 
   # -- Accounts ---------------------------------------------------------
 
@@ -428,8 +430,6 @@ defmodule Emisar.Accounts do
         :ok
 
       {:error, reason} ->
-        require Logger
-
         Logger.warning("suspend_membership_user_missing",
           user_id: target.user_id,
           membership_id: target.id,
@@ -899,8 +899,6 @@ defmodule Emisar.Accounts do
   # Empty scope list = all runners (default). Any rows = union of
   # (group, runner) tuples — a runner is in-scope when its id OR its
   # group matches at least one row.
-
-  alias Emisar.Accounts.UserRunnerScope
 
   @doc """
   All scope rows for a membership, ordered for stable rendering.
