@@ -43,6 +43,83 @@ defmodule Emisar.ApprovalsTest do
     end
   end
 
+  describe "create_request/3 approver notifications" do
+    setup do
+      account = account_fixture()
+
+      members =
+        for role <- ~w(owner admin operator viewer), into: %{} do
+          user = user_fixture()
+          _ = membership_fixture(account_id: account.id, user_id: user.id, role: role)
+          {role, user}
+        end
+
+      runner = runner_fixture(account_id: account.id)
+
+      {:ok, run} =
+        Runs.create_run(%{
+          account_id: account.id,
+          runner_id: runner.id,
+          action_id: "linux.uptime",
+          source: "operator",
+          args: %{}
+        })
+
+      %{account: account, run: run, members: members}
+    end
+
+    test "emails the deciders (owner/admin/operator), never viewers", %{
+      run: run,
+      members: members
+    } do
+      # Requested by an unrelated user so no decider is excluded as the asker.
+      {:ok, _req} = Approvals.create_request(run, user_fixture().id, "needs approval")
+
+      recipients = notified_recipients()
+
+      assert members["owner"].email in recipients
+      assert members["admin"].email in recipients
+      assert members["operator"].email in recipients
+      refute members["viewer"].email in recipients
+    end
+
+    test "excludes the requester from their own notification", %{run: run, members: members} do
+      {:ok, _req} = Approvals.create_request(run, members["owner"].id, "needs approval")
+
+      recipients = notified_recipients()
+
+      refute members["owner"].email in recipients
+      assert members["admin"].email in recipients
+    end
+
+    test "stays within the request's account — other tenants aren't emailed", %{
+      run: run,
+      members: members
+    } do
+      other_owner = user_fixture()
+      other_account = account_fixture()
+      _ = membership_fixture(account_id: other_account.id, user_id: other_owner.id, role: "owner")
+
+      {:ok, _req} = Approvals.create_request(run, user_fixture().id, "needs approval")
+
+      recipients = notified_recipients()
+
+      assert members["owner"].email in recipients
+      refute other_owner.email in recipients
+    end
+  end
+
+  # Drain the Swoosh test mailbox (notify runs inline under
+  # :notify_approvers_async? false) and collect recipient addresses.
+  defp notified_recipients(acc \\ []) do
+    receive do
+      {:email, email} ->
+        notified_recipients(Enum.map(email.to, fn {_name, addr} -> addr end) ++ acc)
+    after
+      0 -> acc
+    end
+  end
+
   describe "approve_request/3" do
     test "transitions the run to :sent + writes an audit event" do
       {account, run} = run_fixture()
