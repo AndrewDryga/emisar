@@ -972,27 +972,34 @@ defmodule Emisar.Accounts do
   and failed-password attempts (`user.email_change_failed`) since wrong-password
   on the email-change form is a credential probe worth seeing.
   """
-  def update_user_email(new_email, current_password, %Subject{actor: %User{} = user})
+  def update_user_email(new_email, current_password, %Subject{actor: %User{id: user_id} = user})
       when is_binary(new_email) and is_binary(current_password) do
-    if User.valid_password?(user, current_password) do
-      Multi.new()
-      |> Multi.update(:user, User.Changeset.email(user, %{email: new_email}))
-      |> Audit.Multi.log_for_user(:audit, user, "user.email_changed",
-        payload_fn: fn %{user: updated} -> %{from: user.email, to: updated.email} end
-      )
-      |> Repo.commit_multi()
-      |> case do
-        {:ok, %{user: updated}} -> {:ok, updated}
-        {:error, reason} -> {:error, reason}
+    User.Query.not_deleted()
+    |> User.Query.by_id(user_id)
+    |> Repo.fetch_and_update(User.Query,
+      with: fn fresh ->
+        if User.valid_password?(fresh, current_password),
+          do: User.Changeset.email(fresh, %{email: new_email}),
+          else: :invalid_current_password
+      end,
+      audit: fn updated ->
+        Audit.user_changeset(updated, "user.email_changed",
+          payload: %{from: user.email, to: updated.email}
+        )
       end
-    else
-      # Failed-credential probe — audit it standalone since there's no
-      # parent mutation to bundle with.
-      Audit.log_for_user(user, "user.email_change_failed",
-        payload: %{reason: "invalid_current_password"}
-      )
+    )
+    |> case do
+      {:error, :invalid_current_password} = err ->
+        # Failed-credential probe — log it standalone since the
+        # transaction rolled back without an audit row.
+        Audit.log_for_user(user, "user.email_change_failed",
+          payload: %{reason: "invalid_current_password"}
+        )
 
-      {:error, :invalid_current_password}
+        err
+
+      other ->
+        other
     end
   end
 
@@ -1013,36 +1020,39 @@ defmodule Emisar.Accounts do
   """
   @password_min_length 12
 
-  def change_user_password(current_password, new_password, %Subject{actor: %User{} = user})
+  def change_user_password(current_password, new_password, %Subject{
+        actor: %User{id: user_id} = user
+      })
       when is_binary(current_password) and is_binary(new_password) do
-    with :ok <- ensure_password_length(new_password),
-         :ok <- ensure_current_password(user, current_password) do
-      Multi.new()
-      |> Multi.update(:user, User.Changeset.password(user, %{password: new_password}))
-      |> Audit.Multi.log_for_user(:audit, user, "user.password_changed")
-      |> Repo.commit_multi()
+    with :ok <- ensure_password_length(new_password) do
+      User.Query.not_deleted()
+      |> User.Query.by_id(user_id)
+      |> Repo.fetch_and_update(User.Query,
+        with: fn fresh ->
+          if User.valid_password?(fresh, current_password),
+            do: User.Changeset.password(fresh, %{password: new_password}),
+            else: :invalid_current_password
+        end,
+        audit: &Audit.user_changeset(&1, "user.password_changed")
+      )
       |> case do
-        {:ok, %{user: updated}} -> {:ok, updated}
-        {:error, reason} -> {:error, reason}
+        {:error, :invalid_current_password} = err ->
+          # Failed-credential probe — log it standalone since the
+          # transaction rolled back without an audit row.
+          Audit.log_for_user(user, "user.password_change_failed",
+            payload: %{reason: "invalid_current_password"}
+          )
+
+          err
+
+        other ->
+          other
       end
     end
   end
 
   defp ensure_password_length(p) when byte_size(p) >= @password_min_length, do: :ok
   defp ensure_password_length(_), do: {:error, :password_too_short}
-
-  defp ensure_current_password(%User{} = user, current) do
-    if User.valid_password?(user, current) do
-      :ok
-    else
-      # Pre-mutation probe — no parent transaction to bundle with.
-      Audit.log_for_user(user, "user.password_change_failed",
-        payload: %{reason: "invalid_current_password"}
-      )
-
-      {:error, :invalid_current_password}
-    end
-  end
 
   def confirm_user(%User{} = user) do
     user |> User.Changeset.confirm() |> Repo.update()
