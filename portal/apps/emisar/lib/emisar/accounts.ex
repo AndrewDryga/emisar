@@ -1057,14 +1057,13 @@ defmodule Emisar.Accounts do
   end
 
   @doc """
-  Validation-only changeset for the change-password form, so the profile
-  LiveView can drive `phx-change` and render the length + confirmation-
-  mismatch errors inline on the right fields. `hash_password: false`
-  keeps it pure — no bcrypt on every keystroke and no `:password` change
-  consumed, so the field round-trips for redisplay. The actual change
-  (with the current-password challenge + audit) is `change_user_password/4`.
+  Validation-only changeset for a password change. `hash_password: false`
+  keeps it pure — no bcrypt, no `:password` consumed — so it validates
+  length + confirmation and round-trips the field for redisplay. The
+  actual change, with the current-password challenge and audit, is
+  `change_user_password/4`.
   """
-  def change_user_password_form(%User{} = user, attrs \\ %{}) do
+  def change_password(%User{} = user, attrs \\ %{}) do
     User.Changeset.password(user, attrs, hash_password: false)
   end
 end

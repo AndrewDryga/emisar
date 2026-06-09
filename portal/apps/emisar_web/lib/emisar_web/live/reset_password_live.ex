@@ -11,7 +11,7 @@ defmodule EmisarWeb.ResetPasswordLive do
       |> assign(:sent_to, nil)
       |> assign(:reset_token, params["token"])
       |> assign(:request_form, to_form(Accounts.change_user(%User{}), as: "user"))
-      |> assign(:reset_form, to_form(Accounts.change_user_password_form(%User{}), as: "user"))
+      |> assign(:reset_form, to_form(Accounts.change_password(%User{}), as: "user"))
 
     {:ok, socket}
   end
@@ -117,7 +117,7 @@ defmodule EmisarWeb.ResetPasswordLive do
   def handle_event("validate_reset", %{"user" => params}, socket) do
     changeset =
       %User{}
-      |> Accounts.change_user_password_form(params)
+      |> Accounts.change_password(params)
       |> Map.put(:action, :validate)
 
     {:noreply, assign(socket, :reset_form, to_form(changeset, as: "user"))}
@@ -139,7 +139,7 @@ defmodule EmisarWeb.ResetPasswordLive do
   def handle_event("reset", %{"user" => %{"password" => password} = params}, socket) do
     # Length + confirmation-mismatch are field errors — render them inline
     # (border + message) on the right input instead of a flash.
-    changeset = Accounts.change_user_password_form(%User{}, params)
+    changeset = Accounts.change_password(%User{}, params)
 
     if changeset.valid? do
       case Auth.reset_user_password(socket.assigns.reset_token, password) do

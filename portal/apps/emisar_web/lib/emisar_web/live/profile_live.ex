@@ -104,7 +104,7 @@ defmodule EmisarWeb.ProfileLive do
   def handle_event("validate_password", %{"password" => params}, socket) do
     changeset =
       socket.assigns.current_user
-      |> Accounts.change_user_password_form(params)
+      |> Accounts.change_password(params)
       |> Map.put(:action, :validate)
 
     {:noreply, assign(socket, :password_form, to_form(changeset, as: "password"))}
@@ -122,7 +122,7 @@ defmodule EmisarWeb.ProfileLive do
     # render them inline (border + message) instead of a flash. The
     # current-password challenge isn't a field of the password schema; a
     # wrong one stays a concise flash.
-    changeset = Accounts.change_user_password_form(user, params)
+    changeset = Accounts.change_password(user, params)
 
     if changeset.valid? do
       case Accounts.change_user_password(current, new, subject) do
@@ -303,7 +303,7 @@ defmodule EmisarWeb.ProfileLive do
   end
 
   defp assign_password_form(socket) do
-    changeset = Accounts.change_user_password_form(socket.assigns.current_user)
+    changeset = Accounts.change_password(socket.assigns.current_user)
     assign(socket, :password_form, to_form(changeset, as: "password"))
   end
 

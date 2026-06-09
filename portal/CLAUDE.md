@@ -346,6 +346,7 @@ end
 
 - LiveView mount + handle_params **assigns the Subject once** via `on_mount(:require_authenticated_user)` (already wired in `UserAuth`).
 - Every context call uses `socket.assigns.current_subject` — never re-derive role inside the LV. (IL-15: still re-check permission semantics in each `handle_event` — the context call does this for you when you pass the subject.)
+- **Forms are a web concern.** A context exposes plain `change_*(struct, attrs)` changeset builders (the Phoenix convention — `change_user`, `change_account`, `change_password`); it never has a `*_form` function or a changeset doc'd "for the LiveView form." The form *orchestration* — `to_form`, `phx-change`, `Map.put(:action, :validate)`, rendering inline field errors — lives in the LiveView, built on top of those `change_*` builders.
 - `EmisarWeb.LiveTable` is stateless and URL-driven. Use `LiveTable.params_to_opts(params, Query.filters())` to translate URL params into `[filter:, page:]` for `Repo.list/3`.
 - Reach for `EmisarWeb.CoreComponents` before writing markup; reach for `stream/3` before assigning a list (IL-18).
 - Controllers / channels / MCP follow the same pattern: build a `%Subject{}` via `Subject.for_user/4`, `Subject.for_api_key/3`, or `Subject.for_runner/3` at the auth boundary, then pass it through. The marketing site (`controllers/marketing_html/`) is the only unauthenticated, server-rendered surface — keep it that way for SEO (see `/seo-marketing`).
