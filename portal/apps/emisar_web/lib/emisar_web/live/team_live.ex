@@ -250,7 +250,9 @@ defmodule EmisarWeb.TeamLive do
   end
 
   defp error_message(:unauthorized), do: "Only owners and admins can manage memberships."
-  defp error_message(:owner_required), do: "Only an existing owner can grant or revoke owner."
+
+  defp error_message(:insufficient_privileges),
+    do: "You can only assign or change roles whose permissions you already hold."
 
   defp error_message(:last_owner),
     do: "Can't remove or demote the last owner. Promote someone else first."

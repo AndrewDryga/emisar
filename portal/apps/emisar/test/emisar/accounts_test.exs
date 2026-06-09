@@ -264,6 +264,54 @@ defmodule Emisar.AccountsTest do
       assert {:error, cs} = Accounts.update_membership_role(m, "supreme-leader", subject)
       assert "is invalid" in errors_on(cs).role
     end
+
+    test "an admin cannot grant the owner role (no escalation by proxy)" do
+      account = account_fixture()
+      _ = membership_fixture(account_id: account.id, user_id: user_fixture().id, role: "owner")
+      admin = user_fixture()
+      _ = membership_fixture(account_id: account.id, user_id: admin.id, role: "admin")
+      m = membership_fixture(account_id: account.id, user_id: user_fixture().id, role: "operator")
+      subject = subject_for(admin, account, role: :admin)
+
+      assert {:error, :insufficient_privileges} =
+               Accounts.update_membership_role(m, "owner", subject)
+    end
+
+    test "an admin cannot demote an owner (can't outrank a superior)" do
+      account = account_fixture()
+
+      owner_m =
+        membership_fixture(account_id: account.id, user_id: user_fixture().id, role: "owner")
+
+      admin = user_fixture()
+      _ = membership_fixture(account_id: account.id, user_id: admin.id, role: "admin")
+      subject = subject_for(admin, account, role: :admin)
+
+      assert {:error, :insufficient_privileges} =
+               Accounts.update_membership_role(owner_m, "operator", subject)
+    end
+
+    test "you cannot promote yourself" do
+      account = account_fixture()
+      _ = membership_fixture(account_id: account.id, user_id: user_fixture().id, role: "owner")
+      admin = user_fixture()
+      admin_m = membership_fixture(account_id: account.id, user_id: admin.id, role: "admin")
+      subject = subject_for(admin, account, role: :admin)
+
+      assert {:error, :cannot_self_promote} =
+               Accounts.update_membership_role(admin_m, "owner", subject)
+    end
+
+    test "an owner can grant the owner role" do
+      account = account_fixture()
+      owner = user_fixture()
+      _ = membership_fixture(account_id: account.id, user_id: owner.id, role: "owner")
+      m = membership_fixture(account_id: account.id, user_id: user_fixture().id, role: "operator")
+      subject = subject_for(owner, account, role: :owner)
+
+      assert {:ok, %Membership{role: :owner}} =
+               Accounts.update_membership_role(m, "owner", subject)
+    end
   end
 
   describe "delete_membership/3" do
@@ -293,6 +341,19 @@ defmodule Emisar.AccountsTest do
       assert {:error, :unauthorized} = Accounts.delete_membership(target, operator_subject)
       # The target membership is still present.
       assert %Membership{} = fetch_membership(account.id, target_user.id)
+    end
+
+    test "an admin cannot remove an owner" do
+      account = account_fixture()
+
+      owner_m =
+        membership_fixture(account_id: account.id, user_id: user_fixture().id, role: "owner")
+
+      admin = user_fixture()
+      _ = membership_fixture(account_id: account.id, user_id: admin.id, role: "admin")
+      subject = subject_for(admin, account, role: :admin)
+
+      assert {:error, :insufficient_privileges} = Accounts.delete_membership(owner_m, subject)
     end
   end
 

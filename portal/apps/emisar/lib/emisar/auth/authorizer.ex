@@ -103,4 +103,15 @@ defmodule Emisar.Auth.Authorizer do
   end
 
   def permissions_for(_), do: MapSet.new()
+
+  @doc """
+  True when `subject` already holds every permission `role` grants — so it
+  can assign that role, or act on a member who has it, without escalating
+  beyond its own privileges. The permission-subset generalization of
+  role-name guards like "only an owner can manage owners": no role
+  hierarchy, just `permissions_for(role) ⊆ subject.permissions`. Robust to a
+  non-nested permission model in a way a `== :owner` check is not.
+  """
+  def covers_role?(%Subject{permissions: perms}, role),
+    do: MapSet.subset?(permissions_for(role), perms)
 end

@@ -308,19 +308,16 @@ defmodule Emisar.Accounts do
     new_role = normalize_role(new_role)
 
     cond do
-      # Self-promotion is never allowed (an admin cannot promote themselves
-      # to owner; an operator cannot promote themselves to admin).
-      target.user_id == subject.actor.id and target.role != new_role and
-          Role.at_least?(new_role, target.role) ->
-        {:error, :cannot_self_promote}
+      # Can't grant a role whose permissions you don't already hold (no
+      # escalation by proxy). On your own membership that's self-promotion.
+      not Auth.Authorizer.covers_role?(subject, new_role) ->
+        if target.user_id == subject.actor.id,
+          do: {:error, :cannot_self_promote},
+          else: {:error, :insufficient_privileges}
 
-      # Only owners can grant the owner role.
-      new_role == :owner and not can_manage_owners?(subject) ->
-        {:error, :owner_required}
-
-      # Only owners can take the owner role away from someone.
-      target.role == :owner and not can_manage_owners?(subject) ->
-        {:error, :owner_required}
+      # Can't change the role of someone whose permissions outrank yours.
+      not Auth.Authorizer.covers_role?(subject, target.role) ->
+        {:error, :insufficient_privileges}
 
       # Don't demote the last owner.
       target.role == :owner and new_role != :owner and
@@ -543,17 +540,17 @@ defmodule Emisar.Accounts do
   defp ensure_subject_in_account(%Subject{} = subject, account_id),
     do: Subject.ensure_in_account(subject, account_id, :unauthorized)
 
-  # Self-protection + owner-protection invariants that apply on top of
-  # the role-permission check. The permission tells us the caller has
-  # the right to manage_team in general; this enforces "can't shoot
-  # yourself in the foot" and "can't pin owners around if you're not one".
+  # Invariants on top of the manage_team permission gate: you can't modify
+  # your own membership (no shooting yourself in the foot), and you can't
+  # touch a member whose role grants permissions you don't hold (can't pin
+  # around a superior).
   defp ensure_can_modify_membership(%Membership{} = target, %Subject{} = subject) do
     cond do
       target.user_id == subject.actor.id ->
         {:error, :cannot_modify_self}
 
-      target.role == :owner and not can_manage_owners?(subject) ->
-        {:error, :owner_required}
+      not Auth.Authorizer.covers_role?(subject, target.role) ->
+        {:error, :insufficient_privileges}
 
       true ->
         :ok
@@ -573,10 +570,9 @@ defmodule Emisar.Accounts do
   @doc """
   Remove a membership, enforcing the same invariants as role updates:
 
-    * Only owners can remove owners.
-    * Admins/owners can remove non-owners; nobody can remove themselves
-      while they are the last owner.
-    * The last owner cannot be removed at all.
+    * You can only remove a member whose permissions you already hold, so a
+      non-owner can't remove an owner.
+    * The last active owner can't be removed (even by themselves).
   """
   def delete_membership(%Membership{} = target, %Subject{} = subject) do
     with :ok <-
@@ -598,8 +594,8 @@ defmodule Emisar.Accounts do
 
   defp ensure_delete_membership_allowed(%Membership{} = target, %Subject{} = subject) do
     cond do
-      target.role == :owner and not can_manage_owners?(subject) ->
-        {:error, :owner_required}
+      not Auth.Authorizer.covers_role?(subject, target.role) ->
+        {:error, :insufficient_privileges}
 
       target.role == :owner and count_owners(target.account_id) <= 1 ->
         {:error, :last_owner}
@@ -619,10 +615,6 @@ defmodule Emisar.Accounts do
     |> Membership.Query.not_disabled()
     |> Repo.aggregate(:count, :id)
   end
-
-  # Owner-only capability, checked by permission rather than role name.
-  defp can_manage_owners?(%Subject{} = subject),
-    do: Auth.Authorizer.has_permission?(subject, Authorizer.manage_owners_permission())
 
   # Coerce a role name to a known atom for guard comparisons; nil for an
   # unrecognized value (which then falls through to the changeset, where
