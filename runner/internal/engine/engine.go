@@ -16,6 +16,7 @@ import (
 	"log/slog"
 	"sort"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -306,29 +307,44 @@ func (e *Engine) Run(ctx context.Context, req Request) (*Result, error) {
 
 	combinedRedactor := e.combinedRedactor(act)
 
-	// If the caller wants streaming, set up an OnChunk that redacts
-	// line-by-line and forwards to OnProgress. We also accumulate the
-	// redacted bytes into local buffers so the post-run code (JSON
-	// parser, audit journal, run result) has the full output. Without
-	// the buffers, streaming mode silently produces empty stdout/stderr
-	// in the result, which then makes `parser: json` reliably fail.
+	// When the caller wants streaming, redact each chunk before it leaves the
+	// runner and accumulate the redacted bytes locally so the post-run code
+	// (JSON parser, audit journal, run result) sees exactly what the cloud
+	// does. Redaction is stateful per stream: a StreamRedactor holds back a
+	// bounded tail so multi-line rules (e.g. a PEM private-key block streamed
+	// one line at a time) still match across chunk boundaries. This matters
+	// for confidentiality, not just tidiness — the cloud reassembles stored
+	// output from these chunks (the result message omits it), so a per-chunk
+	// redaction miss would be a permanent leak into the run record.
 	streaming := req.OnProgress != nil
 	var (
 		stdoutBuf, stderrBuf strings.Builder
-		streamHits           []redact.Hit
+		outRed, errRed       *redact.StreamRedactor
 	)
 
 	if streaming {
+		outRed = combinedRedactor.StreamRedactor()
+		errRed = combinedRedactor.StreamRedactor()
+		// stdout and stderr stream from separate goroutines; serialize so the
+		// redactors' state and the shared progress sink stay consistent.
+		var mu sync.Mutex
 		plan.OnChunk = func(stream executor.Stream, data []byte) {
-			redacted, hs := combinedRedactor.Apply(string(data))
-			req.OnProgress(stream, []byte(redacted))
+			mu.Lock()
+			defer mu.Unlock()
+			var sr *redact.StreamRedactor
+			var buf *strings.Builder
 			switch stream {
 			case executor.StreamStdout:
-				stdoutBuf.WriteString(redacted)
+				sr, buf = outRed, &stdoutBuf
 			case executor.StreamStderr:
-				stderrBuf.WriteString(redacted)
+				sr, buf = errRed, &stderrBuf
+			default:
+				return
 			}
-			streamHits = redact.MergeHits(streamHits, hs)
+			if emitted := sr.Write(data); len(emitted) > 0 {
+				req.OnProgress(stream, emitted)
+				buf.Write(emitted)
+			}
 		}
 	}
 
@@ -343,9 +359,19 @@ func (e *Engine) Run(ctx context.Context, req Request) (*Result, error) {
 	)
 
 	if streaming {
+		// Execute has returned, so both stream goroutines are done and no
+		// further OnChunk can run — draining the held-back tails needs no lock.
+		if tail := outRed.Flush(); len(tail) > 0 {
+			req.OnProgress(executor.StreamStdout, tail)
+			stdoutBuf.Write(tail)
+		}
+		if tail := errRed.Flush(); len(tail) > 0 {
+			req.OnProgress(executor.StreamStderr, tail)
+			stderrBuf.Write(tail)
+		}
 		redactedStdout = stdoutBuf.String()
 		redactedStderr = stderrBuf.String()
-		hits = streamHits
+		hits = redact.MergeHits(outRed.Hits(), errRed.Hits())
 	} else {
 		var hs1, hs2 []redact.Hit
 		redactedStdout, hs1 = combinedRedactor.Apply(execRes.Stdout)

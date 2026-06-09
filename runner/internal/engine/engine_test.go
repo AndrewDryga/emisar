@@ -475,3 +475,80 @@ func TestEngine_StreamingProgress(t *testing.T) {
 		t.Fatalf("expected streamed chunks containing 'stream', got %v", chunks)
 	}
 }
+
+// leakAction emits a multi-line secret bracketed by sentinels the action's own
+// redaction rule matches across lines. Because the executor ships output one
+// line at a time, a per-chunk redactor would never see the whole block and
+// would stream the body out unredacted.
+const leakAction = `
+schema_version: 1
+id: t.leak
+title: Emit a multi-line secret
+kind: exec
+risk: low
+description: d
+side_effects: [none]
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "printf '%s\\n' before ==BEGINKEY== AAAALEAKYKEYBODYAAAA BBBBLEAKYKEYBODYBBBB ==ENDKEY== after"
+  timeout: 5s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 1024
+  redact:
+    - name: pem
+      type: regex
+      pattern: '==BEGINKEY==[\s\S]*?==ENDKEY=='
+      replacement: '[REDACTED_PEM]'
+`
+
+// TestEngine_StreamingRedactsMultiLineSecret is the engine-level guard for the
+// streaming redaction bypass: a secret whose redaction rule spans lines must be
+// masked in BOTH the streamed chunks (which the cloud reassembles into the
+// permanent run record) and the captured result/journal stdout.
+func TestEngine_StreamingRedactsMultiLineSecret(t *testing.T) {
+	e, j, _ := setupEngineExtra(t, map[string]string{"leak.yaml": leakAction})
+	defer j.Close()
+
+	var (
+		mu       sync.Mutex
+		streamed strings.Builder
+	)
+	res, err := e.Run(context.Background(), Request{
+		ActionID: "t.leak",
+		Reason:   "test",
+		OnProgress: func(_ executor.Stream, b []byte) {
+			mu.Lock()
+			defer mu.Unlock()
+			streamed.Write(b)
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Status != StatusSuccess {
+		t.Fatalf("status=%s reason=%s", res.Status, res.Reason)
+	}
+
+	mu.Lock()
+	stream := streamed.String()
+	mu.Unlock()
+
+	for label, body := range map[string]string{"streamed chunks": stream, "result stdout": res.Stdout} {
+		if strings.Contains(body, "LEAKYKEYBODY") {
+			t.Fatalf("multi-line secret leaked in %s:\n%s", label, body)
+		}
+		if !strings.Contains(body, "[REDACTED_PEM]") {
+			t.Fatalf("expected redaction marker in %s, got:\n%s", label, body)
+		}
+		// Non-secret bytes on either side must survive untouched.
+		if !strings.Contains(body, "before") || !strings.Contains(body, "after") {
+			t.Fatalf("non-secret output should pass through in %s: %q", label, body)
+		}
+	}
+}
