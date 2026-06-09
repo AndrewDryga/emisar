@@ -177,14 +177,6 @@ defmodule Emisar.Audit do
   end
 
   @doc """
-  Convenience: log a state-transition event for an ActionRun. Called
-  by `Runs.transition/3` so every run state change leaves a trace.
-  """
-  def log_run_event(%ActionRun{} = run) do
-    Repo.insert(run_event_changeset(run))
-  end
-
-  @doc """
   Build the audit-event changeset for a run state transition. Use
   inside an `Ecto.Multi` so the audit row commits together with the
   parent `run` update — see `Runs.transition/3`.

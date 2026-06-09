@@ -60,7 +60,6 @@ defmodule EmisarWeb.MixProject do
       # Optional: error reporting via Sentry. Compiled out when
       # SENTRY_DSN isn't set (init/0 short-circuits on no-DSN).
       {:sentry, "~> 13.1"},
-      {:hackney, "~> 1.20"},
       {:gettext, "~> 1.0"},
       {:emisar, in_umbrella: true},
       {:jason, "~> 1.4"},

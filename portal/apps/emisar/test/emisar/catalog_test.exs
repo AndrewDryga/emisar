@@ -71,6 +71,32 @@ defmodule Emisar.CatalogTest do
       {:ok, reloaded} = Emisar.Runners.peek_runner_by_id(runner.id)
       assert reloaded.runner_version == "9.9.9"
     end
+
+    test "an apply_state error does not crash observe_state; the catalog still syncs" do
+      # Regression: `apply_state` ends in `Repo.update` and can return
+      # `{:error, changeset}` from a bad field in untrusted runner JSON (here
+      # a string where `labels` expects a map → cast error). It used to be a
+      # hard `{:ok, _} = apply_state(...)` match above the try/rescue, so the
+      # MatchError killed the runner socket → reconnect loop → same crash.
+      # observe_state must keep the existing runner struct, NOT raise, and
+      # still upsert the packs/actions in the same advertisement.
+      runner = runner_fixture()
+      account = Emisar.Accounts.fetch_account_by_id!(runner.account_id)
+      system = Emisar.Auth.Subject.system(account)
+
+      payload =
+        state_payload(
+          labels: "not-a-map",
+          actions: [action("linux.uptime")]
+        )
+
+      assert {:ok, returned} = Catalog.observe_state(runner, payload)
+      assert returned.id == runner.id
+
+      # The catalog sync below the failed row-update still ran.
+      assert {:ok, [%RunnerAction{action_id: "linux.uptime"}], _} =
+               Catalog.list_actions_for_runner(runner.id, system)
+    end
   end
 
   describe "count_pending_pack_versions/1" do

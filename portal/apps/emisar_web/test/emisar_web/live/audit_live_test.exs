@@ -91,7 +91,7 @@ defmodule EmisarWeb.AuditLiveTest do
 
       # Rename. The audit row still says "old-name" in subject_label.
       runner
-      |> Runner.Changeset.update(%{name: "renamed-prod", group: "default"})
+      |> Ecto.Changeset.change(name: "renamed-prod")
       |> Repo.update!()
 
       {:ok, _lv, html} = live(conn, ~p"/app/audit")

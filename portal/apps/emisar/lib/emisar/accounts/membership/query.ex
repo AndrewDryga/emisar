@@ -55,13 +55,9 @@ defmodule Emisar.Accounts.Membership.Query do
     |> where([accounts: a], is_nil(a.deleted_at))
   end
 
-  # -- Pagination + preloads -------------------------------------------
+  # -- Pagination ------------------------------------------------------
 
   @impl Emisar.Repo.Query
   def cursor_fields,
     do: [{:memberships, :desc, :inserted_at}, {:memberships, :asc, :id}]
-
-  @impl Emisar.Repo.Query
-  def preloads,
-    do: [account: [], user: []]
 end

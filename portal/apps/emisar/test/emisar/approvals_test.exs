@@ -418,6 +418,62 @@ defmodule Emisar.ApprovalsTest do
       assert g.approval_request.run.args == %{"table" => "users", "full" => true}
     end
 
+    test "a failed grant insert rolls the approval transaction back — no dispatch, no grant, no approved audit" do
+      # Regression: when the operator approves "for 24h" but the durable
+      # grant insert fails, the old code did `_ -> nil` and committed the
+      # approval + dispatched as if it were `:once` — the grant silently
+      # no-ops, the audit row records `grant_id: nil`, and the next identical
+      # LLM call re-prompts. The fix rolls the grant/audit/dispatch
+      # transaction back so the operator's intent isn't lost without a trace
+      # (the error surfaces instead).
+      account = account_fixture()
+      user = user_fixture()
+      _ = membership_fixture(account_id: account.id, user_id: user.id, role: "owner")
+      subject = subject_for(user, account, role: :owner)
+      {_, key} = api_key_fixture(account_id: account.id, created_by_id: user.id)
+      runner = runner_fixture(account_id: account.id)
+
+      {:ok, run} =
+        Runs.create_run(%{
+          account_id: account.id,
+          runner_id: runner.id,
+          action_id: "linux.uptime",
+          source: "mcp",
+          api_key_id: key.id,
+          args: %{},
+          args_sha256: "abc123"
+        })
+
+      {:ok, req} = Approvals.create_request(run, user.id, "x")
+
+      # Force create_grant to fail deterministically: blank the run's
+      # action_id (bypassing the create changeset). Grant.Changeset.create
+      # requires action_id, so the insert returns {:error, changeset} — the
+      # exact branch that must roll back rather than commit as `:once`.
+      {1, _} =
+        ActionRun.Query.all()
+        |> ActionRun.Query.by_id(run.id)
+        |> Repo.update_all(set: [action_id: ""])
+
+      Emisar.PubSub.subscribe_runner(runner.id)
+
+      assert {:error, {:grant_failed, %Ecto.Changeset{}}} =
+               Approvals.approve_request(req, subject, "ok", duration: :one_day)
+
+      # No grant was minted.
+      assert {:ok, [], _} = Approvals.list_grants_for_api_key(key.id)
+
+      # The run was NOT dispatched (the rollback aborted before dispatch).
+      refute_receive {:cloud_to_runner, _}, 100
+
+      # The approval.approved audit row was inside the rolled-back
+      # transaction, so it never committed.
+      {:ok, events, _} =
+        Audit.list_events(Emisar.Auth.Subject.system(account), page: [limit: 50])
+
+      refute Enum.any?(events, &(&1.event_type == "approval.approved"))
+    end
+
     test ":any_args scope drops args_sha256 so any args match" do
       account = account_fixture()
       user = user_fixture()

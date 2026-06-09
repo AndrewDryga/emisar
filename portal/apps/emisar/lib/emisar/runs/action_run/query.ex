@@ -58,10 +58,6 @@ defmodule Emisar.Runs.ActionRun.Query do
     do: [{:runs, :desc, :inserted_at}, {:runs, :asc, :id}]
 
   @impl Emisar.Repo.Query
-  def preloads,
-    do: [runner: [], api_key: []]
-
-  @impl Emisar.Repo.Query
   def filters,
     do: [
       %Filter{

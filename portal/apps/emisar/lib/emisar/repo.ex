@@ -3,7 +3,7 @@ defmodule Emisar.Repo do
     otp_app: :emisar,
     adapter: Ecto.Adapters.Postgres
 
-  alias Emisar.Repo.{Filter, Paginator, Preloader}
+  alias Emisar.Repo.{Filter, Paginator}
   require Ecto.Query
 
   @doc "True iff `binary` is a string-encoded UUID."
@@ -22,31 +22,22 @@ defmodule Emisar.Repo do
   def peek(queryable), do: __MODULE__.one(queryable)
 
   @doc """
-  Single-result fetcher with filter support. Returns `{:ok, schema}`
-  or `{:error, :not_found}`. Raises if more than one row matches.
+  Single-result fetcher. Returns `{:ok, schema}` or
+  `{:error, :not_found}`. Raises if more than one row matches.
 
   Options:
 
-    * `:filter` — `Emisar.Repo.Filter.filters()` to apply
     * `:preload` — Ecto preload list, applied after the fetch
   """
   @spec fetch(Ecto.Queryable.t(), module(), keyword()) ::
           {:ok, Ecto.Schema.t()}
           | {:error, :not_found}
-          | {:error, {:unknown_filter, keyword()}}
-          | {:error, {:invalid_type, keyword()}}
-          | {:error, {:invalid_value, keyword()}}
-  def fetch(queryable, query_module, opts \\ []) do
+  def fetch(queryable, _query_module, opts \\ []) do
     {preload, opts} = Keyword.pop(opts, :preload, [])
-    {filter, opts} = Keyword.pop(opts, :filter, [])
 
-    with {:ok, queryable} <- Filter.filter(queryable, query_module, filter),
-         schema when not is_nil(schema) <- __MODULE__.one(queryable, opts) do
-      {schema, ecto_preloads} = Preloader.preload(schema, preload, query_module)
-      {:ok, __MODULE__.preload(schema, ecto_preloads)}
-    else
+    case __MODULE__.one(queryable, opts) do
       nil -> {:error, :not_found}
-      {:error, reason} -> {:error, reason}
+      schema -> {:ok, __MODULE__.preload(schema, preload)}
     end
   end
 
@@ -61,11 +52,10 @@ defmodule Emisar.Repo do
     case fetch(queryable, query_module, opts) do
       {:ok, schema} -> schema
       {:error, :not_found} -> raise Ecto.NoResultsError, queryable: queryable
-      {:error, reason} -> raise "Emisar.Repo.fetch!/2 failed: #{inspect(reason)}"
     end
   end
 
-  @type after_commit :: (term() -> :ok) | (term(), Ecto.Changeset.t() -> :ok)
+  @type after_commit :: (term() -> :ok)
   @type changeset_fun :: (term() -> Ecto.Changeset.t())
   @type audit_fun :: (term() -> Ecto.Changeset.t() | nil)
 
@@ -84,10 +74,9 @@ defmodule Emisar.Repo do
       as the update, so the audit row is atomic with the parent
       mutation. Return `nil` to skip audit for this call.
     * `:after_commit` — callback or list of callbacks; each receives
-      `(schema)` or `(schema, changeset)` and must return `:ok`.
-      Fires only after the DB transaction commits — use for broadcasts
-      and other side effects that should NOT happen on rollback.
-    * `:filter` — `Emisar.Repo.Filter.filters()` to constrain the lookup
+      the updated `schema` and must return `:ok`. Fires only after the
+      DB transaction commits — use for broadcasts and other side
+      effects that should NOT happen on rollback.
     * `:preload` — Ecto preloads applied after the update
   """
   @spec fetch_and_update(Ecto.Queryable.t(), module(), keyword()) ::
@@ -95,54 +84,47 @@ defmodule Emisar.Repo do
           | {:error, :not_found}
           | {:error, Ecto.Changeset.t()}
           | {:error, term()}
-  def fetch_and_update(queryable, query_module, opts) do
+  def fetch_and_update(queryable, _query_module, opts) do
     {preload, opts} = Keyword.pop(opts, :preload, [])
-    {filter, opts} = Keyword.pop(opts, :filter, [])
     {after_commit, opts} = Keyword.pop(opts, :after_commit, [])
     {audit_fun, opts} = Keyword.pop(opts, :audit)
     {changeset_fun, repo_opts} = Keyword.pop!(opts, :with)
 
     queryable = Ecto.Query.lock(queryable, "FOR NO KEY UPDATE")
 
-    with {:ok, queryable} <- Filter.filter(queryable, query_module, filter) do
-      fn ->
-        if schema = __MODULE__.one(queryable, repo_opts) do
-          case changeset_fun.(schema) do
-            %Ecto.Changeset{} = cs ->
-              case update(cs, mode: :savepoint) do
-                {:ok, updated} = ok ->
-                  case maybe_insert_audit(audit_fun, updated) do
-                    :ok -> {ok, cs}
-                    {:error, reason} -> rollback({:audit_failed, reason})
-                  end
+    fn ->
+      if schema = __MODULE__.one(queryable, repo_opts) do
+        case changeset_fun.(schema) do
+          %Ecto.Changeset{} = cs ->
+            case update(cs, mode: :savepoint) do
+              {:ok, updated} ->
+                case maybe_insert_audit(audit_fun, updated) do
+                  :ok -> {:ok, updated}
+                  {:error, reason} -> rollback({:audit_failed, reason})
+                end
 
-                err ->
-                  {err, cs}
-              end
+              {:error, _changeset} = err ->
+                err
+            end
 
-            reason ->
-              {:error, reason}
-          end
-        else
-          {:error, :not_found}
+          reason ->
+            {:error, reason}
         end
+      else
+        {:error, :not_found}
       end
-      |> transaction(repo_opts)
-      |> case do
-        {:ok, {{:ok, schema}, cs}} ->
-          :ok = execute_after_commit(schema, cs, after_commit)
-          {schema, ecto_preloads} = Preloader.preload(schema, preload, query_module)
-          {:ok, __MODULE__.preload(schema, ecto_preloads)}
+    end
+    |> transaction(repo_opts)
+    |> case do
+      {:ok, {:ok, updated}} ->
+        :ok = execute_after_commit(updated, after_commit)
+        {:ok, __MODULE__.preload(updated, preload)}
 
-        {:ok, {{:error, reason}, _cs}} ->
-          {:error, reason}
+      {:ok, {:error, reason}} ->
+        {:error, reason}
 
-        {:ok, {:error, reason}} ->
-          {:error, reason}
-
-        {:error, reason} ->
-          {:error, reason}
-      end
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 
@@ -161,13 +143,10 @@ defmodule Emisar.Repo do
     end
   end
 
-  defp execute_after_commit(schema, changeset, after_commit) do
+  defp execute_after_commit(schema, after_commit) do
     after_commit
     |> List.wrap()
-    |> Enum.each(fn
-      cb when is_function(cb, 1) -> :ok = cb.(schema)
-      cb when is_function(cb, 2) -> :ok = cb.(schema, changeset)
-    end)
+    |> Enum.each(fn cb when is_function(cb, 1) -> :ok = cb.(schema) end)
   end
 
   @doc """
@@ -283,8 +262,7 @@ defmodule Emisar.Repo do
         |> __MODULE__.all(opts)
         |> Paginator.metadata(paginator_opts)
 
-      {results, ecto_preloads} = Preloader.preload(results, preload, query_module)
-      results = __MODULE__.preload(results, ecto_preloads)
+      results = __MODULE__.preload(results, preload)
       {:ok, results, %{metadata | count: count}}
     end
   end

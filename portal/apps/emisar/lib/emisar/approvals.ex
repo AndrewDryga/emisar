@@ -295,9 +295,15 @@ defmodule Emisar.Approvals do
 
               grant =
                 if grant_attrs.duration != :once and run.api_key_id do
+                  # The operator explicitly chose a durable window ("for 24h").
+                  # If the grant insert fails we must NOT commit the approval as
+                  # if it were `:once` — that would silently no-op their intent,
+                  # record `grant_id: nil`, and re-prompt on the next identical
+                  # call. Roll the whole transaction back so the request stays
+                  # pending and the operator can retry.
                   case create_grant(req, run, by_user_id, grant_attrs) do
                     {:ok, g} -> g
-                    _ -> nil
+                    {:error, cs} -> Repo.rollback({:grant_failed, cs})
                   end
                 end
 
@@ -649,7 +655,14 @@ defmodule Emisar.Approvals do
             :ok
 
           %ActionRun{} = run ->
-            Runs.mark_cancelled(run, "approval expired without decision")
+            # Roll back the whole expiry on a failed cancel so the request
+            # stays pending and the next sweep retries it — otherwise the
+            # request flips to `expired` while its run is still live, and the
+            # sweep won't pick it up again (status no longer pending).
+            case Runs.mark_cancelled(run, "approval expired without decision") do
+              {:ok, _} -> :ok
+              {:error, reason} -> Repo.rollback({:cancel_failed, reason})
+            end
         end
 
         Audit.log(req.account_id, "approval.expired",

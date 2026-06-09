@@ -14,8 +14,18 @@ defmodule EmisarWeb.PaddleWebhookController do
   alias Emisar.Billing.PaddleClient
 
   def create(conn, _params) do
-    secret = Application.fetch_env!(:emisar, :paddle_webhook_secret)
+    # nil on the EMISAR_DISABLE_BILLING deployment, where the secret is
+    # never configured — short-circuit to 503 rather than raising a 500.
+    case Application.get_env(:emisar, :paddle_webhook_secret) do
+      nil ->
+        conn |> put_status(:service_unavailable) |> json(%{error: "billing_disabled"})
 
+      secret ->
+        verify_and_handle(conn, secret)
+    end
+  end
+
+  defp verify_and_handle(conn, secret) do
     with {:ok, body} <- raw_body(conn),
          [signature] <- get_req_header(conn, "paddle-signature"),
          {:ok, event} <- PaddleClient.construct_webhook_event(body, signature, secret) do

@@ -47,7 +47,22 @@ defmodule Emisar.Catalog do
     # transaction as a few-hundred-action upsert meant one bad action — or a
     # disconnect mid-sync — rolled the whole thing back, pinning the runner
     # to a stale version/group while the catalog churned.
-    {:ok, runner} = Emisar.Runners.apply_state(runner, payload)
+    #
+    # `apply_state` ends in `Repo.update` and can return `{:error, changeset}`
+    # on a stale-struct race or a bad/oversized field from untrusted runner
+    # JSON. A hard match would raise a MatchError above the try/rescue and drop
+    # the socket → reconnect loop → same crash. Keep the existing struct on
+    # error (the next heartbeat re-syncs) and continue with the catalog sync.
+    runner =
+      case Emisar.Runners.apply_state(runner, payload) do
+        {:ok, updated} ->
+          updated
+
+        {:error, reason} ->
+          Logger.warning("apply_state for runner #{runner.id} failed: #{inspect(reason)}")
+
+          runner
+      end
 
     now = DateTime.utc_now() |> DateTime.truncate(:microsecond)
     packs = payload["packs"] || %{}

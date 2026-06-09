@@ -6,6 +6,8 @@ defmodule Emisar.Runs do
   Transport for sending, and tracks progress + final result.
   """
 
+  require Logger
+
   alias Ecto.Multi
   alias Emisar.{Audit, Auth, PubSub, Repo}
   alias Emisar.Auth.Subject
@@ -566,8 +568,22 @@ defmodule Emisar.Runs do
 
     PubSub.deliver_to_runner(run.runner_id, maybe_stamp_pack_hash(payload, run))
 
-    mark_sent(run)
-    :ok
+    # The envelope is already on the runner's topic, so we can't un-send it
+    # if the DB write fails — but a dropped `mark_sent` leaves the runner
+    # executing while the row stays un-`sent`. Surface that mismatch instead
+    # of swallowing it (the run still shows un-sent until the runner reports
+    # progress, which flips it to :running).
+    case mark_sent(run) do
+      {:ok, _} ->
+        :ok
+
+      {:error, reason} ->
+        Logger.warning(
+          "mark_sent failed for run #{run.id} after envelope delivered: #{inspect(reason)}"
+        )
+
+        :ok
+    end
   end
 
   # Stamp the trusted pack hash into the wire envelope so the runner
@@ -687,12 +703,46 @@ defmodule Emisar.Runs do
         # If this run was part of a runbook and succeeded, fire the
         # next step. Non-success stops the runbook and the failed step
         # surfaces on the runbook detail.
-        Emisar.Runbooks.dispatch_next_step(finished)
+        finished
+        |> Emisar.Runbooks.dispatch_next_step()
+        |> audit_continuation(finished)
+
         ok
 
       other ->
         other
     end
+  end
+
+  # `dispatch_next_step/1` either dispatches the next runbook step
+  # (`{:ok, :running | :pending_approval, _}`), no-ops when there's no
+  # continuation (`:noop`), or fails to dispatch it. The failure is either
+  # a denied-by-policy 3-tuple (`{:error, :denied_by_policy, reason}`) or a
+  # 2-tuple (`{:error, %Changeset{} | :runner_out_of_scope | :pack_untrusted
+  # | …}`). A failed continuation silently stopped the runbook with no
+  # trace — write a run-scoped audit row so operators can see WHY the chain
+  # halted mid-flight.
+  defp audit_continuation({:error, :denied_by_policy, reason}, %ActionRun{} = finished),
+    do: log_continuation_failure(finished, reason)
+
+  defp audit_continuation({:error, reason}, %ActionRun{} = finished),
+    do: log_continuation_failure(finished, reason)
+
+  defp audit_continuation(_ok_or_noop, _finished), do: :ok
+
+  defp log_continuation_failure(%ActionRun{} = finished, reason) do
+    Audit.log(finished.account_id, "runbook.step_dispatch_failed",
+      actor_kind: "system",
+      subject_kind: "action_run",
+      subject_id: finished.id,
+      subject_label: finished.action_id,
+      payload: %{
+        run_id: finished.id,
+        runbook_id: finished.runbook_id,
+        runbook_step_id: finished.runbook_step_id,
+        reason: inspect(reason)
+      }
+    )
   end
 
   defp result_attrs(payload) do

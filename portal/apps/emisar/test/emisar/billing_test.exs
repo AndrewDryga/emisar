@@ -1,7 +1,10 @@
 defmodule Emisar.BillingTest do
-  use ExUnit.Case, async: true
+  use Emisar.DataCase, async: true
+
+  import Emisar.Fixtures
 
   alias Emisar.Billing
+  alias Emisar.Billing.Subscription
 
   describe "plans/0" do
     test "has free, team, enterprise" do
@@ -100,5 +103,115 @@ defmodule Emisar.BillingTest do
     test "nil when neither field present" do
       assert Billing.extract_next_billed_at(%{}) == nil
     end
+  end
+
+  describe "record_and_apply_event/3 — subscription.created" do
+    setup do
+      # Map the team price id to the "team" plan, exactly as the webhook
+      # payload nests it under items[].price.id (mirrors `:paddle_price_ids`).
+      Application.put_env(:emisar, :paddle_price_ids, %{"team" => "pri_team_01"})
+      on_exit(fn -> Application.delete_env(:emisar, :paddle_price_ids) end)
+      :ok
+    end
+
+    test "persists a subscription with the plan derived from the price id" do
+      account = account_fixture(%{paddle_customer_id: "ctm_team_01"})
+
+      event =
+        subscription_created_event("evt_created_1", account.paddle_customer_id, "pri_team_01")
+
+      assert :ok = Billing.record_and_apply_event("evt_created_1", "subscription.created", event)
+
+      sub =
+        Subscription.Query.all()
+        |> Subscription.Query.by_account_id(account.id)
+        |> Repo.one()
+
+      assert sub.plan == "team"
+      assert sub.status == "active"
+      assert sub.paddle_subscription_id == "sub_evt_created_1"
+      assert sub.paddle_price_id == "pri_team_01"
+    end
+
+    test "falls back to the account's current plan when the price id is unknown" do
+      account = account_fixture(%{plan: "enterprise", paddle_customer_id: "ctm_ent_01"})
+
+      # Enterprise is sales-led; no configured price id maps to it.
+      event =
+        subscription_created_event("evt_created_2", account.paddle_customer_id, "pri_unmapped")
+
+      assert :ok = Billing.record_and_apply_event("evt_created_2", "subscription.created", event)
+
+      sub =
+        Subscription.Query.all()
+        |> Subscription.Query.by_account_id(account.id)
+        |> Repo.one()
+
+      assert sub.plan == "enterprise"
+    end
+
+    test "no-op (still :ok) when no account matches the Paddle customer" do
+      event = subscription_created_event("evt_created_3", "ctm_nobody", "pri_team_01")
+
+      assert :ok = Billing.record_and_apply_event("evt_created_3", "subscription.created", event)
+    end
+  end
+
+  describe "record_and_apply_event/3 — dedup + rollback" do
+    test "a second delivery of the same event id is a duplicate and does not re-apply" do
+      account = account_fixture(%{paddle_customer_id: "ctm_dup_01"})
+      event = subscription_created_event("evt_dup", account.paddle_customer_id, nil)
+
+      assert :ok = Billing.record_and_apply_event("evt_dup", "subscription.created", event)
+
+      assert {:duplicate, "evt_dup"} =
+               Billing.record_and_apply_event("evt_dup", "subscription.created", event)
+    end
+
+    test "an apply failure rolls back the dedup row so redelivery reprocesses" do
+      account = account_fixture(%{paddle_customer_id: "ctm_fail_01"})
+
+      # An invalid status fails `validate_inclusion(:status)` inside the same
+      # transaction — the apply returns {:error, changeset}.
+      bad_event =
+        subscription_created_event("evt_fail", account.paddle_customer_id, nil)
+        |> put_in(["data", "status"], "not-a-real-status")
+
+      assert {:error, {:apply_failed, %Ecto.Changeset{}}} =
+               Billing.record_and_apply_event("evt_fail", "subscription.created", bad_event)
+
+      # The dedup row MUST be absent — otherwise Paddle's retry is swallowed.
+      refute processed_event?("evt_fail")
+
+      # No subscription leaked from the rolled-back transaction either.
+      assert Subscription.Query.all()
+             |> Subscription.Query.by_account_id(account.id)
+             |> Repo.one() == nil
+
+      # Redelivery with a now-valid payload reprocesses and persists.
+      good_event = subscription_created_event("evt_fail", account.paddle_customer_id, nil)
+      assert :ok = Billing.record_and_apply_event("evt_fail", "subscription.created", good_event)
+      assert processed_event?("evt_fail")
+    end
+  end
+
+  # A minimal Paddle subscription.created webhook envelope. The price id is
+  # nested under data.items[].price.id, matching Paddle's Billing API.
+  defp subscription_created_event(event_id, customer_id, price_id) do
+    %{
+      "event_id" => event_id,
+      "event_type" => "subscription.created",
+      "data" => %{
+        "id" => "sub_" <> event_id,
+        "customer_id" => customer_id,
+        "status" => "active",
+        "next_billed_at" => "2026-07-01T00:00:00Z",
+        "items" => [%{"price" => %{"id" => price_id}}]
+      }
+    }
+  end
+
+  defp processed_event?(event_id) do
+    Repo.exists?(from e in "paddle_processed_events", where: e.id == ^event_id)
   end
 end

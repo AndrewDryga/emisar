@@ -1,14 +1,14 @@
 defmodule Emisar.Runners.Authorizer do
   @moduledoc """
   Permissions + queryable scoping for runner-related schemas: runners,
-  auth keys, runner tokens, event cursors.
+  auth keys, runner tokens.
 
     * `manage_*` gates mutations and admin-only listings.
     * `view_runners_permission` gates read-only operator/viewer surfaces.
   """
   use Emisar.Auth.Authorizer
 
-  alias Emisar.Runners.{AuthKey, EventCursor, Runner, Token}
+  alias Emisar.Runners.{AuthKey, Runner, Token}
 
   # -- Catalogue -------------------------------------------------------
 
@@ -58,7 +58,6 @@ defmodule Emisar.Runners.Authorizer do
     case query_source(queryable) do
       :runners -> Runner.Query.by_id(queryable, runner_id)
       :runner_tokens -> Token.Query.by_runner_id(queryable, runner_id)
-      :runner_event_cursors -> EventCursor.Query.by_runner_id(queryable, runner_id)
       _ -> queryable
     end
   end
@@ -68,7 +67,6 @@ defmodule Emisar.Runners.Authorizer do
       :runners -> Runner.Query.by_account_id(queryable, account_id)
       :runner_auth_keys -> AuthKey.Query.by_account_id(queryable, account_id)
       :runner_tokens -> Token.Query.by_runner_account_id(queryable, account_id)
-      :runner_event_cursors -> EventCursor.Query.by_runner_account_id(queryable, account_id)
       _ -> queryable
     end
   end

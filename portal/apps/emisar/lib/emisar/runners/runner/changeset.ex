@@ -72,13 +72,6 @@ defmodule Emisar.Runners.Runner.Changeset do
 
   # -- Lifecycle transitions ------------------------------------------
 
-  def update(%Runner{} = runner, attrs) do
-    runner
-    |> cast(attrs, [:name, :group, :labels])
-    |> validate_required([:name, :group])
-    |> validate_length(:name, min: 1, max: 80)
-  end
-
   @doc "Apply a runner_state advertisement (hostname, labels, version, packs)."
   def apply_state(%Runner{} = runner, attrs) do
     # external_id is set at create / register time and is the stable

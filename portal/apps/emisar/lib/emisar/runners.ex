@@ -10,10 +10,10 @@ defmodule Emisar.Runners do
 
   Reads/writes go through `Runner.Query` + `Runner.Changeset` (and
   similar per-entity modules under `Emisar.Runners.AuthKey`,
-  `Token`, `EventCursor`). The public surface takes `%Subject{}` and
+  `Token`). The public surface takes `%Subject{}` and
   routes through `Authorizer.for_subject/2`; the runner-socket-driven
   state helpers (`apply_state`, `connect_runner`, `mark_disconnected`,
-  `record_heartbeat`, `mark_event_acked`, `event_acked?`) are internal
+  `record_heartbeat`) are internal
   to the runner connection process and called with the runner
   socket's own subject upstream.
   """
@@ -21,7 +21,7 @@ defmodule Emisar.Runners do
   alias Ecto.Multi
   alias Emisar.{Audit, Auth, Crypto, Repo}
   alias Emisar.Auth.Subject
-  alias Emisar.Runners.{Authorizer, AuthKey, EventCursor, Presence, Runner, Token}
+  alias Emisar.Runners.{Authorizer, AuthKey, Presence, Runner, Token}
 
   require Logger
 
@@ -236,17 +236,6 @@ defmodule Emisar.Runners do
       %Emisar.Accounts.Account{id: account.id}
       |> Runner.Changeset.create(attrs)
       |> Repo.insert()
-    end
-  end
-
-  def update_runner(%Runner{} = runner, attrs, %Subject{} = subject) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.manage_runners_permission()
-           ),
-         :ok <- Subject.ensure_in_account(subject, runner.account_id) do
-      runner |> Runner.Changeset.update(attrs) |> Repo.update()
     end
   end
 
@@ -914,22 +903,5 @@ defmodule Emisar.Runners do
   defp derive_name(attrs) do
     attrs[:hostname] || attrs[:name] ||
       "runner-#{Base.url_encode64(:crypto.strong_rand_bytes(4), padding: false)}"
-  end
-
-  # -- Event cursor (audit-upload outbox) ------------------------------
-  #
-  # Internal — called only by the runner socket process. The runner
-  # is the authority on what its own cursor is.
-
-  def mark_event_acked(runner_id, event_id) do
-    EventCursor.Changeset.upsert(runner_id, event_id)
-    |> Repo.insert(on_conflict: :nothing)
-  end
-
-  def event_acked?(runner_id, event_id) do
-    EventCursor.Query.all()
-    |> EventCursor.Query.by_runner_id(runner_id)
-    |> EventCursor.Query.by_event_id(event_id)
-    |> Repo.exists?()
   end
 end

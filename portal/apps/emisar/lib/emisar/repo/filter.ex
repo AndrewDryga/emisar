@@ -11,29 +11,11 @@ defmodule Emisar.Repo.Filter do
   """
   import Ecto.Query
   alias Emisar.Repo.Query
-  alias Emisar.Repo.Filter.Range
 
-  @typedoc """
-  A list of `{name, value}` pairs. `:and` / `:or` groups allow boolean
-  trees.
-  """
-  @type filters :: [
-          {name :: atom(), value :: term()}
-          | {:or, filters()}
-          | {:and, filters()}
-        ]
+  @typedoc "A flat list of `{name, value}` pairs, ANDed together."
+  @type filters :: [{name :: atom(), value :: term()}]
 
-  @type numeric_type :: :integer | :number
-  @type datetime_type :: :date | :time | :datetime
-  @type binary_type :: :string | {:string, :email | :uuid | :websearch}
-  @type range_type :: {:range, numeric_type() | datetime_type()}
-  @type type ::
-          :boolean
-          | binary_type()
-          | numeric_type()
-          | datetime_type()
-          | range_type()
-          | {:list, type()}
+  @type type :: :boolean | :string | {:list, :boolean | :string}
 
   @type fun ::
           (Ecto.Queryable.t(), value :: term() ->
@@ -47,7 +29,7 @@ defmodule Emisar.Repo.Filter do
           name: atom(),
           title: String.t() | nil,
           type: type(),
-          values: values() | Range.t() | nil,
+          values: values() | nil,
           fun: fun()
         }
 
@@ -77,22 +59,11 @@ defmodule Emisar.Repo.Filter do
   end
 
   @doc false
-  def build_dynamic(queryable, _filters, [], acc), do: {queryable, acc}
   def build_dynamic(queryable, [], _definitions, acc), do: {queryable, acc}
-
-  def build_dynamic(queryable, [{op, nested} | rest], definitions, acc) when op in [:or, :and] do
-    {queryable, dynamic} =
-      Enum.reduce(nested, {queryable, nil}, fn nested_filter, {queryable, inner_acc} ->
-        {queryable, dynamic} = build_dynamic(queryable, nested_filter, definitions, nil)
-        {queryable, merge_dynamic(op, inner_acc, dynamic)}
-      end)
-
-    build_dynamic(queryable, rest, definitions, merge_dynamic(:and, acc, dynamic))
-  end
 
   def build_dynamic(queryable, [{name, value} | rest], definitions, acc) do
     with {:ok, {queryable, dynamic}} <- apply_filter(definitions, name, value, queryable) do
-      build_dynamic(queryable, rest, definitions, merge_dynamic(:and, acc, dynamic))
+      build_dynamic(queryable, rest, definitions, merge_dynamic(acc, dynamic))
     end
   end
 
@@ -181,29 +152,14 @@ defmodule Emisar.Repo.Filter do
     end)
   end
 
-  defp value_type_valid?({:range, type}, %Range{from: from, to: to}) do
-    (is_nil(from) or value_type_valid?(type, from)) and
-      (is_nil(to) or value_type_valid?(type, to)) and
-      not (is_nil(from) and is_nil(to))
-  end
-
   defp value_type_valid?({:list, type}, values) when is_list(values),
     do: Enum.all?(values, &value_type_valid?(type, &1))
 
-  defp value_type_valid?({:string, :email}, v), do: is_binary(v)
-  defp value_type_valid?({:string, :websearch}, v), do: is_binary(v)
-  defp value_type_valid?({:string, :uuid}, v), do: Emisar.Repo.valid_uuid?(v)
   defp value_type_valid?(:string, v), do: is_binary(v)
   defp value_type_valid?(:boolean, v), do: is_boolean(v)
-  defp value_type_valid?(:integer, v), do: is_integer(v)
-  defp value_type_valid?(:number, v), do: is_number(v)
-  defp value_type_valid?(:date, %Date{}), do: true
-  defp value_type_valid?(:datetime, %DateTime{}), do: true
-  defp value_type_valid?(:datetime, %NaiveDateTime{}), do: true
   defp value_type_valid?(_type, _value), do: false
 
-  def merge_dynamic(_op, dynamic, nil), do: dynamic
-  def merge_dynamic(_op, nil, dynamic), do: dynamic
-  def merge_dynamic(:and, a, b), do: dynamic(^a and ^b)
-  def merge_dynamic(:or, a, b), do: dynamic(^a or ^b)
+  def merge_dynamic(dynamic, nil), do: dynamic
+  def merge_dynamic(nil, dynamic), do: dynamic
+  def merge_dynamic(a, b), do: dynamic(^a and ^b)
 end

@@ -60,22 +60,6 @@ defmodule EmisarWeb.Permissions do
   defp role(%{current_membership: %Membership{role: r}}), do: r
   defp role(_), do: nil
 
-  @doc """
-  Guard for `handle_event/3`. Returns either `{:ok, socket}` to proceed
-  or `{:deny, socket_with_flash}` so the caller can short-circuit.
-
-      with {:ok, socket} <- Permissions.require!(socket, :manage_auth_keys) do
-        # ...
-      end
-  """
-  def require!(socket, action) do
-    if can?(socket, action) do
-      {:ok, socket}
-    else
-      {:deny, Phoenix.LiveView.put_flash(socket, :error, denial_message(action))}
-    end
-  end
-
   defp denial_message(:manage_billing), do: "Only owners can manage billing."
   defp denial_message(:manage_subscription), do: "Only owners can change the subscription."
   defp denial_message(:manage_team), do: "Only owners and admins can manage the team."

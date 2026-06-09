@@ -232,30 +232,29 @@ defmodule Emisar.Billing do
   def record_and_apply_event(event_id, event_type, event)
       when is_binary(event_id) and is_binary(event_type) do
     Repo.transaction(fn ->
-      attrs = %{
+      row = %{
         id: event_id,
         event_type: event_type,
         received_at: DateTime.utc_now() |> DateTime.truncate(:microsecond)
       }
 
-      changeset =
-        Ecto.Changeset.cast(
-          {%{}, %{id: :string, event_type: :string, received_at: :utc_datetime_usec}},
-          attrs,
-          [:id, :event_type, :received_at]
-        )
-
-      case Repo.insert(changeset, source: "paddle_processed_events", on_conflict: :nothing) do
-        {:ok, %{id: nil}} ->
-          # on_conflict: :nothing returns a struct with id=nil when the
-          # row already existed; treat as duplicate.
+      # Dedup insert into the schemaless bookkeeping table. `on_conflict:
+      # :nothing` → 0 rows means this Paddle event id was already processed
+      # (it re-delivers); 1 row means it's new. A genuine DB error raises and
+      # rolls the transaction back, so it's never mistaken for a duplicate.
+      case Repo.insert_all("paddle_processed_events", [row], on_conflict: :nothing) do
+        {0, _} ->
           Repo.rollback({:duplicate, event_id})
 
-        {:ok, _row} ->
-          apply_webhook_event(event)
-
-        {:error, _cs} ->
-          Repo.rollback({:duplicate, event_id})
+        {1, _} ->
+          # Roll back when applying the event fails so the dedup row is NOT
+          # committed — otherwise Paddle's redelivery is swallowed as
+          # already-processed and the account never gets its plan/entitlement.
+          case apply_webhook_event(event) do
+            :ok -> :ok
+            {:ok, _} -> :ok
+            {:error, reason} -> Repo.rollback({:apply_failed, reason})
+          end
       end
     end)
     |> case do
@@ -292,15 +291,40 @@ defmodule Emisar.Billing do
       nil ->
         :ok
 
-      %Account{id: account_id} ->
+      %Account{} = account ->
+        price_id = extract_price_id(sub)
+
         attrs = %{
           paddle_subscription_id: sub["id"],
+          paddle_price_id: price_id,
+          plan: plan_for_subscription(account, price_id),
           status: sub["status"],
           current_period_end: extract_next_billed_at(sub)
         }
 
-        upsert_subscription(account_id, attrs)
+        upsert_subscription(account.id, attrs)
     end
+  end
+
+  # Paddle subscription payloads nest the price under `items[].price.id`.
+  # We bill a single line item, so the first item's price id is the plan.
+  defp extract_price_id(%{"items" => [%{"price" => %{"id" => id}} | _]}) when is_binary(id),
+    do: id
+
+  defp extract_price_id(_), do: nil
+
+  # `:paddle_price_ids` is configured as `%{plan_name => price_id}` (the
+  # same map `start_checkout/3` reads). Invert it to map the webhook's
+  # price id back to a plan. If it can't be resolved (price id absent or
+  # not configured — e.g. the sales-led enterprise tier), fall back to the
+  # account's current plan, then "free", so the subscription can persist
+  # rather than failing `validate_required([:plan])` and stranding the account.
+  defp plan_for_subscription(%Account{} = account, price_id) do
+    price_to_plan =
+      Application.get_env(:emisar, :paddle_price_ids, %{})
+      |> Map.new(fn {plan, pid} -> {pid, plan} end)
+
+    price_to_plan[price_id] || account.plan || "free"
   end
 
   defp peek_account_by_paddle_customer(cid) when is_binary(cid) do
