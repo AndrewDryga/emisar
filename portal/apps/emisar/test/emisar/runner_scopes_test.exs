@@ -29,15 +29,15 @@ defmodule Emisar.RunnerScopesTest do
                )
 
       assert [
-               %{scope_type: "group", scope_value: "dba"},
-               %{scope_type: "group", scope_value: "edge"}
+               %{scope_type: :group, scope_value: "dba"},
+               %{scope_type: :group, scope_value: "edge"}
              ] = Accounts.runner_scopes_for_membership(membership.id)
 
       # Second call replaces the set entirely.
       assert {:ok, :ok} =
                Accounts.replace_runner_scopes(membership, [{"group", "app"}], subject)
 
-      assert [%{scope_type: "group", scope_value: "app"}] =
+      assert [%{scope_type: :group, scope_value: "app"}] =
                Accounts.runner_scopes_for_membership(membership.id)
     end
 

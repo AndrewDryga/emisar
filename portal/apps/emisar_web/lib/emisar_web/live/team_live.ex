@@ -320,10 +320,10 @@ defmodule EmisarWeb.TeamLive do
   end
 
   # Render a scope chip's value — humanizes runner-uuids into names.
-  defp scope_label(%{scope_type: "group", scope_value: v}, _groups, _runners),
+  defp scope_label(%{scope_type: :group, scope_value: v}, _groups, _runners),
     do: v
 
-  defp scope_label(%{scope_type: "runner", scope_value: id}, _groups, runners_by_id) do
+  defp scope_label(%{scope_type: :runner, scope_value: id}, _groups, runners_by_id) do
     case Map.get(runners_by_id, id) do
       %{name: name} -> name
       _ -> String.slice(id, 0, 8) <> "…"
@@ -681,7 +681,7 @@ defmodule EmisarWeb.TeamLive do
                         <option
                           :for={g <- @runner_groups}
                           value={g}
-                          selected={scope_selected?(m.id, @scopes_by_membership, "group", g)}
+                          selected={scope_selected?(m.id, @scopes_by_membership, :group, g)}
                         >
                           {g}
                         </option>
@@ -704,7 +704,7 @@ defmodule EmisarWeb.TeamLive do
                         <option
                           :for={{id, r} <- @runners_by_id}
                           value={id}
-                          selected={scope_selected?(m.id, @scopes_by_membership, "runner", id)}
+                          selected={scope_selected?(m.id, @scopes_by_membership, :runner, id)}
                         >
                           {r.name} <span :if={r.group}>({r.group})</span>
                         </option>

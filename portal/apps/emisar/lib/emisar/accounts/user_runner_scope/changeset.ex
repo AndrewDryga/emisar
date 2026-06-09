@@ -10,7 +10,6 @@ defmodule Emisar.Accounts.UserRunnerScope.Changeset do
       [:membership_id, :scope_type, :scope_value]
     )
     |> validate_required([:membership_id, :scope_type, :scope_value])
-    |> validate_inclusion(:scope_type, UserRunnerScope.valid_types())
     |> validate_length(:scope_value, min: 1, max: 255)
     |> unique_constraint([:membership_id, :scope_type, :scope_value],
       name: :user_runner_scopes_unique

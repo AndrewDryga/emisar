@@ -976,8 +976,8 @@ defmodule Emisar.Accounts do
 
   def runner_in_scope?(%{id: id, group: group}, scopes) when is_list(scopes) do
     Enum.any?(scopes, fn
-      %UserRunnerScope{scope_type: "runner", scope_value: ^id} -> true
-      %UserRunnerScope{scope_type: "group", scope_value: ^group} -> true
+      %UserRunnerScope{scope_type: :runner, scope_value: ^id} -> true
+      %UserRunnerScope{scope_type: :group, scope_value: ^group} -> true
       _ -> false
     end)
   end

@@ -108,8 +108,8 @@ defmodule EmisarWeb.TeamLiveTest do
 
       # Persisted as two scope rows.
       scopes = Emisar.Accounts.runner_scopes_for_membership(m.id)
-      assert Enum.any?(scopes, &(&1.scope_type == "group" and &1.scope_value == "dba"))
-      assert Enum.any?(scopes, &(&1.scope_type == "runner" and &1.scope_value == runner.id))
+      assert Enum.any?(scopes, &(&1.scope_type == :group and &1.scope_value == "dba"))
+      assert Enum.any?(scopes, &(&1.scope_type == :runner and &1.scope_value == runner.id))
     end
   end
 end
