@@ -7,7 +7,7 @@ defmodule Emisar.Billing do
   binds the live client, tests use the in-process stub.
   """
 
-  alias Emisar.{Auth, Repo}
+  alias Emisar.{Auth, PublicUrl, Repo}
   alias Emisar.Accounts.{Account, Membership}
   alias Emisar.Auth.Subject
   alias Emisar.Billing.{Authorizer, Subscription}
@@ -139,7 +139,7 @@ defmodule Emisar.Billing do
           {:ok, "/paddle-checkout-stub?plan=" <> plan_name}
 
         true ->
-          with {:ok, cid, _account} <- ensure_paddle_customer(account),
+          with {:ok, cid, _account} <- ensure_paddle_customer(account, subject),
                price_id <-
                  Map.fetch!(Application.get_env(:emisar, :paddle_price_ids, %{}), plan_name),
                {:ok, %{"url" => url}} <-
@@ -147,8 +147,8 @@ defmodule Emisar.Billing do
                    customer: cid,
                    price_id: price_id,
                    quantity: current_count(account, :runners),
-                   success_url: app_url("/app/settings/billing?status=success"),
-                   cancel_url: app_url("/app/settings/billing?status=cancelled")
+                   success_url: PublicUrl.url("/app/settings/billing?status=success"),
+                   cancel_url: PublicUrl.url("/app/settings/billing?status=cancelled")
                  }) do
             {:ok, url}
           end
@@ -180,7 +180,7 @@ defmodule Emisar.Billing do
   defp do_open_billing_portal(%Account{paddle_customer_id: nil}), do: {:error, :no_customer}
 
   defp do_open_billing_portal(%Account{paddle_customer_id: cid}) when is_binary(cid) do
-    return_url = app_url("/app/settings/billing")
+    return_url = PublicUrl.url("/app/settings/billing")
 
     if Application.get_env(:emisar, :paddle_api_key) do
       case Emisar.Billing.PaddleClient.create_billing_portal_session(%{
@@ -203,14 +203,18 @@ defmodule Emisar.Billing do
   @doc """
   Ensures the account has a Paddle customer; returns the customer id.
   Idempotent — if the account already has one, just returns it.
-  """
-  def ensure_paddle_customer(%Account{paddle_customer_id: cid} = account) when is_binary(cid),
-    do: {:ok, cid, account}
 
-  def ensure_paddle_customer(%Account{} = account) do
+  On first creation the acting user's email is attached to the Paddle
+  customer so invoices and receipts reach a real inbox.
+  """
+  def ensure_paddle_customer(%Account{paddle_customer_id: cid} = account, %Subject{})
+      when is_binary(cid),
+      do: {:ok, cid, account}
+
+  def ensure_paddle_customer(%Account{} = account, %Subject{} = subject) do
     with {:ok, %{"id" => cid}} <-
            Emisar.Billing.PaddleClient.create_customer(%{
-             email: nil,
+             email: Subject.actor_email(subject),
              name: account.name,
              account_id: account.id
            }),
@@ -345,19 +349,6 @@ defmodule Emisar.Billing do
     account
     |> Ecto.Changeset.change(paddle_customer_id: cid)
     |> Repo.update()
-  end
-
-  defp app_url(path) do
-    base =
-      Application.get_env(:emisar_web, EmisarWeb.Endpoint, [])
-      |> Keyword.get(:url, host: "localhost")
-      |> case do
-        [host: host, port: port] -> "https://#{host}:#{port}"
-        [host: host] -> "https://#{host}"
-        _ -> "http://localhost:4000"
-      end
-
-    base <> path
   end
 
   @doc """

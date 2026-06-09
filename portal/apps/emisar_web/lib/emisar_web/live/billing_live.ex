@@ -217,7 +217,8 @@ defmodule EmisarWeb.BillingLive do
               :if={@summary.plan == "free" and Permissions.can?(assigns, :manage_billing)}
               phx-click="upgrade"
               phx-value-plan="team"
-              class="rounded-lg bg-indigo-500 px-4 py-2 text-sm font-semibold text-zinc-950 hover:bg-indigo-400"
+              phx-disable-with="Starting checkout…"
+              class="rounded-lg bg-indigo-500 px-4 py-2 text-sm font-semibold text-zinc-950 hover:bg-indigo-400 disabled:opacity-60"
             >
               Upgrade to Team
             </button>
@@ -229,7 +230,8 @@ defmodule EmisarWeb.BillingLive do
             <button
               :if={@current_account.paddle_customer_id && Permissions.can?(assigns, :manage_billing)}
               phx-click="manage_billing"
-              class="inline-flex items-center gap-1.5 rounded-lg border border-zinc-800 px-4 py-2 text-sm font-medium text-zinc-200 hover:bg-zinc-900"
+              phx-disable-with="Opening portal…"
+              class="inline-flex items-center gap-1.5 rounded-lg border border-zinc-800 px-4 py-2 text-sm font-medium text-zinc-200 hover:bg-zinc-900 disabled:opacity-60"
             >
               <.icon name="hero-credit-card" class="h-4 w-4" /> Manage subscription
             </button>
@@ -312,7 +314,8 @@ defmodule EmisarWeb.BillingLive do
                     <button
                       phx-click="upgrade"
                       phx-value-plan={plan.key}
-                      class="block w-full rounded-lg bg-indigo-500 px-3 py-2 text-center text-xs font-semibold text-zinc-950 hover:bg-indigo-400"
+                      phx-disable-with="Starting checkout…"
+                      class="block w-full rounded-lg bg-indigo-500 px-3 py-2 text-center text-xs font-semibold text-zinc-950 hover:bg-indigo-400 disabled:opacity-60"
                     >
                       Upgrade to {plan.name}
                     </button>

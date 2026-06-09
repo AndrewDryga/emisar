@@ -15,7 +15,7 @@ defmodule EmisarWeb.Mcp.Service do
 
   require Logger
 
-  alias Emisar.{Accounts, Catalog, Runbooks, Runners, Runs}
+  alias Emisar.{Accounts, Catalog, PubSub, Runbooks, Runners, Runs}
   alias EmisarWeb.Mcp.{Idempotency, ToolSchema}
 
   # Same caps the REST handlers use; keep them in lockstep so
@@ -26,7 +26,12 @@ defmodule EmisarWeb.Mcp.Service do
   # Cap a long-poll at 90s so a `wait_for_run` can't pin a request process for
   # five minutes; clients re-poll if the run is still running.
   @max_get_run_wait_ms 90_000
-  @poll_interval_ms 200
+  # The wait is event-driven — it blocks on the run's PubSub topic and wakes on
+  # each `{:run_updated, _}` broadcast. This timer is only the safety net: a
+  # missed broadcast, or a state change that doesn't broadcast at all, is still
+  # caught within ~2s. ~10× fewer DB queries than the old 200ms busy-poll while
+  # staying robust.
+  @recheck_interval_ms 2_000
 
   @terminal_statuses ~w(success failed error validation_failed unknown_action cancelled timed_out denied)
 
@@ -604,19 +609,38 @@ defmodule EmisarWeb.Mcp.Service do
     end
   end
 
+  # Block until every run in `ids` is terminal or the deadline passes. The
+  # runner socket broadcasts `{:run_updated, _}` on each run's topic at every
+  # state transition (Emisar.PubSub.broadcast_run/1), so we subscribe and wake
+  # on those instead of busy-polling; the recheck timer is the safety net.
   defp poll_all_to_terminal(subject, ids, deadline) do
+    Enum.each(ids, &PubSub.subscribe_run/1)
+    schedule_recheck(deadline)
+
+    try do
+      await_all_terminal(subject, ids, deadline)
+    after
+      Enum.each(ids, &PubSub.unsubscribe_run/1)
+    end
+  end
+
+  defp await_all_terminal(subject, ids, deadline) do
     remaining = Enum.reject(ids, &run_terminal?(&1, subject))
 
-    cond do
-      remaining == [] ->
-        :ok
+    if remaining == [] do
+      :ok
+    else
+      case wait_for_signal(deadline) do
+        :recheck ->
+          schedule_recheck(deadline)
+          await_all_terminal(subject, remaining, deadline)
 
-      System.monotonic_time(:millisecond) >= deadline ->
-        :ok
+        {:run_updated, _run} ->
+          await_all_terminal(subject, remaining, deadline)
 
-      true ->
-        Process.sleep(@poll_interval_ms)
-        poll_all_to_terminal(subject, remaining, deadline)
+        :timeout ->
+          :ok
+      end
     end
   end
 
@@ -630,7 +654,20 @@ defmodule EmisarWeb.Mcp.Service do
   defp run_status_kind(%{status: s}) when s in @terminal_statuses, do: :terminal
   defp run_status_kind(_), do: :waiting
 
+  # Single-run variant of the above, returning the terminal run for the caller
+  # to render. Same event-driven wait; one subscription instead of N.
   defp poll_to_terminal(subject, run_id, deadline) do
+    PubSub.subscribe_run(run_id)
+    schedule_recheck(deadline)
+
+    try do
+      await_terminal(subject, run_id, deadline)
+    after
+      PubSub.unsubscribe_run(run_id)
+    end
+  end
+
+  defp await_terminal(subject, run_id, deadline) do
     case Runs.fetch_run_by_id(run_id, subject) do
       {:error, :not_found} ->
         :timeout
@@ -639,14 +676,44 @@ defmodule EmisarWeb.Mcp.Service do
         {:terminal, run}
 
       {:ok, _} ->
-        now = System.monotonic_time(:millisecond)
+        case wait_for_signal(deadline) do
+          :recheck ->
+            schedule_recheck(deadline)
+            await_terminal(subject, run_id, deadline)
 
-        if now >= deadline do
-          :timeout
-        else
-          Process.sleep(min(@poll_interval_ms, max(deadline - now, 1)))
-          poll_to_terminal(subject, run_id, deadline)
+          {:run_updated, _run} ->
+            await_terminal(subject, run_id, deadline)
+
+          :timeout ->
+            :timeout
         end
+    end
+  end
+
+  # Block until a relevant PubSub message arrives, the recheck timer fires, or
+  # the deadline's remaining budget elapses — whichever comes first. Returns the
+  # signal so the caller decides whether to re-check the run(s) or give up.
+  # `{:run_event, _}` progress chunks are drained in place (they don't change
+  # status, so re-querying on each would re-amplify DB load on a chatty run)
+  # without resetting the deadline; a state change still arrives as
+  # `{:run_updated, _}`, and the recheck timer backstops anything missed.
+  defp wait_for_signal(deadline) do
+    timeout = max(deadline - System.monotonic_time(:millisecond), 0)
+
+    receive do
+      :recheck -> :recheck
+      {:run_updated, run} -> {:run_updated, run}
+      {:run_event, _event} -> wait_for_signal(deadline)
+    after
+      timeout -> :timeout
+    end
+  end
+
+  defp schedule_recheck(deadline) do
+    remaining = deadline - System.monotonic_time(:millisecond)
+
+    if remaining > 0 do
+      Process.send_after(self(), :recheck, min(@recheck_interval_ms, remaining))
     end
   end
 

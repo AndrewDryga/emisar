@@ -129,6 +129,21 @@ defmodule Emisar.PoliciesTest do
                  %{}
                )
     end
+
+    test "the evaluator ignores `kind` in match_ctx — action_id + risk decide" do
+      # `kind` was dead plumbing in the evaluator: overrides match on the
+      # action glob and defaults on the risk tier. Passing it (any value)
+      # must not change the verdict.
+      policy = %Policy{rules: Policies.default_rules()}
+
+      base = %{"action_id" => "x", "risk" => "high"}
+
+      assert Policies.evaluate(policy, base, %{}) ==
+               Policies.evaluate(policy, Map.put(base, "kind", "exec"), %{})
+
+      assert Policies.evaluate(policy, base, %{}) ==
+               Policies.evaluate(policy, Map.put(base, "kind", "anything-else"), %{})
+    end
   end
 
   describe "tier-monotonicity validation" do

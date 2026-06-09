@@ -9,6 +9,7 @@ defmodule Emisar.Mailers.UserNotifier do
 
   alias Emisar.Accounts.User
   alias Emisar.Mailer
+  alias Emisar.PublicUrl
 
   # Resolved at call-time (not compile-time) so `runtime.exs` env-var
   # overrides take effect without a recompile. Falls back to the
@@ -19,7 +20,7 @@ defmodule Emisar.Mailers.UserNotifier do
   end
 
   def deliver_confirmation_instructions(%User{} = user, token) do
-    url = url_for("/confirm/#{token}")
+    url = PublicUrl.url("/confirm/#{token}")
 
     deliver(user.email, "Confirm your emisar account", """
     Welcome to emisar!
@@ -35,7 +36,7 @@ defmodule Emisar.Mailers.UserNotifier do
   end
 
   def deliver_magic_link(%User{} = user, token) do
-    url = url_for("/sign_in/magic/#{token}")
+    url = PublicUrl.url("/sign_in/magic/#{token}")
 
     deliver(user.email, "Your emisar magic link", """
     Click the link below to sign in to emisar. It expires in 15 minutes.
@@ -48,7 +49,7 @@ defmodule Emisar.Mailers.UserNotifier do
   end
 
   def deliver_password_reset(%User{} = user, token) do
-    url = url_for("/reset_password/#{token}")
+    url = PublicUrl.url("/reset_password/#{token}")
 
     deliver(user.email, "Reset your emisar password", """
     Reset your password using this link (valid for 1 hour):
@@ -71,7 +72,7 @@ defmodule Emisar.Mailers.UserNotifier do
   from their inbox without context-switching into the app.
   """
   def deliver_approval_request(%User{} = approver, %{} = req, %{} = run) do
-    url = url_for("/app/approvals/#{req.id}")
+    url = PublicUrl.url("/app/approvals/#{req.id}")
     runner_label = runner_email_label(run)
     args_block = format_args_for_email(run)
     matched = format_matched_rules(run)
@@ -129,7 +130,7 @@ defmodule Emisar.Mailers.UserNotifier do
   defp format_args_for_email(_), do: "  (none)"
 
   def deliver_account_invitation(%User{} = invitee, %{} = inviter, account, token) do
-    url = url_for("/accept_invitation/#{token}")
+    url = PublicUrl.url("/accept_invitation/#{token}")
 
     deliver(invitee.email, "You're invited to #{account.name} on emisar", """
     #{inviter.full_name || inviter.email} invited you to join the
@@ -153,33 +154,4 @@ defmodule Emisar.Mailers.UserNotifier do
     |> text_body(body)
     |> Mailer.deliver()
   end
-
-  # Builds an absolute URL the mailer can stick in an email body.
-  # Honors the endpoint's configured scheme (so dev emails use `http://`
-  # and don't 404 with cert errors against localhost:4000), host, and
-  # port. Falls back to the dev URL only when no endpoint config exists.
-  defp url_for(path) do
-    url_cfg = Application.get_env(:emisar_web, EmisarWeb.Endpoint, []) |> Keyword.get(:url, [])
-    host = Keyword.get(url_cfg, :host)
-    scheme = Keyword.get(url_cfg, :scheme, "https")
-    port = Keyword.get(url_cfg, :port)
-
-    base =
-      cond do
-        is_binary(host) and is_integer(port) and not default_port?(scheme, port) ->
-          "#{scheme}://#{host}:#{port}"
-
-        is_binary(host) ->
-          "#{scheme}://#{host}"
-
-        true ->
-          "http://localhost:4000"
-      end
-
-    base <> path
-  end
-
-  defp default_port?("https", 443), do: true
-  defp default_port?("http", 80), do: true
-  defp default_port?(_, _), do: false
 end

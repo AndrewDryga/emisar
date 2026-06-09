@@ -224,10 +224,13 @@ defmodule Emisar.Policies do
   def evaluate_with_policy(account_id, attrs) when is_binary(account_id) do
     policy = peek_policy_for_account(account_id)
 
+    # `evaluate/3` matches on `action_id` (override globs) + `risk` (tier
+    # defaults) only. The catalog-authoritative `kind` in `attrs` is the
+    # anti-spoofing field carried by `Runs.evaluate_and_dispatch`; the
+    # evaluator never reads it, so it isn't threaded into `match_ctx`.
     match_ctx = %{
       "action_id" => attrs[:action_id],
-      "risk" => attrs[:risk] || "low",
-      "kind" => attrs[:kind] || "exec"
+      "risk" => attrs[:risk] || "low"
     }
 
     {decision, matched, reason} = evaluate(policy, match_ctx, attrs[:args] || %{})

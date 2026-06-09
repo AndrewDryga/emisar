@@ -126,6 +126,14 @@ defmodule Emisar.Auth.Subject do
   def actor_id(%__MODULE__{actor: %{id: id}}), do: id
 
   @doc """
+  The acting user's email, or `nil` when the actor isn't a user
+  (API key / runner / system). Used to attach the buyer's email to a
+  Paddle customer for invoices and receipts.
+  """
+  def actor_email(%__MODULE__{actor: %User{email: email}}), do: email
+  def actor_email(%__MODULE__{}), do: nil
+
+  @doc """
   True iff the subject can act on data scoped to `account_id`. System
   actors always pass; user / api-key / runner subjects must match the
   account on their `%Subject{}`.

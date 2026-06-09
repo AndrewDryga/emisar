@@ -10,7 +10,7 @@ defmodule EmisarWeb.Mcp.Auth do
   """
   import Plug.Conn
 
-  alias Emisar.{Accounts, ApiKeys, OAuth}
+  alias Emisar.{Accounts, ApiKeys, OAuth, PublicUrl}
   alias Emisar.Auth.Subject
 
   @doc """
@@ -57,10 +57,10 @@ defmodule EmisarWeb.Mcp.Auth do
   end
 
   # RFC 9728 §5.1 — point unauthenticated clients at the protected-resource
-  # metadata. The base is the app's configured public URL (same source the
-  # mailers use), so the issuer is stable rather than echoing whatever host
-  # the request happened to arrive on.
+  # metadata. The base is the app's configured public URL (the same
+  # `Emisar.PublicUrl` source the mailers + billing use), so the issuer is
+  # stable rather than echoing whatever host the request happened to arrive on.
   defp challenge do
-    ~s(Bearer resource_metadata="#{EmisarWeb.Endpoint.url()}/.well-known/oauth-protected-resource")
+    ~s(Bearer resource_metadata="#{PublicUrl.base()}/.well-known/oauth-protected-resource")
   end
 end

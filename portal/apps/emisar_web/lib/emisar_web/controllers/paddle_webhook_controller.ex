@@ -55,7 +55,13 @@ defmodule EmisarWeb.PaddleWebhookController do
         json(conn, %{received: true, duplicate: true})
 
       {:error, reason} ->
-        Logger.error("paddle webhook apply failed: #{inspect(reason)}")
+        # Log the event id + a short reason summary, never `inspect(reason)`:
+        # an apply failure carries an Ecto changeset whose error term can echo
+        # Paddle payload fragments (customer ids, amounts) into the log drain.
+        Logger.error(
+          "paddle webhook apply failed event_id=#{event_id} reason=#{reason_summary(reason)}"
+        )
+
         conn |> put_status(:internal_server_error) |> json(%{error: "apply_failed"})
     end
   end
@@ -63,6 +69,19 @@ defmodule EmisarWeb.PaddleWebhookController do
   defp handle_event(conn, _malformed) do
     conn |> put_status(:bad_request) |> json(%{error: "malformed_event"})
   end
+
+  # A loggable summary that never carries payload values. For a changeset
+  # we surface only which fields failed (names, not values); everything
+  # else collapses to its atom tag or a generic label.
+  defp reason_summary({:apply_failed, reason}), do: reason_summary(reason)
+
+  defp reason_summary(%Ecto.Changeset{errors: errors}) do
+    fields = errors |> Keyword.keys() |> Enum.uniq() |> Enum.join(",")
+    "invalid_changeset[#{fields}]"
+  end
+
+  defp reason_summary(reason) when is_atom(reason), do: Atom.to_string(reason)
+  defp reason_summary(_), do: "unknown"
 
   # CachedBodyReader stashes the bytes during Plug.Parsers. For tests
   # that hit this controller directly without going through the parser

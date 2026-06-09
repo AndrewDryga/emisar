@@ -83,6 +83,33 @@ defmodule Emisar.BillingTest do
     end
   end
 
+  describe "ensure_paddle_customer/2" do
+    test "threads the acting user's email to Paddle on first creation" do
+      # The test stub derives the customer id from the email it receives,
+      # so two owners with different emails must yield different customer
+      # ids. Before the fix (email: nil) both produced the same id.
+      {_user_a, account_a, subject_a} =
+        owner_subject_fixture(%{name: "Acct A"})
+
+      {_user_b, account_b, subject_b} =
+        owner_subject_fixture(%{name: "Acct B"})
+
+      assert {:ok, cid_a, _} = Billing.ensure_paddle_customer(account_a, subject_a)
+      assert {:ok, cid_b, _} = Billing.ensure_paddle_customer(account_b, subject_b)
+
+      assert String.starts_with?(cid_a, "ctm_stub_")
+      refute cid_a == cid_b
+    end
+
+    test "is idempotent — returns the existing customer id without re-creating" do
+      {_user, account, subject} = owner_subject_fixture()
+      account = %{account | paddle_customer_id: "ctm_existing_01"}
+
+      assert {:ok, "ctm_existing_01", ^account} =
+               Billing.ensure_paddle_customer(account, subject)
+    end
+  end
+
   describe "extract_next_billed_at/1" do
     test "parses ISO8601 from next_billed_at" do
       iso = "2026-07-01T00:00:00Z"
