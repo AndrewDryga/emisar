@@ -25,6 +25,7 @@ Lower-stakes taste calls. Not Iron Laws, but the defaults. **The user adds to th
 - Pipe into the data; don't nest calls. A function reads top-to-bottom as a pipeline (`Query.not_deleted() |> Authorizer.for_subject(subject) |> Repo.list(...)`).
 - `with` for the happy path; let the `else` carry the error shapes. Don't pyramid `case`.
 - Name by intent, not by type. `expire_overdue_requests`, not `update_requests`. Boolean-returning fns end in `?`.
+- Spell variables out: `changeset`, not `cs`. A struct-typed binding takes the schema's own name — `%Membership{} = membership`, not `m`/`target`. Reach for a qualified name (`target_membership`) only to disambiguate two bindings of the same type.
 - One public function = one job. If a context function has an `opts` flag that changes *what it does* (not just filtering), it's two functions.
 - Small modules over big ones, but never a module per function. Follow the standard split (context / schema / query / changeset / authorizer) and stop there.
 - Comments explain *why*, never *what*. The code says what. If you're tempted to narrate the what, the code isn't readable enough yet.

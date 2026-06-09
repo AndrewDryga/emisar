@@ -129,7 +129,7 @@ defmodule Emisar.Accounts do
       |> Repo.commit_multi()
       |> case do
         {:ok, %{account: updated}} -> {:ok, updated}
-        {:error, %Ecto.Changeset{} = cs} -> {:error, cs}
+        {:error, %Ecto.Changeset{} = changeset} -> {:error, changeset}
         {:error, other} -> {:error, other}
       end
     end
