@@ -145,7 +145,7 @@ defmodule EmisarWeb.RunbookEditorLive do
   end
 
   def handle_event("step_change", %{"index" => idx} = params, socket) do
-    i = String.to_integer(idx)
+    i = safe_index(idx)
 
     steps =
       List.update_at(socket.assigns.steps, i, fn step ->
@@ -175,12 +175,12 @@ defmodule EmisarWeb.RunbookEditorLive do
   end
 
   def handle_event("remove_step", %{"index" => idx}, socket) do
-    i = String.to_integer(idx)
+    i = safe_index(idx)
     {:noreply, assign(socket, :steps, List.delete_at(socket.assigns.steps, i))}
   end
 
   def handle_event("move_step", %{"index" => idx, "dir" => dir}, socket) do
-    i = String.to_integer(idx)
+    i = safe_index(idx)
     target = if dir == "up", do: i - 1, else: i + 1
     steps = socket.assigns.steps
 
@@ -196,7 +196,7 @@ defmodule EmisarWeb.RunbookEditorLive do
   end
 
   def handle_event("add_arg", %{"index" => idx}, socket) do
-    i = String.to_integer(idx)
+    i = safe_index(idx)
 
     steps =
       List.update_at(socket.assigns.steps, i, fn step ->
@@ -208,8 +208,8 @@ defmodule EmisarWeb.RunbookEditorLive do
   end
 
   def handle_event("remove_arg", %{"index" => idx, "arg" => arg_idx}, socket) do
-    i = String.to_integer(idx)
-    a = String.to_integer(arg_idx)
+    i = safe_index(idx)
+    a = safe_index(arg_idx)
 
     steps =
       List.update_at(socket.assigns.steps, i, fn step ->
@@ -221,8 +221,8 @@ defmodule EmisarWeb.RunbookEditorLive do
   end
 
   def handle_event("arg_change", %{"index" => idx, "arg" => arg_idx} = params, socket) do
-    i = String.to_integer(idx)
-    a = String.to_integer(arg_idx)
+    i = safe_index(idx)
+    a = safe_index(arg_idx)
 
     steps =
       List.update_at(socket.assigns.steps, i, fn step ->
@@ -240,6 +240,17 @@ defmodule EmisarWeb.RunbookEditorLive do
 
   def handle_event("publish", _params, socket) do
     Permissions.gated(socket, :manage_runbooks, fn s -> save(s, publish?: true) end)
+  end
+
+  # phx-value step/arg indices are server-rendered, so they're valid in normal
+  # use — but a crafted event with a non-numeric index would otherwise crash
+  # this LV. Parse defensively, mapping bad input to an out-of-range index so
+  # the List operations in the handlers above no-op rather than raise.
+  defp safe_index(idx) do
+    case Integer.parse(to_string(idx)) do
+      {i, ""} when i >= 0 -> i
+      _ -> 1_000_000_000
+    end
   end
 
   defp save(socket, publish?: publish?) do

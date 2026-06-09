@@ -47,7 +47,7 @@ defmodule EmisarWeb.McpRpcControllerTest do
     {account, user}
   end
 
-  defp make_runner!(account, opts \\ []) do
+  defp make_runner!(account, opts) do
     {:ok, runner} =
       Runner.Changeset.register(%{
         account_id: account.id,

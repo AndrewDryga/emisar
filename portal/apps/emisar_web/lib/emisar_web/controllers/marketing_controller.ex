@@ -87,43 +87,46 @@ defmodule EmisarWeb.MarketingController do
   # other page is generated below from @pages.
   def home(conn, _params) do
     org_ld =
-      Jason.encode!(%{
-        "@context" => "https://schema.org",
-        "@graph" => [
-          %{
-            "@type" => "Organization",
-            "name" => "emisar",
-            "url" => @base,
-            "logo" => @base <> "/images/emisar-logo.svg",
-            "description" =>
-              "Give AI tools approved infrastructure actions, not SSH. Pack trust, policy gates, approvals, searchable audit, and a hash-chained runner journal."
-          },
-          %{
-            "@type" => "SoftwareApplication",
-            "name" => "emisar",
-            "applicationCategory" => "DeveloperApplication",
-            "operatingSystem" => "Linux, macOS",
-            "url" => @base,
-            "offers" => %{
-              "@type" => "Offer",
-              "priceCurrency" => "USD",
-              "price" => "0",
-              "description" => "Free for up to 3 runners"
+      Jason.encode!(
+        %{
+          "@context" => "https://schema.org",
+          "@graph" => [
+            %{
+              "@type" => "Organization",
+              "name" => "emisar",
+              "url" => @base,
+              "logo" => @base <> "/images/emisar-logo.svg",
+              "description" =>
+                "Give AI tools approved infrastructure actions, not SSH. Pack trust, policy gates, approvals, searchable audit, and a hash-chained runner journal."
+            },
+            %{
+              "@type" => "SoftwareApplication",
+              "name" => "emisar",
+              "applicationCategory" => "DeveloperApplication",
+              "operatingSystem" => "Linux, macOS",
+              "url" => @base,
+              "offers" => %{
+                "@type" => "Offer",
+                "priceCurrency" => "USD",
+                "price" => "0",
+                "description" => "Free for up to 3 runners"
+              }
+            },
+            %{
+              "@type" => "FAQPage",
+              "mainEntity" =>
+                Enum.map(@home_faqs, fn {q, a} ->
+                  %{
+                    "@type" => "Question",
+                    "name" => q,
+                    "acceptedAnswer" => %{"@type" => "Answer", "text" => a}
+                  }
+                end)
             }
-          },
-          %{
-            "@type" => "FAQPage",
-            "mainEntity" =>
-              Enum.map(@home_faqs, fn {q, a} ->
-                %{
-                  "@type" => "Question",
-                  "name" => q,
-                  "acceptedAnswer" => %{"@type" => "Answer", "text" => a}
-                }
-              end)
-          }
-        ]
-      })
+          ]
+        },
+        escape: :html_safe
+      )
 
     render(conn, :home,
       page_title: "Give AI tools approved infrastructure actions, not SSH",
@@ -154,46 +157,49 @@ defmodule EmisarWeb.MarketingController do
 
   # Product + per-plan Offer + FAQ rich data for the pricing page. Prices
   # mirror `Emisar.Billing.@plans` (Free = 3 runners, Team = $20/runner).
-  @pricing_ld Jason.encode!(%{
-                "@context" => "https://schema.org",
-                "@graph" => [
-                  %{
-                    "@type" => "Product",
-                    "name" => "emisar",
-                    "description" =>
-                      "Approved infrastructure actions for AI agents — policy, approvals, searchable audit, and a hash-chained runner journal instead of SSH.",
-                    "brand" => %{"@type" => "Brand", "name" => "emisar"},
-                    "offers" => [
-                      %{
-                        "@type" => "Offer",
-                        "name" => "Free",
-                        "price" => "0",
-                        "priceCurrency" => "USD",
-                        "description" => "Up to 3 runners, 1 user, 7-day audit retention"
-                      },
-                      %{
-                        "@type" => "Offer",
-                        "name" => "Team",
-                        "price" => "20",
-                        "priceCurrency" => "USD",
-                        "description" =>
-                          "Per runner / month. Unlimited users, 90-day audit retention"
-                      }
-                    ]
-                  },
-                  %{
-                    "@type" => "FAQPage",
-                    "mainEntity" =>
-                      Enum.map(@pricing_faqs, fn {q, a} ->
+  @pricing_ld Jason.encode!(
+                %{
+                  "@context" => "https://schema.org",
+                  "@graph" => [
+                    %{
+                      "@type" => "Product",
+                      "name" => "emisar",
+                      "description" =>
+                        "Approved infrastructure actions for AI agents — policy, approvals, searchable audit, and a hash-chained runner journal instead of SSH.",
+                      "brand" => %{"@type" => "Brand", "name" => "emisar"},
+                      "offers" => [
                         %{
-                          "@type" => "Question",
-                          "name" => q,
-                          "acceptedAnswer" => %{"@type" => "Answer", "text" => a}
+                          "@type" => "Offer",
+                          "name" => "Free",
+                          "price" => "0",
+                          "priceCurrency" => "USD",
+                          "description" => "Up to 3 runners, 1 user, 7-day audit retention"
+                        },
+                        %{
+                          "@type" => "Offer",
+                          "name" => "Team",
+                          "price" => "20",
+                          "priceCurrency" => "USD",
+                          "description" =>
+                            "Per runner / month. Unlimited users, 90-day audit retention"
                         }
-                      end)
-                  }
-                ]
-              })
+                      ]
+                    },
+                    %{
+                      "@type" => "FAQPage",
+                      "mainEntity" =>
+                        Enum.map(@pricing_faqs, fn {q, a} ->
+                          %{
+                            "@type" => "Question",
+                            "name" => q,
+                            "acceptedAnswer" => %{"@type" => "Answer", "text" => a}
+                          }
+                        end)
+                    }
+                  ]
+                },
+                escape: :html_safe
+              )
 
   def pricing(conn, _params) do
     render(conn, :pricing,
