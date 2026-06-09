@@ -84,23 +84,10 @@ defmodule Emisar.Accounts do
       Emisar.Policies.seed_policy(account.id, user.id)
     end)
     |> Multi.insert(:account_created, fn %{account: account} ->
-      Audit.changeset(account.id, "account.created",
-        actor_kind: "user",
-        actor_id: user.id,
-        subject_kind: "account",
-        subject_id: account.id,
-        subject_label: account.name,
-        payload: %{plan: account.plan, slug: account.slug}
-      )
+      Audit.Events.account_created(account, user)
     end)
     |> Multi.insert(:user_signed_up, fn %{account: account} ->
-      Audit.changeset(account.id, "user.signed_up",
-        actor_kind: "user",
-        actor_id: user.id,
-        subject_kind: "user",
-        subject_id: user.id,
-        subject_label: user.email
-      )
+      Audit.Events.user_signed_up(user, account)
     end)
     |> Repo.commit_multi()
     |> case do
@@ -165,24 +152,15 @@ defmodule Emisar.Accounts do
 
   # A require_mfa change is a security event; everything else is a plain
   # account.updated. The UI never changes both in one request.
-  defp account_update_audit(%Account{} = account, %Ecto.Changeset{} = changeset, %Subject{} = subject) do
+  defp account_update_audit(
+         %Account{} = account,
+         %Ecto.Changeset{} = changeset,
+         %Subject{} = subject
+       ) do
     if Map.has_key?(changeset.changes, :require_mfa) do
-      Audit.changeset(account.id, "account.require_mfa_set",
-        actor_kind: "user",
-        actor_id: subject.actor.id,
-        subject_kind: "account",
-        subject_id: account.id,
-        payload: %{require_mfa: account.require_mfa}
-      )
+      Audit.Events.account_require_mfa_set(subject, account)
     else
-      Audit.changeset(account.id, "account.updated",
-        actor_kind: "user",
-        actor_id: subject.actor.id,
-        subject_kind: "account",
-        subject_id: account.id,
-        subject_label: account.name,
-        payload: %{name: account.name, slug: account.slug}
-      )
+      Audit.Events.account_updated(subject, account)
     end
   end
 
@@ -316,13 +294,7 @@ defmodule Emisar.Accounts do
       Multi.new()
       |> Multi.update(:membership, Membership.Changeset.update(target, %{role: new_role}))
       |> Multi.insert(:audit, fn _ ->
-        Audit.changeset(target.account_id, "membership.role_changed",
-          actor_kind: "user",
-          actor_id: subject.actor.id,
-          subject_kind: "user",
-          subject_id: target.user_id,
-          payload: %{from: target.role, to: new_role}
-        )
+        Audit.Events.membership_role_changed(subject, target, new_role)
       end)
       |> Repo.commit_multi(after_commit: &broadcast_team_change(&1, "membership.role_changed"))
       |> case do
@@ -388,12 +360,7 @@ defmodule Emisar.Accounts do
       Multi.new()
       |> Multi.update(:membership, Membership.Changeset.suspend(target))
       |> Multi.insert(:audit, fn _ ->
-        Audit.changeset(target.account_id, "membership.suspended",
-          actor_kind: "user",
-          actor_id: subject.actor.id,
-          subject_kind: "user",
-          subject_id: target.user_id
-        )
+        Audit.Events.membership_suspended(subject, target)
       end)
       |> Repo.commit_multi(
         after_commit: [
@@ -439,12 +406,7 @@ defmodule Emisar.Accounts do
       Multi.new()
       |> Multi.update(:membership, Membership.Changeset.reinstate(target))
       |> Multi.insert(:audit, fn _ ->
-        Audit.changeset(target.account_id, "membership.reinstated",
-          actor_kind: "user",
-          actor_id: subject.actor.id,
-          subject_kind: "user",
-          subject_id: target.user_id
-        )
+        Audit.Events.membership_reinstated(subject, target)
       end)
       |> Repo.commit_multi(after_commit: &broadcast_team_change(&1, "membership.reinstated"))
       |> case do
@@ -477,13 +439,7 @@ defmodule Emisar.Accounts do
       Multi.new()
       |> Multi.update(:user, Ecto.Changeset.change(user, %{hashed_password: nil}))
       |> Multi.insert(:audit, fn _ ->
-        Audit.changeset(target.account_id, "user.password_reset_forced",
-          actor_kind: "user",
-          actor_id: subject.actor.id,
-          subject_kind: "user",
-          subject_id: user.id,
-          subject_label: user.email
-        )
+        Audit.Events.user_password_reset_forced(subject, target, user)
       end)
       |> Repo.commit_multi(
         # Sending the reset email + broadcasting disconnects are side
@@ -539,14 +495,7 @@ defmodule Emisar.Accounts do
       Multi.new()
       |> Multi.update(:user, User.Changeset.profile(user, attrs))
       |> Multi.insert(:audit, fn %{user: updated} ->
-        Audit.changeset(target.account_id, "user.updated_by_admin",
-          actor_kind: "user",
-          actor_id: subject.actor.id,
-          subject_kind: "user",
-          subject_id: updated.id,
-          subject_label: updated.email,
-          payload: %{full_name: updated.full_name}
-        )
+        Audit.Events.user_updated_by_admin(subject, target, updated)
       end)
       |> Repo.commit_multi()
       |> case do
@@ -578,13 +527,7 @@ defmodule Emisar.Accounts do
         |> Auth.UserToken.Query.by_contexts(["session"])
       )
       |> Multi.insert(:audit, fn _ ->
-        Audit.changeset(target.account_id, "user.sessions_revoked",
-          actor_kind: "user",
-          actor_id: subject.actor.id,
-          subject_kind: "user",
-          subject_id: user.id,
-          subject_label: user.email
-        )
+        Audit.Events.user_sessions_revoked(subject, target, user)
       end)
       |> Repo.commit_multi(
         after_commit: fn _ ->
@@ -648,13 +591,7 @@ defmodule Emisar.Accounts do
       Multi.new()
       |> Multi.delete(:membership, target)
       |> Multi.insert(:audit, fn _ ->
-        Audit.changeset(target.account_id, "membership.removed",
-          actor_kind: "user",
-          actor_id: subject.actor.id,
-          subject_kind: "user",
-          subject_id: target.user_id,
-          payload: %{role: target.role}
-        )
+        Audit.Events.membership_removed(subject, target)
       end)
       |> Repo.commit_multi(after_commit: &broadcast_team_change(&1, "membership.removed"))
       |> case do
@@ -749,14 +686,7 @@ defmodule Emisar.Accounts do
                 invitation_token: token
               })
 
-            Emisar.Audit.log(account_id, "user.invited",
-              actor_kind: "user",
-              actor_id: invited_by_id,
-              subject_kind: "user",
-              subject_id: user.id,
-              subject_label: email,
-              payload: %{role: role}
-            )
+            Audit.Events.user_invited(subject, user, role) |> Repo.insert()
 
             %{membership: membership, user: user, invitation_token: token, created?: created?}
 
@@ -813,13 +743,7 @@ defmodule Emisar.Accounts do
       Ecto.Changeset.change(membership, invitation_token: nil, invitation_accepted_at: now)
     )
     |> Multi.insert(:audit, fn _ ->
-      Audit.changeset(membership.account_id, "membership.invitation_accepted",
-        actor_kind: "user",
-        actor_id: membership.user_id,
-        subject_kind: "user",
-        subject_id: membership.user_id,
-        payload: %{role: membership.role}
-      )
+      Audit.Events.membership_invitation_accepted(membership)
     end)
     |> Repo.commit_multi()
     |> case do
@@ -849,14 +773,7 @@ defmodule Emisar.Accounts do
       Ecto.Changeset.change(membership, invitation_token: nil, invitation_accepted_at: now)
     )
     |> Multi.insert(:audit, fn %{confirmed_user: user, membership: m} ->
-      Audit.changeset(m.account_id, "user.invitation_accepted",
-        actor_kind: "user",
-        actor_id: user.id,
-        subject_kind: "user",
-        subject_id: user.id,
-        subject_label: user.email,
-        payload: %{role: m.role}
-      )
+      Audit.Events.user_invitation_accepted(user, m)
     end)
     |> Repo.commit_multi()
     |> case do
@@ -941,16 +858,7 @@ defmodule Emisar.Accounts do
 
       multi
       |> Multi.insert(:audit, fn _ ->
-        Audit.changeset(membership.account_id, "membership.runner_scopes_changed",
-          actor_kind: "user",
-          actor_id: subject.actor.id,
-          subject_kind: "user",
-          subject_id: membership.user_id,
-          payload: %{
-            scope_count: length(new_scopes),
-            scopes: Enum.map(new_scopes, fn {type, value} -> %{type: type, value: value} end)
-          }
-        )
+        Audit.Events.membership_runner_scopes_changed(subject, membership, new_scopes)
       end)
       |> Repo.commit_multi()
       |> case do

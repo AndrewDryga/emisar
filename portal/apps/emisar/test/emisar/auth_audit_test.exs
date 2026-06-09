@@ -293,7 +293,8 @@ defmodule Emisar.AuthAuditTest do
       {owner, account, owner_subject} = owner_subject_fixture()
       member = user_fixture()
 
-      membership = membership_fixture(account_id: account.id, user_id: member.id, role: "operator")
+      membership =
+        membership_fixture(account_id: account.id, user_id: member.id, role: "operator")
 
       %{
         owner: owner,
