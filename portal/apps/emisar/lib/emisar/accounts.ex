@@ -543,16 +543,11 @@ defmodule Emisar.Accounts do
          :ok <- ensure_subject_in_account(subject, target.account_id),
          :ok <- ensure_can_modify_membership(target, subject),
          {:ok, user} <- fetch_user_by_id(target.user_id) do
-      # Whitelist: full_name only. Email is intentionally absent — see
-      # moduledoc. Adding fields here = adding admin-driven mutation
-      # surface; treat every entry as security-reviewed.
-      whitelisted =
-        attrs
-        |> Map.new(fn {k, v} -> {to_string(k), v} end)
-        |> Map.take(["full_name"])
-
+      # profile/2 casts full_name only — email/password are deliberately
+      # not editable through the admin path (see moduledoc). The field
+      # whitelist lives in the changeset, not here.
       Multi.new()
-      |> Multi.update(:user, User.Changeset.registration(user, whitelisted, hash_password: false))
+      |> Multi.update(:user, User.Changeset.profile(user, attrs))
       |> Multi.insert(:audit, fn %{user: updated} ->
         Audit.changeset(target.account_id, "user.updated_by_admin",
           actor_kind: "user",
