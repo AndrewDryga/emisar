@@ -287,7 +287,7 @@ defmodule Emisar.Accounts do
   defp maybe_fetch_session_membership(_, _), do: {:error, :not_found}
 
   @doc """
-  True iff every membership the user holds is suspended (and they have
+  True if every membership the user holds is suspended (and they have
   at least one). Distinct from "user has no memberships" — the UI
   needs to show "your access was suspended" rather than send them to
   onboarding.
