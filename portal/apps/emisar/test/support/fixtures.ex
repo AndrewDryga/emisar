@@ -21,7 +21,7 @@ defmodule Emisar.Fixtures do
 
       account = account_fixture()
       user = user_fixture()
-      {:ok, _} = Accounts.create_membership(%{...})
+      _ = membership_fixture(account_id: account.id, user_id: user.id)
       subject = subject_for(user, account)
   """
   def subject_for(%User{} = user, account, opts \\ []) do
@@ -129,7 +129,7 @@ defmodule Emisar.Fixtures do
       }
       |> Map.merge(Map.take(attrs, [:invited_by_id, :invitation_token]))
 
-    {:ok, m} = Accounts.create_membership(params)
+    {:ok, m} = params |> Membership.Changeset.create() |> Repo.insert()
     m
   end
 

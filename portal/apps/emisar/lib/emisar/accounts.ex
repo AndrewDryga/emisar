@@ -289,7 +289,11 @@ defmodule Emisar.Accounts do
     Repo.exists?(base) and not Repo.exists?(Membership.Query.not_disabled(base))
   end
 
-  def create_membership(attrs) do
+  # Internal write — the invite flow (already authorized via
+  # invite_member_permission) is the only caller. Not a public API:
+  # there's no Subject gate here, so it must never be reachable from
+  # LiveView/controllers/MCP. Fixtures build memberships directly.
+  defp create_membership(attrs) do
     Membership.Changeset.create(attrs)
     |> Repo.insert()
   end

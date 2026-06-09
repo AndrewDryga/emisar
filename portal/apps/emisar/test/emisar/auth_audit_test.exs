@@ -168,12 +168,7 @@ defmodule Emisar.AuthAuditTest do
       # Unconfirmed user — bypass owner_subject_fixture which auto-confirms.
       unconfirmed = user_fixture(confirmed?: false)
 
-      _ =
-        Accounts.create_membership(%{
-          account_id: account.id,
-          user_id: unconfirmed.id,
-          role: "operator"
-        })
+      _ = membership_fixture(account_id: account.id, user_id: unconfirmed.id, role: "operator")
 
       raw = Auth.issue_confirmation_token!(unconfirmed)
       assert {:ok, _} = Auth.confirm_user_by_token(raw)
@@ -298,12 +293,7 @@ defmodule Emisar.AuthAuditTest do
       {owner, account, owner_subject} = owner_subject_fixture()
       member = user_fixture()
 
-      {:ok, membership} =
-        Accounts.create_membership(%{
-          account_id: account.id,
-          user_id: member.id,
-          role: "operator"
-        })
+      membership = membership_fixture(account_id: account.id, user_id: member.id, role: "operator")
 
       %{
         owner: owner,
@@ -586,12 +576,8 @@ defmodule Emisar.AuthAuditTest do
       {admin, account, admin_subject} = owner_subject_fixture()
       target = user_fixture()
 
-      {:ok, target_membership} =
-        Accounts.create_membership(%{
-          account_id: account.id,
-          user_id: target.id,
-          role: "operator"
-        })
+      target_membership =
+        membership_fixture(account_id: account.id, user_id: target.id, role: "operator")
 
       %{
         admin: admin,
