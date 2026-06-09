@@ -221,13 +221,6 @@ defmodule Emisar.Accounts do
     end
   end
 
-  # Internal helper for permission checks that operate on nil-or-struct.
-  defp peek_membership(account_id, user_id) do
-    Membership.Query.not_deleted()
-    |> Membership.Query.by_account_and_user(account_id, user_id)
-    |> Repo.peek()
-  end
-
   @doc """
   Resolve the membership to mount as the user's active tenant for this
   request. If `account_id` is given and the user has a non-suspended
@@ -661,12 +654,6 @@ defmodule Emisar.Accounts do
 
       Multi.new()
       |> Multi.run(:user, fn _repo, _changes -> fetch_or_create_user(email) end)
-      |> Multi.run(:ensure_not_member, fn _repo, %{user: {user, _created?}} ->
-        case peek_membership(account_id, user.id) do
-          nil -> {:ok, nil}
-          %Membership{} -> {:error, :already_member}
-        end
-      end)
       |> Multi.insert(:membership, fn %{user: {user, _created?}} ->
         Membership.Changeset.create(%{
           account_id: account_id,
@@ -684,6 +671,14 @@ defmodule Emisar.Accounts do
         {:ok, %{user: {user, created?}, membership: membership}} ->
           {:ok,
            %{membership: membership, user: user, invitation_token: token, created?: created?}}
+
+        # The partial unique index on (account_id, user_id) is the source of
+        # truth for "already a member" — let the insert hit it instead of a
+        # read-before-write check that races under concurrent invites.
+        {:error, %Ecto.Changeset{data: %Membership{}} = changeset} ->
+          if unique_constraint_error?(changeset),
+            do: {:error, :already_member},
+            else: {:error, changeset}
 
         {:error, reason} ->
           {:error, reason}
@@ -703,6 +698,10 @@ defmodule Emisar.Accounts do
       {:ok, user} -> {:ok, {user, false}}
       {:error, changeset} -> {:error, changeset}
     end
+  end
+
+  defp unique_constraint_error?(%Ecto.Changeset{errors: errors}) do
+    Enum.any?(errors, fn {_field, {_msg, opts}} -> opts[:constraint] == :unique end)
   end
 
   # Field-aware permission: every invite needs invite_member, and inviting
