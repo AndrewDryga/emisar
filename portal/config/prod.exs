@@ -17,7 +17,17 @@ config :emisar_web, EmisarWeb.Endpoint,
   # `/healthz` probe and localhost dev through without a redirect.
   force_ssl: [
     rewrite_on: [:x_forwarded_proto],
-    exclude: ["localhost", "127.0.0.1", {:paths, ["/healthz"]}]
+    exclude: ["localhost", "127.0.0.1", {:paths, ["/healthz"]}],
+    # Strong HSTS (Plug.SSL builds the Strict-Transport-Security header):
+    # two-year max-age, every subdomain, and the `preload` directive so the
+    # domain is eligible for the browsers' built-in preload list. Getting onto
+    # that list is a one-time manual submission at hstspreload.org — the
+    # directive just signals readiness; until you submit, this stays
+    # reversible. `subdomains: true` assumes every *.emisar.dev is HTTPS-only.
+    hsts: true,
+    expires: 63_072_000,
+    preload: true,
+    subdomains: true
   ]
 
 # Configures Swoosh API Client

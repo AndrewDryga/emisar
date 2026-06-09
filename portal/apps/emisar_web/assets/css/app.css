@@ -3,6 +3,33 @@
 @import "tailwindcss/utilities";
 
 /* ---------------------------------------------------------------------------
+   Self-hosted Inter (variable). Previously loaded from rsms.me, which was the
+   single worst render-blocker (a ~780ms third-party request on every page) and
+   a privacy/reliability dependency. Vendored into priv/static/fonts and applied
+   on :root here — the same shape rsms.me's inter.css used — so there is no
+   external font request and rsms.me can be dropped from the CSP. `swap` avoids
+   invisible text while the woff2 loads.
+   --------------------------------------------------------------------------- */
+@font-face {
+  font-family: "InterVariable";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("/fonts/InterVariable.woff2") format("woff2");
+}
+@font-face {
+  font-family: "InterVariable";
+  font-style: italic;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("/fonts/InterVariable-Italic.woff2") format("woff2");
+}
+:root {
+  font-family: "InterVariable", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  font-feature-settings: "liga" 1, "calt" 1;
+}
+
+/* ---------------------------------------------------------------------------
    Global accessibility + polish.
 
    Tailwind utilities cover per-element styling; this layer adds the few

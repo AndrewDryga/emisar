@@ -17,8 +17,8 @@ defmodule EmisarWeb.Plugs.ContentSecurityPolicy do
       colocated `<style>` blocks rely on inline styles. (See
       hexdocs.pm/phoenix_live_view/colocated_hook for the relevant
       note.)
-    * fonts: same-origin + rsms.me (the Inter font CDN we already
-      `<link>` from root.html.heex).
+    * fonts: same-origin only — Inter is self-hosted under
+      `priv/static/fonts` (no third-party font CDN).
     * connect-src: same-origin + `wss:` (LiveView websocket).
     * frame-ancestors: 'none' (we never embed in an iframe).
 
@@ -43,6 +43,10 @@ defmodule EmisarWeb.Plugs.ContentSecurityPolicy do
     conn
     |> assign(:csp_nonce, nonce)
     |> put_resp_header("content-security-policy", policy)
+    # Process-isolate the page from any window it opens / that opened it, so a
+    # cross-origin opener can't reach into this document (and the page becomes
+    # cross-origin-isolated capable). We never rely on window.opener.
+    |> put_resp_header("cross-origin-opener-policy", "same-origin")
   end
 
   # Per-request directives. `script-src` carries the nonce so the only
@@ -52,9 +56,9 @@ defmodule EmisarWeb.Plugs.ContentSecurityPolicy do
     [
       "default-src 'self'",
       "script-src 'self' 'nonce-#{nonce}'",
-      "style-src 'self' 'unsafe-inline' https://rsms.me",
+      "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: https:",
-      "font-src 'self' https://rsms.me",
+      "font-src 'self'",
       "connect-src 'self' wss: ws:",
       "frame-ancestors 'none'",
       "base-uri 'self'",

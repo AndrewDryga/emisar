@@ -190,7 +190,7 @@
                 <span class="font-mono text-xs font-semibold text-indigo-400">{step}</span>
                 <.icon
                   name={icon}
-                  class="h-5 w-5 text-zinc-600 transition group-hover:text-indigo-400"
+                  class="h-5 w-5 text-zinc-500 transition group-hover:text-indigo-400"
                 />
               </div>
               <h3 class="mt-6 text-base font-semibold text-white">{title}</h3>
@@ -477,7 +477,7 @@
                             <.icon name="hero-check" class="h-4 w-4" />Yes
                           </span>
                         <% v == "no" -> %>
-                          <span class="inline-flex items-center gap-1.5 text-zinc-600">
+                          <span class="inline-flex items-center gap-1.5 text-zinc-500">
                             <.icon name="hero-x-mark" class="h-4 w-4" />No
                           </span>
                         <% v == "maybe" -> %>
@@ -562,7 +562,7 @@
           See emisar mapped to the framework, control by control
           <.icon name="hero-arrow-right" class="h-4 w-4" />
         </.link>
-        <p class="mx-auto mt-4 max-w-xl text-xs leading-relaxed text-zinc-600">
+        <p class="mx-auto mt-4 max-w-xl text-xs leading-relaxed text-zinc-500">
           Not affiliated with or endorsed by Anthropic. We cite the framework because emisar is
           built to the control set it describes.
         </p>
@@ -591,7 +591,7 @@
               <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-indigo-500/10 text-indigo-400">
                 <.icon name={icon} class="h-5 w-5" />
               </div>
-              <span class="font-mono text-[10px] uppercase tracking-widest text-zinc-600">
+              <span class="font-mono text-[10px] uppercase tracking-widest text-zinc-500">
                 {tag}
               </span>
             </div>
