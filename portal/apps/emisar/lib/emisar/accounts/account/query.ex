@@ -38,4 +38,9 @@ defmodule Emisar.Accounts.Account.Query do
   @impl Emisar.Repo.Query
   def cursor_fields,
     do: [{:accounts, :asc, :name}, {:accounts, :asc, :id}]
+
+  # No nested preloads cascade when an account is loaded through the
+  # Preloader; declared so callers can compose `{not_deleted(), preloads()}`.
+  @impl Emisar.Repo.Query
+  def preloads, do: []
 end

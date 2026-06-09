@@ -86,12 +86,14 @@ defmodule Emisar.Accounts.Membership.Query do
   def cursor_fields,
     do: [{:memberships, :desc, :inserted_at}, {:memberships, :asc, :id}]
 
-  # Explicit not_deleted preload queries so a membership never resolves a
-  # soft-deleted account or user.
+  # Each preload is `{scope_query, nested_preloads}` so the associated
+  # schema's own preloads/0 cascades — deep nesting composes. The scope is
+  # not_deleted/0 so a membership never resolves a soft-deleted account/user.
   @impl Emisar.Repo.Query
   def preloads,
     do: [
-      account: Emisar.Accounts.Account.Query.not_deleted(),
-      user: Emisar.Accounts.User.Query.not_deleted()
+      account:
+        {Emisar.Accounts.Account.Query.not_deleted(), Emisar.Accounts.Account.Query.preloads()},
+      user: {Emisar.Accounts.User.Query.not_deleted(), Emisar.Accounts.User.Query.preloads()}
     ]
 end

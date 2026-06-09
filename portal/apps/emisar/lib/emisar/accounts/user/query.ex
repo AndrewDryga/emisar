@@ -45,4 +45,9 @@ defmodule Emisar.Accounts.User.Query do
     |> where([memberships: m], m.account_id == ^account_id)
     |> distinct([users: u], u.id)
   end
+
+  # No nested preloads cascade when a user is loaded through the Preloader;
+  # declared so callers can compose `{not_deleted(), preloads()}`.
+  @impl Emisar.Repo.Query
+  def preloads, do: []
 end
