@@ -3,17 +3,12 @@ defmodule Emisar.Accounts.Membership.Changeset do
   alias Emisar.Accounts.Membership
 
   @roles ~w(owner admin operator viewer)
+  @create_fields ~w[account_id user_id role invited_by_id invitation_token invitation_accepted_at]a
+  @update_fields ~w[role invitation_accepted_at]a
 
   def create(attrs) do
     %Membership{}
-    |> cast(attrs, [
-      :account_id,
-      :user_id,
-      :role,
-      :invited_by_id,
-      :invitation_token,
-      :invitation_accepted_at
-    ])
+    |> cast(attrs, @create_fields)
     |> validate_required([:account_id, :user_id, :role])
     |> validate_inclusion(:role, @roles)
     |> unique_constraint([:account_id, :user_id])
@@ -21,7 +16,7 @@ defmodule Emisar.Accounts.Membership.Changeset do
 
   def update(%Membership{} = m, attrs) do
     m
-    |> cast(attrs, [:role, :invitation_accepted_at])
+    |> cast(attrs, @update_fields)
     |> validate_inclusion(:role, @roles)
   end
 

@@ -274,6 +274,7 @@ end
 - All `cast`/`validate_*`/`unique_constraint` live here.
 - No `Repo.*` calls. Changesets are pure.
 - One function per state transition (`create`, `update`, `delete`, `publish`, …). A private `changeset/1` carries the shared validations. Don't overload a single `changeset/2`.
+- Cast field lists live in module attributes (`@fields`, or `@create_fields`/`@update_fields` when they diverge), never inline in the `cast/3` call. Inline a list only when a module has so many divergent field sets that named attrs would be noise.
 
 ### 5. Authorizer modules (`lib/emisar/<context>/authorizer.ex`)
 
