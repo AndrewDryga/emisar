@@ -187,7 +187,7 @@ defmodule Emisar.AccountsTest do
                Accounts.invite_user_to_account(existing.email, "operator", subject)
     end
 
-    test "an admin cannot invite an owner (needs manage_owners)" do
+    test "an admin cannot invite an owner (can't grant a role it doesn't hold)" do
       admin = user_fixture()
       account = account_fixture()
       _ = membership_fixture(account_id: account.id, user_id: admin.id, role: "admin")
@@ -195,7 +195,7 @@ defmodule Emisar.AccountsTest do
 
       email = "owner-invite-#{System.unique_integer([:positive])}@example.test"
 
-      assert {:error, :unauthorized} =
+      assert {:error, :insufficient_privileges} =
                Accounts.invite_user_to_account(email, "owner", subject)
     end
   end

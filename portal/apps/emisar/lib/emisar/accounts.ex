@@ -691,18 +691,19 @@ defmodule Emisar.Accounts do
     Enum.any?(errors, fn {_field, {_msg, opts}} -> opts[:constraint] == :unique end)
   end
 
-  # Field-aware permission: every invite needs invite_member, and inviting
-  # an owner additionally needs the owner-only manage_owners — so an admin
-  # can invite anyone except an owner. Same shape as update_account/3.
+  # Inviting needs the base invite_member permission, and you can't invite
+  # someone at a role whose permissions you don't already hold — the same
+  # no-escalation rule as role changes (Authorizer.covers_role?/2).
   defp ensure_invite_permitted(role, %Subject{} = subject) do
-    required =
-      if normalize_role(role) == :owner do
-        [Authorizer.invite_member_permission(), Authorizer.manage_owners_permission()]
-      else
-        [Authorizer.invite_member_permission()]
-      end
-
-    Auth.Authorizer.ensure_has_permissions(subject, required)
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.invite_member_permission()
+           ) do
+      if Auth.Authorizer.covers_role?(subject, normalize_role(role)),
+        do: :ok,
+        else: {:error, :insufficient_privileges}
+    end
   end
 
   @doc """
