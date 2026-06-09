@@ -25,7 +25,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "curl -sS -u \"$ELASTIC_USER:$ELASTIC_PASSWORD\" \"${ELASTIC_URL:-http://127.0.0.1:9200}/_snapshot/{{ args.repository }}/{{ args.snapshot }}/_status?pretty\""
+      - "{ printf 'Authorization: Basic '; printf '%s:%s' \"$ELASTIC_USER\" \"$ELASTIC_PASSWORD\" | base64 | tr -d '\\n'; printf '\\n'; } | curl -sS -H @- \"${ELASTIC_URL:-http://127.0.0.1:9200}/_snapshot/{{ args.repository }}/{{ args.snapshot }}/_status?pretty\""
   timeout: 30s
 output:
   parser: json

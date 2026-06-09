@@ -2,7 +2,7 @@ schema_version: 1
 
 id: nomad
 name: HashiCorp Nomad
-version: 0.1.5
+version: 0.1.6
 description: >
   Deep Nomad operations — full job lifecycle (inspect, history, scale,
   dispatch, revert, promote, stop), allocation introspection + restart +

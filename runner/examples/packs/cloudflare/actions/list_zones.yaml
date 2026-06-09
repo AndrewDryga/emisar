@@ -13,7 +13,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "curl -sS \"https://api.cloudflare.com/client/v4/zones?per_page=50\" -H \"Authorization: Bearer $CF_API_TOKEN\""
+      - "{ [ -n \"$CF_API_TOKEN\" ] && printf 'Authorization: Bearer %s\\n' \"$CF_API_TOKEN\"; } | curl -sS \"https://api.cloudflare.com/client/v4/zones?per_page=50\" -H @-"
   timeout: 30s
 output:
   parser: json

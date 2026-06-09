@@ -13,7 +13,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "curl -sS -u \"$ELASTIC_USER:$ELASTIC_PASSWORD\" \"${ELASTIC_URL:-http://127.0.0.1:9200}/_cluster/pending_tasks?pretty\""
+      - "{ printf 'Authorization: Basic '; printf '%s:%s' \"$ELASTIC_USER\" \"$ELASTIC_PASSWORD\" | base64 | tr -d '\\n'; printf '\\n'; } | curl -sS -H @- \"${ELASTIC_URL:-http://127.0.0.1:9200}/_cluster/pending_tasks?pretty\""
   timeout: 15s
 output:
   parser: json

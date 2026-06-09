@@ -26,7 +26,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - 'curl -sS -XPUT -H "X-Consul-Token: $CONSUL_HTTP_TOKEN" --data-urlencode "note=$NOTE" -G "${CONSUL_HTTP_ADDR:-http://127.0.0.1:8500}/v1/agent/check/warn/$CHECK_ID"'
+      - '{ [ -n "$CONSUL_HTTP_TOKEN" ] && printf "X-Consul-Token: %s\n" "$CONSUL_HTTP_TOKEN"; } | curl -sS -XPUT -H @- --data-urlencode "note=$NOTE" -G "${CONSUL_HTTP_ADDR:-http://127.0.0.1:8500}/v1/agent/check/warn/$CHECK_ID"'
   env:
     NOTE: "{{ args.note }}"
     CHECK_ID: "{{ args.check_id }}"

@@ -17,7 +17,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "curl -sS -H \"X-Consul-Token: $CONSUL_HTTP_TOKEN\" \"${CONSUL_HTTP_ADDR:-http://127.0.0.1:8500}/v1/connect/intentions/match?by=destination&name={{ args.destination }}\""
+      - "{ [ -n \"$CONSUL_HTTP_TOKEN\" ] && printf 'X-Consul-Token: %s\\n' \"$CONSUL_HTTP_TOKEN\"; } | curl -sS -H @- \"${CONSUL_HTTP_ADDR:-http://127.0.0.1:8500}/v1/connect/intentions/match?by=destination&name={{ args.destination }}\""
   timeout: 30s
 output:
   parser: json

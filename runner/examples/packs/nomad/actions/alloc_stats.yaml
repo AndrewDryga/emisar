@@ -17,7 +17,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "curl -sS -H \"X-Nomad-Token: $NOMAD_TOKEN\" \"${NOMAD_ADDR:-http://127.0.0.1:4646}/v1/client/allocation/{{ args.alloc_id }}/stats\""
+      - "{ [ -n \"$NOMAD_TOKEN\" ] && printf 'X-Nomad-Token: %s\\n' \"$NOMAD_TOKEN\"; } | curl -sS -H @- \"${NOMAD_ADDR:-http://127.0.0.1:4646}/v1/client/allocation/{{ args.alloc_id }}/stats\""
   timeout: 15s
 output:
   parser: json
