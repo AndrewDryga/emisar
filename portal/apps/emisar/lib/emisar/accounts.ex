@@ -253,9 +253,7 @@ defmodule Emisar.Accounts do
     end
   end
 
-  defp maybe_fetch_session_membership(_user_id, nil), do: {:error, :not_found}
-
-  defp maybe_fetch_session_membership(user_id, account_id) when is_binary(account_id) do
+  defp maybe_fetch_session_membership(user_id, account_id) do
     if Repo.valid_uuid?(account_id) do
       Membership.Query.not_deleted()
       |> Membership.Query.by_account_and_user(account_id, user_id)
@@ -266,8 +264,6 @@ defmodule Emisar.Accounts do
       {:error, :not_found}
     end
   end
-
-  defp maybe_fetch_session_membership(_, _), do: {:error, :not_found}
 
   @doc """
   True if every membership the user holds is suspended (and they have
