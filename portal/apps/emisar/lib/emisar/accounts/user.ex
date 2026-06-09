@@ -8,9 +8,11 @@ defmodule Emisar.Accounts.User do
   schema "users" do
     field :email, :string
     field :full_name, :string
+
     field :password, :string, virtual: true, redact: true
     field :hashed_password, :string, redact: true
     field :confirmed_at, :utc_datetime_usec
+
     field :mfa_secret, :binary, redact: true
     field :mfa_enabled_at, :utc_datetime_usec
     # Most-recent TOTP step counter the user authenticated with;
@@ -19,6 +21,7 @@ defmodule Emisar.Accounts.User do
     # Backup codes stored as `:crypto.hash(:sha256, raw)` so a DB leak
     # doesn't surface the codes themselves. Consumed on use.
     field :mfa_recovery_codes, {:array, :binary}, default: [], redact: true
+
     field :last_sign_in_at, :utc_datetime_usec
     field :is_admin, :boolean, default: false
     field :deleted_at, :utc_datetime_usec

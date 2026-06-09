@@ -237,6 +237,7 @@ end
 
 - No business logic, no changeset functions in the schema module — those live in `Schema.Changeset`.
 - Field declarations only. Associations only. That's it.
+- Separate logical field groups with a blank line (identity / credentials / feature-X / flags) so a long schema scans at a glance. Keep associations and `timestamps()` in their own trailing groups.
 
 ### 4. Changeset modules (`lib/emisar/<context>/<schema>/changeset.ex`)
 
