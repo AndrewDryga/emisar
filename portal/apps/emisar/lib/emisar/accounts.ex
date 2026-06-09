@@ -298,8 +298,7 @@ defmodule Emisar.Accounts do
   """
   def all_memberships_suspended?(%User{id: user_id}) do
     base = Membership.Query.all() |> Membership.Query.by_user_id(user_id)
-    total = Repo.aggregate(base, :count, :id)
-    total > 0 and Repo.aggregate(Membership.Query.not_disabled(base), :count, :id) == 0
+    Repo.exists?(base) and not Repo.exists?(Membership.Query.not_disabled(base))
   end
 
   def create_membership(attrs) do
