@@ -35,6 +35,7 @@ erl_crash.dump
 *.swo
 *~
 .DS_Store
+.claude/scheduled_tasks.lock
 
 # Local dev compose secrets — copy .env.example to .env and fill in.
 /.env
