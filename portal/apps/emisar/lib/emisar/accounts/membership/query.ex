@@ -70,7 +70,7 @@ defmodule Emisar.Accounts.Membership.Query do
         queryable,
         :inner,
         [memberships: m],
-        user in ^Emisar.Accounts.User.Query.not_deleted(),
+        user in ^Emisar.Users.User.Query.not_deleted(),
         on: m.user_id == user.id,
         as: ^binding
       )
@@ -98,6 +98,6 @@ defmodule Emisar.Accounts.Membership.Query do
     do: [
       account:
         {Emisar.Accounts.Account.Query.not_deleted(), Emisar.Accounts.Account.Query.preloads()},
-      user: {Emisar.Accounts.User.Query.not_deleted(), Emisar.Accounts.User.Query.preloads()}
+      user: {Emisar.Users.User.Query.not_deleted(), Emisar.Users.User.Query.preloads()}
     ]
 end

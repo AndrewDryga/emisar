@@ -108,7 +108,7 @@ defmodule Emisar.Runners.AuthKey.Query do
     )
   end
 
-  @doc "Audit label-lookup helper. See Accounts.User.Query.select_labels/3."
+  @doc "Audit label-lookup helper. See Users.User.Query.select_labels/3."
   def select_labels(queryable, ids, field) do
     queryable
     |> where([auth_keys: k], k.id in ^ids)

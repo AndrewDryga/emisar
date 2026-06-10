@@ -16,8 +16,8 @@ defmodule Emisar.Accounts.Membership do
     field :deleted_at, :utc_datetime_usec
 
     belongs_to :account, Emisar.Accounts.Account, where: [deleted_at: nil]
-    belongs_to :user, Emisar.Accounts.User, where: [deleted_at: nil]
-    belongs_to :invited_by, Emisar.Accounts.User, where: [deleted_at: nil]
+    belongs_to :user, Emisar.Users.User, where: [deleted_at: nil]
+    belongs_to :invited_by, Emisar.Users.User, where: [deleted_at: nil]
 
     timestamps()
   end

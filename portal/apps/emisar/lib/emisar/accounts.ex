@@ -7,9 +7,10 @@ defmodule Emisar.Accounts do
   account; this context owns the slug-based lookups and signup flow.
   """
   alias Ecto.Multi
-  alias Emisar.{Audit, Auth, Crypto, Repo, Slug}
-  alias Emisar.Accounts.{Account, Authorizer, Membership, User}
+  alias Emisar.{Audit, Auth, Crypto, Repo, Slug, Users}
+  alias Emisar.Accounts.{Account, Authorizer, Membership}
   alias Emisar.Auth.{Role, Subject}
+  alias Emisar.Users.User
   require Logger
 
   # -- Accounts ---------------------------------------------------------
@@ -394,7 +395,7 @@ defmodule Emisar.Accounts do
   end
 
   defp disconnect_user_sessions(%Membership{} = membership) do
-    case fetch_user_by_id(membership.user_id) do
+    case Users.fetch_user_by_id(membership.user_id) do
       {:ok, user} ->
         Emisar.Auth.disconnect_and_revoke_all_sessions(user)
         :ok
@@ -444,26 +445,20 @@ defmodule Emisar.Accounts do
            Auth.Authorizer.ensure_has_permissions(subject, Authorizer.manage_team_permission()),
          :ok <- ensure_subject_in_account(subject, membership.account_id),
          :ok <- ensure_can_modify_membership(membership, subject) do
-      # Null out password hash + audit atomically, holding the row lock
-      # while we do it. `valid_password?/2` guards on
-      # `is_binary(hashed_password)` — nil falls through to the
-      # timing-safe placeholder branch and returns false, so the old
-      # credential stops working the moment this commits.
-      User.Query.not_deleted()
-      |> User.Query.by_id(membership.user_id)
-      |> Repo.fetch_and_update(User.Query,
-        with: &Ecto.Changeset.change(&1, %{hashed_password: nil}),
+      # Users nulls the hash + inserts our audit atomically under the row
+      # lock; the old credential stops working the moment this commits.
+      #
+      # Sending the reset email + broadcasting disconnects are side
+      # effects that must NOT happen if the password-null update rolled
+      # back. We pass `audit: false` to the token mint so it doesn't
+      # ALSO emit a `user.password_reset_requested` row — that row would
+      # attribute the action to the TARGET user as actor, not the admin
+      # who triggered it. The `user.password_reset_forced` event below is
+      # the canonical record with the correct actor → subject pair.
+      Users.clear_user_password(membership.user_id,
         audit: fn updated ->
           Audit.Events.user_password_reset_forced(subject, membership, updated)
         end,
-        # Sending the reset email + broadcasting disconnects are side
-        # effects that must NOT happen if the password-null update
-        # rolled back. We pass `audit: false` to the token mint so it
-        # doesn't ALSO emit a `user.password_reset_requested` row — that
-        # row would attribute the action to the TARGET user as actor,
-        # not the admin who triggered it. The `user.password_reset_forced`
-        # event above is the canonical record of this action with the
-        # correct actor → subject pair (admin → target).
         after_commit: fn user ->
           :ok = Emisar.Auth.disconnect_and_revoke_all_sessions(user)
           token = Emisar.Auth.issue_password_reset_token!(user, audit: false)
@@ -502,13 +497,10 @@ defmodule Emisar.Accounts do
            Auth.Authorizer.ensure_has_permissions(subject, Authorizer.manage_team_permission()),
          :ok <- ensure_subject_in_account(subject, membership.account_id),
          :ok <- ensure_can_modify_membership(membership, subject) do
-      # profile/2 casts full_name only — email/password are deliberately
-      # not editable through the admin path (see moduledoc). The field
-      # whitelist lives in the changeset, not here.
-      User.Query.not_deleted()
-      |> User.Query.by_id(membership.user_id)
-      |> Repo.fetch_and_update(User.Query,
-        with: &User.Changeset.profile(&1, attrs),
+      # Users whitelists the editable fields (full_name only — email and
+      # password are deliberately not admin-editable, see moduledoc) and
+      # holds the row lock while it writes + inserts our audit.
+      Users.update_user_profile_as_admin(membership.user_id, attrs,
         audit: fn updated ->
           Audit.Events.user_updated_by_admin(subject, membership, updated)
         end
@@ -529,13 +521,13 @@ defmodule Emisar.Accounts do
       # The DB-side delete of session tokens is the source of truth — bundle
       # it with the audit row so we never end up with "tokens deleted but no
       # audit" or vice versa. The user read lives INSIDE the transaction so
-      # it shares the snapshot with the delete. The PubSub disconnect
-      # broadcast is a side effect that fires only after the rows commit.
+      # it shares the snapshot with the delete (which Auth owns — token
+      # internals stay private to it). The PubSub disconnect broadcast is a
+      # side effect that fires only after the rows commit.
       Multi.new()
-      |> Multi.run(:user, fn _repo, _changes -> fetch_user_by_id(membership.user_id) end)
-      |> Multi.delete_all(:tokens, fn %{user: user} ->
-        Auth.UserToken.Query.by_user_id(user.id)
-        |> Auth.UserToken.Query.by_contexts(["session"])
+      |> Multi.run(:user, fn _repo, _changes -> Users.fetch_user_by_id(membership.user_id) end)
+      |> Multi.run(:tokens, fn _repo, %{user: user} ->
+        Emisar.Auth.delete_all_session_tokens(user)
       end)
       |> Multi.insert(:audit, fn %{user: user} ->
         Audit.Events.user_sessions_revoked(subject, membership, user)
@@ -654,7 +646,7 @@ defmodule Emisar.Accounts do
       token = Crypto.user_invite_token()
 
       Multi.new()
-      |> Multi.run(:user, fn _repo, _changes -> fetch_or_create_user(email) end)
+      |> Multi.run(:user, fn _repo, _changes -> Users.fetch_or_create_user_by_email(email) end)
       |> Multi.insert(:membership, fn %{user: user} ->
         Membership.Changeset.create(%{
           account_id: account_id,
@@ -683,23 +675,6 @@ defmodule Emisar.Accounts do
         {:error, reason} ->
           {:error, reason}
       end
-    end
-  end
-
-  # Fetch the user by email, or create a placeholder (unconfirmed, no
-  # password) so the invitation has a record to hang off. An unmatched
-  # `{:ok, user}` from the fetch passes straight through the `with`.
-  #
-  # Two concurrent invites can race on the same NEW email; the insert is
-  # ON CONFLICT DO NOTHING (a raw unique violation would abort the whole
-  # invite transaction) and we re-read the row that won — ours or the
-  # concurrent one.
-  defp fetch_or_create_user(email) do
-    changeset = User.Changeset.registration(%User{}, %{email: email}, hash_password: false)
-
-    with {:error, :not_found} <- fetch_user_by_email(email),
-         {:ok, _} <- Repo.insert(changeset, on_conflict: :nothing) do
-      fetch_user_by_email(email)
     end
   end
 
@@ -787,245 +762,23 @@ defmodule Emisar.Accounts do
 
     Multi.new()
     |> Multi.run(:existing_user, fn _repo, _changes ->
-      fetch_user_by_id(membership.user_id)
+      Users.fetch_user_by_id(membership.user_id)
     end)
-    |> Multi.update(:user, fn %{existing_user: existing_user} ->
-      User.Changeset.registration(existing_user, user_attrs)
-    end)
-    |> Multi.update(:confirmed_user, fn %{user: u} ->
-      User.Changeset.confirm(u)
+    |> Multi.run(:user, fn _repo, %{existing_user: existing_user} ->
+      Users.register_invited_user(existing_user, user_attrs)
     end)
     |> Multi.update(
       :membership,
       Ecto.Changeset.change(membership, invitation_token: nil, invitation_accepted_at: now)
     )
-    |> Multi.insert(:audit, fn %{confirmed_user: user, membership: m} ->
-      Audit.Events.user_invitation_accepted(user, m)
+    |> Multi.insert(:audit, fn %{user: user, membership: updated} ->
+      Audit.Events.user_invitation_accepted(user, updated)
     end)
     |> Repo.commit_multi()
     |> case do
-      {:ok, %{confirmed_user: user, membership: m}} -> {:ok, %{user: user, membership: m}}
+      {:ok, %{user: user, membership: updated}} -> {:ok, %{user: user, membership: updated}}
       {:error, reason} -> {:error, reason}
     end
-  end
-
-  # -- Users ------------------------------------------------------------
-
-  def fetch_user_by_id(id) do
-    if Repo.valid_uuid?(id) do
-      User.Query.not_deleted()
-      |> User.Query.by_id(id)
-      |> Repo.fetch(User.Query)
-    else
-      {:error, :not_found}
-    end
-  end
-
-  def fetch_user_by_email(email) when is_binary(email) do
-    User.Query.not_deleted()
-    |> User.Query.by_email(email)
-    |> Repo.fetch(User.Query)
-  end
-
-  @doc """
-  Batch resolver returning `%{user_id => display_name}` for the
-  supplied ids. Falls back to email when full_name is blank.
-  """
-  def user_labels_for_ids(ids) when is_list(ids) do
-    case Enum.reject(ids, &is_nil/1) |> Enum.uniq() do
-      [] ->
-        %{}
-
-      ids ->
-        User.Query.not_deleted()
-        |> User.Query.by_ids(ids)
-        |> Repo.all()
-        |> Map.new(fn u -> {u.id, u.full_name || u.email} end)
-    end
-  end
-
-  def register_user(attrs) do
-    %User{}
-    |> User.Changeset.registration(attrs)
-    |> Repo.insert()
-  end
-
-  @doc """
-  Update the caller's own profile fields. Self-service — the user is the
-  subject's own actor; admins use `update_user_as_admin/3` for teammates.
-  """
-  def update_user_profile(attrs, %Subject{actor: %User{id: user_id}}) do
-    User.Query.not_deleted()
-    |> User.Query.by_id(user_id)
-    |> Repo.fetch_and_update(User.Query,
-      with: &User.Changeset.profile(&1, attrs),
-      audit: fn updated ->
-        Audit.user_changeset(updated, "user.profile_updated",
-          payload: %{full_name: updated.full_name}
-        )
-      end
-    )
-  end
-
-  @doc """
-  Change the caller's own sign-in email after verifying their current
-  password. Returns `{:ok, user} | {:error, :invalid_current_password}
-  | {:error, %Ecto.Changeset{}}`. Self-service — the user is the subject's
-  own actor; the current-password check is the proof-of-control gate.
-
-  Audits success (`user.email_changed`) with both addresses for traceability,
-  and failed-password attempts (`user.email_change_failed`) since wrong-password
-  on the email-change form is a credential probe worth seeing.
-  """
-  def update_user_email(new_email, current_password, %Subject{actor: %User{id: user_id} = user})
-      when is_binary(new_email) and is_binary(current_password) do
-    User.Query.not_deleted()
-    |> User.Query.by_id(user_id)
-    |> Repo.fetch_and_update(User.Query,
-      with: fn fresh ->
-        if User.valid_password?(fresh, current_password),
-          do: User.Changeset.email(fresh, %{email: new_email}),
-          else: :invalid_current_password
-      end,
-      audit: fn updated ->
-        Audit.user_changeset(updated, "user.email_changed",
-          payload: %{from: user.email, to: updated.email}
-        )
-      end
-    )
-    |> case do
-      {:error, :invalid_current_password} ->
-        # Failed-credential probe — log it standalone since the
-        # transaction rolled back without an audit row.
-        Audit.log_for_user(user, "user.email_change_failed",
-          payload: %{reason: "invalid_current_password"}
-        )
-
-        {:error, :invalid_current_password}
-
-      other ->
-        other
-    end
-  end
-
-  @doc """
-  Change the caller's own sign-in password after verifying the current
-  one. Returns `{:ok, user} | {:error, :invalid_current_password}
-  | {:error, :passwords_must_match} | {:error, :password_too_short}
-  | {:error, %Ecto.Changeset{}}`.
-
-  Audits success (`user.password_changed`) and audit-records bad
-  current-password attempts (`user.password_change_failed`) — wrong
-  current-password on this form is a real-credential probe worth seeing.
-
-  The caller is responsible for revoking other sessions after success —
-  a successful password change implies "the old credential is blown",
-  so every other device should sign out. Self-service — the user is the
-  subject's own actor.
-  """
-  @password_min_length 12
-
-  def change_user_password(current_password, new_password, %Subject{
-        actor: %User{id: user_id} = user
-      })
-      when is_binary(current_password) and is_binary(new_password) do
-    with :ok <- ensure_password_length(new_password) do
-      User.Query.not_deleted()
-      |> User.Query.by_id(user_id)
-      |> Repo.fetch_and_update(User.Query,
-        with: fn fresh ->
-          if User.valid_password?(fresh, current_password),
-            do: User.Changeset.password(fresh, %{password: new_password}),
-            else: :invalid_current_password
-        end,
-        audit: &Audit.user_changeset(&1, "user.password_changed")
-      )
-      |> case do
-        {:error, :invalid_current_password} ->
-          # Failed-credential probe — log it standalone since the
-          # transaction rolled back without an audit row.
-          Audit.log_for_user(user, "user.password_change_failed",
-            payload: %{reason: "invalid_current_password"}
-          )
-
-          {:error, :invalid_current_password}
-
-        other ->
-          other
-      end
-    end
-  end
-
-  defp ensure_password_length(p) when byte_size(p) >= @password_min_length, do: :ok
-  defp ensure_password_length(_), do: {:error, :password_too_short}
-
-  @doc """
-  Stamp the user's last sign-in and audit `user.signed_in` (with the auth
-  `method` — `"password"`, `"password+mfa"`, `"magic_link"`) in one
-  transaction. The audit row is silently skipped for a user with no active
-  membership (no account to scope it to), matching `Audit.log_for_user/3`.
-  Sign-in is the one mutation the web layer triggers pre-Subject, so the
-  audit trail is this function's concern — controllers never write audit
-  rows themselves.
-  """
-  def record_sign_in(%User{} = user, method) when is_binary(method) do
-    Multi.new()
-    |> Multi.update(:user, User.Changeset.sign_in(user))
-    |> Audit.Multi.log_for_user(:audit, user, "user.signed_in",
-      extra: [payload: %{method: method}]
-    )
-    |> Repo.commit_multi()
-    |> case do
-      {:ok, %{user: user}} -> {:ok, user}
-      {:error, reason} -> {:error, reason}
-    end
-  end
-
-  def change_user(%User{} = user, attrs \\ %{}) do
-    User.Changeset.registration(user, attrs, hash_password: false)
-  end
-
-  @doc """
-  Validation-only changeset for a password change. `hash_password: false`
-  keeps it pure — no bcrypt, no `:password` consumed — so it validates
-  length + confirmation and round-trips the field for redisplay. The
-  actual change, with the current-password challenge and audit, is
-  `change_user_password/4`.
-  """
-  def change_password(%User{} = user, attrs \\ %{}) do
-    User.Changeset.password(user, attrs, hash_password: false)
-  end
-
-  # -- Internal (Auth flows) ---------------------------------------------
-  # User-credential writes the Auth context performs after its own gates
-  # (token possession, password/TOTP verification). Auth composes them
-  # into its token transactions via `Multi.run`, so each runs inside the
-  # caller's transaction — the User changeset internals stay private to
-  # Accounts. Never exposed to LiveView/controllers/MCP.
-
-  @doc "Internal — Auth: set a new password after a verified reset token."
-  def reset_user_password(%User{} = user, password) when is_binary(password) do
-    user |> User.Changeset.password(%{password: password}) |> Repo.update()
-  end
-
-  @doc "Internal — Auth: mark the user's email confirmed (token flow)."
-  def mark_user_confirmed(%User{} = user) do
-    user |> User.Changeset.confirm() |> Repo.update()
-  end
-
-  @doc "Internal — Auth: enable MFA (secret + enrolled-at + recovery digests) or disable (nils)."
-  def update_user_mfa(%User{} = user, secret, enabled_at, recovery_code_digests) do
-    user |> User.Changeset.mfa(secret, enabled_at, recovery_code_digests) |> Repo.update()
-  end
-
-  @doc "Internal — Auth: replace the stored MFA recovery-code digests."
-  def put_user_mfa_recovery_codes(%User{} = user, digests) when is_list(digests) do
-    user |> User.Changeset.mfa_recovery_codes(digests) |> Repo.update()
-  end
-
-  @doc "Internal — Auth: stamp the most recent successful TOTP (the replay guard)."
-  def record_user_mfa_consumed(%User{} = user, %DateTime{} = at) do
-    user |> User.Changeset.mfa_consumed(at) |> Repo.update()
   end
 
   # -- Authorization ----------------------------------------------------

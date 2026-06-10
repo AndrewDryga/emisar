@@ -69,7 +69,7 @@ defmodule Emisar.Runs.ActionRun do
     belongs_to :account, Emisar.Accounts.Account, where: [deleted_at: nil]
     belongs_to :runner, Emisar.Runners.Runner, where: [deleted_at: nil]
     belongs_to :runbook, Emisar.Runbooks.Runbook, where: [deleted_at: nil]
-    belongs_to :requested_by, Emisar.Accounts.User, where: [deleted_at: nil]
+    belongs_to :requested_by, Emisar.Users.User, where: [deleted_at: nil]
     belongs_to :policy, Emisar.Policies.Policy, where: [deleted_at: nil]
     # api_key_id is already a field above; this reuses it so the run can
     # name its initiator (e.g. the "Claude Code" key) without a second FK.

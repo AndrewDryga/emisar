@@ -4,7 +4,7 @@ defmodule Emisar.AuthTest do
   import Emisar.Fixtures
 
   alias Emisar.Auth
-  alias Emisar.Accounts.User
+  alias Emisar.Users.User
 
   @password "a-password-of-some-length"
 

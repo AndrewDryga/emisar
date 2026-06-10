@@ -9,7 +9,7 @@ defmodule EmisarWeb.RunnerSocketTest do
   describe "POST /runner/register (bearer-authed)" do
     setup do
       {:ok, user} =
-        Emisar.Accounts.register_user(%{
+        Emisar.Users.register_user(%{
           email: "owner-#{System.unique_integer([:positive])}@example.com",
           password: "very-long-password-1234"
         })
@@ -68,7 +68,7 @@ defmodule EmisarWeb.RunnerSocketTest do
   describe "runner socket dispatch (end-to-end)" do
     setup do
       {:ok, user} =
-        Emisar.Accounts.register_user(%{
+        Emisar.Users.register_user(%{
           email: "owner-#{System.unique_integer([:positive])}@example.com",
           password: "very-long-password-1234"
         })
@@ -302,7 +302,7 @@ defmodule EmisarWeb.RunnerSocketTest do
   # to its cloud→runner topic), exactly like the end-to-end tests above.
   defp connected_socket(_ctx) do
     {:ok, user} =
-      Emisar.Accounts.register_user(%{
+      Emisar.Users.register_user(%{
         email: "owner-#{System.unique_integer([:positive])}@example.com",
         password: "very-long-password-1234"
       })

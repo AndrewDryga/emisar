@@ -8,10 +8,11 @@ defmodule Emisar.Fixtures do
   so tests using `async: true` never collide.
   """
 
-  alias Emisar.{Accounts, Runners, ApiKeys, Policies, Repo}
-  alias Emisar.Accounts.{Account, Membership, User}
+  alias Emisar.{Accounts, Runners, ApiKeys, Policies, Repo, Users}
+  alias Emisar.Accounts.{Account, Membership}
   alias Emisar.Auth.Subject
   alias Emisar.Runners.Runner
+  alias Emisar.Users.User
 
   @doc """
   Builds a `%Subject{}` for an account-scoped test caller. Looks up
@@ -253,7 +254,7 @@ defmodule Emisar.Fixtures do
       |> Account.Query.by_id(account_id)
       |> Repo.fetch!(Account.Query)
 
-    {:ok, user} = Accounts.fetch_user_by_id(user_id)
+    {:ok, user} = Users.fetch_user_by_id(user_id)
     subject = subject_for(user, account, role: :owner)
     {:ok, raw, key} = Runners.create_auth_key(create_attrs, subject)
     {raw, key}
@@ -283,7 +284,7 @@ defmodule Emisar.Fixtures do
       |> Account.Query.by_id(account_id)
       |> Repo.fetch!(Account.Query)
 
-    {:ok, user} = Accounts.fetch_user_by_id(user_id)
+    {:ok, user} = Users.fetch_user_by_id(user_id)
     subject = subject_for(user, account, role: :owner)
     {:ok, raw, key} = ApiKeys.create_key(create_attrs, subject)
     {raw, key}

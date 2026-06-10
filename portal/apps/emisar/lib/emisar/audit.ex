@@ -157,7 +157,7 @@ defmodule Emisar.Audit do
   (`actor_kind: "user", actor_id: user.id, subject_kind: "user",
    subject_id: user.id, subject_label: user.email`).
   """
-  def log_for_user(%Emisar.Accounts.User{} = user, event_type, attrs \\ %{}) do
+  def log_for_user(%Emisar.Users.User{} = user, event_type, attrs \\ %{}) do
     case user_changeset(user, event_type, attrs) do
       %Ecto.Changeset{} = changeset -> Repo.insert(changeset)
       nil -> :ok
@@ -172,7 +172,7 @@ defmodule Emisar.Audit do
   Returns `nil` (treated as "skip") when the user has no active membership.
   Same defaults + override semantics as `log_for_user/3`.
   """
-  def user_changeset(%Emisar.Accounts.User{} = user, event_type, attrs \\ %{}) do
+  def user_changeset(%Emisar.Users.User{} = user, event_type, attrs \\ %{}) do
     case Emisar.Accounts.fetch_membership_for_session(user, nil) do
       {:ok, membership} ->
         defaults = %{
@@ -383,8 +383,8 @@ defmodule Emisar.Audit do
       # Users belong to accounts via memberships, not a column, so they
       # scope through the membership join rather than `by_account_id`.
       "user" =>
-        fetch_labels(Emisar.Accounts.User.Query, ids_by_kind, "user", :email, fn q ->
-          Emisar.Accounts.User.Query.members_of_account(q, account_id)
+        fetch_labels(Emisar.Users.User.Query, ids_by_kind, "user", :email, fn q ->
+          Emisar.Users.User.Query.members_of_account(q, account_id)
         end),
       "runner" =>
         fetch_labels(Emisar.Runners.Runner.Query, ids_by_kind, "runner", :name, fn q ->

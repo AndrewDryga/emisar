@@ -5,9 +5,9 @@ defmodule Emisar.Mailers.UserNotifier do
   rendering engine is intentionally not LiveView's heex.
   """
   import Swoosh.Email
-  alias Emisar.Accounts.User
   alias Emisar.Mailer
   alias Emisar.PublicUrl
+  alias Emisar.Users.User
 
   # Resolved at call-time (not compile-time) so `runtime.exs` env-var
   # overrides take effect without a recompile. Falls back to the

@@ -1,6 +1,6 @@
-defmodule Emisar.Accounts.User.Changeset do
+defmodule Emisar.Users.User.Changeset do
   use Emisar, :changeset
-  alias Emisar.Accounts.User
+  alias Emisar.Users.User
 
   def registration(user, attrs, opts \\ []) do
     user
@@ -59,6 +59,8 @@ defmodule Emisar.Accounts.User.Changeset do
     do: change(user, mfa_recovery_codes: codes)
 
   def delete(%User{} = user), do: change(user, deleted_at: DateTime.utc_now())
+
+  def clear_password(%User{} = user), do: change(user, hashed_password: nil)
 
   # The citext unique index is the uniqueness source of truth (IL-8:
   # changesets are pure — no Repo pre-check); `unique_constraint` maps

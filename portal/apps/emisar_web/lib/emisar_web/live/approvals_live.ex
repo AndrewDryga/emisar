@@ -15,7 +15,7 @@ defmodule EmisarWeb.ApprovalsLive do
   """
   use EmisarWeb, :live_view
 
-  alias Emisar.{Accounts, Approvals, PubSub, Runners}
+  alias Emisar.{Approvals, PubSub, Runners, Users}
   alias EmisarWeb.{LiveTable, Permissions}
 
   def mount(_params, _session, socket) do
@@ -113,7 +113,7 @@ defmodule EmisarWeb.ApprovalsLive do
         [r.requested_by_id, r.decided_by_id]
       end)
 
-    Accounts.user_labels_for_ids(ids)
+    Users.user_labels_for_ids(ids)
   end
 
   defp runner_id_from(%{context: %{"runner_id" => id}}) when is_binary(id), do: id

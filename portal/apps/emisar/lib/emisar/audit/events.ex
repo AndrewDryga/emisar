@@ -8,10 +8,11 @@ defmodule Emisar.Audit.Events do
   are this module's concern, not the context's. Fire-and-forget standalone
   events (no `Multi`, often no subject) use `Audit.log/3` directly instead.
   """
-  alias Emisar.Accounts.{Account, Membership, User}
+  alias Emisar.Accounts.{Account, Membership}
   alias Emisar.{ApiKeys, Approvals, Runbooks, Runners}
   alias Emisar.Audit
   alias Emisar.Auth.Subject
+  alias Emisar.Users.User
 
   # -- Account ---------------------------------------------------------
 

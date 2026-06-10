@@ -17,8 +17,8 @@ defmodule Emisar.Approvals.Request do
 
     belongs_to :account, Emisar.Accounts.Account, where: [deleted_at: nil]
     belongs_to :run, Emisar.Runs.ActionRun
-    belongs_to :requested_by, Emisar.Accounts.User, where: [deleted_at: nil]
-    belongs_to :decided_by, Emisar.Accounts.User, where: [deleted_at: nil]
+    belongs_to :requested_by, Emisar.Users.User, where: [deleted_at: nil]
+    belongs_to :decided_by, Emisar.Users.User, where: [deleted_at: nil]
 
     timestamps()
   end

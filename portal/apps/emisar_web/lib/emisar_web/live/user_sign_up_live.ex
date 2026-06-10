@@ -1,10 +1,10 @@
 defmodule EmisarWeb.UserSignUpLive do
   use EmisarWeb, :live_view
 
-  alias Emisar.{Accounts, Auth}
+  alias Emisar.{Accounts, Auth, Users}
 
   def mount(_params, _session, socket) do
-    changeset = Accounts.change_user(%Emisar.Accounts.User{})
+    changeset = Users.change_user(%Emisar.Users.User{})
 
     {:ok,
      socket
@@ -67,8 +67,8 @@ defmodule EmisarWeb.UserSignUpLive do
 
   def handle_event("validate", %{"user" => params} = all, socket) do
     changeset =
-      %Emisar.Accounts.User{}
-      |> Accounts.change_user(params)
+      %Emisar.Users.User{}
+      |> Users.change_user(params)
       |> Map.put(:action, :validate)
 
     {:noreply,
@@ -93,7 +93,7 @@ defmodule EmisarWeb.UserSignUpLive do
   end
 
   defp do_save(socket, user_params, account_name) do
-    case Accounts.register_user(user_params) do
+    case Users.register_user(user_params) do
       {:ok, user} ->
         case Accounts.create_account_with_owner(
                %{
@@ -109,7 +109,7 @@ defmodule EmisarWeb.UserSignUpLive do
             {:noreply,
              socket
              |> assign(:trigger_submit, true)
-             |> assign_form(Accounts.change_user(user))}
+             |> assign_form(Users.change_user(user))}
 
           {:error, _reason} ->
             {:noreply,

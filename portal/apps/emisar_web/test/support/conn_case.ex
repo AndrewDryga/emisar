@@ -62,7 +62,7 @@ defmodule EmisarWeb.ConnCase do
         Map.get(attrs, :account, %{})
       )
 
-    {:ok, user} = Emisar.Accounts.register_user(user_attrs)
+    {:ok, user} = Emisar.Users.register_user(user_attrs)
     user = Emisar.Fixtures.confirm_user(user)
 
     {:ok, account} =

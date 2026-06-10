@@ -8,7 +8,7 @@ defmodule EmisarWeb.McpRpcControllerTest do
 
   use EmisarWeb.ConnCase, async: true
 
-  alias Emisar.{Accounts, ApiKeys, Policies, Repo, Runs, Runners}
+  alias Emisar.{Accounts, ApiKeys, Policies, Repo, Runs, Runners, Users}
   alias Emisar.Catalog.RunnerAction
   alias Emisar.Runners.Runner
 
@@ -16,7 +16,7 @@ defmodule EmisarWeb.McpRpcControllerTest do
 
   defp setup_account do
     {:ok, user} =
-      Accounts.register_user(%{
+      Users.register_user(%{
         email: "owner-#{unique()}@example.com",
         full_name: "Test Owner",
         password: "very-long-password-1234"

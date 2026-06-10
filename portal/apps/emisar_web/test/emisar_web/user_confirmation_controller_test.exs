@@ -1,7 +1,7 @@
 defmodule EmisarWeb.UserConfirmationControllerTest do
   use EmisarWeb.ConnCase, async: true
 
-  alias Emisar.{Accounts, Auth, Repo}
+  alias Emisar.{Auth, Repo, Users}
 
   describe "GET /confirm/:token" do
     test "confirms a signed-in (but unconfirmed) user and returns them to the app", %{conn: conn} do
@@ -43,7 +43,7 @@ defmodule EmisarWeb.UserConfirmationControllerTest do
 
   defp unconfirmed_user do
     {:ok, user} =
-      Accounts.register_user(%{
+      Users.register_user(%{
         email: "unconfirmed-#{System.unique_integer([:positive])}@example.com",
         full_name: "Unconfirmed User",
         password: "very-long-password-1234"

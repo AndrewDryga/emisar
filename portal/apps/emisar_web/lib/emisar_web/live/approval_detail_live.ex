@@ -1,7 +1,7 @@
 defmodule EmisarWeb.ApprovalDetailLive do
   use EmisarWeb, :live_view
 
-  alias Emisar.{Accounts, Approvals, PubSub, Runners, Runs}
+  alias Emisar.{Approvals, PubSub, Runners, Runs, Users}
   alias EmisarWeb.Permissions
 
   def mount(%{"id" => id}, _session, socket) do
@@ -51,7 +51,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
   defp lookup_user(nil), do: nil
 
   defp lookup_user(id) when is_binary(id) do
-    case Accounts.fetch_user_by_id(id) do
+    case Users.fetch_user_by_id(id) do
       {:ok, user} -> user
       _ -> nil
     end
@@ -175,11 +175,11 @@ defmodule EmisarWeb.ApprovalDetailLive do
   # Rendering helper for "Requested by" / "Decided by". Prefers the
   # user's full name, falls back to email, then to a short UUID slice
   # if the user record is gone (deleted account), then to em-dash.
-  defp user_label(%Emisar.Accounts.User{full_name: name}, _id)
+  defp user_label(%Emisar.Users.User{full_name: name}, _id)
        when is_binary(name) and name != "",
        do: name
 
-  defp user_label(%Emisar.Accounts.User{email: email}, _id), do: email
+  defp user_label(%Emisar.Users.User{email: email}, _id), do: email
   defp user_label(_, id) when is_binary(id), do: String.slice(id, 0, 8) <> "…"
   defp user_label(_, _), do: "—"
 

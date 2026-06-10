@@ -10,7 +10,7 @@ defmodule EmisarWeb.McpControllerTest do
 
   import Ecto.Query
 
-  alias Emisar.{Accounts, ApiKeys, Catalog, Policies, Repo, Runners}
+  alias Emisar.{Accounts, ApiKeys, Catalog, Policies, Repo, Runners, Users}
   alias Emisar.Catalog.RunnerAction
   alias Emisar.Runners.Runner
 
@@ -21,7 +21,7 @@ defmodule EmisarWeb.McpControllerTest do
 
   defp setup_account do
     {:ok, user} =
-      Accounts.register_user(%{
+      Users.register_user(%{
         email: "owner-#{unique()}@example.com",
         full_name: "Test Owner",
         password: "very-long-password-1234"

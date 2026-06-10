@@ -27,7 +27,7 @@ defmodule EmisarWeb.AuthFlowTest do
   describe "POST /sign_in" do
     setup do
       {:ok, user} =
-        Emisar.Accounts.register_user(%{
+        Emisar.Users.register_user(%{
           email: "test@example.com",
           full_name: "Test User",
           password: "very-long-password-1234"
@@ -68,7 +68,7 @@ defmodule EmisarWeb.AuthFlowTest do
   describe "MFA step-up flow" do
     setup do
       {:ok, user} =
-        Emisar.Accounts.register_user(%{
+        Emisar.Users.register_user(%{
           email: "mfa@example.com",
           full_name: "MFA User",
           password: "long-mfa-password-123"

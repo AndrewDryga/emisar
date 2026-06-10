@@ -3,8 +3,9 @@ defmodule Emisar.MfaEnforcementTest do
 
   import Emisar.Fixtures
 
-  alias Emisar.{Accounts, Repo}
-  alias Emisar.Accounts.{Account, User}
+  alias Emisar.{Accounts, Repo, Users}
+  alias Emisar.Accounts.Account
+  alias Emisar.Users.User
 
   describe "update_account/3 (require_mfa)" do
     test "owner can enable; flips the column" do
@@ -66,7 +67,7 @@ defmodule Emisar.MfaEnforcementTest do
       email = "t-#{System.unique_integer([:positive])}@example.com"
 
       {:ok, user} =
-        Accounts.register_user(%{email: email, password: "Hunter222-original", full_name: "T"})
+        Users.register_user(%{email: email, password: "Hunter222-original", full_name: "T"})
 
       user = confirm_user(user)
       {:ok, _} = Accounts.invite_user_to_account(email, "operator", owner_subject)

@@ -6,10 +6,11 @@
 # real-shaped data when an operator first opens the app — instead of
 # empty-state cards everywhere.
 
-alias Emisar.{Accounts, Approvals, Audit, Catalog, Policies, Repo, Runbooks, Runners, Runs}
-alias Emisar.Accounts.{Account, User}
+alias Emisar.{Accounts, Approvals, Audit, Catalog, Policies, Repo, Runbooks, Runners, Runs, Users}
+alias Emisar.Accounts.Account
 alias Emisar.Approvals.Request, as: ApprovalRequest
 alias Emisar.Auth.Subject
+alias Emisar.Users.User
 # Approval emails go through Swoosh; in dev that's fine, but the seed
 # shouldn't depend on the mailer being reachable.
 Application.put_env(:emisar, :notify_approvers_async?, false)
@@ -46,10 +47,10 @@ end
 demo_email = "demo@emisar.dev"
 
 user =
-  case Accounts.fetch_user_by_email(demo_email) do
+  case Users.fetch_user_by_email(demo_email) do
     {:error, :not_found} ->
       {:ok, u} =
-        Accounts.register_user(%{
+        Users.register_user(%{
           full_name: "Demo User",
           email: demo_email,
           password: "Sleep-tight-1234"
@@ -59,7 +60,7 @@ user =
       u
 
     {:ok, %User{full_name: nil} = u} ->
-      {:ok, u} = Accounts.update_user_profile(%{full_name: "Demo User"}, %Subject{actor: u})
+      {:ok, u} = Users.update_user_profile(%{full_name: "Demo User"}, %Subject{actor: u})
       u
 
     {:ok, %User{} = u} ->
@@ -106,7 +107,7 @@ owner_subject =
   )
 
 invite_member = fn email, full_name, role ->
-  case Accounts.fetch_user_by_email(email) do
+  case Users.fetch_user_by_email(email) do
     {:ok, %User{} = u} ->
       u
 
@@ -114,7 +115,7 @@ invite_member = fn email, full_name, role ->
       {:ok, %{user: invited, membership: m}} =
         Accounts.invite_user_to_account(email, role, owner_subject)
 
-      {:ok, _u} = Accounts.update_user_profile(%{full_name: full_name}, %Subject{actor: invited})
+      {:ok, _u} = Users.update_user_profile(%{full_name: full_name}, %Subject{actor: invited})
       {:ok, confirmed} = invited |> User.Changeset.confirm() |> Repo.update()
       {:ok, _m} = Accounts.mark_invitation_accepted(m, invited)
       confirmed

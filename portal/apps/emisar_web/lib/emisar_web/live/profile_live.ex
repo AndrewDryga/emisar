@@ -1,7 +1,7 @@
 defmodule EmisarWeb.ProfileLive do
   use EmisarWeb, :live_view
 
-  alias Emisar.{Accounts, Auth}
+  alias Emisar.{Auth, Users}
 
   def mount(_params, session, socket) do
     user = socket.assigns.current_user
@@ -52,14 +52,14 @@ defmodule EmisarWeb.ProfileLive do
   def handle_event("validate_profile", %{"profile" => params}, socket) do
     changeset =
       socket.assigns.current_user
-      |> Accounts.change_user(params)
+      |> Users.change_user(params)
       |> Map.put(:action, :validate)
 
     {:noreply, assign(socket, :profile_form, to_form(changeset, as: "profile"))}
   end
 
   def handle_event("save_profile", %{"profile" => params}, socket) do
-    case Accounts.update_user_profile(params, socket.assigns.current_subject) do
+    case Users.update_user_profile(params, socket.assigns.current_subject) do
       {:ok, updated} ->
         {:noreply,
          socket
@@ -75,7 +75,7 @@ defmodule EmisarWeb.ProfileLive do
   def handle_event("validate_email", %{"email" => params}, socket) do
     changeset =
       socket.assigns.current_user
-      |> Accounts.change_user(%{"email" => params["email"] || ""})
+      |> Users.change_user(%{"email" => params["email"] || ""})
       |> Map.put(:action, :validate)
 
     {:noreply, assign(socket, :email_form, to_form(changeset, as: "email"))}
@@ -85,7 +85,7 @@ defmodule EmisarWeb.ProfileLive do
     new_email = String.trim(params["email"] || "")
     current = params["current_password"] || ""
 
-    case Accounts.update_user_email(new_email, current, socket.assigns.current_subject) do
+    case Users.update_user_email(new_email, current, socket.assigns.current_subject) do
       {:ok, updated} ->
         {:noreply,
          socket
@@ -104,7 +104,7 @@ defmodule EmisarWeb.ProfileLive do
   def handle_event("validate_password", %{"password" => params}, socket) do
     changeset =
       socket.assigns.current_user
-      |> Accounts.change_password(params)
+      |> Users.change_password(params)
       |> Map.put(:action, :validate)
 
     {:noreply, assign(socket, :password_form, to_form(changeset, as: "password"))}
@@ -122,10 +122,10 @@ defmodule EmisarWeb.ProfileLive do
     # render them inline (border + message) instead of a flash. The
     # current-password challenge isn't a field of the password schema; a
     # wrong one stays a concise flash.
-    changeset = Accounts.change_password(user, params)
+    changeset = Users.change_password(user, params)
 
     if changeset.valid? do
-      case Accounts.change_user_password(current, new, subject) do
+      case Users.change_user_password(current, new, subject) do
         {:ok, _updated} ->
           # A successful password change blows the old credential — log out
           # every other device immediately, both at the DB layer (cookie no
@@ -293,17 +293,17 @@ defmodule EmisarWeb.ProfileLive do
   end
 
   defp assign_profile_form(socket, user) do
-    changeset = Accounts.change_user(user, %{"full_name" => user.full_name || ""})
+    changeset = Users.change_user(user, %{"full_name" => user.full_name || ""})
     assign(socket, :profile_form, to_form(changeset, as: "profile"))
   end
 
   defp assign_email_form(socket, user) do
-    changeset = Accounts.change_user(user, %{"email" => user.email || ""})
+    changeset = Users.change_user(user, %{"email" => user.email || ""})
     assign(socket, :email_form, to_form(changeset, as: "email"))
   end
 
   defp assign_password_form(socket) do
-    changeset = Accounts.change_password(socket.assigns.current_user)
+    changeset = Users.change_password(socket.assigns.current_user)
     assign(socket, :password_form, to_form(changeset, as: "password"))
   end
 

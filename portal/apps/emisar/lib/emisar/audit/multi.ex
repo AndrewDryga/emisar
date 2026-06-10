@@ -13,7 +13,7 @@ defmodule Emisar.Audit.Multi do
   """
   alias Ecto.Multi
   alias Emisar.Audit
-  alias Emisar.Accounts.User
+  alias Emisar.Users.User
 
   @doc """
   Adds an `Audit.Event` insert step to `multi`. `attrs_fn` receives

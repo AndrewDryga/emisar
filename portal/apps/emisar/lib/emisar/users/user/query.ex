@@ -1,8 +1,8 @@
-defmodule Emisar.Accounts.User.Query do
+defmodule Emisar.Users.User.Query do
   use Emisar, :query
 
   def all,
-    do: from(users in Emisar.Accounts.User, as: :users)
+    do: from(users in Emisar.Users.User, as: :users)
 
   def not_deleted(queryable \\ all()),
     do: where(queryable, [users: u], is_nil(u.deleted_at))

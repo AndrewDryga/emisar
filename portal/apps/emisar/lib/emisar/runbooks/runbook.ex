@@ -16,7 +16,7 @@ defmodule Emisar.Runbooks.Runbook do
     field :deleted_at, :utc_datetime_usec
 
     belongs_to :account, Emisar.Accounts.Account, where: [deleted_at: nil]
-    belongs_to :created_by, Emisar.Accounts.User, where: [deleted_at: nil]
+    belongs_to :created_by, Emisar.Users.User, where: [deleted_at: nil]
 
     timestamps()
   end

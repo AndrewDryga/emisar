@@ -7,7 +7,7 @@ defmodule EmisarWeb.AccountSwitchControllerTest do
 
   use EmisarWeb.ConnCase, async: true
 
-  alias Emisar.{Accounts, Repo}
+  alias Emisar.{Accounts, Repo, Users}
   alias Emisar.Audit.Event
 
   defp second_account_for(user, attrs \\ %{}) do
@@ -52,7 +52,7 @@ defmodule EmisarWeb.AccountSwitchControllerTest do
 
       # Account belonging to someone else.
       {:ok, other_user} =
-        Accounts.register_user(%{
+        Users.register_user(%{
           email: "other-#{System.unique_integer([:positive])}@example.com",
           full_name: "Other",
           password: "very-long-password-1234"

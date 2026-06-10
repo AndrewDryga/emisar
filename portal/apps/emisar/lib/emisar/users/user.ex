@@ -1,7 +1,8 @@
-defmodule Emisar.Accounts.User do
+defmodule Emisar.Users.User do
   @moduledoc """
-  Users are identities that can sign in to the cloud UI. A user has
-  one or more `Membership`s in accounts.
+  Users are identities that can sign in to the cloud UI. Identity is
+  deliberately cross-account: a user holds one or more
+  `Emisar.Accounts.Membership`s, each joining them to a tenant.
   """
   use Emisar, :schema
 

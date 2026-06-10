@@ -28,7 +28,7 @@ defmodule Emisar.Auth.UserToken do
     field :sent_to, :string
     field :metadata, :map, default: %{}
 
-    belongs_to :user, Emisar.Accounts.User, where: [deleted_at: nil]
+    belongs_to :user, Emisar.Users.User, where: [deleted_at: nil]
 
     timestamps(type: :utc_datetime_usec, updated_at: false)
   end
@@ -141,14 +141,14 @@ defmodule Emisar.Auth.UserToken do
   All session tokens for a user, newest first. Used by the profile
   page to show "where you're currently signed in".
   """
-  def sessions_for_user_query(%Emisar.Accounts.User{id: user_id}) do
+  def sessions_for_user_query(%Emisar.Users.User{id: user_id}) do
     from t in __MODULE__,
       where: t.user_id == ^user_id and t.context == "session",
       order_by: [desc: t.inserted_at]
   end
 
   @doc "Query selecting a specific session token by `id` scoped to `user`."
-  def session_by_id_for_user_query(%Emisar.Accounts.User{id: user_id}, token_id) do
+  def session_by_id_for_user_query(%Emisar.Users.User{id: user_id}, token_id) do
     from t in __MODULE__,
       where: t.id == ^token_id and t.user_id == ^user_id and t.context == "session"
   end
@@ -158,7 +158,7 @@ defmodule Emisar.Auth.UserToken do
   matching `keep_token_digest`. Used by Profile's "sign out everywhere
   else" so the caller's current cookie keeps working.
   """
-  def other_sessions_for_user_query(%Emisar.Accounts.User{id: user_id}, keep_token_digest) do
+  def other_sessions_for_user_query(%Emisar.Users.User{id: user_id}, keep_token_digest) do
     from t in __MODULE__,
       where: t.user_id == ^user_id and t.context == "session" and t.token != ^keep_token_digest
   end

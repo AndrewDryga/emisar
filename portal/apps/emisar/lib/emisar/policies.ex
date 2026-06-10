@@ -64,7 +64,7 @@ defmodule Emisar.Policies do
 
   @doc """
   Changeset for the policy editor form (no Subject — like
-  `Accounts.change_user`). Validates the assembled `rules` map so the
+  `Users.change_user`). Validates the assembled `rules` map so the
   LiveView can render the rules-level error inline; the persisted write
   still goes through `save_rules/2`.
   """

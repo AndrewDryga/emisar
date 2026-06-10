@@ -12,7 +12,7 @@ defmodule Emisar.AuthAuditTest do
 
   import Emisar.Fixtures
 
-  alias Emisar.{Accounts, Audit, Auth, Runners}
+  alias Emisar.{Accounts, Audit, Auth, Runners, Users}
 
   defp events_of(account, event_type) do
     subject = subject_for(user_fixture(), account, role: :owner)
@@ -223,7 +223,7 @@ defmodule Emisar.AuthAuditTest do
       account: account,
       subject: subject
     } do
-      {:ok, _} = Accounts.update_user_profile(%{full_name: "New Name"}, subject)
+      {:ok, _} = Users.update_user_profile(%{full_name: "New Name"}, subject)
 
       assert [event] = events_of(account, "user.profile_updated")
       assert event.payload["full_name"] == "New Name"
@@ -236,7 +236,7 @@ defmodule Emisar.AuthAuditTest do
     } do
       new = "renamed-#{System.unique_integer()}@example.test"
 
-      {:ok, _} = Accounts.update_user_email(new, "password-with-12-chars", subject)
+      {:ok, _} = Users.update_user_email(new, "password-with-12-chars", subject)
 
       assert [event] = events_of(account, "user.email_changed")
       assert event.payload["from"] == user.email
@@ -248,7 +248,7 @@ defmodule Emisar.AuthAuditTest do
       subject: subject
     } do
       assert {:error, :invalid_current_password} =
-               Accounts.update_user_email("new@example.test", "wrong", subject)
+               Users.update_user_email("new@example.test", "wrong", subject)
 
       assert [event] = events_of(account, "user.email_change_failed")
       assert event.payload["reason"] == "invalid_current_password"
@@ -260,7 +260,7 @@ defmodule Emisar.AuthAuditTest do
       subject: subject
     } do
       {:ok, _} =
-        Accounts.change_user_password("password-with-12-chars", "new-password-12c", subject)
+        Users.change_user_password("password-with-12-chars", "new-password-12c", subject)
 
       assert [event] = events_of(account, "user.password_changed")
       assert event.actor_id == user.id
@@ -271,7 +271,7 @@ defmodule Emisar.AuthAuditTest do
       subject: subject
     } do
       assert {:error, :invalid_current_password} =
-               Accounts.change_user_password("wrong-password", "new-pw-12-char", subject)
+               Users.change_user_password("wrong-password", "new-pw-12-char", subject)
 
       assert [event] = events_of(account, "user.password_change_failed")
       assert event.payload["reason"] == "invalid_current_password"
@@ -281,7 +281,7 @@ defmodule Emisar.AuthAuditTest do
       subject: subject
     } do
       assert {:error, :password_too_short} =
-               Accounts.change_user_password("password-with-12-chars", "short", subject)
+               Users.change_user_password("password-with-12-chars", "short", subject)
     end
   end
 

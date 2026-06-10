@@ -1,7 +1,7 @@
 defmodule EmisarWeb.MagicLinkLive do
   use EmisarWeb, :live_view
 
-  alias Emisar.{Accounts, Auth, Mailers}
+  alias Emisar.{Auth, Mailers, Users}
 
   def mount(_params, _session, socket) do
     {:ok,
@@ -62,7 +62,7 @@ defmodule EmisarWeb.MagicLinkLive do
   end
 
   def handle_event("send", %{"user" => %{"email" => email}}, socket) do
-    case Accounts.fetch_user_by_email(email) do
+    case Users.fetch_user_by_email(email) do
       {:ok, user} ->
         token = Auth.issue_magic_link_token!(user)
         Mailers.UserNotifier.deliver_magic_link(user, token)
