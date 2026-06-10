@@ -147,8 +147,8 @@ defmodule Emisar.Users do
   @doc """
   Change the caller's own sign-in password after verifying the current
   one. Returns `{:ok, user} | {:error, :invalid_current_password}
-  | {:error, :passwords_must_match} | {:error, :password_too_short}
-  | {:error, %Ecto.Changeset{}}`.
+  | {:error, %Ecto.Changeset{}}` — length/confirmation problems come back
+  as changeset field errors from `User.Changeset.password/2`.
 
   Audits success (`user.password_changed`) and audit-records bad
   current-password attempts (`user.password_change_failed`) — wrong
@@ -159,41 +159,34 @@ defmodule Emisar.Users do
   so every other device should sign out. Self-service — the user is the
   subject's own actor.
   """
-  @password_min_length 12
-
   def change_user_password(current_password, new_password, %Subject{
         actor: %User{id: user_id} = user
       })
       when is_binary(current_password) and is_binary(new_password) do
-    with :ok <- ensure_password_length(new_password) do
-      User.Query.not_deleted()
-      |> User.Query.by_id(user_id)
-      |> Repo.fetch_and_update(User.Query,
-        with: fn fresh ->
-          if User.valid_password?(fresh, current_password),
-            do: User.Changeset.password(fresh, %{password: new_password}),
-            else: :invalid_current_password
-        end,
-        audit: &Audit.user_changeset(&1, "user.password_changed")
-      )
-      |> case do
-        {:error, :invalid_current_password} ->
-          # Failed-credential probe — log it standalone since the
-          # transaction rolled back without an audit row.
-          Audit.log_for_user(user, "user.password_change_failed",
-            payload: %{reason: "invalid_current_password"}
-          )
+    User.Query.not_deleted()
+    |> User.Query.by_id(user_id)
+    |> Repo.fetch_and_update(User.Query,
+      with: fn fresh ->
+        if User.valid_password?(fresh, current_password),
+          do: User.Changeset.password(fresh, %{password: new_password}),
+          else: :invalid_current_password
+      end,
+      audit: &Audit.user_changeset(&1, "user.password_changed")
+    )
+    |> case do
+      {:error, :invalid_current_password} ->
+        # Failed-credential probe — log it standalone since the
+        # transaction rolled back without an audit row.
+        Audit.log_for_user(user, "user.password_change_failed",
+          payload: %{reason: "invalid_current_password"}
+        )
 
-          {:error, :invalid_current_password}
+        {:error, :invalid_current_password}
 
-        other ->
-          other
-      end
+      other ->
+        other
     end
   end
-
-  defp ensure_password_length(p) when byte_size(p) >= @password_min_length, do: :ok
-  defp ensure_password_length(_), do: {:error, :password_too_short}
 
   # -- Form builders -------------------------------------------------------
 

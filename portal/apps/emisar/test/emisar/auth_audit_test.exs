@@ -280,8 +280,10 @@ defmodule Emisar.AuthAuditTest do
     test "change_user_password rejects passwords below the length minimum", %{
       subject: subject
     } do
-      assert {:error, :password_too_short} =
+      assert {:error, %Ecto.Changeset{} = changeset} =
                Users.change_user_password("password-with-12-chars", "short", subject)
+
+      assert "should be at least 12 character(s)" in errors_on(changeset).password
     end
   end
 
