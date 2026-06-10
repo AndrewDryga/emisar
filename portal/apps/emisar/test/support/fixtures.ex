@@ -337,6 +337,19 @@ defmodule Emisar.Fixtures do
   end
 
   @doc """
+  Auth key persisted from a caller-supplied raw secret — the seed/dev
+  bootstrap shape (`AuthKey.Changeset.create_with_secret/4`). Tests use
+  it to exercise the secret→key round-trip with a known raw value.
+  """
+  def auth_key_with_secret_fixture(raw, account_id, user_id, attrs \\ %{}) do
+    {:ok, key} =
+      Emisar.Runners.AuthKey.Changeset.create_with_secret(account_id, user_id, raw, attrs)
+      |> Repo.insert()
+
+    key
+  end
+
+  @doc """
   Test-side inspector: the unrevoked grants minted against an API key,
   newest first. Verifies `approve_request/4` side effects without
   rebuilding the Subject-gated operator surface in test setup.

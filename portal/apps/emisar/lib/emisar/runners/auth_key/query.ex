@@ -120,4 +120,12 @@ defmodule Emisar.Runners.AuthKey.Query do
   @impl Emisar.Repo.Query
   def cursor_fields,
     do: [{:auth_keys, :desc, :inserted_at}, {:auth_keys, :asc, :id}]
+
+  # created_by is a soft-delete schema — scope the preload to
+  # not_deleted() so the filter is explicit at the preload site.
+  @impl Emisar.Repo.Query
+  def preloads,
+    do: [
+      created_by: {Emisar.Users.User.Query.not_deleted(), Emisar.Users.User.Query.preloads()}
+    ]
 end

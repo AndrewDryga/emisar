@@ -68,7 +68,7 @@ defmodule Emisar.CatalogTest do
 
       assert {:ok, _runner} = Catalog.observe_state(runner, payload)
 
-      {:ok, reloaded} = Emisar.Runners.peek_runner_by_id(runner.id)
+      reloaded = Emisar.Runners.peek_runner_by_id(runner.id)
       assert reloaded.runner_version == "9.9.9"
     end
 

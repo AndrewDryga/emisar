@@ -46,7 +46,7 @@ defmodule Emisar.Workers.RunDispatchTimeout do
   # out — the "agent stuck waiting forever" failure mode.
   defp maybe_time_out_running(run, cutoff) do
     case Runners.peek_runner_by_id(run.runner_id) do
-      {:ok, runner} ->
+      %Runners.Runner{} = runner ->
         cond do
           Runners.online?(runner.account_id, runner.id) ->
             :noop
@@ -64,7 +64,7 @@ defmodule Emisar.Workers.RunDispatchTimeout do
             :noop
         end
 
-      {:error, :not_found} ->
+      nil ->
         Runs.mark_runner_unreachable(run, "Runner was removed while this run was in flight.")
     end
   end
@@ -79,7 +79,7 @@ defmodule Emisar.Workers.RunDispatchTimeout do
 
   defp maybe_time_out(run) do
     case Runners.peek_runner_by_id(run.runner_id) do
-      {:ok, runner} ->
+      %Runners.Runner{} = runner ->
         if Runners.online?(runner.account_id, runner.id) do
           # Runner's online — the run is just slow. Leave it.
           :noop
@@ -87,7 +87,7 @@ defmodule Emisar.Workers.RunDispatchTimeout do
           Runs.mark_runner_unreachable(run, unreachable_reason(runner))
         end
 
-      {:error, :not_found} ->
+      nil ->
         # Runner row vanished mid-flight (delete_runner).
         Runs.mark_runner_unreachable(
           run,

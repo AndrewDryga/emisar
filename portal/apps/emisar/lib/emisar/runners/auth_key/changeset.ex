@@ -36,6 +36,23 @@ defmodule Emisar.Runners.AuthKey.Changeset do
     |> validate_length(:description, max: 200)
   end
 
+  # Mirrors Emisar.Runners' mint size ("emkey-auth-" + 16 random chars);
+  # the round-trip test on `peek_auth_key_by_secret/1` breaks on drift.
+  @auth_key_prefix_size 27
+
+  @doc """
+  Seed/dev-bootstrap variant of `create/5` deriving prefix + hash from a
+  caller-supplied raw secret (docker-compose's fixed dev key, test
+  fixtures). Production keys MUST mint through
+  `Emisar.Runners.create_auth_key/2` — a known raw value defeats the
+  server-side randomization that makes auth keys credentials.
+  """
+  def create_with_secret(account_id, user_id, raw, attrs)
+      when is_binary(raw) and byte_size(raw) >= @auth_key_prefix_size do
+    prefix = String.slice(raw, 0, @auth_key_prefix_size)
+    create(account_id, user_id, prefix, Emisar.Crypto.hash(raw), attrs)
+  end
+
   def mint_install(account_id, user_id, prefix, hash, attrs \\ %{}) do
     %AuthKey{}
     |> cast(attrs, [:description, :group])

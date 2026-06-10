@@ -191,7 +191,7 @@ defmodule Emisar.RunnersTest do
       refute new_id == holder_id
 
       # The displaced holder is soft-deleted, not gone.
-      assert {:error, :not_found} = Runners.peek_runner_by_id(holder_id)
+      assert is_nil(Runners.peek_runner_by_id(holder_id))
 
       subject = subject_for(user, account, role: :owner)
 
@@ -246,7 +246,7 @@ defmodule Emisar.RunnersTest do
                Runners.register_via_auth_key(raw, attrs)
 
       refute second_id == first_id
-      assert {:error, :not_found} = Runners.peek_runner_by_id(first_id)
+      assert is_nil(Runners.peek_runner_by_id(first_id))
     end
 
     test "returns :over_limit when the plan cap is exceeded" do
@@ -345,7 +345,7 @@ defmodule Emisar.RunnersTest do
                Runners.create_runner(%{"name" => "edge-01", "group" => "edge"}, subject)
 
       refute runner.id == holder.id
-      assert {:error, :not_found} = Runners.peek_runner_by_id(holder.id)
+      assert is_nil(Runners.peek_runner_by_id(holder.id))
 
       {:ok, events, _} =
         Emisar.Audit.list_events(subject, filter: [event_type: ["runner.replaced"]])
@@ -362,7 +362,7 @@ defmodule Emisar.RunnersTest do
                Runners.create_runner(%{"name" => "edge-01", "group" => "edge"}, subject)
 
       assert "is already used by another runner in this account" in errors_on(changeset).name
-      assert {:ok, _still_there} = Runners.peek_runner_by_id(holder.id)
+      assert %Runner{} = Runners.peek_runner_by_id(holder.id)
     end
   end
 
@@ -550,19 +550,19 @@ defmodule Emisar.RunnersTest do
     end
   end
 
-  describe "create_auth_key_with_secret/4" do
-    test "inserts a key whose hash matches the supplied raw secret" do
+  describe "auth keys from a fixed raw secret (seed bootstrap shape)" do
+    test "the supplied raw secret round-trips through peek_auth_key_by_secret" do
       account = account_fixture()
       user = user_fixture()
       raw = "emkey-auth-dev-fixed-bootstrap-DO-NOT-USE-IN-PROD"
 
-      assert {:ok, %AuthKey{} = key} =
-               Runners.create_auth_key_with_secret(raw, account.id, user.id, %{reusable: true})
+      key = auth_key_with_secret_fixture(raw, account.id, user.id, %{reusable: true})
 
       assert key.key_prefix == String.slice(raw, 0, 27)
-      # And the lookup round-trips: presenting the raw secret resolves
-      # to the same record. This is what makes the docker-compose
-      # seeder + runner handoff work without an out-of-band copy step.
+      # The lookup round-trips: presenting the raw secret resolves to
+      # the same record. This is what makes the docker-compose seeder +
+      # runner handoff work without an out-of-band copy step — and what
+      # pins the changeset's prefix size to Runners' mint size.
       assert %AuthKey{id: id} = Runners.peek_auth_key_by_secret(raw)
       assert id == key.id
     end

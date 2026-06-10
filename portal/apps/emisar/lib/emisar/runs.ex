@@ -328,10 +328,14 @@ defmodule Emisar.Runs do
         :ok
 
       scopes ->
-        with {:ok, runner} <- Emisar.Runners.peek_runner_by_id(runner_id) do
-          if Emisar.Runners.runner_in_scope?(runner, scopes),
-            do: :ok,
-            else: {:error, :runner_out_of_scope}
+        case Emisar.Runners.peek_runner_by_id(runner_id) do
+          nil ->
+            {:error, :runner_not_found}
+
+          runner ->
+            if Emisar.Runners.runner_in_scope?(runner, scopes),
+              do: :ok,
+              else: {:error, :runner_out_of_scope}
         end
     end
   end

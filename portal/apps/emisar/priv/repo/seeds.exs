@@ -913,11 +913,12 @@ case Runners.list_auth_keys(owner_subject) do
     case System.get_env("EMISAR_DEV_FIXED_AUTH_KEY") do
       fixed when is_binary(fixed) and byte_size(fixed) >= 27 ->
         {:ok, _key} =
-          Runners.create_auth_key_with_secret(fixed, account.id, user.id, %{
+          Emisar.Runners.AuthKey.Changeset.create_with_secret(account.id, user.id, fixed, %{
             description: "Dev fixed auth key (docker-compose)",
             group: "dev-docker",
             reusable: true
           })
+          |> Repo.insert()
 
         IO.puts(IO.ANSI.green() <> "✓ Seeded dev fixed auth key" <> IO.ANSI.reset())
 

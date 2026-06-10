@@ -59,15 +59,12 @@ defmodule Emisar.Runners do
   end
 
   @doc """
-  Flat list of all runners for an account. Used by the grouped
-  RunnersLive UI which sorts the rows client-side by group; no
-  pagination needed because real fleets are small (≪ 100 runners).
-  Use `list_runners_page/2` for paginated/filterable surfaces.
-
-  Returns `{:ok, [runner], %Paginator.Metadata{}}` per the
-  context-function convention. The `:membership_id` opt restricts the
-  result to runners the membership is allowed to see (post-DB filter;
-  empty scopes = all).
+  Paginated, filterable runner listing for the RunnersLive UI —
+  `:group` / `:status` / `:membership_id` opts narrow the set (the
+  membership filter applies in the query, before pagination; empty
+  scopes = all). Returns `{:ok, [runner], %Paginator.Metadata{}}`,
+  presence-decorated. MCP paths that must see the complete fleet use
+  `list_all_runners_for_account/1` instead.
   """
   def list_runners_for_account(%Subject{} = subject, opts \\ []) do
     with :ok <-
@@ -227,14 +224,16 @@ defmodule Emisar.Runners do
     |> Repo.aggregate(:count, :id)
   end
 
-  @doc "Internal lookup by id only — used by socket-driven state updates."
+  @doc """
+  Internal nil-or-struct lookup by id (`peek` per §1.1) — socket-driven
+  state updates and sweep workers, where a vanished runner is a
+  meaningful state to branch on rather than an error.
+  """
   def peek_runner_by_id(id) do
     if Repo.valid_uuid?(id) do
       Runner.Query.not_deleted()
       |> Runner.Query.by_id(id)
-      |> Repo.fetch(Runner.Query)
-    else
-      {:error, :not_found}
+      |> Repo.peek()
     end
   end
 
@@ -323,18 +322,14 @@ defmodule Emisar.Runners do
            Auth.Authorizer.ensure_has_permissions(
              subject,
              Authorizer.manage_runners_permission()
-           ),
-         :ok <- Subject.ensure_in_account(subject, runner.account_id) do
-      Multi.new()
-      |> Multi.update(:runner, Runner.Changeset.disable(runner))
-      |> Multi.insert(:audit, fn %{runner: disabled} ->
-        Audit.Events.runner_disabled(subject, disabled)
-      end)
-      |> Repo.commit_multi()
-      |> case do
-        {:ok, %{runner: disabled}} -> {:ok, disabled}
-        {:error, reason} -> {:error, reason}
-      end
+           ) do
+      Runner.Query.not_deleted()
+      |> Runner.Query.by_id(runner.id)
+      |> Authorizer.for_subject(subject)
+      |> Repo.fetch_and_update(Runner.Query,
+        with: &Runner.Changeset.disable/1,
+        audit: fn disabled -> Audit.Events.runner_disabled(subject, disabled) end
+      )
     end
   end
 
@@ -354,16 +349,13 @@ defmodule Emisar.Runners do
          :ok <- Subject.ensure_in_account(subject, runner.account_id),
          runner = Repo.preload(runner, :account),
          :ok <- Emisar.Billing.check_limit(runner.account, :runners) do
-      Multi.new()
-      |> Multi.update(:runner, Runner.Changeset.enable(runner))
-      |> Multi.insert(:audit, fn %{runner: enabled} ->
-        Audit.Events.runner_enabled(subject, enabled)
-      end)
-      |> Repo.commit_multi()
-      |> case do
-        {:ok, %{runner: enabled}} -> {:ok, enabled}
-        {:error, reason} -> {:error, reason}
-      end
+      Runner.Query.not_deleted()
+      |> Runner.Query.by_id(runner.id)
+      |> Authorizer.for_subject(subject)
+      |> Repo.fetch_and_update(Runner.Query,
+        with: &Runner.Changeset.enable/1,
+        audit: fn enabled -> Audit.Events.runner_enabled(subject, enabled) end
+      )
     end
   end
 
@@ -377,18 +369,14 @@ defmodule Emisar.Runners do
            Auth.Authorizer.ensure_has_permissions(
              subject,
              Authorizer.manage_runners_permission()
-           ),
-         :ok <- Subject.ensure_in_account(subject, runner.account_id) do
-      Multi.new()
-      |> Multi.update(:runner, Runner.Changeset.delete(runner))
-      |> Multi.insert(:audit, fn %{runner: deleted} ->
-        Audit.Events.runner_deleted(subject, deleted)
-      end)
-      |> Repo.commit_multi()
-      |> case do
-        {:ok, %{runner: deleted}} -> {:ok, deleted}
-        {:error, reason} -> {:error, reason}
-      end
+           ) do
+      Runner.Query.not_deleted()
+      |> Runner.Query.by_id(runner.id)
+      |> Authorizer.for_subject(subject)
+      |> Repo.fetch_and_update(Runner.Query,
+        with: &Runner.Changeset.delete/1,
+        audit: fn deleted -> Audit.Events.runner_deleted(subject, deleted) end
+      )
     end
   end
 
@@ -516,8 +504,8 @@ defmodule Emisar.Runners do
 
   def mark_disconnected(runner_id, reason) when is_binary(runner_id) do
     case peek_runner_by_id(runner_id) do
-      {:ok, runner} -> mark_disconnected(runner, reason)
-      {:error, :not_found} -> {:error, :not_found}
+      %Runner{} = runner -> mark_disconnected(runner, reason)
+      nil -> {:error, :not_found}
     end
   end
 
@@ -536,7 +524,7 @@ defmodule Emisar.Runners do
 
   @doc "Subscribe the caller to this account's runner presence diffs."
   def subscribe_connections(account_id) do
-    Phoenix.PubSub.subscribe(Emisar.PubSub.Server, Presence.topic(account_id))
+    Emisar.PubSub.subscribe(Presence.topic(account_id))
   end
 
   @doc """
@@ -789,20 +777,6 @@ defmodule Emisar.Runners do
 
   defp runner_topic(account_id, runner_id), do: "account:#{account_id}:runner:#{runner_id}"
 
-  @doc false
-  # Seed/test helper that persists an auth key with a caller-supplied
-  # raw secret. Production paths MUST use `create_auth_key/2` so the
-  # secret is randomized server-side. A known raw value defeats the
-  # randomization that makes auth keys worth anything as credentials.
-  def create_auth_key_with_secret(raw, account_id, user_id, attrs \\ %{})
-      when is_binary(raw) and byte_size(raw) >= @auth_key_prefix_size do
-    prefix = String.slice(raw, 0, @auth_key_prefix_size)
-    hash = Crypto.hash(raw)
-
-    AuthKey.Changeset.create(account_id, user_id, prefix, hash, attrs)
-    |> Repo.insert()
-  end
-
   @doc """
   Mints a fresh, single-use bootstrap auth key for the dashboard's
   install command, marks it auto-generated, and evicts the oldest
@@ -825,19 +799,20 @@ defmodule Emisar.Runners do
 
       {raw, prefix, hash} = Crypto.mint("emkey-auth-", @auth_key_prefix_size)
 
-      Repo.transaction(fn ->
-        # Insert first, then evict — so the account never momentarily has
-        # zero auto-unused keys (which would race against concurrent
-        # dashboard mounts).
-        {:ok, key} =
-          AuthKey.Changeset.mint_install(account_id, user_id, prefix, hash, %{})
-          |> Repo.insert()
-
-        evict_install_ring_overflow(account_id, cap, grace_s, key.auto_generated_at)
-        {raw, key}
+      Multi.new()
+      # Insert first, then evict — so the account never momentarily has
+      # zero auto-unused keys (which would race against concurrent
+      # dashboard mounts).
+      |> Multi.insert(
+        :key,
+        AuthKey.Changeset.mint_install(account_id, user_id, prefix, hash, %{})
+      )
+      |> Multi.run(:evicted, fn _repo, %{key: key} ->
+        {:ok, evict_install_ring_overflow(account_id, cap, grace_s, key.auto_generated_at)}
       end)
+      |> Repo.commit_multi()
       |> case do
-        {:ok, {raw, key}} -> {:ok, raw, key}
+        {:ok, %{key: key}} -> {:ok, raw, key}
         {:error, reason} -> {:error, reason}
       end
     end
@@ -855,25 +830,19 @@ defmodule Emisar.Runners do
            Auth.Authorizer.ensure_has_permissions(
              subject,
              Authorizer.manage_auth_keys_permission()
-           ),
-         :ok <- Subject.ensure_in_account(subject, key.account_id) do
+           ) do
       by_user_id = Subject.actor_id(subject)
 
-      result =
-        Multi.new()
-        |> Multi.update(:key, AuthKey.Changeset.revoke(key, by_user_id))
-        |> Multi.insert(:audit, fn %{key: revoked} ->
-          Audit.Events.auth_key_revoked(subject, revoked)
-        end)
-        |> Repo.commit_multi(after_commit: &broadcast_auth_key_change(&1, "auth_key.revoked"))
-
-      case result do
-        {:ok, %{key: revoked}} ->
-          {:ok, revoked}
-
-        {:error, reason} ->
-          {:error, reason}
-      end
+      AuthKey.Query.all()
+      |> AuthKey.Query.by_id(key.id)
+      |> Authorizer.for_subject(subject)
+      |> Repo.fetch_and_update(AuthKey.Query,
+        with: &AuthKey.Changeset.revoke(&1, by_user_id),
+        audit: fn revoked -> Audit.Events.auth_key_revoked(subject, revoked) end,
+        after_commit: fn revoked ->
+          broadcast_auth_key_change(%{key: revoked}, "auth_key.revoked")
+        end
+      )
     end
   end
 

@@ -103,8 +103,8 @@ defmodule Emisar.Catalog do
 
   def observe_state(runner_id, payload) when is_binary(runner_id) do
     case Emisar.Runners.peek_runner_by_id(runner_id) do
-      {:ok, %Runner{} = runner} -> observe_state(runner, payload)
-      {:error, :not_found} -> {:error, :unknown_runner}
+      %Runner{} = runner -> observe_state(runner, payload)
+      nil -> {:error, :unknown_runner}
     end
   end
 
