@@ -348,7 +348,7 @@ defmodule Emisar.AuthAuditTest do
 
     test "mark_invitation_accepted (self-accept of existing user) audits", %{
       account: account,
-      member: _member,
+      member: member,
       membership: membership
     } do
       # Stamp the membership as pending an invitation, then accept it.
@@ -357,7 +357,7 @@ defmodule Emisar.AuthAuditTest do
         |> Ecto.Changeset.change(invitation_token: "tok-#{System.unique_integer()}")
         |> Emisar.Repo.update()
 
-      {:ok, _} = Accounts.mark_invitation_accepted(with_token)
+      {:ok, _} = Accounts.mark_invitation_accepted(with_token, member)
 
       assert [event] = events_of(account, "membership.invitation_accepted")
       assert event.payload["role"] == "operator"

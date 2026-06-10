@@ -116,7 +116,7 @@ invite_member = fn email, full_name, role ->
 
       {:ok, _u} = Accounts.update_user_profile(%{full_name: full_name}, %Subject{actor: invited})
       {:ok, confirmed} = Accounts.confirm_user(invited)
-      {:ok, _m} = Accounts.mark_invitation_accepted(m)
+      {:ok, _m} = Accounts.mark_invitation_accepted(m, invited)
       confirmed
   end
 end

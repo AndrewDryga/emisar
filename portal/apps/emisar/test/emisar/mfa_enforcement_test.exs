@@ -43,7 +43,7 @@ defmodule Emisar.MfaEnforcementTest do
         Accounts.invite_user_to_account(email, "admin", owner_subject)
 
       {:ok, _} = Accounts.confirm_user(admin_user)
-      {:ok, _} = Accounts.mark_invitation_accepted(m)
+      {:ok, _} = Accounts.mark_invitation_accepted(m, admin_user)
       admin_subject = subject_for(admin_user, account, role: :admin)
 
       assert {:error, :unauthorized} =

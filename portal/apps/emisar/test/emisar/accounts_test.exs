@@ -214,7 +214,7 @@ defmodule Emisar.AccountsTest do
 
       # No password change, no full_name set — the signed-in-as-self
       # path skips the registration changeset entirely.
-      assert {:ok, accepted} = Accounts.mark_invitation_accepted(membership)
+      assert {:ok, accepted} = Accounts.mark_invitation_accepted(membership, user)
       assert accepted.invitation_accepted_at != nil
       refute accepted.invitation_token
 
@@ -223,6 +223,27 @@ defmodule Emisar.AccountsTest do
       reloaded = Accounts.fetch_user_by_id!(user.id)
       assert reloaded.email == user.email
       assert reloaded.hashed_password == user.hashed_password
+    end
+
+    test "a different signed-in user can't accept (burn) someone else's invite" do
+      inviter = user_fixture()
+      account = account_fixture()
+      _ = membership_fixture(account_id: account.id, user_id: inviter.id, role: "owner")
+      subject = subject_for(inviter, account, role: :owner)
+
+      email = "invitee-#{System.unique_integer([:positive])}@example.test"
+
+      {:ok, %{membership: membership, invitation_token: token}} =
+        Accounts.invite_user_to_account(email, "operator", subject)
+
+      attacker = user_fixture()
+
+      assert {:error, :unauthorized} =
+               Accounts.mark_invitation_accepted(membership, attacker)
+
+      # The token survives, so the real invitee can still accept.
+      assert {:ok, found} = Accounts.fetch_invitation_by_token(token)
+      assert found.id == membership.id
     end
   end
 

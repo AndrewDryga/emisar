@@ -722,13 +722,18 @@ defmodule Emisar.Accounts do
   def fetch_invitation_by_token(_), do: {:error, :not_found}
 
   @doc """
-  Marks an invitation accepted without touching the user record.
-  Used when an already-signed-in user clicks an invite link for one of
-  their own accounts — the user already has a password + confirmed_at,
-  there's nothing to set, so we just clear the token + stamp
-  `invitation_accepted_at`.
+  Marks an invitation accepted without touching the user record. Used when
+  an already-signed-in user clicks an invite link for one of their own
+  accounts — the user already has a password + confirmed_at, so we just clear
+  the token + stamp `invitation_accepted_at`.
+
+  The accepting user must BE the invited user (the membership's `user_id`):
+  a signed-in *different* user holding the token (e.g. a forwarded link) must
+  not be able to burn the invitation. Returns `{:error, :unauthorized}`
+  otherwise. Takes the `%User{}` (not a `%Subject{}`) — the accept-invite page
+  is a public route with only `current_user` assigned, no subject.
   """
-  def mark_invitation_accepted(%Membership{} = membership) do
+  def mark_invitation_accepted(%Membership{user_id: user_id} = membership, %User{id: user_id}) do
     now = DateTime.utc_now() |> DateTime.truncate(:microsecond)
 
     Multi.new()
@@ -745,6 +750,8 @@ defmodule Emisar.Accounts do
       {:error, reason} -> {:error, reason}
     end
   end
+
+  def mark_invitation_accepted(%Membership{}, %User{}), do: {:error, :unauthorized}
 
   @doc """
   Accepts a membership invitation: sets the user's full_name + password,
