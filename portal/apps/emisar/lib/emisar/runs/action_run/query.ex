@@ -23,6 +23,9 @@ defmodule Emisar.Runs.ActionRun.Query do
   def by_idempotency_key(queryable, key),
     do: where(queryable, [runs: r], r.idempotency_key == ^key)
 
+  def by_runbook_execution_id(queryable, execution_id),
+    do: where(queryable, [runs: r], r.runbook_execution_id == ^execution_id)
+
   def by_status(queryable, status),
     do: where(queryable, [runs: r], r.status == ^status)
 
@@ -53,6 +56,9 @@ defmodule Emisar.Runs.ActionRun.Query do
 
   def ordered_by_recent(queryable \\ all()),
     do: order_by(queryable, [runs: r], desc: r.inserted_at)
+
+  def ordered_by_oldest(queryable \\ all()),
+    do: order_by(queryable, [runs: r], asc: r.inserted_at)
 
   def limit_to(queryable, n), do: limit(queryable, ^n)
 

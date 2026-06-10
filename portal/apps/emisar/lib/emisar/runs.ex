@@ -565,6 +565,20 @@ defmodule Emisar.Runs do
   end
 
   @doc """
+  Internal — the runbook engine's view of one execution: every run minted
+  by that invocation, in dispatch order. The engine derives wave state
+  (dispatched / in-flight / failed) from these rows; an execution is at
+  most steps × group-members runs, so a plain list is fine.
+  """
+  def list_runs_for_runbook_execution(account_id, execution_id) do
+    ActionRun.Query.all()
+    |> ActionRun.Query.by_account_id(account_id)
+    |> ActionRun.Query.by_runbook_execution_id(execution_id)
+    |> ActionRun.Query.ordered_by_oldest()
+    |> Repo.all()
+  end
+
+  @doc """
   Re-emits the run_action envelope onto the runner's PubSub topic. Used
   both for fresh dispatches and for the approve→send transition.
   Internal — called from `dispatch_run/2` and `Approvals.approve_request/4`.
@@ -725,49 +739,18 @@ defmodule Emisar.Runs do
 
     case transition(run, status, result_attrs(result_payload)) do
       {:ok, finished} = ok ->
-        # If this run was part of a runbook and succeeded, fire the
-        # next step. Non-success stops the runbook and the failed step
-        # surfaces on the runbook detail.
-        finished
-        |> Emisar.Runbooks.dispatch_next_step()
-        |> audit_continuation(finished)
+        # If this run was part of a runbook execution, let the engine
+        # decide whether the next wave fires — it no-ops while wave
+        # peers are still in flight and halts on any failure (the failed
+        # run surfaces on the runbook run page). Dispatch failures are
+        # audited inside the engine.
+        Emisar.Runbooks.dispatch_next_batch(finished)
 
         ok
 
       other ->
         other
     end
-  end
-
-  # `dispatch_next_step/1` either dispatches the next runbook step
-  # (`{:ok, :running | :pending_approval, _}`), no-ops when there's no
-  # continuation (`:noop`), or fails to dispatch it. The failure is either
-  # a denied-by-policy 3-tuple (`{:error, :denied_by_policy, reason}`) or a
-  # 2-tuple (`{:error, %Changeset{} | :runner_out_of_scope | :pack_untrusted
-  # | …}`). A failed continuation silently stopped the runbook with no
-  # trace — write a run-scoped audit row so operators can see WHY the chain
-  # halted mid-flight.
-  defp audit_continuation({:error, :denied_by_policy, reason}, %ActionRun{} = finished),
-    do: log_continuation_failure(finished, reason)
-
-  defp audit_continuation({:error, reason}, %ActionRun{} = finished),
-    do: log_continuation_failure(finished, reason)
-
-  defp audit_continuation(_ok_or_noop, _finished), do: :ok
-
-  defp log_continuation_failure(%ActionRun{} = finished, reason) do
-    Audit.log(finished.account_id, "runbook.step_dispatch_failed",
-      actor_kind: "system",
-      subject_kind: "action_run",
-      subject_id: finished.id,
-      subject_label: finished.action_id,
-      payload: %{
-        run_id: finished.id,
-        runbook_id: finished.runbook_id,
-        runbook_step_id: finished.runbook_step_id,
-        reason: inspect(reason)
-      }
-    )
   end
 
   defp result_attrs(payload) do

@@ -28,6 +28,42 @@ defmodule EmisarWeb.RunbookRunLiveTest do
     rb
   end
 
+  describe "dispatch + live results" do
+    test "dispatching stays on the page and streams the execution's runs in", %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      runner = Emisar.Fixtures.runner_fixture(account_id: account.id)
+      Emisar.Fixtures.action_fixture(runner: runner, action_id: "linux.uptime")
+      Emisar.Fixtures.policy_fixture(account_id: account.id)
+      rb = published_runbook!(user, account)
+
+      {:ok, lv, _html} = live(conn, ~p"/app/runbooks/#{rb.id}/run")
+
+      html = render_submit(lv, "dispatch", %{"reason" => "rolling restart"})
+      assert html =~ "Runbook dispatched"
+
+      # The engine broadcast the created run before dispatch returned; the
+      # next render has processed it into the results stream — no redirect,
+      # the operator watches results arrive on this page.
+      html = render(lv)
+      assert html =~ "Results"
+      assert html =~ "linux.uptime"
+      assert html =~ "on #{runner.name}"
+      assert html =~ ~p"/app/runs/"
+    end
+
+    test "the target select offers runner groups alongside runners", %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      runner = Emisar.Fixtures.runner_fixture(account_id: account.id)
+      rb = published_runbook!(user, account)
+
+      {:ok, _lv, html} = live(conn, ~p"/app/runbooks/#{rb.id}/run")
+
+      assert html =~ "Runner groups"
+      assert html =~ "group:#{runner.group}"
+      assert html =~ "runner:#{runner.id}"
+    end
+  end
+
   describe "dispatch validation" do
     test "a blank reason shows an inline field error, not a flash", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)

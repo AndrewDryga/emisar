@@ -79,6 +79,7 @@ defmodule Emisar.Audit.Event.Query do
     {"runbook.updated", "Runbook updated"},
     {"runbook.published", "Runbook published"},
     {"runbook.dispatched", "Runbook dispatched"},
+    {"runbook.step_dispatch_failed", "Runbook step dispatch failed"},
     {"approval.approved", "Approval granted"},
     {"approval.denied", "Approval denied"},
     {"approval.expired", "Approval expired"},
@@ -183,7 +184,8 @@ defmodule Emisar.Audit.Event.Query do
        {"runbook.created", "Created"},
        {"runbook.updated", "Updated (new version)"},
        {"runbook.published", "Published"},
-       {"runbook.dispatched", "Dispatched"}
+       {"runbook.dispatched", "Dispatched"},
+       {"runbook.step_dispatch_failed", "Step dispatch failed"}
      ]},
     {"Approval",
      [

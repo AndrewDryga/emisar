@@ -366,46 +366,45 @@ defmodule Emisar.RunsTest do
   end
 
   describe "mark_finished/2 runbook continuation" do
-    test "a continuation that fails to dispatch writes a runbook.step_dispatch_failed audit row" do
-      # Regression: mark_finished discarded dispatch_next_step's result. If
-      # step N+1 can't dispatch (denied / out-of-scope / unknown action), the
-      # runbook just stopped with NO audit event and NO signal — operators
-      # couldn't see WHY it halted. Now a failed continuation leaves a trace.
+    test "a next-wave step that fails to dispatch writes a runbook.step_dispatch_failed audit row" do
+      # Regression: a continuation that can't dispatch (denied / out-of-scope /
+      # unknown action) used to stop the runbook with NO audit event and NO
+      # signal — operators couldn't see WHY it halted. The failure must leave
+      # a trace. Six steps: the first wave of five is advertised + allowed,
+      # step 6 names an action no runner advertises, so its wave-2 dispatch
+      # returns {:error, :action_not_found}.
       {_user, account, subject} = owner_subject_fixture()
       runner = runner_fixture(account_id: account.id)
-
-      # Only step 1's action is advertised. Step 2 names an action no runner
-      # advertises, so its continuation dispatch returns {:error, :action_not_found}.
       _ = action_fixture(runner: runner, action_id: "linux.uptime", risk: "low")
       _ = policy_fixture(account_id: account.id)
+
+      good_steps =
+        for n <- 1..5, do: %{"id" => "step#{n}", "action_id" => "linux.uptime", "args" => %{}}
+
+      steps = good_steps ++ [%{"id" => "step6", "action_id" => "linux.missing", "args" => %{}}]
 
       {:ok, rb} =
         Emisar.Runbooks.create_runbook(
           %{
-            "title" => "two-step",
-            "name" => "two-step",
-            "slug" => "two-step",
-            "definition" => %{
-              "steps" => [
-                %{"id" => "step1", "action_id" => "linux.uptime", "args" => %{}},
-                %{"id" => "step2", "action_id" => "linux.missing", "args" => %{}}
-              ]
-            }
+            "title" => "six-step",
+            "name" => "six-step",
+            "slug" => "six-step",
+            "definition" => %{"steps" => steps}
           },
           subject
         )
 
-      {:ok, _rb} = Emisar.Runbooks.publish(rb, subject)
+      {:ok, rb} = Emisar.Runbooks.publish(rb, subject)
 
-      # Dispatch step 1; it's advertised + allowed, so it runs.
-      {:ok, :running, run1} =
-        Emisar.Runbooks.dispatch_runbook(rb, runner.id, "ship it", subject)
+      {:ok, %{execution_id: execution_id, runs: wave1, errors: []}} =
+        Emisar.Runbooks.dispatch_runbook(rb, {:runner, runner.id}, "ship it", subject)
 
-      assert run1.runbook_id == rb.id
-      assert run1.runbook_step_id == "step1"
+      assert length(wave1) == 5
 
-      # Step 1 finishes successfully → fires the (doomed) step 2 dispatch.
-      {:ok, _} = Runs.mark_finished(run1, %{"status" => "success", "duration_ms" => 5})
+      # The wave finishes successfully → fires the (doomed) step 6 dispatch.
+      Enum.each(wave1, fn run ->
+        {:ok, _} = Runs.mark_finished(run, %{"status" => "success", "duration_ms" => 5})
+      end)
 
       {:ok, events, _} =
         Emisar.Audit.list_events(subject, page: [limit: 50])
@@ -413,10 +412,12 @@ defmodule Emisar.RunsTest do
       failed = Enum.find(events, &(&1.event_type == "runbook.step_dispatch_failed"))
 
       assert failed, "expected a runbook.step_dispatch_failed audit row"
-      assert failed.subject_kind == "action_run"
-      assert failed.subject_id == run1.id
+      assert failed.subject_kind == "runbook"
+      assert failed.subject_id == rb.id
       assert failed.payload["runbook_id"] == rb.id
-      assert failed.payload["runbook_step_id"] == "step1"
+      assert failed.payload["runbook_execution_id"] == execution_id
+      assert failed.payload["runbook_step_id"] == "step6"
+      assert failed.payload["runner_id"] == runner.id
       assert failed.payload["reason"] =~ "action_not_found"
     end
 
@@ -442,12 +443,14 @@ defmodule Emisar.RunsTest do
           subject
         )
 
-      {:ok, _rb} = Emisar.Runbooks.publish(rb, subject)
+      {:ok, rb} = Emisar.Runbooks.publish(rb, subject)
 
-      {:ok, :running, run1} =
-        Emisar.Runbooks.dispatch_runbook(rb, runner.id, "ship it", subject)
+      {:ok, %{runs: runs, errors: []}} =
+        Emisar.Runbooks.dispatch_runbook(rb, {:runner, runner.id}, "ship it", subject)
 
-      {:ok, _} = Runs.mark_finished(run1, %{"status" => "success", "duration_ms" => 5})
+      Enum.each(runs, fn run ->
+        {:ok, _} = Runs.mark_finished(run, %{"status" => "success", "duration_ms" => 5})
+      end)
 
       {:ok, events, _} =
         Emisar.Audit.list_events(subject, page: [limit: 50])

@@ -14,6 +14,13 @@ defmodule Emisar.Runs.ActionRun do
     field :request_id, :string
     field :action_id, :string
     field :runbook_step_id, :string
+    # Groups the runs minted by one runbook invocation; the runbook engine
+    # reads wave state (dispatched / in-flight / failed) off these rows.
+    field :runbook_execution_id, Ecto.UUID
+    # The invocation's dispatch descriptor: %{"target" => %{"runner_id" |
+    # "group" => …}, "reason" => raw operator reason}. Same value on every
+    # run of the execution so a continuation can rebuild the work list.
+    field :runbook_dispatch, :map
 
     field :api_key_id, Ecto.UUID
     # MCP / API caller supplies `Idempotency-Key`; a duplicate
