@@ -433,23 +433,30 @@ defmodule Emisar.AccountsTest do
         |> Emisar.Repo.fetch!(Emisar.Accounts.Membership.Query)
 
       # Promote another owner so the actor isn't the only one — then
-      # the second owner tries to suspend the first.
+      # the second owner suspends the first.
       second_owner = user_fixture()
       _ = membership_fixture(account_id: account.id, user_id: second_owner.id, role: "owner")
       second_owner_subject = subject_for(second_owner, account, role: :owner)
       assert {:ok, _} = Accounts.suspend_membership(owner_membership, second_owner_subject)
 
-      # Now `second_owner` is the last active owner — can't be suspended.
+      # Now `second_owner` is the last ACTIVE owner — can't be suspended.
+      # (The first owner's Subject still carries owner permissions at the
+      # context layer — suspension is enforced by killing their session at
+      # the web layer — so it can drive this attempt.)
       second_owner_membership =
         Emisar.Accounts.Membership.Query.all()
         |> Emisar.Accounts.Membership.Query.by_account_and_user(account.id, second_owner.id)
         |> Emisar.Repo.fetch!(Emisar.Accounts.Membership.Query)
 
-      # Need an actor who can call — use the originally-suspended owner,
-      # but they're suspended so unauthorized. Reinstate them first.
+      assert {:error, :last_owner} =
+               Accounts.suspend_membership(second_owner_membership, owner_subject)
+
+      # Reinstating the first owner makes the second suspendable again —
+      # and pins that reinstate REALLY clears the row (a stale-struct
+      # reinstate used to silently no-op).
       {:ok, _} = Accounts.reinstate_membership(owner_membership, second_owner_subject)
 
-      assert {:error, :last_owner} =
+      assert {:ok, _} =
                Accounts.suspend_membership(second_owner_membership, owner_subject)
 
       _ = owner
