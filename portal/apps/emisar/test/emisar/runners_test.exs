@@ -613,7 +613,7 @@ defmodule Emisar.RunnersTest do
     end
 
     test "emits an auth_key.bound audit event with auto: true" do
-      {account, _user, subject} = account_with_owner_subject()
+      {_account, _user, subject} = account_with_owner_subject()
       {:ok, raw, _key} = Runners.mint_install_key(subject)
 
       {:ok, _runner, _token, _raw_token} =
@@ -624,7 +624,7 @@ defmodule Emisar.RunnersTest do
         })
 
       events =
-        Emisar.Audit.list_events(Emisar.Auth.Subject.system(account), page: [limit: 50])
+        Emisar.Audit.list_events(subject, page: [limit: 50])
         |> elem(1)
 
       bound = Enum.find(events, &(&1.event_type == "auth_key.bound"))

@@ -431,7 +431,7 @@ defmodule EmisarWeb.McpControllerTest do
       {:ok, run} =
         Emisar.Runs.fetch_run_by_id(
           run_entry["run_id"] || run_entry["id"],
-          Emisar.Auth.Subject.system(account)
+          Emisar.Fixtures.subject_for(user, account, role: :owner)
         )
 
       assert run.runner_id == runner.id
@@ -489,7 +489,7 @@ defmodule EmisarWeb.McpControllerTest do
           {:ok, r} =
             Emisar.Runs.fetch_run_by_id(
               entry["run_id"] || entry["id"],
-              Emisar.Auth.Subject.system(account)
+              Emisar.Fixtures.subject_for(user, account, role: :owner)
             )
 
           r.runner_id
@@ -843,7 +843,10 @@ defmodule EmisarWeb.McpControllerTest do
       run_id = run_id_of(run_entry)
 
       {:ok, run} =
-        Emisar.Runs.fetch_run_by_id(run_id, Emisar.Auth.Subject.system(account))
+        Emisar.Runs.fetch_run_by_id(
+          run_id,
+          Emisar.Fixtures.subject_for(user, account, role: :owner)
+        )
 
       assert run.args == %{"path" => "/tmp/marker"}
       refute Map.has_key?(run.args, "idempotency_key")
@@ -1043,7 +1046,11 @@ defmodule EmisarWeb.McpControllerTest do
         ]
       )
 
-      {:ok, run} = Emisar.Runs.fetch_run_by_id(run.id, Emisar.Auth.Subject.system(account))
+      {:ok, run} =
+        Emisar.Runs.fetch_run_by_id(
+          run.id,
+          Emisar.Fixtures.subject_for(user, account, role: :owner)
+        )
 
       {:ok, _} =
         Emisar.Runs.append_event(run, %{

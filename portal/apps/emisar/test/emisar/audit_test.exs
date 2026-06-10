@@ -4,7 +4,6 @@ defmodule Emisar.AuditTest do
   import Emisar.Fixtures
 
   alias Emisar.Audit
-  alias Emisar.Auth.Subject
 
   setup do
     # Each test gets a clean process; metadata stash never bleeds
@@ -149,6 +148,7 @@ defmodule Emisar.AuditTest do
   describe "list_events/2 (paginated + filterable)" do
     test "page size + Next cursor walk through every row in order" do
       account = account_fixture()
+      subject = subject_for(user_fixture(), account, role: :owner)
 
       for i <- 1..7 do
         {:ok, _} =
@@ -160,18 +160,18 @@ defmodule Emisar.AuditTest do
 
       # First page of 3 — Next cursor points to the rest.
       assert {:ok, page1, %{next_page_cursor: cursor, count: 7}} =
-               Audit.list_events(Subject.system(account), page: [limit: 3])
+               Audit.list_events(subject, page: [limit: 3])
 
       assert length(page1) == 3
       assert is_binary(cursor)
 
       {:ok, page2, %{next_page_cursor: cursor2}} =
-        Audit.list_events(Subject.system(account), page: [cursor: cursor, limit: 3])
+        Audit.list_events(subject, page: [cursor: cursor, limit: 3])
 
       assert length(page2) == 3
 
       {:ok, page3, %{next_page_cursor: nil}} =
-        Audit.list_events(Subject.system(account), page: [cursor: cursor2, limit: 3])
+        Audit.list_events(subject, page: [cursor: cursor2, limit: 3])
 
       # Last page tail — 7 - 3 - 3 = 1 row.
       assert length(page3) == 1
@@ -183,6 +183,7 @@ defmodule Emisar.AuditTest do
 
     test "filter list narrows to matching event_types only" do
       account = account_fixture()
+      subject = subject_for(user_fixture(), account, role: :owner)
 
       # Use real known event_type values — the filter now validates
       # against `Event.Query.known_event_type_values/0` so the UI
@@ -192,7 +193,7 @@ defmodule Emisar.AuditTest do
       {:ok, _} = Audit.log(account.id, "user.invited", actor_kind: "user")
 
       {:ok, rows, %{count: 2}} =
-        Audit.list_events(Subject.system(account), filter: [event_type: ["user.invited"]])
+        Audit.list_events(subject, filter: [event_type: ["user.invited"]])
 
       assert length(rows) == 2
       assert Enum.all?(rows, &(&1.event_type == "user.invited"))
@@ -200,13 +201,14 @@ defmodule Emisar.AuditTest do
 
     test "actor_kind list filter accepts a list of kinds" do
       account = account_fixture()
+      subject = subject_for(user_fixture(), account, role: :owner)
 
       {:ok, _} = Audit.log(account.id, "x", actor_kind: "user")
       {:ok, _} = Audit.log(account.id, "x", actor_kind: "api_key")
       {:ok, _} = Audit.log(account.id, "x", actor_kind: "system")
 
       {:ok, rows, _} =
-        Audit.list_events(Subject.system(account), filter: [actor_kind: ["user", "api_key"]])
+        Audit.list_events(subject, filter: [actor_kind: ["user", "api_key"]])
 
       assert length(rows) == 2
       assert Enum.all?(rows, &(&1.actor_kind in ["user", "api_key"]))
@@ -214,13 +216,15 @@ defmodule Emisar.AuditTest do
 
     test "invalid cursor surfaces an error rather than returning random rows" do
       account = account_fixture()
+      subject = subject_for(user_fixture(), account, role: :owner)
 
       assert {:error, :invalid_cursor} =
-               Audit.list_events(Subject.system(account), page: [cursor: "garbage"])
+               Audit.list_events(subject, page: [cursor: "garbage"])
     end
 
     test "hide_noise filter excludes the canonical noisy event types" do
       account = account_fixture()
+      subject = subject_for(user_fixture(), account, role: :owner)
 
       # One of each: 2 noisy types + 2 operator-facing types.
       {:ok, _} = Audit.log(account.id, "policy.evaluated", actor_kind: "system")
@@ -229,7 +233,7 @@ defmodule Emisar.AuditTest do
       {:ok, _} = Audit.log(account.id, "user.invited", actor_kind: "user")
 
       {:ok, rows, %{count: 2}} =
-        Audit.list_events(Subject.system(account), filter: [hide_noise: true])
+        Audit.list_events(subject, filter: [hide_noise: true])
 
       kept = Enum.map(rows, & &1.event_type) |> Enum.sort()
       assert kept == ["approval.approved", "user.invited"]
@@ -237,10 +241,11 @@ defmodule Emisar.AuditTest do
 
     test "hide_noise off (default) keeps everything" do
       account = account_fixture()
+      subject = subject_for(user_fixture(), account, role: :owner)
       {:ok, _} = Audit.log(account.id, "policy.evaluated", actor_kind: "system")
       {:ok, _} = Audit.log(account.id, "approval.approved", actor_kind: "user")
 
-      {:ok, rows, %{count: 2}} = Audit.list_events(Subject.system(account))
+      {:ok, rows, %{count: 2}} = Audit.list_events(subject)
       assert length(rows) == 2
     end
   end

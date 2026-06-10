@@ -148,12 +148,12 @@ defmodule Emisar.RunnerScopesTest do
                    requested_by_id: user.id,
                    requested_by_membership_id: membership.id
                  },
-                 Emisar.Auth.Subject.system(account)
+                 subject
                )
     end
 
     test "no membership_id passed = bypasses the check (MCP/system path)" do
-      {account, _user, _subject} = account_with_owner()
+      {account, _user, subject} = account_with_owner()
       runner = runner_fixture(account_id: account.id, group: "dba")
 
       # No `requested_by_membership_id` → skips scope check entirely.
@@ -167,7 +167,7 @@ defmodule Emisar.RunnerScopesTest do
                    action_id: "x.y",
                    reason: "test"
                  },
-                 Emisar.Auth.Subject.system(account)
+                 subject
                )
     end
   end

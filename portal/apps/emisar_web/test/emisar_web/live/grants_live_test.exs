@@ -135,7 +135,7 @@ defmodule EmisarWeb.GrantsLiveTest do
     assert reloaded.revoked_at != nil
 
     assert Enum.any?(
-             Audit.list_events(Emisar.Auth.Subject.system(account), page: [limit: 50]) |> elem(1),
+             Audit.list_events(owner_subject(user, account), page: [limit: 50]) |> elem(1),
              &(&1.event_type == "approval.grant_revoked" and &1.subject_id == g.id)
            )
   end

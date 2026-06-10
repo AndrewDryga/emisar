@@ -514,7 +514,7 @@ defmodule Emisar.AccountsTest do
       assert {:ok, [], _} = Emisar.Auth.list_sessions_for_user(target_user)
 
       events =
-        Emisar.Audit.list_events(Emisar.Auth.Subject.system(account), page: [limit: 10])
+        Emisar.Audit.list_events(owner_subject, page: [limit: 10])
         |> elem(1)
 
       assert Enum.any?(events, &(&1.event_type == "user.password_reset_forced"))
@@ -550,13 +550,12 @@ defmodule Emisar.AccountsTest do
       assert length(memberships) == 2
     end
 
-    test "a :system subject is scoped to the given account, not every account" do
+    test "list_account_memberships/2 (system fan-out read) is scoped to the given account" do
       {_owner_a, account_a, _} = owner_subject_fixture()
       {_owner_b, account_b, _} = owner_subject_fixture()
       _other = membership_fixture(account_id: account_b.id)
 
-      assert {:ok, memberships, _} =
-               Accounts.list_memberships_for_account(account_a, Emisar.Auth.Subject.system())
+      assert {:ok, memberships, _} = Accounts.list_account_memberships(account_a.id)
 
       assert memberships |> Enum.map(& &1.account_id) |> Enum.uniq() == [account_a.id]
     end

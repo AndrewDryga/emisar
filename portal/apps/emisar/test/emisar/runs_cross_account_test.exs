@@ -29,14 +29,17 @@ defmodule Emisar.RunsCrossAccountTest do
         requested_by_id: user.id
       }
 
+      subject = subject_for(user_fixture(), account_a, role: :owner)
+
       assert {:error, :runner_not_found} =
-               Runs.dispatch_run(attrs, Emisar.Auth.Subject.system(account_a))
+               Runs.dispatch_run(attrs, subject)
     end
 
     test "rejects a missing runner_id" do
       account = account_fixture()
       _ = policy_fixture(account_id: account.id)
       user = user_fixture()
+      subject = subject_for(user_fixture(), account, role: :owner)
 
       assert {:error, :runner_required} =
                Runs.dispatch_run(
@@ -45,7 +48,7 @@ defmodule Emisar.RunsCrossAccountTest do
                    source: "operator",
                    requested_by_id: user.id
                  },
-                 Emisar.Auth.Subject.system(account)
+                 subject
                )
     end
 
@@ -68,7 +71,7 @@ defmodule Emisar.RunsCrossAccountTest do
                    source: "operator",
                    requested_by_id: user.id
                  },
-                 Emisar.Auth.Subject.system(account)
+                 subject
                )
     end
   end

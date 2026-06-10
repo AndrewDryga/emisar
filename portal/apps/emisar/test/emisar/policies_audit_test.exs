@@ -4,7 +4,6 @@ defmodule Emisar.PoliciesAuditTest do
   import Emisar.Fixtures
 
   alias Emisar.{Audit, Policies}
-  alias Emisar.Auth.Subject
 
   describe "policy.updated audit payload" do
     setup do
@@ -23,7 +22,6 @@ defmodule Emisar.PoliciesAuditTest do
 
     test "captures before/after snapshots", %{
       user: user,
-      account: account,
       subject: subject,
       policy: policy
     } do
@@ -43,7 +41,7 @@ defmodule Emisar.PoliciesAuditTest do
       {:ok, updated} = Policies.update_rules(policy, new_rules, subject)
 
       {:ok, [event], _} =
-        Audit.list_events(Subject.system(account), filter: [event_type: ["policy.updated"]])
+        Audit.list_events(subject, filter: [event_type: ["policy.updated"]])
 
       assert event.actor_id == user.id
       assert is_map(event.payload)
@@ -57,7 +55,7 @@ defmodule Emisar.PoliciesAuditTest do
       assert updated.vsn == policy.vsn + 1
     end
 
-    test "diff identifies tier flips", %{subject: subject, account: account, policy: policy} do
+    test "diff identifies tier flips", %{subject: subject, policy: policy} do
       new_rules =
         Policies.default_rules()
         |> Map.update!("defaults", &Map.put(&1, "critical", "require_approval"))
@@ -65,7 +63,7 @@ defmodule Emisar.PoliciesAuditTest do
       {:ok, _} = Policies.update_rules(policy, new_rules, subject)
 
       {:ok, [event], _} =
-        Audit.list_events(Subject.system(account), filter: [event_type: ["policy.updated"]])
+        Audit.list_events(subject, filter: [event_type: ["policy.updated"]])
 
       assert event.payload["changes"]["defaults"]["critical"] ==
                %{"from" => "deny", "to" => "require_approval"}
@@ -75,7 +73,6 @@ defmodule Emisar.PoliciesAuditTest do
 
     test "diff identifies override add / remove / change", %{
       subject: subject,
-      account: account,
       policy: policy
     } do
       starting =
@@ -99,7 +96,7 @@ defmodule Emisar.PoliciesAuditTest do
       {:ok, _} = Policies.update_rules(policy, next, subject)
 
       {:ok, events, _} =
-        Audit.list_events(Subject.system(account), filter: [event_type: ["policy.updated"]])
+        Audit.list_events(subject, filter: [event_type: ["policy.updated"]])
 
       latest = hd(events)
       changes = latest.payload["changes"]["overrides"]

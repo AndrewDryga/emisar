@@ -13,11 +13,12 @@ defmodule Emisar.AuthAuditTest do
   import Emisar.Fixtures
 
   alias Emisar.{Accounts, Audit, Auth, Runners}
-  alias Emisar.Auth.Subject
 
   defp events_of(account, event_type) do
+    subject = subject_for(user_fixture(), account, role: :owner)
+
     {:ok, events, _} =
-      Audit.list_events(Subject.system(account), filter: [event_type: [event_type]])
+      Audit.list_events(subject, filter: [event_type: [event_type]])
 
     events
   end

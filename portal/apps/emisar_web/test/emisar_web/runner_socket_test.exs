@@ -2,7 +2,6 @@ defmodule EmisarWeb.RunnerSocketTest do
   use EmisarWeb.ConnCase, async: true
 
   alias Emisar.{Fixtures, Repo, Runners, Runs}
-  alias Emisar.Auth.Subject
   alias Emisar.Runners.Presence
   alias Emisar.Runs.ActionRun
   alias EmisarWeb.RunnerSocket
@@ -84,12 +83,13 @@ defmodule EmisarWeb.RunnerSocketTest do
       _ = Fixtures.action_fixture(runner: runner)
       _ = Fixtures.policy_fixture(account_id: account.id, created_by_id: user.id)
       {_raw, token} = Runners.mint_runner_token(runner)
+      subject = Emisar.Fixtures.subject_for(user, account, role: :owner)
 
-      %{account: account, runner: runner, token: token}
+      %{account: account, runner: runner, token: token, subject: subject}
     end
 
     test "a connected runner reads online and receives dispatched actions",
-         %{account: account, runner: runner, token: token} do
+         %{account: account, runner: runner, token: token, subject: subject} do
       # Bring the socket up through the production init path: the test
       # process *becomes* the runner socket — tracked in presence AND
       # subscribed to its cloud→runner delivery topic.
@@ -100,7 +100,7 @@ defmodule EmisarWeb.RunnerSocketTest do
       # Dispatch, and assert the run_action envelope actually reaches the
       # socket process — the "messages weren't delivered" symptom.
       {:ok, :running, run} =
-        Runs.dispatch_run(dispatch_attrs(account, runner), Subject.system(account))
+        Runs.dispatch_run(dispatch_attrs(account, runner), subject)
 
       assert_receive {:cloud_to_runner, %{"type" => "run_action", "request_id" => req_id}}, 1_000
       assert req_id == run.request_id
@@ -113,11 +113,11 @@ defmodule EmisarWeb.RunnerSocketTest do
     end
 
     test "a run is timed out only after its runner drops off presence",
-         %{account: account, runner: runner, token: token} do
+         %{account: account, runner: runner, token: token, subject: subject} do
       assert {:ok, _state} = RunnerSocket.init(%{token: token, runner: runner})
 
       {:ok, :running, run} =
-        Runs.dispatch_run(dispatch_attrs(account, runner), Subject.system(account))
+        Runs.dispatch_run(dispatch_attrs(account, runner), subject)
 
       assert_receive {:cloud_to_runner, _}, 1_000
 

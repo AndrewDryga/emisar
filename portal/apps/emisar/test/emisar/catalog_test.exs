@@ -32,7 +32,7 @@ defmodule Emisar.CatalogTest do
     test "upserts pack_versions" do
       runner = runner_fixture()
       account = Emisar.Accounts.fetch_account_by_id!(runner.account_id)
-      system = Emisar.Auth.Subject.system(account)
+      subject = subject_for(user_fixture(), account, role: :owner)
 
       # No library baseline for linux-core@1.0 (we ship 0.3.0), so this
       # lands as pending with the advertised hash sitting in pending_hash.
@@ -50,11 +50,11 @@ defmodule Emisar.CatalogTest do
                   pending_hash: "abc",
                   trust_state: "pending"
                 }
-              ], _meta} = Catalog.list_pack_versions(system)
+              ], _meta} = Catalog.list_pack_versions(subject)
 
       # Idempotent — same payload should not duplicate.
       assert {:ok, _runner} = Catalog.observe_state(runner, payload)
-      assert {:ok, [_], _meta} = Catalog.list_pack_versions(system)
+      assert {:ok, [_], _meta} = Catalog.list_pack_versions(subject)
     end
 
     test "commits the runner-row facts even when the catalog sync raises" do
@@ -82,7 +82,7 @@ defmodule Emisar.CatalogTest do
       # still upsert the packs/actions in the same advertisement.
       runner = runner_fixture()
       account = Emisar.Accounts.fetch_account_by_id!(runner.account_id)
-      system = Emisar.Auth.Subject.system(account)
+      subject = subject_for(user_fixture(), account, role: :owner)
 
       payload =
         state_payload(
@@ -95,7 +95,7 @@ defmodule Emisar.CatalogTest do
 
       # The catalog sync below the failed row-update still ran.
       assert {:ok, [%RunnerAction{action_id: "linux.uptime"}], _} =
-               Catalog.list_actions_for_runner(runner.id, system)
+               Catalog.list_actions_for_runner(runner.id, subject)
     end
   end
 
@@ -198,14 +198,14 @@ defmodule Emisar.CatalogTest do
     test "upserts runner_actions" do
       runner = runner_fixture()
       account = Emisar.Accounts.fetch_account_by_id!(runner.account_id)
-      system = Emisar.Auth.Subject.system(account)
+      subject = subject_for(user_fixture(), account, role: :owner)
 
       payload =
         state_payload(actions: [action("linux.uptime"), action("linux.df", risk: "medium")])
 
       assert {:ok, _runner} = Catalog.observe_state(runner, payload)
 
-      {:ok, actions, _} = Catalog.list_actions_for_runner(runner.id, system)
+      {:ok, actions, _} = Catalog.list_actions_for_runner(runner.id, subject)
       assert length(actions) == 2
       assert Enum.any?(actions, &(&1.action_id == "linux.uptime" and &1.risk == "low"))
       assert Enum.any?(actions, &(&1.action_id == "linux.df" and &1.risk == "medium"))
@@ -214,7 +214,7 @@ defmodule Emisar.CatalogTest do
     test "prunes actions no longer advertised" do
       runner = runner_fixture()
       account = Emisar.Accounts.fetch_account_by_id!(runner.account_id)
-      system = Emisar.Auth.Subject.system(account)
+      subject = subject_for(user_fixture(), account, role: :owner)
 
       _ =
         Catalog.observe_state(
@@ -222,13 +222,13 @@ defmodule Emisar.CatalogTest do
           state_payload(actions: [action("a"), action("b"), action("c")])
         )
 
-      assert {:ok, actions, _} = Catalog.list_actions_for_runner(runner.id, system)
+      assert {:ok, actions, _} = Catalog.list_actions_for_runner(runner.id, subject)
       assert length(actions) == 3
 
       _ = Catalog.observe_state(runner, state_payload(actions: [action("a")]))
 
       assert {:ok, [%RunnerAction{action_id: "a"}], _} =
-               Catalog.list_actions_for_runner(runner.id, system)
+               Catalog.list_actions_for_runner(runner.id, subject)
     end
 
     test "updates the runner row's hostname/labels/version" do
@@ -251,13 +251,13 @@ defmodule Emisar.CatalogTest do
     test "looks up the runner by id" do
       runner = runner_fixture()
       account = Emisar.Accounts.fetch_account_by_id!(runner.account_id)
-      system = Emisar.Auth.Subject.system(account)
+      subject = subject_for(user_fixture(), account, role: :owner)
 
       assert {:ok, _runner} =
                Catalog.observe_state(runner.id, state_payload(actions: [action("a")]))
 
       assert {:ok, [%RunnerAction{action_id: "a"}], _} =
-               Catalog.list_actions_for_runner(runner.id, system)
+               Catalog.list_actions_for_runner(runner.id, subject)
     end
 
     test "returns {:error, :unknown_runner} for an unknown id" do
@@ -269,7 +269,7 @@ defmodule Emisar.CatalogTest do
     test "unknown pack first sight → pending, awaits operator approval" do
       runner = runner_fixture()
       account = Emisar.Accounts.fetch_account_by_id!(runner.account_id)
-      system = Emisar.Auth.Subject.system(account)
+      subject = subject_for(user_fixture(), account, role: :owner)
 
       payload =
         state_payload(
@@ -278,7 +278,7 @@ defmodule Emisar.CatalogTest do
 
       assert {:ok, _} = Catalog.observe_state(runner, payload)
 
-      assert {:ok, [pv], _} = Catalog.list_pack_versions(system)
+      assert {:ok, [pv], _} = Catalog.list_pack_versions(subject)
       assert pv.trust_state == "pending"
       assert pv.hash == nil
       assert pv.pending_hash == "sha256:custom"
@@ -287,7 +287,7 @@ defmodule Emisar.CatalogTest do
     test "custom pack: re-advertising the same pending hash is a touch (no drift event)" do
       runner = runner_fixture()
       account = Emisar.Accounts.fetch_account_by_id!(runner.account_id)
-      system = Emisar.Auth.Subject.system(account)
+      subject = subject_for(user_fixture(), account, role: :owner)
 
       payload =
         state_payload(packs: %{"custom" => %{"version" => "1.0", "hash" => "sha256:H1"}})
@@ -295,7 +295,7 @@ defmodule Emisar.CatalogTest do
       assert {:ok, _} = Catalog.observe_state(runner, payload)
       assert {:ok, _} = Catalog.observe_state(runner, payload)
 
-      assert {:ok, [pv], _} = Catalog.list_pack_versions(system)
+      assert {:ok, [pv], _} = Catalog.list_pack_versions(subject)
       assert pv.trust_state == "pending"
       assert pv.pending_hash == "sha256:H1"
     end
@@ -303,7 +303,6 @@ defmodule Emisar.CatalogTest do
     test "hash change after operator-trust → pending again" do
       {_user, account, subject} = owner_subject_fixture()
       runner = runner_fixture(account_id: account.id)
-      system = Emisar.Auth.Subject.system(account)
 
       assert {:ok, _} =
                Catalog.observe_state(
@@ -313,7 +312,7 @@ defmodule Emisar.CatalogTest do
 
       # Custom pack lands pending — operator approves it before the
       # drift scenario is meaningful.
-      {:ok, [pv], _} = Catalog.list_pack_versions(system)
+      {:ok, [pv], _} = Catalog.list_pack_versions(subject)
       assert {:ok, _} = Catalog.trust_pack_version(pv.id, subject)
 
       assert {:ok, _} =
@@ -322,7 +321,7 @@ defmodule Emisar.CatalogTest do
                  state_payload(packs: %{"x" => %{"version" => "1.0", "hash" => "sha256:H2"}})
                )
 
-      assert {:ok, [pv], _} = Catalog.list_pack_versions(system)
+      assert {:ok, [pv], _} = Catalog.list_pack_versions(subject)
       assert pv.trust_state == "pending"
       assert pv.hash == "sha256:H1"
       assert pv.pending_hash == "sha256:H2"
@@ -337,7 +336,7 @@ defmodule Emisar.CatalogTest do
       account = account_fixture()
       runner_a = runner_fixture(account_id: account.id)
       runner_b = runner_fixture(account_id: account.id)
-      system = Emisar.Auth.Subject.system(account)
+      subject = subject_for(user_fixture(), account, role: :owner)
 
       # Use a pack id we know has NO library baseline so the TOFU path
       # is exercised (baseline-match would auto-pin without testing the
@@ -360,7 +359,7 @@ defmodule Emisar.CatalogTest do
       assert Enum.all?(results, &match?({:ok, _}, &1)),
              "one of the concurrent observers crashed: #{inspect(results)}"
 
-      assert {:ok, [pv], _} = Catalog.list_pack_versions(system)
+      assert {:ok, [pv], _} = Catalog.list_pack_versions(subject)
       assert pv.pack_id == "raceduck-custom-pack"
       assert pv.version == "0.3.0"
       # Custom pack — no library baseline, so it lands pending and
@@ -374,17 +373,16 @@ defmodule Emisar.CatalogTest do
     test "advertising the trusted hash again after approval → no-op (just touches last_seen)" do
       {_user, account, subject} = owner_subject_fixture()
       runner = runner_fixture(account_id: account.id)
-      system = Emisar.Auth.Subject.system(account)
 
       payload =
         state_payload(packs: %{"x" => %{"version" => "1.0", "hash" => "sha256:H1"}})
 
       assert {:ok, _} = Catalog.observe_state(runner, payload)
-      {:ok, [pv], _} = Catalog.list_pack_versions(system)
+      {:ok, [pv], _} = Catalog.list_pack_versions(subject)
       assert {:ok, _} = Catalog.trust_pack_version(pv.id, subject)
       assert {:ok, _} = Catalog.observe_state(runner, payload)
 
-      assert {:ok, [pv], _} = Catalog.list_pack_versions(system)
+      assert {:ok, [pv], _} = Catalog.list_pack_versions(subject)
       assert pv.trust_state == "trusted"
     end
   end
@@ -504,7 +502,6 @@ defmodule Emisar.CatalogTest do
     test "trusted state → :ok" do
       {_user, account, subject} = owner_subject_fixture()
       runner = runner_fixture(account_id: account.id)
-      system = Emisar.Auth.Subject.system(account)
 
       _ =
         Catalog.observe_state(
@@ -516,10 +513,10 @@ defmodule Emisar.CatalogTest do
         )
 
       # Custom pack lands pending — operator approves before dispatch.
-      {:ok, [pv], _} = Catalog.list_pack_versions(system)
+      {:ok, [pv], _} = Catalog.list_pack_versions(subject)
       assert {:ok, _} = Catalog.trust_pack_version(pv.id, subject)
 
-      {:ok, [act], _} = Catalog.list_actions_for_runner(runner.id, system)
+      {:ok, [act], _} = Catalog.list_actions_for_runner(runner.id, subject)
       assert :ok = Catalog.check_pack_trusted(act)
     end
 
@@ -545,8 +542,8 @@ defmodule Emisar.CatalogTest do
         )
 
       account = Emisar.Accounts.fetch_account_by_id!(runner.account_id)
-      system = Emisar.Auth.Subject.system(account)
-      {:ok, [act], _} = Catalog.list_actions_for_runner(runner.id, system)
+      subject = subject_for(user_fixture(), account, role: :owner)
+      {:ok, [act], _} = Catalog.list_actions_for_runner(runner.id, subject)
       assert {:error, :pack_untrusted, _pv} = Catalog.check_pack_trusted(act)
     end
 

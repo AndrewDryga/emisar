@@ -130,7 +130,7 @@ defmodule Emisar.ApprovalsTest do
                Approvals.approve_request(req, subject, "lgtm")
 
       assert Enum.any?(
-               Audit.list_events(Emisar.Auth.Subject.system(account), page: [limit: 50])
+               Audit.list_events(subject, page: [limit: 50])
                |> elem(1),
                &(&1.event_type == "approval.approved")
              )
@@ -172,7 +172,7 @@ defmodule Emisar.ApprovalsTest do
                Approvals.deny_request(req, subject, "not now")
 
       assert Enum.any?(
-               Audit.list_events(Emisar.Auth.Subject.system(account), page: [limit: 50])
+               Audit.list_events(subject, page: [limit: 50])
                |> elem(1),
                &(&1.event_type == "approval.denied")
              )
@@ -256,8 +256,8 @@ defmodule Emisar.ApprovalsTest do
       # disappears rather than crashing the LV mount.
       {account, _} = run_fixture()
 
-      # A `Subject.system/0` actor has every permission, so to test the
-      # rejection branch we craft an empty-permissions subject directly.
+      # To test the rejection branch we craft an empty-permissions
+      # subject directly.
       no_perms = %Emisar.Auth.Subject{
         account: account,
         role: :viewer,
@@ -625,7 +625,7 @@ defmodule Emisar.ApprovalsTest do
       # The approval.approved audit row was inside the rolled-back
       # transaction, so it never committed.
       {:ok, events, _} =
-        Audit.list_events(Emisar.Auth.Subject.system(account), page: [limit: 50])
+        Audit.list_events(subject, page: [limit: 50])
 
       refute Enum.any?(events, &(&1.event_type == "approval.approved"))
     end
@@ -664,6 +664,7 @@ defmodule Emisar.ApprovalsTest do
     test "transitions pending requests past expires_at to expired + cancels the run" do
       {account, run} = run_fixture()
       user = user_fixture()
+      subject = subject_for(user_fixture(), account, role: :owner)
       {:ok, req} = Approvals.create_request(run, user.id, "x")
 
       # Move the request's expiry into the past.
@@ -689,7 +690,7 @@ defmodule Emisar.ApprovalsTest do
       assert reloaded_run.status == "cancelled"
 
       assert Enum.any?(
-               Emisar.Audit.list_events(Emisar.Auth.Subject.system(account), page: [limit: 50])
+               Emisar.Audit.list_events(subject, page: [limit: 50])
                |> elem(1),
                &(&1.event_type == "approval.expired" and &1.subject_id == req.id)
              )
@@ -770,7 +771,7 @@ defmodule Emisar.ApprovalsTest do
       }
 
       assert {:ok, :pending_approval, run1} =
-               Runs.dispatch_run(attrs, Emisar.Auth.Subject.system(account))
+               Runs.dispatch_run(attrs, subject)
 
       req =
         Request.Query.all() |> Request.Query.by_run_id(run1.id) |> Repo.fetch!(Request.Query)
@@ -780,7 +781,7 @@ defmodule Emisar.ApprovalsTest do
 
       assert_receive {:cloud_to_runner, %{"type" => "run_action"}}, 500
 
-      assert {:ok, :running, run2} = Runs.dispatch_run(attrs, Emisar.Auth.Subject.system(account))
+      assert {:ok, :running, run2} = Runs.dispatch_run(attrs, subject)
       assert run2.id != run1.id
       refute Request.Query.all() |> Request.Query.by_run_id(run2.id) |> Repo.peek()
       assert_receive {:cloud_to_runner, %{"type" => "run_action"}}, 500
@@ -827,7 +828,7 @@ defmodule Emisar.ApprovalsTest do
       }
 
       {:ok, :pending_approval, run1} =
-        Runs.dispatch_run(attrs, Emisar.Auth.Subject.system(account))
+        Runs.dispatch_run(attrs, subject)
 
       req =
         Request.Query.all() |> Request.Query.by_run_id(run1.id) |> Repo.fetch!(Request.Query)
@@ -835,7 +836,7 @@ defmodule Emisar.ApprovalsTest do
       {:ok, _} = Approvals.approve_request(req, subject, nil, duration: :once)
 
       assert {:ok, :pending_approval, _run2} =
-               Runs.dispatch_run(attrs, Emisar.Auth.Subject.system(account))
+               Runs.dispatch_run(attrs, subject)
     end
   end
 end

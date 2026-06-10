@@ -117,7 +117,7 @@ defmodule EmisarWeb.AuthFlowTest do
     end
 
     test "OTP submitted against a valid pending marker finishes sign-in WITHOUT asking for the password again",
-         %{conn: conn, secret: secret, account: account} do
+         %{conn: conn, secret: secret, account: account, user: user} do
       # Step 1: password verifies, pending marker set.
       conn =
         post(conn, ~p"/sign_in", %{
@@ -140,7 +140,7 @@ defmodule EmisarWeb.AuthFlowTest do
       # And user.signed_in is audit-logged with the MFA method.
       {:ok, events, _} =
         Emisar.Audit.list_events(
-          Emisar.Auth.Subject.system(account),
+          Emisar.Fixtures.subject_for(user, account, role: :owner),
           filter: [event_type: ["user.signed_in"]]
         )
 
