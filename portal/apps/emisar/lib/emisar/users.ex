@@ -39,6 +39,10 @@ defmodule Emisar.Users do
   @doc """
   Batch resolver returning `%{user_id => display_name}` for the
   supplied ids. Falls back to email when full_name is blank.
+
+  Intentionally subjectless — the caller (Audit's reference resolver)
+  already authorized an account-scoped listing and only projects labels
+  for ids it trusts.
   """
   def user_labels_for_ids(ids) when is_list(ids) do
     case Enum.reject(ids, &is_nil/1) |> Enum.uniq() do

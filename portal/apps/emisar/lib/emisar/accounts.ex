@@ -870,6 +870,9 @@ defmodule Emisar.Accounts do
   the user since the invitation acceptance proves they own the email.
 
   Wrapped in a transaction so a half-accepted state is impossible.
+  Pre-Subject boundary — the accept-invite page is a public route and
+  the invitee has no session yet; possession of the invitation token
+  (resolved by `fetch_invitation_by_token/1`) is the authorization.
   """
   def accept_invitation(%Membership{} = membership, %{} = user_attrs) do
     Multi.new()
