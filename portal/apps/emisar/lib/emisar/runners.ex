@@ -250,13 +250,7 @@ defmodule Emisar.Runners do
       Multi.new()
       |> Multi.update(:runner, Runner.Changeset.disable(runner))
       |> Multi.insert(:audit, fn %{runner: disabled} ->
-        Audit.changeset(disabled.account_id, "runner.disabled",
-          actor_kind: Subject.actor_kind(subject),
-          actor_id: Subject.actor_id(subject),
-          subject_kind: "runner",
-          subject_id: disabled.id,
-          subject_label: disabled.name
-        )
+        Audit.Events.runner_disabled(subject, disabled)
       end)
       |> Repo.commit_multi()
       |> case do
@@ -285,13 +279,7 @@ defmodule Emisar.Runners do
       Multi.new()
       |> Multi.update(:runner, Runner.Changeset.enable(runner))
       |> Multi.insert(:audit, fn %{runner: enabled} ->
-        Audit.changeset(enabled.account_id, "runner.enabled",
-          actor_kind: Subject.actor_kind(subject),
-          actor_id: Subject.actor_id(subject),
-          subject_kind: "runner",
-          subject_id: enabled.id,
-          subject_label: enabled.name
-        )
+        Audit.Events.runner_enabled(subject, enabled)
       end)
       |> Repo.commit_multi()
       |> case do
@@ -316,13 +304,7 @@ defmodule Emisar.Runners do
       Multi.new()
       |> Multi.update(:runner, Runner.Changeset.delete(runner))
       |> Multi.insert(:audit, fn %{runner: deleted} ->
-        Audit.changeset(deleted.account_id, "runner.deleted",
-          actor_kind: Subject.actor_kind(subject),
-          actor_id: Subject.actor_id(subject),
-          subject_kind: "runner",
-          subject_id: deleted.id,
-          subject_label: deleted.name
-        )
+        Audit.Events.runner_deleted(subject, deleted)
       end)
       |> Repo.commit_multi()
       |> case do
@@ -646,13 +628,7 @@ defmodule Emisar.Runners do
       Multi.new()
       |> Multi.insert(:key, AuthKey.Changeset.create(account_id, user_id, prefix, hash, attrs))
       |> Multi.insert(:audit, fn %{key: key} ->
-        Audit.changeset(account_id, "auth_key.created",
-          actor_kind: "user",
-          actor_id: user_id,
-          subject_kind: "auth_key",
-          subject_id: key.id,
-          payload: %{prefix: key.key_prefix, reusable: key.reusable, group: key.group}
-        )
+        Audit.Events.auth_key_created(subject, key)
       end)
       |> Repo.commit_multi(after_commit: &broadcast_auth_key_change(&1, "auth_key.created"))
       |> case do
@@ -741,13 +717,7 @@ defmodule Emisar.Runners do
         Multi.new()
         |> Multi.update(:key, AuthKey.Changeset.revoke(key, by_user_id))
         |> Multi.insert(:audit, fn %{key: revoked} ->
-          Audit.changeset(revoked.account_id, "auth_key.revoked",
-            actor_kind: "user",
-            actor_id: by_user_id,
-            subject_kind: "auth_key",
-            subject_id: revoked.id,
-            payload: %{prefix: revoked.key_prefix}
-          )
+          Audit.Events.auth_key_revoked(subject, revoked)
         end)
         |> Repo.commit_multi(after_commit: &broadcast_auth_key_change(&1, "auth_key.revoked"))
 

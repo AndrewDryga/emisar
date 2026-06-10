@@ -63,14 +63,7 @@ defmodule Emisar.Runbooks do
         Runbook.Changeset.create(account.id, user_id, attrs)
       )
       |> Multi.insert(:audit, fn %{runbook: rb} ->
-        Audit.changeset(rb.account_id, "runbook.created",
-          actor_kind: "user",
-          actor_id: user_id,
-          subject_kind: "runbook",
-          subject_id: rb.id,
-          subject_label: rb.title || rb.name,
-          payload: %{name: rb.name, title: rb.title, version: rb.version}
-        )
+        Audit.Events.runbook_created(subject, rb)
       end)
       |> Repo.commit_multi(after_commit: &broadcast_runbook_change(&1, "runbook.created"))
       |> case do
@@ -96,19 +89,7 @@ defmodule Emisar.Runbooks do
       Multi.new()
       |> Multi.insert(:runbook, Runbook.Changeset.new_version(old, user_id, attrs))
       |> Multi.insert(:audit, fn %{runbook: rb} ->
-        Audit.changeset(rb.account_id, "runbook.updated",
-          actor_kind: "user",
-          actor_id: user_id,
-          subject_kind: "runbook",
-          subject_id: rb.id,
-          subject_label: rb.title || rb.name,
-          payload: %{
-            name: rb.name,
-            title: rb.title,
-            from_version: old.version,
-            to_version: rb.version
-          }
-        )
+        Audit.Events.runbook_updated(subject, old, rb)
       end)
       |> Repo.commit_multi(after_commit: &broadcast_runbook_change(&1, "runbook.updated"))
       |> case do
@@ -124,23 +105,12 @@ defmodule Emisar.Runbooks do
              subject,
              Authorizer.manage_runbooks_permission()
            ) do
-      user_id = Subject.actor_id(subject)
-
       Runbook.Query.not_deleted()
       |> Runbook.Query.by_id(rb.id)
       |> Authorizer.for_subject(subject)
       |> Repo.fetch_and_update(Runbook.Query,
         with: &Runbook.Changeset.update(&1, %{status: "published"}),
-        audit: fn published ->
-          Audit.changeset(published.account_id, "runbook.published",
-            actor_kind: "user",
-            actor_id: user_id,
-            subject_kind: "runbook",
-            subject_id: published.id,
-            subject_label: published.title || published.name,
-            payload: %{name: published.name, version: published.version}
-          )
-        end,
+        audit: fn published -> Audit.Events.runbook_published(subject, published) end,
         after_commit: fn published ->
           broadcast_runbook_change(%{runbook: published}, "runbook.published")
         end

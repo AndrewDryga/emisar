@@ -1,13 +1,15 @@
 defmodule Emisar.Audit.Events do
   @moduledoc """
-  Per-event audit-row builders for Accounts mutations. Each returns an
+  Per-event audit-row builders for domain mutations. Each returns an
   `Ecto.Changeset` for `Ecto.Multi.insert/3` (or `Repo.insert/1` inside a
   plain transaction), so the caller passes the domain structs plus the
   acting `%Subject{}` and never has to know the audit field schema —
   `actor_kind` / `actor_id` / `subject_kind` / `subject_id` / `payload`
-  are this module's concern, not the context's.
+  are this module's concern, not the context's. Fire-and-forget standalone
+  events (no `Multi`, often no subject) use `Audit.log/3` directly instead.
   """
   alias Emisar.Accounts.{Account, Membership, User}
+  alias Emisar.{ApiKeys, Approvals, Runbooks, Runners}
   alias Emisar.Audit
   alias Emisar.Auth.Subject
 
@@ -168,7 +170,152 @@ defmodule Emisar.Audit.Events do
     )
   end
 
+  # -- Runner ----------------------------------------------------------
+
+  def runner_disabled(%Subject{} = subject, %Runners.Runner{} = runner),
+    do: runner_event(subject, runner, "runner.disabled")
+
+  def runner_enabled(%Subject{} = subject, %Runners.Runner{} = runner),
+    do: runner_event(subject, runner, "runner.enabled")
+
+  def runner_deleted(%Subject{} = subject, %Runners.Runner{} = runner),
+    do: runner_event(subject, runner, "runner.deleted")
+
+  # -- Auth keys (runner install/enrolment keys) -----------------------
+
+  def auth_key_created(%Subject{} = subject, %Runners.AuthKey{} = key) do
+    Audit.changeset(
+      key.account_id,
+      "auth_key.created",
+      actor(subject) ++
+        [
+          subject_kind: "auth_key",
+          subject_id: key.id,
+          payload: %{prefix: key.key_prefix, reusable: key.reusable, group: key.group}
+        ]
+    )
+  end
+
+  def auth_key_revoked(%Subject{} = subject, %Runners.AuthKey{} = key) do
+    Audit.changeset(
+      key.account_id,
+      "auth_key.revoked",
+      actor(subject) ++
+        [subject_kind: "auth_key", subject_id: key.id, payload: %{prefix: key.key_prefix}]
+    )
+  end
+
+  # -- API keys --------------------------------------------------------
+
+  def api_key_created(%Subject{} = subject, %ApiKeys.ApiKey{} = key) do
+    Audit.changeset(
+      key.account_id,
+      "api_key.created",
+      actor(subject) ++
+        [
+          subject_kind: "api_key",
+          subject_id: key.id,
+          subject_label: key.name,
+          payload: %{prefix: key.key_prefix, scopes: key.scopes}
+        ]
+    )
+  end
+
+  def api_key_revoked(%Subject{} = subject, %ApiKeys.ApiKey{} = key) do
+    Audit.changeset(
+      key.account_id,
+      "api_key.revoked",
+      actor(subject) ++
+        [
+          subject_kind: "api_key",
+          subject_id: key.id,
+          subject_label: key.name,
+          payload: %{prefix: key.key_prefix}
+        ]
+    )
+  end
+
+  # Auto-bind during OAuth/MCP issuance — no user is acting, so the actor
+  # is the system rather than a `%Subject{}`.
+  def api_key_bound(%ApiKeys.ApiKey{} = key) do
+    Audit.changeset(key.account_id, "api_key.bound",
+      actor_kind: "system",
+      subject_kind: "api_key",
+      subject_id: key.id,
+      subject_label: key.name,
+      payload: %{prefix: key.key_prefix, auto: true}
+    )
+  end
+
+  # -- Runbooks --------------------------------------------------------
+
+  def runbook_created(%Subject{} = subject, %Runbooks.Runbook{} = runbook),
+    do:
+      runbook_event(subject, runbook, "runbook.created", %{
+        name: runbook.name,
+        title: runbook.title,
+        version: runbook.version
+      })
+
+  def runbook_updated(
+        %Subject{} = subject,
+        %Runbooks.Runbook{} = old,
+        %Runbooks.Runbook{} = runbook
+      ),
+      do:
+        runbook_event(subject, runbook, "runbook.updated", %{
+          name: runbook.name,
+          title: runbook.title,
+          from_version: old.version,
+          to_version: runbook.version
+        })
+
+  def runbook_published(%Subject{} = subject, %Runbooks.Runbook{} = runbook),
+    do:
+      runbook_event(subject, runbook, "runbook.published", %{
+        name: runbook.name,
+        version: runbook.version
+      })
+
+  # -- Approval grants -------------------------------------------------
+
+  def approval_grant_revoked(%Subject{} = subject, %Approvals.Grant{} = grant) do
+    Audit.changeset(
+      grant.account_id,
+      "approval.grant_revoked",
+      actor(subject) ++
+        [
+          subject_kind: "approval_grant",
+          subject_id: grant.id,
+          payload: %{action_id: grant.action_id, api_key_id: grant.api_key_id}
+        ]
+    )
+  end
+
   # -- Internals -------------------------------------------------------
+
+  defp runner_event(%Subject{} = subject, %Runners.Runner{} = runner, event_type) do
+    Audit.changeset(
+      runner.account_id,
+      event_type,
+      actor(subject) ++
+        [subject_kind: "runner", subject_id: runner.id, subject_label: runner.name]
+    )
+  end
+
+  defp runbook_event(%Subject{} = subject, %Runbooks.Runbook{} = runbook, event_type, payload) do
+    Audit.changeset(
+      runbook.account_id,
+      event_type,
+      actor(subject) ++
+        [
+          subject_kind: "runbook",
+          subject_id: runbook.id,
+          subject_label: runbook.title || runbook.name,
+          payload: payload
+        ]
+    )
+  end
 
   defp member_event(%Subject{} = subject, %Membership{} = target, event_type) do
     Audit.changeset(

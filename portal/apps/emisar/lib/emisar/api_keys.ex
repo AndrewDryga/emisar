@@ -115,14 +115,7 @@ defmodule Emisar.ApiKeys do
       Multi.new()
       |> Multi.insert(:key, changeset)
       |> Multi.insert(:audit, fn %{key: key} ->
-        Audit.changeset(account_id, "api_key.created",
-          actor_kind: "user",
-          actor_id: user_id,
-          subject_kind: "api_key",
-          subject_id: key.id,
-          subject_label: key.name,
-          payload: %{prefix: key.key_prefix, scopes: key.scopes}
-        )
+        Audit.Events.api_key_created(subject, key)
       end)
       |> Repo.commit_multi(after_commit: &broadcast_api_key_change(&1, "api_key.created"))
       |> case do
@@ -210,14 +203,7 @@ defmodule Emisar.ApiKeys do
       Multi.new()
       |> Multi.update(:key, ApiKey.Changeset.revoke(key, by_user_id))
       |> Multi.insert(:audit, fn %{key: revoked} ->
-        Audit.changeset(revoked.account_id, "api_key.revoked",
-          actor_kind: "user",
-          actor_id: by_user_id,
-          subject_kind: "api_key",
-          subject_id: revoked.id,
-          subject_label: revoked.name,
-          payload: %{prefix: revoked.key_prefix}
-        )
+        Audit.Events.api_key_revoked(subject, revoked)
       end)
       |> Repo.commit_multi(after_commit: &broadcast_api_key_change(&1, "api_key.revoked"))
       |> case do
@@ -257,13 +243,7 @@ defmodule Emisar.ApiKeys do
         multi =
           if was_auto? do
             Multi.insert(multi, :audit, fn %{key: updated} ->
-              Audit.changeset(updated.account_id, "api_key.bound",
-                actor_kind: "system",
-                subject_kind: "api_key",
-                subject_id: updated.id,
-                subject_label: updated.name,
-                payload: %{prefix: updated.key_prefix, auto: true}
-              )
+              Audit.Events.api_key_bound(updated)
             end)
           else
             multi

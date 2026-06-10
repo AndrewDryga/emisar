@@ -540,13 +540,7 @@ defmodule Emisar.Approvals do
       Multi.new()
       |> Multi.update(:grant, Grant.Changeset.revoke(grant, Subject.actor_id(subject)))
       |> Multi.insert(:audit, fn %{grant: revoked} ->
-        Audit.changeset(grant.account_id, "approval.grant_revoked",
-          actor_kind: "user",
-          actor_id: Subject.actor_id(subject),
-          subject_kind: "approval_grant",
-          subject_id: revoked.id,
-          payload: %{action_id: revoked.action_id, api_key_id: revoked.api_key_id}
-        )
+        Audit.Events.approval_grant_revoked(subject, revoked)
       end)
       |> Repo.commit_multi()
       |> case do
