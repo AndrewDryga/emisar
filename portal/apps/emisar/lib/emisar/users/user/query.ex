@@ -38,7 +38,7 @@ defmodule Emisar.Users.User.Query do
   """
   def members_of_account(queryable, account_id) do
     queryable
-    |> join(:inner, [users: u], m in Emisar.Accounts.Membership,
+    |> join(:inner, [users: u], m in ^Emisar.Accounts.Membership.Query.not_deleted(),
       on: m.user_id == u.id,
       as: :memberships
     )

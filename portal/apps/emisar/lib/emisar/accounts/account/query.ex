@@ -23,11 +23,13 @@ defmodule Emisar.Accounts.Account.Query do
   Restrict to accounts the given user is a member of — joins through
   membership on `membership.user_id` and excludes suspended memberships
   (`disabled_at`). Used by the "switch account" picker, so a suspended user
-  isn't shown the tenant that suspended them.
+  isn't shown the tenant that suspended them. The join composes
+  `Membership.Query.not_deleted/0` so a tombstoned membership can't
+  resurface an account either.
   """
   def by_membership_user_id(queryable, user_id) do
     queryable
-    |> join(:inner, [accounts: a], m in Emisar.Accounts.Membership,
+    |> join(:inner, [accounts: a], m in ^Emisar.Accounts.Membership.Query.not_deleted(),
       on: m.account_id == a.id,
       as: :memberships
     )
