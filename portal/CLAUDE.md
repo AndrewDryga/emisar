@@ -22,7 +22,7 @@ These shape every change. When a decision isn't covered by an Iron Law, decide w
 
 ### House opinions (extend freely)
 
-Lower-stakes taste calls. Not Iron Laws, but the defaults. **The user adds to this list over time — append, don't rewrite.**
+Lower-stakes taste calls. Not Iron Laws, but the defaults. **The user adds to this list over time — append, don't rewrite.** Every correction the user gives — a review nit, a naming call, a "use X instead" — is a new rule, not a one-off fix: append it here (or the matching section) **in the same change that applies it**, then sweep the codebase for other instances of the old shape. A correction that only fixes the flagged line will be repeated; that's the failure mode this file exists to prevent.
 
 - Pipe into the data; don't nest calls. A function reads top-to-bottom as a pipeline (`Query.not_deleted() |> Authorizer.for_subject(subject) |> Repo.list(...)`).
 - Keep a pipeline's anonymous-function steps visually uniform: if any step's `fn` must wrap (body and `end` on their own lines, because it's too long to inline), hand-wrap the short ones too rather than leaving them inline. `mix format` preserves a hand-wrapped short `fn`, so the whole `Multi`/pipeline reads as one shape instead of a ragged mix of inline and block closures.
