@@ -305,7 +305,32 @@ defmodule Emisar.AccountsTest do
 
       subject = subject_for(owner, account, role: :owner)
 
-      assert {:ok, %Membership{}} = Accounts.delete_membership(target, subject)
+      assert {:ok, %Membership{} = removed} = Accounts.delete_membership(target, subject)
+
+      # Removal is a soft delete: the tombstone keeps history while every
+      # not_deleted() read treats the member as gone.
+      assert removed.deleted_at
+      assert {:error, :not_found} = Accounts.fetch_membership_for_session(target_user, account.id)
+    end
+
+    test "a removed member can be re-invited (tombstone doesn't hold the seat)" do
+      account = account_fixture()
+      owner = user_fixture()
+      _ = membership_fixture(account_id: account.id, user_id: owner.id, role: "owner")
+      target_user = user_fixture()
+
+      target =
+        membership_fixture(account_id: account.id, user_id: target_user.id, role: "operator")
+
+      subject = subject_for(owner, account, role: :owner)
+
+      assert {:ok, _} = Accounts.delete_membership(target, subject)
+
+      assert {:ok, %{membership: fresh}} =
+               Accounts.invite_user_to_account(target_user.email, "viewer", subject)
+
+      assert fresh.user_id == target_user.id
+      assert fresh.id != target.id
     end
 
     test "an operator (no manage_team permission) cannot remove a member → :unauthorized" do
@@ -495,6 +520,22 @@ defmodule Emisar.AccountsTest do
 
       assert {:error, :unauthorized} =
                Accounts.list_memberships_for_account(account_b, subject_a)
+    end
+  end
+
+  describe "record_account_switched/1" do
+    test "writes the session.account_switched audit row for the switched-to account" do
+      {owner, account, subject} = owner_subject_fixture()
+      {:ok, membership} = Accounts.fetch_membership_for_session(owner, account.id)
+
+      assert {:ok, _event} = Accounts.record_account_switched(membership)
+
+      {:ok, events, _} = Emisar.Audit.list_events(subject, page: [limit: 10])
+      switched = Enum.find(events, &(&1.event_type == "session.account_switched"))
+
+      assert switched
+      assert switched.actor_id == owner.id
+      assert switched.subject_label == owner.email
     end
   end
 end

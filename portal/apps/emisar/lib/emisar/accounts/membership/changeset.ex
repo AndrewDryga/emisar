@@ -20,4 +20,7 @@ defmodule Emisar.Accounts.Membership.Changeset do
 
   def suspend(%Membership{} = membership), do: change(membership, disabled_at: DateTime.utc_now())
   def reinstate(%Membership{} = membership), do: change(membership, disabled_at: nil)
+
+  def accept_invitation(%Membership{} = membership),
+    do: change(membership, invitation_token: nil, invitation_accepted_at: DateTime.utc_now())
 end

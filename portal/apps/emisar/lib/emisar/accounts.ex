@@ -588,6 +588,11 @@ defmodule Emisar.Accounts do
     * You can only remove a member whose permissions you already hold, so a
       non-owner can't remove an owner.
     * The last active owner can't be removed (even by themselves).
+
+  Removal is a soft delete — the tombstoned row keeps the role/invite
+  history for review while every `not_deleted()` read (and the partial
+  unique index on `(account_id, user_id)`) treats the member as gone, so
+  the same user can be re-invited cleanly.
   """
   def delete_membership(%Membership{} = membership, %Subject{} = subject) do
     with :ok <-
@@ -595,7 +600,7 @@ defmodule Emisar.Accounts do
          :ok <- ensure_subject_in_account(subject, membership.account_id),
          :ok <- ensure_delete_membership_allowed(membership, subject) do
       Multi.new()
-      |> Multi.delete(:membership, membership)
+      |> Multi.update(:membership, Membership.Changeset.delete(membership))
       |> Multi.insert(:audit, fn _ ->
         Audit.Events.membership_removed(subject, membership)
       end)
@@ -735,19 +740,14 @@ defmodule Emisar.Accounts do
   is a public route with only `current_user` assigned, no subject.
   """
   def mark_invitation_accepted(%Membership{user_id: user_id} = membership, %User{id: user_id}) do
-    now = DateTime.utc_now()
-
     Multi.new()
-    |> Multi.update(
-      :membership,
-      Ecto.Changeset.change(membership, invitation_token: nil, invitation_accepted_at: now)
-    )
+    |> Multi.update(:membership, Membership.Changeset.accept_invitation(membership))
     |> Multi.insert(:audit, fn _ ->
       Audit.Events.membership_invitation_accepted(membership)
     end)
     |> Repo.commit_multi()
     |> case do
-      {:ok, %{membership: m}} -> {:ok, m}
+      {:ok, %{membership: accepted}} -> {:ok, accepted}
       {:error, reason} -> {:error, reason}
     end
   end
@@ -762,8 +762,6 @@ defmodule Emisar.Accounts do
   Wrapped in a transaction so a half-accepted state is impossible.
   """
   def accept_invitation(%Membership{} = membership, %{} = user_attrs) do
-    now = DateTime.utc_now()
-
     Multi.new()
     |> Multi.run(:existing_user, fn _repo, _changes ->
       Users.fetch_user_by_id(membership.user_id)
@@ -771,10 +769,7 @@ defmodule Emisar.Accounts do
     |> Multi.run(:user, fn _repo, %{existing_user: existing_user} ->
       Users.register_invited_user(existing_user, user_attrs)
     end)
-    |> Multi.update(
-      :membership,
-      Ecto.Changeset.change(membership, invitation_token: nil, invitation_accepted_at: now)
-    )
+    |> Multi.update(:membership, Membership.Changeset.accept_invitation(membership))
     |> Multi.insert(:audit, fn %{user: user, membership: updated} ->
       Audit.Events.user_invitation_accepted(user, updated)
     end)
@@ -793,10 +788,11 @@ defmodule Emisar.Accounts do
   @doc """
   Internal — Billing seat counting: membership rows in the account.
   Counts suspended members too — suspension preserves the seat (role +
-  history kept for reinstate), it doesn't free it.
+  history kept for reinstate), it doesn't free it. Removed (soft-deleted)
+  members do free their seat.
   """
   def count_memberships(account_id) do
-    Membership.Query.all()
+    Membership.Query.not_deleted()
     |> Membership.Query.by_account_id(account_id)
     |> Repo.aggregate(:count, :id)
   end
@@ -807,6 +803,9 @@ defmodule Emisar.Accounts do
   no-match the webhook handler no-ops on).
   """
   def peek_account_by_paddle_customer_id(cid) when is_binary(cid) do
+    # Deliberately `all()`, not `not_deleted()`: a tombstoned account's
+    # subscription webhooks (cancellation, final invoices) must still
+    # resolve so Billing can close the books on it.
     Account.Query.all()
     |> Account.Query.by_paddle_customer_id(cid)
     |> Repo.peek()
