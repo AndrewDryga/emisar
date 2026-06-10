@@ -841,27 +841,39 @@ defmodule Emisar.Accounts do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(subject, Authorizer.manage_team_permission()),
          :ok <- ensure_subject_in_account(subject, membership.account_id) do
-      multi =
-        Multi.new()
-        |> Multi.delete_all(:cleared, UserRunnerScope.Query.by_membership_id(membership_id))
-
-      multi =
-        Enum.reduce(Enum.with_index(new_scopes), multi, fn {{type, value}, i}, acc ->
-          Multi.insert(
-            acc,
-            {:scope, i},
-            UserRunnerScope.Changeset.create(membership_id, type, value)
-          )
+      # Validate each scope through the changeset (rejects a bad scope_type,
+      # an empty value, etc.), then write the whole set in one INSERT rather
+      # than a Multi step per row — it's a simple join table.
+      changesets =
+        Enum.map(new_scopes, fn {type, value} ->
+          UserRunnerScope.Changeset.create(membership_id, type, value)
         end)
 
-      multi
-      |> Multi.insert(:audit, fn _ ->
-        Audit.Events.membership_runner_scopes_changed(subject, membership, new_scopes)
-      end)
-      |> Repo.commit_multi()
-      |> case do
-        {:ok, _changes} -> {:ok, :ok}
-        {:error, reason} -> {:error, reason}
+      case Enum.find(changesets, &(not &1.valid?)) do
+        %Ecto.Changeset{} = invalid ->
+          {:error, invalid}
+
+        nil ->
+          now = DateTime.utc_now()
+
+          rows =
+            Enum.map(changesets, fn cs ->
+              cs.changes
+              |> Map.put(:id, Repo.generate_id())
+              |> Map.put(:inserted_at, now)
+            end)
+
+          Multi.new()
+          |> Multi.delete_all(:cleared, UserRunnerScope.Query.by_membership_id(membership_id))
+          |> Multi.insert_all(:scopes, UserRunnerScope, rows)
+          |> Multi.insert(:audit, fn _ ->
+            Audit.Events.membership_runner_scopes_changed(subject, membership, new_scopes)
+          end)
+          |> Repo.commit_multi()
+          |> case do
+            {:ok, _changes} -> {:ok, :ok}
+            {:error, reason} -> {:error, reason}
+          end
       end
     end
   end

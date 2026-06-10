@@ -13,6 +13,13 @@ defmodule Emisar.Repo do
   def valid_uuid?(_), do: false
 
   @doc """
+  A fresh primary-key id, matching what schemas autogenerate on insert
+  (UUIDv7, monotonic). Use it to fill `:id` for `insert_all` rows, which —
+  unlike `insert/2` — does not run the schema's autogenerate.
+  """
+  def generate_id, do: Ecto.UUID.autogenerate(version: 7, precision: :monotonic)
+
+  @doc """
   nil-or-struct fetcher for internal helpers where `nil` is a
   meaningful "no row" result (e.g. default-deny policy lookup, opaque
   prefix-keyed credential lookups). The query must already be built
