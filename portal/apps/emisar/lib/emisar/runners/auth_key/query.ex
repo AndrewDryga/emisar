@@ -56,9 +56,9 @@ defmodule Emisar.Runners.AuthKey.Query do
     do: where(queryable, [auth_keys: k], k.key_prefix == ^prefix)
 
   @doc "Auto-generated keys no runner has consumed yet — the eviction pool."
-  def auto_unused(queryable \\ not_deleted()),
-    do:
-      where(queryable, [auth_keys: k], not is_nil(k.auto_generated_at) and is_nil(k.last_used_at))
+  def auto_unused(queryable \\ not_deleted()) do
+    where(queryable, [auth_keys: k], not is_nil(k.auto_generated_at) and is_nil(k.last_used_at))
+  end
 
   @doc "Install-key ring overflow. Matches the api_key variant — see ApiKey.Query."
   def evictable_install_overflow(account_id, cap, protected_floor) do

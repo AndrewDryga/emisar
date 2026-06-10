@@ -65,31 +65,31 @@ defmodule Emisar.Audit.Events do
 
   # -- Membership ------------------------------------------------------
 
-  def membership_role_changed(%Subject{} = subject, %Membership{} = target, new_role) do
+  def membership_role_changed(%Subject{} = subject, %Membership{} = membership, new_role) do
     Audit.changeset(
-      target.account_id,
+      membership.account_id,
       "membership.role_changed",
       actor(subject) ++
         [
           subject_kind: "user",
-          subject_id: target.user_id,
-          payload: %{from: target.role, to: new_role}
+          subject_id: membership.user_id,
+          payload: %{from: membership.role, to: new_role}
         ]
     )
   end
 
-  def membership_suspended(%Subject{} = subject, %Membership{} = target),
-    do: member_event(subject, target, "membership.suspended")
+  def membership_suspended(%Subject{} = subject, %Membership{} = membership),
+    do: member_event(subject, membership, "membership.suspended")
 
-  def membership_reinstated(%Subject{} = subject, %Membership{} = target),
-    do: member_event(subject, target, "membership.reinstated")
+  def membership_reinstated(%Subject{} = subject, %Membership{} = membership),
+    do: member_event(subject, membership, "membership.reinstated")
 
-  def membership_removed(%Subject{} = subject, %Membership{} = target) do
+  def membership_removed(%Subject{} = subject, %Membership{} = membership) do
     Audit.changeset(
-      target.account_id,
+      membership.account_id,
       "membership.removed",
       actor(subject) ++
-        [subject_kind: "user", subject_id: target.user_id, payload: %{role: target.role}]
+        [subject_kind: "user", subject_id: membership.user_id, payload: %{role: membership.role}]
     )
   end
 
@@ -124,15 +124,19 @@ defmodule Emisar.Audit.Events do
 
   # -- User ------------------------------------------------------------
 
-  def user_password_reset_forced(%Subject{} = subject, %Membership{} = target, %User{} = user),
-    do: user_event(subject, target, user, "user.password_reset_forced")
+  def user_password_reset_forced(
+        %Subject{} = subject,
+        %Membership{} = membership,
+        %User{} = user
+      ),
+      do: user_event(subject, membership, user, "user.password_reset_forced")
 
-  def user_sessions_revoked(%Subject{} = subject, %Membership{} = target, %User{} = user),
-    do: user_event(subject, target, user, "user.sessions_revoked")
+  def user_sessions_revoked(%Subject{} = subject, %Membership{} = membership, %User{} = user),
+    do: user_event(subject, membership, user, "user.sessions_revoked")
 
-  def user_updated_by_admin(%Subject{} = subject, %Membership{} = target, %User{} = user) do
+  def user_updated_by_admin(%Subject{} = subject, %Membership{} = membership, %User{} = user) do
     Audit.changeset(
-      target.account_id,
+      membership.account_id,
       "user.updated_by_admin",
       actor(subject) ++
         [
@@ -249,33 +253,33 @@ defmodule Emisar.Audit.Events do
 
   # -- Runbooks --------------------------------------------------------
 
-  def runbook_created(%Subject{} = subject, %Runbooks.Runbook{} = runbook),
-    do:
-      runbook_event(subject, runbook, "runbook.created", %{
-        name: runbook.name,
-        title: runbook.title,
-        version: runbook.version
-      })
+  def runbook_created(%Subject{} = subject, %Runbooks.Runbook{} = runbook) do
+    runbook_event(subject, runbook, "runbook.created", %{
+      name: runbook.name,
+      title: runbook.title,
+      version: runbook.version
+    })
+  end
 
   def runbook_updated(
         %Subject{} = subject,
         %Runbooks.Runbook{} = old,
         %Runbooks.Runbook{} = runbook
-      ),
-      do:
-        runbook_event(subject, runbook, "runbook.updated", %{
-          name: runbook.name,
-          title: runbook.title,
-          from_version: old.version,
-          to_version: runbook.version
-        })
+      ) do
+    runbook_event(subject, runbook, "runbook.updated", %{
+      name: runbook.name,
+      title: runbook.title,
+      from_version: old.version,
+      to_version: runbook.version
+    })
+  end
 
-  def runbook_published(%Subject{} = subject, %Runbooks.Runbook{} = runbook),
-    do:
-      runbook_event(subject, runbook, "runbook.published", %{
-        name: runbook.name,
-        version: runbook.version
-      })
+  def runbook_published(%Subject{} = subject, %Runbooks.Runbook{} = runbook) do
+    runbook_event(subject, runbook, "runbook.published", %{
+      name: runbook.name,
+      version: runbook.version
+    })
+  end
 
   # -- Approval grants -------------------------------------------------
 
@@ -317,17 +321,17 @@ defmodule Emisar.Audit.Events do
     )
   end
 
-  defp member_event(%Subject{} = subject, %Membership{} = target, event_type) do
+  defp member_event(%Subject{} = subject, %Membership{} = membership, event_type) do
     Audit.changeset(
-      target.account_id,
+      membership.account_id,
       event_type,
-      actor(subject) ++ [subject_kind: "user", subject_id: target.user_id]
+      actor(subject) ++ [subject_kind: "user", subject_id: membership.user_id]
     )
   end
 
-  defp user_event(%Subject{} = subject, %Membership{} = target, %User{} = user, event_type) do
+  defp user_event(%Subject{} = subject, %Membership{} = membership, %User{} = user, event_type) do
     Audit.changeset(
-      target.account_id,
+      membership.account_id,
       event_type,
       actor(subject) ++ [subject_kind: "user", subject_id: user.id, subject_label: user.email]
     )

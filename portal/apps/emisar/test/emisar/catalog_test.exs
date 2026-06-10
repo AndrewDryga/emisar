@@ -31,7 +31,7 @@ defmodule Emisar.CatalogTest do
   describe "observe_state/2 — packs" do
     test "upserts pack_versions" do
       runner = runner_fixture()
-      account = Emisar.Accounts.fetch_account_by_id!(runner.account_id)
+      account = Emisar.Repo.preload(runner, :account).account
       subject = subject_for(user_fixture(), account, role: :owner)
 
       # No library baseline for linux-core@1.0 (we ship 0.3.0), so this
@@ -81,7 +81,7 @@ defmodule Emisar.CatalogTest do
       # observe_state must keep the existing runner struct, NOT raise, and
       # still upsert the packs/actions in the same advertisement.
       runner = runner_fixture()
-      account = Emisar.Accounts.fetch_account_by_id!(runner.account_id)
+      account = Emisar.Repo.preload(runner, :account).account
       subject = subject_for(user_fixture(), account, role: :owner)
 
       payload =
@@ -197,7 +197,7 @@ defmodule Emisar.CatalogTest do
   describe "observe_state/2 — actions" do
     test "upserts runner_actions" do
       runner = runner_fixture()
-      account = Emisar.Accounts.fetch_account_by_id!(runner.account_id)
+      account = Emisar.Repo.preload(runner, :account).account
       subject = subject_for(user_fixture(), account, role: :owner)
 
       payload =
@@ -213,7 +213,7 @@ defmodule Emisar.CatalogTest do
 
     test "prunes actions no longer advertised" do
       runner = runner_fixture()
-      account = Emisar.Accounts.fetch_account_by_id!(runner.account_id)
+      account = Emisar.Repo.preload(runner, :account).account
       subject = subject_for(user_fixture(), account, role: :owner)
 
       _ =
@@ -250,7 +250,7 @@ defmodule Emisar.CatalogTest do
   describe "observe_state/2 — runner_id variant" do
     test "looks up the runner by id" do
       runner = runner_fixture()
-      account = Emisar.Accounts.fetch_account_by_id!(runner.account_id)
+      account = Emisar.Repo.preload(runner, :account).account
       subject = subject_for(user_fixture(), account, role: :owner)
 
       assert {:ok, _runner} =
@@ -268,7 +268,7 @@ defmodule Emisar.CatalogTest do
   describe "trust pinning" do
     test "unknown pack first sight → pending, awaits operator approval" do
       runner = runner_fixture()
-      account = Emisar.Accounts.fetch_account_by_id!(runner.account_id)
+      account = Emisar.Repo.preload(runner, :account).account
       subject = subject_for(user_fixture(), account, role: :owner)
 
       payload =
@@ -286,7 +286,7 @@ defmodule Emisar.CatalogTest do
 
     test "custom pack: re-advertising the same pending hash is a touch (no drift event)" do
       runner = runner_fixture()
-      account = Emisar.Accounts.fetch_account_by_id!(runner.account_id)
+      account = Emisar.Repo.preload(runner, :account).account
       subject = subject_for(user_fixture(), account, role: :owner)
 
       payload =
@@ -541,7 +541,7 @@ defmodule Emisar.CatalogTest do
           )
         )
 
-      account = Emisar.Accounts.fetch_account_by_id!(runner.account_id)
+      account = Emisar.Repo.preload(runner, :account).account
       subject = subject_for(user_fixture(), account, role: :owner)
       {:ok, [act], _} = Catalog.list_actions_for_runner(runner.id, subject)
       assert {:error, :pack_untrusted, _pv} = Catalog.check_pack_trusted(act)

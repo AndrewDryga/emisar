@@ -248,7 +248,11 @@ defmodule Emisar.Fixtures do
       attrs
       |> Map.take([:description, :group, :reusable, :max_uses, :expires_at])
 
-    account = Emisar.Accounts.fetch_account_by_id!(account_id)
+    account =
+      Account.Query.not_deleted()
+      |> Account.Query.by_id(account_id)
+      |> Repo.fetch!(Account.Query)
+
     {:ok, user} = Accounts.fetch_user_by_id(user_id)
     subject = subject_for(user, account, role: :owner)
     {:ok, raw, key} = Runners.create_auth_key(create_attrs, subject)
@@ -274,7 +278,11 @@ defmodule Emisar.Fixtures do
         expires_at: attrs[:expires_at]
       }
 
-    account = Emisar.Accounts.fetch_account_by_id!(account_id)
+    account =
+      Account.Query.not_deleted()
+      |> Account.Query.by_id(account_id)
+      |> Repo.fetch!(Account.Query)
+
     {:ok, user} = Accounts.fetch_user_by_id(user_id)
     subject = subject_for(user, account, role: :owner)
     {:ok, raw, key} = ApiKeys.create_key(create_attrs, subject)

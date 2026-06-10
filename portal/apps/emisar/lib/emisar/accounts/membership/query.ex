@@ -38,20 +38,6 @@ defmodule Emisar.Accounts.Membership.Query do
     do: queryable |> order_by([memberships: m], desc: m.inserted_at) |> limit(1)
 
   @doc """
-  Restrict to memberships whose account is not soft-deleted. Used by
-  the account picker so a user can't pick a tenant that's been
-  deleted out from under them.
-  """
-  def for_active_account(queryable) do
-    queryable
-    |> join(:inner, [memberships: m], a in Emisar.Accounts.Account,
-      on: a.id == m.account_id,
-      as: :accounts
-    )
-    |> where([accounts: a], is_nil(a.deleted_at))
-  end
-
-  @doc """
   Inner-join the membership's (non-deleted) account, idempotently. Use it
   on its own to filter on account columns; pair with a preload via
   `with_preloaded_account/1`. A membership whose account is soft-deleted

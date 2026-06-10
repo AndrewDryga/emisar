@@ -797,7 +797,7 @@ defmodule Emisar.Runs do
       |> Repo.commit_multi(after_commit: fn %{run: run} -> PubSub.broadcast_run(run) end)
       |> case do
         {:ok, %{run: run}} -> {:ok, run}
-        {:error, _} = err -> err
+        {:error, reason} -> {:error, reason}
       end
     end
   end

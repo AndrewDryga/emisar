@@ -7,7 +7,7 @@
 # empty-state cards everywhere.
 
 alias Emisar.{Accounts, Approvals, Audit, Catalog, Policies, Repo, Runbooks, Runners, Runs}
-alias Emisar.Accounts.User
+alias Emisar.Accounts.{Account, User}
 alias Emisar.Approvals.Request, as: ApprovalRequest
 alias Emisar.Auth.Subject
 # Approval emails go through Swoosh; in dev that's fine, but the seed
@@ -66,8 +66,10 @@ user =
       u
   end
 
+demo_account_query = Account.Query.not_deleted() |> Account.Query.by_slug("demo")
+
 account =
-  case Accounts.fetch_account_by_slug("demo") do
+  case Repo.fetch(demo_account_query, Account.Query) do
     {:error, :not_found} ->
       {:ok, account} =
         Accounts.create_account_with_owner(
@@ -77,8 +79,8 @@ account =
 
       account
 
-    {:ok, a} ->
-      a
+    {:ok, account} ->
+      account
   end
 
 IO.puts(

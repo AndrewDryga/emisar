@@ -34,4 +34,13 @@ defmodule Emisar.Repo.Changeset do
   defp maybe_apply(_cs, fun) when is_function(fun, 0), do: fun.()
   defp maybe_apply(cs, fun) when is_function(fun, 1), do: fun.(cs)
   defp maybe_apply(_cs, value), do: value
+
+  @doc """
+  True when the changeset failed on a `unique_constraint` — for mapping a
+  DB-uniqueness violation back to a domain error at the call site
+  (e.g. a duplicate membership insert → `{:error, :already_member}`).
+  """
+  def unique_constraint_error?(%Ecto.Changeset{errors: errors}) do
+    Enum.any?(errors, fn {_field, {_msg, opts}} -> opts[:constraint] == :unique end)
+  end
 end

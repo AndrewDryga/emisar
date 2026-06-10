@@ -101,7 +101,7 @@ defmodule Emisar.Billing.PaddleClient.Live do
          true <- secure_compare(computed, expected) do
       :ok
     else
-      {:error, _} = err -> err
+      {:error, reason} -> {:error, reason}
       _ -> {:error, :signature_mismatch}
     end
   end
@@ -132,8 +132,8 @@ defmodule Emisar.Billing.PaddleClient.Live do
       {:ok, %Finch.Response{status: status, body: resp_body}} ->
         {:error, {:http, status, resp_body}}
 
-      {:error, _} = err ->
-        err
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 
@@ -147,8 +147,8 @@ defmodule Emisar.Billing.PaddleClient.Live do
       {:ok, %Finch.Response{status: status, body: body}} ->
         {:error, {:http, status, body}}
 
-      {:error, _} = err ->
-        err
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 

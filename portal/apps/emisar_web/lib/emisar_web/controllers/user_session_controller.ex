@@ -8,7 +8,7 @@ defmodule EmisarWeb.UserSessionController do
 
   use EmisarWeb, :controller
 
-  alias Emisar.{Accounts, Audit, Auth}
+  alias Emisar.{Accounts, Auth}
   alias EmisarWeb.UserAuth
 
   # How long a successful password verify lets the operator finish MFA
@@ -123,8 +123,7 @@ defmodule EmisarWeb.UserSessionController do
   end
 
   defp finalize_sign_in(conn, user, user_params, method) do
-    Accounts.record_sign_in(user)
-    Audit.log_for_user(user, "user.signed_in", payload: %{method: method})
+    Accounts.record_sign_in(user, method)
     UserAuth.log_in_user(conn, user, user_params)
   end
 
@@ -183,7 +182,7 @@ defmodule EmisarWeb.UserSessionController do
   def magic_link_confirm(conn, %{"token" => token}) do
     case Auth.consume_magic_link_token(token) do
       {:ok, user} ->
-        Accounts.record_sign_in(user)
+        Accounts.record_sign_in(user, "magic_link")
         UserAuth.log_in_user(conn, user, %{})
 
       {:error, :invalid_or_expired} ->

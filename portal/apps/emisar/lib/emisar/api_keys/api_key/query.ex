@@ -45,9 +45,9 @@ defmodule Emisar.ApiKeys.ApiKey.Query do
   Auto-generated keys that no LLM has ever authenticated with — the
   pool that ring eviction draws from.
   """
-  def auto_unused(queryable \\ not_deleted()),
-    do:
-      where(queryable, [api_keys: k], not is_nil(k.auto_generated_at) and is_nil(k.last_used_at))
+  def auto_unused(queryable \\ not_deleted()) do
+    where(queryable, [api_keys: k], not is_nil(k.auto_generated_at) and is_nil(k.last_used_at))
+  end
 
   @doc """
   Rows to drop when the per-account ring of auto-unused keys overflows

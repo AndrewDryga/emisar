@@ -96,43 +96,43 @@ defmodule Emisar.Repo.Paginator do
   defp append_by_cursor_dynamic(nil, :before, {binding, :asc, field}, value),
     do: dynamic([{^binding, b}], field(b, ^field) < ^value)
 
-  defp append_by_cursor_dynamic(dynamic, :before, {binding, :asc, field}, value),
-    do:
-      dynamic(
-        [{^binding, b}],
-        field(b, ^field) < ^value or (field(b, ^field) == ^value and ^dynamic)
-      )
+  defp append_by_cursor_dynamic(dynamic, :before, {binding, :asc, field}, value) do
+    dynamic(
+      [{^binding, b}],
+      field(b, ^field) < ^value or (field(b, ^field) == ^value and ^dynamic)
+    )
+  end
 
   defp append_by_cursor_dynamic(nil, :after, {binding, :asc, field}, value),
     do: dynamic([{^binding, b}], field(b, ^field) > ^value)
 
-  defp append_by_cursor_dynamic(dynamic, :after, {binding, :asc, field}, value),
-    do:
-      dynamic(
-        [{^binding, b}],
-        field(b, ^field) > ^value or (field(b, ^field) == ^value and ^dynamic)
-      )
+  defp append_by_cursor_dynamic(dynamic, :after, {binding, :asc, field}, value) do
+    dynamic(
+      [{^binding, b}],
+      field(b, ^field) > ^value or (field(b, ^field) == ^value and ^dynamic)
+    )
+  end
 
   # DESC
   defp append_by_cursor_dynamic(nil, :before, {binding, :desc, field}, value),
     do: dynamic([{^binding, b}], field(b, ^field) > ^value)
 
-  defp append_by_cursor_dynamic(dynamic, :before, {binding, :desc, field}, value),
-    do:
-      dynamic(
-        [{^binding, b}],
-        field(b, ^field) > ^value or (field(b, ^field) == ^value and ^dynamic)
-      )
+  defp append_by_cursor_dynamic(dynamic, :before, {binding, :desc, field}, value) do
+    dynamic(
+      [{^binding, b}],
+      field(b, ^field) > ^value or (field(b, ^field) == ^value and ^dynamic)
+    )
+  end
 
   defp append_by_cursor_dynamic(nil, :after, {binding, :desc, field}, value),
     do: dynamic([{^binding, b}], field(b, ^field) < ^value)
 
-  defp append_by_cursor_dynamic(dynamic, :after, {binding, :desc, field}, value),
-    do:
-      dynamic(
-        [{^binding, b}],
-        field(b, ^field) < ^value or (field(b, ^field) == ^value and ^dynamic)
-      )
+  defp append_by_cursor_dynamic(dynamic, :after, {binding, :desc, field}, value) do
+    dynamic(
+      [{^binding, b}],
+      field(b, ^field) < ^value or (field(b, ^field) == ^value and ^dynamic)
+    )
+  end
 
   # Load limit+1 to know whether there's another page.
   defp limit_page_size(queryable, %{limit: limit}), do: Ecto.Query.limit(queryable, ^(limit + 1))

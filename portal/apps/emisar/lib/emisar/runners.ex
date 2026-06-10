@@ -272,8 +272,8 @@ defmodule Emisar.Runners do
              Authorizer.manage_runners_permission()
            ),
          :ok <- Subject.ensure_in_account(subject, runner.account_id),
-         account = Emisar.Accounts.fetch_account_by_id!(runner.account_id),
-         :ok <- Emisar.Billing.check_limit(account, :runners) do
+         runner = Repo.preload(runner, :account),
+         :ok <- Emisar.Billing.check_limit(runner.account, :runners) do
       Multi.new()
       |> Multi.update(:runner, Runner.Changeset.enable(runner))
       |> Multi.insert(:audit, fn %{runner: enabled} ->
@@ -396,7 +396,7 @@ defmodule Emisar.Runners do
   def mark_disconnected(runner_id, reason) when is_binary(runner_id) do
     case peek_runner_by_id(runner_id) do
       {:ok, runner} -> mark_disconnected(runner, reason)
-      {:error, :not_found} = err -> err
+      {:error, :not_found} -> {:error, :not_found}
     end
   end
 
@@ -437,7 +437,7 @@ defmodule Emisar.Runners do
     do: {:ok, decorate_connection(runners), metadata}
 
   defp decorate_result({:ok, runner}), do: {:ok, decorate_connection(runner)}
-  defp decorate_result({:error, _} = err), do: err
+  defp decorate_result({:error, reason}), do: {:error, reason}
 
   defp decorate_connection([]), do: []
 
@@ -723,8 +723,8 @@ defmodule Emisar.Runners do
         {:ok, %{key: revoked}} ->
           {:ok, revoked}
 
-        {:error, _} = err ->
-          err
+        {:error, reason} ->
+          {:error, reason}
       end
     end
   end
@@ -839,7 +839,7 @@ defmodule Emisar.Runners do
   end
 
   def register_via_auth_key(%AuthKey{} = key, attrs) do
-    account = Emisar.Accounts.fetch_account_by_id!(key.account_id)
+    key = Repo.preload(key, :account)
     was_auto? = AuthKey.auto_unused?(key)
 
     Repo.transaction(fn ->
@@ -888,7 +888,7 @@ defmodule Emisar.Runners do
             {existing, false}
 
           {:error, :not_found} ->
-            case Emisar.Billing.check_limit(account, :runners) do
+            case Emisar.Billing.check_limit(key.account, :runners) do
               :ok -> insert_runner!(key, attrs, external_id)
               {:error, :over_limit, plan, limit} -> Repo.rollback({:over_limit, plan, limit})
             end
