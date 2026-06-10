@@ -1,6 +1,6 @@
-defmodule Emisar.Accounts.UserRunnerScope.Changeset do
+defmodule Emisar.Runners.UserRunnerScope.Changeset do
   use Emisar, :changeset
-  alias Emisar.Accounts.UserRunnerScope
+  alias Emisar.Runners.UserRunnerScope
 
   def create(membership_id, scope_type, scope_value)
       when is_binary(membership_id) and is_binary(scope_type) and is_binary(scope_value) do

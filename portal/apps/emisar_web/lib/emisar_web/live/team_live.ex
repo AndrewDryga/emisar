@@ -1,7 +1,7 @@
 defmodule EmisarWeb.TeamLive do
   use EmisarWeb, :live_view
 
-  alias Emisar.{Accounts, Mailers, PubSub}
+  alias Emisar.{Accounts, Mailers, PubSub, Runners}
   alias Emisar.Accounts.Membership
   alias EmisarWeb.LiveTable
   alias Phoenix.LiveView.JS
@@ -117,7 +117,7 @@ defmodule EmisarWeb.TeamLive do
       new_scopes =
         Enum.map(groups, &{"group", &1}) ++ Enum.map(runner_ids, &{"runner", &1})
 
-      case Accounts.replace_runner_scopes(m, new_scopes, socket.assigns.current_subject) do
+      case Runners.replace_runner_scopes(m, new_scopes, socket.assigns.current_subject) do
         {:ok, :ok} -> {:ok, "Scope updated."}
         {:error, reason} -> {:error, error_message(reason)}
       end
@@ -301,7 +301,7 @@ defmodule EmisarWeb.TeamLive do
         scopes_by_membership =
           memberships
           |> Enum.map(& &1.id)
-          |> Accounts.runner_scopes_for_membership_ids()
+          |> Runners.runner_scopes_for_membership_ids()
 
         {:ok, runners, _} =
           Emisar.Runners.list_runners_for_account(socket.assigns.current_subject)

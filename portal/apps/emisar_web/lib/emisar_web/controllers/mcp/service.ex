@@ -10,12 +10,12 @@ defmodule EmisarWeb.Mcp.Service do
   Every function takes a `conn` and reads `conn.assigns.api_key`
   + `conn.assigns.current_subject` (both set by the auth plug shared
   with McpController). No DB access bypasses the existing context
-  modules — `Catalog`, `Runners`, `Runs`, `Accounts`.
+  modules — `Catalog`, `Runners`, `Runs`.
   """
 
   require Logger
 
-  alias Emisar.{Accounts, Catalog, PubSub, Runbooks, Runners, Runs}
+  alias Emisar.{Catalog, PubSub, Runbooks, Runners, Runs}
   alias EmisarWeb.Mcp.{Idempotency, ToolSchema}
 
   # Same caps the REST handlers use; keep them in lockstep so
@@ -85,7 +85,7 @@ defmodule EmisarWeb.Mcp.Service do
     all_runners
     |> Enum.reject(& &1.disabled_at)
     |> Enum.filter(&runner_visible_to_key?(&1, api_key))
-    |> Enum.filter(&Accounts.runner_in_scope?(&1, scopes))
+    |> Enum.filter(&Runners.runner_in_scope?(&1, scopes))
     |> Enum.map(fn runner ->
       %{
         name: runner.name,
@@ -423,7 +423,7 @@ defmodule EmisarWeb.Mcp.Service do
       not runner_visible_to_key?(runner, api_key) ->
         "the API key's runner_filter / runner_group_filter doesn't include it"
 
-      not Accounts.runner_in_scope?(runner, scopes) ->
+      not Runners.runner_in_scope?(runner, scopes) ->
         "the user who minted this key has no runner-scope grant for it"
 
       true ->
@@ -452,7 +452,7 @@ defmodule EmisarWeb.Mcp.Service do
     |> Enum.reject(& &1.disabled_at)
     |> Enum.filter(&(&1.id in runner_ids_advertising))
     |> Enum.filter(&runner_visible_to_key?(&1, api_key))
-    |> Enum.filter(&Accounts.runner_in_scope?(&1, scopes))
+    |> Enum.filter(&Runners.runner_in_scope?(&1, scopes))
   end
 
   defp fetch_runners_by_id(subject, ids) do
@@ -582,7 +582,7 @@ defmodule EmisarWeb.Mcp.Service do
   defp membership_scopes(%{created_by_membership_id: nil}), do: []
 
   defp membership_scopes(%{created_by_membership_id: id}),
-    do: Accounts.runner_scopes_for_membership(id)
+    do: Runners.runner_scopes_for_membership(id)
 
   defp membership_scopes(_), do: []
 
@@ -590,7 +590,7 @@ defmodule EmisarWeb.Mcp.Service do
 
   defp action_in_membership_scope?(action, runners_by_id, scopes) do
     case Map.get(runners_by_id, action.runner_id) do
-      %{} = runner -> Accounts.runner_in_scope?(runner, scopes)
+      %{} = runner -> Runners.runner_in_scope?(runner, scopes)
       _ -> false
     end
   end

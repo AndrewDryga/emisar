@@ -19,7 +19,7 @@ defmodule EmisarWeb.RunnerDetailLive do
         # Per-user runner ACLs (#238): treat out-of-scope as not-found
         # rather than 403 — don't leak the existence of runners the
         # operator's scope doesn't grant access to.
-        if not Emisar.Accounts.runner_in_scope?(runner, membership) do
+        if not Runners.runner_in_scope?(runner, membership) do
           {:ok,
            socket
            |> put_flash(:error, "Runner not found.")

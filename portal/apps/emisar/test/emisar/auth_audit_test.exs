@@ -12,7 +12,7 @@ defmodule Emisar.AuthAuditTest do
 
   import Emisar.Fixtures
 
-  alias Emisar.{Accounts, Audit, Auth}
+  alias Emisar.{Accounts, Audit, Auth, Runners}
   alias Emisar.Auth.Subject
 
   defp events_of(account, event_type) do
@@ -336,7 +336,7 @@ defmodule Emisar.AuthAuditTest do
       membership: membership
     } do
       {:ok, _} =
-        Accounts.replace_runner_scopes(
+        Runners.replace_runner_scopes(
           membership,
           [{"group", "prod"}, {"group", "stage"}],
           owner_subject

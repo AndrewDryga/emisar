@@ -308,13 +308,13 @@ defmodule Emisar.Runs do
   defp runner_in_membership_scope(_runner_id, _account_id, nil), do: :ok
 
   defp runner_in_membership_scope(runner_id, _account_id, membership_id) do
-    case Emisar.Accounts.runner_scopes_for_membership(membership_id) do
+    case Emisar.Runners.runner_scopes_for_membership(membership_id) do
       [] ->
         :ok
 
       scopes ->
         with {:ok, runner} <- Emisar.Runners.peek_runner_by_id(runner_id) do
-          if Emisar.Accounts.runner_in_scope?(runner, scopes),
+          if Emisar.Runners.runner_in_scope?(runner, scopes),
             do: :ok,
             else: {:error, :runner_out_of_scope}
         end

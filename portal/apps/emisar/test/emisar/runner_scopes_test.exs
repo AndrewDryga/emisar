@@ -5,13 +5,13 @@ defmodule Emisar.RunnerScopesTest do
 
   alias Emisar.{Accounts, Runners, Runs}
 
-  describe "Accounts.replace_runner_scopes/2 + runner_scopes_for_membership/1" do
+  describe "Runners.replace_runner_scopes/2 + runner_scopes_for_membership/1" do
     test "empty list = all-runners default" do
       {_account, _user, subject} = account_with_owner()
       {:ok, membership} = Accounts.fetch_membership_for_session(subject.actor, nil)
 
-      assert {:ok, :ok} = Accounts.replace_runner_scopes(membership, [], subject)
-      assert Accounts.runner_scopes_for_membership(membership.id) == []
+      assert {:ok, :ok} = Runners.replace_runner_scopes(membership, [], subject)
+      assert Runners.runner_scopes_for_membership(membership.id) == []
     end
 
     test "replaces the full set atomically" do
@@ -19,7 +19,7 @@ defmodule Emisar.RunnerScopesTest do
       {:ok, membership} = Accounts.fetch_membership_for_session(subject.actor, nil)
 
       assert {:ok, :ok} =
-               Accounts.replace_runner_scopes(
+               Runners.replace_runner_scopes(
                  membership,
                  [
                    {"group", "dba"},
@@ -31,14 +31,14 @@ defmodule Emisar.RunnerScopesTest do
       assert [
                %{scope_type: :group, scope_value: "dba"},
                %{scope_type: :group, scope_value: "edge"}
-             ] = Accounts.runner_scopes_for_membership(membership.id)
+             ] = Runners.runner_scopes_for_membership(membership.id)
 
       # Second call replaces the set entirely.
       assert {:ok, :ok} =
-               Accounts.replace_runner_scopes(membership, [{"group", "app"}], subject)
+               Runners.replace_runner_scopes(membership, [{"group", "app"}], subject)
 
       assert [%{scope_type: :group, scope_value: "app"}] =
-               Accounts.runner_scopes_for_membership(membership.id)
+               Runners.runner_scopes_for_membership(membership.id)
     end
 
     test "rejects invalid scope_type via the changeset" do
@@ -46,7 +46,7 @@ defmodule Emisar.RunnerScopesTest do
       {:ok, membership} = Accounts.fetch_membership_for_session(subject.actor, nil)
 
       assert {:error, %Ecto.Changeset{}} =
-               Accounts.replace_runner_scopes(membership, [{"bogus", "x"}], subject)
+               Runners.replace_runner_scopes(membership, [{"bogus", "x"}], subject)
     end
 
     test "an operator (no manage_team permission) cannot widen scope → :unauthorized" do
@@ -60,7 +60,7 @@ defmodule Emisar.RunnerScopesTest do
       operator_subject = subject_for(operator, account, role: :operator)
 
       assert {:error, :unauthorized} =
-               Accounts.replace_runner_scopes(membership, [{"group", "dba"}], operator_subject)
+               Runners.replace_runner_scopes(membership, [{"group", "dba"}], operator_subject)
     end
   end
 
@@ -88,7 +88,7 @@ defmodule Emisar.RunnerScopesTest do
       _c = runner_fixture(account_id: account.id, name: "app1", group: "app")
 
       {:ok, :ok} =
-        Accounts.replace_runner_scopes(membership, [{"group", "dba"}], subject)
+        Runners.replace_runner_scopes(membership, [{"group", "dba"}], subject)
 
       {:ok, runners, _} =
         Runners.list_runners_for_account(subject, membership_id: membership.id)
@@ -106,7 +106,7 @@ defmodule Emisar.RunnerScopesTest do
       _other = runner_fixture(account_id: account.id, name: "other", group: "misc")
 
       {:ok, :ok} =
-        Accounts.replace_runner_scopes(
+        Runners.replace_runner_scopes(
           membership,
           [
             {"group", "dba"},
@@ -133,7 +133,7 @@ defmodule Emisar.RunnerScopesTest do
       runner_out = runner_fixture(account_id: account.id, name: "out", group: "app")
 
       {:ok, :ok} =
-        Accounts.replace_runner_scopes(membership, [{"group", "dba"}], subject)
+        Runners.replace_runner_scopes(membership, [{"group", "dba"}], subject)
 
       assert {:error, :runner_out_of_scope} =
                Runs.dispatch_run(
@@ -178,10 +178,10 @@ defmodule Emisar.RunnerScopesTest do
       {:ok, %{membership: m_b}} =
         Accounts.invite_user_to_account(email_b, "admin", subject)
 
-      {:ok, :ok} = Accounts.replace_runner_scopes(m_a, [{"group", "dba"}], subject)
-      {:ok, :ok} = Accounts.replace_runner_scopes(m_b, [{"group", "app"}], subject)
+      {:ok, :ok} = Runners.replace_runner_scopes(m_a, [{"group", "dba"}], subject)
+      {:ok, :ok} = Runners.replace_runner_scopes(m_b, [{"group", "app"}], subject)
 
-      grouped = Accounts.runner_scopes_for_membership_ids([m_a.id, m_b.id])
+      grouped = Runners.runner_scopes_for_membership_ids([m_a.id, m_b.id])
 
       assert [%{scope_value: "dba"}] = Map.get(grouped, m_a.id)
       assert [%{scope_value: "app"}] = Map.get(grouped, m_b.id)

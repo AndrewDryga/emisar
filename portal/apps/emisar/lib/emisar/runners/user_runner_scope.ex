@@ -1,4 +1,4 @@
-defmodule Emisar.Accounts.UserRunnerScope do
+defmodule Emisar.Runners.UserRunnerScope do
   @moduledoc """
   Per-membership runner allowlist row. Membership with no scopes = all
   runners (default + v0 behavior); membership with ≥1 scope = union of
