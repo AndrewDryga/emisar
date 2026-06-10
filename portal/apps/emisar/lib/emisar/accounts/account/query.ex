@@ -20,11 +20,12 @@ defmodule Emisar.Accounts.Account.Query do
     do: order_by(queryable, [accounts: a], asc: a.name)
 
   @doc """
-  Restrict to accounts the given user is a (non-suspended) member of.
-  Used by the "switch account" picker — a suspended user is not shown
-  as a member of the tenant that suspended them.
+  Restrict to accounts the given user is a member of — joins through
+  membership on `membership.user_id` and excludes suspended memberships
+  (`disabled_at`). Used by the "switch account" picker, so a suspended user
+  isn't shown the tenant that suspended them.
   """
-  def with_active_member(queryable, user_id) do
+  def by_membership_user_id(queryable, user_id) do
     queryable
     |> join(:inner, [accounts: a], m in Emisar.Accounts.Membership,
       on: m.account_id == a.id,

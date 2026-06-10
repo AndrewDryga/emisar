@@ -246,6 +246,7 @@ Rules:
 - Cross-table label helpers belong here too: `select_labels(queryable, ids, field)` (used by Audit).
 - A helper whose name implies a position (`latest`, `oldest`, `top_n`) owns both its `order_by` and its `limit` — callers shouldn't have to remember to order first for the limit to mean anything.
 - Name order helpers after the columns they sort by — `ordered_by_type_and_value`, `ordered_by_group_name`, not a bare `ordered`. The ordering is then visible at the call site and flags where a matching DB index (incl. its direction) is needed.
+- Match a helper's name to its argument: a name ending in `_id` (`by_user_id`, `by_membership_user_id`) takes an **id**; without that suffix it takes the **struct** (`by_user(user)`). For a value reached through a nested association, name by the **path** to it — `by_membership_user_id` (accounts → `membership.user_id`), not an opaque `with_active_member`. Reserve the `with_*` prefix for join/preload helpers (`with_joined_*`, `with_preloaded_*`), never a plain filter. (Edge cases exist — a helper bundling an extra constraint, like excluding suspended members; document the extra filter in the `@doc`.)
 - No `Repo.*` calls in Query modules. They build queryables; the context calls Repo.
 
 ### 3. Schema modules

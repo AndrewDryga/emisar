@@ -58,7 +58,7 @@ defmodule Emisar.Accounts do
   """
   def list_accounts_for_user(%Subject{actor: %User{id: user_id}}, opts \\ []) do
     Account.Query.not_deleted()
-    |> Account.Query.with_active_member(user_id)
+    |> Account.Query.by_membership_user_id(user_id)
     |> Account.Query.ordered_by_name()
     |> Repo.list(Account.Query, opts)
   end
