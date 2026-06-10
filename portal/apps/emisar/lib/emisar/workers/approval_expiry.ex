@@ -17,12 +17,13 @@ defmodule Emisar.Workers.ApprovalExpiry do
 
   use Oban.Worker, queue: :default, max_attempts: 2
 
+  require Logger
+
   @impl Oban.Worker
   def perform(%Oban.Job{}) do
     expired = Emisar.Approvals.expire_overdue_requests()
 
     if expired > 0 do
-      require Logger
       Logger.info("approval_expiry.swept", count: expired)
     end
 

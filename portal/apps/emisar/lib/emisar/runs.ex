@@ -283,10 +283,12 @@ defmodule Emisar.Runs do
   # whether the caller retried or made a fresh call.
   defp peek_idempotent_run(%{api_key_id: api_key_id, idempotency_key: key})
        when is_binary(api_key_id) and is_binary(key) and key != "" do
-    case ActionRun.Query.all()
-         |> ActionRun.Query.by_api_key_id(api_key_id)
-         |> ActionRun.Query.by_idempotency_key(key)
-         |> Repo.peek() do
+    query =
+      ActionRun.Query.all()
+      |> ActionRun.Query.by_api_key_id(api_key_id)
+      |> ActionRun.Query.by_idempotency_key(key)
+
+    case Repo.peek(query) do
       nil -> :none
       %ActionRun{} = run -> {:replay, run}
     end
@@ -663,7 +665,10 @@ defmodule Emisar.Runs do
     )
   end
 
-  def generate_request_id do
+  # Internal id-minter for the dispatch correlation id (req_…). Private:
+  # only `create_run/1` calls it, and §1.4 keeps internal helpers off the
+  # public context surface (no test reaches it either).
+  defp generate_request_id do
     "req_" <> (:crypto.strong_rand_bytes(16) |> Base.url_encode64(padding: false))
   end
 

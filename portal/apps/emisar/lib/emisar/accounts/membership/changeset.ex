@@ -12,14 +12,14 @@ defmodule Emisar.Accounts.Membership.Changeset do
     |> unique_constraint([:account_id, :user_id])
   end
 
-  def update(%Membership{} = m, attrs) do
-    cast(m, attrs, @update_fields)
+  def update(%Membership{} = membership, attrs) do
+    cast(membership, attrs, @update_fields)
   end
 
-  def delete(%Membership{} = m), do: change(m, deleted_at: now())
+  def delete(%Membership{} = membership), do: change(membership, deleted_at: now())
 
-  def suspend(%Membership{} = m), do: change(m, disabled_at: now())
-  def reinstate(%Membership{} = m), do: change(m, disabled_at: nil)
+  def suspend(%Membership{} = membership), do: change(membership, disabled_at: now())
+  def reinstate(%Membership{} = membership), do: change(membership, disabled_at: nil)
 
   defp now, do: DateTime.utc_now() |> DateTime.truncate(:microsecond)
 end

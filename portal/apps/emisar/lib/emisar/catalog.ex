@@ -538,12 +538,9 @@ defmodule Emisar.Catalog do
         end
 
       %RunnerAction{} = row ->
-        row
-        |> Ecto.Changeset.change(Map.delete(attrs, :first_seen_at))
-        |> Repo.update()
-        |> case do
+        case RunnerAction.Changeset.update(row, attrs) |> Repo.update() do
           {:ok, %RunnerAction{action_id: id}} -> id
-          _ -> nil
+          {:error, _} -> nil
         end
     end
   end

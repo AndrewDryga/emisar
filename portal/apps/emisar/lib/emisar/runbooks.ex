@@ -55,7 +55,7 @@ defmodule Emisar.Runbooks do
              subject,
              Authorizer.manage_runbooks_permission()
            ) do
-      user_id = subject_user_id(subject)
+      user_id = Subject.actor_id(subject)
 
       Multi.new()
       |> Multi.insert(
@@ -91,7 +91,7 @@ defmodule Emisar.Runbooks do
              subject,
              Authorizer.manage_runbooks_permission()
            ) do
-      user_id = subject_user_id(subject)
+      user_id = Subject.actor_id(subject)
 
       Multi.new()
       |> Multi.insert(:runbook, Runbook.Changeset.new_version(old, user_id, attrs))
@@ -124,7 +124,7 @@ defmodule Emisar.Runbooks do
              subject,
              Authorizer.manage_runbooks_permission()
            ) do
-      user_id = subject_user_id(subject)
+      user_id = Subject.actor_id(subject)
 
       Runbook.Query.not_deleted()
       |> Runbook.Query.by_id(rb.id)
@@ -147,14 +147,6 @@ defmodule Emisar.Runbooks do
       )
     end
   end
-
-  defp subject_user_id(%Subject{actor: %{id: id}}), do: id
-
-  # -- Authorization ---------------------------------------------------
-
-  @doc "Whether `subject` may manage runbooks (admin+)."
-  def subject_can_manage_runbooks?(%Subject{} = subject),
-    do: Auth.Authorizer.has_permission?(subject, Authorizer.manage_runbooks_permission())
 
   # -- Expansion + dispatch (internal — called by Runs / executor) ----
 
@@ -186,7 +178,14 @@ defmodule Emisar.Runbooks do
         step = hd(steps)
 
         runbook
-        |> step_attrs(runner_id, subject_user_id(subject), reason, step, 0, subject.membership_id)
+        |> step_attrs(
+          runner_id,
+          Subject.actor_id(subject),
+          reason,
+          step,
+          0,
+          subject.membership_id
+        )
         |> Emisar.Runs.dispatch_run(subject)
       end
     end
@@ -241,6 +240,12 @@ defmodule Emisar.Runbooks do
   end
 
   def dispatch_next_step(_), do: :noop
+
+  # -- Authorization ---------------------------------------------------
+
+  @doc "Whether `subject` may manage runbooks (admin+)."
+  def subject_can_manage_runbooks?(%Subject{} = subject),
+    do: Auth.Authorizer.has_permission?(subject, Authorizer.manage_runbooks_permission())
 
   # Internal lookup (no Subject) for the runbook engine — `Runs`
   # already authorized at dispatch time, this just continues that flow.

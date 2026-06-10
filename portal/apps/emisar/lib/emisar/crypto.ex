@@ -43,6 +43,15 @@ defmodule Emisar.Crypto do
   def hash(raw) when is_binary(raw), do: :crypto.hash(:sha256, raw)
 
   @doc """
+  PKCE S256 challenge transform (RFC 7636): the url-safe-base64 (no
+  padding) encoding of `hash/1`. Lives here so the OAuth context never
+  inlines `Base.url_encode64` over a digest itself — same single crypto
+  review surface as every other secret transform.
+  """
+  def pkce_s256_challenge(verifier) when is_binary(verifier),
+    do: hash(verifier) |> Base.url_encode64(padding: false)
+
+  @doc """
   Mint a prefixed bearer secret for a credential looked up by a visible
   prefix (API keys, runner auth keys, runner tokens).
 

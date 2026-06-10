@@ -224,6 +224,10 @@ defmodule Emisar.Billing do
   end
 
   @doc """
+  Internal — the Paddle webhook controller's entry point; the request's
+  signature is the auth gate at the edge, so there's no Subject here. Not
+  exposed to LiveView/MCP.
+
   Atomically:
 
     * inserts the Paddle event id into `paddle_processed_events` (unique
@@ -269,8 +273,10 @@ defmodule Emisar.Billing do
   end
 
   @doc """
-  Apply an incoming Paddle webhook event. Idempotent on `event["id"]`
-  (deduped via `record_and_apply_event/3`).
+  Internal — applies an incoming Paddle webhook event (account-scoped via
+  the customer/subscription id in the payload, no Subject). Idempotent on
+  `event["id"]` (deduped via `record_and_apply_event/3`). Webhook/worker
+  only; not exposed to LiveView/MCP.
   """
   def apply_webhook_event(%{"event_type" => "subscription.created", "data" => sub}),
     do: upsert_from_subscription(sub)
@@ -352,7 +358,8 @@ defmodule Emisar.Billing do
   end
 
   @doc """
-  Extracts the next billing time from a Paddle subscription payload.
+  Internal — extracts the next billing time from a Paddle subscription
+  payload (used by the webhook upsert + `Workers.BillingSync`, no Subject).
   Paddle returns ISO8601 strings (not epoch ints). The top-level field
   is `next_billed_at`; some payloads put it under
   `current_billing_period.ends_at` — handle both.
@@ -423,6 +430,8 @@ defmodule Emisar.Billing do
   @doc "Whether `subject` may manage billing and the subscription (owner-only)."
   def subject_can_manage_billing?(%Subject{} = subject),
     do: Auth.Authorizer.has_permission?(subject, Authorizer.manage_billing_permission())
+
+  # -- Plan headroom (UI) -----------------------------------------------
 
   @doc """
   Headroom on a `summary` resource: `:ok` (>1 slot free),

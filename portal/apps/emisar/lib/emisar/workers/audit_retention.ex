@@ -6,6 +6,8 @@ defmodule Emisar.Workers.AuditRetention do
   """
   use Oban.Worker, queue: :audit, max_attempts: 2
 
+  require Logger
+
   alias Emisar.Repo
   alias Emisar.Accounts.Account
   alias Emisar.Audit.Event
@@ -32,7 +34,6 @@ defmodule Emisar.Workers.AuditRetention do
       |> Repo.delete_all()
 
     if n > 0 do
-      require Logger
       Logger.info("audit retention: pruned #{n} events from account #{account.id}")
     end
   end

@@ -13,6 +13,7 @@ defmodule Emisar.Auth do
   alias Emisar.Audit
   alias Emisar.Auth.Subject
   alias Emisar.Auth.UserToken
+  alias Emisar.Crypto
   alias Emisar.Repo
 
   # -- Password sign in -------------------------------------------------
@@ -138,7 +139,7 @@ defmodule Emisar.Auth do
   """
   def revoke_and_disconnect_other_sessions!(keep_token, %Subject{actor: %User{} = user})
       when is_binary(keep_token) do
-    keep_digest = :crypto.hash(:sha256, keep_token)
+    keep_digest = Crypto.hash(keep_token)
     broadcast_disconnect_for_user(user, except: keep_digest)
     revoke_other_sessions!(user, keep_token)
   end
@@ -235,7 +236,7 @@ defmodule Emisar.Auth do
   else". Pass `nil` to revoke every session including the current one.
   """
   def revoke_other_sessions!(%User{} = user, keep_token) when is_binary(keep_token) do
-    keep_digest = :crypto.hash(:sha256, keep_token)
+    keep_digest = Crypto.hash(keep_token)
     revoke_sessions_atomically!(user, UserToken.other_sessions_for_user_query(user, keep_digest))
   end
 
@@ -521,7 +522,7 @@ defmodule Emisar.Auth do
     |> Enum.map(fn _ ->
       raw = :crypto.strong_rand_bytes(@recovery_code_bytes)
       plain = Base.encode32(raw, padding: false) |> String.downcase()
-      {plain, :crypto.hash(:sha256, plain)}
+      {plain, Crypto.hash(plain)}
     end)
     |> Enum.unzip()
   end
@@ -578,12 +579,12 @@ defmodule Emisar.Auth do
   """
   def consume_mfa_recovery_code(%User{mfa_recovery_codes: codes} = user, raw)
       when is_list(codes) and is_binary(raw) do
-    digest = :crypto.hash(:sha256, String.downcase(String.trim(raw)))
+    digest = Crypto.hash(String.downcase(String.trim(raw)))
 
-    matched? = Enum.any?(codes, &Emisar.Crypto.secure_compare(&1, digest))
+    matched? = Enum.any?(codes, &Crypto.secure_compare(&1, digest))
 
     if matched? do
-      remaining = Enum.reject(codes, &Emisar.Crypto.secure_compare(&1, digest))
+      remaining = Enum.reject(codes, &Crypto.secure_compare(&1, digest))
 
       Multi.new()
       |> Multi.update(:user, User.Changeset.mfa_recovery_codes(user, remaining))

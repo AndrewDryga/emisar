@@ -168,20 +168,21 @@ defmodule Emisar.ApiKeys do
 
       {raw, prefix, hash} = Crypto.mint("emk-", @prefix_size)
 
-      Repo.transaction(fn ->
-        {:ok, key} =
-          ApiKey.Changeset.mint_quick(account_id, user_id, membership_id, prefix, hash, %{
-            name: name,
-            runner_filter: runner_filter,
-            runner_group_filter: runner_group_filter
-          })
-          |> Repo.insert()
+      changeset =
+        ApiKey.Changeset.mint_quick(account_id, user_id, membership_id, prefix, hash, %{
+          name: name,
+          runner_filter: runner_filter,
+          runner_group_filter: runner_group_filter
+        })
 
+      Multi.new()
+      |> Multi.insert(:key, changeset)
+      |> Multi.run(:evicted, fn _repo, %{key: key} ->
         evict_quick_ring_overflow(account_id, cap, grace_s, key.auto_generated_at)
-        {raw, key}
       end)
+      |> Repo.commit_multi()
       |> case do
-        {:ok, {raw, key}} -> {:ok, raw, key}
+        {:ok, %{key: key}} -> {:ok, raw, key}
         {:error, reason} -> {:error, reason}
       end
     end
@@ -190,8 +191,11 @@ defmodule Emisar.ApiKeys do
   defp evict_quick_ring_overflow(account_id, cap, grace_seconds, now) do
     protected_floor = DateTime.add(now, -grace_seconds, :second)
 
-    ApiKey.Query.evictable_quick_overflow(account_id, cap, protected_floor)
-    |> Repo.delete_all()
+    {evicted, _} =
+      ApiKey.Query.evictable_quick_overflow(account_id, cap, protected_floor)
+      |> Repo.delete_all()
+
+    {:ok, evicted}
   end
 
   def revoke_api_key(%ApiKey{} = key, %Subject{} = subject) do

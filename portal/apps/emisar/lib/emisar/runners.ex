@@ -341,6 +341,7 @@ defmodule Emisar.Runners do
   # the DB keeps only durable, event-driven facts (last_connected_at,
   # last_disconnected_at, last_disconnect_reason).
 
+  @doc "Internal — persists a runner_state advertisement from the runner socket."
   def apply_state(%Runner{} = runner, %{} = payload) do
     runner
     |> Runner.Changeset.apply_state(%{
@@ -403,6 +404,7 @@ defmodule Emisar.Runners do
     end)
   end
 
+  @doc "Internal — stamps disconnect history from the runner socket on close."
   def mark_disconnected(runner_or_id, reason \\ nil)
 
   def mark_disconnected(%Runner{} = runner, reason) do
@@ -545,8 +547,8 @@ defmodule Emisar.Runners do
           now = DateTime.utc_now()
 
           rows =
-            Enum.map(changesets, fn cs ->
-              cs.changes
+            Enum.map(changesets, fn changeset ->
+              changeset.changes
               |> Map.put(:id, Repo.generate_id())
               |> Map.put(:inserted_at, now)
             end)

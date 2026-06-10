@@ -214,10 +214,10 @@ defmodule Emisar.Approvals do
       Auth.Authorizer.roles_with_permission(Authorizer.decide_approval_permission())
 
     memberships
-    |> Enum.filter(fn m ->
+    |> Enum.filter(fn membership ->
       # Only members who can decide get pinged (viewers can't); the user who
       # triggered the request is excluded since they already saw it in the UI.
-      m.role in approver_roles and m.user_id != requested_by_id
+      membership.role in approver_roles and membership.user_id != requested_by_id
     end)
     |> Enum.each(&deliver_approval_email(&1, req, run))
 
@@ -226,7 +226,7 @@ defmodule Emisar.Approvals do
       else: :ok
   end
 
-  defp deliver_approval_email(m, req, run) do
+  defp deliver_approval_email(membership, req, run) do
     require Logger
 
     try do
@@ -234,13 +234,13 @@ defmodule Emisar.Approvals do
       # on transport failure (Mailgun 5xx, SMTP timeout). It DOES NOT
       # raise on non-success — a bare `try` would silently drop
       # delivery errors. Pattern-match and log non-success explicitly.
-      case Emisar.Mailers.UserNotifier.deliver_approval_request(m.user, req, run) do
+      case Emisar.Mailers.UserNotifier.deliver_approval_request(membership.user, req, run) do
         {:ok, _} ->
           :ok
 
         {:error, reason} ->
           Logger.warning("approval_email_failed",
-            user_id: m.user_id,
+            user_id: membership.user_id,
             req_id: req.id,
             error: inspect(reason)
           )
@@ -248,7 +248,7 @@ defmodule Emisar.Approvals do
     rescue
       err ->
         Logger.warning("approval_email_crashed",
-          user_id: m.user_id,
+          user_id: membership.user_id,
           req_id: req.id,
           error: inspect(err)
         )
@@ -301,8 +301,8 @@ defmodule Emisar.Approvals do
                   # call. Roll the whole transaction back so the request stays
                   # pending and the operator can retry.
                   case create_grant(req, run, by_user_id, grant_attrs) do
-                    {:ok, g} -> g
-                    {:error, cs} -> Repo.rollback({:grant_failed, cs})
+                    {:ok, grant} -> grant
+                    {:error, changeset} -> Repo.rollback({:grant_failed, changeset})
                   end
                 end
 
@@ -373,15 +373,15 @@ defmodule Emisar.Approvals do
     end
   end
 
+  defp denial_reason(nil), do: "approval denied"
+  defp denial_reason(reason), do: "approval denied: " <> reason
+
   # Atomically claim a pending approval request as decided. Two operators
   # clicking Approve at the same moment would both pass the LiveView's
   # `status == "pending"` precondition; only one's SQL update will see
   # `WHERE status = 'pending'` evaluate true. The loser gets 0 rows
   # affected and we return `{:error, :already_decided}` so the caller
   # can flash a useful message rather than double-dispatching.
-  defp denial_reason(nil), do: "approval denied"
-  defp denial_reason(reason), do: "approval denied: " <> reason
-
   defp claim_pending(%Request{} = req, status, by_user_id, reason) do
     now = DateTime.utc_now() |> DateTime.truncate(:microsecond)
     status_str = to_string(status)
@@ -408,8 +408,8 @@ defmodule Emisar.Approvals do
     |> Repo.fetch!(Runs.ActionRun.Query)
   end
 
-  defp tap_broadcast({:ok, %Request{} = r} = result) do
-    PubSub.broadcast_approval(r)
+  defp tap_broadcast({:ok, %Request{} = request} = result) do
+    PubSub.broadcast_approval(request)
     result
   end
 

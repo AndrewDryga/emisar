@@ -265,8 +265,7 @@ defmodule Emisar.OAuth do
          %AuthorizationCode{code_challenge: challenge, code_challenge_method: "S256"},
          verifier
        ) do
-    computed = Base.url_encode64(Crypto.hash(verifier), padding: false)
-    constant_eq(computed, challenge)
+    constant_eq(Crypto.pkce_s256_challenge(verifier), challenge)
   end
 
   # Plain method is not allowed (S256 required by MCP).
