@@ -17,6 +17,7 @@ defmodule Emisar.OAuth do
     * access token       — `emo-…`   (1 hour)
     * refresh token      — `emor-…`  (30 days, rotated on use)
   """
+  alias Ecto.Multi
   alias Emisar.{Accounts, ApiKeys, Crypto, Repo}
   alias Emisar.Auth.{Authorizer, Subject}
   alias Emisar.OAuth.{AuthorizationCode, Client, Token}
@@ -89,32 +90,32 @@ defmodule Emisar.OAuth do
       user_id = Subject.actor_id(subject)
       membership_id = subject.membership_id
       key_name = "#{client.client_name || "MCP client"} (OAuth)"
+      raw = "emoc-" <> Crypto.random_secret()
 
-      Repo.transaction(fn ->
-        {:ok, key} =
-          ApiKeys.create_backing_key(account.id, user_id, membership_id, key_name)
-
-        raw = "emoc-" <> Crypto.random_secret()
-
-        {:ok, _code} =
-          %{
-            code_hash: Crypto.hash(raw),
-            client_id: client.id,
-            account_id: account.id,
-            membership_id: membership_id,
-            api_key_id: key.id,
-            redirect_uri: params["redirect_uri"],
-            code_challenge: params["code_challenge"],
-            code_challenge_method: params["code_challenge_method"] || "S256",
-            scope: params["scope"] || "mcp offline_access",
-            resource: params["resource"],
-            expires_at: secs_from_now(@code_ttl_s)
-          }
-          |> AuthorizationCode.Changeset.create()
-          |> Repo.insert()
-
-        raw
+      Multi.new()
+      |> Multi.run(:key, fn _repo, _changes ->
+        ApiKeys.create_backing_key(account.id, user_id, membership_id, key_name)
       end)
+      |> Multi.insert(:code, fn %{key: key} ->
+        AuthorizationCode.Changeset.create(%{
+          code_hash: Crypto.hash(raw),
+          client_id: client.id,
+          account_id: account.id,
+          membership_id: membership_id,
+          api_key_id: key.id,
+          redirect_uri: params["redirect_uri"],
+          code_challenge: params["code_challenge"],
+          code_challenge_method: params["code_challenge_method"] || "S256",
+          scope: params["scope"] || "mcp offline_access",
+          resource: params["resource"],
+          expires_at: secs_from_now(@code_ttl_s)
+        })
+      end)
+      |> Repo.commit_multi()
+      |> case do
+        {:ok, _changes} -> {:ok, raw}
+        {:error, reason} -> {:error, reason}
+      end
     end
   end
 
@@ -134,25 +135,37 @@ defmodule Emisar.OAuth do
         "code_verifier" => verifier
       })
       when is_binary(raw_code) and is_binary(client_id) and is_binary(verifier) do
-    Repo.transaction(fn ->
-      with %AuthorizationCode{} = code <-
-             AuthorizationCode.Query.all()
-             |> AuthorizationCode.Query.by_code_hash(Crypto.hash(raw_code))
-             |> AuthorizationCode.Query.lock_for_update()
-             |> Repo.peek(),
+    Multi.new()
+    |> Multi.run(:code, fn repo, _changes ->
+      # Locked read so two concurrent exchanges of the same code
+      # serialize — the loser sees `used_at` set and gets :invalid_grant.
+      code =
+        AuthorizationCode.Query.all()
+        |> AuthorizationCode.Query.by_code_hash(Crypto.hash(raw_code))
+        |> AuthorizationCode.Query.lock_for_update()
+        |> repo.one()
+
+      with %AuthorizationCode{} <- code,
            :ok <- check_code_live(code),
            :ok <- check(code.client_id == client_id, :invalid_grant),
            :ok <- check(constant_eq(code.redirect_uri, redirect_uri), :invalid_grant),
            :ok <- check(pkce_ok?(code, verifier), :invalid_grant) do
-        # Burn the code (single use) before issuing tokens.
-        {:ok, _} = code |> AuthorizationCode.Changeset.consume() |> Repo.update()
-
-        mint_token_pair!(code)
+        {:ok, code}
       else
-        {:error, reason} -> Repo.rollback(reason)
-        _ -> Repo.rollback(:invalid_grant)
+        {:error, reason} -> {:error, reason}
+        _ -> {:error, :invalid_grant}
       end
     end)
+    # Burn the code (single use) before issuing tokens.
+    |> Multi.run(:burned, fn repo, %{code: code} ->
+      repo.update(AuthorizationCode.Changeset.consume(code))
+    end)
+    |> Multi.run(:tokens, fn _repo, %{code: code} -> {:ok, mint_token_pair!(code)} end)
+    |> Repo.commit_multi()
+    |> case do
+      {:ok, %{tokens: tokens}} -> {:ok, tokens}
+      {:error, reason} -> {:error, reason}
+    end
   end
 
   def exchange_code(_), do: {:error, :invalid_request}
@@ -165,30 +178,44 @@ defmodule Emisar.OAuth do
   @spec refresh(map()) :: {:ok, map()} | {:error, atom()}
   def refresh(%{"refresh_token" => raw, "client_id" => client_id})
       when is_binary(raw) and is_binary(client_id) do
-    Repo.transaction(fn ->
-      with %Token{} = tok <-
-             Token.Query.all()
-             |> Token.Query.not_revoked()
-             |> Token.Query.by_refresh_hash(Crypto.hash(raw))
-             |> Repo.peek(),
-           :ok <- check(tok.client_id == client_id, :invalid_grant),
-           :ok <- check(live?(tok.refresh_expires_at), :invalid_grant) do
-        # Rotate: revoke the old row, issue a new pair from the same key.
-        {:ok, _} = tok |> Token.Changeset.revoke() |> Repo.update()
+    Multi.new()
+    |> Multi.run(:token, fn repo, _changes ->
+      token =
+        Token.Query.all()
+        |> Token.Query.not_revoked()
+        |> Token.Query.by_refresh_hash(Crypto.hash(raw))
+        |> Token.Query.lock_for_update()
+        |> repo.one()
 
-        mint_token_pair!(%{
-          client_id: tok.client_id,
-          account_id: tok.account_id,
-          membership_id: tok.membership_id,
-          api_key_id: tok.api_key_id,
-          scope: tok.scope,
-          resource: tok.resource
-        })
+      with %Token{} <- token,
+           :ok <- check(token.client_id == client_id, :invalid_grant),
+           :ok <- check(live?(token.refresh_expires_at), :invalid_grant) do
+        {:ok, token}
       else
-        {:error, reason} -> Repo.rollback(reason)
-        _ -> Repo.rollback(:invalid_grant)
+        {:error, reason} -> {:error, reason}
+        _ -> {:error, :invalid_grant}
       end
     end)
+    # Rotate: revoke the old row, issue a new pair from the same key.
+    |> Multi.run(:revoked, fn repo, %{token: token} ->
+      repo.update(Token.Changeset.revoke(token))
+    end)
+    |> Multi.run(:tokens, fn _repo, %{token: token} ->
+      {:ok,
+       mint_token_pair!(%{
+         client_id: token.client_id,
+         account_id: token.account_id,
+         membership_id: token.membership_id,
+         api_key_id: token.api_key_id,
+         scope: token.scope,
+         resource: token.resource
+       })}
+    end)
+    |> Repo.commit_multi()
+    |> case do
+      {:ok, %{tokens: tokens}} -> {:ok, tokens}
+      {:error, reason} -> {:error, reason}
+    end
   end
 
   def refresh(_), do: {:error, :invalid_request}
