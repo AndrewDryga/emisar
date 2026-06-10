@@ -205,20 +205,19 @@ defmodule Emisar.ApiKeys do
            Auth.Authorizer.ensure_has_permissions(
              subject,
              Authorizer.manage_api_keys_permission()
-           ),
-         :ok <- Subject.ensure_in_account(subject, key.account_id) do
+           ) do
       by_user_id = Subject.actor_id(subject)
 
-      Multi.new()
-      |> Multi.update(:key, ApiKey.Changeset.revoke(key, by_user_id))
-      |> Multi.insert(:audit, fn %{key: revoked} ->
-        Audit.Events.api_key_revoked(subject, revoked)
-      end)
-      |> Repo.commit_multi(after_commit: &broadcast_api_key_change(&1, "api_key.revoked"))
-      |> case do
-        {:ok, %{key: revoked}} -> {:ok, revoked}
-        {:error, reason} -> {:error, reason}
-      end
+      ApiKey.Query.not_deleted()
+      |> ApiKey.Query.by_id(key.id)
+      |> Authorizer.for_subject(subject)
+      |> Repo.fetch_and_update(ApiKey.Query,
+        with: &ApiKey.Changeset.revoke(&1, by_user_id),
+        audit: fn revoked -> Audit.Events.api_key_revoked(subject, revoked) end,
+        after_commit: fn revoked ->
+          broadcast_api_key_change(%{key: revoked}, "api_key.revoked")
+        end
+      )
     end
   end
 

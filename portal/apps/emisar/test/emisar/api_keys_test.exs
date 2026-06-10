@@ -13,6 +13,24 @@ defmodule Emisar.ApiKeysTest do
     {user, account, subject_for(user, account, role: :owner)}
   end
 
+  describe "list buckets" do
+    test "audit-export tokens land on the audit list, never the agents list" do
+      {_user, _account, subject} = owner_subject_pair()
+
+      {:ok, _raw, agent_key} =
+        ApiKeys.create_key(%{name: "agent", scopes: ["actions:read"]}, subject)
+
+      {:ok, _raw, export_key} =
+        ApiKeys.create_key(%{name: "siem", scopes: ["audit:read"]}, subject)
+
+      assert {:ok, [agents_visible], _} = ApiKeys.list_api_keys_for_account(subject)
+      assert agents_visible.id == agent_key.id
+
+      assert {:ok, [export_visible], _} = ApiKeys.list_audit_export_keys_for_account(subject)
+      assert export_visible.id == export_key.id
+    end
+  end
+
   describe "create_key/2" do
     test "returns raw + persisted key" do
       {user, account, subject} = owner_subject_pair()
