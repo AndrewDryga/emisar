@@ -79,15 +79,17 @@ defmodule Emisar.Runs do
       hours = Keyword.get(opts, :hours, 24)
       cutoff = DateTime.utc_now() |> DateTime.add(-hours * 3600, :second)
 
-      rows =
+      counts =
         ActionRun.Query.all()
         |> ActionRun.Query.inserted_after(cutoff)
         |> Authorizer.for_subject(subject)
+        |> ActionRun.Query.count_by_status()
         |> Repo.all()
+        |> Map.new()
 
-      total = length(rows)
-      success = Enum.count(rows, &(&1.status == "success"))
-      failed = Enum.count(rows, &(&1.status in @failed_statuses))
+      total = counts |> Map.values() |> Enum.sum()
+      success = Map.get(counts, "success", 0)
+      failed = @failed_statuses |> Enum.map(&Map.get(counts, &1, 0)) |> Enum.sum()
       terminal = success + failed
 
       {:ok,
@@ -769,17 +771,41 @@ defmodule Emisar.Runs do
 
   defp transition(%ActionRun{} = run, status, attrs) do
     if ActionRun.terminal?(run.status) do
-      # Idempotent guard: a late or duplicate runner result — e.g. one racing
-      # an operator cancel or a dispatch-timeout that already set the run
-      # terminal — must not overwrite the terminal status, and (critically)
-      # must not re-advance a runbook to its next step. The run is final.
+      # Cheap idempotent guard on the caller's struct. The authoritative
+      # check is the locked re-read below — this just spares the round
+      # trip when the caller already sees a final run.
       {:ok, run}
     else
       Multi.new()
-      |> Multi.update(:run, ActionRun.Changeset.transition(run, status, attrs))
+      |> Multi.run(:run, fn repo, _changes ->
+        # The caller's struct can be stale: a runner result, an operator
+        # cancel, and the timeout sweep race on the same row, and a late
+        # writer must NOT overwrite a terminal status (or re-advance a
+        # runbook). Re-read under the row lock and treat already-terminal
+        # as a benign no-op.
+        fresh =
+          ActionRun.Query.all()
+          |> ActionRun.Query.by_id(run.id)
+          |> ActionRun.Query.lock_for_update()
+          |> repo.one()
+
+        cond do
+          is_nil(fresh) -> {:error, :not_found}
+          ActionRun.terminal?(fresh.status) -> {:ok, :already_terminal}
+          true -> repo.update(ActionRun.Changeset.transition(fresh, status, attrs))
+        end
+      end)
       |> put_run_audit_event()
-      |> Repo.commit_multi(after_commit: fn %{run: run} -> broadcast_run(run) end)
+      |> Repo.commit_multi(
+        after_commit: fn
+          %{run: :already_terminal} -> :ok
+          %{run: run} -> broadcast_run(run)
+        end
+      )
       |> case do
+        # The losing racer keeps the caller's struct — same contract as
+        # the early guard above; the winner's broadcast carries truth.
+        {:ok, %{run: :already_terminal}} -> {:ok, run}
         {:ok, %{run: run}} -> {:ok, run}
         {:error, reason} -> {:error, reason}
       end
@@ -788,12 +814,12 @@ defmodule Emisar.Runs do
 
   # Adds the run-event audit insert to a Multi, but only for statuses
   # worth auditing (see `@audited_run_statuses`). Returns `{:ok, nil}`
-  # for the skipped intermediate states so the transaction still
-  # commits and `fan_out_audit_events/1` simply finds no event to
-  # broadcast.
+  # for the skipped intermediate states (and the already-terminal no-op)
+  # so the transaction still commits and `fan_out_audit_events/1` simply
+  # finds no event to broadcast.
   defp put_run_audit_event(multi) do
     Multi.run(multi, :audit, fn repo, %{run: run} ->
-      if run.status in @audited_run_statuses do
+      if is_struct(run, ActionRun) and run.status in @audited_run_statuses do
         repo.insert(Audit.run_event_changeset(run))
       else
         {:ok, nil}

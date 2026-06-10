@@ -54,6 +54,22 @@ defmodule Emisar.Runs.ActionRun.Query do
   def by_action_id(queryable, action_id),
     do: where(queryable, [runs: r], r.action_id == ^action_id)
 
+  @doc "Status → row count pairs; the dashboard stats roll-up."
+  def count_by_status(queryable) do
+    queryable
+    |> group_by([runs: r], r.status)
+    |> select([runs: r], {r.status, count(r.id)})
+  end
+
+  @doc """
+  Row lock for the state-transition re-read (`FOR NO KEY UPDATE`, the
+  same mode the repo's fetch-and-update path takes), so concurrent
+  finishers — runner result vs. operator cancel vs. timeout sweep —
+  serialize instead of clobbering a terminal status.
+  """
+  def lock_for_update(queryable),
+    do: lock(queryable, "FOR NO KEY UPDATE")
+
   def ordered_by_recent(queryable \\ all()),
     do: order_by(queryable, [runs: r], desc: r.inserted_at)
 

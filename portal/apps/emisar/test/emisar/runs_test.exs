@@ -536,6 +536,83 @@ defmodule Emisar.RunsTest do
     end
   end
 
+  describe "dashboard + per-runner reads" do
+    setup do
+      account = account_fixture()
+      runner = runner_fixture(account_id: account.id)
+      user = user_fixture()
+      _ = membership_fixture(account_id: account.id, user_id: user.id, role: "owner")
+      {:ok, account: account, runner: runner, subject: subject_for(user, account, role: :owner)}
+    end
+
+    test "fetch_run_stats rolls up totals by status", %{
+      account: account,
+      runner: runner,
+      subject: subject
+    } do
+      for status <- ~w[success success failed pending] do
+        {:ok, _} = Runs.create_run(base_attrs(account.id, runner.id, %{status: status}))
+      end
+
+      assert {:ok, stats} = Runs.fetch_run_stats(subject)
+      assert stats.total == 4
+      assert stats.success == 2
+      assert stats.failed == 1
+      assert stats.success_rate == 67
+    end
+
+    test "list_recent_runs_for_runner scopes to the runner and the subject's account", %{
+      account: account,
+      runner: runner,
+      subject: subject
+    } do
+      other_runner = runner_fixture(account_id: account.id)
+      {:ok, mine} = Runs.create_run(base_attrs(account.id, runner.id))
+      {:ok, _theirs} = Runs.create_run(base_attrs(account.id, other_runner.id))
+
+      assert {:ok, [only], _} = Runs.list_recent_runs_for_runner(runner.id, subject)
+      assert only.id == mine.id
+
+      {_user_b, _account_b, subject_b} = owner_subject_fixture()
+      assert {:ok, [], _} = Runs.list_recent_runs_for_runner(runner.id, subject_b)
+    end
+
+    test "list_events_for_run returns seq-ordered events and refuses cross-account", %{
+      account: account,
+      runner: runner,
+      subject: subject
+    } do
+      {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
+      {:ok, _} = Runs.append_event(run, %{seq: 1, kind: "progress", payload: %{"line" => "a"}})
+      {:ok, _} = Runs.append_event(run, %{seq: 2, kind: "progress", payload: %{"line" => "b"}})
+
+      assert {:ok, [%RunEvent{seq: 1}, %RunEvent{seq: 2}], _} =
+               Runs.list_events_for_run(run.id, subject)
+
+      {_user_b, _account_b, subject_b} = owner_subject_fixture()
+      assert {:error, :not_found} = Runs.list_events_for_run(run.id, subject_b)
+    end
+  end
+
+  describe "transition terminal protection" do
+    test "a late result holding a stale struct can't overwrite a terminal status" do
+      account = account_fixture()
+      runner = runner_fixture(account_id: account.id)
+      {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
+      {:ok, sent} = Runs.mark_sent(run)
+
+      # An operator cancel lands while the runner's result is in flight…
+      {:ok, cancelled} = Runs.mark_cancelled(sent, "operator cancelled")
+      assert cancelled.status == "cancelled"
+
+      # …and the late result arrives still holding the PRE-cancel struct.
+      # The locked re-read must keep the run final instead of letting the
+      # stale writer flip cancelled → success.
+      assert {:ok, _} = Runs.mark_finished(sent, %{"status" => "success"})
+      assert Runs.peek_run_by_id(run.id).status == "cancelled"
+    end
+  end
+
   describe "cancel_run/3" do
     test "cancelling a terminal run is a no-op" do
       account = account_fixture()
