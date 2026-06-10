@@ -49,7 +49,7 @@ defmodule Emisar.Policies.Policy.Changeset do
   end
 
   def delete(%Policy{} = policy) do
-    change(policy, deleted_at: now())
+    change(policy, deleted_at: DateTime.utc_now())
   end
 
   defp validate_rules(changeset) do
@@ -134,6 +134,4 @@ defmodule Emisar.Policies.Policy.Changeset do
   end
 
   defp check_overrides(_), do: {:error, "overrides must be a list"}
-
-  defp now, do: DateTime.utc_now() |> DateTime.truncate(:microsecond)
 end

@@ -12,7 +12,7 @@ defmodule Emisar.Runners.UserRunnerScope do
   schema "user_runner_scopes" do
     field :scope_type, Ecto.Enum, values: [:group, :runner]
     field :scope_value, :string
-    belongs_to :membership, Emisar.Accounts.Membership
+    belongs_to :membership, Emisar.Accounts.Membership, where: [deleted_at: nil]
 
     timestamps(updated_at: false)
   end

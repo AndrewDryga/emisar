@@ -66,18 +66,16 @@ defmodule Emisar.Runbooks.Runbook.Changeset do
   end
 
   def delete(%Runbook{} = runbook),
-    do: change(runbook, deleted_at: now())
+    do: change(runbook, deleted_at: DateTime.utc_now())
 
   def statuses, do: @statuses
 
-  defp changeset(cs) do
-    cs
+  defp changeset(changeset) do
+    changeset
     |> validate_required([:account_id, :name, :slug, :title, :definition])
     |> validate_length(:name, min: 1, max: 80)
     |> validate_format(:slug, ~r/^[a-z][a-z0-9_-]{0,79}$/)
     |> validate_inclusion(:status, @statuses)
     |> unique_constraint([:account_id, :slug, :version])
   end
-
-  defp now, do: DateTime.utc_now() |> DateTime.truncate(:microsecond)
 end

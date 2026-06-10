@@ -16,10 +16,8 @@ defmodule Emisar.Accounts.Membership.Changeset do
     cast(membership, attrs, @update_fields)
   end
 
-  def delete(%Membership{} = membership), do: change(membership, deleted_at: now())
+  def delete(%Membership{} = membership), do: change(membership, deleted_at: DateTime.utc_now())
 
-  def suspend(%Membership{} = membership), do: change(membership, disabled_at: now())
+  def suspend(%Membership{} = membership), do: change(membership, disabled_at: DateTime.utc_now())
   def reinstate(%Membership{} = membership), do: change(membership, disabled_at: nil)
-
-  defp now, do: DateTime.utc_now() |> DateTime.truncate(:microsecond)
 end

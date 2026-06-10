@@ -172,7 +172,7 @@ defmodule Emisar.Runs do
   def create_run(attrs) do
     request_id = attrs[:request_id] || generate_request_id()
     attrs = Map.put(attrs, :request_id, request_id)
-    attrs = Map.put(attrs, :queued_at, DateTime.utc_now() |> DateTime.truncate(:microsecond))
+    attrs = Map.put(attrs, :queued_at, DateTime.utc_now())
 
     result =
       Multi.new()
@@ -184,7 +184,7 @@ defmodule Emisar.Runs do
       {:ok, %{run: run}} ->
         {:ok, run}
 
-      {:error, %Ecto.Changeset{errors: errors} = cs} ->
+      {:error, %Ecto.Changeset{errors: errors} = changeset} ->
         if idempotency_conflict?(errors) do
           # The winning concurrent insert created the row; re-fetch and
           # report the replay so the caller can return the original
@@ -194,10 +194,10 @@ defmodule Emisar.Runs do
             # Theoretical race: the conflicting row was deleted between
             # the failed insert and our re-fetch. Fall through to the
             # original error so the caller doesn't silently swallow it.
-            :none -> {:error, cs}
+            :none -> {:error, changeset}
           end
         else
-          {:error, cs}
+          {:error, changeset}
         end
     end
   end
@@ -433,8 +433,8 @@ defmodule Emisar.Runs do
         # already logged the deny; surface its outcome verbatim.
         replay_outcome(run)
 
-      {:error, cs} ->
-        {:error, cs}
+      {:error, changeset} ->
+        {:error, changeset}
     end
   end
 
@@ -458,8 +458,8 @@ defmodule Emisar.Runs do
         # echo the existing row's outcome.
         replay_outcome(run)
 
-      {:error, cs} ->
-        {:error, cs}
+      {:error, changeset} ->
+        {:error, changeset}
     end
   end
 
@@ -487,8 +487,8 @@ defmodule Emisar.Runs do
           {:replay, run} ->
             replay_outcome(run)
 
-          {:error, cs} ->
-            {:error, cs}
+          {:error, changeset} ->
+            {:error, changeset}
         end
 
       :none ->
@@ -511,8 +511,8 @@ defmodule Emisar.Runs do
           {:replay, run} ->
             replay_outcome(run)
 
-          {:error, cs} ->
-            {:error, cs}
+          {:error, changeset} ->
+            {:error, changeset}
         end
     end
   end
@@ -676,17 +676,17 @@ defmodule Emisar.Runs do
   # process, and the runbook engine — all already-authorized paths.
 
   def mark_sent(%ActionRun{} = run) do
-    transition(run, :sent, %{sent_at: now_utc()})
+    transition(run, :sent, %{sent_at: DateTime.utc_now()})
   end
 
   def mark_running(%ActionRun{} = run) do
-    transition(run, :running, %{started_at: now_utc()})
+    transition(run, :running, %{started_at: DateTime.utc_now()})
   end
 
   def mark_cancelled(%ActionRun{} = run, reason \\ nil) do
     transition(run, :cancelled, %{
-      cancelled_at: now_utc(),
-      finished_at: now_utc(),
+      cancelled_at: DateTime.utc_now(),
+      finished_at: DateTime.utc_now(),
       reason_text: reason
     })
   end
@@ -699,7 +699,7 @@ defmodule Emisar.Runs do
   *something* instead of a row stuck in "sent" forever.
   """
   def mark_runner_unreachable(%ActionRun{} = run, reason) when is_binary(reason) do
-    transition(run, :error, %{finished_at: now_utc(), error_message: reason})
+    transition(run, :error, %{finished_at: DateTime.utc_now(), error_message: reason})
   end
 
   # Unknown / missing status from the runner is treated as "failed" so
@@ -765,7 +765,7 @@ defmodule Emisar.Runs do
 
   defp result_attrs(payload) do
     %{
-      finished_at: now_utc(),
+      finished_at: DateTime.utc_now(),
       exit_code: payload["exit_code"],
       duration_ms: payload["duration_ms"],
       timed_out: payload["timed_out"] || false,
@@ -896,8 +896,6 @@ defmodule Emisar.Runs do
     do: Auth.Authorizer.has_permission?(subject, Authorizer.cancel_run_permission())
 
   # -- Helpers ----------------------------------------------------------
-
-  defp now_utc, do: DateTime.utc_now() |> DateTime.truncate(:microsecond)
 
   # Common policy-decision fields stamped on every dispatched run. The
   # caller may add :status / :requires_approval on top via Map.merge.

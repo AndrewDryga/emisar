@@ -15,10 +15,10 @@ defmodule Emisar.Approvals.Request do
     field :decision_reason, :string
     field :expires_at, :utc_datetime_usec
 
-    belongs_to :account, Emisar.Accounts.Account
+    belongs_to :account, Emisar.Accounts.Account, where: [deleted_at: nil]
     belongs_to :run, Emisar.Runs.ActionRun
-    belongs_to :requested_by, Emisar.Accounts.User
-    belongs_to :decided_by, Emisar.Accounts.User
+    belongs_to :requested_by, Emisar.Accounts.User, where: [deleted_at: nil]
+    belongs_to :decided_by, Emisar.Accounts.User, where: [deleted_at: nil]
 
     timestamps()
   end

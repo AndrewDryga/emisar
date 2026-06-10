@@ -41,7 +41,7 @@ defmodule Emisar.Catalog.PackVersion.Changeset do
       hash: pv.pending_hash,
       pending_hash: nil,
       trust_state: "trusted",
-      pinned_at: DateTime.utc_now() |> DateTime.truncate(:microsecond),
+      pinned_at: DateTime.utc_now(),
       pinned_by_id: subject_user_id(subject)
     })
     |> validate_required([:hash])
@@ -53,7 +53,7 @@ defmodule Emisar.Catalog.PackVersion.Changeset do
     |> change(%{
       pending_hash: nil,
       trust_state: "trusted",
-      pinned_at: DateTime.utc_now() |> DateTime.truncate(:microsecond),
+      pinned_at: DateTime.utc_now(),
       pinned_by_id: subject_user_id(subject)
     })
   end

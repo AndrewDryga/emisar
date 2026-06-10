@@ -28,7 +28,7 @@ defmodule Emisar.Auth.UserToken do
     field :sent_to, :string
     field :metadata, :map, default: %{}
 
-    belongs_to :user, Emisar.Accounts.User
+    belongs_to :user, Emisar.Accounts.User, where: [deleted_at: nil]
 
     timestamps(type: :utc_datetime_usec, updated_at: false)
   end

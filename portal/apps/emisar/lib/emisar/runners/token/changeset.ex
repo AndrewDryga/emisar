@@ -14,16 +14,14 @@ defmodule Emisar.Runners.Token.Changeset do
         token_prefix: prefix,
         token_hash: hash,
         issued_via_key_id: issued_via_key_id,
-        issued_at: now()
+        issued_at: DateTime.utc_now()
       },
       [:runner_id, :token_prefix, :token_hash, :issued_via_key_id, :issued_at]
     )
     |> validate_required([:runner_id, :token_prefix, :token_hash, :issued_at])
   end
 
-  def usage(%Token{} = token), do: change(token, last_used_at: now())
+  def usage(%Token{} = token), do: change(token, last_used_at: DateTime.utc_now())
 
-  def revoke(%Token{} = token), do: change(token, revoked_at: now())
-
-  defp now, do: DateTime.utc_now() |> DateTime.truncate(:microsecond)
+  def revoke(%Token{} = token), do: change(token, revoked_at: DateTime.utc_now())
 end

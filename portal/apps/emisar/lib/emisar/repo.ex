@@ -115,16 +115,16 @@ defmodule Emisar.Repo do
       fn ->
         if schema = __MODULE__.one(queryable, repo_opts) do
           case changeset_fun.(schema) do
-            %Ecto.Changeset{} = cs ->
-              case update(cs, mode: :savepoint) do
+            %Ecto.Changeset{} = changeset ->
+              case update(changeset, mode: :savepoint) do
                 {:ok, updated} = ok ->
                   case maybe_insert_audit(audit_fun, updated) do
-                    :ok -> {ok, cs}
+                    :ok -> {ok, changeset}
                     {:error, reason} -> rollback({:audit_failed, reason})
                   end
 
                 err ->
-                  {err, cs}
+                  {err, changeset}
               end
 
             reason ->
@@ -136,12 +136,12 @@ defmodule Emisar.Repo do
       end
       |> transaction(repo_opts)
       |> case do
-        {:ok, {{:ok, schema}, cs}} ->
-          :ok = execute_after_commit(schema, cs, after_commit)
+        {:ok, {{:ok, schema}, changeset}} ->
+          :ok = execute_after_commit(schema, changeset, after_commit)
           {schema, ecto_preloads} = Preloader.preload(schema, preload, query_module)
           {:ok, __MODULE__.preload(schema, ecto_preloads)}
 
-        {:ok, {{:error, reason}, _cs}} ->
+        {:ok, {{:error, reason}, _changeset}} ->
           {:error, reason}
 
         {:ok, {:error, reason}} ->
@@ -220,8 +220,8 @@ defmodule Emisar.Repo do
         :ok = execute_changes_after_commit(changes, after_commit)
         {:ok, changes}
 
-      {:error, _failed_op, %Ecto.Changeset{} = cs, _changes} ->
-        {:error, cs}
+      {:error, _failed_op, %Ecto.Changeset{} = changeset, _changes} ->
+        {:error, changeset}
 
       {:error, _failed_op, reason, _changes} ->
         {:error, reason}

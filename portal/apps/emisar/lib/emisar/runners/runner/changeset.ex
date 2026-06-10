@@ -88,15 +88,15 @@ defmodule Emisar.Runners.Runner.Changeset do
   # Connect/disconnect stamp the durable "last seen" history only.
   # "Online now" is Phoenix.Presence — there's no status column to flip.
   def connected(%Runner{} = runner) do
-    change(runner, last_connected_at: now(), last_disconnect_reason: nil)
+    change(runner, last_connected_at: DateTime.utc_now(), last_disconnect_reason: nil)
   end
 
   def disconnected(%Runner{} = runner, reason \\ nil) do
-    change(runner, last_disconnected_at: now(), last_disconnect_reason: reason)
+    change(runner, last_disconnected_at: DateTime.utc_now(), last_disconnect_reason: reason)
   end
 
   def disable(%Runner{} = runner) do
-    change(runner, disabled_at: now())
+    change(runner, disabled_at: DateTime.utc_now())
   end
 
   def enable(%Runner{} = runner) do
@@ -104,8 +104,6 @@ defmodule Emisar.Runners.Runner.Changeset do
   end
 
   def delete(%Runner{} = runner) do
-    change(runner, deleted_at: now())
+    change(runner, deleted_at: DateTime.utc_now())
   end
-
-  defp now, do: DateTime.utc_now() |> DateTime.truncate(:microsecond)
 end

@@ -19,12 +19,12 @@ defmodule Emisar.Accounts.Account.Changeset do
     account |> cast(attrs, @update_fields) |> changeset()
   end
 
-  def delete(%Account{} = account), do: change(account, deleted_at: now())
+  def delete(%Account{} = account), do: change(account, deleted_at: DateTime.utc_now())
 
   def plans, do: @plans
 
-  defp changeset(cs) do
-    cs
+  defp changeset(changeset) do
+    changeset
     |> validate_required([:name, :slug])
     |> validate_length(:name, min: 1, max: 80)
     |> validate_format(:slug, ~r/^[a-z][a-z0-9-]{1,62}[a-z0-9]$/,
@@ -33,6 +33,4 @@ defmodule Emisar.Accounts.Account.Changeset do
     |> validate_inclusion(:plan, @plans)
     |> unique_constraint(:slug)
   end
-
-  defp now, do: DateTime.utc_now() |> DateTime.truncate(:microsecond)
 end

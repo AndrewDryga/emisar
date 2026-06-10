@@ -21,7 +21,7 @@ defmodule Emisar.Audit.Multi do
   freshly-inserted rows by their auto-generated ids:
 
       Multi.new()
-      |> Multi.update(:policy, cs)
+      |> Multi.update(:policy, changeset)
       |> Audit.Multi.log(:audit, fn %{policy: p} ->
         {p.account_id, "policy.updated",
          actor_id: subject.actor.id, subject_id: p.id, payload: %{...}}

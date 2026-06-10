@@ -33,6 +33,7 @@ Lower-stakes taste calls. Not Iron Laws, but the defaults. **The user adds to th
 - Spell variables out: `changeset`, not `cs`. A struct-typed binding takes the schema's own name — `%Membership{} = membership`, not `m`/`target`. Reach for a qualified name (`target_membership`) only to disambiguate two bindings of the same type.
 - Pattern-match struct arguments by their struct in the function head — `create_request(%Runs.ActionRun{} = run, …)`, not a bare `run`. The head documents the contract and guards the type.
 - Reference **another** context's modules through its top-level alias — `alias Emisar.Runs` then `Runs.ActionRun`, never `alias Emisar.Runs.ActionRun`. It keeps obvious which context a schema belongs to. (Aliasing your *own* context's submodules — `Grant`, `Request` — directly is fine. `Emisar.Auth.Subject`, the universal auth carrier, is the one cross-context exception we alias directly everywhere.)
+- **A context's `<Schema>.Changeset` modules are write-internals — no sibling context builds them.** Another context never does `User.Changeset.x(...) |> Repo.update()` or `Multi.update(:user, User.Changeset.x(...))`: it calls a (possibly `@doc "Internal"`) function on the owning context, composing it into its transaction via `Multi.run(:user, fn _repo, _ -> Accounts.mark_user_confirmed(user) end)` — same atomicity, internals stay private (this is how Auth's token flows write user rows). Struct pattern-matches, pure schema helpers (`User.valid_password?/2`), and Query-module composition for joins/label-batches stay fine; fixtures/seeds building rows directly are the sanctioned exception (§7).
 - One public function = one job. If a context function has an `opts` flag that changes *what it does* (not just filtering), it's two functions.
 - Small modules over big ones, but never a module per function. Follow the standard split (context / schema / query / changeset / authorizer) and stop there.
 - Comments explain *why*, never *what*. The code says what. If you're tempted to narrate the what, the code isn't readable enough yet.
@@ -276,7 +277,7 @@ end
 - Separate logical field groups with a blank line (identity / credentials / feature-X / flags) so a long schema scans at a glance. Keep associations and `timestamps()` in their own trailing groups.
 - Use `Ecto.Enum` (`field :kind, Ecto.Enum, values: [:a, :b]`) for any fixed string-set field — never `:string` + a `@valid_types` list + a `validate_inclusion` in the changeset. The enum casts to atoms, validates inclusion on cast for free, and keeps the DB value as the string form. Match on the atoms (`:group`), not strings.
 - Natural keys compared case-insensitively — emails, slugs — are **`:citext`** columns at the DB level (the extension is enabled in the first migration). App-side `String.downcase` is display normalization, not the uniqueness/lookup guarantee; the citext column + its unique index is.
-- **Soft-deletes never leak through preloads.** An association whose target schema has `deleted_at` carries `where: [deleted_at: nil]` (`has_many :memberships, Membership, where: [deleted_at: nil]`) so a preload skips tombstoned rows. `through:` associations can't take `:where` — they filter via the associations they traverse. Mirror it in the Query module's `preloads/0`: declare the assoc as the `Schema.Query.not_deleted()` query, not a bare `[]`, so the filter is explicit at the preload site too (`Emisar.Repo.Preloader` hands both the bare-preload and query-override paths to `Ecto.Repo.preload`, which honors the association `:where`).
+- **Soft-deletes never leak through preloads.** EVERY association whose target schema has `deleted_at` carries `where: [deleted_at: nil]` — `belongs_to` as much as `has_many` (`belongs_to :account, Account, where: [deleted_at: nil]`; `has_many :memberships, Membership, where: [deleted_at: nil]`). When adding an assoc, check the target schema for `deleted_at` and add the where in the same edit. `through:` associations can't take `:where` — they filter via the associations they traverse. Mirror it in the Query module's `preloads/0`: declare the assoc as the `Schema.Query.not_deleted()` query, not a bare `[]`, so the filter is explicit at the preload site too (`Emisar.Repo.Preloader` hands both the bare-preload and query-override paths to `Ecto.Repo.preload`, which honors the association `:where`).
 
 ### 4. Changeset modules (`lib/emisar/<context>/<schema>/changeset.ex`)
 
@@ -297,16 +298,14 @@ defmodule Emisar.Runbooks.Runbook.Changeset do
 
   def update(%Runbook{} = runbook, attrs), do: runbook |> cast(attrs, @fields) |> changeset()
 
-  def delete(%Runbook{} = runbook), do: change(runbook, deleted_at: now())
+  def delete(%Runbook{} = runbook), do: change(runbook, deleted_at: DateTime.utc_now())
 
-  defp changeset(cs) do
-    cs
+  defp changeset(changeset) do
+    changeset
     |> validate_required([:account_id, :name, :slug, :title, :definition])
     |> validate_format(:slug, ~r/^[a-z][a-z0-9_-]{0,79}$/)
     |> unique_constraint([:account_id, :slug, :version])
   end
-
-  defp now, do: DateTime.utc_now() |> DateTime.truncate(:microsecond)
 end
 ```
 
@@ -314,6 +313,7 @@ end
 - No `Repo.*` calls. Changesets are pure.
 - One function per state transition (`create`, `update`, `delete`, `publish`, …). A private `changeset/1` carries the shared validations. Don't overload a single `changeset/2`.
 - Cast field lists live in module attributes (`@fields`, or `@create_fields`/`@update_fields` when they diverge), never inline in the `cast/3` call. Inline a list only when a module has so many divergent field sets that named attrs would be noise.
+- **No `DateTime.truncate` timestamp helpers.** Every datetime column is `:utc_datetime_usec` and `DateTime.utc_now/0` is already microsecond-precision, so `DateTime.truncate(:microsecond)` is a no-op — write `deleted_at: DateTime.utc_now()` directly; no `defp now` wrapper. (If you ever need a coarser column, that's the exception that gets a why-comment.)
 
 ### 5. Authorizer modules (`lib/emisar/<context>/authorizer.ex`)
 

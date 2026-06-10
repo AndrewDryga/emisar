@@ -23,14 +23,12 @@ defmodule Emisar.Approvals.Grant.Changeset do
 
   def usage(%Grant{} = grant, now \\ DateTime.utc_now()) do
     change(grant,
-      last_used_at: DateTime.truncate(now, :microsecond),
+      last_used_at: now,
       uses_count: grant.uses_count + 1
     )
   end
 
   def revoke(%Grant{} = grant, by_user_id) do
-    change(grant, revoked_at: now(), revoked_by_id: by_user_id)
+    change(grant, revoked_at: DateTime.utc_now(), revoked_by_id: by_user_id)
   end
-
-  defp now, do: DateTime.utc_now() |> DateTime.truncate(:microsecond)
 end

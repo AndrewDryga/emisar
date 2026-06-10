@@ -989,7 +989,7 @@ defmodule Emisar.Runners do
   # re-evaluates every `usable?` condition at SQL level so we can't
   # TOCTOU between SELECT and UPDATE.
   defp consume_auth_key(%AuthKey{} = key) do
-    now = DateTime.utc_now() |> DateTime.truncate(:microsecond)
+    now = DateTime.utc_now()
 
     query =
       AuthKey.Query.consumable_by_id(key.id, now)

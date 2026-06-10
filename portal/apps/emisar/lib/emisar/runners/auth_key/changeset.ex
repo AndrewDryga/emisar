@@ -45,24 +45,22 @@ defmodule Emisar.Runners.AuthKey.Changeset do
     |> put_change(:key_prefix, prefix)
     |> put_change(:key_hash, hash)
     |> put_change(:reusable, false)
-    |> put_change(:auto_generated_at, now())
+    |> put_change(:auto_generated_at, DateTime.utc_now())
     |> validate_required([:account_id])
   end
 
   def usage(%AuthKey{} = key) do
     change(key,
-      last_used_at: now(),
+      last_used_at: DateTime.utc_now(),
       uses_count: key.uses_count + 1
     )
   end
 
   def revoke(%AuthKey{} = key, by_user_id) do
-    change(key, revoked_at: now(), revoked_by_id: by_user_id)
+    change(key, revoked_at: DateTime.utc_now(), revoked_by_id: by_user_id)
   end
 
   def delete(%AuthKey{} = key) do
-    change(key, deleted_at: now())
+    change(key, deleted_at: DateTime.utc_now())
   end
-
-  defp now, do: DateTime.utc_now() |> DateTime.truncate(:microsecond)
 end

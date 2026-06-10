@@ -17,7 +17,7 @@ defmodule Emisar.Billing.Subscription do
     field :cancel_at_period_end, :boolean, default: false
     field :trial_end, :utc_datetime_usec
 
-    belongs_to :account, Emisar.Accounts.Account
+    belongs_to :account, Emisar.Accounts.Account, where: [deleted_at: nil]
 
     timestamps()
   end

@@ -35,11 +35,11 @@ defmodule Emisar.Approvals.Grant do
     field :max_uses, :integer
     field :uses_count, :integer, default: 0
 
-    belongs_to :account, Emisar.Accounts.Account
-    belongs_to :api_key, Emisar.ApiKeys.ApiKey
-    belongs_to :runner, Emisar.Runners.Runner
-    belongs_to :granted_by, Emisar.Accounts.User
-    belongs_to :revoked_by, Emisar.Accounts.User
+    belongs_to :account, Emisar.Accounts.Account, where: [deleted_at: nil]
+    belongs_to :api_key, Emisar.ApiKeys.ApiKey, where: [deleted_at: nil]
+    belongs_to :runner, Emisar.Runners.Runner, where: [deleted_at: nil]
+    belongs_to :granted_by, Emisar.Accounts.User, where: [deleted_at: nil]
+    belongs_to :revoked_by, Emisar.Accounts.User, where: [deleted_at: nil]
     belongs_to :approval_request, Emisar.Approvals.Request
 
     timestamps()

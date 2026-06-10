@@ -13,7 +13,7 @@ defmodule Emisar.Runs.RunEvent do
     field :payload, :map, default: %{}
 
     belongs_to :run, Emisar.Runs.ActionRun
-    belongs_to :account, Emisar.Accounts.Account
+    belongs_to :account, Emisar.Accounts.Account, where: [deleted_at: nil]
 
     timestamps(updated_at: false)
   end

@@ -756,7 +756,7 @@ defmodule Emisar.Accounts do
   is a public route with only `current_user` assigned, no subject.
   """
   def mark_invitation_accepted(%Membership{user_id: user_id} = membership, %User{id: user_id}) do
-    now = DateTime.utc_now() |> DateTime.truncate(:microsecond)
+    now = DateTime.utc_now()
 
     Multi.new()
     |> Multi.update(
@@ -783,7 +783,7 @@ defmodule Emisar.Accounts do
   Wrapped in a transaction so a half-accepted state is impossible.
   """
   def accept_invitation(%Membership{} = membership, %{} = user_attrs) do
-    now = DateTime.utc_now() |> DateTime.truncate(:microsecond)
+    now = DateTime.utc_now()
 
     Multi.new()
     |> Multi.run(:existing_user, fn _repo, _changes ->
@@ -994,6 +994,38 @@ defmodule Emisar.Accounts do
   """
   def change_password(%User{} = user, attrs \\ %{}) do
     User.Changeset.password(user, attrs, hash_password: false)
+  end
+
+  # -- Internal (Auth flows) ---------------------------------------------
+  # User-credential writes the Auth context performs after its own gates
+  # (token possession, password/TOTP verification). Auth composes them
+  # into its token transactions via `Multi.run`, so each runs inside the
+  # caller's transaction — the User changeset internals stay private to
+  # Accounts. Never exposed to LiveView/controllers/MCP.
+
+  @doc "Internal — Auth: set a new password after a verified reset token."
+  def reset_user_password(%User{} = user, password) when is_binary(password) do
+    user |> User.Changeset.password(%{password: password}) |> Repo.update()
+  end
+
+  @doc "Internal — Auth: mark the user's email confirmed (token flow)."
+  def mark_user_confirmed(%User{} = user) do
+    user |> User.Changeset.confirm() |> Repo.update()
+  end
+
+  @doc "Internal — Auth: enable MFA (secret + enrolled-at + recovery digests) or disable (nils)."
+  def update_user_mfa(%User{} = user, secret, enabled_at, recovery_code_digests) do
+    user |> User.Changeset.mfa(secret, enabled_at, recovery_code_digests) |> Repo.update()
+  end
+
+  @doc "Internal — Auth: replace the stored MFA recovery-code digests."
+  def put_user_mfa_recovery_codes(%User{} = user, digests) when is_list(digests) do
+    user |> User.Changeset.mfa_recovery_codes(digests) |> Repo.update()
+  end
+
+  @doc "Internal — Auth: stamp the most recent successful TOTP (the replay guard)."
+  def record_user_mfa_consumed(%User{} = user, %DateTime{} = at) do
+    user |> User.Changeset.mfa_consumed(at) |> Repo.update()
   end
 
   # -- Authorization ----------------------------------------------------

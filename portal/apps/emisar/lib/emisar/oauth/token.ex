@@ -17,9 +17,9 @@ defmodule Emisar.OAuth.Token do
     field :revoked_at, :utc_datetime_usec
 
     belongs_to :client, Emisar.OAuth.Client
-    belongs_to :account, Emisar.Accounts.Account
-    belongs_to :membership, Emisar.Accounts.Membership
-    belongs_to :api_key, Emisar.ApiKeys.ApiKey
+    belongs_to :account, Emisar.Accounts.Account, where: [deleted_at: nil]
+    belongs_to :membership, Emisar.Accounts.Membership, where: [deleted_at: nil]
+    belongs_to :api_key, Emisar.ApiKeys.ApiKey, where: [deleted_at: nil]
 
     timestamps(type: :utc_datetime_usec)
   end

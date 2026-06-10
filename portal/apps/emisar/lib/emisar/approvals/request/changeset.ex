@@ -23,7 +23,7 @@ defmodule Emisar.Approvals.Request.Changeset do
     |> change(
       status: to_string(status),
       decided_by_id: decided_by_id,
-      decided_at: now(),
+      decided_at: DateTime.utc_now(),
       decision_reason: reason
     )
     |> validate_inclusion(:status, @statuses)
@@ -31,10 +31,8 @@ defmodule Emisar.Approvals.Request.Changeset do
 
   def expire(%Request{} = req) do
     req
-    |> change(status: "expired", decided_at: now())
+    |> change(status: "expired", decided_at: DateTime.utc_now())
   end
 
   def statuses, do: @statuses
-
-  defp now, do: DateTime.utc_now() |> DateTime.truncate(:microsecond)
 end

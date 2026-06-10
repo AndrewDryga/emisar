@@ -18,8 +18,8 @@ defmodule Emisar.Policies.Policy do
     field :vsn, :integer, default: 1
     field :deleted_at, :utc_datetime_usec
 
-    belongs_to :account, Emisar.Accounts.Account
-    belongs_to :updated_by, Emisar.Accounts.User
+    belongs_to :account, Emisar.Accounts.Account, where: [deleted_at: nil]
+    belongs_to :updated_by, Emisar.Accounts.User, where: [deleted_at: nil]
 
     timestamps()
   end

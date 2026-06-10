@@ -22,8 +22,8 @@ defmodule Emisar.Catalog.RunnerAction do
     field :first_seen_at, :utc_datetime_usec
     field :last_seen_at, :utc_datetime_usec
 
-    belongs_to :account, Emisar.Accounts.Account
-    belongs_to :runner, Emisar.Runners.Runner
+    belongs_to :account, Emisar.Accounts.Account, where: [deleted_at: nil]
+    belongs_to :runner, Emisar.Runners.Runner, where: [deleted_at: nil]
 
     timestamps()
   end

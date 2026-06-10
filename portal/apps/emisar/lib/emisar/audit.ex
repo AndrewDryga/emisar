@@ -127,7 +127,7 @@ defmodule Emisar.Audit do
     base = %{
       account_id: account_id,
       event_type: to_string(event_type),
-      occurred_at: DateTime.utc_now() |> DateTime.truncate(:microsecond)
+      occurred_at: DateTime.utc_now()
     }
 
     merged =

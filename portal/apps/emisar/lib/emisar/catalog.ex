@@ -62,7 +62,7 @@ defmodule Emisar.Catalog do
           runner
       end
 
-    now = DateTime.utc_now() |> DateTime.truncate(:microsecond)
+    now = DateTime.utc_now()
     packs = payload["packs"] || %{}
     actions = payload["actions"] || []
 

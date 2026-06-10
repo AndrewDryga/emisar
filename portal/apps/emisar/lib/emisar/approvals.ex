@@ -135,7 +135,7 @@ defmodule Emisar.Approvals do
   `requested_by_id` is whoever asked for the run (user, api_key, etc).
   """
   def create_request(%Runs.ActionRun{} = run, requested_by_id, reason \\ nil) do
-    now = DateTime.utc_now() |> DateTime.truncate(:microsecond)
+    now = DateTime.utc_now()
     expires_at = DateTime.add(now, @default_pending_ttl_hours * @one_hour_seconds, :second)
 
     result =
@@ -382,7 +382,7 @@ defmodule Emisar.Approvals do
   # affected and we return `{:error, :already_decided}` so the caller
   # can flash a useful message rather than double-dispatching.
   defp claim_pending(%Request{} = req, status, by_user_id, reason) do
-    now = DateTime.utc_now() |> DateTime.truncate(:microsecond)
+    now = DateTime.utc_now()
     status_str = to_string(status)
 
     {affected, _} =
@@ -458,7 +458,7 @@ defmodule Emisar.Approvals do
   Internal — used by `Runs.dispatch_run` on the grant fast-path.
   """
   def use_grant(%Grant{} = grant) do
-    now = DateTime.utc_now() |> DateTime.truncate(:microsecond)
+    now = DateTime.utc_now()
 
     query =
       Grant.Query.consumable_by_id(grant.id, now)
@@ -489,7 +489,7 @@ defmodule Emisar.Approvals do
   marks the request decided.
   """
   def create_grant(%Request{} = request, %{} = run, granted_by_id, attrs) do
-    now = DateTime.utc_now() |> DateTime.truncate(:microsecond)
+    now = DateTime.utc_now()
     duration = attrs[:duration]
 
     Grant.Changeset.create(%{
@@ -630,8 +630,6 @@ defmodule Emisar.Approvals do
   Internal sweep — runs from an Oban worker with no Subject.
   """
   def expire_overdue_requests(now \\ DateTime.utc_now()) do
-    now = DateTime.truncate(now, :microsecond)
-
     expiring =
       Request.Query.pending()
       |> Request.Query.expired_at_before(now)

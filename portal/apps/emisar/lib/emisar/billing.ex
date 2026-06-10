@@ -242,7 +242,7 @@ defmodule Emisar.Billing do
       row = %{
         id: event_id,
         event_type: event_type,
-        received_at: DateTime.utc_now() |> DateTime.truncate(:microsecond)
+        received_at: DateTime.utc_now()
       }
 
       # Dedup insert into the schemaless bookkeeping table. `on_conflict:
@@ -374,7 +374,7 @@ defmodule Emisar.Billing do
 
   defp parse_iso8601(iso) do
     case DateTime.from_iso8601(iso) do
-      {:ok, dt, _offset} -> DateTime.truncate(dt, :microsecond)
+      {:ok, dt, _offset} -> dt
       _ -> nil
     end
   end

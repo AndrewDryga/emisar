@@ -25,6 +25,6 @@ defmodule Emisar.Audit.Event do
     field :payload, :map, default: %{}
     field :inserted_at, :utc_datetime_usec, autogenerate: {DateTime, :utc_now, []}
 
-    belongs_to :account, Emisar.Accounts.Account
+    belongs_to :account, Emisar.Accounts.Account, where: [deleted_at: nil]
   end
 end

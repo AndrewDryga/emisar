@@ -26,7 +26,9 @@ defmodule Emisar.Accounts.User do
     field :is_admin, :boolean, default: false
     field :deleted_at, :utc_datetime_usec
 
-    has_many :memberships, Emisar.Accounts.Membership
+    has_many :memberships, Emisar.Accounts.Membership, where: [deleted_at: nil]
+    # `through:` can't take a `:where` — it inherits the filters of the
+    # associations it traverses (memberships above + Membership.account).
     has_many :accounts, through: [:memberships, :account]
     has_many :tokens, Emisar.Auth.UserToken
 

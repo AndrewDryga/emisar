@@ -363,7 +363,7 @@ defmodule Emisar.Auth do
 
           {user, token} ->
             Multi.new()
-            |> Multi.update(:user, User.Changeset.password(user, %{password: password}))
+            |> Multi.run(:user, fn _repo, _ -> Accounts.reset_user_password(user, password) end)
             |> Multi.delete(:token, token)
             |> Multi.delete_all(
               :sessions,
@@ -413,7 +413,7 @@ defmodule Emisar.Auth do
 
           {user, token} ->
             Multi.new()
-            |> Multi.update(:user, User.Changeset.confirm(user))
+            |> Multi.run(:user, fn _repo, _ -> Accounts.mark_user_confirmed(user) end)
             |> Multi.delete(:token, token)
             |> Audit.Multi.log_for_user(:audit, user, "user.email_confirmed",
               user_fn: fn %{user: u} -> u end
@@ -459,15 +459,9 @@ defmodule Emisar.Auth do
       {plain_codes, digests} = generate_recovery_codes()
 
       Multi.new()
-      |> Multi.update(
-        :user,
-        User.Changeset.mfa(
-          user,
-          secret,
-          DateTime.utc_now() |> DateTime.truncate(:microsecond),
-          digests
-        )
-      )
+      |> Multi.run(:user, fn _repo, _ ->
+        Accounts.update_user_mfa(user, secret, DateTime.utc_now(), digests)
+      end)
       |> Audit.Multi.log_for_user(:audit, user, "user.mfa_enabled",
         user_fn: fn %{user: u} -> u end
       )
@@ -483,7 +477,7 @@ defmodule Emisar.Auth do
 
   def disable_mfa(%User{} = user) do
     Multi.new()
-    |> Multi.update(:user, User.Changeset.mfa(user, nil, nil, []))
+    |> Multi.run(:user, fn _repo, _ -> Accounts.update_user_mfa(user, nil, nil, []) end)
     |> Audit.Multi.log_for_user(:audit, user, "user.mfa_disabled",
       user_fn: fn %{user: u} -> u end
     )
@@ -505,7 +499,7 @@ defmodule Emisar.Auth do
     {plain_codes, digests} = generate_recovery_codes()
 
     Multi.new()
-    |> Multi.update(:user, User.Changeset.mfa_recovery_codes(user, digests))
+    |> Multi.run(:user, fn _repo, _ -> Accounts.put_user_mfa_recovery_codes(user, digests) end)
     |> Audit.Multi.log_for_user(:audit, user, "user.mfa_recovery_codes_regenerated",
       user_fn: fn %{user: u} -> u end
     )
@@ -552,9 +546,7 @@ defmodule Emisar.Auth do
         {:error, :replay}
 
       true ->
-        case user
-             |> User.Changeset.mfa_consumed(DateTime.truncate(now, :microsecond))
-             |> Repo.update() do
+        case Accounts.record_user_mfa_consumed(user, now) do
           {:ok, _} -> :ok
           {:error, _} -> {:error, :invalid}
         end
@@ -586,7 +578,7 @@ defmodule Emisar.Auth do
       remaining = Enum.reject(codes, &Crypto.secure_compare(&1, digest))
 
       Multi.new()
-      |> Multi.update(:user, User.Changeset.mfa_recovery_codes(user, remaining))
+      |> Multi.run(:user, fn _repo, _ -> Accounts.put_user_mfa_recovery_codes(user, remaining) end)
       |> Audit.Multi.log_for_user(:audit, user, "user.mfa_recovery_code_used",
         user_fn: fn %{user: u} -> u end,
         payload_fn: fn _ -> %{remaining: length(remaining)} end

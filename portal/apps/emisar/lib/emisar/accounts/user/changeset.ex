@@ -14,8 +14,8 @@ defmodule Emisar.Accounts.User.Changeset do
     |> cast(attrs, [:email])
     |> validate_email_field()
     |> case do
-      %{changes: %{email: _}} = cs -> cs
-      %{} = cs -> add_error(cs, :email, "did not change")
+      %{changes: %{email: _}} = changeset -> changeset
+      %{} = changeset -> add_error(changeset, :email, "did not change")
     end
   end
 
@@ -29,10 +29,10 @@ defmodule Emisar.Accounts.User.Changeset do
   def profile(user, attrs), do: cast(user, attrs, [:full_name])
 
   def confirm(%User{} = user),
-    do: change(user, confirmed_at: now())
+    do: change(user, confirmed_at: DateTime.utc_now())
 
   def sign_in(%User{} = user),
-    do: change(user, last_sign_in_at: now())
+    do: change(user, last_sign_in_at: DateTime.utc_now())
 
   @doc """
   Toggle MFA. `secret`/`enabled_at` both non-nil → enable; both nil →
@@ -58,42 +58,42 @@ defmodule Emisar.Accounts.User.Changeset do
   def mfa_recovery_codes(%User{} = user, codes) when is_list(codes),
     do: change(user, mfa_recovery_codes: codes)
 
-  def delete(%User{} = user), do: change(user, deleted_at: now())
+  def delete(%User{} = user), do: change(user, deleted_at: DateTime.utc_now())
 
-  defp validate_email_field(cs) do
-    cs
+  # The citext unique index is the uniqueness source of truth (IL-8:
+  # changesets are pure — no Repo pre-check); `unique_constraint` maps
+  # the violation back onto the :email field.
+  defp validate_email_field(changeset) do
+    changeset
     |> validate_required([:email])
     |> validate_format(:email, ~r/^[^\s]+@[^\s]+$/, message: "must have the @ sign and no spaces")
     |> validate_length(:email, max: 160)
-    |> unsafe_validate_unique(:email, Emisar.Repo)
     |> unique_constraint(:email)
   end
 
-  defp validate_optional_password(cs, opts) do
-    if get_change(cs, :password),
-      do: validate_password_field(cs, opts),
-      else: cs
+  defp validate_optional_password(changeset, opts) do
+    if get_change(changeset, :password),
+      do: validate_password_field(changeset, opts),
+      else: changeset
   end
 
-  defp validate_password_field(cs, opts) do
-    cs
+  defp validate_password_field(changeset, opts) do
+    changeset
     |> validate_required([:password])
     |> validate_length(:password, min: 12, max: 128)
     |> maybe_hash_password(opts)
   end
 
-  defp maybe_hash_password(cs, opts) do
+  defp maybe_hash_password(changeset, opts) do
     hash_password? = Keyword.get(opts, :hash_password, true)
-    password = get_change(cs, :password)
+    password = get_change(changeset, :password)
 
-    if hash_password? && password && cs.valid? do
-      cs
+    if hash_password? && password && changeset.valid? do
+      changeset
       |> put_change(:hashed_password, Bcrypt.hash_pwd_salt(password))
       |> delete_change(:password)
     else
-      cs
+      changeset
     end
   end
-
-  defp now, do: DateTime.utc_now() |> DateTime.truncate(:microsecond)
 end

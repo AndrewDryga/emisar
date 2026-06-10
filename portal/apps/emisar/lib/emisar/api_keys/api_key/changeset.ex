@@ -55,14 +55,14 @@ defmodule Emisar.ApiKeys.ApiKey.Changeset do
     |> put_change(:key_prefix, prefix)
     |> put_change(:key_hash, hash)
     |> put_change(:scopes, ["actions:read", "actions:execute"])
-    |> put_change(:auto_generated_at, now())
+    |> put_change(:auto_generated_at, DateTime.utc_now())
     |> validate_required([:account_id, :name])
   end
 
   def usage(%ApiKey{} = key) do
     # First MCP call promotes an auto-minted key to permanent (visible,
     # audit-logged). Clearing auto_generated_at is the visibility flip.
-    change(key, last_used_at: now(), auto_generated_at: nil)
+    change(key, last_used_at: DateTime.utc_now(), auto_generated_at: nil)
   end
 
   # The MCP `initialize` clientInfo for this key — already sanitized by the
@@ -71,12 +71,10 @@ defmodule Emisar.ApiKeys.ApiKey.Changeset do
     do: change(key, last_client_info: info)
 
   def revoke(%ApiKey{} = key, by_user_id) do
-    change(key, revoked_at: now(), revoked_by_id: by_user_id)
+    change(key, revoked_at: DateTime.utc_now(), revoked_by_id: by_user_id)
   end
 
-  def delete(%ApiKey{} = key), do: change(key, deleted_at: now())
+  def delete(%ApiKey{} = key), do: change(key, deleted_at: DateTime.utc_now())
 
   def valid_scopes, do: @valid_scopes
-
-  defp now, do: DateTime.utc_now() |> DateTime.truncate(:microsecond)
 end
