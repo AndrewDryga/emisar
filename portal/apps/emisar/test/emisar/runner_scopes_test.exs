@@ -90,12 +90,16 @@ defmodule Emisar.RunnerScopesTest do
       {:ok, :ok} =
         Runners.replace_runner_scopes(membership, [{"group", "dba"}], subject)
 
-      {:ok, runners, _} =
+      {:ok, runners, meta} =
         Runners.list_runners_for_account(subject, membership_id: membership.id)
 
       names = runners |> Enum.map(& &1.name) |> Enum.sort()
 
       assert names == ["dba1", "dba2"]
+      # The scope filter runs in the query, before pagination — so the count
+      # reflects the scoped set (2), not all 3 runners (the old in-memory
+      # post-pagination filter left this metadata at 3).
+      assert meta.count == 2
     end
 
     test "runner-id scope additively unions with group scope" do
