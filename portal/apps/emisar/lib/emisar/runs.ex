@@ -553,6 +553,18 @@ defmodule Emisar.Runs do
   end
 
   @doc """
+  Internal — used by `Emisar.Workers.RunDispatchTimeout` to find in-flight
+  runs whose runner may have died mid-run. Plain list (real fleets keep few
+  runs in flight); the worker decides per-run from the runner's presence and
+  disconnect history.
+  """
+  def list_running_runs do
+    ActionRun.Query.all()
+    |> ActionRun.Query.status_in(["running"])
+    |> Repo.all()
+  end
+
+  @doc """
   Re-emits the run_action envelope onto the runner's PubSub topic. Used
   both for fresh dispatches and for the approve→send transition.
   Internal — called from `dispatch_run/2` and `Approvals.approve_request/4`.

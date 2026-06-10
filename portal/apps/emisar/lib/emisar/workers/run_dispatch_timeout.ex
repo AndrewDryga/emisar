@@ -1,10 +1,11 @@
 defmodule Emisar.Workers.RunDispatchTimeout do
   @moduledoc """
-  Times out runs that have been sitting in `pending` or `sent` longer
-  than `@dispatch_grace_secs` when the target runner is offline. Without
-  this sweep a run dispatched to a runner that's down — disabled,
-  disconnected, missing — would sit in `sent` forever, which reads to
-  operators as "the action is still running" and is the opposite of true.
+  Times out runs whose runner went away: `pending`/`sent` rows older than
+  `@dispatch_grace_secs` with an offline runner, and `running` rows whose
+  runner has been continuously offline past the same grace (the socket
+  died mid-run — the result is never coming). Without this sweep those
+  runs sit non-terminal forever, which reads to operators as "still
+  running" and keeps every `wait_for_run` long-poll spinning.
 
   Behavior:
 
@@ -31,8 +32,50 @@ defmodule Emisar.Workers.RunDispatchTimeout do
     Runs.list_stale_dispatches(cutoff)
     |> Enum.each(&maybe_time_out/1)
 
+    Runs.list_running_runs()
+    |> Enum.each(&maybe_time_out_running(&1, cutoff))
+
     :ok
   end
+
+  # A run can sit in `running` legitimately for a long time — but only while
+  # its runner stays connected. If the runner has been continuously offline
+  # past the grace window, the result is never coming: the socket died
+  # mid-run and a reconnect re-registers rather than resumes. Without this
+  # pass the run stays `running` forever and every `wait_for_run` poll times
+  # out — the "agent stuck waiting forever" failure mode.
+  defp maybe_time_out_running(run, cutoff) do
+    case Runners.peek_runner_by_id(run.runner_id) do
+      {:ok, runner} ->
+        cond do
+          Runners.online?(runner.account_id, runner.id) ->
+            :noop
+
+          offline_past_grace?(runner, cutoff) ->
+            Runs.mark_runner_unreachable(
+              run,
+              "Runner #{runner.name} disconnected while this run was in flight. " <>
+                "The result never arrived."
+            )
+
+          true ->
+            # Recently dropped — give it a chance to reconnect (redeploys
+            # bounce sockets routinely); the next sweep re-evaluates.
+            :noop
+        end
+
+      {:error, :not_found} ->
+        Runs.mark_runner_unreachable(run, "Runner was removed while this run was in flight.")
+    end
+  end
+
+  # A nil last_disconnected_at with an offline runner mid-run is an
+  # inconsistent state (the run can't have started without a connect) —
+  # expire it rather than zombie the run forever.
+  defp offline_past_grace?(%{last_disconnected_at: nil}, _cutoff), do: true
+
+  defp offline_past_grace?(%{last_disconnected_at: at}, cutoff),
+    do: DateTime.compare(at, cutoff) == :lt
 
   defp maybe_time_out(run) do
     case Runners.peek_runner_by_id(run.runner_id) do
