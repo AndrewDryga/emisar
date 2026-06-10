@@ -83,7 +83,8 @@ defmodule Emisar.Runbooks do
            Auth.Authorizer.ensure_has_permissions(
              subject,
              Authorizer.manage_runbooks_permission()
-           ) do
+           ),
+         :ok <- Subject.ensure_in_account(subject, old.account_id) do
       user_id = Subject.actor_id(subject)
 
       Multi.new()
@@ -139,7 +140,8 @@ defmodule Emisar.Runbooks do
            Auth.Authorizer.ensure_has_permissions(
              subject,
              Emisar.Runs.Authorizer.dispatch_run_permission()
-           ) do
+           ),
+         :ok <- Subject.ensure_in_account(subject, runbook.account_id) do
       steps = expand(runbook)
 
       if steps == [] do

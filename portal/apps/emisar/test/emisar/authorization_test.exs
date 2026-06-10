@@ -184,6 +184,41 @@ defmodule Emisar.AuthorizationTest do
     end
   end
 
+  describe "Runbooks cross-account isolation (two-gates)" do
+    setup do
+      {_owner_b, _account_b, subject_b} = owner_subject_fixture()
+
+      {:ok, runbook_b} =
+        Emisar.Runbooks.create_runbook(
+          %{
+            name: "ops-#{System.unique_integer()}",
+            slug: "ops-#{System.unique_integer()}",
+            title: "Restart",
+            description: "b's runbook",
+            definition: %{"steps" => []}
+          },
+          subject_b
+        )
+
+      account_a = account_fixture()
+      %{runbook_b: runbook_b, subject_a: subject_with_role(account_a, :owner)}
+    end
+
+    test "an owner of A can't save a new version of B's runbook (permission held, account not)",
+         %{runbook_b: runbook_b, subject_a: subject_a} do
+      assert {:error, :not_found} =
+               Emisar.Runbooks.save_new_version(runbook_b, %{description: "hijacked"}, subject_a)
+    end
+
+    test "an owner of A can't dispatch B's runbook", %{
+      runbook_b: runbook_b,
+      subject_a: subject_a
+    } do
+      assert {:error, :not_found} =
+               Emisar.Runbooks.dispatch_runbook(runbook_b, Ecto.UUID.generate(), "go", subject_a)
+    end
+  end
+
   # -- helpers --------------------------------------------------------
 
   defp seed_policy_for(account) do
