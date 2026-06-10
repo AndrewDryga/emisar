@@ -13,10 +13,7 @@ defmodule Emisar.Workers.ActionRunEventRetention do
   a slow one can't starve the others, mirroring `Workers.AuditRetention`.
   """
   use Oban.Worker, queue: :audit, max_attempts: 2
-  alias Emisar.Repo
-  alias Emisar.Accounts.Account
-  alias Emisar.Billing
-  alias Emisar.Runs.RunEvent
+  alias Emisar.{Accounts, Billing, Repo, Runs}
   require Logger
 
   # A single account can carry a huge backlog (thousands of progress chunks per
@@ -26,14 +23,16 @@ defmodule Emisar.Workers.ActionRunEventRetention do
 
   @impl true
   def perform(%Oban.Job{}) do
-    Account.Query.all()
+    # Deliberately `all()`, not `not_deleted()`: a tombstoned account's
+    # run events still occupy space and age past retention all the same.
+    Accounts.Account.Query.all()
     |> Repo.all()
     |> Enum.each(&prune_account/1)
 
     :ok
   end
 
-  defp prune_account(%Account{} = account) do
+  defp prune_account(%Accounts.Account{} = account) do
     plan = Billing.plan(account.plan) || Billing.plan("free")
     cutoff = DateTime.utc_now() |> DateTime.add(-plan.audit_retention_days * 86_400, :second)
 
@@ -50,8 +49,8 @@ defmodule Emisar.Workers.ActionRunEventRetention do
   # short (the prunable set is drained). Stable across iterations: new events
   # are only ever written for current runs, never for already-finished ones.
   defp delete_in_batches(account_id, cutoff, total) do
-    ids = RunEvent.Query.prunable_ids(account_id, cutoff, @batch_size) |> Repo.all()
-    {n, _} = RunEvent.Query.by_ids(ids) |> Repo.delete_all()
+    ids = Runs.RunEvent.Query.prunable_ids(account_id, cutoff, @batch_size) |> Repo.all()
+    {n, _} = Runs.RunEvent.Query.by_ids(ids) |> Repo.delete_all()
 
     if length(ids) < @batch_size do
       total + n
