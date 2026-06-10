@@ -37,21 +37,11 @@ defmodule Emisar.Runners.Authorizer do
 
   def list_permissions_for_role(:runner), do: []
 
-  def list_permissions_for_role(:system),
-    do: [
-      manage_runners_permission(),
-      view_runners_permission(),
-      manage_auth_keys_permission(),
-      issue_install_key_permission()
-    ]
-
   def list_permissions_for_role(_), do: []
 
   # -- Subject scoping -------------------------------------------------
 
   @impl Emisar.Auth.Authorizer
-  def for_subject(queryable, %Subject{actor: :system}), do: queryable
-
   # Runner socket — narrow to the calling runner's own rows. Cross-runner
   # visibility within an account is intentionally impossible.
   def for_subject(queryable, %Subject{actor: %Runner{id: runner_id}}) do

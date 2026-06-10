@@ -19,14 +19,9 @@ defmodule Emisar.Audit.Authorizer do
 
   def list_permissions_for_role(:runner), do: []
 
-  def list_permissions_for_role(:system),
-    do: [view_audit_permission()]
-
   def list_permissions_for_role(_), do: []
 
   @impl Emisar.Auth.Authorizer
-  def for_subject(queryable, %Subject{actor: :system}), do: queryable
-
   def for_subject(queryable, %Subject{account: %{id: account_id}}),
     do: Event.Query.by_account_id(queryable, account_id)
 

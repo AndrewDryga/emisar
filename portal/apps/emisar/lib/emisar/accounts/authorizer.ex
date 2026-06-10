@@ -49,24 +49,11 @@ defmodule Emisar.Accounts.Authorizer do
   def list_permissions_for_role(:api_client),
     do: [view_own_account_permission()]
 
-  def list_permissions_for_role(:system),
-    do: [
-      manage_own_account_permission(),
-      view_own_account_permission(),
-      manage_team_permission(),
-      manage_owners_permission(),
-      invite_member_permission(),
-      manage_security_settings_permission(),
-      edit_own_profile_permission()
-    ]
-
   def list_permissions_for_role(_), do: []
 
   # -- Subject scoping -------------------------------------------------
 
   @impl Emisar.Auth.Authorizer
-  def for_subject(queryable, %Subject{actor: :system}), do: queryable
-
   def for_subject(queryable, %Subject{account: %Account{id: account_id}}) do
     case query_source(queryable) do
       :accounts -> Account.Query.by_id(queryable, account_id)

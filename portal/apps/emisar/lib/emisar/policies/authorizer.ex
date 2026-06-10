@@ -16,14 +16,9 @@ defmodule Emisar.Policies.Authorizer do
 
   def list_permissions_for_role(:api_client), do: []
 
-  def list_permissions_for_role(:system),
-    do: [manage_policies_permission(), view_policies_permission()]
-
   def list_permissions_for_role(_), do: []
 
   @impl Emisar.Auth.Authorizer
-  def for_subject(queryable, %Subject{actor: :system}), do: queryable
-
   def for_subject(queryable, %Subject{account: %{id: account_id}}),
     do: Policy.Query.by_account_id(queryable, account_id)
 

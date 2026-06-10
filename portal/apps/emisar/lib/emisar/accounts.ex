@@ -192,13 +192,13 @@ defmodule Emisar.Accounts do
   # -- Memberships ------------------------------------------------------
 
   @doc """
-  Memberships of `account` (the team page). The subject must have access
-  to the account — a member of it, or `:system`.
+  Memberships of `account` (the team page). The subject must be a member
+  of the account.
 
-  Scopes by the **explicit** account id, not just `Authorizer.for_subject/2`:
-  a `:system` subject bypasses that scoping, so a background fan-out (e.g.
-  approval notifications) would otherwise list every account's members
-  instead of this one's.
+  Scopes by the **explicit** account id alongside `Authorizer.for_subject/2`
+  (belt-and-suspenders: a wrong subject would otherwise scope to the wrong
+  account). Background fan-outs that need every member use the no-subject
+  `list_account_memberships/2` instead.
   """
   def list_memberships_for_account(%Account{id: account_id}, %Subject{} = subject, opts \\ []) do
     with :ok <-

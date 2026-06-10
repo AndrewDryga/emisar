@@ -148,11 +148,7 @@ defmodule Emisar.Runbooks do
     end
   end
 
-  # System actors (Subject.system/1) carry `:system` as their actor and
-  # have no user id — leaving `created_by_id` nil is the right shape
-  # for seed-time / worker-time creation.
   defp subject_user_id(%Subject{actor: %{id: id}}), do: id
-  defp subject_user_id(%Subject{actor: :system}), do: nil
 
   # -- Authorization ---------------------------------------------------
 

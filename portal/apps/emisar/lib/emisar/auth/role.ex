@@ -6,8 +6,8 @@ defmodule Emisar.Auth.Role do
   never role rank — there is deliberately no rank/`at_least?` here.
 
   Listed most-privileged first (the order the team UI renders). Actor-kind
-  roles that aren't account memberships (`:api_client`, `:runner`,
-  `:system`) live on `Auth.Subject`, not here.
+  roles that aren't account memberships (`:api_client`, `:runner`) live on
+  `Auth.Subject`, not here.
   """
   @roles [:owner, :admin, :operator, :viewer]
 

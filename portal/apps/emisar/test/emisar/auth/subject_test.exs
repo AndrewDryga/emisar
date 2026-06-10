@@ -72,28 +72,6 @@ defmodule Emisar.Auth.SubjectTest do
     end
   end
 
-  describe "system/1" do
-    test "holds the union of every role's permissions" do
-      subject = Subject.system()
-      assert subject.actor == :system
-      assert subject.role == :system
-      assert subject.account == nil
-
-      # A system subject must include any permission an owner has.
-      assert MapSet.subset?(
-               Emisar.Auth.Authorizer.permissions_for(:owner),
-               subject.permissions
-             )
-    end
-
-    test "with an account attaches the account but keeps :system role" do
-      account = account_fixture()
-      subject = Subject.system(account)
-      assert subject.account == account
-      assert subject.role == :system
-    end
-  end
-
   describe "Authorizer.permissions_for/1" do
     test "returns an empty set for unknown roles" do
       assert MapSet.size(Emisar.Auth.Authorizer.permissions_for(:nope)) == 0

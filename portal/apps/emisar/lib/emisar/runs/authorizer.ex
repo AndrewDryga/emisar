@@ -40,18 +40,9 @@ defmodule Emisar.Runs.Authorizer do
   def list_permissions_for_role(:runner),
     do: [view_runs_permission()]
 
-  def list_permissions_for_role(:system),
-    do: [
-      dispatch_run_permission(),
-      cancel_run_permission(),
-      view_runs_permission()
-    ]
-
   def list_permissions_for_role(_), do: []
 
   @impl Emisar.Auth.Authorizer
-  def for_subject(queryable, %Subject{actor: :system}), do: queryable
-
   # Runner socket only sees its own runs — even within the account.
   def for_subject(queryable, %Subject{actor: %Runner{id: runner_id}}) do
     case query_source(queryable) do

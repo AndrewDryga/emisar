@@ -20,14 +20,9 @@ defmodule Emisar.Runbooks.Authorizer do
   def list_permissions_for_role(:api_client),
     do: [view_runbooks_permission()]
 
-  def list_permissions_for_role(:system),
-    do: [manage_runbooks_permission(), view_runbooks_permission()]
-
   def list_permissions_for_role(_), do: []
 
   @impl Emisar.Auth.Authorizer
-  def for_subject(queryable, %Subject{actor: :system}), do: queryable
-
   def for_subject(queryable, %Subject{account: %{id: account_id}}),
     do: Runbook.Query.by_account_id(queryable, account_id)
 

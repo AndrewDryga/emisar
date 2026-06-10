@@ -67,7 +67,7 @@ Numbered so the hook, `/iron-review`, and code review can cite them. **Architect
 | **IL-6** | **Query modules: `use Emisar, :query`, composable helpers (`(queryable) -> queryable`, first arg defaults to `all()`), named bindings (`as: :runbooks`), zero `Repo.*`.** | Composability + named bindings keep helpers safe to chain in any order. | `import Ecto.Query` instead of `use Emisar, :query`; positional bindings; `Repo.` in a query module. → [§2](#2-query-modules) |
 | **IL-7** | **Schema modules are fields + associations only.** No changeset, no business logic. | A schema is a data shape. Logic in it can't be tested or reused in isolation. | `def create`/`cast`/`validate_` in a `*.ex` schema file. → [§3](#3-schema-modules) |
 | **IL-8** | **Changeset modules are pure** — `use Emisar, :changeset`, no `Repo.*`, one function per state transition (`create`, `update`, `delete`, `publish`…). | Pure changesets are unit-testable and composable into `Multi`. One overloaded `changeset/2` hides transitions. | `Repo.` in a `*/changeset.ex`; a single `changeset/2` doing everything. → [§4](#4-changeset-modules) |
-| **IL-9** | **Authorizers define permissions via `build(Schema, :verb)` exposed through accessor fns; `:system` actors bypass row-scoping in `for_subject/2`.** | One union of these role lists builds every `%Subject{}.permissions`. Reaching past the accessor desyncs them. | Raw permission tuples at call sites; `for_subject` without the `:system` clause. → [§5](#5-authorizer-modules) |
+| **IL-9** | **Authorizers define permissions via `build(Schema, :verb)` exposed through accessor fns.** | One union of these role lists builds every `%Subject{}.permissions`. Reaching past the accessor desyncs them. | Raw permission tuples at call sites. → [§5](#5-authorizer-modules) |
 | **IL-10** | **`:preload` routes through the Query module's `preloads/0`; never `Repo.preload/2` in a context.** | Keeps preload shapes defined in one place per query. (Lone exception: an internal post-commit helper preloading an already-fetched struct for email.) | `Repo.preload(` inside `lib/emisar/<context>.ex`. → [§1.4](#14-internal-sweepers--worker-only-helpers) |
 | **IL-11** | **Greenfield. No legacy.** Edit the original migration; delete deprecated code and update callers in the same change; no shims/flags/"this is the new version" comments. | Pre-release MVP. Every compatibility layer is permanent debt for behavior nobody depends on yet. | A corrective migration patching a same-tree migration; a `_v2`/`_old`; a flag with one value. → [§8](#8-greenfield-no-legacy) |
 
@@ -185,13 +185,13 @@ end
   - ✅ `update_rules(%Policy{} = policy, rules, %Subject{} = subject)`
   - ❌ `fetch_event_by_id(%Subject{} = subject, id)` — id is required and comes after subject
 - This holds for **side-effect actions too**, not just row reads/writes — a `!`/no-row-returned helper an authed user triggers still takes the `%Subject{}` and the subject flows down the call chain.
-- For a **self-service** action (a user acting on their own data — profile/email/password edits, session revocation), read the user from `subject.actor`; don't also accept it as a separate arg. `change_user_password(current, new, %Subject{actor: %User{} = user})`, not `(user, current, new, subject)`. The `%Subject{actor: %User{} = user}` match *is* the authorization (you can only act as your own subject) — no separate same-user check, and no `:system`-acts-on-anyone bypass on a self-service path (that's a credential-editing footgun; admin-driven edits have their own functions).
+- For a **self-service** action (a user acting on their own data — profile/email/password edits, session revocation), read the user from `subject.actor`; don't also accept it as a separate arg. `change_user_password(current, new, %Subject{actor: %User{} = user})`, not `(user, current, new, subject)`. The `%Subject{actor: %User{} = user}` match *is* the authorization (you can only act as your own subject) — no separate same-user check, and no admin/override bypass on a self-service path (that's a credential-editing footgun; admin-driven edits have their own functions).
 - The `subject.actor` you read on a self-service path is a **long-lived socket snapshot** and can be stale. A self-service *mutation* must re-fetch the row before writing — `Repo.fetch_and_update/3` locks `FOR NO KEY UPDATE`, re-reads, and runs your `:with` changeset on the fresh row (scope by `by_id(subject.actor.id)` — self-service needs no `for_subject`). This is load-bearing for current-password challenges: `User.valid_password?(subject.actor, given)` checks a possibly-**stale** `hashed_password`, so a password rotated away in another session could still pass the gate; validate against the freshly-fetched row instead.
 - A deliberate **cross-account self-read** (the account picker's `list_accounts_for_user/2` — every tenant the user belongs to) scopes by the subject's actor id and intentionally omits `Authorizer.for_subject/2`, which would wrongly narrow to a single account. It's the rare, documented exception to IL-4 — say so at the call site.
 - Internal helpers called from sibling contexts that have already authorized may take an account_id / actor_id instead. Name them so it's obvious (`fetch_policy_for_account!/1`, `dispatch_runbook/4`), keep them private or moduledoc-marked "internal", and never expose them to LiveView/controllers/MCP.
 - `Authorizer.for_subject(query, subject)` is **always** in the pipeline immediately before `Repo.fetch/list/fetch_and_update`. It is the second authorization gate (permission check + row scoping).
 - **Subject + entity ⇒ two gates.** When a function takes a domain entity *and* a `%Subject{}`, run BOTH: `ensure_has_permissions/2` (does the role allow this action?) **and** an ownership gate that the entity lives in the subject's account (`Subject.ensure_in_account/3`, or `ensure_subject_owns_account/2`). Permission alone is insufficient — an admin of account A holding account B's struct must be rejected.
-- **Subject + explicit account ⇒ scope by both.** When you build a query from an explicit account (or account-bearing entity) *and* a subject, filter by BOTH the explicit account (`Schema.Query.by_account_id(account_id)`) **and** `Authorizer.for_subject(subject)`. Belt-and-suspenders against accidental cross-account leaks: `for_subject` bypasses scoping for `:system` and a wrong subject would scope wrong, so the explicit account filter is the backstop (this is what `list_memberships_for_account` does).
+- **Subject + explicit account ⇒ scope by both.** When you build a query from an explicit account (or account-bearing entity) *and* a subject, filter by BOTH the explicit account (`Schema.Query.by_account_id(account_id)`) **and** `Authorizer.for_subject(subject)`. Belt-and-suspenders against accidental cross-account leaks: a wrong subject would scope to the wrong account, so the explicit account filter is the backstop (this is what `list_memberships_for_account` does).
 - `Auth.Authorizer.ensure_has_permissions/2` accepts a single permission, a list (all required), or `{:one_of, [perms]}` (any one).
 
 #### 1.3 Return shapes (IL-5)
@@ -202,7 +202,7 @@ end
 
 #### 1.4 Internal sweepers + worker-only helpers (IL-10)
 
-A small set of context functions never take a `%Subject{}`: the runner socket process's state advertisers (`Runners.apply_state/2`, `Runners.mark_connected/1`, `Runners.mark_disconnected/2`, `Runners.record_heartbeat/2`), the catalog observer (`Catalog.observe_state/2`), Oban sweepers (`Approvals.expire_overdue_requests/1`), and `Runs.create_run/1` / `Runs.dispatch_to_runner/1` / `Runs.mark_*` transition helpers. They run inside processes that have already authenticated (runner socket carries `Subject.for_runner` upstream; sweepers wrap with `Subject.system/1` if they need to call out). Mark these `@doc "Internal …"` and never expose them to LiveView/controllers/MCP.
+A small set of context functions never take a `%Subject{}`: the runner socket process's state advertisers (`Runners.apply_state/2`, `Runners.mark_connected/1`, `Runners.mark_disconnected/2`, `Runners.record_heartbeat/2`), the catalog observer (`Catalog.observe_state/2`), Oban sweepers (`Approvals.expire_overdue_requests/1`), and `Runs.create_run/1` / `Runs.dispatch_to_runner/1` / `Runs.mark_*` transition helpers. They run inside processes that have already authenticated (runner socket carries `Subject.for_runner` upstream; Oban sweepers operate on explicit account ids through named internal helpers). Mark these `@doc "Internal …"` and never expose them to LiveView/controllers/MCP.
 
 `:preload` opts route through the per-Query `preloads/0` callback first; never call `Repo.preload/2` from a context module. The lone allowed exception is an internal mutation-side helper that's preloading an already-fetched struct for email rendering or a similar post-commit side effect.
 
@@ -328,14 +328,10 @@ defmodule Emisar.Runbooks.Authorizer do
   def list_permissions_for_role(:operator), do: [view_runbooks_permission()]
   def list_permissions_for_role(:viewer), do: [view_runbooks_permission()]
   def list_permissions_for_role(:api_client), do: [view_runbooks_permission()]
-  def list_permissions_for_role(:system),
-    do: [manage_runbooks_permission(), view_runbooks_permission()]
 
   def list_permissions_for_role(_), do: []
 
   @impl Emisar.Auth.Authorizer
-  def for_subject(queryable, %Subject{actor: :system}), do: queryable
-
   def for_subject(queryable, %Subject{account: %{id: account_id}}),
     do: Runbook.Query.by_account_id(queryable, account_id)
 
@@ -344,11 +340,11 @@ end
 ```
 
 - Permissions are built with **`build(Schema, :verb)`** and exposed via per-permission accessor functions (`view_runbooks_permission/0`) so callers never construct a permission inline.
-- Roles in this codebase: `:owner`, `:admin`, `:operator`, `:viewer`, `:api_client`, `:system`. Every authorizer must clause all of them (plus a `_ -> []` catch-all).
+- Roles in this codebase: `:owner`, `:admin`, `:operator`, `:viewer`, `:api_client`, `:runner` — each authorizer clauses the ones it grants, with a `_ -> []` catch-all for the rest.
 - The four **membership** roles (`:owner`/`:admin`/`:operator`/`:viewer`) are defined once in `Emisar.Auth.Role` — the single source for the `Membership` `Ecto.Enum`, the rank/`at_least?` hierarchy, and the team UI's role list. Never re-list them in a schema, changeset, or LiveView.
-- **Authorize by permission, not role name.** A context must never branch on `subject.role` to gate an action (`subject.role != :owner` is a smell) — add a permission (e.g. `manage_owners_permission`, held by owner + system only) and check `Auth.Authorizer.has_permission?/2`. Comparing a *data* role value (`target.role == :owner`) is fine; gating the *actor's* capability by role name is not.
-- `for_subject/2` is the **row-scoping** authorizer — it composes onto whatever query the context built. Use the Query module helpers; do not write raw `where` here. Keep the three clauses: `:system` (bypass), account-scoped, and the `_` fallback.
-- ⚠️ Because `for_subject/2` **bypasses** scoping for `:system`, a read that takes an explicit account *and* may be called with a `:system` subject (a worker, a fan-out) must scope by that account itself — `Query.by_account_id(account_id) |> for_subject(subject)` — and verify access with `Subject.ensure_in_account/3`. Relying on `for_subject` alone lets the system subject read every account (this is what broke the approval-notification fan-out).
+- **Authorize by permission, not role name.** A context must never branch on `subject.role` to gate an action (`subject.role != :owner` is a smell) — add a permission (e.g. `manage_owners_permission`, held by owners only) and check `Auth.Authorizer.has_permission?/2`. Comparing a *data* role value (`target.role == :owner`) is fine; gating the *actor's* capability by role name is not.
+- `for_subject/2` is the **row-scoping** authorizer — it composes onto whatever query the context built. Use the Query module helpers; do not write raw `where` here. Keep the account-scoped clause and the `_` fallback (plus any actor-specific clause, e.g. the runner-only scoping in `Runs.Authorizer`).
+- **Background/system-side reads take an explicit `account_id`, not a forged subject.** There is no `:system` god-subject. A read with no user in scope (an Oban sweeper, the approval fan-out, a dispatch-payload enrichment) is a named internal function that scopes via `Schema.Query.by_account_id/2` directly — e.g. `Accounts.list_account_memberships/2` and `Catalog.fetch_action_for_account/3`. This is the IL-1.4 internal-helper pattern; it's why removing `:system` couldn't reintroduce the cross-account fan-out leak.
 - `Emisar.Auth.Authorizer.permissions_for/1` unions every per-context Authorizer's role list — that union builds the `%Subject{}.permissions` MapSet.
 
 ### 6. Web layer

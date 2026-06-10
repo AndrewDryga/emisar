@@ -87,8 +87,7 @@ defmodule Emisar.Auth.Authorizer do
 
   @doc """
   Returns the full permission set for a role. Unions every authorizer's
-  `list_permissions_for_role/1`. `:system` is the all-rights shortcut
-  for cron workers + seeds.
+  `list_permissions_for_role/1`.
   """
   def permissions_for(role) when is_atom(role) do
     @authorizers

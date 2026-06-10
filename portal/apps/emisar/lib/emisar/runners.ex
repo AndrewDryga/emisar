@@ -588,7 +588,7 @@ defmodule Emisar.Runners do
   Empty scope = all runners. Otherwise the runner's id OR its group
   must appear in at least one row.
 
-  `:system` actors and any membership with no scopes always pass.
+  A membership with no scopes always passes.
   Pass `nil` membership for unauthenticated paths — returns true
   there too; callers must do their own auth check.
   """
