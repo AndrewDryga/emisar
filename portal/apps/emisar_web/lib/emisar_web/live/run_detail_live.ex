@@ -57,15 +57,19 @@ defmodule EmisarWeb.RunDetailLive do
   def handle_info(_, socket), do: {:noreply, socket}
 
   def handle_event("cancel", _params, socket) do
-    Permissions.gated(socket, :cancel_run, fn s ->
-      case Runs.cancel_run(s.assigns.run, s.assigns.current_subject, "operator cancelled") do
-        {:ok, run} ->
-          {:noreply, s |> assign(:run, run) |> put_flash(:info, "Cancel sent to runner.")}
+    Permissions.gated(
+      socket,
+      Runs.subject_can_cancel_run?(socket.assigns.current_subject),
+      fn s ->
+        case Runs.cancel_run(s.assigns.run, s.assigns.current_subject, "operator cancelled") do
+          {:ok, run} ->
+            {:noreply, s |> assign(:run, run) |> put_flash(:info, "Cancel sent to runner.")}
 
-        _ ->
-          {:noreply, put_flash(s, :error, "Unable to cancel.")}
+          _ ->
+            {:noreply, put_flash(s, :error, "Unable to cancel.")}
+        end
       end
-    end)
+    )
   end
 
   def render(assigns) do
@@ -89,7 +93,8 @@ defmodule EmisarWeb.RunDetailLive do
       <:actions>
         <button
           :if={
-            @run.status in ["sent", "running", "pending"] and Permissions.can?(assigns, :cancel_run)
+            @run.status in ["sent", "running", "pending"] and
+              Runs.subject_can_cancel_run?(@current_subject)
           }
           phx-click="cancel"
           data-confirm="Cancel this run? The runner will SIGTERM then SIGKILL."

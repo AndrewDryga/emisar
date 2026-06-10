@@ -94,30 +94,34 @@ defmodule EmisarWeb.AgentsLive do
     # un-bound auto-key gets ring-evicted naturally. Any restrictions
     # picked in the shared scope panel propagate to the mint so
     # quick-mints can be scoped too, not only Custom-tab keys.
-    Permissions.gated(socket, :manage_api_keys, fn s ->
-      name = client_label(id)
+    Permissions.gated(
+      socket,
+      ApiKeys.subject_can_manage_api_keys?(socket.assigns.current_subject),
+      fn s ->
+        name = client_label(id)
 
-      opts = [
-        name: name,
-        runner_filter: s.assigns.selected_runner_ids,
-        runner_group_filter: s.assigns.selected_runner_groups
-      ]
+        opts = [
+          name: name,
+          runner_filter: s.assigns.selected_runner_ids,
+          runner_group_filter: s.assigns.selected_runner_groups
+        ]
 
-      case ApiKeys.mint_quick_key(s.assigns.current_subject, opts) do
-        {:ok, raw, _key} ->
-          {:noreply,
-           s
-           |> assign(:selected_client, id)
-           |> assign(:quick_secret, raw)
-           |> reload()}
+        case ApiKeys.mint_quick_key(s.assigns.current_subject, opts) do
+          {:ok, raw, _key} ->
+            {:noreply,
+             s
+             |> assign(:selected_client, id)
+             |> assign(:quick_secret, raw)
+             |> reload()}
 
-        {:error, _} ->
-          {:noreply,
-           s
-           |> assign(:selected_client, id)
-           |> put_flash(:error, "Could not mint a quick key.")}
+          {:error, _} ->
+            {:noreply,
+             s
+             |> assign(:selected_client, id)
+             |> put_flash(:error, "Could not mint a quick key.")}
+        end
       end
-    end)
+    )
   end
 
   # Pure scope-picker change (no mint). Keeps the selection alive
@@ -142,11 +146,19 @@ defmodule EmisarWeb.AgentsLive do
   end
 
   def handle_event("create", %{"api_key" => params}, socket) do
-    Permissions.gated(socket, :manage_api_keys, fn s -> do_create(s, params) end)
+    Permissions.gated(
+      socket,
+      ApiKeys.subject_can_manage_api_keys?(socket.assigns.current_subject),
+      fn s -> do_create(s, params) end
+    )
   end
 
   def handle_event("revoke", %{"id" => id}, socket) do
-    Permissions.gated(socket, :manage_api_keys, fn s -> do_revoke(s, id) end)
+    Permissions.gated(
+      socket,
+      ApiKeys.subject_can_manage_api_keys?(socket.assigns.current_subject),
+      fn s -> do_revoke(s, id) end
+    )
   end
 
   def handle_info(:tick, socket) do
@@ -622,7 +634,9 @@ defmodule EmisarWeb.AgentsLive do
               </:meta>
               <:actions>
                 <button
-                  :if={is_nil(key.revoked_at) and Permissions.can?(assigns, :manage_api_keys)}
+                  :if={
+                    is_nil(key.revoked_at) and ApiKeys.subject_can_manage_api_keys?(@current_subject)
+                  }
                   phx-click="revoke"
                   phx-value-id={key.id}
                   data-confirm="Revoke this API key? The connected client will get 401s on its next call."

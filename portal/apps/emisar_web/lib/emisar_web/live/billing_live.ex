@@ -30,20 +30,24 @@ defmodule EmisarWeb.BillingLive do
   end
 
   def handle_event("upgrade", %{"plan" => plan}, socket) do
-    Permissions.gated(socket, :manage_billing, fn s ->
-      if plan in @plan_order do
-        case Billing.start_checkout(s.assigns.current_account, plan, s.assigns.current_subject) do
-          {:ok, url} ->
-            {:noreply, redirect(s, external: url)}
+    Permissions.gated(
+      socket,
+      Billing.subject_can_manage_billing?(socket.assigns.current_subject),
+      fn s ->
+        if plan in @plan_order do
+          case Billing.start_checkout(s.assigns.current_account, plan, s.assigns.current_subject) do
+            {:ok, url} ->
+              {:noreply, redirect(s, external: url)}
 
-          {:error, reason} ->
-            {:noreply,
-             put_flash(s, :error, "Could not start checkout: #{humanize_reason(reason)}")}
+            {:error, reason} ->
+              {:noreply,
+               put_flash(s, :error, "Could not start checkout: #{humanize_reason(reason)}")}
+          end
+        else
+          {:noreply, put_flash(s, :error, "Unknown plan.")}
         end
-      else
-        {:noreply, put_flash(s, :error, "Unknown plan.")}
       end
-    end)
+    )
   end
 
   def handle_event("contact_sales", _params, socket) do
@@ -52,24 +56,28 @@ defmodule EmisarWeb.BillingLive do
   end
 
   def handle_event("manage_billing", _params, socket) do
-    Permissions.gated(socket, :manage_billing, fn s ->
-      case Billing.open_billing_portal(s.assigns.current_account, s.assigns.current_subject) do
-        {:ok, url} ->
-          {:noreply, redirect(s, external: url)}
+    Permissions.gated(
+      socket,
+      Billing.subject_can_manage_billing?(socket.assigns.current_subject),
+      fn s ->
+        case Billing.open_billing_portal(s.assigns.current_account, s.assigns.current_subject) do
+          {:ok, url} ->
+            {:noreply, redirect(s, external: url)}
 
-        {:error, :no_customer} ->
-          {:noreply,
-           put_flash(
-             s,
-             :error,
-             "No Paddle customer yet — upgrade to a paid plan first, then come back to manage billing."
-           )}
+          {:error, :no_customer} ->
+            {:noreply,
+             put_flash(
+               s,
+               :error,
+               "No Paddle customer yet — upgrade to a paid plan first, then come back to manage billing."
+             )}
 
-        {:error, reason} ->
-          {:noreply,
-           put_flash(s, :error, "Could not open billing portal: #{humanize_reason(reason)}")}
+          {:error, reason} ->
+            {:noreply,
+             put_flash(s, :error, "Could not open billing portal: #{humanize_reason(reason)}")}
+        end
       end
-    end)
+    )
   end
 
   defp ordered_plans do
@@ -218,7 +226,7 @@ defmodule EmisarWeb.BillingLive do
             </div>
 
             <button
-              :if={@summary.plan == "free" and Permissions.can?(assigns, :manage_billing)}
+              :if={@summary.plan == "free" and Billing.subject_can_manage_billing?(@current_subject)}
               phx-click="upgrade"
               phx-value-plan="team"
               phx-disable-with="Starting checkout…"
@@ -232,7 +240,10 @@ defmodule EmisarWeb.BillingLive do
                  Paddle customer attached (any paid plan or
                  previous paid plan). --%>
             <button
-              :if={@current_account.paddle_customer_id && Permissions.can?(assigns, :manage_billing)}
+              :if={
+                @current_account.paddle_customer_id &&
+                  Billing.subject_can_manage_billing?(@current_subject)
+              }
               phx-click="manage_billing"
               phx-disable-with="Opening portal…"
               class="inline-flex items-center gap-1.5 rounded-lg border border-zinc-800 px-4 py-2 text-sm font-medium text-zinc-200 hover:bg-zinc-900 disabled:opacity-60"
@@ -314,7 +325,7 @@ defmodule EmisarWeb.BillingLive do
                     >
                       Contact sales
                     </button>
-                  <% Permissions.can?(assigns, :manage_billing) -> %>
+                  <% Billing.subject_can_manage_billing?(@current_subject) -> %>
                     <button
                       phx-click="upgrade"
                       phx-value-plan={plan.key}

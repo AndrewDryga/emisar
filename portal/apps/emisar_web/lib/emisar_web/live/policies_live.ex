@@ -74,17 +74,21 @@ defmodule EmisarWeb.PoliciesLive do
   end
 
   def handle_event("save", _params, socket) do
-    Permissions.gated(socket, :manage_policies, fn s ->
-      rules = to_rules(s.assigns.defaults, s.assigns.overrides)
+    Permissions.gated(
+      socket,
+      Policies.subject_can_manage_policies?(socket.assigns.current_subject),
+      fn s ->
+        rules = to_rules(s.assigns.defaults, s.assigns.overrides)
 
-      case Policies.save_rules(rules, s.assigns.current_subject) do
-        {:ok, _policy} ->
-          {:noreply, s |> put_flash(:info, "Policy saved.") |> load()}
+        case Policies.save_rules(rules, s.assigns.current_subject) do
+          {:ok, _policy} ->
+            {:noreply, s |> put_flash(:info, "Policy saved.") |> load()}
 
-        {:error, %Ecto.Changeset{} = cs} ->
-          {:noreply, assign_form(s, Map.put(cs, :action, :validate))}
+          {:error, %Ecto.Changeset{} = cs} ->
+            {:noreply, assign_form(s, Map.put(cs, :action, :validate))}
+        end
       end
-    end)
+    )
   end
 
   # -- State helpers --------------------------------------------------
@@ -226,7 +230,7 @@ defmodule EmisarWeb.PoliciesLive do
       section={:policies}
     >
       <:title>Policy</:title>
-      <:actions :if={not @loading? and Permissions.can?(assigns, :manage_policies)}>
+      <:actions :if={not @loading? and Policies.subject_can_manage_policies?(@current_subject)}>
         <.button type="submit" form="policy-form" phx-disable-with="Saving...">Save</.button>
       </:actions>
 
@@ -272,7 +276,7 @@ defmodule EmisarWeb.PoliciesLive do
                   tier={tier}
                   value={@defaults[tier]}
                   floor_rank={tier_floor_rank(@defaults, tier)}
-                  can_manage={Permissions.can?(assigns, :manage_policies)}
+                  can_manage={Policies.subject_can_manage_policies?(@current_subject)}
                 />
               <% end %>
             </div>
@@ -295,7 +299,7 @@ defmodule EmisarWeb.PoliciesLive do
                 </p>
               </div>
               <button
-                :if={Permissions.can?(assigns, :manage_policies)}
+                :if={Policies.subject_can_manage_policies?(@current_subject)}
                 type="button"
                 phx-click="add_override"
                 class="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-zinc-800 px-3 py-1.5 text-xs font-medium text-zinc-300 hover:border-indigo-500 hover:text-indigo-300"
@@ -316,7 +320,7 @@ defmodule EmisarWeb.PoliciesLive do
                 <.override_card
                   override={ov}
                   index={idx}
-                  can_manage={Permissions.can?(assigns, :manage_policies)}
+                  can_manage={Policies.subject_can_manage_policies?(@current_subject)}
                 />
               <% end %>
             </div>

@@ -74,41 +74,53 @@ defmodule EmisarWeb.RunnerDetailLive do
   def handle_info(_, socket), do: {:noreply, socket}
 
   def handle_event("disable", _params, socket) do
-    Permissions.gated(socket, :manage_runners, fn s ->
-      {:ok, runner} = Runners.disable_runner(s.assigns.runner, s.assigns.current_subject)
-      {:noreply, s |> put_flash(:info, "Runner disabled.") |> assign(:runner, runner)}
-    end)
+    Permissions.gated(
+      socket,
+      Runners.subject_can_manage_runners?(socket.assigns.current_subject),
+      fn s ->
+        {:ok, runner} = Runners.disable_runner(s.assigns.runner, s.assigns.current_subject)
+        {:noreply, s |> put_flash(:info, "Runner disabled.") |> assign(:runner, runner)}
+      end
+    )
   end
 
   def handle_event("enable", _params, socket) do
-    Permissions.gated(socket, :manage_runners, fn s ->
-      case Runners.enable_runner(s.assigns.runner, s.assigns.current_subject) do
-        {:ok, runner} ->
-          {:noreply, s |> put_flash(:info, "Runner enabled.") |> assign(:runner, runner)}
+    Permissions.gated(
+      socket,
+      Runners.subject_can_manage_runners?(socket.assigns.current_subject),
+      fn s ->
+        case Runners.enable_runner(s.assigns.runner, s.assigns.current_subject) do
+          {:ok, runner} ->
+            {:noreply, s |> put_flash(:info, "Runner enabled.") |> assign(:runner, runner)}
 
-        {:error, :over_limit, _plan, limit} ->
-          {:noreply,
-           put_flash(
-             s,
-             :error,
-             "Can't enable — you're at your runner limit (#{limit}). Upgrade your plan or remove another runner first."
-           )}
+          {:error, :over_limit, _plan, limit} ->
+            {:noreply,
+             put_flash(
+               s,
+               :error,
+               "Can't enable — you're at your runner limit (#{limit}). Upgrade your plan or remove another runner first."
+             )}
 
-        {:error, _} ->
-          {:noreply, put_flash(s, :error, "Could not enable runner.")}
+          {:error, _} ->
+            {:noreply, put_flash(s, :error, "Could not enable runner.")}
+        end
       end
-    end)
+    )
   end
 
   def handle_event("delete", _params, socket) do
-    Permissions.gated(socket, :manage_runners, fn s ->
-      {:ok, _runner} = Runners.delete_runner(s.assigns.runner, s.assigns.current_subject)
+    Permissions.gated(
+      socket,
+      Runners.subject_can_manage_runners?(socket.assigns.current_subject),
+      fn s ->
+        {:ok, _runner} = Runners.delete_runner(s.assigns.runner, s.assigns.current_subject)
 
-      {:noreply,
-       s
-       |> put_flash(:info, "Runner deleted. The host can re-register on next connect.")
-       |> push_navigate(to: ~p"/app/runners")}
-    end)
+        {:noreply,
+         s
+         |> put_flash(:info, "Runner deleted. The host can re-register on next connect.")
+         |> push_navigate(to: ~p"/app/runners")}
+      end
+    )
   end
 
   def render(assigns) do
@@ -279,7 +291,7 @@ defmodule EmisarWeb.RunnerDetailLive do
            stale duplicate holding a name; a connected runner must be
            disabled first so a misclick can't wipe a live one. --%>
       <div
-        :if={is_nil(@runner.disabled_at) and Permissions.can?(assigns, :manage_runners)}
+        :if={is_nil(@runner.disabled_at) and Runners.subject_can_manage_runners?(@current_subject)}
         class="mt-6"
       >
         <.danger_zone title="Disable this runner">
@@ -302,7 +314,9 @@ defmodule EmisarWeb.RunnerDetailLive do
            disabled (the disable zone above hides then). Positive styling —
            it's a restorative action, not a danger one. --%>
       <div
-        :if={not is_nil(@runner.disabled_at) and Permissions.can?(assigns, :manage_runners)}
+        :if={
+          not is_nil(@runner.disabled_at) and Runners.subject_can_manage_runners?(@current_subject)
+        }
         class="mt-6"
       >
         <section class="flex items-start justify-between gap-4 rounded-xl border border-emerald-500/30 bg-emerald-500/[0.04] p-5">
@@ -325,7 +339,7 @@ defmodule EmisarWeb.RunnerDetailLive do
       </div>
 
       <div
-        :if={not @runner.online? and Permissions.can?(assigns, :manage_runners)}
+        :if={not @runner.online? and Runners.subject_can_manage_runners?(@current_subject)}
         class="mt-6"
       >
         <.danger_zone title="Delete this runner">

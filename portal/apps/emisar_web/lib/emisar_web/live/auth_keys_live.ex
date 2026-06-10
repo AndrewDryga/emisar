@@ -50,7 +50,11 @@ defmodule EmisarWeb.AuthKeysLive do
   end
 
   def handle_event("create", %{"auth_key" => params}, socket) do
-    Permissions.gated(socket, :manage_auth_keys, &do_create(&1, params))
+    Permissions.gated(
+      socket,
+      Runners.subject_can_manage_auth_keys?(socket.assigns.current_subject),
+      &do_create(&1, params)
+    )
   end
 
   def handle_event("dismiss_secret", _params, socket) do
@@ -61,7 +65,11 @@ defmodule EmisarWeb.AuthKeysLive do
   end
 
   def handle_event("revoke", %{"id" => id}, socket) do
-    Permissions.gated(socket, :manage_auth_keys, fn s -> do_revoke(s, id) end)
+    Permissions.gated(
+      socket,
+      Runners.subject_can_manage_auth_keys?(socket.assigns.current_subject),
+      fn s -> do_revoke(s, id) end
+    )
   end
 
   def handle_event("filter", params, socket) do
@@ -190,7 +198,7 @@ defmodule EmisarWeb.AuthKeysLive do
       section={:auth_keys}
     >
       <:title>Auth keys</:title>
-      <:actions :if={Permissions.can?(assigns, :manage_auth_keys)}>
+      <:actions :if={Runners.subject_can_manage_auth_keys?(@current_subject)}>
         <button
           phx-click={show_create()}
           class="inline-flex items-center gap-1.5 rounded-lg bg-indigo-500 px-3 py-1.5 text-sm font-semibold text-zinc-950 hover:bg-indigo-400"
@@ -251,7 +259,7 @@ defmodule EmisarWeb.AuthKeysLive do
              button. Avoids a permanent form panel competing with the
              list when no key is being issued. --%>
         <section
-          :if={Permissions.can?(assigns, :manage_auth_keys)}
+          :if={Runners.subject_can_manage_auth_keys?(@current_subject)}
           id="create-panel"
           class="hidden rounded-xl border border-zinc-900 bg-zinc-950/60 p-6"
         >
@@ -374,7 +382,9 @@ defmodule EmisarWeb.AuthKeysLive do
               </:meta>
               <:actions>
                 <button
-                  :if={is_nil(key.revoked_at) and Permissions.can?(assigns, :manage_auth_keys)}
+                  :if={
+                    is_nil(key.revoked_at) and Runners.subject_can_manage_auth_keys?(@current_subject)
+                  }
                   phx-click="revoke"
                   phx-value-id={key.id}
                   data-confirm="Revoke this auth key? Existing runners aren't affected; new registrations will fail."
@@ -401,7 +411,10 @@ defmodule EmisarWeb.AuthKeysLive do
           </:empty>
         </LiveTable.live_table>
 
-        <p :if={not Permissions.can?(assigns, :manage_auth_keys)} class="text-xs text-zinc-500">
+        <p
+          :if={not Runners.subject_can_manage_auth_keys?(@current_subject)}
+          class="text-xs text-zinc-500"
+        >
           Only owners and admins can issue or revoke auth keys.
         </p>
       </.page_container>

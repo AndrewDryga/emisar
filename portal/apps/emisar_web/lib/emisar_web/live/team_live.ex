@@ -3,7 +3,7 @@ defmodule EmisarWeb.TeamLive do
 
   alias Emisar.{Accounts, Mailers, PubSub}
   alias Emisar.Accounts.Membership
-  alias EmisarWeb.{LiveTable, Permissions}
+  alias EmisarWeb.LiveTable
   alias Phoenix.LiveView.JS
 
   # String forms of the canonical role enum — the invite/role forms work
@@ -66,7 +66,7 @@ defmodule EmisarWeb.TeamLive do
     value = not socket.assigns.current_account.require_mfa
 
     cond do
-      not Permissions.can?(socket, :manage_account_security) ->
+      not Accounts.subject_can_manage_account_security?(socket.assigns.current_subject) ->
         {:noreply, put_flash(socket, :error, "Only the account owner can change this setting.")}
 
       # Prevent owners from locking themselves out — if they don't have
@@ -354,7 +354,11 @@ defmodule EmisarWeb.TeamLive do
   # Mirrors the central Permissions module, but accepts the assigns map
   # directly so it can be called from inside HEEx templates without a
   # full socket.
-  defp can_manage?(socket_or_assigns), do: Permissions.can?(socket_or_assigns, :manage_team)
+  defp can_manage?(%{assigns: %{current_subject: subject}}),
+    do: Accounts.subject_can_manage_team?(subject)
+
+  defp can_manage?(%{current_subject: subject}),
+    do: Accounts.subject_can_manage_team?(subject)
 
   # Schemaless validation changeset for the invite form. The invite itself
   # is created by `Accounts.invite_user_to_account/3`; this only drives
@@ -417,7 +421,7 @@ defmodule EmisarWeb.TeamLive do
             </div>
 
             <%= cond do %>
-              <% Permissions.can?(assigns, :manage_account_security) -> %>
+              <% Accounts.subject_can_manage_account_security?(@current_subject) -> %>
                 <button
                   type="button"
                   phx-click="toggle_require_mfa"

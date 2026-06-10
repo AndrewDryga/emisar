@@ -100,7 +100,7 @@ defmodule EmisarWeb.BillingLiveTest do
       # render_hook returns HTML, not an {:error, {:redirect, …}}.
       html = render_hook(lv, "upgrade", %{"plan" => "team"})
 
-      assert html =~ "Only owners can manage billing."
+      assert html =~ "have permission to do that."
     end
   end
 end

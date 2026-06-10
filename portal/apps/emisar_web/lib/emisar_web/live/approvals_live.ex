@@ -35,27 +35,31 @@ defmodule EmisarWeb.ApprovalsLive do
   defp reload(socket), do: load(socket, socket.assigns[:filter_params] || %{})
 
   def handle_event("revoke_grant", %{"id" => id}, socket) do
-    Permissions.gated(socket, :decide_approval, fn s ->
-      case Approvals.fetch_grant_by_id(id, s.assigns.current_subject) do
-        {:error, :not_found} ->
-          {:noreply, put_flash(s, :error, "Grant not found.")}
+    Permissions.gated(
+      socket,
+      Approvals.subject_can_decide_approval?(socket.assigns.current_subject),
+      fn s ->
+        case Approvals.fetch_grant_by_id(id, s.assigns.current_subject) do
+          {:error, :not_found} ->
+            {:noreply, put_flash(s, :error, "Grant not found.")}
 
-        {:ok, grant} ->
-          # Audit logging lives inside `Approvals.revoke_grant/2` so the
-          # transaction is atomic and other callers (future scripts /
-          # tasks) can't accidentally skip it.
-          case Approvals.revoke_grant(grant, s.assigns.current_subject) do
-            {:ok, _} ->
-              {:noreply,
-               s
-               |> put_flash(:info, "Grant revoked. New calls will require fresh approval.")
-               |> reload()}
+          {:ok, grant} ->
+            # Audit logging lives inside `Approvals.revoke_grant/2` so the
+            # transaction is atomic and other callers (future scripts /
+            # tasks) can't accidentally skip it.
+            case Approvals.revoke_grant(grant, s.assigns.current_subject) do
+              {:ok, _} ->
+                {:noreply,
+                 s
+                 |> put_flash(:info, "Grant revoked. New calls will require fresh approval.")
+                 |> reload()}
 
-            _ ->
-              {:noreply, put_flash(s, :error, "Could not revoke grant.")}
-          end
+              _ ->
+                {:noreply, put_flash(s, :error, "Could not revoke grant.")}
+            end
+        end
       end
-    end)
+    )
   end
 
   defp load(socket, params) do
@@ -308,7 +312,7 @@ defmodule EmisarWeb.ApprovalsLive do
                 </:meta>
                 <:actions>
                   <button
-                    :if={Permissions.can?(assigns, :decide_approval)}
+                    :if={Approvals.subject_can_decide_approval?(@current_subject)}
                     phx-click="revoke_grant"
                     phx-value-id={g.id}
                     data-confirm={"Revoke this grant? Calls to #{g.action_id} from #{(g.api_key && g.api_key.name) || "the key"} will require fresh approval."}

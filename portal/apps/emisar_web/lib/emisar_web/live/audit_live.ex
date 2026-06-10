@@ -45,16 +45,20 @@ defmodule EmisarWeb.AuditLive do
   def handle_info(_, socket), do: {:noreply, socket}
 
   def handle_event("revoke_export_key", %{"id" => id}, socket) do
-    Permissions.gated(socket, :manage_api_keys, fn s ->
-      case ApiKeys.fetch_api_key_by_id(id, s.assigns.current_subject) do
-        {:ok, key} ->
-          {:ok, _} = ApiKeys.revoke_api_key(key, s.assigns.current_subject)
-          {:noreply, s |> put_flash(:info, "Export token revoked.") |> assign_export_keys()}
+    Permissions.gated(
+      socket,
+      ApiKeys.subject_can_manage_api_keys?(socket.assigns.current_subject),
+      fn s ->
+        case ApiKeys.fetch_api_key_by_id(id, s.assigns.current_subject) do
+          {:ok, key} ->
+            {:ok, _} = ApiKeys.revoke_api_key(key, s.assigns.current_subject)
+            {:noreply, s |> put_flash(:info, "Export token revoked.") |> assign_export_keys()}
 
-        {:error, _} ->
-          {:noreply, s}
+          {:error, _} ->
+            {:noreply, s}
+        end
       end
-    end)
+    )
   end
 
   def handle_event("create_export_key", _params, socket) do
@@ -62,21 +66,25 @@ defmodule EmisarWeb.AuditLive do
     # they carry `audit:read` (not `actions:*`), expose `/api/audit`,
     # and live on the audit page rather than the agents page so the
     # SIEM-export use case isn't mixed in with the LLM-bridge one.
-    Permissions.gated(socket, :manage_api_keys, fn s ->
-      attrs = %{
-        name: "Audit export — #{Calendar.strftime(DateTime.utc_now(), "%Y-%m-%d")}",
-        description: "Read-only token for shipping audit events to a SIEM.",
-        scopes: ["audit:read"]
-      }
+    Permissions.gated(
+      socket,
+      ApiKeys.subject_can_manage_api_keys?(socket.assigns.current_subject),
+      fn s ->
+        attrs = %{
+          name: "Audit export — #{Calendar.strftime(DateTime.utc_now(), "%Y-%m-%d")}",
+          description: "Read-only token for shipping audit events to a SIEM.",
+          scopes: ["audit:read"]
+        }
 
-      case ApiKeys.create_key(attrs, s.assigns.current_subject) do
-        {:ok, raw, _key} ->
-          {:noreply, s |> assign(:export_secret, raw) |> assign_export_keys()}
+        case ApiKeys.create_key(attrs, s.assigns.current_subject) do
+          {:ok, raw, _key} ->
+            {:noreply, s |> assign(:export_secret, raw) |> assign_export_keys()}
 
-        {:error, _} ->
-          {:noreply, put_flash(s, :error, "Could not mint the export key.")}
+          {:error, _} ->
+            {:noreply, put_flash(s, :error, "Could not mint the export key.")}
+        end
       end
-    end)
+    )
   end
 
   def handle_event("dismiss_export_secret", _params, socket),
@@ -200,7 +208,7 @@ defmodule EmisarWeb.AuditLive do
            here, not on the LLM agents page (which is for MCP connections).
            Lists existing tokens with revoke + the mint affordance. --%>
       <section
-        :if={Permissions.can?(assigns, :manage_api_keys)}
+        :if={ApiKeys.subject_can_manage_api_keys?(@current_subject)}
         id="siem-export"
         class="mt-8 overflow-hidden rounded-xl border border-zinc-900 bg-zinc-950/40"
       >

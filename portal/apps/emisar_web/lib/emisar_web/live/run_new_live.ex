@@ -53,7 +53,11 @@ defmodule EmisarWeb.RunNewLive do
   end
 
   def handle_event("dispatch", params, socket) do
-    Permissions.gated(socket, :dispatch_run, fn s -> do_dispatch(s, params) end)
+    Permissions.gated(
+      socket,
+      Runs.subject_can_dispatch_run?(socket.assigns.current_subject),
+      fn s -> do_dispatch(s, params) end
+    )
   end
 
   defp do_dispatch(socket, params) do

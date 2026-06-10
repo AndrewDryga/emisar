@@ -1,7 +1,7 @@
 defmodule EmisarWeb.RunbookRunLive do
   use EmisarWeb, :live_view
 
-  alias Emisar.{Runners, Runbooks}
+  alias Emisar.{Runbooks, Runners, Runs}
   alias EmisarWeb.Permissions
 
   def mount(%{"id" => id}, _session, socket) do
@@ -107,9 +107,13 @@ defmodule EmisarWeb.RunbookRunLive do
   end
 
   def handle_event("dispatch", params, socket) do
-    Permissions.gated(socket, :dispatch_run, fn s ->
-      do_dispatch(s, params)
-    end)
+    Permissions.gated(
+      socket,
+      Runs.subject_can_dispatch_run?(socket.assigns.current_subject),
+      fn s ->
+        do_dispatch(s, params)
+      end
+    )
   end
 
   defp do_dispatch(socket, params) do

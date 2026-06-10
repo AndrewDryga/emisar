@@ -235,11 +235,19 @@ defmodule EmisarWeb.RunbookEditorLive do
   end
 
   def handle_event("save", _params, socket) do
-    Permissions.gated(socket, :manage_runbooks, fn s -> save(s, publish?: false) end)
+    Permissions.gated(
+      socket,
+      Runbooks.subject_can_manage_runbooks?(socket.assigns.current_subject),
+      fn s -> save(s, publish?: false) end
+    )
   end
 
   def handle_event("publish", _params, socket) do
-    Permissions.gated(socket, :manage_runbooks, fn s -> save(s, publish?: true) end)
+    Permissions.gated(
+      socket,
+      Runbooks.subject_can_manage_runbooks?(socket.assigns.current_subject),
+      fn s -> save(s, publish?: true) end
+    )
   end
 
   # phx-value step/arg indices are server-rendered, so they're valid in normal

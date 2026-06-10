@@ -7,7 +7,7 @@ defmodule EmisarWeb.RunbooksLive do
   use EmisarWeb, :live_view
 
   alias Emisar.{PubSub, Runbooks}
-  alias EmisarWeb.{LiveTable, Permissions}
+  alias EmisarWeb.LiveTable
 
   def mount(_params, _session, socket) do
     if connected?(socket),
@@ -53,7 +53,7 @@ defmodule EmisarWeb.RunbooksLive do
       section={:runbooks}
     >
       <:title>Runbooks</:title>
-      <:actions :if={Permissions.can?(assigns, :manage_runbooks)}>
+      <:actions :if={Runbooks.subject_can_manage_runbooks?(@current_subject)}>
         <.link
           navigate={~p"/app/runbooks/new"}
           class="inline-flex items-center gap-1.5 rounded-lg bg-indigo-500 px-3 py-1.5 text-sm font-semibold text-zinc-950 hover:bg-indigo-400"
@@ -66,7 +66,10 @@ defmodule EmisarWeb.RunbooksLive do
         <.empty_state icon="hero-book-open" title="No runbooks yet">
           Runbooks are cloud-side workflows that expand into ordered action dispatches.
           Compose multi-step procedures, publish them, and operators or LLMs can run them safely.
-          <:cta :if={Permissions.can?(assigns, :manage_runbooks)} navigate={~p"/app/runbooks/new"}>
+          <:cta
+            :if={Runbooks.subject_can_manage_runbooks?(@current_subject)}
+            navigate={~p"/app/runbooks/new"}
+          >
             Create runbook
           </:cta>
         </.empty_state>

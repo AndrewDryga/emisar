@@ -23,7 +23,6 @@ defmodule EmisarWeb.PacksLive do
   use EmisarWeb, :live_view
 
   alias Emisar.Catalog
-  alias EmisarWeb.Permissions
 
   def mount(_params, _session, socket) do
     socket = assign(socket, :page_title, "Packs")
@@ -267,7 +266,7 @@ defmodule EmisarWeb.PacksLive do
                      pending banner above stays visible to everyone — it
                      explains WHY dispatch is blocked. --%>
                 <div
-                  :if={Permissions.can?(assigns, :manage_packs)}
+                  :if={Catalog.subject_can_manage_packs?(@current_subject)}
                   class="mt-3 flex flex-wrap gap-2"
                 >
                   <button

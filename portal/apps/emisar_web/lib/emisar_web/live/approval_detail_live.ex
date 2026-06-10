@@ -79,40 +79,48 @@ defmodule EmisarWeb.ApprovalDetailLive do
   end
 
   def handle_event("approve", params, socket) do
-    Permissions.gated(socket, :decide_approval, fn s ->
-      opts = [
-        duration: parse_duration(params["duration"]),
-        scope: parse_scope(params["scope"]),
-        max_uses: parse_max_uses(params["max_uses"])
-      ]
+    Permissions.gated(
+      socket,
+      Approvals.subject_can_decide_approval?(socket.assigns.current_subject),
+      fn s ->
+        opts = [
+          duration: parse_duration(params["duration"]),
+          scope: parse_scope(params["scope"]),
+          max_uses: parse_max_uses(params["max_uses"])
+        ]
 
-      reason = blank_or(params["reason"])
+        reason = blank_or(params["reason"])
 
-      case Approvals.approve_request(s.assigns.request, s.assigns.current_subject, reason, opts) do
-        {:ok, {req, _run}} ->
-          msg = approval_flash(opts)
-          {:noreply, s |> assign(:request, req) |> put_flash(:info, msg)}
+        case Approvals.approve_request(s.assigns.request, s.assigns.current_subject, reason, opts) do
+          {:ok, {req, _run}} ->
+            msg = approval_flash(opts)
+            {:noreply, s |> assign(:request, req) |> put_flash(:info, msg)}
 
-        _ ->
-          {:noreply, put_flash(s, :error, "Could not approve.")}
+          _ ->
+            {:noreply, put_flash(s, :error, "Could not approve.")}
+        end
       end
-    end)
+    )
   end
 
   def handle_event("deny", params, socket) do
-    Permissions.gated(socket, :decide_approval, fn s ->
-      case Approvals.deny_request(
-             s.assigns.request,
-             s.assigns.current_subject,
-             blank_or(params["reason"])
-           ) do
-        {:ok, {req, _run}} ->
-          {:noreply, s |> assign(:request, req) |> put_flash(:info, "Denied.")}
+    Permissions.gated(
+      socket,
+      Approvals.subject_can_decide_approval?(socket.assigns.current_subject),
+      fn s ->
+        case Approvals.deny_request(
+               s.assigns.request,
+               s.assigns.current_subject,
+               blank_or(params["reason"])
+             ) do
+          {:ok, {req, _run}} ->
+            {:noreply, s |> assign(:request, req) |> put_flash(:info, "Denied.")}
 
-        _ ->
-          {:noreply, put_flash(s, :error, "Could not deny.")}
+          _ ->
+            {:noreply, put_flash(s, :error, "Could not deny.")}
+        end
       end
-    end)
+    )
   end
 
   defp parse_max_uses(v) when is_binary(v) do
@@ -313,7 +321,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
         <aside class="lg:sticky lg:top-6 lg:self-start">
           <%= if @request.status == "pending" do %>
             <.decision_panel
-              can_decide?={Permissions.can?(assigns, :decide_approval)}
+              can_decide?={Approvals.subject_can_decide_approval?(@current_subject)}
               grant_duration={@grant_duration}
               runner_state={@runner_connection}
             />
