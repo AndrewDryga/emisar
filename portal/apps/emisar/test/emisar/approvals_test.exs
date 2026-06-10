@@ -31,6 +31,69 @@ defmodule Emisar.ApprovalsTest do
     subject_for(operator, account, role: :owner)
   end
 
+  describe "request + grant reads" do
+    test "fetch_approval_request_by_run_id finds the run's single request, account-scoped" do
+      {account, run} = run_fixture()
+      operator = user_fixture()
+      {:ok, req} = Approvals.create_request(run, operator.id, "x")
+
+      subject = operator_subject(account)
+      assert {:ok, %Request{id: id}} = Approvals.fetch_approval_request_by_run_id(run.id, subject)
+      assert id == req.id
+
+      {other_account, _run_b} = run_fixture()
+      other_subject = operator_subject(other_account)
+
+      assert {:error, :not_found} =
+               Approvals.fetch_approval_request_by_run_id(run.id, other_subject)
+    end
+
+    test "list_approval_requests_for_account filters by status" do
+      {account, run} = run_fixture()
+      operator = user_fixture()
+      {:ok, req} = Approvals.create_request(run, operator.id, "x")
+
+      subject = operator_subject(account)
+      {:ok, _} = Approvals.deny_request(req, subject, "no")
+
+      assert {:ok, [%Request{status: "denied"}], _} =
+               Approvals.list_approval_requests_for_account(subject, status: "denied")
+
+      assert {:ok, [], _} =
+               Approvals.list_approval_requests_for_account(subject, status: "pending")
+    end
+
+    test "fetch_grant_by_id scopes to the subject's account" do
+      account = account_fixture()
+      runner = runner_fixture(account_id: account.id)
+      operator = user_fixture()
+      {_, key} = api_key_fixture(account_id: account.id, created_by_id: operator.id)
+
+      {:ok, run} =
+        Runs.create_run(%{
+          account_id: account.id,
+          runner_id: runner.id,
+          action_id: "linux.uptime",
+          source: "mcp",
+          args: %{},
+          api_key_id: key.id
+        })
+
+      {:ok, req} = Approvals.create_request(run, operator.id, "x")
+      subject = operator_subject(account)
+
+      {:ok, grant} =
+        Approvals.create_grant(req, run, operator.id, %{duration: :one_day, scope: :exact_args})
+
+      assert {:ok, %Grant{id: id}} = Approvals.fetch_grant_by_id(grant.id, subject)
+      assert id == grant.id
+
+      {other_account, _} = run_fixture()
+      other_subject = operator_subject(other_account)
+      assert {:error, :not_found} = Approvals.fetch_grant_by_id(grant.id, other_subject)
+    end
+  end
+
   describe "create_request/3" do
     test "creates an approval request in :pending status" do
       {_account, run} = run_fixture()
@@ -652,11 +715,13 @@ defmodule Emisar.ApprovalsTest do
       {:ok, req} = Approvals.create_request(run, user.id, "x")
 
       {:ok, _} =
-        Approvals.approve_request(req, subject, nil, duration: :indefinite, scope: :any_args)
+        Approvals.approve_request(req, subject, nil, duration: :ninety_days, scope: :any_args)
 
       [g] = grants_for_api_key(key.id)
       assert g.args_sha256 == nil
-      assert g.expires_at == nil
+      # Every grant carries an explicit re-confirm horizon — there is
+      # deliberately no indefinite duration.
+      assert %DateTime{} = g.expires_at
     end
   end
 

@@ -83,4 +83,18 @@ defmodule Emisar.Approvals.Grant.Query do
   @impl Emisar.Repo.Query
   def cursor_fields,
     do: [{:grants, :desc, :granted_at}, {:grants, :asc, :id}]
+
+  # api_key / runner / the user assocs are soft-delete schemas — scope
+  # each preload to not_deleted() so the filter is explicit at the
+  # preload site. approval_request has no deleted_at and falls through
+  # to Ecto's machinery.
+  @impl Emisar.Repo.Query
+  def preloads,
+    do: [
+      api_key:
+        {Emisar.ApiKeys.ApiKey.Query.not_deleted(), Emisar.ApiKeys.ApiKey.Query.preloads()},
+      runner: {Emisar.Runners.Runner.Query.not_deleted(), Emisar.Runners.Runner.Query.preloads()},
+      granted_by: {Emisar.Users.User.Query.not_deleted(), Emisar.Users.User.Query.preloads()},
+      revoked_by: {Emisar.Users.User.Query.not_deleted(), Emisar.Users.User.Query.preloads()}
+    ]
 end

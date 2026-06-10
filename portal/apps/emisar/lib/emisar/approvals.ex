@@ -14,10 +14,10 @@ defmodule Emisar.Approvals do
        and the LLM-facing endpoint returns `pending_approval` with a
        run id for the LLM to poll on.
     4. The operator decides in the UI. On approve, they pick a
-       duration (once / 1h / 24h / indefinite) and an arg-match scope
-       (exact / any) — those choices populate a new
-       `Approvals.Grant` so the LLM doesn't have to ask again next
-       time within that window.
+       duration (once / 1h / 24h / 30d / 90d — every grant has an
+       explicit re-confirm horizon) and an arg-match scope (exact /
+       any) — those choices populate a new `Approvals.Grant` so the
+       LLM doesn't have to ask again next time within that window.
   """
   alias Ecto.Multi
   alias Emisar.{Audit, Auth, Repo, Runs}
@@ -279,62 +279,61 @@ defmodule Emisar.Approvals do
          :ok <- Subject.ensure_in_account(subject, req.account_id) do
       by_user_id = Subject.actor_id(subject)
 
-      case claim_pending(req, :approved, by_user_id, reason) do
-        {:ok, decided} ->
-          result =
-            Repo.transaction(fn ->
-              run = Runs.fetch_run!(req.run_id)
+      grant_attrs = %{
+        duration: Keyword.get(opts, :duration, :once),
+        scope: Keyword.get(opts, :scope, :exact_args),
+        max_uses: Keyword.get(opts, :max_uses)
+      }
 
-              grant_attrs = %{
-                duration: Keyword.get(opts, :duration, :once),
-                scope: Keyword.get(opts, :scope, :exact_args),
-                max_uses: Keyword.get(opts, :max_uses)
-              }
-
-              grant =
-                if grant_attrs.duration != :once and run.api_key_id do
-                  # The operator explicitly chose a durable window ("for 24h").
-                  # If the grant insert fails we must NOT commit the approval as
-                  # if it were `:once` — that would silently no-op their intent,
-                  # record `grant_id: nil`, and re-prompt on the next identical
-                  # call. Roll the whole transaction back so the request stays
-                  # pending and the operator can retry.
-                  case create_grant(req, run, by_user_id, grant_attrs) do
-                    {:ok, grant} -> grant
-                    {:error, changeset} -> Repo.rollback({:grant_failed, changeset})
-                  end
-                end
-
-              Audit.log(req.account_id, "approval.approved",
-                actor_kind: "user",
-                actor_id: by_user_id,
-                subject_kind: "approval_request",
-                subject_id: req.id,
-                payload: %{
-                  run_id: req.run_id,
-                  reason: reason,
-                  grant_id: grant && grant.id,
-                  grant_duration: grant && grant_attrs.duration,
-                  grant_scope: grant && grant_attrs.scope
-                }
-              )
-
-              {decided, run}
-            end)
-            |> tap_broadcast_tuple()
-
-          # Deliver to the runner AFTER the transaction commits so the
-          # PubSub broadcast can't fire before the DB state is durable.
-          # The transition to :sent happens inside
-          # Runs.dispatch_to_runner/1 → Runs.mark_sent/1.
-          with {:ok, {decided, run}} <- result,
-               :ok <- Runs.dispatch_to_runner(run) do
-            run = Repo.reload!(run)
-            {:ok, {decided, run}}
+      # The claim is part of the SAME transaction as the grant + audit:
+      # if the operator chose a durable window and the grant insert
+      # fails, the whole decision rolls back and the request stays
+      # pending for a retry. (Claiming first in its own commit left an
+      # approved request with no grant, no audit, and an undispatched
+      # run on that error path.)
+      result =
+        Multi.new()
+        |> Multi.run(:decided, fn _repo, _changes ->
+          claim_pending(req, :approved, by_user_id, reason)
+        end)
+        |> Multi.run(:run, fn _repo, _changes -> {:ok, Runs.fetch_run!(req.run_id)} end)
+        |> Multi.run(:grant, fn _repo, %{run: run} ->
+          if grant_attrs.duration != :once and run.api_key_id do
+            case create_grant(req, run, by_user_id, grant_attrs) do
+              {:ok, grant} -> {:ok, grant}
+              {:error, changeset} -> {:error, {:grant_failed, changeset}}
+            end
+          else
+            {:ok, nil}
           end
+        end)
+        |> Multi.run(:audit, fn _repo, %{grant: grant} ->
+          Audit.log(req.account_id, "approval.approved",
+            actor_kind: "user",
+            actor_id: by_user_id,
+            subject_kind: "approval_request",
+            subject_id: req.id,
+            payload: %{
+              run_id: req.run_id,
+              reason: reason,
+              grant_id: grant && grant.id,
+              grant_duration: grant && grant_attrs.duration,
+              grant_scope: grant && grant_attrs.scope
+            }
+          )
+        end)
+        |> Repo.commit_multi(
+          after_commit: fn %{decided: decided} -> broadcast_approval(decided) end
+        )
 
-        {:error, :already_decided} ->
-          {:error, :already_decided}
+      # Deliver to the runner AFTER the transaction commits so the
+      # PubSub broadcast can't fire before the DB state is durable.
+      # The transition to :sent happens inside
+      # Runs.dispatch_to_runner/1 → Runs.mark_sent/1.
+      with {:ok, %{decided: decided, run: run}} <- result,
+           :ok <- Runs.dispatch_to_runner(run) do
+        run = Repo.reload!(run)
+        {:ok, {decided, run}}
       end
     end
   end
@@ -348,26 +347,33 @@ defmodule Emisar.Approvals do
          :ok <- Subject.ensure_in_account(subject, req.account_id) do
       by_user_id = Subject.actor_id(subject)
 
-      case claim_pending(req, :denied, by_user_id, reason) do
-        {:ok, decided} ->
-          Repo.transaction(fn ->
-            run = Runs.fetch_run!(req.run_id)
-            {:ok, run} = Runs.mark_cancelled(run, denial_reason(reason))
-
-            Audit.log(req.account_id, "approval.denied",
-              actor_kind: "user",
-              actor_id: by_user_id,
-              subject_kind: "approval_request",
-              subject_id: req.id,
-              payload: %{run_id: req.run_id, reason: reason}
-            )
-
-            {decided, run}
-          end)
-          |> tap_broadcast_tuple()
-
-        {:error, :already_decided} ->
-          {:error, :already_decided}
+      # Claim + cancel + audit commit together — a failed cancel rolls
+      # the claim back too, so the request stays pending instead of
+      # flipping to denied while its run stays live (the expiry sweep
+      # only re-visits pending requests).
+      Multi.new()
+      |> Multi.run(:decided, fn _repo, _changes ->
+        claim_pending(req, :denied, by_user_id, reason)
+      end)
+      |> Multi.run(:run, fn _repo, _changes ->
+        run = Runs.fetch_run!(req.run_id)
+        Runs.mark_cancelled(run, denial_reason(reason))
+      end)
+      |> Multi.run(:audit, fn _repo, _changes ->
+        Audit.log(req.account_id, "approval.denied",
+          actor_kind: "user",
+          actor_id: by_user_id,
+          subject_kind: "approval_request",
+          subject_id: req.id,
+          payload: %{run_id: req.run_id, reason: reason}
+        )
+      end)
+      |> Repo.commit_multi(
+        after_commit: fn %{decided: decided} -> broadcast_approval(decided) end
+      )
+      |> case do
+        {:ok, %{decided: decided, run: run}} -> {:ok, {decided, run}}
+        {:error, reason} -> {:error, reason}
       end
     end
   end
@@ -407,13 +413,6 @@ defmodule Emisar.Approvals do
   end
 
   defp tap_broadcast(other), do: other
-
-  defp tap_broadcast_tuple({:ok, {req, _run}} = result) do
-    broadcast_approval(req)
-    result
-  end
-
-  defp tap_broadcast_tuple(other), do: other
 
   # -- PubSub ----------------------------------------------------------
 
@@ -522,12 +521,14 @@ defmodule Emisar.Approvals do
     |> Repo.insert()
   end
 
+  # Deliberately NO catch-all: an unknown duration atom must crash, not
+  # silently mint a never-expiring grant (the web layer parses operator
+  # input down to exactly these atoms).
   defp expires_at_for(:once, _now), do: nil
   defp expires_at_for(:one_hour, now), do: DateTime.add(now, @one_hour_seconds, :second)
   defp expires_at_for(:one_day, now), do: DateTime.add(now, @one_day_seconds, :second)
   defp expires_at_for(:thirty_days, now), do: DateTime.add(now, @thirty_days_seconds, :second)
   defp expires_at_for(:ninety_days, now), do: DateTime.add(now, @ninety_days_seconds, :second)
-  defp expires_at_for(_, _now), do: nil
 
   # `:once` is hardcoded to a single use regardless of any operator-set
   # cap (the duration alone already says "one shot"). For windowed
@@ -543,18 +544,16 @@ defmodule Emisar.Approvals do
            Auth.Authorizer.ensure_has_permissions(
              subject,
              Authorizer.manage_grants_permission()
-           ),
-         :ok <- Subject.ensure_in_account(subject, grant.account_id) do
-      Multi.new()
-      |> Multi.update(:grant, Grant.Changeset.revoke(grant, Subject.actor_id(subject)))
-      |> Multi.insert(:audit, fn %{grant: revoked} ->
-        Audit.Events.approval_grant_revoked(subject, revoked)
-      end)
-      |> Repo.commit_multi()
-      |> case do
-        {:ok, %{grant: revoked}} -> {:ok, revoked}
-        {:error, reason} -> {:error, reason}
-      end
+           ) do
+      by_user_id = Subject.actor_id(subject)
+
+      Grant.Query.all()
+      |> Grant.Query.by_id(grant.id)
+      |> Authorizer.for_subject(subject)
+      |> Repo.fetch_and_update(Grant.Query,
+        with: &Grant.Changeset.revoke(&1, by_user_id),
+        audit: fn revoked -> Audit.Events.approval_grant_revoked(subject, revoked) end
+      )
     end
   end
 
