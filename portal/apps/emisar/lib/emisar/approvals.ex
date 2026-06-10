@@ -177,8 +177,8 @@ defmodule Emisar.Approvals do
   #     surfaces it instead of silently orphaning the task.
   defp run_notify(fun) do
     if Application.get_env(:emisar, :notify_approvers_async?, true) do
-      sup = Application.fetch_env!(:emisar, :task_supervisor)
-      Task.Supervisor.start_child(sup, fun)
+      supervisor = Application.fetch_env!(:emisar, :task_supervisor)
+      Task.Supervisor.start_child(supervisor, fun)
     else
       fun.()
     end

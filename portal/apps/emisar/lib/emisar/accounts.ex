@@ -56,6 +56,10 @@ defmodule Emisar.Accounts do
   `user.signed_up` (the new user) and `account.created` (the new
   tenant) — together they form the "this person stood up a new team"
   trace operators need for billing/abuse review.
+
+  Pre-Subject boundary: called from onboarding/signup where the user has
+  no membership yet, so no `%Subject{}` can exist — owning the brand-new
+  account is what creates one.
   """
   def create_account_with_owner(account_attrs, %User{} = user) do
     Multi.new()
@@ -102,6 +106,11 @@ defmodule Emisar.Accounts do
     with :ok <- ensure_account_changes_permitted(changeset, subject),
          :ok <- ensure_subject_owns_account(subject, account) do
       Multi.new()
+      # Deliberately updates the caller's changeset rather than a locked
+      # re-read: the diff writes exactly the fields the field-aware
+      # permission check above authorized. A locked re-read could apply a
+      # `require_mfa` flip that was never permission-checked when the
+      # stale copy and the row disagree.
       |> Multi.update(:account, changeset)
       |> Multi.insert(:audit, fn %{account: updated} ->
         account_update_audit(updated, changeset, subject)
@@ -109,8 +118,7 @@ defmodule Emisar.Accounts do
       |> Repo.commit_multi()
       |> case do
         {:ok, %{account: updated}} -> {:ok, updated}
-        {:error, %Ecto.Changeset{} = changeset} -> {:error, changeset}
-        {:error, other} -> {:error, other}
+        {:error, reason} -> {:error, reason}
       end
     end
   end
@@ -169,15 +177,15 @@ defmodule Emisar.Accounts do
     do_suggest(base, 0)
   end
 
-  defp do_suggest(base, n) do
-    candidate = if n == 0, do: base, else: "#{base}-#{n}"
+  defp do_suggest(base, attempt) do
+    candidate = if attempt == 0, do: base, else: "#{base}-#{attempt}"
 
     taken? =
       Account.Query.not_deleted()
       |> Account.Query.by_slug(candidate)
       |> Repo.exists?()
 
-    if taken?, do: do_suggest(base, n + 1), else: candidate
+    if taken?, do: do_suggest(base, attempt + 1), else: candidate
   end
 
   # -- Memberships ------------------------------------------------------
