@@ -219,11 +219,14 @@ defmodule Emisar.Approvals do
     {:ok, memberships, %{next_page_cursor: next}} =
       Emisar.Accounts.list_memberships_for_account(account, system, page: page_opts)
 
+    approver_roles =
+      Auth.Authorizer.roles_with_permission(Authorizer.decide_approval_permission())
+
     memberships
     |> Enum.filter(fn m ->
-      # Viewers can't decide so don't get pinged; the user who triggered
-      # the request is excluded since they already saw it in the UI.
-      m.role in [:owner, :admin, :operator] and m.user_id != requested_by_id
+      # Only members who can decide get pinged (viewers can't); the user who
+      # triggered the request is excluded since they already saw it in the UI.
+      m.role in approver_roles and m.user_id != requested_by_id
     end)
     |> Enum.each(&deliver_approval_email(&1, req, run))
 

@@ -114,4 +114,13 @@ defmodule Emisar.Auth.Authorizer do
   """
   def covers_role?(%Subject{permissions: perms}, role),
     do: MapSet.subset?(permissions_for(role), perms)
+
+  @doc """
+  The membership roles whose permission set includes `permission` — e.g. the
+  roles that can decide approvals. Derived from `permissions_for/1`, so an
+  eligibility/recipient list built from it can't drift from the
+  role → permission source of truth (unlike a hard-coded `[:owner, :admin]`).
+  """
+  def roles_with_permission(permission),
+    do: Enum.filter(Emisar.Auth.Role.all(), &MapSet.member?(permissions_for(&1), permission))
 end
