@@ -14,6 +14,14 @@ defmodule Emisar.Runs do
   alias Emisar.Runs.{ActionRun, Authorizer, RunEvent}
   alias Emisar.Runners.Runner
 
+  @doc "Whether `subject` may dispatch action runs (operator+)."
+  def subject_can_dispatch_run?(%Subject{} = subject),
+    do: Auth.Authorizer.has_permission?(subject, Authorizer.dispatch_run_permission())
+
+  @doc "Whether `subject` may cancel action runs (operator+)."
+  def subject_can_cancel_run?(%Subject{} = subject),
+    do: Auth.Authorizer.has_permission?(subject, Authorizer.cancel_run_permission())
+
   # -- Listing / queries ------------------------------------------------
 
   @doc """

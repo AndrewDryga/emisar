@@ -13,6 +13,10 @@ defmodule Emisar.Runbooks do
   alias Emisar.Auth.Subject
   alias Emisar.Runbooks.{Authorizer, Runbook}
 
+  @doc "Whether `subject` may manage runbooks (admin+)."
+  def subject_can_manage_runbooks?(%Subject{} = subject),
+    do: Auth.Authorizer.has_permission?(subject, Authorizer.manage_runbooks_permission())
+
   # -- Reads -----------------------------------------------------------
 
   def list_runbooks(%Subject{} = subject, opts \\ []) do

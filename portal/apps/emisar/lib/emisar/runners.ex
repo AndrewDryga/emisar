@@ -23,6 +23,14 @@ defmodule Emisar.Runners do
   alias Emisar.Auth.Subject
   alias Emisar.Runners.{Authorizer, AuthKey, Presence, Runner, Token}
 
+  @doc "Whether `subject` may manage runners (admin+)."
+  def subject_can_manage_runners?(%Subject{} = subject),
+    do: Auth.Authorizer.has_permission?(subject, Authorizer.manage_runners_permission())
+
+  @doc "Whether `subject` may manage runner auth keys (admin+)."
+  def subject_can_manage_auth_keys?(%Subject{} = subject),
+    do: Auth.Authorizer.has_permission?(subject, Authorizer.manage_auth_keys_permission())
+
   require Logger
 
   # 11 chars for "emkey-auth-" + 16 random chars => 27.

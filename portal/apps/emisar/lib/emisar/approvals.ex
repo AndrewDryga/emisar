@@ -25,6 +25,10 @@ defmodule Emisar.Approvals do
   alias Emisar.Approvals.{Authorizer, Grant, Request}
   alias Emisar.Auth.Subject
 
+  @doc "Whether `subject` may decide (approve/deny) approval requests (operator+)."
+  def subject_can_decide_approval?(%Subject{} = subject),
+    do: Auth.Authorizer.has_permission?(subject, Authorizer.decide_approval_permission())
+
   def list_pending_approval_requests(%Subject{} = subject, opts \\ []) do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(

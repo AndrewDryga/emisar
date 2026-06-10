@@ -14,6 +14,21 @@ defmodule Emisar.Accounts do
 
   require Logger
 
+  @doc "Whether `subject` may manage team memberships (admin+)."
+  def subject_can_manage_team?(%Subject{} = subject),
+    do: Auth.Authorizer.has_permission?(subject, Authorizer.manage_team_permission())
+
+  @doc """
+  Whether `subject` may change account security settings such as MFA
+  enforcement — owner-only.
+  """
+  def subject_can_manage_account_security?(%Subject{} = subject),
+    do:
+      Auth.Authorizer.has_permission?(
+        subject,
+        Authorizer.manage_security_settings_permission()
+      )
+
   # -- Accounts ---------------------------------------------------------
 
   # Account lookups by id / slug are pre-authentication — they're how
