@@ -180,17 +180,13 @@ defmodule EmisarWeb.ProfileLive do
 
   def handle_event("start_mfa", _params, socket) do
     secret = Auth.generate_mfa_secret()
-    encoded = Base.encode32(secret, padding: false)
-
-    issuer = "emisar"
-    account_label = socket.assigns.current_user.email
-    uri = "otpauth://totp/#{issuer}:#{account_label}?secret=#{encoded}&issuer=#{issuer}"
+    uri = EmisarWeb.MfaQr.provisioning_uri(socket.assigns.current_user.email, secret)
 
     {:noreply,
      socket
      |> assign(:mfa_secret, secret)
      |> assign(:mfa_uri, uri)
-     |> assign(:mfa_qr_svg, mfa_qr_svg(uri))
+     |> assign(:mfa_qr_svg, EmisarWeb.MfaQr.svg(uri))
      |> assign_mfa_form()}
   end
 
@@ -282,16 +278,6 @@ defmodule EmisarWeb.ProfileLive do
   # directly from the screen.
   # Renders an SVG with explicit width AND viewBox so it scales cleanly
   # regardless of the surrounding flex/grid container. EQRCode's
-  # `viewbox: true` (singular w/o explicit width) emits a viewBox-only
-  # SVG whose intrinsic size collapses to 0 in some browsers — render
-  # both attributes so it works everywhere. 240px = comfortable scan
-  # distance on a phone camera held a foot from the screen.
-  defp mfa_qr_svg(uri) do
-    uri
-    |> EQRCode.encode()
-    |> EQRCode.svg(width: 240, background_color: "#ffffff", color: "#000000")
-  end
-
   defp assign_profile_form(socket, user) do
     changeset = Users.change_user(user, %{"full_name" => user.full_name || ""})
     assign(socket, :profile_form, to_form(changeset, as: "profile"))

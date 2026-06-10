@@ -319,15 +319,10 @@ defmodule EmisarWeb.UserAuth do
         {:cont, socket}
 
       true ->
-        socket =
-          socket
-          |> Phoenix.LiveView.put_flash(
-            :error,
-            "Your account requires two-factor authentication. Set it up to continue."
-          )
-          |> Phoenix.LiveView.redirect(to: ~p"/app/settings/profile")
-
-        {:halt, socket}
+        # No error flash — the setup page explains the enforcement and
+        # walks the member through enrollment (the invite-accept flow
+        # lands here as its natural second step before the dashboard).
+        {:halt, Phoenix.LiveView.redirect(socket, to: ~p"/app/mfa_setup")}
     end
   end
 

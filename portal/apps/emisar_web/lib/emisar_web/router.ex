@@ -128,6 +128,16 @@ defmodule EmisarWeb.Router do
 
     post "/accounts/switch", AccountSwitchController, :switch
 
+    # Outside :authenticated on purpose: this is where ensure_mfa_compliant
+    # SENDS a non-compliant member, so it must mount without that gate.
+    live_session :mfa_setup,
+      on_mount: [
+        {EmisarWeb.UserAuth, :ensure_authenticated},
+        {EmisarWeb.UserAuth, :audit_meta}
+      ] do
+      live "/mfa_setup", MfaSetupLive, :new
+    end
+
     live_session :authenticated,
       on_mount: [
         {EmisarWeb.UserAuth, :ensure_authenticated},
