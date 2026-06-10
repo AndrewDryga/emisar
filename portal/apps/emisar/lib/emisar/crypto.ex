@@ -90,6 +90,24 @@ defmodule Emisar.Crypto do
     {raw, String.slice(raw, 0, prefix_size), hash(raw)}
   end
 
+  # 80-bit base32 recovery codes match the GitHub / Google Workspace
+  # shape: unguessable, yet short enough to copy by hand.
+  @mfa_recovery_code_bytes 10
+
+  @doc """
+  One MFA recovery code as `{plaintext, digest}` — show the plaintext
+  exactly once, persist only the digest. Lowercased base32 so the code
+  survives hand transcription.
+  """
+  def mfa_recovery_code do
+    plain =
+      :crypto.strong_rand_bytes(@mfa_recovery_code_bytes)
+      |> Base.encode32(padding: false)
+      |> String.downcase()
+
+    {plain, hash(plain)}
+  end
+
   @doc """
   Constant-time binary comparison. False when sizes differ — `:crypto.hash_equals/2`
   requires equal-length binaries. Use this anywhere a presented secret

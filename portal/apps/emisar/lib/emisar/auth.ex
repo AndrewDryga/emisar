@@ -201,23 +201,25 @@ defmodule Emisar.Auth do
     do: "users_sessions:#{Base.url_encode64(token_digest)}"
 
   @doc """
-  All active sessions for a user, newest first. The raw token is never
-  surfaced — only the row id (for revocation) and inserted_at (display).
-  Returns `{:ok, [token], %Paginator.Metadata{}}` per the context-
-  function convention.
+  The caller's own active sessions, newest first (Profile's device
+  list). Self-service — the user is the subject's own actor. The raw
+  token is never surfaced — only the row id (for revocation) and
+  inserted_at (display). Returns `{:ok, [token], %Paginator.Metadata{}}`
+  per the context-function convention.
   """
-  def list_sessions_for_user(%User{} = user, opts \\ []) do
+  def list_sessions_for_user(%Subject{actor: %User{} = user}, opts \\ []) do
     UserToken.Query.by_user_id(user.id)
     |> UserToken.Query.by_context("session")
     |> Repo.list(UserToken.Query, opts)
   end
 
   @doc """
-  Revoke one specific session by id, scoped to the owning user so a
-  malicious id from one user can't kill another's session.
-  Returns :ok | {:error, :not_found}.
+  Revoke one of the caller's own sessions by id (Profile's per-device
+  sign-out). Self-service — the user comes from the subject's own
+  actor, and the query is scoped to them so a malicious id can't kill
+  another user's session. Returns :ok | {:error, :not_found}.
   """
-  def revoke_session(%User{} = user, token_id) do
+  def revoke_session(token_id, %Subject{actor: %User{} = user}) do
     if Repo.valid_uuid?(token_id) do
       Multi.new()
       |> Multi.delete_all(:sessions, UserToken.session_by_id_for_user_query(user, token_id))
@@ -239,9 +241,10 @@ defmodule Emisar.Auth do
   end
 
   @doc """
-  Revoke every session except the one carrying `keep_token` (the
-  caller's current cookie). Used by Profile's "sign out everywhere
-  else". Pass `nil` to revoke every session including the current one.
+  Internal — the token-deletion half of
+  `revoke_and_disconnect_other_sessions!/2` (the Subject-fronted public
+  surface): revoke every session except the one carrying `keep_token`.
+  Pass `nil` to revoke every session including the current one.
   """
   def revoke_other_sessions!(%User{} = user, keep_token) when is_binary(keep_token) do
     keep_digest = Crypto.hash(keep_token)
@@ -449,12 +452,10 @@ defmodule Emisar.Auth do
   def generate_mfa_secret, do: NimbleTOTP.secret()
 
   # 10 recovery codes is the de facto standard (matches GitHub, Google
-  # Workspace, etc). Each is a base32-encoded 80-bit random value — long
-  # enough to be unguessable, short enough that a user can copy by hand.
-  # Returned in plaintext exactly once at enable-time; we only persist
-  # the SHA-256 digest.
+  # Workspace, etc). Returned in plaintext exactly once at enable-time;
+  # we only persist the digests. Each code's shape (length, encoding,
+  # digest) is `Crypto.mfa_recovery_code/0`'s concern.
   @recovery_code_count 10
-  @recovery_code_bytes 10
 
   @doc """
   Enable TOTP for the user. Verifies the OTP against the secret before
@@ -521,11 +522,7 @@ defmodule Emisar.Auth do
 
   defp generate_recovery_codes do
     1..@recovery_code_count
-    |> Enum.map(fn _ ->
-      raw = :crypto.strong_rand_bytes(@recovery_code_bytes)
-      plain = Base.encode32(raw, padding: false) |> String.downcase()
-      {plain, Crypto.hash(plain)}
-    end)
+    |> Enum.map(fn _ -> Crypto.mfa_recovery_code() end)
     |> Enum.unzip()
   end
 

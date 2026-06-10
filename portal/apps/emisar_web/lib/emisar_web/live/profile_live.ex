@@ -37,7 +37,7 @@ defmodule EmisarWeb.ProfileLive do
 
   defp load_sessions(socket) do
     sessions =
-      case Auth.list_sessions_for_user(socket.assigns.current_user, page: [limit: 100]) do
+      case Auth.list_sessions_for_user(socket.assigns.current_subject, page: [limit: 100]) do
         {:ok, list, _meta} -> list
         _ -> []
       end
@@ -153,9 +153,7 @@ defmodule EmisarWeb.ProfileLive do
   end
 
   def handle_event("revoke_session", %{"id" => id}, socket) do
-    user = socket.assigns.current_user
-
-    case Auth.revoke_session(user, id) do
+    case Auth.revoke_session(id, socket.assigns.current_subject) do
       :ok ->
         {:noreply, socket |> put_flash(:info, "Session revoked.") |> load_sessions()}
 

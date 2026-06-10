@@ -181,11 +181,11 @@ defmodule Emisar.AuthAuditTest do
 
   describe "session self-revocation" do
     setup do
-      {user, account, _} = owner_subject_fixture()
+      {user, account, subject} = owner_subject_fixture()
       # Mint two sessions for the user.
       _ = Auth.create_session_token!(user)
       keep = Auth.create_session_token!(user)
-      %{user: user, account: account, keep: keep}
+      %{user: user, account: account, keep: keep, subject: subject}
     end
 
     test "revoke_other_sessions! audits user.other_sessions_revoked with the count", %{
@@ -201,13 +201,13 @@ defmodule Emisar.AuthAuditTest do
     end
 
     test "revoke_session audits user.session_revoked", %{
-      user: user,
+      subject: subject,
       account: account,
       keep: _keep
     } do
-      {:ok, [%{id: token_id} | _], _} = Auth.list_sessions_for_user(user)
+      {:ok, [%{id: token_id} | _], _} = Auth.list_sessions_for_user(subject)
 
-      assert :ok = Auth.revoke_session(user, token_id)
+      assert :ok = Auth.revoke_session(token_id, subject)
       assert [event] = events_of(account, "user.session_revoked")
       assert event.payload["session_id"] == token_id
     end

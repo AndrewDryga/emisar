@@ -460,12 +460,13 @@ defmodule Emisar.AccountsTest do
       target =
         membership_fixture(account_id: account.id, user_id: target_user.id, role: "operator")
 
+      target_subject = subject_for(target_user, account, role: :operator)
       _ = Emisar.Auth.create_session_token!(target_user)
-      assert {:ok, [_], _} = Emisar.Auth.list_sessions_for_user(target_user)
+      assert {:ok, [_], _} = Emisar.Auth.list_sessions_for_user(target_subject)
 
       owner_subject = subject_for(owner, account, role: :owner)
       assert :ok = Accounts.force_password_reset(target, owner_subject)
-      assert {:ok, [], _} = Emisar.Auth.list_sessions_for_user(target_user)
+      assert {:ok, [], _} = Emisar.Auth.list_sessions_for_user(target_subject)
 
       events =
         Emisar.Audit.list_events(owner_subject, page: [limit: 10])
