@@ -270,7 +270,7 @@ defmodule Emisar.Runners do
              Authorizer.manage_runners_permission()
            ) do
       changeset =
-        %Emisar.Accounts.Account{id: account.id}
+        %Accounts.Account{id: account.id}
         |> Runner.Changeset.create(attrs)
 
       case Repo.insert(changeset) do
@@ -459,39 +459,16 @@ defmodule Emisar.Runners do
   # no Multi to join (presence/PubSub aren't transactional).
 
   @doc "Internal — runner socket: audit the WebSocket connect."
-  def audit_runner_connected(%Runner{} = runner, token_id) do
-    Audit.log(runner.account_id, "runner.connected",
-      actor_kind: "runner",
-      actor_id: runner.id,
-      actor_label: runner.name,
-      subject_kind: "runner",
-      subject_id: runner.id,
-      subject_label: runner.name,
-      payload: %{token_id: token_id}
-    )
-  end
+  def audit_runner_connected(%Runner{} = runner, token_id),
+    do: Audit.record(Audit.Events.runner_connected(runner, token_id))
 
   @doc "Internal — runner socket: audit the WebSocket close."
-  def audit_runner_disconnected(account_id, runner_id, reason) do
-    Audit.log(account_id, "runner.disconnected",
-      actor_kind: "runner",
-      actor_id: runner_id,
-      subject_kind: "runner",
-      subject_id: runner_id,
-      payload: %{reason: reason}
-    )
-  end
+  def audit_runner_disconnected(account_id, runner_id, reason),
+    do: Audit.record(Audit.Events.runner_disconnected(account_id, runner_id, reason))
 
   @doc "Internal — runner socket: audit an error envelope reported by the runner."
-  def audit_runner_error(account_id, runner_id, %{} = payload) do
-    Audit.log(account_id, "runner.error",
-      actor_kind: "runner",
-      actor_id: runner_id,
-      subject_kind: "runner",
-      subject_id: runner_id,
-      payload: payload
-    )
-  end
+  def audit_runner_error(account_id, runner_id, %{} = payload),
+    do: Audit.record(Audit.Events.runner_error(account_id, runner_id, payload))
 
   @doc "Internal — stamps disconnect history from the runner socket on close."
   def mark_disconnected(runner_or_id, reason \\ nil)

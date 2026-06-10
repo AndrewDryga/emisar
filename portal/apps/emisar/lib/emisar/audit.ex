@@ -108,6 +108,19 @@ defmodule Emisar.Audit do
   end
 
   @doc """
+  Insert a prebuilt `Audit.Events` changeset fire-and-forget — the
+  counterpart to `log/3` for events whose actor/subject/payload fields
+  come from a per-event builder rather than raw attrs (so the caller
+  never hand-assembles them). Use an `Audit.Events.<event>` builder
+  inside a `Multi.insert(:audit, …)` when the row must commit with a
+  parent mutation; use this only for standalone socket/presence events
+  that have no transaction to join (runner connect/disconnect/error).
+  Like `log/3`, it does not broadcast — presence already drives the live
+  runner UI.
+  """
+  def record(%Ecto.Changeset{} = event_changeset), do: Repo.insert(event_changeset)
+
+  @doc """
   Build the audit-event changeset without inserting it — the low-level
   primitive the `Audit.Events` per-event builders sit on. Context
   mutations never call this directly: they go through an

@@ -190,6 +190,41 @@ defmodule Emisar.Audit.Events do
 
   # -- Runner ----------------------------------------------------------
 
+  # Connection-lifecycle events fired by the runner socket process. The
+  # runner itself is the actor — there is no acting `%Subject{}` — so the
+  # actor/subject fields point at the runner row.
+  def runner_connected(%Runners.Runner{} = runner, token_id) do
+    Audit.changeset(runner.account_id, "runner.connected",
+      actor_kind: "runner",
+      actor_id: runner.id,
+      actor_label: runner.name,
+      subject_kind: "runner",
+      subject_id: runner.id,
+      subject_label: runner.name,
+      payload: %{token_id: token_id}
+    )
+  end
+
+  def runner_disconnected(account_id, runner_id, reason) do
+    Audit.changeset(account_id, "runner.disconnected",
+      actor_kind: "runner",
+      actor_id: runner_id,
+      subject_kind: "runner",
+      subject_id: runner_id,
+      payload: %{reason: reason}
+    )
+  end
+
+  def runner_error(account_id, runner_id, %{} = payload) do
+    Audit.changeset(account_id, "runner.error",
+      actor_kind: "runner",
+      actor_id: runner_id,
+      subject_kind: "runner",
+      subject_id: runner_id,
+      payload: payload
+    )
+  end
+
   def runner_disabled(%Subject{} = subject, %Runners.Runner{} = runner),
     do: runner_event(subject, runner, "runner.disabled")
 
