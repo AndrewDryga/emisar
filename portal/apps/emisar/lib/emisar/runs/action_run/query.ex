@@ -6,35 +6,35 @@ defmodule Emisar.Runs.ActionRun.Query do
   def all,
     do: from(runs in Emisar.Runs.ActionRun, as: :runs)
 
-  def by_id(q, id),
-    do: where(q, [runs: r], r.id == ^id)
+  def by_id(queryable, id),
+    do: where(queryable, [runs: r], r.id == ^id)
 
-  def by_account_id(q, account_id),
-    do: where(q, [runs: r], r.account_id == ^account_id)
+  def by_account_id(queryable, account_id),
+    do: where(queryable, [runs: r], r.account_id == ^account_id)
 
-  def by_runner_id(q, runner_id),
-    do: where(q, [runs: r], r.runner_id == ^runner_id)
+  def by_runner_id(queryable, runner_id),
+    do: where(queryable, [runs: r], r.runner_id == ^runner_id)
 
-  def by_request_id(q, request_id),
-    do: where(q, [runs: r], r.request_id == ^request_id)
+  def by_request_id(queryable, request_id),
+    do: where(queryable, [runs: r], r.request_id == ^request_id)
 
-  def by_api_key_id(q, api_key_id),
-    do: where(q, [runs: r], r.api_key_id == ^api_key_id)
+  def by_api_key_id(queryable, api_key_id),
+    do: where(queryable, [runs: r], r.api_key_id == ^api_key_id)
 
-  def by_idempotency_key(q, key),
-    do: where(q, [runs: r], r.idempotency_key == ^key)
+  def by_idempotency_key(queryable, key),
+    do: where(queryable, [runs: r], r.idempotency_key == ^key)
 
-  def by_status(q, status),
-    do: where(q, [runs: r], r.status == ^status)
+  def by_status(queryable, status),
+    do: where(queryable, [runs: r], r.status == ^status)
 
-  def status_in(q, statuses),
-    do: where(q, [runs: r], r.status in ^statuses)
+  def status_in(queryable, statuses),
+    do: where(queryable, [runs: r], r.status in ^statuses)
 
-  def inserted_after(q, %DateTime{} = ts),
-    do: where(q, [runs: r], r.inserted_at >= ^ts)
+  def inserted_after(queryable, %DateTime{} = ts),
+    do: where(queryable, [runs: r], r.inserted_at >= ^ts)
 
-  def queued_before(q, %DateTime{} = ts),
-    do: where(q, [runs: r], r.queued_at < ^ts)
+  def queued_before(queryable, %DateTime{} = ts),
+    do: where(queryable, [runs: r], r.queued_at < ^ts)
 
   @doc """
   Id-only projection of runs that reached a terminal state before `ts`.
@@ -43,23 +43,23 @@ defmodule Emisar.Runs.ActionRun.Query do
   authoritative "this run is old" signal, so still-running / never-
   finished runs (null `finished_at`) are excluded.
   """
-  def finished_before_ids(q \\ all(), %DateTime{} = ts) do
-    q
+  def finished_before_ids(queryable \\ all(), %DateTime{} = ts) do
+    queryable
     |> where([runs: r], not is_nil(r.finished_at) and r.finished_at < ^ts)
     |> select([runs: r], r.id)
   end
 
-  def by_action_id(q, action_id),
-    do: where(q, [runs: r], r.action_id == ^action_id)
+  def by_action_id(queryable, action_id),
+    do: where(queryable, [runs: r], r.action_id == ^action_id)
 
-  def ordered_by_recent(q \\ all()),
-    do: order_by(q, [runs: r], desc: r.inserted_at)
+  def ordered_by_recent(queryable \\ all()),
+    do: order_by(queryable, [runs: r], desc: r.inserted_at)
 
-  def limit_to(q, n), do: limit(q, ^n)
+  def limit_to(queryable, n), do: limit(queryable, ^n)
 
   @doc "Audit label-lookup helper. See Accounts.User.Query.select_labels/3."
-  def select_labels(q, ids, field) do
-    q
+  def select_labels(queryable, ids, field) do
+    queryable
     |> where([runs: r], r.id in ^ids)
     |> select([runs: r], {r.id, field(r, ^field)})
   end

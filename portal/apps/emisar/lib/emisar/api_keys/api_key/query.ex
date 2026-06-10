@@ -4,49 +4,50 @@ defmodule Emisar.ApiKeys.ApiKey.Query do
   def all,
     do: from(api_keys in Emisar.ApiKeys.ApiKey, as: :api_keys)
 
-  def not_deleted(q \\ all()),
-    do: where(q, [api_keys: k], is_nil(k.deleted_at))
+  def not_deleted(queryable \\ all()),
+    do: where(queryable, [api_keys: k], is_nil(k.deleted_at))
 
-  def by_id(q, id),
-    do: where(q, [api_keys: k], k.id == ^id)
+  def by_id(queryable, id),
+    do: where(queryable, [api_keys: k], k.id == ^id)
 
-  def by_account_id(q, account_id),
-    do: where(q, [api_keys: k], k.account_id == ^account_id)
+  def by_account_id(queryable, account_id),
+    do: where(queryable, [api_keys: k], k.account_id == ^account_id)
 
   @doc """
   Hides auto-generated keys until an LLM has authenticated with one.
   Auto-unused entries stay invisible to operator-facing surfaces.
   """
-  def visible_to_operators(q \\ not_deleted()) do
-    where(q, [api_keys: k], is_nil(k.auto_generated_at) or not is_nil(k.last_used_at))
+  def visible_to_operators(queryable \\ not_deleted()) do
+    where(queryable, [api_keys: k], is_nil(k.auto_generated_at) or not is_nil(k.last_used_at))
   end
 
-  def ordered_by_recent(q \\ not_deleted()),
-    do: order_by(q, [api_keys: k], desc: k.inserted_at)
+  def ordered_by_recent(queryable \\ not_deleted()),
+    do: order_by(queryable, [api_keys: k], desc: k.inserted_at)
 
-  def by_key_prefix(q \\ all(), prefix),
-    do: where(q, [api_keys: k], k.key_prefix == ^prefix)
+  def by_key_prefix(queryable \\ all(), prefix),
+    do: where(queryable, [api_keys: k], k.key_prefix == ^prefix)
 
   @doc """
   Restricts to keys that carry the given scope. Uses Postgres array
   containment so the index on `scopes` (if added later) covers it.
   """
-  def with_scope(q \\ all(), scope) when is_binary(scope),
-    do: where(q, [api_keys: k], fragment("? = ANY(?)", ^scope, k.scopes))
+  def with_scope(queryable \\ all(), scope) when is_binary(scope),
+    do: where(queryable, [api_keys: k], fragment("? = ANY(?)", ^scope, k.scopes))
 
   @doc """
   Restricts to keys that do NOT carry the given scope. Used to keep
   audit-export tokens (audit:read) out of the LLM-bridge agents list.
   """
-  def without_scope(q \\ all(), scope) when is_binary(scope),
-    do: where(q, [api_keys: k], fragment("NOT (? = ANY(?))", ^scope, k.scopes))
+  def without_scope(queryable \\ all(), scope) when is_binary(scope),
+    do: where(queryable, [api_keys: k], fragment("NOT (? = ANY(?))", ^scope, k.scopes))
 
   @doc """
   Auto-generated keys that no LLM has ever authenticated with — the
   pool that ring eviction draws from.
   """
-  def auto_unused(q \\ not_deleted()),
-    do: where(q, [api_keys: k], not is_nil(k.auto_generated_at) and is_nil(k.last_used_at))
+  def auto_unused(queryable \\ not_deleted()),
+    do:
+      where(queryable, [api_keys: k], not is_nil(k.auto_generated_at) and is_nil(k.last_used_at))
 
   @doc """
   Rows to drop when the per-account ring of auto-unused keys overflows
@@ -72,8 +73,8 @@ defmodule Emisar.ApiKeys.ApiKey.Query do
   end
 
   @doc "Audit label-lookup helper. See Accounts.User.Query.select_labels/3."
-  def select_labels(q, ids, field) do
-    q
+  def select_labels(queryable, ids, field) do
+    queryable
     |> where([api_keys: k], k.id in ^ids)
     |> select([api_keys: k], {k.id, field(k, ^field)})
   end

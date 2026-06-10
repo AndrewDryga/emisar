@@ -4,14 +4,14 @@ defmodule Emisar.Runs.RunEvent.Query do
   def all,
     do: from(events in Emisar.Runs.RunEvent, as: :events)
 
-  def by_id(q, id),
-    do: where(q, [events: e], e.id == ^id)
+  def by_id(queryable, id),
+    do: where(queryable, [events: e], e.id == ^id)
 
-  def by_run_id(q, run_id),
-    do: where(q, [events: e], e.run_id == ^run_id)
+  def by_run_id(queryable, run_id),
+    do: where(queryable, [events: e], e.run_id == ^run_id)
 
-  def by_account_id(q, account_id),
-    do: where(q, [events: e], e.account_id == ^account_id)
+  def by_account_id(queryable, account_id),
+    do: where(queryable, [events: e], e.account_id == ^account_id)
 
   @doc """
   Restrict to events whose parent run reached a terminal state before
@@ -26,9 +26,9 @@ defmodule Emisar.Runs.RunEvent.Query do
   delete — Postgres `DELETE` with a correlated `IN` is unambiguous,
   whereas a join-delete leans on `USING` semantics.
   """
-  def with_run_finished_before(q, %DateTime{} = cutoff) do
+  def with_run_finished_before(queryable, %DateTime{} = cutoff) do
     finished_run_ids = Emisar.Runs.ActionRun.Query.finished_before_ids(cutoff)
-    where(q, [events: e], e.run_id in subquery(finished_run_ids))
+    where(queryable, [events: e], e.run_id in subquery(finished_run_ids))
   end
 
   @doc """
@@ -45,17 +45,17 @@ defmodule Emisar.Runs.RunEvent.Query do
     |> select([events: e], e.id)
   end
 
-  def by_ids(q \\ all(), ids) when is_list(ids),
-    do: where(q, [events: e], e.id in ^ids)
+  def by_ids(queryable \\ all(), ids) when is_list(ids),
+    do: where(queryable, [events: e], e.id in ^ids)
 
-  def by_kind(q, kind),
-    do: where(q, [events: e], e.kind == ^kind)
+  def by_kind(queryable, kind),
+    do: where(queryable, [events: e], e.kind == ^kind)
 
-  def by_stream(q, stream),
-    do: where(q, [events: e], e.stream == ^stream)
+  def by_stream(queryable, stream),
+    do: where(queryable, [events: e], e.stream == ^stream)
 
-  def ordered_by_seq(q \\ all()),
-    do: order_by(q, [events: e], asc: e.seq)
+  def ordered_by_seq(queryable \\ all()),
+    do: order_by(queryable, [events: e], asc: e.seq)
 
   # -- Pagination ------------------------------------------------------
 

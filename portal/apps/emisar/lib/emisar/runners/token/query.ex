@@ -4,17 +4,17 @@ defmodule Emisar.Runners.Token.Query do
   def all,
     do: from(tokens in Emisar.Runners.Token, as: :tokens)
 
-  def by_id(q, id),
-    do: where(q, [tokens: t], t.id == ^id)
+  def by_id(queryable, id),
+    do: where(queryable, [tokens: t], t.id == ^id)
 
-  def by_runner_id(q, runner_id),
-    do: where(q, [tokens: t], t.runner_id == ^runner_id)
+  def by_runner_id(queryable, runner_id),
+    do: where(queryable, [tokens: t], t.runner_id == ^runner_id)
 
-  def by_prefix(q, prefix),
-    do: where(q, [tokens: t], t.token_prefix == ^prefix)
+  def by_prefix(queryable, prefix),
+    do: where(queryable, [tokens: t], t.token_prefix == ^prefix)
 
-  def by_runner_account_id(q, account_id) do
-    q
+  def by_runner_account_id(queryable, account_id) do
+    queryable
     |> join(:inner, [tokens: t], r in ^Emisar.Runners.Runner.Query.all(),
       on: r.id == t.runner_id,
       as: :runners

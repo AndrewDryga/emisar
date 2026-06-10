@@ -4,31 +4,31 @@ defmodule Emisar.Approvals.Request.Query do
   def all,
     do: from(requests in Emisar.Approvals.Request, as: :requests)
 
-  def by_id(q, id),
-    do: where(q, [requests: r], r.id == ^id)
+  def by_id(queryable, id),
+    do: where(queryable, [requests: r], r.id == ^id)
 
-  def by_account_id(q, account_id),
-    do: where(q, [requests: r], r.account_id == ^account_id)
+  def by_account_id(queryable, account_id),
+    do: where(queryable, [requests: r], r.account_id == ^account_id)
 
-  def by_run_id(q, run_id),
-    do: where(q, [requests: r], r.run_id == ^run_id)
+  def by_run_id(queryable, run_id),
+    do: where(queryable, [requests: r], r.run_id == ^run_id)
 
-  def by_status(q, status),
-    do: where(q, [requests: r], r.status == ^status)
+  def by_status(queryable, status),
+    do: where(queryable, [requests: r], r.status == ^status)
 
-  def pending(q \\ all()),
-    do: where(q, [requests: r], r.status == "pending")
+  def pending(queryable \\ all()),
+    do: where(queryable, [requests: r], r.status == "pending")
 
-  def ordered_by_recent(q \\ all()),
-    do: order_by(q, [requests: r], desc: r.requested_at)
+  def ordered_by_recent(queryable \\ all()),
+    do: order_by(queryable, [requests: r], desc: r.requested_at)
 
-  def ordered_by_requested(q),
-    do: order_by(q, [requests: r], asc: r.requested_at)
+  def ordered_by_requested(queryable),
+    do: order_by(queryable, [requests: r], asc: r.requested_at)
 
-  def limit_to(q, n), do: limit(q, ^n)
+  def limit_to(queryable, n), do: limit(queryable, ^n)
 
-  def expired_at_before(q, now),
-    do: where(q, [requests: r], not is_nil(r.expires_at) and r.expires_at < ^now)
+  def expired_at_before(queryable, now),
+    do: where(queryable, [requests: r], not is_nil(r.expires_at) and r.expires_at < ^now)
 
   @doc """
   Conditional UPDATE used by `claim_pending/4`: matches only rows
@@ -67,8 +67,8 @@ defmodule Emisar.Approvals.Request.Query do
   end
 
   @doc "Audit label-lookup helper. See Accounts.User.Query.select_labels/3."
-  def select_labels(q, ids, field) do
-    q
+  def select_labels(queryable, ids, field) do
+    queryable
     |> where([requests: r], r.id in ^ids)
     |> select([requests: r], {r.id, field(r, ^field)})
   end

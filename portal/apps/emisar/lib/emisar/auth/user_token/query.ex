@@ -4,20 +4,20 @@ defmodule Emisar.Auth.UserToken.Query do
   def all,
     do: from(t in Emisar.Auth.UserToken, as: :tokens)
 
-  def by_user_id(q \\ all(), user_id),
-    do: where(q, [tokens: t], t.user_id == ^user_id)
+  def by_user_id(queryable \\ all(), user_id),
+    do: where(queryable, [tokens: t], t.user_id == ^user_id)
 
-  def by_context(q \\ all(), context) when is_binary(context),
-    do: where(q, [tokens: t], t.context == ^context)
+  def by_context(queryable \\ all(), context) when is_binary(context),
+    do: where(queryable, [tokens: t], t.context == ^context)
 
-  def by_contexts(q \\ all(), contexts) when is_list(contexts),
-    do: where(q, [tokens: t], t.context in ^contexts)
+  def by_contexts(queryable \\ all(), contexts) when is_list(contexts),
+    do: where(queryable, [tokens: t], t.context in ^contexts)
 
-  def by_id(q \\ all(), id),
-    do: where(q, [tokens: t], t.id == ^id)
+  def by_id(queryable \\ all(), id),
+    do: where(queryable, [tokens: t], t.id == ^id)
 
-  def ordered_by_recent(q \\ all()),
-    do: order_by(q, [tokens: t], desc: t.inserted_at)
+  def ordered_by_recent(queryable \\ all()),
+    do: order_by(queryable, [tokens: t], desc: t.inserted_at)
 
   # -- Pagination ------------------------------------------------------
 

@@ -6,37 +6,37 @@ defmodule Emisar.Runners.Runner.Query do
   def all,
     do: from(runners in Emisar.Runners.Runner, as: :runners)
 
-  def not_deleted(q \\ all()),
-    do: where(q, [runners: r], is_nil(r.deleted_at))
+  def not_deleted(queryable \\ all()),
+    do: where(queryable, [runners: r], is_nil(r.deleted_at))
 
-  def not_disabled(q \\ all()),
-    do: where(q, [runners: r], is_nil(r.disabled_at))
+  def not_disabled(queryable \\ all()),
+    do: where(queryable, [runners: r], is_nil(r.disabled_at))
 
-  def by_id(q, id),
-    do: where(q, [runners: r], r.id == ^id)
+  def by_id(queryable, id),
+    do: where(queryable, [runners: r], r.id == ^id)
 
-  def by_account_id(q, account_id),
-    do: where(q, [runners: r], r.account_id == ^account_id)
+  def by_account_id(queryable, account_id),
+    do: where(queryable, [runners: r], r.account_id == ^account_id)
 
-  def by_external_id(q, external_id),
-    do: where(q, [runners: r], r.external_id == ^external_id)
+  def by_external_id(queryable, external_id),
+    do: where(queryable, [runners: r], r.external_id == ^external_id)
 
-  def by_name(q, name),
-    do: where(q, [runners: r], r.name == ^name)
+  def by_name(queryable, name),
+    do: where(queryable, [runners: r], r.name == ^name)
 
-  def by_group(q, group),
-    do: where(q, [runners: r], r.group == ^group)
+  def by_group(queryable, group),
+    do: where(queryable, [runners: r], r.group == ^group)
 
   @doc """
   Restrict to the runners a per-membership scope set grants — matched by
   runner id (`runner_ids`) or by group (`groups`). Drives query-level runner
   ACLs; the caller handles the empty-scopes-means-all case before calling.
   """
-  def by_scope_values(q, runner_ids, groups),
-    do: where(q, [runners: r], r.id in ^runner_ids or r.group in ^groups)
+  def by_scope_values(queryable, runner_ids, groups),
+    do: where(queryable, [runners: r], r.id in ^runner_ids or r.group in ^groups)
 
-  def ordered_by_group_name(q),
-    do: order_by(q, [runners: r], asc: r.group, asc: r.name)
+  def ordered_by_group_name(queryable),
+    do: order_by(queryable, [runners: r], asc: r.group, asc: r.name)
 
   @doc """
   Filter by derived connection state. `online_ids` is the set of runner
@@ -45,7 +45,7 @@ defmodule Emisar.Runners.Runner.Query do
   is any of `"connected"`, `"disconnected"`, `"pending"`, `"disabled"`,
   ORed together. An empty `statuses` list matches nothing.
   """
-  def by_connection(q \\ all(), statuses, online_ids) when is_list(statuses) do
+  def by_connection(queryable \\ all(), statuses, online_ids) when is_list(statuses) do
     # Clauses mirror `Emisar.Runners.connection_state/1`'s precedence
     # (disabled beats a stale socket), so the four states partition the
     # set cleanly — a disabled-never-connected runner is only "disabled".
@@ -76,18 +76,18 @@ defmodule Emisar.Runners.Runner.Query do
           acc
       end)
 
-    where(q, ^condition)
+    where(queryable, ^condition)
   end
 
   @doc "Audit label-lookup helper. See Accounts.User.Query.select_labels/3."
-  def select_labels(q, ids, field) do
-    q
+  def select_labels(queryable, ids, field) do
+    queryable
     |> where([runners: r], r.id in ^ids)
     |> select([runners: r], {r.id, field(r, ^field)})
   end
 
-  def group_summary(q \\ not_deleted()) do
-    q
+  def group_summary(queryable \\ not_deleted()) do
+    queryable
     |> group_by([runners: r], r.group)
     |> select([runners: r], {r.group, count(r.id)})
     |> order_by([runners: r], asc: r.group)

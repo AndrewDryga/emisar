@@ -6,25 +6,25 @@ defmodule Emisar.Runners.AuthKey.Query do
   def all,
     do: from(auth_keys in Emisar.Runners.AuthKey, as: :auth_keys)
 
-  def not_deleted(q \\ all()),
-    do: where(q, [auth_keys: k], is_nil(k.deleted_at))
+  def not_deleted(queryable \\ all()),
+    do: where(queryable, [auth_keys: k], is_nil(k.deleted_at))
 
-  def by_id(q, id),
-    do: where(q, [auth_keys: k], k.id == ^id)
+  def by_id(queryable, id),
+    do: where(queryable, [auth_keys: k], k.id == ^id)
 
-  def by_account_id(q, account_id),
-    do: where(q, [auth_keys: k], k.account_id == ^account_id)
+  def by_account_id(queryable, account_id),
+    do: where(queryable, [auth_keys: k], k.account_id == ^account_id)
 
   @doc """
   Hides auto-generated keys until they've been bound to a runner.
   Auto-unused entries stay invisible to operator-facing surfaces.
   """
-  def visible_to_operators(q \\ not_deleted()) do
-    where(q, [auth_keys: k], is_nil(k.auto_generated_at) or not is_nil(k.last_used_at))
+  def visible_to_operators(queryable \\ not_deleted()) do
+    where(queryable, [auth_keys: k], is_nil(k.auto_generated_at) or not is_nil(k.last_used_at))
   end
 
-  def ordered_by_recent(q \\ not_deleted()),
-    do: order_by(q, [auth_keys: k], desc: k.inserted_at)
+  def ordered_by_recent(queryable \\ not_deleted()),
+    do: order_by(queryable, [auth_keys: k], desc: k.inserted_at)
 
   @impl Emisar.Repo.Query
   def filters,
@@ -53,12 +53,13 @@ defmodule Emisar.Runners.AuthKey.Query do
       }
     ]
 
-  def by_key_prefix(q \\ all(), prefix),
-    do: where(q, [auth_keys: k], k.key_prefix == ^prefix)
+  def by_key_prefix(queryable \\ all(), prefix),
+    do: where(queryable, [auth_keys: k], k.key_prefix == ^prefix)
 
   @doc "Auto-generated keys no runner has consumed yet — the eviction pool."
-  def auto_unused(q \\ not_deleted()),
-    do: where(q, [auth_keys: k], not is_nil(k.auto_generated_at) and is_nil(k.last_used_at))
+  def auto_unused(queryable \\ not_deleted()),
+    do:
+      where(queryable, [auth_keys: k], not is_nil(k.auto_generated_at) and is_nil(k.last_used_at))
 
   @doc "Install-key ring overflow. Matches the api_key variant — see ApiKey.Query."
   def evictable_install_overflow(account_id, cap, protected_floor) do
@@ -101,16 +102,16 @@ defmodule Emisar.Runners.AuthKey.Query do
   clearing `auto_generated_at` so the key is no longer eligible for
   ring eviction).
   """
-  def consume_one(q, now) do
-    update(q,
+  def consume_one(queryable, now) do
+    update(queryable,
       inc: [uses_count: 1],
       set: [last_used_at: ^now, updated_at: ^now, auto_generated_at: nil]
     )
   end
 
   @doc "Audit label-lookup helper. See Accounts.User.Query.select_labels/3."
-  def select_labels(q, ids, field) do
-    q
+  def select_labels(queryable, ids, field) do
+    queryable
     |> where([auth_keys: k], k.id in ^ids)
     |> select([auth_keys: k], {k.id, field(k, ^field)})
   end

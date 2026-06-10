@@ -4,5 +4,5 @@ defmodule Emisar.OAuth.Client.Query do
 
   def all, do: from(c in Client, as: :clients)
 
-  def by_id(q \\ all(), id), do: where(q, [clients: c], c.id == ^id)
+  def by_id(queryable \\ all(), id), do: where(queryable, [clients: c], c.id == ^id)
 end

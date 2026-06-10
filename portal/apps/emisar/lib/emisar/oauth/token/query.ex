@@ -4,11 +4,14 @@ defmodule Emisar.OAuth.Token.Query do
 
   def all, do: from(t in Token, as: :tokens)
 
-  def by_access_hash(q \\ all(), hash), do: where(q, [tokens: t], t.access_token_hash == ^hash)
-  def by_refresh_hash(q \\ all(), hash), do: where(q, [tokens: t], t.refresh_token_hash == ^hash)
+  def by_access_hash(queryable \\ all(), hash),
+    do: where(queryable, [tokens: t], t.access_token_hash == ^hash)
 
-  def not_revoked(q \\ all()), do: where(q, [tokens: t], is_nil(t.revoked_at))
+  def by_refresh_hash(queryable \\ all(), hash),
+    do: where(queryable, [tokens: t], t.refresh_token_hash == ^hash)
 
-  def for_api_key(q \\ all(), api_key_id),
-    do: where(q, [tokens: t], t.api_key_id == ^api_key_id)
+  def not_revoked(queryable \\ all()), do: where(queryable, [tokens: t], is_nil(t.revoked_at))
+
+  def for_api_key(queryable \\ all(), api_key_id),
+    do: where(queryable, [tokens: t], t.api_key_id == ^api_key_id)
 end

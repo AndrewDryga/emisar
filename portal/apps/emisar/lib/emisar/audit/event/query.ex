@@ -213,66 +213,66 @@ defmodule Emisar.Audit.Event.Query do
   def all,
     do: from(events in Emisar.Audit.Event, as: :events)
 
-  def by_id(q, id),
-    do: where(q, [events: e], e.id == ^id)
+  def by_id(queryable, id),
+    do: where(queryable, [events: e], e.id == ^id)
 
-  def by_account_id(q, account_id),
-    do: where(q, [events: e], e.account_id == ^account_id)
+  def by_account_id(queryable, account_id),
+    do: where(queryable, [events: e], e.account_id == ^account_id)
 
-  def by_event_type(q, type),
-    do: where(q, [events: e], e.event_type == ^type)
+  def by_event_type(queryable, type),
+    do: where(queryable, [events: e], e.event_type == ^type)
 
-  def by_actor_kind(q, kind),
-    do: where(q, [events: e], e.actor_kind == ^kind)
+  def by_actor_kind(queryable, kind),
+    do: where(queryable, [events: e], e.actor_kind == ^kind)
 
-  def by_subject_kind(q, kind),
-    do: where(q, [events: e], e.subject_kind == ^kind)
+  def by_subject_kind(queryable, kind),
+    do: where(queryable, [events: e], e.subject_kind == ^kind)
 
-  def by_subject_id(q, id),
-    do: where(q, [events: e], e.subject_id == ^id)
+  def by_subject_id(queryable, id),
+    do: where(queryable, [events: e], e.subject_id == ^id)
 
-  def occurred_after(q, ts),
-    do: where(q, [events: e], e.occurred_at > ^ts)
+  def occurred_after(queryable, ts),
+    do: where(queryable, [events: e], e.occurred_at > ^ts)
 
-  def occurred_before(q, ts),
-    do: where(q, [events: e], e.occurred_at < ^ts)
+  def occurred_before(queryable, ts),
+    do: where(queryable, [events: e], e.occurred_at < ^ts)
 
-  def ordered_by_recent(q \\ all()),
-    do: order_by(q, [events: e], desc: e.occurred_at)
+  def ordered_by_recent(queryable \\ all()),
+    do: order_by(queryable, [events: e], desc: e.occurred_at)
 
   # Stable forward order for SIEM export — `(occurred_at, id)` ascending
   # so consumers can poll with a cursor without ever skipping or
   # re-reading rows. UUID v7 ids are time-sortable, which keeps the
   # tie-break identical to the time order for same-microsecond inserts.
-  def ordered_for_export(q \\ all()),
-    do: order_by(q, [events: e], asc: e.occurred_at, asc: e.id)
+  def ordered_for_export(queryable \\ all()),
+    do: order_by(queryable, [events: e], asc: e.occurred_at, asc: e.id)
 
   # Cursor for the export endpoint — accepts the (occurred_at, id) of
   # the last row the consumer has already received and returns rows
   # STRICTLY AFTER that point. Composite-keyset semantics: skip exact
   # ties on the timestamp by also comparing id.
-  def occurred_strictly_after(q, %DateTime{} = ts, id) when is_binary(id) do
+  def occurred_strictly_after(queryable, %DateTime{} = ts, id) when is_binary(id) do
     where(
-      q,
+      queryable,
       [events: e],
       e.occurred_at > ^ts or (e.occurred_at == ^ts and e.id > ^id)
     )
   end
 
   # Variant for the first page — no id tie-break, just the time bound.
-  def occurred_at_or_after(q, %DateTime{} = ts),
-    do: where(q, [events: e], e.occurred_at >= ^ts)
+  def occurred_at_or_after(queryable, %DateTime{} = ts),
+    do: where(queryable, [events: e], e.occurred_at >= ^ts)
 
   # IN-list filter for the export `event_type[]` param.
-  def by_event_types(q, types) when is_list(types) and types != [],
-    do: where(q, [events: e], e.event_type in ^types)
+  def by_event_types(queryable, types) when is_list(types) and types != [],
+    do: where(queryable, [events: e], e.event_type in ^types)
 
-  def by_event_types(q, _), do: q
+  def by_event_types(queryable, _), do: queryable
 
   # Hard-cap; the controller validates the user-supplied limit against
   # @max_export_limit and passes it through, so this stays a one-liner.
-  def limit_to(q, n) when is_integer(n) and n > 0,
-    do: limit(q, ^n)
+  def limit_to(queryable, n) when is_integer(n) and n > 0,
+    do: limit(queryable, ^n)
 
   # -- Pagination / filters --------------------------------------------
 
