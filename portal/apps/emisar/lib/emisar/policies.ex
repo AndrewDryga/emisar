@@ -60,7 +60,10 @@ defmodule Emisar.Policies do
   def decision_rank("allow"), do: 0
   def decision_rank("require_approval"), do: 1
   def decision_rank("deny"), do: 2
-  def decision_rank(_), do: 0
+  # Unknown decisions rank most-restrictive — fail closed. Reachable
+  # only through malformed stored rules (the changeset validates the
+  # decision set), and a corrupt tier must read as deny, not allow.
+  def decision_rank(_), do: 2
 
   @doc """
   Changeset for the policy editor form (no Subject — like
@@ -93,17 +96,30 @@ defmodule Emisar.Policies do
              Authorizer.manage_policies_permission()
            ) do
       case peek_policy_for_account(account_id) do
-        nil ->
-          Policy.Changeset.create(%{
-            account_id: account_id,
-            updated_by_id: user_id,
-            rules: rules
-          })
-          |> Repo.insert()
-
-        %Policy{} = policy ->
-          update_rules(policy, rules, subject)
+        nil -> create_first_policy(rules, account_id, user_id, subject)
+        %Policy{} = policy -> update_rules(policy, rules, subject)
       end
+    end
+  end
+
+  # First save races with a concurrent first save (and with the account
+  # bootstrap's seed): insert ON CONFLICT DO NOTHING and re-read the
+  # winning row — if it isn't ours, fall through to the update path so
+  # the operator's rules still land instead of a raw unique error.
+  defp create_first_policy(rules, account_id, user_id, %Subject{} = subject) do
+    changeset =
+      Policy.Changeset.create(%{account_id: account_id, updated_by_id: user_id, rules: rules})
+
+    with {:ok, inserted} <- Repo.insert(changeset, on_conflict: :nothing),
+         %Policy{} = canonical <- peek_policy_for_account(account_id) do
+      if canonical.id == inserted.id do
+        {:ok, canonical}
+      else
+        update_rules(canonical, rules, subject)
+      end
+    else
+      nil -> {:error, :not_found}
+      {:error, reason} -> {:error, reason}
     end
   end
 

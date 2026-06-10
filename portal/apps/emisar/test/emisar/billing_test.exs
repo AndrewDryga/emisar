@@ -83,6 +83,30 @@ defmodule Emisar.BillingTest do
     end
   end
 
+  describe "open_billing_portal/2" do
+    test "an account that never subscribed has no portal" do
+      {_user, account, subject} = owner_subject_fixture()
+
+      assert {:error, :no_customer} = Billing.open_billing_portal(account, subject)
+    end
+
+    test "returns the stub portal URL when no Paddle key is configured" do
+      {_user, account, subject} = owner_subject_fixture()
+      account = %{account | paddle_customer_id: "ctm_existing_01"}
+
+      assert {:ok, url} = Billing.open_billing_portal(account, subject)
+      assert url =~ "/app/settings/billing?status=stub-portal"
+    end
+
+    test "an owner of another account is refused" do
+      {_user, account, _subject} = owner_subject_fixture()
+      {_user_b, _account_b, subject_b} = owner_subject_fixture()
+      account = %{account | paddle_customer_id: "ctm_existing_01"}
+
+      assert {:error, :unauthorized} = Billing.open_billing_portal(account, subject_b)
+    end
+  end
+
   describe "ensure_paddle_customer/2" do
     test "threads the acting user's email to Paddle on first creation" do
       # The test stub derives the customer id from the email it receives,
