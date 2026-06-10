@@ -7,7 +7,6 @@ defmodule Emisar.Runners.AuthKey do
   Stored as `key_prefix` (e.g. "emkey-auth-AB12") + `key_hash`. The
   raw key is only returned to the operator at creation.
   """
-
   use Emisar, :schema
 
   schema "runner_auth_keys" do

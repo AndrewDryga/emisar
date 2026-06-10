@@ -11,7 +11,6 @@ defmodule Emisar.Audit.Multi do
   callback (PubSub broadcasts, emails, session-kill broadcasts) only
   fires once the DB actually commits.
   """
-
   alias Ecto.Multi
   alias Emisar.Audit
   alias Emisar.Accounts.User

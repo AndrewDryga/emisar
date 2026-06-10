@@ -7,7 +7,6 @@ defmodule Emisar.Runners.Authorizer do
     * `view_runners_permission` gates read-only operator/viewer surfaces.
   """
   use Emisar.Auth.Authorizer
-
   alias Emisar.Runners.{AuthKey, Runner, Token}
 
   # -- Catalogue -------------------------------------------------------

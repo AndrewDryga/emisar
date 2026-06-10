@@ -14,7 +14,6 @@ defmodule Emisar.ApiKeys do
   lists until an LLM actually authenticates with one. Ring-evicted at
   #{@quick_ring_cap} unused entries per account.
   """
-
   alias Ecto.Multi
   alias Emisar.{Audit, Auth, Crypto, Repo}
   alias Emisar.ApiKeys.{ApiKey, Authorizer}

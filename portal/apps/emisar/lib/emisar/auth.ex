@@ -6,7 +6,6 @@ defmodule Emisar.Auth do
   All token types share `user_tokens` storage; `context` disambiguates
   semantics + validity window.
   """
-
   alias Ecto.Multi
   alias Emisar.Accounts
   alias Emisar.Accounts.User

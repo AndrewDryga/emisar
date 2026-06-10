@@ -6,12 +6,10 @@ defmodule Emisar.Accounts do
   Every read API in the rest of the system is expected to scope by
   account; this context owns the slug-based lookups and signup flow.
   """
-
   alias Ecto.Multi
   alias Emisar.{Audit, Auth, Crypto, Repo, Slug}
   alias Emisar.Accounts.{Account, Authorizer, Membership, User}
   alias Emisar.Auth.{Role, Subject}
-
   require Logger
 
   # -- Accounts ---------------------------------------------------------
@@ -143,7 +141,9 @@ defmodule Emisar.Accounts do
           Authorizer.manage_security_settings_permission()
         ]
       else
-        [Authorizer.manage_own_account_permission()]
+        [
+          Authorizer.manage_own_account_permission()
+        ]
       end
 
     Auth.Authorizer.ensure_has_permissions(subject, required)

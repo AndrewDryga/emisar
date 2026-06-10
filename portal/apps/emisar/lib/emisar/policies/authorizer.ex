@@ -1,7 +1,6 @@
 defmodule Emisar.Policies.Authorizer do
   @moduledoc "Authorization for policy bundles."
   use Emisar.Auth.Authorizer
-
   alias Emisar.Policies.Policy
 
   def manage_policies_permission, do: build(Policy, :manage)

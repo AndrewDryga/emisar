@@ -3,7 +3,6 @@ defmodule Emisar.Runbooks.Runbook do
   Cloud-side workflow composed of action calls. The runner never sees a
   runbook — cloud expands it into individual `run_action` messages.
   """
-
   use Emisar, :schema
 
   schema "runbooks" do

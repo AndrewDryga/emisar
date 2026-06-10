@@ -1,7 +1,6 @@
 defmodule Emisar.ApiKeys.Authorizer do
   @moduledoc "Authorization for API keys (LLM / programmatic access)."
   use Emisar.Auth.Authorizer
-
   alias Emisar.ApiKeys.ApiKey
 
   def manage_api_keys_permission, do: build(ApiKey, :manage)

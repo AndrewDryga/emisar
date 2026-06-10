@@ -1,7 +1,6 @@
 defmodule Emisar.Approvals.Authorizer do
   @moduledoc "Authorization for approval requests + standing grants."
   use Emisar.Auth.Authorizer
-
   alias Emisar.Approvals.{Grant, Request}
 
   def decide_approval_permission, do: build(Request, :decide)

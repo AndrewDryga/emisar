@@ -5,11 +5,9 @@ defmodule Emisar.Workers.BillingSync do
   source of truth so we re-fetch every account's subscription.
   """
   use Oban.Worker, queue: :billing, max_attempts: 3
-
-  require Logger
-
   alias Emisar.{Billing, Repo}
   alias Emisar.Billing.{PaddleClient, Subscription}
+  require Logger
 
   @impl true
   def perform(%Oban.Job{}) do

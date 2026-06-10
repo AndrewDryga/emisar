@@ -5,13 +5,11 @@ defmodule Emisar.Workers.AuditRetention do
   one can't starve the others.
   """
   use Oban.Worker, queue: :audit, max_attempts: 2
-
-  require Logger
-
   alias Emisar.Repo
   alias Emisar.Accounts.Account
   alias Emisar.Audit.Event
   alias Emisar.Billing
+  require Logger
 
   @impl true
   def perform(%Oban.Job{}) do

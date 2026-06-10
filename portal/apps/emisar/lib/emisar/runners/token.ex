@@ -5,7 +5,6 @@ defmodule Emisar.Runners.Token do
   reconnect. Auth keys are one-shot bootstraps; tokens are the durable
   credential.
   """
-
   use Emisar, :schema
 
   schema "runner_tokens" do

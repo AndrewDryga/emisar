@@ -20,7 +20,6 @@ defmodule Emisar.Workers.RunDispatchTimeout do
   comfortably outside the heartbeat window + transport buffer.
   """
   use Oban.Worker, queue: :default, max_attempts: 2
-
   alias Emisar.{Runners, Runs}
 
   @dispatch_grace_secs 120

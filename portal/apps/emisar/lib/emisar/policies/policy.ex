@@ -5,7 +5,6 @@ defmodule Emisar.Policies.Policy do
   versioning — operators edit this one row in place. The runner doesn't
   see it; cloud evaluates the rules before sending `run_action`.
   """
-
   use Emisar, :schema
 
   schema "policies" do

@@ -5,7 +5,6 @@ defmodule Emisar.Accounts.Authorizer do
   promote anyone past their own level.
   """
   use Emisar.Auth.Authorizer
-
   alias Emisar.Accounts.{Account, Membership, User}
 
   # -- Catalogue -------------------------------------------------------

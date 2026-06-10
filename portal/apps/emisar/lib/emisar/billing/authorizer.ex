@@ -1,7 +1,6 @@
 defmodule Emisar.Billing.Authorizer do
   @moduledoc "Authorization for the billing surface."
   use Emisar.Auth.Authorizer
-
   alias Emisar.Billing.Subscription
 
   def manage_billing_permission, do: build(Subscription, :manage)

@@ -1,6 +1,5 @@
 defmodule Emisar.Runners.AuthKey.Query do
   use Emisar, :query
-
   alias Emisar.Repo.Filter
 
   def all,

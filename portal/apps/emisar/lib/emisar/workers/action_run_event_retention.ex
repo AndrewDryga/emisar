@@ -13,12 +13,10 @@ defmodule Emisar.Workers.ActionRunEventRetention do
   a slow one can't starve the others, mirroring `Workers.AuditRetention`.
   """
   use Oban.Worker, queue: :audit, max_attempts: 2
-
   alias Emisar.Repo
   alias Emisar.Accounts.Account
   alias Emisar.Billing
   alias Emisar.Runs.RunEvent
-
   require Logger
 
   # A single account can carry a huge backlog (thousands of progress chunks per

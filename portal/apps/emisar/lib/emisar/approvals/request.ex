@@ -4,7 +4,6 @@ defmodule Emisar.Approvals.Request do
   An operator with sufficient role clicks approve or deny in the UI;
   on approve the run transitions to `:sent` and cloud dispatches it.
   """
-
   use Emisar, :schema
 
   schema "approval_requests" do

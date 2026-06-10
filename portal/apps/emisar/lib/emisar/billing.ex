@@ -6,7 +6,6 @@ defmodule Emisar.Billing do
   via `Application.fetch_env!(:emisar, :paddle_client)` — production
   binds the live client, tests use the in-process stub.
   """
-
   alias Emisar.{Auth, PublicUrl, Repo}
   alias Emisar.Accounts.{Account, Membership}
   alias Emisar.Auth.Subject

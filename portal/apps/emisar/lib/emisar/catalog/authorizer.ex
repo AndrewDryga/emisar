@@ -1,7 +1,6 @@
 defmodule Emisar.Catalog.Authorizer do
   @moduledoc "Authorization for the action / pack catalogue."
   use Emisar.Auth.Authorizer
-
   alias Emisar.Catalog.{PackVersion, RunnerAction}
 
   def view_catalog_permission, do: build(RunnerAction, :view)

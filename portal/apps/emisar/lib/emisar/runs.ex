@@ -5,14 +5,12 @@ defmodule Emisar.Runs do
   creates the run row, evaluates policy, hands the dispatch to the
   Transport for sending, and tracks progress + final result.
   """
-
-  require Logger
-
   alias Ecto.Multi
   alias Emisar.{Audit, Auth, PubSub, Repo}
   alias Emisar.Auth.Subject
   alias Emisar.Runs.{ActionRun, Authorizer, RunEvent}
   alias Emisar.Runners.Runner
+  require Logger
 
   # -- Listing / queries ------------------------------------------------
 

@@ -4,9 +4,7 @@ defmodule Emisar.Mailers.UserNotifier do
   magic-link login, password reset. Plain-text templates — the
   rendering engine is intentionally not LiveView's heex.
   """
-
   import Swoosh.Email
-
   alias Emisar.Accounts.User
   alias Emisar.Mailer
   alias Emisar.PublicUrl

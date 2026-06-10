@@ -18,7 +18,6 @@ defmodule Emisar.Auth.Subject do
       `user_agent`, `request_id`. Filled in by the boundary, read by
       `Audit` via `put_request_metadata/1`.
   """
-
   alias Emisar.Accounts.{Account, Membership, User}
   alias Emisar.Auth.Role
 

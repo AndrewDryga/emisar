@@ -14,9 +14,7 @@ defmodule Emisar.Workers.ApprovalExpiry do
   Idempotent: re-running over the same row is a no-op (the inner
   update is gated on `status == "pending"`).
   """
-
   use Oban.Worker, queue: :default, max_attempts: 2
-
   require Logger
 
   @impl Oban.Worker

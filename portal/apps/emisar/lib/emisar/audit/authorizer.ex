@@ -1,7 +1,6 @@
 defmodule Emisar.Audit.Authorizer do
   @moduledoc "Authorization for the audit log."
   use Emisar.Auth.Authorizer
-
   alias Emisar.Audit.Event
 
   def view_audit_permission, do: build(Event, :view)

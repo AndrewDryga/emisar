@@ -17,7 +17,6 @@ defmodule Emisar.PubSub do
     "run:<id>"                 — per-run events (progress chunks)
     "runner:<id>"              — per-runner transport messages
   """
-
   alias Emisar.Runs.{ActionRun, RunEvent}
   alias Emisar.Approvals.Request
   alias Emisar.Audit.Event

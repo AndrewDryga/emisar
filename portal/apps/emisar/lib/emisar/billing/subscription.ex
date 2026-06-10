@@ -4,7 +4,6 @@ defmodule Emisar.Billing.Subscription do
   plan. Paddle remains the source of truth; we mirror what we need for
   in-app plan enforcement without round-tripping to Paddle per request.
   """
-
   use Emisar, :schema
 
   schema "subscriptions" do

@@ -7,7 +7,6 @@ defmodule Emisar.Runbooks do
   v0.1 expansion is straight-line sequential — branching, conditional
   steps, and inline assertions are on the roadmap.
   """
-
   alias Ecto.Multi
   alias Emisar.{Audit, Auth, Repo}
   alias Emisar.Auth.Subject

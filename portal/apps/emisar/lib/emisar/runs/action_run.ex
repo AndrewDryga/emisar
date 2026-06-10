@@ -8,7 +8,6 @@ defmodule Emisar.Runs.ActionRun do
 
   Or:    pending -> awaiting_approval -> sent -> ...
   """
-
   use Emisar, :schema
 
   schema "action_runs" do

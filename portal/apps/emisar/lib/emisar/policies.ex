@@ -27,7 +27,6 @@ defmodule Emisar.Policies do
         ]
       }
   """
-
   alias Emisar.{Audit, Auth, Repo}
   alias Emisar.Auth.Subject
   alias Emisar.Policies.{Authorizer, Policy}

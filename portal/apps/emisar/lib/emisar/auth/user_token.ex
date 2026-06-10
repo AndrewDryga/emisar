@@ -4,7 +4,6 @@ defmodule Emisar.Auth.UserToken do
   tokens. Stored hashed; the raw token is only ever returned to the
   caller at creation time.
   """
-
   use Ecto.Schema
   import Ecto.Query
 

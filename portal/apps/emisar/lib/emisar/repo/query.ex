@@ -11,8 +11,8 @@ defmodule Emisar.Repo.Query do
     * `filters/0` — `Emisar.Repo.Filter.t()` definitions surfaced by
       `LiveTable` and applied via `Repo.list/3`'s `:filter` option.
   """
-  alias Emisar.Repo.Filter
   import Ecto.Query
+  alias Emisar.Repo.Filter
 
   @type direction :: :after | :before
   @type cursor_fields :: [{binding :: atom(), :asc | :desc, field :: atom()}]

@@ -17,12 +17,10 @@ defmodule Emisar.Runners do
   to the runner connection process and called with the runner
   socket's own subject upstream.
   """
-
   alias Ecto.Multi
   alias Emisar.{Accounts, Audit, Auth, Crypto, Repo}
   alias Emisar.Auth.Subject
   alias Emisar.Runners.{Authorizer, AuthKey, Presence, Runner, Token, UserRunnerScope}
-
   require Logger
 
   # 11 chars for "emkey-auth-" + 16 random chars => 27.

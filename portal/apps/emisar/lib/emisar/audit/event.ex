@@ -4,7 +4,6 @@ defmodule Emisar.Audit.Event do
   in the cloud. Distinct from `Emisar.Runs.RunEvent` which is the
   per-run progress stream.
   """
-
   use Emisar, :schema
 
   schema "audit_events" do

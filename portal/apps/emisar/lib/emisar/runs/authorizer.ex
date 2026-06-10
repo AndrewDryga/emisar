@@ -12,7 +12,6 @@ defmodule Emisar.Runs.Authorizer do
   dedicated permission for them.
   """
   use Emisar.Auth.Authorizer
-
   alias Emisar.Runs.ActionRun
   alias Emisar.Runners.Runner
 

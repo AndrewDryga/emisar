@@ -1,7 +1,6 @@
 defmodule Emisar.Runbooks.Authorizer do
   @moduledoc "Authorization for cloud runbooks."
   use Emisar.Auth.Authorizer
-
   alias Emisar.Runbooks.Runbook
 
   def manage_runbooks_permission, do: build(Runbook, :manage)

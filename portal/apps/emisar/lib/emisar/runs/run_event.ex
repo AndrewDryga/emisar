@@ -4,7 +4,6 @@ defmodule Emisar.Runs.RunEvent do
   transition note, a cancellation, an error envelope. Insertion is
   append-only; `seq` is dense within (run_id).
   """
-
   use Emisar, :schema
 
   schema "action_run_events" do

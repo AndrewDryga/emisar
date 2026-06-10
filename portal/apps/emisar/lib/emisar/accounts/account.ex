@@ -4,7 +4,6 @@ defmodule Emisar.Accounts.Account do
   account; runners, runbooks, policies, and audit events all belong
   to exactly one account.
   """
-
   use Emisar, :schema
 
   schema "accounts" do

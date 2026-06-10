@@ -1,6 +1,5 @@
 defmodule Emisar.Runs.ActionRun.Query do
   use Emisar, :query
-
   alias Emisar.Repo.Filter
 
   def all,

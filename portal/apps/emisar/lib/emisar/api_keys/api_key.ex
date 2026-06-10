@@ -4,7 +4,6 @@ defmodule Emisar.ApiKeys.ApiKey do
   (Claude, Cursor, custom runners). `runner_filter` restricts which
   runners a key may target; empty means "all runners in this account."
   """
-
   use Emisar, :schema
 
   schema "api_keys" do

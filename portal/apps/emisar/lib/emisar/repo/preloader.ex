@@ -20,7 +20,6 @@ defmodule Emisar.Repo.Preloader do
   Anything not declared in `preloads/0` passes through unchanged to
   Ecto's regular preload machinery.
   """
-
   alias Emisar.Repo.Query
 
   def preload(schema, preload, query_module) do

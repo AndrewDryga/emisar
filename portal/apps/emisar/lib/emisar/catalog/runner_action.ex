@@ -4,7 +4,6 @@ defmodule Emisar.Catalog.RunnerAction do
   runner_state ActionDescriptor as JSON so the UI and MCP tool listings
   can render exactly what the runner declared without secondary lookups.
   """
-
   use Emisar, :schema
 
   schema "runner_actions" do

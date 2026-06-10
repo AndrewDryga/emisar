@@ -15,7 +15,6 @@ defmodule Emisar.Auth.Authorizer do
         |> Repo.fetch(Entity.Query, opts)
       end
   """
-
   alias Emisar.Auth.Subject
 
   @type permission :: {module(), atom()}

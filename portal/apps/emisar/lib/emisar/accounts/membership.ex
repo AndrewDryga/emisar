@@ -3,9 +3,7 @@ defmodule Emisar.Accounts.Membership do
   Joins users to accounts with a role. A user can be in many accounts;
   an account has many users.
   """
-
   use Emisar, :schema
-
   alias Emisar.Auth.Role
 
   @roles Role.all()

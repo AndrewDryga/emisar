@@ -19,7 +19,6 @@ defmodule Emisar.Approvals do
        `Approvals.Grant` so the LLM doesn't have to ask again next
        time within that window.
   """
-
   alias Ecto.Multi
   alias Emisar.{Audit, Auth, PubSub, Repo, Runs}
   alias Emisar.Approvals.{Authorizer, Grant, Request}

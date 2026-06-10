@@ -22,13 +22,11 @@ defmodule Emisar.Catalog do
       * Same as trusted hash → no-op (touch last_seen).
       * Different → keep trusted, set pending_hash. Dispatch refuses.
   """
-
-  require Logger
-
   alias Emisar.{Audit, Auth, Repo}
   alias Emisar.Auth.Subject
   alias Emisar.Runners.Runner
   alias Emisar.Catalog.{Authorizer, PackBaseline, PackVersion, RunnerAction}
+  require Logger
 
   @doc """
   Observe the full `runner_state` payload: upsert pack_versions and

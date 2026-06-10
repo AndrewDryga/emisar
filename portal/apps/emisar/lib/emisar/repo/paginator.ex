@@ -4,8 +4,8 @@ defmodule Emisar.Repo.Paginator do
   inserts/deletes. The cursor encodes the last row's `cursor_fields`
   values, opaque to callers.
   """
-  alias Emisar.Repo.Query
   import Ecto.Query
+  alias Emisar.Repo.Query
 
   @default_limit 35
   @max_limit 100

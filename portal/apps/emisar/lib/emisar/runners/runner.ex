@@ -5,7 +5,6 @@ defmodule Emisar.Runners.Runner do
   history; live connection state (online, action_load, last heartbeat)
   is Phoenix.Presence, surfaced here as virtual fields.
   """
-
   use Emisar, :schema
 
   schema "runners" do

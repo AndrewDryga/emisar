@@ -21,7 +21,6 @@ defmodule Emisar.Approvals.Grant do
       consumed when `uses_count >= max_uses`.
     * `revoked_at` non-nil makes the grant unusable forever.
   """
-
   use Emisar, :schema
 
   schema "approval_grants" do

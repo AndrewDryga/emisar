@@ -1,6 +1,5 @@
 defmodule Emisar.Audit.Event.Query do
   use Emisar, :query
-
   alias Emisar.Repo.Filter
 
   # Event types the audit log fires automatically as a byproduct of

@@ -17,7 +17,6 @@ defmodule Emisar.Catalog.PackVersion do
   System pins (auto-trust on library match, TOFU on unknown pack) leave
   `pinned_by_id` null.
   """
-
   use Emisar, :schema
 
   schema "pack_versions" do
