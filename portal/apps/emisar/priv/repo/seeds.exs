@@ -94,8 +94,6 @@ if Policies.peek_policy_for_account(account.id) == nil do
   IO.puts(IO.ANSI.cyan() <> "✓ Seeded default policy" <> IO.ANSI.reset())
 end
 
-system_subject = Subject.system(account)
-
 # -- Invited teammates ------------------------------------------------
 
 owner_subject =
@@ -128,7 +126,7 @@ IO.puts(IO.ANSI.cyan() <> "✓ Teammates: alex (admin), sam (operator)" <> IO.AN
 # -- Sample runbook (skip if exists) ---------------------------------
 
 unless (
-         {:ok, list, _} = Runbooks.list_runbooks(system_subject)
+         {:ok, list, _} = Runbooks.list_runbooks(owner_subject)
          Enum.find(list, &(&1.slug == "nightly-edge-health"))
        ) do
   {:ok, _rb} =
@@ -156,7 +154,7 @@ unless (
           ]
         }
       },
-      system_subject
+      owner_subject
     )
 
   IO.puts(IO.ANSI.cyan() <> "✓ Seeded sample runbook" <> IO.ANSI.reset())
@@ -441,7 +439,7 @@ IO.puts(IO.ANSI.cyan() <> "✓ Seeded MCP API key for the LLM agent" <> IO.ANSI.
 IO.puts(IO.ANSI.cyan() <> "✓ Seeded audit-export API key" <> IO.ANSI.reset())
 
 existing_runs =
-  case Runs.list_recent_runs(system_subject, limit: 1) do
+  case Runs.list_recent_runs(owner_subject, limit: 1) do
     {:ok, list, _meta} -> list
     _ -> []
   end

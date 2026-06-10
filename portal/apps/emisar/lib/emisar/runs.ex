@@ -234,29 +234,45 @@ defmodule Emisar.Runs do
              subject,
              Authorizer.dispatch_run_permission()
            ) do
-      attrs = Map.put(attrs, :account_id, account_id)
-      runner_id = attrs[:runner_id]
-      action_id = attrs[:action_id]
-      reason = attrs[:reason]
-      membership_id = Map.get(attrs, :requested_by_membership_id)
+      do_dispatch_run(attrs, account_id)
+    end
+  end
 
-      with :none <- peek_idempotent_run(attrs),
-           :ok <- require_runner(runner_id),
-           :ok <- require_action(action_id),
-           :ok <- require_reason(reason),
-           :ok <- runner_in_account(runner_id, account_id),
-           :ok <- runner_in_membership_scope(runner_id, account_id, membership_id),
-           {:ok, action} <- fetch_advertised_action(runner_id, action_id, subject),
-           :ok <- check_pack_trust(action, account_id) do
-        attrs
-        |> Map.delete(:requested_by_membership_id)
-        |> Map.put(:args_sha256, args_sha256(attrs[:args]))
-        |> Map.put(:requires_approval, false)
-        |> evaluate_and_dispatch(account_id, action)
-      else
-        {:replay, run} -> replay_outcome(run)
-        other -> other
-      end
+  @doc """
+  Internal: dispatch a run for an explicit account with no `%Subject{}`.
+  Used by the runbook engine to continue a chain from the post-`mark_finished`
+  callback, where no user is in scope — the originating dispatch already
+  authorized the operator and validated runner scope (the continuation passes
+  `requested_by_membership_id: nil`, which bypasses the per-membership scope
+  check that first dispatch already enforced).
+  """
+  def dispatch_run_for_account(attrs, account_id) when is_binary(account_id) do
+    do_dispatch_run(attrs, account_id)
+  end
+
+  defp do_dispatch_run(attrs, account_id) do
+    attrs = Map.put(attrs, :account_id, account_id)
+    runner_id = attrs[:runner_id]
+    action_id = attrs[:action_id]
+    reason = attrs[:reason]
+    membership_id = Map.get(attrs, :requested_by_membership_id)
+
+    with :none <- peek_idempotent_run(attrs),
+         :ok <- require_runner(runner_id),
+         :ok <- require_action(action_id),
+         :ok <- require_reason(reason),
+         :ok <- runner_in_account(runner_id, account_id),
+         :ok <- runner_in_membership_scope(runner_id, account_id, membership_id),
+         {:ok, action} <- fetch_advertised_action(runner_id, action_id, account_id),
+         :ok <- check_pack_trust(action, account_id) do
+      attrs
+      |> Map.delete(:requested_by_membership_id)
+      |> Map.put(:args_sha256, args_sha256(attrs[:args]))
+      |> Map.put(:requires_approval, false)
+      |> evaluate_and_dispatch(account_id, action)
+    else
+      {:replay, run} -> replay_outcome(run)
+      other -> other
     end
   end
 
@@ -348,8 +364,8 @@ defmodule Emisar.Runs do
   # Authoritative lookup. The runner has already advertised this action
   # via `Catalog.observe_state`; if the catalog row is missing the
   # action simply doesn't exist on that runner and we refuse to dispatch.
-  defp fetch_advertised_action(runner_id, action_id, %Subject{} = subject) do
-    case Emisar.Catalog.fetch_action_by_id(action_id, runner_id, subject) do
+  defp fetch_advertised_action(runner_id, action_id, account_id) do
+    case Emisar.Catalog.fetch_action_for_account(action_id, runner_id, account_id) do
       {:error, :not_found} -> {:error, :action_not_found}
       {:ok, action} -> {:ok, action}
     end
@@ -588,10 +604,11 @@ defmodule Emisar.Runs do
 
   # Stamp the trusted pack hash into the wire envelope so the runner
   # can re-hash its on-disk pack and refuse a dispatch whose bytes
-  # don't match what cloud trusts. We `fetch_action_by_id` against the
-  # system subject because this runs inside an authorized dispatch path
-  # — the caller's auth already passed; we're just enriching the wire
-  # payload with a side-channel fact (trusted hash on file).
+  # don't match what cloud trusts. We fetch the catalog action scoped to
+  # the run's own account (no Subject) because this runs inside an
+  # already-authorized dispatch path — the caller's auth already passed;
+  # we're just enriching the wire payload with a side-channel fact
+  # (trusted hash on file).
   #
   # If anything's missing — catalog row gone, pack_version not yet
   # populated, no trusted hash yet — we omit the key, and the runner
@@ -601,10 +618,8 @@ defmodule Emisar.Runs do
   # the brief moment when a hash is in flux; the upstream gate stays
   # closed.
   defp maybe_stamp_pack_hash(payload, %ActionRun{} = run) do
-    account = Emisar.Accounts.fetch_account_by_id!(run.account_id)
-    system = Subject.system(account)
-
-    with {:ok, action} <- Emisar.Catalog.fetch_action_by_id(run.action_id, run.runner_id, system),
+    with {:ok, action} <-
+           Emisar.Catalog.fetch_action_for_account(run.action_id, run.runner_id, run.account_id),
          hash when is_binary(hash) <- Emisar.Catalog.trusted_hash_for_action(action) do
       Map.put(payload, "expected_pack_hash", hash)
     else

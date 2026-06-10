@@ -646,6 +646,20 @@ defmodule Emisar.Catalog do
     end
   end
 
+  @doc """
+  Internal: same lookup as `fetch_action_by_id/3` but scoped to an explicit
+  account instead of a `%Subject{}`. For the system-side dispatch paths (the
+  pack-hash stamp and the runbook continuation) that already authorized
+  upstream and run where no user is in scope.
+  """
+  def fetch_action_for_account(action_id, runner_id, account_id) do
+    RunnerAction.Query.all()
+    |> RunnerAction.Query.by_runner_id(runner_id)
+    |> RunnerAction.Query.by_action_id(action_id)
+    |> RunnerAction.Query.by_account_id(account_id)
+    |> Repo.fetch(RunnerAction.Query)
+  end
+
   def list_pack_versions(%Subject{} = subject, opts \\ []) do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(

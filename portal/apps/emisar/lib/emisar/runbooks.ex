@@ -188,7 +188,10 @@ defmodule Emisar.Runbooks do
         {:error, :empty_runbook}
       else
         step = hd(steps)
-        dispatch_step(runbook, runner_id, subject_user_id(subject), reason, step, 0, subject)
+
+        runbook
+        |> step_attrs(runner_id, subject_user_id(subject), reason, step, 0, subject.membership_id)
+        |> Emisar.Runs.dispatch_run(subject)
       end
     end
   end
@@ -218,20 +221,20 @@ defmodule Emisar.Runbooks do
         next_idx = if is_integer(idx), do: idx + 1
 
         if next_idx && next_idx < length(steps) do
-          # System subject — the runbook engine continues the chain in
-          # the post-`mark_finished` callback, where no user is in
-          # scope; the original dispatch was already authorized.
-          system = Subject.system(%Emisar.Accounts.Account{id: run.account_id})
-
-          dispatch_step(
-            runbook,
+          # The runbook engine continues the chain from the post-
+          # `mark_finished` callback, where no user is in scope; the
+          # original dispatch was already authorized, so we re-enter via
+          # the account-scoped internal dispatch (no Subject to forge).
+          runbook
+          |> step_attrs(
             run.runner_id,
             run.requested_by_id,
             run.reason,
             Enum.at(steps, next_idx),
             next_idx,
-            system
+            nil
           )
+          |> Emisar.Runs.dispatch_run_for_account(run.account_id)
         else
           :noop
         end
@@ -254,27 +257,24 @@ defmodule Emisar.Runbooks do
     |> Repo.peek()
   end
 
-  defp dispatch_step(runbook, runner_id, user_id, reason, step, idx, %Subject{} = subject) do
-    Emisar.Runs.dispatch_run(
-      %{
-        runner_id: runner_id,
-        action_id: step["action"] || step["action_id"],
-        args: step["args"] || %{},
-        opts: step["opts"] || %{},
-        reason:
-          "runbook: #{runbook.title} • step #{idx + 1}/#{length(expand(runbook))} — #{reason}",
-        source: "runbook",
-        requested_by_id: user_id,
-        # The operator's membership at dispatch time — `Runs.dispatch_run`
-        # rejects if the runner falls outside this membership's runner
-        # scope. nil on continuation (Subject.system) bypasses the check
-        # because the originating dispatch already validated scope.
-        requested_by_membership_id: subject.membership_id,
-        runbook_id: runbook.id,
-        runbook_step_id: step_id_for(step, idx)
-      },
-      subject
-    )
+  defp step_attrs(runbook, runner_id, user_id, reason, step, idx, membership_id) do
+    %{
+      runner_id: runner_id,
+      action_id: step["action"] || step["action_id"],
+      args: step["args"] || %{},
+      opts: step["opts"] || %{},
+      reason:
+        "runbook: #{runbook.title} • step #{idx + 1}/#{length(expand(runbook))} — #{reason}",
+      source: "runbook",
+      requested_by_id: user_id,
+      # The operator's membership at first dispatch — `Runs.dispatch_run`
+      # rejects if the runner falls outside this membership's runner
+      # scope. nil on continuation re-dispatch bypasses the check because
+      # the originating dispatch already validated scope.
+      requested_by_membership_id: membership_id,
+      runbook_id: runbook.id,
+      runbook_step_id: step_id_for(step, idx)
+    }
   end
 
   defp step_id_for(step, idx), do: step["id"] || "step_#{idx + 1}"

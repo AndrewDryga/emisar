@@ -217,6 +217,20 @@ defmodule Emisar.Accounts do
   end
 
   @doc """
+  Internal: account-scoped membership page for system fan-outs (the approval
+  notifier, which emails every approver). No `%Subject{}` — the caller is a
+  background job already scoped to this account; pages via `opts` like the
+  public `list_memberships_for_account/3`.
+  """
+  def list_account_memberships(account_id, opts \\ []) do
+    Membership.Query.not_deleted()
+    |> Membership.Query.by_account_id(account_id)
+    |> Membership.Query.with_preloaded_account()
+    |> Membership.Query.with_preloaded_user()
+    |> Repo.list(Membership.Query, opts)
+  end
+
+  @doc """
   Resolve the membership to mount as the user's active tenant for this
   request. If `account_id` is given and the user has a non-suspended
   membership on that (non-deleted) account, return it. Otherwise fall
