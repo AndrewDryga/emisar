@@ -108,17 +108,19 @@ defmodule Emisar.Audit do
   end
 
   @doc """
-  Build the audit-event changeset without inserting it. Use inside an
-  `Ecto.Multi` so the audit row commits or rolls back together with
-  the parent mutation:
+  Build the audit-event changeset without inserting it — the low-level
+  primitive the `Audit.Events` per-event builders sit on. Context
+  mutations never call this directly: they go through an
+  `Audit.Events.<event>/n` builder inside their `Multi` so the row
+  commits or rolls back with the parent mutation and the actor fields
+  derive from the `%Subject{}`:
 
       Multi.new()
-      |> Multi.update(:policy, Policy.Changeset.update(policy, attrs))
-      |> Multi.insert(:audit, fn %{policy: p} ->
-        Audit.changeset(p.account_id, "policy.updated",
-          actor_id: subject.actor.id, subject_id: p.id)
+      |> Multi.update(:policy, changeset)
+      |> Multi.insert(:audit, fn %{policy: updated} ->
+        Audit.Events.policy_updated(subject, updated)
       end)
-      |> Repo.transact(after_commit: fn _ -> PubSub.broadcast(...) end)
+      |> Repo.commit_multi()
 
   Field merge order is identical to `log/3`: base < process metadata
   < explicit attrs.

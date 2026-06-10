@@ -9,7 +9,7 @@ defmodule Emisar.Audit.Events do
   events (no `Multi`, often no subject) use `Audit.log/3` directly instead.
   """
   alias Emisar.Accounts.{Account, Membership}
-  alias Emisar.{ApiKeys, Approvals, Runbooks, Runners}
+  alias Emisar.{ApiKeys, Approvals, Policies, Runbooks, Runners}
   alias Emisar.Audit
   alias Emisar.Auth.Subject
   alias Emisar.Users.User
@@ -313,6 +313,34 @@ defmodule Emisar.Audit.Events do
       name: runbook.name,
       version: runbook.version
     })
+  end
+
+  # -- Policies --------------------------------------------------------
+
+  def policy_updated(
+        %Subject{} = subject,
+        %Policies.Policy{} = old,
+        %Policies.Policy{} = updated
+      ) do
+    before_rules = old.rules || Policies.default_rules()
+    after_rules = updated.rules || Policies.default_rules()
+
+    Audit.changeset(
+      updated.account_id,
+      "policy.updated",
+      actor(subject) ++
+        [
+          subject_kind: "policy",
+          subject_id: updated.id,
+          payload: %{
+            before: before_rules,
+            after: after_rules,
+            from_version: old.vsn,
+            to_version: updated.vsn,
+            changes: Policies.diff_rules(before_rules, after_rules)
+          }
+        ]
+    )
   end
 
   # -- Approval grants -------------------------------------------------

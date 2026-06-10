@@ -115,32 +115,15 @@ defmodule Emisar.Policies do
            ) do
       # `audit:` runs inside the same DB transaction as the update, so a
       # downstream constraint failure rolls back both the policy mutation
-      # and its audit row together. The audit changeset closes over the
-      # changeset's `data.rules` (pre-update snapshot) and the updated
-      # struct's `rules` (post-update) so the diff captures both.
+      # and its audit row together. The builder closes over the caller's
+      # `policy` (pre-update snapshot) and the freshly-updated struct so
+      # the payload diff captures both sides.
       Policy.Query.not_deleted()
       |> Policy.Query.by_id(policy.id)
       |> Authorizer.for_subject(subject)
       |> Repo.fetch_and_update(Policy.Query,
         with: &Policy.Changeset.update(&1, %{rules: rules, updated_by_id: user_id}),
-        audit: fn updated ->
-          before_rules = policy.rules || @default_rules
-          after_rules = updated.rules || @default_rules
-
-          Audit.changeset(updated.account_id, "policy.updated",
-            actor_kind: "user",
-            actor_id: user_id,
-            subject_kind: "policy",
-            subject_id: updated.id,
-            payload: %{
-              before: before_rules,
-              after: after_rules,
-              from_version: policy.vsn,
-              to_version: updated.vsn,
-              changes: diff_rules(before_rules, after_rules)
-            }
-          )
-        end
+        audit: fn updated -> Audit.Events.policy_updated(subject, policy, updated) end
       )
     end
   end
