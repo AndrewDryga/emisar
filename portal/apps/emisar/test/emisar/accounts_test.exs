@@ -220,6 +220,24 @@ defmodule Emisar.AccountsTest do
   end
 
   describe "update_membership_role/3" do
+    test "the last active owner can't demote themselves; with a second owner it works" do
+      account = account_fixture()
+      owner = user_fixture()
+      owner_m = membership_fixture(account_id: account.id, user_id: owner.id, role: "owner")
+      subject = subject_for(owner, account, role: :owner)
+
+      # Sole owner — the in-transaction guard (locked re-count of the
+      # account's active owner rows) refuses the demotion.
+      assert {:error, :last_owner} = Accounts.update_membership_role(owner_m, "admin", subject)
+
+      # A second active owner frees the demotion.
+      second = user_fixture()
+      _ = membership_fixture(account_id: account.id, user_id: second.id, role: "owner")
+
+      assert {:ok, %Membership{role: :admin}} =
+               Accounts.update_membership_role(owner_m, "admin", subject)
+    end
+
     test "promotes operator to admin" do
       account = account_fixture()
       owner = user_fixture()

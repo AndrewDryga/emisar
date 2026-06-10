@@ -305,6 +305,13 @@ defmodule Emisar.Accounts do
          :ok <- ensure_subject_in_account(subject, membership.account_id),
          :ok <- ensure_role_change_allowed(membership, new_role, subject) do
       Multi.new()
+      |> Multi.run(:last_owner_guard, fn repo, _changes ->
+        if membership.role == :owner and new_role != :owner do
+          ensure_not_last_active_owner(repo, membership)
+        else
+          {:ok, :not_a_demotion}
+        end
+      end)
       |> Multi.update(:membership, changeset)
       |> Multi.insert(:audit, fn _ ->
         Audit.Events.membership_role_changed(subject, membership, new_role)
@@ -332,6 +339,10 @@ defmodule Emisar.Accounts do
     :ok
   end
 
+  # The last-owner invariant is NOT checked here — a pre-transaction
+  # count races a concurrent demotion (two operators demoting the two
+  # last owners both pass `count > 1`); `ensure_not_last_active_owner/2`
+  # re-checks under the row lock inside each mutation's Multi.
   defp ensure_role_change_allowed(%Membership{} = membership, new_role, %Subject{} = subject) do
     cond do
       # Can't grant a role whose permissions you don't already hold (no
@@ -345,14 +356,27 @@ defmodule Emisar.Accounts do
       not Auth.Authorizer.covers_role?(subject, membership.role) ->
         {:error, :insufficient_privileges}
 
-      # Don't demote the last owner.
-      membership.role == :owner and new_role != :owner and
-          count_owners(membership.account_id) <= 1 ->
-        {:error, :last_owner}
-
       true ->
         :ok
     end
+  end
+
+  # Refuses to take the account's last ACTIVE owner out of play. Runs
+  # inside the caller's Multi: it locks the account's active owner rows
+  # (`FOR NO KEY UPDATE`), so two concurrent demote/suspend/remove calls
+  # serialize and the loser re-counts the winner's committed state —
+  # the pre-transaction `count_owners` check this replaces was a TOCTOU
+  # that could leave the account ownerless.
+  defp ensure_not_last_active_owner(repo, %Membership{} = membership) do
+    owners =
+      Membership.Query.not_deleted()
+      |> Membership.Query.by_account_id(membership.account_id)
+      |> Membership.Query.by_role(:owner)
+      |> Membership.Query.not_disabled()
+      |> Membership.Query.lock_for_update()
+      |> repo.all()
+
+    if length(owners) > 1, do: {:ok, :guarded}, else: {:error, :last_owner}
   end
 
   @doc """
@@ -373,9 +397,15 @@ defmodule Emisar.Accounts do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(subject, Authorizer.manage_team_permission()),
          :ok <- ensure_subject_in_account(subject, membership.account_id),
-         :ok <- ensure_can_modify_membership(membership, subject),
-         :ok <- ensure_not_last_owner_change(membership) do
+         :ok <- ensure_can_modify_membership(membership, subject) do
       Multi.new()
+      |> Multi.run(:last_owner_guard, fn repo, _changes ->
+        if membership.role == :owner do
+          ensure_not_last_active_owner(repo, membership)
+        else
+          {:ok, :not_an_owner}
+        end
+      end)
       |> Multi.update(:membership, Membership.Changeset.suspend(membership))
       |> Multi.insert(:audit, fn _ ->
         Audit.Events.membership_suspended(subject, membership)
@@ -572,16 +602,6 @@ defmodule Emisar.Accounts do
     end
   end
 
-  defp ensure_not_last_owner_change(%Membership{role: :owner} = membership) do
-    if count_owners(membership.account_id) <= 1 do
-      {:error, :last_owner}
-    else
-      :ok
-    end
-  end
-
-  defp ensure_not_last_owner_change(%Membership{}), do: :ok
-
   @doc """
   Remove a membership, enforcing the same invariants as role updates:
 
@@ -600,6 +620,13 @@ defmodule Emisar.Accounts do
          :ok <- ensure_subject_in_account(subject, membership.account_id),
          :ok <- ensure_delete_membership_allowed(membership, subject) do
       Multi.new()
+      |> Multi.run(:last_owner_guard, fn repo, _changes ->
+        if membership.role == :owner do
+          ensure_not_last_active_owner(repo, membership)
+        else
+          {:ok, :not_an_owner}
+        end
+      end)
       |> Multi.update(:membership, Membership.Changeset.delete(membership))
       |> Multi.insert(:audit, fn _ ->
         Audit.Events.membership_removed(subject, membership)
@@ -612,28 +639,14 @@ defmodule Emisar.Accounts do
     end
   end
 
+  # The last-owner invariant lives in `ensure_not_last_active_owner/2`,
+  # inside the Multi (see `ensure_role_change_allowed/3`'s note).
   defp ensure_delete_membership_allowed(%Membership{} = membership, %Subject{} = subject) do
-    cond do
-      not Auth.Authorizer.covers_role?(subject, membership.role) ->
-        {:error, :insufficient_privileges}
-
-      membership.role == :owner and count_owners(membership.account_id) <= 1 ->
-        {:error, :last_owner}
-
-      true ->
-        :ok
+    if Auth.Authorizer.covers_role?(subject, membership.role) do
+      :ok
+    else
+      {:error, :insufficient_privileges}
     end
-  end
-
-  # Only ACTIVE owners count toward the "must have at least one"
-  # invariant — a suspended owner can't sign in or act, so they don't
-  # protect against the account losing its last working admin.
-  defp count_owners(account_id) do
-    Membership.Query.not_deleted()
-    |> Membership.Query.by_account_id(account_id)
-    |> Membership.Query.by_role(:owner)
-    |> Membership.Query.not_disabled()
-    |> Repo.aggregate(:count, :id)
   end
 
   @doc """

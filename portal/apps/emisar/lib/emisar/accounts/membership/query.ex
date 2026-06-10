@@ -90,6 +90,16 @@ defmodule Emisar.Accounts.Membership.Query do
   def cursor_fields,
     do: [{:memberships, :desc, :inserted_at}, {:memberships, :asc, :id}]
 
+  @doc """
+  Row lock for the last-active-owner guard (`FOR NO KEY UPDATE`):
+  concurrent owner demotions/suspensions/removals lock the account's
+  owner rows and serialize, so the loser re-counts after the winner
+  committed instead of both passing a stale count and orphaning the
+  account.
+  """
+  def lock_for_update(queryable),
+    do: lock(queryable, "FOR NO KEY UPDATE")
+
   # Each preload is `{scope_query, nested_preloads}` so the associated
   # schema's own preloads/0 cascades — deep nesting composes. The scope is
   # not_deleted/0 so a membership never resolves a soft-deleted account/user.
