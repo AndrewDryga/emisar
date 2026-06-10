@@ -22,6 +22,7 @@ defmodule Emisar.Catalog do
       * Same as trusted hash → no-op (touch last_seen).
       * Different → keep trusted, set pending_hash. Dispatch refuses.
   """
+  alias Ecto.Multi
   alias Emisar.{Audit, Auth, Repo}
   alias Emisar.Auth.Subject
   alias Emisar.Runners.Runner
@@ -117,15 +118,6 @@ defmodule Emisar.Catalog do
     |> PackVersion.Query.pending()
     |> Repo.aggregate(:count)
   end
-
-  # Taps a Trust/Reject result: on success, fire the badge broadcast and
-  # pass the result through unchanged.
-  defp broadcast_trust_change({:ok, %PackVersion{account_id: account_id}} = result) do
-    broadcast_pack_trust(account_id)
-    result
-  end
-
-  defp broadcast_trust_change(other), do: other
 
   # -- Pack-version pinning --------------------------------------------
 
@@ -291,46 +283,36 @@ defmodule Emisar.Catalog do
 
   @doc """
   Adopt the pending hash as the new trusted hash. Records who clicked,
-  logs an audit event. No-op if there's no pending hash.
+  audits the adoption in the same transaction as the flip. Returns
+  `{:error, :not_pending}` when there's nothing pending to adopt.
   """
   def trust_pack_version(pack_version_id, %Subject{} = subject) do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(
              subject,
              Authorizer.manage_catalog_permission()
-           ),
-         {:ok, pv} <- fetch_pack_version_by_id(pack_version_id, subject) do
-      cond do
-        pv.trust_state != "pending" ->
-          {:error, :not_pending}
-
-        is_nil(pv.pending_hash) ->
-          {:error, :not_pending}
-
-        true ->
-          {:ok, updated} =
-            pv
-            |> PackVersion.Changeset.trust(subject)
-            |> Repo.update()
-
-          Audit.log(pv.account_id, :pack_trust_adopted,
-            actor_kind: Subject.actor_kind(subject),
-            actor_id: Subject.actor_id(subject),
-            subject_kind: "pack_version",
-            subject_id: pv.id,
-            subject_label: "#{pv.pack_id}@#{pv.version}",
-            payload: %{
-              pack_id: pv.pack_id,
-              version: pv.version,
-              previous_hash: pv.hash,
-              new_hash: pv.pending_hash
-            }
-          )
-
-          {:ok, updated}
+           ) do
+      Multi.new()
+      |> Multi.run(:before, fn repo, _changes ->
+        lock_pending_pack_version(repo, pack_version_id, subject)
+      end)
+      |> Multi.run(:pack_version, fn repo, %{before: pending} ->
+        repo.update(PackVersion.Changeset.trust(pending, subject))
+      end)
+      |> Multi.insert(:audit, fn %{before: pending} ->
+        Audit.Events.pack_trust_adopted(subject, pending)
+      end)
+      |> Repo.commit_multi(
+        after_commit: fn %{pack_version: updated} ->
+          broadcast_pack_trust(updated.account_id)
+          :ok
+        end
+      )
+      |> case do
+        {:ok, %{pack_version: updated}} -> {:ok, updated}
+        {:error, reason} -> {:error, reason}
       end
     end
-    |> broadcast_trust_change()
   end
 
   @doc """
@@ -357,59 +339,64 @@ defmodule Emisar.Catalog do
            Auth.Authorizer.ensure_has_permissions(
              subject,
              Authorizer.manage_catalog_permission()
-           ),
-         {:ok, pv} <- fetch_pack_version_by_id(pack_version_id, subject) do
-      cond do
-        pv.trust_state == "trusted" ->
-          {:error, :not_pending}
-
-        is_nil(pv.hash) ->
+           ) do
+      Multi.new()
+      |> Multi.run(:before, fn repo, _changes ->
+        lock_pending_pack_version(repo, pack_version_id, subject)
+      end)
+      |> Multi.run(:pack_version, fn repo, %{before: pending} ->
+        if is_nil(pending.hash) do
           # Never trusted. Drop the row — Trust is a no-op when nothing
           # exists, and a future advertisement will recreate it as
           # pending.
-          {:ok, _} = Repo.delete(pv)
-
-          Audit.log(pv.account_id, :pack_trust_rejected,
-            actor_kind: Subject.actor_kind(subject),
-            actor_id: Subject.actor_id(subject),
-            subject_kind: "pack_version",
-            subject_id: pv.id,
-            subject_label: "#{pv.pack_id}@#{pv.version}",
-            payload: %{
-              pack_id: pv.pack_id,
-              version: pv.version,
-              trusted_hash: nil,
-              rejected_hash: pv.pending_hash,
-              row_deleted: true
-            }
-          )
-
-          {:ok, pv}
-
-        true ->
-          {:ok, updated} =
-            pv
-            |> PackVersion.Changeset.reject(subject)
-            |> Repo.update()
-
-          Audit.log(pv.account_id, :pack_trust_rejected,
-            actor_kind: Subject.actor_kind(subject),
-            actor_id: Subject.actor_id(subject),
-            subject_kind: "pack_version",
-            subject_id: pv.id,
-            subject_label: "#{pv.pack_id}@#{pv.version}",
-            payload: %{
-              pack_id: pv.pack_id,
-              version: pv.version,
-              trusted_hash: pv.hash,
-              rejected_hash: pv.pending_hash
-            }
-          )
-
-          {:ok, updated}
+          repo.delete(pending)
+        else
+          repo.update(PackVersion.Changeset.reject(pending, subject))
+        end
+      end)
+      |> Multi.insert(:audit, fn %{before: pending} ->
+        Audit.Events.pack_trust_rejected(subject, pending, row_deleted: is_nil(pending.hash))
+      end)
+      |> Repo.commit_multi(
+        after_commit: fn %{pack_version: pack_version} ->
+          broadcast_pack_trust(pack_version.account_id)
+          :ok
+        end
+      )
+      |> case do
+        {:ok, %{pack_version: pack_version}} -> {:ok, pack_version}
+        {:error, reason} -> {:error, reason}
       end
     end
-    |> broadcast_trust_change()
+  end
+
+  # Locked re-read for the Trust/Reject decision: the row is fetched
+  # FOR NO KEY UPDATE inside the transaction (account-scoped via
+  # for_subject) and must still be pending — so two operators racing
+  # Trust vs. Reject serialize, and the loser gets `:not_pending`
+  # instead of flipping or deleting a row the winner already resolved.
+  defp lock_pending_pack_version(repo, pack_version_id, %Subject{} = subject) do
+    if Repo.valid_uuid?(pack_version_id) do
+      pack_version =
+        PackVersion.Query.all()
+        |> PackVersion.Query.by_id(pack_version_id)
+        |> Authorizer.for_subject(subject)
+        |> PackVersion.Query.lock_for_update()
+        |> repo.one()
+
+      case pack_version do
+        nil ->
+          {:error, :not_found}
+
+        %PackVersion{trust_state: "pending", pending_hash: hash} = pv when not is_nil(hash) ->
+          {:ok, pv}
+
+        %PackVersion{} ->
+          {:error, :not_pending}
+      end
+    else
+      {:error, :not_found}
+    end
   end
 
   def fetch_pack_version_by_id(id, %Subject{} = subject) do
@@ -417,11 +404,15 @@ defmodule Emisar.Catalog do
            Auth.Authorizer.ensure_has_permissions(
              subject,
              Authorizer.view_catalog_permission()
-           ) do
+           ),
+         true <- Repo.valid_uuid?(id) do
       PackVersion.Query.all()
       |> PackVersion.Query.by_id(id)
       |> Authorizer.for_subject(subject)
       |> Repo.fetch(PackVersion.Query)
+    else
+      false -> {:error, :not_found}
+      other -> other
     end
   end
 
@@ -632,12 +623,16 @@ defmodule Emisar.Catalog do
            Auth.Authorizer.ensure_has_permissions(
              subject,
              Authorizer.view_catalog_permission()
-           ) do
+           ),
+         true <- Repo.valid_uuid?(runner_id) do
       RunnerAction.Query.all()
       |> RunnerAction.Query.by_runner_id(runner_id)
       |> RunnerAction.Query.by_action_id(action_id)
       |> Authorizer.for_subject(subject)
       |> Repo.fetch(RunnerAction.Query)
+    else
+      false -> {:error, :not_found}
+      other -> other
     end
   end
 

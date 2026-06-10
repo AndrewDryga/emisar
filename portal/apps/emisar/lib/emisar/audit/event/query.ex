@@ -41,6 +41,13 @@ defmodule Emisar.Audit.Event.Query do
     {"api_key.created", "API key created"},
     {"api_key.revoked", "API key revoked"},
     {"api_key.bound", "API key first use"},
+    {"pack_trust_baseline_match", "Pack auto-trusted (baseline match)"},
+    {"pack_trust_baseline_mismatch", "Pack pinned to baseline (drift)"},
+    {"pack_trust_review_required", "Pack pending review"},
+    {"pack_trust_drift_detected", "Pack drift detected"},
+    {"pack_trust_adopted", "Pack hash trusted"},
+    {"pack_trust_rejected", "Pack hash rejected"},
+    {"dispatch_blocked_pack_untrusted", "Dispatch blocked (pack untrusted)"},
     {"user.signed_up", "User signed up"},
     {"user.signed_in", "User signed in"},
     {"user.signed_out", "User signed out"},
@@ -120,6 +127,16 @@ defmodule Emisar.Audit.Event.Query do
        {"runner.deleted", "Deleted"},
        {"runner.replaced", "Replaced"},
        {"runner.error", "Error"}
+     ]},
+    {"Pack trust",
+     [
+       {"pack_trust_baseline_match", "Auto-trusted (baseline)"},
+       {"pack_trust_baseline_mismatch", "Pinned to baseline (drift)"},
+       {"pack_trust_review_required", "Pending review"},
+       {"pack_trust_drift_detected", "Drift detected"},
+       {"pack_trust_adopted", "Hash trusted"},
+       {"pack_trust_rejected", "Hash rejected"},
+       {"dispatch_blocked_pack_untrusted", "Dispatch blocked"}
      ]},
     {"Auth key",
      [

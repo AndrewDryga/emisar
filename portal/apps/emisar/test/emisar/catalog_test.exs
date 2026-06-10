@@ -387,6 +387,68 @@ defmodule Emisar.CatalogTest do
     end
   end
 
+  describe "catalog reads" do
+    test "fetch_pack_version_by_id scopes to the subject's account" do
+      {_user, account, subject} = owner_subject_fixture()
+      runner = runner_fixture(account_id: account.id)
+
+      _ =
+        Catalog.observe_state(
+          runner,
+          state_payload(packs: %{"p" => %{"version" => "1.0", "hash" => "sha256:X"}})
+        )
+
+      {:ok, [pv], _} = Catalog.list_pack_versions(subject)
+
+      assert {:ok, %{id: id}} = Catalog.fetch_pack_version_by_id(pv.id, subject)
+      assert id == pv.id
+      assert {:error, :not_found} = Catalog.fetch_pack_version_by_id("not-a-uuid", subject)
+
+      {_user_b, _account_b, subject_b} = owner_subject_fixture()
+      assert {:error, :not_found} = Catalog.fetch_pack_version_by_id(pv.id, subject_b)
+    end
+
+    test "trusted_hash_for_action returns the trusted hash, never the pending one" do
+      {_user, account, subject} = owner_subject_fixture()
+      runner = runner_fixture(account_id: account.id)
+
+      _ =
+        Catalog.observe_state(
+          runner,
+          state_payload(
+            packs: %{"p" => %{"version" => "1.0", "hash" => "sha256:NEW"}},
+            actions: [%{"id" => "p.do", "pack_id" => "p", "title" => "Do"}]
+          )
+        )
+
+      {:ok, action} = Catalog.fetch_action_for_account("p.do", runner.id, account.id)
+
+      # Custom pack, never trusted → no hash to stamp.
+      assert Catalog.trusted_hash_for_action(action) == nil
+
+      {:ok, [pv], _} = Catalog.list_pack_versions(subject)
+      {:ok, _} = Catalog.trust_pack_version(pv.id, subject)
+
+      assert Catalog.trusted_hash_for_action(action) == "sha256:NEW"
+    end
+
+    test "fetch_action_by_id scopes to the subject's account and rejects junk ids" do
+      {_user, account, subject} = owner_subject_fixture()
+      runner = runner_fixture(account_id: account.id)
+      _ = action_fixture(runner: runner, action_id: "linux.uptime")
+
+      assert {:ok, action} = Catalog.fetch_action_by_id("linux.uptime", runner.id, subject)
+      assert action.account_id == account.id
+
+      assert {:error, :not_found} = Catalog.fetch_action_by_id("linux.uptime", "junk", subject)
+
+      {_user_b, _account_b, subject_b} = owner_subject_fixture()
+
+      assert {:error, :not_found} =
+               Catalog.fetch_action_by_id("linux.uptime", runner.id, subject_b)
+    end
+  end
+
   describe "trust_pack_version / reject_pack_version" do
     test "trust adopts pending_hash as the trusted hash" do
       {_user, account, subject} = owner_subject_fixture()

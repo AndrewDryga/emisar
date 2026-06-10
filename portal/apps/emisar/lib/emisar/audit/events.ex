@@ -9,7 +9,7 @@ defmodule Emisar.Audit.Events do
   events (no `Multi`, often no subject) use `Audit.log/3` directly instead.
   """
   alias Emisar.Accounts.{Account, Membership}
-  alias Emisar.{ApiKeys, Approvals, Policies, Runbooks, Runners}
+  alias Emisar.{ApiKeys, Approvals, Catalog, Policies, Runbooks, Runners}
   alias Emisar.Audit
   alias Emisar.Auth.Subject
   alias Emisar.Users.User
@@ -313,6 +313,61 @@ defmodule Emisar.Audit.Events do
       name: runbook.name,
       version: runbook.version
     })
+  end
+
+  # -- Catalog pack trust ----------------------------------------------
+
+  @doc """
+  Operator adopted a pending pack hash. Takes the PRE-trust row so the
+  payload can show what flipped (`previous_hash` → `new_hash`).
+  """
+  def pack_trust_adopted(%Subject{} = subject, %Catalog.PackVersion{} = pack_version) do
+    pack_trust_event(subject, pack_version, "pack_trust_adopted", %{
+      pack_id: pack_version.pack_id,
+      version: pack_version.version,
+      previous_hash: pack_version.hash,
+      new_hash: pack_version.pending_hash
+    })
+  end
+
+  @doc """
+  Operator rejected a pending pack hash. Takes the PRE-reject row;
+  `row_deleted: true` marks the never-trusted custom pack whose row is
+  dropped entirely (nothing to fall back to).
+  """
+  def pack_trust_rejected(%Subject{} = subject, %Catalog.PackVersion{} = pack_version, opts \\ []) do
+    payload = %{
+      pack_id: pack_version.pack_id,
+      version: pack_version.version,
+      trusted_hash: pack_version.hash,
+      rejected_hash: pack_version.pending_hash
+    }
+
+    payload =
+      if Keyword.get(opts, :row_deleted, false),
+        do: Map.put(payload, :row_deleted, true),
+        else: payload
+
+    pack_trust_event(subject, pack_version, "pack_trust_rejected", payload)
+  end
+
+  defp pack_trust_event(
+         %Subject{} = subject,
+         %Catalog.PackVersion{} = pack_version,
+         type,
+         payload
+       ) do
+    Audit.changeset(
+      pack_version.account_id,
+      type,
+      actor(subject) ++
+        [
+          subject_kind: "pack_version",
+          subject_id: pack_version.id,
+          subject_label: "#{pack_version.pack_id}@#{pack_version.version}",
+          payload: payload
+        ]
+    )
   end
 
   # -- Policies --------------------------------------------------------

@@ -23,6 +23,14 @@ defmodule Emisar.Catalog.PackVersion.Query do
   def ordered_by_pack(queryable \\ all()),
     do: order_by(queryable, [packs: p], asc: p.pack_id, asc: p.version)
 
+  @doc """
+  Row lock for the trust/reject re-read (`FOR NO KEY UPDATE`) so a
+  concurrent Trust and Reject on the same row serialize instead of the
+  loser updating a row the winner already flipped or deleted.
+  """
+  def lock_for_update(queryable),
+    do: lock(queryable, "FOR NO KEY UPDATE")
+
   # -- Pagination ------------------------------------------------------
 
   @impl Emisar.Repo.Query
