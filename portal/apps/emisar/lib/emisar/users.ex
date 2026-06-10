@@ -122,9 +122,9 @@ defmodule Emisar.Users do
     User.Query.not_deleted()
     |> User.Query.by_id(user_id)
     |> Repo.fetch_and_update(User.Query,
-      with: fn fresh ->
-        if User.valid_password?(fresh, current_password),
-          do: User.Changeset.email(fresh, %{email: new_email}),
+      with: fn loaded_user ->
+        if User.valid_password?(loaded_user, current_password),
+          do: User.Changeset.email(loaded_user, %{email: new_email}),
           else: :invalid_current_password
       end,
       audit: fn updated ->
@@ -170,9 +170,9 @@ defmodule Emisar.Users do
     User.Query.not_deleted()
     |> User.Query.by_id(user_id)
     |> Repo.fetch_and_update(User.Query,
-      with: fn fresh ->
-        if User.valid_password?(fresh, current_password),
-          do: User.Changeset.password(fresh, %{password: new_password}),
+      with: fn loaded_user ->
+        if User.valid_password?(loaded_user, current_password),
+          do: User.Changeset.password(loaded_user, %{password: new_password}),
           else: :invalid_current_password
       end,
       audit: &Audit.user_changeset(&1, "user.password_changed")

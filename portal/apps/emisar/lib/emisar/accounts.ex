@@ -111,12 +111,12 @@ defmodule Emisar.Accounts do
       |> Account.Query.by_id(account.id)
       |> Authorizer.for_subject(subject)
       |> Repo.fetch_and_update(Account.Query,
-        with: fn fresh ->
+        with: fn loaded_account ->
           # The owner-only escalation is judged on the FRESH diff under
           # the row lock, so the gate covers exactly what gets written —
           # a stale-struct diff could smuggle a `require_mfa` flip past
           # it when the caller's copy and the row disagree.
-          changeset = Account.Changeset.update(fresh, attrs)
+          changeset = Account.Changeset.update(loaded_account, attrs)
 
           case ensure_security_change_permitted(changeset, subject) do
             :ok -> changeset
@@ -310,14 +310,14 @@ defmodule Emisar.Accounts do
       |> Membership.Query.by_id(membership.id)
       |> Authorizer.for_subject(subject)
       |> Repo.fetch_and_update(Membership.Query,
-        with: fn fresh ->
+        with: fn loaded_membership ->
           # The hierarchy guards judge the row's CURRENT role under the
           # lock — the caller's struct is a stale socket snapshot, and a
           # concurrent promotion must not let a stale-admin demote a
           # freshly-promoted owner.
-          with :ok <- ensure_role_change_allowed(fresh, new_role, subject),
-               :ok <- ensure_demotion_keeps_an_owner(fresh, new_role) do
-            Membership.Changeset.update(fresh, %{role: new_role})
+          with :ok <- ensure_role_change_allowed(loaded_membership, new_role, subject),
+               :ok <- ensure_demotion_keeps_an_owner(loaded_membership, new_role) do
+            Membership.Changeset.update(loaded_membership, %{role: new_role})
           else
             {:error, reason} -> reason
           end
@@ -393,22 +393,24 @@ defmodule Emisar.Accounts do
   # membership row itself use `Repo.fetch_and_update/3` instead.
   defp lock_target_membership(multi, %Membership{} = membership, guard) do
     Multi.run(multi, :target, fn repo, _changes ->
-      with {:ok, fresh} <- lock_membership(repo, membership),
-           :ok <- guard.(fresh) do
-        {:ok, fresh}
+      with {:ok, loaded_membership} <- lock_membership(repo, membership),
+           :ok <- guard.(loaded_membership) do
+        {:ok, loaded_membership}
       end
     end)
   end
 
   # `nil` means the member vanished mid-flight.
   defp lock_membership(repo, %Membership{} = membership) do
-    fresh =
+    loaded_membership =
       Membership.Query.not_deleted()
       |> Membership.Query.by_id(membership.id)
       |> Membership.Query.lock_for_update()
       |> repo.one()
 
-    if fresh, do: {:ok, fresh}, else: {:error, :not_found}
+    if loaded_membership,
+      do: {:ok, loaded_membership},
+      else: {:error, :not_found}
   end
 
   # Refuses to take the account's last ACTIVE owner out of play. Runs
@@ -461,12 +463,12 @@ defmodule Emisar.Accounts do
       |> Membership.Query.by_id(membership.id)
       |> Authorizer.for_subject(subject)
       |> Repo.fetch_and_update(Membership.Query,
-        with: fn fresh ->
+        with: fn loaded_membership ->
           # The guards judge the row's CURRENT role under the lock — the
           # caller's struct is a stale socket snapshot.
-          with :ok <- ensure_can_modify_membership(fresh, subject),
-               :ok <- ensure_not_last_active_owner(fresh) do
-            Membership.Changeset.suspend(fresh)
+          with :ok <- ensure_can_modify_membership(loaded_membership, subject),
+               :ok <- ensure_not_last_active_owner(loaded_membership) do
+            Membership.Changeset.suspend(loaded_membership)
           else
             {:error, reason} -> reason
           end
@@ -511,11 +513,11 @@ defmodule Emisar.Accounts do
       |> Membership.Query.by_id(membership.id)
       |> Authorizer.for_subject(subject)
       |> Repo.fetch_and_update(Membership.Query,
-        with: fn fresh ->
+        with: fn loaded_membership ->
           # The guard judges the row's CURRENT role under the lock — the
           # caller's struct is a stale socket snapshot.
-          case ensure_can_modify_membership(fresh, subject) do
-            :ok -> Membership.Changeset.reinstate(fresh)
+          case ensure_can_modify_membership(loaded_membership, subject) do
+            :ok -> Membership.Changeset.reinstate(loaded_membership)
             {:error, reason} -> reason
           end
         end,
@@ -555,10 +557,10 @@ defmodule Emisar.Accounts do
       # the canonical record with the correct actor → subject pair.
       Multi.new()
       |> lock_target_membership(membership, &ensure_can_modify_membership(&1, subject))
-      |> Multi.run(:user, fn _repo, %{target: fresh} ->
-        Users.clear_user_password(fresh.user_id,
+      |> Multi.run(:user, fn _repo, %{target: loaded_membership} ->
+        Users.clear_user_password(loaded_membership.user_id,
           audit: fn updated ->
-            Audit.Events.user_password_reset_forced(subject, fresh, updated)
+            Audit.Events.user_password_reset_forced(subject, loaded_membership, updated)
           end,
           after_commit: fn user ->
             :ok = Emisar.Auth.disconnect_and_revoke_all_sessions(user)
@@ -606,10 +608,10 @@ defmodule Emisar.Accounts do
       # transaction so the hierarchy is judged on the CURRENT role.
       Multi.new()
       |> lock_target_membership(membership, &ensure_can_modify_membership(&1, subject))
-      |> Multi.run(:user, fn _repo, %{target: fresh} ->
-        Users.update_user_profile_as_admin(fresh.user_id, attrs,
+      |> Multi.run(:user, fn _repo, %{target: loaded_membership} ->
+        Users.update_user_profile_as_admin(loaded_membership.user_id, attrs,
           audit: fn updated ->
-            Audit.Events.user_updated_by_admin(subject, fresh, updated)
+            Audit.Events.user_updated_by_admin(subject, loaded_membership, updated)
           end
         )
       end)
@@ -638,14 +640,14 @@ defmodule Emisar.Accounts do
       # side effect that fires only after the rows commit.
       Multi.new()
       |> lock_target_membership(membership, &ensure_can_modify_membership(&1, subject))
-      |> Multi.run(:user, fn _repo, %{target: fresh} ->
-        Users.fetch_user_by_id(fresh.user_id)
+      |> Multi.run(:user, fn _repo, %{target: loaded_membership} ->
+        Users.fetch_user_by_id(loaded_membership.user_id)
       end)
       |> Multi.run(:tokens, fn _repo, %{user: user} ->
         Emisar.Auth.delete_all_session_tokens(user)
       end)
-      |> Multi.insert(:audit, fn %{target: fresh, user: user} ->
-        Audit.Events.user_sessions_revoked(subject, fresh, user)
+      |> Multi.insert(:audit, fn %{target: loaded_membership, user: user} ->
+        Audit.Events.user_sessions_revoked(subject, loaded_membership, user)
       end)
       |> Repo.commit_multi(
         after_commit: fn %{user: user} ->
@@ -703,12 +705,12 @@ defmodule Emisar.Accounts do
       |> Membership.Query.by_id(membership.id)
       |> Authorizer.for_subject(subject)
       |> Repo.fetch_and_update(Membership.Query,
-        with: fn fresh ->
+        with: fn loaded_membership ->
           # The guards judge the row's CURRENT role under the lock — the
           # caller's struct is a stale socket snapshot.
-          with :ok <- ensure_delete_membership_allowed(fresh, subject),
-               :ok <- ensure_not_last_active_owner(fresh) do
-            Membership.Changeset.delete(fresh)
+          with :ok <- ensure_delete_membership_allowed(loaded_membership, subject),
+               :ok <- ensure_not_last_active_owner(loaded_membership) do
+            Membership.Changeset.delete(loaded_membership)
           else
             {:error, reason} -> reason
           end

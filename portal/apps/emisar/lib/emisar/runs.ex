@@ -792,16 +792,16 @@ defmodule Emisar.Runs do
         # writer must NOT overwrite a terminal status (or re-advance a
         # runbook). Re-read under the row lock and treat already-terminal
         # as a benign no-op.
-        fresh =
+        loaded_run =
           ActionRun.Query.all()
           |> ActionRun.Query.by_id(run.id)
           |> ActionRun.Query.lock_for_update()
           |> repo.one()
 
         cond do
-          is_nil(fresh) -> {:error, :not_found}
-          ActionRun.terminal?(fresh.status) -> {:ok, :already_terminal}
-          true -> repo.update(ActionRun.Changeset.transition(fresh, status, attrs))
+          is_nil(loaded_run) -> {:error, :not_found}
+          ActionRun.terminal?(loaded_run.status) -> {:ok, :already_terminal}
+          true -> repo.update(ActionRun.Changeset.transition(loaded_run, status, attrs))
         end
       end)
       |> put_run_audit_event()
