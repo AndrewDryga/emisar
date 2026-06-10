@@ -319,7 +319,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
         <%!-- Right: decision panel — sticky on desktop so it stays in
              reach when scanning a long args/reason. --%>
         <aside class="lg:sticky lg:top-6 lg:self-start">
-          <%= if @request.status == "pending" do %>
+          <%= if @request.status == :pending do %>
             <.decision_panel
               can_decide?={Approvals.subject_can_decide_approval?(@current_subject)}
               grant_duration={@grant_duration}

@@ -48,7 +48,7 @@ defmodule Emisar.CatalogTest do
                   version: "1.0",
                   hash: nil,
                   pending_hash: "abc",
-                  trust_state: "pending"
+                  trust_state: :pending
                 }
               ], _meta} = Catalog.list_pack_versions(subject)
 
@@ -207,8 +207,8 @@ defmodule Emisar.CatalogTest do
 
       {:ok, actions, _} = Catalog.list_actions_for_runner(runner.id, subject)
       assert length(actions) == 2
-      assert Enum.any?(actions, &(&1.action_id == "linux.uptime" and &1.risk == "low"))
-      assert Enum.any?(actions, &(&1.action_id == "linux.df" and &1.risk == "medium"))
+      assert Enum.any?(actions, &(&1.action_id == "linux.uptime" and &1.risk == :low))
+      assert Enum.any?(actions, &(&1.action_id == "linux.df" and &1.risk == :medium))
     end
 
     test "prunes actions no longer advertised" do
@@ -279,7 +279,7 @@ defmodule Emisar.CatalogTest do
       assert {:ok, _} = Catalog.observe_state(runner, payload)
 
       assert {:ok, [pv], _} = Catalog.list_pack_versions(subject)
-      assert pv.trust_state == "pending"
+      assert pv.trust_state == :pending
       assert pv.hash == nil
       assert pv.pending_hash == "sha256:custom"
     end
@@ -296,7 +296,7 @@ defmodule Emisar.CatalogTest do
       assert {:ok, _} = Catalog.observe_state(runner, payload)
 
       assert {:ok, [pv], _} = Catalog.list_pack_versions(subject)
-      assert pv.trust_state == "pending"
+      assert pv.trust_state == :pending
       assert pv.pending_hash == "sha256:H1"
     end
 
@@ -322,7 +322,7 @@ defmodule Emisar.CatalogTest do
                )
 
       assert {:ok, [pv], _} = Catalog.list_pack_versions(subject)
-      assert pv.trust_state == "pending"
+      assert pv.trust_state == :pending
       assert pv.hash == "sha256:H1"
       assert pv.pending_hash == "sha256:H2"
     end
@@ -365,7 +365,7 @@ defmodule Emisar.CatalogTest do
       # Custom pack — no library baseline, so it lands pending and
       # awaits operator approval. The pending_hash is the bytes both
       # racing runners advertised.
-      assert pv.trust_state == "pending"
+      assert pv.trust_state == :pending
       assert pv.pending_hash == "sha256:RACE"
       assert pv.hash == nil
     end
@@ -383,7 +383,7 @@ defmodule Emisar.CatalogTest do
       assert {:ok, _} = Catalog.observe_state(runner, payload)
 
       assert {:ok, [pv], _} = Catalog.list_pack_versions(subject)
-      assert pv.trust_state == "trusted"
+      assert pv.trust_state == :trusted
     end
   end
 
@@ -468,7 +468,7 @@ defmodule Emisar.CatalogTest do
 
       {:ok, [pv], _} = Catalog.list_pack_versions(subject)
       assert {:ok, trusted} = Catalog.trust_pack_version(pv.id, subject)
-      assert trusted.trust_state == "trusted"
+      assert trusted.trust_state == :trusted
       assert trusted.hash == "sha256:NEW"
       assert trusted.pending_hash == nil
     end
@@ -496,7 +496,7 @@ defmodule Emisar.CatalogTest do
 
       {:ok, [pv], _} = Catalog.list_pack_versions(subject)
       assert {:ok, after_reject} = Catalog.reject_pack_version(pv.id, subject)
-      assert after_reject.trust_state == "trusted"
+      assert after_reject.trust_state == :trusted
       assert after_reject.hash == "sha256:KEEP"
       assert after_reject.pending_hash == nil
     end
@@ -512,11 +512,11 @@ defmodule Emisar.CatalogTest do
         )
 
       {:ok, [pv], _} = Catalog.list_pack_versions(subject)
-      assert pv.trust_state == "pending"
+      assert pv.trust_state == :pending
       assert pv.hash == nil
 
       assert {:ok, trusted} = Catalog.trust_pack_version(pv.id, subject)
-      assert trusted.trust_state == "trusted"
+      assert trusted.trust_state == :trusted
       assert trusted.hash == "sha256:NEW"
       assert trusted.pending_hash == nil
     end

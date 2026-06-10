@@ -8,7 +8,7 @@ defmodule Emisar.Runs.RunEvent do
 
   schema "action_run_events" do
     field :seq, :integer
-    field :kind, :string
+    field :kind, Ecto.Enum, values: [:progress, :transition, :error, :redaction_summary]
     field :stream, :string
     field :payload, :map, default: %{}
 
@@ -17,6 +17,4 @@ defmodule Emisar.Runs.RunEvent do
 
     timestamps(updated_at: false)
   end
-
-  def kinds, do: Emisar.Runs.RunEvent.Changeset.kinds()
 end

@@ -119,7 +119,7 @@ defmodule Emisar.Runbooks do
       |> Runbook.Query.by_id(rb.id)
       |> Authorizer.for_subject(subject)
       |> Repo.fetch_and_update(Runbook.Query,
-        with: &Runbook.Changeset.update(&1, %{status: "published"}),
+        with: &Runbook.Changeset.update(&1, %{status: :published}),
         audit: fn published -> Audit.Events.runbook_published(subject, published) end,
         after_commit: fn published ->
           broadcast_runbook_change(%{runbook: published}, "runbook.published")
@@ -349,12 +349,12 @@ defmodule Emisar.Runbooks do
     end
   end
 
-  defp failed_run?(%Emisar.Runs.ActionRun{status: "denied"}), do: true
+  defp failed_run?(%Emisar.Runs.ActionRun{status: :denied}), do: true
 
   defp failed_run?(%Emisar.Runs.ActionRun{status: status}),
-    do: Emisar.Runs.ActionRun.terminal?(status) and status != "success"
+    do: Emisar.Runs.ActionRun.terminal?(status) and status != :success
 
-  defp in_flight_run?(%Emisar.Runs.ActionRun{status: "denied"}), do: false
+  defp in_flight_run?(%Emisar.Runs.ActionRun{status: :denied}), do: false
 
   defp in_flight_run?(%Emisar.Runs.ActionRun{status: status}),
     do: not Emisar.Runs.ActionRun.terminal?(status)

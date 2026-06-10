@@ -935,11 +935,13 @@ defmodule EmisarWeb.CoreComponents do
     """
   end
 
-  @doc "Coloured pill for run/runner status."
-  attr :status, :string, required: true
+  @doc "Coloured pill for run/runner status — takes a string or an Ecto.Enum atom."
+  attr :status, :any, required: true
   attr :class, :string, default: ""
 
   def status_badge(assigns) do
+    assigns = assign(assigns, :status, to_string(assigns.status))
+
     ~H"""
     <span class={[
       "inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset",
@@ -1549,12 +1551,15 @@ defmodule EmisarWeb.CoreComponents do
 
   @doc """
   Risk pill — used on action descriptors. Colours mirror the runner's
-  declared risk level (`low|medium|high|critical`).
+  declared risk level (`low|medium|high|critical`); takes the risk as a
+  string (pack-manifest data) or an Ecto.Enum atom (catalog rows).
   """
-  attr :risk, :string, required: true
+  attr :risk, :any, required: true
   attr :class, :string, default: nil
 
   def risk_pill(assigns) do
+    assigns = assign(assigns, :risk, to_string(assigns.risk))
+
     ~H"""
     <span class={[
       "rounded px-2 py-0.5 text-xs font-semibold uppercase tracking-wider ring-1 ring-inset",

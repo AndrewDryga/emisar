@@ -24,7 +24,7 @@ defmodule Emisar.Catalog.PackVersion do
     field :version, :string
     field :hash, :string
     field :pending_hash, :string
-    field :trust_state, :string, default: "trusted"
+    field :trust_state, Ecto.Enum, values: [:trusted, :pending], default: :trusted
     field :pinned_at, :utc_datetime_usec
     field :first_seen_at, :utc_datetime_usec
     field :last_seen_at, :utc_datetime_usec

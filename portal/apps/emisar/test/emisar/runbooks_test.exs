@@ -132,7 +132,7 @@ defmodule Emisar.RunbooksTest do
                Runbooks.dispatch_runbook(runbook, {:runner, runner.id}, "try", subject)
 
       assert [denied] = execution_runs(account, execution_id)
-      assert denied.status == "denied"
+      assert denied.status == :denied
       assert denied.runbook_step_id == "step1"
     end
   end

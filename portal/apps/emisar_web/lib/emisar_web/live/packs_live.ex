@@ -49,7 +49,7 @@ defmodule EmisarWeb.PacksLive do
   # via `stream_insert`/`stream_delete` (see `restream_pack/2`).
   defp load_packs(socket) do
     rows = fetch_rows(socket)
-    pending = Enum.count(rows, &(&1.trust_state == "pending"))
+    pending = Enum.count(rows, &(&1.trust_state == :pending))
     groups = group_by_pack(rows)
 
     socket
@@ -118,7 +118,7 @@ defmodule EmisarWeb.PacksLive do
   # `pending_count` (and sidebar badge) are recomputed from the full set.
   defp restream_pack(socket, pack_id) do
     rows = fetch_rows(socket)
-    pending = Enum.count(rows, &(&1.trust_state == "pending"))
+    pending = Enum.count(rows, &(&1.trust_state == :pending))
     pack_count = rows |> Enum.map(& &1.pack_id) |> Enum.uniq() |> length()
     versions = rows |> Enum.filter(&(&1.pack_id == pack_id)) |> sort_versions()
 
@@ -217,13 +217,13 @@ defmodule EmisarWeb.PacksLive do
                     sha256:{short_hash(v.hash)}
                   </span>
                   <span
-                    :if={v.trust_state == "trusted"}
+                    :if={v.trust_state == :trusted}
                     class="rounded bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-emerald-200 ring-1 ring-emerald-500/20"
                   >
                     Trusted
                   </span>
                   <span
-                    :if={v.trust_state == "pending"}
+                    :if={v.trust_state == :pending}
                     class="rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-amber-200 ring-1 ring-amber-500/30"
                   >
                     Pending
@@ -241,7 +241,7 @@ defmodule EmisarWeb.PacksLive do
               </div>
 
               <div
-                :if={v.trust_state == "pending"}
+                :if={v.trust_state == :pending}
                 class="rounded border border-amber-800/60 bg-amber-950/30 p-3"
               >
                 <p :if={is_nil(v.hash)} class="text-xs text-amber-100/90">
@@ -317,7 +317,7 @@ defmodule EmisarWeb.PacksLive do
   defp sort_versions(versions),
     do: Enum.sort_by(versions, & &1.last_seen_at, {:desc, DateTime})
 
-  defp any_pending?(versions), do: Enum.any?(versions, &(&1.trust_state == "pending"))
+  defp any_pending?(versions), do: Enum.any?(versions, &(&1.trust_state == :pending))
 
   defp version_count_label(versions) do
     n = length(versions)

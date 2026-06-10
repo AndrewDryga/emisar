@@ -53,7 +53,7 @@ defmodule Emisar.Runs do
     end
   end
 
-  @failed_statuses ~w[failed error timed_out]
+  @failed_statuses [:failed, :error, :timed_out]
 
   # Run statuses that earn an audit row. The intermediate lifecycle
   # states — pending, sent, running, pending_approval — are already
@@ -63,7 +63,16 @@ defmodule Emisar.Runs do
   # five-rows-per-run noise. Only terminal results and policy denials
   # are audited as run events; the decision itself is captured by the
   # separate `policy.evaluated` row.
-  @audited_run_statuses ~w[success failed error validation_failed unknown_action timed_out cancelled denied]
+  @audited_run_statuses [
+    :success,
+    :failed,
+    :error,
+    :validation_failed,
+    :unknown_action,
+    :timed_out,
+    :cancelled,
+    :denied
+  ]
 
   @doc """
   Rolled-up totals for the dashboard headline: total runs in window,
@@ -88,7 +97,7 @@ defmodule Emisar.Runs do
         |> Map.new()
 
       total = counts |> Map.values() |> Enum.sum()
-      success = Map.get(counts, "success", 0)
+      success = Map.get(counts, :success, 0)
       failed = @failed_statuses |> Enum.map(&Map.get(counts, &1, 0)) |> Enum.sum()
       terminal = success + failed
 
@@ -305,11 +314,11 @@ defmodule Emisar.Runs do
   #     approval; `wait_for_run` is still the right tool.
   #   * anything else (sent, running, terminal) — the run exists and the
   #     LLM can long-poll via `/runs/:id?wait=…` for the final state.
-  defp replay_outcome(%ActionRun{status: "denied", policy_reason: reason}),
+  defp replay_outcome(%ActionRun{status: :denied, policy_reason: reason}),
     do: {:error, :denied_by_policy, reason || "policy denied this call"}
 
   defp replay_outcome(%ActionRun{status: status} = run)
-       when status in ["pending_approval", "awaiting_approval"],
+       when status in [:pending_approval, :awaiting_approval],
        do: {:ok, :pending_approval, run}
 
   defp replay_outcome(%ActionRun{} = run),
@@ -426,7 +435,7 @@ defmodule Emisar.Runs do
     run_attrs =
       attrs
       |> Map.merge(policy_attrs(policy, "deny", reason, matched))
-      |> Map.put(:status, "denied")
+      |> Map.put(:status, :denied)
 
     case create_run(run_attrs) do
       {:ok, denied} ->
@@ -500,7 +509,7 @@ defmodule Emisar.Runs do
         attrs =
           attrs
           |> Map.merge(policy_attrs(policy, "require_approval", policy_reason, matched))
-          |> Map.merge(%{status: "pending_approval", requires_approval: true})
+          |> Map.merge(%{status: :pending_approval, requires_approval: true})
 
         # Operator's reason ("why I'm running this") goes to the approval
         # request; the policy reason ("why approval is required") stays
@@ -550,7 +559,7 @@ defmodule Emisar.Runs do
   """
   def list_stale_dispatches(cutoff) when is_struct(cutoff, DateTime) do
     ActionRun.Query.all()
-    |> ActionRun.Query.status_in(["pending", "sent"])
+    |> ActionRun.Query.status_in([:pending, :sent])
     |> ActionRun.Query.queued_before(cutoff)
     |> Repo.all()
   end
@@ -563,7 +572,7 @@ defmodule Emisar.Runs do
   """
   def list_running_runs do
     ActionRun.Query.all()
-    |> ActionRun.Query.status_in(["running"])
+    |> ActionRun.Query.status_in([:running])
     |> Repo.all()
   end
 
@@ -843,7 +852,7 @@ defmodule Emisar.Runs do
 
         # The first progress chunk marks the run as :running (transitions
         # are idempotent server-side).
-        if run.status == "sent", do: mark_running(run)
+        if run.status == :sent, do: mark_running(run)
         {:ok, event}
 
       err ->

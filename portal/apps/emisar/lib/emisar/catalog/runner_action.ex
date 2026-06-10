@@ -11,8 +11,8 @@ defmodule Emisar.Catalog.RunnerAction do
     field :pack_id, :string
     field :pack_version, :string
     field :title, :string
-    field :kind, :string
-    field :risk, :string
+    field :kind, Ecto.Enum, values: [:exec, :script]
+    field :risk, Ecto.Enum, values: [:low, :medium, :high, :critical]
     field :description, :string
     field :side_effects, {:array, :string}, default: []
     field :args_schema, :map, default: %{}
@@ -27,7 +27,4 @@ defmodule Emisar.Catalog.RunnerAction do
 
     timestamps()
   end
-
-  def risks, do: Emisar.Catalog.RunnerAction.Changeset.risks()
-  def kinds, do: Emisar.Catalog.RunnerAction.Changeset.kinds()
 end

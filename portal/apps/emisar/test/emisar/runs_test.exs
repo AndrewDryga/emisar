@@ -297,14 +297,14 @@ defmodule Emisar.RunsTest do
       requester = user_fixture()
       subject = subject_for(user_fixture(), account, role: :owner)
 
-      assert {:ok, :pending_approval, %ActionRun{status: "pending_approval"} = run} =
+      assert {:ok, :pending_approval, %ActionRun{status: :pending_approval} = run} =
                Runs.dispatch_run(
                  base_attrs(account.id, runner.id, %{requested_by_id: requester.id}),
                  subject
                )
 
       assert {:ok, [_req], _} = Approvals.list_pending_approval_requests(subject)
-      assert {:ok, %{status: "pending_approval"}} = Runs.fetch_run_by_id(run.id, subject)
+      assert {:ok, %{status: :pending_approval}} = Runs.fetch_run_by_id(run.id, subject)
     end
 
     test "policy with no matching allow rule denies and records the attempt for audit" do
@@ -343,7 +343,7 @@ defmodule Emisar.RunsTest do
       assert is_binary(reason)
       # A denied run is recorded with status="denied" so operators can
       # see attempts in the audit log.
-      assert {:ok, [%{status: "denied", policy_decision: "deny"}], _meta} =
+      assert {:ok, [%{status: :denied, policy_decision: "deny"}], _meta} =
                Runs.list_recent_runs(subject, limit: 50)
     end
 
@@ -467,7 +467,7 @@ defmodule Emisar.RunsTest do
 
       Emisar.Runs.subscribe_run(run.account_id, run.id)
 
-      assert {:ok, %RunEvent{seq: 1, kind: "progress"}} =
+      assert {:ok, %RunEvent{seq: 1, kind: :progress}} =
                Runs.append_event(run, %{seq: 1, kind: "progress", payload: %{"line" => "hi"}})
 
       assert_receive {:run_event, %RunEvent{seq: 1}}, 500
@@ -480,7 +480,7 @@ defmodule Emisar.RunsTest do
       runner = runner_fixture(account_id: account.id)
       {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
 
-      assert {:ok, %ActionRun{status: "success"}} =
+      assert {:ok, %ActionRun{status: :success}} =
                Runs.finalize_from_result(runner.id, %{
                  "request_id" => run.request_id,
                  "status" => "success",
@@ -494,7 +494,7 @@ defmodule Emisar.RunsTest do
       runner = runner_fixture(account_id: account.id)
       {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
 
-      assert {:ok, %ActionRun{status: "success", executed_command: "uptime -p"}} =
+      assert {:ok, %ActionRun{status: :success, executed_command: "uptime -p"}} =
                Runs.finalize_from_result(runner.id, %{
                  "request_id" => run.request_id,
                  "status" => "success",
@@ -603,13 +603,13 @@ defmodule Emisar.RunsTest do
 
       # An operator cancel lands while the runner's result is in flight…
       {:ok, cancelled} = Runs.mark_cancelled(sent, "operator cancelled")
-      assert cancelled.status == "cancelled"
+      assert cancelled.status == :cancelled
 
       # …and the late result arrives still holding the PRE-cancel struct.
       # The locked re-read must keep the run final instead of letting the
       # stale writer flip cancelled → success.
       assert {:ok, _} = Runs.mark_finished(sent, %{"status" => "success"})
-      assert Runs.peek_run_by_id(run.id).status == "cancelled"
+      assert Runs.peek_run_by_id(run.id).status == :cancelled
     end
   end
 
@@ -645,14 +645,14 @@ defmodule Emisar.RunsTest do
 
       Emisar.Runs.subscribe_account_runs(account.id)
 
-      assert {:ok, %ActionRun{status: "cancelled", cancelled_at: %DateTime{}}} =
+      assert {:ok, %ActionRun{status: :cancelled, cancelled_at: %DateTime{}}} =
                Runs.cancel_run(run, subject, "user pressed stop")
 
       # Payload contract: runner is preloaded so subscribers (e.g.
       # RunDetailLive's meta strip) can render `runner.name` without
       # tripping over `%Ecto.Association.NotLoaded{}`.
       assert_receive {:run_updated,
-                      %ActionRun{status: "cancelled", runner: %Emisar.Runners.Runner{}}},
+                      %ActionRun{status: :cancelled, runner: %Emisar.Runners.Runner{}}},
                      500
     end
 
@@ -697,7 +697,7 @@ defmodule Emisar.RunsTest do
 
       stale =
         fresh
-        |> Ecto.Changeset.change(queued_at: stale_inserted_at, status: "sent")
+        |> Ecto.Changeset.change(queued_at: stale_inserted_at, status: :sent)
         |> Repo.update!()
 
       cutoff = DateTime.utc_now() |> DateTime.add(-2 * 60, :second)
@@ -715,7 +715,7 @@ defmodule Emisar.RunsTest do
       {:ok, :running, run} =
         Runs.dispatch_run(base_attrs(account.id, runner.id), subject)
 
-      assert {:ok, %ActionRun{status: "error", error_message: msg, finished_at: %DateTime{}}} =
+      assert {:ok, %ActionRun{status: :error, error_message: msg, finished_at: %DateTime{}}} =
                Runs.mark_runner_unreachable(run, "runner was disconnected")
 
       assert msg =~ "disconnected"
@@ -736,13 +736,13 @@ defmodule Emisar.RunsTest do
       stale_at = DateTime.utc_now() |> DateTime.add(-5 * 60, :second)
 
       run
-      |> Ecto.Changeset.change(queued_at: stale_at, status: "sent")
+      |> Ecto.Changeset.change(queued_at: stale_at, status: :sent)
       |> Repo.update!()
 
       assert :ok = Emisar.Workers.RunDispatchTimeout.perform(%Oban.Job{args: %{}})
 
       reloaded = Repo.get!(ActionRun, run.id)
-      assert reloaded.status == "error"
+      assert reloaded.status == :error
       assert reloaded.error_message =~ "offline"
     end
 
@@ -760,12 +760,12 @@ defmodule Emisar.RunsTest do
       stale_at = DateTime.utc_now() |> DateTime.add(-5 * 60, :second)
 
       run
-      |> Ecto.Changeset.change(queued_at: stale_at, status: "sent")
+      |> Ecto.Changeset.change(queued_at: stale_at, status: :sent)
       |> Repo.update!()
 
       assert :ok = Emisar.Workers.RunDispatchTimeout.perform(%Oban.Job{args: %{}})
 
-      assert Repo.get!(ActionRun, run.id).status == "sent"
+      assert Repo.get!(ActionRun, run.id).status == :sent
     end
   end
 end

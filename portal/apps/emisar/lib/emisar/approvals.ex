@@ -389,10 +389,9 @@ defmodule Emisar.Approvals do
   # can flash a useful message rather than double-dispatching.
   defp claim_pending(%Request{} = req, status, by_user_id, reason) do
     now = DateTime.utc_now()
-    status_str = to_string(status)
 
     {affected, _} =
-      Request.Query.decide_pending(req.id, status_str, by_user_id, reason, now)
+      Request.Query.decide_pending(req.id, status, by_user_id, reason, now)
       |> Repo.update_all([])
 
     case affected do

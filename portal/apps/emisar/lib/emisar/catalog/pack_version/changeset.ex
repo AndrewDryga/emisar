@@ -10,7 +10,6 @@ defmodule Emisar.Catalog.PackVersion.Changeset do
     %PackVersion{}
     |> cast(attrs, @insert_fields)
     |> validate_required([:account_id, :pack_id, :version, :first_seen_at, :last_seen_at])
-    |> validate_inclusion(:trust_state, ["trusted", "pending"])
     |> unique_constraint([:account_id, :pack_id, :version])
   end
 
@@ -29,7 +28,7 @@ defmodule Emisar.Catalog.PackVersion.Changeset do
     pv
     |> change(%{
       pending_hash: pending_hash,
-      trust_state: "pending",
+      trust_state: :pending,
       last_seen_at: now
     })
   end
@@ -40,7 +39,7 @@ defmodule Emisar.Catalog.PackVersion.Changeset do
     |> change(%{
       hash: pv.pending_hash,
       pending_hash: nil,
-      trust_state: "trusted",
+      trust_state: :trusted,
       pinned_at: DateTime.utc_now(),
       pinned_by_id: subject_user_id(subject)
     })
@@ -52,7 +51,7 @@ defmodule Emisar.Catalog.PackVersion.Changeset do
     pv
     |> change(%{
       pending_hash: nil,
-      trust_state: "trusted",
+      trust_state: :trusted,
       pinned_at: DateTime.utc_now(),
       pinned_by_id: subject_user_id(subject)
     })

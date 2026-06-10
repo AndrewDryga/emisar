@@ -75,7 +75,7 @@ defmodule EmisarWeb.ApprovalDecisionGateLiveTest do
         |> render_submit(%{"reason" => "ok"})
 
       assert html =~ "Approved for this call only."
-      assert reload_status(req.id) == "approved"
+      assert reload_status(req.id) == :approved
     end
 
     test "denying a pending request flips it to denied", %{conn: conn} do
@@ -90,7 +90,7 @@ defmodule EmisarWeb.ApprovalDecisionGateLiveTest do
         |> render_submit()
 
       assert html =~ "Denied."
-      assert reload_status(req.id) == "denied"
+      assert reload_status(req.id) == :denied
     end
   end
 
@@ -122,7 +122,7 @@ defmodule EmisarWeb.ApprovalDecisionGateLiveTest do
       html = render_hook(lv, "approve", %{"reason" => "let me in"})
 
       assert html =~ "Viewers can&#39;t decide approvals."
-      assert reload_status(req.id) == "pending"
+      assert reload_status(req.id) == :pending
     end
 
     test "a crafted deny event is refused — request stays pending", %{conn: conn} do
@@ -135,7 +135,7 @@ defmodule EmisarWeb.ApprovalDecisionGateLiveTest do
       html = render_hook(lv, "deny", %{"reason" => "nope"})
 
       assert html =~ "Viewers can&#39;t decide approvals."
-      assert reload_status(req.id) == "pending"
+      assert reload_status(req.id) == :pending
     end
   end
 end

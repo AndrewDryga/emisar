@@ -33,6 +33,8 @@ defmodule Emisar.Accounts.Account.Changeset do
     |> validate_format(:slug, ~r/^[a-z][a-z0-9-]{1,62}[a-z0-9]$/,
       message: "must be lowercase letters/numbers/hyphens, start with a letter, 3-64 chars"
     )
+    # Write-side guard only — reads tolerate legacy plan names (see the
+    # schema's `plan` field note); an Ecto.Enum can't express that split.
     |> validate_inclusion(:plan, @plans)
     |> unique_constraint(:slug)
   end

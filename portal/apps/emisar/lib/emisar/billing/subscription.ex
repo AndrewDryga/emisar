@@ -22,8 +22,6 @@ defmodule Emisar.Billing.Subscription do
     timestamps()
   end
 
-  def statuses, do: Emisar.Billing.Subscription.Changeset.statuses()
-
   def active?(%__MODULE__{status: status}) when status in ["trialing", "active"], do: true
   def active?(_), do: false
 end

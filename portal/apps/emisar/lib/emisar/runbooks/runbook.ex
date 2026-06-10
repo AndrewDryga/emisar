@@ -11,7 +11,7 @@ defmodule Emisar.Runbooks.Runbook do
     field :title, :string
     field :description, :string
     field :version, :integer, default: 1
-    field :status, :string, default: "draft"
+    field :status, Ecto.Enum, values: [:draft, :published], default: :draft
     field :definition, :map
     field :deleted_at, :utc_datetime_usec
 
@@ -20,6 +20,4 @@ defmodule Emisar.Runbooks.Runbook do
 
     timestamps()
   end
-
-  def statuses, do: Emisar.Runbooks.Runbook.Changeset.statuses()
 end

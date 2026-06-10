@@ -107,7 +107,7 @@ defmodule EmisarWeb.RunbooksLive do
                   </:meta>
                   <:actions>
                     <.link
-                      :if={rb.status == "published"}
+                      :if={rb.status == :published}
                       navigate={~p"/app/runbooks/#{rb.id}/run"}
                       class="rounded-lg bg-indigo-500/10 px-2.5 py-1 text-xs font-semibold text-indigo-300 ring-1 ring-indigo-500/30 hover:bg-indigo-500/20"
                     >

@@ -33,7 +33,16 @@ defmodule EmisarWeb.Mcp.Service do
   # staying robust.
   @recheck_interval_ms 2_000
 
-  @terminal_statuses ~w(success failed error validation_failed unknown_action cancelled timed_out denied)
+  @terminal_statuses [
+    :success,
+    :failed,
+    :error,
+    :validation_failed,
+    :unknown_action,
+    :cancelled,
+    :timed_out,
+    :denied
+  ]
 
   @stdout_cap 65_536
   @stderr_cap 65_536
@@ -157,7 +166,7 @@ defmodule EmisarWeb.Mcp.Service do
 
   defp published_latest_per_slug(runbooks) do
     runbooks
-    |> Enum.filter(&(&1.status == "published"))
+    |> Enum.filter(&(&1.status == :published))
     |> Enum.group_by(& &1.slug)
     |> Enum.map(fn {_slug, versions} -> Enum.max_by(versions, & &1.version) end)
   end

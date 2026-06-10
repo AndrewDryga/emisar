@@ -222,11 +222,13 @@ defmodule Emisar.BillingTest do
     test "an apply failure rolls back the dedup row so redelivery reprocesses" do
       account = account_fixture(%{paddle_customer_id: "ctm_fail_01"})
 
-      # An invalid status fails `validate_inclusion(:status)` inside the same
-      # transaction — the apply returns {:error, changeset}.
+      # A payload with no status fails `validate_required(:status)` inside
+      # the same transaction — the apply returns {:error, changeset}. (An
+      # UNKNOWN status string deliberately persists — Paddle owns the value
+      # space — so a missing field is the failure mode to exercise here.)
       bad_event =
         subscription_created_event("evt_fail", account.paddle_customer_id, nil)
-        |> put_in(["data", "status"], "not-a-real-status")
+        |> put_in(["data", "status"], nil)
 
       assert {:error, {:apply_failed, %Ecto.Changeset{}}} =
                Billing.record_and_apply_event("evt_fail", "subscription.created", bad_event)

@@ -28,7 +28,7 @@ defmodule Emisar.Runs.ActionRun do
     # instead of dispatching a fresh one. Nil when the caller didn't
     # send the header (UI / runbook paths).
     field :idempotency_key, :string
-    field :source, :string, default: "operator"
+    field :source, Ecto.Enum, values: [:operator, :runbook, :mcp, :scheduled], default: :operator
     field :reason, :string
 
     field :args, :map, default: %{}
@@ -52,7 +52,24 @@ defmodule Emisar.Runs.ActionRun do
     field :requires_approval, :boolean, default: false
     field :approval_request_id, Ecto.UUID
 
-    field :status, :string, default: "pending"
+    field :status, Ecto.Enum,
+      values: [
+        :pending,
+        :awaiting_approval,
+        :pending_approval,
+        :denied,
+        :sent,
+        :running,
+        :success,
+        :failed,
+        :error,
+        :validation_failed,
+        :unknown_action,
+        :cancelled,
+        :timed_out
+      ],
+      default: :pending
+
     field :queued_at, :utc_datetime_usec
     field :sent_at, :utc_datetime_usec
     field :started_at, :utc_datetime_usec
@@ -90,12 +107,18 @@ defmodule Emisar.Runs.ActionRun do
     timestamps()
   end
 
-  def statuses, do: Emisar.Runs.ActionRun.Changeset.statuses()
-  def sources, do: Emisar.Runs.ActionRun.Changeset.sources()
-
   @doc "Is `status` a terminal state?"
-  def terminal?(status) when is_binary(status),
-    do: status in ~w(success failed error validation_failed unknown_action cancelled timed_out)
+  def terminal?(status) when is_atom(status),
+    do:
+      status in [
+        :success,
+        :failed,
+        :error,
+        :validation_failed,
+        :unknown_action,
+        :cancelled,
+        :timed_out
+      ]
 
   def terminal?(_), do: false
 end

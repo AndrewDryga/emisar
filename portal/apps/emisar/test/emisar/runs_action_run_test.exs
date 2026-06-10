@@ -5,13 +5,21 @@ defmodule Emisar.Runs.ActionRunTest do
 
   describe "terminal?/1" do
     test "terminal statuses are terminal" do
-      for s <- ~w(success failed error validation_failed unknown_action cancelled timed_out) do
+      for s <- [
+            :success,
+            :failed,
+            :error,
+            :validation_failed,
+            :unknown_action,
+            :cancelled,
+            :timed_out
+          ] do
         assert ActionRun.terminal?(s), "expected #{s} to be terminal"
       end
     end
 
     test "in-flight statuses are not terminal" do
-      for s <- ~w(pending awaiting_approval sent running) do
+      for s <- [:pending, :awaiting_approval, :sent, :running] do
         refute ActionRun.terminal?(s), "expected #{s} to be non-terminal"
       end
     end

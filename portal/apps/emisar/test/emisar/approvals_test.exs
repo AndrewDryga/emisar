@@ -56,7 +56,7 @@ defmodule Emisar.ApprovalsTest do
       subject = operator_subject(account)
       {:ok, _} = Approvals.deny_request(req, subject, "no")
 
-      assert {:ok, [%Request{status: "denied"}], _} =
+      assert {:ok, [%Request{status: :denied}], _} =
                Approvals.list_approval_requests_for_account(subject, status: "denied")
 
       assert {:ok, [], _} =
@@ -99,7 +99,7 @@ defmodule Emisar.ApprovalsTest do
       {_account, run} = run_fixture()
       operator = user_fixture()
 
-      assert {:ok, %Request{status: "pending", run_id: run_id}} =
+      assert {:ok, %Request{status: :pending, run_id: run_id}} =
                Approvals.create_request(run, operator.id, "high-risk action")
 
       assert run_id == run.id
@@ -189,7 +189,7 @@ defmodule Emisar.ApprovalsTest do
       subject = operator_subject(account)
       {:ok, req} = Approvals.create_request(run, subject.actor.id, "needs approve")
 
-      assert {:ok, {%Request{status: "approved"}, %ActionRun{status: "sent"}}} =
+      assert {:ok, {%Request{status: :approved}, %ActionRun{status: :sent}}} =
                Approvals.approve_request(req, subject, "lgtm")
 
       assert Enum.any?(
@@ -231,7 +231,7 @@ defmodule Emisar.ApprovalsTest do
       subject = operator_subject(account)
       {:ok, req} = Approvals.create_request(run, subject.actor.id, "needs approve")
 
-      assert {:ok, {%Request{status: "denied"}, %ActionRun{status: "cancelled"}}} =
+      assert {:ok, {%Request{status: :denied}, %ActionRun{status: :cancelled}}} =
                Approvals.deny_request(req, subject, "not now")
 
       assert Enum.any?(
@@ -743,7 +743,7 @@ defmodule Emisar.ApprovalsTest do
       assert Approvals.expire_overdue_requests() == 1
 
       expired = Request.Query.all() |> Request.Query.by_id(req.id) |> Repo.fetch!(Request.Query)
-      assert expired.status == "expired"
+      assert expired.status == :expired
       assert expired.decided_at != nil
       assert expired.decision_reason =~ "expired"
 
@@ -752,7 +752,7 @@ defmodule Emisar.ApprovalsTest do
         |> Emisar.Runs.ActionRun.Query.by_id(run.id)
         |> Repo.fetch!(Emisar.Runs.ActionRun.Query)
 
-      assert reloaded_run.status == "cancelled"
+      assert reloaded_run.status == :cancelled
 
       assert Enum.any?(
                Emisar.Audit.list_events(subject, page: [limit: 50])
@@ -784,7 +784,7 @@ defmodule Emisar.ApprovalsTest do
 
       assert (Request.Query.all()
               |> Request.Query.by_id(req.id)
-              |> Repo.fetch!(Request.Query)).status == "pending"
+              |> Repo.fetch!(Request.Query)).status == :pending
     end
   end
 

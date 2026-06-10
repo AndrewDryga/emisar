@@ -9,6 +9,10 @@ defmodule Emisar.Accounts.Account do
   schema "accounts" do
     field :name, :string
     field :slug, :string
+    # Deliberately NOT Ecto.Enum: writes are constrained to the current
+    # plan list (changeset inclusion), but a stored legacy/renamed plan
+    # name must still LOAD — `Billing.plan/1` degrades it to free-tier
+    # limits, whereas an enum would raise on every fetch of the account.
     field :plan, :string, default: "free"
     field :paddle_customer_id, :string
     field :require_mfa, :boolean, default: false

@@ -44,7 +44,7 @@ defmodule Emisar.Workers.RunDispatchTimeoutTest do
     assert :ok = RunDispatchTimeout.perform(%Oban.Job{args: %{}})
 
     reloaded = Runs.peek_run_by_id(run.id)
-    assert reloaded.status == "error"
+    assert reloaded.status == :error
     assert reloaded.error_message =~ "disconnected while this run was in flight"
   end
 
@@ -54,7 +54,7 @@ defmodule Emisar.Workers.RunDispatchTimeoutTest do
 
     assert :ok = RunDispatchTimeout.perform(%Oban.Job{args: %{}})
 
-    assert Runs.peek_run_by_id(run.id).status == "running"
+    assert Runs.peek_run_by_id(run.id).status == :running
   end
 
   test "a recently-dropped runner gets reconnect grace before its runs are killed" do
@@ -64,7 +64,7 @@ defmodule Emisar.Workers.RunDispatchTimeoutTest do
 
     assert :ok = RunDispatchTimeout.perform(%Oban.Job{args: %{}})
 
-    assert Runs.peek_run_by_id(run.id).status == "running"
+    assert Runs.peek_run_by_id(run.id).status == :running
   end
 
   test "a running run whose runner row was deleted goes terminal" do
@@ -77,7 +77,7 @@ defmodule Emisar.Workers.RunDispatchTimeoutTest do
     assert :ok = RunDispatchTimeout.perform(%Oban.Job{args: %{}})
 
     reloaded = Runs.peek_run_by_id(run.id)
-    assert reloaded.status == "error"
+    assert reloaded.status == :error
     assert reloaded.error_message =~ "removed while this run was in flight"
   end
 

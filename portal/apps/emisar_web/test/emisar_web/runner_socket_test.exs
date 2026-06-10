@@ -109,7 +109,7 @@ defmodule EmisarWeb.RunnerSocketTest do
       # alone, even past the grace window — this is what regressed.
       backdate_to_stale!(run)
       assert :ok = Emisar.Workers.RunDispatchTimeout.perform(%Oban.Job{args: %{}})
-      assert Repo.get!(ActionRun, run.id).status == "sent"
+      assert Repo.get!(ActionRun, run.id).status == :sent
     end
 
     test "a run is timed out only after its runner drops off presence",
@@ -130,7 +130,7 @@ defmodule EmisarWeb.RunnerSocketTest do
       assert :ok = Emisar.Workers.RunDispatchTimeout.perform(%Oban.Job{args: %{}})
 
       timed_out = Repo.get!(ActionRun, run.id)
-      assert timed_out.status == "error"
+      assert timed_out.status == :error
       assert timed_out.error_message =~ "offline"
     end
   end
@@ -198,7 +198,7 @@ defmodule EmisarWeb.RunnerSocketTest do
       assert %{"type" => "ack_result", "request_id" => req} = decode(ack)
       assert req == run.request_id
       finalized = Repo.get!(ActionRun, run.id)
-      assert finalized.status == "success"
+      assert finalized.status == :success
       assert finalized.exit_code == 0
 
       # A SECOND copy of the same request_id is short-circuited by the dedup
@@ -209,7 +209,7 @@ defmodule EmisarWeb.RunnerSocketTest do
       assert %{"type" => "ack_result"} = decode(ack2)
 
       unchanged = Repo.get!(ActionRun, run.id)
-      assert unchanged.status == "success"
+      assert unchanged.status == :success
       assert unchanged.exit_code == 0
     end
 
@@ -240,7 +240,7 @@ defmodule EmisarWeb.RunnerSocketTest do
           "exit_code" => 0
         })
 
-      assert Repo.get!(ActionRun, run.id).status == "success"
+      assert Repo.get!(ActionRun, run.id).status == :success
 
       late = result_frame(run.request_id, "error", exit_code: 1)
       assert {:push, ack, _state} = RunnerSocket.handle_in({late, text()}, state)
@@ -248,7 +248,7 @@ defmodule EmisarWeb.RunnerSocketTest do
 
       # H1: terminal status + result fields are unchanged; no overwrite.
       final = Repo.get!(ActionRun, run.id)
-      assert final.status == "success"
+      assert final.status == :success
       assert final.exit_code == 0
     end
 
@@ -368,7 +368,7 @@ defmodule EmisarWeb.RunnerSocketTest do
 
     ActionRun
     |> Repo.get!(run.id)
-    |> Ecto.Changeset.change(queued_at: stale, status: "sent")
+    |> Ecto.Changeset.change(queued_at: stale, status: :sent)
     |> Repo.update!()
   end
 end

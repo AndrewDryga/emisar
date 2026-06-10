@@ -26,7 +26,7 @@ defmodule Emisar.Workers.ActionRunEventRetentionTest do
 
     {:ok, run} =
       run
-      |> Ecto.Changeset.change(status: "success", finished_at: finished_at)
+      |> Ecto.Changeset.change(status: :success, finished_at: finished_at)
       |> Repo.update()
 
     run

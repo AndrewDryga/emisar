@@ -572,7 +572,7 @@ defmodule EmisarWeb.RunbookEditorLive do
               <.kv label="Status"><.status_badge status={@runbook.status} /></.kv>
               <.kv label="Saving creates">v{@runbook.version + 1}</.kv>
             </dl>
-            <p :if={@runbook.status == "published"} class="mt-4 text-xs text-zinc-500 leading-relaxed">
+            <p :if={@runbook.status == :published} class="mt-4 text-xs text-zinc-500 leading-relaxed">
               Published runbooks are immutable — saving creates a new draft version.
             </p>
           </section>

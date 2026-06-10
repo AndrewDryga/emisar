@@ -229,8 +229,8 @@ defmodule Emisar.Audit do
 
   defp actor_kind(%ActionRun{requested_by_id: id}) when not is_nil(id), do: "user"
   defp actor_kind(%ActionRun{api_key_id: id}) when not is_nil(id), do: "api_key"
-  defp actor_kind(%ActionRun{source: "runbook"}), do: "runbook"
-  defp actor_kind(%ActionRun{source: "scheduled"}), do: "scheduler"
+  defp actor_kind(%ActionRun{source: :runbook}), do: "runbook"
+  defp actor_kind(%ActionRun{source: :scheduled}), do: "scheduler"
   defp actor_kind(_), do: "system"
 
   # Internal helper — `log/3` accepts both atom and string keys to match

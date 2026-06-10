@@ -169,15 +169,15 @@ defmodule Emisar.Catalog do
     {trusted_hash, pending_hash, trust_state, audit_event} =
       cond do
         is_binary(baseline) and baseline == advertised ->
-          {advertised, nil, "trusted", :pack_trust_baseline_match}
+          {advertised, nil, :trusted, :pack_trust_baseline_match}
 
         is_binary(baseline) ->
-          {baseline, advertised, "pending", :pack_trust_baseline_mismatch}
+          {baseline, advertised, :pending, :pack_trust_baseline_mismatch}
 
         true ->
           # Self-written / custom pack — never auto-trust. Dispatch
           # refuses until a human clicks Trust in /app/packs.
-          {nil, advertised, "pending", :pack_trust_review_required}
+          {nil, advertised, :pending, :pack_trust_review_required}
       end
 
     changeset =
@@ -388,7 +388,7 @@ defmodule Emisar.Catalog do
         nil ->
           {:error, :not_found}
 
-        %PackVersion{trust_state: "pending", pending_hash: hash} = pv when not is_nil(hash) ->
+        %PackVersion{trust_state: :pending, pending_hash: hash} = pv when not is_nil(hash) ->
           {:ok, pv}
 
         %PackVersion{} ->
@@ -439,8 +439,8 @@ defmodule Emisar.Catalog do
              |> PackVersion.Query.by_pack_id_and_version(action.pack_id, action.pack_version)
              |> Repo.peek() do
           nil -> :ok
-          %PackVersion{trust_state: "trusted"} -> :ok
-          %PackVersion{trust_state: "pending"} = pv -> {:error, :pack_untrusted, pv}
+          %PackVersion{trust_state: :trusted} -> :ok
+          %PackVersion{trust_state: :pending} = pv -> {:error, :pack_untrusted, pv}
         end
     end
   end
@@ -470,7 +470,7 @@ defmodule Emisar.Catalog do
              |> PackVersion.Query.by_account_id(action.account_id)
              |> PackVersion.Query.by_pack_id_and_version(action.pack_id, action.pack_version)
              |> Repo.peek() do
-          %PackVersion{trust_state: "trusted", hash: hash} -> hash
+          %PackVersion{trust_state: :trusted, hash: hash} -> hash
           _ -> nil
         end
     end

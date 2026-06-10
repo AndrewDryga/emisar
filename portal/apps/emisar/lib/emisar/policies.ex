@@ -232,9 +232,11 @@ defmodule Emisar.Policies do
     # defaults) only. The catalog-authoritative `kind` in `attrs` is the
     # anti-spoofing field carried by `Runs.evaluate_and_dispatch`; the
     # evaluator never reads it, so it isn't threaded into `match_ctx`.
+    # `risk` arrives as the catalog's Ecto.Enum atom; the stored rules
+    # key their tier defaults by string, so bridge here.
     match_ctx = %{
       "action_id" => attrs[:action_id],
-      "risk" => attrs[:risk] || "low"
+      "risk" => to_string(attrs[:risk] || "low")
     }
 
     {decision, matched, reason} = evaluate(policy, match_ctx, attrs[:args] || %{})

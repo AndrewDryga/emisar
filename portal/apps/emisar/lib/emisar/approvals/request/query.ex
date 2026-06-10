@@ -17,7 +17,7 @@ defmodule Emisar.Approvals.Request.Query do
     do: where(queryable, [requests: r], r.status == ^status)
 
   def pending(queryable \\ all()),
-    do: where(queryable, [requests: r], r.status == "pending")
+    do: where(queryable, [requests: r], r.status == :pending)
 
   def ordered_by_recent(queryable \\ all()),
     do: order_by(queryable, [requests: r], desc: r.requested_at)
@@ -37,7 +37,7 @@ defmodule Emisar.Approvals.Request.Query do
   """
   def decide_pending(id, status, by_user_id, reason, now) do
     all()
-    |> where([requests: r], r.id == ^id and r.status == "pending")
+    |> where([requests: r], r.id == ^id and r.status == :pending)
     |> update(
       set: [
         status: ^status,
@@ -55,10 +55,10 @@ defmodule Emisar.Approvals.Request.Query do
   """
   def expire_pending(id, now) do
     all()
-    |> where([requests: r], r.id == ^id and r.status == "pending")
+    |> where([requests: r], r.id == ^id and r.status == :pending)
     |> update(
       set: [
-        status: "expired",
+        status: :expired,
         decided_at: ^now,
         decision_reason: "pending approval window expired",
         updated_at: ^now

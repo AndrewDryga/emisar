@@ -220,9 +220,9 @@ defmodule EmisarWeb.RunbookRunLive do
 
   # "denied" never reaches a terminal transition but is as settled as a
   # run gets — count it alongside the terminal states.
-  defp run_settled?(status), do: Runs.ActionRun.terminal?(status) or status == "denied"
+  defp run_settled?(status), do: Runs.ActionRun.terminal?(status) or status == :denied
 
-  defp run_failed?(status), do: run_settled?(status) and status != "success"
+  defp run_failed?(status), do: run_settled?(status) and status != :success
 
   def render(assigns) do
     ~H"""

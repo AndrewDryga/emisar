@@ -10,7 +10,7 @@ defmodule Emisar.Approvals.Request do
     field :requested_at, :utc_datetime_usec
     field :reason, :string
     field :context, :map, default: %{}
-    field :status, :string, default: "pending"
+    field :status, Ecto.Enum, values: [:pending, :approved, :denied, :expired], default: :pending
     field :decided_at, :utc_datetime_usec
     field :decision_reason, :string
     field :expires_at, :utc_datetime_usec
@@ -22,6 +22,4 @@ defmodule Emisar.Approvals.Request do
 
     timestamps()
   end
-
-  def statuses, do: Emisar.Approvals.Request.Changeset.statuses()
 end
