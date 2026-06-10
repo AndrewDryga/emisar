@@ -91,8 +91,8 @@ defmodule Emisar.Runs do
       counts =
         ActionRun.Query.all()
         |> ActionRun.Query.inserted_after(cutoff)
-        |> Authorizer.for_subject(subject)
         |> ActionRun.Query.count_by_status()
+        |> Authorizer.for_subject(subject)
         |> Repo.all()
         |> Map.new()
 

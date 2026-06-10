@@ -73,8 +73,10 @@ defmodule Emisar.Repo do
   end
 
   @type after_commit :: (term() -> :ok) | (term(), Ecto.Changeset.t() -> :ok)
-  @type changeset_fun :: (term() -> Ecto.Changeset.t())
-  @type audit_fun :: (term() -> Ecto.Changeset.t() | nil)
+  @type changeset_fun :: (term() -> Ecto.Changeset.t() | term())
+  @type audit_fun ::
+          (term() -> Ecto.Changeset.t() | nil)
+          | (term(), Ecto.Changeset.t() -> Ecto.Changeset.t() | nil)
 
   @doc """
   Locks the row matched by `queryable` with `FOR NO KEY UPDATE`, runs
@@ -85,11 +87,21 @@ defmodule Emisar.Repo do
 
   Options:
 
-    * `:with` — `(schema -> changeset)` (required)
-    * `:audit` — `(schema -> Ecto.Changeset.t() | nil)` — when set,
-      the returned audit changeset is inserted in the SAME transaction
-      as the update, so the audit row is atomic with the parent
-      mutation. Return `nil` to skip audit for this call.
+    * `:with` — `(schema -> changeset | abort_reason)` (required).
+      Runs inside the transaction on the locked row, so domain guards
+      that must judge the row's CURRENT state belong here: returning
+      anything other than a changeset aborts and surfaces as
+      `{:error, that_value}`. An invariant query the guard needs (a
+      locked owner re-count) is a plain repo call — it joins this
+      transaction.
+    * `:audit` — when set, the returned audit changeset is inserted in
+      the SAME transaction as the update, so the audit row is atomic
+      with the parent mutation. Receives `(updated)` or
+      `(updated, changeset)` — `changeset.data` is the locked
+      pre-update row, for audit payloads that record before-state.
+      Return `nil` to skip audit for this call. The inserted row is
+      broadcast to the account's audit topic once committed, same as
+      `commit_multi/2`.
     * `:after_commit` — callback or list of callbacks; each receives
       `(schema)` or `(schema, changeset)` and must return `:ok`.
       Fires only after the DB transaction commits — use for broadcasts
@@ -118,8 +130,8 @@ defmodule Emisar.Repo do
             %Ecto.Changeset{} = changeset ->
               case update(changeset, mode: :savepoint) do
                 {:ok, updated} = ok ->
-                  case maybe_insert_audit(audit_fun, updated) do
-                    :ok -> {ok, changeset}
+                  case maybe_insert_audit(audit_fun, updated, changeset) do
+                    {:ok, audit_event} -> {ok, changeset, audit_event}
                     {:error, reason} -> rollback({:audit_failed, reason})
                   end
 
@@ -136,7 +148,8 @@ defmodule Emisar.Repo do
       end
       |> transaction(repo_opts)
       |> case do
-        {:ok, {{:ok, schema}, changeset}} ->
+        {:ok, {{:ok, schema}, changeset, audit_event}} ->
+          :ok = fan_out_audit_events(%{audit: audit_event})
           :ok = execute_after_commit(schema, changeset, after_commit)
           {schema, ecto_preloads} = Preloader.preload(schema, preload, query_module)
           {:ok, __MODULE__.preload(schema, ecto_preloads)}
@@ -153,18 +166,18 @@ defmodule Emisar.Repo do
     end
   end
 
-  defp maybe_insert_audit(nil, _schema), do: :ok
+  defp maybe_insert_audit(nil, _schema, _changeset), do: {:ok, nil}
 
-  defp maybe_insert_audit(audit_fun, schema) when is_function(audit_fun, 1) do
-    case audit_fun.(schema) do
-      nil ->
-        :ok
+  defp maybe_insert_audit(audit_fun, schema, changeset) do
+    built =
+      cond do
+        is_function(audit_fun, 1) -> audit_fun.(schema)
+        is_function(audit_fun, 2) -> audit_fun.(schema, changeset)
+      end
 
-      %Ecto.Changeset{} = audit_cs ->
-        case insert(audit_cs, mode: :savepoint) do
-          {:ok, _} -> :ok
-          {:error, reason} -> {:error, reason}
-        end
+    case built do
+      nil -> {:ok, nil}
+      %Ecto.Changeset{} = audit_changeset -> insert(audit_changeset, mode: :savepoint)
     end
   end
 

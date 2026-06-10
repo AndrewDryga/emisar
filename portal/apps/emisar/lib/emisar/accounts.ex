@@ -101,25 +101,30 @@ defmodule Emisar.Accounts do
   everything else as `account.updated`.
   """
   def update_account(%Account{} = account, attrs, %Subject{} = subject) do
-    changeset = Account.Changeset.update(account, attrs)
-
-    with :ok <- ensure_account_changes_permitted(changeset, subject),
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.manage_own_account_permission()
+           ),
          :ok <- ensure_subject_owns_account(subject, account) do
-      Multi.new()
-      # Deliberately updates the caller's changeset rather than a locked
-      # re-read: the diff writes exactly the fields the field-aware
-      # permission check above authorized. A locked re-read could apply a
-      # `require_mfa` flip that was never permission-checked when the
-      # stale copy and the row disagree.
-      |> Multi.update(:account, changeset)
-      |> Multi.insert(:audit, fn %{account: updated} ->
-        account_update_audit(updated, changeset, subject)
-      end)
-      |> Repo.commit_multi()
-      |> case do
-        {:ok, %{account: updated}} -> {:ok, updated}
-        {:error, reason} -> {:error, reason}
-      end
+      Account.Query.not_deleted()
+      |> Account.Query.by_id(account.id)
+      |> Authorizer.for_subject(subject)
+      |> Repo.fetch_and_update(Account.Query,
+        with: fn fresh ->
+          # The owner-only escalation is judged on the FRESH diff under
+          # the row lock, so the gate covers exactly what gets written —
+          # a stale-struct diff could smuggle a `require_mfa` flip past
+          # it when the caller's copy and the row disagree.
+          changeset = Account.Changeset.update(fresh, attrs)
+
+          case ensure_security_change_permitted(changeset, subject) do
+            :ok -> changeset
+            {:error, reason} -> reason
+          end
+        end,
+        audit: fn updated, changeset -> account_update_audit(updated, changeset, subject) end
+      )
     end
   end
 
@@ -128,22 +133,17 @@ defmodule Emisar.Accounts do
   end
 
   # Field-aware authorization: a security-setting change requires the
-  # owner-only permission on top of manage_own_account; a plain
-  # rename/rebrand only needs manage_own_account.
-  defp ensure_account_changes_permitted(%Ecto.Changeset{} = changeset, %Subject{} = subject) do
-    required =
-      if Map.has_key?(changeset.changes, :require_mfa) do
-        [
-          Authorizer.manage_own_account_permission(),
-          Authorizer.manage_security_settings_permission()
-        ]
-      else
-        [
-          Authorizer.manage_own_account_permission()
-        ]
-      end
-
-    Auth.Authorizer.ensure_has_permissions(subject, required)
+  # owner-only permission on top of the manage_own_account gate already
+  # checked at the entry; a plain rename/rebrand needs nothing more.
+  defp ensure_security_change_permitted(%Ecto.Changeset{} = changeset, %Subject{} = subject) do
+    if Map.has_key?(changeset.changes, :require_mfa) do
+      Auth.Authorizer.ensure_has_permissions(
+        subject,
+        Authorizer.manage_security_settings_permission()
+      )
+    else
+      :ok
+    end
   end
 
   # A require_mfa change is a security event; everything else is a plain
@@ -208,9 +208,9 @@ defmodule Emisar.Accounts do
          :ok <- Subject.ensure_in_account(subject, account_id, :unauthorized) do
       Membership.Query.not_deleted()
       |> Membership.Query.by_account_id(account_id)
-      |> Authorizer.for_subject(subject)
       |> Membership.Query.with_preloaded_account()
       |> Membership.Query.with_preloaded_user()
+      |> Authorizer.for_subject(subject)
       |> Repo.list(Membership.Query, opts)
     end
   end
@@ -306,35 +306,31 @@ defmodule Emisar.Accounts do
            Auth.Authorizer.ensure_has_permissions(subject, Authorizer.manage_team_permission()),
          :ok <- ensure_subject_in_account(subject, membership.account_id),
          {:ok, new_role} <- cast_new_role(membership, new_role) do
-      Multi.new()
-      |> Multi.run(:target, fn repo, _changes ->
-        # The hierarchy guards must judge the target's CURRENT role —
-        # the caller's struct is a stale socket snapshot, and a
-        # concurrent promotion must not let a stale-admin demote a
-        # freshly-promoted owner.
-        with {:ok, fresh} <- lock_membership(repo, membership),
-             :ok <- ensure_role_change_allowed(fresh, new_role, subject) do
-          {:ok, fresh}
+      Membership.Query.not_deleted()
+      |> Membership.Query.by_id(membership.id)
+      |> Authorizer.for_subject(subject)
+      |> Repo.fetch_and_update(Membership.Query,
+        with: fn fresh ->
+          # The hierarchy guards judge the row's CURRENT role under the
+          # lock — the caller's struct is a stale socket snapshot, and a
+          # concurrent promotion must not let a stale-admin demote a
+          # freshly-promoted owner.
+          with :ok <- ensure_role_change_allowed(fresh, new_role, subject),
+               :ok <- ensure_demotion_keeps_an_owner(fresh, new_role) do
+            Membership.Changeset.update(fresh, %{role: new_role})
+          else
+            {:error, reason} -> reason
+          end
+        end,
+        # `changeset.data` is the locked pre-update row — the audit
+        # payload records the role that was actually replaced.
+        audit: fn _updated, changeset ->
+          Audit.Events.membership_role_changed(subject, changeset.data, new_role)
+        end,
+        after_commit: fn updated ->
+          broadcast_team_change(updated, "membership.role_changed")
         end
-      end)
-      |> Multi.run(:last_owner_guard, fn repo, %{target: fresh} ->
-        if fresh.role == :owner and new_role != :owner do
-          ensure_not_last_active_owner(repo, fresh)
-        else
-          {:ok, :not_a_demotion}
-        end
-      end)
-      |> Multi.run(:membership, fn repo, %{target: fresh} ->
-        repo.update(Membership.Changeset.update(fresh, %{role: new_role}))
-      end)
-      |> Multi.insert(:audit, fn %{target: fresh} ->
-        Audit.Events.membership_role_changed(subject, fresh, new_role)
-      end)
-      |> Repo.commit_multi(after_commit: &broadcast_team_change(&1, "membership.role_changed"))
-      |> case do
-        {:ok, %{membership: membership}} -> {:ok, membership}
-        {:error, reason} -> {:error, reason}
-      end
+      )
     end
   end
 
@@ -344,7 +340,7 @@ defmodule Emisar.Accounts do
 
   defp account_team_topic(account_id), do: "account:#{account_id}:team"
 
-  defp broadcast_team_change(%{membership: membership}, event_type) do
+  defp broadcast_team_change(%Membership{} = membership, event_type) do
     Emisar.PubSub.broadcast(
       account_team_topic(membership.account_id),
       {:list_changed, :team, event_type, membership.user_id}
@@ -355,8 +351,8 @@ defmodule Emisar.Accounts do
 
   # The last-owner invariant is NOT checked here — a pre-transaction
   # count races a concurrent demotion (two operators demoting the two
-  # last owners both pass `count > 1`); `ensure_not_last_active_owner/2`
-  # re-checks under the row lock inside each mutation's Multi.
+  # last owners both pass `count > 1`); `ensure_not_last_active_owner/1`
+  # re-checks under the row lock inside each mutation's transaction.
   defp ensure_role_change_allowed(%Membership{} = membership, new_role, %Subject{} = subject) do
     cond do
       # Can't grant a role whose permissions you don't already hold (no
@@ -377,7 +373,8 @@ defmodule Emisar.Accounts do
 
   # The changeset's Ecto.Enum cast turns the submitted role name into its
   # atom, or rejects an unknown one — no hand-rolled role coercion. The
-  # write itself rebuilds the changeset on the locked row inside the Multi.
+  # write itself rebuilds the changeset on the locked row inside
+  # `fetch_and_update`'s `:with`.
   defp cast_new_role(%Membership{} = membership, new_role) do
     changeset = Membership.Changeset.update(membership, %{role: new_role})
 
@@ -388,11 +385,22 @@ defmodule Emisar.Accounts do
     end
   end
 
-  # Locked re-read of the mutation's target membership. The caller's
-  # struct is a stale socket snapshot: the hierarchy guards must judge
-  # the row's CURRENT role, or a concurrent promotion lets a stale-admin
-  # demote/suspend/remove a freshly-promoted owner. Runs inside the
-  # mutation's Multi; `nil` means the member vanished mid-flight.
+  # Locked-target prefix for the membership mutations that go on to
+  # write OTHER rows (the member's user record, their session tokens):
+  # one `:target` step that re-reads the membership under the row lock
+  # and runs the hierarchy guard against the fresh copy — the caller's
+  # struct is a stale socket snapshot. Mutations that write the
+  # membership row itself use `Repo.fetch_and_update/3` instead.
+  defp lock_target_membership(multi, %Membership{} = membership, guard) do
+    Multi.run(multi, :target, fn repo, _changes ->
+      with {:ok, fresh} <- lock_membership(repo, membership),
+           :ok <- guard.(fresh) do
+        {:ok, fresh}
+      end
+    end)
+  end
+
+  # `nil` means the member vanished mid-flight.
   defp lock_membership(repo, %Membership{} = membership) do
     fresh =
       Membership.Query.not_deleted()
@@ -404,22 +412,32 @@ defmodule Emisar.Accounts do
   end
 
   # Refuses to take the account's last ACTIVE owner out of play. Runs
-  # inside the caller's Multi: it locks the account's active owner rows
-  # (`FOR NO KEY UPDATE`), so two concurrent demote/suspend/remove calls
-  # serialize and the loser re-counts the winner's committed state —
-  # the pre-transaction `count_owners` check this replaces was a TOCTOU
-  # that could leave the account ownerless.
-  defp ensure_not_last_active_owner(repo, %Membership{} = membership) do
+  # inside the caller's transaction (a plain `Repo` call joins it): it
+  # locks the account's active owner rows (`FOR NO KEY UPDATE`), so two
+  # concurrent demote/suspend/remove calls serialize and the loser
+  # re-counts the winner's committed state — a pre-transaction count is
+  # a TOCTOU that could leave the account ownerless.
+  defp ensure_not_last_active_owner(%Membership{role: :owner} = membership) do
     owners =
       Membership.Query.not_deleted()
       |> Membership.Query.by_account_id(membership.account_id)
       |> Membership.Query.by_role(:owner)
       |> Membership.Query.not_disabled()
       |> Membership.Query.lock_for_update()
-      |> repo.all()
+      |> Repo.all()
 
-    if length(owners) > 1, do: {:ok, :guarded}, else: {:error, :last_owner}
+    if length(owners) > 1, do: :ok, else: {:error, :last_owner}
   end
+
+  # A non-owner leaving play never threatens owner coverage.
+  defp ensure_not_last_active_owner(%Membership{}), do: :ok
+
+  # A role change only threatens owner coverage when it demotes an owner.
+  defp ensure_demotion_keeps_an_owner(%Membership{role: :owner} = membership, new_role)
+       when new_role != :owner,
+       do: ensure_not_last_active_owner(membership)
+
+  defp ensure_demotion_keeps_an_owner(%Membership{}, _new_role), do: :ok
 
   @doc """
   Suspend a member's access to this account. The membership row stays
@@ -439,41 +457,31 @@ defmodule Emisar.Accounts do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(subject, Authorizer.manage_team_permission()),
          :ok <- ensure_subject_in_account(subject, membership.account_id) do
-      Multi.new()
-      |> Multi.run(:target, fn repo, _changes ->
-        with {:ok, fresh} <- lock_membership(repo, membership),
-             :ok <- ensure_can_modify_membership(fresh, subject) do
-          {:ok, fresh}
-        end
-      end)
-      |> Multi.run(:last_owner_guard, fn repo, %{target: fresh} ->
-        if fresh.role == :owner do
-          ensure_not_last_active_owner(repo, fresh)
-        else
-          {:ok, :not_an_owner}
-        end
-      end)
-      |> Multi.run(:membership, fn repo, %{target: fresh} ->
-        repo.update(Membership.Changeset.suspend(fresh))
-      end)
-      |> Multi.insert(:audit, fn %{target: fresh} ->
-        Audit.Events.membership_suspended(subject, fresh)
-      end)
-      |> Repo.commit_multi(
+      Membership.Query.not_deleted()
+      |> Membership.Query.by_id(membership.id)
+      |> Authorizer.for_subject(subject)
+      |> Repo.fetch_and_update(Membership.Query,
+        with: fn fresh ->
+          # The guards judge the row's CURRENT role under the lock — the
+          # caller's struct is a stale socket snapshot.
+          with :ok <- ensure_can_modify_membership(fresh, subject),
+               :ok <- ensure_not_last_active_owner(fresh) do
+            Membership.Changeset.suspend(fresh)
+          else
+            {:error, reason} -> reason
+          end
+        end,
+        audit: fn suspended -> Audit.Events.membership_suspended(subject, suspended) end,
         after_commit: [
           # Broadcast first so the team-page LV refreshes the row before
           # we kill the user's sessions — keeps the visual ordering sane.
-          &broadcast_team_change(&1, "membership.suspended"),
+          fn suspended -> broadcast_team_change(suspended, "membership.suspended") end,
           # Session kill is a side effect — broadcast PubSub disconnects
           # only after the suspension actually commits. Otherwise a rolled-
           # back update would still kick the user out of every tab.
-          fn _ -> disconnect_user_sessions(membership) end
+          fn suspended -> disconnect_user_sessions(suspended) end
         ]
       )
-      |> case do
-        {:ok, %{membership: membership}} -> {:ok, membership}
-        {:error, reason} -> {:error, reason}
-      end
     end
   end
 
@@ -499,24 +507,23 @@ defmodule Emisar.Accounts do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(subject, Authorizer.manage_team_permission()),
          :ok <- ensure_subject_in_account(subject, membership.account_id) do
-      Multi.new()
-      |> Multi.run(:target, fn repo, _changes ->
-        with {:ok, fresh} <- lock_membership(repo, membership),
-             :ok <- ensure_can_modify_membership(fresh, subject) do
-          {:ok, fresh}
+      Membership.Query.not_deleted()
+      |> Membership.Query.by_id(membership.id)
+      |> Authorizer.for_subject(subject)
+      |> Repo.fetch_and_update(Membership.Query,
+        with: fn fresh ->
+          # The guard judges the row's CURRENT role under the lock — the
+          # caller's struct is a stale socket snapshot.
+          case ensure_can_modify_membership(fresh, subject) do
+            :ok -> Membership.Changeset.reinstate(fresh)
+            {:error, reason} -> reason
+          end
+        end,
+        audit: fn reinstated -> Audit.Events.membership_reinstated(subject, reinstated) end,
+        after_commit: fn reinstated ->
+          broadcast_team_change(reinstated, "membership.reinstated")
         end
-      end)
-      |> Multi.run(:membership, fn repo, %{target: fresh} ->
-        repo.update(Membership.Changeset.reinstate(fresh))
-      end)
-      |> Multi.insert(:audit, fn %{target: fresh} ->
-        Audit.Events.membership_reinstated(subject, fresh)
-      end)
-      |> Repo.commit_multi(after_commit: &broadcast_team_change(&1, "membership.reinstated"))
-      |> case do
-        {:ok, %{membership: membership}} -> {:ok, membership}
-        {:error, reason} -> {:error, reason}
-      end
+      )
     end
   end
 
@@ -547,12 +554,7 @@ defmodule Emisar.Accounts do
       # who triggered it. The `user.password_reset_forced` event below is
       # the canonical record with the correct actor → subject pair.
       Multi.new()
-      |> Multi.run(:target, fn repo, _changes ->
-        with {:ok, fresh} <- lock_membership(repo, membership),
-             :ok <- ensure_can_modify_membership(fresh, subject) do
-          {:ok, fresh}
-        end
-      end)
+      |> lock_target_membership(membership, &ensure_can_modify_membership(&1, subject))
       |> Multi.run(:user, fn _repo, %{target: fresh} ->
         Users.clear_user_password(fresh.user_id,
           audit: fn updated ->
@@ -603,12 +605,7 @@ defmodule Emisar.Accounts do
       # membership guard re-reads under its own lock in the same
       # transaction so the hierarchy is judged on the CURRENT role.
       Multi.new()
-      |> Multi.run(:target, fn repo, _changes ->
-        with {:ok, fresh} <- lock_membership(repo, membership),
-             :ok <- ensure_can_modify_membership(fresh, subject) do
-          {:ok, fresh}
-        end
-      end)
+      |> lock_target_membership(membership, &ensure_can_modify_membership(&1, subject))
       |> Multi.run(:user, fn _repo, %{target: fresh} ->
         Users.update_user_profile_as_admin(fresh.user_id, attrs,
           audit: fn updated ->
@@ -632,8 +629,7 @@ defmodule Emisar.Accounts do
   def end_all_sessions_for(%Membership{} = membership, %Subject{} = subject) do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(subject, Authorizer.manage_team_permission()),
-         :ok <- ensure_subject_in_account(subject, membership.account_id),
-         :ok <- ensure_can_modify_membership(membership, subject) do
+         :ok <- ensure_subject_in_account(subject, membership.account_id) do
       # The DB-side delete of session tokens is the source of truth — bundle
       # it with the audit row so we never end up with "tokens deleted but no
       # audit" or vice versa. The user read lives INSIDE the transaction so
@@ -641,12 +637,7 @@ defmodule Emisar.Accounts do
       # internals stay private to it). The PubSub disconnect broadcast is a
       # side effect that fires only after the rows commit.
       Multi.new()
-      |> Multi.run(:target, fn repo, _changes ->
-        with {:ok, fresh} <- lock_membership(repo, membership),
-             :ok <- ensure_can_modify_membership(fresh, subject) do
-          {:ok, fresh}
-        end
-      end)
+      |> lock_target_membership(membership, &ensure_can_modify_membership(&1, subject))
       |> Multi.run(:user, fn _repo, %{target: fresh} ->
         Users.fetch_user_by_id(fresh.user_id)
       end)
@@ -708,31 +699,23 @@ defmodule Emisar.Accounts do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(subject, Authorizer.manage_team_permission()),
          :ok <- ensure_subject_in_account(subject, membership.account_id) do
-      Multi.new()
-      |> Multi.run(:target, fn repo, _changes ->
-        with {:ok, fresh} <- lock_membership(repo, membership),
-             :ok <- ensure_delete_membership_allowed(fresh, subject) do
-          {:ok, fresh}
-        end
-      end)
-      |> Multi.run(:last_owner_guard, fn repo, %{target: fresh} ->
-        if fresh.role == :owner do
-          ensure_not_last_active_owner(repo, fresh)
-        else
-          {:ok, :not_an_owner}
-        end
-      end)
-      |> Multi.run(:membership, fn repo, %{target: fresh} ->
-        repo.update(Membership.Changeset.delete(fresh))
-      end)
-      |> Multi.insert(:audit, fn %{target: fresh} ->
-        Audit.Events.membership_removed(subject, fresh)
-      end)
-      |> Repo.commit_multi(after_commit: &broadcast_team_change(&1, "membership.removed"))
-      |> case do
-        {:ok, %{membership: deleted}} -> {:ok, deleted}
-        {:error, reason} -> {:error, reason}
-      end
+      Membership.Query.not_deleted()
+      |> Membership.Query.by_id(membership.id)
+      |> Authorizer.for_subject(subject)
+      |> Repo.fetch_and_update(Membership.Query,
+        with: fn fresh ->
+          # The guards judge the row's CURRENT role under the lock — the
+          # caller's struct is a stale socket snapshot.
+          with :ok <- ensure_delete_membership_allowed(fresh, subject),
+               :ok <- ensure_not_last_active_owner(fresh) do
+            Membership.Changeset.delete(fresh)
+          else
+            {:error, reason} -> reason
+          end
+        end,
+        audit: fn deleted -> Audit.Events.membership_removed(subject, deleted) end,
+        after_commit: fn deleted -> broadcast_team_change(deleted, "membership.removed") end
+      )
     end
   end
 

@@ -318,11 +318,11 @@ defmodule Emisar.Audit do
 
       events =
         Event.Query.all()
-        |> Authorizer.for_subject(subject)
         |> apply_export_cursor(opts)
         |> Event.Query.by_event_types(types)
         |> Event.Query.ordered_for_export()
         |> Event.Query.limit_to(limit)
+        |> Authorizer.for_subject(subject)
         |> Repo.all()
 
       {:ok, events}

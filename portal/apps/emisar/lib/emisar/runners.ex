@@ -160,8 +160,8 @@ defmodule Emisar.Runners do
            ) do
       rows =
         Runner.Query.not_deleted()
-        |> Authorizer.for_subject(subject)
         |> Runner.Query.group_summary()
+        |> Authorizer.for_subject(subject)
         |> Repo.all()
 
       {:ok, rows}

@@ -380,8 +380,8 @@ defmodule Emisar.Catalog do
       pack_version =
         PackVersion.Query.all()
         |> PackVersion.Query.by_id(pack_version_id)
-        |> Authorizer.for_subject(subject)
         |> PackVersion.Query.lock_for_update()
+        |> Authorizer.for_subject(subject)
         |> repo.one()
 
       case pack_version do
