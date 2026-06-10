@@ -22,7 +22,7 @@ defmodule EmisarWeb.McpRpcControllerTest do
         password: "very-long-password-1234"
       })
 
-    {:ok, user} = Accounts.confirm_user(user)
+    user = Emisar.Fixtures.confirm_user(user)
 
     {:ok, account} =
       Accounts.create_account_with_owner(

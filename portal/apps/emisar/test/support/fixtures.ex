@@ -9,7 +9,7 @@ defmodule Emisar.Fixtures do
   """
 
   alias Emisar.{Accounts, Runners, ApiKeys, Policies, Repo}
-  alias Emisar.Accounts.{Membership, User}
+  alias Emisar.Accounts.{Account, Membership, User}
   alias Emisar.Auth.Subject
   alias Emisar.Runners.Runner
 
@@ -90,12 +90,13 @@ defmodule Emisar.Fixtures do
       |> User.Changeset.registration(cast_attrs)
       |> Repo.insert()
 
-    if confirmed? do
-      {:ok, user} = Accounts.confirm_user(user)
-      user
-    else
-      user
-    end
+    if confirmed?, do: confirm_user(user), else: user
+  end
+
+  @doc "Marks a user's email confirmed, bypassing the token flow. Test/seed convenience."
+  def confirm_user(%User{} = user) do
+    {:ok, user} = user |> User.Changeset.confirm() |> Repo.update()
+    user
   end
 
   # -- Account ----------------------------------------------------------
@@ -108,7 +109,12 @@ defmodule Emisar.Fixtures do
       plan: "free"
     }
 
-    {:ok, account} = Accounts.create_account(Map.merge(base, Map.new(attrs)))
+    {:ok, account} =
+      base
+      |> Map.merge(Map.new(attrs))
+      |> Account.Changeset.create()
+      |> Repo.insert()
+
     account
   end
 
@@ -243,7 +249,7 @@ defmodule Emisar.Fixtures do
       |> Map.take([:description, :group, :reusable, :max_uses, :expires_at])
 
     account = Emisar.Accounts.fetch_account_by_id!(account_id)
-    user = Emisar.Accounts.fetch_user_by_id!(user_id)
+    {:ok, user} = Accounts.fetch_user_by_id(user_id)
     subject = subject_for(user, account, role: :owner)
     {:ok, raw, key} = Runners.create_auth_key(create_attrs, subject)
     {raw, key}
@@ -269,7 +275,7 @@ defmodule Emisar.Fixtures do
       }
 
     account = Emisar.Accounts.fetch_account_by_id!(account_id)
-    user = Emisar.Accounts.fetch_user_by_id!(user_id)
+    {:ok, user} = Accounts.fetch_user_by_id(user_id)
     subject = subject_for(user, account, role: :owner)
     {:ok, raw, key} = ApiKeys.create_key(create_attrs, subject)
     {raw, key}

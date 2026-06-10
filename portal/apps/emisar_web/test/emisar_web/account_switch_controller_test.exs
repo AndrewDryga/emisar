@@ -58,7 +58,7 @@ defmodule EmisarWeb.AccountSwitchControllerTest do
           password: "very-long-password-1234"
         })
 
-      {:ok, other_user} = Accounts.confirm_user(other_user)
+      other_user = Emisar.Fixtures.confirm_user(other_user)
       foreign = second_account_for(other_user)
 
       conn = post(conn, ~p"/app/accounts/switch", account_id: foreign.id)

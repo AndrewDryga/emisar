@@ -55,7 +55,7 @@ user =
           password: "Sleep-tight-1234"
         })
 
-      {:ok, u} = Accounts.confirm_user(u)
+      {:ok, u} = u |> User.Changeset.confirm() |> Repo.update()
       u
 
     {:ok, %User{full_name: nil} = u} ->
@@ -115,7 +115,7 @@ invite_member = fn email, full_name, role ->
         Accounts.invite_user_to_account(email, role, owner_subject)
 
       {:ok, _u} = Accounts.update_user_profile(%{full_name: full_name}, %Subject{actor: invited})
-      {:ok, confirmed} = Accounts.confirm_user(invited)
+      {:ok, confirmed} = invited |> User.Changeset.confirm() |> Repo.update()
       {:ok, _m} = Accounts.mark_invitation_accepted(m, invited)
       confirmed
   end

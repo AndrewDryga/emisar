@@ -33,7 +33,7 @@ defmodule EmisarWeb.AuthFlowTest do
           password: "very-long-password-1234"
         })
 
-      {:ok, _user} = Emisar.Accounts.confirm_user(user)
+      Emisar.Fixtures.confirm_user(user)
       :ok
     end
 
@@ -74,7 +74,7 @@ defmodule EmisarWeb.AuthFlowTest do
           password: "long-mfa-password-123"
         })
 
-      {:ok, user} = Emisar.Accounts.confirm_user(user)
+      user = Emisar.Fixtures.confirm_user(user)
 
       # The user needs a membership for the `user.signed_in` audit
       # broadcast (and the post-sign-in redirect) to find an account.

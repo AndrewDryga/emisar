@@ -7,7 +7,7 @@ defmodule EmisarWeb.AuditLiveTest do
   """
   use EmisarWeb.ConnCase, async: true
 
-  alias Emisar.{Accounts, Audit, Repo}
+  alias Emisar.{Audit, Repo}
   alias Emisar.Runners.Runner
 
   describe "GET /app/audit" do
@@ -183,12 +183,7 @@ defmodule EmisarWeb.AuditLiveTest do
       {conn, _user, _account} = register_and_log_in(conn)
 
       # Brand-new account the logged-in user has no membership in.
-      {:ok, other} =
-        Accounts.create_account(%{
-          name: "Other",
-          slug: "other-#{System.unique_integer([:positive])}",
-          plan: "free"
-        })
+      other = Emisar.Fixtures.account_fixture()
 
       {:ok, event} = Audit.log(other.id, "secret.event", actor_kind: "system")
 

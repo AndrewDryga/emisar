@@ -63,11 +63,6 @@ defmodule Emisar.Accounts do
     |> Repo.list(Account.Query, opts)
   end
 
-  def create_account(attrs) do
-    Account.Changeset.create(attrs)
-    |> Repo.insert()
-  end
-
   @doc """
   Creates an account with the given user as `:owner`. Wrapped in a
   transaction so a half-created account is impossible. Audit-logs both
@@ -799,12 +794,6 @@ defmodule Emisar.Accounts do
     end
   end
 
-  def fetch_user_by_id!(id) do
-    User.Query.not_deleted()
-    |> User.Query.by_id(id)
-    |> Repo.fetch!(User.Query)
-  end
-
   def fetch_user_by_email(email) when is_binary(email) do
     User.Query.not_deleted()
     |> User.Query.by_email(email)
@@ -942,10 +931,6 @@ defmodule Emisar.Accounts do
 
   defp ensure_password_length(p) when byte_size(p) >= @password_min_length, do: :ok
   defp ensure_password_length(_), do: {:error, :password_too_short}
-
-  def confirm_user(%User{} = user) do
-    user |> User.Changeset.confirm() |> Repo.update()
-  end
 
   def record_sign_in(%User{} = user) do
     user |> User.Changeset.sign_in() |> Repo.update()

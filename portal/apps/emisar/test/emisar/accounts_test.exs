@@ -220,7 +220,7 @@ defmodule Emisar.AccountsTest do
 
       # User row is untouched: same hashed_password (nil for a placeholder
       # user), same email.
-      reloaded = Accounts.fetch_user_by_id!(user.id)
+      {:ok, reloaded} = Accounts.fetch_user_by_id(user.id)
       assert reloaded.email == user.email
       assert reloaded.hashed_password == user.hashed_password
     end

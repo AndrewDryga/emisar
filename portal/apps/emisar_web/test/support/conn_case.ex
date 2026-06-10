@@ -63,7 +63,7 @@ defmodule EmisarWeb.ConnCase do
       )
 
     {:ok, user} = Emisar.Accounts.register_user(user_attrs)
-    {:ok, user} = Emisar.Accounts.confirm_user(user)
+    user = Emisar.Fixtures.confirm_user(user)
 
     {:ok, account} =
       Emisar.Accounts.create_account_with_owner(
