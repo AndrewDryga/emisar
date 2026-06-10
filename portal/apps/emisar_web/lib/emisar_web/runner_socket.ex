@@ -66,16 +66,7 @@ defmodule EmisarWeb.RunnerSocket do
     # source of truth for "connected now"; it clears automatically when
     # this process dies. Catalog observation stays a separate concern.
     Runners.connect_runner(runner)
-
-    Audit.log(runner.account_id, "runner.connected",
-      actor_kind: "runner",
-      actor_id: runner.id,
-      actor_label: runner.name,
-      subject_kind: "runner",
-      subject_id: runner.id,
-      subject_label: runner.name,
-      payload: %{token_id: token.id}
-    )
+    Runners.audit_runner_connected(runner, token.id)
 
     {:ok, state}
   end
@@ -143,14 +134,7 @@ defmodule EmisarWeb.RunnerSocket do
   @impl true
   def terminate(reason, state) do
     Runners.mark_disconnected(state.runner_id, format_reason(reason))
-
-    Audit.log(state.account_id, "runner.disconnected",
-      actor_kind: "runner",
-      actor_id: state.runner_id,
-      subject_kind: "runner",
-      subject_id: state.runner_id,
-      payload: %{reason: format_reason(reason)}
-    )
+    Runners.audit_runner_disconnected(state.account_id, state.runner_id, format_reason(reason))
 
     :ok
   end
@@ -251,17 +235,11 @@ defmodule EmisarWeb.RunnerSocket do
   end
 
   defp handle_envelope("error", msg, state) do
-    Audit.log(state.account_id, "runner.error",
-      actor_kind: "runner",
-      actor_id: state.runner_id,
-      subject_kind: "runner",
-      subject_id: state.runner_id,
-      payload: %{
-        code: msg["code"],
-        message: msg["message"],
-        request_id: msg["request_id"]
-      }
-    )
+    Runners.audit_runner_error(state.account_id, state.runner_id, %{
+      code: msg["code"],
+      message: msg["message"],
+      request_id: msg["request_id"]
+    })
 
     {:ok, state}
   end

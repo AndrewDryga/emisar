@@ -189,6 +189,30 @@ defmodule Emisar.Runners do
     end
   end
 
+  @doc """
+  Internal — the Runs dispatch gate: true when the runner exists in
+  `account_id` and is neither soft-deleted nor disabled (a disabled
+  runner must refuse new dispatches).
+  """
+  def runner_active_in_account?(runner_id, account_id) do
+    Runner.Query.not_deleted()
+    |> Runner.Query.not_disabled()
+    |> Runner.Query.by_id(runner_id)
+    |> Runner.Query.by_account_id(account_id)
+    |> Repo.exists?()
+  end
+
+  @doc """
+  Internal — Billing seat counting: active (not deleted, not disabled)
+  runners in the account. Disabled runners don't occupy a plan slot.
+  """
+  def count_billable_runners(account_id) do
+    Runner.Query.not_deleted()
+    |> Runner.Query.not_disabled()
+    |> Runner.Query.by_account_id(account_id)
+    |> Repo.aggregate(:count, :id)
+  end
+
   @doc "Internal lookup by id only — used by socket-driven state updates."
   def peek_runner_by_id(id) do
     if Repo.valid_uuid?(id) do
@@ -382,6 +406,47 @@ defmodule Emisar.Runners do
           last_heartbeat_at: System.system_time(:second)
       }
     end)
+  end
+
+  # Connection-lifecycle audit rows. The runner socket calls these (audit
+  # is a domain concern — the web layer never assembles audit rows); they
+  # run in the socket process, so the request metadata it stashed in the
+  # process dictionary rides along. Fire-and-forget Audit.log/3 — there is
+  # no Multi to join (presence/PubSub aren't transactional).
+
+  @doc "Internal — runner socket: audit the WebSocket connect."
+  def audit_runner_connected(%Runner{} = runner, token_id) do
+    Audit.log(runner.account_id, "runner.connected",
+      actor_kind: "runner",
+      actor_id: runner.id,
+      actor_label: runner.name,
+      subject_kind: "runner",
+      subject_id: runner.id,
+      subject_label: runner.name,
+      payload: %{token_id: token_id}
+    )
+  end
+
+  @doc "Internal — runner socket: audit the WebSocket close."
+  def audit_runner_disconnected(account_id, runner_id, reason) do
+    Audit.log(account_id, "runner.disconnected",
+      actor_kind: "runner",
+      actor_id: runner_id,
+      subject_kind: "runner",
+      subject_id: runner_id,
+      payload: %{reason: reason}
+    )
+  end
+
+  @doc "Internal — runner socket: audit an error envelope reported by the runner."
+  def audit_runner_error(account_id, runner_id, %{} = payload) do
+    Audit.log(account_id, "runner.error",
+      actor_kind: "runner",
+      actor_id: runner_id,
+      subject_kind: "runner",
+      subject_id: runner_id,
+      payload: payload
+    )
   end
 
   @doc "Internal — stamps disconnect history from the runner socket on close."

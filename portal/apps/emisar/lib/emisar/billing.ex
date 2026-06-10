@@ -6,11 +6,10 @@ defmodule Emisar.Billing do
   via `Application.fetch_env!(:emisar, :paddle_client)` — production
   binds the live client, tests use the in-process stub.
   """
-  alias Emisar.{Auth, PublicUrl, Repo}
-  alias Emisar.Accounts.{Account, Membership}
+  alias Emisar.{Accounts, Auth, PublicUrl, Repo, Runners}
+  alias Emisar.Accounts.Account
   alias Emisar.Auth.Subject
   alias Emisar.Billing.{Authorizer, Subscription}
-  alias Emisar.Runners.Runner
 
   @plans %{
     "free" => %{
@@ -104,18 +103,13 @@ defmodule Emisar.Billing do
   defp limit_key(:runners), do: :runners_limit
   defp limit_key(:members), do: :members_limit
 
-  defp current_count(%Account{id: account_id}, :runners) do
-    Runner.Query.not_deleted()
-    |> Runner.Query.not_disabled()
-    |> Runner.Query.by_account_id(account_id)
-    |> Repo.aggregate(:count, :id)
-  end
+  # The owning contexts count their own rows — billing only owns the
+  # limit semantics.
+  defp current_count(%Account{id: account_id}, :runners),
+    do: Runners.count_billable_runners(account_id)
 
-  defp current_count(%Account{id: account_id}, :members) do
-    Membership.Query.all()
-    |> Membership.Query.by_account_id(account_id)
-    |> Repo.aggregate(:count, :id)
-  end
+  defp current_count(%Account{id: account_id}, :members),
+    do: Accounts.count_memberships(account_id)
 
   @doc """
   Creates a Paddle Checkout (Transaction) for the chosen plan and returns
@@ -217,7 +211,7 @@ defmodule Emisar.Billing do
              name: account.name,
              account_id: account.id
            }),
-         {:ok, account} <- update_account_paddle_id(account, cid) do
+         {:ok, account} <- Accounts.put_account_paddle_customer_id(account, cid) do
       {:ok, cid, account}
     end
   end
@@ -336,11 +330,9 @@ defmodule Emisar.Billing do
     price_to_plan[price_id] || account.plan || "free"
   end
 
-  defp peek_account_by_paddle_customer(cid) when is_binary(cid) do
-    Account.Query.all()
-    |> Account.Query.by_paddle_customer_id(cid)
-    |> Repo.peek()
-  end
+  # nil-tolerant adapter: Paddle payloads may omit the customer id.
+  defp peek_account_by_paddle_customer(cid) when is_binary(cid),
+    do: Accounts.peek_account_by_paddle_customer_id(cid)
 
   defp peek_account_by_paddle_customer(_), do: nil
 
@@ -348,12 +340,6 @@ defmodule Emisar.Billing do
     Subscription.Query.all()
     |> Subscription.Query.by_paddle_subscription_id(id)
     |> Repo.peek()
-  end
-
-  defp update_account_paddle_id(account, cid) do
-    account
-    |> Ecto.Changeset.change(paddle_customer_id: cid)
-    |> Repo.update()
   end
 
   @doc """

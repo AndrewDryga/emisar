@@ -283,7 +283,7 @@ defmodule Emisar.Approvals do
         {:ok, decided} ->
           result =
             Repo.transaction(fn ->
-              run = fetch_run!(req.run_id)
+              run = Runs.fetch_run!(req.run_id)
 
               grant_attrs = %{
                 duration: Keyword.get(opts, :duration, :once),
@@ -351,7 +351,7 @@ defmodule Emisar.Approvals do
       case claim_pending(req, :denied, by_user_id, reason) do
         {:ok, decided} ->
           Repo.transaction(fn ->
-            run = fetch_run!(req.run_id)
+            run = Runs.fetch_run!(req.run_id)
             {:ok, run} = Runs.mark_cancelled(run, denial_reason(reason))
 
             Audit.log(req.account_id, "approval.denied",
@@ -399,12 +399,6 @@ defmodule Emisar.Approvals do
       0 ->
         {:error, :already_decided}
     end
-  end
-
-  defp fetch_run!(run_id) do
-    Runs.ActionRun.Query.all()
-    |> Runs.ActionRun.Query.by_id(run_id)
-    |> Repo.fetch!(Runs.ActionRun.Query)
   end
 
   defp tap_broadcast({:ok, %Request{} = request} = result) do
@@ -646,9 +640,7 @@ defmodule Emisar.Approvals do
         |> Repo.update_all([])
 
       if affected == 1 do
-        case Runs.ActionRun.Query.all()
-             |> Runs.ActionRun.Query.by_id(req.run_id)
-             |> Repo.peek() do
+        case Runs.peek_run_by_id(req.run_id) do
           nil ->
             :ok
 

@@ -9,7 +9,6 @@ defmodule Emisar.Runs do
   alias Emisar.{Audit, Auth, PubSub, Repo}
   alias Emisar.Auth.Subject
   alias Emisar.Runs.{ActionRun, Authorizer, RunEvent}
-  alias Emisar.Runners.Runner
   require Logger
 
   # -- Listing / queries ------------------------------------------------
@@ -354,7 +353,7 @@ defmodule Emisar.Runs do
   defp require_action(_), do: :ok
 
   defp runner_in_account(runner_id, account_id) do
-    if runner_belongs_to_account?(runner_id, account_id) do
+    if Emisar.Runners.runner_active_in_account?(runner_id, account_id) do
       :ok
     else
       {:error, :runner_not_found}
@@ -537,14 +536,6 @@ defmodule Emisar.Runs do
   defp args_sha256(args) do
     :crypto.hash(:sha256, Jason.encode!(args || %{}))
     |> Base.encode16(case: :lower)
-  end
-
-  defp runner_belongs_to_account?(runner_id, account_id) do
-    Runner.Query.not_deleted()
-    |> Runner.Query.not_disabled()
-    |> Runner.Query.by_id(runner_id)
-    |> Runner.Query.by_account_id(account_id)
-    |> Repo.exists?()
   end
 
   @doc """
@@ -842,10 +833,32 @@ defmodule Emisar.Runs do
   end
 
   def append_event(run_id, attrs) when is_binary(run_id) do
-    case ActionRun.Query.all() |> ActionRun.Query.by_id(run_id) |> Repo.peek() do
+    case peek_run_by_id(run_id) do
       nil -> {:error, :unknown_run}
       %ActionRun{} = run -> append_event(run, attrs)
     end
+  end
+
+  @doc """
+  Internal — sibling flows (the Approvals decide/expiry transactions)
+  and the event appender: the run row, nil-or-struct (`peek` — a run
+  that vanished mid-flight is a meaningful no-op state for callers).
+  """
+  def peek_run_by_id(run_id) do
+    ActionRun.Query.all()
+    |> ActionRun.Query.by_id(run_id)
+    |> Repo.peek()
+  end
+
+  @doc """
+  Internal — Approvals decide: the approval-gated run. Raises if missing —
+  the request row holds a foreign key to it, so absence is a broken
+  invariant, not a caller-handleable state.
+  """
+  def fetch_run!(run_id) do
+    ActionRun.Query.all()
+    |> ActionRun.Query.by_id(run_id)
+    |> Repo.fetch!(ActionRun.Query)
   end
 
   @doc """

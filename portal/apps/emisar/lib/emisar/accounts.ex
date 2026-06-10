@@ -781,6 +781,38 @@ defmodule Emisar.Accounts do
     end
   end
 
+  # -- Internal (Billing flows) -------------------------------------------
+  # Account/membership reads + the one account write the Billing context
+  # needs. Billing owns the plan/limit semantics; the row mechanics stay
+  # here. Never exposed to LiveView/controllers/MCP.
+
+  @doc """
+  Internal — Billing seat counting: membership rows in the account.
+  Counts suspended members too — suspension preserves the seat (role +
+  history kept for reinstate), it doesn't free it.
+  """
+  def count_memberships(account_id) do
+    Membership.Query.all()
+    |> Membership.Query.by_account_id(account_id)
+    |> Repo.aggregate(:count, :id)
+  end
+
+  @doc """
+  Internal — Billing webhook resolve: the account a Paddle customer id
+  belongs to, nil-or-struct (`peek` — an unknown cid is a meaningful
+  no-match the webhook handler no-ops on).
+  """
+  def peek_account_by_paddle_customer_id(cid) when is_binary(cid) do
+    Account.Query.all()
+    |> Account.Query.by_paddle_customer_id(cid)
+    |> Repo.peek()
+  end
+
+  @doc "Internal — Billing: stamp the Paddle customer id after first checkout."
+  def put_account_paddle_customer_id(%Account{} = account, cid) when is_binary(cid) do
+    account |> Account.Changeset.link_paddle_customer(cid) |> Repo.update()
+  end
+
   # -- Authorization ----------------------------------------------------
 
   @doc "Whether `subject` may manage team memberships (admin+)."
