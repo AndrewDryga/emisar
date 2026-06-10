@@ -40,7 +40,6 @@ in_lib_emisar=0;  [[ "$FILE_PATH" == */portal/apps/emisar/lib/emisar/* ]] && in_
 is_query=0;       [[ "$FILE_PATH" == */query.ex ]] && is_query=1
 is_changeset=0;   [[ "$FILE_PATH" == */changeset.ex ]] && is_changeset=1
 is_repo=0;        [[ "$FILE_PATH" == */repo.ex || "$FILE_PATH" == */repo/* ]] && is_repo=1
-is_user_token=0;  [[ "$FILE_PATH" == */user_token.ex ]] && is_user_token=1
 is_test=0;        [[ "$FILE_PATH" == *_test.exs || "$FILE_PATH" == */test/* ]] && is_test=1
 is_schema=0;      grep -qE '^\s*use Emisar, :schema' "$FILE_PATH" 2>/dev/null && is_schema=1
 
@@ -65,7 +64,7 @@ if [[ $in_lib_emisar == 1 && $is_test == 0 ]]; then
 fi
 
 # --- IL-1: no import Ecto.Query in a context / worker ----------------------
-if [[ $in_lib_emisar == 1 && $is_query == 0 && $is_repo == 0 && $is_user_token == 0 ]]; then
+if [[ $in_lib_emisar == 1 && $is_query == 0 && $is_repo == 0 ]]; then
   m=$(hit '^\s*import Ecto\.Query')
   [[ -n "$m" ]] && add "#1" "$(lineno "$m")" "import Ecto.Query in a context/worker — move the query into the Schema.Query module (use \`use Emisar, :query\` there)."
 fi

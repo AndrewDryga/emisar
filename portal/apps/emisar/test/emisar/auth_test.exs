@@ -43,6 +43,17 @@ defmodule Emisar.AuthTest do
       :ok = Auth.delete_session_token(token)
       assert {:error, :not_found} = Auth.fetch_user_by_session_token(token)
     end
+
+    test "a session past its validity window no longer resolves" do
+      user = user_fixture()
+      token = Auth.create_session_token!(user)
+
+      {1, _} =
+        Emisar.Auth.UserToken.Query.by_user_id(user.id)
+        |> Repo.update_all(set: [inserted_at: DateTime.add(DateTime.utc_now(), -61, :day)])
+
+      assert {:error, :not_found} = Auth.fetch_user_by_session_token(token)
+    end
   end
 
   describe "magic link" do
@@ -59,6 +70,15 @@ defmodule Emisar.AuthTest do
 
     test "garbage token returns invalid_or_expired" do
       assert {:error, :invalid_or_expired} = Auth.consume_magic_link_token("not-a-real-token")
+    end
+
+    test "a link whose user was deleted no longer works" do
+      user = user_fixture()
+      raw = Auth.issue_magic_link_token!(user)
+
+      {:ok, _} = user |> User.Changeset.delete() |> Repo.update()
+
+      assert {:error, :invalid_or_expired} = Auth.consume_magic_link_token(raw)
     end
   end
 

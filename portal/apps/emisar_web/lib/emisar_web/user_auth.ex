@@ -74,7 +74,7 @@ defmodule EmisarWeb.UserAuth do
     # couldn't broadcast to a session whose cookie it doesn't hold.
     conn
     |> put_session(:user_token, token)
-    |> put_session(:live_socket_id, Auth.live_socket_topic(:crypto.hash(:sha256, token)))
+    |> put_session(:live_socket_id, Auth.live_socket_topic_for_session(token))
   end
 
   @doc "Sign-out: invalidate the session token and clear the cookie."

@@ -7,7 +7,6 @@ defmodule Emisar.Auth do
   semantics + validity window.
   """
   alias Ecto.Multi
-  alias Emisar.Accounts
   alias Emisar.Audit
   alias Emisar.Auth.Subject
   alias Emisar.Auth.UserToken
@@ -27,7 +26,7 @@ defmodule Emisar.Auth do
       when is_binary(email) and is_binary(password) do
     user =
       case Users.fetch_user_by_email(email) do
-        {:ok, u} -> u
+        {:ok, user} -> user
         {:error, :not_found} -> nil
       end
 
@@ -46,11 +45,13 @@ defmodule Emisar.Auth do
   Mint a session token and persist it. Returns the raw token for the
   cookie. `metadata` (optional) carries `ip_address` + `user_agent`
   captured from the inbound request so the Profile page can show
-  per-session device info; missing keys are tolerated.
+  per-session device info; missing keys are tolerated. Pre-Subject
+  boundary — the session controller calls this right after verifying
+  credentials.
   """
   def create_session_token!(%User{} = user, metadata \\ %{}) do
-    {token, struct} = UserToken.build_session_token(user, metadata)
-    Repo.insert!(struct)
+    {token, digest} = Crypto.session_token()
+    Repo.insert!(UserToken.Changeset.session(user, digest, metadata))
     token
   end
 
@@ -60,16 +61,27 @@ defmodule Emisar.Auth do
   tokens. Pre-auth boundary — no Subject.
   """
   def fetch_user_by_session_token(token) when is_binary(token) do
-    {:ok, query} = UserToken.verify_session_token_query(token)
-
-    case Repo.one(query) do
+    UserToken.Query.by_token_digest(Crypto.hash(token))
+    |> UserToken.Query.by_context("session")
+    |> UserToken.Query.not_expired("session")
+    |> UserToken.Query.with_joined_user()
+    |> UserToken.Query.select_user()
+    |> Repo.one()
+    |> case do
       nil -> {:error, :not_found}
       %User{} = user -> {:ok, user}
     end
   end
 
+  @doc """
+  Drop the session row backing a cookie (sign-out). Pre-auth boundary —
+  possession of the cookie value is the authorization.
+  """
   def delete_session_token(token) when is_binary(token) do
-    Repo.delete_all(UserToken.delete_session_token_query(token))
+    UserToken.Query.by_token_digest(Crypto.hash(token))
+    |> UserToken.Query.by_context("session")
+    |> Repo.delete_all()
+
     :ok
   end
 
@@ -112,7 +124,7 @@ defmodule Emisar.Auth do
   def delete_all_session_tokens(%User{} = user) do
     {count, _} =
       UserToken.Query.by_user_id(user.id)
-      |> UserToken.Query.by_contexts(["session"])
+      |> UserToken.Query.by_context("session")
       |> Repo.delete_all()
 
     {:ok, count}
@@ -198,7 +210,15 @@ defmodule Emisar.Auth do
   (the raw cookie value is only available to the user's own browser).
   """
   def live_socket_topic(token_digest) when is_binary(token_digest),
-    do: "users_sessions:#{Base.url_encode64(token_digest)}"
+    do: "users_sessions:#{Crypto.encode_digest(token_digest)}"
+
+  @doc """
+  Same topic derived from the RAW session token — for the sign-in
+  boundary, which holds the cookie value and shouldn't compute digests
+  itself.
+  """
+  def live_socket_topic_for_session(token) when is_binary(token),
+    do: live_socket_topic(Crypto.hash(token))
 
   @doc """
   The caller's own active sessions, newest first (Profile's device
@@ -221,8 +241,13 @@ defmodule Emisar.Auth do
   """
   def revoke_session(token_id, %Subject{actor: %User{} = user}) do
     if Repo.valid_uuid?(token_id) do
+      session_query =
+        UserToken.Query.by_id(token_id)
+        |> UserToken.Query.by_user_id(user.id)
+        |> UserToken.Query.by_context("session")
+
       Multi.new()
-      |> Multi.delete_all(:sessions, UserToken.session_by_id_for_user_query(user, token_id))
+      |> Multi.delete_all(:sessions, session_query)
       |> Multi.run(:check_affected, fn _repo, %{sessions: {affected, _}} ->
         if affected == 1, do: {:ok, :revoked}, else: {:error, :not_found}
       end)
@@ -247,45 +272,35 @@ defmodule Emisar.Auth do
   Pass `nil` to revoke every session including the current one.
   """
   def revoke_other_sessions!(%User{} = user, keep_token) when is_binary(keep_token) do
-    keep_digest = Crypto.hash(keep_token)
-    revoke_sessions_atomically!(user, UserToken.other_sessions_for_user_query(user, keep_digest))
+    sessions_query =
+      UserToken.Query.by_user_id(user.id)
+      |> UserToken.Query.by_context("session")
+      |> UserToken.Query.except_token_digest(Crypto.hash(keep_token))
+
+    revoke_sessions_atomically!(user, sessions_query)
   end
 
   def revoke_other_sessions!(%User{} = user, nil) do
-    revoke_sessions_atomically!(
-      user,
-      UserToken.Query.by_user_id(user.id) |> UserToken.Query.by_contexts(["session"])
-    )
+    sessions_query =
+      UserToken.Query.by_user_id(user.id)
+      |> UserToken.Query.by_context("session")
+
+    revoke_sessions_atomically!(user, sessions_query)
   end
 
   # Wraps the delete + (conditional) audit in one transaction so a row
-  # delete-without-audit can't happen on a downstream failure.
-  defp revoke_sessions_atomically!(%User{} = user, query) do
+  # delete-without-audit can't happen on a downstream failure. The
+  # audit's `user_fn` resolves the user only when rows were actually
+  # revoked — a no-op revoke stays out of the log.
+  defp revoke_sessions_atomically!(%User{} = user, sessions_query) do
     {:ok, %{count: count}} =
       Multi.new()
-      |> Multi.delete_all(:sessions, query)
-      |> Multi.run(:count, fn _repo, %{sessions: {n, _}} -> {:ok, n} end)
-      |> Audit.Multi.log(:audit, fn changes ->
-        case changes do
-          %{count: n} when n > 0 ->
-            case Accounts.fetch_membership_for_session(user, nil) do
-              {:ok, m} ->
-                {m.account_id, "user.other_sessions_revoked",
-                 actor_kind: "user",
-                 actor_id: user.id,
-                 subject_kind: "user",
-                 subject_id: user.id,
-                 subject_label: user.email,
-                 payload: %{count: n}}
-
-              {:error, :not_found} ->
-                nil
-            end
-
-          _ ->
-            nil
-        end
-      end)
+      |> Multi.delete_all(:sessions, sessions_query)
+      |> Multi.run(:count, fn _repo, %{sessions: {count, _}} -> {:ok, count} end)
+      |> Audit.Multi.log_for_user(:audit, user, "user.other_sessions_revoked",
+        user_fn: fn %{count: count} -> if count > 0, do: user end,
+        payload_fn: fn %{count: count} -> %{count: count} end
+      )
       |> Repo.commit_multi()
 
     count
@@ -293,13 +308,43 @@ defmodule Emisar.Auth do
 
   # -- Magic link -------------------------------------------------------
 
+  # Shared prefix of the single-use token flows (magic link / password
+  # reset / confirm): locks the still-valid token row, then resolves its
+  # user — both inside the transaction, so a double-submitted link
+  # serializes on the row lock and the loser sees the token already
+  # gone instead of raising a stale-delete.
+  defp verified_token_multi(digest, context) do
+    Multi.new()
+    |> Multi.run(:token, fn repo, _changes ->
+      loaded_token =
+        UserToken.Query.by_token_digest(digest)
+        |> UserToken.Query.by_context(context)
+        |> UserToken.Query.not_expired(context)
+        |> UserToken.Query.lock_for_update()
+        |> repo.one()
+
+      if loaded_token, do: {:ok, loaded_token}, else: {:error, :invalid_or_expired}
+    end)
+    |> Multi.run(:token_user, fn _repo, %{token: token} ->
+      case Users.fetch_user_by_id(token.user_id) do
+        {:ok, user} ->
+          {:ok, user}
+
+        # A soft-deleted user behind a still-live token is the same
+        # outcome for the caller: the link no longer works.
+        {:error, :not_found} ->
+          {:error, :invalid_or_expired}
+      end
+    end)
+  end
+
   @doc "Issues a magic-link token. Returns the raw token to email."
   def issue_magic_link_token!(%User{} = user) do
-    {raw, struct} = UserToken.build_hashed_token(user, "magic_link", user.email)
+    {raw, digest} = Crypto.email_token()
 
     {:ok, _} =
       Multi.new()
-      |> Multi.insert(:token, struct)
+      |> Multi.insert(:token, UserToken.Changeset.hashed(user, digest, "magic_link", user.email))
       |> Audit.Multi.log_for_user(:audit, user, "user.magic_link_issued")
       |> Repo.commit_multi()
 
@@ -308,27 +353,20 @@ defmodule Emisar.Auth do
 
   @doc "Consumes a magic-link token, returning the user or {:error, reason}."
   def consume_magic_link_token(raw) when is_binary(raw) do
-    case UserToken.verify_hashed_token_query(raw, "magic_link") do
-      {:ok, query} ->
-        case Repo.one(query) do
-          nil ->
-            {:error, :invalid_or_expired}
-
-          {user, token} ->
-            Multi.new()
-            |> Multi.delete(:token, token)
-            |> Audit.Multi.log_for_user(:audit, user, "user.signed_in",
-              payload_fn: fn _ -> %{method: "magic_link"} end
-            )
-            |> Repo.commit_multi()
-            |> case do
-              {:ok, _} -> {:ok, user}
-              {:error, reason} -> {:error, reason}
-            end
-        end
-
-      :error ->
-        {:error, :invalid_or_expired}
+    with {:ok, digest} <- Crypto.email_token_digest(raw) do
+      verified_token_multi(digest, "magic_link")
+      |> Multi.delete(:deleted_token, fn %{token: token} -> token end)
+      |> Audit.Multi.log_for_user(:audit, nil, "user.signed_in",
+        user_fn: fn %{token_user: user} -> user end,
+        payload_fn: fn _ -> %{method: "magic_link"} end
+      )
+      |> Repo.commit_multi()
+      |> case do
+        {:ok, %{token_user: user}} -> {:ok, user}
+        {:error, reason} -> {:error, reason}
+      end
+    else
+      :error -> {:error, :invalid_or_expired}
     end
   end
 
@@ -349,11 +387,14 @@ defmodule Emisar.Auth do
       TARGET user as actor — which is wrong and confusing in the log.
   """
   def issue_password_reset_token!(%User{} = user, opts \\ []) do
-    {raw, struct} = UserToken.build_hashed_token(user, "reset_password", user.email)
+    {raw, digest} = Crypto.email_token()
 
     multi =
       Multi.new()
-      |> Multi.insert(:token, struct)
+      |> Multi.insert(
+        :token,
+        UserToken.Changeset.hashed(user, digest, "reset_password", user.email)
+      )
 
     multi =
       if Keyword.get(opts, :audit, true) do
@@ -366,41 +407,34 @@ defmodule Emisar.Auth do
     raw
   end
 
-  def reset_user_password(raw, password) when is_binary(raw) do
-    case UserToken.verify_hashed_token_query(raw, "reset_password") do
-      {:ok, query} ->
-        case Repo.one(query) do
-          nil ->
-            {:error, :invalid_or_expired}
-
-          {user, token} ->
-            Multi.new()
-            |> Multi.run(:user, fn _repo, _ -> Users.reset_user_password(user, password) end)
-            |> Multi.delete(:token, token)
-            |> Multi.delete_all(
-              :sessions,
-              UserToken.Query.by_user_id(user.id) |> UserToken.Query.by_contexts(["session"])
-            )
-            |> Audit.Multi.log_for_user(:audit, user, "user.password_reset_completed",
-              user_fn: fn %{user: u} -> u end
-            )
-            |> Repo.commit_multi()
-            |> case do
-              {:ok, %{user: updated}} -> {:ok, updated}
-              {:error, reason} -> {:error, reason}
-            end
-        end
-
-      :error ->
-        {:error, :invalid_or_expired}
+  def reset_user_password(raw, password) when is_binary(raw) and is_binary(password) do
+    with {:ok, digest} <- Crypto.email_token_digest(raw) do
+      verified_token_multi(digest, "reset_password")
+      |> Multi.run(:user, fn _repo, %{token_user: user} ->
+        Users.reset_user_password(user, password)
+      end)
+      |> Multi.delete(:deleted_token, fn %{token: token} -> token end)
+      |> Multi.delete_all(:sessions, fn %{token_user: user} ->
+        UserToken.Query.by_user_id(user.id) |> UserToken.Query.by_context("session")
+      end)
+      |> Audit.Multi.log_for_user(:audit, nil, "user.password_reset_completed",
+        user_fn: fn %{user: user} -> user end
+      )
+      |> Repo.commit_multi()
+      |> case do
+        {:ok, %{user: updated}} -> {:ok, updated}
+        {:error, reason} -> {:error, reason}
+      end
+    else
+      :error -> {:error, :invalid_or_expired}
     end
   end
 
   # -- Email confirmation ----------------------------------------------
 
   def issue_confirmation_token!(%User{} = user) do
-    {raw, struct} = UserToken.build_hashed_token(user, "confirm", user.email)
-    Repo.insert!(struct)
+    {raw, digest} = Crypto.email_token()
+    Repo.insert!(UserToken.Changeset.hashed(user, digest, "confirm", user.email))
     raw
   end
 
@@ -417,28 +451,20 @@ defmodule Emisar.Auth do
   end
 
   def confirm_user_by_token(raw) when is_binary(raw) do
-    case UserToken.verify_hashed_token_query(raw, "confirm") do
-      {:ok, query} ->
-        case Repo.one(query) do
-          nil ->
-            {:error, :invalid_or_expired}
-
-          {user, token} ->
-            Multi.new()
-            |> Multi.run(:user, fn _repo, _ -> Users.mark_user_confirmed(user) end)
-            |> Multi.delete(:token, token)
-            |> Audit.Multi.log_for_user(:audit, user, "user.email_confirmed",
-              user_fn: fn %{user: u} -> u end
-            )
-            |> Repo.commit_multi()
-            |> case do
-              {:ok, %{user: confirmed}} -> {:ok, confirmed}
-              {:error, reason} -> {:error, reason}
-            end
-        end
-
-      :error ->
-        {:error, :invalid_or_expired}
+    with {:ok, digest} <- Crypto.email_token_digest(raw) do
+      verified_token_multi(digest, "confirm")
+      |> Multi.run(:user, fn _repo, %{token_user: user} -> Users.mark_user_confirmed(user) end)
+      |> Multi.delete(:deleted_token, fn %{token: token} -> token end)
+      |> Audit.Multi.log_for_user(:audit, nil, "user.email_confirmed",
+        user_fn: fn %{user: user} -> user end
+      )
+      |> Repo.commit_multi()
+      |> case do
+        {:ok, %{user: confirmed}} -> {:ok, confirmed}
+        {:error, reason} -> {:error, reason}
+      end
+    else
+      :error -> {:error, :invalid_or_expired}
     end
   end
 

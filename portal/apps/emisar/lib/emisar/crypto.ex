@@ -37,6 +37,47 @@ defmodule Emisar.Crypto do
   def user_invite_token, do: random_secret(@invite_token_bytes)
 
   @doc """
+  Opaque session-cookie token as `{raw, digest}` — the raw bytes ride
+  in the signed session cookie, only the digest is stored. Look the row
+  up by `hash/1` of the presented cookie value.
+  """
+  def session_token do
+    raw = :crypto.strong_rand_bytes(@secret_bytes)
+    {raw, hash(raw)}
+  end
+
+  @doc """
+  Single-use emailed token (magic link / password reset / confirm) as
+  `{encoded, digest}` — the url-safe-base64 string goes in the emailed
+  link, only the digest is stored. Verify a presented token with
+  `email_token_digest/1`.
+  """
+  def email_token do
+    raw = :crypto.strong_rand_bytes(@secret_bytes)
+    {Base.url_encode64(raw, padding: false), hash(raw)}
+  end
+
+  @doc """
+  Digest of a presented emailed token: decodes the url-safe form and
+  re-hashes it for the row lookup. `:error` when the presented string
+  isn't valid base64 (mangled or forged link).
+  """
+  def email_token_digest(encoded) when is_binary(encoded) do
+    case Base.url_decode64(encoded, padding: false) do
+      {:ok, raw} -> {:ok, hash(raw)}
+      :error -> :error
+    end
+  end
+
+  @doc """
+  Url-safe-base64 (no padding) of a digest — for embedding a digest in
+  a PubSub topic or similar identifier without the call site inlining
+  the encoding (same single-surface rule as `pkce_s256_challenge/1`).
+  """
+  def encode_digest(digest) when is_binary(digest),
+    do: Base.url_encode64(digest, padding: false)
+
+  @doc """
   sha256 of a raw secret, as a 32-byte binary — the at-rest form. Store
   this, never the raw secret.
   """

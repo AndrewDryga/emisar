@@ -399,14 +399,14 @@ Three layers, cheapest first:
 
 ```sh
 # IL-1 — import Ecto.Query outside Query/Repo modules
-rg 'import Ecto\.Query' -g '!**/query.ex' -g '!**/repo.ex' -g '!repo/**' -g '!**/user_token.ex'
+rg 'import Ecto\.Query' -g '!**/query.ex' -g '!**/repo.ex' -g '!repo/**'
 
 # IL-2 — Repo.get/get!/get_by (bypass the Query module)
 rg '\bRepo\.(get|get!|get_by)\b'
 
 # IL-1 — inline Ecto DSL outside Query/Repo (unqualified macros only)
 rg '(^|[^.\w])(from|where|order_by|join|select|preload|limit|lock|group_by|having|distinct|offset)\(' \
-   -g '!**/query.ex' -g '!**/repo.ex' -g '!repo/**' -g '!**/user_token.ex' -g '!mailers/**'
+   -g '!**/query.ex' -g '!**/repo.ex' -g '!repo/**' -g '!mailers/**'
 ```
 
 If any return hits, the change isn't done. (The one documented exception to the third grep is `Repo.preload/2` in a post-commit/email helper — IL-10 — which is qualified and so won't match anyway.) Then run the [verify loop](#how-we-build-prime-directive) (IL-20).

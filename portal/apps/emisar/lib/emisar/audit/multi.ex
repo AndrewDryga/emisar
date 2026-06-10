@@ -50,33 +50,48 @@ defmodule Emisar.Audit.Multi do
   the user's primary membership to derive `account_id` — the same
   shape as `Audit.log_for_user/3` but transactional.
 
+  `user` may be `nil` when the user is only known mid-transaction (an
+  earlier step resolved it) — then `:user_fn` is required.
+
   Options:
 
     * `:payload_fn` — `(changes -> map)` to compute the payload from
       the multi's changes (default: `nil` → no payload)
     * `:extra` — keyword of additional audit attrs (override defaults)
-    * `:user_fn` — `(changes -> %User{})` if the user is a multi-step
-      result rather than a captured variable (defaults to the passed
-      user struct)
+    * `:user_fn` — `(changes -> %User{} | nil)` if the user is a
+      multi-step result rather than a captured variable (defaults to
+      the passed user struct). Returning `nil` skips the audit step —
+      for events conditional on an earlier step's outcome (e.g. "only
+      log when rows were actually revoked").
 
   Silently no-ops if the user has no active membership — matching the
   semantics of `Audit.log_for_user/3`.
   """
-  def log_for_user(multi, name, %User{} = user, event_type, opts \\ []) do
+  def log_for_user(multi, name, user, event_type, opts \\ []) do
     payload_fn = Keyword.get(opts, :payload_fn)
     extra = Keyword.get(opts, :extra, [])
-    user_fn = Keyword.get(opts, :user_fn, fn _ -> user end)
+    user_fn = Keyword.get(opts, :user_fn) || default_user_fn(user)
 
     Multi.run(multi, name, fn _repo, changes ->
-      resolved_user = user_fn.(changes)
-      attrs = extra |> maybe_put_payload(payload_fn, changes) |> Map.new()
+      case user_fn.(changes) do
+        %User{} = resolved_user ->
+          attrs = extra |> maybe_put_payload(payload_fn, changes) |> Map.new()
 
-      case Audit.user_changeset(resolved_user, event_type, attrs) do
-        %Ecto.Changeset{} = changeset -> Emisar.Repo.insert(changeset)
-        nil -> {:ok, nil}
+          case Audit.user_changeset(resolved_user, event_type, attrs) do
+            %Ecto.Changeset{} = changeset -> Emisar.Repo.insert(changeset)
+            nil -> {:ok, nil}
+          end
+
+        nil ->
+          {:ok, nil}
       end
     end)
   end
+
+  defp default_user_fn(%User{} = user), do: fn _ -> user end
+
+  defp default_user_fn(nil),
+    do: raise(ArgumentError, "log_for_user/5 needs a %User{} or a :user_fn resolving one")
 
   defp maybe_put_payload(attrs, nil, _changes), do: attrs
 
