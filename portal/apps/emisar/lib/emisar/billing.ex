@@ -13,10 +13,6 @@ defmodule Emisar.Billing do
   alias Emisar.Billing.{Authorizer, Subscription}
   alias Emisar.Runners.Runner
 
-  @doc "Whether `subject` may manage billing and the subscription (owner-only)."
-  def subject_can_manage_billing?(%Subject{} = subject),
-    do: Auth.Authorizer.has_permission?(subject, Authorizer.manage_billing_permission())
-
   @plans %{
     "free" => %{
       name: "Free",
@@ -421,6 +417,12 @@ defmodule Emisar.Billing do
        }}
     end
   end
+
+  # -- Authorization ----------------------------------------------------
+
+  @doc "Whether `subject` may manage billing and the subscription (owner-only)."
+  def subject_can_manage_billing?(%Subject{} = subject),
+    do: Auth.Authorizer.has_permission?(subject, Authorizer.manage_billing_permission())
 
   @doc """
   Headroom on a `summary` resource: `:ok` (>1 slot free),

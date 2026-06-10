@@ -20,10 +20,6 @@ defmodule Emisar.ApiKeys do
   alias Emisar.ApiKeys.{ApiKey, Authorizer}
   alias Emisar.Auth.Subject
 
-  @doc "Whether `subject` may manage MCP API keys (admin+)."
-  def subject_can_manage_api_keys?(%Subject{} = subject),
-    do: Auth.Authorizer.has_permission?(subject, Authorizer.manage_api_keys_permission())
-
   # 4 chars for "emk-" + 8 random chars => 12-char prefix.
   @prefix_size 12
 
@@ -328,4 +324,10 @@ defmodule Emisar.ApiKeys do
   end
 
   def record_client_info(_key, _info), do: {:error, :invalid}
+
+  # -- Authorization ---------------------------------------------------
+
+  @doc "Whether `subject` may manage MCP API keys (admin+)."
+  def subject_can_manage_api_keys?(%Subject{} = subject),
+    do: Auth.Authorizer.has_permission?(subject, Authorizer.manage_api_keys_permission())
 end

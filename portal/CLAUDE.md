@@ -132,6 +132,8 @@ The expanded law text. Iron Laws above are the index; this is the body.
 
 Context modules are the **only** public surface that LiveView, controllers, channels, and MCP call. They are the authorization boundary.
 
+**Arrangement.** Order a context top-to-bottom as: moduledoc → aliases/`require`/module attributes → the domain API in `# -- Section ----` blocks (reads, then mutations/actions, then any specialized sections) → a trailing **`# -- Authorization ----`** section for the `subject_can_<verb>?/1` capability predicates → internal/private helpers last. The capability predicates are a *supporting* surface (the web calls them to show/hide UI) — they belong in their own near-the-end section, **never crammed at the very top before the domain API**.
+
 #### 1.1 No `Ecto.Query` in context modules (IL-1, IL-2)
 
 **Forbidden in `lib/emisar/<context>.ex` and `lib/emisar/workers/*.ex`:**

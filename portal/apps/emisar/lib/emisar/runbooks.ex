@@ -13,10 +13,6 @@ defmodule Emisar.Runbooks do
   alias Emisar.Auth.Subject
   alias Emisar.Runbooks.{Authorizer, Runbook}
 
-  @doc "Whether `subject` may manage runbooks (admin+)."
-  def subject_can_manage_runbooks?(%Subject{} = subject),
-    do: Auth.Authorizer.has_permission?(subject, Authorizer.manage_runbooks_permission())
-
   # -- Reads -----------------------------------------------------------
 
   def list_runbooks(%Subject{} = subject, opts \\ []) do
@@ -157,6 +153,12 @@ defmodule Emisar.Runbooks do
   # for seed-time / worker-time creation.
   defp subject_user_id(%Subject{actor: %{id: id}}), do: id
   defp subject_user_id(%Subject{actor: :system}), do: nil
+
+  # -- Authorization ---------------------------------------------------
+
+  @doc "Whether `subject` may manage runbooks (admin+)."
+  def subject_can_manage_runbooks?(%Subject{} = subject),
+    do: Auth.Authorizer.has_permission?(subject, Authorizer.manage_runbooks_permission())
 
   # -- Expansion + dispatch (internal — called by Runs / executor) ----
 

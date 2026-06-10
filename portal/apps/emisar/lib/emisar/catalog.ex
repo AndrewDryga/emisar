@@ -30,10 +30,6 @@ defmodule Emisar.Catalog do
   alias Emisar.Runners.Runner
   alias Emisar.Catalog.{Authorizer, PackBaseline, PackVersion, RunnerAction}
 
-  @doc "Whether `subject` may manage packs (admin+)."
-  def subject_can_manage_packs?(%Subject{} = subject),
-    do: Auth.Authorizer.has_permission?(subject, Authorizer.manage_catalog_permission())
-
   @doc """
   Observe the full `runner_state` payload: upsert pack_versions and
   the runner's actions, prune actions that disappeared from the
@@ -679,4 +675,10 @@ defmodule Emisar.Catalog do
         0
     end
   end
+
+  # -- Authorization ---------------------------------------------------
+
+  @doc "Whether `subject` may manage packs (admin+)."
+  def subject_can_manage_packs?(%Subject{} = subject),
+    do: Auth.Authorizer.has_permission?(subject, Authorizer.manage_catalog_permission())
 end

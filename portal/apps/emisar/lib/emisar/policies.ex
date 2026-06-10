@@ -32,10 +32,6 @@ defmodule Emisar.Policies do
   alias Emisar.Auth.Subject
   alias Emisar.Policies.{Authorizer, Policy}
 
-  @doc "Whether `subject` may manage policies (admin+)."
-  def subject_can_manage_policies?(%Subject{} = subject),
-    do: Auth.Authorizer.has_permission?(subject, Authorizer.manage_policies_permission())
-
   @risk_tiers ~w(low medium high critical)
   @decisions ~w(allow require_approval deny)
 
@@ -149,6 +145,12 @@ defmodule Emisar.Policies do
       )
     end
   end
+
+  # -- Authorization --------------------------------------------------
+
+  @doc "Whether `subject` may manage policies (admin+)."
+  def subject_can_manage_policies?(%Subject{} = subject),
+    do: Auth.Authorizer.has_permission?(subject, Authorizer.manage_policies_permission())
 
   # -- Internal helpers (no Subject needed) ---------------------------
 
