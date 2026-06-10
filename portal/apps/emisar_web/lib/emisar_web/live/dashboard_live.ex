@@ -1,15 +1,15 @@
 defmodule EmisarWeb.DashboardLive do
   use EmisarWeb, :live_view
 
-  alias Emisar.{ApiKeys, Runners, Approvals, Billing, Catalog, PubSub, Runs}
+  alias Emisar.{ApiKeys, Runners, Approvals, Billing, Catalog, Runs}
 
   def mount(_params, _session, socket) do
     account_id = socket.assigns.current_account.id
 
     if connected?(socket) do
-      PubSub.subscribe_account_runs(account_id)
+      Runs.subscribe_account_runs(account_id)
       Runners.subscribe_connections(account_id)
-      PubSub.subscribe_account_approvals(account_id)
+      Approvals.subscribe_account_approvals(account_id)
       {:ok, load(socket)}
     else
       {:ok, socket |> assign(:page_title, "Dashboard") |> assign(:loading?, true)}

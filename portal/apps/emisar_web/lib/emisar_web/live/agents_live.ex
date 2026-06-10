@@ -22,7 +22,7 @@ defmodule EmisarWeb.AgentsLive do
   """
   use EmisarWeb, :live_view
 
-  alias Emisar.{ApiKeys, PubSub, Runners}
+  alias Emisar.{ApiKeys, Runners}
   alias Emisar.ApiKeys.ApiKey
   alias EmisarWeb.{LiveTable, Permissions, UrlHelpers}
 
@@ -37,7 +37,7 @@ defmodule EmisarWeb.AgentsLive do
       # Live API-key list — another operator's create / revoke (or an
       # LLM's first call that flips api_key.bound) reflows this page
       # without the viewer refreshing.
-      PubSub.subscribe_account_api_keys(socket.assigns.current_account.id)
+      ApiKeys.subscribe_account_api_keys(socket.assigns.current_account.id)
     end
 
     # The operator first picks which LLM client they're connecting

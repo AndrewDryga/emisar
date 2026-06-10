@@ -8,7 +8,7 @@ defmodule EmisarWeb.AuditLive do
   """
   use EmisarWeb, :live_view
 
-  alias Emisar.{ApiKeys, Audit, PubSub}
+  alias Emisar.{ApiKeys, Audit}
   alias Emisar.Audit.Event
   alias EmisarWeb.{AuditSummary, LiveTable, Permissions, UrlHelpers}
 
@@ -18,10 +18,10 @@ defmodule EmisarWeb.AuditLive do
     # auto-broadcast by `Repo.commit_multi`, so subscribing here is
     # enough to make the list fully live without per-domain plumbing.
     if connected?(socket) do
-      PubSub.subscribe_account_audit(socket.assigns.current_account.id)
+      Audit.subscribe_account_audit(socket.assigns.current_account.id)
       # Live SIEM-token list too — minting/revoking on this page flows
       # via api_key.* broadcasts.
-      PubSub.subscribe_account_api_keys(socket.assigns.current_account.id)
+      ApiKeys.subscribe_account_api_keys(socket.assigns.current_account.id)
     end
 
     {:ok,

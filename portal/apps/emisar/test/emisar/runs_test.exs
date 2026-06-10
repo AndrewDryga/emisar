@@ -102,7 +102,7 @@ defmodule Emisar.RunsTest do
       _ = policy_fixture(account_id: account.id)
       subject = subject_for(user_fixture(), account, role: :owner)
 
-      Emisar.PubSub.subscribe_runner(runner.id)
+      Emisar.Runners.subscribe_runner_transport(runner)
 
       assert {:ok, :running, %ActionRun{} = run} =
                Runs.dispatch_run(
@@ -199,7 +199,7 @@ defmodule Emisar.RunsTest do
 
       _ = policy_fixture(account_id: account.id)
 
-      Emisar.PubSub.subscribe_runner(runner.id)
+      Emisar.Runners.subscribe_runner_transport(runner)
 
       assert {:ok, :running, _run} =
                Runs.dispatch_run(
@@ -462,7 +462,7 @@ defmodule Emisar.RunsTest do
       runner = runner_fixture(account_id: account.id)
       {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
 
-      Emisar.PubSub.subscribe_run(run.id)
+      Emisar.Runs.subscribe_run(run.account_id, run.id)
 
       assert {:ok, %RunEvent{seq: 1, kind: "progress"}} =
                Runs.append_event(run, %{seq: 1, kind: "progress", payload: %{"line" => "hi"}})
@@ -563,7 +563,7 @@ defmodule Emisar.RunsTest do
       {:ok, :running, run} =
         Runs.dispatch_run(base_attrs(account.id, runner.id), subject)
 
-      Emisar.PubSub.subscribe_account_runs(account.id)
+      Emisar.Runs.subscribe_account_runs(account.id)
 
       assert {:ok, %ActionRun{status: "cancelled", cancelled_at: %DateTime{}}} =
                Runs.cancel_run(run, subject, "user pressed stop")

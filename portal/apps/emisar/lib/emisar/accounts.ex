@@ -317,12 +317,16 @@ defmodule Emisar.Accounts do
     end
   end
 
+  @doc "Subscribe the caller to the account's team list changes (`{:list_changed, :team, …}`)."
+  def subscribe_account_team(account_id),
+    do: Emisar.PubSub.subscribe(account_team_topic(account_id))
+
+  defp account_team_topic(account_id), do: "account:#{account_id}:team"
+
   defp broadcast_team_change(%{membership: membership}, event_type) do
-    Emisar.PubSub.broadcast_account_list(
-      membership.account_id,
-      :team,
-      event_type,
-      membership.user_id
+    Emisar.PubSub.broadcast(
+      account_team_topic(membership.account_id),
+      {:list_changed, :team, event_type, membership.user_id}
     )
 
     :ok

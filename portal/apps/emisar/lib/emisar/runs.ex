@@ -6,7 +6,7 @@ defmodule Emisar.Runs do
   Transport for sending, and tracks progress + final result.
   """
   alias Ecto.Multi
-  alias Emisar.{Audit, Auth, PubSub, Repo}
+  alias Emisar.{Audit, Auth, Repo}
   alias Emisar.Auth.Subject
   alias Emisar.Runs.{ActionRun, Authorizer, RunEvent}
   require Logger
@@ -177,7 +177,7 @@ defmodule Emisar.Runs do
       Multi.new()
       |> Multi.insert(:run, ActionRun.Changeset.create(attrs))
       |> put_run_audit_event()
-      |> Repo.commit_multi(after_commit: fn %{run: run} -> PubSub.broadcast_run(run) end)
+      |> Repo.commit_multi(after_commit: fn %{run: run} -> broadcast_run(run) end)
 
     case result do
       {:ok, %{run: run}} ->
@@ -573,7 +573,11 @@ defmodule Emisar.Runs do
       "reason" => run.reason
     }
 
-    PubSub.deliver_to_runner(run.runner_id, maybe_stamp_pack_hash(payload, run))
+    Emisar.Runners.deliver_to_runner(
+      run.account_id,
+      run.runner_id,
+      maybe_stamp_pack_hash(payload, run)
+    )
 
     # The envelope is already on the runner's topic, so we can't un-send it
     # if the DB write fails — but a dropped `mark_sent` leaves the runner
@@ -632,7 +636,7 @@ defmodule Emisar.Runs do
       if ActionRun.terminal?(status) do
         {:ok, run}
       else
-        PubSub.deliver_to_runner(run.runner_id, %{
+        Emisar.Runners.deliver_to_runner(run.account_id, run.runner_id, %{
           "type" => "cancel",
           "request_id" => run.request_id,
           "reason" => reason
@@ -785,7 +789,7 @@ defmodule Emisar.Runs do
       Multi.new()
       |> Multi.update(:run, ActionRun.Changeset.transition(run, status, attrs))
       |> put_run_audit_event()
-      |> Repo.commit_multi(after_commit: fn %{run: run} -> PubSub.broadcast_run(run) end)
+      |> Repo.commit_multi(after_commit: fn %{run: run} -> broadcast_run(run) end)
       |> case do
         {:ok, %{run: run}} -> {:ok, run}
         {:error, reason} -> {:error, reason}
@@ -820,7 +824,7 @@ defmodule Emisar.Runs do
     |> Repo.insert()
     |> case do
       {:ok, event} ->
-        PubSub.broadcast_run_event(run, event)
+        broadcast_run_event(run, event)
 
         # The first progress chunk marks the run as :running (transitions
         # are idempotent server-side).
@@ -897,6 +901,45 @@ defmodule Emisar.Runs do
       |> Repo.list(RunEvent.Query, opts)
     end
   end
+
+  # -- PubSub ----------------------------------------------------------
+
+  @doc "Subscribe the caller to the account's run create/transition feed (`{:run_updated, run}`)."
+  def subscribe_account_runs(account_id),
+    do: Emisar.PubSub.subscribe(account_runs_topic(account_id))
+
+  @doc """
+  Subscribe to one run's live updates — `{:run_updated, run}` transitions
+  plus `{:run_event, event}` progress chunks. The topic carries the
+  account id, so a subscriber can only name runs inside its own account.
+  """
+  def subscribe_run(account_id, run_id),
+    do: Emisar.PubSub.subscribe(run_topic(account_id, run_id))
+
+  def unsubscribe_run(account_id, run_id),
+    do: Emisar.PubSub.unsubscribe(run_topic(account_id, run_id))
+
+  defp account_runs_topic(account_id), do: "account:#{account_id}:runs"
+  defp run_topic(account_id, run_id), do: "account:#{account_id}:run:#{run_id}"
+
+  # Subscribers (RunDetailLive's meta strip, RunsLive table) need
+  # `runner.name` to render — make `runner` preloaded part of the payload
+  # contract so a `:run_updated` arriving after mount can cleanly replace
+  # `@run` without re-introducing `%NotLoaded{}`.
+  defp broadcast_run(%ActionRun{} = run) do
+    run =
+      case run.runner do
+        %Ecto.Association.NotLoaded{} -> Repo.preload(run, :runner)
+        _ -> run
+      end
+
+    payload = {:run_updated, run}
+    Emisar.PubSub.broadcast(run_topic(run.account_id, run.id), payload)
+    Emisar.PubSub.broadcast(account_runs_topic(run.account_id), payload)
+  end
+
+  defp broadcast_run_event(%ActionRun{} = run, %RunEvent{} = event),
+    do: Emisar.PubSub.broadcast(run_topic(run.account_id, run.id), {:run_event, event})
 
   # -- Authorization ----------------------------------------------------
 

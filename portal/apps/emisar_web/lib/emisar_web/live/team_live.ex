@@ -1,7 +1,7 @@
 defmodule EmisarWeb.TeamLive do
   use EmisarWeb, :live_view
 
-  alias Emisar.{Accounts, Mailers, PubSub, Runners}
+  alias Emisar.{Accounts, Mailers, Runners}
   alias Emisar.Accounts.Membership
   alias EmisarWeb.LiveTable
   alias Phoenix.LiveView.JS
@@ -12,7 +12,7 @@ defmodule EmisarWeb.TeamLive do
 
   def mount(_params, _session, socket) do
     if connected?(socket),
-      do: PubSub.subscribe_account_team(socket.assigns.current_account.id)
+      do: Accounts.subscribe_account_team(socket.assigns.current_account.id)
 
     {:ok,
      socket

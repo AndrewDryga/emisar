@@ -124,8 +124,18 @@ defmodule Emisar.ApiKeys do
     end
   end
 
+  @doc "Subscribe the caller to the account's API-key list changes (`{:list_changed, :api_key, …}`)."
+  def subscribe_account_api_keys(account_id),
+    do: Emisar.PubSub.subscribe(account_api_keys_topic(account_id))
+
+  defp account_api_keys_topic(account_id), do: "account:#{account_id}:api_keys"
+
   defp broadcast_api_key_change(%{key: key}, event_type) do
-    Emisar.PubSub.broadcast_account_list(key.account_id, :api_key, event_type, key.id)
+    Emisar.PubSub.broadcast(
+      account_api_keys_topic(key.account_id),
+      {:list_changed, :api_key, event_type, key.id}
+    )
+
     :ok
   end
 

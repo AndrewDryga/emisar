@@ -198,7 +198,7 @@ defmodule Emisar.Repo do
           actor_id: subject.actor.id, subject_id: p.id, payload: %{...})
       end)
       |> Repo.commit_multi(after_commit: fn %{policy: p} ->
-        PubSub.broadcast_policy(p)
+        broadcast_policy_change(p)
       end)
 
   Options:
@@ -246,10 +246,9 @@ defmodule Emisar.Repo do
   # Tolerates the case where Audit isn't compiled (test-only) by routing
   # through `Code.ensure_loaded?` — keeps the data app's startup honest.
   defp fan_out_audit_events(changes) when is_map(changes) do
-    if Code.ensure_loaded?(Emisar.PubSub) and
-         Code.ensure_loaded?(Emisar.Audit.Event) do
+    if Code.ensure_loaded?(Emisar.Audit) and Code.ensure_loaded?(Emisar.Audit.Event) do
       Enum.each(changes, fn
-        {_step, %Emisar.Audit.Event{} = ev} -> Emisar.PubSub.broadcast_audit_event(ev)
+        {_step, %Emisar.Audit.Event{} = ev} -> Emisar.Audit.broadcast_event(ev)
         _ -> :ok
       end)
     end

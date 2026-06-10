@@ -243,6 +243,22 @@ defmodule Emisar.Audit do
     end)
   end
 
+  # -- PubSub ----------------------------------------------------------
+
+  @doc "Subscribe the caller to the account-wide audit fan-out (`{:audit_event, event}` per row)."
+  def subscribe_account_audit(account_id),
+    do: Emisar.PubSub.subscribe(account_audit_topic(account_id))
+
+  defp account_audit_topic(account_id), do: "account:#{account_id}:audit"
+
+  @doc """
+  Internal — `Repo.commit_multi` auto-fans every committed `Audit.Event`
+  to the account-wide audit topic, so AuditLive stays current without
+  each context having to remember to broadcast.
+  """
+  def broadcast_event(%Event{} = event),
+    do: Emisar.PubSub.broadcast(account_audit_topic(event.account_id), {:audit_event, event})
+
   # -- Reads (Subject-gated) -------------------------------------------
 
   @doc """

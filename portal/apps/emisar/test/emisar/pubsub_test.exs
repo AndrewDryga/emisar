@@ -1,21 +1,26 @@
 defmodule Emisar.PubSubTest do
-  use ExUnit.Case, async: true
+  use Emisar.DataCase, async: true
 
-  alias Emisar.PubSub
+  import Emisar.Fixtures
 
-  describe "topic helpers" do
-    test "account topics are scoped by account id" do
-      assert PubSub.topic_for_account_runs("a1") == "account:a1:runs"
-      assert PubSub.topic_for_account_approvals("a1") == "account:a1:approvals"
-    end
+  alias Emisar.Audit
 
-    test "per-run and per-runner topics are scoped by id" do
-      assert PubSub.topic_for_run("r1") == "run:r1"
-      assert PubSub.topic_for_runner("a1") == "runner:a1"
-    end
+  # Topic names are private to the owning contexts now — the account
+  # scoping guarantee is asserted through the public subscribe/broadcast
+  # surface instead of string-shape checks.
+  test "context topics are account-scoped: another account's broadcast never arrives" do
+    account_a = account_fixture()
+    account_b = account_fixture()
 
-    test "topics for different accounts never collide" do
-      refute PubSub.topic_for_account_runs("a1") == PubSub.topic_for_account_runs("a2")
-    end
+    :ok = Audit.subscribe_account_audit(account_a.id)
+
+    {:ok, event_b} = Audit.log(account_b.id, "scope.test", actor_kind: "system")
+    Audit.broadcast_event(event_b)
+    refute_receive {:audit_event, _}, 50
+
+    {:ok, event_a} = Audit.log(account_a.id, "scope.test", actor_kind: "system")
+    Audit.broadcast_event(event_a)
+    assert_receive {:audit_event, received}, 500
+    assert received.id == event_a.id
   end
 end

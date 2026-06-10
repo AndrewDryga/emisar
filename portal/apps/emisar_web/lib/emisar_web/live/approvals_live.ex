@@ -15,12 +15,12 @@ defmodule EmisarWeb.ApprovalsLive do
   """
   use EmisarWeb, :live_view
 
-  alias Emisar.{Approvals, PubSub, Runners, Users}
+  alias Emisar.{Approvals, Runners, Users}
   alias EmisarWeb.{LiveTable, Permissions}
 
   def mount(_params, _session, socket) do
     if connected?(socket),
-      do: PubSub.subscribe_account_approvals(socket.assigns.current_account.id)
+      do: Approvals.subscribe_account_approvals(socket.assigns.current_account.id)
 
     {:ok, assign(socket, :page_title, "Approvals")}
   end

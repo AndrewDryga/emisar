@@ -6,12 +6,12 @@ defmodule EmisarWeb.RunbooksLive do
   """
   use EmisarWeb, :live_view
 
-  alias Emisar.{PubSub, Runbooks}
+  alias Emisar.Runbooks
   alias EmisarWeb.LiveTable
 
   def mount(_params, _session, socket) do
     if connected?(socket),
-      do: PubSub.subscribe_account_runbooks(socket.assigns.current_account.id)
+      do: Runbooks.subscribe_account_runbooks(socket.assigns.current_account.id)
 
     {:ok, assign(socket, :page_title, "Runbooks")}
   end

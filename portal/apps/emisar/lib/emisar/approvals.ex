@@ -20,7 +20,7 @@ defmodule Emisar.Approvals do
        time within that window.
   """
   alias Ecto.Multi
-  alias Emisar.{Audit, Auth, PubSub, Repo, Runs}
+  alias Emisar.{Audit, Auth, Repo, Runs}
   alias Emisar.Approvals.{Authorizer, Grant, Request}
   alias Emisar.Auth.Subject
 
@@ -402,18 +402,33 @@ defmodule Emisar.Approvals do
   end
 
   defp tap_broadcast({:ok, %Request{} = request} = result) do
-    PubSub.broadcast_approval(request)
+    broadcast_approval(request)
     result
   end
 
   defp tap_broadcast(other), do: other
 
   defp tap_broadcast_tuple({:ok, {req, _run}} = result) do
-    PubSub.broadcast_approval(req)
+    broadcast_approval(req)
     result
   end
 
   defp tap_broadcast_tuple(other), do: other
+
+  # -- PubSub ----------------------------------------------------------
+
+  @doc "Subscribe the caller to the account's approval feed (`{:approval_updated, request}`)."
+  def subscribe_account_approvals(account_id),
+    do: Emisar.PubSub.subscribe(account_approvals_topic(account_id))
+
+  defp account_approvals_topic(account_id), do: "account:#{account_id}:approvals"
+
+  defp broadcast_approval(%Request{} = request) do
+    Emisar.PubSub.broadcast(
+      account_approvals_topic(request.account_id),
+      {:approval_updated, request}
+    )
+  end
 
   # -- Grants ---------------------------------------------------------
 
@@ -668,7 +683,7 @@ defmodule Emisar.Approvals do
         reloaded =
           Request.Query.all() |> Request.Query.by_id(req.id) |> Repo.fetch!(Request.Query)
 
-        PubSub.broadcast_approval(reloaded)
+        broadcast_approval(reloaded)
       end
     end)
   end

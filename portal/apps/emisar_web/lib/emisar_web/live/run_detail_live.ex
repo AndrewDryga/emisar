@@ -1,7 +1,7 @@
 defmodule EmisarWeb.RunDetailLive do
   use EmisarWeb, :live_view
 
-  alias Emisar.{Approvals, PubSub, Runs}
+  alias Emisar.{Approvals, Runs}
   alias EmisarWeb.Permissions
 
   def mount(%{"id" => id}, _session, socket) do
@@ -16,7 +16,7 @@ defmodule EmisarWeb.RunDetailLive do
 
       {:ok, run} ->
         if connected?(socket) do
-          PubSub.subscribe_run(run.id)
+          Runs.subscribe_run(run.account_id, run.id)
         end
 
         {:ok, events, _meta} = Runs.list_events_for_run(run.id, subject, page: [limit: 500])

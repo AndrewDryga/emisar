@@ -92,7 +92,7 @@ defmodule Emisar.Catalog do
       {:ok, pending_changed?} ->
         # Light up the pack-trust badge only when the pending set actually
         # moved (drift / new custom pack), and only after the commit.
-        if pending_changed?, do: Emisar.PubSub.broadcast_pack_trust(runner.account_id)
+        if pending_changed?, do: broadcast_pack_trust(runner.account_id)
 
       {:error, reason} ->
         Logger.warning("catalog sync for runner #{runner.id} failed: #{inspect(reason)}")
@@ -121,7 +121,7 @@ defmodule Emisar.Catalog do
   # Taps a Trust/Reject result: on success, fire the badge broadcast and
   # pass the result through unchanged.
   defp broadcast_trust_change({:ok, %PackVersion{account_id: account_id}} = result) do
-    Emisar.PubSub.broadcast_pack_trust(account_id)
+    broadcast_pack_trust(account_id)
     result
   end
 
@@ -683,6 +683,22 @@ defmodule Emisar.Catalog do
       _ ->
         0
     end
+  end
+
+  # -- PubSub ----------------------------------------------------------
+
+  @doc "Subscribe the caller to the account's pack-trust badge signal (`{:pack_trust_changed, account_id}`)."
+  def subscribe_account_packs(account_id),
+    do: Emisar.PubSub.subscribe(account_packs_topic(account_id))
+
+  defp account_packs_topic(account_id), do: "account:#{account_id}:packs"
+
+  # Pack-trust badge signal: a pack version just became pending (drift or
+  # a new custom pack) or was resolved (Trust/Reject). Subscribers
+  # recompute the "needs review" count. Fired only after the mutation
+  # commits, so a rolled-back observe can't light up the badge.
+  defp broadcast_pack_trust(account_id) when is_binary(account_id) do
+    Emisar.PubSub.broadcast(account_packs_topic(account_id), {:pack_trust_changed, account_id})
   end
 
   # -- Authorization ---------------------------------------------------

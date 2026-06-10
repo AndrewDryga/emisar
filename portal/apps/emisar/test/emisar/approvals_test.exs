@@ -611,7 +611,7 @@ defmodule Emisar.ApprovalsTest do
         |> ActionRun.Query.by_id(run.id)
         |> Repo.update_all(set: [action_id: ""])
 
-      Emisar.PubSub.subscribe_runner(runner.id)
+      Emisar.Runners.subscribe_runner_transport(runner)
 
       assert {:error, {:grant_failed, %Ecto.Changeset{}}} =
                Approvals.approve_request(req, subject, "ok", duration: :one_day)
@@ -759,7 +759,7 @@ defmodule Emisar.ApprovalsTest do
           }
         )
 
-      Emisar.PubSub.subscribe_runner(runner.id)
+      Emisar.Runners.subscribe_runner_transport(runner)
 
       attrs = %{
         runner_id: runner.id,
@@ -816,7 +816,7 @@ defmodule Emisar.ApprovalsTest do
           }
         )
 
-      Emisar.PubSub.subscribe_runner(runner.id)
+      Emisar.Runners.subscribe_runner_transport(runner)
 
       attrs = %{
         runner_id: runner.id,

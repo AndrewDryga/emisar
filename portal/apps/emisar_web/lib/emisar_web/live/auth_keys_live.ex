@@ -1,7 +1,7 @@
 defmodule EmisarWeb.AuthKeysLive do
   use EmisarWeb, :live_view
 
-  alias Emisar.{PubSub, Runners}
+  alias Emisar.Runners
   alias Emisar.Runners.AuthKey
   alias EmisarWeb.{LiveTable, Permissions, UrlHelpers}
   alias Phoenix.LiveView.JS
@@ -11,7 +11,7 @@ defmodule EmisarWeb.AuthKeysLive do
     # create / revoke (or an auto-bind from a runner registration) reflows
     # this list without the viewer having to refresh.
     if connected?(socket),
-      do: PubSub.subscribe_account_auth_keys(socket.assigns.current_account.id)
+      do: Runners.subscribe_account_auth_keys(socket.assigns.current_account.id)
 
     {:ok,
      socket

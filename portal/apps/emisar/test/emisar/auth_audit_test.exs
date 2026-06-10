@@ -638,7 +638,7 @@ defmodule Emisar.AuthAuditTest do
     test "every audited mutation reaches subscribers of the account audit topic" do
       {_user, account, subject} = owner_subject_fixture()
 
-      :ok = Emisar.PubSub.subscribe_account_audit(account.id)
+      :ok = Emisar.Audit.subscribe_account_audit(account.id)
 
       {:ok, _} = Emisar.Accounts.update_account(account, %{name: "Reloaded"}, subject)
 
@@ -650,7 +650,7 @@ defmodule Emisar.AuthAuditTest do
     test "broadcast does NOT fire when the transaction rolls back" do
       {_user, account, subject} = owner_subject_fixture()
 
-      :ok = Emisar.PubSub.subscribe_account_audit(account.id)
+      :ok = Emisar.Audit.subscribe_account_audit(account.id)
 
       # A too-long slug rolls the whole multi back — no audit row commits,
       # no broadcast.

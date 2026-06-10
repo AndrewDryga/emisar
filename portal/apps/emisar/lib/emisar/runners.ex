@@ -701,10 +701,37 @@ defmodule Emisar.Runners do
     end
   end
 
+  @doc "Subscribe the caller to the account's auth-key list changes (`{:list_changed, :auth_key, …}`)."
+  def subscribe_account_auth_keys(account_id),
+    do: Emisar.PubSub.subscribe(account_auth_keys_topic(account_id))
+
+  defp account_auth_keys_topic(account_id), do: "account:#{account_id}:auth_keys"
+
   defp broadcast_auth_key_change(%{key: key}, event_type) do
-    Emisar.PubSub.broadcast_account_list(key.account_id, :auth_key, event_type, key.id)
+    Emisar.PubSub.broadcast(
+      account_auth_keys_topic(key.account_id),
+      {:list_changed, :auth_key, event_type, key.id}
+    )
+
     :ok
   end
+
+  @doc """
+  Subscribe the caller to a runner's cloud→runner transport topic. Used
+  by the runner socket process; messages arrive as `{:cloud_to_runner, msg}`.
+  """
+  def subscribe_runner_transport(%Runner{} = runner),
+    do: Emisar.PubSub.subscribe(runner_topic(runner.account_id, runner.id))
+
+  @doc """
+  Internal — Runs dispatch/cancel: push an outbound envelope to the
+  runner's socket process. The topic carries the account id, so a caller
+  can only address runners inside the account it already proved.
+  """
+  def deliver_to_runner(account_id, runner_id, msg),
+    do: Emisar.PubSub.broadcast(runner_topic(account_id, runner_id), {:cloud_to_runner, msg})
+
+  defp runner_topic(account_id, runner_id), do: "account:#{account_id}:runner:#{runner_id}"
 
   @doc false
   # Seed/test helper that persists an auth key with a caller-supplied

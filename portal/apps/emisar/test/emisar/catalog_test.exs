@@ -160,7 +160,7 @@ defmodule Emisar.CatalogTest do
       {account, subject} = account_with_owner()
       runner = runner_fixture(account_id: account.id)
       account_id = account.id
-      Emisar.PubSub.subscribe_account_packs(account_id)
+      Emisar.Catalog.subscribe_account_packs(account_id)
 
       # New custom pack (no shipped baseline) → lands pending → broadcast.
       {:ok, _} =

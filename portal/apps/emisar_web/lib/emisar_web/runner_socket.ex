@@ -7,7 +7,7 @@ defmodule EmisarWeb.RunnerSocket do
     1. Authenticates the runner on `init/1` using the bearer token (or
        bootstrap auth key) presented in the `Authorization` header,
        then ingests the runner's first `runner_state` message.
-    2. Subscribes to `Emisar.PubSub.topic_for_runner/1` so the cloud can
+    2. Subscribes to the runner transport topic (`Runners.subscribe_runner_transport/1`) so the cloud can
        deliver `run_action`/`cancel`/`ack_result` messages to this
        socket by broadcasting onto that topic.
     3. Pushes Presence membership for the LiveView "online" indicator.
@@ -24,7 +24,7 @@ defmodule EmisarWeb.RunnerSocket do
 
   require Logger
 
-  alias Emisar.{Runners, Audit, Catalog, PubSub, Runs}
+  alias Emisar.{Runners, Audit, Catalog, Runs}
   alias Emisar.Runners.{Runner, Token}
 
   @protocol_version 1
@@ -52,7 +52,7 @@ defmodule EmisarWeb.RunnerSocket do
       heartbeat_ref: schedule_heartbeat_timeout()
     }
 
-    PubSub.subscribe_runner(runner.id)
+    Runners.subscribe_runner_transport(runner)
 
     # Drain coordinator broadcasts here on SIGTERM so this process can
     # gracefully push a shutdown envelope to the runner before the

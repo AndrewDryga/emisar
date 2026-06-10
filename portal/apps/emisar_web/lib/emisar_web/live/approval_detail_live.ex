@@ -1,7 +1,7 @@
 defmodule EmisarWeb.ApprovalDetailLive do
   use EmisarWeb, :live_view
 
-  alias Emisar.{Approvals, PubSub, Runners, Runs, Users}
+  alias Emisar.{Approvals, Runners, Runs, Users}
   alias EmisarWeb.Permissions
 
   def mount(%{"id" => id}, _session, socket) do
@@ -17,7 +17,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
 
       {:ok, req} ->
         if connected?(socket) do
-          PubSub.subscribe_account_approvals(account_id)
+          Approvals.subscribe_account_approvals(account_id)
           Runners.subscribe_connections(account_id)
         end
 

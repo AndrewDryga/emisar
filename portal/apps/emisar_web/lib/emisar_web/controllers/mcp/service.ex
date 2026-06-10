@@ -15,7 +15,7 @@ defmodule EmisarWeb.Mcp.Service do
 
   require Logger
 
-  alias Emisar.{Catalog, PubSub, Runbooks, Runners, Runs}
+  alias Emisar.{Catalog, Runbooks, Runners, Runs}
   alias EmisarWeb.Mcp.{Idempotency, ToolSchema}
 
   # Same caps the REST handlers use; keep them in lockstep so
@@ -613,16 +613,16 @@ defmodule EmisarWeb.Mcp.Service do
 
   # Block until every run in `ids` is terminal or the deadline passes. The
   # runner socket broadcasts `{:run_updated, _}` on each run's topic at every
-  # state transition (Emisar.PubSub.broadcast_run/1), so we subscribe and wake
+  # state transition (Runs broadcasts on the run topic), so we subscribe and wake
   # on those instead of busy-polling; the recheck timer is the safety net.
   defp poll_all_to_terminal(subject, ids, deadline) do
-    Enum.each(ids, &PubSub.subscribe_run/1)
+    Enum.each(ids, &Runs.subscribe_run(subject.account.id, &1))
     schedule_recheck(deadline)
 
     try do
       await_all_terminal(subject, ids, deadline)
     after
-      Enum.each(ids, &PubSub.unsubscribe_run/1)
+      Enum.each(ids, &Runs.unsubscribe_run(subject.account.id, &1))
     end
   end
 
@@ -659,13 +659,13 @@ defmodule EmisarWeb.Mcp.Service do
   # Single-run variant of the above, returning the terminal run for the caller
   # to render. Same event-driven wait; one subscription instead of N.
   defp poll_to_terminal(subject, run_id, deadline) do
-    PubSub.subscribe_run(run_id)
+    Runs.subscribe_run(subject.account.id, run_id)
     schedule_recheck(deadline)
 
     try do
       await_terminal(subject, run_id, deadline)
     after
-      PubSub.unsubscribe_run(run_id)
+      Runs.unsubscribe_run(subject.account.id, run_id)
     end
   end
 

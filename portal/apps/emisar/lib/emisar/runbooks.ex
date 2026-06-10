@@ -72,8 +72,18 @@ defmodule Emisar.Runbooks do
     end
   end
 
+  @doc "Subscribe the caller to the account's runbook list changes (`{:list_changed, :runbook, …}`)."
+  def subscribe_account_runbooks(account_id),
+    do: Emisar.PubSub.subscribe(account_runbooks_topic(account_id))
+
+  defp account_runbooks_topic(account_id), do: "account:#{account_id}:runbooks"
+
   defp broadcast_runbook_change(%{runbook: rb}, event_type) do
-    Emisar.PubSub.broadcast_account_list(rb.account_id, :runbook, event_type, rb.id)
+    Emisar.PubSub.broadcast(
+      account_runbooks_topic(rb.account_id),
+      {:list_changed, :runbook, event_type, rb.id}
+    )
+
     :ok
   end
 

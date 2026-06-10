@@ -372,8 +372,8 @@ defmodule EmisarWeb.UserAuth do
 
     if Phoenix.LiveView.connected?(socket) and socket.assigns[:current_account] do
       account_id = socket.assigns.current_account.id
-      Emisar.PubSub.subscribe_account_approvals(account_id)
-      Emisar.PubSub.subscribe_account_packs(account_id)
+      Emisar.Approvals.subscribe_account_approvals(account_id)
+      Emisar.Catalog.subscribe_account_packs(account_id)
 
       {:cont,
        socket
