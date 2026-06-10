@@ -149,10 +149,10 @@ defmodule Emisar.RunnersTest do
       refute id1 == id2
     end
 
-    test "a different external_id with a taken name is rejected (names unique among live)" do
-      # Names are unique among live runners: a different machine reusing a
-      # name gets a clean conflict, not a silent second runner. Identity is
-      # still external_id; the operator deletes/renames the holder to resolve.
+    test "a CONNECTED holder keeps its name — a different external_id is rejected" do
+      # Names are unique among live runners. An actively connected holder is
+      # a real conflict: a different machine reusing the name gets a clean
+      # error, never a silent takeover of a working runner.
       account = account_fixture()
       user = user_fixture()
 
@@ -161,11 +161,45 @@ defmodule Emisar.RunnersTest do
 
       base = %{hostname: "samehost", group: "g"}
 
-      assert {:ok, %Runner{name: "samehost"}, _, _} =
+      assert {:ok, %Runner{name: "samehost"} = holder, _, _} =
                Runners.register_via_auth_key(raw, Map.put(base, :external_id, "ext-a"))
+
+      {:ok, _} = Runners.connect_runner(holder)
 
       assert {:error, :runner_name_taken, "samehost"} =
                Runners.register_via_auth_key(raw, Map.put(base, :external_id, "ext-b"))
+    end
+
+    test "an OFFLINE holder is displaced: the new registration takes the name" do
+      # A dead runner shouldn't squat its name — reinstalls and renames are
+      # routine. The offline holder is soft-deleted (history preserved) and
+      # the swap is audited as runner.replaced.
+      account = account_fixture()
+      user = user_fixture()
+
+      {raw, _key} =
+        auth_key_fixture(account_id: account.id, created_by_id: user.id, reusable: true)
+
+      base = %{hostname: "samehost", group: "g"}
+
+      assert {:ok, %Runner{id: holder_id, name: "samehost"}, _, _} =
+               Runners.register_via_auth_key(raw, Map.put(base, :external_id, "ext-a"))
+
+      assert {:ok, %Runner{id: new_id, name: "samehost"}, _, _} =
+               Runners.register_via_auth_key(raw, Map.put(base, :external_id, "ext-b"))
+
+      refute new_id == holder_id
+
+      # The displaced holder is soft-deleted, not gone.
+      assert {:error, :not_found} = Runners.peek_runner_by_id(holder_id)
+
+      subject = subject_for(user, account, role: :owner)
+
+      {:ok, events, _} =
+        Emisar.Audit.list_events(subject, filter: [event_type: ["runner.replaced"]])
+
+      assert [event] = events
+      assert event.payload["replaced_runner_id"] == holder_id
     end
 
     test "a taken name frees up once the holding runner is deleted" do
@@ -179,6 +213,9 @@ defmodule Emisar.RunnersTest do
       assert {:ok, %Runner{} = holder, _, _} =
                Runners.register_via_auth_key(raw, Map.put(base, :external_id, "ext-a"))
 
+      # Connected holders are never displaced — the conflict stands.
+      {:ok, holder} = Runners.connect_runner(holder)
+
       assert {:error, :runner_name_taken, "samehost"} =
                Runners.register_via_auth_key(raw, Map.put(base, :external_id, "ext-b"))
 
@@ -189,13 +226,12 @@ defmodule Emisar.RunnersTest do
                Runners.register_via_auth_key(raw, Map.put(base, :external_id, "ext-b"))
     end
 
-    test "registers without an external_id (no crash), then conflicts on its name" do
+    test "registers without an external_id (no crash); re-registering displaces the stale row" do
       # A legacy runner that doesn't send external_id: the server mints a
       # fresh UUID, so the first register succeeds cleanly (no 500). A second
       # register from the same host (same name, still no external_id) can't
-      # reuse that identity, so it cleanly conflicts on the name instead of
-      # crashing — the fix is to upgrade to a runner that persists a stable
-      # runner_id (or delete the stale row).
+      # reuse that identity — but the stale offline row is displaced, so the
+      # host comes back as a fresh runner instead of erroring.
       account = account_fixture()
       user = user_fixture()
 
@@ -204,10 +240,13 @@ defmodule Emisar.RunnersTest do
 
       attrs = %{hostname: "no-id-host", group: "g"}
 
-      assert {:ok, %Runner{}, _, _} = Runners.register_via_auth_key(raw, attrs)
+      assert {:ok, %Runner{id: first_id}, _, _} = Runners.register_via_auth_key(raw, attrs)
 
-      assert {:error, :runner_name_taken, "no-id-host"} =
+      assert {:ok, %Runner{id: second_id, name: "no-id-host"}, _, _} =
                Runners.register_via_auth_key(raw, attrs)
+
+      refute second_id == first_id
+      assert {:error, :not_found} = Runners.peek_runner_by_id(first_id)
     end
 
     test "returns :over_limit when the plan cap is exceeded" do
@@ -294,6 +333,36 @@ defmodule Emisar.RunnersTest do
 
       assert successes == 1, "expected exactly 1 success, got #{successes}: #{inspect(results)}"
       assert failures == 7, "expected 7 :auth_key_invalid failures, got #{failures}"
+    end
+  end
+
+  describe "create_runner/2 name conflicts" do
+    test "replaces an OFFLINE runner holding the name" do
+      {account, _user, subject} = account_with_owner_subject()
+      holder = runner_fixture(account_id: account.id, name: "edge-01", connected?: false)
+
+      assert {:ok, %Runner{} = runner} =
+               Runners.create_runner(%{"name" => "edge-01", "group" => "edge"}, subject)
+
+      refute runner.id == holder.id
+      assert {:error, :not_found} = Runners.peek_runner_by_id(holder.id)
+
+      {:ok, events, _} =
+        Emisar.Audit.list_events(subject, filter: [event_type: ["runner.replaced"]])
+
+      assert [event] = events
+      assert event.payload["replaced_runner_id"] == holder.id
+    end
+
+    test "keeps the conflict when the holder is CONNECTED" do
+      {account, _user, subject} = account_with_owner_subject()
+      holder = runner_fixture(account_id: account.id, name: "edge-01", connected?: true)
+
+      assert {:error, %Ecto.Changeset{} = changeset} =
+               Runners.create_runner(%{"name" => "edge-01", "group" => "edge"}, subject)
+
+      assert "is already used by another runner in this account" in errors_on(changeset).name
+      assert {:ok, _still_there} = Runners.peek_runner_by_id(holder.id)
     end
   end
 

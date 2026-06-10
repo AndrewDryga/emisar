@@ -256,9 +256,51 @@ defmodule Emisar.Runners do
              subject,
              Authorizer.manage_runners_permission()
            ) do
-      %Emisar.Accounts.Account{id: account.id}
-      |> Runner.Changeset.create(attrs)
-      |> Repo.insert()
+      changeset =
+        %Emisar.Accounts.Account{id: account.id}
+        |> Runner.Changeset.create(attrs)
+
+      case Repo.insert(changeset) do
+        {:ok, runner} ->
+          {:ok, runner}
+
+        {:error, %Ecto.Changeset{} = errored} ->
+          # Retry with the PRISTINE changeset — the errored one is invalid
+          # and would fail the Multi insert on its own carried errors.
+          with true <- name_taken_changeset?(errored),
+               {:ok, runner} <- replace_inactive_name_holder(changeset, account.id, subject) do
+            {:ok, runner}
+          else
+            _ -> {:error, errored}
+          end
+      end
+    end
+  end
+
+  # The taken name may belong to a dead runner (reinstalled host, renamed
+  # fleet) — replacing it beats forcing the operator to hunt down and delete
+  # the corpse first. Only an OFFLINE holder is displaced (soft-deleted, so
+  # its history survives); a connected one keeps the conflict error.
+  defp replace_inactive_name_holder(%Ecto.Changeset{} = changeset, account_id, subject) do
+    name = Ecto.Changeset.get_field(changeset, :name)
+
+    with {:ok, %Runner{} = existing} <- fetch_live_runner_by_name(name, account_id),
+         false <- online?(account_id, existing.id) do
+      Multi.new()
+      |> Multi.update(:replaced, Runner.Changeset.delete(existing))
+      |> Multi.insert(:runner, changeset)
+      |> Multi.insert(:audit, fn %{runner: runner} ->
+        Audit.Events.runner_replaced(subject, existing, runner)
+      end)
+      |> Repo.commit_multi()
+      |> case do
+        {:ok, %{runner: runner}} -> {:ok, runner}
+        {:error, reason} -> {:error, reason}
+      end
+    else
+      # The holder is actively connected — or vanished between the failed
+      # insert and this read. Let the caller surface the original conflict.
+      _ -> :conflict
     end
   end
 
@@ -1029,41 +1071,63 @@ defmodule Emisar.Runners do
     name = derive_name(attrs)
 
     # Names are unique among live runners. We're here because no live runner
-    # has this external_id, so if another live runner already holds this name
-    # it's a real conflict: bail with a clean error the controller turns into
-    # a 409 ("delete/rename the other runner") instead of a constraint crash.
-    # The partial unique index is the race backstop in the insert below.
+    # has this external_id, so another live runner holding this name is a
+    # conflict — but only an ACTIVE one. An offline holder (reinstalled host,
+    # renamed machine) is displaced so a dead runner can't squat the address;
+    # a connected holder rolls back to the clean error the controller turns
+    # into a 409. The partial unique index is the race backstop below.
     case fetch_live_runner_by_name(name, key.account_id) do
-      {:ok, %Runner{}} ->
-        Repo.rollback({:runner_name_taken, name})
+      {:ok, %Runner{} = existing} -> displace_inactive_name_holder!(existing, key, name)
+      {:error, :not_found} -> :ok
+    end
 
-      {:error, :not_found} ->
-        changeset =
-          Runner.Changeset.register(%{
-            account_id: key.account_id,
-            name: name,
-            external_id: external_id,
-            group: attrs[:group] || key.group || "default",
-            hostname: attrs[:hostname],
-            labels: attrs[:labels] || %{},
-            runner_version: attrs[:version] || attrs[:runner_version],
-            bootstrap_auth_key_id: key.id
-          })
+    changeset =
+      Runner.Changeset.register(%{
+        account_id: key.account_id,
+        name: name,
+        external_id: external_id,
+        group: attrs[:group] || key.group || "default",
+        hostname: attrs[:hostname],
+        labels: attrs[:labels] || %{},
+        runner_version: attrs[:version] || attrs[:runner_version],
+        bootstrap_auth_key_id: key.id
+      })
 
-        case Repo.insert(changeset,
-               on_conflict: :nothing,
-               conflict_target:
-                 {:unsafe_fragment, "(account_id, external_id) WHERE deleted_at IS NULL"}
-             ) do
-          {:ok, inserted} ->
-            {:ok, runner} = fetch_runner_by_external_id_for_account(external_id, key.account_id)
-            {runner, runner.id == inserted.id}
+    case Repo.insert(changeset,
+           on_conflict: :nothing,
+           conflict_target:
+             {:unsafe_fragment, "(account_id, external_id) WHERE deleted_at IS NULL"}
+         ) do
+      {:ok, inserted} ->
+        {:ok, runner} = fetch_runner_by_external_id_for_account(external_id, key.account_id)
+        {runner, runner.id == inserted.id}
 
-          {:error, changeset} ->
-            if name_taken_changeset?(changeset),
-              do: Repo.rollback({:runner_name_taken, name}),
-              else: Repo.rollback(changeset)
-        end
+      {:error, changeset} ->
+        if name_taken_changeset?(changeset),
+          do: Repo.rollback({:runner_name_taken, name}),
+          else: Repo.rollback(changeset)
+    end
+  end
+
+  # Runs inside register_via_auth_key's transaction. A connected holder rolls
+  # the registration back; an offline one is soft-deleted (history preserved)
+  # with an audit row so the fleet timeline shows where the name went.
+  defp displace_inactive_name_holder!(%Runner{} = existing, %AuthKey{} = key, name) do
+    if online?(key.account_id, existing.id) do
+      Repo.rollback({:runner_name_taken, name})
+    else
+      {:ok, _} = existing |> Runner.Changeset.delete() |> Repo.update()
+
+      {:ok, _} =
+        Audit.log(key.account_id, "runner.replaced",
+          actor_kind: "system",
+          subject_kind: "runner",
+          subject_id: existing.id,
+          subject_label: name,
+          payload: %{replaced_runner_id: existing.id, auth_key_id: key.id}
+        )
+
+      :ok
     end
   end
 
