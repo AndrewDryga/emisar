@@ -1172,7 +1172,6 @@ defmodule Emisar.Runners do
   end
 
   defp derive_name(attrs) do
-    attrs[:hostname] || attrs[:name] ||
-      "runner-#{Base.url_encode64(:crypto.strong_rand_bytes(4), padding: false)}"
+    attrs[:hostname] || attrs[:name] || "runner-#{Crypto.runner_name_suffix()}"
   end
 end

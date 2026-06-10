@@ -43,6 +43,28 @@ defmodule Emisar.Crypto do
   def hash(raw) when is_binary(raw), do: :crypto.hash(:sha256, raw)
 
   @doc """
+  Lowercase-hex sha256 — the integrity-digest form for content-addressing
+  non-secret payloads (run args, output digests), matching the hex
+  digests runners report.
+  """
+  def hash_hex(raw) when is_binary(raw), do: hash(raw) |> Base.encode16(case: :lower)
+
+  # Dispatch correlation ids ride in runner envelopes, results, and logs;
+  # 16 random bytes keeps them unguessable without bloating log lines.
+  @request_id_bytes 16
+
+  @doc "Correlation id for one action dispatch (`req_…`)."
+  def run_request_id, do: "req_" <> random_secret(@request_id_bytes)
+
+  # Auto-generated runner names only need to avoid casual collision (the
+  # partial unique index on the name is the real guarantee), so a short
+  # tail keeps them readable.
+  @runner_name_suffix_bytes 4
+
+  @doc "Random tail for an auto-generated runner name (`runner-…`)."
+  def runner_name_suffix, do: random_secret(@runner_name_suffix_bytes)
+
+  @doc """
   PKCE S256 challenge transform (RFC 7636): the url-safe-base64 (no
   padding) encoding of `hash/1`. Lives here so the OAuth context never
   inlines `Base.url_encode64` over a digest itself — same single crypto

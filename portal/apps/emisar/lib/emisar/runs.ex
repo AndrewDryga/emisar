@@ -6,7 +6,7 @@ defmodule Emisar.Runs do
   Transport for sending, and tracks progress + final result.
   """
   alias Ecto.Multi
-  alias Emisar.{Audit, Auth, Repo}
+  alias Emisar.{Audit, Auth, Crypto, Repo}
   alias Emisar.Auth.Subject
   alias Emisar.Runs.{ActionRun, Authorizer, RunEvent}
   require Logger
@@ -169,7 +169,7 @@ defmodule Emisar.Runs do
   this directly to seed runs without exercising policy + dispatch.
   """
   def create_run(attrs) do
-    request_id = attrs[:request_id] || generate_request_id()
+    request_id = attrs[:request_id] || Crypto.run_request_id()
     attrs = Map.put(attrs, :request_id, request_id)
     attrs = Map.put(attrs, :queued_at, DateTime.utc_now())
 
@@ -533,10 +533,7 @@ defmodule Emisar.Runs do
 
   defp lookup_grant(_attrs), do: :none
 
-  defp args_sha256(args) do
-    :crypto.hash(:sha256, Jason.encode!(args || %{}))
-    |> Base.encode16(case: :lower)
-  end
+  defp args_sha256(args), do: Crypto.hash_hex(Jason.encode!(args || %{}))
 
   @doc """
   Internal — used by `Emisar.Workers.RunDispatchTimeout` to find runs
@@ -682,13 +679,6 @@ defmodule Emisar.Runs do
       subject_id: run.id,
       payload: %{from_status: run.status, reason: reason}
     )
-  end
-
-  # Internal id-minter for the dispatch correlation id (req_…). Private:
-  # only `create_run/1` calls it, and §1.4 keeps internal helpers off the
-  # public context surface (no test reaches it either).
-  defp generate_request_id do
-    "req_" <> (:crypto.strong_rand_bytes(16) |> Base.url_encode64(padding: false))
   end
 
   # -- State transitions ----------------------------------------------

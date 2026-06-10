@@ -98,7 +98,7 @@ defmodule Emisar.Billing.PaddleClient.Live do
          signed_payload <- "#{timestamp}:#{payload}",
          computed <-
            :crypto.mac(:hmac, :sha256, secret, signed_payload) |> Base.encode16(case: :lower),
-         true <- secure_compare(computed, expected) do
+         true <- Emisar.Crypto.secure_compare(computed, expected) do
       :ok
     else
       {:error, reason} -> {:error, reason}
@@ -115,11 +115,6 @@ defmodule Emisar.Billing.PaddleClient.Live do
       :ok
     end
   end
-
-  defp secure_compare(a, b) when is_binary(a) and is_binary(b) and byte_size(a) == byte_size(b),
-    do: :crypto.hash_equals(a, b)
-
-  defp secure_compare(_, _), do: false
 
   defp post_json(path, params) do
     body = Jason.encode!(params)
