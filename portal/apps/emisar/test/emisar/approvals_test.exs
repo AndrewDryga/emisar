@@ -476,7 +476,7 @@ defmodule Emisar.ApprovalsTest do
       {:ok, req} = Approvals.create_request(run, user.id, "x")
       {:ok, _} = Approvals.approve_request(req, subject, "ok", duration: :once)
 
-      assert {:ok, [], _} = Approvals.list_grants_for_api_key(key.id)
+      assert [] = grants_for_api_key(key.id)
     end
 
     test ":one_day creates a grant with expires_at ~24h from now" do
@@ -503,7 +503,7 @@ defmodule Emisar.ApprovalsTest do
       {:ok, _} =
         Approvals.approve_request(req, subject, nil, duration: :one_day, scope: :exact_args)
 
-      {:ok, [g], _} = Approvals.list_grants_for_api_key(key.id)
+      [g] = grants_for_api_key(key.id)
       assert g.action_id == "linux.uptime"
       assert g.args_sha256 == "abc123"
       assert g.expires_at != nil
@@ -540,7 +540,7 @@ defmodule Emisar.ApprovalsTest do
 
       # Regression: approve_request used to drop :max_uses from grant_attrs,
       # minting an UNCAPPED grant even when the operator set a cap.
-      {:ok, [g], _} = Approvals.list_grants_for_api_key(key.id)
+      [g] = grants_for_api_key(key.id)
       assert g.max_uses == 5
     end
 
@@ -617,7 +617,7 @@ defmodule Emisar.ApprovalsTest do
                Approvals.approve_request(req, subject, "ok", duration: :one_day)
 
       # No grant was minted.
-      assert {:ok, [], _} = Approvals.list_grants_for_api_key(key.id)
+      assert [] = grants_for_api_key(key.id)
 
       # The run was NOT dispatched (the rollback aborted before dispatch).
       refute_receive {:cloud_to_runner, _}, 100
@@ -654,7 +654,7 @@ defmodule Emisar.ApprovalsTest do
       {:ok, _} =
         Approvals.approve_request(req, subject, nil, duration: :indefinite, scope: :any_args)
 
-      {:ok, [g], _} = Approvals.list_grants_for_api_key(key.id)
+      [g] = grants_for_api_key(key.id)
       assert g.args_sha256 == nil
       assert g.expires_at == nil
     end
@@ -786,7 +786,7 @@ defmodule Emisar.ApprovalsTest do
       refute Request.Query.all() |> Request.Query.by_run_id(run2.id) |> Repo.peek()
       assert_receive {:cloud_to_runner, %{"type" => "run_action"}}, 500
 
-      {:ok, [g], _} = Approvals.list_grants_for_api_key(key.id)
+      [g] = grants_for_api_key(key.id)
       # Two executions under this grant: the approved first call (its
       # minting use) and the auto-approved second call.
       assert g.uses_count == 2

@@ -559,20 +559,6 @@ defmodule Emisar.Approvals do
   end
 
   @doc """
-  Test-only: enumerate the grants that have been minted against an API
-  key. Production listings go through `list_grants_for_account/2` which
-  is Subject-gated and used by the Grants LV. Used here to verify
-  side-effects of `approve_request/4` in tests without rebuilding the operator
-  surface in test setup.
-  """
-  def list_grants_for_api_key(api_key_id, opts \\ []) do
-    Grant.Query.not_revoked()
-    |> Grant.Query.by_api_key_id(api_key_id)
-    |> Grant.Query.ordered_by_recent()
-    |> Repo.list(Grant.Query, opts)
-  end
-
-  @doc """
   Lists active (un-revoked) grants for an account. `opts[:include_expired]`
   defaults to false. Grants are returned with `api_key`, `runner`,
   `granted_by` and `approval_request: :run` preloaded so the LV table can

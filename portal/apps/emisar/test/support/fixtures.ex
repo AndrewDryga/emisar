@@ -335,4 +335,16 @@ defmodule Emisar.Fixtures do
         updated
     end
   end
+
+  @doc """
+  Test-side inspector: the unrevoked grants minted against an API key,
+  newest first. Verifies `approve_request/4` side effects without
+  rebuilding the Subject-gated operator surface in test setup.
+  """
+  def grants_for_api_key(api_key_id) do
+    Emisar.Approvals.Grant.Query.not_revoked()
+    |> Emisar.Approvals.Grant.Query.by_api_key_id(api_key_id)
+    |> Emisar.Approvals.Grant.Query.ordered_by_recent()
+    |> Repo.all()
+  end
 end

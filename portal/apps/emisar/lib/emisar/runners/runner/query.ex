@@ -99,6 +99,9 @@ defmodule Emisar.Runners.Runner.Query do
     do: [{:runners, :asc, :group}, {:runners, :asc, :name}, {:runners, :asc, :id}]
 
   @impl Emisar.Repo.Query
+  def preloads, do: []
+
+  @impl Emisar.Repo.Query
   def filters,
     do: [
       %Filter{

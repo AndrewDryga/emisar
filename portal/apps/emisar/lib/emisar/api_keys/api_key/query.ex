@@ -31,7 +31,7 @@ defmodule Emisar.ApiKeys.ApiKey.Query do
   Restricts to keys that carry the given scope. Uses Postgres array
   containment so the index on `scopes` (if added later) covers it.
   """
-  def with_scope(queryable \\ all(), scope) when is_binary(scope),
+  def by_scope(queryable \\ all(), scope) when is_binary(scope),
     do: where(queryable, [api_keys: k], fragment("? = ANY(?)", ^scope, k.scopes))
 
   @doc """
@@ -84,4 +84,7 @@ defmodule Emisar.ApiKeys.ApiKey.Query do
   @impl Emisar.Repo.Query
   def cursor_fields,
     do: [{:api_keys, :desc, :inserted_at}, {:api_keys, :asc, :id}]
+
+  @impl Emisar.Repo.Query
+  def preloads, do: []
 end

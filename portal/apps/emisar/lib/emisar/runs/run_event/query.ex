@@ -26,7 +26,7 @@ defmodule Emisar.Runs.RunEvent.Query do
   delete — Postgres `DELETE` with a correlated `IN` is unambiguous,
   whereas a join-delete leans on `USING` semantics.
   """
-  def with_run_finished_before(queryable, %DateTime{} = cutoff) do
+  def by_run_finished_before(queryable, %DateTime{} = cutoff) do
     finished_run_ids = Emisar.Runs.ActionRun.Query.finished_before_ids(cutoff)
     where(queryable, [events: e], e.run_id in subquery(finished_run_ids))
   end
@@ -40,7 +40,7 @@ defmodule Emisar.Runs.RunEvent.Query do
   def prunable_ids(account_id, %DateTime{} = cutoff, limit) when is_integer(limit) do
     all()
     |> by_account_id(account_id)
-    |> with_run_finished_before(cutoff)
+    |> by_run_finished_before(cutoff)
     |> limit(^limit)
     |> select([events: e], e.id)
   end

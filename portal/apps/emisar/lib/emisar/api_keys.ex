@@ -63,7 +63,7 @@ defmodule Emisar.ApiKeys do
              Authorizer.view_api_keys_permission()
            ) do
       ApiKey.Query.visible_to_operators()
-      |> ApiKey.Query.with_scope("audit:read")
+      |> ApiKey.Query.by_scope("audit:read")
       |> ApiKey.Query.ordered_by_recent()
       |> Authorizer.for_subject(subject)
       |> Repo.list(ApiKey.Query, Keyword.put_new(opts, :preload, :created_by))

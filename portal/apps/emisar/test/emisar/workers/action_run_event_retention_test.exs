@@ -119,7 +119,7 @@ defmodule Emisar.Workers.ActionRunEventRetentionTest do
     {n, _} =
       RunEvent.Query.all()
       |> RunEvent.Query.by_account_id(account_a.id)
-      |> RunEvent.Query.with_run_finished_before(DateTime.utc_now())
+      |> RunEvent.Query.by_run_finished_before(DateTime.utc_now())
       |> Repo.delete_all()
 
     assert n == 1

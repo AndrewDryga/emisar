@@ -64,15 +64,11 @@ defmodule Emisar.Billing.PaddleClient.Live do
 
   @impl true
   def construct_webhook_event(payload, signature, secret) do
-    case verify_signature(payload, signature, secret) do
-      :ok ->
-        case Jason.decode(payload) do
-          {:ok, event} -> {:ok, event}
-          err -> err
-        end
-
-      err ->
-        err
+    with :ok <- verify_signature(payload, signature, secret),
+         {:ok, event} <- Jason.decode(payload) do
+      {:ok, event}
+    else
+      {:error, reason} -> {:error, reason}
     end
   end
 

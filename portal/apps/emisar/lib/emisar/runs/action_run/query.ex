@@ -40,7 +40,7 @@ defmodule Emisar.Runs.ActionRun.Query do
 
   @doc """
   Id-only projection of runs that reached a terminal state before `ts`.
-  Built for use as a subquery by `RunEvent.Query.with_run_finished_before/2`
+  Built for use as a subquery by `RunEvent.Query.by_run_finished_before/2`
   (the action-run-event retention sweep) — `finished_at` is the
   authoritative "this run is old" signal, so still-running / never-
   finished runs (null `finished_at`) are excluded.
@@ -75,9 +75,15 @@ defmodule Emisar.Runs.ActionRun.Query do
   def cursor_fields,
     do: [{:runs, :desc, :inserted_at}, {:runs, :asc, :id}]
 
+  # Both targets are soft-delete schemas — scope each preload to
+  # `not_deleted()` so the filter is explicit at the preload site, not
+  # just on the association's `:where`.
   @impl Emisar.Repo.Query
   def preloads,
-    do: [runner: [], api_key: []]
+    do: [
+      runner: {Emisar.Runners.Runner.Query.not_deleted(), Emisar.Runners.Runner.Query.preloads()},
+      api_key: {Emisar.ApiKeys.ApiKey.Query.not_deleted(), Emisar.ApiKeys.ApiKey.Query.preloads()}
+    ]
 
   @impl Emisar.Repo.Query
   def filters,
