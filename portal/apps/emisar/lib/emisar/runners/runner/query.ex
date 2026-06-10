@@ -27,6 +27,14 @@ defmodule Emisar.Runners.Runner.Query do
   def by_group(q, group),
     do: where(q, [runners: r], r.group == ^group)
 
+  @doc """
+  Restrict to the runners a per-membership scope set grants — matched by
+  runner id (`runner_ids`) or by group (`groups`). Drives query-level runner
+  ACLs; the caller handles the empty-scopes-means-all case before calling.
+  """
+  def by_scope_values(q, runner_ids, groups),
+    do: where(q, [runners: r], r.id in ^runner_ids or r.group in ^groups)
+
   def ordered_by_group_name(q),
     do: order_by(q, [runners: r], asc: r.group, asc: r.name)
 

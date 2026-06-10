@@ -85,10 +85,10 @@ defmodule Emisar.Runners do
       |> Runner.Query.ordered_by_group_name()
       |> maybe_by_group(group)
       |> maybe_by_connection(subject, status)
+      |> scope_to_membership(membership_id)
       |> Authorizer.for_subject(subject)
       |> Repo.list(Runner.Query, opts)
       |> decorate_result()
-      |> apply_scope_filter(membership_id)
     end
   end
 
@@ -118,23 +118,24 @@ defmodule Emisar.Runners do
     end
   end
 
-  # Per-user runner ACLs (v1 — uniform per-membership scope). When the
-  # caller passes `membership_id: id`, restrict the result to runners
-  # the membership is allowed to see (empty scopes = all). Defaults to
-  # no filter so MCP/system paths keep working unchanged.
-  defp apply_scope_filter({:ok, runners, metadata}, nil), do: {:ok, runners, metadata}
+  # Per-membership runner ACLs: restrict to the runners a membership may see
+  # (empty scopes = all). Filters in the query — BEFORE pagination — so the
+  # page contents and the metadata counts are correct (the old post-fetch
+  # in-memory filter left short pages with inflated totals). nil membership =
+  # no filter, so MCP / system paths see everything.
+  defp scope_to_membership(query, nil), do: query
 
-  defp apply_scope_filter({:ok, runners, metadata}, membership_id) do
+  defp scope_to_membership(query, membership_id) do
     case runner_scopes_for_membership(membership_id) do
       [] ->
-        {:ok, runners, metadata}
+        query
 
       scopes ->
-        {:ok, Enum.filter(runners, &runner_in_scope?(&1, scopes)), metadata}
+        runner_ids = for %{scope_type: :runner, scope_value: v} <- scopes, do: v
+        groups = for %{scope_type: :group, scope_value: v} <- scopes, do: v
+        Runner.Query.by_scope_values(query, runner_ids, groups)
     end
   end
-
-  defp apply_scope_filter({:error, _} = err, _), do: err
 
   defp maybe_by_group(query, group) when is_binary(group), do: Runner.Query.by_group(query, group)
   defp maybe_by_group(query, _), do: query
