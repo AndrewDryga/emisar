@@ -150,6 +150,21 @@ defmodule Emisar.Crypto do
   end
 
   @doc """
+  Fresh TOTP secret for MFA enrollment. Wraps `NimbleTOTP` so the one
+  crypto-review surface owns the authenticator primitive too — contexts
+  never call `NimbleTOTP` directly.
+  """
+  def totp_secret, do: NimbleTOTP.secret()
+
+  @doc """
+  Whether `otp` is a currently-valid TOTP for `secret`. No replay guard
+  — that's the caller's stamped-bucket check
+  (`Users.record_user_mfa_consumed/2`, judged under the row lock).
+  """
+  def valid_totp?(secret, otp) when is_binary(secret) and is_binary(otp),
+    do: NimbleTOTP.valid?(secret, otp)
+
+  @doc """
   Constant-time binary comparison. False when sizes differ — `:crypto.hash_equals/2`
   requires equal-length binaries. Use this anywhere a presented secret
   is compared against a stored hash.

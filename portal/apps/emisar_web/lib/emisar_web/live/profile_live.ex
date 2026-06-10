@@ -198,7 +198,6 @@ defmodule EmisarWeb.ProfileLive do
   end
 
   def handle_event("confirm_mfa", %{"mfa" => %{"otp" => otp}}, socket) do
-    user = socket.assigns.current_user
     secret = socket.assigns.mfa_secret
 
     cond do
@@ -206,7 +205,7 @@ defmodule EmisarWeb.ProfileLive do
         {:noreply, put_flash(socket, :error, "Start the enable flow first.")}
 
       true ->
-        case Auth.enable_mfa(user, secret, otp) do
+        case Auth.enable_mfa(secret, otp, socket.assigns.current_subject) do
           {:ok, updated, recovery_codes} ->
             {:noreply,
              socket
@@ -231,7 +230,7 @@ defmodule EmisarWeb.ProfileLive do
   end
 
   def handle_event("regenerate_recovery_codes", _params, socket) do
-    case Auth.regenerate_mfa_recovery_codes(socket.assigns.current_user) do
+    case Auth.regenerate_mfa_recovery_codes(socket.assigns.current_subject) do
       {:ok, updated, codes} ->
         {:noreply,
          socket
@@ -252,7 +251,7 @@ defmodule EmisarWeb.ProfileLive do
   end
 
   def handle_event("disable_mfa", _params, socket) do
-    case Auth.disable_mfa(socket.assigns.current_user) do
+    case Auth.disable_mfa(socket.assigns.current_subject) do
       {:ok, updated} ->
         {:noreply,
          socket

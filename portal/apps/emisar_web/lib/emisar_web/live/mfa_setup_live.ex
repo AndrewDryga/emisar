@@ -141,13 +141,12 @@ defmodule EmisarWeb.MfaSetupLive do
   end
 
   def handle_event("confirm_mfa", %{"mfa" => %{"otp" => otp}}, socket) do
-    user = socket.assigns.current_user
     secret = socket.assigns.mfa_secret
 
     if is_nil(secret) do
       {:noreply, put_flash(socket, :error, "Still preparing — try again in a second.")}
     else
-      case Auth.enable_mfa(user, secret, otp) do
+      case Auth.enable_mfa(secret, otp, socket.assigns.current_subject) do
         {:ok, updated, recovery_codes} ->
           {:noreply,
            socket

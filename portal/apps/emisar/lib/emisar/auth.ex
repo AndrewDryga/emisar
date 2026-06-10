@@ -473,9 +473,9 @@ defmodule Emisar.Auth do
   @doc """
   Generates a fresh TOTP secret for the user. Caller is responsible
   for displaying the QR code; nothing is persisted until
-  `enable_mfa/2` confirms the user has the secret.
+  `enable_mfa/3` confirms the user has the secret.
   """
-  def generate_mfa_secret, do: NimbleTOTP.secret()
+  def generate_mfa_secret, do: Crypto.totp_secret()
 
   # 10 recovery codes is the de facto standard (matches GitHub, Google
   # Workspace, etc). Returned in plaintext exactly once at enable-time;
@@ -484,26 +484,27 @@ defmodule Emisar.Auth do
   @recovery_code_count 10
 
   @doc """
-  Enable TOTP for the user. Verifies the OTP against the secret before
-  flipping the bit; returns the freshly-generated **recovery codes**
-  (plaintext, 10 single-use base32 strings) along with the user — show
-  these once and never again. The plaintext leaves this function and
-  the DB never sees it.
+  Enable TOTP for the caller. Verifies the OTP against the secret
+  before flipping the bit; returns the freshly-generated **recovery
+  codes** (plaintext, 10 single-use base32 strings) along with the
+  user — show these once and never again. The plaintext leaves this
+  function and the DB never sees it.
+
+  Self-service — the user is the subject's own actor; the write happens
+  on the locked re-read of their row (`Users.update_user_mfa/5`), so a
+  stale socket snapshot can't clobber a concurrent credential change.
   """
-  def enable_mfa(%User{} = user, secret, otp) when is_binary(secret) and is_binary(otp) do
-    if NimbleTOTP.valid?(secret, otp) do
+  def enable_mfa(secret, otp, %Subject{actor: %User{} = user})
+      when is_binary(secret) and is_binary(otp) do
+    if Crypto.valid_totp?(secret, otp) do
       {plain_codes, digests} = generate_recovery_codes()
 
-      Multi.new()
-      |> Multi.run(:user, fn _repo, _ ->
-        Users.update_user_mfa(user, secret, DateTime.utc_now(), digests)
-      end)
-      |> Audit.Multi.log_for_user(:audit, user, "user.mfa_enabled",
-        user_fn: fn %{user: u} -> u end
+      user.id
+      |> Users.update_user_mfa(secret, DateTime.utc_now(), digests,
+        audit: &Audit.user_changeset(&1, "user.mfa_enabled")
       )
-      |> Repo.commit_multi()
       |> case do
-        {:ok, %{user: updated}} -> {:ok, updated, plain_codes}
+        {:ok, updated} -> {:ok, updated, plain_codes}
         {:error, reason} -> {:error, reason}
       end
     else
@@ -511,37 +512,29 @@ defmodule Emisar.Auth do
     end
   end
 
-  def disable_mfa(%User{} = user) do
-    Multi.new()
-    |> Multi.run(:user, fn _repo, _ -> Users.update_user_mfa(user, nil, nil, []) end)
-    |> Audit.Multi.log_for_user(:audit, user, "user.mfa_disabled",
-      user_fn: fn %{user: u} -> u end
+  @doc "Disable TOTP for the caller. Self-service — the user is the subject's own actor."
+  def disable_mfa(%Subject{actor: %User{} = user}) do
+    Users.update_user_mfa(user.id, nil, nil, [],
+      audit: &Audit.user_changeset(&1, "user.mfa_disabled")
     )
-    |> Repo.commit_multi()
-    |> case do
-      {:ok, %{user: updated}} -> {:ok, updated}
-      {:error, reason} -> {:error, reason}
-    end
   end
 
   @doc """
   Regenerate the recovery code set (e.g. user lost their printed copy).
   Invalidates the prior codes; returns the new plaintext set once.
-  Requires MFA to already be enabled.
+  Requires MFA to already be enabled — refused on the locked row, not
+  the caller's snapshot. Self-service — the user is the subject's own
+  actor.
   """
-  def regenerate_mfa_recovery_codes(%User{mfa_enabled_at: nil}), do: {:error, :mfa_not_enabled}
-
-  def regenerate_mfa_recovery_codes(%User{} = user) do
+  def regenerate_mfa_recovery_codes(%Subject{actor: %User{} = user}) do
     {plain_codes, digests} = generate_recovery_codes()
 
-    Multi.new()
-    |> Multi.run(:user, fn _repo, _ -> Users.put_user_mfa_recovery_codes(user, digests) end)
-    |> Audit.Multi.log_for_user(:audit, user, "user.mfa_recovery_codes_regenerated",
-      user_fn: fn %{user: u} -> u end
+    user.id
+    |> Users.put_user_mfa_recovery_codes(digests,
+      audit: &Audit.user_changeset(&1, "user.mfa_recovery_codes_regenerated")
     )
-    |> Repo.commit_multi()
     |> case do
-      {:ok, %{user: updated}} -> {:ok, updated, plain_codes}
+      {:ok, updated} -> {:ok, updated, plain_codes}
       {:error, reason} -> {:error, reason}
     end
   end
@@ -556,74 +549,69 @@ defmodule Emisar.Auth do
   def mfa_required?(%User{}), do: true
 
   @doc """
-  Verifies a TOTP code with replay protection — `NimbleTOTP.valid?`
-  alone accepts the same code multiple times within its 30-second
-  window. Stamps `mfa_last_used_at` to the bucketed window and rejects
-  any code claiming the same bucket. Returns `:ok` on a fresh code,
-  `{:error, :replay}` on duplicate, `{:error, :invalid}` otherwise.
+  Verifies a second-factor TOTP code with replay protection. A bare
+  `Crypto.valid_totp?/2` accepts the same code repeatedly within its
+  30-second window, so the consume step stamps `mfa_last_used_at` on
+  the **locked** row and rejects a second claim of the same bucket —
+  two concurrent submissions of one code can't both pass. Returns `:ok`
+  on a fresh code, `{:error, :replay}` on duplicate, `{:error,
+  :invalid}` otherwise.
 
-  Pair with `consume_mfa_recovery_code/2` for the lost-device path.
+  Pre-Subject — this is the sign-in second factor, so it takes the
+  partially-authenticated `%User{}` (no tenant resolved yet). Pair with
+  `consume_mfa_recovery_code/2` for the lost-device path.
   """
   def verify_mfa(%User{mfa_secret: secret} = user, otp)
       when is_binary(secret) and is_binary(otp) do
-    now = DateTime.utc_now()
-
     cond do
-      not NimbleTOTP.valid?(secret, otp) ->
+      not Crypto.valid_totp?(secret, otp) ->
         Audit.log_for_user(user, "user.mfa_failed", payload: %{reason: "invalid_otp"})
         {:error, :invalid}
 
-      replayed?(user, now) ->
-        Audit.log_for_user(user, "user.mfa_failed", payload: %{reason: "replay"})
-        {:error, :replay}
-
       true ->
-        case Users.record_user_mfa_consumed(user, now) do
-          {:ok, _} -> :ok
-          {:error, _} -> {:error, :invalid}
+        case Users.record_user_mfa_consumed(user.id, DateTime.utc_now()) do
+          {:ok, _} ->
+            :ok
+
+          {:error, :replay} ->
+            Audit.log_for_user(user, "user.mfa_failed", payload: %{reason: "replay"})
+            {:error, :replay}
+
+          {:error, _} ->
+            {:error, :invalid}
         end
     end
   end
 
   def verify_mfa(_, _), do: {:error, :invalid}
 
-  # TOTP buckets are 30 seconds wide. If we already stamped within the
-  # current bucket, the same code is being submitted twice.
-  defp replayed?(%User{mfa_last_used_at: nil}, _now), do: false
-
-  defp replayed?(%User{mfa_last_used_at: prev}, now) do
-    div(DateTime.to_unix(prev), 30) == div(DateTime.to_unix(now), 30)
-  end
-
   @doc """
   One-shot consume a recovery code. Returns `:ok` if it matched (and
-  removes it from the user's stored set), `{:error, :invalid}` otherwise.
-  Constant-time comparison protects against length/prefix probes.
+  removes it from the user's stored set under the row lock — concurrent
+  submissions of the same code serialize and only one wins),
+  `{:error, :invalid}` otherwise. Pre-Subject — the sign-in lost-device
+  fallback, so it takes the partially-authenticated `%User{}`.
   """
-  def consume_mfa_recovery_code(%User{mfa_recovery_codes: codes} = user, raw)
-      when is_list(codes) and is_binary(raw) do
+  def consume_mfa_recovery_code(%User{} = user, raw) when is_binary(raw) do
     digest = Crypto.hash(String.downcase(String.trim(raw)))
 
-    matched? = Enum.any?(codes, &Crypto.secure_compare(&1, digest))
+    case Users.consume_user_mfa_recovery_code(user.id, digest,
+           audit: fn updated ->
+             Audit.user_changeset(updated, "user.mfa_recovery_code_used", %{
+               payload: %{remaining: length(updated.mfa_recovery_codes)}
+             })
+           end
+         ) do
+      {:ok, _} ->
+        :ok
 
-    if matched? do
-      remaining = Enum.reject(codes, &Crypto.secure_compare(&1, digest))
+      {:error, :invalid} ->
+        # No DB mutation on a wrong code — just an audit row standalone.
+        Audit.log_for_user(user, "user.mfa_failed", payload: %{reason: "invalid_recovery_code"})
+        {:error, :invalid}
 
-      Multi.new()
-      |> Multi.run(:user, fn _repo, _ -> Users.put_user_mfa_recovery_codes(user, remaining) end)
-      |> Audit.Multi.log_for_user(:audit, user, "user.mfa_recovery_code_used",
-        user_fn: fn %{user: u} -> u end,
-        payload_fn: fn _ -> %{remaining: length(remaining)} end
-      )
-      |> Repo.commit_multi()
-      |> case do
-        {:ok, _} -> :ok
-        {:error, _} -> {:error, :invalid}
-      end
-    else
-      # No DB mutation on a wrong code — just an audit row standalone.
-      Audit.log_for_user(user, "user.mfa_failed", payload: %{reason: "invalid_recovery_code"})
-      {:error, :invalid}
+      {:error, _} ->
+        {:error, :invalid}
     end
   end
 

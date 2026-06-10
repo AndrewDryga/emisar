@@ -55,33 +55,33 @@ defmodule Emisar.AuthAuditTest do
 
   describe "MFA lifecycle" do
     setup do
-      {user, account, _} = owner_subject_fixture()
+      {user, account, subject} = owner_subject_fixture()
       secret = Auth.generate_mfa_secret()
-      %{user: user, account: account, secret: secret}
+      %{user: user, account: account, secret: secret, subject: subject}
     end
 
-    test "enable_mfa audits on success", %{user: user, account: account, secret: secret} do
+    test "enable_mfa audits on success", %{account: account, secret: secret, subject: subject} do
       otp = NimbleTOTP.verification_code(secret)
-      assert {:ok, updated, _codes} = Auth.enable_mfa(user, secret, otp)
+      assert {:ok, updated, _codes} = Auth.enable_mfa(secret, otp, subject)
 
       assert [event] = events_of(account, "user.mfa_enabled")
       assert event.actor_id == updated.id
     end
 
-    test "disable_mfa audits", %{user: user, account: account, secret: secret} do
-      {:ok, enabled, _} = Auth.enable_mfa(user, secret, NimbleTOTP.verification_code(secret))
+    test "disable_mfa audits", %{account: account, secret: secret, subject: subject} do
+      {:ok, enabled, _} = Auth.enable_mfa(secret, NimbleTOTP.verification_code(secret), subject)
 
-      assert {:ok, _} = Auth.disable_mfa(enabled)
+      assert {:ok, _} = Auth.disable_mfa(subject)
       assert [event] = events_of(account, "user.mfa_disabled")
       assert event.actor_id == enabled.id
     end
 
     test "verify_mfa with bad code audits user.mfa_failed", %{
-      user: user,
       account: account,
-      secret: secret
+      secret: secret,
+      subject: subject
     } do
-      {:ok, enabled, _} = Auth.enable_mfa(user, secret, NimbleTOTP.verification_code(secret))
+      {:ok, enabled, _} = Auth.enable_mfa(secret, NimbleTOTP.verification_code(secret), subject)
 
       assert {:error, :invalid} = Auth.verify_mfa(enabled, "000000")
 
@@ -90,11 +90,12 @@ defmodule Emisar.AuthAuditTest do
     end
 
     test "consume_mfa_recovery_code success audits with remaining count", %{
-      user: user,
       account: account,
-      secret: secret
+      secret: secret,
+      subject: subject
     } do
-      {:ok, enabled, codes} = Auth.enable_mfa(user, secret, NimbleTOTP.verification_code(secret))
+      {:ok, enabled, codes} =
+        Auth.enable_mfa(secret, NimbleTOTP.verification_code(secret), subject)
 
       assert :ok = Auth.consume_mfa_recovery_code(enabled, hd(codes))
 
@@ -103,11 +104,11 @@ defmodule Emisar.AuthAuditTest do
     end
 
     test "consume_mfa_recovery_code with bad code audits user.mfa_failed", %{
-      user: user,
       account: account,
-      secret: secret
+      secret: secret,
+      subject: subject
     } do
-      {:ok, enabled, _} = Auth.enable_mfa(user, secret, NimbleTOTP.verification_code(secret))
+      {:ok, enabled, _} = Auth.enable_mfa(secret, NimbleTOTP.verification_code(secret), subject)
 
       assert {:error, :invalid} = Auth.consume_mfa_recovery_code(enabled, "not-a-real-code")
 
@@ -115,10 +116,14 @@ defmodule Emisar.AuthAuditTest do
       assert event.payload["reason"] == "invalid_recovery_code"
     end
 
-    test "regenerate_mfa_recovery_codes audits", %{user: user, account: account, secret: secret} do
-      {:ok, enabled, _} = Auth.enable_mfa(user, secret, NimbleTOTP.verification_code(secret))
+    test "regenerate_mfa_recovery_codes audits", %{
+      account: account,
+      secret: secret,
+      subject: subject
+    } do
+      {:ok, enabled, _} = Auth.enable_mfa(secret, NimbleTOTP.verification_code(secret), subject)
 
-      {:ok, _, _codes} = Auth.regenerate_mfa_recovery_codes(enabled)
+      {:ok, _, _codes} = Auth.regenerate_mfa_recovery_codes(subject)
 
       assert [event] = events_of(account, "user.mfa_recovery_codes_regenerated")
       assert event.actor_id == enabled.id

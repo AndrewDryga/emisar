@@ -95,7 +95,11 @@ defmodule EmisarWeb.AuthFlowTest do
       secret = Emisar.Auth.generate_mfa_secret()
 
       {:ok, user, _codes} =
-        Emisar.Auth.enable_mfa(user, secret, NimbleTOTP.verification_code(secret))
+        Emisar.Auth.enable_mfa(
+          secret,
+          NimbleTOTP.verification_code(secret),
+          Emisar.Fixtures.subject_for(user, account)
+        )
 
       %{user: user, secret: secret, account: account}
     end

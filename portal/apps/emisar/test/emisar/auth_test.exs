@@ -128,12 +128,12 @@ defmodule Emisar.AuthTest do
     end
 
     test "enable_mfa with the correct OTP persists the secret + returns recovery codes" do
-      user = user_fixture()
+      {_user, _account, subject} = owner_subject_fixture()
       secret = Auth.generate_mfa_secret()
       otp = NimbleTOTP.verification_code(secret)
 
       assert {:ok, %User{mfa_secret: ^secret, mfa_enabled_at: %DateTime{}} = updated, codes} =
-               Auth.enable_mfa(user, secret, otp)
+               Auth.enable_mfa(secret, otp, subject)
 
       assert is_list(codes) and length(codes) == 10
       assert Enum.all?(codes, &is_binary/1)
@@ -143,16 +143,16 @@ defmodule Emisar.AuthTest do
     end
 
     test "enable_mfa with the wrong OTP returns :invalid_otp" do
-      user = user_fixture()
+      {_user, _account, subject} = owner_subject_fixture()
       secret = Auth.generate_mfa_secret()
 
-      assert {:error, :invalid_otp} = Auth.enable_mfa(user, secret, "000000")
+      assert {:error, :invalid_otp} = Auth.enable_mfa(secret, "000000", subject)
     end
 
     test "verify_mfa accepts a valid OTP once and rejects an immediate replay" do
-      user = user_fixture()
+      {_user, _account, subject} = owner_subject_fixture()
       secret = Auth.generate_mfa_secret()
-      {:ok, user, _codes} = Auth.enable_mfa(user, secret, NimbleTOTP.verification_code(secret))
+      {:ok, user, _codes} = Auth.enable_mfa(secret, NimbleTOTP.verification_code(secret), subject)
 
       otp = NimbleTOTP.verification_code(secret)
       assert :ok = Auth.verify_mfa(user, otp)
@@ -162,19 +162,19 @@ defmodule Emisar.AuthTest do
     end
 
     test "verify_mfa rejects an invalid OTP" do
-      user = user_fixture()
+      {_user, _account, subject} = owner_subject_fixture()
       secret = Auth.generate_mfa_secret()
-      {:ok, user, _codes} = Auth.enable_mfa(user, secret, NimbleTOTP.verification_code(secret))
+      {:ok, user, _codes} = Auth.enable_mfa(secret, NimbleTOTP.verification_code(secret), subject)
 
       assert {:error, :invalid} = Auth.verify_mfa(user, "000000")
     end
 
     test "consume_mfa_recovery_code accepts a fresh code once, rejects reuse" do
-      user = user_fixture()
+      {_user, _account, subject} = owner_subject_fixture()
       secret = Auth.generate_mfa_secret()
 
       {:ok, user, [code | _]} =
-        Auth.enable_mfa(user, secret, NimbleTOTP.verification_code(secret))
+        Auth.enable_mfa(secret, NimbleTOTP.verification_code(secret), subject)
 
       assert :ok = Auth.consume_mfa_recovery_code(user, code)
 

@@ -14,7 +14,7 @@ defmodule Emisar.Users do
   `Emisar.Accounts`.
   """
   alias Ecto.Multi
-  alias Emisar.{Audit, Repo}
+  alias Emisar.{Audit, Crypto, Repo}
   alias Emisar.Auth.Subject
   alias Emisar.Users.User
 
@@ -226,20 +226,83 @@ defmodule Emisar.Users do
     user |> User.Changeset.confirm() |> Repo.update()
   end
 
-  @doc "Internal — Auth: enable MFA (secret + enrolled-at + recovery digests) or disable (nils)."
-  def update_user_mfa(%User{} = user, secret, enabled_at, recovery_code_digests) do
-    user |> User.Changeset.mfa(secret, enabled_at, recovery_code_digests) |> Repo.update()
+  @doc """
+  Internal — Auth: enable MFA (secret + enrolled-at + recovery digests)
+  or disable (nils), under the row lock. `opts[:audit]` supplies the
+  event changeset — MFA flips are credential-grade and always audited.
+  """
+  def update_user_mfa(user_id, secret, enabled_at, recovery_code_digests, opts) do
+    User.Query.not_deleted()
+    |> User.Query.by_id(user_id)
+    |> Repo.fetch_and_update(User.Query,
+      with: &User.Changeset.mfa(&1, secret, enabled_at, recovery_code_digests),
+      audit: Keyword.fetch!(opts, :audit)
+    )
   end
 
-  @doc "Internal — Auth: replace the stored MFA recovery-code digests."
-  def put_user_mfa_recovery_codes(%User{} = user, digests) when is_list(digests) do
-    user |> User.Changeset.mfa_recovery_codes(digests) |> Repo.update()
+  @doc """
+  Internal — Auth: replace the stored MFA recovery-code digests under
+  the row lock. Refuses with `:mfa_not_enabled` when MFA isn't on —
+  judged on the locked row, not the caller's snapshot.
+  """
+  def put_user_mfa_recovery_codes(user_id, digests, opts) when is_list(digests) do
+    User.Query.not_deleted()
+    |> User.Query.by_id(user_id)
+    |> Repo.fetch_and_update(User.Query,
+      with: fn loaded_user ->
+        if loaded_user.mfa_enabled_at,
+          do: User.Changeset.mfa_recovery_codes(loaded_user, digests),
+          else: :mfa_not_enabled
+      end,
+      audit: Keyword.fetch!(opts, :audit)
+    )
   end
 
-  @doc "Internal — Auth: stamp the most recent successful TOTP (the replay guard)."
-  def record_user_mfa_consumed(%User{} = user, %DateTime{} = at) do
-    user |> User.Changeset.mfa_consumed(at) |> Repo.update()
+  @doc """
+  Internal — Auth: one-shot consume of a recovery-code digest under the
+  row lock — two concurrent submissions of the same code serialize and
+  the loser gets `:invalid`. `opts[:audit]` supplies the success event
+  (the updated row carries the remaining digests for its payload).
+  """
+  def consume_user_mfa_recovery_code(user_id, digest, opts) when is_binary(digest) do
+    User.Query.not_deleted()
+    |> User.Query.by_id(user_id)
+    |> Repo.fetch_and_update(User.Query,
+      with: fn loaded_user ->
+        codes = loaded_user.mfa_recovery_codes || []
+
+        if Enum.any?(codes, &Crypto.secure_compare(&1, digest)) do
+          remaining = Enum.reject(codes, &Crypto.secure_compare(&1, digest))
+          User.Changeset.mfa_recovery_codes(loaded_user, remaining)
+        else
+          :invalid
+        end
+      end,
+      audit: Keyword.fetch!(opts, :audit)
+    )
   end
+
+  @doc """
+  Internal — Auth: stamp the most recent successful TOTP under the row
+  lock — the replay guard. A second claim of the same 30-second TOTP
+  bucket aborts with `:replay`, judged on the locked row so two
+  concurrent submissions of one code can't both pass.
+  """
+  def record_user_mfa_consumed(user_id, %DateTime{} = at) do
+    User.Query.not_deleted()
+    |> User.Query.by_id(user_id)
+    |> Repo.fetch_and_update(User.Query,
+      with: fn loaded_user ->
+        if totp_bucket(loaded_user.mfa_last_used_at) == totp_bucket(at),
+          do: :replay,
+          else: User.Changeset.mfa_consumed(loaded_user, at)
+      end
+    )
+  end
+
+  # TOTP buckets are 30 seconds wide — NimbleTOTP's verification window.
+  defp totp_bucket(nil), do: nil
+  defp totp_bucket(%DateTime{} = at), do: div(DateTime.to_unix(at), 30)
 
   # -- Internal (Accounts flows) --------------------------------------------
   # User-row writes the Accounts context performs from its invitation and

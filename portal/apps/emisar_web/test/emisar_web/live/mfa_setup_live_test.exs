@@ -64,10 +64,13 @@ defmodule EmisarWeb.MfaSetupLiveTest do
 
   test "an already-compliant member is sent straight to the dashboard", %{
     conn: conn,
-    user: user
+    user: user,
+    account: account
   } do
     secret = Auth.generate_mfa_secret()
-    {:ok, _user, _codes} = Auth.enable_mfa(user, secret, NimbleTOTP.verification_code(secret))
+
+    {:ok, _user, _codes} =
+      Auth.enable_mfa(secret, NimbleTOTP.verification_code(secret), owner_subject(user, account))
 
     assert {:error, {:live_redirect, %{to: "/app"}}} = live(conn, ~p"/app/mfa_setup")
   end
