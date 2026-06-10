@@ -9,21 +9,13 @@ defmodule EmisarWeb.AccountSwitchController do
   """
   use EmisarWeb, :controller
 
+  alias Emisar.Accounts
   alias EmisarWeb.UserAuth
-  alias Emisar.Audit
 
   def switch(conn, %{"account_id" => account_id}) when is_binary(account_id) do
     case UserAuth.switch_account(conn, account_id) do
       {:ok, conn, membership} ->
-        Audit.log(account_id, "session.account_switched",
-          actor_kind: "user",
-          actor_id: conn.assigns.current_user.id,
-          subject_kind: "user",
-          subject_id: conn.assigns.current_user.id,
-          subject_label: conn.assigns.current_user.email,
-          payload: %{role: membership.role}
-        )
-
+        {:ok, _} = Accounts.record_account_switched(membership)
         redirect(conn, to: ~p"/app")
 
       {:error, :not_found} ->

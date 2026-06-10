@@ -260,6 +260,16 @@ defmodule Emisar.Accounts do
   end
 
   @doc """
+  Audit a session account switch. The switch itself is web session state
+  (no rows change), but the audit trail of it is the domain's record —
+  controllers never write audit rows. Takes the membership resolved by
+  `fetch_membership_for_session/2` (`:user` preloaded).
+  """
+  def record_account_switched(%Membership{} = membership) do
+    membership |> Audit.Events.session_account_switched() |> Repo.insert()
+  end
+
+  @doc """
   True if every membership the user holds is suspended (and they have
   at least one). Distinct from "user has no memberships" — the UI
   needs to show "your access was suspended" rather than send them to
@@ -726,7 +736,9 @@ defmodule Emisar.Accounts do
     Membership.Query.not_deleted()
     |> Membership.Query.by_invitation_token(token)
     |> Membership.Query.pending_invitation()
-    |> Repo.fetch(Membership.Query, preload: [:account, :user])
+    |> Membership.Query.with_preloaded_account()
+    |> Membership.Query.with_preloaded_user()
+    |> Repo.fetch(Membership.Query)
   end
 
   def fetch_invitation_by_token(_), do: {:error, :not_found}
