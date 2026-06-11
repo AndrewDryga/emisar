@@ -249,14 +249,17 @@ defmodule Emisar.Users do
     User.Query.not_deleted()
     |> User.Query.by_id(user_id)
     |> Repo.fetch_and_update(User.Query,
-      with: fn loaded_user ->
-        if loaded_user.mfa_enabled_at,
-          do: User.Changeset.mfa_recovery_codes(loaded_user, digests),
-          else: :mfa_not_enabled
-      end,
+      with: &mfa_recovery_codes_when_enabled(&1, digests),
       audit: Keyword.fetch!(opts, :audit)
     )
   end
+
+  # Judged on the locked row, not the caller's snapshot.
+  defp mfa_recovery_codes_when_enabled(%User{mfa_enabled_at: nil}, _digests),
+    do: :mfa_not_enabled
+
+  defp mfa_recovery_codes_when_enabled(%User{} = loaded_user, digests),
+    do: User.Changeset.mfa_recovery_codes(loaded_user, digests)
 
   @doc """
   Internal — Auth: one-shot consume of a recovery-code digest under the

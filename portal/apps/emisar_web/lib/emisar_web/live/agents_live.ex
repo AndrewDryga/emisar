@@ -464,79 +464,82 @@ defmodule EmisarWeb.AgentsLive do
   defp pluralize([_]), do: ""
   defp pluralize(_), do: "s"
 
-  defp client_config(client_id, url, key) do
-    case client_id do
-      "claude_web" ->
-        %{
-          kind: :remote,
-          rpc_url: "#{url}/api/mcp/rpc",
-          auth_header: "Authorization: Bearer #{key}",
-          steps: [
-            "Open Settings → Connectors → Add custom connector in claude.ai.",
-            "Name it \"Emisar\" and paste the URL below into Remote MCP server URL.",
-            "Under Authentication, add a header named Authorization with value Bearer <key>.",
-            "Save. Claude tests the connection and lists every Emisar action as a tool."
-          ]
-        }
+  defp client_config("claude_web", url, key) do
+    %{
+      kind: :remote,
+      rpc_url: "#{url}/api/mcp/rpc",
+      auth_header: "Authorization: Bearer #{key}",
+      steps: [
+        "Open Settings → Connectors → Add custom connector in claude.ai.",
+        "Name it \"Emisar\" and paste the URL below into Remote MCP server URL.",
+        "Under Authentication, add a header named Authorization with value Bearer <key>.",
+        "Save. Claude tests the connection and lists every Emisar action as a tool."
+      ]
+    }
+  end
 
-      "chatgpt" ->
-        %{
-          kind: :remote,
-          rpc_url: "#{url}/api/mcp/rpc",
-          auth_header: "Authorization: Bearer #{key}",
-          steps: [
-            "Open Settings → Connectors in ChatGPT (Pro / Team / Enterprise — custom connectors are gated).",
-            "Click Add custom connector and paste the URL below as the MCP server URL.",
-            "Set the bearer token to the API key (no header name needed — ChatGPT prepends \"Authorization: Bearer\").",
-            "Save. Tools become available in the next chat turn."
-          ]
-        }
+  defp client_config("chatgpt", url, key) do
+    %{
+      kind: :remote,
+      rpc_url: "#{url}/api/mcp/rpc",
+      auth_header: "Authorization: Bearer #{key}",
+      steps: [
+        "Open Settings → Connectors in ChatGPT (Pro / Team / Enterprise — custom connectors are gated).",
+        "Click Add custom connector and paste the URL below as the MCP server URL.",
+        "Set the bearer token to the API key (no header name needed — ChatGPT prepends \"Authorization: Bearer\").",
+        "Save. Tools become available in the next chat turn."
+      ]
+    }
+  end
 
-      "claude_code" ->
-        %{
-          kind: :local,
-          location: "One command — registers the bridge globally",
-          body: """
-          claude mcp add emisar /usr/local/bin/emisar-mcp \\
-              --scope user \\
-              -e EMISAR_URL=#{url} \\
-              -e EMISAR_API_KEY=#{key} \\
-              -e EMISAR_CLIENT=claude-code\
-          """
-        }
+  defp client_config("claude_code", url, key) do
+    %{
+      kind: :local,
+      location: "One command — registers the bridge globally",
+      body: """
+      claude mcp add emisar /usr/local/bin/emisar-mcp \\
+          --scope user \\
+          -e EMISAR_URL=#{url} \\
+          -e EMISAR_API_KEY=#{key} \\
+          -e EMISAR_CLIENT=claude-code\
+      """
+    }
+  end
 
-      "claude_desktop" ->
-        %{
-          kind: :local,
-          location: "~/Library/Application Support/Claude/claude_desktop_config.json",
-          body: mcp_json_snippet(url, key, "/usr/local/bin/emisar-mcp", "claude-desktop")
-        }
+  defp client_config("claude_desktop", url, key) do
+    %{
+      kind: :local,
+      location: "~/Library/Application Support/Claude/claude_desktop_config.json",
+      body: mcp_json_snippet(url, key, "/usr/local/bin/emisar-mcp", "claude-desktop")
+    }
+  end
 
-      "cursor" ->
-        %{
-          kind: :local,
-          location: "~/.cursor/mcp.json",
-          body: mcp_json_snippet(url, key, "emisar-mcp", "cursor")
-        }
+  defp client_config("cursor", url, key) do
+    %{
+      kind: :local,
+      location: "~/.cursor/mcp.json",
+      body: mcp_json_snippet(url, key, "emisar-mcp", "cursor")
+    }
+  end
 
-      "gemini" ->
-        %{
-          kind: :local,
-          location: "~/.gemini/settings.json",
-          body: mcp_json_snippet(url, key, "/usr/local/bin/emisar-mcp", "gemini")
-        }
+  defp client_config("gemini", url, key) do
+    %{
+      kind: :local,
+      location: "~/.gemini/settings.json",
+      body: mcp_json_snippet(url, key, "/usr/local/bin/emisar-mcp", "gemini")
+    }
+  end
 
-      "codex" ->
-        %{
-          kind: :local,
-          location: "~/.codex/config.toml",
-          body: """
-          [mcp_servers.emisar]
-          command = "/usr/local/bin/emisar-mcp"
-          env = { EMISAR_URL = "#{url}", EMISAR_API_KEY = "#{key}", EMISAR_CLIENT = "codex" }\
-          """
-        }
-    end
+  defp client_config("codex", url, key) do
+    %{
+      kind: :local,
+      location: "~/.codex/config.toml",
+      body: """
+      [mcp_servers.emisar]
+      command = "/usr/local/bin/emisar-mcp"
+      env = { EMISAR_URL = "#{url}", EMISAR_API_KEY = "#{key}", EMISAR_CLIENT = "codex" }\
+      """
+    }
   end
 
   # `client` is baked into EMISAR_CLIENT so the bridge can stamp it on

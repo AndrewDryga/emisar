@@ -127,6 +127,12 @@ fi
 if command -v rg >/dev/null 2>&1; then
   m=$(rg -n --pcre2 'fn (\w+) -> [\w.!?]+\(\1\) end' "$FILE_PATH" 2>/dev/null | grep -v '&' | head -1)
   [[ -n "$m" ]] && add "house/forwarding-fn" "$(lineno "$m")" "single-call forwarding closure — use capture syntax (\`&fun/1\`, or \`&fun(&1, extra)\` when other args slot in)."
+
+  # Closure whose body is `if <arg>.<field>` (bare truthiness, no operator) —
+  # that's a pattern: write a two-clause defp on %Struct{field: nil} instead.
+  m=$(rg -Un --pcre2 'fn (\w+) ->\n\s+if \1\.\w+(,| do)' "$FILE_PATH" 2>/dev/null | head -1)
+  [[ -z "$m" ]] && m=$(rg -n --pcre2 'fn (\w+) -> if \1\.\w+(,| do)' "$FILE_PATH" 2>/dev/null | head -1)
+  [[ -n "$m" ]] && add "house/if-on-pattern" "$(lineno "$m")" "closure dispatching on a field's truthiness — use function clause heads (%Struct{field: nil} = x / catch-all) instead of an inner if."
 fi
 
 # IL-14 (String.to_atom) and IL-16 (raw/1) intentionally live in /iron-review,

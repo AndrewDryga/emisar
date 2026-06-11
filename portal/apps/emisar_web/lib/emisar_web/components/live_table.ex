@@ -346,12 +346,8 @@ defmodule EmisarWeb.LiveTable do
   # (audit event types are grouped by domain prefix). Normalize to
   # `[{group_label_or_nil, [{value, label}, …]}, …]` so the template
   # can take one path.
-  defp normalize_groups(values) do
-    case values do
-      [{_label, list} | _] when is_list(list) -> values
-      flat -> [{nil, flat}]
-    end
-  end
+  defp normalize_groups([{_label, list} | _] = values) when is_list(list), do: values
+  defp normalize_groups(flat), do: [{nil, flat}]
 
   defp has_active_filters?(params, filters) do
     filters

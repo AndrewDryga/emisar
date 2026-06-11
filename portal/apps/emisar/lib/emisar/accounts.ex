@@ -930,6 +930,17 @@ defmodule Emisar.Accounts do
     |> Repo.aggregate(:count, :id)
   end
 
+  # First-wins under the row lock: a concurrent checkout already linked a
+  # customer — keep it (the empty changeset makes the update a no-op write).
+  defp link_paddle_customer_unless_linked(
+         %Account{paddle_customer_id: nil} = account,
+         customer_id
+       ),
+       do: Account.Changeset.link_paddle_customer(account, customer_id)
+
+  defp link_paddle_customer_unless_linked(%Account{} = account, _customer_id),
+    do: Ecto.Changeset.change(account)
+
   @doc """
   Internal — Billing webhook resolve: the account a Paddle customer id
   belongs to, nil-or-struct (`peek` — an unknown customer_id is a meaningful
@@ -957,15 +968,7 @@ defmodule Emisar.Accounts do
     Account.Query.not_deleted()
     |> Account.Query.by_id(account.id)
     |> Repo.fetch_and_update(Account.Query,
-      with: fn loaded_account ->
-        if loaded_account.paddle_customer_id do
-          # A concurrent checkout already linked a customer — keep it.
-          # The empty changeset makes the update a no-op write.
-          Ecto.Changeset.change(loaded_account)
-        else
-          Account.Changeset.link_paddle_customer(loaded_account, customer_id)
-        end
-      end
+      with: &link_paddle_customer_unless_linked(&1, customer_id)
     )
   end
 
