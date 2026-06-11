@@ -396,6 +396,31 @@ defmodule Emisar.Audit.Events do
     })
   end
 
+  # A wave-engine dispatch that produced no run row (runner offline, a
+  # row-less error) — the engine continuation has no acting subject, so
+  # the actor is the system.
+  def runbook_step_dispatch_failed(
+        %Runbooks.Runbook{} = runbook,
+        execution_id,
+        step_id,
+        runner_id,
+        reason
+      ) do
+    Audit.changeset(runbook.account_id, "runbook.step_dispatch_failed",
+      actor_kind: "system",
+      subject_kind: "runbook",
+      subject_id: runbook.id,
+      subject_label: runbook.title,
+      payload: %{
+        runbook_id: runbook.id,
+        runbook_execution_id: execution_id,
+        runbook_step_id: step_id,
+        runner_id: runner_id,
+        reason: inspect(reason)
+      }
+    )
+  end
+
   # -- Catalog pack trust ----------------------------------------------
 
   @doc """

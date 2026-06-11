@@ -312,18 +312,14 @@ defmodule Emisar.Runbooks do
   end
 
   defp log_wave_dispatch_failure(%Runbook{} = runbook, execution, step, idx, runner_id, reason) do
-    Audit.log(runbook.account_id, "runbook.step_dispatch_failed",
-      actor_kind: "system",
-      subject_kind: "runbook",
-      subject_id: runbook.id,
-      subject_label: runbook.title,
-      payload: %{
-        runbook_id: runbook.id,
-        runbook_execution_id: execution.id,
-        runbook_step_id: step_id_for(step, idx),
-        runner_id: runner_id,
-        reason: inspect(reason)
-      }
+    Audit.record(
+      Audit.Events.runbook_step_dispatch_failed(
+        runbook,
+        execution.id,
+        step_id_for(step, idx),
+        runner_id,
+        reason
+      )
     )
   end
 
