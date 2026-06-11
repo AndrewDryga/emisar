@@ -768,4 +768,61 @@ defmodule Emisar.RunsTest do
       assert Repo.get!(ActionRun, run.id).status == :sent
     end
   end
+
+  describe "run reads" do
+    test "list_runs pages the subject's account only (cross-account isolation)" do
+      {_user, account, subject} = owner_subject_fixture()
+      runner = runner_fixture(account_id: account.id)
+      {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
+
+      assert {:ok, [listed], _meta} = Runs.list_runs(subject)
+      assert listed.id == run.id
+
+      {_user_b, _account_b, subject_b} = owner_subject_fixture()
+      assert {:ok, [], _meta} = Runs.list_runs(subject_b)
+    end
+
+    test "fetch_run_by_id scopes to the subject's account and survives a bad id" do
+      {_user, account, subject} = owner_subject_fixture()
+      runner = runner_fixture(account_id: account.id)
+      {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
+
+      assert {:ok, fetched} = Runs.fetch_run_by_id(run.id, subject)
+      assert fetched.id == run.id
+
+      {_user_b, _account_b, subject_b} = owner_subject_fixture()
+      assert {:error, :not_found} = Runs.fetch_run_by_id(run.id, subject_b)
+      assert {:error, :not_found} = Runs.fetch_run_by_id("not-a-uuid", subject)
+    end
+
+    test "fetch_run_by_request_id_for_runner never crosses runners" do
+      account = account_fixture()
+      runner = runner_fixture(account_id: account.id)
+      other_runner = runner_fixture(account_id: account.id)
+      {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
+
+      assert {:ok, found} = Runs.fetch_run_by_request_id_for_runner(run.request_id, runner.id)
+      assert found.id == run.id
+
+      # Another runner in the SAME account must not see it — the runner
+      # socket may only touch runs dispatched to that runner.
+      assert {:error, :not_found} =
+               Runs.fetch_run_by_request_id_for_runner(run.request_id, other_runner.id)
+    end
+
+    test "list_running_runs returns only in-flight rows" do
+      account = account_fixture()
+      runner = runner_fixture(account_id: account.id)
+      {:ok, pending} = Runs.create_run(base_attrs(account.id, runner.id))
+      {:ok, running} = Runs.create_run(base_attrs(account.id, runner.id))
+      {:ok, running} = Runs.mark_sent(running)
+      {:ok, running} = Runs.mark_running(running)
+
+      ids = Runs.list_running_runs() |> Enum.map(& &1.id)
+      assert running.id in ids
+      refute pending.id in ids
+      assert running.status == :running
+      assert %DateTime{} = running.started_at
+    end
+  end
 end

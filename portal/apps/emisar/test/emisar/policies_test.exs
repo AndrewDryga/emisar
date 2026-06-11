@@ -221,4 +221,43 @@ defmodule Emisar.PoliciesTest do
       assert Policies.decision_rank("require_approval") < Policies.decision_rank("deny")
     end
   end
+
+  describe "catalogue accessors" do
+    test "expose the tiers, decisions, and form changeset the editor renders" do
+      assert Policies.risk_tiers() == ~w(low medium high critical)
+      assert Policies.decisions() == ~w(allow require_approval deny)
+      assert %Ecto.Changeset{} = Policies.change_policy()
+    end
+  end
+
+  describe "diff_rules/2" do
+    test "reports only the tiers and overrides that actually moved" do
+      before_rules = %{
+        "schema_version" => 2,
+        "defaults" => %{"low" => "allow", "high" => "require_approval"},
+        "overrides" => [
+          %{"name" => "keep", "action" => "a.*", "decision" => "allow"},
+          %{"name" => "drop", "action" => "b.*", "decision" => "deny"},
+          %{"name" => "flip", "action" => "c.*", "decision" => "allow"}
+        ]
+      }
+
+      after_rules = %{
+        "schema_version" => 2,
+        "defaults" => %{"low" => "allow", "high" => "deny"},
+        "overrides" => [
+          %{"name" => "keep", "action" => "a.*", "decision" => "allow"},
+          %{"name" => "flip", "action" => "c.*", "decision" => "deny"},
+          %{"name" => "new", "action" => "d.*", "decision" => "deny"}
+        ]
+      }
+
+      diff = Policies.diff_rules(before_rules, after_rules)
+
+      assert diff["defaults"] == %{"high" => %{"from" => "require_approval", "to" => "deny"}}
+      assert [%{"action" => "d.*"}] = diff["overrides"]["added"]
+      assert [%{"action" => "b.*"}] = diff["overrides"]["removed"]
+      assert [%{"action" => "c.*", "from" => _, "to" => _}] = diff["overrides"]["changed"]
+    end
+  end
 end

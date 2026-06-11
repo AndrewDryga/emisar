@@ -48,4 +48,40 @@ defmodule Emisar.PoliciesPersistenceTest do
                Policies.save_rules(rules("require_approval"), viewer_subject)
     end
   end
+
+  describe "evaluate_with_policy/2" do
+    test "an account with no policy default-denies every dispatch" do
+      account = account_fixture()
+
+      assert {:deny, [], "no policy configured for this account", nil} =
+               Policies.evaluate_with_policy(account.id, %{action_id: "linux.uptime", risk: :low})
+    end
+
+    test "bridges the catalog's risk atom to the stored string tiers" do
+      account = account_fixture()
+
+      _ =
+        policy_fixture(
+          account_id: account.id,
+          rules: %{
+            "schema_version" => 2,
+            "defaults" => %{
+              "low" => "allow",
+              "medium" => "allow",
+              "high" => "require_approval",
+              "critical" => "deny"
+            },
+            "overrides" => []
+          }
+        )
+
+      {decision, _matched, _reason, %Policies.Policy{} = policy} =
+        Policies.evaluate_with_policy(account.id, %{action_id: "db.drop", risk: :high})
+
+      # The policy gates high-risk behind approval — the
+      # :high ATOM (Ecto.Enum) must match the "high" string tier.
+      assert decision == :require_approval
+      assert policy.account_id == account.id
+    end
+  end
 end
