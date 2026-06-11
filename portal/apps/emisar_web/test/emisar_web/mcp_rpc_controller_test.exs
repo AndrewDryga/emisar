@@ -505,4 +505,224 @@ defmodule EmisarWeb.McpRpcControllerTest do
     |> get_in(["result", "content"])
     |> Enum.map_join("\n", & &1["text"])
   end
+
+  describe "malformed frames + scope denials" do
+    test "a non-2.0 frame is rejected with -32600", %{conn: conn, account: account, user: user} do
+      raw = make_api_key!(account, user)
+
+      conn =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> put_req_header("content-type", "application/json")
+        |> post(~p"/api/mcp/rpc", Jason.encode!(%{method: "ping"}))
+
+      assert %{"error" => %{"code" => -32600}} = json_response(conn, 400)
+    end
+
+    test "tools/call without a tool name is -32602", %{conn: conn, account: account, user: user} do
+      raw = make_api_key!(account, user)
+
+      conn =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> rpc("tools/call", %{"arguments" => %{}})
+
+      assert %{"error" => %{"code" => -32602}} = json_response(conn, 200)
+    end
+
+    test "a read-only key calling an action tool is refused with the required scope", %{
+      conn: conn,
+      account: account,
+      user: user
+    } do
+      runner = make_runner!(account, [])
+      _ = advertise_action!(runner, action_id: "linux.uptime")
+      raw = make_api_key!(account, user, scopes: ["actions:read"])
+
+      conn =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> rpc("tools/call", %{"name" => "linux_uptime", "arguments" => %{"reason" => "x"}})
+
+      assert %{"error" => %{"code" => -32002, "data" => %{"required" => "actions:execute"}}} =
+               json_response(conn, 200)
+    end
+
+    test "an execute-only key calling wait_for_run is refused with actions:read", %{
+      conn: conn,
+      account: account,
+      user: user
+    } do
+      raw = make_api_key!(account, user, scopes: ["actions:execute"])
+
+      conn =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> rpc("tools/call", %{"name" => "wait_for_run", "arguments" => %{"run_id" => "x"}})
+
+      assert %{"error" => %{"code" => -32002, "data" => %{"required" => "actions:read"}}} =
+               json_response(conn, 200)
+    end
+  end
+
+  describe "wait_for_run argument + lookup errors" do
+    test "missing run_id is an in-band tool error", %{conn: conn, account: account, user: user} do
+      raw = make_api_key!(account, user)
+
+      conn =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> rpc("tools/call", %{"name" => "wait_for_run", "arguments" => %{}})
+
+      body = json_response(conn, 200)
+      assert get_in(body, ["result", "isError"]) == true
+      assert content_text(body) =~ "requires `run_id`"
+    end
+
+    test "an unparseable timeout is an in-band tool error", %{
+      conn: conn,
+      account: account,
+      user: user
+    } do
+      raw = make_api_key!(account, user)
+
+      conn =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> rpc("tools/call", %{
+          "name" => "wait_for_run",
+          "arguments" => %{"run_id" => Ecto.UUID.generate(), "timeout" => "soon"}
+        })
+
+      body = json_response(conn, 200)
+      assert get_in(body, ["result", "isError"]) == true
+      assert content_text(body) =~ "duration"
+    end
+
+    test "an unknown run id reads as not found", %{conn: conn, account: account, user: user} do
+      raw = make_api_key!(account, user)
+
+      conn =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> rpc("tools/call", %{
+          "name" => "wait_for_run",
+          "arguments" => %{"run_id" => Ecto.UUID.generate(), "timeout" => ""}
+        })
+
+      body = json_response(conn, 200)
+      assert get_in(body, ["result", "isError"]) == true
+      assert content_text(body) =~ "Run not found"
+    end
+
+    test "the long-poll returns the terminal result when the run finalizes mid-wait", %{
+      conn: conn,
+      account: account,
+      user: user
+    } do
+      runner = make_runner!(account, [])
+      raw = make_api_key!(account, user)
+
+      {:ok, run} =
+        Runs.create_run(%{
+          account_id: account.id,
+          runner_id: runner.id,
+          action_id: "linux.uptime",
+          source: "mcp",
+          args: %{}
+        })
+
+      # Finalize from another process shortly after the poll starts —
+      # the await loop must wake on the run_updated broadcast, well
+      # before the 5s timeout.
+      test_pid = self()
+
+      Task.start(fn ->
+        Ecto.Adapters.SQL.Sandbox.allow(Emisar.Repo, test_pid, self())
+        Process.sleep(50)
+
+        {:ok, _} =
+          Runs.finalize_from_result(runner.id, %{
+            "request_id" => run.request_id,
+            "status" => "success",
+            "exit_code" => 0,
+            "stdout" => "up 3 days"
+          })
+      end)
+
+      conn =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> rpc("tools/call", %{
+          "name" => "wait_for_run",
+          "arguments" => %{"run_id" => run.id, "timeout" => "5s"}
+        })
+
+      body = json_response(conn, 200)
+      assert get_in(body, ["result", "isError"]) == false
+      assert content_text(body) =~ "exit_code=0"
+    end
+
+    test "a still-running run with zero wait reports waiting, not an error", %{
+      conn: conn,
+      account: account,
+      user: user
+    } do
+      runner = make_runner!(account, [])
+      raw = make_api_key!(account, user)
+
+      {:ok, run} =
+        Runs.create_run(%{
+          account_id: account.id,
+          runner_id: runner.id,
+          action_id: "linux.uptime",
+          source: "mcp",
+          args: %{}
+        })
+
+      conn =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> rpc("tools/call", %{
+          "name" => "wait_for_run",
+          "arguments" => %{"run_id" => run.id, "timeout" => ""}
+        })
+
+      body = json_response(conn, 200)
+      assert get_in(body, ["result", "isError"]) == false
+      assert content_text(body) =~ "still"
+    end
+  end
+
+  describe "get_runbook argument errors" do
+    test "missing runbook arg is an in-band tool error", %{
+      conn: conn,
+      account: account,
+      user: user
+    } do
+      raw = make_api_key!(account, user)
+
+      conn =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> rpc("tools/call", %{"name" => "get_runbook", "arguments" => %{}})
+
+      body = json_response(conn, 200)
+      assert get_in(body, ["result", "isError"]) == true
+      assert content_text(body) =~ "requires `runbook`"
+    end
+
+    test "an unknown slug reads as not found", %{conn: conn, account: account, user: user} do
+      raw = make_api_key!(account, user)
+
+      conn =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> rpc("tools/call", %{"name" => "get_runbook", "arguments" => %{"runbook" => "ghost"}})
+
+      body = json_response(conn, 200)
+      assert get_in(body, ["result", "isError"]) == true
+      assert content_text(body) =~ "Runbook not found"
+    end
+  end
 end
