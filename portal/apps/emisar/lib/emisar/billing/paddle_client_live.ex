@@ -91,9 +91,8 @@ defmodule Emisar.Billing.PaddleClient.Live do
          {:ok, expected} <- Map.fetch(parts, "h1"),
          {timestamp, ""} <- Integer.parse(timestamp_str),
          :ok <- check_timestamp(timestamp),
-         signed_payload <- "#{timestamp}:#{payload}",
-         computed <-
-           :crypto.mac(:hmac, :sha256, secret, signed_payload) |> Base.encode16(case: :lower),
+         signed_payload = "#{timestamp}:#{payload}",
+         computed = compute_signature(secret, signed_payload),
          true <- Emisar.Crypto.secure_compare(computed, expected) do
       :ok
     else
@@ -102,8 +101,11 @@ defmodule Emisar.Billing.PaddleClient.Live do
     end
   end
 
-  defp check_timestamp(ts) do
-    delta = abs(System.system_time(:second) - ts)
+  defp compute_signature(secret, signed_payload),
+    do: :crypto.mac(:hmac, :sha256, secret, signed_payload) |> Base.encode16(case: :lower)
+
+  defp check_timestamp(timestamp) do
+    delta = abs(System.system_time(:second) - timestamp)
 
     if delta > @tolerance_seconds do
       {:error, :timestamp_too_old}

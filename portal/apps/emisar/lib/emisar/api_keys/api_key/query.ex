@@ -79,6 +79,22 @@ defmodule Emisar.ApiKeys.ApiKey.Query do
     |> select([api_keys: k], {k.id, field(k, ^field)})
   end
 
+  @doc "Left-join + preload the key's (non-deleted) creating user, idempotently."
+  def with_preloaded_created_by(queryable) do
+    queryable
+    |> with_named_binding(:created_by, fn queryable, binding ->
+      join(
+        queryable,
+        :left,
+        [api_keys: k],
+        created_by in ^Emisar.Users.User.Query.not_deleted(),
+        on: k.created_by_id == created_by.id,
+        as: ^binding
+      )
+    end)
+    |> preload([created_by: created_by], created_by: created_by)
+  end
+
   # -- Pagination ------------------------------------------------------
 
   @impl Emisar.Repo.Query

@@ -64,7 +64,7 @@ defmodule Emisar.Runbooks do
       |> Multi.insert(:audit, fn %{runbook: runbook} ->
         Audit.Events.runbook_created(subject, runbook)
       end)
-      |> Repo.commit_multi(after_commit: &broadcast_runbook_change(&1, "runbook.created"))
+      |> Repo.commit_multi(after_commit: &broadcast_runbook_created(&1.runbook))
       |> case do
         {:ok, %{runbook: runbook}} -> {:ok, runbook}
         {:error, reason} -> {:error, reason}
@@ -72,19 +72,33 @@ defmodule Emisar.Runbooks do
     end
   end
 
+  # -- PubSub ----------------------------------------------------------
+
   @doc "Subscribe the caller to the account's runbook list changes (`{:list_changed, :runbook, …}`)."
   def subscribe_account_runbooks(account_id),
     do: Emisar.PubSub.subscribe(account_runbooks_topic(account_id))
 
   defp account_runbooks_topic(account_id), do: "account:#{account_id}:runbooks"
 
-  defp broadcast_runbook_change(%{runbook: runbook}, event_type) do
+  defp broadcast_runbook_created(%Runbook{} = runbook) do
     Emisar.PubSub.broadcast(
       account_runbooks_topic(runbook.account_id),
-      {:list_changed, :runbook, event_type, runbook.id}
+      {:list_changed, :runbook, "runbook.created", runbook.id}
     )
+  end
 
-    :ok
+  defp broadcast_runbook_updated(%Runbook{} = runbook) do
+    Emisar.PubSub.broadcast(
+      account_runbooks_topic(runbook.account_id),
+      {:list_changed, :runbook, "runbook.updated", runbook.id}
+    )
+  end
+
+  defp broadcast_runbook_published(%Runbook{} = runbook) do
+    Emisar.PubSub.broadcast(
+      account_runbooks_topic(runbook.account_id),
+      {:list_changed, :runbook, "runbook.published", runbook.id}
+    )
   end
 
   def save_new_version(%Runbook{} = old, attrs, %Subject{} = subject) do
@@ -101,7 +115,7 @@ defmodule Emisar.Runbooks do
       |> Multi.insert(:audit, fn %{runbook: runbook} ->
         Audit.Events.runbook_updated(subject, old, runbook)
       end)
-      |> Repo.commit_multi(after_commit: &broadcast_runbook_change(&1, "runbook.updated"))
+      |> Repo.commit_multi(after_commit: &broadcast_runbook_updated(&1.runbook))
       |> case do
         {:ok, %{runbook: runbook}} -> {:ok, runbook}
         {:error, reason} -> {:error, reason}
@@ -120,10 +134,8 @@ defmodule Emisar.Runbooks do
       |> Authorizer.for_subject(subject)
       |> Repo.fetch_and_update(Runbook.Query,
         with: &Runbook.Changeset.update(&1, %{status: :published}),
-        audit: fn published -> Audit.Events.runbook_published(subject, published) end,
-        after_commit: fn published ->
-          broadcast_runbook_change(%{runbook: published}, "runbook.published")
-        end
+        audit: &Audit.Events.runbook_published(subject, &1),
+        after_commit: &broadcast_runbook_published/1
       )
     end
   end

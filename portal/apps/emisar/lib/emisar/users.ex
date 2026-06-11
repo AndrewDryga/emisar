@@ -336,7 +336,9 @@ defmodule Emisar.Users do
   transaction.
   """
   def register_invited_user(%User{} = user, %{} = attrs) do
-    with {:ok, user} <- user |> User.Changeset.registration(attrs) |> Repo.update() do
+    registration = User.Changeset.registration(user, attrs)
+
+    with {:ok, user} <- Repo.update(registration) do
       user |> User.Changeset.confirm() |> Repo.update()
     end
   end

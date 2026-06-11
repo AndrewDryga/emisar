@@ -45,8 +45,9 @@ defmodule Emisar.ApiKeys do
       ApiKey.Query.visible_to_operators()
       |> ApiKey.Query.without_scope("audit:read")
       |> ApiKey.Query.ordered_by_recent()
+      |> ApiKey.Query.with_preloaded_created_by()
       |> Authorizer.for_subject(subject)
-      |> Repo.list(ApiKey.Query, Keyword.put_new(opts, :preload, :created_by))
+      |> Repo.list(ApiKey.Query, opts)
     end
   end
 
@@ -65,8 +66,9 @@ defmodule Emisar.ApiKeys do
       ApiKey.Query.visible_to_operators()
       |> ApiKey.Query.by_scope("audit:read")
       |> ApiKey.Query.ordered_by_recent()
+      |> ApiKey.Query.with_preloaded_created_by()
       |> Authorizer.for_subject(subject)
-      |> Repo.list(ApiKey.Query, Keyword.put_new(opts, :preload, :created_by))
+      |> Repo.list(ApiKey.Query, opts)
     end
   end
 
@@ -116,7 +118,7 @@ defmodule Emisar.ApiKeys do
       |> Multi.insert(:audit, fn %{key: key} ->
         Audit.Events.api_key_created(subject, key)
       end)
-      |> Repo.commit_multi(after_commit: &broadcast_api_key_change(&1, "api_key.created"))
+      |> Repo.commit_multi(after_commit: &broadcast_api_key_created(&1.key))
       |> case do
         {:ok, %{key: key}} -> {:ok, raw, key}
         {:error, reason} -> {:error, reason}
@@ -124,19 +126,26 @@ defmodule Emisar.ApiKeys do
     end
   end
 
+  # -- PubSub ----------------------------------------------------------
+
   @doc "Subscribe the caller to the account's API-key list changes (`{:list_changed, :api_key, …}`)."
   def subscribe_account_api_keys(account_id),
     do: Emisar.PubSub.subscribe(account_api_keys_topic(account_id))
 
   defp account_api_keys_topic(account_id), do: "account:#{account_id}:api_keys"
 
-  defp broadcast_api_key_change(%{key: key}, event_type) do
+  defp broadcast_api_key_created(%ApiKey{} = key) do
     Emisar.PubSub.broadcast(
       account_api_keys_topic(key.account_id),
-      {:list_changed, :api_key, event_type, key.id}
+      {:list_changed, :api_key, "api_key.created", key.id}
     )
+  end
 
-    :ok
+  defp broadcast_api_key_revoked(%ApiKey{} = key) do
+    Emisar.PubSub.broadcast(
+      account_api_keys_topic(key.account_id),
+      {:list_changed, :api_key, "api_key.revoked", key.id}
+    )
   end
 
   @doc """
@@ -213,10 +222,8 @@ defmodule Emisar.ApiKeys do
       |> Authorizer.for_subject(subject)
       |> Repo.fetch_and_update(ApiKey.Query,
         with: &ApiKey.Changeset.revoke(&1, by_user_id),
-        audit: fn revoked -> Audit.Events.api_key_revoked(subject, revoked) end,
-        after_commit: fn revoked ->
-          broadcast_api_key_change(%{key: revoked}, "api_key.revoked")
-        end
+        audit: &Audit.Events.api_key_revoked(subject, &1),
+        after_commit: &broadcast_api_key_revoked/1
       )
     end
   end
@@ -240,8 +247,9 @@ defmodule Emisar.ApiKeys do
 
       # Deliberately all(): `usable?/1` below is the single liveness gate
       # (it rejects deleted/revoked/expired in one place).
-      with %ApiKey{} = key <-
-             ApiKey.Query.all() |> ApiKey.Query.by_key_prefix(prefix) |> Repo.peek(),
+      queryable = ApiKey.Query.all() |> ApiKey.Query.by_key_prefix(prefix)
+
+      with %ApiKey{} = key <- Repo.peek(queryable),
            true <- Crypto.secure_compare(key.key_hash, hash),
            true <- ApiKey.usable?(key) do
         was_auto? = ApiKey.auto_unused?(key)
