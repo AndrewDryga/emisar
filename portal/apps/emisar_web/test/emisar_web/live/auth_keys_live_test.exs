@@ -54,4 +54,67 @@ defmodule EmisarWeb.AuthKeysLiveTest do
     # …and no flash banner with a humanized changeset dump.
     refute html =~ "Could not create key"
   end
+
+  test "create shows the secret once; dismiss hides it; revoke retires the key", %{conn: conn} do
+    {conn, _user, _account} = register_and_log_in(conn)
+    {:ok, lv, _html} = live(conn, ~p"/app/settings/runners/auth-keys")
+
+    html =
+      lv
+      |> form("#auth_key_form", %{
+        "auth_key" => %{"description" => "bootstrap for prod image", "group" => "prod"}
+      })
+      |> render_submit()
+
+    assert html =~ "Copy it now"
+
+    # The full raw secret is on the page exactly once, until dismissed —
+    # the list rows keep showing the short prefix, so refute the raw.
+    [raw_secret] = Regex.run(~r/emkey-auth-[A-Za-z0-9_-]{20,}/, html)
+
+    html = render_click(lv, "dismiss_secret", %{})
+    refute html =~ raw_secret
+    assert html =~ "bootstrap for prod image"
+
+    # Revoke it via the row control — the row flips out of the active list.
+    [key_id] = Regex.run(~r/phx-value-id="([0-9a-f-]+)"/, html, capture: :all_but_first)
+
+    html = render_click(lv, "revoke", %{"id" => key_id})
+    assert html =~ "Key revoked."
+    refute html =~ "bootstrap for prod image"
+  end
+
+  test "a viewer cannot mint an auth key", %{conn: conn} do
+    {_owner_conn, _owner, account} = register_and_log_in(conn)
+
+    viewer = Emisar.Fixtures.user_fixture()
+
+    _ =
+      Emisar.Fixtures.membership_fixture(
+        account_id: account.id,
+        user_id: viewer.id,
+        role: "viewer"
+      )
+
+    {:ok, lv, _html} =
+      build_conn() |> log_in_user(viewer) |> live(~p"/app/settings/runners/auth-keys")
+
+    html = render_submit(lv, "create", %{"auth_key" => %{"description" => "sneaky"}})
+
+    assert html =~ "You don&#39;t have permission to do that."
+    refute html =~ "emkey-auth-"
+  end
+
+  test "a list_changed broadcast refreshes the key list", %{conn: conn} do
+    {conn, user, account} = register_and_log_in(conn)
+    subject = Emisar.Fixtures.subject_for(user, account)
+
+    {:ok, lv, html} = live(conn, ~p"/app/settings/runners/auth-keys")
+    refute html =~ "minted-elsewhere"
+
+    {:ok, _raw, key} = Runners.create_auth_key(%{description: "minted-elsewhere"}, subject)
+    send(lv.pid, {:list_changed, :auth_key, "auth_key.created", key.id})
+
+    assert render(lv) =~ "minted-elsewhere"
+  end
 end

@@ -131,22 +131,32 @@ defmodule EmisarWeb.AuthKeysLive do
     # the operator has touched the filter we can't tell "All" from "unset" by
     # the params alone: treat an absent status as their "All" rather than
     # snapping back to "active". `filter_params` is unset until the first load.
-    params =
+    effective_params =
       if socket.assigns[:filter_params],
         do: params,
         else: Map.put_new(params, "status", "active")
 
     filters = AuthKey.Query.filters()
-    opts = LiveTable.params_to_opts(params, filters)
+    opts = LiveTable.params_to_opts(effective_params, filters)
 
     case Runners.list_auth_keys(socket.assigns.current_subject, opts) do
       {:ok, auth_keys, meta} ->
         socket
         |> assign(:auth_keys, auth_keys)
         |> assign(:metadata, meta)
-        |> assign(:filter_params, params)
+        |> assign(:filter_params, effective_params)
         |> assign(:filters, filters)
 
+      # A clean reload can fail too (e.g. the subject can't list keys) —
+      # degrade to an empty list rather than recursing forever.
+      {:error, _} when map_size(params) == 0 ->
+        socket
+        |> assign(:auth_keys, [])
+        |> assign(:metadata, %Emisar.Repo.Paginator.Metadata{count: 0, limit: 0})
+        |> assign(:filter_params, effective_params)
+        |> assign(:filters, filters)
+
+      # Bad filter/page params from a hand-edited URL — retry once, clean.
       {:error, _} ->
         load(socket, %{})
     end
