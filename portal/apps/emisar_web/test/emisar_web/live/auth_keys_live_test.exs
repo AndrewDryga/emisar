@@ -96,13 +96,12 @@ defmodule EmisarWeb.AuthKeysLiveTest do
         role: "viewer"
       )
 
-    {:ok, lv, _html} =
-      build_conn() |> log_in_user(viewer) |> live(~p"/app/settings/runners/auth-keys")
+    # Manage-only page: a viewer is bounced at LOAD time (reads as
+    # not-found), never reaching the form to fail on submit.
+    assert {:error, {:live_redirect, %{to: "/app", flash: flash}}} =
+             build_conn() |> log_in_user(viewer) |> live(~p"/app/settings/runners/auth-keys")
 
-    html = render_submit(lv, "create", %{"auth_key" => %{"description" => "sneaky"}})
-
-    assert html =~ "You don&#39;t have permission to do that."
-    refute html =~ "emkey-auth-"
+    assert flash["error"] == "Page not found."
   end
 
   test "a list_changed broadcast refreshes the key list", %{conn: conn} do
