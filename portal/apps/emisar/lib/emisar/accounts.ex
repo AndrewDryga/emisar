@@ -123,7 +123,7 @@ defmodule Emisar.Accounts do
             {:error, reason} -> reason
           end
         end,
-        audit: fn updated, changeset -> account_update_audit(updated, changeset, subject) end
+        audit: &account_update_audit(&1, &2, subject)
       )
     end
   end
@@ -323,16 +323,17 @@ defmodule Emisar.Accounts do
           end
         end,
         # `changeset.data` is the locked pre-update row — the audit
-        # payload records the role that was actually replaced.
+        # payload records the role that was actually replaced. (A capture
+        # can't skip &1, so this stays a fn.)
         audit: fn _updated, changeset ->
           Audit.Events.membership_role_changed(subject, changeset.data, new_role)
         end,
-        after_commit: fn updated ->
-          broadcast_team_change(updated, "membership.role_changed")
-        end
+        after_commit: &broadcast_membership_role_changed/1
       )
     end
   end
+
+  # -- PubSub ----------------------------------------------------------
 
   @doc "Subscribe the caller to the account's team list changes (`{:list_changed, :team, …}`)."
   def subscribe_account_team(account_id),
@@ -340,13 +341,32 @@ defmodule Emisar.Accounts do
 
   defp account_team_topic(account_id), do: "account:#{account_id}:team"
 
-  defp broadcast_team_change(%Membership{} = membership, event_type) do
+  defp broadcast_membership_role_changed(%Membership{} = membership) do
     Emisar.PubSub.broadcast(
       account_team_topic(membership.account_id),
-      {:list_changed, :team, event_type, membership.user_id}
+      {:list_changed, :team, "membership.role_changed", membership.user_id}
     )
+  end
 
-    :ok
+  defp broadcast_membership_suspended(%Membership{} = membership) do
+    Emisar.PubSub.broadcast(
+      account_team_topic(membership.account_id),
+      {:list_changed, :team, "membership.suspended", membership.user_id}
+    )
+  end
+
+  defp broadcast_membership_reinstated(%Membership{} = membership) do
+    Emisar.PubSub.broadcast(
+      account_team_topic(membership.account_id),
+      {:list_changed, :team, "membership.reinstated", membership.user_id}
+    )
+  end
+
+  defp broadcast_membership_removed(%Membership{} = membership) do
+    Emisar.PubSub.broadcast(
+      account_team_topic(membership.account_id),
+      {:list_changed, :team, "membership.removed", membership.user_id}
+    )
   end
 
   # The last-owner invariant is NOT checked here — a pre-transaction
@@ -473,11 +493,11 @@ defmodule Emisar.Accounts do
             {:error, reason} -> reason
           end
         end,
-        audit: fn suspended -> Audit.Events.membership_suspended(subject, suspended) end,
+        audit: &Audit.Events.membership_suspended(subject, &1),
         after_commit: [
           # Broadcast first so the team-page LV refreshes the row before
           # we kill the user's sessions — keeps the visual ordering sane.
-          fn suspended -> broadcast_team_change(suspended, "membership.suspended") end,
+          &broadcast_membership_suspended/1,
           # Session kill is a side effect — broadcast PubSub disconnects
           # only after the suspension actually commits. Otherwise a rolled-
           # back update would still kick the user out of every tab.
@@ -521,10 +541,8 @@ defmodule Emisar.Accounts do
             {:error, reason} -> reason
           end
         end,
-        audit: fn reinstated -> Audit.Events.membership_reinstated(subject, reinstated) end,
-        after_commit: fn reinstated ->
-          broadcast_team_change(reinstated, "membership.reinstated")
-        end
+        audit: &Audit.Events.membership_reinstated(subject, &1),
+        after_commit: &broadcast_membership_reinstated/1
       )
     end
   end
@@ -715,8 +733,8 @@ defmodule Emisar.Accounts do
             {:error, reason} -> reason
           end
         end,
-        audit: fn deleted -> Audit.Events.membership_removed(subject, deleted) end,
-        after_commit: fn deleted -> broadcast_team_change(deleted, "membership.removed") end
+        audit: &Audit.Events.membership_removed(subject, &1),
+        after_commit: &broadcast_membership_removed/1
       )
     end
   end

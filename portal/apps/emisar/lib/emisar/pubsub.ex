@@ -19,6 +19,11 @@ defmodule Emisar.PubSub do
 
   def unsubscribe(topic) when is_binary(topic), do: Phoenix.PubSub.unsubscribe(@pubsub, topic)
 
-  def broadcast(topic, payload) when is_binary(topic),
-    do: Phoenix.PubSub.broadcast(@pubsub, topic, payload)
+  # Normalized to :ok so the per-event broadcast_* functions satisfy the
+  # `after_commit` callback contract without each appending a bare :ok.
+  # Broadcasts are fire-and-forget; no caller branches on delivery.
+  def broadcast(topic, payload) when is_binary(topic) do
+    _ = Phoenix.PubSub.broadcast(@pubsub, topic, payload)
+    :ok
+  end
 end
