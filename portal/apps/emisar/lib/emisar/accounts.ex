@@ -878,16 +878,17 @@ defmodule Emisar.Accounts do
   is a public route with only `current_user` assigned, no subject.
   """
   def mark_invitation_accepted(%Membership{user_id: user_id} = membership, %User{id: user_id}) do
-    Multi.new()
-    |> Multi.update(:membership, Membership.Changeset.accept_invitation(membership))
-    |> Multi.insert(:audit, fn _ ->
-      Audit.Events.membership_invitation_accepted(membership)
-    end)
-    |> Repo.commit_multi()
-    |> case do
-      {:ok, %{membership: accepted}} -> {:ok, accepted}
-      {:error, reason} -> {:error, reason}
-    end
+    # Locked re-read judged on the FRESH row: a concurrently-accepted,
+    # expired, or revoked invitation is :not_found — first accept wins,
+    # never a blind re-stamp of the caller's stale snapshot.
+    Membership.Query.not_deleted()
+    |> Membership.Query.by_id(membership.id)
+    |> Membership.Query.pending_invitation()
+    |> Membership.Query.invitation_not_expired()
+    |> Repo.fetch_and_update(Membership.Query,
+      with: &Membership.Changeset.accept_invitation/1,
+      audit: &Audit.Events.membership_invitation_accepted/1
+    )
   end
 
   def mark_invitation_accepted(%Membership{}, %User{}), do: {:error, :unauthorized}
@@ -904,13 +905,21 @@ defmodule Emisar.Accounts do
   """
   def accept_invitation(%Membership{} = membership, %{} = user_attrs) do
     Multi.new()
+    # Lock + re-judge the invitation FIRST: a token burnt between the
+    # page mount and this submit (a second link holder racing the first
+    # acceptor) must fail :not_found here — before register_invited_user
+    # could overwrite the winner's freshly-set password.
+    |> Multi.run(:membership, fn repo, _changes ->
+      with {:ok, loaded_membership} <- lock_pending_invitation(repo, membership) do
+        repo.update(Membership.Changeset.accept_invitation(loaded_membership))
+      end
+    end)
     |> Multi.run(:existing_user, fn _repo, _changes ->
       Users.fetch_user_by_id(membership.user_id)
     end)
     |> Multi.run(:user, fn _repo, %{existing_user: existing_user} ->
       Users.register_invited_user(existing_user, user_attrs)
     end)
-    |> Multi.update(:membership, Membership.Changeset.accept_invitation(membership))
     |> Multi.insert(:audit, fn %{user: user, membership: updated} ->
       Audit.Events.user_invitation_accepted(user, updated)
     end)
@@ -919,6 +928,22 @@ defmodule Emisar.Accounts do
       {:ok, %{user: user, membership: updated}} -> {:ok, %{user: user, membership: updated}}
       {:error, reason} -> {:error, reason}
     end
+  end
+
+  # `nil` means the invitation is no longer pending (accepted, expired,
+  # revoked, or the membership vanished) — the accept races resolve here.
+  defp lock_pending_invitation(repo, %Membership{id: id}) do
+    loaded_membership =
+      Membership.Query.not_deleted()
+      |> Membership.Query.by_id(id)
+      |> Membership.Query.pending_invitation()
+      |> Membership.Query.invitation_not_expired()
+      |> Membership.Query.lock_for_update()
+      |> repo.one()
+
+    if loaded_membership,
+      do: {:ok, loaded_membership},
+      else: {:error, :not_found}
   end
 
   # -- Internal (Billing flows) -------------------------------------------

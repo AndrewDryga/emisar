@@ -164,5 +164,60 @@ defmodule Emisar.InvitationTest do
                  "password" => "short"
                })
     end
+
+    test "a second accept with the same (stale) membership loses — first wins", %{
+      membership: membership
+    } do
+      assert {:ok, %{user: user}} =
+               Accounts.accept_invitation(membership, %{
+                 "full_name" => "Carol",
+                 "password" => "winner-password-1234"
+               })
+
+      # A second link holder submits after the token is burnt: judged on
+      # the locked fresh row, it must fail — and crucially must NOT have
+      # overwritten the winner's password.
+      assert {:error, :not_found} =
+               Accounts.accept_invitation(membership, %{
+                 "full_name" => "Mallory",
+                 "password" => "attacker-password-99"
+               })
+
+      assert {:ok, _} =
+               Emisar.Auth.fetch_user_by_email_and_password(user.email, "winner-password-1234")
+
+      assert {:error, _} =
+               Emisar.Auth.fetch_user_by_email_and_password(user.email, "attacker-password-99")
+    end
+  end
+
+  describe "mark_invitation_accepted/2" do
+    test "in-place accept burns the token; a replay is :not_found" do
+      account = account_fixture()
+      {_inviter, subject} = inviter_subject(account)
+      invitee = user_fixture()
+
+      {:ok, %{membership: membership}} =
+        Accounts.invite_user_to_account(invitee.email, "viewer", subject)
+
+      assert {:ok, accepted} = Accounts.mark_invitation_accepted(membership, invitee)
+      assert accepted.invitation_accepted_at
+      assert is_nil(accepted.invitation_token_digest)
+
+      # The stale struct replayed: the fresh row is no longer pending.
+      assert {:error, :not_found} = Accounts.mark_invitation_accepted(membership, invitee)
+    end
+
+    test "a different signed-in user cannot burn the invitation" do
+      account = account_fixture()
+      {_inviter, subject} = inviter_subject(account)
+      invitee = user_fixture()
+      bystander = user_fixture()
+
+      {:ok, %{membership: membership}} =
+        Accounts.invite_user_to_account(invitee.email, "viewer", subject)
+
+      assert {:error, :unauthorized} = Accounts.mark_invitation_accepted(membership, bystander)
+    end
   end
 end
