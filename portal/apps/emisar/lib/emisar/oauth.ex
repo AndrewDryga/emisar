@@ -73,9 +73,9 @@ defmodule Emisar.OAuth do
 
   `subject` is the consenting operator; `client` the requesting client.
   """
-  @spec issue_code(Subject.t(), Client.t(), map()) ::
+  @spec issue_code(Client.t(), map(), Subject.t()) ::
           {:ok, String.t()} | {:error, term()}
-  def issue_code(%Subject{} = subject, %Client{} = client, params) do
+  def issue_code(%Client{} = client, params, %Subject{} = subject) do
     # The backing key carries actions:read + actions:execute, so consenting
     # is exactly as privileged as minting an API key. Gate it on the same
     # permission the manual key-issue path requires — otherwise a read-only

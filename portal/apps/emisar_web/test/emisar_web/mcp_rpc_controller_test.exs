@@ -464,13 +464,17 @@ defmodule EmisarWeb.McpRpcControllerTest do
       challenge = Base.url_encode64(:crypto.hash(:sha256, verifier), padding: false)
 
       {:ok, code} =
-        Emisar.OAuth.issue_code(subject, client, %{
-          "redirect_uri" => redirect,
-          "code_challenge" => challenge,
-          "code_challenge_method" => "S256",
-          "scope" => "mcp offline_access",
-          "resource" => "https://app.emisar.dev/api/mcp/rpc"
-        })
+        Emisar.OAuth.issue_code(
+          client,
+          %{
+            "redirect_uri" => redirect,
+            "code_challenge" => challenge,
+            "code_challenge_method" => "S256",
+            "scope" => "mcp offline_access",
+            "resource" => "https://app.emisar.dev/api/mcp/rpc"
+          },
+          subject
+        )
 
       {:ok, tokens} =
         Emisar.OAuth.exchange_code(%{

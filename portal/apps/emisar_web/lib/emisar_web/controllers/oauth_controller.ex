@@ -88,7 +88,7 @@ defmodule EmisarWeb.OAuthController do
          :ok <- check_redirect(client, redirect_uri) do
       case params["decision"] do
         "approve" ->
-          case OAuth.issue_code(subject, client, params) do
+          case OAuth.issue_code(client, params, subject) do
             {:ok, code} ->
               redirect_back(conn, redirect_uri, %{code: code, state: state})
 

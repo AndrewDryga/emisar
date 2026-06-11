@@ -38,13 +38,17 @@ defmodule EmisarWeb.OAuthControllerTest do
     {verifier, challenge} = pkce()
 
     {:ok, code} =
-      OAuth.issue_code(subject, client, %{
-        "redirect_uri" => @redirect,
-        "code_challenge" => challenge,
-        "code_challenge_method" => "S256",
-        "scope" => "mcp offline_access",
-        "resource" => @resource
-      })
+      OAuth.issue_code(
+        client,
+        %{
+          "redirect_uri" => @redirect,
+          "code_challenge" => challenge,
+          "code_challenge_method" => "S256",
+          "scope" => "mcp offline_access",
+          "resource" => @resource
+        },
+        subject
+      )
 
     {:ok, tokens} =
       OAuth.exchange_code(%{
@@ -229,13 +233,17 @@ defmodule EmisarWeb.OAuthControllerTest do
       {verifier, challenge} = pkce()
 
       {:ok, code} =
-        OAuth.issue_code(subject, client, %{
-          "redirect_uri" => @redirect,
-          "code_challenge" => challenge,
-          "code_challenge_method" => "S256",
-          "scope" => "mcp offline_access",
-          "resource" => @resource
-        })
+        OAuth.issue_code(
+          client,
+          %{
+            "redirect_uri" => @redirect,
+            "code_challenge" => challenge,
+            "code_challenge_method" => "S256",
+            "scope" => "mcp offline_access",
+            "resource" => @resource
+          },
+          subject
+        )
 
       body =
         conn

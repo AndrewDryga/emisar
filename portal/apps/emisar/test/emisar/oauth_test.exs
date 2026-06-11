@@ -29,13 +29,17 @@ defmodule Emisar.OAuthTest do
 
   defp issue!(subject, client, challenge, opts \\ []) do
     {:ok, code} =
-      OAuth.issue_code(subject, client, %{
-        "redirect_uri" => @redirect,
-        "code_challenge" => challenge,
-        "code_challenge_method" => "S256",
-        "scope" => opts[:scope] || "mcp offline_access",
-        "resource" => @resource
-      })
+      OAuth.issue_code(
+        client,
+        %{
+          "redirect_uri" => @redirect,
+          "code_challenge" => challenge,
+          "code_challenge_method" => "S256",
+          "scope" => opts[:scope] || "mcp offline_access",
+          "resource" => @resource
+        },
+        subject
+      )
 
     code
   end
@@ -75,13 +79,17 @@ defmodule Emisar.OAuthTest do
       viewer = subject_for(user_fixture(), account, role: :viewer)
 
       assert {:error, :unauthorized} =
-               OAuth.issue_code(viewer, client, %{
-                 "redirect_uri" => @redirect,
-                 "code_challenge" => challenge,
-                 "code_challenge_method" => "S256",
-                 "scope" => "mcp offline_access",
-                 "resource" => @resource
-               })
+               OAuth.issue_code(
+                 client,
+                 %{
+                   "redirect_uri" => @redirect,
+                   "code_challenge" => challenge,
+                   "code_challenge_method" => "S256",
+                   "scope" => "mcp offline_access",
+                   "resource" => @resource
+                 },
+                 viewer
+               )
     end
   end
 
