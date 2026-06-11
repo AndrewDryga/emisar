@@ -112,4 +112,126 @@ defmodule EmisarWeb.TeamLiveTest do
       assert Enum.any?(scopes, &(&1.scope_type == :runner and &1.scope_value == runner.id))
     end
   end
+
+  describe "member administration" do
+    setup %{conn: conn} do
+      {conn, owner, account} = register_and_log_in(conn)
+      member = Emisar.Fixtures.user_fixture()
+
+      membership =
+        Emisar.Fixtures.membership_fixture(
+          account_id: account.id,
+          user_id: member.id,
+          role: "viewer"
+        )
+
+      {:ok, lv, _html} = live(conn, ~p"/app/settings/team")
+      %{owner: owner, account: account, member: member, membership: membership, lv: lv}
+    end
+
+    test "invite happy path reports and lists the invitee", %{lv: lv} do
+      email = "newbie-#{System.unique_integer([:positive])}@example.com"
+
+      html =
+        lv
+        |> form("#invite_form", %{"invite" => %{"email" => email, "role" => "operator"}})
+        |> render_submit()
+
+      assert html =~ "Invited #{email}."
+      assert html =~ email
+    end
+
+    test "change_role promotes the member", %{lv: lv, membership: membership} do
+      html =
+        render_click(lv, "change_role", %{"membership_id" => membership.id, "role" => "operator"})
+
+      assert html =~ "Role updated."
+      assert Emisar.Repo.reload!(membership).role == :operator
+    end
+
+    test "an unknown role value is rejected", %{lv: lv, membership: membership} do
+      html =
+        render_click(lv, "change_role", %{"membership_id" => membership.id, "role" => "root"})
+
+      assert html =~ "Unknown role."
+      assert Emisar.Repo.reload!(membership).role == :viewer
+    end
+
+    test "suspend then reinstate round-trips", %{lv: lv, membership: membership} do
+      assert render_click(lv, "suspend", %{"membership_id" => membership.id}) =~
+               "Access suspended."
+
+      assert Emisar.Repo.reload!(membership).disabled_at
+
+      assert render_click(lv, "reinstate", %{"membership_id" => membership.id}) =~
+               "Access restored."
+
+      refute Emisar.Repo.reload!(membership).disabled_at
+    end
+
+    test "remove soft-deletes the membership", %{lv: lv, membership: membership} do
+      assert render_click(lv, "remove", %{"membership_id" => membership.id}) =~ "Member removed."
+      assert Emisar.Repo.reload!(membership).deleted_at
+    end
+
+    test "end_sessions kills the member's signed-in devices", %{
+      lv: lv,
+      member: member,
+      membership: membership
+    } do
+      _member_conn = build_conn() |> log_in_user(member)
+
+      assert render_click(lv, "end_sessions", %{"membership_id" => membership.id}) =~
+               "All sessions ended for that user."
+    end
+  end
+
+  describe "account-wide MFA toggle" do
+    test "an owner without MFA hits the lockout guard", %{conn: conn} do
+      {conn, _owner, _account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/app/settings/team")
+
+      html = render_click(lv, "toggle_require_mfa", %{})
+
+      assert html =~ "Enable MFA on your own profile first"
+    end
+
+    test "an owner with MFA enforces it account-wide", %{conn: conn} do
+      {conn, owner, account} = register_and_log_in(conn)
+
+      secret = Emisar.Auth.generate_mfa_secret()
+
+      {:ok, _user, _codes} =
+        Emisar.Auth.enable_mfa(
+          secret,
+          NimbleTOTP.verification_code(secret),
+          Emisar.Fixtures.subject_for(owner, account)
+        )
+
+      {:ok, lv, _html} = live(conn, ~p"/app/settings/team")
+
+      assert render_click(lv, "toggle_require_mfa", %{}) =~ "Account-wide MFA enforced."
+      assert Emisar.Repo.reload!(account).require_mfa
+    end
+
+    test "a non-owner is refused at the event level", %{conn: conn} do
+      {_owner_conn, _owner, account} = register_and_log_in(conn)
+
+      admin = Emisar.Fixtures.user_fixture()
+
+      _ =
+        Emisar.Fixtures.membership_fixture(
+          account_id: account.id,
+          user_id: admin.id,
+          role: "admin"
+        )
+
+      {:ok, lv, _html} = build_conn() |> log_in_user(admin) |> live(~p"/app/settings/team")
+
+      html = render_click(lv, "toggle_require_mfa", %{})
+
+      assert html =~ "Only the account owner can change this setting."
+      refute Emisar.Repo.reload!(account).require_mfa
+    end
+  end
 end

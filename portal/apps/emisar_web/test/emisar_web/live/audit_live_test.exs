@@ -191,4 +191,69 @@ defmodule EmisarWeb.AuditLiveTest do
                live(conn, ~p"/app/audit/#{event.id}")
     end
   end
+
+  describe "SIEM export keys" do
+    test "mint shows the secret once, list updates, revoke retires it", %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      subject = Emisar.Fixtures.subject_for(user, account)
+      {:ok, lv, _html} = live(conn, ~p"/app/audit")
+
+      # Mint: the raw emk- secret is rendered exactly once.
+      html = render_click(lv, "create_export_key", %{})
+      assert html =~ "emk-"
+      assert html =~ "Audit export —"
+
+      html = render_click(lv, "dismiss_export_secret", %{})
+      refute html =~ "emk-NOSUCH"
+
+      # The minted key row is in the export list; revoke it.
+      {:ok, [key], _meta} =
+        Emisar.ApiKeys.list_audit_export_keys_for_account(subject, page_size: 50)
+
+      html = render_click(lv, "revoke_export_key", %{"id" => key.id})
+      assert html =~ "Export token revoked."
+
+      # Revoked keys stay listed (audit trail) but carry the revocation.
+      {:ok, [revoked], _meta} =
+        Emisar.ApiKeys.list_audit_export_keys_for_account(subject, page_size: 50)
+
+      assert revoked.revoked_at
+    end
+
+    test "a viewer cannot mint an export key", %{conn: conn} do
+      {_owner_conn, _owner, account} = register_and_log_in(conn)
+
+      viewer = Emisar.Fixtures.user_fixture()
+
+      _ =
+        Emisar.Fixtures.membership_fixture(
+          account_id: account.id,
+          user_id: viewer.id,
+          role: "viewer"
+        )
+
+      {:ok, lv, _html} = build_conn() |> log_in_user(viewer) |> live(~p"/app/audit")
+
+      html = render_click(lv, "create_export_key", %{})
+      assert html =~ "You don&#39;t have permission to do that."
+      refute html =~ "emk-"
+    end
+
+    test "an api_key list_changed broadcast refreshes the key list", %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/app/audit")
+
+      # A key minted elsewhere (another tab/admin) appears via the broadcast.
+      subject = Emisar.Fixtures.subject_for(user, account)
+
+      {:ok, _raw, key} =
+        Emisar.ApiKeys.create_key(
+          %{name: "Side-channel export", scopes: ["audit:read"]},
+          subject
+        )
+
+      send(lv.pid, {:list_changed, :api_key, "api_key.created", key.id})
+      assert render(lv) =~ "Side-channel export"
+    end
+  end
 end
