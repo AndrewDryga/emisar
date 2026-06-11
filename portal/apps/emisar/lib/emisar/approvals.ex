@@ -67,12 +67,13 @@ defmodule Emisar.Approvals do
            ) do
       {status, opts} = Keyword.pop(opts, :status)
       {limit, opts} = Keyword.pop(opts, :limit, 100)
+      opts = Keyword.put_new(opts, :page, limit: limit)
 
       Request.Query.all()
       |> Request.Query.ordered_by_recent()
       |> apply_request_status_filter(status)
       |> Authorizer.for_subject(subject)
-      |> Repo.list(Request.Query, Keyword.put_new(opts, :page, limit: limit))
+      |> Repo.list(Request.Query, opts)
     end
   end
 
@@ -309,9 +310,7 @@ defmodule Emisar.Approvals do
         |> Multi.insert(:audit, fn %{grant: grant} ->
           Audit.Events.approval_approved(subject, request, reason, grant, grant_attrs)
         end)
-        |> Repo.commit_multi(
-          after_commit: &broadcast_approval(&1.decided)
-        )
+        |> Repo.commit_multi(after_commit: &broadcast_approval(&1.decided))
 
       # Deliver to the runner AFTER the transaction commits so the
       # PubSub broadcast can't fire before the DB state is durable.
@@ -347,9 +346,7 @@ defmodule Emisar.Approvals do
         Runs.mark_cancelled(run, denial_reason(reason))
       end)
       |> Multi.insert(:audit, Audit.Events.approval_denied(subject, request, reason))
-      |> Repo.commit_multi(
-        after_commit: &broadcast_approval(&1.decided)
-      )
+      |> Repo.commit_multi(after_commit: &broadcast_approval(&1.decided))
       |> case do
         {:ok, %{decided: decided, run: run}} -> {:ok, {decided, run}}
         {:error, reason} -> {:error, reason}
@@ -640,8 +637,6 @@ defmodule Emisar.Approvals do
     |> Multi.run(:reloaded, fn _repo, _changes ->
       {:ok, Request.Query.all() |> Request.Query.by_id(request.id) |> Repo.fetch!(Request.Query)}
     end)
-    |> Repo.commit_multi(
-      after_commit: &broadcast_approval(&1.reloaded)
-    )
+    |> Repo.commit_multi(after_commit: &broadcast_approval(&1.reloaded))
   end
 end
