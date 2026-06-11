@@ -479,6 +479,57 @@ defmodule Emisar.Audit.Events do
     )
   end
 
+  # -- Approval decisions ----------------------------------------------
+
+  def approval_approved(
+        %Subject{} = subject,
+        %Approvals.Request{} = req,
+        reason,
+        grant,
+        grant_attrs
+      ) do
+    Audit.changeset(
+      req.account_id,
+      "approval.approved",
+      actor(subject) ++
+        [
+          subject_kind: "approval_request",
+          subject_id: req.id,
+          payload: %{
+            run_id: req.run_id,
+            reason: reason,
+            grant_id: grant && grant.id,
+            grant_duration: grant && grant_attrs.duration,
+            grant_scope: grant && grant_attrs.scope
+          }
+        ]
+    )
+  end
+
+  def approval_denied(%Subject{} = subject, %Approvals.Request{} = req, reason) do
+    Audit.changeset(
+      req.account_id,
+      "approval.denied",
+      actor(subject) ++
+        [
+          subject_kind: "approval_request",
+          subject_id: req.id,
+          payload: %{run_id: req.run_id, reason: reason}
+        ]
+    )
+  end
+
+  # Auto-rejected by the ApprovalExpiry sweep when no operator decided in
+  # time — system actor, no acting subject.
+  def approval_expired(%Approvals.Request{} = req) do
+    Audit.changeset(req.account_id, "approval.expired",
+      actor_kind: "system",
+      subject_kind: "approval_request",
+      subject_id: req.id,
+      payload: %{run_id: req.run_id, expires_at: req.expires_at}
+    )
+  end
+
   # -- Approval grants -------------------------------------------------
 
   def approval_grant_revoked(%Subject{} = subject, %Approvals.Grant{} = grant) do

@@ -23,6 +23,7 @@ defmodule Emisar.Approvals do
   alias Emisar.{Audit, Auth, Repo, Runs}
   alias Emisar.Approvals.{Authorizer, Grant, Request}
   alias Emisar.Auth.Subject
+  require Logger
 
   def list_pending_approval_requests(%Subject{} = subject, opts \\ []) do
     with :ok <-
@@ -226,8 +227,6 @@ defmodule Emisar.Approvals do
   end
 
   defp deliver_approval_email(membership, req, run) do
-    require Logger
-
     try do
       # Mailer.deliver returns {:ok, _} on success and {:error, reason}
       # on transport failure (Mailgun 5xx, SMTP timeout). It DOES NOT
@@ -307,20 +306,8 @@ defmodule Emisar.Approvals do
             {:ok, nil}
           end
         end)
-        |> Multi.run(:audit, fn _repo, %{grant: grant} ->
-          Audit.log(req.account_id, "approval.approved",
-            actor_kind: "user",
-            actor_id: by_user_id,
-            subject_kind: "approval_request",
-            subject_id: req.id,
-            payload: %{
-              run_id: req.run_id,
-              reason: reason,
-              grant_id: grant && grant.id,
-              grant_duration: grant && grant_attrs.duration,
-              grant_scope: grant && grant_attrs.scope
-            }
-          )
+        |> Multi.insert(:audit, fn %{grant: grant} ->
+          Audit.Events.approval_approved(subject, req, reason, grant, grant_attrs)
         end)
         |> Repo.commit_multi(
           after_commit: fn %{decided: decided} -> broadcast_approval(decided) end
@@ -359,15 +346,7 @@ defmodule Emisar.Approvals do
         run = Runs.fetch_run!(req.run_id)
         Runs.mark_cancelled(run, denial_reason(reason))
       end)
-      |> Multi.run(:audit, fn _repo, _changes ->
-        Audit.log(req.account_id, "approval.denied",
-          actor_kind: "user",
-          actor_id: by_user_id,
-          subject_kind: "approval_request",
-          subject_id: req.id,
-          payload: %{run_id: req.run_id, reason: reason}
-        )
-      end)
+      |> Multi.insert(:audit, Audit.Events.approval_denied(subject, req, reason))
       |> Repo.commit_multi(
         after_commit: fn %{decided: decided} -> broadcast_approval(decided) end
       )
@@ -633,42 +612,34 @@ defmodule Emisar.Approvals do
   end
 
   defp expire_one(%Request{} = req, now) do
-    Repo.transaction(fn ->
-      {affected, _} =
-        Request.Query.expire_pending(req.id, now)
-        |> Repo.update_all([])
+    Multi.new()
+    # Claim the still-pending request as expired; 0 rows means another
+    # decision landed between the sweep's SELECT and here — abort as a
+    # benign no-op.
+    |> Multi.run(:expire, fn _repo, _changes ->
+      {affected, _} = Request.Query.expire_pending(req.id, now) |> Repo.update_all([])
 
-      if affected == 1 do
-        case Runs.peek_run_by_id(req.run_id) do
-          nil ->
-            :ok
-
-          %Runs.ActionRun{} = run ->
-            # Roll back the whole expiry on a failed cancel so the request
-            # stays pending and the next sweep retries it — otherwise the
-            # request flips to `expired` while its run is still live, and the
-            # sweep won't pick it up again (status no longer pending).
-            case Runs.mark_cancelled(run, "approval expired without decision") do
-              {:ok, _} -> :ok
-              {:error, reason} -> Repo.rollback({:cancel_failed, reason})
-            end
-        end
-
-        Audit.log(req.account_id, "approval.expired",
-          actor_kind: "system",
-          subject_kind: "approval_request",
-          subject_id: req.id,
-          payload: %{
-            run_id: req.run_id,
-            expires_at: req.expires_at
-          }
-        )
-
-        reloaded =
-          Request.Query.all() |> Request.Query.by_id(req.id) |> Repo.fetch!(Request.Query)
-
-        broadcast_approval(reloaded)
+      case affected do
+        1 -> {:ok, :expired}
+        0 -> {:error, :not_pending}
       end
     end)
+    # Cancel the underlying run. A failed cancel aborts the whole expiry
+    # so the request stays pending and the next sweep retries it —
+    # otherwise it would flip to `expired` with its run still live, and
+    # the pending-only sweep would never revisit it.
+    |> Multi.run(:cancel, fn _repo, _changes ->
+      case Runs.peek_run_by_id(req.run_id) do
+        nil -> {:ok, :no_run}
+        %Runs.ActionRun{} = run -> Runs.mark_cancelled(run, "approval expired without decision")
+      end
+    end)
+    |> Multi.insert(:audit, Audit.Events.approval_expired(req))
+    |> Multi.run(:reloaded, fn _repo, _changes ->
+      {:ok, Request.Query.all() |> Request.Query.by_id(req.id) |> Repo.fetch!(Request.Query)}
+    end)
+    |> Repo.commit_multi(
+      after_commit: fn %{reloaded: reloaded} -> broadcast_approval(reloaded) end
+    )
   end
 end
