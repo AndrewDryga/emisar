@@ -29,24 +29,24 @@ import Config
 #   RELEASE_VSN            — used in Sentry's `release` field
 
 if config_env() == :prod do
-  # Logger metadata captured per call (runner_id, request_id,
-  # policy_decision, etc.) is emitted alongside each line in logfmt-ish
-  # key=value form — queryable in fly's log drain without grep parsing.
-  # Switch to a JSON formatter (logger_json) when log shipping needs it.
+  # Structured JSON logs for the fly log drain: every Logger metadata
+  # key ships as a queryable JSON field (no more curated key list to
+  # drift), minus the huge per-request structs. Belt-and-suspenders
+  # redaction of secret-shaped keys — the app never logs raw secrets,
+  # but a future `inspect(changeset)` must not become an incident.
   config :logger,
     level: :info,
     handle_otp_reports: true
 
-  config :logger, :default_formatter,
-    format: "$dateT$time level=$level $message $metadata\n",
-    metadata: [
-      :request_id,
-      :runner_id,
-      :run_id,
-      :policy_decision,
-      :user_id,
-      :account_id
-    ]
+  config :logger, :default_handler,
+    formatter:
+      {LoggerJSON.Formatters.Basic,
+       metadata: {:all_except, [:conn, :socket, :crash_reason]},
+       redactors: [
+         LoggerJSON.Redactors.RedactKeys.new(
+           ~w[password token secret authorization api_key key_hash token_hash]
+         )
+       ]}
 
   database_url =
     System.get_env("DATABASE_URL") ||

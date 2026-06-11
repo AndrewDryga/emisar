@@ -43,6 +43,15 @@ defmodule Emisar.MixProject do
 
       # Background jobs (delivery retries, audit ingestion, etc.)
       {:oban, "~> 2.23"},
+      # Structured JSON logs for the prod log drain (configured in
+      # config/runtime.exs; dev/test keep the human console format).
+      {:logger_json, "~> 7.0"},
+      # Production debugging, shipped IN the release on purpose so
+      # `bin/emisar remote` always has them: recon for safe
+      # introspection (recon:proc_count, bin_leak), observer_cli for
+      # the live top-style dashboard (:observer_cli.start()).
+      {:recon, "~> 2.5"},
+      {:observer_cli, "~> 1.8"},
 
       # Auth — password hashing and TOTP for MFA
       {:bcrypt_elixir, "~> 3.3"},

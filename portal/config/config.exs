@@ -107,7 +107,20 @@ config :tailwind,
 # Configures Elixir's Logger
 config :logger, :console,
   format: "$time $metadata[$level] $message\n",
-  metadata: [:request_id]
+  metadata: [
+    :request_id,
+    :account_id,
+    :user_id,
+    :membership_id,
+    :runner_id,
+    :run_id,
+    :req_id,
+    :policy_decision,
+    :paddle_subscription_id,
+    :reason,
+    :error,
+    :count
+  ]
 
 # Status-page URL surfaced as a "Status" link in the marketing footer
 # and the in-app sidebar. Default is the Better Stack hosted page
