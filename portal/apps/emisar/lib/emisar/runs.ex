@@ -394,20 +394,8 @@ defmodule Emisar.Runs do
       :ok ->
         :ok
 
-      {:error, :pack_untrusted, %{id: pv_id, pack_id: pack_id, version: version}} ->
-        Emisar.Audit.log(account_id, :dispatch_blocked_pack_untrusted,
-          actor_kind: "system",
-          subject_kind: "pack_version",
-          subject_id: pv_id,
-          subject_label: "#{pack_id}@#{version}",
-          payload: %{
-            pack_id: pack_id,
-            version: version,
-            action_id: action.action_id,
-            runner_id: action.runner_id
-          }
-        )
-
+      {:error, :pack_untrusted, %{} = pack_info} ->
+        Audit.record(Audit.Events.dispatch_blocked_pack_untrusted(account_id, pack_info, action))
         {:error, :pack_untrusted}
     end
   end
@@ -492,7 +480,7 @@ defmodule Emisar.Runs do
           {:ok, run} ->
             # Same ordering rule as the allow path: log the grant-based
             # decision before the run reaches the runner.
-            log_grant_used(run, grant, policy)
+            Audit.record(Audit.Events.grant_used(run, grant, policy))
 
             with :ok <- dispatch_to_runner(run) do
               {:ok, :running, run}
@@ -680,20 +668,10 @@ defmodule Emisar.Runs do
           "reason" => reason
         })
 
-        log_cancel_requested(run, subject, reason)
+        Audit.record(Audit.Events.run_cancel_requested(subject, run, reason))
         mark_cancelled(run, reason || "operator cancelled")
       end
     end
-  end
-
-  defp log_cancel_requested(%ActionRun{} = run, %Subject{} = subject, reason) do
-    Audit.log(run.account_id, "run.cancel_requested",
-      actor_kind: Subject.actor_kind(subject),
-      actor_id: Subject.actor_id(subject),
-      subject_kind: "run",
-      subject_id: run.id,
-      payload: %{from_status: run.status, reason: reason}
-    )
   end
 
   # -- State transitions ----------------------------------------------
@@ -1004,40 +982,6 @@ defmodule Emisar.Runs do
   # policy doesn't lose the trail of "this decision was made under
   # policy v5".
   defp log_policy_evaluated(%ActionRun{} = run, policy, decision, reason, matched) do
-    Audit.log(run.account_id, "policy.evaluated",
-      actor_kind: "system",
-      subject_kind: "action_run",
-      subject_id: run.id,
-      subject_label: run.action_id,
-      payload: %{
-        run_id: run.id,
-        policy_id: policy && policy.id,
-        policy_version: policy && policy.vsn,
-        decision: decision,
-        reason: reason,
-        matched_rules: matched
-      }
-    )
-  end
-
-  # Emits an audit row when a run bypasses approval via a standing
-  # grant. The grant id + originating approval are in the payload so
-  # operators can trace "why did this fire without prompting?" back to
-  # the human who said yes.
-  defp log_grant_used(%ActionRun{} = run, grant, policy) do
-    Audit.log(run.account_id, "approval.grant_used",
-      actor_kind: "system",
-      subject_kind: "action_run",
-      subject_id: run.id,
-      subject_label: run.action_id,
-      payload: %{
-        run_id: run.id,
-        grant_id: grant.id,
-        approval_request_id: grant.approval_request_id,
-        policy_id: policy && policy.id,
-        uses_count: grant.uses_count + 1,
-        max_uses: grant.max_uses
-      }
-    )
+    Audit.record(Audit.Events.policy_evaluated(run, policy, decision, reason, matched))
   end
 end

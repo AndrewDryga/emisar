@@ -5,11 +5,14 @@ defmodule Emisar.Audit.Events do
   plain transaction), so the caller passes the domain structs plus the
   acting `%Subject{}` and never has to know the audit field schema —
   `actor_kind` / `actor_id` / `subject_kind` / `subject_id` / `payload`
-  are this module's concern, not the context's. Fire-and-forget standalone
-  events (no `Multi`, often no subject) use `Audit.log/3` directly instead.
+  are this module's concern, not the context's. A fire-and-forget
+  standalone event (no `Multi` to join — a runner socket connect, a
+  dispatch-time policy decision) still goes through a builder here,
+  inserted with `Audit.record/1`; only an event with no fixed
+  actor/subject shape falls back to raw `Audit.log/3`.
   """
   alias Emisar.Accounts.{Account, Membership}
-  alias Emisar.{ApiKeys, Approvals, Catalog, Policies, Runbooks, Runners}
+  alias Emisar.{ApiKeys, Approvals, Catalog, Policies, Runbooks, Runners, Runs}
   alias Emisar.Audit
   alias Emisar.Auth.Subject
   alias Emisar.Users.User
@@ -488,6 +491,84 @@ defmodule Emisar.Audit.Events do
           subject_id: grant.id,
           payload: %{action_id: grant.action_id, api_key_id: grant.api_key_id}
         ]
+    )
+  end
+
+  # -- Runs (dispatch decisions, cancel) -------------------------------
+
+  # Dispatch refused because the action's pack hash diverges from what an
+  # operator trusted — system actor (the trust gate runs inside an
+  # already-authorized dispatch, with no acting subject).
+  def dispatch_blocked_pack_untrusted(
+        account_id,
+        %{id: pv_id, pack_id: pack_id, version: version},
+        action
+      ) do
+    Audit.changeset(account_id, "dispatch_blocked_pack_untrusted",
+      actor_kind: "system",
+      subject_kind: "pack_version",
+      subject_id: pv_id,
+      subject_label: "#{pack_id}@#{version}",
+      payload: %{
+        pack_id: pack_id,
+        version: version,
+        action_id: action.action_id,
+        runner_id: action.runner_id
+      }
+    )
+  end
+
+  def run_cancel_requested(%Subject{} = subject, %Runs.ActionRun{} = run, reason) do
+    Audit.changeset(
+      run.account_id,
+      "run.cancel_requested",
+      actor(subject) ++
+        [
+          subject_kind: "run",
+          subject_id: run.id,
+          payload: %{from_status: run.status, reason: reason}
+        ]
+    )
+  end
+
+  # Policy decision tied to a run, so operators can answer "what was the
+  # policy state when this fired?" by querying the trail by run_id —
+  # system actor, with the policy version snapshotted at decision time so
+  # a later edit doesn't lose "this was decided under policy v5".
+  def policy_evaluated(%Runs.ActionRun{} = run, policy, decision, reason, matched) do
+    Audit.changeset(run.account_id, "policy.evaluated",
+      actor_kind: "system",
+      subject_kind: "action_run",
+      subject_id: run.id,
+      subject_label: run.action_id,
+      payload: %{
+        run_id: run.id,
+        policy_id: policy && policy.id,
+        policy_version: policy && policy.vsn,
+        decision: decision,
+        reason: reason,
+        matched_rules: matched
+      }
+    )
+  end
+
+  # A run that bypassed approval via a standing grant — the grant + its
+  # originating approval ride in the payload so operators can trace why it
+  # fired without prompting. System actor.
+  def grant_used(%Runs.ActionRun{} = run, grant, policy) do
+    Audit.changeset(run.account_id, "approval.grant_used",
+      actor_kind: "system",
+      subject_kind: "action_run",
+      subject_id: run.id,
+      subject_label: run.action_id,
+      payload: %{
+        run_id: run.id,
+        grant_id: grant.id,
+        approval_request_id: grant.approval_request_id,
+        policy_id: policy && policy.id,
+        uses_count: grant.uses_count + 1,
+        max_uses: grant.max_uses
+      }
     )
   end
 
