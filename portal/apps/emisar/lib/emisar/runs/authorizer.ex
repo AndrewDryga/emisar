@@ -12,8 +12,8 @@ defmodule Emisar.Runs.Authorizer do
   dedicated permission for them.
   """
   use Emisar.Auth.Authorizer
-  alias Emisar.Runs.ActionRun
   alias Emisar.Runners
+  alias Emisar.Runs.ActionRun
 
   def dispatch_run_permission, do: build(ActionRun, :dispatch)
   def cancel_run_permission, do: build(ActionRun, :cancel)

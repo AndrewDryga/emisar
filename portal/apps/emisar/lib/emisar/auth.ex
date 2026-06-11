@@ -352,20 +352,22 @@ defmodule Emisar.Auth do
 
   @doc "Consumes a magic-link token, returning the user or {:error, reason}."
   def consume_magic_link_token(raw) when is_binary(raw) do
-    with {:ok, digest} <- Crypto.email_token_digest(raw) do
-      verified_token_multi(digest, "magic_link")
-      |> Multi.delete(:deleted_token, fn %{token: token} -> token end)
-      |> Audit.Multi.log_for_user(:audit, nil, "user.signed_in",
-        user_fn: fn %{token_user: user} -> user end,
-        payload_fn: fn _ -> %{method: "magic_link"} end
-      )
-      |> Repo.commit_multi()
-      |> case do
-        {:ok, %{token_user: user}} -> {:ok, user}
-        {:error, reason} -> {:error, reason}
-      end
-    else
-      :error -> {:error, :invalid_or_expired}
+    case Crypto.email_token_digest(raw) do
+      :error ->
+        {:error, :invalid_or_expired}
+
+      {:ok, digest} ->
+        verified_token_multi(digest, "magic_link")
+        |> Multi.delete(:deleted_token, fn %{token: token} -> token end)
+        |> Audit.Multi.log_for_user(:audit, nil, "user.signed_in",
+          user_fn: fn %{token_user: user} -> user end,
+          payload_fn: fn _ -> %{method: "magic_link"} end
+        )
+        |> Repo.commit_multi()
+        |> case do
+          {:ok, %{token_user: user}} -> {:ok, user}
+          {:error, reason} -> {:error, reason}
+        end
     end
   end
 
@@ -407,25 +409,27 @@ defmodule Emisar.Auth do
   end
 
   def reset_user_password(raw, password) when is_binary(raw) and is_binary(password) do
-    with {:ok, digest} <- Crypto.email_token_digest(raw) do
-      verified_token_multi(digest, "reset_password")
-      |> Multi.run(:user, fn _repo, %{token_user: user} ->
-        Users.reset_user_password(user, password)
-      end)
-      |> Multi.delete(:deleted_token, fn %{token: token} -> token end)
-      |> Multi.delete_all(:sessions, fn %{token_user: user} ->
-        UserToken.Query.by_user_id(user.id) |> UserToken.Query.by_context("session")
-      end)
-      |> Audit.Multi.log_for_user(:audit, nil, "user.password_reset_completed",
-        user_fn: fn %{user: user} -> user end
-      )
-      |> Repo.commit_multi()
-      |> case do
-        {:ok, %{user: updated}} -> {:ok, updated}
-        {:error, reason} -> {:error, reason}
-      end
-    else
-      :error -> {:error, :invalid_or_expired}
+    case Crypto.email_token_digest(raw) do
+      :error ->
+        {:error, :invalid_or_expired}
+
+      {:ok, digest} ->
+        verified_token_multi(digest, "reset_password")
+        |> Multi.run(:user, fn _repo, %{token_user: user} ->
+          Users.reset_user_password(user, password)
+        end)
+        |> Multi.delete(:deleted_token, fn %{token: token} -> token end)
+        |> Multi.delete_all(:sessions, fn %{token_user: user} ->
+          UserToken.Query.by_user_id(user.id) |> UserToken.Query.by_context("session")
+        end)
+        |> Audit.Multi.log_for_user(:audit, nil, "user.password_reset_completed",
+          user_fn: fn %{user: user} -> user end
+        )
+        |> Repo.commit_multi()
+        |> case do
+          {:ok, %{user: updated}} -> {:ok, updated}
+          {:error, reason} -> {:error, reason}
+        end
     end
   end
 
@@ -450,20 +454,22 @@ defmodule Emisar.Auth do
   end
 
   def confirm_user_by_token(raw) when is_binary(raw) do
-    with {:ok, digest} <- Crypto.email_token_digest(raw) do
-      verified_token_multi(digest, "confirm")
-      |> Multi.run(:user, fn _repo, %{token_user: user} -> Users.mark_user_confirmed(user) end)
-      |> Multi.delete(:deleted_token, fn %{token: token} -> token end)
-      |> Audit.Multi.log_for_user(:audit, nil, "user.email_confirmed",
-        user_fn: fn %{user: user} -> user end
-      )
-      |> Repo.commit_multi()
-      |> case do
-        {:ok, %{user: confirmed}} -> {:ok, confirmed}
-        {:error, reason} -> {:error, reason}
-      end
-    else
-      :error -> {:error, :invalid_or_expired}
+    case Crypto.email_token_digest(raw) do
+      :error ->
+        {:error, :invalid_or_expired}
+
+      {:ok, digest} ->
+        verified_token_multi(digest, "confirm")
+        |> Multi.run(:user, fn _repo, %{token_user: user} -> Users.mark_user_confirmed(user) end)
+        |> Multi.delete(:deleted_token, fn %{token: token} -> token end)
+        |> Audit.Multi.log_for_user(:audit, nil, "user.email_confirmed",
+          user_fn: fn %{user: user} -> user end
+        )
+        |> Repo.commit_multi()
+        |> case do
+          {:ok, %{user: confirmed}} -> {:ok, confirmed}
+          {:error, reason} -> {:error, reason}
+        end
     end
   end
 
@@ -562,23 +568,21 @@ defmodule Emisar.Auth do
   """
   def verify_mfa(%Users.User{mfa_secret: secret} = user, otp)
       when is_binary(secret) and is_binary(otp) do
-    cond do
-      not Crypto.valid_totp?(secret, otp) ->
-        Audit.log_for_user(user, "user.mfa_failed", payload: %{reason: "invalid_otp"})
-        {:error, :invalid}
+    if Crypto.valid_totp?(secret, otp) do
+      case Users.record_user_mfa_consumed(user.id, DateTime.utc_now()) do
+        {:ok, _} ->
+          :ok
 
-      true ->
-        case Users.record_user_mfa_consumed(user.id, DateTime.utc_now()) do
-          {:ok, _} ->
-            :ok
+        {:error, :replay} ->
+          Audit.log_for_user(user, "user.mfa_failed", payload: %{reason: "replay"})
+          {:error, :replay}
 
-          {:error, :replay} ->
-            Audit.log_for_user(user, "user.mfa_failed", payload: %{reason: "replay"})
-            {:error, :replay}
-
-          {:error, _} ->
-            {:error, :invalid}
-        end
+        {:error, _} ->
+          {:error, :invalid}
+      end
+    else
+      Audit.log_for_user(user, "user.mfa_failed", payload: %{reason: "invalid_otp"})
+      {:error, :invalid}
     end
   end
 

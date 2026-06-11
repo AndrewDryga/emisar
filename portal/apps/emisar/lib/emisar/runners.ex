@@ -20,7 +20,7 @@ defmodule Emisar.Runners do
   alias Ecto.Multi
   alias Emisar.{Accounts, Audit, Auth, Crypto, Repo}
   alias Emisar.Auth.Subject
-  alias Emisar.Runners.{Authorizer, AuthKey, Presence, Runner, Token, UserRunnerScope}
+  alias Emisar.Runners.{AuthKey, Authorizer, Presence, Runner, Token, UserRunnerScope}
   require Logger
 
   # 11 chars for "emkey-auth-" + 16 random chars => 27.

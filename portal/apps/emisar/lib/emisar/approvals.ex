@@ -20,8 +20,8 @@ defmodule Emisar.Approvals do
        LLM doesn't have to ask again next time within that window.
   """
   alias Ecto.Multi
-  alias Emisar.{Audit, Auth, Repo, Runs}
   alias Emisar.Approvals.{Authorizer, Grant, Request}
+  alias Emisar.{Audit, Auth, Repo, Runs}
   alias Emisar.Auth.Subject
   require Logger
 
@@ -228,30 +228,28 @@ defmodule Emisar.Approvals do
   end
 
   defp deliver_approval_email(membership, request, run) do
-    try do
-      # Mailer.deliver returns {:ok, _} on success and {:error, reason}
-      # on transport failure (Mailgun 5xx, SMTP timeout). It DOES NOT
-      # raise on non-success — a bare `try` would silently drop
-      # delivery errors. Pattern-match and log non-success explicitly.
-      case Emisar.Mailers.UserNotifier.deliver_approval_request(membership.user, request, run) do
-        {:ok, _} ->
-          :ok
+    # Mailer.deliver returns {:ok, _} on success and {:error, reason}
+    # on transport failure (Mailgun 5xx, SMTP timeout). It DOES NOT
+    # raise on non-success — a bare rescue would silently drop
+    # delivery errors. Pattern-match and log non-success explicitly.
+    case Emisar.Mailers.UserNotifier.deliver_approval_request(membership.user, request, run) do
+      {:ok, _} ->
+        :ok
 
-        {:error, reason} ->
-          Logger.warning("approval_email_failed",
-            user_id: membership.user_id,
-            req_id: request.id,
-            error: inspect(reason)
-          )
-      end
-    rescue
-      err ->
-        Logger.warning("approval_email_crashed",
+      {:error, reason} ->
+        Logger.warning("approval_email_failed",
           user_id: membership.user_id,
           req_id: request.id,
-          error: inspect(err)
+          error: inspect(reason)
         )
     end
+  rescue
+    err ->
+      Logger.warning("approval_email_crashed",
+        user_id: membership.user_id,
+        req_id: request.id,
+        error: inspect(err)
+      )
   end
 
   @doc """

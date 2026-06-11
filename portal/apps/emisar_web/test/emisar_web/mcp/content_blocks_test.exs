@@ -11,7 +11,7 @@ defmodule EmisarWeb.Mcp.ContentBlocksTest do
 
   alias EmisarWeb.Mcp.ContentBlocks
 
-  defp text(blocks), do: blocks |> Enum.map(& &1.text) |> Enum.join("\n")
+  defp text(blocks), do: Enum.map_join(blocks, "\n", & &1.text)
 
   describe "from_runs/1 — in-flight (non-terminal) run" do
     test "surfaces run_id + wait_for_run instead of a bare status line" do

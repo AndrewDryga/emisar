@@ -135,28 +135,7 @@ defmodule Emisar.Repo do
     queryable = Ecto.Query.lock(queryable, "FOR NO KEY UPDATE")
 
     with {:ok, queryable} <- Filter.filter(queryable, query_module, filter) do
-      fn ->
-        if schema = __MODULE__.one(queryable, repo_opts) do
-          case changeset_fun.(schema) do
-            %Ecto.Changeset{} = changeset ->
-              case update(changeset, mode: :savepoint) do
-                {:ok, updated} = ok ->
-                  case maybe_insert_audit(audit_fun, updated, changeset) do
-                    {:ok, audit_event} -> {ok, changeset, audit_event}
-                    {:error, reason} -> rollback({:audit_failed, reason})
-                  end
-
-                err ->
-                  {err, changeset}
-              end
-
-            reason ->
-              {:error, reason}
-          end
-        else
-          {:error, :not_found}
-        end
-      end
+      fn -> locked_update(queryable, changeset_fun, audit_fun, repo_opts) end
       |> transaction(repo_opts)
       |> case do
         {:ok, {{:ok, schema}, changeset, audit_event}} ->
@@ -174,6 +153,33 @@ defmodule Emisar.Repo do
         {:error, reason} ->
           {:error, reason}
       end
+    end
+  end
+
+  # The fetch_and_update/3 transaction body: load the locked row, run the
+  # caller's :with on it, apply the update, insert the audit row in the
+  # same transaction. The tuple shapes feed the response-shaping case in
+  # fetch_and_update/3.
+  defp locked_update(queryable, changeset_fun, audit_fun, repo_opts) do
+    if schema = __MODULE__.one(queryable, repo_opts) do
+      case changeset_fun.(schema) do
+        %Ecto.Changeset{} = changeset ->
+          case update(changeset, mode: :savepoint) do
+            {:ok, updated} = ok ->
+              case maybe_insert_audit(audit_fun, updated, changeset) do
+                {:ok, audit_event} -> {ok, changeset, audit_event}
+                {:error, reason} -> rollback({:audit_failed, reason})
+              end
+
+            err ->
+              {err, changeset}
+          end
+
+        reason ->
+          {:error, reason}
+      end
+    else
+      {:error, :not_found}
     end
   end
 

@@ -202,32 +202,30 @@ defmodule EmisarWeb.ProfileLive do
   def handle_event("confirm_mfa", %{"mfa" => %{"otp" => otp}}, socket) do
     secret = socket.assigns.mfa_secret
 
-    cond do
-      is_nil(secret) ->
-        {:noreply, put_flash(socket, :error, "Start the enable flow first.")}
+    if is_nil(secret) do
+      {:noreply, put_flash(socket, :error, "Start the enable flow first.")}
+    else
+      case Auth.enable_mfa(secret, otp, socket.assigns.current_subject) do
+        {:ok, updated, recovery_codes} ->
+          {:noreply,
+           socket
+           |> put_flash(
+             :info,
+             "MFA enabled. Copy your recovery codes below — they'll only be shown once."
+           )
+           |> assign(:current_user, updated)
+           |> assign(:mfa_enabled?, true)
+           |> assign(:mfa_recovery_codes, recovery_codes)
+           |> assign(:mfa_secret, nil)
+           |> assign(:mfa_uri, nil)
+           |> assign(:mfa_qr_svg, nil)}
 
-      true ->
-        case Auth.enable_mfa(secret, otp, socket.assigns.current_subject) do
-          {:ok, updated, recovery_codes} ->
-            {:noreply,
-             socket
-             |> put_flash(
-               :info,
-               "MFA enabled. Copy your recovery codes below — they'll only be shown once."
-             )
-             |> assign(:current_user, updated)
-             |> assign(:mfa_enabled?, true)
-             |> assign(:mfa_recovery_codes, recovery_codes)
-             |> assign(:mfa_secret, nil)
-             |> assign(:mfa_uri, nil)
-             |> assign(:mfa_qr_svg, nil)}
+        {:error, :invalid_otp} ->
+          {:noreply, put_flash(socket, :error, "Invalid code — try the next one.")}
 
-          {:error, :invalid_otp} ->
-            {:noreply, put_flash(socket, :error, "Invalid code — try the next one.")}
-
-          {:error, _changeset} ->
-            {:noreply, put_flash(socket, :error, "Could not enable MFA.")}
-        end
+        {:error, _changeset} ->
+          {:noreply, put_flash(socket, :error, "Could not enable MFA.")}
+      end
     end
   end
 

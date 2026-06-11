@@ -169,10 +169,9 @@ defmodule EmisarWeb.AuditSummary do
     from = get(p, :from_version)
     to = get(p, :to_version)
 
-    cond do
-      is_integer(from) and is_integer(to) -> [{"version", "v#{from} → v#{to}"}]
-      true -> []
-    end
+    if is_integer(from) and is_integer(to),
+      do: [{"version", "v#{from} → v#{to}"}],
+      else: []
   end
 
   defp summarize("runbook.published", p),

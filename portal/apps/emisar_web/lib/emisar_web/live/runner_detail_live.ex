@@ -1,7 +1,7 @@
 defmodule EmisarWeb.RunnerDetailLive do
   use EmisarWeb, :live_view
 
-  alias Emisar.{Runners, Catalog, Runs}
+  alias Emisar.{Catalog, Runners, Runs}
   alias EmisarWeb.{LiveTable, Permissions}
 
   def mount(%{"id" => id}, _session, socket) do
@@ -19,18 +19,18 @@ defmodule EmisarWeb.RunnerDetailLive do
         # Per-user runner ACLs (#238): treat out-of-scope as not-found
         # rather than 403 — don't leak the existence of runners the
         # operator's scope doesn't grant access to.
-        if not Runners.runner_in_scope?(runner, membership) do
-          {:ok,
-           socket
-           |> put_flash(:error, "Runner not found.")
-           |> push_navigate(to: ~p"/app/runners")}
-        else
+        if Runners.runner_in_scope?(runner, membership) do
           if connected?(socket), do: Runners.subscribe_connections(account_id)
 
           {:ok,
            socket
            |> assign(:page_title, runner.name)
            |> assign(:runner, runner)}
+        else
+          {:ok,
+           socket
+           |> put_flash(:error, "Runner not found.")
+           |> push_navigate(to: ~p"/app/runners")}
         end
     end
   end

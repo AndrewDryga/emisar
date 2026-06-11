@@ -64,15 +64,13 @@ defmodule EmisarWeb.RunNewLive do
     raw_args = params["args"] || %{}
     reason = params["reason"] || ""
 
-    cond do
-      String.trim(reason) == "" ->
-        {:noreply,
-         socket
-         |> assign(:reason, reason)
-         |> put_flash(:error, "Reason is required — describe why you are running this action.")}
-
-      true ->
-        do_dispatch_with_reason(socket, raw_args, reason)
+    if String.trim(reason) == "" do
+      {:noreply,
+       socket
+       |> assign(:reason, reason)
+       |> put_flash(:error, "Reason is required — describe why you are running this action.")}
+    else
+      do_dispatch_with_reason(socket, raw_args, reason)
     end
   end
 

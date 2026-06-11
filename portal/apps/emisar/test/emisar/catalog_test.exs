@@ -4,7 +4,7 @@ defmodule Emisar.CatalogTest do
   import Emisar.Fixtures
 
   alias Emisar.Catalog
-  alias Emisar.Catalog.{RunnerAction, PackVersion}
+  alias Emisar.Catalog.{PackVersion, RunnerAction}
 
   defp state_payload(opts) do
     %{

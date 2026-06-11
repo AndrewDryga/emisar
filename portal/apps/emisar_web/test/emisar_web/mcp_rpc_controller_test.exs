@@ -8,7 +8,7 @@ defmodule EmisarWeb.McpRpcControllerTest do
 
   use EmisarWeb.ConnCase, async: true
 
-  alias Emisar.{Accounts, ApiKeys, Policies, Repo, Runs, Runners, Users}
+  alias Emisar.{Accounts, ApiKeys, Policies, Repo, Runners, Runs, Users}
   alias Emisar.Catalog.RunnerAction
   alias Emisar.Runners.Runner
 

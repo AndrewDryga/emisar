@@ -80,15 +80,13 @@ defmodule EmisarWeb.UserSignUpLive do
   def handle_event("save", %{"user" => user_params} = all, socket) do
     account_name = String.trim(all["account_name"] || "")
 
-    cond do
-      account_name == "" ->
-        {:noreply,
-         socket
-         |> assign(:account_name, "")
-         |> put_flash(:error, "Tell us what to call your workspace.")}
-
-      true ->
-        do_save(socket, user_params, account_name)
+    if account_name == "" do
+      {:noreply,
+       socket
+       |> assign(:account_name, "")
+       |> put_flash(:error, "Tell us what to call your workspace.")}
+    else
+      do_save(socket, user_params, account_name)
     end
   end
 

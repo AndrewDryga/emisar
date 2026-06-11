@@ -53,7 +53,7 @@ defmodule EmisarWeb.AuditExportController do
       {:ok, opts} ->
         {:ok, events} = Audit.list_for_export(conn.assigns.current_subject, opts)
 
-        body = events |> Enum.map(&serialize/1) |> Enum.join("\n")
+        body = Enum.map_join(events, "\n", &serialize/1)
 
         conn
         |> maybe_put_next_cursor(events, opts[:limit])

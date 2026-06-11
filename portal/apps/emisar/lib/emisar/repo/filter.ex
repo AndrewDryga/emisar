@@ -10,8 +10,8 @@ defmodule Emisar.Repo.Filter do
   The `fun` callback carries the SQL.
   """
   import Ecto.Query
-  alias Emisar.Repo.Query
   alias Emisar.Repo.Filter.Range
+  alias Emisar.Repo.Query
 
   @typedoc """
   A list of `{name, value}` pairs. `:and` / `:or` groups allow boolean

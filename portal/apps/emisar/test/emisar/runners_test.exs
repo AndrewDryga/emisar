@@ -4,9 +4,9 @@ defmodule Emisar.RunnersTest do
   import Emisar.Fixtures
 
   alias Emisar.Billing
-  alias Emisar.Runners
-  alias Emisar.Runners.{Runner, AuthKey, Token}
   alias Emisar.Repo
+  alias Emisar.Runners
+  alias Emisar.Runners.{AuthKey, Runner, Token}
 
   defp account_with_owner_subject do
     user = user_fixture()

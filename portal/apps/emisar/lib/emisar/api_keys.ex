@@ -15,8 +15,8 @@ defmodule Emisar.ApiKeys do
   #{@quick_ring_cap} unused entries per account.
   """
   alias Ecto.Multi
-  alias Emisar.{Audit, Auth, Crypto, Repo}
   alias Emisar.ApiKeys.{ApiKey, Authorizer}
+  alias Emisar.{Audit, Auth, Crypto, Repo}
   alias Emisar.Auth.Subject
 
   # 4 chars for "emk-" + 8 random chars => 12-char prefix.

@@ -8,7 +8,7 @@ defmodule Emisar.Fixtures do
   so tests using `async: true` never collide.
   """
 
-  alias Emisar.{Accounts, Runners, ApiKeys, Policies, Repo, Users}
+  alias Emisar.{Accounts, ApiKeys, Policies, Repo, Runners, Users}
   alias Emisar.Accounts.{Account, Membership}
   alias Emisar.Auth.Subject
   alias Emisar.Runners.Runner

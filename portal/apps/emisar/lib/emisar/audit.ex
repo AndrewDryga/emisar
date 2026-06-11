@@ -27,8 +27,8 @@ defmodule Emisar.Audit do
   the event row. Explicit `:ip_address` / `:user_agent` / `:request_id`
   keys in the `attrs` map always win over the process dict.
   """
-  alias Emisar.{Auth, Repo, Runs}
   alias Emisar.Audit.{Authorizer, Event}
+  alias Emisar.{Auth, Repo, Runs}
   alias Emisar.Auth.Subject
 
   @meta_key :emisar_audit_request_metadata

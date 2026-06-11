@@ -66,8 +66,10 @@ defmodule EmisarWeb.Mcp.Service do
     {:ok, actions} = Catalog.list_all_actions_for_account(subject)
 
     actions
-    |> Enum.filter(&action_visible_to_key?(&1, api_key, runners_by_id))
-    |> Enum.filter(&action_in_membership_scope?(&1, runners_by_id, scopes))
+    |> Enum.filter(
+      &(action_visible_to_key?(&1, api_key, runners_by_id) and
+          action_in_membership_scope?(&1, runners_by_id, scopes))
+    )
     |> Enum.group_by(& &1.action_id)
     |> Enum.map(fn {_action_id, group} -> mcp_tool_from_group(group, runners_by_id) end)
     |> Enum.sort_by(& &1.name)
@@ -93,8 +95,9 @@ defmodule EmisarWeb.Mcp.Service do
 
     all_runners
     |> Enum.reject(& &1.disabled_at)
-    |> Enum.filter(&runner_visible_to_key?(&1, api_key))
-    |> Enum.filter(&Runners.runner_in_scope?(&1, scopes))
+    |> Enum.filter(
+      &(runner_visible_to_key?(&1, api_key) and Runners.runner_in_scope?(&1, scopes))
+    )
     |> Enum.map(fn runner ->
       %{
         name: runner.name,
@@ -313,33 +316,31 @@ defmodule EmisarWeb.Mcp.Service do
         {:error, :not_found}
 
       {:ok, run} ->
-        cond do
-          wait_ms == 0 ->
-            {:ok, full_run_payload(run, subject), run_status_kind(run)}
+        if wait_ms == 0 do
+          {:ok, full_run_payload(run, subject), run_status_kind(run)}
+        else
+          deadline = System.monotonic_time(:millisecond) + min(wait_ms, @max_get_run_wait_ms)
 
-          true ->
-            deadline = System.monotonic_time(:millisecond) + min(wait_ms, @max_get_run_wait_ms)
+          case poll_to_terminal(subject, run.id, deadline) do
+            {:terminal, final} ->
+              {:ok, full_run_payload(final, subject), :terminal}
 
-            case poll_to_terminal(subject, run.id, deadline) do
-              {:terminal, final} ->
-                {:ok, full_run_payload(final, subject), :terminal}
+            :timeout ->
+              current =
+                case Runs.fetch_run_by_id(run.id, subject) do
+                  {:ok, r} -> r
+                  {:error, _} -> run
+                end
 
-              :timeout ->
-                current =
-                  case Runs.fetch_run_by_id(run.id, subject) do
-                    {:ok, r} -> r
-                    {:error, _} -> run
-                  end
-
-                {:ok, full_run_payload(current, subject), :waiting}
-            end
+              {:ok, full_run_payload(current, subject), :waiting}
+          end
         end
     end
   end
 
   # -- Helpers exposed for both controllers ---------------------------
 
-  @doc "Accepts \"15s\", \"1m\", \"500ms\"; clamped to `max_ms`."
+  @doc ~s(Accepts "15s", "1m", "500ms"; clamped to `max_ms`.)
   @spec parse_wait(String.t() | nil, pos_integer()) :: {:ok, non_neg_integer()} | :error
   def parse_wait(nil, _max_ms), do: {:ok, 0}
   def parse_wait("", _max_ms), do: {:ok, 0}
@@ -459,9 +460,10 @@ defmodule EmisarWeb.Mcp.Service do
 
     runners
     |> Enum.reject(& &1.disabled_at)
-    |> Enum.filter(&(&1.id in runner_ids_advertising))
-    |> Enum.filter(&runner_visible_to_key?(&1, api_key))
-    |> Enum.filter(&Runners.runner_in_scope?(&1, scopes))
+    |> Enum.filter(
+      &(&1.id in runner_ids_advertising and runner_visible_to_key?(&1, api_key) and
+          Runners.runner_in_scope?(&1, scopes))
+    )
   end
 
   defp fetch_runners_by_id(subject, ids) do

@@ -7,8 +7,8 @@ defmodule Emisar.Accounts do
   account; this context owns the slug-based lookups and signup flow.
   """
   alias Ecto.Multi
-  alias Emisar.{Audit, Auth, Crypto, Repo, Slug, Users}
   alias Emisar.Accounts.{Account, Authorizer, Membership}
+  alias Emisar.{Audit, Auth, Crypto, Repo, Slug, Users}
   alias Emisar.Auth.Subject
   require Logger
 

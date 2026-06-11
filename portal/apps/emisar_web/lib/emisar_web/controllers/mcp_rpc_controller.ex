@@ -231,42 +231,40 @@ defmodule EmisarWeb.McpRpcController do
     run_id = Map.get(args, "run_id")
     timeout = Map.get(args, "timeout", "300s")
 
-    cond do
-      not is_binary(run_id) or run_id == "" ->
-        {content, _} =
-          ContentBlocks.error_content("Bad arguments", "wait_for_run requires `run_id` (string).")
+    if not is_binary(run_id) or run_id == "" do
+      {content, _} =
+        ContentBlocks.error_content("Bad arguments", "wait_for_run requires `run_id` (string).")
 
-        {:ok, %{content: content, isError: true}}
+      {:ok, %{content: content, isError: true}}
+    else
+      case Service.parse_wait(timeout, Service.max_get_run_wait_ms()) do
+        :error ->
+          {content, _} =
+            ContentBlocks.error_content(
+              "Bad timeout",
+              "Expected a duration like \"60s\" or \"3m\" (max 5m)."
+            )
 
-      true ->
-        case Service.parse_wait(timeout, Service.max_get_run_wait_ms()) do
-          :error ->
-            {content, _} =
-              ContentBlocks.error_content(
-                "Bad timeout",
-                "Expected a duration like \"60s\" or \"3m\" (max 5m)."
-              )
+          {:ok, %{content: content, isError: true}}
 
-            {:ok, %{content: content, isError: true}}
+        {:ok, wait_ms} ->
+          case Service.fetch_run(conn, run_id, wait_ms) do
+            {:ok, payload, :terminal} ->
+              {content, is_err} = ContentBlocks.from_run(payload)
+              {:ok, %{content: content, isError: is_err}}
 
-          {:ok, wait_ms} ->
-            case Service.fetch_run(conn, run_id, wait_ms) do
-              {:ok, payload, :terminal} ->
-                {content, is_err} = ContentBlocks.from_run(payload)
-                {:ok, %{content: content, isError: is_err}}
+            {:ok, payload, :waiting} ->
+              # Still in-flight — tell the LLM to call again.
+              {content, _} = ContentBlocks.from_run(Map.put(payload, "waiting", "timeout"))
+              {:ok, %{content: content, isError: false}}
 
-              {:ok, payload, :waiting} ->
-                # Still in-flight — tell the LLM to call again.
-                {content, _} = ContentBlocks.from_run(Map.put(payload, "waiting", "timeout"))
-                {:ok, %{content: content, isError: false}}
+            {:error, :not_found} ->
+              {content, _} =
+                ContentBlocks.error_content("Run not found", "No run with id `#{run_id}`.")
 
-              {:error, :not_found} ->
-                {content, _} =
-                  ContentBlocks.error_content("Run not found", "No run with id `#{run_id}`.")
-
-                {:ok, %{content: content, isError: true}}
-            end
-        end
+              {:ok, %{content: content, isError: true}}
+          end
+      end
     end
   end
 

@@ -10,7 +10,7 @@ defmodule EmisarWeb.UserAuth do
   import Plug.Conn
   import Phoenix.Controller
 
-  alias Emisar.{Auth, Accounts}
+  alias Emisar.{Accounts, Auth}
   alias Emisar.Auth.Subject
 
   @remember_me_cookie "_emisar_user_remember_me"
@@ -161,17 +161,15 @@ defmodule EmisarWeb.UserAuth do
 
     case Accounts.fetch_membership_for_session(user, requested_account_id) do
       {:error, :not_found} ->
-        cond do
-          Accounts.all_memberships_suspended?(user) ->
-            conn
-            |> log_out_user_with_flash("Your access has been suspended. Contact your team admin.")
-            |> halt()
-
-          true ->
-            conn
-            |> put_flash(:error, "You don't belong to any account. Create one to continue.")
-            |> redirect(to: ~p"/onboarding")
-            |> halt()
+        if Accounts.all_memberships_suspended?(user) do
+          conn
+          |> log_out_user_with_flash("Your access has been suspended. Contact your team admin.")
+          |> halt()
+        else
+          conn
+          |> put_flash(:error, "You don't belong to any account. Create one to continue.")
+          |> redirect(to: ~p"/onboarding")
+          |> halt()
         end
 
       {:ok, membership} ->

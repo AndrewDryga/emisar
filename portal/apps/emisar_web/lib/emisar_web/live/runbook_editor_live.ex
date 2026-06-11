@@ -183,14 +183,12 @@ defmodule EmisarWeb.RunbookEditorLive do
     target = if dir == "up", do: i - 1, else: i + 1
     steps = socket.assigns.steps
 
-    cond do
-      target < 0 or target >= length(steps) ->
-        {:noreply, socket}
-
-      true ->
-        step = Enum.at(steps, i)
-        steps = steps |> List.delete_at(i) |> List.insert_at(target, step)
-        {:noreply, assign(socket, :steps, steps)}
+    if target < 0 or target >= length(steps) do
+      {:noreply, socket}
+    else
+      step = Enum.at(steps, i)
+      steps = steps |> List.delete_at(i) |> List.insert_at(target, step)
+      {:noreply, assign(socket, :steps, steps)}
     end
   end
 

@@ -32,7 +32,8 @@ defmodule Emisar.Umbrella.MixProject do
       # Phoenix surface; mix_audit = CVE/advisory scan of the lockfile.
       # dev/test only + runtime: false — never compiled into the release.
       {:sobelow, "~> 0.14.1", only: [:dev, :test], runtime: false},
-      {:mix_audit, "~> 2.1", only: [:dev, :test], runtime: false}
+      {:mix_audit, "~> 2.1", only: [:dev, :test], runtime: false},
+      {:credo, "~> 1.7", only: [:dev, :test], runtime: false}
     ]
   end
 

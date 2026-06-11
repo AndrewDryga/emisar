@@ -22,10 +22,8 @@ defmodule EmisarWeb.RunnerSocket do
 
   @behaviour WebSock
 
+  alias Emisar.{Audit, Catalog, Runners, Runs}
   require Logger
-
-  alias Emisar.{Runners, Audit, Catalog, Runs}
-  alias Emisar.Runners
 
   @protocol_version 1
   @heartbeat_timeout_ms 90_000

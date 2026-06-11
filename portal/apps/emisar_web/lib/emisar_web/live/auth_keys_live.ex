@@ -8,12 +8,7 @@ defmodule EmisarWeb.AuthKeysLive do
   def mount(_params, _session, socket) do
     # Manage-only page (auth keys have no view-only permission): anyone
     # without manage lands on not-found at LOAD time, not on first submit.
-    if not Runners.subject_can_manage_auth_keys?(socket.assigns.current_subject) do
-      {:ok,
-       socket
-       |> put_flash(:error, "Page not found.")
-       |> push_navigate(to: ~p"/app")}
-    else
+    if Runners.subject_can_manage_auth_keys?(socket.assigns.current_subject) do
       # Subscribe to the per-account auth-keys topic so another operator's
       # create / revoke (or an auto-bind from a runner registration) reflows
       # this list without the viewer having to refresh.
@@ -30,6 +25,11 @@ defmodule EmisarWeb.AuthKeysLive do
        # cap-warning banner just stays hidden until it loads.
        |> assign(:billing, connected?(socket) && fetch_billing(socket))
        |> assign_form(Runners.change_auth_key(%{"group" => "default"}))}
+    else
+      {:ok,
+       socket
+       |> put_flash(:error, "Page not found.")
+       |> push_navigate(to: ~p"/app")}
     end
   end
 

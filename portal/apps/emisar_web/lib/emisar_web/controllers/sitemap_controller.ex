@@ -38,7 +38,7 @@ defmodule EmisarWeb.SitemapController do
     pack_paths = Enum.map(EmisarWeb.PacksRegistry.list(), &"/packs/#{&1.id}")
 
     urls =
-      Enum.map(@paths ++ pack_paths, fn path ->
+      Enum.map_join(@paths ++ pack_paths, "\n", fn path ->
         """
           <url>
             <loc>#{@base}#{path}</loc>
@@ -46,7 +46,6 @@ defmodule EmisarWeb.SitemapController do
           </url>\
         """
       end)
-      |> Enum.join("\n")
 
     body = """
     <?xml version="1.0" encoding="UTF-8"?>

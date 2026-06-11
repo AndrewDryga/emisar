@@ -103,7 +103,7 @@ defmodule EmisarWeb.Mcp.ToolSchema do
          "REQUIRED. One or more runner names from the `enum`. " <>
            "The call fans out and each runner runs independently. " <>
            "Pass `[\"runner-1\"]` to target a single host, or " <>
-           "`[\"runner-1\",\"runner-2\"]` to run on multiple. " <>
+           ~s(`["runner-1","runner-2"]` to run on multiple. ) <>
            "Each returned run carries its own status — some may " <>
            "succeed immediately while others need approval."
      }, true}

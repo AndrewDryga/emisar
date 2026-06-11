@@ -1,7 +1,7 @@
 defmodule EmisarWeb.DashboardLive do
   use EmisarWeb, :live_view
 
-  alias Emisar.{ApiKeys, Runners, Approvals, Billing, Catalog, Runs}
+  alias Emisar.{ApiKeys, Approvals, Billing, Catalog, Runners, Runs}
 
   def mount(_params, _session, socket) do
     account_id = socket.assigns.current_account.id

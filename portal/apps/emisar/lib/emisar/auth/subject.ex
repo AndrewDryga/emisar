@@ -18,8 +18,8 @@ defmodule Emisar.Auth.Subject do
       `user_agent`, `request_id`. Filled in by the boundary, read by
       `Audit` via `put_request_metadata/1`.
   """
-  alias Emisar.Auth.Role
   alias Emisar.{Accounts, Users}
+  alias Emisar.Auth.Role
 
   @type role :: :owner | :admin | :operator | :viewer | :api_client | :runner
   @type permission :: {module(), atom()}
