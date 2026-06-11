@@ -154,4 +154,84 @@ defmodule EmisarWeb.RunDetailLiveTest do
     assert html =~ ~r/<span[^>]*text-rose-300[^>]*>[^<]*boom-error/
     refute html =~ ~r/<div[^>]*whitespace-pre-wrap/
   end
+
+  test "an unknown run id bounces to the runs index", %{conn: conn} do
+    {conn, _user, _account} = register_and_log_in(conn)
+
+    assert {:error, {:live_redirect, %{to: "/app/runs", flash: flash}}} =
+             live(conn, ~p"/app/runs/#{Ecto.UUID.generate()}")
+
+    assert flash["error"] == "Run not found."
+  end
+
+  test "a cross-account run reads as not-found", %{conn: conn} do
+    {conn, _user, _account} = register_and_log_in(conn)
+
+    foreign_account = account_fixture()
+    foreign_run = run_with(foreign_account, %{})
+
+    assert {:error, {:live_redirect, %{to: "/app/runs"}}} =
+             live(conn, ~p"/app/runs/#{foreign_run.id}")
+  end
+
+  test "cancel sends the cancellation and confirms", %{conn: conn} do
+    {conn, _user, account} = register_and_log_in(conn)
+    run = run_with(account, %{status: "sent"})
+
+    {:ok, lv, _html} = live(conn, ~p"/app/runs/#{run.id}")
+
+    html = render_click(lv, "cancel", %{})
+    assert html =~ "Cancel sent to runner."
+  end
+
+  test "a viewer cannot cancel", %{conn: conn} do
+    {_owner_conn, _owner, account} = register_and_log_in(conn)
+    run = run_with(account, %{status: "sent"})
+
+    viewer = user_fixture()
+    _ = membership_fixture(account_id: account.id, user_id: viewer.id, role: "viewer")
+
+    {:ok, lv, _html} = build_conn() |> log_in_user(viewer) |> live(~p"/app/runs/#{run.id}")
+
+    html = render_click(lv, "cancel", %{})
+    assert html =~ "You don&#39;t have permission to do that."
+    assert Repo.reload!(run).status == :sent
+  end
+
+  test "a run_event broadcast streams into the live terminal", %{conn: conn} do
+    {conn, _user, account} = register_and_log_in(conn)
+    run = run_with(account, %{status: "running"})
+
+    {:ok, lv, html} = live(conn, ~p"/app/runs/#{run.id}")
+    refute html =~ "late-chunk"
+
+    {:ok, event} =
+      Runs.append_event(run, %{
+        seq: 1,
+        kind: "progress",
+        stream: "stdout",
+        payload: %{"chunk" => "late-chunk\n"}
+      })
+
+    send(lv.pid, {:run_event, event})
+    assert render(lv) =~ "late-chunk"
+  end
+
+  test "a run_updated broadcast refreshes the status chip", %{conn: conn} do
+    {conn, _user, account} = register_and_log_in(conn)
+    run = run_with(account, %{status: "sent"})
+
+    {:ok, lv, _html} = live(conn, ~p"/app/runs/#{run.id}")
+
+    {:ok, updated} =
+      Runs.finalize_from_result(run.runner_id, %{
+        "request_id" => run.request_id,
+        "status" => "success",
+        "exit_code" => 0
+      })
+
+    send(lv.pid, {:run_updated, updated})
+
+    assert render(lv) =~ "success"
+  end
 end
