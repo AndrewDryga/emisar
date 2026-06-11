@@ -369,7 +369,7 @@ defmodule EmisarWeb.ApprovalsLive do
                     <div class="truncate text-xs text-zinc-500">
                       on {runner_label(request, @runner_labels)}
                       <span :if={request.decided_by_id}>
-                        · {String.capitalize(request.status)} by {user_label(
+                        · {String.capitalize(to_string(request.status))} by {user_label(
                           request.decided_by_id,
                           @user_labels
                         )}
