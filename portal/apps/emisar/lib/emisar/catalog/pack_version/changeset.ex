@@ -13,12 +13,6 @@ defmodule Emisar.Catalog.PackVersion.Changeset do
     |> unique_constraint([:account_id, :pack_id, :version])
   end
 
-  @doc "Refresh last_seen_at while keeping trust untouched."
-  def touch(%PackVersion{} = pack_version, now) do
-    pack_version
-    |> change(last_seen_at: now)
-  end
-
   @doc """
   A runner reported a different hash than the trusted one. Park it as
   pending; dispatch will refuse until a human decides. Idempotent —

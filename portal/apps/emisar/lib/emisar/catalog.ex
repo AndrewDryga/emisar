@@ -39,57 +39,9 @@ defmodule Emisar.Catalog do
   authenticated by the runner token. Not exposed to LV/MCP.
   """
   def observe_state(%Runner{} = runner, %{} = payload) do
-    # Commit the runner-row facts (version, group, hostname, labels, packs)
-    # FIRST, in their own transaction. They must land on every reconnect
-    # even when the heavier pack/action catalog sync below is slow, errors,
-    # or the socket dies mid-sync. Folding the row update into the same
-    # transaction as a few-hundred-action upsert meant one bad action — or a
-    # disconnect mid-sync — rolled the whole thing back, pinning the runner
-    # to a stale version/group while the catalog churned.
-    #
-    # `apply_state` ends in `Repo.update` and can return `{:error, changeset}`
-    # on a stale-struct race or a bad/oversized field from untrusted runner
-    # JSON. A hard match would raise a MatchError above the try/rescue and drop
-    # the socket → reconnect loop → same crash. Keep the existing struct on
-    # error (the next heartbeat re-syncs) and continue with the catalog sync.
-    runner =
-      case Emisar.Runners.apply_state(runner, payload) do
-        {:ok, updated} ->
-          updated
+    runner = apply_runner_facts(runner, payload)
 
-        {:error, reason} ->
-          Logger.warning("apply_state for runner #{runner.id} failed: #{inspect(reason)}")
-
-          runner
-      end
-
-    now = DateTime.utc_now()
-    packs = payload["packs"] || %{}
-    actions = payload["actions"] || []
-
-    catalog =
-      try do
-        Repo.transaction(fn ->
-          pending_before = pending_pack_count(runner.account_id)
-          Enum.each(packs, &observe_pack(runner.account_id, &1, now))
-          pending_after = pending_pack_count(runner.account_id)
-
-          seen_ids =
-            actions
-            |> Enum.map(&observe_action(runner, &1, packs, now))
-            |> Enum.reject(&is_nil/1)
-
-          prune_missing_actions(runner.id, seen_ids)
-          pending_before != pending_after
-        end)
-      rescue
-        # The catalog is best-effort and re-syncs on the next runner_state;
-        # never let it crash the runner socket (which would drop + revert
-        # the connection) now that the durable row facts are already saved.
-        error -> {:error, error}
-      end
-
-    case catalog do
+    case sync_catalog(runner, payload) do
       {:ok, pending_changed?} ->
         # Light up the pack-trust badge only when the pending set actually
         # moved (drift / new custom pack), and only after the commit.
@@ -109,61 +61,84 @@ defmodule Emisar.Catalog do
     end
   end
 
-  # COUNT of pending pack versions for an account — internal liveness
-  # signal for the badge broadcast, no Subject (runs inside the already
-  # authenticated runner-socket observe path).
-  defp pending_pack_count(account_id) do
-    PackVersion.Query.all()
-    |> PackVersion.Query.by_account_id(account_id)
-    |> PackVersion.Query.pending()
-    |> Repo.aggregate(:count)
+  # Commit the runner-row facts (version, group, hostname, labels) FIRST,
+  # in their own transaction. They must land on every reconnect even when
+  # the heavier pack/action catalog sync is slow, errors, or the socket
+  # dies mid-sync — folding them into one transaction once pinned runners
+  # to stale versions whenever a single bad action rolled the batch back.
+  #
+  # `apply_state` can return `{:error, changeset}` on a stale-struct race
+  # or a bad/oversized field from untrusted runner JSON; keep the existing
+  # struct on error (the next heartbeat re-syncs) rather than crashing the
+  # socket.
+  defp apply_runner_facts(%Runner{} = runner, payload) do
+    case Emisar.Runners.apply_state(runner, payload) do
+      {:ok, updated} ->
+        updated
+
+      {:error, reason} ->
+        Logger.warning("apply_state for runner #{runner.id} failed: #{inspect(reason)}")
+        runner
+    end
+  end
+
+  # One transaction for the catalog facts: pin/refresh every advertised
+  # pack, upsert the advertised actions, prune the vanished ones.
+  # Returns {:ok, pending_changed?} — whether this advertisement put a
+  # new pack decision in front of the operator (drives the badge).
+  #
+  # Best-effort by design: the catalog re-syncs on the next runner_state,
+  # so a raise must never crash the runner socket (the durable runner-row
+  # facts are already saved by then).
+  defp sync_catalog(%Runner{} = runner, payload) do
+    now = DateTime.utc_now()
+    packs = payload["packs"] || %{}
+    actions = payload["actions"] || []
+
+    Repo.transaction(fn ->
+      pending_changed? =
+        packs
+        |> Enum.map(&observe_pack(runner.account_id, &1, now))
+        |> Enum.any?(&(&1 == :pending_changed))
+
+      seen_ids =
+        actions
+        |> Enum.map(&observe_action(runner, &1, packs, now))
+        |> Enum.reject(&is_nil/1)
+
+      prune_missing_actions(runner.id, seen_ids)
+      pending_changed?
+    end)
+  rescue
+    error -> {:error, error}
   end
 
   # -- Pack-version pinning --------------------------------------------
 
+  # One sighting of (account, pack_id, version) = ONE upsert: first sight
+  # inserts the pin computed from the baseline below; any later (or
+  # concurrent) sight only refreshes last_seen_at, and RETURNING hands
+  # back the canonical row for the drift judgment. The conflict update
+  # deliberately never touches the trust fields — the existing row's
+  # state machine must be JUDGED (judge_drift/3), not replaced; this is
+  # the documented exception to the plain-upsert rule.
+  #
+  # Pin decision on first sight:
+  #
+  #   * Baseline + match → auto-pin trusted (bytes match the shipped
+  #     pack library).
+  #   * Baseline + mismatch → pin BASELINE as trusted, advertised as
+  #     pending; operator must Trust to adopt or Reject to keep the
+  #     library baseline. Dispatch refuses in the meantime.
+  #   * No baseline (self-written / third-party pack) → pending with NO
+  #     trusted hash; a human must Trust in /app/packs before any of
+  #     its actions can run.
+  #
+  # Returns :pending_changed when this sighting put a new decision in
+  # front of the operator (fresh pending pin, or drift on a known row).
   defp observe_pack(account_id, {pack_id, info}, now) when is_map(info) do
     version = info["version"] || "unknown"
     advertised = info["hash"]
-
-    existing =
-      PackVersion.Query.all()
-      |> PackVersion.Query.by_account_id(account_id)
-      |> PackVersion.Query.by_pack_id_and_version(pack_id, version)
-      |> Repo.peek()
-
-    case existing do
-      nil -> insert_pinned(account_id, pack_id, version, advertised, now)
-      %PackVersion{} = pack_version -> maybe_mark_pending(pack_version, advertised, now)
-    end
-  end
-
-  # Skip a malformed (non-map) pack advertisement rather than letting
-  # `info["version"]` raise and abort the whole sync (the valid packs +
-  # actions in the same batch should still persist).
-  defp observe_pack(_account_id, _entry, _now), do: :ok
-
-  # First sight of (account, pack_id, version). Behavior depends on
-  # whether we ship a baseline hash for this (pack_id, version):
-  #
-  #   * Baseline + match → auto-pin trusted. The bytes match what we
-  #     vouched for in the shipped pack library; no review needed.
-  #   * Baseline + mismatch → pin BASELINE as trusted, advertised as
-  #     pending. The pack is one of ours but the bytes were modified
-  #     locally; operator must Trust to adopt or Reject to keep the
-  #     library baseline. Dispatch refuses in the meantime.
-  #   * No baseline (self-written / third-party / custom pack) → pin
-  #     as pending with NO trusted hash. Operator must approve in
-  #     /app/packs before any of its actions can run. Trust adopts
-  #     the advertised hash as the trusted hash.
-  #
-  # Concurrency: multiple runners can advertise the same pack at the
-  # same time, so two `observe_state` calls can peek nil for the same
-  # `(account, pack_id, version)` and then both try to insert. We use
-  # `on_conflict: :nothing` against the unique index so the loser of
-  # the race quietly drops through to the "row exists" path and
-  # follows `maybe_mark_pending`, instead of crashing the runner
-  # socket with a unique-violation Changeset error.
-  defp insert_pinned(account_id, pack_id, version, advertised, now) do
     baseline = PackBaseline.lookup(pack_id, version)
 
     {trusted_hash, pending_hash, trust_state, audit_event} =
@@ -175,8 +150,6 @@ defmodule Emisar.Catalog do
           {baseline, advertised, :pending, :pack_trust_baseline_mismatch}
 
         true ->
-          # Self-written / custom pack — never auto-trust. Dispatch
-          # refuses until a human clicks Trust in /app/packs.
           {nil, advertised, :pending, :pack_trust_review_required}
       end
 
@@ -194,61 +167,53 @@ defmodule Emisar.Catalog do
       })
 
     case Repo.insert(changeset,
-           on_conflict: :nothing,
-           conflict_target: [:account_id, :pack_id, :version]
+           on_conflict: [set: [last_seen_at: now]],
+           conflict_target: [:account_id, :pack_id, :version],
+           returning: true
          ) do
-      {:ok, %PackVersion{id: id} = pack_version} when not is_nil(id) ->
-        # We won the race and inserted. id is the Postgres-returned UUID.
-        Audit.record(Audit.Events.pack_pinned(pack_version, audit_event, advertised, baseline))
-        pack_version
-
-      _ ->
-        # Lost the race (or RETURNING gave us no id because of conflict).
-        # Treat the row that's now there as the canonical one and feed
-        # the advertised hash through the drift detector — no audit log
-        # for the missed pin; the winning insert already logged it.
-        existing =
-          PackVersion.Query.all()
-          |> PackVersion.Query.by_account_id(account_id)
-          |> PackVersion.Query.by_pack_id_and_version(pack_id, version)
-          |> Repo.peek()
-
-        case existing do
-          %PackVersion{} = pack_version -> maybe_mark_pending(pack_version, advertised, now)
-          # Truly nothing there (would mean a non-conflict failure we don't
-          # know how to recover from) — let the caller see the empty result.
-          nil -> nil
+      {:ok, %PackVersion{} = pack_version} ->
+        if DateTime.compare(pack_version.first_seen_at, now) == :eq do
+          # Fresh pin — this sighting inserted it.
+          Audit.record(Audit.Events.pack_pinned(pack_version, audit_event, advertised, baseline))
+          if pack_version.trust_state == :pending, do: :pending_changed, else: :ok
+        else
+          judge_drift(pack_version, advertised, now)
         end
+
+      {:error, _changeset} ->
+        # Malformed advertisement (oversized/bad field) — skip this pack,
+        # keep the rest of the batch.
+        :ok
     end
   end
 
-  # Existing row + new advertisement. Only state changes worth
-  # audit-logging are trusted→pending and pending→pending-with-new-hash.
-  defp maybe_mark_pending(%PackVersion{} = pack_version, advertised, now) do
+  # Skip a malformed (non-map) pack advertisement rather than letting
+  # `info["version"]` raise and abort the whole sync (the valid packs +
+  # actions in the same batch should still persist).
+  defp observe_pack(_account_id, _entry, _now), do: :ok
+
+  # Known row + new advertisement. The upsert already refreshed
+  # last_seen_at; the only state change worth writing (and auditing) is
+  # a hash we haven't seen — trusted→pending or pending-on-a-new-hash.
+  # A previously recorded pending_hash is deliberately kept until an
+  # operator decides via Trust/Reject, not by whichever runner
+  # heartbeats next.
+  defp judge_drift(%PackVersion{} = pack_version, advertised, now) do
     cond do
       pack_version.hash == advertised ->
-        # Runner is still reporting the trusted bytes — keep state,
-        # but if a pending_hash had been recorded earlier, leave it
-        # in place. Operators decide via Trust/Reject, not by
-        # whichever runner heartbeats next.
-        pack_version
-        |> PackVersion.Changeset.touch(now)
-        |> Repo.update!()
+        :ok
 
       pack_version.pending_hash == advertised ->
-        # Already pending against this exact hash — just touch.
-        pack_version
-        |> PackVersion.Changeset.touch(now)
-        |> Repo.update!()
+        :ok
 
       true ->
-        {:ok, updated} =
+        {:ok, _updated} =
           pack_version
           |> PackVersion.Changeset.mark_pending(advertised, now)
           |> Repo.update()
 
         Audit.record(Audit.Events.pack_trust_drift_detected(pack_version, advertised))
-        updated
+        :pending_changed
     end
   end
 
