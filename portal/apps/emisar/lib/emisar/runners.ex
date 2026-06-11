@@ -935,84 +935,89 @@ defmodule Emisar.Runners do
   def register_via_auth_key(%AuthKey{} = key, attrs) do
     key = Repo.preload(key, :account)
     was_auto? = AuthKey.auto_unused?(key)
+    external_id = registration_external_id(attrs)
 
-    Repo.transaction(fn ->
-      # Atomically claim a use of this auth key. The conditional
-      # UPDATE only succeeds if the key is still in a usable state
-      # AT the moment of the update — defeating the race where two
-      # concurrent registrations both see uses_count = 0.
+    Multi.new()
+    # Atomically claim a use of this auth key. The conditional UPDATE only
+    # succeeds if the key is still usable AT the moment of the update —
+    # defeating the race where two concurrent registrations both see
+    # uses_count = 0.
+    |> Multi.run(:consume, fn _repo, _changes ->
       case consume_auth_key(key) do
-        :ok -> :ok
-        {:error, reason} -> Repo.rollback(reason)
+        :ok -> {:ok, :consumed}
+        {:error, reason} -> {:error, reason}
       end
-
-      # Surface the auto→permanent promotion. The mint itself was
-      # deliberately silent (would flood the log with noise), so
-      # binding is where this key first becomes visible.
-      if was_auto? do
-        Audit.log(key.account_id, "auth_key.bound",
-          actor_kind: "system",
-          subject_kind: "auth_key",
-          subject_id: key.id,
-          payload: %{prefix: key.key_prefix, auto: true}
-        )
-      end
-
-      # Identity is (account, external_id) — the stable id the runner
-      # persists and sends. Reuse the existing row on reconnect;
-      # otherwise insert. Names are display-only and may repeat across
-      # runners, so external_id is the only uniqueness here. A blank id
-      # (older runner that doesn't send one) gets a server-minted UUID
-      # — never treated as a shared empty-string key.
-      external_id =
-        case attrs[:external_id] do
-          id when is_binary(id) and id != "" -> id
-          _ -> Ecto.UUID.generate()
-        end
-
-      # The plan's runner-count limit is enforced only when adding a NEW
-      # seat, on the fresh-insert branch and before the row exists (so the
-      # count excludes it). A reconnecting runner — e.g. one that lost its
-      # token on a redeploy and re-registers via its auth key — is already
-      # counted, so checking the limit for it would lock an operator out of
-      # their own fleet at the plan ceiling.
-      {runner, fresh?} =
-        case fetch_runner_by_external_id_for_account(external_id, key.account_id) do
-          {:ok, %Runner{} = existing} ->
-            {existing, false}
-
-          {:error, :not_found} ->
-            case Emisar.Billing.check_limit(key.account, :runners) do
-              :ok -> insert_runner!(key, attrs, external_id)
-              {:error, :over_limit, plan, limit} -> Repo.rollback({:over_limit, plan, limit})
-            end
-        end
-
-      if fresh? do
-        Audit.log(runner.account_id, "runner.registered",
-          actor_kind: "runner",
-          actor_id: runner.id,
-          actor_label: runner.name,
-          subject_kind: "runner",
-          subject_id: runner.id,
-          subject_label: runner.name,
-          payload: %{
-            external_id: runner.external_id,
-            group: runner.group,
-            hostname: runner.hostname,
-            auth_key_id: key.id
-          }
-        )
-      end
-
-      {raw_token, token} = mint_runner_token(runner, key.id)
-      {runner, token, raw_token}
     end)
+    # Surface the auto→permanent promotion. The mint itself is deliberately
+    # silent (would flood the log), so binding is where the key first
+    # becomes visible.
+    |> maybe_audit_auth_key_bound(key, was_auto?)
+    |> Multi.run(:registration, fn repo, _changes ->
+      register_or_reuse_runner(repo, key, attrs, external_id)
+    end)
+    |> maybe_audit_runner_registered(key)
+    |> Multi.run(:token, fn _repo, %{registration: {runner, _fresh?}} ->
+      {:ok, mint_runner_token(runner, key.id)}
+    end)
+    |> Repo.commit_multi()
     |> case do
-      {:ok, {runner, token, raw_token}} -> {:ok, runner, token, raw_token}
-      {:error, {:over_limit, plan, limit}} -> {:error, :over_limit, plan, limit}
-      {:error, {:runner_name_taken, name}} -> {:error, :runner_name_taken, name}
-      {:error, reason} -> {:error, reason}
+      {:ok, %{registration: {runner, _fresh?}, token: {raw_token, token}}} ->
+        {:ok, runner, token, raw_token}
+
+      {:error, {:over_limit, plan, limit}} ->
+        {:error, :over_limit, plan, limit}
+
+      {:error, {:runner_name_taken, name}} ->
+        {:error, :runner_name_taken, name}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  # Identity is (account, external_id) — the stable id the runner persists
+  # and sends. Names are display-only and may repeat across runners, so
+  # external_id is the only uniqueness. A blank id (older runner that
+  # doesn't send one) gets a server-minted UUID, never treated as a shared
+  # empty-string key.
+  defp registration_external_id(attrs) do
+    case attrs[:external_id] do
+      id when is_binary(id) and id != "" -> id
+      _ -> Ecto.UUID.generate()
+    end
+  end
+
+  defp maybe_audit_auth_key_bound(multi, _key, false), do: multi
+
+  defp maybe_audit_auth_key_bound(multi, key, true),
+    do: Multi.insert(multi, :auth_key_bound, Audit.Events.auth_key_bound(key))
+
+  # Only a brand-new seat is audited as a registration — a reconnecting
+  # runner that already has a row isn't.
+  defp maybe_audit_runner_registered(multi, key) do
+    Multi.run(multi, :registered_audit, fn repo, %{registration: {runner, fresh?}} ->
+      if fresh?,
+        do: repo.insert(Audit.Events.runner_registered(runner, key)),
+        else: {:ok, nil}
+    end)
+  end
+
+  # Reuse the existing row on reconnect; otherwise insert a new one. The
+  # plan's runner-count limit is enforced only on the fresh-insert branch
+  # and before the row exists (so the count excludes it). A reconnecting
+  # runner — e.g. one that lost its token on a redeploy and re-registers
+  # via its auth key — is already counted, so checking the limit for it
+  # would lock an operator out of their own fleet at the plan ceiling.
+  defp register_or_reuse_runner(repo, key, attrs, external_id) do
+    case fetch_runner_by_external_id_for_account(external_id, key.account_id) do
+      {:ok, %Runner{} = existing} ->
+        {:ok, {existing, false}}
+
+      {:error, :not_found} ->
+        case Emisar.Billing.check_limit(key.account, :runners) do
+          :ok -> insert_runner(repo, key, attrs, external_id)
+          {:error, :over_limit, plan, limit} -> {:error, {:over_limit, plan, limit}}
+        end
     end
   end
 
@@ -1020,74 +1025,66 @@ defmodule Emisar.Runners do
   # (account, external_id) makes a concurrent register with the same id
   # a no-op instead of a constraint error that would poison the
   # transaction (Postgres 25P02); we then re-fetch the canonical row and
-  # report whether *this* call inserted it. Returns `{runner, fresh?}`.
+  # report whether *this* call inserted it. Returns `{:ok, {runner, fresh?}}`.
   #
   # The unique index is partial (`WHERE deleted_at IS NULL`) so a
   # soft-deleted runner frees its external_id — the conflict target has to
   # carry the same predicate or Postgres won't match the partial index.
   # An :unsafe_fragment is the only way to express that in Ecto; the
   # columns/predicate are literals here, so there's nothing to interpolate.
-  defp insert_runner!(key, attrs, external_id) do
+  defp insert_runner(repo, key, attrs, external_id) do
     name = derive_name(attrs)
 
-    # Names are unique among live runners. We're here because no live runner
-    # has this external_id, so another live runner holding this name is a
-    # conflict — but only an ACTIVE one. An offline holder (reinstalled host,
-    # renamed machine) is displaced so a dead runner can't squat the address;
-    # a connected holder rolls back to the clean error the controller turns
-    # into a 409. The partial unique index is the race backstop below.
-    case fetch_live_runner_by_name(name, key.account_id) do
-      {:ok, %Runner{} = existing} -> displace_inactive_name_holder!(existing, key, name)
-      {:error, :not_found} -> :ok
-    end
+    with :ok <- ensure_name_available(repo, key, name) do
+      changeset =
+        Runner.Changeset.register(%{
+          account_id: key.account_id,
+          name: name,
+          external_id: external_id,
+          group: attrs[:group] || key.group || "default",
+          hostname: attrs[:hostname],
+          labels: attrs[:labels] || %{},
+          runner_version: attrs[:version] || attrs[:runner_version],
+          bootstrap_auth_key_id: key.id
+        })
 
-    changeset =
-      Runner.Changeset.register(%{
-        account_id: key.account_id,
-        name: name,
-        external_id: external_id,
-        group: attrs[:group] || key.group || "default",
-        hostname: attrs[:hostname],
-        labels: attrs[:labels] || %{},
-        runner_version: attrs[:version] || attrs[:runner_version],
-        bootstrap_auth_key_id: key.id
-      })
+      case repo.insert(changeset,
+             on_conflict: :nothing,
+             conflict_target:
+               {:unsafe_fragment, "(account_id, external_id) WHERE deleted_at IS NULL"}
+           ) do
+        {:ok, inserted} ->
+          {:ok, runner} = fetch_runner_by_external_id_for_account(external_id, key.account_id)
+          {:ok, {runner, runner.id == inserted.id}}
 
-    case Repo.insert(changeset,
-           on_conflict: :nothing,
-           conflict_target:
-             {:unsafe_fragment, "(account_id, external_id) WHERE deleted_at IS NULL"}
-         ) do
-      {:ok, inserted} ->
-        {:ok, runner} = fetch_runner_by_external_id_for_account(external_id, key.account_id)
-        {runner, runner.id == inserted.id}
-
-      {:error, changeset} ->
-        if name_taken_changeset?(changeset),
-          do: Repo.rollback({:runner_name_taken, name}),
-          else: Repo.rollback(changeset)
+        {:error, changeset} ->
+          if name_taken_changeset?(changeset),
+            do: {:error, {:runner_name_taken, name}},
+            else: {:error, changeset}
+      end
     end
   end
 
-  # Runs inside register_via_auth_key's transaction. A connected holder rolls
-  # the registration back; an offline one is soft-deleted (history preserved)
-  # with an audit row so the fleet timeline shows where the name went.
-  defp displace_inactive_name_holder!(%Runner{} = existing, %AuthKey{} = key, name) do
-    if online?(key.account_id, existing.id) do
-      Repo.rollback({:runner_name_taken, name})
-    else
-      {:ok, _} = existing |> Runner.Changeset.delete() |> Repo.update()
+  # Names are unique among live runners. We're inserting a runner with a
+  # fresh external_id, so another live runner holding this name is a
+  # conflict — but only an ACTIVE one. An offline holder (reinstalled host,
+  # renamed machine) is displaced (soft-deleted, history preserved) with an
+  # audit row so a dead runner can't squat the address; a connected holder
+  # returns the clean error the controller turns into a 409. The partial
+  # unique index is the race backstop in `insert_runner/4`.
+  defp ensure_name_available(repo, key, name) do
+    case fetch_live_runner_by_name(name, key.account_id) do
+      {:error, :not_found} ->
+        :ok
 
-      {:ok, _} =
-        Audit.log(key.account_id, "runner.replaced",
-          actor_kind: "system",
-          subject_kind: "runner",
-          subject_id: existing.id,
-          subject_label: name,
-          payload: %{replaced_runner_id: existing.id, auth_key_id: key.id}
-        )
-
-      :ok
+      {:ok, %Runner{} = existing} ->
+        if online?(key.account_id, existing.id) do
+          {:error, {:runner_name_taken, name}}
+        else
+          {:ok, _} = existing |> Runner.Changeset.delete() |> repo.update()
+          {:ok, _} = repo.insert(Audit.Events.runner_replaced_by_system(existing, key, name))
+          :ok
+        end
     end
   end
 

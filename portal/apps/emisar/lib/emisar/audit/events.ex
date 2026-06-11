@@ -225,6 +225,25 @@ defmodule Emisar.Audit.Events do
     )
   end
 
+  # A runner enrolling itself via an auth key on first connect — the
+  # runner is the actor, no operator `%Subject{}` is involved.
+  def runner_registered(%Runners.Runner{} = runner, %Runners.AuthKey{} = key) do
+    Audit.changeset(runner.account_id, "runner.registered",
+      actor_kind: "runner",
+      actor_id: runner.id,
+      actor_label: runner.name,
+      subject_kind: "runner",
+      subject_id: runner.id,
+      subject_label: runner.name,
+      payload: %{
+        external_id: runner.external_id,
+        group: runner.group,
+        hostname: runner.hostname,
+        auth_key_id: key.id
+      }
+    )
+  end
+
   def runner_disabled(%Subject{} = subject, %Runners.Runner{} = runner),
     do: runner_event(subject, runner, "runner.disabled")
 
@@ -254,6 +273,19 @@ defmodule Emisar.Audit.Events do
     )
   end
 
+  # Same displacement, but during auth-key registration — no operator
+  # `%Subject{}` is acting, so the actor is the system. The displaced
+  # (soft-deleted) runner is the subject.
+  def runner_replaced_by_system(%Runners.Runner{} = replaced, %Runners.AuthKey{} = key, name) do
+    Audit.changeset(key.account_id, "runner.replaced",
+      actor_kind: "system",
+      subject_kind: "runner",
+      subject_id: replaced.id,
+      subject_label: name,
+      payload: %{replaced_runner_id: replaced.id, auth_key_id: key.id}
+    )
+  end
+
   # -- Auth keys (runner install/enrolment keys) -----------------------
 
   def auth_key_created(%Subject{} = subject, %Runners.AuthKey{} = key) do
@@ -275,6 +307,17 @@ defmodule Emisar.Audit.Events do
       "auth_key.revoked",
       actor(subject) ++
         [subject_kind: "auth_key", subject_id: key.id, payload: %{prefix: key.key_prefix}]
+    )
+  end
+
+  # Auto-generated install key promoted to permanent when a runner first
+  # binds with it — system actor (no user is acting), mirroring api_key_bound.
+  def auth_key_bound(%Runners.AuthKey{} = key) do
+    Audit.changeset(key.account_id, "auth_key.bound",
+      actor_kind: "system",
+      subject_kind: "auth_key",
+      subject_id: key.id,
+      payload: %{prefix: key.key_prefix, auto: true}
     )
   end
 
