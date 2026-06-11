@@ -58,6 +58,14 @@ Lower-stakes taste calls. Not Iron Laws, but the defaults. **The user adds to th
 - A pure helper used in more than one place is its own small module with unit tests (e.g. `Emisar.Slug`), not a `defp` copy-pasted between call sites. Take options for the per-caller differences instead of forking the logic.
 - **A guarded single-row mutation goes through `Repo.fetch_and_update/3`, not a hand-rolled lock-Multi.** Its `:with` runs inside the transaction on the locked row — bind that row `loaded_<schema>` (`loaded_account`, `loaded_membership`), never a vague `fresh` — so domain guards that must judge CURRENT state (hierarchy checks, field-aware escalations) live there — returning any non-changeset value aborts as `{:error, that_value}`, and an invariant query a guard needs (the locked last-owner re-count) is a plain `Repo` call, which joins the same transaction. `:audit` takes `(updated)` or `(updated, changeset)` — `changeset.data` is the locked pre-update row when the audit payload needs before-state (e.g. role changes). Hand-roll a `Multi` only when the mutation writes OTHER rows after judging the locked target (Accounts' `lock_target_membership/3` prefix) or spans multiple tables.
 - `Authorizer.for_subject/2` is the **last** queryable transform in a pipeline: filters, ordering, preload helpers, and `lock_for_update` come before it, and the `Repo.*` call follows immediately. IL-4 says "immediately before" — that's the letter, not approximately.
+- **Upserts are preferred.** When the row's identity is a unique key, write it with ONE statement — `Repo.insert(changeset, on_conflict: {:replace, [...]}, conflict_target: ..., returning: true)` — not peek-then-insert-or-update and not insert-rescue-refetch. The upsert is atomic under concurrency where the read-then-write shape races. When an audit payload needs the before-state, read it as a step in the same `Multi` — still a single write. (Exception: a state machine where the conflict path must *judge* the existing row — e.g. pack trust — keeps its explicit branches; say why at the call site.)
+- **Use RETURNING instead of a follow-up read.** Data the write itself can hand back is never re-fetched: `returning: true` on insert/upsert, `select` on `update_all`/`delete_all`. A write immediately followed by a fetch of the same row(s) is the smell.
+- A one-event `audit:` / `after_commit:` builder closure uses **capture syntax** — `audit: &Audit.Events.policy_updated(subject, policy, &1)` — so long as it stays one readable line. Reach for a `fn` block only when the body genuinely has more than one step.
+- **Every PubSub publish goes through a named per-event function** — `broadcast_auth_key_revoked(%AuthKey{} = key)`, not a shared `broadcast_x_change(struct, "event.string")` that takes the event name as data. The function head documents the message; the literal topic + tuple live inside it. All `subscribe_*` and `broadcast_*` functions sit together in one `# -- PubSub ----` section per context so the context's topics and message shapes read in one place. No inline `Emisar.PubSub.broadcast/2` at mutation sites.
+- **No pipe anywhere in a `with`/`case`/`for` head — single-line included.** `{:ok, x} <- a() |> b()` hides the operation being matched; bind first (`queryable = Token.Query.all() |> Token.Query.by_prefix(prefix)`) and match the short call (`<- Repo.peek(queryable)`). The PostToolUse hook blocks both the one-line and the wrapped form.
+- **Contexts never pass `:preload` opts to `Repo.fetch`/`Repo.list`** — chain the Query module's `with_preloaded_<assoc>/1` helpers in the pipeline (before `for_subject`). `Keyword.put_new(opts, :preload, …)` buried in the Repo call's argument list is the double violation: a call-site preload AND an inline-built argument. The `preloads/0` callback exists to declare nested cascade shapes, not to serve call sites. Hook-blocked.
+- Don't build an argument with a nested transform call inline — `Repo.fetch(query, Query, Keyword.put_new(opts, …))` makes the reader parse two calls at once. Bind the transformed value on its own line above, then pass the name. (Same family as the multiline-pipe-as-argument rule.)
+- LiveTable `filters/0` callbacks bind their queryable as **`queryable`** — `fun: fn queryable, statuses -> …` — never `q`. (The `[runs: r]`-style DSL bindings inside `dynamic`/`where` stay the documented §2 idiom.)
 
 ---
 
@@ -409,4 +417,21 @@ rg '(^|[^.\w])(from|where|order_by|join|select|preload|limit|lock|group_by|havin
    -g '!**/query.ex' -g '!**/repo.ex' -g '!repo/**' -g '!mailers/**'
 ```
 
-If any return hits, the change isn't done. (The one documented exception to the third grep is `Repo.preload/2` in a post-commit/email helper — IL-10 — which is qualified and so won't match anyway.) Then run the [verify loop](#how-we-build-prime-directive) (IL-20).
+House-opinion greps — run from `portal/apps/` over BOTH apps' `lib/` (also enforced live by the hook):
+
+```sh
+# Pipe in a with/case/for head — one-line form and the wrapped form
+rg -n '<-.*\|>' emisar/lib emisar_web/lib
+rg -Un '<-\s*\n[^\n]*\|>' emisar/lib emisar_web/lib
+
+# :preload opts at context call sites (chain with_preloaded_* instead)
+rg -n ':preload' emisar/lib/emisar -g '!**/query.ex' -g '!**/repo/**' -g '!**/repo.ex'
+
+# LiveTable filter callbacks must bind `queryable`, not `q`
+rg -n '\bfn q\b' emisar/lib emisar_web/lib
+
+# Event name passed as data to a shared broadcast helper (want per-event fns)
+rg -n 'broadcast_[a-z_]+\([^)]*"' emisar/lib/emisar
+```
+
+If any return hits, the change isn't done. (The one documented exception to the third IL grep is `Repo.preload/2` in a post-commit/email helper — IL-10 — which is qualified and so won't match anyway.) Then run the [verify loop](#how-we-build-prime-directive) (IL-20).

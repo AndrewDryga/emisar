@@ -91,6 +91,30 @@ fi
 m=$(hit '(field|add)[[:space:]]+:(price|amount|cost|total|subtotal|balance|fee|rate|charge|payment|salary|wage|budget|revenue|discount|tax|cents|money)[a-z_]*,[[:space:]]*:float')
 [[ -n "$m" ]] && add "#12" "$(lineno "$m")" ":float for a money field — use :decimal or :integer (cents)."
 
+# --- House: no pipe in a with/case/for head (one-line OR wrapped form) ------
+# `{:ok, x} <- a() |> b()` hides the matched operation — bind the pipeline
+# to a name above the head, then match the short call. Lib code only.
+if [[ $is_test == 0 ]]; then
+  m=$(hit '<-.*\|>')
+  [[ -n "$m" ]] && add "house/with-head-pipe" "$(lineno "$m")" "pipe in a with/case/for head — bind \`queryable = …\` (or similar) above, then match \`<- Repo.peek(queryable)\`."
+
+  # Wrapped form: the head ends in `<-` and the pipeline starts on the next line.
+  m=$(awk 'prev ~ /<-[[:space:]]*$/ && /\|>/ {print NR; exit} {prev=$0}' "$FILE_PATH")
+  [[ -n "$m" ]] && add "house/with-head-pipe" "$m" "wrapped pipe under a \`<-\` head — bind the pipeline to a name above the with/case, then match the name."
+fi
+
+# --- House: contexts never pass :preload opts — chain with_preloaded_* ------
+if [[ $in_lib_emisar == 1 && $is_query == 0 && $is_repo == 0 && $is_test == 0 ]]; then
+  m=$(hit ':preload\b')
+  [[ -n "$m" ]] && add "house/preload-opt" "$(lineno "$m")" ":preload opt at a context call site — chain Schema.Query.with_preloaded_<assoc>() in the pipeline (before for_subject) instead."
+fi
+
+# --- House: LiveTable filter callbacks bind `queryable`, never `q` ----------
+if [[ $is_test == 0 ]]; then
+  m=$(hit '\bfn q\b')
+  [[ -n "$m" ]] && add "house/fn-q" "$(lineno "$m")" "\`fn q\` — spell the binding out: \`fn queryable, …\` (DSL bindings like [runs: r] inside dynamic/where stay fine)."
+fi
+
 # IL-14 (String.to_atom) and IL-16 (raw/1) intentionally live in /iron-review,
 # not here: their safety depends on whether the value is a code literal /
 # app-generated (safe) or request/runner/LLM input (unsafe) — a judgment a
