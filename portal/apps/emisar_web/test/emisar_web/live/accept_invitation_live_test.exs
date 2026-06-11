@@ -57,7 +57,7 @@ defmodule EmisarWeb.AcceptInvitationLiveTest do
         "user" => %{"full_name" => "New Person", "password" => "a-long-enough-password"}
       }
 
-      {:ok, pending_membership} = Accounts.fetch_invitation_by_token(token)
+      {:ok, pending_membership} = Accounts.fetch_invitation_by_token(token, preload: [:user])
 
       # A valid accept arms the hidden POST to /sign_in (phx-trigger-action).
       html = lv |> form("#accept_form", params) |> render_submit()

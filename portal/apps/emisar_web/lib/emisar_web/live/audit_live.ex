@@ -95,7 +95,10 @@ defmodule EmisarWeb.AuditLive do
   end
 
   defp assign_export_keys(socket) do
-    case ApiKeys.list_audit_export_keys_for_account(socket.assigns.current_subject, page_size: 50) do
+    case ApiKeys.list_audit_export_keys_for_account(socket.assigns.current_subject,
+           page_size: 50,
+           preload: [:created_by]
+         ) do
       {:ok, keys, _meta} -> assign(socket, :export_keys, keys)
       _ -> assign(socket, :export_keys, [])
     end

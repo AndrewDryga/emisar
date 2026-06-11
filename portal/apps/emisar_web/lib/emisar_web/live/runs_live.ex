@@ -40,7 +40,10 @@ defmodule EmisarWeb.RunsLive do
     filters = ActionRun.Query.filters()
     opts = LiveTable.params_to_opts(params, filters)
 
-    case Runs.list_runs(socket.assigns.current_subject, opts) do
+    case Runs.list_runs(
+           socket.assigns.current_subject,
+           Keyword.put(opts, :preload, [:runner, :api_key])
+         ) do
       {:ok, runs, meta} ->
         socket
         |> assign(:runs, runs)

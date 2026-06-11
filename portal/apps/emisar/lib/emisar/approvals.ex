@@ -548,16 +548,36 @@ defmodule Emisar.Approvals do
            ) do
       {include_expired, opts} = Keyword.pop(opts, :include_expired, false)
 
+      {preloads, opts} = Keyword.pop(opts, :preload, [])
+
       Grant.Query.not_revoked()
       |> Grant.Query.ordered_by_recent()
       |> maybe_filter_expired(include_expired)
-      |> Grant.Query.with_preloaded_api_key()
-      |> Grant.Query.with_preloaded_runner()
-      |> Grant.Query.with_preloaded_granted_by()
-      |> Grant.Query.with_preloaded_approval_request_run()
+      |> apply_grant_preloads(preloads)
       |> Authorizer.for_subject(subject)
       |> Repo.list(Grant.Query, opts)
     end
+  end
+
+  # Rendering concerns are the caller's: pass `preload:` only for the
+  # associations the page actually shows. Unknown atoms raise (caller bug).
+  defp apply_grant_preloads(queryable, preloads) do
+    Enum.reduce(preloads, queryable, fn
+      :api_key, queryable ->
+        Grant.Query.with_preloaded_api_key(queryable)
+
+      :runner, queryable ->
+        Grant.Query.with_preloaded_runner(queryable)
+
+      :granted_by, queryable ->
+        Grant.Query.with_preloaded_granted_by(queryable)
+
+      :revoked_by, queryable ->
+        Grant.Query.with_preloaded_revoked_by(queryable)
+
+      :approval_request_run, queryable ->
+        Grant.Query.with_preloaded_approval_request_run(queryable)
+    end)
   end
 
   defp maybe_filter_expired(query, true), do: query
@@ -570,12 +590,11 @@ defmodule Emisar.Approvals do
              Authorizer.manage_grants_permission()
            ),
          true <- Repo.valid_uuid?(id) do
+      {preloads, opts} = Keyword.pop(opts, :preload, [])
+
       Grant.Query.all()
       |> Grant.Query.by_id(id)
-      |> Grant.Query.with_preloaded_api_key()
-      |> Grant.Query.with_preloaded_runner()
-      |> Grant.Query.with_preloaded_granted_by()
-      |> Grant.Query.with_preloaded_revoked_by()
+      |> apply_grant_preloads(preloads)
       |> Authorizer.for_subject(subject)
       |> Repo.fetch(Grant.Query, opts)
     else

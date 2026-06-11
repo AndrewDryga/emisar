@@ -80,14 +80,22 @@ defmodule Emisar.InvitationTest do
       %{membership: membership, token: token, invitee: invitee, account: account}
     end
 
-    test "returns the membership with preloads", %{
+    test "preloads are caller-driven: opted-in assocs load, the default loads none", %{
       token: token,
       account: account,
       invitee: invitee
     } do
-      assert {:ok, membership} = Accounts.fetch_invitation_by_token(token)
+      assert {:ok, membership} =
+               Accounts.fetch_invitation_by_token(token, preload: [:account, :user])
+
       assert membership.account.id == account.id
       assert membership.user.id == invitee.id
+
+      # Without the opt the row comes back bare — callers that only need
+      # the membership itself pay for no joins.
+      assert {:ok, bare} = Accounts.fetch_invitation_by_token(token)
+      assert %Ecto.Association.NotLoaded{} = bare.account
+      assert %Ecto.Association.NotLoaded{} = bare.user
     end
 
     test "returns :not_found for an unknown token" do

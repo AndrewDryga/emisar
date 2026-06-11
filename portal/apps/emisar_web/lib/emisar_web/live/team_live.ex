@@ -295,7 +295,7 @@ defmodule EmisarWeb.TeamLive do
     case Accounts.list_memberships_for_account(
            socket.assigns.current_account,
            socket.assigns.current_subject,
-           opts
+           Keyword.put(opts, :preload, [:user])
          ) do
       {:ok, memberships, meta} ->
         scopes_by_membership =

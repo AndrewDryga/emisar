@@ -35,7 +35,10 @@ defmodule EmisarWeb.DashboardLive do
     |> assign(:loading?, false)
     |> assign(:runners_total, length(runners))
     |> assign(:runners_connected, Enum.count(runners, & &1.online?))
-    |> assign(:recent_runs, list_or_empty(Runs.list_recent_runs(subject, limit: 6)))
+    |> assign(
+      :recent_runs,
+      list_or_empty(Runs.list_recent_runs(subject, limit: 6, preload: [:runner]))
+    )
     |> assign(:run_stats, unwrap_ok(Runs.fetch_run_stats(subject, hours: 24)))
     |> assign(:pending_approvals, pending)
     |> assign(:has_llm_connected?, api_keys != [])
@@ -45,7 +48,7 @@ defmodule EmisarWeb.DashboardLive do
   end
 
   defp list_memberships(account, subject) do
-    case Emisar.Accounts.list_memberships_for_account(account, subject) do
+    case Emisar.Accounts.list_memberships_for_account(account, subject, preload: [:user]) do
       {:ok, list, _} -> list
       _ -> []
     end

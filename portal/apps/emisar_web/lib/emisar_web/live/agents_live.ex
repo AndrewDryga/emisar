@@ -223,7 +223,10 @@ defmodule EmisarWeb.AgentsLive do
   defp load(socket, params) do
     opts = LiveTable.params_to_opts(params)
 
-    case ApiKeys.list_api_keys_for_account(socket.assigns.current_subject, opts) do
+    case ApiKeys.list_api_keys_for_account(
+           socket.assigns.current_subject,
+           Keyword.put(opts, :preload, [:created_by])
+         ) do
       {:ok, keys, meta} ->
         socket
         |> assign(:api_keys, keys)

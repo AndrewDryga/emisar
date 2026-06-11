@@ -206,13 +206,24 @@ defmodule Emisar.Accounts do
              Authorizer.view_own_account_permission()
            ),
          :ok <- Subject.ensure_in_account(subject, account_id, :unauthorized) do
+      {preloads, opts} = Keyword.pop(opts, :preload, [])
+
       Membership.Query.not_deleted()
       |> Membership.Query.by_account_id(account_id)
-      |> Membership.Query.with_preloaded_account()
-      |> Membership.Query.with_preloaded_user()
+      |> apply_membership_preloads(preloads)
       |> Authorizer.for_subject(subject)
       |> Repo.list(Membership.Query, opts)
     end
+  end
+
+  # Rendering concerns are the caller's: pass `preload: [:user]` (and/or
+  # `:account`) only when the page actually shows those fields — a
+  # counting or existence caller pays for no joins. Unknown atoms raise.
+  defp apply_membership_preloads(queryable, preloads) do
+    Enum.reduce(preloads, queryable, fn
+      :account, queryable -> Membership.Query.with_preloaded_account(queryable)
+      :user, queryable -> Membership.Query.with_preloaded_user(queryable)
+    end)
   end
 
   @doc """
@@ -222,9 +233,10 @@ defmodule Emisar.Accounts do
   public `list_memberships_for_account/3`.
   """
   def list_account_memberships(account_id, opts \\ []) do
+    # `user` is this helper's contract — the notifier addresses the email
+    # from it. (No account preload: nothing downstream reads it.)
     Membership.Query.not_deleted()
     |> Membership.Query.by_account_id(account_id)
-    |> Membership.Query.with_preloaded_account()
     |> Membership.Query.with_preloaded_user()
     |> Repo.list(Membership.Query, opts)
   end
@@ -826,18 +838,24 @@ defmodule Emisar.Accounts do
   window. Returns the membership with `:account` and `:user` preloaded,
   or `{:error, :not_found}`. Pre-Subject helper — used by the
   invitation-accept LV before the user has signed in.
+
+  Options: `preload:` — associations the caller renders (`:account`,
+  `:user`); omit when only the row itself is needed.
   """
-  def fetch_invitation_by_token(token) when is_binary(token) and byte_size(token) > 0 do
+  def fetch_invitation_by_token(token, opts \\ [])
+
+  def fetch_invitation_by_token(token, opts) when is_binary(token) and byte_size(token) > 0 do
+    {preloads, _opts} = Keyword.pop(opts, :preload, [])
+
     Membership.Query.not_deleted()
     |> Membership.Query.by_invitation_token_digest(Crypto.user_invite_token_digest(token))
     |> Membership.Query.pending_invitation()
     |> Membership.Query.invitation_not_expired()
-    |> Membership.Query.with_preloaded_account()
-    |> Membership.Query.with_preloaded_user()
+    |> apply_membership_preloads(preloads)
     |> Repo.fetch(Membership.Query)
   end
 
-  def fetch_invitation_by_token(_), do: {:error, :not_found}
+  def fetch_invitation_by_token(_, _opts), do: {:error, :not_found}
 
   @doc """
   Marks an invitation accepted without touching the user record. Used when

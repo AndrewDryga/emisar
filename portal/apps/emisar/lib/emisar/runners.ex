@@ -635,12 +635,22 @@ defmodule Emisar.Runners do
              subject,
              Authorizer.manage_auth_keys_permission()
            ) do
+      {preloads, opts} = Keyword.pop(opts, :preload, [])
+
       AuthKey.Query.visible_to_operators()
       |> AuthKey.Query.ordered_by_recent()
-      |> AuthKey.Query.with_preloaded_created_by()
+      |> apply_auth_key_preloads(preloads)
       |> Authorizer.for_subject(subject)
       |> Repo.list(AuthKey.Query, opts)
     end
+  end
+
+  # Rendering concerns are the caller's: pass `preload:` only for the
+  # associations the page actually shows. Unknown atoms raise (caller bug).
+  defp apply_auth_key_preloads(queryable, preloads) do
+    Enum.reduce(preloads, queryable, fn
+      :created_by, queryable -> AuthKey.Query.with_preloaded_created_by(queryable)
+    end)
   end
 
   @doc """

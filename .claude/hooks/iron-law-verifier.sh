@@ -103,10 +103,16 @@ if [[ $is_test == 0 ]]; then
   [[ -n "$m" ]] && add "house/with-head-pipe" "$m" "wrapped pipe under a \`<-\` head — bind the pipeline to a name above the with/case, then match the name."
 fi
 
-# --- House: contexts never pass :preload opts — chain with_preloaded_* ------
+# --- House: preloads never smuggled into Repo opts --------------------------
+# The caller-facing `preload:` option is fine (it's Keyword.pop'd and mapped
+# to with_preloaded_* helpers); what's blocked is stuffing preloads into the
+# opts the Repo call consumes, which bypasses the helpers' soft-delete scoping.
 if [[ $in_lib_emisar == 1 && $is_query == 0 && $is_repo == 0 && $is_test == 0 ]]; then
-  m=$(hit ':preload\b')
-  [[ -n "$m" ]] && add "house/preload-opt" "$(lineno "$m")" ":preload opt at a context call site — chain Schema.Query.with_preloaded_<assoc>() in the pipeline (before for_subject) instead."
+  m=$(hit 'Keyword\.put(_new)?\([^)]*:preload')
+  [[ -n "$m" ]] && add "house/preload-opt" "$(lineno "$m")" "preload smuggled into Repo opts — pop the caller's \`preload:\` option and map it to Schema.Query.with_preloaded_<assoc>() helpers instead."
+
+  m=$(hit 'Repo\.(fetch|list)\([^)]*preload:')
+  [[ -n "$m" ]] && add "house/preload-opt" "$(lineno "$m")" "literal preload: inside a Repo call — map the caller's \`preload:\` option to with_preloaded_* helpers in the pipeline."
 fi
 
 # --- House: LiveTable filter callbacks bind `queryable`, never `q` ----------

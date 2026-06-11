@@ -25,9 +25,10 @@ defmodule Emisar.Runs do
              subject,
              Authorizer.view_runs_permission()
            ) do
+      {preloads, opts} = Keyword.pop(opts, :preload, [])
+
       ActionRun.Query.all()
-      |> ActionRun.Query.with_preloaded_runner()
-      |> ActionRun.Query.with_preloaded_api_key()
+      |> apply_run_preloads(preloads)
       |> Authorizer.for_subject(subject)
       |> Repo.list(ActionRun.Query, opts)
     end
@@ -37,8 +38,10 @@ defmodule Emisar.Runs do
   Paginated top-N most recent runs for the dashboard tile. Default
   page size is 8 — the dashboard renders a short fixed list, not a
   scrolling table. Returns `{:ok, [run], %Paginator.Metadata{}}` per
-  the context-function convention; runner is preloaded for label
-  rendering.
+  the context-function convention.
+
+  Options: `preload:` — associations the caller renders (`:runner`,
+  `:api_key`); `limit:` — page size (default 8).
   """
   def list_recent_runs(%Subject{} = subject, opts \\ []) do
     with :ok <-
@@ -46,12 +49,13 @@ defmodule Emisar.Runs do
              subject,
              Authorizer.view_runs_permission()
            ) do
+      {preloads, opts} = Keyword.pop(opts, :preload, [])
       limit = Keyword.get(opts, :limit, 8)
-      page = [limit: limit]
 
       ActionRun.Query.all()
+      |> apply_run_preloads(preloads)
       |> Authorizer.for_subject(subject)
-      |> Repo.list(ActionRun.Query, preload: [:runner], page: page)
+      |> Repo.list(ActionRun.Query, page: [limit: limit])
     end
   end
 
@@ -139,16 +143,26 @@ defmodule Emisar.Runs do
              Authorizer.view_runs_permission()
            ),
          true <- Repo.valid_uuid?(id) do
+      {preloads, opts} = Keyword.pop(opts, :preload, [])
+
       ActionRun.Query.all()
       |> ActionRun.Query.by_id(id)
-      |> ActionRun.Query.with_preloaded_runner()
-      |> ActionRun.Query.with_preloaded_api_key()
+      |> apply_run_preloads(preloads)
       |> Authorizer.for_subject(subject)
       |> Repo.fetch(ActionRun.Query, opts)
     else
       false -> {:error, :not_found}
       other -> other
     end
+  end
+
+  # Rendering concerns are the caller's: pass `preload:` only for the
+  # associations the page actually shows. Unknown atoms raise (caller bug).
+  defp apply_run_preloads(queryable, preloads) do
+    Enum.reduce(preloads, queryable, fn
+      :runner, queryable -> ActionRun.Query.with_preloaded_runner(queryable)
+      :api_key, queryable -> ActionRun.Query.with_preloaded_api_key(queryable)
+    end)
   end
 
   @doc """

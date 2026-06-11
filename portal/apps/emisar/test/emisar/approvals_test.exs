@@ -668,9 +668,11 @@ defmodule Emisar.ApprovalsTest do
       {:ok, _} =
         Approvals.approve_request(request, subject, nil, duration: :one_day, scope: :exact_args)
 
-      # The grant stores only the hash; the list preloads approval_request
+      # The grant stores only the hash; the UI opts into approval_request
       # → run so the operator can see exactly what args it's locked to.
-      {:ok, [grant], _} = Approvals.list_grants_for_account(subject)
+      {:ok, [grant], _} =
+        Approvals.list_grants_for_account(subject, preload: [:approval_request_run])
+
       assert grant.approval_request.run.args == %{"table" => "users", "full" => true}
     end
 

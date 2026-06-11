@@ -73,7 +73,17 @@ defmodule EmisarWeb.ApprovalsLive do
       list_or_empty(Approvals.list_pending_approval_requests(subject, pending_opts))
 
     {:ok, grants, grants_meta} =
-      list_or_empty(Approvals.list_grants_for_account(subject, grants_opts))
+      list_or_empty(
+        Approvals.list_grants_for_account(
+          subject,
+          Keyword.put(grants_opts, :preload, [
+            :api_key,
+            :runner,
+            :granted_by,
+            :approval_request_run
+          ])
+        )
+      )
 
     # "Decided" = the full list minus the ones already showing in the
     # Pending section above (only relevant on page 1 — on later pages

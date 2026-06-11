@@ -7,7 +7,7 @@ defmodule EmisarWeb.RunDetailLive do
   def mount(%{"id" => id}, _session, socket) do
     subject = socket.assigns.current_subject
 
-    case Runs.fetch_run_by_id(id, subject) do
+    case Runs.fetch_run_by_id(id, subject, preload: [:runner, :api_key]) do
       {:error, :not_found} ->
         {:ok,
          socket

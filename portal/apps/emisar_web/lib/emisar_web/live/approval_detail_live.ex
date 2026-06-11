@@ -22,7 +22,9 @@ defmodule EmisarWeb.ApprovalDetailLive do
         end
 
         run =
-          case Runs.fetch_run_by_id(request.run_id, socket.assigns.current_subject) do
+          case Runs.fetch_run_by_id(request.run_id, socket.assigns.current_subject,
+                 preload: [:runner]
+               ) do
             {:ok, r} -> r
             {:error, _} -> nil
           end

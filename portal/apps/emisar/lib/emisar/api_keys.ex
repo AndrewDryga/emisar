@@ -42,10 +42,12 @@ defmodule Emisar.ApiKeys do
              subject,
              Authorizer.view_api_keys_permission()
            ) do
+      {preloads, opts} = Keyword.pop(opts, :preload, [])
+
       ApiKey.Query.visible_to_operators()
       |> ApiKey.Query.without_scope("audit:read")
       |> ApiKey.Query.ordered_by_recent()
-      |> ApiKey.Query.with_preloaded_created_by()
+      |> apply_api_key_preloads(preloads)
       |> Authorizer.for_subject(subject)
       |> Repo.list(ApiKey.Query, opts)
     end
@@ -63,10 +65,12 @@ defmodule Emisar.ApiKeys do
              subject,
              Authorizer.view_api_keys_permission()
            ) do
+      {preloads, opts} = Keyword.pop(opts, :preload, [])
+
       ApiKey.Query.visible_to_operators()
       |> ApiKey.Query.by_scope("audit:read")
       |> ApiKey.Query.ordered_by_recent()
-      |> ApiKey.Query.with_preloaded_created_by()
+      |> apply_api_key_preloads(preloads)
       |> Authorizer.for_subject(subject)
       |> Repo.list(ApiKey.Query, opts)
     end
@@ -124,6 +128,14 @@ defmodule Emisar.ApiKeys do
         {:error, reason} -> {:error, reason}
       end
     end
+  end
+
+  # Rendering concerns are the caller's: pass `preload:` only for the
+  # associations the page actually shows. Unknown atoms raise (caller bug).
+  defp apply_api_key_preloads(queryable, preloads) do
+    Enum.reduce(preloads, queryable, fn
+      :created_by, queryable -> ApiKey.Query.with_preloaded_created_by(queryable)
+    end)
   end
 
   # -- PubSub ----------------------------------------------------------

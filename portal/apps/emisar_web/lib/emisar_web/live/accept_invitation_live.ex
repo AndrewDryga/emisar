@@ -18,7 +18,7 @@ defmodule EmisarWeb.AcceptInvitationLive do
   alias Emisar.Users
 
   def mount(%{"token" => token}, _session, socket) do
-    case Accounts.fetch_invitation_by_token(token) do
+    case Accounts.fetch_invitation_by_token(token, preload: [:account, :user]) do
       {:error, :not_found} ->
         {:ok,
          socket

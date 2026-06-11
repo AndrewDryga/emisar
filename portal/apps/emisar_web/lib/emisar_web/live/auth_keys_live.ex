@@ -148,7 +148,10 @@ defmodule EmisarWeb.AuthKeysLive do
     filters = AuthKey.Query.filters()
     opts = LiveTable.params_to_opts(effective_params, filters)
 
-    case Runners.list_auth_keys(socket.assigns.current_subject, opts) do
+    case Runners.list_auth_keys(
+           socket.assigns.current_subject,
+           Keyword.put(opts, :preload, [:created_by])
+         ) do
       {:ok, auth_keys, meta} ->
         socket
         |> assign(:auth_keys, auth_keys)
