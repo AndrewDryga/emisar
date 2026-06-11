@@ -300,8 +300,8 @@ defmodule EmisarWeb.RunnerSocketTest do
 
       # First result: run transitions to a terminal success.
       assert {:push, ack, state} = RunnerSocket.handle_in({frame_in, text()}, state)
-      assert %{"type" => "ack_result", "request_id" => req} = decode(ack)
-      assert req == run.request_id
+      assert %{"type" => "ack_result", "request_id" => acked_request_id} = decode(ack)
+      assert acked_request_id == run.request_id
       finalized = Repo.get!(ActionRun, run.id)
       assert finalized.status == :success
       assert finalized.exit_code == 0

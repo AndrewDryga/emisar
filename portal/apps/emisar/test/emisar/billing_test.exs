@@ -173,15 +173,15 @@ defmodule Emisar.BillingTest do
 
       assert :ok = Billing.record_and_apply_event("evt_created_1", "subscription.created", event)
 
-      sub =
+      subscription =
         Subscription.Query.all()
         |> Subscription.Query.by_account_id(account.id)
         |> Repo.one()
 
-      assert sub.plan == "team"
-      assert sub.status == "active"
-      assert sub.paddle_subscription_id == "sub_evt_created_1"
-      assert sub.paddle_price_id == "pri_team_01"
+      assert subscription.plan == "team"
+      assert subscription.status == "active"
+      assert subscription.paddle_subscription_id == "sub_evt_created_1"
+      assert subscription.paddle_price_id == "pri_team_01"
     end
 
     test "falls back to the account's current plan when the price id is unknown" do
@@ -193,12 +193,12 @@ defmodule Emisar.BillingTest do
 
       assert :ok = Billing.record_and_apply_event("evt_created_2", "subscription.created", event)
 
-      sub =
+      subscription =
         Subscription.Query.all()
         |> Subscription.Query.by_account_id(account.id)
         |> Repo.one()
 
-      assert sub.plan == "enterprise"
+      assert subscription.plan == "enterprise"
     end
 
     test "no-op (still :ok) when no account matches the Paddle customer" do
