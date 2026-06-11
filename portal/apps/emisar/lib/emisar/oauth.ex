@@ -18,7 +18,7 @@ defmodule Emisar.OAuth do
     * refresh token      — `emor-…`  (30 days, rotated on use)
   """
   alias Ecto.Multi
-  alias Emisar.{Accounts, ApiKeys, Crypto, Repo}
+  alias Emisar.{Accounts, ApiKeys, Audit, Crypto, Repo}
   alias Emisar.Auth.{Authorizer, Subject}
   alias Emisar.OAuth.{AuthorizationCode, Client, Token}
 
@@ -110,6 +110,9 @@ defmodule Emisar.OAuth do
           resource: params["resource"],
           expires_at: secs_from_now(@code_ttl_s)
         })
+      end)
+      |> Multi.insert(:audit, fn %{key: key} ->
+        Audit.Events.oauth_consent_granted(subject, client, key)
       end)
       |> Repo.commit_multi()
       |> case do

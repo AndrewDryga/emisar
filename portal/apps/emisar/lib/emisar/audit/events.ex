@@ -12,7 +12,7 @@ defmodule Emisar.Audit.Events do
   actor/subject shape falls back to raw `Audit.log/3`.
   """
   alias Emisar.Accounts.{Account, Membership}
-  alias Emisar.{ApiKeys, Approvals, Catalog, Policies, Runbooks, Runners, Runs}
+  alias Emisar.{ApiKeys, Approvals, Catalog, OAuth, Policies, Runbooks, Runners, Runs}
   alias Emisar.Audit
   alias Emisar.Auth.Subject
   alias Emisar.Users.User
@@ -363,6 +363,31 @@ defmodule Emisar.Audit.Events do
       subject_id: key.id,
       subject_label: key.name,
       payload: %{prefix: key.key_prefix, auto: true}
+    )
+  end
+
+  # -- OAuth -------------------------------------------------------------
+
+  # Operator consent minted an execute-capable backing key for a remote
+  # MCP client — the grant moment of the OAuth flow ("X gave Claude.ai
+  # execute access"). Later token exchange/refresh is mechanical and
+  # deliberately unaudited (per-hour noise; the standing capability is
+  # what operators review).
+  def oauth_consent_granted(
+        %Subject{} = subject,
+        %OAuth.Client{} = client,
+        %ApiKeys.ApiKey{} = key
+      ) do
+    Audit.changeset(
+      key.account_id,
+      "oauth.consent_granted",
+      actor(subject) ++
+        [
+          subject_kind: "api_key",
+          subject_id: key.id,
+          subject_label: key.name,
+          payload: %{client_id: client.id, client_name: client.client_name, scopes: key.scopes}
+        ]
     )
   end
 

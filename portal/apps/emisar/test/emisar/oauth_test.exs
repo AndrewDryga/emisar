@@ -125,6 +125,20 @@ defmodule Emisar.OAuthTest do
       assert "actions:execute" in key.scopes
     end
 
+    test "consent audits oauth.consent_granted with the backing key as subject",
+         %{subject: subject, client: client} do
+      {_verifier, challenge} = pkce()
+      _code = issue!(subject, client, challenge)
+
+      {:ok, [event], _meta} =
+        Emisar.Audit.list_events(subject, filter: [event_type: ["oauth.consent_granted"]])
+
+      assert event.actor_id == Emisar.Auth.Subject.actor_id(subject)
+      assert event.subject_kind == "api_key"
+      assert event.payload["client_id"] == client.id
+      assert event.payload["scopes"] == ["actions:read", "actions:execute"]
+    end
+
     test "rejects a tampered PKCE verifier", %{subject: subject, client: client} do
       {_verifier, challenge} = pkce()
       code = issue!(subject, client, challenge)
