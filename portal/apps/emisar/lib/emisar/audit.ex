@@ -279,7 +279,7 @@ defmodule Emisar.Audit do
   @doc """
   Paginated + filterable list for the Audit page. Returns
   `{:ok, [event], %Paginator.Metadata{}} | {:error, ...}`. Honors
-  `Emisar.Repo.list/3` options (`:filter`, `:page`, `:preload`).
+  `Emisar.Repo.list/3` options (`:filter`, `:page`).
   """
   def list_events(%Subject{} = subject, opts \\ []) do
     with :ok <-

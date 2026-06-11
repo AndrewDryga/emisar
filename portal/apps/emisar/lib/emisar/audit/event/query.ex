@@ -308,7 +308,7 @@ defmodule Emisar.Audit.Event.Query do
         title: "Type",
         type: {:list, :string},
         values: grouped_event_type_values(),
-        fun: fn q, types -> {q, dynamic([events: e], e.event_type in ^types)} end
+        fun: fn queryable, types -> {queryable, dynamic([events: e], e.event_type in ^types)} end
       },
       %Filter{
         name: :actor_kind,
@@ -322,7 +322,7 @@ defmodule Emisar.Audit.Event.Query do
           {"scheduler", "Scheduler"},
           {"system", "System"}
         ],
-        fun: fn q, kinds -> {q, dynamic([events: e], e.actor_kind in ^kinds)} end
+        fun: fn queryable, kinds -> {queryable, dynamic([events: e], e.actor_kind in ^kinds)} end
       },
       %Filter{
         name: :subject_kind,
@@ -340,14 +340,14 @@ defmodule Emisar.Audit.Event.Query do
           {"runbook", "Runbook"},
           {"policy", "Policy"}
         ],
-        fun: fn q, kinds -> {q, dynamic([events: e], e.subject_kind in ^kinds)} end
+        fun: fn queryable, kinds -> {queryable, dynamic([events: e], e.subject_kind in ^kinds)} end
       },
       %Filter{
         name: :hide_noise,
         title: "Hide noisy events",
         type: :boolean,
-        fun: fn q, true ->
-          {q, dynamic([events: e], e.event_type not in ^@noisy_event_types)}
+        fun: fn queryable, true ->
+          {queryable, dynamic([events: e], e.event_type not in ^@noisy_event_types)}
         end
       }
     ]
