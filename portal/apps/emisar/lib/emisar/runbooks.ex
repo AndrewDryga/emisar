@@ -192,9 +192,7 @@ defmodule Emisar.Runbooks do
         |> build_work_list(runner_ids)
         |> Enum.take(@batch_size)
         |> Enum.map(fn item ->
-          dispatch_item(runbook, execution, item, fn attrs ->
-            Emisar.Runs.dispatch_run(attrs, subject)
-          end)
+          dispatch_item(runbook, execution, item, &Emisar.Runs.dispatch_run(&1, subject))
         end)
 
       runs = for {:ok, run} <- outcomes, do: run
@@ -272,9 +270,12 @@ defmodule Emisar.Runbooks do
       end)
       |> Enum.take(@batch_size)
       |> Enum.each(fn item ->
-        dispatch_item(runbook, execution, item, fn attrs ->
-          Emisar.Runs.dispatch_run_for_account(attrs, runbook.account_id)
-        end)
+        dispatch_item(
+          runbook,
+          execution,
+          item,
+          &Emisar.Runs.dispatch_run_for_account(&1, runbook.account_id)
+        )
       end)
     end
 

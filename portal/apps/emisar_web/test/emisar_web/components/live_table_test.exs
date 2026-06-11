@@ -292,7 +292,7 @@ defmodule EmisarWeb.LiveTableTest do
           rows={@rows}
           metadata={%Metadata{count: 3, previous_page_cursor: nil, next_page_cursor: nil}}
           filter_params={%{}}
-          group_by={fn r -> r.group end}
+          group_by={& &1.group}
         >
           <:item :let={r}>
             <li data-name={r.name}>{r.name}</li>
@@ -323,7 +323,7 @@ defmodule EmisarWeb.LiveTableTest do
           rows={@rows}
           metadata={%Metadata{count: 2, previous_page_cursor: nil, next_page_cursor: nil}}
           filter_params={%{}}
-          group_by={fn r -> r.group end}
+          group_by={& &1.group}
         >
           <:group_header :let={label}>
             <li class="custom-divider">SECTION: {label}</li>

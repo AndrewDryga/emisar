@@ -138,9 +138,7 @@ defmodule EmisarWeb.RunbookRunLive do
     Permissions.gated(
       socket,
       Runs.subject_can_dispatch_run?(socket.assigns.current_subject),
-      fn socket ->
-        do_dispatch(socket, params)
-      end
+      &do_dispatch(&1, params)
     )
   end
 

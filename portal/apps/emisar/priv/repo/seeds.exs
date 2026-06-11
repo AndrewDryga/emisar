@@ -16,9 +16,9 @@ alias Emisar.Users.User
 Application.put_env(:emisar, :notify_approvers_async?, false)
 
 now = fn -> DateTime.utc_now() |> DateTime.truncate(:microsecond) end
-mins_ago = fn n -> DateTime.add(now.(), -n * 60, :second) end
-hours_ago = fn n -> DateTime.add(now.(), -n * 3600, :second) end
-days_ago = fn n -> DateTime.add(now.(), -n * 86_400, :second) end
+mins_ago = &DateTime.add(now.(), -&1 * 60, :second)
+hours_ago = &DateTime.add(now.(), -&1 * 3600, :second)
+days_ago = &DateTime.add(now.(), -&1 * 86_400, :second)
 
 # Aggregate stream chunks: total byte size and sha256 of the
 # concatenation. Used to populate ActionRun.{stdout,stderr}_{bytes,sha256}

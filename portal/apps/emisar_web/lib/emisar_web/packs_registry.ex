@@ -231,7 +231,7 @@ defmodule EmisarWeb.PacksRegistry do
   def suggest_index do
     @packs
     |> Enum.map(fn p -> %{id: p.id, name: p.name, os: p.requires_os, detect: p.detect} end)
-    |> Enum.reject(fn p -> detect_empty?(p.detect) end)
+    |> Enum.reject(&detect_empty?(&1.detect))
   end
 
   defp detect_empty?(%{binaries: b, processes: pr, ports: po}),

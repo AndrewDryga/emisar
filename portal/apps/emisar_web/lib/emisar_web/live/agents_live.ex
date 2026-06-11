@@ -149,7 +149,7 @@ defmodule EmisarWeb.AgentsLive do
     Permissions.gated(
       socket,
       ApiKeys.subject_can_manage_api_keys?(socket.assigns.current_subject),
-      fn socket -> do_create(socket, params) end
+      &do_create(&1, params)
     )
   end
 
@@ -157,7 +157,7 @@ defmodule EmisarWeb.AgentsLive do
     Permissions.gated(
       socket,
       ApiKeys.subject_can_manage_api_keys?(socket.assigns.current_subject),
-      fn socket -> do_revoke(socket, id) end
+      &do_revoke(&1, id)
     )
   end
 
@@ -589,7 +589,7 @@ defmodule EmisarWeb.AgentsLive do
 
       <%!-- Connect-a-client guide (always visible, pre-filled key) --%>
       <.connect_panel
-        configs_for={fn id -> client_config(id, @base_url, @quick_secret || "emk-…") end}
+        configs_for={&client_config(&1, @base_url, @quick_secret || "emk-…")}
         selected_client={@selected_client}
         quick_secret={@quick_secret}
         form={@form}

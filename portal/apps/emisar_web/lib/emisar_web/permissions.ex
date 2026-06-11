@@ -13,7 +13,7 @@ defmodule EmisarWeb.Permissions do
         Permissions.gated(
           socket,
           Runners.subject_can_manage_auth_keys?(socket.assigns.current_subject),
-          fn s -> do_revoke(s, id) end
+          &do_revoke(&1, id)
         )
       end
   """

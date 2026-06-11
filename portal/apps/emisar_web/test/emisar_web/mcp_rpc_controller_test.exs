@@ -407,7 +407,7 @@ defmodule EmisarWeb.McpRpcControllerTest do
       {:ok, _} = Emisar.Runbooks.publish(runbook, subject)
 
       raw = make_api_key!(account, user)
-      auth = fn c -> put_req_header(c, "authorization", "Bearer " <> raw) end
+      auth = &put_req_header(&1, "authorization", "Bearer " <> raw)
 
       list_text =
         conn

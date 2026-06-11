@@ -282,7 +282,7 @@ defmodule Emisar.Runners do
       |> Authorizer.for_subject(subject)
       |> Repo.fetch_and_update(Runner.Query,
         with: &Runner.Changeset.disable/1,
-        audit: fn disabled -> Audit.Events.runner_disabled(subject, disabled) end
+        audit: &Audit.Events.runner_disabled(subject, &1)
       )
     end
   end
@@ -309,7 +309,7 @@ defmodule Emisar.Runners do
       |> Authorizer.for_subject(subject)
       |> Repo.fetch_and_update(Runner.Query,
         with: &Runner.Changeset.enable/1,
-        audit: fn enabled -> Audit.Events.runner_enabled(subject, enabled) end
+        audit: &Audit.Events.runner_enabled(subject, &1)
       )
     end
   end
@@ -330,7 +330,7 @@ defmodule Emisar.Runners do
       |> Authorizer.for_subject(subject)
       |> Repo.fetch_and_update(Runner.Query,
         with: &Runner.Changeset.delete/1,
-        audit: fn deleted -> Audit.Events.runner_deleted(subject, deleted) end
+        audit: &Audit.Events.runner_deleted(subject, &1)
       )
     end
   end

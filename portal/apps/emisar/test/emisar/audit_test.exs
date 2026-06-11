@@ -10,7 +10,7 @@ defmodule Emisar.AuditTest do
     # between tests. Be paranoid in case a previous test crashed
     # without clearing.
     Audit.clear_request_metadata()
-    on_exit(fn -> Audit.clear_request_metadata() end)
+    on_exit(&Audit.clear_request_metadata/0)
     :ok
   end
 

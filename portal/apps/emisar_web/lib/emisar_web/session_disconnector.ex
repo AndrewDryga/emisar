@@ -20,8 +20,6 @@ defmodule EmisarWeb.SessionDisconnector do
   Phoenix.LiveView ignores topics with no subscribers.
   """
   def disconnect_live_sessions(topics) when is_list(topics) do
-    Enum.each(topics, fn topic ->
-      EmisarWeb.Endpoint.broadcast(topic, "disconnect", %{})
-    end)
+    Enum.each(topics, &EmisarWeb.Endpoint.broadcast(&1, "disconnect", %{}))
   end
 end

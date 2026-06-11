@@ -501,7 +501,7 @@ defmodule Emisar.Accounts do
           # Session kill is a side effect — broadcast PubSub disconnects
           # only after the suspension actually commits. Otherwise a rolled-
           # back update would still kick the user out of every tab.
-          fn suspended -> disconnect_user_sessions(suspended) end
+          &disconnect_user_sessions/1
         ]
       )
     end
@@ -577,9 +577,7 @@ defmodule Emisar.Accounts do
       |> lock_target_membership(membership, &ensure_can_modify_membership(&1, subject))
       |> Multi.run(:user, fn _repo, %{target: loaded_membership} ->
         Users.clear_user_password(loaded_membership.user_id,
-          audit: fn updated ->
-            Audit.Events.user_password_reset_forced(subject, loaded_membership, updated)
-          end,
+          audit: &Audit.Events.user_password_reset_forced(subject, loaded_membership, &1),
           after_commit: fn user ->
             :ok = Emisar.Auth.disconnect_and_revoke_all_sessions(user)
             token = Emisar.Auth.issue_password_reset_token!(user, audit: false)
@@ -628,9 +626,7 @@ defmodule Emisar.Accounts do
       |> lock_target_membership(membership, &ensure_can_modify_membership(&1, subject))
       |> Multi.run(:user, fn _repo, %{target: loaded_membership} ->
         Users.update_user_profile_as_admin(loaded_membership.user_id, attrs,
-          audit: fn updated ->
-            Audit.Events.user_updated_by_admin(subject, loaded_membership, updated)
-          end
+          audit: &Audit.Events.user_updated_by_admin(subject, loaded_membership, &1)
         )
       end)
       |> Repo.commit_multi()

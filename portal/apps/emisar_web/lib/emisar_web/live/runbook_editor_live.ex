@@ -238,7 +238,7 @@ defmodule EmisarWeb.RunbookEditorLive do
     Permissions.gated(
       socket,
       Runbooks.subject_can_manage_runbooks?(socket.assigns.current_subject),
-      fn s -> save(s, publish?: false) end
+      &save(&1, publish?: false)
     )
   end
 
@@ -246,7 +246,7 @@ defmodule EmisarWeb.RunbookEditorLive do
     Permissions.gated(
       socket,
       Runbooks.subject_can_manage_runbooks?(socket.assigns.current_subject),
-      fn s -> save(s, publish?: true) end
+      &save(&1, publish?: true)
     )
   end
 

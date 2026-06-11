@@ -60,7 +60,7 @@ Lower-stakes taste calls. Not Iron Laws, but the defaults. **The user adds to th
 - `Authorizer.for_subject/2` is the **last** queryable transform in a pipeline: filters, ordering, preload helpers, and `lock_for_update` come before it, and the `Repo.*` call follows immediately. IL-4 says "immediately before" — that's the letter, not approximately.
 - **Upserts are preferred.** When the row's identity is a unique key, write it with ONE statement — `Repo.insert(changeset, on_conflict: {:replace, [...]}, conflict_target: ..., returning: true)` — not peek-then-insert-or-update and not insert-rescue-refetch. The upsert is atomic under concurrency where the read-then-write shape races. When an audit payload needs the before-state, read it as a step in the same `Multi` — still a single write. (Exception: a state machine where the conflict path must *judge* the existing row — e.g. pack trust — keeps its explicit branches; say why at the call site.)
 - **Use RETURNING instead of a follow-up read.** Data the write itself can hand back is never re-fetched: `returning: true` on insert/upsert, `select` on `update_all`/`delete_all`. A write immediately followed by a fetch of the same row(s) is the smell.
-- A one-event `audit:` / `after_commit:` builder closure uses **capture syntax** — `audit: &Audit.Events.policy_updated(subject, policy, &1)` — so long as it stays one readable line. Reach for a `fn` block only when the body genuinely has more than one step.
+- **Any closure whose body is a single call uses capture syntax** — `&disconnect_user_sessions/1`, `&do_revoke(&1, id)`, `&save(&1, publish?: true)`, `audit: &Audit.Events.policy_updated(subject, policy, &1)`, `& &1.group` — so long as it stays one readable line. `fn` earns its keep only for: multi-step bodies, pattern-matching heads, multi-clause closures, a zero-arity closure that passes scope values (a capture needs at least one `&N` placeholder — `fn -> count_for(subject) end` can't convert; bare `fn -> f() end` becomes `&f/0`), a closure nested inside an outer capture (capture-in-capture won't compile), and when the argument is used several times and naming it genuinely reads better than repeated `&1`s.
 - **Every PubSub publish goes through a named per-event function** — `broadcast_auth_key_revoked(%AuthKey{} = key)`, not a shared `broadcast_x_change(struct, "event.string")` that takes the event name as data. The function head documents the message; the literal topic + tuple live inside it. All `subscribe_*` and `broadcast_*` functions sit together in one `# -- PubSub ----` section per context so the context's topics and message shapes read in one place. No inline `Emisar.PubSub.broadcast/2` at mutation sites.
 - **No pipe anywhere in a `with`/`case`/`for` head — single-line included.** `{:ok, x} <- a() |> b()` hides the operation being matched; bind first (`queryable = Token.Query.all() |> Token.Query.by_prefix(prefix)`) and match the short call (`<- Repo.peek(queryable)`). The PostToolUse hook blocks both the one-line and the wrapped form.
 - **Contexts never pass `:preload` opts to `Repo.fetch`/`Repo.list`** — chain the Query module's `with_preloaded_<assoc>/1` helpers in the pipeline (before `for_subject`). `Keyword.put_new(opts, :preload, …)` buried in the Repo call's argument list is the double violation: a call-site preload AND an inline-built argument. The `preloads/0` callback exists to declare nested cascade shapes, not to serve call sites. Hook-blocked.
@@ -432,6 +432,13 @@ rg -n '\bfn q\b' emisar/lib emisar_web/lib
 
 # Event name passed as data to a shared broadcast helper (want per-event fns)
 rg -n 'broadcast_[a-z_]+\([^)]*"' emisar/lib/emisar
+
+# Single-call forwarding closures (want capture syntax; judgment on each hit —
+# zero-arity-with-scope-args, nested-in-capture, and multi-use args stay fn)
+rg -n --pcre2 'fn (\w+) -> [\w.!?]+\(\1\) end' emisar emisar_web -g '*.ex' -g '*.exs'
+rg -n --pcre2 'fn (\w+) -> [\w.!?]+\((?:[^()]|\([^()]*\))*\b\1\b(?:[^()]|\([^()]*\))*\) end' \
+   emisar emisar_web -g '*.ex' -g '*.exs'
+rg -n --pcre2 'fn (\w+) -> \1\.\w+ end' emisar emisar_web -g '*.ex' -g '*.exs'
 ```
 
 If any return hits, the change isn't done. (The one documented exception to the third IL grep is `Repo.preload/2` in a post-commit/email helper — IL-10 — which is qualified and so won't match anyway.) Then run the [verify loop](#how-we-build-prime-directive) (IL-20).

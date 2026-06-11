@@ -115,6 +115,14 @@ if [[ $is_test == 0 ]]; then
   [[ -n "$m" ]] && add "house/fn-q" "$(lineno "$m")" "\`fn q\` — spell the binding out: \`fn queryable, …\` (DSL bindings like [runs: r] inside dynamic/where stay fine)."
 fi
 
+# --- House: single-call forwarding closure — use capture syntax -------------
+# `fn x -> f(x) end` is `&f/1`. Needs PCRE backrefs, so rg; degrade if absent.
+# Lines already containing `&` are skipped (a capture can't nest in a capture).
+if command -v rg >/dev/null 2>&1; then
+  m=$(rg -n --pcre2 'fn (\w+) -> [\w.!?]+\(\1\) end' "$FILE_PATH" 2>/dev/null | grep -v '&' | head -1)
+  [[ -n "$m" ]] && add "house/forwarding-fn" "$(lineno "$m")" "single-call forwarding closure — use capture syntax (\`&fun/1\`, or \`&fun(&1, extra)\` when other args slot in)."
+fi
+
 # IL-14 (String.to_atom) and IL-16 (raw/1) intentionally live in /iron-review,
 # not here: their safety depends on whether the value is a code literal /
 # app-generated (safe) or request/runner/LLM input (unsafe) — a judgment a

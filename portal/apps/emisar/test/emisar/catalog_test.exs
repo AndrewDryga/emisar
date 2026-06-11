@@ -349,7 +349,7 @@ defmodule Emisar.CatalogTest do
       tasks =
         Task.async_stream(
           [runner_a, runner_b],
-          fn r -> Catalog.observe_state(r, payload) end,
+          &Catalog.observe_state(&1, payload),
           max_concurrency: 2,
           ordered: false
         )
