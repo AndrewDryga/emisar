@@ -66,5 +66,25 @@ defmodule EmisarWeb.DashboardLiveTest do
       # this test.
       assert html =~ "Connect an LLM"
     end
+
+    test "account broadcasts reload the stats without a refresh", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+
+      {:ok, lv, html} = live(conn, ~p"/app")
+      assert html =~ "Connect a runner"
+
+      # A runner registers elsewhere; the dashboard hears the account
+      # broadcast (2-tuple) or a presence_diff and re-reads its stats.
+      runner = Emisar.Fixtures.runner_fixture(account_id: account.id)
+      send(lv.pid, {:runner_updated, runner})
+      refute render(lv) =~ "Connect a runner"
+
+      send(lv.pid, %{event: "presence_diff"})
+      assert render(lv) =~ "Runners online"
+
+      # Unrelated message shapes are ignored, never a crash.
+      send(lv.pid, :stray_message)
+      assert render(lv) =~ "Runners online"
+    end
   end
 end

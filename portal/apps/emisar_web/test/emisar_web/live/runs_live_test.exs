@@ -38,4 +38,47 @@ defmodule EmisarWeb.RunsLiveTest do
 
     assert html =~ "Claude Code"
   end
+
+  test "redirects anonymous users", %{conn: conn} do
+    assert {:error, {:redirect, %{to: "/sign_in"}}} = live(conn, ~p"/app/runs")
+  end
+
+  test "renders the empty state before any runs exist", %{conn: conn} do
+    {conn, _user, _account} = register_and_log_in(conn)
+
+    {:ok, _lv, html} = live(conn, ~p"/app/runs")
+    assert html =~ "Runs"
+  end
+
+  test "an account-runs broadcast reloads the current page", %{conn: conn} do
+    {conn, _user, account} = register_and_log_in(conn)
+    runner = runner_fixture(account_id: account.id, connected?: false)
+
+    {:ok, lv, html} = live(conn, ~p"/app/runs")
+    refute html =~ "linux.late_run"
+
+    {:ok, run} =
+      Runs.create_run(%{
+        account_id: account.id,
+        runner_id: runner.id,
+        action_id: "linux.late_run",
+        source: "operator",
+        args: %{}
+      })
+
+    send(lv.pid, {:run_created, run})
+    assert render(lv) =~ "linux.late_run"
+
+    # The badge hooks forward unrelated account-topic broadcasts — any
+    # other message shape is ignored, never a crash.
+    send(lv.pid, :totally_unrelated)
+    assert render(lv) =~ "linux.late_run"
+  end
+
+  test "a bad cursor in the URL falls back to the first page", %{conn: conn} do
+    {conn, _user, _account} = register_and_log_in(conn)
+
+    {:ok, _lv, html} = live(conn, ~p"/app/runs?page=garbage-cursor")
+    assert html =~ "Runs"
+  end
 end
