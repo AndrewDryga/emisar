@@ -48,6 +48,17 @@ defmodule EmisarWeb.RunnersLive do
         |> assign(:filters, filters)
         |> assign(:groups, groups)
 
+      # A clean reload can fail too (e.g. a tightened list permission) —
+      # degrade to an empty page rather than recursing forever.
+      {:error, _} when map_size(params) == 0 ->
+        socket
+        |> assign(:runners, [])
+        |> assign(:metadata, %Emisar.Repo.Paginator.Metadata{count: 0, limit: 0})
+        |> assign(:filter_params, params)
+        |> assign(:filters, filters)
+        |> assign(:groups, [])
+
+      # Bad filter/page params from a hand-edited URL — retry once, clean.
       {:error, _} ->
         load(socket, %{})
     end

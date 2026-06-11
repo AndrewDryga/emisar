@@ -35,8 +35,16 @@ defmodule EmisarWeb.RunbooksLive do
         |> assign(:metadata, meta)
         |> assign(:filter_params, params)
 
+      # A clean reload can fail too (e.g. a tightened list permission) —
+      # degrade to an empty page rather than recursing forever.
+      {:error, _} when map_size(params) == 0 ->
+        socket
+        |> assign(:runbooks, [])
+        |> assign(:metadata, %Emisar.Repo.Paginator.Metadata{count: 0, limit: 0})
+        |> assign(:filter_params, params)
+
+      # Bad filter/page params from a hand-edited URL — retry once, clean.
       {:error, _} ->
-        # Invalid cursor → fall back to first page.
         load(socket, %{})
     end
   end

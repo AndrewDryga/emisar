@@ -236,6 +236,19 @@ defmodule EmisarWeb.AgentsLive do
         |> assign(:never_used_count, count_status(keys, :never_used))
         |> assign(:issued_count, length(active_keys(keys)))
 
+      # A clean reload can fail too (e.g. a tightened list permission) —
+      # degrade to an empty page rather than recursing forever.
+      {:error, _} when map_size(params) == 0 ->
+        socket
+        |> assign(:api_keys, [])
+        |> assign(:metadata, %Emisar.Repo.Paginator.Metadata{count: 0, limit: 0})
+        |> assign(:filter_params, params)
+        |> assign(:active_count, 0)
+        |> assign(:idle_count, 0)
+        |> assign(:never_used_count, 0)
+        |> assign(:issued_count, 0)
+
+      # Bad filter/page params from a hand-edited URL — retry once, clean.
       {:error, _} ->
         load(socket, %{})
     end

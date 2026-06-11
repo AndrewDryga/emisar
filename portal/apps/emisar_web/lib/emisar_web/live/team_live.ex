@@ -317,6 +317,19 @@ defmodule EmisarWeb.TeamLive do
         |> assign(:runner_groups, runner_groups)
         |> assign(:current_role, current_role(memberships, socket.assigns.current_user.id))
 
+      # A clean reload can fail too (e.g. a tightened list permission) —
+      # degrade to an empty page rather than recursing forever.
+      {:error, _} when map_size(params) == 0 ->
+        socket
+        |> assign(:memberships, [])
+        |> assign(:metadata, %Emisar.Repo.Paginator.Metadata{count: 0, limit: 0})
+        |> assign(:filter_params, params)
+        |> assign(:scopes_by_membership, %{})
+        |> assign(:runners_by_id, %{})
+        |> assign(:runner_groups, [])
+        |> assign(:current_role, nil)
+
+      # Bad filter/page params from a hand-edited URL — retry once, clean.
       {:error, _} ->
         load(socket, %{})
     end
