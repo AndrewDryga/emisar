@@ -27,6 +27,7 @@ defmodule Emisar.Policies do
         ]
       }
   """
+  alias Ecto.Multi
   alias Emisar.{Audit, Auth, Repo}
   alias Emisar.Auth.Subject
   alias Emisar.Policies.{Authorizer, Policy}
@@ -85,9 +86,12 @@ defmodule Emisar.Policies do
   end
 
   @doc """
-  Subject-gated save: updates the account's policy rules if one exists,
-  or seeds the account's first policy if none does. The LiveView form
-  uses this so the same save button works on first save and edit alike.
+  Subject-gated save: ONE upsert writes the account's policy whether
+  this is the first save or an edit — one policy per account, so the
+  partial unique index on `account_id` is the row's identity. The
+  conflict update adopts the new rules and bumps `vsn` only when they
+  actually changed; the audit diff reads its before-snapshot as a step
+  of the same transaction.
   """
   def save_rules(rules, %Subject{account: %{id: account_id}, actor: %{id: user_id}} = subject) do
     with :ok <-
@@ -95,52 +99,28 @@ defmodule Emisar.Policies do
              subject,
              Authorizer.manage_policies_permission()
            ) do
-      case peek_policy_for_account(account_id) do
-        nil -> create_first_policy(rules, account_id, user_id, subject)
-        %Policy{} = policy -> update_rules(policy, rules, subject)
-      end
-    end
-  end
+      changeset =
+        Policy.Changeset.create(%{account_id: account_id, updated_by_id: user_id, rules: rules})
 
-  # First save races with a concurrent first save (and with the account
-  # bootstrap's seed): insert ON CONFLICT DO NOTHING and re-read the
-  # winning row — if it isn't ours, fall through to the update path so
-  # the operator's rules still land instead of a raw unique error.
-  defp create_first_policy(rules, account_id, user_id, %Subject{} = subject) do
-    changeset =
-      Policy.Changeset.create(%{account_id: account_id, updated_by_id: user_id, rules: rules})
-
-    with {:ok, inserted} <- Repo.insert(changeset, on_conflict: :nothing),
-         %Policy{} = canonical <- peek_policy_for_account(account_id) do
-      if canonical.id == inserted.id do
-        {:ok, canonical}
-      else
-        update_rules(canonical, rules, subject)
-      end
-    else
-      nil -> {:error, :not_found}
-      {:error, reason} -> {:error, reason}
-    end
-  end
-
-  def update_rules(%Policy{} = policy, rules, %Subject{actor: %{id: user_id}} = subject) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.manage_policies_permission()
-           ) do
-      # `audit:` runs inside the same DB transaction as the update, so a
-      # downstream constraint failure rolls back both the policy mutation
-      # and its audit row together. The builder closes over the caller's
-      # `policy` (pre-update snapshot) and the freshly-updated struct so
-      # the payload diff captures both sides.
-      Policy.Query.not_deleted()
-      |> Policy.Query.by_id(policy.id)
-      |> Authorizer.for_subject(subject)
-      |> Repo.fetch_and_update(Policy.Query,
-        with: &Policy.Changeset.update(&1, %{rules: rules, updated_by_id: user_id}),
-        audit: fn updated -> Audit.Events.policy_updated(subject, policy, updated) end
+      Multi.new()
+      |> Multi.run(:before, fn _repo, _changes -> {:ok, peek_policy_for_account(account_id)} end)
+      |> Multi.insert(:policy, changeset,
+        # The conflict target must repeat the partial index's predicate
+        # or Postgres won't match the soft-delete-aware unique index.
+        on_conflict: Policy.Query.rules_upsert_conflict(),
+        conflict_target: {:unsafe_fragment, "(account_id) WHERE deleted_at IS NULL"},
+        returning: true
       )
+      |> Multi.insert(:audit, fn %{before: before, policy: updated} ->
+        # First-ever save has no before-row; a bare %Policy{} makes the
+        # builder diff against the implicit defaults (rules nil → default_rules).
+        Audit.Events.policy_updated(subject, before || %Policy{}, updated)
+      end)
+      |> Repo.commit_multi()
+      |> case do
+        {:ok, %{policy: policy}} -> {:ok, policy}
+        {:error, reason} -> {:error, reason}
+      end
     end
   end
 

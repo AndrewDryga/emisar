@@ -12,9 +12,10 @@ defmodule Emisar.Policies.Policy do
     # and are stamped in by `seed_policy/3` so the schema doesn't drift
     # if the policy shape changes.
     field :rules, :map, default: %{}
-    # Bumped by `Changeset.update_rules/2` on every accepted edit so the
-    # audit trail can pin "run 123 was decided under policy v5" even
-    # after the rules map is later modified.
+    # Bumped on every accepted rules edit (the upsert's conflict CASE in
+    # `Policy.Query.rules_upsert_conflict/0`) so the audit trail can pin
+    # "run 123 was decided under policy v5" even after the rules map is
+    # later modified.
     field :vsn, :integer, default: 1
     field :deleted_at, :utc_datetime_usec
 

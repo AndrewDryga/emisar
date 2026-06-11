@@ -70,22 +70,21 @@ defmodule Emisar.AuthorizationTest do
       assert {:ok, _policy} = Emisar.Policies.fetch_policy(subject)
     end
 
-    test "viewer is rejected from update_rules" do
+    test "viewer is rejected from save_rules" do
       account = account_fixture()
-      policy = seed_policy_for(account)
+      _policy = seed_policy_for(account)
       subject = subject_with_role(account, :viewer)
 
       assert {:error, :unauthorized} =
-               Emisar.Policies.update_rules(
-                 policy,
+               Emisar.Policies.save_rules(
                  %{"schema_version" => 2, "defaults" => %{}, "overrides" => []},
                  subject
                )
     end
 
-    test "admin can update_rules" do
+    test "admin can save_rules" do
       account = account_fixture()
-      policy = seed_policy_for(account)
+      _policy = seed_policy_for(account)
       subject = subject_with_role(account, :admin)
 
       new_rules = %{
@@ -99,7 +98,7 @@ defmodule Emisar.AuthorizationTest do
         "overrides" => []
       }
 
-      assert {:ok, updated} = Emisar.Policies.update_rules(policy, new_rules, subject)
+      assert {:ok, updated} = Emisar.Policies.save_rules(new_rules, subject)
 
       assert updated.rules == new_rules
     end

@@ -38,7 +38,7 @@ defmodule Emisar.PoliciesAuditTest do
         ]
       }
 
-      {:ok, updated} = Policies.update_rules(policy, new_rules, subject)
+      {:ok, updated} = Policies.save_rules(new_rules, subject)
 
       {:ok, [event], _} =
         Audit.list_events(subject, filter: [event_type: ["policy.updated"]])
@@ -60,7 +60,7 @@ defmodule Emisar.PoliciesAuditTest do
         Policies.default_rules()
         |> Map.update!("defaults", &Map.put(&1, "critical", "require_approval"))
 
-      {:ok, _} = Policies.update_rules(policy, new_rules, subject)
+      {:ok, _} = Policies.save_rules(new_rules, subject)
 
       {:ok, [event], _} =
         Audit.list_events(subject, filter: [event_type: ["policy.updated"]])
@@ -83,7 +83,7 @@ defmodule Emisar.PoliciesAuditTest do
           %{"name" => "remove", "action" => "remove.me", "decision" => "deny"}
         ])
 
-      {:ok, policy} = Policies.update_rules(policy, starting, subject)
+      {:ok, policy} = Policies.save_rules(starting, subject)
 
       next =
         Policies.default_rules()
@@ -93,7 +93,7 @@ defmodule Emisar.PoliciesAuditTest do
           %{"name" => "add", "action" => "add.me", "decision" => "allow"}
         ])
 
-      {:ok, _} = Policies.update_rules(policy, next, subject)
+      {:ok, _} = Policies.save_rules(next, subject)
 
       {:ok, events, _} =
         Audit.list_events(subject, filter: [event_type: ["policy.updated"]])
