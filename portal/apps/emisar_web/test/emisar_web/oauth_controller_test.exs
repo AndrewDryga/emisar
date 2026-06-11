@@ -146,6 +146,16 @@ defmodule EmisarWeb.OAuthControllerTest do
       assert html =~ "Claude Web"
       # PKCE challenge is carried through as a hidden field.
       assert html =~ challenge
+
+      # Both known scopes render as human-readable grants, not raw tokens.
+      assert html =~ "Run approved actions"
+      assert html =~ "Stay connected"
+    end
+
+    test "scope_label falls back to the raw token for unknown scopes" do
+      # Unreachable through the controller (scopes/1 filters to supported),
+      # but the template-level fallback must never crash the consent page.
+      assert EmisarWeb.OAuthHTML.scope_label("weird:scope") == "weird:scope"
     end
 
     test "shows an error page for an unknown client (no redirect)", %{conn: conn, user: user} do

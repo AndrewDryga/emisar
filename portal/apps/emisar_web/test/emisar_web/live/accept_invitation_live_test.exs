@@ -32,4 +32,82 @@ defmodule EmisarWeb.AcceptInvitationLiveTest do
       refute html =~ "Could not accept"
     end
   end
+
+  describe "token gate" do
+    test "a bogus token bounces to sign-in as expired", %{conn: _conn} do
+      assert {:error, {:live_redirect, %{to: "/sign_in", flash: flash}}} =
+               live(build_conn(), ~p"/accept_invitation/not-a-real-token")
+
+      assert flash["error"] == "That invitation expired or was already used."
+    end
+  end
+
+  describe "anonymous accept" do
+    test "renders the join offer and accepts with a valid registration", %{conn: conn} do
+      {_conn, owner, account} = register_and_log_in(conn)
+      token = invitation_token(account, owner)
+
+      {:ok, lv, html} = live(build_conn(), ~p"/accept_invitation/#{token}")
+
+      assert html =~ account.name
+      assert html =~ "operator"
+      assert html =~ "invitee-"
+
+      params = %{
+        "user" => %{"full_name" => "New Person", "password" => "a-long-enough-password"}
+      }
+
+      {:ok, pending_membership} = Accounts.fetch_invitation_by_token(token)
+
+      # A valid accept arms the hidden POST to /sign_in (phx-trigger-action).
+      html = lv |> form("#accept_form", params) |> render_submit()
+      assert html =~ ~s|action="/sign_in?_action=invitation_accepted"|
+
+      # Accepting burns the token and completes the registration.
+      assert Accounts.fetch_invitation_by_token(token) == {:error, :not_found}
+
+      user = Emisar.Repo.reload!(pending_membership.user)
+      assert user.full_name == "New Person"
+      assert user.confirmed_at
+    end
+  end
+
+  describe "signed-in accept" do
+    test "the invitee accepts in place and lands in the app", %{conn: conn} do
+      {_owner_conn, owner, account} = register_and_log_in(conn)
+
+      # The invitee is an already-registered user, signed in.
+      invitee = Emisar.Fixtures.user_fixture()
+
+      {:ok, %{invitation_token: token}} =
+        Accounts.invite_user_to_account(invitee.email, "viewer", owner_subject(owner, account))
+
+      {:ok, lv, html} =
+        build_conn() |> log_in_user(invitee) |> live(~p"/accept_invitation/#{token}")
+
+      assert html =~ "You&#39;re signed in as"
+
+      render_click(lv, "accept_existing", %{})
+      assert_redirect(lv, "/app")
+
+      # Accepted: the token is burned.
+      assert Accounts.fetch_invitation_by_token(token) == {:error, :not_found}
+    end
+
+    test "a DIFFERENT signed-in user gets the wrong-account screen, not the accept", %{
+      conn: conn
+    } do
+      {_owner_conn, owner, account} = register_and_log_in(conn)
+      token = invitation_token(account, owner)
+
+      bystander = Emisar.Fixtures.user_fixture()
+
+      {:ok, _lv, html} =
+        build_conn() |> log_in_user(bystander) |> live(~p"/accept_invitation/#{token}")
+
+      assert html =~ "Wrong account"
+      assert html =~ "Sign out"
+      refute html =~ "phx-click=\"accept_existing\""
+    end
+  end
 end

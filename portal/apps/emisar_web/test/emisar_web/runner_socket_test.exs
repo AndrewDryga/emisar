@@ -54,6 +54,111 @@ defmodule EmisarWeb.RunnerSocketTest do
     end
   end
 
+  describe "POST /runner/register — limits and name conflicts" do
+    setup do
+      {:ok, user} =
+        Emisar.Users.register_user(%{
+          email: "owner-#{System.unique_integer([:positive])}@example.com",
+          password: "very-long-password-1234"
+        })
+
+      {:ok, account} =
+        Emisar.Accounts.create_account_with_owner(
+          %{name: "OwnerCo", slug: Emisar.Accounts.suggest_unique_slug("OwnerCo"), plan: "team"},
+          user
+        )
+
+      subject = Emisar.Fixtures.subject_for(user, account, role: :owner)
+
+      # Reusable: these tests register several runners off one bootstrap key.
+      {:ok, raw_key, _key} =
+        Runners.create_auth_key(%{description: "test", reusable: true}, subject)
+
+      %{account: account, raw_key: raw_key}
+    end
+
+    defp register(conn, raw_key, params) do
+      conn
+      |> put_req_header("authorization", "Bearer " <> raw_key)
+      |> post(~p"/runner/register", params)
+    end
+
+    test "the free plan caps runners at its limit → 402", %{conn: conn} do
+      {:ok, user} =
+        Emisar.Users.register_user(%{
+          email: "owner-#{System.unique_integer([:positive])}@example.com",
+          password: "very-long-password-1234"
+        })
+
+      {:ok, account} =
+        Emisar.Accounts.create_account_with_owner(
+          %{name: "FreeCo", slug: Emisar.Accounts.suggest_unique_slug("FreeCo"), plan: "free"},
+          user
+        )
+
+      subject = Emisar.Fixtures.subject_for(user, account, role: :owner)
+
+      {:ok, raw_key, _key} =
+        Runners.create_auth_key(%{description: "test", reusable: true}, subject)
+
+      for n <- 1..3 do
+        response =
+          register(build_conn(), raw_key, %{"external_id" => "free-#{n}", "hostname" => "h#{n}"})
+
+        assert %{"runner_id" => _} = json_response(response, 201)
+      end
+
+      over = register(conn, raw_key, %{"external_id" => "free-4", "hostname" => "h4"})
+
+      assert json_response(over, 402) == %{
+               "error" => "runner_limit_exceeded",
+               "plan" => "free",
+               "limit" => 3
+             }
+    end
+
+    test "a CONNECTED holder of the same name → 409; re-register of the same external_id is idempotent",
+         %{conn: conn, raw_key: raw_key, account: account} do
+      first =
+        register(conn, raw_key, %{"external_id" => "squat-a", "hostname" => "shared-name"})
+
+      assert %{"runner_id" => runner_id} = json_response(first, 201)
+
+      # Same external_id → same runner back, no conflict (idempotent boot).
+      again =
+        register(build_conn(), raw_key, %{"external_id" => "squat-a", "hostname" => "shared-name"})
+
+      assert %{"runner_id" => ^runner_id} = json_response(again, 201)
+
+      # Bring the holder online — only an ACTIVE holder defends its name.
+      runner = Repo.get!(Emisar.Runners.Runner, runner_id)
+      Runners.connect_runner(runner)
+      assert Runners.online?(account.id, runner.id)
+
+      conflict =
+        register(build_conn(), raw_key, %{"external_id" => "squat-b", "hostname" => "shared-name"})
+
+      assert %{"error" => "runner_name_taken", "name" => "shared-name"} =
+               json_response(conflict, 409)
+    end
+  end
+
+  describe "GET /runner/socket/websocket — bearer gate" do
+    test "missing bearer → 401", %{conn: conn} do
+      conn = get(conn, "/runner/socket/websocket")
+      assert json_response(conn, 401) == %{"error" => "missing_bearer"}
+    end
+
+    test "an invalid runner token → 401", %{conn: conn} do
+      conn =
+        conn
+        |> put_req_header("authorization", "Bearer rnrtok-FORGED")
+        |> get("/runner/socket/websocket")
+
+      assert json_response(conn, 401) == %{"error" => "token_invalid"}
+    end
+  end
+
   describe "GET /healthz" do
     test "returns ok", %{conn: conn} do
       assert json_response(get(conn, ~p"/healthz"), 200) == %{"status" => "ok"}
@@ -292,6 +397,139 @@ defmodule EmisarWeb.RunnerSocketTest do
 
     test "missing-heartbeat timeout stops the socket normally", %{state: state} do
       assert {:stop, :normal, ^state} = RunnerSocket.handle_info(:heartbeat_timeout, state)
+    end
+  end
+
+  describe "handle_info/2 — delivery, drain, catch-all" do
+    setup [:connected_socket]
+
+    test "cloud_to_runner is pushed with the protocol version stamped", %{state: state} do
+      msg = %{"type" => "run_action", "request_id" => "req_push"}
+
+      assert {:push, frame, ^state} = RunnerSocket.handle_info({:cloud_to_runner, msg}, state)
+
+      assert decode(frame) == %{
+               "type" => "run_action",
+               "request_id" => "req_push",
+               "protocol_version" => 1
+             }
+    end
+
+    test "drain pushes a shutdown envelope first, then stops", %{state: state} do
+      assert {:push, frame, ^state} = RunnerSocket.handle_info(:runner_socket_drain, state)
+
+      assert %{"type" => "shutdown", "reason" => "cloud_shutdown"} = decode(frame)
+
+      # The stop is deferred behind the frame (this process IS the socket).
+      assert_receive :stop_after_drain
+      assert {:stop, :normal, ^state} = RunnerSocket.handle_info(:stop_after_drain, state)
+    end
+
+    test "an unexpected message is logged and ignored", %{state: state} do
+      assert {:ok, ^state} = RunnerSocket.handle_info({:stray, make_ref()}, state)
+    end
+  end
+
+  describe "terminate/2" do
+    setup [:connected_socket]
+
+    test "stamps the disconnect on the runner row", %{state: state, runner: runner} do
+      assert :ok = RunnerSocket.terminate(:remote, state)
+
+      reloaded = Repo.reload!(runner)
+      assert reloaded.last_disconnected_at
+    end
+  end
+
+  describe "handle_in/2 — runner_state, action_progress, error envelopes" do
+    setup [:connected_socket]
+
+    test "runner_state refreshes the runner row from the payload", %{
+      state: state,
+      runner: runner
+    } do
+      raw =
+        Jason.encode!(%{
+          "type" => "runner_state",
+          "hostname" => "renamed-host",
+          "version" => "0.9.9",
+          "labels" => %{"env" => "prod"},
+          "packs" => %{},
+          "actions" => []
+        })
+
+      assert {:ok, _state} = RunnerSocket.handle_in({raw, text()}, state)
+
+      reloaded = Repo.reload!(runner)
+      assert reloaded.hostname == "renamed-host"
+      assert reloaded.runner_version == "0.9.9"
+    end
+
+    test "runner_state for a vanished runner answers runner_state_failed", %{state: state} do
+      gone = %{state | runner_id: Ecto.UUID.generate()}
+      raw = Jason.encode!(%{"type" => "runner_state", "packs" => %{}, "actions" => []})
+
+      assert {:push, frame, ^gone} = RunnerSocket.handle_in({raw, text()}, gone)
+      assert %{"code" => "runner_state_failed"} = decode(frame)
+    end
+
+    test "error envelope is audited without dropping the socket", %{state: state} do
+      raw =
+        Jason.encode!(%{
+          "type" => "error",
+          "code" => "exec_failed",
+          "message" => "binary not found",
+          "request_id" => "req_err"
+        })
+
+      assert {:ok, ^state} = RunnerSocket.handle_in({raw, text()}, state)
+    end
+  end
+
+  describe "handle_in/2 — action_progress" do
+    setup [:connected_socket, :dispatched_run]
+
+    test "appends a progress event to the run", %{state: state, run: run} do
+      raw =
+        Jason.encode!(%{
+          "type" => "action_progress",
+          "request_id" => run.request_id,
+          "seq" => 1,
+          "stream" => "stdout",
+          "chunk" => "hello world\n"
+        })
+
+      assert {:ok, ^state} = RunnerSocket.handle_in({raw, text()}, state)
+
+      events =
+        Emisar.Runs.RunEvent.Query.all()
+        |> Emisar.Runs.RunEvent.Query.by_run_id(run.id)
+        |> Repo.all()
+
+      progress = Enum.find(events, &(&1.kind == :progress))
+      assert progress.payload["chunk"] == "hello world\n"
+      assert progress.payload["stream"] == "stdout"
+    end
+
+    test "progress for an unknown request_id is swallowed", %{state: state} do
+      raw =
+        Jason.encode!(%{
+          "type" => "action_progress",
+          "request_id" => "req_phantom",
+          "seq" => 1,
+          "stream" => "stdout",
+          "chunk" => "x"
+        })
+
+      assert {:ok, ^state} = RunnerSocket.handle_in({raw, text()}, state)
+    end
+  end
+
+  describe "normalize_ip/1" do
+    test "strips the unknown sentinel, passes real strings, rejects junk" do
+      assert RunnerSocket.normalize_ip("unknown") == nil
+      assert RunnerSocket.normalize_ip("203.0.113.9") == "203.0.113.9"
+      assert RunnerSocket.normalize_ip({203, 0, 113, 9}) == nil
     end
   end
 
