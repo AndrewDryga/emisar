@@ -6,6 +6,7 @@ defmodule Emisar.Billing do
   via `Application.fetch_env!(:emisar, :paddle_client)` — production
   binds the live client, tests use the in-process stub.
   """
+  alias Ecto.Multi
   alias Emisar.{Accounts, Auth, PublicUrl, Repo, Runners}
   alias Emisar.Accounts.Account
   alias Emisar.Auth.Subject
@@ -232,34 +233,32 @@ defmodule Emisar.Billing do
   """
   def record_and_apply_event(event_id, event_type, event)
       when is_binary(event_id) and is_binary(event_type) do
-    Repo.transaction(fn ->
-      row = %{
-        id: event_id,
-        event_type: event_type,
-        received_at: DateTime.utc_now()
-      }
+    row = %{id: event_id, event_type: event_type, received_at: DateTime.utc_now()}
 
-      # Dedup insert into the schemaless bookkeeping table. `on_conflict:
-      # :nothing` → 0 rows means this Paddle event id was already processed
-      # (it re-delivers); 1 row means it's new. A genuine DB error raises and
-      # rolls the transaction back, so it's never mistaken for a duplicate.
+    Multi.new()
+    # Dedup insert into the schemaless bookkeeping table. `on_conflict:
+    # :nothing` → 0 rows means this Paddle event id was already processed
+    # (Paddle re-delivers); 1 row means it's new. A duplicate aborts the
+    # whole transaction so the side effects below never re-run.
+    |> Multi.run(:dedup, fn _repo, _changes ->
       case Repo.insert_all("paddle_processed_events", [row], on_conflict: :nothing) do
-        {0, _} ->
-          Repo.rollback({:duplicate, event_id})
-
-        {1, _} ->
-          # Roll back when applying the event fails so the dedup row is NOT
-          # committed — otherwise Paddle's redelivery is swallowed as
-          # already-processed and the account never gets its plan/entitlement.
-          case apply_webhook_event(event) do
-            :ok -> :ok
-            {:ok, _} -> :ok
-            {:error, reason} -> Repo.rollback({:apply_failed, reason})
-          end
+        {1, _} -> {:ok, :new}
+        {0, _} -> {:error, {:duplicate, event_id}}
       end
     end)
+    # A failed apply aborts too, so the dedup row is NOT committed —
+    # otherwise Paddle's redelivery is swallowed as already-processed and
+    # the account never gets its plan/entitlement.
+    |> Multi.run(:apply, fn _repo, _changes ->
+      case apply_webhook_event(event) do
+        :ok -> {:ok, :applied}
+        {:ok, _} -> {:ok, :applied}
+        {:error, reason} -> {:error, {:apply_failed, reason}}
+      end
+    end)
+    |> Repo.commit_multi()
     |> case do
-      {:ok, _result} -> :ok
+      {:ok, _changes} -> :ok
       {:error, {:duplicate, _} = dup} -> dup
       {:error, other} -> {:error, other}
     end
