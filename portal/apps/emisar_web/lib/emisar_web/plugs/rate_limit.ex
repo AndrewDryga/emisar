@@ -67,7 +67,7 @@ defmodule EmisarWeb.Plugs.RateLimit do
 
   defp key_for(conn, :bearer) do
     case get_req_header(conn, "authorization") do
-      ["Bearer " <> token | _] -> "key:" <> Base.encode16(:crypto.hash(:sha256, token))
+      ["Bearer " <> token | _] -> "key:" <> Emisar.Crypto.hash_hex(token)
       _ -> client_ip(conn)
     end
   end

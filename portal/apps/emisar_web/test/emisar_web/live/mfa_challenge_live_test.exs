@@ -1,0 +1,61 @@
+defmodule EmisarWeb.MfaChallengeLiveTest do
+  @moduledoc """
+  The second-factor page between password and session: it must refuse
+  to render without a live pending-MFA marker (no skipping the first
+  factor by URL), and offer the lost-device recovery-code path.
+  """
+  use EmisarWeb.ConnCase, async: true
+
+  alias Emisar.Auth
+
+  @password "long-mfa-password-123"
+
+  defp mfa_user! do
+    {:ok, user} =
+      Emisar.Users.register_user(%{
+        email: "mfa-#{System.unique_integer([:positive])}@example.com",
+        full_name: "MFA User",
+        password: @password
+      })
+
+    user = Emisar.Fixtures.confirm_user(user)
+
+    {:ok, account} =
+      Emisar.Accounts.create_account_with_owner(
+        %{name: "MFA Co", slug: "mfa-co-#{System.unique_integer([:positive])}", plan: "free"},
+        user
+      )
+
+    secret = Auth.generate_mfa_secret()
+
+    {:ok, user, _codes} =
+      Auth.enable_mfa(
+        secret,
+        NimbleTOTP.verification_code(secret),
+        Emisar.Fixtures.subject_for(user, account)
+      )
+
+    user
+  end
+
+  test "without a pending marker, bounces back to /sign_in", %{conn: conn} do
+    assert {:error, {:live_redirect, %{to: "/sign_in"}}} = live(conn, ~p"/sign_in/mfa")
+  end
+
+  test "renders the OTP form after the password step set the marker", %{conn: conn} do
+    user = mfa_user!()
+
+    conn =
+      post(conn, ~p"/sign_in", %{"user" => %{"email" => user.email, "password" => @password}})
+
+    assert redirected_to(conn) == ~p"/sign_in/mfa"
+
+    {:ok, lv, html} = live(conn, ~p"/sign_in/mfa")
+    assert html =~ "Two-factor authentication"
+    assert html =~ "authenticator app"
+
+    # The lost-device path swaps the OTP input for the recovery code one.
+    recovery_html = render_click(lv, "toggle_recovery", %{})
+    assert recovery_html =~ "recovery"
+  end
+end

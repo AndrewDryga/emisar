@@ -1,0 +1,90 @@
+defmodule EmisarWeb.RunbooksLiveTest do
+  @moduledoc """
+  The runbooks index: lists the account's runbooks, gates the New
+  button on manage permission, links published rows to the Run form,
+  and live-refreshes on the account's runbook feed.
+  """
+  use EmisarWeb.ConnCase, async: true
+
+  alias Emisar.Runbooks
+
+  defp create_runbook!(user, account, title, opts \\ []) do
+    subject = owner_subject(user, account)
+
+    {:ok, runbook} =
+      Runbooks.create_runbook(
+        %{
+          "title" => title,
+          "name" => title,
+          "slug" => String.downcase(String.replace(title, " ", "-")),
+          "definition" => %{
+            "steps" => [%{"id" => "s1", "action_id" => "linux.uptime", "args" => %{}}]
+          }
+        },
+        subject
+      )
+
+    if opts[:published?] do
+      {:ok, runbook} = Runbooks.publish(runbook, subject)
+      runbook
+    else
+      runbook
+    end
+  end
+
+  test "renders the empty state with the New action for an owner", %{conn: conn} do
+    {conn, _user, _account} = register_and_log_in(conn)
+
+    {:ok, _lv, html} = live(conn, ~p"/app/runbooks")
+
+    assert html =~ "Runbooks"
+    assert html =~ ~p"/app/runbooks/new"
+  end
+
+  test "lists runbooks; published rows get a Run link, drafts don't", %{conn: conn} do
+    {conn, user, account} = register_and_log_in(conn)
+    published = create_runbook!(user, account, "Deploy check", published?: true)
+    draft = create_runbook!(user, account, "Half baked")
+
+    {:ok, _lv, html} = live(conn, ~p"/app/runbooks")
+
+    assert html =~ "Deploy check"
+    assert html =~ "Half baked"
+    assert html =~ ~p"/app/runbooks/#{published.id}/run"
+    refute html =~ ~p"/app/runbooks/#{draft.id}/run"
+  end
+
+  test "a viewer gets the list but no New action", %{conn: conn} do
+    {_owner_conn, user, account} = register_and_log_in(conn)
+    _ = create_runbook!(user, account, "Visible to all")
+
+    viewer = Emisar.Fixtures.user_fixture()
+
+    _ =
+      Emisar.Fixtures.membership_fixture(
+        account_id: account.id,
+        user_id: viewer.id,
+        role: "viewer"
+      )
+
+    {:ok, _lv, html} =
+      build_conn()
+      |> log_in_user(viewer)
+      |> live(~p"/app/runbooks")
+
+    assert html =~ "Visible to all"
+    refute html =~ ~p"/app/runbooks/new"
+  end
+
+  test "refreshes when the account's runbook feed broadcasts", %{conn: conn} do
+    {conn, user, account} = register_and_log_in(conn)
+
+    {:ok, lv, html} = live(conn, ~p"/app/runbooks")
+    refute html =~ "Late arrival"
+
+    late = create_runbook!(user, account, "Late arrival")
+    send(lv.pid, {:list_changed, :runbook, "runbook.created", late.id})
+
+    assert render(lv) =~ "Late arrival"
+  end
+end
