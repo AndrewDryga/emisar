@@ -234,4 +234,55 @@ defmodule EmisarWeb.PaddleWebhookControllerTest do
       assert subscription_for(account.id).paddle_subscription_id == "sub_ctx"
     end
   end
+
+  describe "malformed + failing events" do
+    test "a decodable event without event_id/event_type is malformed → 400", %{conn: conn} do
+      conn = post_webhook(conn, %{"hello" => "world"})
+
+      assert json_response(conn, 400) == %{"error" => "malformed_event"}
+    end
+
+    @tag capture_log: true
+    test "a body the client can't decode is rejected as invalid → 400" do
+      # Direct controller call, skipping the endpoint: Plug.Parsers would
+      # 400 unparseable JSON itself, so this is the only way to reach the
+      # controller's own rejection branch — and the `read_body/1` fallback
+      # (no CachedBodyReader ran, so `assigns[:raw_body]` is unset).
+      conn =
+        build_conn(:post, "/webhooks/paddle", "not-json{{")
+        |> put_req_header("paddle-signature", "ts=1;h1=deadbeef")
+        |> EmisarWeb.PaddleWebhookController.call(EmisarWeb.PaddleWebhookController.init(:create))
+
+      assert json_response(conn, 400) == %{"error" => "invalid"}
+    end
+
+    test "an apply failure → 500, logging field names but never payload values", %{conn: conn} do
+      import ExUnit.CaptureLog
+
+      _account = account_with_customer("ctm_apply_fail")
+
+      event =
+        subscription_event(
+          event_id: "evt_apply_fail",
+          customer_id: "ctm_apply_fail",
+          subscription_id: "sub_apply_fail"
+        )
+
+      # Paddle owns `status` (open string), but the upsert requires it —
+      # a null status is the natural in-the-wild apply failure.
+      event = put_in(event, ["data", "status"], nil)
+
+      log =
+        capture_log(fn ->
+          conn = post_webhook(conn, event)
+          assert json_response(conn, 500) == %{"error" => "apply_failed"}
+        end)
+
+      assert log =~ "event_id=evt_apply_fail"
+      assert log =~ "invalid_changeset[status]"
+      # The redaction contract: field names only, no payload values.
+      refute log =~ "ctm_apply_fail"
+      refute log =~ "sub_apply_fail"
+    end
+  end
 end
