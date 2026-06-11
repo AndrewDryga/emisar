@@ -310,7 +310,7 @@ defmodule Emisar.Approvals do
           Audit.Events.approval_approved(subject, request, reason, grant, grant_attrs)
         end)
         |> Repo.commit_multi(
-          after_commit: fn %{decided: decided} -> broadcast_approval(decided) end
+          after_commit: &broadcast_approval(&1.decided)
         )
 
       # Deliver to the runner AFTER the transaction commits so the
@@ -348,7 +348,7 @@ defmodule Emisar.Approvals do
       end)
       |> Multi.insert(:audit, Audit.Events.approval_denied(subject, request, reason))
       |> Repo.commit_multi(
-        after_commit: fn %{decided: decided} -> broadcast_approval(decided) end
+        after_commit: &broadcast_approval(&1.decided)
       )
       |> case do
         {:ok, %{decided: decided, run: run}} -> {:ok, {decided, run}}
@@ -530,7 +530,7 @@ defmodule Emisar.Approvals do
       |> Authorizer.for_subject(subject)
       |> Repo.fetch_and_update(Grant.Query,
         with: &Grant.Changeset.revoke(&1, by_user_id),
-        audit: fn revoked -> Audit.Events.approval_grant_revoked(subject, revoked) end
+        audit: &Audit.Events.approval_grant_revoked(subject, &1)
       )
     end
   end
@@ -554,11 +554,12 @@ defmodule Emisar.Approvals do
       Grant.Query.not_revoked()
       |> Grant.Query.ordered_by_recent()
       |> maybe_filter_expired(include_expired)
+      |> Grant.Query.with_preloaded_api_key()
+      |> Grant.Query.with_preloaded_runner()
+      |> Grant.Query.with_preloaded_granted_by()
+      |> Grant.Query.with_preloaded_approval_request_run()
       |> Authorizer.for_subject(subject)
-      |> Repo.list(
-        Grant.Query,
-        Keyword.put_new(opts, :preload, [:api_key, :runner, :granted_by, approval_request: :run])
-      )
+      |> Repo.list(Grant.Query, opts)
     end
   end
 
@@ -574,11 +575,12 @@ defmodule Emisar.Approvals do
          true <- Repo.valid_uuid?(id) do
       Grant.Query.all()
       |> Grant.Query.by_id(id)
+      |> Grant.Query.with_preloaded_api_key()
+      |> Grant.Query.with_preloaded_runner()
+      |> Grant.Query.with_preloaded_granted_by()
+      |> Grant.Query.with_preloaded_revoked_by()
       |> Authorizer.for_subject(subject)
-      |> Repo.fetch(
-        Grant.Query,
-        Keyword.put_new(opts, :preload, [:api_key, :runner, :granted_by, :revoked_by])
-      )
+      |> Repo.fetch(Grant.Query, opts)
     else
       false -> {:error, :not_found}
       other -> other
@@ -639,7 +641,7 @@ defmodule Emisar.Approvals do
       {:ok, Request.Query.all() |> Request.Query.by_id(request.id) |> Repo.fetch!(Request.Query)}
     end)
     |> Repo.commit_multi(
-      after_commit: fn %{reloaded: reloaded} -> broadcast_approval(reloaded) end
+      after_commit: &broadcast_approval(&1.reloaded)
     )
   end
 end

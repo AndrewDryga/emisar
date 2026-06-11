@@ -78,6 +78,107 @@ defmodule Emisar.Approvals.Grant.Query do
     )
   end
 
+  # -- Preload helpers --------------------------------------------------
+  # All belongs_to and optional (a deleted key/runner/user must not hide
+  # the grant from the audit-relevant list), so every join is :left and
+  # scoped to the assoc's not_deleted() where one exists.
+
+  @doc "Left-join + preload the grant's (non-deleted) API key, idempotently."
+  def with_preloaded_api_key(queryable) do
+    queryable
+    |> with_named_binding(:api_key, fn queryable, binding ->
+      join(
+        queryable,
+        :left,
+        [grants: g],
+        api_key in ^Emisar.ApiKeys.ApiKey.Query.not_deleted(),
+        on: g.api_key_id == api_key.id,
+        as: ^binding
+      )
+    end)
+    |> preload([api_key: api_key], api_key: api_key)
+  end
+
+  @doc "Left-join + preload the grant's (non-deleted) runner, idempotently."
+  def with_preloaded_runner(queryable) do
+    queryable
+    |> with_named_binding(:runner, fn queryable, binding ->
+      join(
+        queryable,
+        :left,
+        [grants: g],
+        runner in ^Emisar.Runners.Runner.Query.not_deleted(),
+        on: g.runner_id == runner.id,
+        as: ^binding
+      )
+    end)
+    |> preload([runner: runner], runner: runner)
+  end
+
+  @doc "Left-join + preload the (non-deleted) granting user, idempotently."
+  def with_preloaded_granted_by(queryable) do
+    queryable
+    |> with_named_binding(:granted_by, fn queryable, binding ->
+      join(
+        queryable,
+        :left,
+        [grants: g],
+        granted_by in ^Emisar.Users.User.Query.not_deleted(),
+        on: g.granted_by_id == granted_by.id,
+        as: ^binding
+      )
+    end)
+    |> preload([granted_by: granted_by], granted_by: granted_by)
+  end
+
+  @doc "Left-join + preload the (non-deleted) revoking user, idempotently."
+  def with_preloaded_revoked_by(queryable) do
+    queryable
+    |> with_named_binding(:revoked_by, fn queryable, binding ->
+      join(
+        queryable,
+        :left,
+        [grants: g],
+        revoked_by in ^Emisar.Users.User.Query.not_deleted(),
+        on: g.revoked_by_id == revoked_by.id,
+        as: ^binding
+      )
+    end)
+    |> preload([revoked_by: revoked_by], revoked_by: revoked_by)
+  end
+
+  @doc """
+  Left-join + preload the grant's approval request together with that
+  request's run (neither is soft-deleted), idempotently.
+  """
+  def with_preloaded_approval_request_run(queryable) do
+    queryable
+    |> with_named_binding(:approval_request, fn queryable, binding ->
+      join(
+        queryable,
+        :left,
+        [grants: g],
+        approval_request in Emisar.Approvals.Request,
+        on: g.approval_request_id == approval_request.id,
+        as: ^binding
+      )
+    end)
+    |> with_named_binding(:approval_request_run, fn queryable, binding ->
+      join(
+        queryable,
+        :left,
+        [approval_request: approval_request],
+        run in Emisar.Runs.ActionRun,
+        on: approval_request.run_id == run.id,
+        as: ^binding
+      )
+    end)
+    |> preload(
+      [approval_request: approval_request, approval_request_run: run],
+      approval_request: {approval_request, run: run}
+    )
+  end
+
   # -- Pagination ------------------------------------------------------
 
   @impl Emisar.Repo.Query
