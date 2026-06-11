@@ -44,7 +44,7 @@ defmodule Emisar.InvitationTest do
       assert invitee.id == existing.id
     end
 
-    test "lowercases + trims email" do
+    test "trims the email; the citext column owns case-insensitive identity" do
       account = account_fixture()
       {_inviter, subject} = inviter_subject(account)
 
@@ -55,7 +55,18 @@ defmodule Emisar.InvitationTest do
                  subject
                )
 
-      assert invitee.email == "hello@example.test"
+      # Stored as typed (whitespace trimmed) — no app-side downcase.
+      assert invitee.email == "HELLO@Example.Test"
+
+      # A differently-cased invite resolves to the SAME user row: the
+      # unique citext index is the guarantee, not normalization.
+      other_account = account_fixture()
+      {_inviter, other_subject} = inviter_subject(other_account)
+
+      assert {:ok, %{user: same_user}} =
+               Accounts.invite_user_to_account("hello@example.test", "viewer", other_subject)
+
+      assert same_user.id == invitee.id
     end
 
     test "rolls back when the user already belongs to the account" do

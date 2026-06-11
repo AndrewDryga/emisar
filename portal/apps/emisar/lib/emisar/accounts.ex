@@ -777,7 +777,10 @@ defmodule Emisar.Accounts do
   def invite_user_to_account(email, role, %Subject{account: %Account{id: account_id}} = subject)
       when is_binary(email) and is_binary(role) do
     with :ok <- ensure_invite_permitted(role, subject) do
-      email = String.downcase(String.trim(email))
+      # Trim only: `users.email` is citext, so lookup + uniqueness are
+      # case-insensitive without app-side normalization (and registration
+      # stores the typed casing — invites shouldn't differ).
+      email = String.trim(email)
       {token, token_digest} = Crypto.user_invite_token()
 
       Multi.new()

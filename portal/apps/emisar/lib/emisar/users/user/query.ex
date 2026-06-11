@@ -13,8 +13,10 @@ defmodule Emisar.Users.User.Query do
   def by_ids(queryable, ids),
     do: where(queryable, [users: u], u.id in ^ids)
 
+  # `email` is citext — the column compares case-insensitively; no
+  # app-side downcase (the index is the guarantee, not normalization).
   def by_email(queryable, email),
-    do: where(queryable, [users: u], u.email == ^String.downcase(email))
+    do: where(queryable, [users: u], u.email == ^email)
 
   @doc """
   `Audit.resolve_references/1` helper — narrow to ids, project
