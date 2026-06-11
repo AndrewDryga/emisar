@@ -24,7 +24,7 @@ defmodule Emisar.CapabilitiesTest do
 
   @roles [:owner, :admin, :operator, :viewer]
 
-  defp subject(role), do: %Subject{permissions: Authorizer.permissions_for(role)}
+  defp subject(role), do: %Subject{permissions: Emisar.Auth.Permissions.for_role(role)}
 
   test "subject_can_<verb>? predicates match the role matrix" do
     matrix = [

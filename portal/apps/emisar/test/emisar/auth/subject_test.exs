@@ -66,7 +66,7 @@ defmodule Emisar.Auth.SubjectTest do
 
       # The fallback is the same shape as an explicit viewer subject —
       # not all-perms, not empty.
-      viewer_perms = Emisar.Auth.Authorizer.permissions_for(:viewer)
+      viewer_perms = Emisar.Auth.Permissions.for_role(:viewer)
       assert subject.role == :viewer
       assert subject.permissions == viewer_perms
     end
@@ -74,12 +74,12 @@ defmodule Emisar.Auth.SubjectTest do
 
   describe "Authorizer.permissions_for/1" do
     test "returns an empty set for unknown roles" do
-      assert MapSet.size(Emisar.Auth.Authorizer.permissions_for(:nope)) == 0
+      assert MapSet.size(Emisar.Auth.Permissions.for_role(:nope)) == 0
     end
 
     test "returns the same set on every call (purity)" do
-      assert Emisar.Auth.Authorizer.permissions_for(:owner) ==
-               Emisar.Auth.Authorizer.permissions_for(:owner)
+      assert Emisar.Auth.Permissions.for_role(:owner) ==
+               Emisar.Auth.Permissions.for_role(:owner)
     end
   end
 

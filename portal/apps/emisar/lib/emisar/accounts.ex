@@ -357,13 +357,13 @@ defmodule Emisar.Accounts do
     cond do
       # Can't grant a role whose permissions you don't already hold (no
       # escalation by proxy). On your own membership that's self-promotion.
-      not Auth.Authorizer.covers_role?(subject, new_role) ->
+      not Auth.Permissions.covers_role?(subject, new_role) ->
         if membership.user_id == subject.actor.id,
           do: {:error, :cannot_self_promote},
           else: {:error, :insufficient_privileges}
 
       # Can't change the role of someone whose permissions outrank yours.
-      not Auth.Authorizer.covers_role?(subject, membership.role) ->
+      not Auth.Permissions.covers_role?(subject, membership.role) ->
         {:error, :insufficient_privileges}
 
       true ->
@@ -677,7 +677,7 @@ defmodule Emisar.Accounts do
       membership.user_id == subject.actor.id ->
         {:error, :cannot_modify_self}
 
-      not Auth.Authorizer.covers_role?(subject, membership.role) ->
+      not Auth.Permissions.covers_role?(subject, membership.role) ->
         {:error, :insufficient_privileges}
 
       true ->
@@ -724,7 +724,7 @@ defmodule Emisar.Accounts do
   # The last-owner invariant lives in `ensure_not_last_active_owner/2`,
   # inside the Multi (see `ensure_role_change_allowed/3`'s note).
   defp ensure_delete_membership_allowed(%Membership{} = membership, %Subject{} = subject) do
-    if Auth.Authorizer.covers_role?(subject, membership.role) do
+    if Auth.Permissions.covers_role?(subject, membership.role) do
       :ok
     else
       {:error, :insufficient_privileges}
@@ -793,7 +793,7 @@ defmodule Emisar.Accounts do
            ) do
       case Role.cast(role) do
         {:ok, role} ->
-          if Auth.Authorizer.covers_role?(subject, role),
+          if Auth.Permissions.covers_role?(subject, role),
             do: :ok,
             else: {:error, :insufficient_privileges}
 

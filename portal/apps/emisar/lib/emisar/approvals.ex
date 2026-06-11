@@ -211,7 +211,7 @@ defmodule Emisar.Approvals do
       Emisar.Accounts.list_account_memberships(request.account_id, page: page_opts)
 
     approver_roles =
-      Auth.Authorizer.roles_with_permission(Authorizer.decide_approval_permission())
+      Auth.Permissions.roles_with_permission(Authorizer.decide_approval_permission())
 
     memberships
     |> Enum.filter(fn membership ->

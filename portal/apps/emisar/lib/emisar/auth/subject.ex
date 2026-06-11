@@ -54,7 +54,7 @@ defmodule Emisar.Auth.Subject do
       actor: user,
       role: role,
       membership_id: membership.id,
-      permissions: Emisar.Auth.Authorizer.permissions_for(role),
+      permissions: Emisar.Auth.Permissions.for_role(role),
       context: context
     }
   end
@@ -69,7 +69,7 @@ defmodule Emisar.Auth.Subject do
       # uses this to apply per-user runner ACLs at call-time, so revoking
       # a user's runner scope immediately shrinks every key they minted.
       membership_id: Map.get(api_key, :created_by_membership_id),
-      permissions: Emisar.Auth.Authorizer.permissions_for(:api_client),
+      permissions: Emisar.Auth.Permissions.for_role(:api_client),
       context: context
     }
   end
@@ -80,7 +80,7 @@ defmodule Emisar.Auth.Subject do
       account: account,
       actor: runner,
       role: :runner,
-      permissions: Emisar.Auth.Authorizer.permissions_for(:runner),
+      permissions: Emisar.Auth.Permissions.for_role(:runner),
       context: context
     }
   end
