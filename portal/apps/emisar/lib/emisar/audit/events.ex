@@ -256,39 +256,6 @@ defmodule Emisar.Audit.Events do
   def runner_deleted(%Subject{} = subject, %Runners.Runner{} = runner),
     do: runner_event(subject, runner, "runner.deleted")
 
-  # An offline runner displaced because a new one claimed its name — the new
-  # runner is the subject; the payload points back at the soft-deleted row.
-  def runner_replaced(
-        %Subject{} = subject,
-        %Runners.Runner{} = replaced,
-        %Runners.Runner{} = runner
-      ) do
-    Audit.changeset(
-      runner.account_id,
-      "runner.replaced",
-      actor(subject) ++
-        [
-          subject_kind: "runner",
-          subject_id: runner.id,
-          subject_label: runner.name,
-          payload: %{replaced_runner_id: replaced.id}
-        ]
-    )
-  end
-
-  # Same displacement, but during auth-key registration — no operator
-  # `%Subject{}` is acting, so the actor is the system. The displaced
-  # (soft-deleted) runner is the subject.
-  def runner_replaced_by_system(%Runners.Runner{} = replaced, %Runners.AuthKey{} = key, name) do
-    Audit.changeset(key.account_id, "runner.replaced",
-      actor_kind: "system",
-      subject_kind: "runner",
-      subject_id: replaced.id,
-      subject_label: name,
-      payload: %{replaced_runner_id: replaced.id, auth_key_id: key.id}
-    )
-  end
-
   # -- Auth keys (runner install/enrolment keys) -----------------------
 
   def auth_key_created(%Subject{} = subject, %Runners.AuthKey{} = key) do

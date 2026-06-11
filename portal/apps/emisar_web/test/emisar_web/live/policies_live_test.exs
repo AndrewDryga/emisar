@@ -165,12 +165,10 @@ defmodule EmisarWeb.PoliciesLiveTest do
       {conn, user, account} = register_and_log_in(conn)
 
       # Hand-craft a policy directly so we control the JSON shape.
-      existing = Policies.peek_policy_for_account(account.id)
       subject = Emisar.Fixtures.subject_for(user, account)
 
       {:ok, _} =
-        Policies.update_rules(
-          existing,
+        Policies.save_rules(
           %{
             "schema_version" => 2,
             "defaults" => %{

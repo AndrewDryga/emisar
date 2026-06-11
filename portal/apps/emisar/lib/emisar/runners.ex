@@ -253,17 +253,6 @@ defmodule Emisar.Runners do
     |> Repo.fetch(Runner.Query)
   end
 
-  # Internal: the live runner currently holding `name` in this account, or
-  # `{:error, :not_found}`. Names are unique among live runners, so at most
-  # one matches. Used by the register path to detect a name collision before
-  # a fresh external_id tries to claim a taken name.
-  defp fetch_live_runner_by_name(name, account_id) when is_binary(name) do
-    Runner.Query.not_deleted()
-    |> Runner.Query.by_account_id(account_id)
-    |> Runner.Query.by_name(name)
-    |> Repo.fetch(Runner.Query)
-  end
-
   # -- Runners: mutations ----------------------------------------------
 
   def create_runner(attrs, %Subject{account: account} = subject) do
@@ -276,47 +265,9 @@ defmodule Emisar.Runners do
         %Accounts.Account{id: account.id}
         |> Runner.Changeset.create(attrs)
 
-      case Repo.insert(changeset) do
-        {:ok, runner} ->
-          {:ok, runner}
-
-        {:error, %Ecto.Changeset{} = errored} ->
-          # Retry with the PRISTINE changeset — the errored one is invalid
-          # and would fail the Multi insert on its own carried errors.
-          with true <- name_taken_changeset?(errored),
-               {:ok, runner} <- replace_inactive_name_holder(changeset, account.id, subject) do
-            {:ok, runner}
-          else
-            _ -> {:error, errored}
-          end
-      end
-    end
-  end
-
-  # The taken name may belong to a dead runner (reinstalled host, renamed
-  # fleet) — replacing it beats forcing the operator to hunt down and delete
-  # the corpse first. Only an OFFLINE holder is displaced (soft-deleted, so
-  # its history survives); a connected one keeps the conflict error.
-  defp replace_inactive_name_holder(%Ecto.Changeset{} = changeset, account_id, subject) do
-    name = Ecto.Changeset.get_field(changeset, :name)
-
-    with {:ok, %Runner{} = existing} <- fetch_live_runner_by_name(name, account_id),
-         false <- online?(account_id, existing.id) do
-      Multi.new()
-      |> Multi.update(:replaced, Runner.Changeset.delete(existing))
-      |> Multi.insert(:runner, changeset)
-      |> Multi.insert(:audit, fn %{runner: runner} ->
-        Audit.Events.runner_replaced(subject, existing, runner)
-      end)
-      |> Repo.commit_multi()
-      |> case do
-        {:ok, %{runner: runner}} -> {:ok, runner}
-        {:error, reason} -> {:error, reason}
-      end
-    else
-      # The holder is actively connected — or vanished between the failed
-      # insert and this read. Let the caller surface the original conflict.
-      _ -> :conflict
+      # A name conflict is a conflict — the unique-index error renders
+      # inline on the form; the operator renames or deletes the holder.
+      Repo.insert(changeset)
     end
   end
 
@@ -503,11 +454,6 @@ defmodule Emisar.Runners do
   @doc "Raw presence map for an account: `%{runner_id => %{metas: [meta, ...]}}`."
   def connection_metas(account_id), do: Presence.list(Presence.topic(account_id))
 
-  @doc "Subscribe the caller to this account's runner presence diffs."
-  def subscribe_connections(account_id) do
-    Emisar.PubSub.subscribe(Presence.topic(account_id))
-  end
-
   @doc """
   Derived connection state for a runner struct carrying the virtual
   `online?` field (set by `list_runners_for_account/2` and
@@ -691,8 +637,9 @@ defmodule Emisar.Runners do
            ) do
       AuthKey.Query.visible_to_operators()
       |> AuthKey.Query.ordered_by_recent()
+      |> AuthKey.Query.with_preloaded_created_by()
       |> Authorizer.for_subject(subject)
-      |> Repo.list(AuthKey.Query, Keyword.put_new(opts, :preload, :created_by))
+      |> Repo.list(AuthKey.Query, opts)
     end
   end
 
@@ -718,12 +665,19 @@ defmodule Emisar.Runners do
       |> Multi.insert(:audit, fn %{key: key} ->
         Audit.Events.auth_key_created(subject, key)
       end)
-      |> Repo.commit_multi(after_commit: &broadcast_auth_key_change(&1, "auth_key.created"))
+      |> Repo.commit_multi(after_commit: &broadcast_auth_key_created(&1.key))
       |> case do
         {:ok, %{key: key}} -> {:ok, raw, key}
         {:error, reason} -> {:error, reason}
       end
     end
+  end
+
+  # -- PubSub ----------------------------------------------------------
+
+  @doc "Subscribe the caller to this account's runner presence diffs."
+  def subscribe_connections(account_id) do
+    Emisar.PubSub.subscribe(Presence.topic(account_id))
   end
 
   @doc "Subscribe the caller to the account's auth-key list changes (`{:list_changed, :auth_key, …}`)."
@@ -732,13 +686,18 @@ defmodule Emisar.Runners do
 
   defp account_auth_keys_topic(account_id), do: "account:#{account_id}:auth_keys"
 
-  defp broadcast_auth_key_change(%{key: key}, event_type) do
+  defp broadcast_auth_key_created(%AuthKey{} = key) do
     Emisar.PubSub.broadcast(
       account_auth_keys_topic(key.account_id),
-      {:list_changed, :auth_key, event_type, key.id}
+      {:list_changed, :auth_key, "auth_key.created", key.id}
     )
+  end
 
-    :ok
+  defp broadcast_auth_key_revoked(%AuthKey{} = key) do
+    Emisar.PubSub.broadcast(
+      account_auth_keys_topic(key.account_id),
+      {:list_changed, :auth_key, "auth_key.revoked", key.id}
+    )
   end
 
   @doc """
@@ -819,10 +778,8 @@ defmodule Emisar.Runners do
       |> Authorizer.for_subject(subject)
       |> Repo.fetch_and_update(AuthKey.Query,
         with: &AuthKey.Changeset.revoke(&1, by_user_id),
-        audit: fn revoked -> Audit.Events.auth_key_revoked(subject, revoked) end,
-        after_commit: fn revoked ->
-          broadcast_auth_key_change(%{key: revoked}, "auth_key.revoked")
-        end
+        audit: &Audit.Events.auth_key_revoked(subject, &1),
+        after_commit: &broadcast_auth_key_revoked/1
       )
     end
   end
@@ -853,8 +810,9 @@ defmodule Emisar.Runners do
 
       # Deliberately all(): `usable?/1` below is the single liveness gate
       # (it rejects deleted/revoked/expired/exhausted in one place).
-      with %AuthKey{} = key <-
-             AuthKey.Query.all() |> AuthKey.Query.by_key_prefix(prefix) |> Repo.peek(),
+      queryable = AuthKey.Query.all() |> AuthKey.Query.by_key_prefix(prefix)
+
+      with %AuthKey{} = key <- Repo.peek(queryable),
            true <- Crypto.secure_compare(key.key_hash, hash),
            true <- AuthKey.usable?(key) do
         key
@@ -892,13 +850,13 @@ defmodule Emisar.Runners do
     else
       prefix = String.slice(raw, 0, @token_prefix_size)
       hash = Crypto.hash(raw)
+      token_queryable = Token.Query.all() |> Token.Query.by_prefix(prefix)
 
-      with %Token{} = token <-
-             Token.Query.all() |> Token.Query.by_prefix(prefix) |> Repo.peek(),
+      with %Token{} = token <- Repo.peek(token_queryable),
            true <- Crypto.secure_compare(token.token_hash, hash),
            true <- Token.usable?(token),
-           %Runner{disabled_at: nil} = runner <-
-             Runner.Query.not_deleted() |> Runner.Query.by_id(token.runner_id) |> Repo.peek() do
+           runner_queryable = Runner.Query.not_deleted() |> Runner.Query.by_id(token.runner_id),
+           %Runner{disabled_at: nil} = runner <- Repo.peek(runner_queryable) do
         {:ok, _} = token |> Token.Changeset.usage() |> Repo.update()
         {:ok, token, runner}
       else
@@ -1041,7 +999,7 @@ defmodule Emisar.Runners do
   defp insert_runner(repo, key, attrs, external_id) do
     name = derive_name(attrs)
 
-    with :ok <- ensure_name_available(repo, key, name) do
+    with :ok <- ensure_name_available(key, name) do
       changeset =
         Runner.Changeset.register(%{
           account_id: key.account_id,
@@ -1071,27 +1029,18 @@ defmodule Emisar.Runners do
     end
   end
 
-  # Names are unique among live runners. We're inserting a runner with a
-  # fresh external_id, so another live runner holding this name is a
-  # conflict — but only an ACTIVE one. An offline holder (reinstalled host,
-  # renamed machine) is displaced (soft-deleted, history preserved) with an
-  # audit row so a dead runner can't squat the address; a connected holder
-  # returns the clean error the controller turns into a 409. The partial
-  # unique index is the race backstop in `insert_runner/4`.
-  defp ensure_name_available(repo, key, name) do
-    case fetch_live_runner_by_name(name, key.account_id) do
-      {:error, :not_found} ->
-        :ok
+  # Names are unique among live runners: another live runner holding this
+  # name — online or not — is a conflict the operator resolves (rename or
+  # delete the holder in the dashboard). The partial unique index is the
+  # race backstop in `insert_runner/4`.
+  defp ensure_name_available(key, name) do
+    taken? =
+      Runner.Query.not_deleted()
+      |> Runner.Query.by_account_id(key.account_id)
+      |> Runner.Query.by_name(name)
+      |> Repo.exists?()
 
-      {:ok, %Runner{} = existing} ->
-        if online?(key.account_id, existing.id) do
-          {:error, {:runner_name_taken, name}}
-        else
-          {:ok, _} = existing |> Runner.Changeset.delete() |> repo.update()
-          {:ok, _} = repo.insert(Audit.Events.runner_replaced_by_system(existing, key, name))
-          :ok
-        end
-    end
+    if taken?, do: {:error, {:runner_name_taken, name}}, else: :ok
   end
 
   # A changeset error from the (account_id, name) partial unique index — vs a

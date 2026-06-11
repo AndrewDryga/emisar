@@ -33,7 +33,6 @@ defmodule Emisar.Audit.Event.Query do
     {"runner.disabled", "Runner disabled"},
     {"runner.enabled", "Runner enabled"},
     {"runner.deleted", "Runner deleted"},
-    {"runner.replaced", "Runner replaced"},
     {"runner.error", "Runner error"},
     {"auth_key.created", "Auth key created"},
     {"auth_key.revoked", "Auth key revoked"},
@@ -126,7 +125,6 @@ defmodule Emisar.Audit.Event.Query do
        {"runner.disabled", "Disabled"},
        {"runner.enabled", "Enabled"},
        {"runner.deleted", "Deleted"},
-       {"runner.replaced", "Replaced"},
        {"runner.error", "Error"}
      ]},
     {"Pack trust",

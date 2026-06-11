@@ -38,7 +38,7 @@ defmodule Emisar.Runners.AuthKey.Query do
           {"active", "Active"},
           {"revoked", "Revoked"}
         ],
-        fun: fn q, statuses ->
+        fun: fn queryable, statuses ->
           dyn =
             cond do
               "active" in statuses and "revoked" in statuses -> dynamic([auth_keys: k], true)
@@ -47,7 +47,7 @@ defmodule Emisar.Runners.AuthKey.Query do
               true -> dynamic([auth_keys: k], true)
             end
 
-          {q, dyn}
+          {queryable, dyn}
         end
       }
     ]
@@ -113,6 +113,22 @@ defmodule Emisar.Runners.AuthKey.Query do
     queryable
     |> where([auth_keys: k], k.id in ^ids)
     |> select([auth_keys: k], {k.id, field(k, ^field)})
+  end
+
+  @doc "Left-join + preload the key's (non-deleted) creating user, idempotently."
+  def with_preloaded_created_by(queryable) do
+    queryable
+    |> with_named_binding(:created_by, fn queryable, binding ->
+      join(
+        queryable,
+        :left,
+        [auth_keys: k],
+        created_by in ^Emisar.Users.User.Query.not_deleted(),
+        on: k.created_by_id == created_by.id,
+        as: ^binding
+      )
+    end)
+    |> preload([created_by: created_by], created_by: created_by)
   end
 
   # -- Pagination ------------------------------------------------------
