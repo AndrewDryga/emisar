@@ -376,9 +376,9 @@ defmodule Emisar.RunnersTest do
 
       {:ok, _agent, _token, raw_token} = Runners.register_via_auth_key(raw, %{group: "demo"})
 
-      assert {:ok, %Token{} = tok, %Runner{}} = Runners.verify_runner_token(raw_token)
+      assert {:ok, %Token{} = token, %Runner{}} = Runners.verify_runner_token(raw_token)
       # `verify_runner_token` bumps last_used_at server-side; reload to observe.
-      assert %Token{last_used_at: %DateTime{}} = Repo.reload!(tok)
+      assert %Token{last_used_at: %DateTime{}} = Repo.reload!(token)
     end
 
     test "returns {:error, :token_invalid} for garbage" do

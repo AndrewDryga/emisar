@@ -113,11 +113,11 @@ defmodule EmisarWeb.PaddleWebhookControllerTest do
 
       # Side effect: the subscription row exists, on the plan the price id
       # maps to, with the Paddle ids mirrored.
-      sub = subscription_for(account.id)
-      assert sub.plan == "team"
-      assert sub.status == "active"
-      assert sub.paddle_subscription_id == "sub_valid"
-      assert sub.paddle_price_id == @price_team
+      subscription = subscription_for(account.id)
+      assert subscription.plan == "team"
+      assert subscription.status == "active"
+      assert subscription.paddle_subscription_id == "sub_valid"
+      assert subscription.paddle_price_id == @price_team
     end
   end
 

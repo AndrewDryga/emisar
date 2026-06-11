@@ -32,15 +32,15 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
         args: %{}
       })
 
-    {:ok, req} = Approvals.create_request(run, requested_by.id, "please approve")
-    req
+    {:ok, request} = Approvals.create_request(run, requested_by.id, "please approve")
+    request
   end
 
   test "renders the decision panel for a decider without crashing", %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
-    req = pending_request(account, user)
+    request = pending_request(account, user)
 
-    {:ok, _lv, html} = live(conn, ~p"/app/approvals/#{req.id}")
+    {:ok, _lv, html} = live(conn, ~p"/app/approvals/#{request.id}")
 
     # The panel renders the approve form (owner can decide) — this is the
     # exact path that raised KeyError on `@grant_duration` in production.
@@ -50,9 +50,9 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
 
   test "choosing a reuse window reveals the grant scope fields", %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
-    req = pending_request(account, user)
+    request = pending_request(account, user)
 
-    {:ok, lv, html} = live(conn, ~p"/app/approvals/#{req.id}")
+    {:ok, lv, html} = live(conn, ~p"/app/approvals/#{request.id}")
 
     # Defaults to "once" (no grant) → Match / Limit-to fields hidden.
     refute html =~ "Same arguments only"
@@ -68,9 +68,9 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
 
   test "denying does not crash when the form carries no reason", %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
-    req = pending_request(account, user)
+    request = pending_request(account, user)
 
-    {:ok, lv, _html} = live(conn, ~p"/app/approvals/#{req.id}")
+    {:ok, lv, _html} = live(conn, ~p"/app/approvals/#{request.id}")
 
     # The Deny form is a bare button — it submits no `reason`, which used
     # to raise FunctionClauseError in handle_event/3.

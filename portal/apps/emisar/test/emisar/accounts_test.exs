@@ -38,58 +38,58 @@ defmodule Emisar.AccountsTest do
   describe "fetch_membership_for_session/2" do
     test "with no account_id, returns the most-recent non-disabled membership" do
       user = user_fixture()
-      a1 = account_fixture()
-      a2 = account_fixture()
-      _ = membership_fixture(account_id: a1.id, user_id: user.id)
-      m2 = membership_fixture(account_id: a2.id, user_id: user.id)
+      first_account = account_fixture()
+      second_account = account_fixture()
+      _ = membership_fixture(account_id: first_account.id, user_id: user.id)
+      second_membership = membership_fixture(account_id: second_account.id, user_id: user.id)
 
       assert {:ok, %Membership{id: id, account: %Account{}, user: %User{}}} =
                Accounts.fetch_membership_for_session(user, nil)
 
-      assert id == m2.id
+      assert id == second_membership.id
     end
 
     test "with a matching account_id, returns that specific membership even if older" do
       user = user_fixture()
-      a1 = account_fixture()
-      a2 = account_fixture()
-      m1 = membership_fixture(account_id: a1.id, user_id: user.id)
-      _ = membership_fixture(account_id: a2.id, user_id: user.id)
+      first_account = account_fixture()
+      second_account = account_fixture()
+      first_membership = membership_fixture(account_id: first_account.id, user_id: user.id)
+      _ = membership_fixture(account_id: second_account.id, user_id: user.id)
 
-      assert {:ok, %Membership{id: id, account: %Account{} = a}} =
-               Accounts.fetch_membership_for_session(user, a1.id)
+      assert {:ok, %Membership{id: id, account: %Account{} = account}} =
+               Accounts.fetch_membership_for_session(user, first_account.id)
 
-      assert id == m1.id
-      assert a.id == a1.id
+      assert id == first_membership.id
+      assert account.id == first_account.id
     end
 
     test "with a stale or unknown account_id, falls back to the primary" do
       user = user_fixture()
-      a1 = account_fixture()
-      _ = membership_fixture(account_id: a1.id, user_id: user.id)
+      first_account = account_fixture()
+      _ = membership_fixture(account_id: first_account.id, user_id: user.id)
 
       assert {:ok, %Membership{account_id: returned_account_id}} =
                Accounts.fetch_membership_for_session(user, Ecto.UUID.generate())
 
-      assert returned_account_id == a1.id
+      assert returned_account_id == first_account.id
     end
 
     test "with a suspended membership on the requested account, falls back" do
       user = user_fixture()
-      a1 = account_fixture()
-      _ = membership_fixture(account_id: a1.id, user_id: user.id)
+      first_account = account_fixture()
+      _ = membership_fixture(account_id: first_account.id, user_id: user.id)
 
-      {_owner_user, a2, owner_subject} = owner_subject_fixture()
+      {_owner_user, second_account, owner_subject} = owner_subject_fixture()
 
-      m2 =
-        membership_fixture(account_id: a2.id, user_id: user.id, role: "operator")
+      second_membership =
+        membership_fixture(account_id: second_account.id, user_id: user.id, role: "operator")
 
-      assert {:ok, _} = Accounts.suspend_membership(m2, owner_subject)
+      assert {:ok, _} = Accounts.suspend_membership(second_membership, owner_subject)
 
       assert {:ok, %Membership{account_id: returned_account_id}} =
-               Accounts.fetch_membership_for_session(user, a2.id)
+               Accounts.fetch_membership_for_session(user, second_account.id)
 
-      refute returned_account_id == a2.id
+      refute returned_account_id == second_account.id
     end
 
     test "returns :not_found for a user with no memberships" do
@@ -110,13 +110,13 @@ defmodule Emisar.AccountsTest do
       assert {:ok,
               %{
                 membership: %Membership{role: :admin},
-                user: %User{} = u,
+                user: %User{} = invitee,
                 invitation_token: token
               }} =
                Accounts.invite_user_to_account(email, "admin", subject)
 
-      assert u.email == email
-      refute u.hashed_password
+      assert invitee.email == email
+      refute invitee.hashed_password
       assert is_binary(token)
     end
 

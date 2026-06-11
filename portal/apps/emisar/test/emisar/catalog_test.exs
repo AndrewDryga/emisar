@@ -181,8 +181,8 @@ defmodule Emisar.CatalogTest do
       refute_receive {:pack_trust_changed, _}
 
       # Resolving it (Trust) → broadcast again.
-      {:ok, [pv], _} = Catalog.list_pack_versions(subject)
-      {:ok, _} = Catalog.trust_pack_version(pv.id, subject)
+      {:ok, [pack_version], _} = Catalog.list_pack_versions(subject)
+      {:ok, _} = Catalog.trust_pack_version(pack_version.id, subject)
       assert_receive {:pack_trust_changed, ^account_id}
     end
   end
@@ -278,10 +278,10 @@ defmodule Emisar.CatalogTest do
 
       assert {:ok, _} = Catalog.observe_state(runner, payload)
 
-      assert {:ok, [pv], _} = Catalog.list_pack_versions(subject)
-      assert pv.trust_state == :pending
-      assert pv.hash == nil
-      assert pv.pending_hash == "sha256:custom"
+      assert {:ok, [pack_version], _} = Catalog.list_pack_versions(subject)
+      assert pack_version.trust_state == :pending
+      assert pack_version.hash == nil
+      assert pack_version.pending_hash == "sha256:custom"
     end
 
     test "custom pack: re-advertising the same pending hash is a touch (no drift event)" do
@@ -295,9 +295,9 @@ defmodule Emisar.CatalogTest do
       assert {:ok, _} = Catalog.observe_state(runner, payload)
       assert {:ok, _} = Catalog.observe_state(runner, payload)
 
-      assert {:ok, [pv], _} = Catalog.list_pack_versions(subject)
-      assert pv.trust_state == :pending
-      assert pv.pending_hash == "sha256:H1"
+      assert {:ok, [pack_version], _} = Catalog.list_pack_versions(subject)
+      assert pack_version.trust_state == :pending
+      assert pack_version.pending_hash == "sha256:H1"
     end
 
     test "hash change after operator-trust → pending again" do
@@ -312,8 +312,8 @@ defmodule Emisar.CatalogTest do
 
       # Custom pack lands pending — operator approves it before the
       # drift scenario is meaningful.
-      {:ok, [pv], _} = Catalog.list_pack_versions(subject)
-      assert {:ok, _} = Catalog.trust_pack_version(pv.id, subject)
+      {:ok, [pack_version], _} = Catalog.list_pack_versions(subject)
+      assert {:ok, _} = Catalog.trust_pack_version(pack_version.id, subject)
 
       assert {:ok, _} =
                Catalog.observe_state(
@@ -321,10 +321,10 @@ defmodule Emisar.CatalogTest do
                  state_payload(packs: %{"x" => %{"version" => "1.0", "hash" => "sha256:H2"}})
                )
 
-      assert {:ok, [pv], _} = Catalog.list_pack_versions(subject)
-      assert pv.trust_state == :pending
-      assert pv.hash == "sha256:H1"
-      assert pv.pending_hash == "sha256:H2"
+      assert {:ok, [pack_version], _} = Catalog.list_pack_versions(subject)
+      assert pack_version.trust_state == :pending
+      assert pack_version.hash == "sha256:H1"
+      assert pack_version.pending_hash == "sha256:H2"
     end
 
     test "concurrent first-sight from two runners → no crash, one row" do
@@ -359,15 +359,15 @@ defmodule Emisar.CatalogTest do
       assert Enum.all?(results, &match?({:ok, _}, &1)),
              "one of the concurrent observers crashed: #{inspect(results)}"
 
-      assert {:ok, [pv], _} = Catalog.list_pack_versions(subject)
-      assert pv.pack_id == "raceduck-custom-pack"
-      assert pv.version == "0.3.0"
+      assert {:ok, [pack_version], _} = Catalog.list_pack_versions(subject)
+      assert pack_version.pack_id == "raceduck-custom-pack"
+      assert pack_version.version == "0.3.0"
       # Custom pack — no library baseline, so it lands pending and
       # awaits operator approval. The pending_hash is the bytes both
       # racing runners advertised.
-      assert pv.trust_state == :pending
-      assert pv.pending_hash == "sha256:RACE"
-      assert pv.hash == nil
+      assert pack_version.trust_state == :pending
+      assert pack_version.pending_hash == "sha256:RACE"
+      assert pack_version.hash == nil
     end
 
     test "advertising the trusted hash again after approval → no-op (just touches last_seen)" do
@@ -378,12 +378,12 @@ defmodule Emisar.CatalogTest do
         state_payload(packs: %{"x" => %{"version" => "1.0", "hash" => "sha256:H1"}})
 
       assert {:ok, _} = Catalog.observe_state(runner, payload)
-      {:ok, [pv], _} = Catalog.list_pack_versions(subject)
-      assert {:ok, _} = Catalog.trust_pack_version(pv.id, subject)
+      {:ok, [pack_version], _} = Catalog.list_pack_versions(subject)
+      assert {:ok, _} = Catalog.trust_pack_version(pack_version.id, subject)
       assert {:ok, _} = Catalog.observe_state(runner, payload)
 
-      assert {:ok, [pv], _} = Catalog.list_pack_versions(subject)
-      assert pv.trust_state == :trusted
+      assert {:ok, [pack_version], _} = Catalog.list_pack_versions(subject)
+      assert pack_version.trust_state == :trusted
     end
   end
 
@@ -398,14 +398,14 @@ defmodule Emisar.CatalogTest do
           state_payload(packs: %{"p" => %{"version" => "1.0", "hash" => "sha256:X"}})
         )
 
-      {:ok, [pv], _} = Catalog.list_pack_versions(subject)
+      {:ok, [pack_version], _} = Catalog.list_pack_versions(subject)
 
-      assert {:ok, %{id: id}} = Catalog.fetch_pack_version_by_id(pv.id, subject)
-      assert id == pv.id
+      assert {:ok, %{id: id}} = Catalog.fetch_pack_version_by_id(pack_version.id, subject)
+      assert id == pack_version.id
       assert {:error, :not_found} = Catalog.fetch_pack_version_by_id("not-a-uuid", subject)
 
       {_user_b, _account_b, subject_b} = owner_subject_fixture()
-      assert {:error, :not_found} = Catalog.fetch_pack_version_by_id(pv.id, subject_b)
+      assert {:error, :not_found} = Catalog.fetch_pack_version_by_id(pack_version.id, subject_b)
     end
 
     test "trusted_hash_for_action returns the trusted hash, never the pending one" do
@@ -426,8 +426,8 @@ defmodule Emisar.CatalogTest do
       # Custom pack, never trusted → no hash to stamp.
       assert Catalog.trusted_hash_for_action(action) == nil
 
-      {:ok, [pv], _} = Catalog.list_pack_versions(subject)
-      {:ok, _} = Catalog.trust_pack_version(pv.id, subject)
+      {:ok, [pack_version], _} = Catalog.list_pack_versions(subject)
+      {:ok, _} = Catalog.trust_pack_version(pack_version.id, subject)
 
       assert Catalog.trusted_hash_for_action(action) == "sha256:NEW"
     end
@@ -466,8 +466,8 @@ defmodule Emisar.CatalogTest do
           state_payload(packs: %{"p" => %{"version" => "1.0", "hash" => "sha256:NEW"}})
         )
 
-      {:ok, [pv], _} = Catalog.list_pack_versions(subject)
-      assert {:ok, trusted} = Catalog.trust_pack_version(pv.id, subject)
+      {:ok, [pack_version], _} = Catalog.list_pack_versions(subject)
+      assert {:ok, trusted} = Catalog.trust_pack_version(pack_version.id, subject)
       assert trusted.trust_state == :trusted
       assert trusted.hash == "sha256:NEW"
       assert trusted.pending_hash == nil
@@ -485,8 +485,8 @@ defmodule Emisar.CatalogTest do
 
       # Operator approves KEEP, then runner advertises DROP. Reject
       # should revert to KEEP.
-      {:ok, [pv], _} = Catalog.list_pack_versions(subject)
-      assert {:ok, _} = Catalog.trust_pack_version(pv.id, subject)
+      {:ok, [pack_version], _} = Catalog.list_pack_versions(subject)
+      assert {:ok, _} = Catalog.trust_pack_version(pack_version.id, subject)
 
       _ =
         Catalog.observe_state(
@@ -494,8 +494,8 @@ defmodule Emisar.CatalogTest do
           state_payload(packs: %{"p" => %{"version" => "1.0", "hash" => "sha256:DROP"}})
         )
 
-      {:ok, [pv], _} = Catalog.list_pack_versions(subject)
-      assert {:ok, after_reject} = Catalog.reject_pack_version(pv.id, subject)
+      {:ok, [pack_version], _} = Catalog.list_pack_versions(subject)
+      assert {:ok, after_reject} = Catalog.reject_pack_version(pack_version.id, subject)
       assert after_reject.trust_state == :trusted
       assert after_reject.hash == "sha256:KEEP"
       assert after_reject.pending_hash == nil
@@ -511,11 +511,11 @@ defmodule Emisar.CatalogTest do
           state_payload(packs: %{"custom" => %{"version" => "1.0", "hash" => "sha256:NEW"}})
         )
 
-      {:ok, [pv], _} = Catalog.list_pack_versions(subject)
-      assert pv.trust_state == :pending
-      assert pv.hash == nil
+      {:ok, [pack_version], _} = Catalog.list_pack_versions(subject)
+      assert pack_version.trust_state == :pending
+      assert pack_version.hash == nil
 
-      assert {:ok, trusted} = Catalog.trust_pack_version(pv.id, subject)
+      assert {:ok, trusted} = Catalog.trust_pack_version(pack_version.id, subject)
       assert trusted.trust_state == :trusted
       assert trusted.hash == "sha256:NEW"
       assert trusted.pending_hash == nil
@@ -531,8 +531,8 @@ defmodule Emisar.CatalogTest do
           state_payload(packs: %{"custom" => %{"version" => "1.0", "hash" => "sha256:NOPE"}})
         )
 
-      {:ok, [pv], _} = Catalog.list_pack_versions(subject)
-      assert {:ok, _} = Catalog.reject_pack_version(pv.id, subject)
+      {:ok, [pack_version], _} = Catalog.list_pack_versions(subject)
+      assert {:ok, _} = Catalog.reject_pack_version(pack_version.id, subject)
       assert {:ok, [], _} = Catalog.list_pack_versions(subject)
     end
 
@@ -554,9 +554,11 @@ defmodule Emisar.CatalogTest do
           state_payload(packs: %{"p" => %{"version" => "1.0", "hash" => "sha256:B"}})
         )
 
-      {:ok, [pv], _} = Catalog.list_pack_versions(owner_subject)
-      assert {:error, :unauthorized} = Catalog.trust_pack_version(pv.id, viewer_subject)
-      assert {:error, :unauthorized} = Catalog.reject_pack_version(pv.id, viewer_subject)
+      {:ok, [pack_version], _} = Catalog.list_pack_versions(owner_subject)
+      assert {:error, :unauthorized} = Catalog.trust_pack_version(pack_version.id, viewer_subject)
+
+      assert {:error, :unauthorized} =
+               Catalog.reject_pack_version(pack_version.id, viewer_subject)
     end
   end
 
@@ -575,8 +577,8 @@ defmodule Emisar.CatalogTest do
         )
 
       # Custom pack lands pending — operator approves before dispatch.
-      {:ok, [pv], _} = Catalog.list_pack_versions(subject)
-      assert {:ok, _} = Catalog.trust_pack_version(pv.id, subject)
+      {:ok, [pack_version], _} = Catalog.list_pack_versions(subject)
+      assert {:ok, _} = Catalog.trust_pack_version(pack_version.id, subject)
 
       {:ok, [act], _} = Catalog.list_actions_for_runner(runner.id, subject)
       assert :ok = Catalog.check_pack_trusted(act)

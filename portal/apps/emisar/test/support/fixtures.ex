@@ -153,9 +153,9 @@ defmodule Emisar.Fixtures do
   to protect humans — fine to ignore in fixtures that rig a state
   directly.
   """
-  def force_membership_role(%Accounts.Membership{} = m, role) when is_binary(role) do
+  def force_membership_role(%Accounts.Membership{} = membership, role) when is_binary(role) do
     {:ok, updated} =
-      m
+      membership
       |> Accounts.Membership.Changeset.update(%{role: role})
       |> Emisar.Repo.update()
 

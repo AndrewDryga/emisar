@@ -384,7 +384,7 @@ defmodule EmisarWeb.McpRpcControllerTest do
       make_runner!(account, name: "edge-1", group: "edge-eu")
       subject = Emisar.Fixtures.subject_for(user, account, role: :owner)
 
-      {:ok, rb} =
+      {:ok, runbook} =
         Emisar.Runbooks.create_runbook(
           %{
             "title" => "EU health",
@@ -404,7 +404,7 @@ defmodule EmisarWeb.McpRpcControllerTest do
           subject
         )
 
-      {:ok, _} = Emisar.Runbooks.publish(rb, subject)
+      {:ok, _} = Emisar.Runbooks.publish(runbook, subject)
 
       raw = make_api_key!(account, user)
       auth = fn c -> put_req_header(c, "authorization", "Bearer " <> raw) end

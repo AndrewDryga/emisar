@@ -161,13 +161,13 @@ defmodule Emisar.PoliciesTest do
         "overrides" => []
       }
 
-      cs =
+      changeset =
         PolicyChangeset.create(%{
           account_id: Ecto.UUID.generate(),
           rules: rules
         })
 
-      assert cs.valid?
+      assert changeset.valid?
     end
 
     test "rejects a higher tier that's more permissive than a lower tier" do
@@ -183,14 +183,16 @@ defmodule Emisar.PoliciesTest do
         "overrides" => []
       }
 
-      cs =
+      changeset =
         PolicyChangeset.create(%{
           account_id: Ecto.UUID.generate(),
           rules: rules
         })
 
-      refute cs.valid?
-      assert {"higher-risk tiers must be at least as restrictive" <> _, []} = cs.errors[:rules]
+      refute changeset.valid?
+
+      assert {"higher-risk tiers must be at least as restrictive" <> _, []} =
+               changeset.errors[:rules]
     end
 
     test "rejects critical=require_approval when high=deny" do
@@ -205,13 +207,13 @@ defmodule Emisar.PoliciesTest do
         "overrides" => []
       }
 
-      cs =
+      changeset =
         PolicyChangeset.create(%{
           account_id: Ecto.UUID.generate(),
           rules: rules
         })
 
-      refute cs.valid?
+      refute changeset.valid?
     end
 
     test "Policies.decision_rank/1 orders allow < require_approval < deny" do

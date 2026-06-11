@@ -32,9 +32,9 @@ defmodule Emisar.Runs.ActionRunTest do
 
   describe "create_changeset/2" do
     test "requires account_id, runner_id, request_id, action_id" do
-      cs = ActionRun.Changeset.create(%{})
-      refute cs.valid?
-      errors = Keyword.keys(cs.errors)
+      changeset = ActionRun.Changeset.create(%{})
+      refute changeset.valid?
+      errors = Keyword.keys(changeset.errors)
       assert :account_id in errors
       assert :runner_id in errors
       assert :request_id in errors
@@ -42,7 +42,7 @@ defmodule Emisar.Runs.ActionRunTest do
     end
 
     test "rejects unknown source values" do
-      cs =
+      changeset =
         ActionRun.Changeset.create(%{
           account_id: Ecto.UUID.generate(),
           runner_id: Ecto.UUID.generate(),
@@ -51,8 +51,8 @@ defmodule Emisar.Runs.ActionRunTest do
           source: "wat"
         })
 
-      refute cs.valid?
-      assert {"is invalid", _} = cs.errors[:source]
+      refute changeset.valid?
+      assert {"is invalid", _} = changeset.errors[:source]
     end
   end
 end

@@ -4,7 +4,7 @@ defmodule EmisarWeb.RunbookRunLiveTest do
   defp published_runbook!(user, account) do
     subject = owner_subject(user, account)
 
-    {:ok, rb} =
+    {:ok, runbook} =
       Emisar.Runbooks.create_runbook(
         %{
           "title" => "EU health",
@@ -24,8 +24,8 @@ defmodule EmisarWeb.RunbookRunLiveTest do
         subject
       )
 
-    {:ok, rb} = Emisar.Runbooks.publish(rb, subject)
-    rb
+    {:ok, runbook} = Emisar.Runbooks.publish(runbook, subject)
+    runbook
   end
 
   describe "dispatch + live results" do
@@ -34,9 +34,9 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       runner = Emisar.Fixtures.runner_fixture(account_id: account.id)
       Emisar.Fixtures.action_fixture(runner: runner, action_id: "linux.uptime")
       Emisar.Fixtures.policy_fixture(account_id: account.id)
-      rb = published_runbook!(user, account)
+      runbook = published_runbook!(user, account)
 
-      {:ok, lv, _html} = live(conn, ~p"/app/runbooks/#{rb.id}/run")
+      {:ok, lv, _html} = live(conn, ~p"/app/runbooks/#{runbook.id}/run")
 
       html = render_submit(lv, "dispatch", %{"reason" => "rolling restart"})
       assert html =~ "Runbook dispatched"
@@ -54,9 +54,9 @@ defmodule EmisarWeb.RunbookRunLiveTest do
     test "the target select offers runner groups alongside runners", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
       runner = Emisar.Fixtures.runner_fixture(account_id: account.id)
-      rb = published_runbook!(user, account)
+      runbook = published_runbook!(user, account)
 
-      {:ok, _lv, html} = live(conn, ~p"/app/runbooks/#{rb.id}/run")
+      {:ok, _lv, html} = live(conn, ~p"/app/runbooks/#{runbook.id}/run")
 
       assert html =~ "Runner groups"
       assert html =~ "group:#{runner.group}"
@@ -68,9 +68,9 @@ defmodule EmisarWeb.RunbookRunLiveTest do
     test "a blank reason shows an inline field error, not a flash", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
       Emisar.Fixtures.runner_fixture(account_id: account.id)
-      rb = published_runbook!(user, account)
+      runbook = published_runbook!(user, account)
 
-      {:ok, lv, _html} = live(conn, ~p"/app/runbooks/#{rb.id}/run")
+      {:ok, lv, _html} = live(conn, ~p"/app/runbooks/#{runbook.id}/run")
 
       # A runner is preselected (mount picks the first), so the only missing run
       # parameter is the required reason. Dispatching with it blank renders the
@@ -86,9 +86,9 @@ defmodule EmisarWeb.RunbookRunLiveTest do
     test "typing a reason clears the inline error live", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
       Emisar.Fixtures.runner_fixture(account_id: account.id)
-      rb = published_runbook!(user, account)
+      runbook = published_runbook!(user, account)
 
-      {:ok, lv, _html} = live(conn, ~p"/app/runbooks/#{rb.id}/run")
+      {:ok, lv, _html} = live(conn, ~p"/app/runbooks/#{runbook.id}/run")
 
       # Trip the inline error first.
       html = render_submit(lv, "dispatch", %{"reason" => ""})

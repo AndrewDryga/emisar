@@ -384,10 +384,10 @@ defmodule Emisar.AuthAuditTest do
         definition: %{"steps" => []}
       }
 
-      {:ok, rb} = Emisar.Runbooks.create_runbook(attrs, subject)
+      {:ok, runbook} = Emisar.Runbooks.create_runbook(attrs, subject)
 
       assert [event] = events_of(account, "runbook.created")
-      assert event.subject_id == rb.id
+      assert event.subject_id == runbook.id
       assert event.payload["name"] == attrs.name
       assert event.payload["version"] == 1
     end
@@ -395,7 +395,7 @@ defmodule Emisar.AuthAuditTest do
     test "save_new_version audits runbook.updated with version bump" do
       {_user, account, subject} = owner_subject_fixture()
 
-      {:ok, rb} =
+      {:ok, runbook} =
         Emisar.Runbooks.create_runbook(
           %{
             name: "ops-#{System.unique_integer()}",
@@ -408,7 +408,7 @@ defmodule Emisar.AuthAuditTest do
         )
 
       {:ok, v2} =
-        Emisar.Runbooks.save_new_version(rb, %{description: "tweaked"}, subject)
+        Emisar.Runbooks.save_new_version(runbook, %{description: "tweaked"}, subject)
 
       assert [event] = events_of(account, "runbook.updated")
       assert event.subject_id == v2.id
@@ -419,7 +419,7 @@ defmodule Emisar.AuthAuditTest do
     test "save_new_version accepts string-keyed form params" do
       {_user, _account, subject} = owner_subject_fixture()
 
-      {:ok, rb} =
+      {:ok, runbook} =
         Emisar.Runbooks.create_runbook(
           %{
             name: "ops-#{System.unique_integer()}",
@@ -434,7 +434,7 @@ defmodule Emisar.AuthAuditTest do
       # programmatic version bump (this combination crashed cast on mixed keys).
       assert {:ok, v2} =
                Emisar.Runbooks.save_new_version(
-                 rb,
+                 runbook,
                  %{"description" => "tweaked", "definition" => %{"steps" => []}},
                  subject
                )
@@ -445,7 +445,7 @@ defmodule Emisar.AuthAuditTest do
     test "publish audits runbook.published" do
       {_user, account, subject} = owner_subject_fixture()
 
-      {:ok, rb} =
+      {:ok, runbook} =
         Emisar.Runbooks.create_runbook(
           %{
             name: "ops-#{System.unique_integer()}",
@@ -457,7 +457,7 @@ defmodule Emisar.AuthAuditTest do
           subject
         )
 
-      {:ok, published} = Emisar.Runbooks.publish(rb, subject)
+      {:ok, published} = Emisar.Runbooks.publish(runbook, subject)
 
       assert [event] = events_of(account, "runbook.published")
       assert event.subject_id == published.id
@@ -620,9 +620,9 @@ defmodule Emisar.AuthAuditTest do
       # Default behavior — caller is the user requesting their own reset.
       _ = Auth.issue_password_reset_token!(target)
 
-      assert [ev] = events_of(account, "user.password_reset_requested")
-      assert ev.actor_id == target.id
-      assert ev.subject_id == target.id
+      assert [event] = events_of(account, "user.password_reset_requested")
+      assert event.actor_id == target.id
+      assert event.subject_id == target.id
     end
 
     test "the :audit false override suppresses the inline event without affecting token issuance",

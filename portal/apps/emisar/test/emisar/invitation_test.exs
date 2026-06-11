@@ -74,16 +74,20 @@ defmodule Emisar.InvitationTest do
       account = account_fixture()
       {_inviter, subject} = inviter_subject(account)
 
-      {:ok, %{membership: m, invitation_token: token, user: u}} =
+      {:ok, %{membership: membership, invitation_token: token, user: invitee}} =
         Accounts.invite_user_to_account("bob@example.test", "admin", subject)
 
-      %{membership: m, token: token, invitee: u, account: account}
+      %{membership: membership, token: token, invitee: invitee, account: account}
     end
 
-    test "returns the membership with preloads", %{token: token, account: account, invitee: u} do
-      assert {:ok, m} = Accounts.fetch_invitation_by_token(token)
-      assert m.account.id == account.id
-      assert m.user.id == u.id
+    test "returns the membership with preloads", %{
+      token: token,
+      account: account,
+      invitee: invitee
+    } do
+      assert {:ok, membership} = Accounts.fetch_invitation_by_token(token)
+      assert membership.account.id == account.id
+      assert membership.user.id == invitee.id
     end
 
     test "returns :not_found for an unknown token" do
@@ -95,11 +99,11 @@ defmodule Emisar.InvitationTest do
       assert {:error, :not_found} = Accounts.fetch_invitation_by_token("")
     end
 
-    test "an expired invitation no longer resolves", %{membership: m, token: token} do
+    test "an expired invitation no longer resolves", %{membership: membership, token: token} do
       # inserted_at IS the invite time (re-invites insert fresh rows) —
       # backdate it past the validity window.
       nine_days_ago = DateTime.add(DateTime.utc_now(), -9 * 24 * 3600, :second)
-      {:ok, _} = m |> Ecto.Changeset.change(inserted_at: nine_days_ago) |> Repo.update()
+      {:ok, _} = membership |> Ecto.Changeset.change(inserted_at: nine_days_ago) |> Repo.update()
 
       assert {:error, :not_found} = Accounts.fetch_invitation_by_token(token)
     end
@@ -110,30 +114,36 @@ defmodule Emisar.InvitationTest do
       account = account_fixture()
       {_inviter, subject} = inviter_subject(account)
 
-      {:ok, %{membership: m}} =
+      {:ok, %{membership: membership}} =
         Accounts.invite_user_to_account("carol@example.test", "operator", subject)
 
-      %{membership: m}
+      %{membership: membership}
     end
 
-    test "sets the user's password + full_name, confirms, clears the token", %{membership: m} do
+    test "sets the user's password + full_name, confirms, clears the token", %{
+      membership: membership
+    } do
       attrs = %{"full_name" => "Carol", "password" => "very-long-password-1234"}
 
-      assert {:ok, %{user: user, membership: m2}} = Accounts.accept_invitation(m, attrs)
+      assert {:ok, %{user: user, membership: accepted_membership}} =
+               Accounts.accept_invitation(membership, attrs)
 
       assert user.full_name == "Carol"
       assert user.confirmed_at
-      assert is_nil(m2.invitation_token_digest)
-      assert m2.invitation_accepted_at
+      assert is_nil(accepted_membership.invitation_token_digest)
+      assert accepted_membership.invitation_accepted_at
 
       # And the user can now actually sign in.
       assert {:ok, %_{}} =
                Emisar.Auth.fetch_user_by_email_and_password(user.email, "very-long-password-1234")
     end
 
-    test "rejects too-short passwords", %{membership: m} do
+    test "rejects too-short passwords", %{membership: membership} do
       assert {:error, %Ecto.Changeset{}} =
-               Accounts.accept_invitation(m, %{"full_name" => "Carol", "password" => "short"})
+               Accounts.accept_invitation(membership, %{
+                 "full_name" => "Carol",
+                 "password" => "short"
+               })
     end
   end
 end

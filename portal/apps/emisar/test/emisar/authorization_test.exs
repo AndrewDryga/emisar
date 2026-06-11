@@ -163,7 +163,7 @@ defmodule Emisar.AuthorizationTest do
 
       # The LiveView form submits string keys; the context must not merge an
       # atom :version into them — that produced a mixed-key map and crashed cast.
-      assert {:ok, rb} =
+      assert {:ok, runbook} =
                Emisar.Runbooks.create_runbook(
                  %{
                    "name" => "from-form",
@@ -180,7 +180,7 @@ defmodule Emisar.AuthorizationTest do
                  subject
                )
 
-      assert rb.version == 1
+      assert runbook.version == 1
     end
   end
 

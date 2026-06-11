@@ -42,8 +42,8 @@ defmodule EmisarWeb.ApprovalDecisionGateLiveTest do
         args: %{}
       })
 
-    {:ok, req} = Approvals.create_request(run, requested_by.id, "please approve")
-    req
+    {:ok, request} = Approvals.create_request(run, requested_by.id, "please approve")
+    request
   end
 
   defp reload_status(req_id) do
@@ -63,9 +63,9 @@ defmodule EmisarWeb.ApprovalDecisionGateLiveTest do
   describe "owner decisions transition state" do
     test "approving a pending request flips it to approved", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
-      req = pending_request(account, user)
+      request = pending_request(account, user)
 
-      {:ok, lv, _html} = live(conn, ~p"/app/approvals/#{req.id}")
+      {:ok, lv, _html} = live(conn, ~p"/app/approvals/#{request.id}")
 
       # Duration defaults to "once" (the form's first option) → no grant,
       # one-shot approval.
@@ -75,14 +75,14 @@ defmodule EmisarWeb.ApprovalDecisionGateLiveTest do
         |> render_submit(%{"reason" => "ok"})
 
       assert html =~ "Approved for this call only."
-      assert reload_status(req.id) == :approved
+      assert reload_status(request.id) == :approved
     end
 
     test "denying a pending request flips it to denied", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
-      req = pending_request(account, user)
+      request = pending_request(account, user)
 
-      {:ok, lv, _html} = live(conn, ~p"/app/approvals/#{req.id}")
+      {:ok, lv, _html} = live(conn, ~p"/app/approvals/#{request.id}")
 
       html =
         lv
@@ -90,17 +90,17 @@ defmodule EmisarWeb.ApprovalDecisionGateLiveTest do
         |> render_submit()
 
       assert html =~ "Denied."
-      assert reload_status(req.id) == :denied
+      assert reload_status(request.id) == :denied
     end
   end
 
   describe "viewer is gated" do
     test "no approve/deny controls render for a viewer", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
-      req = pending_request(account, user)
+      request = pending_request(account, user)
       downgrade_to_viewer(user)
 
-      {:ok, _lv, html} = live(conn, ~p"/app/approvals/#{req.id}")
+      {:ok, _lv, html} = live(conn, ~p"/app/approvals/#{request.id}")
 
       assert html =~ "Viewers can&#39;t decide approvals." or
                html =~ "Viewers can't decide approvals."
@@ -111,10 +111,10 @@ defmodule EmisarWeb.ApprovalDecisionGateLiveTest do
 
     test "a crafted approve event is refused — flash, request stays pending", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
-      req = pending_request(account, user)
+      request = pending_request(account, user)
       downgrade_to_viewer(user)
 
-      {:ok, lv, _html} = live(conn, ~p"/app/approvals/#{req.id}")
+      {:ok, lv, _html} = live(conn, ~p"/app/approvals/#{request.id}")
 
       # Push the event directly, as a hand-rolled client would — the
       # rendered UI never offers it to a viewer, so the handler itself
@@ -122,20 +122,20 @@ defmodule EmisarWeb.ApprovalDecisionGateLiveTest do
       html = render_hook(lv, "approve", %{"reason" => "let me in"})
 
       assert html =~ "Viewers can&#39;t decide approvals."
-      assert reload_status(req.id) == :pending
+      assert reload_status(request.id) == :pending
     end
 
     test "a crafted deny event is refused — request stays pending", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
-      req = pending_request(account, user)
+      request = pending_request(account, user)
       downgrade_to_viewer(user)
 
-      {:ok, lv, _html} = live(conn, ~p"/app/approvals/#{req.id}")
+      {:ok, lv, _html} = live(conn, ~p"/app/approvals/#{request.id}")
 
       html = render_hook(lv, "deny", %{"reason" => "nope"})
 
       assert html =~ "Viewers can&#39;t decide approvals."
-      assert reload_status(req.id) == :pending
+      assert reload_status(request.id) == :pending
     end
   end
 end

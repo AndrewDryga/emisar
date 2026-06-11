@@ -35,11 +35,11 @@ defmodule Emisar.ApprovalsTest do
     test "fetch_approval_request_by_run_id finds the run's single request, account-scoped" do
       {account, run} = run_fixture()
       operator = user_fixture()
-      {:ok, req} = Approvals.create_request(run, operator.id, "x")
+      {:ok, request} = Approvals.create_request(run, operator.id, "x")
 
       subject = operator_subject(account)
       assert {:ok, %Request{id: id}} = Approvals.fetch_approval_request_by_run_id(run.id, subject)
-      assert id == req.id
+      assert id == request.id
 
       {other_account, _run_b} = run_fixture()
       other_subject = operator_subject(other_account)
@@ -51,10 +51,10 @@ defmodule Emisar.ApprovalsTest do
     test "list_approval_requests_for_account filters by status" do
       {account, run} = run_fixture()
       operator = user_fixture()
-      {:ok, req} = Approvals.create_request(run, operator.id, "x")
+      {:ok, request} = Approvals.create_request(run, operator.id, "x")
 
       subject = operator_subject(account)
-      {:ok, _} = Approvals.deny_request(req, subject, "no")
+      {:ok, _} = Approvals.deny_request(request, subject, "no")
 
       assert {:ok, [%Request{status: :denied}], _} =
                Approvals.list_approval_requests_for_account(subject, status: "denied")
@@ -79,11 +79,14 @@ defmodule Emisar.ApprovalsTest do
           api_key_id: key.id
         })
 
-      {:ok, req} = Approvals.create_request(run, operator.id, "x")
+      {:ok, request} = Approvals.create_request(run, operator.id, "x")
       subject = operator_subject(account)
 
       {:ok, grant} =
-        Approvals.create_grant(req, run, operator.id, %{duration: :one_day, scope: :exact_args})
+        Approvals.create_grant(request, run, operator.id, %{
+          duration: :one_day,
+          scope: :exact_args
+        })
 
       assert {:ok, %Grant{id: id}} = Approvals.fetch_grant_by_id(grant.id, subject)
       assert id == grant.id
@@ -187,10 +190,10 @@ defmodule Emisar.ApprovalsTest do
     test "transitions the run to :sent + writes an audit event" do
       {account, run} = run_fixture()
       subject = operator_subject(account)
-      {:ok, req} = Approvals.create_request(run, subject.actor.id, "needs approve")
+      {:ok, request} = Approvals.create_request(run, subject.actor.id, "needs approve")
 
       assert {:ok, {%Request{status: :approved}, %ActionRun{status: :sent}}} =
-               Approvals.approve_request(req, subject, "lgtm")
+               Approvals.approve_request(request, subject, "lgtm")
 
       assert Enum.any?(
                Audit.list_events(subject, page: [limit: 50])
@@ -202,13 +205,14 @@ defmodule Emisar.ApprovalsTest do
     test "a viewer (cannot decide) is refused with :unauthorized" do
       {account, run} = run_fixture()
       decider = operator_subject(account)
-      {:ok, req} = Approvals.create_request(run, decider.actor.id, "needs approve")
+      {:ok, request} = Approvals.create_request(run, decider.actor.id, "needs approve")
 
       viewer = user_fixture()
       _ = membership_fixture(account_id: account.id, user_id: viewer.id, role: "viewer")
       viewer_subject = subject_for(viewer, account, role: :viewer)
 
-      assert {:error, :unauthorized} = Approvals.approve_request(req, viewer_subject, "no rights")
+      assert {:error, :unauthorized} =
+               Approvals.approve_request(request, viewer_subject, "no rights")
     end
 
     test "an owner of account B cannot approve account A's request (cross-account → :not_found)" do
@@ -229,10 +233,10 @@ defmodule Emisar.ApprovalsTest do
     test "transitions the run to :cancelled + writes an audit event" do
       {account, run} = run_fixture()
       subject = operator_subject(account)
-      {:ok, req} = Approvals.create_request(run, subject.actor.id, "needs approve")
+      {:ok, request} = Approvals.create_request(run, subject.actor.id, "needs approve")
 
       assert {:ok, {%Request{status: :denied}, %ActionRun{status: :cancelled}}} =
-               Approvals.deny_request(req, subject, "not now")
+               Approvals.deny_request(request, subject, "not now")
 
       assert Enum.any?(
                Audit.list_events(subject, page: [limit: 50])
@@ -244,13 +248,14 @@ defmodule Emisar.ApprovalsTest do
     test "a viewer (cannot decide) is refused with :unauthorized" do
       {account, run} = run_fixture()
       decider = operator_subject(account)
-      {:ok, req} = Approvals.create_request(run, decider.actor.id, "needs approve")
+      {:ok, request} = Approvals.create_request(run, decider.actor.id, "needs approve")
 
       viewer = user_fixture()
       _ = membership_fixture(account_id: account.id, user_id: viewer.id, role: "viewer")
       viewer_subject = subject_for(viewer, account, role: :viewer)
 
-      assert {:error, :unauthorized} = Approvals.deny_request(req, viewer_subject, "no rights")
+      assert {:error, :unauthorized} =
+               Approvals.deny_request(request, viewer_subject, "no rights")
     end
 
     test "an owner of account B cannot deny account A's request (cross-account → :not_found)" do
@@ -415,8 +420,8 @@ defmodule Emisar.ApprovalsTest do
       subject = subject_for(user, account, role: :owner)
       {_, key} = api_key_fixture(account_id: account.id, created_by_id: user.id)
 
-      g = insert_grant(account, key, action_id: "x", granted_by_id: user.id)
-      {:ok, _} = Approvals.revoke_grant(g, subject)
+      grant = insert_grant(account, key, action_id: "x", granted_by_id: user.id)
+      {:ok, _} = Approvals.revoke_grant(grant, subject)
 
       assert Approvals.peek_matching_grant(key.id, "x", nil, "sha") == nil
     end
@@ -431,15 +436,15 @@ defmodule Emisar.ApprovalsTest do
       subject = subject_for(user, account, role: :owner)
       {_, key} = api_key_fixture(account_id: account.id, created_by_id: user.id)
 
-      g = insert_grant(account, key, action_id: "act.revoke-audit", granted_by_id: user.id)
-      assert {:ok, _} = Approvals.revoke_grant(g, subject)
+      grant = insert_grant(account, key, action_id: "act.revoke-audit", granted_by_id: user.id)
+      assert {:ok, _} = Approvals.revoke_grant(grant, subject)
 
       {:ok, events, _} = Emisar.Audit.list_events(subject)
       audit = Enum.find(events, &(&1.event_type == "approval.grant_revoked"))
 
       assert audit, "expected an approval.grant_revoked audit row"
       assert audit.subject_kind == "approval_grant"
-      assert audit.subject_id == g.id
+      assert audit.subject_id == grant.id
       assert audit.actor_kind == "user"
       assert audit.actor_id == user.id
       assert audit.payload["action_id"] == "act.revoke-audit"
@@ -464,13 +469,13 @@ defmodule Emisar.ApprovalsTest do
       account = account_fixture()
       user = user_fixture()
       {_, key} = api_key_fixture(account_id: account.id, created_by_id: user.id)
-      g = insert_grant(account, key, action_id: "x", granted_by_id: user.id)
+      grant = insert_grant(account, key, action_id: "x", granted_by_id: user.id)
 
       operator = user_fixture()
       _ = membership_fixture(account_id: account.id, user_id: operator.id, role: "operator")
       operator_subject = subject_for(operator, account, role: :operator)
 
-      assert {:error, :unauthorized} = Approvals.revoke_grant(g, operator_subject)
+      assert {:error, :unauthorized} = Approvals.revoke_grant(grant, operator_subject)
     end
 
     test "an owner of account B cannot revoke account A's grant (cross-account → :not_found)" do
@@ -493,10 +498,10 @@ defmodule Emisar.ApprovalsTest do
       account = account_fixture()
       user = user_fixture()
       {_, key} = api_key_fixture(account_id: account.id, created_by_id: user.id)
-      g = insert_grant(account, key, action_id: "x", max_uses: 1, granted_by_id: user.id)
+      grant = insert_grant(account, key, action_id: "x", max_uses: 1, granted_by_id: user.id)
 
-      assert :ok = Approvals.use_grant(g)
-      reloaded = Repo.reload!(g)
+      assert :ok = Approvals.use_grant(grant)
+      reloaded = Repo.reload!(grant)
       assert reloaded.uses_count == 1
       assert reloaded.last_used_at != nil
 
@@ -507,13 +512,13 @@ defmodule Emisar.ApprovalsTest do
       account = account_fixture()
       user = user_fixture()
       {_, key} = api_key_fixture(account_id: account.id, created_by_id: user.id)
-      g = insert_grant(account, key, action_id: "x", granted_by_id: user.id)
+      grant = insert_grant(account, key, action_id: "x", granted_by_id: user.id)
 
-      assert :ok = Approvals.use_grant(g)
-      assert :ok = Approvals.use_grant(Repo.reload!(g))
-      assert :ok = Approvals.use_grant(Repo.reload!(g))
+      assert :ok = Approvals.use_grant(grant)
+      assert :ok = Approvals.use_grant(Repo.reload!(grant))
+      assert :ok = Approvals.use_grant(Repo.reload!(grant))
 
-      assert Repo.reload!(g).uses_count == 3
+      assert Repo.reload!(grant).uses_count == 3
     end
   end
 
@@ -536,8 +541,8 @@ defmodule Emisar.ApprovalsTest do
           args_sha256: "abc"
         })
 
-      {:ok, req} = Approvals.create_request(run, user.id, "x")
-      {:ok, _} = Approvals.approve_request(req, subject, "ok", duration: :once)
+      {:ok, request} = Approvals.create_request(run, user.id, "x")
+      {:ok, _} = Approvals.approve_request(request, subject, "ok", duration: :once)
 
       assert [] = grants_for_api_key(key.id)
     end
@@ -561,21 +566,21 @@ defmodule Emisar.ApprovalsTest do
           args_sha256: "abc123"
         })
 
-      {:ok, req} = Approvals.create_request(run, user.id, "x")
+      {:ok, request} = Approvals.create_request(run, user.id, "x")
 
       {:ok, _} =
-        Approvals.approve_request(req, subject, nil, duration: :one_day, scope: :exact_args)
+        Approvals.approve_request(request, subject, nil, duration: :one_day, scope: :exact_args)
 
-      [g] = grants_for_api_key(key.id)
-      assert g.action_id == "linux.uptime"
-      assert g.args_sha256 == "abc123"
-      assert g.expires_at != nil
-      assert DateTime.diff(g.expires_at, DateTime.utc_now(), :hour) in 23..24
+      [grant] = grants_for_api_key(key.id)
+      assert grant.action_id == "linux.uptime"
+      assert grant.args_sha256 == "abc123"
+      assert grant.expires_at != nil
+      assert DateTime.diff(grant.expires_at, DateTime.utc_now(), :hour) in 23..24
 
       # Minting the grant dispatched the approved run — that's its first
       # use, so it starts at 1 (never "not used yet") with last_used_at set.
-      assert g.uses_count == 1
-      assert g.last_used_at != nil
+      assert grant.uses_count == 1
+      assert grant.last_used_at != nil
     end
 
     test "honors the operator's max_uses cap on the minted grant" do
@@ -597,14 +602,14 @@ defmodule Emisar.ApprovalsTest do
           args_sha256: "abc123"
         })
 
-      {:ok, req} = Approvals.create_request(run, user.id, "x")
+      {:ok, request} = Approvals.create_request(run, user.id, "x")
 
-      {:ok, _} = Approvals.approve_request(req, subject, nil, duration: :one_day, max_uses: 5)
+      {:ok, _} = Approvals.approve_request(request, subject, nil, duration: :one_day, max_uses: 5)
 
       # Regression: approve_request used to drop :max_uses from grant_attrs,
       # minting an UNCAPPED grant even when the operator set a cap.
-      [g] = grants_for_api_key(key.id)
-      assert g.max_uses == 5
+      [grant] = grants_for_api_key(key.id)
+      assert grant.max_uses == 5
     end
 
     test "preloads the originating run so the UI can show the locked args" do
@@ -626,15 +631,15 @@ defmodule Emisar.ApprovalsTest do
           args_sha256: "deadbeef"
         })
 
-      {:ok, req} = Approvals.create_request(run, user.id, "x")
+      {:ok, request} = Approvals.create_request(run, user.id, "x")
 
       {:ok, _} =
-        Approvals.approve_request(req, subject, nil, duration: :one_day, scope: :exact_args)
+        Approvals.approve_request(request, subject, nil, duration: :one_day, scope: :exact_args)
 
       # The grant stores only the hash; the list preloads approval_request
       # → run so the operator can see exactly what args it's locked to.
-      {:ok, [g], _} = Approvals.list_grants_for_account(subject)
-      assert g.approval_request.run.args == %{"table" => "users", "full" => true}
+      {:ok, [grant], _} = Approvals.list_grants_for_account(subject)
+      assert grant.approval_request.run.args == %{"table" => "users", "full" => true}
     end
 
     test "a failed grant insert rolls the approval transaction back — no dispatch, no grant, no approved audit" do
@@ -663,7 +668,7 @@ defmodule Emisar.ApprovalsTest do
           args_sha256: "abc123"
         })
 
-      {:ok, req} = Approvals.create_request(run, user.id, "x")
+      {:ok, request} = Approvals.create_request(run, user.id, "x")
 
       # Force create_grant to fail deterministically: blank the run's
       # action_id (bypassing the create changeset). Grant.Changeset.create
@@ -677,7 +682,7 @@ defmodule Emisar.ApprovalsTest do
       Emisar.Runners.subscribe_runner_transport(runner)
 
       assert {:error, {:grant_failed, %Ecto.Changeset{}}} =
-               Approvals.approve_request(req, subject, "ok", duration: :one_day)
+               Approvals.approve_request(request, subject, "ok", duration: :one_day)
 
       # No grant was minted.
       assert [] = grants_for_api_key(key.id)
@@ -712,16 +717,16 @@ defmodule Emisar.ApprovalsTest do
           args_sha256: "abc123"
         })
 
-      {:ok, req} = Approvals.create_request(run, user.id, "x")
+      {:ok, request} = Approvals.create_request(run, user.id, "x")
 
       {:ok, _} =
-        Approvals.approve_request(req, subject, nil, duration: :ninety_days, scope: :any_args)
+        Approvals.approve_request(request, subject, nil, duration: :ninety_days, scope: :any_args)
 
-      [g] = grants_for_api_key(key.id)
-      assert g.args_sha256 == nil
+      [grant] = grants_for_api_key(key.id)
+      assert grant.args_sha256 == nil
       # Every grant carries an explicit re-confirm horizon — there is
       # deliberately no indefinite duration.
-      assert %DateTime{} = g.expires_at
+      assert %DateTime{} = grant.expires_at
     end
   end
 
@@ -730,19 +735,21 @@ defmodule Emisar.ApprovalsTest do
       {account, run} = run_fixture()
       user = user_fixture()
       subject = subject_for(user_fixture(), account, role: :owner)
-      {:ok, req} = Approvals.create_request(run, user.id, "x")
+      {:ok, request} = Approvals.create_request(run, user.id, "x")
 
       # Move the request's expiry into the past.
       past = DateTime.utc_now() |> DateTime.add(-3600, :second) |> DateTime.truncate(:microsecond)
 
       {1, _} =
         Request.Query.all()
-        |> Request.Query.by_id(req.id)
+        |> Request.Query.by_id(request.id)
         |> Repo.update_all(set: [expires_at: past])
 
       assert Approvals.expire_overdue_requests() == 1
 
-      expired = Request.Query.all() |> Request.Query.by_id(req.id) |> Repo.fetch!(Request.Query)
+      expired =
+        Request.Query.all() |> Request.Query.by_id(request.id) |> Repo.fetch!(Request.Query)
+
       assert expired.status == :expired
       assert expired.decided_at != nil
       assert expired.decision_reason =~ "expired"
@@ -757,18 +764,18 @@ defmodule Emisar.ApprovalsTest do
       assert Enum.any?(
                Emisar.Audit.list_events(subject, page: [limit: 50])
                |> elem(1),
-               &(&1.event_type == "approval.expired" and &1.subject_id == req.id)
+               &(&1.event_type == "approval.expired" and &1.subject_id == request.id)
              )
     end
 
     test "is idempotent — second sweep is a no-op" do
       {_account, run} = run_fixture()
       user = user_fixture()
-      {:ok, req} = Approvals.create_request(run, user.id, "x")
+      {:ok, request} = Approvals.create_request(run, user.id, "x")
       past = DateTime.utc_now() |> DateTime.add(-3600, :second)
 
       Request.Query.all()
-      |> Request.Query.by_id(req.id)
+      |> Request.Query.by_id(request.id)
       |> Repo.update_all(set: [expires_at: past])
 
       assert Approvals.expire_overdue_requests() == 1
@@ -778,12 +785,12 @@ defmodule Emisar.ApprovalsTest do
     test "leaves pending requests within the window alone" do
       {_account, run} = run_fixture()
       user = user_fixture()
-      {:ok, req} = Approvals.create_request(run, user.id, "x")
+      {:ok, request} = Approvals.create_request(run, user.id, "x")
       # default 24h is in the future
       assert Approvals.expire_overdue_requests() == 0
 
       assert (Request.Query.all()
-              |> Request.Query.by_id(req.id)
+              |> Request.Query.by_id(request.id)
               |> Repo.fetch!(Request.Query)).status == :pending
     end
   end
@@ -792,10 +799,10 @@ defmodule Emisar.ApprovalsTest do
     test "sets expires_at 24h from now by default" do
       {_account, run} = run_fixture()
       user = user_fixture()
-      {:ok, req} = Approvals.create_request(run, user.id, "x")
+      {:ok, request} = Approvals.create_request(run, user.id, "x")
 
-      assert req.expires_at != nil
-      assert DateTime.diff(req.expires_at, DateTime.utc_now(), :hour) in 23..24
+      assert request.expires_at != nil
+      assert DateTime.diff(request.expires_at, DateTime.utc_now(), :hour) in 23..24
     end
   end
 
@@ -838,11 +845,11 @@ defmodule Emisar.ApprovalsTest do
       assert {:ok, :pending_approval, run1} =
                Runs.dispatch_run(attrs, subject)
 
-      req =
+      request =
         Request.Query.all() |> Request.Query.by_run_id(run1.id) |> Repo.fetch!(Request.Query)
 
       {:ok, _} =
-        Approvals.approve_request(req, subject, nil, duration: :one_day, scope: :any_args)
+        Approvals.approve_request(request, subject, nil, duration: :one_day, scope: :any_args)
 
       assert_receive {:cloud_to_runner, %{"type" => "run_action"}}, 500
 
@@ -851,10 +858,10 @@ defmodule Emisar.ApprovalsTest do
       refute Request.Query.all() |> Request.Query.by_run_id(run2.id) |> Repo.peek()
       assert_receive {:cloud_to_runner, %{"type" => "run_action"}}, 500
 
-      [g] = grants_for_api_key(key.id)
+      [grant] = grants_for_api_key(key.id)
       # Two executions under this grant: the approved first call (its
       # minting use) and the auto-approved second call.
-      assert g.uses_count == 2
+      assert grant.uses_count == 2
     end
 
     test ":once approval doesn't create a reusable grant" do
@@ -895,10 +902,10 @@ defmodule Emisar.ApprovalsTest do
       {:ok, :pending_approval, run1} =
         Runs.dispatch_run(attrs, subject)
 
-      req =
+      request =
         Request.Query.all() |> Request.Query.by_run_id(run1.id) |> Repo.fetch!(Request.Query)
 
-      {:ok, _} = Approvals.approve_request(req, subject, nil, duration: :once)
+      {:ok, _} = Approvals.approve_request(request, subject, nil, duration: :once)
 
       assert {:ok, :pending_approval, _run2} =
                Runs.dispatch_run(attrs, subject)

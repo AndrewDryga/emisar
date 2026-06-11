@@ -194,8 +194,8 @@ defmodule Emisar.RunsTest do
           {:ok, _} -> :ok
         end
 
-      {:ok, [pv], _} = Emisar.Catalog.list_pack_versions(subject)
-      assert {:ok, _} = Emisar.Catalog.trust_pack_version(pv.id, subject)
+      {:ok, [pack_version], _} = Emisar.Catalog.list_pack_versions(subject)
+      assert {:ok, _} = Emisar.Catalog.trust_pack_version(pack_version.id, subject)
 
       _ = policy_fixture(account_id: account.id)
 
@@ -383,7 +383,7 @@ defmodule Emisar.RunsTest do
 
       steps = good_steps ++ [%{"id" => "step6", "action_id" => "linux.missing", "args" => %{}}]
 
-      {:ok, rb} =
+      {:ok, runbook} =
         Emisar.Runbooks.create_runbook(
           %{
             "title" => "six-step",
@@ -394,10 +394,10 @@ defmodule Emisar.RunsTest do
           subject
         )
 
-      {:ok, rb} = Emisar.Runbooks.publish(rb, subject)
+      {:ok, runbook} = Emisar.Runbooks.publish(runbook, subject)
 
       {:ok, %{execution_id: execution_id, runs: wave1, errors: []}} =
-        Emisar.Runbooks.dispatch_runbook(rb, {:runner, runner.id}, "ship it", subject)
+        Emisar.Runbooks.dispatch_runbook(runbook, {:runner, runner.id}, "ship it", subject)
 
       assert length(wave1) == 5
 
@@ -413,8 +413,8 @@ defmodule Emisar.RunsTest do
 
       assert failed, "expected a runbook.step_dispatch_failed audit row"
       assert failed.subject_kind == "runbook"
-      assert failed.subject_id == rb.id
-      assert failed.payload["runbook_id"] == rb.id
+      assert failed.subject_id == runbook.id
+      assert failed.payload["runbook_id"] == runbook.id
       assert failed.payload["runbook_execution_id"] == execution_id
       assert failed.payload["runbook_step_id"] == "step6"
       assert failed.payload["runner_id"] == runner.id
@@ -427,7 +427,7 @@ defmodule Emisar.RunsTest do
       _ = action_fixture(runner: runner, action_id: "linux.uptime", risk: "low")
       _ = policy_fixture(account_id: account.id)
 
-      {:ok, rb} =
+      {:ok, runbook} =
         Emisar.Runbooks.create_runbook(
           %{
             "title" => "two-step-ok",
@@ -443,10 +443,10 @@ defmodule Emisar.RunsTest do
           subject
         )
 
-      {:ok, rb} = Emisar.Runbooks.publish(rb, subject)
+      {:ok, runbook} = Emisar.Runbooks.publish(runbook, subject)
 
       {:ok, %{runs: runs, errors: []}} =
-        Emisar.Runbooks.dispatch_runbook(rb, {:runner, runner.id}, "ship it", subject)
+        Emisar.Runbooks.dispatch_runbook(runbook, {:runner, runner.id}, "ship it", subject)
 
       Enum.each(runs, fn run ->
         {:ok, _} = Runs.mark_finished(run, %{"status" => "success", "duration_ms" => 5})
