@@ -25,6 +25,38 @@ defmodule Emisar.ApprovalsTest do
     {account, run}
   end
 
+  describe "fetch_approval_request_by_id/3" do
+    test "returns the request inside the subject's account; cross-account is :not_found" do
+      {account, run} = run_fixture()
+      {:ok, request} = Approvals.create_request(run, user_fixture().id, "x")
+      subject = operator_subject(account)
+
+      assert {:ok, %Request{id: id}} = Approvals.fetch_approval_request_by_id(request.id, subject)
+      assert id == request.id
+
+      {other_account, _run} = run_fixture()
+      other_subject = operator_subject(other_account)
+
+      assert {:error, :not_found} =
+               Approvals.fetch_approval_request_by_id(request.id, other_subject)
+
+      assert {:error, :not_found} = Approvals.fetch_approval_request_by_id("not-a-uuid", subject)
+    end
+  end
+
+  describe "double decide" do
+    test "the second operator's decision loses with :already_decided" do
+      {account, run} = run_fixture()
+      {:ok, request} = Approvals.create_request(run, user_fixture().id, "x")
+      first = operator_subject(account)
+      second = operator_subject(account)
+
+      assert {:ok, _} = Approvals.deny_request(request, first, "no")
+      assert {:error, :already_decided} = Approvals.approve_request(request, second)
+      assert {:error, :already_decided} = Approvals.deny_request(request, second, "again")
+    end
+  end
+
   defp operator_subject(account) do
     operator = user_fixture()
     _ = membership_fixture(account_id: account.id, user_id: operator.id, role: "owner")

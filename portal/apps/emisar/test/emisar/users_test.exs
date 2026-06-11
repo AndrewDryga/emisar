@@ -78,4 +78,54 @@ defmodule Emisar.UsersTest do
                Users.update_user_email("not-an-email", password, subject)
     end
   end
+
+  describe "fetch_user_by_id/1" do
+    test "a malformed id is a clean :not_found" do
+      assert {:error, :not_found} = Users.fetch_user_by_id("not-a-uuid")
+    end
+  end
+
+  describe "user_labels_for_ids/1" do
+    test "labels by full name, falls back to email, skips nils and dedupes" do
+      named = user_fixture(full_name: "Ada Lovelace")
+      unnamed = user_fixture(full_name: nil)
+
+      labels = Users.user_labels_for_ids([named.id, unnamed.id, nil, named.id])
+
+      assert labels[named.id] == "Ada Lovelace"
+      assert labels[unnamed.id] == unnamed.email
+      assert map_size(labels) == 2
+      assert Users.user_labels_for_ids([]) == %{}
+    end
+  end
+
+  describe "record_sign_in/2" do
+    test "stamps the sign-in and audits user.signed_in with the method" do
+      {user, account, subject} = owner_subject_fixture()
+
+      assert {:ok, updated} = Users.record_sign_in(user, "password")
+      assert %DateTime{} = updated.last_sign_in_at
+
+      {:ok, [event], _} =
+        Emisar.Audit.list_events(subject, filter: [event_type: ["user.signed_in"]])
+
+      assert event.payload["method"] == "password"
+      _ = account
+    end
+  end
+
+  describe "change_password/2" do
+    test "validates without hashing so the form can round-trip the field" do
+      user = user_fixture()
+
+      changeset = Users.change_password(user, %{"password" => "short"})
+      refute changeset.valid?
+
+      changeset = Users.change_password(user, %{"password" => "long-enough-password-123"})
+      assert changeset.valid?
+      # hash_password: false keeps it pure — nothing consumed the field.
+      assert Ecto.Changeset.get_change(changeset, :password)
+      refute Ecto.Changeset.get_change(changeset, :hashed_password)
+    end
+  end
 end
