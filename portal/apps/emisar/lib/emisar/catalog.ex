@@ -199,21 +199,7 @@ defmodule Emisar.Catalog do
          ) do
       {:ok, %PackVersion{id: id} = pv} when not is_nil(id) ->
         # We won the race and inserted. id is the Postgres-returned UUID.
-        Audit.log(account_id, audit_event,
-          actor_kind: "system",
-          subject_kind: "pack_version",
-          subject_id: id,
-          subject_label: "#{pack_id}@#{version}",
-          payload: %{
-            pack_id: pack_id,
-            version: version,
-            trusted_hash: trusted_hash,
-            pending_hash: pending_hash,
-            advertised: advertised,
-            baseline: baseline
-          }
-        )
-
+        Audit.record(Audit.Events.pack_pinned(pv, audit_event, advertised, baseline))
         pv
 
       _ ->
@@ -261,20 +247,7 @@ defmodule Emisar.Catalog do
           |> PackVersion.Changeset.mark_pending(advertised, now)
           |> Repo.update()
 
-        Audit.log(pv.account_id, :pack_trust_drift_detected,
-          actor_kind: "system",
-          subject_kind: "pack_version",
-          subject_id: pv.id,
-          subject_label: "#{pv.pack_id}@#{pv.version}",
-          payload: %{
-            pack_id: pv.pack_id,
-            version: pv.version,
-            trusted_hash: pv.hash,
-            previous_pending: pv.pending_hash,
-            pending_hash: advertised
-          }
-        )
-
+        Audit.record(Audit.Events.pack_trust_drift_detected(pv, advertised))
         updated
     end
   end
@@ -429,20 +402,25 @@ defmodule Emisar.Catalog do
   pass through — they'll get a version on the next runner heartbeat.
   """
   def check_pack_trusted(%RunnerAction{} = action) do
-    cond do
-      is_nil(action.pack_id) or is_nil(action.pack_version) ->
-        :ok
-
-      true ->
-        case PackVersion.Query.all()
-             |> PackVersion.Query.by_account_id(action.account_id)
-             |> PackVersion.Query.by_pack_id_and_version(action.pack_id, action.pack_version)
-             |> Repo.peek() do
-          nil -> :ok
-          %PackVersion{trust_state: :trusted} -> :ok
-          %PackVersion{trust_state: :pending} = pv -> {:error, :pack_untrusted, pv}
-        end
+    if is_nil(action.pack_id) or is_nil(action.pack_version) do
+      :ok
+    else
+      case peek_pack_version_for_action(action) do
+        nil -> :ok
+        %PackVersion{trust_state: :trusted} -> :ok
+        %PackVersion{trust_state: :pending} = pv -> {:error, :pack_untrusted, pv}
+      end
     end
+  end
+
+  # The pinned pack_version row for an action's (account, pack_id, version),
+  # or nil — shared by the two dispatch-gate reads. `peek` (nil-or-struct)
+  # per §1.1: a missing row is a meaningful "nothing pinned yet" state.
+  defp peek_pack_version_for_action(%RunnerAction{} = action) do
+    PackVersion.Query.all()
+    |> PackVersion.Query.by_account_id(action.account_id)
+    |> PackVersion.Query.by_pack_id_and_version(action.pack_id, action.pack_version)
+    |> Repo.peek()
   end
 
   @doc """
@@ -461,18 +439,13 @@ defmodule Emisar.Catalog do
   said yes to.
   """
   def trusted_hash_for_action(%RunnerAction{} = action) do
-    cond do
-      is_nil(action.pack_id) or is_nil(action.pack_version) ->
-        nil
-
-      true ->
-        case PackVersion.Query.all()
-             |> PackVersion.Query.by_account_id(action.account_id)
-             |> PackVersion.Query.by_pack_id_and_version(action.pack_id, action.pack_version)
-             |> Repo.peek() do
-          %PackVersion{trust_state: :trusted, hash: hash} -> hash
-          _ -> nil
-        end
+    if is_nil(action.pack_id) or is_nil(action.pack_version) do
+      nil
+    else
+      case peek_pack_version_for_action(action) do
+        %PackVersion{trust_state: :trusted, hash: hash} -> hash
+        _ -> nil
+      end
     end
   end
 

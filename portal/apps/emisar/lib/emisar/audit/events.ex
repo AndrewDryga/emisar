@@ -451,6 +451,44 @@ defmodule Emisar.Audit.Events do
     )
   end
 
+  # System-actor pack pins observed during a runner_state sync (no operator
+  # is acting). pack_pinned/4 covers all three first-sight outcomes — the
+  # `event_type` atom distinguishes baseline-match / mismatch / review.
+  def pack_pinned(%Catalog.PackVersion{} = pv, event_type, advertised, baseline) do
+    Audit.changeset(pv.account_id, event_type,
+      actor_kind: "system",
+      subject_kind: "pack_version",
+      subject_id: pv.id,
+      subject_label: "#{pv.pack_id}@#{pv.version}",
+      payload: %{
+        pack_id: pv.pack_id,
+        version: pv.version,
+        trusted_hash: pv.hash,
+        pending_hash: pv.pending_hash,
+        advertised: advertised,
+        baseline: baseline
+      }
+    )
+  end
+
+  # A runner advertised bytes that diverge from the trusted hash — keep
+  # trusted, record the new pending. System actor.
+  def pack_trust_drift_detected(%Catalog.PackVersion{} = pv, advertised) do
+    Audit.changeset(pv.account_id, "pack_trust_drift_detected",
+      actor_kind: "system",
+      subject_kind: "pack_version",
+      subject_id: pv.id,
+      subject_label: "#{pv.pack_id}@#{pv.version}",
+      payload: %{
+        pack_id: pv.pack_id,
+        version: pv.version,
+        trusted_hash: pv.hash,
+        previous_pending: pv.pending_hash,
+        pending_hash: advertised
+      }
+    )
+  end
+
   # -- Policies --------------------------------------------------------
 
   def policy_updated(
