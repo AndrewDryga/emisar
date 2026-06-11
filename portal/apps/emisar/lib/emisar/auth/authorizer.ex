@@ -43,7 +43,12 @@ defmodule Emisar.Auth.Authorizer do
   apply a table-specific scope only when the query actually targets that
   table — a joined or label-selecting query must not get the row filter.
   """
-  def query_source(%Ecto.Query{from: %{source: {table, _}}}), do: String.to_atom(table)
+  # `table` is a compile-time schema source (our own migrations name the
+  # tables), so the atom always exists — to_existing_atom keeps IL-14's
+  # no-atom-minting guarantee without a whitelist.
+  def query_source(%Ecto.Query{from: %{source: {table, _}}}),
+    do: String.to_existing_atom(table)
+
   def query_source(_), do: nil
 
   @doc """

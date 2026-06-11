@@ -51,6 +51,9 @@ defmodule Emisar.Runners do
         %{}
 
       ids ->
+        # Deliberately all(), not not_deleted(): runs and audit rows keep
+        # foreign keys to soft-deleted runners, and their labels must
+        # still render in history views.
         Runner.Query.all()
         |> Runner.Query.select_labels(ids, :name)
         |> Repo.all()
@@ -347,8 +350,9 @@ defmodule Emisar.Runners do
              Authorizer.manage_runners_permission()
            ),
          :ok <- Subject.ensure_in_account(subject, runner.account_id),
-         runner = Repo.preload(runner, :account),
-         :ok <- Emisar.Billing.check_limit(runner.account, :runners) do
+         # ensure_in_account just proved runner.account_id == subject.account.id,
+         # so the subject's own account feeds the plan-limit check — no preload.
+         :ok <- Emisar.Billing.check_limit(subject.account, :runners) do
       Runner.Query.not_deleted()
       |> Runner.Query.by_id(runner.id)
       |> Authorizer.for_subject(subject)
@@ -810,7 +814,7 @@ defmodule Emisar.Runners do
            ) do
       by_user_id = Subject.actor_id(subject)
 
-      AuthKey.Query.all()
+      AuthKey.Query.not_deleted()
       |> AuthKey.Query.by_id(key.id)
       |> Authorizer.for_subject(subject)
       |> Repo.fetch_and_update(AuthKey.Query,
@@ -847,6 +851,8 @@ defmodule Emisar.Runners do
     else
       prefix = String.slice(raw, 0, size)
 
+      # Deliberately all(): `usable?/1` below is the single liveness gate
+      # (it rejects deleted/revoked/expired/exhausted in one place).
       with %AuthKey{} = key <-
              AuthKey.Query.all() |> AuthKey.Query.by_key_prefix(prefix) |> Repo.peek(),
            true <- Crypto.secure_compare(key.key_hash, hash),
@@ -891,8 +897,8 @@ defmodule Emisar.Runners do
              Token.Query.all() |> Token.Query.by_prefix(prefix) |> Repo.peek(),
            true <- Crypto.secure_compare(token.token_hash, hash),
            true <- Token.usable?(token),
-           %Runner{disabled_at: nil, deleted_at: nil} = runner <-
-             Runner.Query.all() |> Runner.Query.by_id(token.runner_id) |> Repo.peek() do
+           %Runner{disabled_at: nil} = runner <-
+             Runner.Query.not_deleted() |> Runner.Query.by_id(token.runner_id) |> Repo.peek() do
         {:ok, _} = token |> Token.Changeset.usage() |> Repo.update()
         {:ok, token, runner}
       else

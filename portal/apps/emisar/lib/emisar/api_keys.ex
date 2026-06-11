@@ -238,6 +238,8 @@ defmodule Emisar.ApiKeys do
       prefix = String.slice(raw, 0, @prefix_size)
       hash = Crypto.hash(raw)
 
+      # Deliberately all(): `usable?/1` below is the single liveness gate
+      # (it rejects deleted/revoked/expired in one place).
       with %ApiKey{} = key <-
              ApiKey.Query.all() |> ApiKey.Query.by_key_prefix(prefix) |> Repo.peek(),
            true <- Crypto.secure_compare(key.key_hash, hash),
@@ -294,6 +296,7 @@ defmodule Emisar.ApiKeys do
   token to its backing key. Returns the key or `nil`.
   """
   def peek_api_key_by_id(id) when is_binary(id) do
+    # Deliberately all(): `usable?/1` is the single liveness gate.
     case ApiKey.Query.all() |> ApiKey.Query.by_id(id) |> Repo.peek() do
       %ApiKey{} = key -> if ApiKey.usable?(key), do: key, else: nil
       _ -> nil
