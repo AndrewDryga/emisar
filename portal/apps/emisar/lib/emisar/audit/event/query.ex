@@ -340,7 +340,9 @@ defmodule Emisar.Audit.Event.Query do
           {"runbook", "Runbook"},
           {"policy", "Policy"}
         ],
-        fun: fn queryable, kinds -> {queryable, dynamic([events: e], e.subject_kind in ^kinds)} end
+        fun: fn queryable, kinds ->
+          {queryable, dynamic([events: e], e.subject_kind in ^kinds)}
+        end
       },
       %Filter{
         name: :hide_noise,

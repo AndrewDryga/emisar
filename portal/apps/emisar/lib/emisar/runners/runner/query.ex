@@ -114,7 +114,9 @@ defmodule Emisar.Runners.Runner.Query do
         name: :name,
         title: "Name contains",
         type: :string,
-        fun: fn queryable, name -> {queryable, dynamic([runners: r], ilike(r.name, ^"%#{name}%"))} end
+        fun: fn queryable, name ->
+          {queryable, dynamic([runners: r], ilike(r.name, ^"%#{name}%"))}
+        end
       }
     ]
 end
