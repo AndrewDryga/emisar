@@ -374,8 +374,7 @@ defmodule Emisar.Users do
     |> User.Query.by_id(user_id)
     |> Repo.fetch_and_update(User.Query,
       with: &User.Changeset.clear_password/1,
-      audit: Keyword.fetch!(opts, :audit),
-      after_commit: Keyword.get(opts, :after_commit, [])
+      audit: Keyword.fetch!(opts, :audit)
     )
   end
 end

@@ -121,6 +121,17 @@ defmodule Emisar.Repo do
     {audit_fun, opts} = Keyword.pop(opts, :audit)
     {changeset_fun, repo_opts} = Keyword.pop!(opts, :with)
 
+    # Inside an already-open transaction this call JOINS it, so its
+    # "after commit" would fire before the OUTER commit — side effects
+    # would escape a later rollback. Hoist them to the outer
+    # commit_multi(after_commit: …) instead.
+    if after_commit != [] and in_transaction?() do
+      raise ArgumentError,
+            "fetch_and_update :after_commit inside an open transaction fires before " <>
+              "the outer commit — pass the side effects to the outer " <>
+              "Repo.commit_multi(after_commit: …) instead"
+    end
+
     queryable = Ecto.Query.lock(queryable, "FOR NO KEY UPDATE")
 
     with {:ok, queryable} <- Filter.filter(queryable, query_module, filter) do

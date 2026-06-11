@@ -589,16 +589,21 @@ defmodule Emisar.Accounts do
       |> lock_target_membership(membership, &ensure_can_modify_membership(&1, subject))
       |> Multi.run(:user, fn _repo, %{target: loaded_membership} ->
         Users.clear_user_password(loaded_membership.user_id,
-          audit: &Audit.Events.user_password_reset_forced(subject, loaded_membership, &1),
-          after_commit: fn user ->
-            :ok = Emisar.Auth.disconnect_and_revoke_all_sessions(user)
-            token = Emisar.Auth.issue_password_reset_token!(user, audit: false)
-            _ = Emisar.Mailers.UserNotifier.deliver_password_reset(user, token)
-            :ok
-          end
+          audit: &Audit.Events.user_password_reset_forced(subject, loaded_membership, &1)
         )
       end)
-      |> Repo.commit_multi()
+      |> Repo.commit_multi(
+        # On the OUTER commit, not the nested update's — a nested
+        # after_commit fires while this transaction is still open, so a
+        # commit-time failure would kick the user + email a reset for a
+        # rollback. fetch_and_update raises on that misuse now.
+        after_commit: fn %{user: user} ->
+          :ok = Emisar.Auth.disconnect_and_revoke_all_sessions(user)
+          token = Emisar.Auth.issue_password_reset_token!(user, audit: false)
+          _ = Emisar.Mailers.UserNotifier.deliver_password_reset(user, token)
+          :ok
+        end
+      )
       |> case do
         {:ok, _changes} -> :ok
         {:error, reason} -> {:error, reason}
