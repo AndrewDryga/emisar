@@ -536,6 +536,7 @@ defmodule EmisarWeb.CoreComponents do
   """
   attr :current_user, :map, required: true
   attr :current_account, :map, required: true
+  attr :current_subject, :map, required: true
   attr :switchable_accounts, :list, default: nil
   attr :section, :atom, default: :dashboard
   attr :pending_approvals_count, :integer, default: 0
@@ -559,6 +560,7 @@ defmodule EmisarWeb.CoreComponents do
           switchable_accounts={@switchable_accounts || [@current_account]}
         />
         <.shell_nav
+          current_subject={@current_subject}
           section={@section}
           pending_approvals_count={@pending_approvals_count}
           pending_packs_count={@pending_packs_count}
@@ -598,6 +600,7 @@ defmodule EmisarWeb.CoreComponents do
             </button>
           </div>
           <.shell_nav
+            current_subject={@current_subject}
             section={@section}
             pending_approvals_count={@pending_approvals_count}
             pending_packs_count={@pending_packs_count}
@@ -730,6 +733,7 @@ defmodule EmisarWeb.CoreComponents do
   end
 
   attr :section, :atom, required: true
+  attr :current_subject, :map, required: true
   attr :pending_approvals_count, :integer, default: 0
   attr :pending_packs_count, :integer, default: 0
 
@@ -743,6 +747,7 @@ defmodule EmisarWeb.CoreComponents do
         Runners
       </.nav_link>
       <.nav_link
+        :if={Emisar.Runners.subject_can_manage_auth_keys?(@current_subject)}
         to={~p"/app/settings/runners/auth-keys"}
         active={@section == :auth_keys}
         icon="hero-key"

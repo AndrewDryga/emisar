@@ -38,13 +38,11 @@ defmodule EmisarWeb.RunnerSocketDrain do
   def terminate(_reason, _state) do
     Logger.info("draining runner sockets before shutdown")
 
-    case Phoenix.PubSub.broadcast(Emisar.PubSub.Server, @drain_topic, :runner_socket_drain) do
-      :ok ->
-        Process.sleep(@drain_window_ms)
+    :ok = Emisar.PubSub.broadcast(@drain_topic, :runner_socket_drain)
 
-      {:error, reason} ->
-        Logger.warning("runner_socket_drain broadcast failed: #{inspect(reason)}")
-    end
+    # Give the sockets time to flush the shutdown envelope onto the wire
+    # before BEAM teardown closes the transports.
+    Process.sleep(@drain_window_ms)
 
     :ok
   end

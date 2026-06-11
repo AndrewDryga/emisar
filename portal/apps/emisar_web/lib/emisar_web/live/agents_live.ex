@@ -443,7 +443,11 @@ defmodule EmisarWeb.AgentsLive do
   defp remote_client?(id), do: id in @remote_client_ids
 
   defp client_label(id), do: Map.get(@client_labels, id, "MCP client")
-  defp client_ids, do: @client_ids
+
+  defp remote_client_ids, do: Enum.filter(@client_ids, &remote_client?/1)
+
+  defp local_client_ids,
+    do: Enum.reject(@client_ids, &(remote_client?(&1) or &1 == "custom"))
 
   # Plain string instead of inline ternaries to dodge a fixed-point
   # bug in the HEEx formatter where multiple `if x == 1, do:`
@@ -558,6 +562,7 @@ defmodule EmisarWeb.AgentsLive do
   def render(assigns) do
     ~H"""
     <.dashboard_shell
+      current_subject={@current_subject}
       pending_approvals_count={@pending_approvals_count}
       pending_packs_count={@pending_packs_count}
       current_user={@current_user}
@@ -767,7 +772,7 @@ defmodule EmisarWeb.AgentsLive do
         </p>
         <div class="mt-2 flex flex-wrap gap-1.5">
           <.client_tab
-            :for={id <- client_ids() |> Enum.filter(&remote_client?/1)}
+            :for={id <- remote_client_ids()}
             id={id}
             label={client_label(id)}
             selected={id == @selected_client}
@@ -780,7 +785,7 @@ defmodule EmisarWeb.AgentsLive do
         </p>
         <div class="mt-2 flex flex-wrap gap-1.5">
           <.client_tab
-            :for={id <- client_ids() |> Enum.reject(&(remote_client?(&1) or &1 == "custom"))}
+            :for={id <- local_client_ids()}
             id={id}
             label={client_label(id)}
             selected={id == @selected_client}

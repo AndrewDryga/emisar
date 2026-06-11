@@ -75,6 +75,7 @@ defmodule EmisarWeb.DashboardLive do
   def render(assigns) do
     ~H"""
     <.dashboard_shell
+      current_subject={@current_subject}
       pending_approvals_count={@pending_approvals_count}
       pending_packs_count={@pending_packs_count}
       current_user={@current_user}

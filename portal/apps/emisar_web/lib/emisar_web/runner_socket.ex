@@ -56,10 +56,8 @@ defmodule EmisarWeb.RunnerSocket do
 
     # Drain coordinator broadcasts here on SIGTERM so this process can
     # gracefully push a shutdown envelope to the runner before the
-    # Endpoint tears the transport down. PubSub server name comes from
-    # `config :emisar_web, EmisarWeb.Endpoint, pubsub_server:` — keep
-    # it in sync with `Emisar.PubSub.@pubsub`.
-    Phoenix.PubSub.subscribe(Emisar.PubSub.Server, EmisarWeb.RunnerSocketDrain.drain_topic())
+    # Endpoint tears the transport down.
+    Emisar.PubSub.subscribe(EmisarWeb.RunnerSocketDrain.drain_topic())
 
     # Track this socket in presence (the live "online" signal) and stamp
     # last_connected_at. Presence — not a DB status column — is the
