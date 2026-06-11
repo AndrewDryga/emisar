@@ -65,6 +65,14 @@ defmodule Emisar.Billing do
   # Internal write — called from webhook handlers + `Workers.BillingSync`
   # which run on already-trusted server contexts. Subject-less because
   # the Paddle webhook signature is the auth gate at the edge.
+  #
+  # Deliberately peek-then-insert/update rather than an `on_conflict`
+  # true-upsert: webhook payloads carry PARTIAL attr sets (e.g. cancel
+  # carries only `status`), so a replace-set upsert would null fields
+  # the event didn't mention. The shape is race-safe anyway — the
+  # `unique_index(:subscriptions, [:account_id])` makes a concurrent
+  # first-insert lose with a constraint error, and Paddle's redelivery
+  # then takes the update branch.
   def upsert_subscription(account_id, attrs) do
     case peek_subscription_for_account(account_id) do
       nil ->
@@ -214,7 +222,12 @@ defmodule Emisar.Billing do
              account_id: account.id
            }),
          {:ok, account} <- Accounts.put_account_paddle_customer_id(account, customer_id) do
-      {:ok, customer_id, account}
+      # The write is first-wins under the row lock: a concurrent first
+      # checkout may have linked its customer between our stale-struct
+      # check and here, so the id of record is whatever the locked row
+      # carries — our freshly-minted customer is then a harmless orphan
+      # at Paddle (it bills nothing).
+      {:ok, account.paddle_customer_id, account}
     end
   end
 

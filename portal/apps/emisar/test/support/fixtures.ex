@@ -140,7 +140,7 @@ defmodule Emisar.Fixtures do
         user_id: user_id,
         role: attrs[:role] || "operator"
       }
-      |> Map.merge(Map.take(attrs, [:invited_by_id, :invitation_token]))
+      |> Map.merge(Map.take(attrs, [:invited_by_id, :invitation_token_digest]))
 
     {:ok, m} = params |> Membership.Changeset.create() |> Repo.insert()
     m

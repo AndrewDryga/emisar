@@ -2,7 +2,7 @@ defmodule Emisar.Accounts.Membership.Changeset do
   use Emisar, :changeset
   alias Emisar.Accounts.Membership
 
-  @create_fields ~w[account_id user_id role invited_by_id invitation_token invitation_accepted_at]a
+  @create_fields ~w[account_id user_id role invited_by_id invitation_token_digest invitation_accepted_at]a
   @update_fields ~w[role invitation_accepted_at]a
 
   def create(attrs) do
@@ -22,5 +22,6 @@ defmodule Emisar.Accounts.Membership.Changeset do
   def reinstate(%Membership{} = membership), do: change(membership, disabled_at: nil)
 
   def accept_invitation(%Membership{} = membership),
-    do: change(membership, invitation_token: nil, invitation_accepted_at: DateTime.utc_now())
+    do:
+      change(membership, invitation_token_digest: nil, invitation_accepted_at: DateTime.utc_now())
 end

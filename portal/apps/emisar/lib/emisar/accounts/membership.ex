@@ -10,7 +10,7 @@ defmodule Emisar.Accounts.Membership do
 
   schema "memberships" do
     field :role, Ecto.Enum, values: @roles, default: :operator
-    field :invitation_token, :string
+    field :invitation_token_digest, :string
     field :invitation_accepted_at, :utc_datetime_usec
     field :disabled_at, :utc_datetime_usec
     field :deleted_at, :utc_datetime_usec

@@ -362,7 +362,7 @@ defmodule Emisar.AuthAuditTest do
       # Stamp the membership as pending an invitation, then accept it.
       {:ok, with_token} =
         membership
-        |> Ecto.Changeset.change(invitation_token: "tok-#{System.unique_integer()}")
+        |> Ecto.Changeset.change(invitation_token_digest: "tok-#{System.unique_integer()}")
         |> Emisar.Repo.update()
 
       {:ok, _} = Accounts.mark_invitation_accepted(with_token, member)

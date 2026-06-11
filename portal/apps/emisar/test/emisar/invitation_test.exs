@@ -27,7 +27,9 @@ defmodule Emisar.InvitationTest do
       assert is_binary(token)
       assert byte_size(token) > 16
       assert membership.role == :admin
-      assert membership.invitation_token == token
+      # Only the digest is at rest — a DB leak must not expose the live link.
+      assert membership.invitation_token_digest == Emisar.Crypto.user_invite_token_digest(token)
+      refute membership.invitation_token_digest == token
       assert is_nil(membership.invitation_accepted_at)
     end
 
@@ -92,6 +94,15 @@ defmodule Emisar.InvitationTest do
       assert {:error, :not_found} = Accounts.fetch_invitation_by_token(nil)
       assert {:error, :not_found} = Accounts.fetch_invitation_by_token("")
     end
+
+    test "an expired invitation no longer resolves", %{membership: m, token: token} do
+      # inserted_at IS the invite time (re-invites insert fresh rows) —
+      # backdate it past the validity window.
+      nine_days_ago = DateTime.add(DateTime.utc_now(), -9 * 24 * 3600, :second)
+      {:ok, _} = m |> Ecto.Changeset.change(inserted_at: nine_days_ago) |> Repo.update()
+
+      assert {:error, :not_found} = Accounts.fetch_invitation_by_token(token)
+    end
   end
 
   describe "accept_invitation/2" do
@@ -112,7 +123,7 @@ defmodule Emisar.InvitationTest do
 
       assert user.full_name == "Carol"
       assert user.confirmed_at
-      assert is_nil(m2.invitation_token)
+      assert is_nil(m2.invitation_token_digest)
       assert m2.invitation_accepted_at
 
       # And the user can now actually sign in.

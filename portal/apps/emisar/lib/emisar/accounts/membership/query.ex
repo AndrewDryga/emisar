@@ -27,11 +27,25 @@ defmodule Emisar.Accounts.Membership.Query do
     |> where([memberships: m], m.account_id == ^account_id and m.user_id == ^user_id)
   end
 
-  def by_invitation_token(queryable, token),
-    do: where(queryable, [memberships: m], m.invitation_token == ^token)
+  def by_invitation_token_digest(queryable, digest),
+    do: where(queryable, [memberships: m], m.invitation_token_digest == ^digest)
 
   def pending_invitation(queryable),
     do: where(queryable, [memberships: m], is_nil(m.invitation_accepted_at))
+
+  # Invitation links lapse after a week — long enough for a weekend
+  # inbox, short enough that a leaked link isn't a standing seat. The
+  # row's inserted_at IS the invite time (re-invites insert fresh rows).
+  @invitation_validity_in_days 7
+
+  @doc "Pending invitations still inside their validity window."
+  def invitation_not_expired(queryable),
+    do:
+      where(
+        queryable,
+        [memberships: m],
+        m.inserted_at > ago(@invitation_validity_in_days, "day")
+      )
 
   @doc "Most-recently-joined membership only — orders and limits in one step."
   def latest(queryable),

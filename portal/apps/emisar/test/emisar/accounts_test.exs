@@ -174,7 +174,7 @@ defmodule Emisar.AccountsTest do
       # path skips the registration changeset entirely.
       assert {:ok, accepted} = Accounts.mark_invitation_accepted(membership, user)
       assert accepted.invitation_accepted_at != nil
-      refute accepted.invitation_token
+      refute accepted.invitation_token_digest
 
       # User row is untouched: same hashed_password (nil for a placeholder
       # user), same email.

@@ -747,7 +747,7 @@ defmodule Emisar.Accounts do
       when is_binary(email) and is_binary(role) do
     with :ok <- ensure_invite_permitted(role, subject) do
       email = String.downcase(String.trim(email))
-      token = Crypto.user_invite_token()
+      {token, token_digest} = Crypto.user_invite_token()
 
       Multi.new()
       |> Multi.run(:user, fn _repo, _changes -> Users.fetch_or_create_user_by_email(email) end)
@@ -757,7 +757,7 @@ defmodule Emisar.Accounts do
           user_id: user.id,
           role: role,
           invited_by_id: subject.actor.id,
-          invitation_token: token
+          invitation_token_digest: token_digest
         })
       end)
       |> Multi.insert(:audit, fn %{user: user} ->
@@ -806,15 +806,18 @@ defmodule Emisar.Accounts do
   end
 
   @doc """
-  Looks up a pending membership by invitation token. Returns the
-  membership with `:account` and `:user` preloaded, or `{:error, :not_found}`.
-  Pre-Subject helper — used by the invitation-accept LV before the user
-  has signed in / chosen an account.
+  Looks up a pending membership by invitation token. The presented raw
+  token is re-hashed for the lookup — only its digest is at rest — and
+  invitations lapse after `Membership.Query.invitation_not_expired/1`'s
+  window. Returns the membership with `:account` and `:user` preloaded,
+  or `{:error, :not_found}`. Pre-Subject helper — used by the
+  invitation-accept LV before the user has signed in.
   """
   def fetch_invitation_by_token(token) when is_binary(token) and byte_size(token) > 0 do
     Membership.Query.not_deleted()
-    |> Membership.Query.by_invitation_token(token)
+    |> Membership.Query.by_invitation_token_digest(Crypto.user_invite_token_digest(token))
     |> Membership.Query.pending_invitation()
+    |> Membership.Query.invitation_not_expired()
     |> Membership.Query.with_preloaded_account()
     |> Membership.Query.with_preloaded_user()
     |> Repo.fetch(Membership.Query)
@@ -909,10 +912,29 @@ defmodule Emisar.Accounts do
     |> Repo.peek()
   end
 
-  @doc "Internal — Billing: stamp the Paddle customer id after first checkout."
+  @doc """
+  Internal — Billing: stamp the Paddle customer id after first checkout.
+  First-wins under the row lock: two concurrent first-checkouts both
+  create a vendor customer, but only the first write lands — the loser
+  gets the winner's account back (its vendor customer stays orphaned at
+  Paddle, an accepted cost; orphans bill nothing). Callers must read the
+  id off the RETURNED account, not the one they minted.
+  """
   def put_account_paddle_customer_id(%Account{} = account, customer_id)
       when is_binary(customer_id) do
-    account |> Account.Changeset.link_paddle_customer(customer_id) |> Repo.update()
+    Account.Query.not_deleted()
+    |> Account.Query.by_id(account.id)
+    |> Repo.fetch_and_update(Account.Query,
+      with: fn loaded_account ->
+        if loaded_account.paddle_customer_id do
+          # A concurrent checkout already linked a customer — keep it.
+          # The empty changeset makes the update a no-op write.
+          Ecto.Changeset.change(loaded_account)
+        else
+          Account.Changeset.link_paddle_customer(loaded_account, customer_id)
+        end
+      end
+    )
   end
 
   # -- Authorization ----------------------------------------------------

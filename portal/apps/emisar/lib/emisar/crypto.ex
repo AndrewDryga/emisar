@@ -30,11 +30,19 @@ defmodule Emisar.Crypto do
   @invite_token_bytes 24
 
   @doc """
-  Opaque secret for a membership invitation link — carried in the invite
-  URL and matched back on acceptance. Defined here so the token's length
-  and encoding stay a crypto concern, not the inviting context's.
+  Opaque secret for a membership invitation link as `{raw, digest}` —
+  the raw rides only in the emailed URL; persist the digest (url-safe
+  string form, sized for a varchar column) and look the presented token
+  up via `user_invite_token_digest/1`. Same mint→hash contract as every
+  other bearer credential.
   """
-  def user_invite_token, do: random_secret(@invite_token_bytes)
+  def user_invite_token do
+    raw = random_secret(@invite_token_bytes)
+    {raw, user_invite_token_digest(raw)}
+  end
+
+  @doc "Digest of a presented invitation token, for the row lookup."
+  def user_invite_token_digest(raw) when is_binary(raw), do: encode_digest(hash(raw))
 
   @doc """
   Opaque session-cookie token as `{raw, digest}` — the raw bytes ride
