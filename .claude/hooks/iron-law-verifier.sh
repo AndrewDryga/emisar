@@ -121,6 +121,34 @@ if [[ $is_test == 0 ]]; then
   [[ -n "$m" ]] && add "house/fn-q" "$(lineno "$m")" "\`fn q\` — spell the binding out: \`fn queryable, …\` (DSL bindings like [runs: r] inside dynamic/where stay fine)."
 fi
 
+# --- House: cross-context modules via the top-level alias only --------------
+# `alias Emisar.Users.User` inside accounts.ex hides which context owns the
+# schema — alias Emisar.Users and write Users.User. Allowed: a context
+# aliasing its OWN submodules, Emisar.Auth.Subject (the universal carrier),
+# and Emisar.Repo.* (infra, not a context).
+if [[ $is_test == 0 && "$FILE_PATH" == */lib/* ]]; then
+  own_ctx=""
+  if [[ "$FILE_PATH" =~ /lib/emisar/([a-z_]+)(\.ex|/) ]]; then
+    ctx_dir="${BASH_REMATCH[1]}"
+    case "$ctx_dir" in
+      oauth) own_ctx="OAuth" ;;
+      api_keys) own_ctx="ApiKeys" ;;
+      *) own_ctx=$(echo "$ctx_dir" | awk -F_ '{out=""; for(i=1;i<=NF;i++){out=out toupper(substr($i,1,1)) substr($i,2)}; print out}') ;;
+    esac
+  fi
+
+  m=$(grep -nE 'alias Emisar\.[A-Z][A-Za-z]+\.(\{|[A-Z])' "$FILE_PATH" 2>/dev/null | while IFS= read -r line; do
+    content="${line#*:}"
+    top=$(echo "$content" | sed -E 's/.*alias Emisar\.([A-Za-z]+)\..*/\1/')
+    [[ "$top" == "Repo" ]] && continue
+    [[ -n "$own_ctx" && "$top" == "$own_ctx" ]] && continue
+    echo "$content" | grep -qE 'alias Emisar\.Auth\.Subject[[:space:]]*$' && continue
+    echo "$line"
+    break
+  done)
+  [[ -n "$m" ]] && add "house/deep-alias" "$(lineno "$m")" "cross-context deep alias — alias the owning context (\`alias Emisar.<Ctx>\`) and reference \`<Ctx>.<Schema>\` (Auth.Subject and Repo.* are the only exceptions)."
+fi
+
 # --- House: single-call forwarding closure — use capture syntax -------------
 # `fn x -> f(x) end` is `&f/1`. Needs PCRE backrefs, so rg; degrade if absent.
 # Lines already containing `&` are skipped (a capture can't nest in a capture).

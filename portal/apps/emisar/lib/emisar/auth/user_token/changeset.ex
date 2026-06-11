@@ -1,13 +1,13 @@
 defmodule Emisar.Auth.UserToken.Changeset do
   use Emisar, :changeset
   alias Emisar.Auth.UserToken
-  alias Emisar.Users.User
+  alias Emisar.Users
 
   @doc """
   Session-cookie token row. Persists the digest (never the raw bearer)
   plus optional request metadata for the Profile sessions list.
   """
-  def session(%User{} = user, digest, metadata) when is_binary(digest) do
+  def session(%Users.User{} = user, digest, metadata) when is_binary(digest) do
     change(%UserToken{},
       token: digest,
       context: "session",
@@ -17,7 +17,7 @@ defmodule Emisar.Auth.UserToken.Changeset do
   end
 
   @doc "Single-use emailed token row (magic link / password reset / confirm)."
-  def hashed(%User{} = user, digest, context, sent_to)
+  def hashed(%Users.User{} = user, digest, context, sent_to)
       when is_binary(digest) and is_binary(context) do
     change(%UserToken{}, token: digest, context: context, sent_to: sent_to, user_id: user.id)
   end

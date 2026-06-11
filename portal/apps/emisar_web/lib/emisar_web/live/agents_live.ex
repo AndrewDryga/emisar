@@ -23,7 +23,6 @@ defmodule EmisarWeb.AgentsLive do
   use EmisarWeb, :live_view
 
   alias Emisar.{ApiKeys, Runners}
-  alias Emisar.ApiKeys.ApiKey
   alias EmisarWeb.{LiveTable, Permissions, UrlHelpers}
 
   @active_threshold_secs 5 * 60
@@ -368,10 +367,10 @@ defmodule EmisarWeb.AgentsLive do
 
   # -- Status derivation ----------------------------------------------
 
-  defp client_status(%ApiKey{revoked_at: ts}) when not is_nil(ts), do: :revoked
-  defp client_status(%ApiKey{last_used_at: nil}), do: :never_used
+  defp client_status(%ApiKeys.ApiKey{revoked_at: ts}) when not is_nil(ts), do: :revoked
+  defp client_status(%ApiKeys.ApiKey{last_used_at: nil}), do: :never_used
 
-  defp client_status(%ApiKey{last_used_at: ts}) do
+  defp client_status(%ApiKeys.ApiKey{last_used_at: ts}) do
     diff = DateTime.diff(DateTime.utc_now(), ts, :second)
 
     cond do
@@ -384,7 +383,7 @@ defmodule EmisarWeb.AgentsLive do
   # The MCP client a key reported at `initialize` (clientInfo): prefer the
   # human-readable "title" over the machine "name", with "version" appended
   # when present. nil until a client has connected.
-  defp reported_client(%ApiKey{last_client_info: %{} = info}) do
+  defp reported_client(%ApiKeys.ApiKey{last_client_info: %{} = info}) do
     label = info["title"] || info["name"]
 
     cond do

@@ -11,7 +11,6 @@ defmodule EmisarWeb.PaddleWebhookController do
   require Logger
 
   alias Emisar.Billing
-  alias Emisar.Billing.PaddleClient
 
   def create(conn, _params) do
     # nil on the EMISAR_DISABLE_BILLING deployment, where the secret is
@@ -28,7 +27,7 @@ defmodule EmisarWeb.PaddleWebhookController do
   defp verify_and_handle(conn, secret) do
     with {:ok, body} <- raw_body(conn),
          [signature] <- get_req_header(conn, "paddle-signature"),
-         {:ok, event} <- PaddleClient.construct_webhook_event(body, signature, secret) do
+         {:ok, event} <- Billing.PaddleClient.construct_webhook_event(body, signature, secret) do
       handle_event(conn, event)
     else
       [] ->

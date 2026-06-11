@@ -8,7 +8,6 @@ defmodule Emisar.Billing do
   """
   alias Ecto.Multi
   alias Emisar.{Accounts, Auth, PublicUrl, Repo, Runners}
-  alias Emisar.Accounts.Account
   alias Emisar.Auth.Subject
   alias Emisar.Billing.{Authorizer, Subscription}
 
@@ -93,7 +92,7 @@ defmodule Emisar.Billing do
   flows that already authorized upstream. The check itself is
   account-scoped (the runner counting), not subject-scoped.
   """
-  def check_limit(%Account{plan: plan_name} = account, resource) do
+  def check_limit(%Accounts.Account{plan: plan_name} = account, resource) do
     # Fall back to the free plan when the account's plan name isn't a
     # current plan (legacy/renamed) — the same guard billing_summary and
     # audit_retention use, and it avoids Map.get on a nil plan.
@@ -114,10 +113,10 @@ defmodule Emisar.Billing do
 
   # The owning contexts count their own rows — billing only owns the
   # limit semantics.
-  defp current_count(%Account{id: account_id}, :runners),
+  defp current_count(%Accounts.Account{id: account_id}, :runners),
     do: Runners.count_billable_runners(account_id)
 
-  defp current_count(%Account{id: account_id}, :members),
+  defp current_count(%Accounts.Account{id: account_id}, :members),
     do: Accounts.count_memberships(account_id)
 
   @doc """
@@ -125,7 +124,7 @@ defmodule Emisar.Billing do
   the URL the operator should be redirected to. Falls back to a stub
   URL when no Paddle price ID is configured (dev/test).
   """
-  def start_checkout(%Account{} = account, plan_name, %Subject{} = subject)
+  def start_checkout(%Accounts.Account{} = account, plan_name, %Subject{} = subject)
       when is_binary(plan_name) do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(
@@ -168,7 +167,7 @@ defmodule Emisar.Billing do
   paid plan (no `paddle_customer_id`). Returns a stub URL when no
   Paddle key is configured (dev/test).
   """
-  def open_billing_portal(%Account{} = account, %Subject{} = subject) do
+  def open_billing_portal(%Accounts.Account{} = account, %Subject{} = subject) do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(
              subject,
@@ -179,9 +178,10 @@ defmodule Emisar.Billing do
     end
   end
 
-  defp do_open_billing_portal(%Account{paddle_customer_id: nil}), do: {:error, :no_customer}
+  defp do_open_billing_portal(%Accounts.Account{paddle_customer_id: nil}),
+    do: {:error, :no_customer}
 
-  defp do_open_billing_portal(%Account{paddle_customer_id: customer_id})
+  defp do_open_billing_portal(%Accounts.Account{paddle_customer_id: customer_id})
        when is_binary(customer_id) do
     return_url = PublicUrl.url("/app/settings/billing")
 
@@ -200,7 +200,7 @@ defmodule Emisar.Billing do
     end
   end
 
-  defp ensure_subject_owns_account(%Account{id: id}, %Subject{} = subject),
+  defp ensure_subject_owns_account(%Accounts.Account{id: id}, %Subject{} = subject),
     do: Subject.ensure_in_account(subject, id, :unauthorized)
 
   @doc """
@@ -210,11 +210,14 @@ defmodule Emisar.Billing do
   On first creation the acting user's email is attached to the Paddle
   customer so invoices and receipts reach a real inbox.
   """
-  def ensure_paddle_customer(%Account{paddle_customer_id: customer_id} = account, %Subject{})
+  def ensure_paddle_customer(
+        %Accounts.Account{paddle_customer_id: customer_id} = account,
+        %Subject{}
+      )
       when is_binary(customer_id),
       do: {:ok, customer_id, account}
 
-  def ensure_paddle_customer(%Account{} = account, %Subject{} = subject) do
+  def ensure_paddle_customer(%Accounts.Account{} = account, %Subject{} = subject) do
     with {:ok, %{"id" => customer_id}} <-
            Emisar.Billing.PaddleClient.create_customer(%{
              email: Subject.actor_email(subject),
@@ -307,7 +310,7 @@ defmodule Emisar.Billing do
       nil ->
         :ok
 
-      %Account{} = account ->
+      %Accounts.Account{} = account ->
         price_id = extract_price_id(subscription_data)
 
         attrs = %{
@@ -335,7 +338,7 @@ defmodule Emisar.Billing do
   # not configured — e.g. the sales-led enterprise tier), fall back to the
   # account's current plan, then "free", so the subscription can persist
   # rather than failing `validate_required([:plan])` and stranding the account.
-  defp plan_for_subscription(%Account{} = account, price_id) do
+  defp plan_for_subscription(%Accounts.Account{} = account, price_id) do
     price_to_plan =
       Application.get_env(:emisar, :paddle_price_ids, %{})
       |> Map.new(fn {plan, pid} -> {pid, plan} end)
@@ -386,7 +389,7 @@ defmodule Emisar.Billing do
   badge), not after the next runner install fails with a 402 buried
   in `journalctl`.
   """
-  def billing_summary(%Account{} = account, %Subject{} = subject) do
+  def billing_summary(%Accounts.Account{} = account, %Subject{} = subject) do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(
              subject,

@@ -11,7 +11,6 @@ defmodule EmisarWeb.OnboardingLive do
   use EmisarWeb, :live_view
 
   alias Emisar.Accounts
-  alias Emisar.Accounts.Account
 
   def mount(_params, _session, socket) do
     {:ok,
@@ -19,7 +18,7 @@ defmodule EmisarWeb.OnboardingLive do
      |> assign(:page_title, "Set up your workspace")
      |> assign(:trigger_submit, false)
      |> assign(:created_account_id, "")
-     |> assign_form(Accounts.change_account(%Account{}, %{"plan" => "free"}))}
+     |> assign_form(Accounts.change_account(%Accounts.Account{}, %{"plan" => "free"}))}
   end
 
   def render(assigns) do
@@ -70,7 +69,7 @@ defmodule EmisarWeb.OnboardingLive do
 
   def handle_event("validate", %{"account" => params}, socket) do
     changeset =
-      %Account{}
+      %Accounts.Account{}
       |> Accounts.change_account(params)
       |> Map.put(:action, :validate)
 

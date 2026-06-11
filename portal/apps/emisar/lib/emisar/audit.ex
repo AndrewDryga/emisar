@@ -27,10 +27,9 @@ defmodule Emisar.Audit do
   the event row. Explicit `:ip_address` / `:user_agent` / `:request_id`
   keys in the `attrs` map always win over the process dict.
   """
-  alias Emisar.{Auth, Repo}
+  alias Emisar.{Auth, Repo, Runs}
   alias Emisar.Audit.{Authorizer, Event}
   alias Emisar.Auth.Subject
-  alias Emisar.Runs.ActionRun
 
   @meta_key :emisar_audit_request_metadata
 
@@ -210,7 +209,7 @@ defmodule Emisar.Audit do
   inside an `Ecto.Multi` so the audit row commits together with the
   parent `run` update — see `Runs.transition/3`.
   """
-  def run_event_changeset(%ActionRun{} = run) do
+  def run_event_changeset(%Runs.ActionRun{} = run) do
     changeset(run.account_id, "action_run.#{run.status}",
       subject_kind: "action_run",
       subject_id: run.id,
@@ -240,10 +239,10 @@ defmodule Emisar.Audit do
   # bloat with fields that are still being filled in.
   defp compact(map), do: :maps.filter(fn _key, value -> not is_nil(value) end, map)
 
-  defp actor_kind(%ActionRun{requested_by_id: id}) when not is_nil(id), do: "user"
-  defp actor_kind(%ActionRun{api_key_id: id}) when not is_nil(id), do: "api_key"
-  defp actor_kind(%ActionRun{source: :runbook}), do: "runbook"
-  defp actor_kind(%ActionRun{source: :scheduled}), do: "scheduler"
+  defp actor_kind(%Runs.ActionRun{requested_by_id: id}) when not is_nil(id), do: "user"
+  defp actor_kind(%Runs.ActionRun{api_key_id: id}) when not is_nil(id), do: "api_key"
+  defp actor_kind(%Runs.ActionRun{source: :runbook}), do: "runbook"
+  defp actor_kind(%Runs.ActionRun{source: :scheduled}), do: "scheduler"
   defp actor_kind(_), do: "system"
 
   # Internal helper — `log/3` accepts both atom and string keys to match

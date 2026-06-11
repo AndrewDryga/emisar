@@ -13,7 +13,7 @@ defmodule Emisar.Audit.Multi do
   """
   alias Ecto.Multi
   alias Emisar.Audit
-  alias Emisar.Users.User
+  alias Emisar.Users
 
   @doc """
   Adds an `Audit.Event` insert step to `multi`. `attrs_fn` receives
@@ -46,7 +46,7 @@ defmodule Emisar.Audit.Multi do
   end
 
   @doc """
-  Adds an audit step that logs an event for a `%User{}`, looking up
+  Adds an audit step that logs an event for a `%Users.User{}`, looking up
   the user's primary membership to derive `account_id` — the same
   shape as `Audit.log_for_user/3` but transactional.
 
@@ -58,7 +58,7 @@ defmodule Emisar.Audit.Multi do
     * `:payload_fn` — `(changes -> map)` to compute the payload from
       the multi's changes (default: `nil` → no payload)
     * `:extra` — keyword of additional audit attrs (override defaults)
-    * `:user_fn` — `(changes -> %User{} | nil)` if the user is a
+    * `:user_fn` — `(changes -> %Users.User{} | nil)` if the user is a
       multi-step result rather than a captured variable (defaults to
       the passed user struct). Returning `nil` skips the audit step —
       for events conditional on an earlier step's outcome (e.g. "only
@@ -74,7 +74,7 @@ defmodule Emisar.Audit.Multi do
 
     Multi.run(multi, name, fn _repo, changes ->
       case user_fn.(changes) do
-        %User{} = resolved_user ->
+        %Users.User{} = resolved_user ->
           attrs = extra |> maybe_put_payload(payload_fn, changes) |> Map.new()
 
           case Audit.user_changeset(resolved_user, event_type, attrs) do
@@ -88,10 +88,10 @@ defmodule Emisar.Audit.Multi do
     end)
   end
 
-  defp default_user_fn(%User{} = user), do: fn _ -> user end
+  defp default_user_fn(%Users.User{} = user), do: fn _ -> user end
 
   defp default_user_fn(nil),
-    do: raise(ArgumentError, "log_for_user/5 needs a %User{} or a :user_fn resolving one")
+    do: raise(ArgumentError, "log_for_user/5 needs a %Users.User{} or a :user_fn resolving one")
 
   defp maybe_put_payload(attrs, nil, _changes), do: attrs
 

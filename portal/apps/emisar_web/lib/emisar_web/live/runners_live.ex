@@ -2,7 +2,6 @@ defmodule EmisarWeb.RunnersLive do
   use EmisarWeb, :live_view
 
   alias Emisar.Runners
-  alias Emisar.Runners.Runner
   alias EmisarWeb.LiveTable
 
   def mount(_params, _session, socket) do
@@ -24,7 +23,7 @@ defmodule EmisarWeb.RunnersLive do
   defp reload(socket), do: load(socket, socket.assigns[:filter_params] || %{})
 
   defp load(socket, params) do
-    filters = Runner.Query.filters()
+    filters = Runners.Runner.Query.filters()
     opts = LiveTable.params_to_opts(params, filters)
 
     # Filter by per-membership runner scopes (#238). Owners/admins

@@ -19,7 +19,8 @@ defmodule Emisar.OAuth do
   """
   alias Ecto.Multi
   alias Emisar.{Accounts, ApiKeys, Audit, Crypto, Repo}
-  alias Emisar.Auth.{Authorizer, Subject}
+  alias Emisar.Auth
+  alias Emisar.Auth.Subject
   alias Emisar.OAuth.{AuthorizationCode, Client, Token}
 
   @code_ttl_s 60
@@ -82,7 +83,7 @@ defmodule Emisar.OAuth do
     # viewer could walk the consent flow into an execute-capable token they
     # could never mint in-product (privilege escalation).
     with :ok <-
-           Authorizer.ensure_has_permissions(
+           Auth.Authorizer.ensure_has_permissions(
              subject,
              ApiKeys.Authorizer.issue_quick_key_permission()
            ) do

@@ -2,7 +2,6 @@ defmodule EmisarWeb.AuthKeysLive do
   use EmisarWeb, :live_view
 
   alias Emisar.Runners
-  alias Emisar.Runners.AuthKey
   alias EmisarWeb.{LiveTable, Permissions, UrlHelpers}
   alias Phoenix.LiveView.JS
 
@@ -145,7 +144,7 @@ defmodule EmisarWeb.AuthKeysLive do
         do: params,
         else: Map.put_new(params, "status", "active")
 
-    filters = AuthKey.Query.filters()
+    filters = Runners.AuthKey.Query.filters()
     opts = LiveTable.params_to_opts(effective_params, filters)
 
     case Runners.list_auth_keys(

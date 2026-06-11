@@ -9,7 +9,6 @@ defmodule EmisarWeb.AuditLive do
   use EmisarWeb, :live_view
 
   alias Emisar.{ApiKeys, Audit}
-  alias Emisar.Audit.Event
   alias EmisarWeb.{AuditSummary, LiveTable, Permissions, UrlHelpers}
 
   def mount(_params, _session, socket) do
@@ -105,7 +104,7 @@ defmodule EmisarWeb.AuditLive do
   end
 
   defp load(socket, params) do
-    filters = Event.Query.filters()
+    filters = Audit.Event.Query.filters()
     opts = LiveTable.params_to_opts(params, filters)
 
     case Audit.list_events(socket.assigns.current_subject, opts) do

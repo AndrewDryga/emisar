@@ -6,22 +6,24 @@ defmodule Emisar.Workers.BillingSync do
   """
   use Oban.Worker, queue: :billing, max_attempts: 3
   alias Emisar.{Billing, Repo}
-  alias Emisar.Billing.{PaddleClient, Subscription}
   require Logger
 
   @impl true
   def perform(%Oban.Job{}) do
-    Subscription.Query.all()
+    Billing.Subscription.Query.all()
     |> Repo.all()
     |> Enum.each(&sync/1)
 
     :ok
   end
 
-  defp sync(%Subscription{paddle_subscription_id: nil}), do: :ok
+  defp sync(%Billing.Subscription{paddle_subscription_id: nil}), do: :ok
 
-  defp sync(%Subscription{paddle_subscription_id: paddle_subscription_id, account_id: account_id}) do
-    case PaddleClient.retrieve_subscription(paddle_subscription_id) do
+  defp sync(%Billing.Subscription{
+         paddle_subscription_id: paddle_subscription_id,
+         account_id: account_id
+       }) do
+    case Billing.PaddleClient.retrieve_subscription(paddle_subscription_id) do
       {:ok, subscription_data} ->
         Billing.upsert_subscription(account_id, %{
           status: subscription_data["status"],

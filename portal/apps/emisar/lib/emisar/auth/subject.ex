@@ -9,7 +9,7 @@ defmodule Emisar.Auth.Subject do
 
     * `account` — the active `%Accounts.Account{}` (nil only for the
       rare actor-only case — a self-service edit that reads just `actor`)
-    * `actor` — `%User{}`, `%ApiKey{}`, or `%Runner{}`
+    * `actor` — `%Users.User{}`, `%ApiKey{}`, or `%Runner{}`
     * `role` — atom role identifier (`:owner | :admin | :operator |
       :viewer | :api_client | :runner`)
     * `permissions` — `MapSet.t()` of `{module, action}` tuples; the
@@ -18,9 +18,8 @@ defmodule Emisar.Auth.Subject do
       `user_agent`, `request_id`. Filled in by the boundary, read by
       `Audit` via `put_request_metadata/1`.
   """
-  alias Emisar.Accounts.{Account, Membership}
   alias Emisar.Auth.Role
-  alias Emisar.Users.User
+  alias Emisar.{Accounts, Users}
 
   @type role :: :owner | :admin | :operator | :viewer | :api_client | :runner
   @type permission :: {module(), atom()}
@@ -30,7 +29,7 @@ defmodule Emisar.Auth.Subject do
           | Emisar.Runners.Runner.t()
 
   @type t :: %__MODULE__{
-          account: Account.t() | nil,
+          account: Accounts.Account.t() | nil,
           actor: actor() | nil,
           role: role() | nil,
           membership_id: binary() | nil,
@@ -45,8 +44,13 @@ defmodule Emisar.Auth.Subject do
             permissions: MapSet.new(),
             context: %{}
 
-  @doc "Build a subject from a `%User{}` + their `%Membership{}`."
-  def for_user(%User{} = user, %Account{} = account, %Membership{} = membership, context \\ %{}) do
+  @doc "Build a subject from a `%Users.User{}` + their `%Accounts.Membership{}`."
+  def for_user(
+        %Users.User{} = user,
+        %Accounts.Account{} = account,
+        %Accounts.Membership{} = membership,
+        context \\ %{}
+      ) do
     role = role_atom(membership.role)
 
     %__MODULE__{
@@ -60,7 +64,7 @@ defmodule Emisar.Auth.Subject do
   end
 
   @doc "Build a subject for an API key call (MCP / programmatic)."
-  def for_api_key(api_key, %Account{} = account, context \\ %{}) do
+  def for_api_key(api_key, %Accounts.Account{} = account, context \\ %{}) do
     %__MODULE__{
       account: account,
       actor: api_key,
@@ -75,7 +79,7 @@ defmodule Emisar.Auth.Subject do
   end
 
   @doc "Build a subject for the runner WebSocket caller."
-  def for_runner(runner, %Account{} = account, context \\ %{}) do
+  def for_runner(runner, %Accounts.Account{} = account, context \\ %{}) do
     %__MODULE__{
       account: account,
       actor: runner,
@@ -100,7 +104,7 @@ defmodule Emisar.Auth.Subject do
   String label for the subject's actor kind. Used by `Audit.log/3`
   callers to stamp the `actor_kind` field consistently.
   """
-  def actor_kind(%__MODULE__{actor: %User{}}), do: "user"
+  def actor_kind(%__MODULE__{actor: %Users.User{}}), do: "user"
   def actor_kind(%__MODULE__{actor: %Emisar.ApiKeys.ApiKey{}}), do: "api_key"
   def actor_kind(%__MODULE__{actor: %Emisar.Runners.Runner{}}), do: "runner"
   # Defensive fallback: an actor-less subject (anonymous bootstrap) is a system
@@ -118,14 +122,14 @@ defmodule Emisar.Auth.Subject do
   (API key / runner / system). Used to attach the buyer's email to a
   Paddle customer for invoices and receipts.
   """
-  def actor_email(%__MODULE__{actor: %User{email: email}}), do: email
+  def actor_email(%__MODULE__{actor: %Users.User{email: email}}), do: email
   def actor_email(%__MODULE__{}), do: nil
 
   @doc """
   True iff the subject can act on data scoped to `account_id` — the
   account on its `%Subject{}` must match.
   """
-  def in_account?(%__MODULE__{account: %Account{id: id}}, id), do: true
+  def in_account?(%__MODULE__{account: %Accounts.Account{id: id}}, id), do: true
   def in_account?(_subject, _account_id), do: false
 
   @doc """

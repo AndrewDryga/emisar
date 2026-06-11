@@ -13,7 +13,6 @@ defmodule Emisar.Auth do
   alias Emisar.Crypto
   alias Emisar.Repo
   alias Emisar.Users
-  alias Emisar.Users.User
 
   # -- Password sign in -------------------------------------------------
 
@@ -32,7 +31,7 @@ defmodule Emisar.Auth do
 
     # `valid_password?(nil, _)` falls through to Bcrypt.no_user_verify/0
     # so timing is constant whether or not the email matched a row.
-    if User.valid_password?(user, password) do
+    if Users.User.valid_password?(user, password) do
       {:ok, user}
     else
       {:error, :not_found}
@@ -49,7 +48,7 @@ defmodule Emisar.Auth do
   boundary — the session controller calls this right after verifying
   credentials.
   """
-  def create_session_token!(%User{} = user, metadata \\ %{}) do
+  def create_session_token!(%Users.User{} = user, metadata \\ %{}) do
     {token, digest} = Crypto.session_token()
     Repo.insert!(UserToken.Changeset.session(user, digest, metadata))
     token
@@ -69,7 +68,7 @@ defmodule Emisar.Auth do
     |> Repo.one()
     |> case do
       nil -> {:error, :not_found}
-      %User{} = user -> {:ok, user}
+      %Users.User{} = user -> {:ok, user}
     end
   end
 
@@ -90,7 +89,7 @@ defmodule Emisar.Auth do
   `EmisarWeb.UserAuth.log_out_user/1` before the token is dropped so the
   event is attributable to the user that owned it.
   """
-  def record_sign_out(%User{} = user) do
+  def record_sign_out(%Users.User{} = user) do
     Audit.log_for_user(user, "user.signed_out")
     :ok
   end
@@ -121,7 +120,7 @@ defmodule Emisar.Auth do
   team-admin "sign out everywhere" does) — token internals stay private
   to Auth.
   """
-  def delete_all_session_tokens(%User{} = user) do
+  def delete_all_session_tokens(%Users.User{} = user) do
     {count, _} =
       UserToken.Query.by_user_id(user.id)
       |> UserToken.Query.by_context("session")
@@ -141,7 +140,7 @@ defmodule Emisar.Auth do
   Pair with the standard `delete_all_session_tokens/1` for the auth
   cookie invalidation; the broadcast is best-effort and idempotent.
   """
-  def disconnect_and_revoke_all_sessions(%User{} = user) do
+  def disconnect_and_revoke_all_sessions(%Users.User{} = user) do
     broadcast_disconnect_for_user(user)
     {:ok, _count} = delete_all_session_tokens(user)
     :ok
@@ -157,7 +156,7 @@ defmodule Emisar.Auth do
   it's read from the `%Subject{}` rather than passed separately — there's
   no way to revoke anyone else's sessions through this path.
   """
-  def revoke_and_disconnect_other_sessions!(keep_token, %Subject{actor: %User{} = user})
+  def revoke_and_disconnect_other_sessions!(keep_token, %Subject{actor: %Users.User{} = user})
       when is_binary(keep_token) do
     keep_digest = Crypto.hash(keep_token)
     broadcast_disconnect_for_user(user, except: keep_digest)
@@ -181,7 +180,7 @@ defmodule Emisar.Auth do
   deliberately doesn't depend on. Auth knows WHICH topics to kill;
   the web app knows HOW to broadcast.
   """
-  def broadcast_disconnect_for_user(%User{} = user, opts \\ []) do
+  def broadcast_disconnect_for_user(%Users.User{} = user, opts \\ []) do
     skip_digest = Keyword.get(opts, :except)
 
     topics =
@@ -227,7 +226,7 @@ defmodule Emisar.Auth do
   inserted_at (display). Returns `{:ok, [token], %Paginator.Metadata{}}`
   per the context-function convention.
   """
-  def list_sessions_for_user(%Subject{actor: %User{} = user}, opts \\ []) do
+  def list_sessions_for_user(%Subject{actor: %Users.User{} = user}, opts \\ []) do
     UserToken.Query.by_user_id(user.id)
     |> UserToken.Query.by_context("session")
     |> Repo.list(UserToken.Query, opts)
@@ -239,7 +238,7 @@ defmodule Emisar.Auth do
   actor, and the query is scoped to them so a malicious id can't kill
   another user's session. Returns :ok | {:error, :not_found}.
   """
-  def revoke_session(token_id, %Subject{actor: %User{} = user}) do
+  def revoke_session(token_id, %Subject{actor: %Users.User{} = user}) do
     if Repo.valid_uuid?(token_id) do
       session_query =
         UserToken.Query.by_id(token_id)
@@ -271,7 +270,7 @@ defmodule Emisar.Auth do
   surface): revoke every session except the one carrying `keep_token`.
   Pass `nil` to revoke every session including the current one.
   """
-  def revoke_other_sessions!(%User{} = user, keep_token) when is_binary(keep_token) do
+  def revoke_other_sessions!(%Users.User{} = user, keep_token) when is_binary(keep_token) do
     sessions_query =
       UserToken.Query.by_user_id(user.id)
       |> UserToken.Query.by_context("session")
@@ -280,7 +279,7 @@ defmodule Emisar.Auth do
     revoke_sessions_atomically!(user, sessions_query)
   end
 
-  def revoke_other_sessions!(%User{} = user, nil) do
+  def revoke_other_sessions!(%Users.User{} = user, nil) do
     sessions_query =
       UserToken.Query.by_user_id(user.id)
       |> UserToken.Query.by_context("session")
@@ -292,7 +291,7 @@ defmodule Emisar.Auth do
   # delete-without-audit can't happen on a downstream failure. The
   # audit's `user_fn` resolves the user only when rows were actually
   # revoked — a no-op revoke stays out of the log.
-  defp revoke_sessions_atomically!(%User{} = user, sessions_query) do
+  defp revoke_sessions_atomically!(%Users.User{} = user, sessions_query) do
     {:ok, %{count: count}} =
       Multi.new()
       |> Multi.delete_all(:sessions, sessions_query)
@@ -339,7 +338,7 @@ defmodule Emisar.Auth do
   end
 
   @doc "Issues a magic-link token. Returns the raw token to email."
-  def issue_magic_link_token!(%User{} = user) do
+  def issue_magic_link_token!(%Users.User{} = user) do
     {raw, digest} = Crypto.email_token()
 
     {:ok, _} =
@@ -386,7 +385,7 @@ defmodule Emisar.Auth do
       audit here would otherwise re-record the same action with the
       TARGET user as actor — which is wrong and confusing in the log.
   """
-  def issue_password_reset_token!(%User{} = user, opts \\ []) do
+  def issue_password_reset_token!(%Users.User{} = user, opts \\ []) do
     {raw, digest} = Crypto.email_token()
 
     multi =
@@ -432,7 +431,7 @@ defmodule Emisar.Auth do
 
   # -- Email confirmation ----------------------------------------------
 
-  def issue_confirmation_token!(%User{} = user) do
+  def issue_confirmation_token!(%Users.User{} = user) do
     {raw, digest} = Crypto.email_token()
     Repo.insert!(UserToken.Changeset.hashed(user, digest, "confirm", user.email))
     raw
@@ -444,7 +443,7 @@ defmodule Emisar.Auth do
   and the portal banner all call this so the token + delivery never drift.
   Best-effort: returns `:ok` regardless of the mailer result.
   """
-  def deliver_confirmation_instructions(%User{} = user) do
+  def deliver_confirmation_instructions(%Users.User{} = user) do
     token = issue_confirmation_token!(user)
     _ = Emisar.Mailers.UserNotifier.deliver_confirmation_instructions(user, token)
     :ok
@@ -494,7 +493,7 @@ defmodule Emisar.Auth do
   on the locked re-read of their row (`Users.update_user_mfa/5`), so a
   stale socket snapshot can't clobber a concurrent credential change.
   """
-  def enable_mfa(secret, otp, %Subject{actor: %User{} = user})
+  def enable_mfa(secret, otp, %Subject{actor: %Users.User{} = user})
       when is_binary(secret) and is_binary(otp) do
     if Crypto.valid_totp?(secret, otp) do
       {plain_codes, digests} = generate_recovery_codes()
@@ -513,7 +512,7 @@ defmodule Emisar.Auth do
   end
 
   @doc "Disable TOTP for the caller. Self-service — the user is the subject's own actor."
-  def disable_mfa(%Subject{actor: %User{} = user}) do
+  def disable_mfa(%Subject{actor: %Users.User{} = user}) do
     Users.update_user_mfa(user.id, nil, nil, [],
       audit: &Audit.user_changeset(&1, "user.mfa_disabled")
     )
@@ -526,7 +525,7 @@ defmodule Emisar.Auth do
   the caller's snapshot. Self-service — the user is the subject's own
   actor.
   """
-  def regenerate_mfa_recovery_codes(%Subject{actor: %User{} = user}) do
+  def regenerate_mfa_recovery_codes(%Subject{actor: %Users.User{} = user}) do
     {plain_codes, digests} = generate_recovery_codes()
 
     user.id
@@ -545,8 +544,8 @@ defmodule Emisar.Auth do
     |> Enum.unzip()
   end
 
-  def mfa_required?(%User{mfa_enabled_at: nil}), do: false
-  def mfa_required?(%User{}), do: true
+  def mfa_required?(%Users.User{mfa_enabled_at: nil}), do: false
+  def mfa_required?(%Users.User{}), do: true
 
   @doc """
   Verifies a second-factor TOTP code with replay protection. A bare
@@ -558,10 +557,10 @@ defmodule Emisar.Auth do
   :invalid}` otherwise.
 
   Pre-Subject — this is the sign-in second factor, so it takes the
-  partially-authenticated `%User{}` (no tenant resolved yet). Pair with
+  partially-authenticated `%Users.User{}` (no tenant resolved yet). Pair with
   `consume_mfa_recovery_code/2` for the lost-device path.
   """
-  def verify_mfa(%User{mfa_secret: secret} = user, otp)
+  def verify_mfa(%Users.User{mfa_secret: secret} = user, otp)
       when is_binary(secret) and is_binary(otp) do
     cond do
       not Crypto.valid_totp?(secret, otp) ->
@@ -590,9 +589,9 @@ defmodule Emisar.Auth do
   removes it from the user's stored set under the row lock — concurrent
   submissions of the same code serialize and only one wins),
   `{:error, :invalid}` otherwise. Pre-Subject — the sign-in lost-device
-  fallback, so it takes the partially-authenticated `%User{}`.
+  fallback, so it takes the partially-authenticated `%Users.User{}`.
   """
-  def consume_mfa_recovery_code(%User{} = user, raw) when is_binary(raw) do
+  def consume_mfa_recovery_code(%Users.User{} = user, raw) when is_binary(raw) do
     digest = Crypto.hash(String.downcase(String.trim(raw)))
 
     case Users.consume_user_mfa_recovery_code(user.id, digest,

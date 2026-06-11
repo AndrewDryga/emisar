@@ -23,9 +23,8 @@ defmodule Emisar.Catalog do
       * Different → keep trusted, set pending_hash. Dispatch refuses.
   """
   alias Ecto.Multi
-  alias Emisar.{Audit, Auth, Repo}
+  alias Emisar.{Audit, Auth, Repo, Runners}
   alias Emisar.Auth.Subject
-  alias Emisar.Runners.Runner
   alias Emisar.Catalog.{Authorizer, PackBaseline, PackVersion, RunnerAction}
   require Logger
 
@@ -38,7 +37,7 @@ defmodule Emisar.Catalog do
   Internal — called by the runner socket process which is itself
   authenticated by the runner token. Not exposed to LV/MCP.
   """
-  def observe_state(%Runner{} = runner, %{} = payload) do
+  def observe_state(%Runners.Runner{} = runner, %{} = payload) do
     runner = apply_runner_facts(runner, payload)
 
     case sync_catalog(runner, payload) do
@@ -56,7 +55,7 @@ defmodule Emisar.Catalog do
 
   def observe_state(runner_id, payload) when is_binary(runner_id) do
     case Emisar.Runners.peek_runner_by_id(runner_id) do
-      %Runner{} = runner -> observe_state(runner, payload)
+      %Runners.Runner{} = runner -> observe_state(runner, payload)
       nil -> {:error, :unknown_runner}
     end
   end
@@ -71,7 +70,7 @@ defmodule Emisar.Catalog do
   # or a bad/oversized field from untrusted runner JSON; keep the existing
   # struct on error (the next heartbeat re-syncs) rather than crashing the
   # socket.
-  defp apply_runner_facts(%Runner{} = runner, payload) do
+  defp apply_runner_facts(%Runners.Runner{} = runner, payload) do
     case Emisar.Runners.apply_state(runner, payload) do
       {:ok, updated} ->
         updated
@@ -90,7 +89,7 @@ defmodule Emisar.Catalog do
   # Best-effort by design: the catalog re-syncs on the next runner_state,
   # so a raise must never crash the runner socket (the durable runner-row
   # facts are already saved by then).
-  defp sync_catalog(%Runner{} = runner, payload) do
+  defp sync_catalog(%Runners.Runner{} = runner, payload) do
     now = DateTime.utc_now()
     packs = payload["packs"] || %{}
     actions = payload["actions"] || []
@@ -422,7 +421,8 @@ defmodule Emisar.Catalog do
 
   # -- Action upsert ---------------------------------------------------
 
-  defp observe_action(%Runner{} = runner, descriptor, packs, now) when is_map(descriptor) do
+  defp observe_action(%Runners.Runner{} = runner, descriptor, packs, now)
+       when is_map(descriptor) do
     pack_id = descriptor["pack_id"]
 
     # `packs` is untrusted runner-advertised state: a descriptor can name a

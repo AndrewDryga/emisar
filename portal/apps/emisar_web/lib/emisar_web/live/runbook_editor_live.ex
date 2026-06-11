@@ -10,7 +10,6 @@ defmodule EmisarWeb.RunbookEditorLive do
   use EmisarWeb, :live_view
 
   alias Emisar.{Catalog, Runbooks, Runners}
-  alias Emisar.Runbooks.Runbook
   alias EmisarWeb.Permissions
 
   def mount(params, _session, socket) do
@@ -291,13 +290,13 @@ defmodule EmisarWeb.RunbookEditorLive do
   defp persist(%{assigns: %{runbook: nil}} = socket, attrs),
     do: Runbooks.create_runbook(attrs, socket.assigns.current_subject)
 
-  defp persist(%{assigns: %{runbook: %Runbook{} = runbook}} = socket, attrs),
+  defp persist(%{assigns: %{runbook: %Runbooks.Runbook{} = runbook}} = socket, attrs),
     do: Runbooks.save_new_version(runbook, attrs, socket.assigns.current_subject)
 
-  defp maybe_publish(%Runbook{} = runbook, true, socket),
+  defp maybe_publish(%Runbooks.Runbook{} = runbook, true, socket),
     do: Runbooks.publish(runbook, socket.assigns.current_subject)
 
-  defp maybe_publish(%Runbook{} = runbook, false, _socket), do: {:ok, runbook}
+  defp maybe_publish(%Runbooks.Runbook{} = runbook, false, _socket), do: {:ok, runbook}
 
   defp success_message(_, true), do: "Runbook published."
   defp success_message(%{version: v}, false) when v > 1, do: "Draft v#{v} saved."

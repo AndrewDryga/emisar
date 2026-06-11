@@ -4,9 +4,9 @@ defmodule Emisar.Accounts.Membership do
   an account has many users.
   """
   use Emisar, :schema
-  alias Emisar.Auth.Role
+  alias Emisar.Auth
 
-  @roles Role.all()
+  @roles Auth.Role.all()
 
   schema "memberships" do
     field :role, Ecto.Enum, values: @roles, default: :operator

@@ -6,7 +6,7 @@ defmodule Emisar.Accounts.Authorizer do
   """
   use Emisar.Auth.Authorizer
   alias Emisar.Accounts.{Account, Membership}
-  alias Emisar.Users.User
+  alias Emisar.Users
 
   # -- Catalogue -------------------------------------------------------
 
@@ -17,7 +17,7 @@ defmodule Emisar.Accounts.Authorizer do
   # itself. Admins hold manage_team but not this.
   def manage_owners_permission, do: build(Membership, :manage_owners)
   def invite_member_permission, do: build(Membership, :invite)
-  def edit_own_profile_permission, do: build(User, :edit_self)
+  def edit_own_profile_permission, do: build(Users.User, :edit_self)
   # Held by owners only — required to flip account-wide security knobs
   # (require_mfa, etc.).
   def manage_security_settings_permission, do: build(Account, :manage_security)

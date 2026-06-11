@@ -9,7 +9,6 @@ defmodule EmisarWeb.RunsLive do
   use EmisarWeb, :live_view
 
   alias Emisar.Runs
-  alias Emisar.Runs.ActionRun
   alias EmisarWeb.LiveTable
 
   def mount(_params, _session, socket) do
@@ -37,7 +36,7 @@ defmodule EmisarWeb.RunsLive do
   def handle_info(_msg, socket), do: {:noreply, socket}
 
   defp load_runs(socket, params) do
-    filters = ActionRun.Query.filters()
+    filters = Runs.ActionRun.Query.filters()
     opts = LiveTable.params_to_opts(params, filters)
 
     case Runs.list_runs(

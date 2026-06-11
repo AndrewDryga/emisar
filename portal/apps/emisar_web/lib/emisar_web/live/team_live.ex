@@ -2,7 +2,6 @@ defmodule EmisarWeb.TeamLive do
   use EmisarWeb, :live_view
 
   alias Emisar.{Accounts, Mailers, Runners}
-  alias Emisar.Accounts.Membership
   alias EmisarWeb.LiveTable
   alias Phoenix.LiveView.JS
 
@@ -40,7 +39,7 @@ defmodule EmisarWeb.TeamLive do
       nil ->
         {:noreply, socket}
 
-      %Membership{user: user} when not is_nil(user) ->
+      %Accounts.Membership{user: user} when not is_nil(user) ->
         params = %{"full_name" => user.full_name || ""}
 
         {:noreply,
@@ -158,7 +157,7 @@ defmodule EmisarWeb.TeamLive do
 
   def handle_event("change_role", %{"membership_id" => id, "role" => role}, socket) do
     with true <- role in @roles,
-         %Membership{} = membership <- find_membership(socket, id) do
+         %Accounts.Membership{} = membership <- find_membership(socket, id) do
       case Accounts.update_membership_role(membership, role, socket.assigns.current_subject) do
         {:ok, _updated} ->
           {:noreply, socket |> put_flash(:info, "Role updated.") |> reload()}
@@ -241,7 +240,7 @@ defmodule EmisarWeb.TeamLive do
       nil ->
         {:noreply, socket}
 
-      %Membership{} = membership ->
+      %Accounts.Membership{} = membership ->
         case fun.(membership) do
           {:ok, message} -> {:noreply, socket |> put_flash(:info, message) |> reload()}
           {:error, message} -> {:noreply, put_flash(socket, :error, message)}
@@ -347,7 +346,7 @@ defmodule EmisarWeb.TeamLive do
   defp current_role(memberships, user_id) do
     case Enum.find(memberships, &(&1.user_id == user_id)) do
       nil -> nil
-      %Membership{role: role} -> role
+      %Accounts.Membership{role: role} -> role
     end
   end
 
@@ -556,7 +555,7 @@ defmodule EmisarWeb.TeamLive do
                         "(unknown)"}
                     </span>
                     <span
-                      :if={Membership.disabled?(membership)}
+                      :if={Accounts.Membership.disabled?(membership)}
                       class="rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium text-amber-200 ring-1 ring-amber-500/30"
                     >
                       Suspended
@@ -611,7 +610,7 @@ defmodule EmisarWeb.TeamLive do
                   </div>
                 </div>
 
-                <%= if can_manage?(assigns) and not self_owner?(membership, @current_user.id) and not Membership.disabled?(membership) do %>
+                <%= if can_manage?(assigns) and not self_owner?(membership, @current_user.id) and not Accounts.Membership.disabled?(membership) do %>
                   <form phx-change="change_role" class="shrink-0">
                     <input type="hidden" name="membership_id" value={membership.id} />
                     <select
@@ -914,7 +913,7 @@ defmodule EmisarWeb.TeamLive do
     """
   end
 
-  defp self_owner?(%Membership{user_id: uid, role: :owner}, user_id) when uid == user_id,
+  defp self_owner?(%Accounts.Membership{user_id: uid, role: :owner}, user_id) when uid == user_id,
     do: true
 
   defp self_owner?(_, _), do: false

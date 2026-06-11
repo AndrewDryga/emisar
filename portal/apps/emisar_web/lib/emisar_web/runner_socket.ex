@@ -25,7 +25,7 @@ defmodule EmisarWeb.RunnerSocket do
   require Logger
 
   alias Emisar.{Runners, Audit, Catalog, Runs}
-  alias Emisar.Runners.{Runner, Token}
+  alias Emisar.Runners
 
   @protocol_version 1
   @heartbeat_timeout_ms 90_000
@@ -33,7 +33,7 @@ defmodule EmisarWeb.RunnerSocket do
   # -- WebSock callbacks ----------------------------------------------
 
   @impl true
-  def init(%{token: %Token{} = token, runner: %Runner{} = runner} = upgrade) do
+  def init(%{token: %Runners.Token{} = token, runner: %Runners.Runner{} = runner} = upgrade) do
     # Stash IP + UA from the HTTP upgrade on the socket process so
     # every Audit.log call in init / terminate / handle_in carries
     # them. The controller passed these in via `WebSockAdapter.upgrade`.

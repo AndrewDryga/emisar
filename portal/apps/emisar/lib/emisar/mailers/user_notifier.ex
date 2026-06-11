@@ -7,7 +7,7 @@ defmodule Emisar.Mailers.UserNotifier do
   import Swoosh.Email
   alias Emisar.Mailer
   alias Emisar.PublicUrl
-  alias Emisar.Users.User
+  alias Emisar.Users
 
   # Resolved at call-time (not compile-time) so `runtime.exs` env-var
   # overrides take effect without a recompile. Falls back to the
@@ -17,7 +17,7 @@ defmodule Emisar.Mailers.UserNotifier do
      Application.get_env(:emisar, :mailer_from_email, "no-reply@emisar.dev")}
   end
 
-  def deliver_confirmation_instructions(%User{} = user, token) do
+  def deliver_confirmation_instructions(%Users.User{} = user, token) do
     url = PublicUrl.url("/confirm/#{token}")
 
     deliver(user.email, "Confirm your emisar account", """
@@ -33,7 +33,7 @@ defmodule Emisar.Mailers.UserNotifier do
     """)
   end
 
-  def deliver_magic_link(%User{} = user, token) do
+  def deliver_magic_link(%Users.User{} = user, token) do
     url = PublicUrl.url("/sign_in/magic/#{token}")
 
     deliver(user.email, "Your emisar magic link", """
@@ -46,7 +46,7 @@ defmodule Emisar.Mailers.UserNotifier do
     """)
   end
 
-  def deliver_password_reset(%User{} = user, token) do
+  def deliver_password_reset(%Users.User{} = user, token) do
     url = PublicUrl.url("/reset_password/#{token}")
 
     deliver(user.email, "Reset your emisar password", """
@@ -69,7 +69,7 @@ defmodule Emisar.Mailers.UserNotifier do
   preview of the arguments — that an experienced operator can decide
   from their inbox without context-switching into the app.
   """
-  def deliver_approval_request(%User{} = approver, %{} = request, %{} = run) do
+  def deliver_approval_request(%Users.User{} = approver, %{} = request, %{} = run) do
     url = PublicUrl.url("/app/approvals/#{request.id}")
     runner_label = runner_email_label(run)
     args_block = format_args_for_email(run)
@@ -127,7 +127,7 @@ defmodule Emisar.Mailers.UserNotifier do
 
   defp format_args_for_email(_), do: "  (none)"
 
-  def deliver_account_invitation(%User{} = invitee, %{} = inviter, account, token) do
+  def deliver_account_invitation(%Users.User{} = invitee, %{} = inviter, account, token) do
     url = PublicUrl.url("/accept_invitation/#{token}")
 
     deliver(invitee.email, "You're invited to #{account.name} on emisar", """

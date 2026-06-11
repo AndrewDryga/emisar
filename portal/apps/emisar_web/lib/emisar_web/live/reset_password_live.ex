@@ -2,7 +2,6 @@ defmodule EmisarWeb.ResetPasswordLive do
   use EmisarWeb, :live_view
 
   alias Emisar.{Auth, Mailers, Users}
-  alias Emisar.Users.User
 
   def mount(params, _session, socket) do
     socket =
@@ -10,8 +9,8 @@ defmodule EmisarWeb.ResetPasswordLive do
       |> assign(:page_title, "Reset your password")
       |> assign(:sent_to, nil)
       |> assign(:reset_token, params["token"])
-      |> assign(:request_form, to_form(Users.change_user(%User{}), as: "user"))
-      |> assign(:reset_form, to_form(Users.change_password(%User{}), as: "user"))
+      |> assign(:request_form, to_form(Users.change_user(%Users.User{}), as: "user"))
+      |> assign(:reset_form, to_form(Users.change_password(%Users.User{}), as: "user"))
 
     {:ok, socket}
   end
@@ -102,12 +101,12 @@ defmodule EmisarWeb.ResetPasswordLive do
     {:noreply,
      socket
      |> assign(:sent_to, nil)
-     |> assign(:request_form, to_form(Users.change_user(%User{}), as: "user"))}
+     |> assign(:request_form, to_form(Users.change_user(%Users.User{}), as: "user"))}
   end
 
   def handle_event("validate_request", %{"user" => params}, socket) do
     changeset =
-      %User{}
+      %Users.User{}
       |> Users.change_user(%{"email" => params["email"] || ""})
       |> Map.put(:action, :validate)
 
@@ -116,7 +115,7 @@ defmodule EmisarWeb.ResetPasswordLive do
 
   def handle_event("validate_reset", %{"user" => params}, socket) do
     changeset =
-      %User{}
+      %Users.User{}
       |> Users.change_password(params)
       |> Map.put(:action, :validate)
 
@@ -139,7 +138,7 @@ defmodule EmisarWeb.ResetPasswordLive do
   def handle_event("reset", %{"user" => %{"password" => password} = params}, socket) do
     # Length + confirmation-mismatch are field errors — render them inline
     # (border + message) on the right input instead of a flash.
-    changeset = Users.change_password(%User{}, params)
+    changeset = Users.change_password(%Users.User{}, params)
 
     if changeset.valid? do
       case Auth.reset_user_password(socket.assigns.reset_token, password) do

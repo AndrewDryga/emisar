@@ -9,8 +9,7 @@ defmodule Emisar.Accounts do
   alias Ecto.Multi
   alias Emisar.{Audit, Auth, Crypto, Repo, Slug, Users}
   alias Emisar.Accounts.{Account, Authorizer, Membership}
-  alias Emisar.Auth.{Role, Subject}
-  alias Emisar.Users.User
+  alias Emisar.Auth.Subject
   require Logger
 
   # -- Accounts ---------------------------------------------------------
@@ -43,7 +42,7 @@ defmodule Emisar.Accounts do
   The subject's user is the only authorization that applies — you can
   only ever list your own memberships.
   """
-  def list_accounts_for_user(%Subject{actor: %User{id: user_id}}, opts \\ []) do
+  def list_accounts_for_user(%Subject{actor: %Users.User{id: user_id}}, opts \\ []) do
     Account.Query.not_deleted()
     |> Account.Query.by_membership_user_id(user_id)
     |> Account.Query.ordered_by_name()
@@ -61,7 +60,7 @@ defmodule Emisar.Accounts do
   no membership yet, so no `%Subject{}` can exist — owning the brand-new
   account is what creates one.
   """
-  def create_account_with_owner(account_attrs, %User{} = user) do
+  def create_account_with_owner(account_attrs, %Users.User{} = user) do
     Multi.new()
     |> Multi.insert(:account, Account.Changeset.create(account_attrs))
     |> Multi.insert(:membership, fn %{account: account} ->
@@ -251,7 +250,7 @@ defmodule Emisar.Accounts do
   Returns `{:ok, membership} | {:error, :not_found}`. Pre-Subject —
   called from `UserAuth` before there's a Subject to authorize with.
   """
-  def fetch_membership_for_session(%User{id: user_id}, account_id) do
+  def fetch_membership_for_session(%Users.User{id: user_id}, account_id) do
     case maybe_fetch_session_membership(user_id, account_id) do
       {:ok, membership} ->
         {:ok, membership}
@@ -296,7 +295,7 @@ defmodule Emisar.Accounts do
   needs to show "your access was suspended" rather than send them to
   onboarding.
   """
-  def all_memberships_suspended?(%User{id: user_id}) do
+  def all_memberships_suspended?(%Users.User{id: user_id}) do
     base = Membership.Query.not_deleted() |> Membership.Query.by_user_id(user_id)
     Repo.exists?(base) and not Repo.exists?(Membership.Query.not_disabled(base))
   end
@@ -825,7 +824,7 @@ defmodule Emisar.Accounts do
              subject,
              Authorizer.invite_member_permission()
            ) do
-      case Role.cast(role) do
+      case Auth.Role.cast(role) do
         {:ok, role} ->
           if Auth.Permissions.covers_role?(subject, role),
             do: :ok,
@@ -874,10 +873,12 @@ defmodule Emisar.Accounts do
   The accepting user must BE the invited user (the membership's `user_id`):
   a signed-in *different* user holding the token (e.g. a forwarded link) must
   not be able to burn the invitation. Returns `{:error, :unauthorized}`
-  otherwise. Takes the `%User{}` (not a `%Subject{}`) — the accept-invite page
+  otherwise. Takes the `%Users.User{}` (not a `%Subject{}`) — the accept-invite page
   is a public route with only `current_user` assigned, no subject.
   """
-  def mark_invitation_accepted(%Membership{user_id: user_id} = membership, %User{id: user_id}) do
+  def mark_invitation_accepted(%Membership{user_id: user_id} = membership, %Users.User{
+        id: user_id
+      }) do
     # Locked re-read judged on the FRESH row: a concurrently-accepted,
     # expired, or revoked invitation is :not_found — first accept wins,
     # never a blind re-stamp of the caller's stale snapshot.
@@ -891,7 +892,7 @@ defmodule Emisar.Accounts do
     )
   end
 
-  def mark_invitation_accepted(%Membership{}, %User{}), do: {:error, :unauthorized}
+  def mark_invitation_accepted(%Membership{}, %Users.User{}), do: {:error, :unauthorized}
 
   @doc """
   Accepts a membership invitation: sets the user's full_name + password,

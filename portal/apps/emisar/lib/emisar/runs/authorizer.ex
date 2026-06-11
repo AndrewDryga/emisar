@@ -13,7 +13,7 @@ defmodule Emisar.Runs.Authorizer do
   """
   use Emisar.Auth.Authorizer
   alias Emisar.Runs.ActionRun
-  alias Emisar.Runners.Runner
+  alias Emisar.Runners
 
   def dispatch_run_permission, do: build(ActionRun, :dispatch)
   def cancel_run_permission, do: build(ActionRun, :cancel)
@@ -43,7 +43,7 @@ defmodule Emisar.Runs.Authorizer do
 
   @impl Emisar.Auth.Authorizer
   # Runner socket only sees its own runs — even within the account.
-  def for_subject(queryable, %Subject{actor: %Runner{id: runner_id}}) do
+  def for_subject(queryable, %Subject{actor: %Runners.Runner{id: runner_id}}) do
     case query_source(queryable) do
       :action_runs -> ActionRun.Query.by_runner_id(queryable, runner_id)
       _ -> queryable
