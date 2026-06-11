@@ -26,8 +26,10 @@ defmodule Emisar.Runs do
              Authorizer.view_runs_permission()
            ) do
       ActionRun.Query.all()
+      |> ActionRun.Query.with_preloaded_runner()
+      |> ActionRun.Query.with_preloaded_api_key()
       |> Authorizer.for_subject(subject)
-      |> Repo.list(ActionRun.Query, Keyword.put_new(opts, :preload, [:runner, :api_key]))
+      |> Repo.list(ActionRun.Query, opts)
     end
   end
 
@@ -88,17 +90,14 @@ defmodule Emisar.Runs do
       hours = Keyword.get(opts, :hours, 24)
       cutoff = DateTime.utc_now() |> DateTime.add(-hours * 3600, :second)
 
-      counts =
+      # One aggregate row, summed in SQL (FILTER) — no app-side counting.
+      %{total: total, success: success, failed: failed} =
         ActionRun.Query.all()
         |> ActionRun.Query.inserted_after(cutoff)
-        |> ActionRun.Query.count_by_status()
+        |> ActionRun.Query.outcome_totals(@failed_statuses)
         |> Authorizer.for_subject(subject)
-        |> Repo.all()
-        |> Map.new()
+        |> Repo.one()
 
-      total = counts |> Map.values() |> Enum.sum()
-      success = Map.get(counts, :success, 0)
-      failed = @failed_statuses |> Enum.map(&Map.get(counts, &1, 0)) |> Enum.sum()
       terminal = success + failed
 
       {:ok,
@@ -142,8 +141,10 @@ defmodule Emisar.Runs do
          true <- Repo.valid_uuid?(id) do
       ActionRun.Query.all()
       |> ActionRun.Query.by_id(id)
+      |> ActionRun.Query.with_preloaded_runner()
+      |> ActionRun.Query.with_preloaded_api_key()
       |> Authorizer.for_subject(subject)
-      |> Repo.fetch(ActionRun.Query, Keyword.put_new(opts, :preload, [:runner, :api_key]))
+      |> Repo.fetch(ActionRun.Query, opts)
     else
       false -> {:error, :not_found}
       other -> other
@@ -186,44 +187,34 @@ defmodule Emisar.Runs do
 
     result =
       Multi.new()
-      |> Multi.insert(:run, ActionRun.Changeset.create(attrs))
-      |> put_run_audit_event()
-      |> Repo.commit_multi(after_commit: fn %{run: run} -> broadcast_run(run) end)
+      # ON CONFLICT on the partial idempotency index turns a concurrent
+      # duplicate into RETURNING the winning row in the same statement —
+      # no constraint rescue, no re-fetch. Rows without an
+      # idempotency_key can't match the partial index and always insert;
+      # the touched updated_at is the price of DO UPDATE ... RETURNING.
+      |> Multi.insert(:run, ActionRun.Changeset.create(attrs),
+        on_conflict: [set: [updated_at: DateTime.utc_now()]],
+        conflict_target:
+          {:unsafe_fragment, "(api_key_id, idempotency_key) WHERE idempotency_key IS NOT NULL"},
+        returning: true
+      )
+      |> put_run_audit_event(request_id)
+      |> Repo.commit_multi()
 
     case result do
-      {:ok, %{run: run}} ->
+      # Fresh insert: RETURNING carries the request_id this call minted.
+      {:ok, %{run: %ActionRun{request_id: ^request_id} = run}} ->
+        broadcast_run(run)
         {:ok, run}
 
-      {:error, %Ecto.Changeset{errors: errors} = changeset} ->
-        if idempotency_conflict?(errors) do
-          # The winning concurrent insert created the row; re-fetch and
-          # report the replay so the caller can return the original
-          # outcome instead of bubbling a confusing constraint error.
-          case peek_idempotent_run(attrs) do
-            {:replay, run} -> {:replay, run}
-            # Theoretical race: the conflicting row was deleted between
-            # the failed insert and our re-fetch. Fall through to the
-            # original error so the caller doesn't silently swallow it.
-            :none -> {:error, changeset}
-          end
-        else
-          {:error, changeset}
-        end
+      # Conflict path: the returned row is the earlier winner's — replay.
+      # No audit row, no broadcast; the original insert already did both.
+      {:ok, %{run: %ActionRun{} = run}} ->
+        {:replay, run}
+
+      {:error, reason} ->
+        {:error, reason}
     end
-  end
-
-  # Matches the `unique_constraint([:api_key_id, :idempotency_key], …)`
-  # in `ActionRun.Changeset.create/1`. Other unique-index hits
-  # (`request_id`, etc.) are NOT idempotency replays and should still
-  # propagate as changeset errors.
-  defp idempotency_conflict?(errors) do
-    Enum.any?(errors, fn
-      {:api_key_id, {_, opts}} ->
-        Keyword.get(opts, :constraint_name) == "action_runs_api_key_idempotency_key_index"
-
-      _ ->
-        false
-    end)
   end
 
   @doc """
@@ -242,7 +233,7 @@ defmodule Emisar.Runs do
              subject,
              Authorizer.dispatch_run_permission()
            ) do
-      do_dispatch_run(attrs, account_id)
+      dispatch_run_for_account(attrs, account_id)
     end
   end
 
@@ -255,10 +246,6 @@ defmodule Emisar.Runs do
   check that first dispatch already enforced).
   """
   def dispatch_run_for_account(attrs, account_id) when is_binary(account_id) do
-    do_dispatch_run(attrs, account_id)
-  end
-
-  defp do_dispatch_run(attrs, account_id) do
     attrs = Map.put(attrs, :account_id, account_id)
     runner_id = attrs[:runner_id]
     action_id = attrs[:action_id]
@@ -804,9 +791,14 @@ defmodule Emisar.Runs do
   # for the skipped intermediate states (and the already-terminal no-op)
   # so the transaction still commits and `fan_out_audit_events/1` simply
   # finds no event to broadcast.
-  defp put_run_audit_event(multi) do
+  # With `fresh_request_id` (the create_run upsert), the audit row is
+  # skipped on an idempotency replay — the returned row carries the
+  # original request_id, and the original insert already audited it.
+  defp put_run_audit_event(multi, fresh_request_id \\ nil) do
     Multi.run(multi, :audit, fn repo, %{run: run} ->
-      if is_struct(run, ActionRun) and run.status in @audited_run_statuses do
+      fresh? = is_nil(fresh_request_id) or run.request_id == fresh_request_id
+
+      if is_struct(run, ActionRun) and fresh? and run.status in @audited_run_statuses do
         repo.insert(Audit.run_event_changeset(run))
       else
         {:ok, nil}

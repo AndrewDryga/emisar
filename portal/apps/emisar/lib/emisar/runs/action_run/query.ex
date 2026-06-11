@@ -54,11 +54,49 @@ defmodule Emisar.Runs.ActionRun.Query do
   def by_action_id(queryable, action_id),
     do: where(queryable, [runs: r], r.action_id == ^action_id)
 
-  @doc "Status → row count pairs; the dashboard stats roll-up."
-  def count_by_status(queryable) do
+  @doc """
+  One-row aggregate for the dashboard stats: total runs plus the
+  success / failed splits, counted with SQL FILTER so the context does
+  no app-side summing. The caller owns which statuses count as failed.
+  """
+  def outcome_totals(queryable, failed_statuses) do
+    select(queryable, [runs: r], %{
+      total: count(r.id),
+      success: filter(count(r.id), r.status == ^:success),
+      failed: filter(count(r.id), r.status in ^failed_statuses)
+    })
+  end
+
+  @doc "Left-join + preload the run's (non-deleted) runner, idempotently."
+  def with_preloaded_runner(queryable) do
     queryable
-    |> group_by([runs: r], r.status)
-    |> select([runs: r], {r.status, count(r.id)})
+    |> with_named_binding(:runner, fn queryable, binding ->
+      join(
+        queryable,
+        :left,
+        [runs: r],
+        runner in ^Emisar.Runners.Runner.Query.not_deleted(),
+        on: r.runner_id == runner.id,
+        as: ^binding
+      )
+    end)
+    |> preload([runner: runner], runner: runner)
+  end
+
+  @doc "Left-join + preload the run's (non-deleted) API key, idempotently."
+  def with_preloaded_api_key(queryable) do
+    queryable
+    |> with_named_binding(:api_key, fn queryable, binding ->
+      join(
+        queryable,
+        :left,
+        [runs: r],
+        api_key in ^Emisar.ApiKeys.ApiKey.Query.not_deleted(),
+        on: r.api_key_id == api_key.id,
+        as: ^binding
+      )
+    end)
+    |> preload([api_key: api_key], api_key: api_key)
   end
 
   @doc """
@@ -119,7 +157,7 @@ defmodule Emisar.Runs.ActionRun.Query do
           {"cancelled", "Cancelled"},
           {"timed_out", "Timed out"}
         ],
-        fun: fn q, statuses -> {q, dynamic([runs: r], r.status in ^statuses)} end
+        fun: fn queryable, statuses -> {queryable, dynamic([runs: r], r.status in ^statuses)} end
       },
       %Filter{
         name: :action_id,
@@ -129,9 +167,9 @@ defmodule Emisar.Runs.ActionRun.Query do
         # and "postgres.uptime". Anchored to action_id only; doesn't
         # leak across to other columns. ILIKE for case-insensitive
         # match — most operators don't bother shift-keying.
-        fun: fn q, action ->
+        fun: fn queryable, action ->
           pattern = "%" <> action <> "%"
-          {q, dynamic([runs: r], ilike(r.action_id, ^pattern))}
+          {queryable, dynamic([runs: r], ilike(r.action_id, ^pattern))}
         end
       },
       %Filter{
@@ -143,7 +181,7 @@ defmodule Emisar.Runs.ActionRun.Query do
           {"mcp", "MCP / LLM"},
           {"runbook", "Runbook"}
         ],
-        fun: fn q, sources -> {q, dynamic([runs: r], r.source in ^sources)} end
+        fun: fn queryable, sources -> {queryable, dynamic([runs: r], r.source in ^sources)} end
       }
     ]
 end
