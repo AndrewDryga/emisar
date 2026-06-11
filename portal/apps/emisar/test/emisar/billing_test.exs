@@ -264,6 +264,106 @@ defmodule Emisar.BillingTest do
     }
   end
 
+  describe "billing_summary/2" do
+    test "rolls plan limits + live counts + subscription mirror into one map" do
+      {_user, account, subject} = owner_subject_fixture()
+      _ = runner_fixture(account_id: account.id)
+
+      assert {:ok, summary} = Billing.billing_summary(account, subject)
+      assert summary.plan == "free"
+      assert summary.runner_count == 1
+      assert summary.runner_limit == 3
+      assert summary.member_count == 1
+      # Free plan is priced at 0, so the total is 0 — and the
+      # never-subscribed mirror fields read nil.
+      assert summary.monthly_total_cents == 0
+      refute summary.subscription_status
+      refute summary.current_period_end
+    end
+
+    test "an owner of account B cannot read account A's summary (cross-account)" do
+      {_user_a, account_a, _subject_a} = owner_subject_fixture()
+      {_user_b, _account_b, subject_b} = owner_subject_fixture()
+
+      assert {:error, :unauthorized} = Billing.billing_summary(account_a, subject_b)
+    end
+  end
+
+  describe "start_checkout/3" do
+    test "rejects a plan name we do not sell" do
+      {_user, account, subject} = owner_subject_fixture()
+
+      assert {:error, :unknown_plan} = Billing.start_checkout(account, "platinum", subject)
+    end
+
+    test "returns the stub checkout URL when no Paddle price id is configured" do
+      {_user, account, subject} = owner_subject_fixture()
+
+      assert {:ok, "/paddle-checkout-stub?plan=team"} =
+               Billing.start_checkout(account, "team", subject)
+    end
+
+    test "an admin (manage_billing is owner-only) is refused with :unauthorized" do
+      {_user, account, _subject} = owner_subject_fixture()
+      admin = user_fixture()
+      _ = membership_fixture(account_id: account.id, user_id: admin.id, role: "admin")
+      admin_subject = subject_for(admin, account, role: :admin)
+
+      assert {:error, :unauthorized} = Billing.start_checkout(account, "team", admin_subject)
+      assert {:error, :unauthorized} = Billing.open_billing_portal(account, admin_subject)
+    end
+  end
+
+  describe "apply_webhook_event/1 subscription.canceled" do
+    test "flips the mirrored status, and an unknown subscription id is a no-op" do
+      {_user, account, _subject} = owner_subject_fixture()
+
+      {:ok, _} =
+        Billing.upsert_subscription(account.id, %{
+          paddle_subscription_id: "sub_live_1",
+          plan: "team",
+          status: "active"
+        })
+
+      assert {:ok, _} =
+               Billing.apply_webhook_event(%{
+                 "event_type" => "subscription.canceled",
+                 "data" => %{"id" => "sub_live_1"}
+               })
+
+      assert %Subscription{status: "canceled"} =
+               Repo.one(from(s in Subscription, where: s.account_id == ^account.id))
+
+      assert :ok =
+               Billing.apply_webhook_event(%{
+                 "event_type" => "subscription.canceled",
+                 "data" => %{"id" => "sub_never_seen"}
+               })
+    end
+  end
+
+  describe "ensure_paddle_customer/2 first-wins" do
+    test "a stale struct cannot clobber an already-linked customer id" do
+      {_user, account, subject} = owner_subject_fixture()
+
+      {:ok, first_customer_id, linked} = Billing.ensure_paddle_customer(account, subject)
+      assert linked.paddle_customer_id == first_customer_id
+
+      # Simulate the race: a second checkout still holds the pre-link
+      # snapshot (nil customer id) and a DIFFERENT acting user, so the
+      # stub would mint a different vendor customer. The locked row wins.
+      other_owner = user_fixture()
+      _ = membership_fixture(account_id: account.id, user_id: other_owner.id, role: "owner")
+      other_subject = subject_for(other_owner, account, role: :owner)
+      stale_account = %{account | paddle_customer_id: nil}
+
+      assert {:ok, ^first_customer_id, relinked} =
+               Billing.ensure_paddle_customer(stale_account, other_subject)
+
+      assert relinked.paddle_customer_id == first_customer_id
+    end
+  end
+
   defp processed_event?(event_id) do
     Repo.exists?(from e in "paddle_processed_events", where: e.id == ^event_id)
   end

@@ -249,4 +249,107 @@ defmodule Emisar.AuditTest do
       assert length(rows) == 2
     end
   end
+
+  describe "list_for_export/2 (SIEM forward sweep)" do
+    defp seed_export_events(account, count) do
+      base = DateTime.add(DateTime.utc_now(), -3600, :second)
+
+      for offset <- 1..count do
+        {:ok, event} =
+          Audit.log(account.id, "user.signed_in",
+            actor_kind: "user",
+            occurred_at: DateTime.add(base, offset, :second)
+          )
+
+        event
+      end
+    end
+
+    test "returns ascending (occurred_at, id) so SIEMs can checkpoint" do
+      account = account_fixture()
+      subject = subject_for(user_fixture(), account, role: :owner)
+      [first, second, third] = seed_export_events(account, 3)
+
+      assert {:ok, events} = Audit.list_for_export(subject)
+      assert Enum.map(events, & &1.id) == [first.id, second.id, third.id]
+    end
+
+    test ":after cursor is strict — resuming never re-ingests the checkpoint row" do
+      account = account_fixture()
+      subject = subject_for(user_fixture(), account, role: :owner)
+      [first, second, third] = seed_export_events(account, 3)
+
+      assert {:ok, [event_a, event_b]} =
+               Audit.list_for_export(subject, after: {first.occurred_at, first.id})
+
+      assert event_a.id == second.id
+      assert event_b.id == third.id
+    end
+
+    test ":since is an inclusive lower bound and :limit caps the page" do
+      account = account_fixture()
+      subject = subject_for(user_fixture(), account, role: :owner)
+      [_first, second, third] = seed_export_events(account, 3)
+
+      assert {:ok, [only]} =
+               Audit.list_for_export(subject, since: second.occurred_at, limit: 1)
+
+      assert only.id == second.id
+      _ = third
+    end
+
+    test ":event_types narrows the sweep" do
+      account = account_fixture()
+      subject = subject_for(user_fixture(), account, role: :owner)
+      _ = seed_export_events(account, 2)
+      {:ok, denied} = Audit.log(account.id, "approval.denied", actor_kind: "user")
+
+      assert {:ok, [only]} = Audit.list_for_export(subject, event_types: ["approval.denied"])
+      assert only.id == denied.id
+    end
+
+    test "a junk :limit falls back to the default; the cap is exposed for the controller" do
+      account = account_fixture()
+      subject = subject_for(user_fixture(), account, role: :owner)
+      _ = seed_export_events(account, 2)
+
+      assert {:ok, [_, _]} = Audit.list_for_export(subject, limit: "junk")
+      assert Audit.max_export_limit() == 1_000
+      assert Audit.default_export_limit() == 100
+    end
+
+    test "an owner of account B never exports account A's events (cross-account)" do
+      account_a = account_fixture()
+      _ = seed_export_events(account_a, 2)
+
+      subject_b = subject_for(user_fixture(), account_fixture(), role: :owner)
+
+      assert {:ok, []} = Audit.list_for_export(subject_b)
+    end
+  end
+
+  describe "fetch_event_by_id/2" do
+    test "returns the event inside the subject's account" do
+      account = account_fixture()
+      subject = subject_for(user_fixture(), account, role: :owner)
+      {:ok, event} = Audit.log(account.id, "user.signed_in", actor_kind: "user")
+
+      assert {:ok, fetched} = Audit.fetch_event_by_id(event.id, subject)
+      assert fetched.id == event.id
+    end
+
+    test "an owner of account B cannot fetch account A's event (cross-account → :not_found)" do
+      account_a = account_fixture()
+      {:ok, event_a} = Audit.log(account_a.id, "user.signed_in", actor_kind: "user")
+
+      subject_b = subject_for(user_fixture(), account_fixture(), role: :owner)
+
+      assert {:error, :not_found} = Audit.fetch_event_by_id(event_a.id, subject_b)
+    end
+
+    test "a malformed id is a clean :not_found" do
+      subject = subject_for(user_fixture(), account_fixture(), role: :owner)
+      assert {:error, :not_found} = Audit.fetch_event_by_id("not-a-uuid", subject)
+    end
+  end
 end
