@@ -114,9 +114,9 @@ defmodule Emisar.Billing.PaddleClient.Live do
 
   defp post_json(path, params) do
     body = Jason.encode!(params)
-    req = Finch.build(:post, @base <> path, headers(), body)
+    request = Finch.build(:post, @base <> path, headers(), body)
 
-    case Finch.request(req, Emisar.Finch, receive_timeout: 8_000) do
+    case Finch.request(request, Emisar.Finch, receive_timeout: 8_000) do
       {:ok, %Finch.Response{status: status, body: resp_body}} when status in 200..299 ->
         Jason.decode(resp_body)
 
@@ -129,9 +129,9 @@ defmodule Emisar.Billing.PaddleClient.Live do
   end
 
   defp get(path) do
-    req = Finch.build(:get, @base <> path, headers())
+    request = Finch.build(:get, @base <> path, headers())
 
-    case Finch.request(req, Emisar.Finch, receive_timeout: 8_000) do
+    case Finch.request(request, Emisar.Finch, receive_timeout: 8_000) do
       {:ok, %Finch.Response{status: status, body: body}} when status in 200..299 ->
         Jason.decode(body)
 

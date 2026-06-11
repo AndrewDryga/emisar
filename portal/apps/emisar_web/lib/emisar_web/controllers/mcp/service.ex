@@ -154,9 +154,9 @@ defmodule EmisarWeb.Mcp.Service do
           nil ->
             {:error, :not_found}
 
-          rb ->
+          runbook ->
             {:ok, runners} = Runners.list_all_runners_for_account(subject)
-            {:ok, runbook_detail(rb, runners)}
+            {:ok, runbook_detail(runbook, runners)}
         end
 
       {:error, :unauthorized} ->
@@ -176,27 +176,27 @@ defmodule EmisarWeb.Mcp.Service do
       Enum.find(runbooks, &(&1.id == slug_or_id))
   end
 
-  defp runbook_summary(rb) do
-    steps = runbook_steps(rb)
+  defp runbook_summary(runbook) do
+    steps = runbook_steps(runbook)
 
     %{
-      slug: rb.slug,
-      title: rb.title,
-      version: rb.version,
-      description: nil_if_blank(rb.description),
+      slug: runbook.slug,
+      title: runbook.title,
+      version: runbook.version,
+      description: nil_if_blank(runbook.description),
       steps: length(steps),
       actions:
         steps |> Enum.map(&Map.get(&1, "action_id")) |> Enum.reject(&blank?/1) |> Enum.uniq()
     }
   end
 
-  defp runbook_detail(rb, runners) do
+  defp runbook_detail(runbook, runners) do
     %{
-      slug: rb.slug,
-      title: rb.title,
-      version: rb.version,
-      description: nil_if_blank(rb.description),
-      steps: rb |> runbook_steps() |> Enum.map(&runbook_step(&1, runners))
+      slug: runbook.slug,
+      title: runbook.title,
+      version: runbook.version,
+      description: nil_if_blank(runbook.description),
+      steps: runbook |> runbook_steps() |> Enum.map(&runbook_step(&1, runners))
     }
   end
 
@@ -227,7 +227,7 @@ defmodule EmisarWeb.Mcp.Service do
   defp normalize_targets(v) when is_binary(v) and v != "", do: [v]
   defp normalize_targets(_), do: []
 
-  defp runbook_steps(rb), do: get_in(rb.definition || %{}, ["steps"]) || []
+  defp runbook_steps(runbook), do: get_in(runbook.definition || %{}, ["steps"]) || []
 
   defp blank?(s), do: s in [nil, ""]
   defp nil_if_blank(s), do: if(blank?(s), do: nil, else: s)
@@ -764,12 +764,12 @@ defmodule EmisarWeb.Mcp.Service do
           "(or get an approval grant for the same (action, runner, args) shape)."
     }
 
-  defp runner_result_to_json({name, {:error, %Ecto.Changeset{} = cs}, _runner}, _subject),
+  defp runner_result_to_json({name, {:error, %Ecto.Changeset{} = changeset}, _runner}, _subject),
     do: %{
       runner: name,
       status: "error",
       error: "invalid_args",
-      details: errors(cs),
+      details: errors(changeset),
       message:
         "One or more arguments failed validation. `details` lists the offending fields " <>
           "and the reason — fix and retry."
@@ -934,9 +934,9 @@ defmodule EmisarWeb.Mcp.Service do
   end
 
   defp collect_streams(events) do
-    Enum.reduce(events, {"", ""}, fn ev, {out, err} ->
-      chunk = get_chunk(ev)
-      stream = ev.stream || (ev.payload && ev.payload["stream"])
+    Enum.reduce(events, {"", ""}, fn event, {out, err} ->
+      chunk = get_chunk(event)
+      stream = event.stream || (event.payload && event.payload["stream"])
 
       case stream do
         "stderr" -> {out, err <> chunk}

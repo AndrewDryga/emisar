@@ -284,14 +284,14 @@ defmodule EmisarWeb.Mcp.ContentBlocks do
 
   defp policy_reason(run) do
     case run["policy"] || run[:policy] do
-      %{} = p -> p["reason"] || p[:reason]
+      %{} = payload -> payload["reason"] || payload[:reason]
       _ -> nil
     end
   end
 
   defp policy_decision(run) do
     case run["policy"] || run[:policy] do
-      %{} = p -> p["decision"] || p[:decision]
+      %{} = payload -> payload["decision"] || payload[:decision]
       _ -> nil
     end
   end

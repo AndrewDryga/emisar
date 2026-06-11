@@ -171,22 +171,22 @@ defmodule EmisarWeb.AuditExportController do
   # the audit row stores — including the request metadata stamped by
   # the boundary plug — so downstream rules can correlate by
   # `request_id` / `ip_address` / `user_agent`.
-  defp serialize(%Emisar.Audit.Event{} = e) do
+  defp serialize(%Emisar.Audit.Event{} = event) do
     %{
-      id: e.id,
-      occurred_at: DateTime.to_iso8601(e.occurred_at),
-      account_id: e.account_id,
-      event_type: e.event_type,
-      actor_kind: e.actor_kind,
-      actor_id: e.actor_id,
-      actor_label: e.actor_label,
-      subject_kind: e.subject_kind,
-      subject_id: e.subject_id,
-      subject_label: e.subject_label,
-      ip_address: e.ip_address,
-      user_agent: e.user_agent,
-      request_id: e.request_id,
-      payload: e.payload
+      id: event.id,
+      occurred_at: DateTime.to_iso8601(event.occurred_at),
+      account_id: event.account_id,
+      event_type: event.event_type,
+      actor_kind: event.actor_kind,
+      actor_id: event.actor_id,
+      actor_label: event.actor_label,
+      subject_kind: event.subject_kind,
+      subject_id: event.subject_id,
+      subject_label: event.subject_label,
+      ip_address: event.ip_address,
+      user_agent: event.user_agent,
+      request_id: event.request_id,
+      payload: event.payload
     }
     |> Jason.encode!()
   end

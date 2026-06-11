@@ -38,24 +38,24 @@ defmodule EmisarWeb.ApprovalsLive do
     Permissions.gated(
       socket,
       Approvals.subject_can_decide_approval?(socket.assigns.current_subject),
-      fn s ->
-        case Approvals.fetch_grant_by_id(id, s.assigns.current_subject) do
+      fn socket ->
+        case Approvals.fetch_grant_by_id(id, socket.assigns.current_subject) do
           {:error, :not_found} ->
-            {:noreply, put_flash(s, :error, "Grant not found.")}
+            {:noreply, put_flash(socket, :error, "Grant not found.")}
 
           {:ok, grant} ->
             # Audit logging lives inside `Approvals.revoke_grant/2` so the
             # transaction is atomic and other callers (future scripts /
             # tasks) can't accidentally skip it.
-            case Approvals.revoke_grant(grant, s.assigns.current_subject) do
+            case Approvals.revoke_grant(grant, socket.assigns.current_subject) do
               {:ok, _} ->
                 {:noreply,
-                 s
+                 socket
                  |> put_flash(:info, "Grant revoked. New calls will require fresh approval.")
                  |> reload()}
 
               _ ->
-                {:noreply, put_flash(s, :error, "Could not revoke grant.")}
+                {:noreply, put_flash(socket, :error, "Could not revoke grant.")}
             end
         end
       end
@@ -119,8 +119,8 @@ defmodule EmisarWeb.ApprovalsLive do
   defp runner_id_from(%{context: %{"runner_id" => id}}) when is_binary(id), do: id
   defp runner_id_from(_), do: nil
 
-  defp runner_label(req, labels) do
-    id = runner_id_from(req)
+  defp runner_label(request, labels) do
+    id = runner_id_from(request)
 
     cond do
       id && labels[id] -> labels[id]
@@ -209,30 +209,33 @@ defmodule EmisarWeb.ApprovalsLive do
             filter_params={@filter_params}
             wrapper_class="space-y-2"
           >
-            <:item :let={req}>
+            <:item :let={request}>
               <li>
                 <.link
-                  navigate={~p"/app/approvals/#{req.id}"}
+                  navigate={~p"/app/approvals/#{request.id}"}
                   class="block rounded-xl border border-amber-500/30 bg-amber-500/[0.04] p-4 transition hover:border-amber-500/50 hover:bg-amber-500/[0.07]"
                 >
                   <div class="flex items-start justify-between gap-3">
                     <div class="min-w-0">
                       <div class="truncate font-mono text-sm font-semibold text-amber-100">
-                        {req.context["action_id"] || "—"}
+                        {request.context["action_id"] || "—"}
                       </div>
                       <div class="mt-0.5 truncate text-xs text-amber-200/70">
-                        on {runner_label(req, @runner_labels)} · requested by {user_label(
-                          req.requested_by_id,
+                        on {runner_label(request, @runner_labels)} · requested by {user_label(
+                          request.requested_by_id,
                           @user_labels
                         )}
                       </div>
                     </div>
                     <span class="shrink-0 text-xs text-amber-200/70">
-                      {relative_time(req.requested_at)}
+                      {relative_time(request.requested_at)}
                     </span>
                   </div>
-                  <p :if={req.reason && req.reason != ""} class="mt-2 text-sm italic text-zinc-300">
-                    "{req.reason}"
+                  <p
+                    :if={request.reason && request.reason != ""}
+                    class="mt-2 text-sm italic text-zinc-300"
+                  >
+                    "{request.reason}"
                   </p>
                 </.link>
               </li>
@@ -353,21 +356,21 @@ defmodule EmisarWeb.ApprovalsLive do
             metadata={@decided_metadata}
             filter_params={@filter_params}
           >
-            <:item :let={req}>
+            <:item :let={request}>
               <li>
                 <.link
-                  navigate={~p"/app/approvals/#{req.id}"}
+                  navigate={~p"/app/approvals/#{request.id}"}
                   class="flex items-center justify-between gap-3 px-4 py-3 text-sm transition hover:bg-zinc-900/40"
                 >
                   <div class="min-w-0 flex-1">
                     <div class="truncate font-mono text-sm text-zinc-200">
-                      {req.context["action_id"] || "—"}
+                      {request.context["action_id"] || "—"}
                     </div>
                     <div class="truncate text-xs text-zinc-500">
-                      on {runner_label(req, @runner_labels)}
-                      <span :if={req.decided_by_id}>
-                        · {String.capitalize(req.status)} by {user_label(
-                          req.decided_by_id,
+                      on {runner_label(request, @runner_labels)}
+                      <span :if={request.decided_by_id}>
+                        · {String.capitalize(request.status)} by {user_label(
+                          request.decided_by_id,
                           @user_labels
                         )}
                       </span>
@@ -375,9 +378,9 @@ defmodule EmisarWeb.ApprovalsLive do
                   </div>
                   <div class="flex shrink-0 items-center gap-3">
                     <span class="text-xs text-zinc-500">
-                      {relative_time(req.decided_at || req.requested_at)}
+                      {relative_time(request.decided_at || request.requested_at)}
                     </span>
-                    <.status_badge status={req.status} />
+                    <.status_badge status={request.status} />
                   </div>
                 </.link>
               </li>

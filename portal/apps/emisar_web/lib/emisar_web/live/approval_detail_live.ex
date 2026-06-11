@@ -15,28 +15,28 @@ defmodule EmisarWeb.ApprovalDetailLive do
          |> put_flash(:error, "Approval not found.")
          |> push_navigate(to: ~p"/app/approvals")}
 
-      {:ok, req} ->
+      {:ok, request} ->
         if connected?(socket) do
           Approvals.subscribe_account_approvals(account_id)
           Runners.subscribe_connections(account_id)
         end
 
         run =
-          case Runs.fetch_run_by_id(req.run_id, socket.assigns.current_subject) do
+          case Runs.fetch_run_by_id(request.run_id, socket.assigns.current_subject) do
             {:ok, r} -> r
             {:error, _} -> nil
           end
 
-        title = "Approval · " <> ((run && run.action_id) || String.slice(req.id, 0, 8))
+        title = "Approval · " <> ((run && run.action_id) || String.slice(request.id, 0, 8))
 
         {:ok,
          socket
          |> assign(:page_title, title)
-         |> assign(:request, req)
+         |> assign(:request, request)
          |> assign(:run, run)
          |> assign(:runner_connection, runner_connection(run))
-         |> assign(:requested_by, lookup_user(req.requested_by_id))
-         |> assign(:decided_by, lookup_user(req.decided_by_id))
+         |> assign(:requested_by, lookup_user(request.requested_by_id))
+         |> assign(:decided_by, lookup_user(request.decided_by_id))
          |> assign(:decision_reason, "")
          # Tracks the duration the operator picked in the grant-reuse
          # disclosure. "once" (the default) means "no grant" — in that
@@ -82,7 +82,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
     Permissions.gated(
       socket,
       Approvals.subject_can_decide_approval?(socket.assigns.current_subject),
-      fn s ->
+      fn socket ->
         opts = [
           duration: parse_duration(params["duration"]),
           scope: parse_scope(params["scope"]),
@@ -91,13 +91,18 @@ defmodule EmisarWeb.ApprovalDetailLive do
 
         reason = blank_or(params["reason"])
 
-        case Approvals.approve_request(s.assigns.request, s.assigns.current_subject, reason, opts) do
-          {:ok, {req, _run}} ->
+        case Approvals.approve_request(
+               socket.assigns.request,
+               socket.assigns.current_subject,
+               reason,
+               opts
+             ) do
+          {:ok, {request, _run}} ->
             msg = approval_flash(opts)
-            {:noreply, s |> assign(:request, req) |> put_flash(:info, msg)}
+            {:noreply, socket |> assign(:request, request) |> put_flash(:info, msg)}
 
           _ ->
-            {:noreply, put_flash(s, :error, "Could not approve.")}
+            {:noreply, put_flash(socket, :error, "Could not approve.")}
         end
       end
     )
@@ -107,17 +112,17 @@ defmodule EmisarWeb.ApprovalDetailLive do
     Permissions.gated(
       socket,
       Approvals.subject_can_decide_approval?(socket.assigns.current_subject),
-      fn s ->
+      fn socket ->
         case Approvals.deny_request(
-               s.assigns.request,
-               s.assigns.current_subject,
+               socket.assigns.request,
+               socket.assigns.current_subject,
                blank_or(params["reason"])
              ) do
-          {:ok, {req, _run}} ->
-            {:noreply, s |> assign(:request, req) |> put_flash(:info, "Denied.")}
+          {:ok, {request, _run}} ->
+            {:noreply, socket |> assign(:request, request) |> put_flash(:info, "Denied.")}
 
           _ ->
-            {:noreply, put_flash(s, :error, "Could not deny.")}
+            {:noreply, put_flash(socket, :error, "Could not deny.")}
         end
       end
     )
@@ -170,7 +175,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
   defp scope_label(_), do: "same arguments only"
 
   defp blank_or(""), do: nil
-  defp blank_or(s), do: s
+  defp blank_or(value), do: value
 
   # Rendering helper for "Requested by" / "Decided by". Prefers the
   # user's full name, falls back to email, then to a short UUID slice

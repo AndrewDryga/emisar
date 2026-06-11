@@ -110,14 +110,14 @@ defmodule EmisarWeb.TeamLive do
   end
 
   def handle_event("save_scopes", %{"membership_id" => id} = params, socket) do
-    with_membership(socket, id, fn m ->
+    with_membership(socket, id, fn membership ->
       groups = (params["groups"] || []) |> List.wrap()
       runner_ids = (params["runners"] || []) |> List.wrap()
 
       new_scopes =
         Enum.map(groups, &{"group", &1}) ++ Enum.map(runner_ids, &{"runner", &1})
 
-      case Runners.replace_runner_scopes(m, new_scopes, socket.assigns.current_subject) do
+      case Runners.replace_runner_scopes(membership, new_scopes, socket.assigns.current_subject) do
         {:ok, :ok} -> {:ok, "Scope updated."}
         {:error, reason} -> {:error, error_message(reason)}
       end
@@ -126,8 +126,8 @@ defmodule EmisarWeb.TeamLive do
   end
 
   def handle_event("save_edit", %{"membership_id" => id, "user" => params}, socket) do
-    with_membership(socket, id, fn m ->
-      case Accounts.update_user_as_admin(m, params, socket.assigns.current_subject) do
+    with_membership(socket, id, fn membership ->
+      case Accounts.update_user_as_admin(membership, params, socket.assigns.current_subject) do
         {:ok, _user} -> {:ok, "Member updated."}
         {:error, reason} -> {:error, error_message(reason)}
       end
@@ -158,8 +158,8 @@ defmodule EmisarWeb.TeamLive do
 
   def handle_event("change_role", %{"membership_id" => id, "role" => role}, socket) do
     with true <- role in @roles,
-         %Membership{} = m <- find_membership(socket, id) do
-      case Accounts.update_membership_role(m, role, socket.assigns.current_subject) do
+         %Membership{} = membership <- find_membership(socket, id) do
+      case Accounts.update_membership_role(membership, role, socket.assigns.current_subject) do
         {:ok, _updated} ->
           {:noreply, socket |> put_flash(:info, "Role updated.") |> reload()}
 
@@ -173,8 +173,8 @@ defmodule EmisarWeb.TeamLive do
   end
 
   def handle_event("remove", %{"membership_id" => id}, socket) do
-    with_membership(socket, id, fn m ->
-      case Accounts.delete_membership(m, socket.assigns.current_subject) do
+    with_membership(socket, id, fn membership ->
+      case Accounts.delete_membership(membership, socket.assigns.current_subject) do
         {:ok, _} -> {:ok, "Member removed."}
         {:error, reason} -> {:error, error_message(reason)}
       end
@@ -182,8 +182,8 @@ defmodule EmisarWeb.TeamLive do
   end
 
   def handle_event("suspend", %{"membership_id" => id}, socket) do
-    with_membership(socket, id, fn m ->
-      case Accounts.suspend_membership(m, socket.assigns.current_subject) do
+    with_membership(socket, id, fn membership ->
+      case Accounts.suspend_membership(membership, socket.assigns.current_subject) do
         {:ok, _} -> {:ok, "Access suspended."}
         {:error, reason} -> {:error, error_message(reason)}
       end
@@ -191,8 +191,8 @@ defmodule EmisarWeb.TeamLive do
   end
 
   def handle_event("reinstate", %{"membership_id" => id}, socket) do
-    with_membership(socket, id, fn m ->
-      case Accounts.reinstate_membership(m, socket.assigns.current_subject) do
+    with_membership(socket, id, fn membership ->
+      case Accounts.reinstate_membership(membership, socket.assigns.current_subject) do
         {:ok, _} -> {:ok, "Access restored."}
         {:error, reason} -> {:error, error_message(reason)}
       end
@@ -200,8 +200,8 @@ defmodule EmisarWeb.TeamLive do
   end
 
   def handle_event("force_password_reset", %{"membership_id" => id}, socket) do
-    with_membership(socket, id, fn m ->
-      case Accounts.force_password_reset(m, socket.assigns.current_subject) do
+    with_membership(socket, id, fn membership ->
+      case Accounts.force_password_reset(membership, socket.assigns.current_subject) do
         :ok -> {:ok, "Password-reset email sent and sessions ended."}
         {:error, reason} -> {:error, error_message(reason)}
       end
@@ -209,8 +209,8 @@ defmodule EmisarWeb.TeamLive do
   end
 
   def handle_event("end_sessions", %{"membership_id" => id}, socket) do
-    with_membership(socket, id, fn m ->
-      case Accounts.end_all_sessions_for(m, socket.assigns.current_subject) do
+    with_membership(socket, id, fn membership ->
+      case Accounts.end_all_sessions_for(membership, socket.assigns.current_subject) do
         :ok -> {:ok, "All sessions ended for that user."}
         {:error, reason} -> {:error, error_message(reason)}
       end
@@ -241,8 +241,8 @@ defmodule EmisarWeb.TeamLive do
       nil ->
         {:noreply, socket}
 
-      %Membership{} = m ->
-        case fun.(m) do
+      %Membership{} = membership ->
+        case fun.(membership) do
           {:ok, message} -> {:noreply, socket |> put_flash(:info, message) |> reload()}
           {:error, message} -> {:noreply, put_flash(socket, :error, message)}
         end
@@ -324,7 +324,7 @@ defmodule EmisarWeb.TeamLive do
   end
 
   defp mfa_enrolled_count(memberships) do
-    Enum.count(memberships, fn m -> m.user && m.user.mfa_enabled_at end)
+    Enum.count(memberships, fn membership -> membership.user && membership.user.mfa_enabled_at end)
   end
 
   # Render a scope chip's value — humanizes runner-uuids into names.
@@ -341,7 +341,7 @@ defmodule EmisarWeb.TeamLive do
   defp scope_selected?(membership_id, scopes_by_membership, type, value) do
     scopes_by_membership
     |> Map.get(membership_id, [])
-    |> Enum.any?(fn s -> s.scope_type == type and s.scope_value == value end)
+    |> Enum.any?(fn scope -> scope.scope_type == type and scope.scope_value == value end)
   end
 
   defp current_role(memberships, user_id) do
@@ -537,22 +537,25 @@ defmodule EmisarWeb.TeamLive do
           filter_params={@filter_params}
           overflow={:visible}
         >
-          <:item :let={m}>
+          <:item :let={membership}>
             <li class="px-5 py-4">
               <div class="flex items-center gap-4">
                 <%!-- Avatar: initial in a colored disc — same shape as
                      the sidebar avatar, so the visual rhymes. --%>
                 <span class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-zinc-800 text-sm font-semibold uppercase text-zinc-300">
-                  {String.first((m.user && (m.user.full_name || m.user.email)) || "?")}
+                  {String.first(
+                    (membership.user && (membership.user.full_name || membership.user.email)) || "?"
+                  )}
                 </span>
 
                 <div class="min-w-0 flex-1">
                   <div class="flex items-center gap-2">
                     <span class="truncate font-medium text-zinc-100">
-                      {(m.user && (m.user.full_name || m.user.email)) || "(unknown)"}
+                      {(membership.user && (membership.user.full_name || membership.user.email)) ||
+                        "(unknown)"}
                     </span>
                     <span
-                      :if={Membership.disabled?(m)}
+                      :if={Membership.disabled?(membership)}
                       class="rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium text-amber-200 ring-1 ring-amber-500/30"
                     >
                       Suspended
@@ -561,7 +564,7 @@ defmodule EmisarWeb.TeamLive do
                          email confirmation link. Useful signal when an
                          admin is wondering why a member can't sign in. --%>
                     <span
-                      :if={m.user && is_nil(m.user.confirmed_at)}
+                      :if={membership.user && is_nil(membership.user.confirmed_at)}
                       class="rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium text-amber-200 ring-1 ring-amber-500/30"
                       title="This user signed up but hasn't confirmed their email."
                     >
@@ -574,24 +577,24 @@ defmodule EmisarWeb.TeamLive do
                          enrolled AND the account requires MFA — LOUD
                          rose, because that user can't sign in right
                          now and an admin should chase them. --%>
-                    <.mfa_badge user={m.user} require_mfa?={@current_account.require_mfa} />
+                    <.mfa_badge user={membership.user} require_mfa?={@current_account.require_mfa} />
                     <span
-                      :if={m.user_id == @current_user.id}
+                      :if={membership.user_id == @current_user.id}
                       class="rounded bg-indigo-500/15 px-1.5 py-0.5 text-[10px] font-medium text-indigo-200 ring-1 ring-indigo-500/30"
                     >
                       You
                     </span>
                   </div>
                   <div class="truncate text-xs text-zinc-500">
-                    {m.user && m.user.email} · joined {relative_time(m.inserted_at)} · {sign_in_label(
-                      m.user
-                    )}
+                    {membership.user && membership.user.email} · joined {relative_time(
+                      membership.inserted_at
+                    )} · {sign_in_label(membership.user)}
                   </div>
                   <%!-- Per-user runner ACLs (#238): show what runners
                        this member can reach. Empty = all (default).
                        Group/runner scopes appear as inline chips. --%>
                   <div class="mt-1 flex flex-wrap items-center gap-1">
-                    <%= case Map.get(@scopes_by_membership, m.id, []) do %>
+                    <%= case Map.get(@scopes_by_membership, membership.id, []) do %>
                       <% [] -> %>
                         <span class="text-[10px] text-zinc-600">
                           access: all runners
@@ -600,33 +603,33 @@ defmodule EmisarWeb.TeamLive do
                         <span class="text-[10px] uppercase tracking-wider text-zinc-600">
                           scope:
                         </span>
-                        <.chip :for={s <- scopes} tone={:indigo}>
-                          {s.scope_type}: {scope_label(s, @runner_groups, @runners_by_id)}
+                        <.chip :for={scope <- scopes} tone={:indigo}>
+                          {scope.scope_type}: {scope_label(scope, @runner_groups, @runners_by_id)}
                         </.chip>
                     <% end %>
                   </div>
                 </div>
 
-                <%= if can_manage?(assigns) and not self_owner?(m, @current_user.id) and not Membership.disabled?(m) do %>
+                <%= if can_manage?(assigns) and not self_owner?(membership, @current_user.id) and not Membership.disabled?(membership) do %>
                   <form phx-change="change_role" class="shrink-0">
-                    <input type="hidden" name="membership_id" value={m.id} />
+                    <input type="hidden" name="membership_id" value={membership.id} />
                     <select
                       name="role"
                       class="rounded-lg border-0 bg-zinc-900 px-2 py-1 text-xs text-zinc-200 ring-1 ring-zinc-800 focus:ring-indigo-500"
                     >
-                      <option :for={r <- @roles} value={r} selected={to_string(m.role) == r}>
+                      <option :for={r <- @roles} value={r} selected={to_string(membership.role) == r}>
                         {String.capitalize(r)}
                       </option>
                     </select>
                   </form>
                 <% else %>
                   <span class="shrink-0 rounded-md bg-zinc-900 px-2 py-1 text-xs font-medium text-zinc-300 ring-1 ring-zinc-800">
-                    {String.capitalize(to_string(m.role))}
+                    {String.capitalize(to_string(membership.role))}
                   </span>
                 <% end %>
 
                 <.member_actions
-                  membership={m}
+                  membership={membership}
                   current_user_id={@current_user.id}
                   can_manage?={can_manage?(assigns)}
                 />
@@ -635,16 +638,16 @@ defmodule EmisarWeb.TeamLive do
               <%!-- Edit form appears inline under the row. No bolted-
                    on table column; just normal flow. --%>
               <div
-                :if={@editing_id == m.id and @edit_form}
+                :if={@editing_id == membership.id and @edit_form}
                 class="mt-4 rounded-lg border border-zinc-800 bg-zinc-900/40 p-4"
               >
                 <.simple_form
                   for={@edit_form}
-                  id={"edit-form-#{m.id}"}
+                  id={"edit-form-#{membership.id}"}
                   phx-submit="save_edit"
                   class="space-y-3"
                 >
-                  <input type="hidden" name="membership_id" value={m.id} />
+                  <input type="hidden" name="membership_id" value={membership.id} />
                   <.input field={@edit_form[:full_name]} type="text" label="Full name" />
                   <p class="text-xs text-zinc-500">
                     Only display name can be changed from here. Members
@@ -669,11 +672,11 @@ defmodule EmisarWeb.TeamLive do
                    (groups + individual runners). Empty selection on
                    both = "all runners" default. --%>
               <div
-                :if={@scope_editing_id == m.id}
+                :if={@scope_editing_id == membership.id}
                 class="mt-4 rounded-lg border border-zinc-800 bg-zinc-900/40 p-4"
               >
                 <form phx-submit="save_scopes" class="space-y-4">
-                  <input type="hidden" name="membership_id" value={m.id} />
+                  <input type="hidden" name="membership_id" value={membership.id} />
                   <p class="text-xs text-zinc-400">
                     Restrict this member to specific runner groups or individual runners. Leaving
                     both empty grants access to <strong>all runners</strong> in the account.
@@ -693,7 +696,7 @@ defmodule EmisarWeb.TeamLive do
                         <option
                           :for={g <- @runner_groups}
                           value={g}
-                          selected={scope_selected?(m.id, @scopes_by_membership, :group, g)}
+                          selected={scope_selected?(membership.id, @scopes_by_membership, :group, g)}
                         >
                           {g}
                         </option>
@@ -716,7 +719,9 @@ defmodule EmisarWeb.TeamLive do
                         <option
                           :for={{id, r} <- @runners_by_id}
                           value={id}
-                          selected={scope_selected?(m.id, @scopes_by_membership, :runner, id)}
+                          selected={
+                            scope_selected?(membership.id, @scopes_by_membership, :runner, id)
+                          }
                         >
                           {r.name} <span :if={r.group}>({r.group})</span>
                         </option>

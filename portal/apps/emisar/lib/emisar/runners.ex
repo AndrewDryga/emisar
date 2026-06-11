@@ -126,8 +126,8 @@ defmodule Emisar.Runners do
         query
 
       scopes ->
-        runner_ids = for %{scope_type: :runner, scope_value: v} <- scopes, do: v
-        groups = for %{scope_type: :group, scope_value: v} <- scopes, do: v
+        runner_ids = for %{scope_type: :runner, scope_value: value} <- scopes, do: value
+        groups = for %{scope_type: :group, scope_value: value} <- scopes, do: value
         Runner.Query.by_scope_values(query, runner_ids, groups)
     end
   end
@@ -406,7 +406,7 @@ defmodule Emisar.Runners do
     |> Repo.update()
   end
 
-  defp nonblank(s) when is_binary(s) and s != "", do: s
+  defp nonblank(value) when is_binary(value) and value != "", do: value
   defp nonblank(_), do: nil
 
   @doc """

@@ -77,15 +77,15 @@ defmodule EmisarWeb.PoliciesLive do
     Permissions.gated(
       socket,
       Policies.subject_can_manage_policies?(socket.assigns.current_subject),
-      fn s ->
-        rules = to_rules(s.assigns.defaults, s.assigns.overrides)
+      fn socket ->
+        rules = to_rules(socket.assigns.defaults, socket.assigns.overrides)
 
-        case Policies.save_rules(rules, s.assigns.current_subject) do
+        case Policies.save_rules(rules, socket.assigns.current_subject) do
           {:ok, _policy} ->
-            {:noreply, s |> put_flash(:info, "Policy saved.") |> load()}
+            {:noreply, socket |> put_flash(:info, "Policy saved.") |> load()}
 
-          {:error, %Ecto.Changeset{} = cs} ->
-            {:noreply, assign_form(s, Map.put(cs, :action, :validate))}
+          {:error, %Ecto.Changeset{} = changeset} ->
+            {:noreply, assign_form(socket, Map.put(changeset, :action, :validate))}
         end
       end
     )
@@ -114,11 +114,12 @@ defmodule EmisarWeb.PoliciesLive do
   defp normalize_overrides(nil), do: []
 
   defp normalize_overrides(list) when is_list(list) do
-    Enum.map(list, fn ov ->
+    Enum.map(list, fn override ->
       %{
-        "name" => ov["name"] || "",
-        "action" => ov["action"] || "",
-        "decision" => if(ov["decision"] in @decisions, do: ov["decision"], else: "allow")
+        "name" => override["name"] || "",
+        "action" => override["action"] || "",
+        "decision" =>
+          if(override["decision"] in @decisions, do: override["decision"], else: "allow")
       }
     end)
   end
@@ -165,10 +166,10 @@ defmodule EmisarWeb.PoliciesLive do
 
     state
     |> Enum.with_index()
-    |> Enum.map(fn {ov, i} ->
+    |> Enum.map(fn {override, i} ->
       case Enum.at(form_list, i) do
-        nil -> ov
-        form_ov -> Map.merge(ov, Map.take(form_ov, ["name", "action", "decision"]))
+        nil -> override
+        form_ov -> Map.merge(override, Map.take(form_ov, ["name", "action", "decision"]))
       end
     end)
   end
@@ -195,21 +196,21 @@ defmodule EmisarWeb.PoliciesLive do
       "overrides" =>
         overrides
         |> Enum.reject(&blank_action?/1)
-        |> Enum.map(fn ov ->
+        |> Enum.map(fn override ->
           %{
-            "name" => String.trim(ov["name"] || ""),
-            "action" => String.trim(ov["action"]),
-            "decision" => ov["decision"]
+            "name" => String.trim(override["name"] || ""),
+            "action" => String.trim(override["action"]),
+            "decision" => override["decision"]
           }
         end)
     }
   end
 
-  defp blank_action?(ov), do: blank?(ov["action"])
+  defp blank_action?(override), do: blank?(override["action"])
 
   defp blank?(nil), do: true
   defp blank?(""), do: true
-  defp blank?(s) when is_binary(s), do: String.trim(s) == ""
+  defp blank?(socket) when is_binary(socket), do: String.trim(socket) == ""
   defp blank?(_), do: false
 
   defp assign_form(socket, %Ecto.Changeset{} = changeset) do
@@ -316,9 +317,9 @@ defmodule EmisarWeb.PoliciesLive do
             </div>
 
             <div :if={@overrides != []} class="mt-5 space-y-3">
-              <%= for {ov, idx} <- Enum.with_index(@overrides) do %>
+              <%= for {override, idx} <- Enum.with_index(@overrides) do %>
                 <.override_card
-                  override={ov}
+                  override={override}
                   index={idx}
                   can_manage={Policies.subject_can_manage_policies?(@current_subject)}
                 />

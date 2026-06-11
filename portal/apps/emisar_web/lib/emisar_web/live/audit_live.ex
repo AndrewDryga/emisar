@@ -141,37 +141,42 @@ defmodule EmisarWeb.AuditLive do
         metadata={@metadata}
         filter_params={@filter_params}
         filters={@filters}
-        row_id={fn ev -> "ev-#{ev.id}" end}
-        row_click={fn ev -> JS.navigate(~p"/app/audit/#{ev.id}") end}
+        row_id={fn event -> "event-#{event.id}" end}
+        row_click={fn event -> JS.navigate(~p"/app/audit/#{event.id}") end}
       >
-        <:col :let={ev} label="When" class="w-40">
-          <.local_time value={ev.occurred_at} class="text-xs text-zinc-400" />
+        <:col :let={event} label="When" class="w-40">
+          <.local_time value={event.occurred_at} class="text-xs text-zinc-400" />
         </:col>
-        <:col :let={ev} label="Event">
+        <:col :let={event} label="Event">
           <div class="flex items-start gap-2">
             <span
-              class={["mt-1.5 h-1.5 w-1.5 flex-none rounded-full", tone_dot(ev.event_type)]}
+              class={["mt-1.5 h-1.5 w-1.5 flex-none rounded-full", tone_dot(event.event_type)]}
               aria-hidden="true"
             >
             </span>
             <div class="min-w-0">
-              <div class="text-sm text-zinc-200">{format_event_type(ev.event_type)}</div>
-              <div class="font-mono text-[10px] text-zinc-500">{ev.event_type}</div>
-              <.event_summary :let={pair} pairs={AuditSummary.summary_pairs(ev)}>
+              <div class="text-sm text-zinc-200">{format_event_type(event.event_type)}</div>
+              <div class="font-mono text-[10px] text-zinc-500">{event.event_type}</div>
+              <.event_summary :let={pair} pairs={AuditSummary.summary_pairs(event)}>
                 <span class="font-mono text-zinc-400">{elem(pair, 0)}:</span>
                 <span class="text-zinc-300">{elem(pair, 1)}</span>
               </.event_summary>
             </div>
           </div>
         </:col>
-        <:col :let={ev} label="Actor">
-          <.ref kind={ev.actor_kind} id={ev.actor_id} label={ev.actor_label} refs={@refs} />
+        <:col :let={event} label="Actor">
+          <.ref kind={event.actor_kind} id={event.actor_id} label={event.actor_label} refs={@refs} />
         </:col>
-        <:col :let={ev} label="Subject">
-          <.ref kind={ev.subject_kind} id={ev.subject_id} label={ev.subject_label} refs={@refs} />
+        <:col :let={event} label="Subject">
+          <.ref
+            kind={event.subject_kind}
+            id={event.subject_id}
+            label={event.subject_label}
+            refs={@refs}
+          />
         </:col>
-        <:col :let={ev} label="IP" class="w-32">
-          <span class="font-mono text-xs text-zinc-500">{ev.ip_address || "—"}</span>
+        <:col :let={event} label="IP" class="w-32">
+          <span class="font-mono text-xs text-zinc-500">{event.ip_address || "—"}</span>
         </:col>
         <:empty>
           <%!-- Filter-active stays a one-liner so it doesn't dominate

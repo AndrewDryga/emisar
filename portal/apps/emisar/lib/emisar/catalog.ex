@@ -86,7 +86,7 @@ defmodule Emisar.Catalog do
         # The catalog is best-effort and re-syncs on the next runner_state;
         # never let it crash the runner socket (which would drop + revert
         # the connection) now that the durable row facts are already saved.
-        e -> {:error, e}
+        error -> {:error, error}
       end
 
     case catalog do
@@ -133,7 +133,7 @@ defmodule Emisar.Catalog do
 
     case existing do
       nil -> insert_pinned(account_id, pack_id, version, advertised, now)
-      %PackVersion{} = pv -> maybe_mark_pending(pv, advertised, now)
+      %PackVersion{} = pack_version -> maybe_mark_pending(pack_version, advertised, now)
     end
   end
 
@@ -197,10 +197,10 @@ defmodule Emisar.Catalog do
            on_conflict: :nothing,
            conflict_target: [:account_id, :pack_id, :version]
          ) do
-      {:ok, %PackVersion{id: id} = pv} when not is_nil(id) ->
+      {:ok, %PackVersion{id: id} = pack_version} when not is_nil(id) ->
         # We won the race and inserted. id is the Postgres-returned UUID.
-        Audit.record(Audit.Events.pack_pinned(pv, audit_event, advertised, baseline))
-        pv
+        Audit.record(Audit.Events.pack_pinned(pack_version, audit_event, advertised, baseline))
+        pack_version
 
       _ ->
         # Lost the race (or RETURNING gave us no id because of conflict).
@@ -214,7 +214,7 @@ defmodule Emisar.Catalog do
           |> Repo.peek()
 
         case existing do
-          %PackVersion{} = pv -> maybe_mark_pending(pv, advertised, now)
+          %PackVersion{} = pack_version -> maybe_mark_pending(pack_version, advertised, now)
           # Truly nothing there (would mean a non-conflict failure we don't
           # know how to recover from) — let the caller see the empty result.
           nil -> nil
@@ -224,30 +224,30 @@ defmodule Emisar.Catalog do
 
   # Existing row + new advertisement. Only state changes worth
   # audit-logging are trusted→pending and pending→pending-with-new-hash.
-  defp maybe_mark_pending(%PackVersion{} = pv, advertised, now) do
+  defp maybe_mark_pending(%PackVersion{} = pack_version, advertised, now) do
     cond do
-      pv.hash == advertised ->
+      pack_version.hash == advertised ->
         # Runner is still reporting the trusted bytes — keep state,
         # but if a pending_hash had been recorded earlier, leave it
         # in place. Operators decide via Trust/Reject, not by
         # whichever runner heartbeats next.
-        pv
+        pack_version
         |> PackVersion.Changeset.touch(now)
         |> Repo.update!()
 
-      pv.pending_hash == advertised ->
+      pack_version.pending_hash == advertised ->
         # Already pending against this exact hash — just touch.
-        pv
+        pack_version
         |> PackVersion.Changeset.touch(now)
         |> Repo.update!()
 
       true ->
         {:ok, updated} =
-          pv
+          pack_version
           |> PackVersion.Changeset.mark_pending(advertised, now)
           |> Repo.update()
 
-        Audit.record(Audit.Events.pack_trust_drift_detected(pv, advertised))
+        Audit.record(Audit.Events.pack_trust_drift_detected(pack_version, advertised))
         updated
     end
   end
@@ -361,8 +361,9 @@ defmodule Emisar.Catalog do
         nil ->
           {:error, :not_found}
 
-        %PackVersion{trust_state: :pending, pending_hash: hash} = pv when not is_nil(hash) ->
-          {:ok, pv}
+        %PackVersion{trust_state: :pending, pending_hash: hash} = pack_version
+        when not is_nil(hash) ->
+          {:ok, pack_version}
 
         %PackVersion{} ->
           {:error, :not_pending}
@@ -406,9 +407,14 @@ defmodule Emisar.Catalog do
       :ok
     else
       case peek_pack_version_for_action(action) do
-        nil -> :ok
-        %PackVersion{trust_state: :trusted} -> :ok
-        %PackVersion{trust_state: :pending} = pv -> {:error, :pack_untrusted, pv}
+        nil ->
+          :ok
+
+        %PackVersion{trust_state: :trusted} ->
+          :ok
+
+        %PackVersion{trust_state: :pending} = pack_version ->
+          {:error, :pack_untrusted, pack_version}
       end
     end
   end

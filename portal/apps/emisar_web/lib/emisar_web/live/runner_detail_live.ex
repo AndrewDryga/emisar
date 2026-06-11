@@ -77,9 +77,11 @@ defmodule EmisarWeb.RunnerDetailLive do
     Permissions.gated(
       socket,
       Runners.subject_can_manage_runners?(socket.assigns.current_subject),
-      fn s ->
-        {:ok, runner} = Runners.disable_runner(s.assigns.runner, s.assigns.current_subject)
-        {:noreply, s |> put_flash(:info, "Runner disabled.") |> assign(:runner, runner)}
+      fn socket ->
+        {:ok, runner} =
+          Runners.disable_runner(socket.assigns.runner, socket.assigns.current_subject)
+
+        {:noreply, socket |> put_flash(:info, "Runner disabled.") |> assign(:runner, runner)}
       end
     )
   end
@@ -88,21 +90,21 @@ defmodule EmisarWeb.RunnerDetailLive do
     Permissions.gated(
       socket,
       Runners.subject_can_manage_runners?(socket.assigns.current_subject),
-      fn s ->
-        case Runners.enable_runner(s.assigns.runner, s.assigns.current_subject) do
+      fn socket ->
+        case Runners.enable_runner(socket.assigns.runner, socket.assigns.current_subject) do
           {:ok, runner} ->
-            {:noreply, s |> put_flash(:info, "Runner enabled.") |> assign(:runner, runner)}
+            {:noreply, socket |> put_flash(:info, "Runner enabled.") |> assign(:runner, runner)}
 
           {:error, :over_limit, _plan, limit} ->
             {:noreply,
              put_flash(
-               s,
+               socket,
                :error,
                "Can't enable — you're at your runner limit (#{limit}). Upgrade your plan or remove another runner first."
              )}
 
           {:error, _} ->
-            {:noreply, put_flash(s, :error, "Could not enable runner.")}
+            {:noreply, put_flash(socket, :error, "Could not enable runner.")}
         end
       end
     )
@@ -112,11 +114,12 @@ defmodule EmisarWeb.RunnerDetailLive do
     Permissions.gated(
       socket,
       Runners.subject_can_manage_runners?(socket.assigns.current_subject),
-      fn s ->
-        {:ok, _runner} = Runners.delete_runner(s.assigns.runner, s.assigns.current_subject)
+      fn socket ->
+        {:ok, _runner} =
+          Runners.delete_runner(socket.assigns.runner, socket.assigns.current_subject)
 
         {:noreply,
-         s
+         socket
          |> put_flash(:info, "Runner deleted. The host can re-register on next connect.")
          |> push_navigate(to: ~p"/app/runners")}
       end

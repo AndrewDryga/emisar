@@ -20,12 +20,12 @@ defmodule Emisar.Workers.BillingSync do
 
   defp sync(%Subscription{paddle_subscription_id: nil}), do: :ok
 
-  defp sync(%Subscription{paddle_subscription_id: sid, account_id: account_id}) do
-    case PaddleClient.retrieve_subscription(sid) do
-      {:ok, sub} ->
+  defp sync(%Subscription{paddle_subscription_id: paddle_subscription_id, account_id: account_id}) do
+    case PaddleClient.retrieve_subscription(paddle_subscription_id) do
+      {:ok, subscription_data} ->
         Billing.upsert_subscription(account_id, %{
-          status: sub["status"],
-          current_period_end: Billing.extract_next_billed_at(sub)
+          status: subscription_data["status"],
+          current_period_end: Billing.extract_next_billed_at(subscription_data)
         })
 
       {:error, reason} ->
@@ -35,7 +35,7 @@ defmodule Emisar.Workers.BillingSync do
         # subscription was deleted out from under us) doesn't go
         # invisible. Sentry's Logger backend picks this up automatically.
         Logger.warning("billing_sync.retrieve_failed",
-          paddle_subscription_id: sid,
+          paddle_subscription_id: paddle_subscription_id,
           account_id: account_id,
           error: inspect(reason)
         )

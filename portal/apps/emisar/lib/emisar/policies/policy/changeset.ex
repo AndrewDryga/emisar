@@ -118,12 +118,12 @@ defmodule Emisar.Policies.Policy.Changeset do
   defp check_overrides(nil), do: :ok
 
   defp check_overrides(overrides) when is_list(overrides) do
-    Enum.reduce_while(overrides, :ok, fn ov, _ ->
+    Enum.reduce_while(overrides, :ok, fn override, _ ->
       cond do
-        not is_map(ov) ->
+        not is_map(override) ->
           {:halt, {:error, "each override must be a JSON object"}}
 
-        Map.get(ov, "decision") not in @valid_decisions ->
+        Map.get(override, "decision") not in @valid_decisions ->
           {:halt,
            {:error, "override decision must be one of #{Enum.join(@valid_decisions, ", ")}"}}
 

@@ -85,30 +85,30 @@ defmodule EmisarWeb.RunbooksLive do
               filter_params={@filter_params}
               class="rounded-none border-0"
             >
-              <:item :let={rb}>
+              <:item :let={runbook}>
                 <.list_row icon="hero-book-open">
                   <%!-- Row 1: title (link to editor) + status pill + version --%>
                   <:title>
                     <.link
-                      navigate={~p"/app/runbooks/#{rb.id}/edit"}
+                      navigate={~p"/app/runbooks/#{runbook.id}/edit"}
                       class="truncate font-medium text-zinc-100 hover:text-indigo-300"
                     >
-                      {rb.title}
+                      {runbook.title}
                     </.link>
-                    <.status_badge status={rb.status} />
-                    <span class="font-mono text-[11px] text-zinc-500">v{rb.version}</span>
+                    <.status_badge status={runbook.status} />
+                    <span class="font-mono text-[11px] text-zinc-500">v{runbook.version}</span>
                   </:title>
                   <:meta>
                     <%!-- Row 2: description preview + slug --%>
-                    <span :if={rb.description && rb.description != ""}>
-                      {preview(rb.description)} ·
+                    <span :if={runbook.description && runbook.description != ""}>
+                      {preview(runbook.description)} ·
                     </span>
-                    <span class="font-mono">{rb.slug}</span>
+                    <span class="font-mono">{runbook.slug}</span>
                   </:meta>
                   <:actions>
                     <.link
-                      :if={rb.status == :published}
-                      navigate={~p"/app/runbooks/#{rb.id}/run"}
+                      :if={runbook.status == :published}
+                      navigate={~p"/app/runbooks/#{runbook.id}/run"}
                       class="rounded-lg bg-indigo-500/10 px-2.5 py-1 text-xs font-semibold text-indigo-300 ring-1 ring-indigo-500/30 hover:bg-indigo-500/20"
                     >
                       Run →

@@ -231,15 +231,15 @@ defmodule Emisar.OAuth do
   @spec resolve_access_token(String.t()) ::
           {:ok, %{api_key: term(), account: term(), token: Token.t()}} | {:error, :invalid}
   def resolve_access_token(raw) when is_binary(raw) do
-    with %Token{} = tok <-
+    with %Token{} = token <-
            Token.Query.all()
            |> Token.Query.not_revoked()
            |> Token.Query.by_access_hash(Crypto.hash(raw))
            |> Repo.peek(),
-         true <- live?(tok.access_expires_at),
-         key when not is_nil(key) <- ApiKeys.peek_api_key_by_id(tok.api_key_id),
-         {:ok, account} <- Accounts.fetch_account_by_id(tok.account_id) do
-      {:ok, %{api_key: key, account: account, token: tok}}
+         true <- live?(token.access_expires_at),
+         key when not is_nil(key) <- ApiKeys.peek_api_key_by_id(token.api_key_id),
+         {:ok, account} <- Accounts.fetch_account_by_id(token.account_id) do
+      {:ok, %{api_key: key, account: account, token: token}}
     else
       _ -> {:error, :invalid}
     end
@@ -252,21 +252,21 @@ defmodule Emisar.OAuth do
 
   # -- Internal -------------------------------------------------------
 
-  defp mint_token_pair!(src) do
+  defp mint_token_pair!(source) do
     access = "emo-" <> Crypto.random_secret()
-    offline? = String.contains?(src.scope || "", "offline_access")
+    offline? = String.contains?(source.scope || "", "offline_access")
     refresh = if offline?, do: "emor-" <> Crypto.random_secret(), else: nil
 
     {:ok, _token} =
       %{
         access_token_hash: Crypto.hash(access),
         refresh_token_hash: refresh && Crypto.hash(refresh),
-        client_id: src.client_id,
-        account_id: src.account_id,
-        membership_id: src.membership_id,
-        api_key_id: src.api_key_id,
-        scope: src.scope,
-        resource: src.resource,
+        client_id: source.client_id,
+        account_id: source.account_id,
+        membership_id: source.membership_id,
+        api_key_id: source.api_key_id,
+        scope: source.scope,
+        resource: source.resource,
         access_expires_at: secs_from_now(@access_ttl_s),
         refresh_expires_at: refresh && secs_from_now(@refresh_ttl_s)
       }
@@ -278,7 +278,7 @@ defmodule Emisar.OAuth do
       token_type: "Bearer",
       expires_in: @access_ttl_s,
       refresh_token: refresh,
-      scope: src.scope
+      scope: source.scope
     }
   end
 

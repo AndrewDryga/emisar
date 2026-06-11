@@ -60,13 +60,17 @@ defmodule EmisarWeb.RunDetailLive do
     Permissions.gated(
       socket,
       Runs.subject_can_cancel_run?(socket.assigns.current_subject),
-      fn s ->
-        case Runs.cancel_run(s.assigns.run, s.assigns.current_subject, "operator cancelled") do
+      fn socket ->
+        case Runs.cancel_run(
+               socket.assigns.run,
+               socket.assigns.current_subject,
+               "operator cancelled"
+             ) do
           {:ok, run} ->
-            {:noreply, s |> assign(:run, run) |> put_flash(:info, "Cancel sent to runner.")}
+            {:noreply, socket |> assign(:run, run) |> put_flash(:info, "Cancel sent to runner.")}
 
           _ ->
-            {:noreply, put_flash(s, :error, "Unable to cancel.")}
+            {:noreply, put_flash(socket, :error, "Unable to cancel.")}
         end
       end
     )

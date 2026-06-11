@@ -33,18 +33,22 @@ defmodule EmisarWeb.BillingLive do
     Permissions.gated(
       socket,
       Billing.subject_can_manage_billing?(socket.assigns.current_subject),
-      fn s ->
+      fn socket ->
         if plan in @plan_order do
-          case Billing.start_checkout(s.assigns.current_account, plan, s.assigns.current_subject) do
+          case Billing.start_checkout(
+                 socket.assigns.current_account,
+                 plan,
+                 socket.assigns.current_subject
+               ) do
             {:ok, url} ->
-              {:noreply, redirect(s, external: url)}
+              {:noreply, redirect(socket, external: url)}
 
             {:error, reason} ->
               {:noreply,
-               put_flash(s, :error, "Could not start checkout: #{humanize_reason(reason)}")}
+               put_flash(socket, :error, "Could not start checkout: #{humanize_reason(reason)}")}
           end
         else
-          {:noreply, put_flash(s, :error, "Unknown plan.")}
+          {:noreply, put_flash(socket, :error, "Unknown plan.")}
         end
       end
     )
@@ -59,22 +63,29 @@ defmodule EmisarWeb.BillingLive do
     Permissions.gated(
       socket,
       Billing.subject_can_manage_billing?(socket.assigns.current_subject),
-      fn s ->
-        case Billing.open_billing_portal(s.assigns.current_account, s.assigns.current_subject) do
+      fn socket ->
+        case Billing.open_billing_portal(
+               socket.assigns.current_account,
+               socket.assigns.current_subject
+             ) do
           {:ok, url} ->
-            {:noreply, redirect(s, external: url)}
+            {:noreply, redirect(socket, external: url)}
 
           {:error, :no_customer} ->
             {:noreply,
              put_flash(
-               s,
+               socket,
                :error,
                "No Paddle customer yet — upgrade to a paid plan first, then come back to manage billing."
              )}
 
           {:error, reason} ->
             {:noreply,
-             put_flash(s, :error, "Could not open billing portal: #{humanize_reason(reason)}")}
+             put_flash(
+               socket,
+               :error,
+               "Could not open billing portal: #{humanize_reason(reason)}"
+             )}
         end
       end
     )

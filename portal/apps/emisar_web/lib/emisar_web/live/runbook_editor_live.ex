@@ -283,21 +283,21 @@ defmodule EmisarWeb.RunbookEditorLive do
       # Field errors (blank title, bad slug) render inline under their inputs;
       # a structural `definition` error has no input to bind to, so it surfaces
       # as a concise message above the Steps list (see render/1).
-      {:error, %Ecto.Changeset{} = cs} ->
-        {:noreply, assign_form(socket, Map.put(cs, :action, :insert))}
+      {:error, %Ecto.Changeset{} = changeset} ->
+        {:noreply, assign_form(socket, Map.put(changeset, :action, :insert))}
     end
   end
 
   defp persist(%{assigns: %{runbook: nil}} = socket, attrs),
     do: Runbooks.create_runbook(attrs, socket.assigns.current_subject)
 
-  defp persist(%{assigns: %{runbook: %Runbook{} = rb}} = socket, attrs),
-    do: Runbooks.save_new_version(rb, attrs, socket.assigns.current_subject)
+  defp persist(%{assigns: %{runbook: %Runbook{} = runbook}} = socket, attrs),
+    do: Runbooks.save_new_version(runbook, attrs, socket.assigns.current_subject)
 
-  defp maybe_publish(%Runbook{} = rb, true, socket),
-    do: Runbooks.publish(rb, socket.assigns.current_subject)
+  defp maybe_publish(%Runbook{} = runbook, true, socket),
+    do: Runbooks.publish(runbook, socket.assigns.current_subject)
 
-  defp maybe_publish(%Runbook{} = rb, false, _socket), do: {:ok, rb}
+  defp maybe_publish(%Runbook{} = runbook, false, _socket), do: {:ok, runbook}
 
   defp success_message(_, true), do: "Runbook published."
   defp success_message(%{version: v}, false) when v > 1, do: "Draft v#{v} saved."

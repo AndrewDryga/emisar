@@ -97,26 +97,26 @@ defmodule EmisarWeb.AgentsLive do
     Permissions.gated(
       socket,
       ApiKeys.subject_can_manage_api_keys?(socket.assigns.current_subject),
-      fn s ->
+      fn socket ->
         name = client_label(id)
 
         opts = [
           name: name,
-          runner_filter: s.assigns.selected_runner_ids,
-          runner_group_filter: s.assigns.selected_runner_groups
+          runner_filter: socket.assigns.selected_runner_ids,
+          runner_group_filter: socket.assigns.selected_runner_groups
         ]
 
-        case ApiKeys.mint_quick_key(s.assigns.current_subject, opts) do
+        case ApiKeys.mint_quick_key(socket.assigns.current_subject, opts) do
           {:ok, raw, _key} ->
             {:noreply,
-             s
+             socket
              |> assign(:selected_client, id)
              |> assign(:quick_secret, raw)
              |> reload()}
 
           {:error, _} ->
             {:noreply,
-             s
+             socket
              |> assign(:selected_client, id)
              |> put_flash(:error, "Could not mint a quick key.")}
         end
@@ -149,7 +149,7 @@ defmodule EmisarWeb.AgentsLive do
     Permissions.gated(
       socket,
       ApiKeys.subject_can_manage_api_keys?(socket.assigns.current_subject),
-      fn s -> do_create(s, params) end
+      fn socket -> do_create(socket, params) end
     )
   end
 
@@ -157,7 +157,7 @@ defmodule EmisarWeb.AgentsLive do
     Permissions.gated(
       socket,
       ApiKeys.subject_can_manage_api_keys?(socket.assigns.current_subject),
-      fn s -> do_revoke(s, id) end
+      fn socket -> do_revoke(socket, id) end
     )
   end
 
@@ -256,7 +256,9 @@ defmodule EmisarWeb.AgentsLive do
 
   defp nil_if_blank(nil), do: nil
   defp nil_if_blank(""), do: nil
-  defp nil_if_blank(s) when is_binary(s), do: if(String.trim(s) == "", do: nil, else: s)
+
+  defp nil_if_blank(value) when is_binary(value),
+    do: if(String.trim(value) == "", do: nil, else: value)
 
   # The `<input type="datetime-local">` posts `"YYYY-MM-DDTHH:MM"` (no
   # seconds, no timezone). Treat as local time relative to the cloud's
@@ -267,9 +269,9 @@ defmodule EmisarWeb.AgentsLive do
   defp parse_expires_at(nil), do: nil
   defp parse_expires_at(""), do: nil
 
-  defp parse_expires_at(s) when is_binary(s) do
-    case DateTime.from_iso8601(s <> ":00Z") do
-      {:ok, dt, _} -> dt
+  defp parse_expires_at(value) when is_binary(value) do
+    case DateTime.from_iso8601(value <> ":00Z") do
+      {:ok, datetime, _} -> datetime
       _ -> nil
     end
   end

@@ -164,8 +164,8 @@ defmodule EmisarWeb.AcceptInvitationLive do
         {:noreply, assign(socket, :trigger_submit, true)}
 
       # Field errors (e.g. a too-short password) render inline on the form.
-      {:error, %Ecto.Changeset{} = cs} ->
-        {:noreply, assign_form(socket, Map.put(cs, :action, :insert))}
+      {:error, %Ecto.Changeset{} = changeset} ->
+        {:noreply, assign_form(socket, Map.put(changeset, :action, :insert))}
 
       {:error, _other} ->
         {:noreply, put_flash(socket, :error, "Could not accept the invitation.")}

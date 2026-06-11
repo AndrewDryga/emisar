@@ -215,18 +215,18 @@ defmodule EmisarWeb.DashboardLive do
         cta="Review all"
       >
         <ul class="divide-y divide-amber-500/10">
-          <li :for={req <- Enum.take(@pending_approvals, 5)}>
+          <li :for={request <- Enum.take(@pending_approvals, 5)}>
             <.link
-              navigate={~p"/app/approvals/#{req.id}"}
+              navigate={~p"/app/approvals/#{request.id}"}
               class="flex items-center justify-between gap-3 py-2.5 text-sm hover:opacity-90"
             >
               <div class="min-w-0">
                 <div class="truncate font-mono text-amber-100">
-                  {req.context["action_id"] || "—"}
+                  {request.context["action_id"] || "—"}
                 </div>
                 <div class="truncate text-xs text-amber-200/60">
-                  {relative_time(req.requested_at)}
-                  <span :if={req.reason && req.reason != ""}>· {req.reason}</span>
+                  {relative_time(request.requested_at)}
+                  <span :if={request.reason && request.reason != ""}>· {request.reason}</span>
                 </div>
               </div>
               <.icon name="hero-arrow-right" class="h-4 w-4 shrink-0 text-amber-300/70" />

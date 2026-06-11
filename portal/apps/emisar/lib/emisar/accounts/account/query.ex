@@ -13,8 +13,8 @@ defmodule Emisar.Accounts.Account.Query do
   def by_slug(queryable, slug),
     do: where(queryable, [accounts: a], a.slug == ^slug)
 
-  def by_paddle_customer_id(queryable, cid),
-    do: where(queryable, [accounts: a], a.paddle_customer_id == ^cid)
+  def by_paddle_customer_id(queryable, customer_id),
+    do: where(queryable, [accounts: a], a.paddle_customer_id == ^customer_id)
 
   def ordered_by_name(queryable),
     do: order_by(queryable, [accounts: a], asc: a.name)

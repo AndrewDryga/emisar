@@ -161,9 +161,9 @@ defmodule Emisar.Approvals do
     # the caller's `Runs.dispatch_run` path. In tests it's synchronous so
     # the sandbox connection isn't released while a background task
     # is still querying the DB — `:notify_approvers_async?` flips this.
-    with {:ok, req} <- result do
-      run_notify(fn -> notify_approvers(req, run, requested_by_id) end)
-      {:ok, req}
+    with {:ok, request} <- result do
+      run_notify(fn -> notify_approvers(request, run, requested_by_id) end)
+      {:ok, request}
     end
   end
 
@@ -190,25 +190,25 @@ defmodule Emisar.Approvals do
   # batch isn't a memory hazard if a future plan removes the cap entirely.
   @notify_page_size 200
 
-  defp notify_approvers(%Request{} = req, run, requested_by_id) do
+  defp notify_approvers(%Request{} = request, run, requested_by_id) do
     # Preload runner so the email body can show the runner's name
     # ("db-prod-01") instead of its UUID — approvers shouldn't need to
     # context-switch into the app just to know what's being touched.
     run = Repo.preload(run, :runner)
 
-    notify_approvers_pages(req, run, requested_by_id, nil)
+    notify_approvers_pages(request, run, requested_by_id, nil)
   end
 
   # Cursor-walk the membership pages so accounts with >100 admins still
   # get full coverage — earlier code capped at a single 100-row page,
   # silently skipping everyone after.
-  defp notify_approvers_pages(%Request{} = req, run, requested_by_id, cursor) do
+  defp notify_approvers_pages(%Request{} = request, run, requested_by_id, cursor) do
     page_opts =
       [limit: @notify_page_size]
       |> then(fn opts -> if cursor, do: Keyword.put(opts, :cursor, cursor), else: opts end)
 
     {:ok, memberships, %{next_page_cursor: next}} =
-      Emisar.Accounts.list_account_memberships(req.account_id, page: page_opts)
+      Emisar.Accounts.list_account_memberships(request.account_id, page: page_opts)
 
     approver_roles =
       Auth.Authorizer.roles_with_permission(Authorizer.decide_approval_permission())
@@ -219,27 +219,27 @@ defmodule Emisar.Approvals do
       # triggered the request is excluded since they already saw it in the UI.
       membership.role in approver_roles and membership.user_id != requested_by_id
     end)
-    |> Enum.each(&deliver_approval_email(&1, req, run))
+    |> Enum.each(&deliver_approval_email(&1, request, run))
 
     if next,
-      do: notify_approvers_pages(req, run, requested_by_id, next),
+      do: notify_approvers_pages(request, run, requested_by_id, next),
       else: :ok
   end
 
-  defp deliver_approval_email(membership, req, run) do
+  defp deliver_approval_email(membership, request, run) do
     try do
       # Mailer.deliver returns {:ok, _} on success and {:error, reason}
       # on transport failure (Mailgun 5xx, SMTP timeout). It DOES NOT
       # raise on non-success — a bare `try` would silently drop
       # delivery errors. Pattern-match and log non-success explicitly.
-      case Emisar.Mailers.UserNotifier.deliver_approval_request(membership.user, req, run) do
+      case Emisar.Mailers.UserNotifier.deliver_approval_request(membership.user, request, run) do
         {:ok, _} ->
           :ok
 
         {:error, reason} ->
           Logger.warning("approval_email_failed",
             user_id: membership.user_id,
-            req_id: req.id,
+            req_id: request.id,
             error: inspect(reason)
           )
       end
@@ -247,7 +247,7 @@ defmodule Emisar.Approvals do
       err ->
         Logger.warning("approval_email_crashed",
           user_id: membership.user_id,
-          req_id: req.id,
+          req_id: request.id,
           error: inspect(err)
         )
     end
@@ -267,15 +267,15 @@ defmodule Emisar.Approvals do
     * `:max_uses` — for a windowed duration, cap on total executions
       (nil = unlimited within the window); `:once` is always one use.
   """
-  def approve_request(req, subject, reason \\ nil, opts \\ [])
+  def approve_request(request, subject, reason \\ nil, opts \\ [])
 
-  def approve_request(%Request{} = req, %Subject{} = subject, reason, opts) do
+  def approve_request(%Request{} = request, %Subject{} = subject, reason, opts) do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(
              subject,
              Authorizer.decide_approval_permission()
            ),
-         :ok <- Subject.ensure_in_account(subject, req.account_id) do
+         :ok <- Subject.ensure_in_account(subject, request.account_id) do
       by_user_id = Subject.actor_id(subject)
 
       grant_attrs = %{
@@ -293,12 +293,12 @@ defmodule Emisar.Approvals do
       result =
         Multi.new()
         |> Multi.run(:decided, fn _repo, _changes ->
-          claim_pending(req, :approved, by_user_id, reason)
+          claim_pending(request, :approved, by_user_id, reason)
         end)
-        |> Multi.run(:run, fn _repo, _changes -> {:ok, Runs.fetch_run!(req.run_id)} end)
+        |> Multi.run(:run, fn _repo, _changes -> {:ok, Runs.fetch_run!(request.run_id)} end)
         |> Multi.run(:grant, fn _repo, %{run: run} ->
           if grant_attrs.duration != :once and run.api_key_id do
-            case create_grant(req, run, by_user_id, grant_attrs) do
+            case create_grant(request, run, by_user_id, grant_attrs) do
               {:ok, grant} -> {:ok, grant}
               {:error, changeset} -> {:error, {:grant_failed, changeset}}
             end
@@ -307,7 +307,7 @@ defmodule Emisar.Approvals do
           end
         end)
         |> Multi.insert(:audit, fn %{grant: grant} ->
-          Audit.Events.approval_approved(subject, req, reason, grant, grant_attrs)
+          Audit.Events.approval_approved(subject, request, reason, grant, grant_attrs)
         end)
         |> Repo.commit_multi(
           after_commit: fn %{decided: decided} -> broadcast_approval(decided) end
@@ -325,13 +325,13 @@ defmodule Emisar.Approvals do
     end
   end
 
-  def deny_request(%Request{} = req, %Subject{} = subject, reason \\ nil) do
+  def deny_request(%Request{} = request, %Subject{} = subject, reason \\ nil) do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(
              subject,
              Authorizer.decide_approval_permission()
            ),
-         :ok <- Subject.ensure_in_account(subject, req.account_id) do
+         :ok <- Subject.ensure_in_account(subject, request.account_id) do
       by_user_id = Subject.actor_id(subject)
 
       # Claim + cancel + audit commit together — a failed cancel rolls
@@ -340,13 +340,13 @@ defmodule Emisar.Approvals do
       # only re-visits pending requests).
       Multi.new()
       |> Multi.run(:decided, fn _repo, _changes ->
-        claim_pending(req, :denied, by_user_id, reason)
+        claim_pending(request, :denied, by_user_id, reason)
       end)
       |> Multi.run(:run, fn _repo, _changes ->
-        run = Runs.fetch_run!(req.run_id)
+        run = Runs.fetch_run!(request.run_id)
         Runs.mark_cancelled(run, denial_reason(reason))
       end)
-      |> Multi.insert(:audit, Audit.Events.approval_denied(subject, req, reason))
+      |> Multi.insert(:audit, Audit.Events.approval_denied(subject, request, reason))
       |> Repo.commit_multi(
         after_commit: fn %{decided: decided} -> broadcast_approval(decided) end
       )
@@ -366,17 +366,17 @@ defmodule Emisar.Approvals do
   # `WHERE status = 'pending'` evaluate true. The loser gets 0 rows
   # affected and we return `{:error, :already_decided}` so the caller
   # can flash a useful message rather than double-dispatching.
-  defp claim_pending(%Request{} = req, status, by_user_id, reason) do
+  defp claim_pending(%Request{} = request, status, by_user_id, reason) do
     now = DateTime.utc_now()
 
     {affected, _} =
-      Request.Query.decide_pending(req.id, status, by_user_id, reason, now)
+      Request.Query.decide_pending(request.id, status, by_user_id, reason, now)
       |> Repo.update_all([])
 
     case affected do
       1 ->
         decided =
-          Request.Query.all() |> Request.Query.by_id(req.id) |> Repo.fetch!(Request.Query)
+          Request.Query.all() |> Request.Query.by_id(request.id) |> Repo.fetch!(Request.Query)
 
         {:ok, decided}
 
@@ -611,13 +611,13 @@ defmodule Emisar.Approvals do
     length(expiring)
   end
 
-  defp expire_one(%Request{} = req, now) do
+  defp expire_one(%Request{} = request, now) do
     Multi.new()
     # Claim the still-pending request as expired; 0 rows means another
     # decision landed between the sweep's SELECT and here — abort as a
     # benign no-op.
     |> Multi.run(:expire, fn _repo, _changes ->
-      {affected, _} = Request.Query.expire_pending(req.id, now) |> Repo.update_all([])
+      {affected, _} = Request.Query.expire_pending(request.id, now) |> Repo.update_all([])
 
       case affected do
         1 -> {:ok, :expired}
@@ -629,14 +629,14 @@ defmodule Emisar.Approvals do
     # otherwise it would flip to `expired` with its run still live, and
     # the pending-only sweep would never revisit it.
     |> Multi.run(:cancel, fn _repo, _changes ->
-      case Runs.peek_run_by_id(req.run_id) do
+      case Runs.peek_run_by_id(request.run_id) do
         nil -> {:ok, :no_run}
         %Runs.ActionRun{} = run -> Runs.mark_cancelled(run, "approval expired without decision")
       end
     end)
-    |> Multi.insert(:audit, Audit.Events.approval_expired(req))
+    |> Multi.insert(:audit, Audit.Events.approval_expired(request))
     |> Multi.run(:reloaded, fn _repo, _changes ->
-      {:ok, Request.Query.all() |> Request.Query.by_id(req.id) |> Repo.fetch!(Request.Query)}
+      {:ok, Request.Query.all() |> Request.Query.by_id(request.id) |> Repo.fetch!(Request.Query)}
     end)
     |> Repo.commit_multi(
       after_commit: fn %{reloaded: reloaded} -> broadcast_approval(reloaded) end

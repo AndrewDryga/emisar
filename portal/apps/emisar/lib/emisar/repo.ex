@@ -185,8 +185,8 @@ defmodule Emisar.Repo do
     after_commit
     |> List.wrap()
     |> Enum.each(fn
-      cb when is_function(cb, 1) -> :ok = cb.(schema)
-      cb when is_function(cb, 2) -> :ok = cb.(schema, changeset)
+      callback when is_function(callback, 1) -> :ok = callback.(schema)
+      callback when is_function(callback, 2) -> :ok = callback.(schema, changeset)
     end)
   end
 
@@ -247,7 +247,7 @@ defmodule Emisar.Repo do
   defp execute_changes_after_commit(changes, after_commit) do
     after_commit
     |> List.wrap()
-    |> Enum.each(fn cb when is_function(cb, 1) -> :ok = cb.(changes) end)
+    |> Enum.each(fn callback when is_function(callback, 1) -> :ok = callback.(changes) end)
   end
 
   # Every Multi that includes an audit-event step (via `Audit.changeset`
@@ -261,7 +261,7 @@ defmodule Emisar.Repo do
   defp fan_out_audit_events(changes) when is_map(changes) do
     if Code.ensure_loaded?(Emisar.Audit) and Code.ensure_loaded?(Emisar.Audit.Event) do
       Enum.each(changes, fn
-        {_step, %Emisar.Audit.Event{} = ev} -> Emisar.Audit.broadcast_event(ev)
+        {_step, %Emisar.Audit.Event{} = event} -> Emisar.Audit.broadcast_event(event)
         _ -> :ok
       end)
     end

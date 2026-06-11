@@ -47,7 +47,7 @@ defmodule EmisarWeb.ProfileLive do
   end
 
   defp current_session_digest(nil), do: nil
-  defp current_session_digest(token) when is_binary(token), do: :crypto.hash(:sha256, token)
+  defp current_session_digest(token) when is_binary(token), do: Emisar.Crypto.hash(token)
 
   def handle_event("validate_profile", %{"profile" => params}, socket) do
     changeset =
@@ -96,8 +96,8 @@ defmodule EmisarWeb.ProfileLive do
       {:error, :invalid_current_password} ->
         {:noreply, put_flash(socket, :error, "Current password is incorrect.")}
 
-      {:error, %Ecto.Changeset{} = cs} ->
-        {:noreply, assign(socket, :email_form, to_form(cs, as: "email"))}
+      {:error, %Ecto.Changeset{} = changeset} ->
+        {:noreply, assign(socket, :email_form, to_form(changeset, as: "email"))}
     end
   end
 
@@ -143,7 +143,7 @@ defmodule EmisarWeb.ProfileLive do
         {:error, :invalid_current_password} ->
           {:noreply, put_flash(socket, :error, "Current password is incorrect.")}
 
-        {:error, _cs} ->
+        {:error, _changeset} ->
           {:noreply, put_flash(socket, :error, "Could not update password.")}
       end
     else
@@ -164,13 +164,15 @@ defmodule EmisarWeb.ProfileLive do
 
   def handle_event("revoke_other_sessions", _params, socket) do
     keep = socket.assigns.current_session_token
-    n = Auth.revoke_and_disconnect_other_sessions!(keep, socket.assigns.current_subject)
+
+    revoked_count =
+      Auth.revoke_and_disconnect_other_sessions!(keep, socket.assigns.current_subject)
 
     msg =
-      case n do
+      case revoked_count do
         0 -> "No other sessions to revoke."
         1 -> "1 other session signed out."
-        n -> "#{n} other sessions signed out."
+        revoked_count -> "#{revoked_count} other sessions signed out."
       end
 
     {:noreply, socket |> put_flash(:info, msg) |> load_sessions()}
@@ -223,7 +225,7 @@ defmodule EmisarWeb.ProfileLive do
           {:error, :invalid_otp} ->
             {:noreply, put_flash(socket, :error, "Invalid code — try the next one.")}
 
-          {:error, _cs} ->
+          {:error, _changeset} ->
             {:noreply, put_flash(socket, :error, "Could not enable MFA.")}
         end
     end
@@ -241,7 +243,7 @@ defmodule EmisarWeb.ProfileLive do
       {:error, :mfa_not_enabled} ->
         {:noreply, put_flash(socket, :error, "Enable MFA first.")}
 
-      {:error, _cs} ->
+      {:error, _changeset} ->
         {:noreply, put_flash(socket, :error, "Could not generate recovery codes.")}
     end
   end
@@ -260,7 +262,7 @@ defmodule EmisarWeb.ProfileLive do
          |> assign(:mfa_enabled?, false)
          |> assign(:mfa_recovery_codes, nil)}
 
-      {:error, _cs} ->
+      {:error, _changeset} ->
         {:noreply, put_flash(socket, :error, "Could not disable MFA.")}
     end
   end
@@ -639,37 +641,37 @@ defmodule EmisarWeb.ProfileLive do
 
           <ul class="divide-y divide-zinc-900 rounded-lg border border-zinc-900 bg-zinc-950/40 text-sm">
             <li
-              :for={s <- @sessions}
+              :for={session <- @sessions}
               class="flex items-center justify-between gap-3 px-4 py-3"
             >
               <div class="flex min-w-0 items-center gap-3">
                 <span class="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-zinc-900 text-zinc-400">
-                  <.icon name={session_device_icon(s)} class="h-4 w-4" />
+                  <.icon name={session_device_icon(session)} class="h-4 w-4" />
                 </span>
                 <div class="min-w-0">
                   <div class="flex items-center gap-2">
                     <span class="truncate font-medium text-zinc-100">
-                      {session_device_label(s)}
+                      {session_device_label(session)}
                     </span>
                     <span
-                      :if={current_session?(s, @current_session_digest)}
+                      :if={current_session?(session, @current_session_digest)}
                       class="rounded bg-indigo-500/15 px-1.5 py-0.5 text-[10px] font-medium text-indigo-200 ring-1 ring-indigo-500/30"
                     >
                       This device
                     </span>
                   </div>
                   <div class="mt-0.5 truncate text-xs text-zinc-500">
-                    Started {relative_time(s.inserted_at)}
-                    <%= if session_ip(s) do %>
-                      · <span class="font-mono">{session_ip(s)}</span>
+                    Started {relative_time(session.inserted_at)}
+                    <%= if session_ip(session) do %>
+                      · <span class="font-mono">{session_ip(session)}</span>
                     <% end %>
                   </div>
                 </div>
               </div>
               <button
-                :if={not current_session?(s, @current_session_digest)}
+                :if={not current_session?(session, @current_session_digest)}
                 phx-click="revoke_session"
-                phx-value-id={s.id}
+                phx-value-id={session.id}
                 data-confirm="Sign out this session?"
                 class="shrink-0 text-xs font-medium text-rose-300 hover:text-rose-200"
               >

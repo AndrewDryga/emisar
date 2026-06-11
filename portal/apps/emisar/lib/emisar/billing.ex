@@ -133,12 +133,12 @@ defmodule Emisar.Billing do
           {:ok, "/paddle-checkout-stub?plan=" <> plan_name}
 
         true ->
-          with {:ok, cid, _account} <- ensure_paddle_customer(account, subject),
+          with {:ok, customer_id, _account} <- ensure_paddle_customer(account, subject),
                price_id <-
                  Map.fetch!(Application.get_env(:emisar, :paddle_price_ids, %{}), plan_name),
                {:ok, %{"url" => url}} <-
                  Emisar.Billing.PaddleClient.create_checkout_session(%{
-                   customer: cid,
+                   customer: customer_id,
                    price_id: price_id,
                    quantity: current_count(account, :runners),
                    success_url: PublicUrl.url("/app/settings/billing?status=success"),
@@ -173,12 +173,13 @@ defmodule Emisar.Billing do
 
   defp do_open_billing_portal(%Account{paddle_customer_id: nil}), do: {:error, :no_customer}
 
-  defp do_open_billing_portal(%Account{paddle_customer_id: cid}) when is_binary(cid) do
+  defp do_open_billing_portal(%Account{paddle_customer_id: customer_id})
+       when is_binary(customer_id) do
     return_url = PublicUrl.url("/app/settings/billing")
 
     if Application.get_env(:emisar, :paddle_api_key) do
       case Emisar.Billing.PaddleClient.create_billing_portal_session(%{
-             customer: cid,
+             customer: customer_id,
              return_url: return_url
            }) do
         {:ok, %{"url" => url}} -> {:ok, url}
@@ -201,19 +202,19 @@ defmodule Emisar.Billing do
   On first creation the acting user's email is attached to the Paddle
   customer so invoices and receipts reach a real inbox.
   """
-  def ensure_paddle_customer(%Account{paddle_customer_id: cid} = account, %Subject{})
-      when is_binary(cid),
-      do: {:ok, cid, account}
+  def ensure_paddle_customer(%Account{paddle_customer_id: customer_id} = account, %Subject{})
+      when is_binary(customer_id),
+      do: {:ok, customer_id, account}
 
   def ensure_paddle_customer(%Account{} = account, %Subject{} = subject) do
-    with {:ok, %{"id" => cid}} <-
+    with {:ok, %{"id" => customer_id}} <-
            Emisar.Billing.PaddleClient.create_customer(%{
              email: Subject.actor_email(subject),
              name: account.name,
              account_id: account.id
            }),
-         {:ok, account} <- Accounts.put_account_paddle_customer_id(account, cid) do
-      {:ok, cid, account}
+         {:ok, account} <- Accounts.put_account_paddle_customer_id(account, customer_id) do
+      {:ok, customer_id, account}
     end
   end
 
@@ -270,38 +271,38 @@ defmodule Emisar.Billing do
   `event["id"]` (deduped via `record_and_apply_event/3`). Webhook/worker
   only; not exposed to LiveView/MCP.
   """
-  def apply_webhook_event(%{"event_type" => "subscription.created", "data" => sub}),
-    do: upsert_from_subscription(sub)
+  def apply_webhook_event(%{"event_type" => "subscription.created", "data" => subscription_data}),
+    do: upsert_from_subscription(subscription_data)
 
-  def apply_webhook_event(%{"event_type" => "subscription.updated", "data" => sub}),
-    do: upsert_from_subscription(sub)
+  def apply_webhook_event(%{"event_type" => "subscription.updated", "data" => subscription_data}),
+    do: upsert_from_subscription(subscription_data)
 
-  def apply_webhook_event(%{"event_type" => "subscription.canceled", "data" => sub}) do
-    case peek_subscription_by_paddle_id(sub["id"]) do
+  def apply_webhook_event(%{"event_type" => "subscription.canceled", "data" => subscription_data}) do
+    case peek_subscription_by_paddle_id(subscription_data["id"]) do
       nil ->
         :ok
 
-      %Subscription{} = s ->
-        Repo.update(Subscription.Changeset.upsert(s, %{status: "canceled"}))
+      %Subscription{} = subscription ->
+        Repo.update(Subscription.Changeset.upsert(subscription, %{status: "canceled"}))
     end
   end
 
   def apply_webhook_event(_event), do: :ok
 
-  defp upsert_from_subscription(sub) do
-    case peek_account_by_paddle_customer(sub["customer_id"]) do
+  defp upsert_from_subscription(subscription_data) do
+    case peek_account_by_paddle_customer(subscription_data["customer_id"]) do
       nil ->
         :ok
 
       %Account{} = account ->
-        price_id = extract_price_id(sub)
+        price_id = extract_price_id(subscription_data)
 
         attrs = %{
-          paddle_subscription_id: sub["id"],
+          paddle_subscription_id: subscription_data["id"],
           paddle_price_id: price_id,
           plan: plan_for_subscription(account, price_id),
-          status: sub["status"],
-          current_period_end: extract_next_billed_at(sub)
+          status: subscription_data["status"],
+          current_period_end: extract_next_billed_at(subscription_data)
         }
 
         upsert_subscription(account.id, attrs)
@@ -330,8 +331,8 @@ defmodule Emisar.Billing do
   end
 
   # nil-tolerant adapter: Paddle payloads may omit the customer id.
-  defp peek_account_by_paddle_customer(cid) when is_binary(cid),
-    do: Accounts.peek_account_by_paddle_customer_id(cid)
+  defp peek_account_by_paddle_customer(customer_id) when is_binary(customer_id),
+    do: Accounts.peek_account_by_paddle_customer_id(customer_id)
 
   defp peek_account_by_paddle_customer(_), do: nil
 
@@ -359,7 +360,7 @@ defmodule Emisar.Billing do
 
   defp parse_iso8601(iso) do
     case DateTime.from_iso8601(iso) do
-      {:ok, dt, _offset} -> dt
+      {:ok, datetime, _offset} -> datetime
       _ -> nil
     end
   end
@@ -396,7 +397,7 @@ defmodule Emisar.Billing do
          monthly_total_cents:
            case plan_def.monthly_price_cents do
              nil -> nil
-             n -> n * runner_count
+             cents -> cents * runner_count
            end,
          audit_retention_days: plan_def.audit_retention_days,
          # Subscription state mirrored from Paddle webhooks. nil when

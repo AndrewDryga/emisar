@@ -24,36 +24,36 @@ defmodule EmisarWeb.TimeHelpers do
 
   def relative_time(nil, opts), do: Keyword.get(opts, :placeholder, "—")
 
-  def relative_time(%DateTime{} = dt, _opts) do
-    diff = DateTime.diff(DateTime.utc_now(), dt, :second)
+  def relative_time(%DateTime{} = datetime, _opts) do
+    diff = DateTime.diff(DateTime.utc_now(), datetime, :second)
 
     cond do
       diff >= -5 and diff < 5 -> "just now"
-      diff >= 0 -> past_label(diff, dt)
-      true -> future_label(-diff, dt)
+      diff >= 0 -> past_label(diff, datetime)
+      true -> future_label(-diff, datetime)
     end
   end
 
   def relative_time(%NaiveDateTime{} = ndt, opts),
     do: ndt |> DateTime.from_naive!("Etc/UTC") |> relative_time(opts)
 
-  defp past_label(diff, dt) do
+  defp past_label(diff, datetime) do
     cond do
       diff < 60 -> "#{diff}s ago"
       diff < 3_600 -> "#{div(diff, 60)}m ago"
       diff < 86_400 -> "#{div(diff, 3_600)}h ago"
       diff < 604_800 -> "#{div(diff, 86_400)}d ago"
-      true -> Calendar.strftime(dt, "%b %-d")
+      true -> Calendar.strftime(datetime, "%b %-d")
     end
   end
 
-  defp future_label(diff, dt) do
+  defp future_label(diff, datetime) do
     cond do
       diff < 60 -> "in #{diff}s"
       diff < 3_600 -> "in #{div(diff, 60)}m"
       diff < 86_400 -> "in #{div(diff, 3_600)}h"
       diff < 604_800 -> "in #{div(diff, 86_400)}d"
-      true -> Calendar.strftime(dt, "%b %-d")
+      true -> Calendar.strftime(datetime, "%b %-d")
     end
   end
 
@@ -64,8 +64,8 @@ defmodule EmisarWeb.TimeHelpers do
 
   def absolute_time(nil, opts), do: Keyword.get(opts, :placeholder, "—")
 
-  def absolute_time(%DateTime{} = dt, _opts),
-    do: Calendar.strftime(dt, "%b %-d, %H:%M UTC")
+  def absolute_time(%DateTime{} = datetime, _opts),
+    do: Calendar.strftime(datetime, "%b %-d, %H:%M UTC")
 
   def absolute_time(%NaiveDateTime{} = ndt, opts),
     do: ndt |> DateTime.from_naive!("Etc/UTC") |> absolute_time(opts)
@@ -184,16 +184,16 @@ defmodule EmisarWeb.TimeHelpers do
   end
 
   def local_time(assigns) do
-    dt = to_datetime(assigns.value)
+    datetime = to_datetime(assigns.value)
 
     assigns =
       assigns
-      |> assign(:iso, DateTime.to_iso8601(dt))
+      |> assign(:iso, DateTime.to_iso8601(datetime))
       |> assign(
         :fallback,
         case assigns.mode do
-          :relative -> relative_time(dt)
-          :absolute -> absolute_time(dt)
+          :relative -> relative_time(datetime)
+          :absolute -> absolute_time(datetime)
         end
       )
 
@@ -211,7 +211,7 @@ defmodule EmisarWeb.TimeHelpers do
     """
   end
 
-  defp to_datetime(%DateTime{} = dt), do: dt
+  defp to_datetime(%DateTime{} = datetime), do: datetime
   defp to_datetime(%NaiveDateTime{} = ndt), do: DateTime.from_naive!(ndt, "Etc/UTC")
 
   @doc """

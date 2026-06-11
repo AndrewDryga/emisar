@@ -61,12 +61,12 @@ defmodule Emisar.Runbooks do
         :runbook,
         Runbook.Changeset.create(account.id, user_id, attrs)
       )
-      |> Multi.insert(:audit, fn %{runbook: rb} ->
-        Audit.Events.runbook_created(subject, rb)
+      |> Multi.insert(:audit, fn %{runbook: runbook} ->
+        Audit.Events.runbook_created(subject, runbook)
       end)
       |> Repo.commit_multi(after_commit: &broadcast_runbook_change(&1, "runbook.created"))
       |> case do
-        {:ok, %{runbook: rb}} -> {:ok, rb}
+        {:ok, %{runbook: runbook}} -> {:ok, runbook}
         {:error, reason} -> {:error, reason}
       end
     end
@@ -78,10 +78,10 @@ defmodule Emisar.Runbooks do
 
   defp account_runbooks_topic(account_id), do: "account:#{account_id}:runbooks"
 
-  defp broadcast_runbook_change(%{runbook: rb}, event_type) do
+  defp broadcast_runbook_change(%{runbook: runbook}, event_type) do
     Emisar.PubSub.broadcast(
-      account_runbooks_topic(rb.account_id),
-      {:list_changed, :runbook, event_type, rb.id}
+      account_runbooks_topic(runbook.account_id),
+      {:list_changed, :runbook, event_type, runbook.id}
     )
 
     :ok
@@ -98,25 +98,25 @@ defmodule Emisar.Runbooks do
 
       Multi.new()
       |> Multi.insert(:runbook, Runbook.Changeset.new_version(old, user_id, attrs))
-      |> Multi.insert(:audit, fn %{runbook: rb} ->
-        Audit.Events.runbook_updated(subject, old, rb)
+      |> Multi.insert(:audit, fn %{runbook: runbook} ->
+        Audit.Events.runbook_updated(subject, old, runbook)
       end)
       |> Repo.commit_multi(after_commit: &broadcast_runbook_change(&1, "runbook.updated"))
       |> case do
-        {:ok, %{runbook: rb}} -> {:ok, rb}
+        {:ok, %{runbook: runbook}} -> {:ok, runbook}
         {:error, reason} -> {:error, reason}
       end
     end
   end
 
-  def publish(%Runbook{} = rb, %Subject{} = subject) do
+  def publish(%Runbook{} = runbook, %Subject{} = subject) do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(
              subject,
              Authorizer.manage_runbooks_permission()
            ) do
       Runbook.Query.not_deleted()
-      |> Runbook.Query.by_id(rb.id)
+      |> Runbook.Query.by_id(runbook.id)
       |> Authorizer.for_subject(subject)
       |> Repo.fetch_and_update(Runbook.Query,
         with: &Runbook.Changeset.update(&1, %{status: :published}),

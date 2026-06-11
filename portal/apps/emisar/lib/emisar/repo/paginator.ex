@@ -210,7 +210,7 @@ defmodule Emisar.Repo.Paginator do
   defp compress_cursor(schema, cursor_fields) do
     Enum.map(cursor_fields, fn {_binding, _order, field} ->
       case Map.fetch!(schema, field) do
-        %DateTime{} = dt -> {DateTime, DateTime.to_unix(dt, :nanosecond)}
+        %DateTime{} = datetime -> {DateTime, DateTime.to_unix(datetime, :nanosecond)}
         %NaiveDateTime{} = ndt -> {NaiveDateTime, NaiveDateTime.to_iso8601(ndt)}
         %Date{} = date -> {Date, Date.to_iso8601(date)}
         %Time{} = time -> {Time, Time.to_iso8601(time)}

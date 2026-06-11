@@ -72,11 +72,11 @@ defmodule EmisarWeb.PacksLive do
 
   def handle_event("trust", %{"id" => id}, socket) do
     case Catalog.trust_pack_version(id, socket.assigns.current_subject) do
-      {:ok, pv} ->
+      {:ok, pack_version} ->
         {:noreply,
          socket
-         |> put_flash(:info, "Trusted #{pv.pack_id} v#{pv.version}.")
-         |> restream_pack(pv.pack_id)}
+         |> put_flash(:info, "Trusted #{pack_version.pack_id} v#{pack_version.version}.")
+         |> restream_pack(pack_version.pack_id)}
 
       {:error, :not_pending} ->
         {:noreply, put_flash(socket, :error, "Nothing pending on that pack.")}
@@ -91,14 +91,14 @@ defmodule EmisarWeb.PacksLive do
 
   def handle_event("reject", %{"id" => id}, socket) do
     case Catalog.reject_pack_version(id, socket.assigns.current_subject) do
-      {:ok, pv} ->
+      {:ok, pack_version} ->
         {:noreply,
          socket
          |> put_flash(
            :info,
-           "Rejected drift on #{pv.pack_id} v#{pv.version}. The runner advertising the new hash will re-broadcast — if it's still set, this will re-surface."
+           "Rejected drift on #{pack_version.pack_id} v#{pack_version.version}. The runner advertising the new hash will re-broadcast — if it's still set, this will re-surface."
          )
-         |> restream_pack(pv.pack_id)}
+         |> restream_pack(pack_version.pack_id)}
 
       {:error, :not_pending} ->
         {:noreply, put_flash(socket, :error, "Nothing pending on that pack.")}

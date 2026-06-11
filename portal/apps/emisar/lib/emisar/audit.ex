@@ -238,7 +238,7 @@ defmodule Emisar.Audit do
 
   # Drop nil-valued keys so audit rows for pending/sent runs don't
   # bloat with fields that are still being filled in.
-  defp compact(map), do: :maps.filter(fn _k, v -> not is_nil(v) end, map)
+  defp compact(map), do: :maps.filter(fn _key, value -> not is_nil(value) end, map)
 
   defp actor_kind(%ActionRun{requested_by_id: id}) when not is_nil(id), do: "user"
   defp actor_kind(%ActionRun{api_key_id: id}) when not is_nil(id), do: "api_key"
@@ -403,8 +403,8 @@ defmodule Emisar.Audit do
 
     ids_by_kind =
       events
-      |> Enum.flat_map(fn ev ->
-        [{ev.actor_kind, ev.actor_id}, {ev.subject_kind, ev.subject_id}]
+      |> Enum.flat_map(fn event ->
+        [{event.actor_kind, event.actor_id}, {event.subject_kind, event.subject_id}]
       end)
       |> Enum.reject(fn {_, id} -> is_nil(id) end)
       |> Enum.uniq()
@@ -414,33 +414,57 @@ defmodule Emisar.Audit do
       # Users belong to accounts via memberships, not a column, so they
       # scope through the membership join rather than `by_account_id`.
       "user" =>
-        fetch_labels(Emisar.Users.User.Query, ids_by_kind, "user", :email, fn q ->
-          Emisar.Users.User.Query.members_of_account(q, account_id)
+        fetch_labels(Emisar.Users.User.Query, ids_by_kind, "user", :email, fn queryable ->
+          Emisar.Users.User.Query.members_of_account(queryable, account_id)
         end),
       "runner" =>
-        fetch_labels(Emisar.Runners.Runner.Query, ids_by_kind, "runner", :name, fn q ->
-          Emisar.Runners.Runner.Query.by_account_id(q, account_id)
+        fetch_labels(Emisar.Runners.Runner.Query, ids_by_kind, "runner", :name, fn queryable ->
+          Emisar.Runners.Runner.Query.by_account_id(queryable, account_id)
         end),
       "api_key" =>
-        fetch_labels(Emisar.ApiKeys.ApiKey.Query, ids_by_kind, "api_key", :name, fn q ->
-          Emisar.ApiKeys.ApiKey.Query.by_account_id(q, account_id)
+        fetch_labels(Emisar.ApiKeys.ApiKey.Query, ids_by_kind, "api_key", :name, fn queryable ->
+          Emisar.ApiKeys.ApiKey.Query.by_account_id(queryable, account_id)
         end),
       "auth_key" =>
-        fetch_labels(Emisar.Runners.AuthKey.Query, ids_by_kind, "auth_key", :description, fn q ->
-          Emisar.Runners.AuthKey.Query.by_account_id(q, account_id)
-        end),
+        fetch_labels(
+          Emisar.Runners.AuthKey.Query,
+          ids_by_kind,
+          "auth_key",
+          :description,
+          fn queryable ->
+            Emisar.Runners.AuthKey.Query.by_account_id(queryable, account_id)
+          end
+        ),
       "action_run" =>
-        fetch_labels(Emisar.Runs.ActionRun.Query, ids_by_kind, "action_run", :action_id, fn q ->
-          Emisar.Runs.ActionRun.Query.by_account_id(q, account_id)
-        end),
+        fetch_labels(
+          Emisar.Runs.ActionRun.Query,
+          ids_by_kind,
+          "action_run",
+          :action_id,
+          fn queryable ->
+            Emisar.Runs.ActionRun.Query.by_account_id(queryable, account_id)
+          end
+        ),
       "approval_request" =>
-        fetch_labels(Emisar.Approvals.Request.Query, ids_by_kind, "approval_request", :id, fn q ->
-          Emisar.Approvals.Request.Query.by_account_id(q, account_id)
-        end),
+        fetch_labels(
+          Emisar.Approvals.Request.Query,
+          ids_by_kind,
+          "approval_request",
+          :id,
+          fn queryable ->
+            Emisar.Approvals.Request.Query.by_account_id(queryable, account_id)
+          end
+        ),
       "runbook" =>
-        fetch_labels(Emisar.Runbooks.Runbook.Query, ids_by_kind, "runbook", :title, fn q ->
-          Emisar.Runbooks.Runbook.Query.by_account_id(q, account_id)
-        end)
+        fetch_labels(
+          Emisar.Runbooks.Runbook.Query,
+          ids_by_kind,
+          "runbook",
+          :title,
+          fn queryable ->
+            Emisar.Runbooks.Runbook.Query.by_account_id(queryable, account_id)
+          end
+        )
     }
   end
 

@@ -479,17 +479,17 @@ defmodule Emisar.Audit.Events do
   # System-actor pack pins observed during a runner_state sync (no operator
   # is acting). pack_pinned/4 covers all three first-sight outcomes — the
   # `event_type` atom distinguishes baseline-match / mismatch / review.
-  def pack_pinned(%Catalog.PackVersion{} = pv, event_type, advertised, baseline) do
-    Audit.changeset(pv.account_id, event_type,
+  def pack_pinned(%Catalog.PackVersion{} = pack_version, event_type, advertised, baseline) do
+    Audit.changeset(pack_version.account_id, event_type,
       actor_kind: "system",
       subject_kind: "pack_version",
-      subject_id: pv.id,
-      subject_label: "#{pv.pack_id}@#{pv.version}",
+      subject_id: pack_version.id,
+      subject_label: "#{pack_version.pack_id}@#{pack_version.version}",
       payload: %{
-        pack_id: pv.pack_id,
-        version: pv.version,
-        trusted_hash: pv.hash,
-        pending_hash: pv.pending_hash,
+        pack_id: pack_version.pack_id,
+        version: pack_version.version,
+        trusted_hash: pack_version.hash,
+        pending_hash: pack_version.pending_hash,
         advertised: advertised,
         baseline: baseline
       }
@@ -498,17 +498,17 @@ defmodule Emisar.Audit.Events do
 
   # A runner advertised bytes that diverge from the trusted hash — keep
   # trusted, record the new pending. System actor.
-  def pack_trust_drift_detected(%Catalog.PackVersion{} = pv, advertised) do
-    Audit.changeset(pv.account_id, "pack_trust_drift_detected",
+  def pack_trust_drift_detected(%Catalog.PackVersion{} = pack_version, advertised) do
+    Audit.changeset(pack_version.account_id, "pack_trust_drift_detected",
       actor_kind: "system",
       subject_kind: "pack_version",
-      subject_id: pv.id,
-      subject_label: "#{pv.pack_id}@#{pv.version}",
+      subject_id: pack_version.id,
+      subject_label: "#{pack_version.pack_id}@#{pack_version.version}",
       payload: %{
-        pack_id: pv.pack_id,
-        version: pv.version,
-        trusted_hash: pv.hash,
-        previous_pending: pv.pending_hash,
+        pack_id: pack_version.pack_id,
+        version: pack_version.version,
+        trusted_hash: pack_version.hash,
+        previous_pending: pack_version.pending_hash,
         pending_hash: advertised
       }
     )
@@ -546,20 +546,20 @@ defmodule Emisar.Audit.Events do
 
   def approval_approved(
         %Subject{} = subject,
-        %Approvals.Request{} = req,
+        %Approvals.Request{} = request,
         reason,
         grant,
         grant_attrs
       ) do
     Audit.changeset(
-      req.account_id,
+      request.account_id,
       "approval.approved",
       actor(subject) ++
         [
           subject_kind: "approval_request",
-          subject_id: req.id,
+          subject_id: request.id,
           payload: %{
-            run_id: req.run_id,
+            run_id: request.run_id,
             reason: reason,
             grant_id: grant && grant.id,
             grant_duration: grant && grant_attrs.duration,
@@ -569,27 +569,27 @@ defmodule Emisar.Audit.Events do
     )
   end
 
-  def approval_denied(%Subject{} = subject, %Approvals.Request{} = req, reason) do
+  def approval_denied(%Subject{} = subject, %Approvals.Request{} = request, reason) do
     Audit.changeset(
-      req.account_id,
+      request.account_id,
       "approval.denied",
       actor(subject) ++
         [
           subject_kind: "approval_request",
-          subject_id: req.id,
-          payload: %{run_id: req.run_id, reason: reason}
+          subject_id: request.id,
+          payload: %{run_id: request.run_id, reason: reason}
         ]
     )
   end
 
   # Auto-rejected by the ApprovalExpiry sweep when no operator decided in
   # time — system actor, no acting subject.
-  def approval_expired(%Approvals.Request{} = req) do
-    Audit.changeset(req.account_id, "approval.expired",
+  def approval_expired(%Approvals.Request{} = request) do
+    Audit.changeset(request.account_id, "approval.expired",
       actor_kind: "system",
       subject_kind: "approval_request",
-      subject_id: req.id,
-      payload: %{run_id: req.run_id, expires_at: req.expires_at}
+      subject_id: request.id,
+      payload: %{run_id: request.run_id, expires_at: request.expires_at}
     )
   end
 

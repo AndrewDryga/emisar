@@ -199,8 +199,8 @@ defmodule Emisar.Policies do
         # echoing the verdict.
         {atomize(decision), [], "Default for #{risk}-risk actions"}
 
-      %{"decision" => d} = ov ->
-        {atomize(d), [rule_name(ov)], "Override: #{rule_name(ov)}"}
+      %{"decision" => decision} = override ->
+        {atomize(decision), [rule_name(override)], "Override: #{rule_name(override)}"}
     end
   end
 
@@ -215,7 +215,7 @@ defmodule Emisar.Policies do
 
   defp default_for_tier(defaults, tier) when is_map(defaults) do
     case Map.get(defaults, tier) do
-      d when d in @decisions -> d
+      decision when decision in @decisions -> decision
       _ -> "deny"
     end
   end
@@ -244,7 +244,7 @@ defmodule Emisar.Policies do
   end
 
   defp rule_name(%{"name" => name}) when is_binary(name) and name != "", do: name
-  defp rule_name(%{"action" => a}) when is_binary(a), do: a
+  defp rule_name(%{"action" => action}) when is_binary(action), do: action
   defp rule_name(_), do: "unnamed"
 
   # -- Audit diff ----------------------------------------------------
@@ -265,16 +265,16 @@ defmodule Emisar.Policies do
   # Per-tier diff: %{"high" => %{"from" => "allow", "to" => "require_approval"}, ...}.
   # Tiers that didn't change are omitted so the audit detail can
   # highlight only what moved.
-  defp diff_defaults(before_d, after_d) do
+  defp diff_defaults(before_defaults, after_defaults) do
     @risk_tiers
     |> Enum.flat_map(fn tier ->
-      b = before_d[tier]
-      a = after_d[tier]
+      before_decision = before_defaults[tier]
+      after_decision = after_defaults[tier]
 
-      if b == a do
+      if before_decision == after_decision do
         []
       else
-        [{tier, %{"from" => b, "to" => a}}]
+        [{tier, %{"from" => before_decision, "to" => after_decision}}]
       end
     end)
     |> Enum.into(%{})
@@ -305,13 +305,13 @@ defmodule Emisar.Policies do
       before_keys
       |> MapSet.intersection(after_keys)
       |> Enum.flat_map(fn action ->
-        b = before_map[action]
-        a = after_map[action]
+        before_override = before_map[action]
+        after_override = after_map[action]
 
-        if b == a do
+        if before_override == after_override do
           []
         else
-          [%{"action" => action, "from" => b, "to" => a}]
+          [%{"action" => action, "from" => before_override, "to" => after_override}]
         end
       end)
 

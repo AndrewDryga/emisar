@@ -69,8 +69,8 @@ defmodule Emisar.Mailers.UserNotifier do
   preview of the arguments — that an experienced operator can decide
   from their inbox without context-switching into the app.
   """
-  def deliver_approval_request(%User{} = approver, %{} = req, %{} = run) do
-    url = PublicUrl.url("/app/approvals/#{req.id}")
+  def deliver_approval_request(%User{} = approver, %{} = request, %{} = run) do
+    url = PublicUrl.url("/app/approvals/#{request.id}")
     runner_label = runner_email_label(run)
     args_block = format_args_for_email(run)
     matched = format_matched_rules(run)
@@ -82,7 +82,7 @@ defmodule Emisar.Mailers.UserNotifier do
 
       Action:    #{run.action_id}
       Runner:    #{runner_label}
-      Reason:    #{req.reason || "(none)"}
+      Reason:    #{request.reason || "(none)"}
       Policy:    #{run.policy_reason || "(none)"}#{matched}
 
     Arguments:

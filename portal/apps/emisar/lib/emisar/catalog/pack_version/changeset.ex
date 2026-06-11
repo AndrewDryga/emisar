@@ -14,8 +14,8 @@ defmodule Emisar.Catalog.PackVersion.Changeset do
   end
 
   @doc "Refresh last_seen_at while keeping trust untouched."
-  def touch(%PackVersion{} = pv, now) do
-    pv
+  def touch(%PackVersion{} = pack_version, now) do
+    pack_version
     |> change(last_seen_at: now)
   end
 
@@ -24,8 +24,8 @@ defmodule Emisar.Catalog.PackVersion.Changeset do
   pending; dispatch will refuse until a human decides. Idempotent —
   re-applying the same pending_hash is a no-op.
   """
-  def mark_pending(%PackVersion{} = pv, pending_hash, now) do
-    pv
+  def mark_pending(%PackVersion{} = pack_version, pending_hash, now) do
+    pack_version
     |> change(%{
       pending_hash: pending_hash,
       trust_state: :pending,
@@ -34,10 +34,10 @@ defmodule Emisar.Catalog.PackVersion.Changeset do
   end
 
   @doc "Adopt pending_hash as the trusted hash. Audited via Audit.log."
-  def trust(%PackVersion{} = pv, %{} = subject) do
-    pv
+  def trust(%PackVersion{} = pack_version, %{} = subject) do
+    pack_version
     |> change(%{
-      hash: pv.pending_hash,
+      hash: pack_version.pending_hash,
       pending_hash: nil,
       trust_state: :trusted,
       pinned_at: DateTime.utc_now(),
@@ -47,8 +47,8 @@ defmodule Emisar.Catalog.PackVersion.Changeset do
   end
 
   @doc "Discard pending_hash; keep the trusted hash unchanged."
-  def reject(%PackVersion{} = pv, %{} = subject) do
-    pv
+  def reject(%PackVersion{} = pack_version, %{} = subject) do
+    pack_version
     |> change(%{
       pending_hash: nil,
       trust_state: :trusted,

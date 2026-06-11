@@ -897,21 +897,22 @@ defmodule Emisar.Accounts do
 
   @doc """
   Internal — Billing webhook resolve: the account a Paddle customer id
-  belongs to, nil-or-struct (`peek` — an unknown cid is a meaningful
+  belongs to, nil-or-struct (`peek` — an unknown customer_id is a meaningful
   no-match the webhook handler no-ops on).
   """
-  def peek_account_by_paddle_customer_id(cid) when is_binary(cid) do
+  def peek_account_by_paddle_customer_id(customer_id) when is_binary(customer_id) do
     # Deliberately `all()`, not `not_deleted()`: a tombstoned account's
     # subscription webhooks (cancellation, final invoices) must still
     # resolve so Billing can close the books on it.
     Account.Query.all()
-    |> Account.Query.by_paddle_customer_id(cid)
+    |> Account.Query.by_paddle_customer_id(customer_id)
     |> Repo.peek()
   end
 
   @doc "Internal — Billing: stamp the Paddle customer id after first checkout."
-  def put_account_paddle_customer_id(%Account{} = account, cid) when is_binary(cid) do
-    account |> Account.Changeset.link_paddle_customer(cid) |> Repo.update()
+  def put_account_paddle_customer_id(%Account{} = account, customer_id)
+      when is_binary(customer_id) do
+    account |> Account.Changeset.link_paddle_customer(customer_id) |> Repo.update()
   end
 
   # -- Authorization ----------------------------------------------------
