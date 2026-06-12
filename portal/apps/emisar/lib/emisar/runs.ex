@@ -194,7 +194,7 @@ defmodule Emisar.Runs do
   Internal — called by `dispatch_run/2` and tests. Tests can also call
   this directly to seed runs without exercising policy + dispatch.
   """
-  def create_run(attrs) do
+  def create_run(attrs, opts \\ []) do
     request_id = attrs[:request_id] || Crypto.run_request_id()
     attrs = Map.put(attrs, :request_id, request_id)
     attrs = Map.put(attrs, :queued_at, DateTime.utc_now())
@@ -213,6 +213,7 @@ defmodule Emisar.Runs do
         returning: true
       )
       |> put_run_audit_event(request_id)
+      |> put_decision_audit(request_id, opts[:audit])
       |> Repo.commit_multi()
 
     case result do
@@ -426,9 +427,10 @@ defmodule Emisar.Runs do
       |> Map.merge(policy_attrs(policy, "deny", reason, matched))
       |> Map.put(:status, :denied)
 
-    case create_run(run_attrs) do
-      {:ok, denied} ->
-        log_policy_evaluated(denied, policy, "deny", reason, matched)
+    audit = &Audit.Events.policy_evaluated(&1, policy, "deny", reason, matched)
+
+    case create_run(run_attrs, audit: audit) do
+      {:ok, _denied} ->
         {:error, :denied_by_policy, reason}
 
       {:replay, run} ->
@@ -443,14 +445,14 @@ defmodule Emisar.Runs do
 
   defp dispatch_allow(attrs, policy, reason, matched) do
     attrs = Map.merge(attrs, policy_attrs(policy, "allow", reason, matched))
+    audit = &Audit.Events.policy_evaluated(&1, policy, "allow", reason, matched)
 
-    case create_run(attrs) do
+    # The policy.evaluated decision commits in the SAME transaction as the
+    # run (create_run's Multi), so the trail reads decision → outcome and a
+    # dispatched action can never lack its decision record. Dispatch to the
+    # runner only after that transaction is durable.
+    case create_run(attrs, audit: audit) do
       {:ok, run} ->
-        # Record the policy decision *before* the envelope leaves for the
-        # runner, so the audit trail reads decision → outcome — never the
-        # other way round.
-        log_policy_evaluated(run, policy, "allow", reason, matched)
-
         with :ok <- dispatch_to_runner(run) do
           {:ok, :running, run}
         end
@@ -476,13 +478,12 @@ defmodule Emisar.Runs do
     case lookup_grant(attrs) do
       {:matched, grant} ->
         attrs = Map.merge(attrs, policy_attrs(policy, "allow", "matched approval grant", matched))
+        audit = &Audit.Events.grant_used(&1, grant, policy)
 
-        case create_run(attrs) do
+        # Same atomicity as the allow path: the grant_used decision commits
+        # with the run row, before the run reaches the runner.
+        case create_run(attrs, audit: audit) do
           {:ok, run} ->
-            # Same ordering rule as the allow path: log the grant-based
-            # decision before the run reaches the runner.
-            Audit.record(Audit.Events.grant_used(run, grant, policy))
-
             with :ok <- dispatch_to_runner(run) do
               {:ok, :running, run}
             end
@@ -500,14 +501,17 @@ defmodule Emisar.Runs do
           |> Map.merge(policy_attrs(policy, "require_approval", policy_reason, matched))
           |> Map.merge(%{status: :pending_approval, requires_approval: true})
 
+        audit =
+          &Audit.Events.policy_evaluated(&1, policy, "require_approval", policy_reason, matched)
+
         # Operator's reason ("why I'm running this") goes to the approval
         # request; the policy reason ("why approval is required") stays
-        # on run.policy_reason for the reviewer to see separately.
-        case create_run(attrs) do
+        # on run.policy_reason for the reviewer to see separately. The
+        # require_approval decision commits atomically with the run.
+        case create_run(attrs, audit: audit) do
           {:ok, run} ->
             with {:ok, _req} <-
                    Emisar.Approvals.create_request(run, attrs[:requested_by_id], attrs[:reason]) do
-              log_policy_evaluated(run, policy, "require_approval", policy_reason, matched)
               {:ok, :pending_approval, run}
             end
 
@@ -822,6 +826,26 @@ defmodule Emisar.Runs do
     end)
   end
 
+  # The policy.evaluated / grant_used decision event, committed in the SAME
+  # transaction as the run row (and the run's state-transition event above)
+  # so a dispatched action can't end up with no record of the decision that
+  # let it through. `audit_fn` takes the inserted run and returns the event
+  # changeset. Skipped on the idempotency-replay path (same `fresh?` guard
+  # as the run event) — the original insert already logged the decision.
+  defp put_decision_audit(multi, _fresh_request_id, nil), do: multi
+
+  defp put_decision_audit(multi, fresh_request_id, audit_fn) when is_function(audit_fn, 1) do
+    Multi.run(multi, :decision_audit, fn repo, %{run: run} ->
+      fresh? = is_nil(fresh_request_id) or run.request_id == fresh_request_id
+
+      if is_struct(run, ActionRun) and fresh? do
+        repo.insert(audit_fn.(run))
+      else
+        {:ok, nil}
+      end
+    end)
+  end
+
   # -- Events (progress chunks) ----------------------------------------
   #
   # Called from the runner socket process — no Subject thread; the
@@ -981,15 +1005,5 @@ defmodule Emisar.Runs do
       policy_reason: reason,
       matched_rules: matched
     }
-  end
-
-  # Emits an audit row for every policy evaluation tied to a run, so
-  # operators can answer "what was the policy state when this fired?"
-  # by querying the audit trail by run_id. Includes `policy_version`
-  # — the vsn snapshot at decision time, so a later edit to the
-  # policy doesn't lose the trail of "this decision was made under
-  # policy v5".
-  defp log_policy_evaluated(%ActionRun{} = run, policy, decision, reason, matched) do
-    Audit.record(Audit.Events.policy_evaluated(run, policy, decision, reason, matched))
   end
 end
