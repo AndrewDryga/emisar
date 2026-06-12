@@ -15,7 +15,7 @@
 //	    "emisar": {
 //	      "command": "/usr/local/bin/emisar-mcp",
 //	      "env": {
-//	        "EMISAR_URL":     "https://app.emisar.dev",
+//	        "EMISAR_URL":     "https://emisar.dev",
 //	        "EMISAR_API_KEY": "emk-..."
 //	      }
 //	    }
@@ -66,7 +66,7 @@ const helpText = `emisar-mcp — MCP stdio↔HTTP shim for emisar
 
 Environment:
   EMISAR_URL        Base URL of the control plane (required)
-                    e.g. https://app.emisar.dev
+                    e.g. https://emisar.dev
   EMISAR_API_KEY    Operator API key (required), e.g. emk-...
   EMISAR_CLIENT     Optional label that shows up in the audit log
                     (claude-desktop, cursor, codex, …). Defaults to

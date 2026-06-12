@@ -203,7 +203,7 @@ log "installed:"
 cat <<NEXT
 
 Next steps:
-  - Open https://app.emisar.dev/app/agents in your browser.
+  - Open https://emisar.dev/app/agents in your browser.
   - Pick your LLM client; the page shows you the per-client config
     snippet (path + env vars) to paste into the client launcher.
 
