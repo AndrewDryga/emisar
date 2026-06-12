@@ -210,6 +210,24 @@ defmodule Emisar.OAuthTest do
 
       assert tokens.refresh_token == nil
     end
+
+    test "narrows the granted scope to supported values, dropping anything else",
+         %{client: client, subject: subject} do
+      {verifier, challenge} = pkce()
+      code = issue!(subject, client, challenge, scope: "mcp evil:custom offline_access")
+
+      {:ok, tokens} =
+        OAuth.exchange_code(%{
+          "code" => code,
+          "client_id" => client.id,
+          "redirect_uri" => @redirect,
+          "code_verifier" => verifier
+        })
+
+      # `evil:custom` is client-controlled in the consent POST; only the
+      # supported scopes persist on the grant.
+      assert tokens.scope == "mcp offline_access"
+    end
   end
 
   describe "refresh/1" do

@@ -3,8 +3,13 @@ defmodule Emisar.OAuth do
   Minimal OAuth 2.1 authorization server for remote MCP clients
   (Claude.ai, ChatGPT), implementing the subset the MCP authorization
   spec requires: Dynamic Client Registration (RFC 7591), authorization
-  code + PKCE (S256), refresh tokens, and resource/audience binding
-  (RFC 8707).
+  code + PKCE (S256), and refresh tokens.
+
+  The RFC 8707 `resource` parameter is accepted and stored on the code +
+  token, but is NOT yet enforced as an audience binding — there is one
+  protected resource (the MCP endpoint) today, so audience confusion has
+  no surface. Before adding a second protected resource, enforce
+  `token.resource` against the canonical resource URI at resolve time.
 
   Tokens are backed by an `api_keys` row minted at consent, so the
   existing MCP auth + scoping + attribution logic is reused unchanged:
@@ -107,7 +112,7 @@ defmodule Emisar.OAuth do
           redirect_uri: params["redirect_uri"],
           code_challenge: params["code_challenge"],
           code_challenge_method: params["code_challenge_method"] || "S256",
-          scope: params["scope"] || "mcp offline_access",
+          scope: narrow_scope(params["scope"]),
           resource: params["resource"],
           expires_at: secs_from_now(@code_ttl_s)
         })
@@ -333,4 +338,18 @@ defmodule Emisar.OAuth do
   # (not revoked / deleted / expired) — the same liveness gate the access
   # token's resolve path uses.
   defp backing_key_usable?(api_key_id), do: not is_nil(ApiKeys.peek_api_key_by_id(api_key_id))
+
+  # Keep only supported scopes from the (client-controlled) consent POST,
+  # so a raw scope string can't persist something the consent UI didn't
+  # show — and a future scope that maps to real capability on the backing
+  # key can't be smuggled past `@supported_scopes`. Empty → the default.
+  defp narrow_scope(raw) do
+    (raw || "")
+    |> String.split(~r/\s+/, trim: true)
+    |> Enum.filter(&(&1 in @supported_scopes))
+    |> case do
+      [] -> "mcp offline_access"
+      scopes -> Enum.join(scopes, " ")
+    end
+  end
 end
