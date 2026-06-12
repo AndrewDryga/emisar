@@ -33,6 +33,7 @@ import (
 	"bytes"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -228,40 +229,30 @@ func (b *bridge) forward(frame []byte) ([]byte, error) {
 }
 
 // idempotencyKey derives a stable per-frame token from the JSON-RPC
-// `id` field. Re-sends of the same id (e.g. client retry within the
-// same process) collapse to one run at the portal. Notifications
-// (no id) get no key.
+// envelope `id`. Re-sends of the same id (e.g. a client retry within the
+// same process) collapse to one run at the portal. Notifications (no id)
+// and explicit null ids get no key.
 //
-// We pluck `id` with a cheap string match instead of decoding JSON;
-// the bridge has no business parsing the payload it's just relaying.
+// We decode ONLY the top-level `id` (as a raw token) — not the rest of
+// the payload, which the bridge still relays verbatim. An earlier
+// byte-scan for the first `"id"` could latch onto a nested
+// `params.…id` that serialized before the envelope id and mint an empty
+// or wrong key; a real decode keys off the right field regardless of key
+// order or nesting.
 func (b *bridge) idempotencyKey(frame []byte) string {
-	// Look for `"id":<value>` — the spec allows numbers, strings, null.
-	idx := bytes.Index(frame, []byte(`"id"`))
-	if idx < 0 {
+	var envelope struct {
+		ID json.RawMessage `json:"id"`
+	}
+	if err := json.Unmarshal(frame, &envelope); err != nil {
 		return ""
 	}
-	// Skip past `"id"` and any whitespace + colon.
-	tail := frame[idx+4:]
-	for len(tail) > 0 && (tail[0] == ' ' || tail[0] == ':' || tail[0] == '\t') {
-		tail = tail[1:]
-	}
-	if len(tail) == 0 {
+	id := bytes.TrimSpace(envelope.ID)
+	if len(id) == 0 || bytes.Equal(id, []byte("null")) {
 		return ""
 	}
-
-	// Take everything up to the next comma or closing brace.
-	end := len(tail)
-	for i, c := range tail {
-		if c == ',' || c == '}' {
-			end = i
-			break
-		}
-	}
-	val := bytes.TrimSpace(tail[:end])
-	if len(val) == 0 || bytes.Equal(val, []byte("null")) {
-		return ""
-	}
-	return b.sessionID + ":" + strings.Trim(string(val), `"`)
+	// A JSON-RPC id is a string or a number. Strip the quotes from a
+	// string id so `"7"` and `7` map to the same key.
+	return b.sessionID + ":" + strings.Trim(string(id), `"`)
 }
 
 // buildUserAgent stamps every cloud request with structured client +

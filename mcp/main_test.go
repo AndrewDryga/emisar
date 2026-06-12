@@ -64,6 +64,30 @@ func TestIdempotencyKey_NormalizesStringID(t *testing.T) {
 	}
 }
 
+func TestIdempotencyKey_KeysOffEnvelopeIDNotNested(t *testing.T) {
+	b := &bridge{sessionID: "s"}
+
+	// params (carrying its own "id"-ish content) serialized BEFORE the
+	// envelope id. A naive first-"id" byte-scan would latch onto the nested
+	// occurrence; the envelope id is the only correct key.
+	frame := []byte(`{"method":"tools/call","params":{"arguments":{"id":"nested"}},"id":42}`)
+	if got := b.idempotencyKey(frame); got != "s:42" {
+		t.Errorf("must key off the envelope id: got %q, want %q", got, "s:42")
+	}
+
+	// A param value that is literally the string "id" must not be mistaken
+	// for the (absent) envelope id of a notification.
+	notif := []byte(`{"method":"tools/call","params":{"name":"id"}}`)
+	if got := b.idempotencyKey(notif); got != "" {
+		t.Errorf("notification with an \"id\" param value should yield no key, got %q", got)
+	}
+
+	// Malformed JSON yields no key (forwarded verbatim, just not deduped).
+	if got := b.idempotencyKey([]byte(`{not json`)); got != "" {
+		t.Errorf("malformed frame should yield no key, got %q", got)
+	}
+}
+
 func TestCheckEndpointScheme(t *testing.T) {
 	cases := []struct {
 		base          string
