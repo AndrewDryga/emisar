@@ -36,16 +36,22 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       Emisar.Fixtures.policy_fixture(account_id: account.id)
       runbook = published_runbook!(user, account)
 
-      {:ok, lv, _html} = live(conn, ~p"/app/runbooks/#{runbook.id}/run")
+      {:ok, lv, idle_html} = live(conn, ~p"/app/runbooks/#{runbook.id}/run")
+
+      # Before dispatch the single table is the plan: heading + step count.
+      assert idle_html =~ "Plan"
+      assert idle_html =~ "1 step"
 
       html = render_submit(lv, "dispatch", %{"reason" => "rolling restart"})
       assert html =~ "Runbook dispatched"
 
       # The engine broadcast the created run before dispatch returned; the
-      # next render has processed it into the results stream — no redirect,
-      # the operator watches results arrive on this page.
+      # next render has processed it into the execution stream — no redirect,
+      # the operator watches results arrive on this page. The single table
+      # flips its heading from "Plan" to "Execution" and the plan rows are
+      # replaced by the live runs.
       html = render(lv)
-      assert html =~ "Results"
+      assert html =~ "Execution"
       assert html =~ "linux.uptime"
       assert html =~ "on #{runner.name}"
       assert html =~ ~p"/app/runs/"

@@ -245,25 +245,38 @@ defmodule EmisarWeb.RunbookRunLive do
           results stream in below as they arrive.
         </p>
 
-        <%!-- Results — appears once dispatched and updates live as the
-             engine creates + finishes runs. Short rows, link to the
-             full run for output. --%>
+        <%!-- One table, not two. Idle: the plan (numbered steps). Once
+             dispatched: the live runs replace those rows in place, while
+             the planned-step count stays in the header for context — a
+             step fans out to one run per targeted runner, so there can be
+             more runs than steps. --%>
         <section
-          :if={@execution}
-          id="execution-results"
+          id="execution"
           class="overflow-hidden rounded-xl border border-zinc-900 bg-zinc-950/40"
         >
           <header class="flex items-center justify-between border-b border-zinc-900 px-5 py-3">
-            <h2 class="text-sm font-semibold text-zinc-100">Results</h2>
+            <h2 class="text-sm font-semibold text-zinc-100">
+              {if @execution, do: "Execution", else: "Plan"}
+            </h2>
             <span class="text-xs text-zinc-500">
-              {finished_count(@run_statuses)}/{@execution.total} finished
-              <span :if={failed_count(@run_statuses) > 0} class="text-rose-400">
-                · {failed_count(@run_statuses)} failed
+              {length(@steps)} {if length(@steps) == 1, do: "step", else: "steps"}
+              <span :if={@execution}>
+                · {finished_count(@run_statuses)}/{@execution.total} finished
+                <span :if={failed_count(@run_statuses) > 0} class="text-rose-400">
+                  · {failed_count(@run_statuses)} failed
+                </span>
               </span>
             </span>
           </header>
 
-          <ul id="execution-runs" phx-update="stream" class="divide-y divide-zinc-900">
+          <%!-- Live runs once dispatched. Each row updates in place as its
+               run transitions (the status badge flips to success / failed). --%>
+          <ul
+            :if={@execution}
+            id="execution-runs"
+            phx-update="stream"
+            class="divide-y divide-zinc-900"
+          >
             <li
               :for={{dom_id, run} <- @streams.execution_runs}
               id={dom_id}
@@ -287,50 +300,42 @@ defmodule EmisarWeb.RunbookRunLive do
               </.link>
             </li>
           </ul>
-        </section>
 
-        <%!-- Plan — ordered numbered list, terminal-y. Empty state
-             tells the operator to edit first instead of dispatching
-             nothing. --%>
-        <section class="overflow-hidden rounded-xl border border-zinc-900 bg-zinc-950/40">
-          <header class="flex items-center justify-between border-b border-zinc-900 px-5 py-3">
-            <h2 class="text-sm font-semibold text-zinc-100">Plan</h2>
-            <span class="text-xs text-zinc-500">
-              {length(@steps)} {if length(@steps) == 1, do: "step", else: "steps"}
-            </span>
-          </header>
-
-          <%= if @steps == [] do %>
-            <div class="px-5 py-10 text-center text-sm text-zinc-500">
-              No steps defined.
-              <.link
-                navigate={~p"/app/runbooks/#{@runbook.id}/edit"}
-                class="text-indigo-400 hover:text-indigo-300"
-              >
-                Edit the runbook
-              </.link>
-              first.
-            </div>
-          <% else %>
-            <ol class="divide-y divide-zinc-900">
-              <li
-                :for={{step, idx} <- Enum.with_index(@steps)}
-                class="flex items-start gap-3 px-5 py-3"
-              >
-                <span class="grid h-6 w-6 flex-shrink-0 place-items-center rounded-full bg-zinc-800 text-xs font-semibold text-zinc-300">
-                  {idx + 1}
-                </span>
-                <div class="min-w-0 flex-1 text-sm">
-                  <div class="truncate font-mono text-zinc-200">
-                    {step["action"] || step["action_id"] || "—"}
-                  </div>
-                  <p :if={step["description"]} class="mt-0.5 truncate text-xs text-zinc-500">
-                    {step["description"]}
-                  </p>
+          <%!-- Plan steps, shown until the first dispatch. --%>
+          <ol :if={!@execution && @steps != []} class="divide-y divide-zinc-900">
+            <li
+              :for={{step, idx} <- Enum.with_index(@steps)}
+              class="flex items-start gap-3 px-5 py-3"
+            >
+              <span class="grid h-6 w-6 flex-shrink-0 place-items-center rounded-full bg-zinc-800 text-xs font-semibold text-zinc-300">
+                {idx + 1}
+              </span>
+              <div class="min-w-0 flex-1 text-sm">
+                <div class="truncate font-mono text-zinc-200">
+                  {step["action"] || step["action_id"] || "—"}
                 </div>
-              </li>
-            </ol>
-          <% end %>
+                <p :if={step["description"]} class="mt-0.5 truncate text-xs text-zinc-500">
+                  {step["description"]}
+                </p>
+              </div>
+            </li>
+          </ol>
+
+          <%!-- Nothing to run — nudge to the editor instead of dispatching
+               an empty runbook. --%>
+          <div
+            :if={!@execution && @steps == []}
+            class="px-5 py-10 text-center text-sm text-zinc-500"
+          >
+            No steps defined.
+            <.link
+              navigate={~p"/app/runbooks/#{@runbook.id}/edit"}
+              class="text-indigo-400 hover:text-indigo-300"
+            >
+              Edit the runbook
+            </.link>
+            first.
+          </div>
         </section>
 
         <%!-- Dispatch form — full width below the plan. Target select
