@@ -64,6 +64,35 @@ func TestIdempotencyKey_NormalizesStringID(t *testing.T) {
 	}
 }
 
+func TestCheckEndpointScheme(t *testing.T) {
+	cases := []struct {
+		base          string
+		allowInsecure bool
+		ok            bool
+	}{
+		{"https://emisar.dev", false, true},
+		{"https://example.com:8443", false, true},
+		{"http://localhost:4000", false, true},
+		{"http://127.0.0.1:4000", false, true},
+		{"http://[::1]:4000", false, true},
+		{"http://emisar.dev", false, false},   // cleartext to public host → reject
+		{"http://192.168.1.10", false, false}, // private LAN is still non-loopback
+		{"http://emisar.dev", true, true},     // explicit override
+		{"ws://emisar.dev", false, false},     // wrong scheme for an HTTP POST
+		{"ftp://emisar.dev", false, false},    // nonsense scheme
+		{"://bad", false, false},              // unparseable
+	}
+	for _, c := range cases {
+		err := checkEndpointScheme(c.base, c.allowInsecure)
+		if c.ok && err != nil {
+			t.Errorf("%q (allowInsecure=%v): want ok, got %v", c.base, c.allowInsecure, err)
+		}
+		if !c.ok && err == nil {
+			t.Errorf("%q (allowInsecure=%v): want error, got nil", c.base, c.allowInsecure)
+		}
+	}
+}
+
 func TestNewSessionID_UniquePerProcess(t *testing.T) {
 	// Bind to vars so the comparison is two distinct evaluations, not a
 	// syntactically-identical `f() == f()` (which static analysis flags as

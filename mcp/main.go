@@ -36,7 +36,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"runtime"
 	"strings"
@@ -95,15 +97,23 @@ func main() {
 		}
 	}
 
-	url := strings.TrimRight(os.Getenv("EMISAR_URL"), "/")
+	base := strings.TrimRight(os.Getenv("EMISAR_URL"), "/")
 	apiKey := os.Getenv("EMISAR_API_KEY")
 
-	if url == "" || apiKey == "" {
+	if base == "" || apiKey == "" {
 		fatalln("EMISAR_URL and EMISAR_API_KEY must both be set (try --help)")
 	}
 
+	// Fail closed on a cleartext URL to a non-loopback host: an http:// base
+	// ships the Bearer API key (and every request) in plaintext, inviting
+	// credential theft and MITM. Mirror the runner's cloud.allow_insecure
+	// opt-in so a localhost dev endpoint still works.
+	if err := checkEndpointScheme(base, os.Getenv("EMISAR_ALLOW_INSECURE") == "1"); err != nil {
+		fatalln(err)
+	}
+
 	b := &bridge{
-		endpoint:  url + "/api/mcp/rpc",
+		endpoint:  base + "/api/mcp/rpc",
 		apiKey:    apiKey,
 		userAgent: buildUserAgent(),
 		client:    &http.Client{Timeout: httpTimeout},
@@ -281,6 +291,41 @@ func newSessionID() string {
 		return "nosession"
 	}
 	return hex.EncodeToString(b[:])
+}
+
+// checkEndpointScheme refuses a cleartext (http) EMISAR_URL to a non-loopback
+// host, where the Bearer key would travel in plaintext — credential theft +
+// MITM. https is always fine; http is allowed only to localhost/127.0.0.1/::1,
+// or when EMISAR_ALLOW_INSECURE=1 opts in (mirrors the runner's
+// cloud.allow_insecure). Anything other than http/https is rejected — the
+// bridge POSTs over HTTP, not a websocket.
+func checkEndpointScheme(base string, allowInsecure bool) error {
+	u, err := url.Parse(base)
+	if err != nil {
+		return fmt.Errorf("EMISAR_URL %q is not a valid URL: %w", base, err)
+	}
+	switch u.Scheme {
+	case "https":
+		return nil
+	case "http":
+		if allowInsecure || isLoopbackHost(u.Hostname()) {
+			return nil
+		}
+		return fmt.Errorf("EMISAR_URL %q uses cleartext http to a non-loopback host, "+
+			"which sends the API key in plaintext; use https, or set "+
+			"EMISAR_ALLOW_INSECURE=1 to override", base)
+	default:
+		return fmt.Errorf("EMISAR_URL %q must be http or https, got scheme %q", base, u.Scheme)
+	}
+}
+
+// isLoopbackHost reports whether host is localhost or a loopback IP.
+func isLoopbackHost(host string) bool {
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 func fatalln(args ...any) {
