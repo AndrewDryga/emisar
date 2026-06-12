@@ -76,6 +76,65 @@
         </li>
       </ul>
 
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">
+        Worked example: a fleet health-check
+      </h2>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        The classic case for your first runbook is the
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">health-check.sh</code>
+        that SSHes to every node and greps a dozen things. As a runbook it's an ordered list of
+        <strong class="text-zinc-200">read-only</strong>
+        steps pointed at a runner <strong class="text-zinc-200">group</strong>
+        — no SSH, no inbound
+        port, every check declared and journaled. Because the checks are read-only they sit in the
+        low-risk tier, so they fan out across the whole fleet without stopping for an approval:
+      </p>
+      <ul class="mt-4 space-y-2 text-sm leading-6 text-zinc-400">
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-600">—</span>
+          <span>
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">linux.uptime</code>
+            and <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">systemd.failed_units</code>
+            on the <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">edge</code>
+            group — is anything down, did anything crash-loop since the last sweep.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-600">—</span>
+          <span>
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">linux.disk_usage</code>
+            and <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">linux.memory</code>
+            — the two things that fill before they page you.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-600">—</span>
+          <span>
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">time.chrony_tracking</code>
+            — clock drift, the quiet cause of half of "impossible" distributed bugs.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-600">—</span>
+          <span>
+            one cluster-wide step —
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">consul.node_health</code>
+            from a single runner that can reach Consul — for the leader, members, and any failing
+            service checks.
+          </span>
+        </li>
+      </ul>
+      <p class="mt-4 text-sm leading-6 text-zinc-400">
+        Dispatch it with a reason and each group step fans out in parallel waves — one execution row
+        per node per step, with that node's output, exit code, and duration. Publish it once and the
+        whole sweep is a single click for the on-call, or a single
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">get_runbook</code>
+        for an agent triaging an alert at 3 a.m. Swap a read for a remediation later — a
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">systemd.unit_restart</code>
+        for a unit you found dead — and that one step stops for approval while the read-only ones
+        keep flowing.
+      </p>
+
       <h2 class="mt-10 text-2xl font-semibold text-zinc-50">Runbooks and your LLM</h2>
       <p class="mt-3 text-sm leading-6 text-zinc-400">
         Connected agents see two extra tools:
