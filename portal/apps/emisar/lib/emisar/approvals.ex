@@ -274,7 +274,13 @@ defmodule Emisar.Approvals do
              subject,
              Authorizer.decide_approval_permission()
            ),
-         :ok <- Subject.ensure_in_account(subject, request.account_id) do
+         :ok <- Subject.ensure_in_account(subject, request.account_id),
+         # Re-gate pack trust before approving: the pack could have drifted
+         # to :pending (a tampered re-advertisement) since the run was
+         # parked. Approving re-dispatches directly, so without this the
+         # operator's "yes" against the trusted bytes would ship the new
+         # ones. Refuse early — the request stays pending, no stuck run.
+         :ok <- Runs.recheck_run_pack_trust(request.run_id) do
       by_user_id = Subject.actor_id(subject)
 
       grant_attrs = %{

@@ -825,4 +825,58 @@ defmodule Emisar.RunsTest do
       assert %DateTime{} = running.started_at
     end
   end
+
+  describe "recheck_run_pack_trust/1 (approval-time pack-trust re-gate)" do
+    test "refuses a run whose action pack drifted to :pending" do
+      account = account_fixture()
+      runner = runner_fixture(account_id: account.id)
+
+      # A custom pack lands :pending (untrusted) — the same state a tampered
+      # re-advertisement produces during an approval window.
+      {:ok, _} =
+        Emisar.Catalog.observe_state(runner, %{
+          "hostname" => "h",
+          "version" => "0.1",
+          "labels" => %{},
+          "packs" => %{"linux-core" => %{"version" => "1.2.3", "hash" => "sha256:DRIFT"}},
+          "actions" => [
+            %{
+              "id" => "linux.uptime",
+              "pack_id" => "linux-core",
+              "title" => "Uptime",
+              "kind" => "exec",
+              "risk" => "high",
+              "args" => []
+            }
+          ]
+        })
+
+      {:ok, run} =
+        Runs.create_run(%{
+          account_id: account.id,
+          runner_id: runner.id,
+          action_id: "linux.uptime",
+          source: "operator",
+          args: %{}
+        })
+
+      assert {:error, :pack_untrusted} = Runs.recheck_run_pack_trust(run.id)
+    end
+
+    test "passes when the runner no longer advertises the action (nothing to dispatch to)" do
+      account = account_fixture()
+      runner = runner_fixture(account_id: account.id)
+
+      {:ok, run} =
+        Runs.create_run(%{
+          account_id: account.id,
+          runner_id: runner.id,
+          action_id: "ghost.action",
+          source: "operator",
+          args: %{}
+        })
+
+      assert :ok = Runs.recheck_run_pack_trust(run.id)
+    end
+  end
 end

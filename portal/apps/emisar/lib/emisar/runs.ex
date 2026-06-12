@@ -286,6 +286,33 @@ defmodule Emisar.Runs do
     end
   end
 
+  @doc """
+  Internal — re-validate that an already-created run's action pack is STILL
+  trusted, for the approval path. `dispatch_run_for_account` gates pack
+  trust at run creation, but `Approvals.approve_request` re-dispatches the
+  parked run directly; without this re-check a runner that re-advertised
+  the pack with a tampered hash during the approval window (flipping the
+  pack to `:pending`) would have the operator's approval ship the new,
+  untrusted bytes. Returns `:ok` or `{:error, :pack_untrusted |
+  :action_not_found}` — the caller refuses the approval on error.
+  """
+  def recheck_run_pack_trust(run_id) when is_binary(run_id) do
+    run = fetch_run!(run_id)
+
+    case fetch_advertised_action(run.runner_id, run.action_id, run.account_id) do
+      {:ok, action} ->
+        check_pack_trust(action, run.account_id)
+
+      {:error, :action_not_found} ->
+        # The runner no longer advertises this action (offline / pack
+        # unloaded) — the dispatch itself will fail to reach a live action,
+        # so there is nothing to ship the wrong bytes to. The threat this
+        # gate closes is an advertised pack that DRIFTED to :pending; that
+        # path returns the action above and is refused by check_pack_trust.
+        :ok
+    end
+  end
+
   # If the caller supplied an Idempotency-Key on this api_key, an earlier
   # call that won the unique-index race owns the run. We re-shape the
   # cached row into the same `{:ok, status_atom, run}` tuple the live
