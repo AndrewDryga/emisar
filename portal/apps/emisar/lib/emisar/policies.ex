@@ -298,13 +298,20 @@ defmodule Emisar.Policies do
     %{"added" => added, "removed" => removed, "changed" => changed}
   end
 
+  # Action ids are matched case-INSENSITIVELY. A deny override like
+  # `*.drop_*` must also catch `cassandra.DROP_table` (the safe direction
+  # for a security matcher — a case slip can't downgrade a deny into the
+  # tier default, which for low/medium is allow), and it keeps policy
+  # matching consistent with the case-insensitive `ilike` the Runs page
+  # already uses to filter by action_id. Anchored (`^…$`) and
+  # `Regex.escape`d so literal dots/underscores aren't wildcards — only `*`.
   defp glob_match?(pattern, str) do
     if String.contains?(pattern, "*") do
       escaped = pattern |> Regex.escape() |> String.replace("\\*", ".*")
-      regex = Regex.compile!("^" <> escaped <> "$")
+      regex = Regex.compile!("^" <> escaped <> "$", "i")
       Regex.match?(regex, str)
     else
-      pattern == str
+      String.downcase(pattern) == String.downcase(str)
     end
   end
 end

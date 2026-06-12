@@ -101,6 +101,26 @@ defmodule Emisar.PoliciesTest do
                )
     end
 
+    test "overrides match action_id case-insensitively (a case slip can't dodge a deny)" do
+      rules = %{
+        "schema_version" => 2,
+        "defaults" => %{"low" => "allow"},
+        "overrides" => [
+          %{"name" => "block-drops", "action" => "*.drop_*", "decision" => "deny"}
+        ]
+      }
+
+      # The uppercased action id still trips the lowercase deny glob — were
+      # the match case-sensitive it would fall through to the low-tier
+      # default (allow), silently defeating the deny.
+      assert {:deny, ["block-drops"], _} =
+               Policies.evaluate(
+                 %Policy{rules: rules},
+                 %{"action_id" => "cassandra.DROP_table", "risk" => "low"},
+                 %{}
+               )
+    end
+
     test "first matching override wins" do
       rules = %{
         "schema_version" => 2,
