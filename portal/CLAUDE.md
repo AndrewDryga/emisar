@@ -4,7 +4,7 @@
 
 > **Identity vs tenancy:** `Emisar.Users` owns identity (the User schema, registration, profile/credential self-service, sign-in recording, and the user-row internals Auth/Accounts compose) — deliberately **cross-account**, so nothing in it scopes by account and it has no Authorizer (self-service authz is the `%Subject{actor: …}` match). `Emisar.Accounts` owns tenancy: accounts, memberships, invitations, and team administration (which calls `Users` internals for the user-row mechanics while keeping the permission + audit semantics).
 
-The **Iron Laws** below are non-negotiable. The user has had to call out the same violations repeatedly; the mechanical subset is now enforced by **Credo** — custom AST checks run on every edit (blocking hook) and at the gate (see [Enforcement](#enforcement)). Treat every law as a hard requirement, not a suggestion.
+The **Iron Laws** below are non-negotiable. The user has had to call out the same violations repeatedly; the mechanical subset is now enforced by **Credo** — custom AST checks YOU run after every portal edit (`mix credo <file>`) and that gate every commit (see [Enforcement](#enforcement)). Treat every law as a hard requirement, not a suggestion.
 
 ---
 
@@ -72,7 +72,7 @@ Lower-stakes taste calls. Not Iron Laws, but the defaults. **The user adds to th
 
 ## Iron Laws (non-negotiable)
 
-Numbered so the hook, `/iron-review`, and code review can cite them. **Architecture laws (IL-1…IL-11)** are the layered-context shape — the part the user repeats most. **Phoenix-safety laws (IL-12…IL-19)** are the generally-applicable Elixir/Phoenix guardrails. **IL-20** is process. Detail + code for each architecture law is in the [Reference](#reference--module-by-module) section it points to.
+Numbered so Credo, `/iron-review`, and code review can cite them. **Architecture laws (IL-1…IL-11)** are the layered-context shape — the part the user repeats most. **Phoenix-safety laws (IL-12…IL-19)** are the generally-applicable Elixir/Phoenix guardrails. **IL-20** is process. Detail + code for each architecture law is in the [Reference](#reference--module-by-module) section it points to.
 
 ### Architecture laws (the layered-context shape)
 
@@ -124,7 +124,7 @@ Project skills live in **`../.claude/skills/`** (repo root, so they're found fro
 | `/ship-review` | Reviewing a diff before merge through the product hats **and** the Iron Laws, in parallel. The product-level companion to `/code-review` (bugs) and `/iron-review` (laws). |
 | `/new-context` | Scaffolding a whole new context (context + authorizer + schema + query + changeset + tests) in the standard shape. |
 | `/context-fn` | Adding one read or write function to an existing context the canonical way. |
-| `/iron-review` | Checking a diff (or the working tree) against IL-1…IL-20. The skill form of the enforcement hook. |
+| `/iron-review` | Checking a diff (or the working tree) against IL-1…IL-20. The judgment-side complement to the Credo checks. |
 | `/verify-api` | In doubt whether a function/arg/option/CLI flag exists with that signature — check the repo, `deps/`, `mix help`/IEx, HexDocs, or `--help` before writing it (prime directive #7). |
 | `/investigate` | Root-causing a crash, exception, stacktrace, failing test, or wrong behavior — find the cause, not a symptom. |
 | `/perf` | A slow page/list/query, hot DB, or heavy socket — N+1, missing preloads/indexes, `stream` vs `assign`. |
@@ -404,14 +404,13 @@ Two layers — mechanical rules run by machines, judgment rules by review:
    house-rule checks are custom AST checks in `credo/checks/`
    (`Emisar.Checks.*`), wired into `.credo.exs` alongside the stock checks
    (including `UnsafeToAtom` for IL-14 and `StrictModuleLayout` for the
-   directive order). They run twice:
-   - **on every edit** — the `PostToolUse` hook
-     (`../.claude/hooks/iron-law-verifier.sh`) runs `mix credo <file>` on
-     the touched portal `.ex`/`.exs` and **blocks with exit 2** on any
-     finding (~0.6s, read-only). Disable: delete the `PostToolUse` block
-     from `../.claude/settings.json`.
-   - **at the gate** — `mix credo` is part of the IL-20 verify loop and
-     must report zero.
+   directive order). Run it twice — there is no hook doing this for you:
+   - **after every edit** — when you change a portal `.ex`/`.exs`, run
+     `mix credo <file>` from `portal/` (~0.6s) before moving on, and fix
+     every finding immediately. Editing without re-checking is how the
+     same violations recurred for weeks.
+   - **at the gate** — the full `mix credo` is part of the IL-20 verify
+     loop and must report zero before any commit.
 
    Covered mechanically: IL-1, IL-2, IL-6, IL-7, IL-8, IL-12 (schemas AND
    migrations), IL-13 (perform-head args), IL-14, plus the house rules —

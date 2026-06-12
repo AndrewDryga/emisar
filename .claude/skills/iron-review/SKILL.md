@@ -1,6 +1,6 @@
 ---
 name: iron-review
-description: Review a diff or the working tree against the Emisar Iron Laws (IL-1…IL-20) — the architecture greps plus the judgment checks the PostToolUse hook can't do. Use when reviewing portal/ Elixir before a PR, after a refactor, or to double-check context/query/changeset/LiveView changes. Reports law · file:line · fix.
+description: Review a diff or the working tree against the Emisar Iron Laws (IL-1…IL-20) — the mechanical Credo checks plus the judgment checks a static analyzer can't do. Use when reviewing portal/ Elixir before a PR, after a refactor, or to double-check context/query/changeset/LiveView changes. Reports law · file:line · fix.
 effort: medium
 argument-hint: "[path or git ref, default = working tree]  [--fix]"
 allowed-tools: Read, Grep, Glob, Bash
@@ -8,11 +8,11 @@ allowed-tools: Read, Grep, Glob, Bash
 
 # Iron Law review
 
-Check `portal/` Elixir against the Iron Laws in `portal/CLAUDE.md`. The
-`PostToolUse` hook already blocks the regex-precise subset (IL-1/2/6/7/8/12) on
-every edit; this skill **re-runs those** (in case the hook is off) **and adds the
-judgment laws** — including IL-14 and IL-16, whose safety depends on where a value
-came from, which the hook deliberately can't decide. Default scope: the working
+Check `portal/` Elixir against the Iron Laws in `portal/CLAUDE.md`. The custom
+Credo checks (`Emisar.Checks.*`) cover the mechanical subset — start by running
+`mix credo` from `portal/` and treating any finding as a failure; this skill
+**adds the judgment laws** — including IL-15 and IL-16, whose safety depends on
+where a value came from, which a static check deliberately can't decide. Default scope: the working
 tree (`git diff` + untracked). A path or git ref narrows it.
 
 Read-only by default. With `--fix`, apply only the unambiguous mechanical fixes

@@ -25,8 +25,9 @@ If there's no plan yet and the change is non-trivial, run `/plan` first.
    cd portal && mix compile --warnings-as-errors && mix format
    mix test <the file(s) this step touched>
    ```
-   The `PostToolUse` hook also fires on each edit and will block IL-1/2/6/7/8/12
-   live — fix what it reports immediately; that's the law, not a nuisance.
+   After each portal `.ex`/`.exs` edit, run `mix credo <that file>` from
+   `portal/` (~0.6s) — the `Emisar.Checks.*` findings are the law, not a
+   nuisance; fix them immediately, never carry them to the gate.
 4. **Red gate → stop.** Don't pile the next step on a broken one. Fix it, or report
    the blocker with the error and your read on it. Never edit a test to make a real
    failure pass.

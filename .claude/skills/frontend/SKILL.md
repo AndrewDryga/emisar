@@ -22,7 +22,7 @@ front-end dependency without a real reason.
 - Match the existing screens' Tailwind utility patterns. Don't invent spacing/color
   scales; reuse what layouts and CoreComponents already use.
 
-## LiveView Iron Law (IL-18 — the hook won't catch these; you must)
+## LiveView Iron Law (IL-18 — Credo won't catch these; you must)
 
 - **No unconditional DB/context read in `mount`** — `mount` runs twice. Use
   `assign_async`, or `connected?(socket)` with a cheap disconnected branch.
