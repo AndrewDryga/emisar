@@ -10,7 +10,7 @@ import Config
 #   PADDLE_WEBHOOK_SECRET  — required when PADDLE_API_KEY is set
 #
 # Optional prod env vars:
-#   PHX_HOST               — public hostname (defaults to app.emisar.dev)
+#   PHX_HOST               — public hostname (defaults to emisar.dev)
 #   PORT                   — HTTP port (default 4000)
 #   FORCE_SSL              — "false" disables HTTPS redirect + secure cookies (default true)
 #   POOL_SIZE              — Ecto pool size (default 10)
@@ -64,7 +64,7 @@ if config_env() == :prod do
     System.get_env("SECRET_KEY_BASE") ||
       raise "SECRET_KEY_BASE is missing (generate with: mix phx.gen.secret)"
 
-  host = System.get_env("PHX_HOST") || "app.emisar.dev"
+  host = System.get_env("PHX_HOST") || "emisar.dev"
 
   # FORCE_SSL marks this deployment as HTTPS-fronted: it drives the public
   # URL scheme/port and the secure-cookie pin below. The actual HTTP→HTTPS

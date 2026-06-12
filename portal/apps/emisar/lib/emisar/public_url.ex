@@ -12,7 +12,7 @@ defmodule Emisar.PublicUrl do
   config drives every absolute URL the app emits.
   """
 
-  @doc "The public base URL, e.g. `https://app.emisar.dev` — no trailing slash."
+  @doc "The public base URL, e.g. `https://emisar.dev` — no trailing slash."
   def base do
     url = Application.get_env(:emisar_web, EmisarWeb.Endpoint, []) |> Keyword.get(:url, [])
 
