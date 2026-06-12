@@ -234,6 +234,30 @@ defmodule Emisar.ApprovalsTest do
              )
     end
 
+    test "an expired (not-yet-swept) pending request cannot be approved" do
+      {account, run} = run_fixture()
+      subject = operator_subject(account)
+      {:ok, request} = Approvals.create_request(run, subject.actor.id, "needs approve")
+
+      # Simulate the request lapsing past its 24h expiry before the
+      # every-few-minutes sweep flips it to :expired — the row is still
+      # :pending, so this is the window the decision predicate must close.
+      past = DateTime.add(DateTime.utc_now(), -60, :second)
+
+      {1, _} =
+        Request.Query.all()
+        |> Request.Query.by_id(request.id)
+        |> Repo.update_all(set: [expires_at: past])
+
+      assert {:error, :expired} = Approvals.approve_request(request, subject, "too late")
+
+      # Refused, not flipped to approved — the run is never dispatched; the
+      # sweep will expire it shortly.
+      assert %Request{status: :pending} = Repo.reload!(request)
+      assert %ActionRun{status: status} = Repo.reload!(run)
+      refute status == :sent
+    end
+
     test "a viewer (cannot decide) is refused with :unauthorized" do
       {account, run} = run_fixture()
       decider = operator_subject(account)

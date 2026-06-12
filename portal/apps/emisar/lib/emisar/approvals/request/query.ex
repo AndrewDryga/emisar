@@ -31,13 +31,22 @@ defmodule Emisar.Approvals.Request.Query do
     do: where(queryable, [requests: r], not is_nil(r.expires_at) and r.expires_at < ^now)
 
   @doc """
-  Conditional UPDATE used by `claim_pending/4`: matches only rows
-  still `status == "pending"` so two concurrent operators racing to
-  decide can't both win.
+  Conditional UPDATE used by `claim_pending/4`: matches only rows still
+  `status == "pending"` AND not past `expires_at` — so two concurrent
+  operators racing to decide can't both win, and a request that lapsed
+  past its expiry can't be approved in the window before the expiry sweep
+  (which runs only every few minutes) flips it to `:expired`. The decision
+  boundary is the row predicate here, not the sweep, so the advertised
+  hard expiry holds even if the sweep is delayed. Mirrors how
+  `Grant.Query.consumable_by_id/2` guards `expires_at` at consumption.
   """
   def decide_pending(id, status, by_user_id, reason, now) do
     all()
-    |> where([requests: r], r.id == ^id and r.status == :pending)
+    |> where(
+      [requests: r],
+      r.id == ^id and r.status == :pending and
+        (is_nil(r.expires_at) or r.expires_at > ^now)
+    )
     |> update(
       set: [
         status: ^status,

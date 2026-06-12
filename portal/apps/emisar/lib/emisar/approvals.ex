@@ -357,10 +357,13 @@ defmodule Emisar.Approvals do
 
   # Atomically claim a pending approval request as decided. Two operators
   # clicking Approve at the same moment would both pass the LiveView's
-  # `status == "pending"` precondition; only one's SQL update will see
-  # `WHERE status = 'pending'` evaluate true. The loser gets 0 rows
-  # affected and we return `{:error, :already_decided}` so the caller
-  # can flash a useful message rather than double-dispatching.
+  # `status == "pending"` precondition; only one's SQL update will see the
+  # `decide_pending` predicate evaluate true. The loser gets 0 rows
+  # affected — classified into `:already_decided` (someone won the race) vs
+  # `:expired` (the request lapsed past `expires_at` before this click; the
+  # decision UPDATE refuses an expired row) so the caller flashes the right
+  # message rather than double-dispatching or pretending an expired request
+  # was decided.
   defp claim_pending(%Request{} = request, status, by_user_id, reason) do
     now = DateTime.utc_now()
 
@@ -376,7 +379,22 @@ defmodule Emisar.Approvals do
         {:ok, decided}
 
       0 ->
-        {:error, :already_decided}
+        {:error, claim_blocked_reason(request.id, now)}
+    end
+  end
+
+  defp claim_blocked_reason(request_id, now) do
+    query = Request.Query.all() |> Request.Query.by_id(request_id)
+
+    case Repo.peek(query) do
+      %Request{status: :expired} ->
+        :expired
+
+      %Request{status: :pending, expires_at: %DateTime{} = expires_at} ->
+        if DateTime.compare(expires_at, now) == :gt, do: :already_decided, else: :expired
+
+      _ ->
+        :already_decided
     end
   end
 
