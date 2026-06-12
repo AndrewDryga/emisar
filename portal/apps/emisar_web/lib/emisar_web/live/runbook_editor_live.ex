@@ -69,6 +69,7 @@ defmodule EmisarWeb.RunbookEditorLive do
       socket
       |> assign(:catalog_actions, [])
       |> assign(:args_by_action, %{})
+      |> assign(:risk_by_action, %{})
       |> assign(:runners, [])
       |> assign(:groups, [])
     end
@@ -102,6 +103,9 @@ defmodule EmisarWeb.RunbookEditorLive do
       end)
       |> Map.new(fn {id, set} -> {id, set |> MapSet.to_list() |> Enum.sort()} end)
 
+    # action_id → risk, so each step card shows what tier it composes.
+    risk_by_action = Map.new(runner_actions, &{&1.action_id, &1.risk})
+
     # Options for the runner-target picker. Fail soft to empty lists if the
     # subject can't view runners — they can still author by typing, and the
     # picker just shows its "none yet" hint.
@@ -120,6 +124,7 @@ defmodule EmisarWeb.RunbookEditorLive do
     socket
     |> assign(:catalog_actions, actions)
     |> assign(:args_by_action, args_by_action)
+    |> assign(:risk_by_action, risk_by_action)
     |> assign(:runners, runners)
     |> assign(:groups, groups)
   end
@@ -482,6 +487,7 @@ defmodule EmisarWeb.RunbookEditorLive do
                 index={idx}
                 total={length(@steps)}
                 args_by_action={@args_by_action}
+                risk={@risk_by_action[step["action_id"]]}
                 groups={@groups}
                 runners={@runners}
               />
@@ -584,6 +590,7 @@ defmodule EmisarWeb.RunbookEditorLive do
   attr :index, :integer, required: true
   attr :total, :integer, required: true
   attr :args_by_action, :map, required: true
+  attr :risk, :any, default: nil
   attr :groups, :list, required: true
   attr :runners, :list, required: true
 
@@ -640,9 +647,12 @@ defmodule EmisarWeb.RunbookEditorLive do
              the operator to invent a name before they know what they
              named. --%>
         <div>
-          <label class="block text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
-            Action
-          </label>
+          <div class="flex items-center justify-between gap-2">
+            <label class="block text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+              Action
+            </label>
+            <.risk_pill :if={@risk} risk={@risk} class="flex-none" />
+          </div>
           <input
             type="text"
             name="action_id"

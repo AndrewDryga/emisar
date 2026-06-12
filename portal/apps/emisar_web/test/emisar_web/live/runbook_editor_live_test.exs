@@ -229,6 +229,35 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
     end
   end
 
+  describe "per-step risk" do
+    test "each step card shows its action's risk tier from the catalog", %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      subject = Emisar.Fixtures.subject_for(user, account)
+      runner = Emisar.Fixtures.runner_fixture(account_id: account.id)
+      Emisar.Fixtures.action_fixture(runner: runner, action_id: "linux.uptime", risk: "high")
+
+      {:ok, runbook} =
+        Emisar.Runbooks.create_runbook(
+          %{
+            "title" => "Patch night",
+            "name" => "Patch night",
+            "slug" => "patch-night",
+            "definition" => %{
+              "steps" => [%{"id" => "s1", "action_id" => "linux.uptime", "args" => %{}}]
+            }
+          },
+          subject
+        )
+
+      {:ok, _lv, html} = live(conn, ~p"/app/runbooks/#{runbook.id}/edit")
+
+      # The step's action is high-risk in the catalog → the card shows the
+      # rose risk pill, so the author sees the tier they're composing.
+      assert html =~ "high"
+      assert html =~ "ring-rose-500/30"
+    end
+  end
+
   describe "step manipulation" do
     test "remove, move, and arg add/remove reshape the step list", %{conn: conn} do
       {conn, _user, _account} = register_and_log_in(conn)
