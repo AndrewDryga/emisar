@@ -10,6 +10,7 @@ coverage.out
 # puts them under /bin/.
 /runner/runner
 /mcp/mcp
+/mcp/bin/
 /emisar
 /emisar-mcp
 
