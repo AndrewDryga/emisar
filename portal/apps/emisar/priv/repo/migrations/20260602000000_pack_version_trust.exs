@@ -1,6 +1,4 @@
 defmodule Emisar.Repo.Migrations.PackVersionTrust do
-  use Ecto.Migration
-
   @moduledoc """
   Trust-on-first-use pinning for advertised pack versions.
 
@@ -18,6 +16,7 @@ defmodule Emisar.Repo.Migrations.PackVersionTrust do
   Also adds `pack_version` to `runner_actions` so dispatch can look
   up the trust state of the exact version the runner has loaded.
   """
+  use Ecto.Migration
 
   def change do
     # 1. Add trust columns to pack_versions.

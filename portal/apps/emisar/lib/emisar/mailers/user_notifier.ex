@@ -122,7 +122,7 @@ defmodule Emisar.Mailers.UserNotifier do
     args
     |> Jason.encode!(pretty: true)
     |> String.split("\n")
-    |> Enum.map_join("\n", fn line -> "  " <> line end)
+    |> Enum.map_join("\n", &("  " <> &1))
   end
 
   defp format_args_for_email(_), do: "  (none)"

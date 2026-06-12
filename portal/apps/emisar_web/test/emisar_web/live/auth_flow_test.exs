@@ -148,7 +148,7 @@ defmodule EmisarWeb.AuthFlowTest do
           filter: [event_type: ["user.signed_in"]]
         )
 
-      assert Enum.any?(events, fn ev -> ev.payload["method"] == "password+mfa" end)
+      assert Enum.any?(events, &(&1.payload["method"] == "password+mfa"))
     end
 
     test "wrong OTP under a valid pending marker stays on /sign_in/mfa with a flash", %{

@@ -77,8 +77,8 @@ defmodule EmisarWeb.McpRpcControllerTest do
         description: opts[:description] || "Reports uptime.",
         side_effects: [],
         args_schema: opts[:args_schema] || %{"args" => []},
-        first_seen_at: DateTime.utc_now() |> DateTime.truncate(:microsecond),
-        last_seen_at: DateTime.utc_now() |> DateTime.truncate(:microsecond)
+        first_seen_at: DateTime.utc_now(),
+        last_seen_at: DateTime.utc_now()
       })
       |> Repo.insert()
 
@@ -639,6 +639,9 @@ defmodule EmisarWeb.McpRpcControllerTest do
 
       Task.start(fn ->
         Ecto.Adapters.SQL.Sandbox.allow(Emisar.Repo, test_pid, self())
+        # Delay-injection in the WRITER (finalize lands mid-wait), not
+        # poll-synchronization — the long-poll itself wakes on the broadcast.
+        # credo:disable-for-next-line Emisar.Checks.TestNoProcessSleep
         Process.sleep(50)
 
         {:ok, _} =

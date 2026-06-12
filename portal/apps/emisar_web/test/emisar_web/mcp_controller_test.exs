@@ -93,8 +93,8 @@ defmodule EmisarWeb.McpControllerTest do
         description: opts[:description] || "Reports uptime.",
         side_effects: opts[:side_effects] || [],
         args_schema: args_schema,
-        first_seen_at: DateTime.utc_now() |> DateTime.truncate(:microsecond),
-        last_seen_at: DateTime.utc_now() |> DateTime.truncate(:microsecond)
+        first_seen_at: DateTime.utc_now(),
+        last_seen_at: DateTime.utc_now()
       })
       |> Repo.insert()
 
@@ -992,6 +992,9 @@ defmodule EmisarWeb.McpControllerTest do
       parent = self()
 
       Task.Supervisor.start_child(EmisarWeb.TaskSupervisor, fn ->
+        # Delay-injection in the WRITER (finalize lands mid-wait), not
+        # poll-synchronization — the long-poll itself wakes on the broadcast.
+        # credo:disable-for-next-line Emisar.Checks.TestNoProcessSleep
         Process.sleep(80)
         Ecto.Adapters.SQL.Sandbox.allow(Emisar.Repo, parent, self())
 
@@ -1042,7 +1045,7 @@ defmodule EmisarWeb.McpControllerTest do
           status: "failed",
           exit_code: 1,
           error_message: "command exited with code 1",
-          finished_at: DateTime.utc_now() |> DateTime.truncate(:microsecond)
+          finished_at: DateTime.utc_now()
         ]
       )
 

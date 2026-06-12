@@ -45,7 +45,9 @@ defmodule Emisar.Users do
   for ids it trusts.
   """
   def user_labels_for_ids(ids) when is_list(ids) do
-    case Enum.reject(ids, &is_nil/1) |> Enum.uniq() do
+    ids = ids |> Enum.reject(&is_nil/1) |> Enum.uniq()
+
+    case ids do
       [] ->
         %{}
 

@@ -4,7 +4,7 @@
 
 > **Identity vs tenancy:** `Emisar.Users` owns identity (the User schema, registration, profile/credential self-service, sign-in recording, and the user-row internals Auth/Accounts compose) — deliberately **cross-account**, so nothing in it scopes by account and it has no Authorizer (self-service authz is the `%Subject{actor: …}` match). `Emisar.Accounts` owns tenancy: accounts, memberships, invitations, and team administration (which calls `Users` internals for the user-row mechanics while keeping the permission + audit semantics).
 
-The **Iron Laws** below are non-negotiable. The user has had to call out the same violations repeatedly; some are now enforced by a blocking `PostToolUse` hook (see [Enforcement](#enforcement)). Treat every law as a hard requirement, not a suggestion.
+The **Iron Laws** below are non-negotiable. The user has had to call out the same violations repeatedly; the mechanical subset is now enforced by **Credo** — custom AST checks run on every edit (blocking hook) and at the gate (see [Enforcement](#enforcement)). Treat every law as a hard requirement, not a suggestion.
 
 ---
 
@@ -34,7 +34,7 @@ Lower-stakes taste calls. Not Iron Laws, but the defaults. **The user adds to th
 - Return only the shape callers consume. Don't carry an extra map field or a `{entity, flag}` tuple (e.g. fetch-or-create's `{user, created?}`) that no caller branches on — it's noise every caller and test must destructure, and it complicates the function. Confirm a real consumer exists before adding a return field; drop it when the last one goes.
 - Spell variables out: `changeset`, not `cs`. A struct-typed binding takes the schema's own name — `%Membership{} = membership`, not `m`/`target`. Reach for a qualified name (`target_membership`) only to disambiguate two bindings of the same type.
 - Pattern-match struct arguments by their struct in the function head — `create_request(%Runs.ActionRun{} = run, …)`, not a bare `run`. The head documents the contract and guards the type.
-- Reference **another** context's modules through its top-level alias — `alias Emisar.Runs` then `Runs.ActionRun`, never `alias Emisar.Runs.ActionRun`. It keeps obvious which context a schema belongs to. (Aliasing your *own* context's submodules — `Grant`, `Request` — directly is fine. `Emisar.Auth.Subject`, the universal auth carrier, is the one cross-context exception we alias directly everywhere; `Emisar.Repo.*` is infra, not a context.) Applies to the web app too — a LiveView aliases the context, not its schemas. **Hook-enforced** (path-aware: the hook derives the file's own context from its directory and blocks any other `alias Emisar.<Ctx>.<Sub>`).
+- Reference **another** context's modules through its top-level alias — `alias Emisar.Runs` then `Runs.ActionRun`, never `alias Emisar.Runs.ActionRun`. It keeps obvious which context a schema belongs to. (Aliasing your *own* context's submodules — `Grant`, `Request` — directly is fine. `Emisar.Auth.Subject`, the universal auth carrier, is the one cross-context exception we alias directly everywhere; `Emisar.Repo.*` is infra, not a context.) Applies to the web app too — a LiveView aliases the context, not its schemas. **Credo-enforced**, path-aware (`Emisar.Checks.CrossContextDeepAlias` derives the file's own context from its directory and flags any other `alias Emisar.<Ctx>.<Sub>`).
 - **A context's `<Schema>.Changeset` modules are write-internals — no sibling context builds them.** Another context never does `User.Changeset.x(...) |> Repo.update()` or `Multi.update(:user, User.Changeset.x(...))`: it calls a (possibly `@doc "Internal"`) function on the owning context, composing it into its transaction via `Multi.run(:user, fn _repo, _ -> Users.mark_user_confirmed(user) end)` — same atomicity, internals stay private (this is how Auth's token flows write user rows). **The same goes for cross-context READS**: a sibling never builds a full pipeline on another context's `<Schema>.Query` + `Repo` (billing counting memberships, approvals fetching a run) — the owning context exposes the (often `@doc "Internal"`) function (`Accounts.count_memberships/1`, `Runs.peek_run_by_id/1`, `Runners.runner_active_in_account?/2`). The **sanctioned exceptions**, all documented elsewhere in this file: struct pattern-matches and pure schema helpers (`User.valid_password?/2`); Query-module *composition* — joins (`with_joined_user`), the audit label/scope resolvers (§2's `select_labels` + `Audit.resolve_references`); `workers/*` consuming Query-built pipelines (IL-1 prescribes it); the web reading Query-module **UI metadata** — `filters/0` for LiveTable (§6) and known-value lists like `Event.Query.known_event_type_values/0` for labels; fixtures/seeds building rows directly (§7). When a query module joins another context's table, it composes that schema's `Query.not_deleted()` (`m in ^Membership.Query.not_deleted()`), never the raw schema module — a raw join leaks soft-deleted rows.
 - One public function = one job. If a context function has an `opts` flag that changes *what it does* (not just filtering), it's two functions.
 - Small modules over big ones, but never a module per function. Follow the standard split (context / schema / query / changeset / authorizer) and stop there.
@@ -63,8 +63,8 @@ Lower-stakes taste calls. Not Iron Laws, but the defaults. **The user adds to th
 - **Dispatch on a pattern, not an inner `if`.** A closure or function whose body is one `if`/`case` testing a pattern-matchable property of its argument (field nil-ness/truthiness, a literal value, struct shape) becomes clause heads instead: a `:with` callback like "skip when already linked" turns into a named two-clause defp (`link_paddle_customer_unless_linked(%Account{paddle_customer_id: nil}, id)` / catch-all) passed by capture; a bare-arg `case` with literal branches (`client_config("cursor", url, key)`) turns into multi-clause heads. `if` stays for genuinely computed conditions (comparisons, function-call results) and `case` stays for matching something *other than* the argument itself (e.g. `conn.assigns[:x]` Access on optional keys).
 - **Any closure whose body is a single call uses capture syntax** — `&disconnect_user_sessions/1`, `&do_revoke(&1, id)`, `&save(&1, publish?: true)`, `audit: &Audit.Events.policy_updated(subject, policy, &1)`, `& &1.group` — so long as it stays one readable line. `fn` earns its keep only for: multi-step bodies, pattern-matching heads, multi-clause closures, a zero-arity closure that passes scope values (a capture needs at least one `&N` placeholder — `fn -> count_for(subject) end` can't convert; bare `fn -> f() end` becomes `&f/0`), a closure nested inside an outer capture (capture-in-capture won't compile), and when the argument is used several times and naming it genuinely reads better than repeated `&1`s.
 - **Every PubSub publish goes through a named per-event function** — `broadcast_auth_key_revoked(%AuthKey{} = key)`, not a shared `broadcast_x_change(struct, "event.string")` that takes the event name as data. The function head documents the message; the literal topic + tuple live inside it. All `subscribe_*` and `broadcast_*` functions sit together in one `# -- PubSub ----` section per context so the context's topics and message shapes read in one place. No inline `Emisar.PubSub.broadcast/2` at mutation sites.
-- **No pipe anywhere in a `with`/`case`/`for` head — single-line included.** `{:ok, x} <- a() |> b()` hides the operation being matched; bind first (`queryable = Token.Query.all() |> Token.Query.by_prefix(prefix)`) and match the short call (`<- Repo.peek(queryable)`). The PostToolUse hook blocks both the one-line and the wrapped form.
-- **Preloads that exist for rendering are the CALLER's concern.** A context read whose associations are only consumed by a page exposes a `preload:` option — the caller passes exactly the assoc atoms it renders (`Accounts.list_memberships_for_account(account, subject, preload: [:user])`), and a counting/existence caller omits it and pays for no joins. Inside the context the option maps to the Query's `with_preloaded_*` helpers through a whitelist reducer (`apply_membership_preloads/2` — unknown atoms raise), popped off `opts` before the Repo call. Preloads that are the function's CONTRACT — every caller needs them (the session membership feeding `current_account`/`current_user`, an internal single-consumer like the approval notifier's `user`) — stay unconditionally chained with a why-comment. What remains banned (hook-blocked): the context smuggling preloads INTO the Repo opts — `Keyword.put_new(opts, :preload, …)` / a literal `preload:` in the `Repo.fetch`/`Repo.list` argument list — because that bypasses the `with_preloaded_*` helpers and their soft-delete scoping.
+- **No pipe anywhere in a `with`/`case`/`for` head — single-line included.** `{:ok, x} <- a() |> b()` hides the operation being matched; bind first (`queryable = Token.Query.all() |> Token.Query.by_prefix(prefix)`) and match the short call (`<- Repo.peek(queryable)`). Credo-enforced (`Emisar.Checks.NoPipeInBranchHead` matches the AST, so every form — one-line, wrapped, `case` heads — is caught).
+- **Preloads that exist for rendering are the CALLER's concern.** A context read whose associations are only consumed by a page exposes a `preload:` option — the caller passes exactly the assoc atoms it renders (`Accounts.list_memberships_for_account(account, subject, preload: [:user])`), and a counting/existence caller omits it and pays for no joins. Inside the context the option maps to the Query's `with_preloaded_*` helpers through a whitelist reducer (`apply_membership_preloads/2` — unknown atoms raise), popped off `opts` before the Repo call. Preloads that are the function's CONTRACT — every caller needs them (the session membership feeding `current_account`/`current_user`, an internal single-consumer like the approval notifier's `user`) — stay unconditionally chained with a why-comment. What remains banned (Credo-enforced, `Emisar.Checks.NoPreloadInRepoOpts`): the context smuggling preloads INTO the Repo opts — `Keyword.put_new(opts, :preload, …)` / a literal `preload:` in the `Repo.fetch`/`Repo.list` argument list — because that bypasses the `with_preloaded_*` helpers and their soft-delete scoping.
 - Don't build an argument with a nested transform call inline — `Repo.fetch(query, Query, Keyword.put_new(opts, …))` makes the reader parse two calls at once. Bind the transformed value on its own line above, then pass the name. (Same family as the multiline-pipe-as-argument rule.)
 - LiveTable `filters/0` callbacks bind their queryable as **`queryable`** — `fun: fn queryable, statuses -> …` — never `q`. (The `[runs: r]`-style DSL bindings inside `dynamic`/`where` stay the documented §2 idiom.)
 
@@ -398,58 +398,51 @@ When refactoring: rip out the old shape, update every caller in the same change,
 
 ## Enforcement
 
-Three layers, cheapest first:
+Two layers — mechanical rules run by machines, judgment rules by review:
 
-1. **`PostToolUse` hook** (`../.claude/hooks/iron-law-verifier.sh`, wired in `../.claude/settings.json`). Runs after every `Edit`/`Write`, scans the touched `.ex`/`.exs` file under `portal/`, and **blocks with exit 2** on a violation of the regex-precise subset (**IL-1, IL-2, IL-6, IL-7, IL-8, IL-12**), feeding the specific law back for an immediate fix. The source-dependent laws (**IL-14** `String.to_atom`, **IL-16** `raw/1`) are left to `/iron-review`, which can tell a code literal / app-generated value from attacker input — the hook would false-block legitimate uses (e.g. `raw(@mfa_qr_svg)`). Read-only, ~10ms. To disable: delete the `PostToolUse` block from `../.claude/settings.json`.
+1. **Credo is the single mechanical source of truth.** The Iron-Law and
+   house-rule checks are custom AST checks in `credo/checks/`
+   (`Emisar.Checks.*`), wired into `.credo.exs` alongside the stock checks
+   (including `UnsafeToAtom` for IL-14 and `StrictModuleLayout` for the
+   directive order). They run twice:
+   - **on every edit** — the `PostToolUse` hook
+     (`../.claude/hooks/iron-law-verifier.sh`) runs `mix credo <file>` on
+     the touched portal `.ex`/`.exs` and **blocks with exit 2** on any
+     finding (~0.6s, read-only). Disable: delete the `PostToolUse` block
+     from `../.claude/settings.json`.
+   - **at the gate** — `mix credo` is part of the IL-20 verify loop and
+     must report zero.
 
-2. **`/iron-review`** — the same checks plus the architecture greps, run on demand against a diff or the working tree, with fix suggestions.
+   Covered mechanically: IL-1, IL-2, IL-6, IL-7, IL-8, IL-12 (schemas AND
+   migrations), IL-13 (perform-head args), IL-14, plus the house rules —
+   with/case/for-head pipes, preloads smuggled into Repo opts,
+   cross-context deep aliases (path-aware), capture syntax for
+   single-call closures, clause heads over if-on-arg-field, `q`/`cs`
+   bindings, per-event broadcast functions (inline `PubSub.broadcast` AND
+   event-strings-as-data), `Repo.exists?` over count-compares, the
+   `Emisar.Crypto` boundary, `DateTime.truncate` no-ops, no
+   `Process.sleep` in tests, and the module-header directive order.
 
-3. **Sanity grep before a PR.** Run from `portal/apps/emisar/lib/emisar/`. Each is **zero hits on a clean tree** (verified against the current codebase — the globs exclude the Query/Repo machinery, and the `(^|[^.\w])` prefix stops `Path.join`/`Enum.join`/`Repo.preload`/Swoosh `from` from false-positiving):
+   A documented exception gets `# credo:disable-for-next-line
+   Emisar.Checks.<Name>` (or `-for-lines:<n>`) directly under its
+   why-comment — never a bare disable. Current sanctioned disables: the
+   runner socket's directed `deliver_to_runner` publish, and the two
+   long-poll tests' writer-side delay injections.
 
-```sh
-# IL-1 — import Ecto.Query outside Query/Repo modules
-rg 'import Ecto\.Query' -g '!**/query.ex' -g '!**/repo.ex' -g '!repo/**'
+2. **`/iron-review`** carries the judgment laws a static check can't
+   decide (their safety depends on where a value came from): IL-3/4/5
+   (authz shape + return shapes), IL-10 (internal preload exceptions),
+   IL-15 (per-event authz), IL-16 (`raw/1` on attacker-influenced text),
+   IL-17/18 (OTP/LiveView discipline), IL-19 (vendor seams).
 
-# IL-2 — Repo.get/get!/get_by (bypass the Query module)
-rg '\bRepo\.(get|get!|get_by)\b'
+**Adding a rule = adding its check.** When the user states a new
+mechanical rule (or corrects the same shape twice), the SAME change adds
+an `Emisar.Checks.*` module under `credo/checks/`, wires it into
+`.credo.exs`, and **fixture-verifies it fires**: write a temp violation
+file (e.g. `apps/emisar/lib/emisar/zz_probe.ex`), run
+`mix credo <that file>`, see the finding, delete the file. A check never
+seen firing is a check that may not work — the old grep battery is
+retired precisely because every one of its rules now has a
+fixture-verified AST check.
 
-# IL-1 — inline Ecto DSL outside Query/Repo (unqualified macros only)
-rg '(^|[^.\w])(from|where|order_by|join|select|preload|limit|lock|group_by|having|distinct|offset)\(' \
-   -g '!**/query.ex' -g '!**/repo.ex' -g '!repo/**' -g '!mailers/**'
-```
-
-House-opinion greps — run from `portal/apps/` over BOTH apps' `lib/` (also enforced live by the hook):
-
-```sh
-# Pipe in a with/case/for head — one-line form and the wrapped form
-rg -n '<-.*\|>' emisar/lib emisar_web/lib
-rg -Un '<-\s*\n[^\n]*\|>' emisar/lib emisar_web/lib
-
-# Preloads smuggled into Repo opts (the caller-facing `preload:` option is
-# fine — it's Keyword.pop'd and mapped to with_preloaded_* helpers)
-rg -n 'Keyword\.put(_new)?\([^)]*:preload' emisar/lib/emisar -g '!**/repo/**' -g '!**/repo.ex'
-rg -n 'Repo\.(fetch|list)\([^)]*preload:' emisar/lib/emisar
-
-# LiveTable filter callbacks must bind `queryable`, not `q`
-rg -n '\bfn q\b' emisar/lib emisar_web/lib
-
-# Event name passed as data to a shared broadcast helper (want per-event fns)
-rg -n 'broadcast_[a-z_]+\([^)]*"' emisar/lib/emisar
-
-# Cross-context deep aliases (judgment: own-context, Auth.Subject, Repo.* are fine —
-# the hook applies the path-aware version of this automatically)
-rg -n 'alias Emisar\.[A-Z]\w+\.' emisar/lib emisar_web/lib
-
-# Closure dispatching on a bare field truthiness of its own arg (want clause heads)
-rg -Un --pcre2 'fn (\w+) ->\n\s+if \1\.\w+(,| do)' emisar/lib emisar_web/lib
-rg -n --pcre2 'fn (\w+) -> if \1\.\w+(,| do)' emisar/lib emisar_web/lib
-
-# Single-call forwarding closures (want capture syntax; judgment on each hit —
-# zero-arity-with-scope-args, nested-in-capture, and multi-use args stay fn)
-rg -n --pcre2 'fn (\w+) -> [\w.!?]+\(\1\) end' emisar emisar_web -g '*.ex' -g '*.exs'
-rg -n --pcre2 'fn (\w+) -> [\w.!?]+\((?:[^()]|\([^()]*\))*\b\1\b(?:[^()]|\([^()]*\))*\) end' \
-   emisar emisar_web -g '*.ex' -g '*.exs'
-rg -n --pcre2 'fn (\w+) -> \1\.\w+ end' emisar emisar_web -g '*.ex' -g '*.exs'
-```
-
-If any return hits, the change isn't done. (The one documented exception to the third IL grep is `Repo.preload/2` in a post-commit/email helper — IL-10 — which is qualified and so won't match anyway.) Then run the [verify loop](#how-we-build-prime-directive) (IL-20).
+Then run the [verify loop](#how-we-build-prime-directive) (IL-20).

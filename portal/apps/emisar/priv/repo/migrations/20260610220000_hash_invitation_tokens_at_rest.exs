@@ -1,6 +1,4 @@
 defmodule Emisar.Repo.Migrations.HashInvitationTokensAtRest do
-  use Ecto.Migration
-
   @moduledoc """
   Corrective (prod already ran the original memberships migration):
   invitation tokens move to the same mint→hash contract as every other
@@ -10,6 +8,7 @@ defmodule Emisar.Repo.Migrations.HashInvitationTokensAtRest do
   hashed in place so pending invite emails keep working; the column is
   renamed to say what it now holds.
   """
+  use Ecto.Migration
 
   def up do
     execute "CREATE EXTENSION IF NOT EXISTS pgcrypto"

@@ -29,7 +29,8 @@
           "apps/*/lib/",
           "apps/*/src/",
           "apps/*/test/",
-          "apps/*/web/"
+          "apps/*/web/",
+          "apps/*/priv/repo/migrations/"
         ],
         excluded: [
           ~r"/_build/",
@@ -45,7 +46,7 @@
       # If you create your own checks, you must specify the source files for
       # them here, so they can be loaded by Credo before running the analysis.
       #
-      requires: [],
+      requires: ["credo/checks/**/*.ex"],
       #
       # If you want to enforce a style guide and need a more traditional linting
       # experience, you can change `strict` to `true` below:
@@ -70,6 +71,30 @@
       #
       checks: %{
         enabled: [
+          #
+          ## Emisar Iron Laws + house rules (portal/CLAUDE.md; sources in credo/checks/)
+          #
+          {Emisar.Checks.IL01NoInlineEctoDsl, []},
+          {Emisar.Checks.IL02NoRepoGet, []},
+          {Emisar.Checks.IL06QueryModulePure, []},
+          {Emisar.Checks.IL07SchemaFieldsOnly, []},
+          {Emisar.Checks.IL08ChangesetPure, []},
+          {Emisar.Checks.IL12NoFloatMoney, []},
+          {Emisar.Checks.IL13ObanStringArgs, []},
+          {Emisar.Checks.BroadcastEventAsData, []},
+          {Emisar.Checks.ContextCryptoBoundary, []},
+          {Emisar.Checks.CrossContextDeepAlias, []},
+          {Emisar.Checks.InlineBroadcast, []},
+          {Emisar.Checks.NoDateTimeTruncate, []},
+          {Emisar.Checks.NoIfOnArgField, []},
+          {Emisar.Checks.NoPipeInBranchHead, []},
+          {Emisar.Checks.NoPreloadInRepoOpts, []},
+          {Emisar.Checks.PreferCaptureClosure, []},
+          {Emisar.Checks.RepoExistsOverCount, []},
+          {Emisar.Checks.ShortBindings, []},
+          {Emisar.Checks.TestNoProcessSleep, []},
+          {Emisar.Checks.WebNoRepoCalls, []},
+
           #
           ## Consistency Checks
           #
@@ -111,6 +136,12 @@
           {Credo.Check.Readability.Semicolons, []},
           {Credo.Check.Readability.SpaceAfterCommas, []},
           {Credo.Check.Readability.StringSigils, []},
+          # House rule: module header order use -> import -> alias -> require
+          # (the check's default order) right after @moduledoc. The ignored
+          # attribute is interpolated INTO the ApiKeys moduledoc, so it must
+          # legitimately precede it.
+          {Credo.Check.Readability.StrictModuleLayout,
+           [ignore_module_attributes: [:quick_ring_cap]]},
           {Credo.Check.Readability.TrailingBlankLine, []},
           {Credo.Check.Readability.TrailingWhiteSpace, []},
           {Credo.Check.Readability.UnnecessaryAliasExpansion, []},
@@ -150,6 +181,8 @@
           {Credo.Check.Warning.OperationWithConstantResult, []},
           {Credo.Check.Warning.RaiseInsideRescue, []},
           {Credo.Check.Warning.SpecWithStruct, []},
+          # IL-14: no String.to_atom on user/runner/LLM input (atom table never GCs).
+          {Credo.Check.Warning.UnsafeToAtom, []},
           {Credo.Check.Warning.StructFieldAmount, []},
           {Credo.Check.Warning.UnsafeExec, []},
           {Credo.Check.Warning.UnusedEnumOperation, []},
@@ -202,7 +235,6 @@
           {Credo.Check.Readability.SingleFunctionToBlockPipe, []},
           {Credo.Check.Readability.SinglePipe, []},
           {Credo.Check.Readability.Specs, []},
-          {Credo.Check.Readability.StrictModuleLayout, []},
           {Credo.Check.Readability.WithCustomTaggedTuple, []},
           {Credo.Check.Refactor.ABCSize, []},
           {Credo.Check.Refactor.AppendSingleItem, []},
@@ -220,8 +252,7 @@
           {Credo.Check.Warning.LazyLogging, []},
           {Credo.Check.Warning.LeakyEnvironment, []},
           {Credo.Check.Warning.MapGetUnsafePass, []},
-          {Credo.Check.Warning.MixEnv, []},
-          {Credo.Check.Warning.UnsafeToAtom, []}
+          {Credo.Check.Warning.MixEnv, []}
           # {Credo.Check.Warning.UnusedOperation, [{MyMagicModule, [:fun1, :fun2]}]}
 
           # {Credo.Check.Refactor.MapInto, []},

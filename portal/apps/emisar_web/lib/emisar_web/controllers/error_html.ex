@@ -11,12 +11,13 @@ defmodule EmisarWeb.ErrorHTML do
   a self-contained HTML document.
   """
   use Phoenix.Component
-  import EmisarWeb.CoreComponents, only: [brand: 1]
 
   use Phoenix.VerifiedRoutes,
     endpoint: EmisarWeb.Endpoint,
     router: EmisarWeb.Router,
     statics: EmisarWeb.static_paths()
+
+  import EmisarWeb.CoreComponents, only: [brand: 1]
 
   def render("404.html", _assigns) do
     error_page(%{

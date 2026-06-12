@@ -1,6 +1,4 @@
 defmodule Emisar.Repo.Migrations.TrackPolicyVersionOnRuns do
-  use Ecto.Migration
-
   @moduledoc """
   Adds version tracking so an audit row + run row can both point at
   the exact policy revision that decided the dispatch.
@@ -12,6 +10,7 @@ defmodule Emisar.Repo.Migrations.TrackPolicyVersionOnRuns do
   * `action_runs.policy_version` — the vsn snapshot taken when the
     decision was made. Nilable for runs that pre-date this migration.
   """
+  use Ecto.Migration
 
   def change do
     alter table(:policies) do

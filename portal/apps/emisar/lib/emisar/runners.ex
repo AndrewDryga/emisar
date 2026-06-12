@@ -46,7 +46,9 @@ defmodule Emisar.Runners do
   labels for ids it already trusts.
   """
   def runner_labels_for_ids(ids) when is_list(ids) do
-    case Enum.reject(ids, &is_nil/1) |> Enum.uniq() do
+    ids = ids |> Enum.reject(&is_nil/1) |> Enum.uniq()
+
+    case ids do
       [] ->
         %{}
 
@@ -589,7 +591,9 @@ defmodule Emisar.Runners do
   so a list view can render scope chips without N+1 queries.
   """
   def runner_scopes_for_membership_ids(ids) when is_list(ids) do
-    case Enum.reject(ids, &is_nil/1) |> Enum.uniq() do
+    ids = ids |> Enum.reject(&is_nil/1) |> Enum.uniq()
+
+    case ids do
       [] ->
         %{}
 
@@ -722,6 +726,9 @@ defmodule Emisar.Runners do
   runner's socket process. The topic carries the account id, so a caller
   can only address runners inside the account it already proved.
   """
+  # Directed (single-consumer) publish — the runner's socket process is the
+  # topic's only subscriber, so this is a "deliver", not a broadcast_* event.
+  # credo:disable-for-lines:3 Emisar.Checks.InlineBroadcast
   def deliver_to_runner(account_id, runner_id, msg),
     do: Emisar.PubSub.broadcast(runner_topic(account_id, runner_id), {:cloud_to_runner, msg})
 

@@ -465,13 +465,17 @@ defmodule Emisar.Catalog do
 
     case existing do
       nil ->
-        case RunnerAction.Changeset.upsert(attrs) |> Repo.insert() do
+        changeset = RunnerAction.Changeset.upsert(attrs)
+
+        case Repo.insert(changeset) do
           {:ok, %RunnerAction{action_id: id}} -> id
           {:error, _} -> nil
         end
 
       %RunnerAction{} = row ->
-        case RunnerAction.Changeset.update(row, attrs) |> Repo.update() do
+        changeset = RunnerAction.Changeset.update(row, attrs)
+
+        case Repo.update(changeset) do
           {:ok, %RunnerAction{action_id: id}} -> id
           {:error, _} -> nil
         end

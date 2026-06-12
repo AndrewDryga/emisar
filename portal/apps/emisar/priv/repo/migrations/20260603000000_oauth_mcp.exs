@@ -1,6 +1,4 @@
 defmodule Emisar.Repo.Migrations.OauthMcp do
-  use Ecto.Migration
-
   @moduledoc """
   OAuth 2.1 authorization-server tables so remote MCP clients
   (Claude.ai, ChatGPT) can connect via their connector UIs, which only
@@ -14,6 +12,7 @@ defmodule Emisar.Repo.Migrations.OauthMcp do
   so the existing MCP auth + scoping logic is reused unchanged: an OAuth
   access token resolves to its backing key.
   """
+  use Ecto.Migration
 
   def change do
     # -- Dynamically-registered clients (Claude/ChatGPT) ---------------

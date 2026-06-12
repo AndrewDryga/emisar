@@ -1,5 +1,6 @@
 defmodule EmisarWeb.Router do
   use EmisarWeb, :router
+  import Phoenix.LiveDashboard.Router
 
   import EmisarWeb.UserAuth
 
@@ -269,8 +270,6 @@ defmodule EmisarWeb.Router do
   end
 
   # -- LiveDashboard mounts -------------------------------------------
-
-  import Phoenix.LiveDashboard.Router
 
   # Exposing `ecto_repos` turns on the built-in Ecto page (queries /
   # slowest queries / pool stats) on top of the Phoenix process /

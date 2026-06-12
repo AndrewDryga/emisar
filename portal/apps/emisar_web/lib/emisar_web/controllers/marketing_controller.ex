@@ -115,11 +115,11 @@ defmodule EmisarWeb.MarketingController do
             %{
               "@type" => "FAQPage",
               "mainEntity" =>
-                Enum.map(@home_faqs, fn {q, a} ->
+                Enum.map(@home_faqs, fn {question, answer} ->
                   %{
                     "@type" => "Question",
-                    "name" => q,
-                    "acceptedAnswer" => %{"@type" => "Answer", "text" => a}
+                    "name" => question,
+                    "acceptedAnswer" => %{"@type" => "Answer", "text" => answer}
                   }
                 end)
             }
@@ -188,11 +188,11 @@ defmodule EmisarWeb.MarketingController do
                     %{
                       "@type" => "FAQPage",
                       "mainEntity" =>
-                        Enum.map(@pricing_faqs, fn {q, a} ->
+                        Enum.map(@pricing_faqs, fn {question, answer} ->
                           %{
                             "@type" => "Question",
-                            "name" => q,
-                            "acceptedAnswer" => %{"@type" => "Answer", "text" => a}
+                            "name" => question,
+                            "acceptedAnswer" => %{"@type" => "Answer", "text" => answer}
                           }
                         end)
                     }

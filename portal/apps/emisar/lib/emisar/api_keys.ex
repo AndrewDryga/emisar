@@ -317,7 +317,9 @@ defmodule Emisar.ApiKeys do
   """
   def peek_api_key_by_id(id) when is_binary(id) do
     # Deliberately all(): `usable?/1` is the single liveness gate.
-    case ApiKey.Query.all() |> ApiKey.Query.by_id(id) |> Repo.peek() do
+    queryable = ApiKey.Query.all() |> ApiKey.Query.by_id(id)
+
+    case Repo.peek(queryable) do
       %ApiKey{} = key -> if ApiKey.usable?(key), do: key, else: nil
       _ -> nil
     end

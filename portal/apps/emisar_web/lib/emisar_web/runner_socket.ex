@@ -298,21 +298,21 @@ defmodule EmisarWeb.RunnerSocket do
     if MapSet.member?(state.seen_request_set, request_id) do
       state
     else
-      q = :queue.in(request_id, state.seen_request_ids)
+      queue = :queue.in(request_id, state.seen_request_ids)
       set = MapSet.put(state.seen_request_set, request_id)
       count = state.seen_request_count + 1
 
       if count > @dedup_capacity do
-        {{:value, evict}, q2} = :queue.out(q)
+        {{:value, evict}, trimmed_queue} = :queue.out(queue)
 
         %{
           state
-          | seen_request_ids: q2,
+          | seen_request_ids: trimmed_queue,
             seen_request_set: MapSet.delete(set, evict),
             seen_request_count: count - 1
         }
       else
-        %{state | seen_request_ids: q, seen_request_set: set, seen_request_count: count}
+        %{state | seen_request_ids: queue, seen_request_set: set, seen_request_count: count}
       end
     end
   end

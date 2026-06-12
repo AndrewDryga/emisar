@@ -223,8 +223,8 @@ defmodule Emisar.Fixtures do
       limits: attrs[:limits] || %{},
       output: attrs[:output] || %{},
       examples: attrs[:examples] || [],
-      first_seen_at: DateTime.utc_now() |> DateTime.truncate(:microsecond),
-      last_seen_at: DateTime.utc_now() |> DateTime.truncate(:microsecond)
+      first_seen_at: DateTime.utc_now(),
+      last_seen_at: DateTime.utc_now()
     }
 
     {:ok, action} =

@@ -13,10 +13,9 @@ defmodule EmisarWeb.Mcp.Service do
   modules — `Catalog`, `Runners`, `Runs`.
   """
 
-  require Logger
-
   alias Emisar.{Catalog, Runbooks, Runners, Runs}
   alias EmisarWeb.Mcp.{Idempotency, ToolSchema}
+  require Logger
 
   # Same caps the REST handlers use; keep them in lockstep so
   # behavior matches whether the LLM hits /api/mcp/tools/:id or the

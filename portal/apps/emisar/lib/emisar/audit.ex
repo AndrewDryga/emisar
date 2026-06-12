@@ -413,26 +413,36 @@ defmodule Emisar.Audit do
       # Users belong to accounts via memberships, not a column, so they
       # scope through the membership join rather than `by_account_id`.
       "user" =>
-        fetch_labels(Emisar.Users.User.Query, ids_by_kind, "user", :email, fn queryable ->
-          Emisar.Users.User.Query.members_of_account(queryable, account_id)
-        end),
+        fetch_labels(
+          Emisar.Users.User.Query,
+          ids_by_kind,
+          "user",
+          :email,
+          &Emisar.Users.User.Query.members_of_account(&1, account_id)
+        ),
       "runner" =>
-        fetch_labels(Emisar.Runners.Runner.Query, ids_by_kind, "runner", :name, fn queryable ->
-          Emisar.Runners.Runner.Query.by_account_id(queryable, account_id)
-        end),
+        fetch_labels(
+          Emisar.Runners.Runner.Query,
+          ids_by_kind,
+          "runner",
+          :name,
+          &Emisar.Runners.Runner.Query.by_account_id(&1, account_id)
+        ),
       "api_key" =>
-        fetch_labels(Emisar.ApiKeys.ApiKey.Query, ids_by_kind, "api_key", :name, fn queryable ->
-          Emisar.ApiKeys.ApiKey.Query.by_account_id(queryable, account_id)
-        end),
+        fetch_labels(
+          Emisar.ApiKeys.ApiKey.Query,
+          ids_by_kind,
+          "api_key",
+          :name,
+          &Emisar.ApiKeys.ApiKey.Query.by_account_id(&1, account_id)
+        ),
       "auth_key" =>
         fetch_labels(
           Emisar.Runners.AuthKey.Query,
           ids_by_kind,
           "auth_key",
           :description,
-          fn queryable ->
-            Emisar.Runners.AuthKey.Query.by_account_id(queryable, account_id)
-          end
+          &Emisar.Runners.AuthKey.Query.by_account_id(&1, account_id)
         ),
       "action_run" =>
         fetch_labels(
@@ -440,9 +450,7 @@ defmodule Emisar.Audit do
           ids_by_kind,
           "action_run",
           :action_id,
-          fn queryable ->
-            Emisar.Runs.ActionRun.Query.by_account_id(queryable, account_id)
-          end
+          &Emisar.Runs.ActionRun.Query.by_account_id(&1, account_id)
         ),
       "approval_request" =>
         fetch_labels(
@@ -450,9 +458,7 @@ defmodule Emisar.Audit do
           ids_by_kind,
           "approval_request",
           :id,
-          fn queryable ->
-            Emisar.Approvals.Request.Query.by_account_id(queryable, account_id)
-          end
+          &Emisar.Approvals.Request.Query.by_account_id(&1, account_id)
         ),
       "runbook" =>
         fetch_labels(
@@ -460,9 +466,7 @@ defmodule Emisar.Audit do
           ids_by_kind,
           "runbook",
           :title,
-          fn queryable ->
-            Emisar.Runbooks.Runbook.Query.by_account_id(queryable, account_id)
-          end
+          &Emisar.Runbooks.Runbook.Query.by_account_id(&1, account_id)
         )
     }
   end

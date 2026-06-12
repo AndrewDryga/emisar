@@ -235,11 +235,12 @@ defmodule Emisar.OAuth do
   @spec resolve_access_token(String.t()) ::
           {:ok, %{api_key: term(), account: term(), token: Token.t()}} | {:error, :invalid}
   def resolve_access_token(raw) when is_binary(raw) do
-    with %Token{} = token <-
-           Token.Query.all()
-           |> Token.Query.not_revoked()
-           |> Token.Query.by_access_hash(Crypto.hash(raw))
-           |> Repo.peek(),
+    queryable =
+      Token.Query.all()
+      |> Token.Query.not_revoked()
+      |> Token.Query.by_access_hash(Crypto.hash(raw))
+
+    with %Token{} = token <- Repo.peek(queryable),
          true <- live?(token.access_expires_at),
          key when not is_nil(key) <- ApiKeys.peek_api_key_by_id(token.api_key_id),
          {:ok, account} <- Accounts.fetch_account_by_id(token.account_id) do

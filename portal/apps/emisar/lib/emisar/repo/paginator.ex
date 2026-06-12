@@ -69,8 +69,8 @@ defmodule Emisar.Repo.Paginator do
     do: default_order_by_cursor_fields(queryable, cursor_fields)
 
   defp default_order_by_cursor_fields(queryable, cursor_fields) do
-    Enum.reduce(cursor_fields, queryable, fn {binding, order, field}, q ->
-      order_by(q, [{^binding, b}], [{^order, field(b, ^field)}])
+    Enum.reduce(cursor_fields, queryable, fn {binding, order, field}, queryable ->
+      order_by(queryable, [{^binding, b}], [{^order, field(b, ^field)}])
     end)
   end
 

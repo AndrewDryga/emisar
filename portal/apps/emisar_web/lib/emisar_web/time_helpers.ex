@@ -1,6 +1,4 @@
 defmodule EmisarWeb.TimeHelpers do
-  use Phoenix.Component
-
   @moduledoc """
   Shared view formatters — timestamps, durations, JSON, audit labels,
   and changeset errors. One place so every page renders the same way.
@@ -12,6 +10,7 @@ defmodule EmisarWeb.TimeHelpers do
   `%DateTime{}`. `nil` renders as the configurable `placeholder`
   (defaults to `"—"`).
   """
+  use Phoenix.Component
 
   @doc """
   A short relative timestamp:

@@ -7,10 +7,8 @@ defmodule EmisarWeb.PaddleWebhookController do
   Paddle retries any non-2xx.
   """
   use EmisarWeb, :controller
-
-  require Logger
-
   alias Emisar.Billing
+  require Logger
 
   def create(conn, _params) do
     # nil on the EMISAR_DISABLE_BILLING deployment, where the secret is
