@@ -218,6 +218,31 @@ func TestArg_Validate_PatternRequiresStringType(t *testing.T) {
 	}
 }
 
+func TestArg_Validate_MaxLength(t *testing.T) {
+	ptr := func(n int) *int { return &n }
+
+	// Valid on string-ish types.
+	for _, ty := range []ArgType{ArgString, ArgPath, ArgStringArray} {
+		if err := (Arg{Name: "a", Type: ty, Validation: &Validation{MaxLength: ptr(64)}}).Validate(); err != nil {
+			t.Errorf("max_length on %s should be valid: %v", ty, err)
+		}
+	}
+
+	// Rejected on types where the runtime validator can't apply it.
+	for _, ty := range []ArgType{ArgInteger, ArgNumber, ArgBoolean, ArgDuration, ArgIntegerArray} {
+		if err := (Arg{Name: "a", Type: ty, Validation: &Validation{MaxLength: ptr(64)}}).Validate(); err == nil {
+			t.Errorf("max_length on %s should be rejected at load", ty)
+		}
+	}
+
+	// Non-positive caps are a schema bug.
+	for _, n := range []int{0, -1} {
+		if err := (Arg{Name: "a", Type: ArgString, Validation: &Validation{MaxLength: ptr(n)}}).Validate(); err == nil {
+			t.Errorf("max_length %d should be rejected", n)
+		}
+	}
+}
+
 func TestAction_Validate(t *testing.T) {
 	good := func() *Action {
 		return &Action{

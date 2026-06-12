@@ -36,6 +36,16 @@ args:
     validation:
       pattern: "^[a-z0-9_]{3,32}$"
 
+  # string + max_length — bound free-form input so a caller (or an LLM)
+  # can't blow up argv with a multi-megabyte value. Counts bytes.
+  - name: note
+    type: string
+    required: false
+    default: ""
+    description: Free-form note attached to the run.
+    validation:
+      max_length: 4096
+
   # integer + allowed (closed set)
   - name: port
     type: integer

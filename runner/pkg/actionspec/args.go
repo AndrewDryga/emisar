@@ -51,18 +51,23 @@ type Arg struct {
 // Validation are the optional constraints applied to an argument value after
 // type coercion.
 type Validation struct {
-	Enum            []any     `yaml:"enum,omitempty" json:"enum,omitempty"`
-	Pattern         string    `yaml:"pattern,omitempty" json:"pattern,omitempty"`
-	Min             *float64  `yaml:"min,omitempty" json:"min,omitempty"`
-	Max             *float64  `yaml:"max,omitempty" json:"max,omitempty"`
-	Allowed         []any     `yaml:"allowed,omitempty" json:"allowed,omitempty"`
-	AllowedPaths    []string  `yaml:"allowed_paths,omitempty" json:"allowed_paths,omitempty"`
-	DeniedPaths     []string  `yaml:"denied_paths,omitempty" json:"denied_paths,omitempty"`
-	AllowedPrefixes []string  `yaml:"allowed_prefixes,omitempty" json:"allowed_prefixes,omitempty"`
-	DeniedPrefixes  []string  `yaml:"denied_prefixes,omitempty" json:"denied_prefixes,omitempty"`
-	MaxItems        *int      `yaml:"max_items,omitempty" json:"max_items,omitempty"`
-	MinDuration     *Duration `yaml:"min_duration,omitempty" json:"min_duration,omitempty"`
-	MaxDuration     *Duration `yaml:"max_duration,omitempty" json:"max_duration,omitempty"`
+	Enum            []any    `yaml:"enum,omitempty" json:"enum,omitempty"`
+	Pattern         string   `yaml:"pattern,omitempty" json:"pattern,omitempty"`
+	Min             *float64 `yaml:"min,omitempty" json:"min,omitempty"`
+	Max             *float64 `yaml:"max,omitempty" json:"max,omitempty"`
+	Allowed         []any    `yaml:"allowed,omitempty" json:"allowed,omitempty"`
+	AllowedPaths    []string `yaml:"allowed_paths,omitempty" json:"allowed_paths,omitempty"`
+	DeniedPaths     []string `yaml:"denied_paths,omitempty" json:"denied_paths,omitempty"`
+	AllowedPrefixes []string `yaml:"allowed_prefixes,omitempty" json:"allowed_prefixes,omitempty"`
+	DeniedPrefixes  []string `yaml:"denied_prefixes,omitempty" json:"denied_prefixes,omitempty"`
+	MaxItems        *int     `yaml:"max_items,omitempty" json:"max_items,omitempty"`
+	// MaxLength caps a string/path value (or each element of a string_array)
+	// at this many BYTES. Unset = unbounded (other than OS ARG_MAX), so an
+	// action taking free-form LLM input should set it to bound argv size and
+	// the abuse surface.
+	MaxLength   *int      `yaml:"max_length,omitempty" json:"max_length,omitempty"`
+	MinDuration *Duration `yaml:"min_duration,omitempty" json:"min_duration,omitempty"`
+	MaxDuration *Duration `yaml:"max_duration,omitempty" json:"max_duration,omitempty"`
 }
 
 // Validate checks that the arg declaration itself is well-formed (it does
@@ -92,6 +97,17 @@ func (a Arg) Validate() error {
 
 		if _, err := regexp.Compile(a.Validation.Pattern); err != nil {
 			return fmt.Errorf("arg %s: invalid validation.pattern %q: %w", a.Name, a.Validation.Pattern, err)
+		}
+	}
+	// max_length only bounds string-ish values; on a numeric/boolean/integer_array
+	// arg the runtime validator can't apply it, so the action would load yet be
+	// misleadingly "bounded". Reject at authoring time, and require a positive cap.
+	if a.Validation != nil && a.Validation.MaxLength != nil {
+		if a.Type != ArgString && a.Type != ArgPath && a.Type != ArgStringArray {
+			return fmt.Errorf("arg %s: validation.max_length is only valid on string/path/string_array args, not %q", a.Name, a.Type)
+		}
+		if *a.Validation.MaxLength <= 0 {
+			return fmt.Errorf("arg %s: validation.max_length must be positive, got %d", a.Name, *a.Validation.MaxLength)
 		}
 	}
 	return nil

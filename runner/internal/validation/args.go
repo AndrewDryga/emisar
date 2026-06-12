@@ -176,6 +176,15 @@ func applyScalarValidators(a actionspec.Arg, val *actionspec.Validation, v any) 
 			return newError(a.Name, "allowed", "value must be one of %v", val.Allowed)
 		}
 	}
+	if val.MaxLength != nil {
+		s, ok := v.(string)
+		if !ok {
+			return newError(a.Name, "max_length", "max_length requires string value")
+		}
+		if len(s) > *val.MaxLength {
+			return newError(a.Name, "max_length", "must be at most %d bytes (got %d)", *val.MaxLength, len(s))
+		}
+	}
 	if val.Pattern != "" {
 		s, ok := v.(string)
 		if !ok {

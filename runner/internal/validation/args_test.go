@@ -70,6 +70,31 @@ func TestValidate_Pattern(t *testing.T) {
 	}
 }
 
+func TestValidate_MaxLength(t *testing.T) {
+	schema := []actionspec.Arg{{
+		Name: "x", Type: actionspec.ArgString,
+		Validation: &actionspec.Validation{MaxLength: ptrInt(5)},
+	}}
+	if _, err := Validate(schema, map[string]any{"x": "abcde"}); err != nil {
+		t.Fatalf("5 bytes should pass: %v", err)
+	}
+	if _, err := Validate(schema, map[string]any{"x": "abcdef"}); err == nil {
+		t.Fatal("6 bytes should fail max_length")
+	}
+
+	// Applies per-element to a string_array.
+	arr := []actionspec.Arg{{
+		Name: "xs", Type: actionspec.ArgStringArray,
+		Validation: &actionspec.Validation{MaxLength: ptrInt(3)},
+	}}
+	if _, err := Validate(arr, map[string]any{"xs": []any{"ok", "yes"}}); err != nil {
+		t.Fatalf("short elements should pass: %v", err)
+	}
+	if _, err := Validate(arr, map[string]any{"xs": []any{"ok", "toolong"}}); err == nil {
+		t.Fatal("a 7-byte element should fail max_length")
+	}
+}
+
 func TestValidate_MinMax(t *testing.T) {
 	schema := []actionspec.Arg{{
 		Name: "x", Type: actionspec.ArgInteger,
