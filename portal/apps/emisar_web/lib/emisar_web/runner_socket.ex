@@ -142,11 +142,14 @@ defmodule EmisarWeb.RunnerSocket do
     :ok
   end
 
-  # Strip the "unknown" sentinel that `RunnerConnectController.ip_string/1`
-  # emits when `conn.remote_ip` isn't a real IP tuple, so we don't pollute
-  # audit rows with the placeholder.
+  # Normalize the IP `RunnerConnectController.ip_string/1` passes via socket
+  # state: drop its "unknown" sentinel (emitted when `conn.remote_ip` isn't a
+  # real tuple), and strip the `::ffff:` IPv4-mapped-IPv6 wrapper an IPv6
+  # listener surfaces — so a runner's audit IP reads `1.2.3.4`, the same form
+  # `EmisarWeb.RequestContext` records for every browser path.
   @doc false
   def normalize_ip("unknown"), do: nil
+  def normalize_ip("::ffff:" <> ip4), do: ip4
   def normalize_ip(s) when is_binary(s), do: s
   def normalize_ip(_), do: nil
 

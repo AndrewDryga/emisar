@@ -531,6 +531,10 @@ defmodule EmisarWeb.RunnerSocketTest do
       assert RunnerSocket.normalize_ip("203.0.113.9") == "203.0.113.9"
       assert RunnerSocket.normalize_ip({203, 0, 113, 9}) == nil
     end
+
+    test "strips the ::ffff: IPv4-mapped wrapper, matching the browser paths" do
+      assert RunnerSocket.normalize_ip("::ffff:192.0.2.5") == "192.0.2.5"
+    end
   end
 
   # -- Test seam setup + helpers --------------------------------------
