@@ -169,9 +169,9 @@ defmodule EmisarWeb.AuditExportController do
   end
 
   # SIEMs want exact JSON they can ingest as-is. Project every column
-  # the audit row stores — including the request metadata stamped by
-  # the boundary plug — so downstream rules can correlate by
-  # `request_id` / `ip_address` / `user_agent`.
+  # the audit row stores — including the request metadata the boundary
+  # captured on the caller's %RequestContext{} — so downstream rules can
+  # correlate by `request_id` / `ip_address` / `user_agent`.
   defp serialize(%Emisar.Audit.Event{} = event) do
     %{
       id: event.id,
