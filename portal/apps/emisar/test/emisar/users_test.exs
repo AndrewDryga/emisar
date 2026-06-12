@@ -128,4 +128,42 @@ defmodule Emisar.UsersTest do
       refute Ecto.Changeset.get_change(changeset, :hashed_password)
     end
   end
+
+  describe "change_user_password/3 (self-service)" do
+    setup do
+      pw = "current-password-1234"
+      account = account_fixture()
+      user = user_fixture(password: pw)
+      _ = membership_fixture(account_id: account.id, user_id: user.id, role: "owner")
+      %{user: user, subject: subject_for(user, account, role: :owner), pw: pw}
+    end
+
+    test "with the correct current password, rotates the credential", %{
+      user: user,
+      subject: subject,
+      pw: pw
+    } do
+      assert {:ok, %User{}} = Users.change_user_password(pw, "a-new-password-5678", subject)
+      assert User.valid_password?(Repo.reload!(user), "a-new-password-5678")
+    end
+
+    test "with the wrong current password, refuses with :invalid_current_password", %{
+      subject: subject
+    } do
+      assert {:error, :invalid_current_password} =
+               Users.change_user_password("wrong-current-xxxx", "a-new-password-5678", subject)
+    end
+  end
+
+  describe "update_user_profile/2 (self-service)" do
+    test "updates the caller's own full name" do
+      account = account_fixture()
+      user = user_fixture()
+      _ = membership_fixture(account_id: account.id, user_id: user.id, role: "owner")
+      subject = subject_for(user, account, role: :owner)
+
+      assert {:ok, %User{full_name: "Renamed Person"}} =
+               Users.update_user_profile(%{"full_name" => "Renamed Person"}, subject)
+    end
+  end
 end
