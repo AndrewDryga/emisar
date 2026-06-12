@@ -17,7 +17,7 @@ import (
 	"syscall"
 	"time"
 
-	"nhooyr.io/websocket"
+	"github.com/coder/websocket"
 )
 
 // WebsocketDialer is the real cloud transport. It does the two-step
@@ -415,7 +415,7 @@ func (d *WebsocketDialer) logger() *slog.Logger {
 
 // -- Conn wrapper ----------------------------------------------------
 
-// wsConn adapts a nhooyr.io/websocket.Conn to the cloud.Conn interface.
+// wsConn adapts a github.com/coder/websocket.Conn to the cloud.Conn interface.
 // Messages are JSON-encoded text frames; binary frames are an error.
 type wsConn struct {
 	ws  *websocket.Conn
