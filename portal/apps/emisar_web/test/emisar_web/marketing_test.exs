@@ -11,6 +11,11 @@ defmodule EmisarWeb.MarketingTest do
     /docs/security-model
     /docs/connect-an-llm
     /docs/publishing-packs
+    /docs/policies-and-approvals
+    /docs/runbooks
+    /docs/teams-and-access
+    /docs/runners
+    /docs/audit-and-siem
     /changelog
     /about
     /privacy

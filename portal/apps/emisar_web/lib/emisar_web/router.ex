@@ -88,6 +88,11 @@ defmodule EmisarWeb.Router do
     get "/packs/:id/pack.tar.gz", PackRegistryController, :tarball
     get "/packs/:id", MarketingController, :pack_detail
     get "/docs/publishing-packs", MarketingController, :docs_publishing_packs
+    get "/docs/policies-and-approvals", MarketingController, :docs_policies
+    get "/docs/runbooks", MarketingController, :docs_runbooks
+    get "/docs/teams-and-access", MarketingController, :docs_teams
+    get "/docs/runners", MarketingController, :docs_runners
+    get "/docs/audit-and-siem", MarketingController, :docs_audit
     get "/sitemap.xml", SitemapController, :show
     get "/install.sh", InstallController, :show
     get "/install-mcp.sh", InstallMcpController, :show

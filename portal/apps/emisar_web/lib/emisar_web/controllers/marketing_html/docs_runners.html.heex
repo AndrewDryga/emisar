@@ -1,0 +1,214 @@
+<div class="bg-zinc-950 text-zinc-100">
+  <.marketing_nav current_user={@current_user} current={:docs} />
+
+  <section class="py-16 sm:py-24">
+    <div class="mx-auto max-w-3xl px-6 lg:px-8">
+      <p class="text-sm font-semibold text-indigo-400">Docs / Runners</p>
+      <h1 class="mt-2 text-4xl font-bold tracking-tight text-zinc-50 md:text-5xl">
+        Operating your runner fleet
+      </h1>
+      <p class="mt-6 text-lg leading-8 text-zinc-400">
+        The quickstart gets one runner online. This page is the rest of its life: organizing a
+        fleet with groups and labels, handing packs their credentials, updating, troubleshooting,
+        and removing a host cleanly. (Installation itself is covered in the <.link
+          navigate={~p"/docs/quickstart"}
+          class="text-indigo-400 hover:text-indigo-300"
+        >quickstart</.link>.)
+      </p>
+
+      <h2 class="mt-12 text-2xl font-semibold text-zinc-50">Groups and labels</h2>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        Every runner declares a <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">group</code>
+        (one string — <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">cassandra-prod</code>, <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">web</code>) and free-form
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">labels</code>
+        (<code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">role=db</code>, <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">region=us-east-1</code>) in <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/etc/emisar/config.yaml</code>.
+        Groups are load-bearing: runbook steps target them, per-member runner scopes follow
+        them, and an LLM fan-out call can address every runner in one. Pick group names the way
+        you'd name a fleet tier, not a host. The installer defaults the group to the hostname —
+        fine for one box, worth changing the moment you have a second.
+      </p>
+
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">Enrollment keys</h2>
+      <ul class="mt-4 space-y-2 text-sm leading-6 text-zinc-400">
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-600">—</span>
+          <span>
+            <strong class="text-zinc-200">Single-use, shown once.</strong>
+            Each <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emkey-auth-…</code>
+            key
+            enrolls exactly one runner; concurrent attempts with the same key can't both win.
+            The runner trades it for its own long-lived token
+            (<code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">rnrtok-…</code>, stored
+            hashed cloud-side, mode-0600 on the host) and the key is spent.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-600">—</span>
+          <span>
+            <strong class="text-zinc-200">Mint per host, at install time.</strong>
+            <strong>Runners → Connect a runner</strong> generates the install one-liner with a
+            fresh key baked in. For fleet provisioning (cloud-init, Packer, Ansible), mint a key
+            per host and inject it as <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">EMISAR_AUTH_KEY</code>.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-600">—</span>
+          <span>
+            <strong class="text-zinc-200">Revocation is cloud-side.</strong> Revoke a runner's
+            token (or disable the runner) and its next frame gets a 401; the service exits
+            rather than retrying forever.
+          </span>
+        </li>
+      </ul>
+
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">Giving packs their credentials</h2>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        Packs that talk to a service — Nomad, Consul, Postgres — read credentials from the
+        runner's <em>environment</em>, never from call arguments, so secrets never transit the
+        cloud. Two steps on the host:
+      </p>
+      <div class="mt-3 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
+        <pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300"><span class="text-zinc-500"># 1. /etc/emisar/runner.env (mode 0600) — the values</span>
+NOMAD_ADDR=http://127.0.0.1:4646
+NOMAD_TOKEN=&lt;acl-token&gt;
+
+<span class="text-zinc-500"># 2. /etc/emisar/config.yaml — allowlist the names</span>
+execution:
+  inherit_env:
+    - NOMAD_ADDR
+    - NOMAD_TOKEN</pre>
+      </div>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        Only allowlisted names reach an action's process (on top of the <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">PATH</code>/locale baseline) — the
+        runner's own environment and its token never leak through. Restart the service after
+        editing; what each pack needs is in <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar pack info &lt;id&gt;</code>.
+      </p>
+
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">Online, offline, and stuck runs</h2>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        The runner heartbeats every 30 seconds; the dashboard's online badge reflects it, and
+        either side closes a connection that goes quiet. Disconnects are normal — the runner
+        reconnects with exponential backoff and re-advertises its catalog, and in-flight actions
+        keep executing through the gap with their results delivered on the new connection. If a
+        runner stays offline past a two-minute grace, its in-flight runs are marked as errored
+        with an explanation — nothing sits "running" forever.
+      </p>
+
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">Updating</h2>
+      <div class="mt-3 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
+        <pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300"><span class="text-zinc-500"># runner binary — re-run the installer; configs and packs are preserved</span>
+<span class="text-zinc-500">$</span> curl -sSL https://emisar.dev/install.sh | sudo bash
+
+<span class="text-zinc-500"># packs — update from the registry, then reload (no restart, no dropped runs)</span>
+<span class="text-zinc-500">$</span> sudo emisar pack update linux-core
+<span class="text-zinc-500">$</span> sudo systemctl reload emisar</pre>
+      </div>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        Reload (SIGHUP) re-reads packs and re-advertises the catalog on the live connection. A
+        changed pack hash lands as <strong class="text-zinc-200">pending</strong> on the Packs
+        page until someone trusts it — updates are visible, never silent.
+      </p>
+
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">The host-side toolbox</h2>
+      <div class="mt-3 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
+        <pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300"><span class="text-zinc-500">$</span> journalctl -u emisar -f          <span class="text-zinc-500"># service logs</span>
+<span class="text-zinc-500">$</span> sudo emisar action list           <span class="text-zinc-500"># what this host advertises</span>
+<span class="text-zinc-500">$</span> sudo emisar pack list             <span class="text-zinc-500"># loaded packs + hashes</span>
+<span class="text-zinc-500">$</span> sudo emisar events tail -f        <span class="text-zinc-500"># the local JSONL journal, live</span>
+<span class="text-zinc-500">$</span> sudo emisar audit verify --all    <span class="text-zinc-500"># verify the journal's hash chain</span></pre>
+      </div>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        (The CLI defaults to <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--config /etc/emisar/config.yaml</code>,
+        so these work as-is on an installed host.) For defense-in-depth controls on the
+        host — the local admission allowlist, systemd hardening drop-ins, granting specific
+        actions elevated privileges via polkit/sudoers — see the <.link
+          navigate={~p"/docs/security-model"}
+          class="text-indigo-400 hover:text-indigo-300"
+        >
+          security model
+        </.link>.
+      </p>
+
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">Troubleshooting</h2>
+      <ul class="mt-4 space-y-3 text-sm leading-6 text-zinc-400">
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-600">—</span>
+          <span>
+            <strong class="text-zinc-200">Never shows up:</strong>
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">journalctl -u emisar -f</code>.
+            A 401 means a spent or revoked enrollment key — mint a fresh one. A connect timeout
+            means outbound 443 to
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar.dev</code>
+            is blocked.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-600">—</span>
+          <span>
+            <strong class="text-zinc-200">Service is "failed":</strong> after five crashes in
+            five minutes systemd stops retrying (deliberate — a revoked key shouldn't hammer the
+            cloud). Fix the cause, then <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">systemctl reset-failed emisar && systemctl start emisar</code>.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-600">—</span>
+          <span>
+            <strong class="text-zinc-200">Action won't dispatch:</strong> check the Packs page
+            first — a pending (untrusted) or drifted pack hash blocks dispatch by design. Then
+            check the member's or key's runner scope.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-600">—</span>
+          <span>
+            <strong class="text-zinc-200">Pack refuses to load:</strong>
+            the journal names the
+            exact file and rule — duplicate action IDs, a script escaping the pack root, and
+            symlinks (without <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">allow_symlinks</code>)
+            all fail closed.
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">
+              emisar pack validate ./pack
+            </code>
+            reproduces it locally.
+          </span>
+        </li>
+      </ul>
+
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">Removing a runner</h2>
+      <div class="mt-3 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
+        <pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300"><span class="text-zinc-500"># on the host — remove binary + service (keep config/data/logs)</span>
+<span class="text-zinc-500">$</span> sudo bash install.sh --uninstall
+<span class="text-zinc-500"># …or purge everything, including the local journal</span>
+<span class="text-zinc-500">$</span> sudo bash install.sh --uninstall --purge</pre>
+      </div>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        Then delete the runner in the dashboard. Its run history and audit events stay — history
+        survives the host. <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--purge</code>
+        deletes the local journal too, so export it first if you keep host-side forensics.
+      </p>
+
+      <div class="mt-8 flex flex-wrap gap-x-6 gap-y-3 border-t border-zinc-900 pt-8 text-sm">
+        <.link
+          navigate={~p"/docs/quickstart"}
+          class="inline-flex items-center gap-1 font-medium text-indigo-400 hover:text-indigo-300"
+        >
+          First install: the quickstart <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
+        </.link>
+        <.link
+          navigate={~p"/docs/teams-and-access"}
+          class="inline-flex items-center gap-1 font-medium text-indigo-400 hover:text-indigo-300"
+        >
+          Scope members to runners <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
+        </.link>
+        <.link
+          navigate={~p"/docs/action-packs"}
+          class="inline-flex items-center gap-1 font-medium text-indigo-400 hover:text-indigo-300"
+        >
+          Pack trust + drift <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
+        </.link>
+      </div>
+    </div>
+  </section>
+
+  <.marketing_footer />
+</div>

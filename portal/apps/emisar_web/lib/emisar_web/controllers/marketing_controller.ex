@@ -61,7 +61,19 @@ defmodule EmisarWeb.MarketingController do
      "Anthropic's Zero Trust for AI Agents framework calls for least agency, deny-by-default tools, human approval for high-risk actions, and an immutable audit trail. See how emisar enforces that exact control set between an LLM and your infrastructure — including the approval gates, just-in-time access, and SIEM export the framework files under its top tiers, shipped by default on emisar's Free plan."},
     {"/docs/publishing-packs", :docs_publishing_packs, :docs_publishing_packs,
      "Author your own action pack",
-     "Write, validate, install, and trust an emisar action pack you maintain yourself — pack.yaml, action YAMLs, content-hash trust, and fleet rollout. Plus when (and how) to propose a genuinely generic pack to the curated public registry."}
+     "Write, validate, install, and trust an emisar action pack you maintain yourself — pack.yaml, action YAMLs, content-hash trust, and fleet rollout. Plus when (and how) to propose a genuinely generic pack to the curated public registry."},
+    {"/docs/policies-and-approvals", :docs_policies, :docs_policies,
+     "Policies & approvals — control what runs",
+     "How emisar decides allow / require-approval / deny per action: risk-tier defaults, ordered per-action overrides, human approvals with a 24-hour TTL, and revocable standing grants scoped to a key, action, runner, and arguments."},
+    {"/docs/runbooks", :docs_runbooks, :docs_runbooks,
+     "Runbooks — saved, gated operational sequences",
+     "Author versioned runbooks in a form editor, target runners or groups per step, dispatch with per-step policy gating and halt-on-failure — and let your LLM read them as playbooks over MCP."},
+    {"/docs/teams-and-access", :docs_teams, :docs_teams, "Teams, roles & access",
+     "The emisar access model: owner/admin/operator/viewer roles, invitations, per-member runner scopes that hide out-of-scope hosts, account-wide MFA enforcement, session management, and scoped revocable API keys."},
+    {"/docs/runners", :docs_runners, :docs_runners, "Operating your runner fleet",
+     "Groups and labels, single-use enrollment keys, pack credentials via inherit_env, updating the binary and packs, reconnect and stuck-run semantics, host-side troubleshooting, and clean removal."},
+    {"/docs/audit-and-siem", :docs_audit, :docs_audit, "The audit trail & SIEM export",
+     "What emisar records, reading it in the dashboard, streaming NDJSON to your SIEM with a read-only audit:read key and cursor pagination, and verifying the hash-chained runner journal."}
   ]
 
   # Home FAQ — the single source of truth for both the visible FAQ

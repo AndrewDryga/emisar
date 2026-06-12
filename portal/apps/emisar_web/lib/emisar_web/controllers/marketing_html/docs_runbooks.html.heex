@@ -1,0 +1,126 @@
+<div class="bg-zinc-950 text-zinc-100">
+  <.marketing_nav current_user={@current_user} current={:docs} />
+
+  <section class="py-16 sm:py-24">
+    <div class="mx-auto max-w-3xl px-6 lg:px-8">
+      <p class="text-sm font-semibold text-indigo-400">Docs / Runbooks</p>
+      <h1 class="mt-2 text-4xl font-bold tracking-tight text-zinc-50 md:text-5xl">
+        Runbooks
+      </h1>
+      <p class="mt-6 text-lg leading-8 text-zinc-400">
+        A runbook is a saved, versioned sequence of actions — the "how we restart the cache
+        tier" knowledge that usually lives in a wiki page going stale. Here it's executable:
+        each step is a declared action with its arguments and target, every run of it is
+        policy-gated and audited, and your LLM can read it as a playbook.
+      </p>
+
+      <h2 class="mt-12 text-2xl font-semibold text-zinc-50">What a runbook is made of</h2>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        An ordered list of steps. Each step names an action from your catalog, the arguments to
+        pass, and where it runs — a <strong class="text-zinc-200">specific runner</strong>
+        or a <strong class="text-zinc-200">runner group</strong>
+        (a group step fans out to every
+        matching runner). Because steps reference catalog actions, a runbook can never do
+        anything your packs don't already declare — it's composition, not new capability.
+      </p>
+
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">Authoring</h2>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        <strong>Runbooks → New</strong> in the dashboard. The editor is a form, not a YAML
+        textarea: pick an action from the catalog, fill its declared arguments, choose the
+        target, reorder steps with the arrow controls. Owners and admins author and edit;
+        operators and viewers (and connected LLMs) see published runbooks read-only.
+      </p>
+      <ul class="mt-4 space-y-2 text-sm leading-6 text-zinc-400">
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-600">—</span>
+          <span>
+            <strong class="text-zinc-200">Draft → published.</strong> Drafts are editable and
+            invisible to dispatch. Publishing freezes that version; every later save bumps the
+            version number, so "which revision ran during the incident" has an answer.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-600">—</span>
+          <span>
+            <strong class="text-zinc-200">Title, slug, description.</strong> The description is
+            what an LLM reads when it lists runbooks — write it like you'd brief a new on-call:
+            when to reach for this, when not to.
+          </span>
+        </li>
+      </ul>
+
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">Running one</h2>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        Dispatch from the runbook's page with a required reason — same as any single action.
+        Execution is sequential with a small wave of parallelism: up to five runs in flight at a
+        time, the next wave dispatching as runs complete. Two properties matter operationally:
+      </p>
+      <ul class="mt-4 space-y-2 text-sm leading-6 text-zinc-400">
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-600">—</span>
+          <span>
+            <strong class="text-zinc-200">Policy applies per step.</strong> A runbook isn't a
+            policy bypass: a high-risk step stops for approval exactly as it would standalone,
+            and the runbook continues once a human approves.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-600">—</span>
+          <span>
+            <strong class="text-zinc-200">Failure halts the sequence.</strong> A denied or
+            failed step stops the runbook rather than marching on against a host in an unknown
+            state. Every step's run is individually visible — output, exit code, duration —
+            under the execution.
+          </span>
+        </li>
+      </ul>
+
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">Runbooks and your LLM</h2>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        Connected agents see two extra tools:
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">list_runbooks</code>
+        (published
+        runbooks with their descriptions) and
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">get_runbook</code>
+        (one runbook's
+        ordered steps, targets resolved to current runner names). The cloud deliberately does
+        <strong class="text-zinc-200">not</strong>
+        auto-execute a runbook for the model — the
+        agent dispatches each step itself, in order, through the normal action tools. That keeps
+        every step inside the same policy, approval, and audit machinery, and lets the agent
+        stop, reassess, or escalate between steps the way a human operator would.
+      </p>
+
+      <div class="mt-8 rounded-xl border border-zinc-800 bg-zinc-950/60 p-5 text-sm leading-6 text-zinc-400">
+        <strong class="text-zinc-100">What to put in a runbook.</strong>
+        Diagnostics-then-remediation sequences you run more than twice: drain-and-restart a
+        service tier, rotate a stuck consumer group, the standard triage ladder for a noisy
+        alert. Keep one-off investigation ad-hoc — that's what the catalog itself is for.
+      </div>
+
+      <div class="mt-8 flex flex-wrap gap-x-6 gap-y-3 border-t border-zinc-900 pt-8 text-sm">
+        <.link
+          navigate={~p"/docs/policies-and-approvals"}
+          class="inline-flex items-center gap-1 font-medium text-indigo-400 hover:text-indigo-300"
+        >
+          How steps get gated <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
+        </.link>
+        <.link
+          navigate={~p"/docs/connect-an-llm"}
+          class="inline-flex items-center gap-1 font-medium text-indigo-400 hover:text-indigo-300"
+        >
+          Give your agent the tools <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
+        </.link>
+        <.link
+          navigate={~p"/docs/action-packs"}
+          class="inline-flex items-center gap-1 font-medium text-indigo-400 hover:text-indigo-300"
+        >
+          The actions steps are made of <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
+        </.link>
+      </div>
+    </div>
+  </section>
+
+  <.marketing_footer />
+</div>

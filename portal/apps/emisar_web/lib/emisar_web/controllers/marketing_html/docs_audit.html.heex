@@ -1,0 +1,142 @@
+<div class="bg-zinc-950 text-zinc-100">
+  <.marketing_nav current_user={@current_user} current={:docs} />
+
+  <section class="py-16 sm:py-24">
+    <div class="mx-auto max-w-3xl px-6 lg:px-8">
+      <p class="text-sm font-semibold text-indigo-400">Docs / Audit &amp; SIEM</p>
+      <h1 class="mt-2 text-4xl font-bold tracking-tight text-zinc-50 md:text-5xl">
+        The audit trail
+      </h1>
+      <p class="mt-6 text-lg leading-8 text-zinc-400">
+        Everything that matters leaves a record: every dispatch and its outcome, every approval
+        decision, every policy edit, every credential minted or revoked, every sign-in — even
+        the failed ones. This page covers reading the trail in the dashboard, streaming it to
+        your SIEM, and how the runner-side journal complements it.
+      </p>
+
+      <h2 class="mt-12 text-2xl font-semibold text-zinc-50">What gets recorded</h2>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        Events are named
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">domain.action</code>
+        — <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">policy.evaluated</code>
+        (one per dispatch, with the decision), <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">approval.approved</code>, <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">policy.updated</code>, <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">membership.role_changed</code>, <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">user.sign_in_failed</code>, …
+        about fifty types across runs, approvals, policies, packs, runners, credentials, team,
+        and account changes. Each carries the actor (operator, API key, or runner), the
+        affected entity, a structured payload (a policy edit records its exact diff), and an
+        account-scoped timestamp. Audit rows are written in the
+        <strong class="text-zinc-200">same database transaction</strong>
+        as the change they
+        describe — an action that committed has its audit row, always.
+      </p>
+
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">Reading it in the dashboard</h2>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        <strong>Audit</strong> in the sidebar: filter by event type or actor kind; every
+        row expands to the full payload, and references resolve to live labels (the runner's
+        name, the user's email) so you're not cross-referencing UUIDs. LLM-driven runs carry
+        their attribution — which client, which key, which session — plus the required <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">reason</code>, so "what did the
+        agent do last night, and why" is a filter, not an investigation.
+      </p>
+
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">Streaming to a SIEM</h2>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        The export endpoint serves NDJSON — one event per line, cursor-paginated, forward-only.
+        Mint a key with the
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">audit:read</code>
+        scope from the Audit page; that key can read events and nothing else — it can never
+        list runners or execute an action.
+      </p>
+      <div class="mt-3 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
+        <pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300"><span class="text-zinc-500"># first pull — everything since a timestamp</span>
+<span class="text-zinc-500">$</span> curl -s <span class="text-emerald-300">"https://emisar.dev/api/audit?since=2026-06-01T00:00:00Z&amp;limit=500"</span> \
+    -H <span class="text-emerald-300">"Authorization: Bearer $AUDIT_KEY"</span>
+
+<span class="text-zinc-500"># follow-ups — pass the cursor from the previous response</span>
+<span class="text-zinc-500">$</span> curl -s <span class="text-emerald-300">"https://emisar.dev/api/audit?cursor=$NEXT"</span> \
+    -H <span class="text-emerald-300">"Authorization: Bearer $AUDIT_KEY"</span></pre>
+      </div>
+      <ul class="mt-4 space-y-2 text-sm leading-6 text-zinc-400">
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-600">—</span>
+          <span>
+            The next cursor arrives both as an RFC 5988
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">
+              Link: &lt;…&gt;; rel="next"
+            </code>
+            header and a plain
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">X-Next-Cursor</code>
+            header — Splunk-style collectors follow the Link, Datadog-style ones read the
+            X-header. No headers on the last page means you're caught up; poll again later with
+            the same cursor.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-600">—</span>
+          <span>
+            Pages are capped at 1,000 events; ordering is stable
+            (<code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">occurred_at</code>, then id),
+            so a poller never misses or double-counts an event.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-600">—</span>
+          <span>
+            Retention follows your plan — 7 days on Free, 90 on Team, 365 on Enterprise. Ship
+            to your SIEM ahead of the window and retention becomes your SIEM's policy, not ours.
+          </span>
+        </li>
+      </ul>
+
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">The runner-side journal</h2>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        Independently of the cloud, every runner writes a JSONL line per action attempt to
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/var/log/emisar/events.jsonl</code>
+        — argv hashes, exit codes, redaction counts, output digests — each line chained to the
+        previous by SHA-256.
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar audit verify --all</code>
+        proves the chain (including rotated files). The cloud is the searchable system of
+        record; the journal is the host-side forensics copy that doesn't depend on us — cutting
+        or editing a line breaks the chain detectably, though a root attacker can of course
+        delete the whole file. Ship it with your normal log pipeline if you want both records
+        off-host.
+      </p>
+
+      <div class="mt-8 rounded-xl border border-zinc-800 bg-zinc-950/60 p-5 text-sm leading-6 text-zinc-400">
+        <strong class="text-zinc-100">Worth alerting on.</strong>
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">user.sign_in_failed</code>
+        spikes
+        (someone probing your team),
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">policy.updated</code>
+        (the rules
+        changed), pack-trust transitions (new bytes were approved), and on the runner side
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">validation_failed</code>
+        / <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">action_blocked_by_admission</code>
+        — an agent repeatedly asking for things it can't have is the most interesting signal
+        you'll get.
+      </div>
+
+      <div class="mt-8 flex flex-wrap gap-x-6 gap-y-3 border-t border-zinc-900 pt-8 text-sm">
+        <.link
+          navigate={~p"/docs/security-model"}
+          class="inline-flex items-center gap-1 font-medium text-indigo-400 hover:text-indigo-300"
+        >
+          The full security model <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
+        </.link>
+        <.link
+          navigate={~p"/docs/policies-and-approvals"}
+          class="inline-flex items-center gap-1 font-medium text-indigo-400 hover:text-indigo-300"
+        >
+          The decisions being recorded <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
+        </.link>
+        <.link
+          navigate={~p"/docs/teams-and-access"}
+          class="inline-flex items-center gap-1 font-medium text-indigo-400 hover:text-indigo-300"
+        >
+          Scoped audit:read keys <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
+        </.link>
+      </div>
+    </div>
+  </section>
+
+  <.marketing_footer />
+</div>

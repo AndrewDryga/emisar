@@ -19,141 +19,83 @@
     </div>
   </section>
 
-  <%!-- Cards --%>
+  <%!-- Cards, grouped by what the reader is trying to do --%>
   <section class="pb-24 sm:pb-32">
     <div class="mx-auto max-w-7xl px-6 lg:px-8">
-      <div class="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
-        <.link
-          href={~p"/docs/quickstart"}
-          class="group rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8 transition hover:border-indigo-500/50"
-        >
-          <div class="flex h-12 w-12 items-center justify-center rounded-lg bg-indigo-500/10 text-indigo-400">
-            <.icon name="hero-rocket-launch" class="h-6 w-6" />
-          </div>
-          <h2 class="mt-6 text-xl font-semibold text-zinc-50 group-hover:text-indigo-300">
-            Quickstart
+      <%= for {section, cards} <- [
+        {"Get started",
+         [
+           {~p"/docs/quickstart", "hero-rocket-launch", "Quickstart",
+            "Sign up, install a runner, run your first action in under five minutes."},
+           {~p"/docs/connect-an-llm", "hero-puzzle-piece", "Connect an LLM",
+            "Claude.ai and ChatGPT over remote MCP, or Claude Code, Claude Desktop, Cursor, Gemini CLI, and Codex CLI via the stdio bridge."}
+         ]},
+        {"Operate",
+         [
+           {~p"/docs/policies-and-approvals", "hero-scale", "Policies & approvals",
+            "Risk-tier defaults, per-action overrides, human approvals, and revocable standing grants — control what runs."},
+           {~p"/docs/runbooks", "hero-queue-list", "Runbooks",
+            "Saved, versioned action sequences — policy-gated per step, readable by your LLM as playbooks."},
+           {~p"/docs/teams-and-access", "hero-user-group", "Teams & access",
+            "Roles, invitations, per-member runner scopes, account-wide MFA, sessions, and API key scopes."},
+           {~p"/docs/runners", "hero-server-stack", "Runner fleet",
+            "Groups and labels, enrollment keys, pack credentials, updates, troubleshooting, and clean removal."},
+           {~p"/docs/audit-and-siem", "hero-document-magnifying-glass", "Audit & SIEM",
+            "What gets recorded, the dashboard view, NDJSON export with a read-only key, and the runner journal."}
+         ]},
+        {"Build packs",
+         [
+           {~p"/docs/action-packs", "hero-cube-transparent", "Pack reference",
+            "Action YAML reference: declared args + validation, limits, redaction, side-effects, examples."},
+           {~p"/docs/publishing-packs", "hero-arrow-up-tray", "Author your own pack",
+            "Write, validate, install, and trust a pack you maintain — and when to propose one to the registry."}
+         ]},
+        {"Reference",
+         [
+           {~p"/docs/security-model", "hero-shield-check", "Security model",
+            "Trust boundary, searchable cloud audit, hash-chained runner journal, redaction-before-egress."},
+           {~p"/pricing", "hero-credit-card", "Hosting & plans",
+            "The supported product is the hosted emisar control plane today; the source-available repo can be evaluated in your own environment. Plans and audit retention are on the pricing page."}
+         ]}
+      ] do %>
+        <div class="mt-12 first:mt-0">
+          <h2 class="text-sm font-semibold uppercase tracking-wider text-zinc-500">
+            {section}
           </h2>
-          <p class="mt-2 text-sm text-zinc-400">
-            Sign up, install a runner, run your first action in under five minutes.
-          </p>
-          <p class="mt-4 text-sm font-semibold text-indigo-300">
-            Read the guide <span aria-hidden="true">&rarr;</span>
-          </p>
-        </.link>
-
-        <.link
-          href={~p"/docs/action-packs"}
-          class="group rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8 transition hover:border-indigo-500/50"
-        >
-          <div class="flex h-12 w-12 items-center justify-center rounded-lg bg-indigo-500/10 text-indigo-400">
-            <.icon name="hero-cube-transparent" class="h-6 w-6" />
+          <div class="mt-4 grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+            <%= for {href, icon, title, desc} <- cards do %>
+              <.link
+                href={href}
+                class="group rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8 transition hover:border-indigo-500/50"
+              >
+                <div class="flex h-12 w-12 items-center justify-center rounded-lg bg-indigo-500/10 text-indigo-400">
+                  <.icon name={icon} class="h-6 w-6" />
+                </div>
+                <h3 class="mt-6 text-xl font-semibold text-zinc-50 group-hover:text-indigo-300">
+                  {title}
+                </h3>
+                <p class="mt-2 text-sm text-zinc-400">{desc}</p>
+                <p class="mt-4 text-sm font-semibold text-indigo-300">
+                  Read it <span aria-hidden="true">&rarr;</span>
+                </p>
+              </.link>
+            <% end %>
           </div>
-          <h2 class="mt-6 text-xl font-semibold text-zinc-50 group-hover:text-indigo-300">
-            Pack reference
-          </h2>
-          <p class="mt-2 text-sm text-zinc-400">
-            Action YAML reference: declared args + validation, limits, redaction,
-            side-effects, dispatch-form examples.
-          </p>
-          <p class="mt-4 text-sm font-semibold text-indigo-300">
-            See the spec <span aria-hidden="true">&rarr;</span>
-          </p>
-        </.link>
+        </div>
+      <% end %>
 
-        <.link
-          href={~p"/docs/publishing-packs"}
-          class="group rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8 transition hover:border-indigo-500/50"
-        >
-          <div class="flex h-12 w-12 items-center justify-center rounded-lg bg-indigo-500/10 text-indigo-400">
-            <.icon name="hero-arrow-up-tray" class="h-6 w-6" />
-          </div>
-          <h2 class="mt-6 text-xl font-semibold text-zinc-50 group-hover:text-indigo-300">
-            Author your own pack
-          </h2>
-          <p class="mt-2 text-sm text-zinc-400">
-            Write, validate, install, and trust a pack you maintain yourself — and when to propose
-            a generic one to the curated registry.
-          </p>
-          <p class="mt-4 text-sm font-semibold text-indigo-300">
-            Author a pack <span aria-hidden="true">&rarr;</span>
-          </p>
-        </.link>
-
-        <.link
-          href={~p"/docs/security-model"}
-          class="group rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8 transition hover:border-indigo-500/50"
-        >
-          <div class="flex h-12 w-12 items-center justify-center rounded-lg bg-indigo-500/10 text-indigo-400">
-            <.icon name="hero-shield-check" class="h-6 w-6" />
-          </div>
-          <h2 class="mt-6 text-xl font-semibold text-zinc-50 group-hover:text-indigo-300">
-            Security model
-          </h2>
-          <p class="mt-2 text-sm text-zinc-400">
-            Trust boundary, searchable cloud audit, hash-chained runner journal, and
-            redaction-before-egress.
-          </p>
-          <p class="mt-4 text-sm font-semibold text-indigo-300">
-            Read the model <span aria-hidden="true">&rarr;</span>
-          </p>
-        </.link>
-
-        <.link
-          href={~p"/docs/connect-an-llm"}
-          class="group rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8 transition hover:border-indigo-500/50"
-        >
-          <div class="flex h-12 w-12 items-center justify-center rounded-lg bg-indigo-500/10 text-indigo-400">
-            <.icon name="hero-puzzle-piece" class="h-6 w-6" />
-          </div>
-          <h2 class="mt-6 text-xl font-semibold text-zinc-50 group-hover:text-indigo-300">
-            Connect an LLM
-          </h2>
-          <p class="mt-2 text-sm text-zinc-400">
-            Wire emisar into Claude.ai and ChatGPT over remote MCP, or Claude Code, Claude Desktop, Cursor, Gemini CLI, and Codex CLI via the stdio bridge.
-          </p>
-          <p class="mt-4 text-sm font-semibold text-indigo-300">
-            Set up MCP <span aria-hidden="true">&rarr;</span>
-          </p>
-        </.link>
-
-        <.link
-          href={~p"/pricing"}
-          class="group rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8 transition hover:border-indigo-500/50"
-        >
-          <div class="flex h-12 w-12 items-center justify-center rounded-lg bg-indigo-500/10 text-indigo-400">
-            <.icon name="hero-server-stack" class="h-6 w-6" />
-          </div>
-          <h2 class="mt-6 text-xl font-semibold text-zinc-50 group-hover:text-indigo-300">
-            Hosting &amp; plans
-          </h2>
-          <p class="mt-2 text-sm text-zinc-400">
-            The supported product is the hosted emisar control plane today; the source-available
-            repository can be evaluated in your own environment. Plans and audit retention are on
-            the pricing page.
-          </p>
-          <p class="mt-4 text-sm font-semibold text-indigo-300">
-            Plans &amp; self-host <span aria-hidden="true">&rarr;</span>
-          </p>
-        </.link>
-
+      <div class="mt-12 flex flex-wrap items-center gap-x-6 gap-y-3 rounded-2xl border border-zinc-900 bg-zinc-950/60 p-6 text-sm text-zinc-400">
+        <span>
+          Everything else — example packs, the runner source, and the full reference — lives in
+          the repo.
+        </span>
         <a
           href="https://github.com/andrewdryga/emisar"
           target="_blank"
           rel="noopener noreferrer"
-          class="group rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8 transition hover:border-indigo-500/50"
+          class="inline-flex items-center gap-1.5 font-semibold text-indigo-300 hover:text-indigo-200"
         >
-          <div class="flex h-12 w-12 items-center justify-center rounded-lg bg-indigo-500/10 text-indigo-400">
-            <.icon name="hero-code-bracket" class="h-6 w-6" />
-          </div>
-          <h2 class="mt-6 text-xl font-semibold text-zinc-50 group-hover:text-indigo-300">
-            GitHub repo
-          </h2>
-          <p class="mt-2 text-sm text-zinc-400">
-            All the reference docs, example packs, and the runner source.
-          </p>
-          <p class="mt-4 text-sm font-semibold text-indigo-300">
-            Open on GitHub <span aria-hidden="true">&rarr;</span>
-          </p>
+          Open on GitHub <.icon name="hero-arrow-top-right-on-square" class="h-3.5 w-3.5" />
         </a>
       </div>
     </div>

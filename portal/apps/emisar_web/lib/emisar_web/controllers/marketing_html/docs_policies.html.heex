@@ -1,0 +1,206 @@
+<div class="bg-zinc-950 text-zinc-100">
+  <.marketing_nav current_user={@current_user} current={:docs} />
+
+  <section class="py-16 sm:py-24">
+    <div class="mx-auto max-w-3xl px-6 lg:px-8">
+      <p class="text-sm font-semibold text-indigo-400">Docs / Policies &amp; approvals</p>
+      <h1 class="mt-2 text-4xl font-bold tracking-tight text-zinc-50 md:text-5xl">
+        Control what runs
+      </h1>
+      <p class="mt-6 text-lg leading-8 text-zinc-400">
+        Every dispatch — human or LLM — passes through your account's policy before it touches a
+        runner. The policy answers one question per action: run it now, stop for a human, or
+        refuse. This page covers how the decision is made, how approvals work when policy demands
+        one, and how standing grants keep repeat approvals from becoming busywork.
+      </p>
+
+      <h2 class="mt-12 text-2xl font-semibold text-zinc-50">How a decision is made</h2>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        The policy has two layers, evaluated in order:
+      </p>
+      <ol class="mt-4 list-decimal space-y-3 pl-6 text-sm leading-6 text-zinc-300">
+        <li>
+          <strong class="text-zinc-100">Per-action overrides.</strong>
+          An ordered list of rules, each a glob over action IDs with a decision —
+          <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">cassandra.nodetool_*</code>
+          → <code class="text-amber-300">require_approval</code>,
+          <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">*.delete_*</code>
+          → <code class="text-red-400">deny</code>. The <em>first</em>
+          matching override wins;
+          order them most-specific first.
+        </li>
+        <li>
+          <strong class="text-zinc-100">Risk-tier defaults.</strong>
+          If no override matches, the action's declared risk tier
+          (<code class="text-emerald-300">low</code> / <code class="text-zinc-300">medium</code>
+          / <code class="text-amber-300">high</code>
+          / <code class="text-red-400">critical</code>) picks the decision. Risk is declared in
+          the pack and can't be changed by the caller.
+        </li>
+      </ol>
+      <p class="mt-4 text-sm leading-6 text-zinc-400">
+        Decisions are <code class="text-emerald-300">allow</code>
+        (dispatch immediately), <code class="text-amber-300">require_approval</code>
+        (hold for a human), and <code class="text-red-400">deny</code>
+        (refuse outright). Anything the policy can't
+        answer — no policy saved yet, an unknown tier — is a <strong class="text-zinc-200">deny</strong>: the system fails closed, never open.
+      </p>
+
+      <div class="mt-6 rounded-xl border border-zinc-800 bg-zinc-950/60 p-5 text-sm leading-6 text-zinc-400">
+        <strong class="text-zinc-100">The shipped default.</strong>
+        New accounts start with: low and medium <code class="text-emerald-300">allow</code>,
+        high <code class="text-amber-300">require_approval</code>, critical <code class="text-red-400">deny</code>, no overrides. That's a sane day-one posture —
+        reads and routine diagnostics flow, mutations stop for a click, destructive actions
+        don't run at all until you explicitly open them up.
+      </div>
+
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">Editing the policy</h2>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        <strong>Policies</strong>
+        in the dashboard sidebar. Owners and admins edit; operators and
+        viewers see the current rules read-only. The editor mirrors the two layers: four tier
+        dropdowns up top, the ordered override list below. Tier defaults are
+        <strong class="text-zinc-200">monotonic by construction</strong>
+        — the editor (and the
+        API behind it) rejects a policy where a higher tier is more permissive than a lower one,
+        so you can't accidentally allow
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">critical</code>
+        while gating <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">medium</code>.
+      </p>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        Every save bumps the policy version, writes an audit event with the exact diff (which
+        overrides were added, removed, or changed), and applies to the next dispatch. Each run
+        records the policy version that gated it, so an audit review can always answer "what was
+        the policy <em>when this ran</em>?"
+      </p>
+
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">Approvals</h2>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        When policy says <code class="text-amber-300">require_approval</code>, the run is created
+        in a held state and an approval request opens. Teammates who can decide — owners, admins,
+        and operators — get an email with a link straight to the request; it also appears under
+        <strong>Approvals</strong>
+        in the dashboard with a live badge.
+      </p>
+      <ul class="mt-4 space-y-2 text-sm leading-6 text-zinc-400">
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-600">—</span>
+          <span>
+            The approver sees <strong class="text-zinc-200">who asked, the exact action and
+              arguments, the target runner, and the stated reason</strong> — enough to decide
+            without leaving the page. One click approves or denies.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-600">—</span>
+          <span>
+            Undecided requests <strong class="text-zinc-200">expire after 24 hours</strong> and
+            the held run is cancelled — nothing waits forever.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-600">—</span>
+          <span>
+            An LLM waiting on an approval long-polls
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">wait_for_run</code>
+            and picks
+            the result up the moment a human decides — no busy retry loop.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-600">—</span>
+          <span>
+            Every decision is audited: requester, approver, action, args, and reason.
+          </span>
+        </li>
+      </ul>
+
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">Standing grants</h2>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        Approving the same
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">nodetool repair</code>
+        every morning is how approval fatigue starts. When you approve a request you choose a
+        duration: <strong class="text-zinc-200">once</strong>
+        (this run only), or a standing
+        grant for <strong class="text-zinc-200">1 hour, 24 hours, 30 days, or 90 days</strong>.
+        A standing grant lets matching future calls skip the queue:
+      </p>
+      <ul class="mt-4 space-y-2 text-sm leading-6 text-zinc-400">
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-600">—</span>
+          <span>
+            <strong class="text-zinc-200">Scoped tight.</strong> A grant is bound to the API key
+            it was issued for, the action, optionally the specific runner, and — your choice at
+            approval time — either the <em>exact</em> argument fingerprint or any arguments.
+            A grant for key A never covers key B.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-600">—</span>
+          <span>
+            <strong class="text-zinc-200">Capped and revocable.</strong>
+            Grants can carry a
+            maximum use count, expire on schedule, and are listed under <strong>Approvals</strong>
+            where one click revokes them early. Every use is still a
+            fully audited run.
+          </span>
+        </li>
+      </ul>
+
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">The reason requirement</h2>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        Every dispatch — UI, REST, or MCP — must carry a one-line <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">reason</code>. It's shown to
+        approvers and stored on the run and the audit event. For LLM traffic this is the
+        difference between an audit log that says "the model ran nodetool" and one that says
+        <em>why</em>
+        the model ran nodetool.
+      </p>
+
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">A sensible first policy</h2>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        Keep the shipped tier defaults, then add overrides only as friction teaches you where
+        they belong:
+      </p>
+      <ol class="mt-4 list-decimal space-y-2 pl-6 text-sm leading-6 text-zinc-400">
+        <li>
+          Run a week with the defaults. Watch the <strong>Approvals</strong> queue — the requests
+          that keep showing up are your override candidates.
+        </li>
+        <li>
+          Pin down anything you never want an agent to touch
+          (<code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">*.purge_*</code> → <code class="text-red-400">deny</code>) — a deny override beats relying on everyone
+          remembering.
+        </li>
+        <li>
+          Promote the repeat approvals you always say yes to into standing grants with an
+          expiry, not into <code class="text-emerald-300">allow</code> overrides — grants
+          keep the per-key scoping and the paper trail.
+        </li>
+      </ol>
+
+      <div class="mt-8 flex flex-wrap gap-x-6 gap-y-3 border-t border-zinc-900 pt-8 text-sm">
+        <.link
+          navigate={~p"/docs/runbooks"}
+          class="inline-flex items-center gap-1 font-medium text-indigo-400 hover:text-indigo-300"
+        >
+          Bundle steps into runbooks <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
+        </.link>
+        <.link
+          navigate={~p"/docs/audit-and-siem"}
+          class="inline-flex items-center gap-1 font-medium text-indigo-400 hover:text-indigo-300"
+        >
+          Where decisions land: the audit trail
+          <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
+        </.link>
+        <.link
+          navigate={~p"/docs/security-model"}
+          class="inline-flex items-center gap-1 font-medium text-indigo-400 hover:text-indigo-300"
+        >
+          The full security model <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
+        </.link>
+      </div>
+    </div>
+  </section>
+
+  <.marketing_footer />
+</div>
