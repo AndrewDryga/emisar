@@ -93,10 +93,6 @@ type runState struct {
 	finished bool  // ActionResultMsg has been enqueued
 }
 
-// outboundMsg is the type sent over the wire. Using any keeps the queue
-// uniform across heartbeats, progress, results, and errors.
-type outboundMsg = any
-
 // NewClient constructs a Client. Defaults: heartbeat 30s, reconnect 1-60s,
 // 8 concurrent runs, 2048 messages buffered per run.
 func NewClient(d Dialer, opts Options) *Client {
