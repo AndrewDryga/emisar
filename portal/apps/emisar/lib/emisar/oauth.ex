@@ -193,7 +193,13 @@ defmodule Emisar.OAuth do
 
       with %Token{} <- token,
            :ok <- check(token.client_id == client_id, :invalid_grant),
-           :ok <- check(live?(token.refresh_expires_at), :invalid_grant) do
+           :ok <- check(live?(token.refresh_expires_at), :invalid_grant),
+           # Fail closed when the backing api_key has been revoked / deleted /
+           # expired since the grant was issued. Without this a refresh keeps
+           # minting access tokens off a dead key — and revoking the key is the
+           # operator's off-switch for an OAuth connection, so the refresh path
+           # must honor it, not just the resolve path.
+           :ok <- check(backing_key_usable?(token.api_key_id), :invalid_grant) do
         {:ok, token}
       else
         {:error, reason} -> {:error, reason}
@@ -322,4 +328,9 @@ defmodule Emisar.OAuth do
   defp live?(nil), do: false
   defp live?(%DateTime{} = at), do: DateTime.compare(at, DateTime.utc_now()) == :gt
   defp secs_from_now(s), do: DateTime.add(DateTime.utc_now(), s, :second)
+
+  # `peek_api_key_by_id` returns nil unless the key passes `ApiKey.usable?`
+  # (not revoked / deleted / expired) — the same liveness gate the access
+  # token's resolve path uses.
+  defp backing_key_usable?(api_key_id), do: not is_nil(ApiKeys.peek_api_key_by_id(api_key_id))
 end

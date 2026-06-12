@@ -254,6 +254,23 @@ defmodule Emisar.OAuthTest do
       assert {:ok, _} = OAuth.resolve_access_token(fresh.access_token)
     end
 
+    test "fails closed once the backing api_key is revoked", %{client: client, tokens: tokens} do
+      # Revoking the backing key is the operator's off-switch for an OAuth
+      # connection — refresh must then stop minting access tokens, not keep
+      # the 30-day grant alive over a dead key.
+      {:ok, %{api_key: key}} = OAuth.resolve_access_token(tokens.access_token)
+
+      key
+      |> Ecto.Changeset.change(revoked_at: DateTime.utc_now())
+      |> Emisar.Repo.update!()
+
+      assert {:error, :invalid_grant} =
+               OAuth.refresh(%{
+                 "refresh_token" => tokens.refresh_token,
+                 "client_id" => client.id
+               })
+    end
+
     test "rejects a refresh token presented by the wrong client",
          %{tokens: tokens} do
       other = register!("Other")
