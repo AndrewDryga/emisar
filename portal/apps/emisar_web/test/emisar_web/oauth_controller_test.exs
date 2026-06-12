@@ -10,7 +10,7 @@ defmodule EmisarWeb.OAuthControllerTest do
   alias Emisar.{Fixtures, OAuth}
 
   @redirect "https://claude.ai/api/mcp/auth_callback"
-  @resource "https://app.emisar.dev/api/mcp/rpc"
+  @resource "https://emisar.dev/api/mcp/rpc"
 
   setup do
     {user, account, _subject} = Fixtures.owner_subject_fixture()

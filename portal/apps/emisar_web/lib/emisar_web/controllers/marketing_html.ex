@@ -35,7 +35,7 @@ defmodule EmisarWeb.MarketingHTML do
     {3, "server", "srv-install", "downloading emisar-v0.2.0-linux-amd64.tar.gz"},
     {4, "server", "srv-install", "checksum verified  sha256:9f2c1e7b4a0d…  ·  installed v0.2.0"},
     {5, "server", "srv-banner",
-     "emisar connecting to wss://app.emisar.dev/runner (group=storage packs=storage,nomad,debugging,docker)"},
+     "emisar connecting to wss://emisar.dev/runner/socket/websocket (group=storage packs=storage,nomad,debugging,docker)"},
     {6, "server", "srv-ok", "runner online · nomad-hvn03 · advertising 58 actions"},
 
     # --- Claude Code: the alarm, then investigate through emisar -----

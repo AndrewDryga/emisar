@@ -18,8 +18,8 @@ defmodule Emisar.PublicUrlTest do
 
   describe "base/0" do
     test "prod-style https host elides the default 443 port" do
-      put_url(host: "app.emisar.dev", port: 443, scheme: "https")
-      assert PublicUrl.base() == "https://app.emisar.dev"
+      put_url(host: "emisar.dev", port: 443, scheme: "https")
+      assert PublicUrl.base() == "https://emisar.dev"
     end
 
     test "host-only config (dev/config.exs) defaults to http with no port" do
@@ -40,10 +40,10 @@ defmodule Emisar.PublicUrlTest do
 
   describe "url/1" do
     test "appends the path to the base, no double slash" do
-      put_url(host: "app.emisar.dev", port: 443, scheme: "https")
+      put_url(host: "emisar.dev", port: 443, scheme: "https")
 
       assert PublicUrl.url("/app/settings/billing") ==
-               "https://app.emisar.dev/app/settings/billing"
+               "https://emisar.dev/app/settings/billing"
     end
   end
 end

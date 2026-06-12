@@ -9,7 +9,7 @@ defmodule EmisarWeb.OAuthMetadataController do
 
   URLs are derived from the request host so the documents are
   self-consistent whichever host the client connected through
-  (emisar.dev / app.emisar.dev / localhost).
+  (emisar.dev / emisar.dev / localhost).
   """
   use EmisarWeb, :controller
 

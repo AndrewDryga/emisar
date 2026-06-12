@@ -12,7 +12,7 @@ defmodule Emisar.OAuthTest do
   alias Emisar.OAuth.Client
 
   @redirect "https://claude.ai/api/mcp/auth_callback"
-  @resource "https://app.emisar.dev/api/mcp/rpc"
+  @resource "https://emisar.dev/api/mcp/rpc"
 
   defp pkce do
     verifier = Base.url_encode64(:crypto.strong_rand_bytes(32), padding: false)
