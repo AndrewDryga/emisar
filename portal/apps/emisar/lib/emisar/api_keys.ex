@@ -241,6 +241,29 @@ defmodule Emisar.ApiKeys do
   end
 
   @doc """
+  Internal — revoke every still-active key minted by `membership_id`.
+  Called by `Accounts` when a membership is removed or suspended so a
+  deprovisioned user loses the delegated execute access their keys carry:
+  account-scoped `emk-` keys (and the OAuth backing keys behind `emo-`
+  tokens) keep resolving after the user's membership is gone, unlike
+  sessions, which self-heal at membership resolution. Both honor the
+  `usable?` gate, so flipping `revoked_at` kills MCP dispatch + OAuth
+  refresh at once. Bulk update — the `membership_removed`/`_suspended`
+  event is the audit anchor. Returns `{:ok, count}`.
+  """
+  def revoke_keys_for_membership(membership_id) when is_binary(membership_id) do
+    now = DateTime.utc_now()
+
+    {count, _} =
+      ApiKey.Query.not_deleted()
+      |> ApiKey.Query.by_created_by_membership_id(membership_id)
+      |> ApiKey.Query.not_revoked()
+      |> Repo.update_all(set: [revoked_at: now, updated_at: now])
+
+    {:ok, count}
+  end
+
+  @doc """
   Peeks at the presented bearer token, resolving it to an `%ApiKey{}`.
   Bumps `last_used_at` and — if the key is auto-generated — clears the
   auto flag and audit-logs `api_key.bound`. Returns the updated struct

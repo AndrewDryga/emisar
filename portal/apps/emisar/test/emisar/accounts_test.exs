@@ -331,6 +331,26 @@ defmodule Emisar.AccountsTest do
       assert {:error, :not_found} = Accounts.fetch_membership_for_session(target_user, account.id)
     end
 
+    test "removing a member revokes the API keys they minted" do
+      account = account_fixture()
+      owner = user_fixture()
+      _ = membership_fixture(account_id: account.id, user_id: owner.id, role: "owner")
+      subject = subject_for(owner, account, role: :owner)
+
+      member = user_fixture()
+
+      member_membership =
+        membership_fixture(account_id: account.id, user_id: member.id, role: "admin")
+
+      {_raw, key} = api_key_fixture(account_id: account.id, created_by_id: member.id)
+
+      assert {:ok, _} = Accounts.delete_membership(member_membership, subject)
+
+      # Sessions self-heal at membership resolution; the minted keys don't,
+      # so removal revokes them (after_commit) to cut off MCP / OAuth.
+      refute is_nil(Emisar.Repo.reload!(key).revoked_at)
+    end
+
     test "a removed member can be re-invited (tombstone doesn't hold the seat)" do
       account = account_fixture()
       owner = user_fixture()
@@ -402,6 +422,25 @@ defmodule Emisar.AccountsTest do
 
       assert {:ok, reinstated} = Accounts.reinstate_membership(suspended, owner_subject)
       refute Membership.disabled?(reinstated)
+    end
+
+    test "suspending a member revokes the API keys they minted", %{
+      account: account,
+      owner_subject: owner_subject
+    } do
+      admin = user_fixture()
+
+      admin_membership =
+        membership_fixture(account_id: account.id, user_id: admin.id, role: "admin")
+
+      {_raw, key} = api_key_fixture(account_id: account.id, created_by_id: admin.id)
+      assert is_nil(Emisar.Repo.reload!(key).revoked_at)
+
+      assert {:ok, _} = Accounts.suspend_membership(admin_membership, owner_subject)
+
+      # after_commit revokes the keys the suspended member minted so they
+      # can't keep dispatching via MCP / OAuth after losing access.
+      refute is_nil(Emisar.Repo.reload!(key).revoked_at)
     end
 
     test "operator cannot suspend anyone", %{account: account, target: target} do

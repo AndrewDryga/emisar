@@ -13,6 +13,12 @@ defmodule Emisar.ApiKeys.ApiKey.Query do
   def by_account_id(queryable, account_id),
     do: where(queryable, [api_keys: k], k.account_id == ^account_id)
 
+  def by_created_by_membership_id(queryable, membership_id),
+    do: where(queryable, [api_keys: k], k.created_by_membership_id == ^membership_id)
+
+  def not_revoked(queryable \\ all()),
+    do: where(queryable, [api_keys: k], is_nil(k.revoked_at))
+
   @doc """
   Hides auto-generated keys until an LLM has authenticated with one.
   Auto-unused entries stay invisible to operator-facing surfaces.

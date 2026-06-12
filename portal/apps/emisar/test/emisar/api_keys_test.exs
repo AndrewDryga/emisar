@@ -283,4 +283,29 @@ defmodule Emisar.ApiKeysTest do
       refute Repo.reload!(key_a).revoked_at
     end
   end
+
+  describe "revoke_keys_for_membership/1" do
+    test "revokes that membership's active keys only, idempotently" do
+      account = account_fixture()
+      user = user_fixture()
+      membership = membership_fixture(account_id: account.id, user_id: user.id, role: "owner")
+
+      {_r1, key1} = api_key_fixture(account_id: account.id, created_by_id: user.id)
+      {_r2, key2} = api_key_fixture(account_id: account.id, created_by_id: user.id)
+
+      # A key minted by a different member must be left alone.
+      other = user_fixture()
+      _ = membership_fixture(account_id: account.id, user_id: other.id, role: "owner")
+      {_r3, other_key} = api_key_fixture(account_id: account.id, created_by_id: other.id)
+
+      assert {:ok, 2} = ApiKeys.revoke_keys_for_membership(membership.id)
+
+      refute is_nil(Repo.reload!(key1).revoked_at)
+      refute is_nil(Repo.reload!(key2).revoked_at)
+      assert is_nil(Repo.reload!(other_key).revoked_at)
+
+      # Already-revoked keys aren't re-counted.
+      assert {:ok, 0} = ApiKeys.revoke_keys_for_membership(membership.id)
+    end
+  end
 end

@@ -8,7 +8,7 @@ defmodule Emisar.Accounts do
   """
   alias Ecto.Multi
   alias Emisar.Accounts.{Account, Authorizer, Membership}
-  alias Emisar.{Audit, Auth, Crypto, Repo, Slug, Users}
+  alias Emisar.{ApiKeys, Audit, Auth, Crypto, Repo, Slug, Users}
   alias Emisar.Auth.Subject
   require Logger
 
@@ -509,13 +509,24 @@ defmodule Emisar.Accounts do
           # Broadcast first so the team-page LV refreshes the row before
           # we kill the user's sessions — keeps the visual ordering sane.
           &broadcast_membership_suspended/1,
-          # Session kill is a side effect — broadcast PubSub disconnects
-          # only after the suspension actually commits. Otherwise a rolled-
-          # back update would still kick the user out of every tab.
-          &disconnect_user_sessions/1
+          # Session + key kill are side effects — only fire after the
+          # suspension actually commits. Otherwise a rolled-back update
+          # would still kick the user out of every tab / kill their keys.
+          &disconnect_user_sessions/1,
+          &revoke_membership_api_keys/1
         ]
       )
     end
+  end
+
+  # Revoke the API keys this membership minted — a removed or suspended
+  # user must lose their delegated execute access. Keys are account-scoped,
+  # so unlike sessions (which self-heal at membership resolution) they keep
+  # working until revoked; this kills MCP `emk-` dispatch and the OAuth
+  # backing keys behind `emo-` tokens together.
+  defp revoke_membership_api_keys(%Membership{} = membership) do
+    {:ok, _count} = ApiKeys.revoke_keys_for_membership(membership.id)
+    :ok
   end
 
   defp disconnect_user_sessions(%Membership{} = membership) do
@@ -746,7 +757,13 @@ defmodule Emisar.Accounts do
           end
         end,
         audit: &Audit.Events.membership_removed(subject, &1),
-        after_commit: &broadcast_membership_removed/1
+        after_commit: [
+          &broadcast_membership_removed/1,
+          # A removed user's sessions self-heal at membership resolution,
+          # but their minted API keys don't — revoke them so they can't
+          # keep dispatching via MCP / OAuth after losing the account.
+          &revoke_membership_api_keys/1
+        ]
       )
     end
   end
