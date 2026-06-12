@@ -53,6 +53,9 @@ config :emisar, Oban,
        # sweeps don't contend on the same midnight tick.
        {"15 0 * * *", Emisar.Workers.ActionRunEventRetention},
        {"*/5 * * * *", Emisar.Workers.ApprovalExpiry},
+       # Prune expired OAuth authorization codes (single-use, 60s artifacts;
+       # no forensic value once expired — tokens are kept, not swept here).
+       {"@daily", Emisar.Workers.OAuthCleanup},
        # Every minute — picks up runs that have been pending/sent past
        # the 2-min grace window and forces them to a terminal state.
        {"* * * * *", Emisar.Workers.RunDispatchTimeout},

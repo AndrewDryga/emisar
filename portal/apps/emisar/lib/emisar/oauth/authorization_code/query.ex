@@ -7,6 +7,9 @@ defmodule Emisar.OAuth.AuthorizationCode.Query do
   def by_code_hash(queryable \\ all(), hash),
     do: where(queryable, [codes: c], c.code_hash == ^hash)
 
+  def expired_before(queryable \\ all(), now),
+    do: where(queryable, [codes: c], c.expires_at < ^now)
+
   # Lock the matched row FOR UPDATE so two concurrent token exchanges of the
   # same code serialize: the first burns it (sets used_at) and commits, the
   # second blocks then sees it used and is rejected. Single-use is an

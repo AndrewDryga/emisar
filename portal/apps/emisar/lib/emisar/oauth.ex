@@ -263,6 +263,23 @@ defmodule Emisar.OAuth do
 
   def resolve_access_token(_), do: {:error, :invalid}
 
+  @doc """
+  Internal (Oban sweep) — delete authorization codes past their expiry.
+  Codes are single-use, 60-second exchange artifacts (`emoc-`) with no
+  audit or forensic value once expired, so they're pruned rather than
+  retained. (Access/refresh tokens are deliberately NOT swept here — a
+  revoked/expired token is a record of access that belongs under a
+  retention policy, not this hygiene job.) Returns the count deleted.
+  """
+  def delete_expired_authorization_codes(now \\ DateTime.utc_now()) do
+    {count, _} =
+      AuthorizationCode.Query.all()
+      |> AuthorizationCode.Query.expired_before(now)
+      |> Repo.delete_all()
+
+    count
+  end
+
   @doc "Scopes this AS advertises in its metadata."
   def supported_scopes, do: @supported_scopes
 

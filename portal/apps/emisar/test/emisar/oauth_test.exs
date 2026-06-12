@@ -308,4 +308,23 @@ defmodule Emisar.OAuthTest do
       assert {:error, :invalid} = OAuth.resolve_access_token(nil)
     end
   end
+
+  describe "delete_expired_authorization_codes/1" do
+    test "prunes codes past their expiry, keeps live ones" do
+      {_user, _account, subject} = owner_subject_fixture()
+      client = register!()
+      {_verifier, challenge} = pkce()
+      _code = issue!(subject, client, challenge)
+
+      # The freshly-issued code has a 60s TTL — nothing to prune yet.
+      assert 0 = OAuth.delete_expired_authorization_codes()
+
+      # Treating "now" as 2 minutes ahead, that code is expired and pruned.
+      future = DateTime.add(DateTime.utc_now(), 120, :second)
+      assert 1 = OAuth.delete_expired_authorization_codes(future)
+
+      # Idempotent — it's gone, a second sweep finds nothing.
+      assert 0 = OAuth.delete_expired_authorization_codes(future)
+    end
+  end
 end
