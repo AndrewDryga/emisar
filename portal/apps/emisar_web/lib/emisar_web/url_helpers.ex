@@ -2,11 +2,11 @@ defmodule EmisarWeb.UrlHelpers do
   @moduledoc """
   Cross-LV helpers for URLs that operators copy/paste (install
   one-liners, MCP snippets). Resolves from `socket.host_uri` so dev
-  (`http://localhost:4000`) and prod (`https://app.emisar.dev`) both
+  (`http://localhost:4000`) and prod (`https://emisar.dev`) both
   produce a URL that targets THIS deployment, not a hardcoded host.
   """
 
-  @fallback_url "https://app.emisar.dev"
+  @fallback_url "https://emisar.dev"
 
   @doc """
   Returns the operator-facing base URL — `scheme://host[:port]` — for

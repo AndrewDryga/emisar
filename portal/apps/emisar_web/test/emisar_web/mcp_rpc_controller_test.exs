@@ -471,7 +471,7 @@ defmodule EmisarWeb.McpRpcControllerTest do
             "code_challenge" => challenge,
             "code_challenge_method" => "S256",
             "scope" => "mcp offline_access",
-            "resource" => "https://app.emisar.dev/api/mcp/rpc"
+            "resource" => "https://emisar.dev/api/mcp/rpc"
           },
           subject
         )

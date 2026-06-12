@@ -6,8 +6,8 @@ defmodule EmisarWeb.UrlHelpersTest do
   describe "derive_base_url/1" do
     test "standard ports are elided" do
       assert UrlHelpers.derive_base_url(%{
-               host_uri: %URI{scheme: "https", host: "app.emisar.dev", port: 443}
-             }) == "https://app.emisar.dev"
+               host_uri: %URI{scheme: "https", host: "emisar.dev", port: 443}
+             }) == "https://emisar.dev"
 
       assert UrlHelpers.derive_base_url(%{
                host_uri: %URI{scheme: "http", host: "plain.example", port: 80}
@@ -33,9 +33,9 @@ defmodule EmisarWeb.UrlHelpersTest do
 
     test "a socket without a host_uri falls back to the production URL" do
       assert UrlHelpers.derive_base_url(%{host_uri: :not_mounted_at_router}) ==
-               "https://app.emisar.dev"
+               "https://emisar.dev"
 
-      assert UrlHelpers.derive_base_url(%{}) == "https://app.emisar.dev"
+      assert UrlHelpers.derive_base_url(%{}) == "https://emisar.dev"
     end
   end
 end
