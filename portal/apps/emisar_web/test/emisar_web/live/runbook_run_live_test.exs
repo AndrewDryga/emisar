@@ -57,6 +57,37 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       assert html =~ ~p"/app/runs/"
     end
 
+    test "the plan surfaces each step's action risk before dispatch", %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      runner = Emisar.Fixtures.runner_fixture(account_id: account.id)
+      # The runbook's lone step is linux.uptime — advertise it as high-risk
+      # so the plan must show a high (rose) risk pill, the cue that this step
+      # will stop for approval before a fleet-wide dispatch.
+      Emisar.Fixtures.action_fixture(runner: runner, action_id: "linux.uptime", risk: "high")
+      runbook = published_runbook!(user, account)
+
+      {:ok, _lv, html} = live(conn, ~p"/app/runbooks/#{runbook.id}/run")
+
+      assert html =~ "Plan"
+      assert html =~ "linux.uptime"
+      assert html =~ "high"
+      assert html =~ "ring-rose-500/30"
+    end
+
+    test "a step with no catalog entry shows no risk pill", %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      Emisar.Fixtures.runner_fixture(account_id: account.id)
+      # No action_fixture for linux.uptime — the catalog hasn't observed it,
+      # so the plan step renders without a risk pill (no rose/amber/emerald).
+      runbook = published_runbook!(user, account)
+
+      {:ok, _lv, html} = live(conn, ~p"/app/runbooks/#{runbook.id}/run")
+
+      assert html =~ "linux.uptime"
+      refute html =~ "ring-rose-500/30"
+      refute html =~ "ring-emerald-500/30"
+    end
+
     test "the target select offers runner groups alongside runners", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
       runner = Emisar.Fixtures.runner_fixture(account_id: account.id)

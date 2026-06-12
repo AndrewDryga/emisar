@@ -1,7 +1,7 @@
 defmodule EmisarWeb.RunbookRunLive do
   use EmisarWeb, :live_view
 
-  alias Emisar.{Runbooks, Runners, Runs}
+  alias Emisar.{Catalog, Runbooks, Runners, Runs}
   alias EmisarWeb.Permissions
 
   def mount(%{"id" => id}, _session, socket) do
@@ -37,7 +37,9 @@ defmodule EmisarWeb.RunbookRunLive do
   end
 
   defp load_run_form(socket, runbook) do
-    {:ok, runners, _} = Runners.list_runners_for_account(socket.assigns.current_subject)
+    subject = socket.assigns.current_subject
+    {:ok, runners, _} = Runners.list_runners_for_account(subject)
+    {:ok, runner_actions} = Catalog.list_all_actions_for_account(subject)
 
     # Execution runs stream in over the account topic as the engine
     # creates + transitions them (`{:run_updated, run}`).
@@ -47,6 +49,9 @@ defmodule EmisarWeb.RunbookRunLive do
     |> assign(:runners, runners)
     |> assign(:groups, runner_groups(runners))
     |> assign(:steps, Runbooks.expand(runbook))
+    # action_id → risk, so the plan can show which steps are read-only
+    # (low) vs which will stop for approval before a fleet-wide dispatch.
+    |> assign(:action_risk, Map.new(runner_actions, &{&1.action_id, &1.risk}))
     |> assign(:target, default_target(runners))
   end
 
@@ -55,8 +60,14 @@ defmodule EmisarWeb.RunbookRunLive do
     |> assign(:runners, [])
     |> assign(:groups, [])
     |> assign(:steps, [])
+    |> assign(:action_risk, %{})
     |> assign(:target, nil)
   end
+
+  # Risk of a plan step's action, or nil when the catalog hasn't observed
+  # it (no connected runner advertises it yet) — the pill then hides.
+  defp step_risk(action_risk, step),
+    do: Map.get(action_risk, step["action_id"] || step["action"])
 
   # Groups with at least one enabled runner — mirrors what a group
   # dispatch would actually resolve to.
@@ -311,8 +322,15 @@ defmodule EmisarWeb.RunbookRunLive do
                 {idx + 1}
               </span>
               <div class="min-w-0 flex-1 text-sm">
-                <div class="truncate font-mono text-zinc-200">
-                  {step["action"] || step["action_id"] || "—"}
+                <div class="flex items-center gap-2">
+                  <span class="truncate font-mono text-zinc-200">
+                    {step["action"] || step["action_id"] || "—"}
+                  </span>
+                  <.risk_pill
+                    :if={step_risk(@action_risk, step)}
+                    risk={step_risk(@action_risk, step)}
+                    class="flex-none"
+                  />
                 </div>
                 <p :if={step["description"]} class="mt-0.5 truncate text-xs text-zinc-500">
                   {step["description"]}
