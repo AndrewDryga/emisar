@@ -8,8 +8,13 @@ defmodule Emisar.Auth.SubjectTest do
 
   import Emisar.Fixtures
 
+  alias Emisar.Accounts.Account
   alias Emisar.Accounts.Membership
+  alias Emisar.ApiKeys.ApiKey
   alias Emisar.Auth.Subject
+  alias Emisar.RequestContext
+  alias Emisar.Runners.Runner
+  alias Emisar.Users.User
 
   describe "for_user/4" do
     test "owner gets the full owner-role permission set" do
@@ -158,6 +163,90 @@ defmodule Emisar.Auth.SubjectTest do
 
       assert {:error, :unauthorized} =
                Emisar.Auth.Authorizer.ensure_has_permissions(viewer, {:one_of, perms})
+    end
+  end
+
+  describe "for_api_key/3" do
+    test "carries the api_client role, the key's creator membership, and the request context" do
+      account = %Account{id: "acct-1"}
+      key = %ApiKey{id: "key-1", created_by_membership_id: "mem-1"}
+      context = %RequestContext{ip_address: "10.0.0.9"}
+
+      subject = Subject.for_api_key(key, account, context)
+
+      assert subject.role == :api_client
+      assert subject.actor == key
+      assert subject.account == account
+      # The minting membership rides along so MCP can apply per-user runner ACLs.
+      assert subject.membership_id == "mem-1"
+      assert subject.context == context
+      assert subject.permissions == Emisar.Auth.Permissions.for_role(:api_client)
+    end
+
+    test "membership_id is nil when the key has no creator membership" do
+      subject = Subject.for_api_key(%ApiKey{id: "key-2"}, %Account{id: "acct-1"})
+      assert subject.membership_id == nil
+    end
+  end
+
+  describe "for_runner/3" do
+    test "carries the runner role and defaults to an empty request context" do
+      account = %Account{id: "acct-1"}
+      runner = %Runner{id: "runner-1"}
+
+      subject = Subject.for_runner(runner, account)
+
+      assert subject.role == :runner
+      assert subject.actor == runner
+      assert subject.account == account
+      assert subject.context == %RequestContext{}
+      assert subject.permissions == Emisar.Auth.Permissions.for_role(:runner)
+    end
+  end
+
+  describe "actor_kind/1 + actor_id/1 + actor_email/1" do
+    test "classify each actor, with system/nil fallbacks for an actor-less subject" do
+      user_subject = %Subject{actor: %User{id: "u1", email: "ops@example.test"}}
+      key_subject = %Subject{actor: %ApiKey{id: "k1"}}
+      runner_subject = %Subject{actor: %Runner{id: "r1"}}
+      actorless = %Subject{}
+
+      assert Subject.actor_kind(user_subject) == "user"
+      assert Subject.actor_kind(key_subject) == "api_key"
+      assert Subject.actor_kind(runner_subject) == "runner"
+      assert Subject.actor_kind(actorless) == "system"
+
+      assert Subject.actor_id(user_subject) == "u1"
+      assert Subject.actor_id(key_subject) == "k1"
+      assert Subject.actor_id(actorless) == nil
+
+      assert Subject.actor_email(user_subject) == "ops@example.test"
+      # Only a user actor has an email — keys, runners, and the actor-less
+      # subject return nil (this feeds the Paddle buyer-email attach).
+      assert Subject.actor_email(key_subject) == nil
+      assert Subject.actor_email(actorless) == nil
+    end
+  end
+
+  describe "in_account?/2 + ensure_in_account/3" do
+    test "true / :ok only when the subject's account matches" do
+      subject = %Subject{account: %Account{id: "acct-A"}}
+
+      assert Subject.in_account?(subject, "acct-A")
+      refute Subject.in_account?(subject, "acct-B")
+      # An account-less subject is in no account.
+      refute Subject.in_account?(%Subject{}, "acct-A")
+
+      assert :ok = Subject.ensure_in_account(subject, "acct-A")
+    end
+
+    test "ensure_in_account defaults to :not_found and accepts a custom error atom" do
+      subject = %Subject{account: %Account{id: "acct-A"}}
+
+      assert {:error, :not_found} = Subject.ensure_in_account(subject, "acct-B")
+
+      assert {:error, :unauthorized} =
+               Subject.ensure_in_account(subject, "acct-B", :unauthorized)
     end
   end
 end
