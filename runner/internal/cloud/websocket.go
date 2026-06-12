@@ -35,7 +35,7 @@ import (
 // dialer returns an `unauthorized` error and exits — the runner will
 // not retry forever against a bad key.
 type WebsocketDialer struct {
-	// URL is the cloud base, e.g. "https://app.emisar.dev" or
+	// URL is the cloud base, e.g. "https://emisar.dev" or
 	// "http://localhost:4000". The dialer derives the register URL and
 	// the ws URL from this base.
 	URL string

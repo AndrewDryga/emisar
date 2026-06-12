@@ -417,9 +417,9 @@ func TestWebsocketDialerDerivesWSScheme(t *testing.T) {
 		in, want string
 	}{
 		{"http://localhost:4000", "ws://localhost:4000/runner/socket/websocket"},
-		{"https://app.emisar.dev", "wss://app.emisar.dev/runner/socket/websocket"},
-		{"https://app.emisar.dev/", "wss://app.emisar.dev/runner/socket/websocket"},
-		{"wss://app.emisar.dev", "wss://app.emisar.dev/runner/socket/websocket"},
+		{"https://emisar.dev", "wss://emisar.dev/runner/socket/websocket"},
+		{"https://emisar.dev/", "wss://emisar.dev/runner/socket/websocket"},
+		{"wss://emisar.dev", "wss://emisar.dev/runner/socket/websocket"},
 	}
 
 	for _, c := range cases {
@@ -442,11 +442,11 @@ func TestRegisterURLNormalizesScheme(t *testing.T) {
 	cases := []struct {
 		in, want string
 	}{
-		{"https://app.emisar.dev", "https://app.emisar.dev/runner/register"},
+		{"https://emisar.dev", "https://emisar.dev/runner/register"},
 		{"http://localhost:4000", "http://localhost:4000/runner/register"},
-		{"wss://app.emisar.dev", "https://app.emisar.dev/runner/register"},
+		{"wss://emisar.dev", "https://emisar.dev/runner/register"},
 		{"ws://localhost:4000", "http://localhost:4000/runner/register"},
-		{"wss://app.emisar.dev/", "https://app.emisar.dev/runner/register"},
+		{"wss://emisar.dev/", "https://emisar.dev/runner/register"},
 	}
 	for _, c := range cases {
 		got, err := httpURL(c.in, "/runner/register")
