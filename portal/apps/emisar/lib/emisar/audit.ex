@@ -90,6 +90,28 @@ defmodule Emisar.Audit do
   @doc "Wipes any audit metadata set for the current process."
   def clear_request_metadata, do: Process.delete(@meta_key)
 
+  @doc """
+  Runs `fun` with this process's audit request metadata cleared, restoring
+  it afterward. Use it around engine-internal work that happens to run in a
+  request-bearing process — e.g. a runbook continuation wave dispatched from
+  the runner socket when a run finishes. Those audit rows describe an engine
+  decision, not the runner's connect request, so they must not inherit its
+  IP / User-Agent.
+  """
+  def without_request_metadata(fun) when is_function(fun, 0) do
+    saved = Process.get(@meta_key)
+    Process.delete(@meta_key)
+
+    try do
+      fun.()
+    after
+      restore_request_metadata(saved)
+    end
+  end
+
+  defp restore_request_metadata(nil), do: Process.delete(@meta_key)
+  defp restore_request_metadata(saved), do: Process.put(@meta_key, saved)
+
   # -- Recording (internal helper called by sibling contexts) ----------
 
   @doc """

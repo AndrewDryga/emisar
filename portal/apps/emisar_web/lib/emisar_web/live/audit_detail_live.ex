@@ -9,7 +9,7 @@ defmodule EmisarWeb.AuditDetailLive do
   """
   use EmisarWeb, :live_view
 
-  alias Emisar.Audit
+  alias Emisar.{Audit, Runners, Runs}
   alias EmisarWeb.AuditSummary
 
   def mount(%{"id" => id}, _session, socket) do
@@ -21,7 +21,8 @@ defmodule EmisarWeb.AuditDetailLive do
          socket
          |> assign(:page_title, "Audit · #{event.event_type}")
          |> assign(:event, event)
-         |> assign(:refs, refs)}
+         |> assign(:refs, refs)
+         |> assign(:subject_runner, subject_runner(event, socket.assigns.current_subject))}
 
       {:error, _} ->
         {:ok,
@@ -30,6 +31,20 @@ defmodule EmisarWeb.AuditDetailLive do
          |> push_navigate(to: ~p"/app/audit")}
     end
   end
+
+  # The runner an action_run executed on — a property of the SUBJECT (the
+  # run), not the actor. nil unless the subject is a run still readable in
+  # the caller's account; the run fetch is subject-gated, so cross-account
+  # ids resolve to nil rather than leaking.
+  defp subject_runner(%{subject_kind: "action_run", subject_id: id}, %{} = subject)
+       when is_binary(id) do
+    case Runs.fetch_run_by_id(id, subject, preload: [:runner]) do
+      {:ok, %{runner: %Runners.Runner{} = runner}} -> runner
+      _ -> nil
+    end
+  end
+
+  defp subject_runner(_event, _subject), do: nil
 
   def render(assigns) do
     ~H"""
@@ -97,6 +112,7 @@ defmodule EmisarWeb.AuditDetailLive do
           id={@event.subject_id}
           label={@event.subject_label}
           refs={@refs}
+          runner={@subject_runner}
         />
       </div>
 
@@ -282,6 +298,7 @@ defmodule EmisarWeb.AuditDetailLive do
   attr :label, :string, default: nil
   attr :refs, :map, default: %{}
   attr :user_agent, :string, default: nil
+  attr :runner, :map, default: nil
   attr :mcp_session, :string, default: nil
   attr :mcp_client, :string, default: nil
   attr :mcp_client_host, :string, default: nil
@@ -304,17 +321,30 @@ defmodule EmisarWeb.AuditDetailLive do
         <EmisarWeb.AuditLive.ref kind={@kind} id={@id} label={@label} refs={@refs} />
       </div>
       <p :if={@id} class="mt-1 break-all font-mono text-[10px] text-zinc-500">{@id}</p>
-      <%!-- Device line — what they were using when they did this.
-           Browser/OS for human users, "MCP bridge" for LLM clients,
-           raw UA token for everything else. The full UA string is
-           one click away via the `title=` tooltip. --%>
+      <%!-- Runner line — which host an action_run executed on. A property
+           of the subject (the run), with a link to the runner. No icon —
+           just `runner: name (group) version`. --%>
+      <p :if={@runner} class="mt-1 text-[11px]">
+        <.link
+          navigate={~p"/app/runners/#{@runner.id}"}
+          class="text-indigo-300 hover:text-indigo-200"
+        >
+          runner: {runner_label(@runner)}
+        </.link>
+      </p>
+      <%!-- Device line — what the ACTOR was using. Browser/OS for human
+           users, "MCP bridge" for LLM clients. Hidden for the runner's
+           bare Go HTTP client (it's not a device worth showing — the
+           runner appears under the Subject when relevant). The full UA
+           string is one click away via the `title=` tooltip. --%>
+      <% device = device_label(@user_agent) %>
       <p
-        :if={@user_agent}
+        :if={device}
         class="mt-2 flex items-center gap-1.5 truncate text-[11px] text-zinc-500"
         title={@user_agent}
       >
         <.icon name={device_icon(@user_agent)} class="h-3 w-3 shrink-0 text-zinc-600" />
-        <span class="truncate">{device_label(@user_agent)}</span>
+        <span class="truncate">{device}</span>
       </p>
       <%!-- MCP coordinates for this actor: the client the LLM connected
            through (bridge only) and the session it was on. They belong to
@@ -346,13 +376,21 @@ defmodule EmisarWeb.AuditDetailLive do
   # "what does this string mean." Strips the verbose Mozilla/AppleWebKit
   # cruft into something a reader can scan.
   defp device_label(ua) when is_binary(ua) do
+    # The runner (and any bare Go HTTP client that didn't set a custom UA)
+    # isn't a "device" worth showing on the actor — return nil so the line
+    # hides. The runner appears under the Subject when an event is about one.
+    if ua =~ ~r/^Go-http-client/i, do: nil, else: browser_os_label(ua)
+  end
+
+  defp device_label(_), do: nil
+
+  defp browser_os_label(ua) do
     browser =
       cond do
         ua =~ ~r/Edg\//i -> "Edge"
         ua =~ ~r/Chrome\//i -> "Chrome"
         ua =~ ~r/Firefox\//i -> "Firefox"
         ua =~ ~r/Safari\//i and not (ua =~ ~r/Chrome\//i) -> "Safari"
-        ua =~ ~r/^Go-http-client/i -> "Runner (Go)"
         true -> nil
       end
 
@@ -374,7 +412,18 @@ defmodule EmisarWeb.AuditDetailLive do
     end
   end
 
-  defp device_label(_), do: nil
+  # `runner: name (group) version` for the subject runner line — group and
+  # version are appended only when present.
+  defp runner_label(%Runners.Runner{} = runner) do
+    base =
+      if runner.group in [nil, ""],
+        do: runner.name,
+        else: "#{runner.name} (#{runner.group})"
+
+    if runner.runner_version in [nil, ""],
+      do: base,
+      else: "#{base} #{runner.runner_version}"
+  end
 
   # Last-resort: the first whitespace-delimited token, so a missing UA
   # parser doesn't print a 200-char Mozilla string into the card.

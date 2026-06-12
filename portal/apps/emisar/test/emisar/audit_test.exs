@@ -65,6 +65,30 @@ defmodule Emisar.AuditTest do
       Audit.clear_request_metadata()
       assert Audit.get_request_metadata() == %{}
     end
+
+    test "without_request_metadata clears for the call and restores after" do
+      Audit.put_request_metadata(%{ip_address: "10.0.0.42", user_agent: "Go-http-client/1.1"})
+
+      inner =
+        Audit.without_request_metadata(fn ->
+          # The wrapped engine work sees no ambient request metadata, so its
+          # audit rows aren't stamped with the runner's connect IP/UA.
+          Audit.get_request_metadata()
+        end)
+
+      assert inner == %{}
+      # The runner socket's own metadata is intact for its later events.
+      assert Audit.get_request_metadata() == %{
+               ip_address: "10.0.0.42",
+               user_agent: "Go-http-client/1.1"
+             }
+    end
+
+    test "without_request_metadata restores even when nothing was set" do
+      assert Audit.get_request_metadata() == %{}
+      Audit.without_request_metadata(fn -> :ok end)
+      assert Audit.get_request_metadata() == %{}
+    end
   end
 
   describe "resolve_references/1" do
