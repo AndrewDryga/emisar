@@ -102,10 +102,9 @@
         <li>
           <strong>Setuid drop on Linux.</strong>
           Actions with <code>user:</code>
-          / <code>group:</code>
-          set drop the child
-          process to that uid/gid before exec. A runner shipping under a privileged
-          service account still runs the declared action as the lower-privilege user.
+          set drop the child process to that local user's uid and primary gid
+          before exec. A runner shipping under a privileged service account still
+          runs the declared action as the lower-privilege user.
         </li>
         <li>
           <strong>Local action admission (defense-in-depth).</strong>

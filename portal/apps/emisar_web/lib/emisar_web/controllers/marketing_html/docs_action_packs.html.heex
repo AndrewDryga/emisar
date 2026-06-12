@@ -67,10 +67,10 @@ args:
 
 execution:
   command:
-    binary: /bin/grep
+    binary: grep        # bare name — resolved via PATH on the host
     argv: ["-E", "-n", "&#123;&#123; args.pattern &#125;&#125;", "&#123;&#123; args.file &#125;&#125;"]
   timeout: 30s
-  user: root          # optional setuid drop on Linux
+  user: syslog        # optional — run as this lower-privilege local user
 
 output:
   parser: text
@@ -112,9 +112,10 @@ examples:
           arrays, min/max for numbers, max_duration for durations.
         </li>
         <li>
-          <strong>execution.user / group</strong>
-          — Linux-only. Drops the child process to that uid/gid before exec, so a runner under a
-          privileged service account still runs the action as the declared, lower-privilege user.
+          <strong>execution.user</strong>
+          — Linux-only. Drops the child process to that local user's uid and primary gid before
+          exec, so a runner under a privileged service account still runs the action as the
+          declared, lower-privilege user.
         </li>
         <li>
           <strong>output.parser</strong>

@@ -31,7 +31,7 @@
           <li class="flex items-start gap-2.5">
             <.icon name="hero-check" class="mt-1 h-4 w-4 flex-none text-indigo-400" />
             <span>
-              Outbound HTTPS to <code class="text-zinc-300">app.emisar.dev:443</code>. The runner
+              Outbound HTTPS to <code class="text-zinc-300">emisar.dev:443</code>. The runner
               dials out; nothing listens on the host, so there's no inbound port to open.
             </span>
           </li>
@@ -54,7 +54,7 @@
       </p>
       <div class="mt-3 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
         <pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300"><span class="text-zinc-500">$</span> curl -sSL https://emisar.dev/install.sh \
-    | sudo EMISAR_AUTH_KEY=emkey-auth-… EMISAR_URL=https://app.emisar.dev bash</pre>
+    | sudo EMISAR_AUTH_KEY=emkey-auth-… EMISAR_URL=https://emisar.dev bash</pre>
       </div>
       <p class="mt-3 text-sm leading-6 text-zinc-400">
         That leading space keeps the key out of your shell history if you have
@@ -136,7 +136,7 @@
       <h2 class="mt-10 text-2xl font-semibold text-zinc-50">5 · Point your LLM at it</h2>
       <p class="mt-3 text-sm leading-relaxed text-zinc-400">
         A runner on its own is just a safer way to click buttons. The payoff is handing the catalog
-        to a model. In the dashboard open <strong>Agents</strong>, pick your client — Claude Code,
+        to a model. In the dashboard open <strong>LLM agents</strong>, pick your client — Claude Code,
         Claude Desktop, Cursor, Gemini CLI, Codex CLI, or remote MCP for Claude.ai and ChatGPT —
         and emisar mints a scoped API key with a prefilled config snippet to paste in.
       </p>
@@ -212,7 +212,7 @@
         <strong class="text-zinc-100">Runner not showing up?</strong>
         Check <code class="font-mono text-xs">journalctl -u emisar -f</code>
         on the host. The two usual causes are a stale enrollment key (they're single-use — mint a
-        fresh one from <strong>Connect a runner</strong>) and an outbound firewall blocking <code class="font-mono">app.emisar.dev:443</code>.
+        fresh one from <strong>Connect a runner</strong>) and an outbound firewall blocking <code class="font-mono">emisar.dev:443</code>.
       </div>
 
       <div class="mt-8 flex flex-wrap gap-x-6 gap-y-3 border-t border-zinc-900 pt-8 text-sm">

@@ -74,7 +74,7 @@ defmodule EmisarWeb.MarketingController do
     {"Where do approvals happen?",
      "In the web UI today. The approver sees the actor, the arguments, the target host, and the policy rule that triggered the gate. One click to allow, one to deny."},
     {"What if my runner dies mid-run?",
-     "Child processes are reaped with PR_SET_PDEATHSIG on Linux — no zombies, no orphans. The cloud reconciles run state on reconnect and marks orphaned runs as crashed in the audit log."},
+     "Child processes are reaped with PR_SET_PDEATHSIG on Linux — no zombies, no orphans. If the runner stays offline, the cloud's dispatch-timeout sweep marks its in-flight runs as errored with the reason within minutes, so nothing reads as running forever."},
     {"Is this MCP-compatible?",
      "Yes. Claude.ai and ChatGPT connect to emisar's remote JSON-RPC MCP server through OAuth. Claude Code, Claude Desktop, Cursor, Gemini CLI, and Codex CLI can use the emisar-mcp stdio bridge."},
     {"Can I self-host the control plane?",
