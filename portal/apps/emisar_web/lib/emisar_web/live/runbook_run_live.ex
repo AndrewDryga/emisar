@@ -51,7 +51,9 @@ defmodule EmisarWeb.RunbookRunLive do
     |> assign(:steps, Runbooks.expand(runbook))
     # action_id → risk, so the plan can show which steps are read-only
     # (low) vs which will stop for approval before a fleet-wide dispatch.
-    |> assign(:action_risk, Map.new(runner_actions, &{&1.action_id, &1.risk}))
+    # Most-severe across runners — a group dispatch hits every member, so
+    # showing the recent-but-lower risk would under-warn.
+    |> assign(:action_risk, Catalog.most_severe_risk_by_action(runner_actions))
     |> assign(:target, default_target(runners))
   end
 

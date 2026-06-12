@@ -103,8 +103,10 @@ defmodule EmisarWeb.RunbookEditorLive do
       end)
       |> Map.new(fn {id, set} -> {id, set |> MapSet.to_list() |> Enum.sort()} end)
 
-    # action_id → risk, so each step card shows what tier it composes.
-    risk_by_action = Map.new(runner_actions, &{&1.action_id, &1.risk})
+    # action_id → risk (most-severe across runners), so each step card
+    # shows the worst tier it composes — not whichever runner phoned home
+    # last, which could under-state risk on a mixed-version fleet.
+    risk_by_action = Catalog.most_severe_risk_by_action(runner_actions)
 
     # Options for the runner-target picker. Fail soft to empty lists if the
     # subject can't view runners — they can still author by typing, and the

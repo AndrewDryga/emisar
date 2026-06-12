@@ -617,4 +617,27 @@ defmodule Emisar.CatalogTest do
       assert :ok = Catalog.check_pack_trusted(act)
     end
   end
+
+  describe "most_severe_risk_by_action/1" do
+    test "keeps the worst risk when one action_id is advertised by several runners" do
+      # The same action on two runners (mixed pack versions / a stale
+      # runner) — a fleet dispatch hits both, so the map must surface the
+      # worst risk regardless of which row was seen most recently.
+      rows = [
+        %RunnerAction{action_id: "shared.op", risk: :low},
+        %RunnerAction{action_id: "shared.op", risk: :critical},
+        %RunnerAction{action_id: "shared.op", risk: :medium},
+        %RunnerAction{action_id: "calm.read", risk: :low}
+      ]
+
+      assert Catalog.most_severe_risk_by_action(rows) == %{
+               "shared.op" => :critical,
+               "calm.read" => :low
+             }
+    end
+
+    test "is an empty map for no rows" do
+      assert Catalog.most_severe_risk_by_action([]) == %{}
+    end
+  end
 end

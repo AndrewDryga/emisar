@@ -562,6 +562,31 @@ defmodule Emisar.Catalog do
     end
   end
 
+  # Severity rank for `RunnerAction.risk` (an Ecto.Enum) — lets us pick the
+  # WORST risk when the same action is advertised by more than one runner.
+  @risk_rank %{low: 0, medium: 1, high: 2, critical: 3}
+
+  @doc """
+  Builds `%{action_id => risk}` from already-fetched `%RunnerAction{}` rows
+  (e.g. from `list_all_actions_for_account/1`), keeping the MOST-SEVERE risk
+  per action_id. The same action_id can appear on several runners with
+  different risk (mixed pack versions, a stale runner). A runbook UI that
+  warns before a fleet-wide group dispatch must show the worst a targeted
+  runner would apply, not whichever runner phoned home last — the latter
+  would under-state risk in exactly that case.
+  """
+  def most_severe_risk_by_action(runner_actions) when is_list(runner_actions) do
+    Enum.reduce(runner_actions, %{}, fn %RunnerAction{action_id: id, risk: risk}, acc ->
+      Map.update(acc, id, risk, &most_severe(&1, risk))
+    end)
+  end
+
+  defp most_severe(current, candidate) do
+    if Map.get(@risk_rank, candidate, 0) > Map.get(@risk_rank, current, 0),
+      do: candidate,
+      else: current
+  end
+
   @doc """
   Lookup a single catalog action row by (runner, action_id) scoped to
   the subject's account.
