@@ -65,7 +65,11 @@ func TestIdempotencyKey_NormalizesStringID(t *testing.T) {
 }
 
 func TestNewSessionID_UniquePerProcess(t *testing.T) {
-	if newSessionID() == newSessionID() {
+	// Bind to vars so the comparison is two distinct evaluations, not a
+	// syntactically-identical `f() == f()` (which static analysis flags as
+	// a tautology even though the nonce makes the values differ).
+	first, second := newSessionID(), newSessionID()
+	if first == second {
 		t.Error("two session ids collided — nonce isn't random")
 	}
 }

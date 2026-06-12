@@ -65,11 +65,6 @@ func TestValidIDSegment(t *testing.T) {
 	}
 }
 
-func ptrDur(d time.Duration) Duration {
-	v := Duration(d)
-	return v
-}
-
 func TestValidateTimeoutBounds(t *testing.T) {
 	mk := func(def, lo, hi time.Duration) *Action {
 		return &Action{
