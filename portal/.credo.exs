@@ -89,6 +89,7 @@
           {Emisar.Checks.NoIfOnArgField, []},
           {Emisar.Checks.NoPipeInBranchHead, []},
           {Emisar.Checks.NoPreloadInRepoOpts, []},
+          {Emisar.Checks.NoProcessDictionary, []},
           {Emisar.Checks.PreferCaptureClosure, []},
           {Emisar.Checks.RepoExistsOverCount, []},
           {Emisar.Checks.ShortBindings, []},
