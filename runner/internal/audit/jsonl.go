@@ -177,9 +177,20 @@ func (s *JSONLSink) Write(_ context.Context, ev Event) error {
 		return err
 	}
 
-	// Chain advances only after the bytes are durably appended. If the
-	// Write above had failed, lastHash stays put and the next attempt
-	// chains from the same point.
+	// fsync so a hard crash (power loss, OOM-kill, SIGKILL) can't lose a
+	// line that Write already reported as written — this is the tamper-
+	// evident forensics record, so a "best-effort" page-cache write isn't
+	// enough. One fsync per action attempt is negligible at the runner's
+	// dispatch rate. A failed Sync is treated like a failed Write below:
+	// the chain head doesn't advance, so the next attempt re-chains from
+	// the same point rather than leaving a gap.
+	if err := s.f.Sync(); err != nil {
+		return err
+	}
+
+	// Chain advances only after the bytes are durably on disk. If the
+	// Write or Sync above had failed, lastHash stays put and the next
+	// attempt chains from the same point.
 	h := sha256.Sum256(b)
 	s.lastHash = hex.EncodeToString(h[:])
 	return nil
