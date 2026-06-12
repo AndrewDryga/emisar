@@ -22,7 +22,7 @@ defmodule EmisarWeb.RunnerSocket do
 
   @behaviour WebSock
 
-  alias Emisar.{Audit, Catalog, Runners, Runs}
+  alias Emisar.{Catalog, RequestContext, Runners, Runs}
   require Logger
 
   @protocol_version 1
@@ -32,18 +32,19 @@ defmodule EmisarWeb.RunnerSocket do
 
   @impl true
   def init(%{token: %Runners.Token{} = token, runner: %Runners.Runner{} = runner} = upgrade) do
-    # Stash IP + UA from the HTTP upgrade on the socket process so
-    # every Audit.log call in init / terminate / handle_in carries
-    # them. The controller passed these in via `WebSockAdapter.upgrade`.
-    Audit.put_request_metadata(%{
-      ip_address: upgrade[:ip_address],
-      user_agent: upgrade[:user_agent]
-    })
+    # The connect request's IP + UA, carried on socket state so the
+    # runner's own lifecycle events (connect / disconnect / error) stamp
+    # them — and ONLY those. Engine work that happens to run in this
+    # process (a runbook continuation wave) builds its own events with no
+    # context, so the runner's connect metadata can't bleed onto them.
+    request_context =
+      RequestContext.new(%{ip_address: upgrade[:ip_address], user_agent: upgrade[:user_agent]})
 
     state = %{
       account_id: runner.account_id,
       runner_id: runner.id,
       token_id: token.id,
+      request_context: request_context,
       seen_request_ids: :queue.new(),
       seen_request_set: MapSet.new(),
       seen_request_count: 0,
@@ -62,7 +63,7 @@ defmodule EmisarWeb.RunnerSocket do
     # source of truth for "connected now"; it clears automatically when
     # this process dies. Catalog observation stays a separate concern.
     Runners.connect_runner(runner)
-    Runners.audit_runner_connected(runner, token.id)
+    Runners.audit_runner_connected(runner, token.id, request_context)
 
     {:ok, state}
   end
@@ -130,7 +131,13 @@ defmodule EmisarWeb.RunnerSocket do
   @impl true
   def terminate(reason, state) do
     Runners.mark_disconnected(state.runner_id, format_reason(reason))
-    Runners.audit_runner_disconnected(state.account_id, state.runner_id, format_reason(reason))
+
+    Runners.audit_runner_disconnected(
+      state.account_id,
+      state.runner_id,
+      format_reason(reason),
+      state.request_context
+    )
 
     :ok
   end
@@ -231,11 +238,12 @@ defmodule EmisarWeb.RunnerSocket do
   end
 
   defp handle_envelope("error", msg, state) do
-    Runners.audit_runner_error(state.account_id, state.runner_id, %{
-      code: msg["code"],
-      message: msg["message"],
-      request_id: msg["request_id"]
-    })
+    Runners.audit_runner_error(
+      state.account_id,
+      state.runner_id,
+      %{code: msg["code"], message: msg["message"], request_id: msg["request_id"]},
+      state.request_context
+    )
 
     {:ok, state}
   end

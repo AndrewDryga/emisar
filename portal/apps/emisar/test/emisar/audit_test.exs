@@ -3,29 +3,20 @@ defmodule Emisar.AuditTest do
 
   import Emisar.Fixtures
 
-  alias Emisar.Audit
+  alias Emisar.{Audit, RequestContext}
 
-  setup do
-    # Each test gets a clean process; metadata stash never bleeds
-    # between tests. Be paranoid in case a previous test crashed
-    # without clearing.
-    Audit.clear_request_metadata()
-    on_exit(&Audit.clear_request_metadata/0)
-    :ok
-  end
-
-  describe "put_request_metadata + log/3" do
-    test "log/3 picks up IP/UA/request_id stashed via put_request_metadata/1" do
+  describe "log/3 with a %RequestContext{}" do
+    test "stamps IP/UA/request_id/mcp_session from the :context struct" do
       account = account_fixture()
 
-      Audit.put_request_metadata(%{
+      context = %RequestContext{
         ip_address: "10.0.0.42",
         user_agent: "curl/8.5.0",
         request_id: "req_abc",
         mcp_session_id: "sess_xyz"
-      })
+      }
 
-      {:ok, event} = Audit.log(account.id, "audit.test", actor_kind: "system")
+      {:ok, event} = Audit.log(account.id, "audit.test", actor_kind: "system", context: context)
 
       assert event.ip_address == "10.0.0.42"
       assert event.user_agent == "curl/8.5.0"
@@ -33,23 +24,23 @@ defmodule Emisar.AuditTest do
       assert event.mcp_session_id == "sess_xyz"
     end
 
-    test "explicit attrs win over process metadata" do
+    test "explicit attrs win over the context struct" do
       account = account_fixture()
-      Audit.put_request_metadata(%{ip_address: "10.0.0.42", user_agent: "curl"})
+      context = %RequestContext{ip_address: "10.0.0.42", user_agent: "curl"}
 
       {:ok, event} =
         Audit.log(account.id, "audit.test",
           actor_kind: "system",
+          context: context,
           ip_address: "8.8.8.8"
         )
 
       assert event.ip_address == "8.8.8.8"
-      # User agent NOT explicitly overridden — still picks up the
-      # process value.
+      # user_agent NOT explicitly overridden — still taken from the context.
       assert event.user_agent == "curl"
     end
 
-    test "with no metadata set, IP/UA/request_id are nil (no crash)" do
+    test "with no :context, request metadata is nil (system / engine origin)" do
       account = account_fixture()
 
       {:ok, event} = Audit.log(account.id, "audit.test", actor_kind: "system")
@@ -57,37 +48,7 @@ defmodule Emisar.AuditTest do
       assert event.ip_address == nil
       assert event.user_agent == nil
       assert event.request_id == nil
-    end
-
-    test "clear_request_metadata wipes the stash" do
-      Audit.put_request_metadata(%{ip_address: "10.0.0.42"})
-      assert Audit.get_request_metadata() == %{ip_address: "10.0.0.42"}
-      Audit.clear_request_metadata()
-      assert Audit.get_request_metadata() == %{}
-    end
-
-    test "without_request_metadata clears for the call and restores after" do
-      Audit.put_request_metadata(%{ip_address: "10.0.0.42", user_agent: "Go-http-client/1.1"})
-
-      inner =
-        Audit.without_request_metadata(fn ->
-          # The wrapped engine work sees no ambient request metadata, so its
-          # audit rows aren't stamped with the runner's connect IP/UA.
-          Audit.get_request_metadata()
-        end)
-
-      assert inner == %{}
-      # The runner socket's own metadata is intact for its later events.
-      assert Audit.get_request_metadata() == %{
-               ip_address: "10.0.0.42",
-               user_agent: "Go-http-client/1.1"
-             }
-    end
-
-    test "without_request_metadata restores even when nothing was set" do
-      assert Audit.get_request_metadata() == %{}
-      Audit.without_request_metadata(fn -> :ok end)
-      assert Audit.get_request_metadata() == %{}
+      assert event.mcp_session_id == nil
     end
   end
 

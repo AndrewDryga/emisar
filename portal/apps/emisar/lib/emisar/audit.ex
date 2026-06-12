@@ -19,98 +19,16 @@ defmodule Emisar.Audit do
 
   ## Request metadata
 
-  IP, user agent, and request id are cross-cutting context that the
-  business contexts have no conn-level visibility into. To avoid
-  threading a conn through every audited operation, callers near the
-  edge stash this metadata in the current process dictionary via
-  `put_request_metadata/1`. `log/3` reads from there and merges into
-  the event row. Explicit `:ip_address` / `:user_agent` / `:request_id`
-  keys in the `attrs` map always win over the process dict.
+  IP, user agent, request id, and MCP session are the inbound request's
+  context. They ride in a `%RequestContext{}` passed via the `:context`
+  attr key — from the caller's `%Subject{}` for an authenticated event
+  (`Audit.Events` builders pull `subject.context` automatically), or
+  explicitly on the pre-auth path. An event with no `:context` (system /
+  engine origin) carries no request metadata, by construction.
   """
   alias Emisar.Audit.{Authorizer, Event}
-  alias Emisar.{Auth, Repo, Runs}
+  alias Emisar.{Auth, Repo, RequestContext, Runs}
   alias Emisar.Auth.Subject
-
-  @meta_key :emisar_audit_request_metadata
-
-  # -- Request metadata (process-dict cross-cutting context) -----------
-
-  @doc """
-  Stash `{ip_address, user_agent, request_id}` in the current process so
-  subsequent `Audit.log/3` calls pick them up without each caller having
-  to thread them through. Pass `nil` values to clear.
-  """
-  def put_request_metadata(%{} = meta) do
-    cleaned =
-      meta
-      |> Map.take([:ip_address, :user_agent, :request_id, :mcp_session_id])
-      |> Enum.reject(fn {_, v} -> is_nil(v) end)
-      |> Map.new()
-
-    Process.put(@meta_key, cleaned)
-    :ok
-  end
-
-  @doc """
-  Returns the audit request metadata visible to the current process. Looks
-  in the local dict first, then walks `$callers` (the chain Task and
-  Task.Supervisor stamp so spawned tasks inherit context). The first
-  non-empty entry wins, matching how Logger / Phoenix propagate metadata
-  across async fan-outs.
-  """
-  def get_request_metadata do
-    case Process.get(@meta_key) do
-      %{} = local when map_size(local) > 0 ->
-        local
-
-      _ ->
-        # Tasks spawned via Task / Task.Supervisor inherit the parent's
-        # pid in `:"$callers"` — newest first. Walk it until we find a
-        # caller that has audit metadata set, otherwise return %{}.
-        walk_caller_metadata(Process.get(:"$callers", []))
-    end
-  end
-
-  defp walk_caller_metadata([]), do: %{}
-
-  defp walk_caller_metadata([pid | rest]) do
-    case Process.info(pid, :dictionary) do
-      {:dictionary, dict} ->
-        case Keyword.get(dict, @meta_key) do
-          %{} = meta when map_size(meta) > 0 -> meta
-          _ -> walk_caller_metadata(rest)
-        end
-
-      # Caller exited between spawn and lookup — skip and try the next.
-      _ ->
-        walk_caller_metadata(rest)
-    end
-  end
-
-  @doc "Wipes any audit metadata set for the current process."
-  def clear_request_metadata, do: Process.delete(@meta_key)
-
-  @doc """
-  Runs `fun` with this process's audit request metadata cleared, restoring
-  it afterward. Use it around engine-internal work that happens to run in a
-  request-bearing process — e.g. a runbook continuation wave dispatched from
-  the runner socket when a run finishes. Those audit rows describe an engine
-  decision, not the runner's connect request, so they must not inherit its
-  IP / User-Agent.
-  """
-  def without_request_metadata(fun) when is_function(fun, 0) do
-    saved = Process.get(@meta_key)
-    Process.delete(@meta_key)
-
-    try do
-      fun.()
-    after
-      restore_request_metadata(saved)
-    end
-  end
-
-  defp restore_request_metadata(nil), do: Process.delete(@meta_key)
-  defp restore_request_metadata(saved), do: Process.put(@meta_key, saved)
 
   # -- Recording (internal helper called by sibling contexts) ----------
 
@@ -156,7 +74,7 @@ defmodule Emisar.Audit do
       end)
       |> Repo.commit_multi()
 
-  Field merge order is identical to `log/3`: base < process metadata
+  Field merge order is identical to `log/3`: base < request context
   < explicit attrs.
   """
   def changeset(account_id, event_type, attrs \\ %{}) do
@@ -166,10 +84,16 @@ defmodule Emisar.Audit do
       occurred_at: DateTime.utc_now()
     }
 
+    # Request context rides in a `:context` `%RequestContext{}` — from the
+    # caller's `%Subject{}` (via `actor/1`) or passed explicitly on the
+    # pre-auth path. A struct, so the field set is fixed and a missing
+    # context defaults to all-nil (system / engine origin → no metadata).
+    {context, attrs} = Map.pop(normalize(attrs), :context, %RequestContext{})
+
     merged =
       base
-      |> Map.merge(get_request_metadata())
-      |> Map.merge(normalize(attrs))
+      |> Map.merge(Map.from_struct(context))
+      |> Map.merge(attrs)
 
     Event.Changeset.create(merged)
   end

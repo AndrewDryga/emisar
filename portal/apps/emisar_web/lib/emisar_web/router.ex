@@ -13,7 +13,6 @@ defmodule EmisarWeb.Router do
     plug :put_secure_browser_headers
     plug EmisarWeb.Plugs.ContentSecurityPolicy
     plug :fetch_current_user
-    plug EmisarWeb.Plugs.AuditContext
   end
 
   # `noindex` on every authenticated and auth-bound route. Indexable
@@ -45,7 +44,6 @@ defmodule EmisarWeb.Router do
 
   pipeline :api do
     plug :accepts, ["json"]
-    plug EmisarWeb.Plugs.AuditContext
   end
 
   # -- Health (no logging, no session) --------------------------------
@@ -138,8 +136,7 @@ defmodule EmisarWeb.Router do
     # SENDS a non-compliant member, so it must mount without that gate.
     live_session :mfa_setup,
       on_mount: [
-        {EmisarWeb.UserAuth, :ensure_authenticated},
-        {EmisarWeb.UserAuth, :audit_meta}
+        {EmisarWeb.UserAuth, :ensure_authenticated}
       ] do
       live "/mfa_setup", MfaSetupLive, :new
     end
@@ -148,7 +145,6 @@ defmodule EmisarWeb.Router do
       on_mount: [
         {EmisarWeb.UserAuth, :ensure_authenticated},
         {EmisarWeb.UserAuth, :ensure_mfa_compliant},
-        {EmisarWeb.UserAuth, :audit_meta},
         {EmisarWeb.UserAuth, :track_pending_approvals},
         {EmisarWeb.UserAuth, :email_confirmation}
       ] do

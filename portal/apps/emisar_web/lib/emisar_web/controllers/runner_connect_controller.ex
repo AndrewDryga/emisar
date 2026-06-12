@@ -13,20 +13,24 @@ defmodule EmisarWeb.RunnerConnectController do
   use EmisarWeb, :controller
 
   alias Emisar.Runners
-  alias EmisarWeb.RunnerSocket
+  alias EmisarWeb.{RequestContext, RunnerSocket}
 
   # -- Token exchange -------------------------------------------------
 
   def register(conn, params) do
     with {:ok, auth_key} <- read_bearer(conn),
          {:ok, runner, token, raw_token} <-
-           Runners.register_via_auth_key(auth_key, %{
-             external_id: params["external_id"],
-             hostname: params["hostname"],
-             group: params["group"],
-             labels: params["labels"] || %{},
-             version: params["version"]
-           }) do
+           Runners.register_via_auth_key(
+             auth_key,
+             %{
+               external_id: params["external_id"],
+               hostname: params["hostname"],
+               group: params["group"],
+               labels: params["labels"] || %{},
+               version: params["version"]
+             },
+             RequestContext.from_conn(conn)
+           ) do
       conn
       |> put_status(:created)
       |> json(%{
@@ -73,9 +77,10 @@ defmodule EmisarWeb.RunnerConnectController do
   def websocket(conn, _params) do
     with {:ok, raw} <- read_bearer(conn),
          {:ok, token, runner} <- Runners.verify_runner_token(raw) do
-      # Threaded into the socket process so its `Audit.log` calls (in
-      # init + terminate) can stash IP + UA on the new process's
-      # metadata. The conn's process won't outlive the upgrade.
+      # Threaded into the socket process so its lifecycle audit events
+      # (connect in init, disconnect in terminate) carry the connecting
+      # host's IP + UA — `init/1` builds the `%RequestContext{}` from
+      # these. The conn's process won't outlive the upgrade.
       state = %{
         token: token,
         runner: runner,

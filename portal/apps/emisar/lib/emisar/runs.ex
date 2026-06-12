@@ -727,14 +727,10 @@ defmodule Emisar.Runs do
         # decide whether the next wave fires — it no-ops while wave
         # peers are still in flight and halts on any failure (the failed
         # run surfaces on the runbook run page). Dispatch failures are
-        # audited inside the engine.
-        #
-        # This runs in the runner socket process (a result just arrived),
-        # whose audit metadata is that runner's connect IP/UA. The next
-        # wave is an engine decision, not the runner's request, so clear
-        # that metadata first — otherwise the wave's policy.evaluated rows
-        # get mis-stamped with the runner's device.
-        Audit.without_request_metadata(fn -> Emisar.Runbooks.dispatch_next_batch(finished) end)
+        # audited inside the engine. The wave's policy.evaluated rows are
+        # system-origin (no `%Subject{}`), so they carry no request
+        # context — the runner's connect IP/UA can't bleed onto them.
+        Emisar.Runbooks.dispatch_next_batch(finished)
 
         ok
 

@@ -8,7 +8,7 @@ defmodule Emisar.Fixtures do
   so tests using `async: true` never collide.
   """
 
-  alias Emisar.{Accounts, ApiKeys, Policies, Repo, Runners, Users}
+  alias Emisar.{Accounts, ApiKeys, Policies, Repo, RequestContext, Runners, Users}
   alias Emisar.Accounts.{Account, Membership}
   alias Emisar.Auth.Subject
   alias Emisar.Runners.Runner
@@ -27,7 +27,7 @@ defmodule Emisar.Fixtures do
   """
   def subject_for(%User{} = user, account, opts \\ []) do
     role = opts[:role] || :owner
-    context = opts[:context] || %{}
+    context = opts[:context] || %RequestContext{}
 
     membership =
       fetch_membership(account.id, user.id) ||

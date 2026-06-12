@@ -26,6 +26,7 @@ defmodule Emisar.Audit.Events do
 
   alias Emisar.Audit
   alias Emisar.Auth.Subject
+  alias Emisar.RequestContext
 
   # -- Account ---------------------------------------------------------
 
@@ -218,7 +219,7 @@ defmodule Emisar.Audit.Events do
   # Connection-lifecycle events fired by the runner socket process. The
   # runner itself is the actor — there is no acting `%Subject{}` — so the
   # actor/subject fields point at the runner row.
-  def runner_connected(%Runners.Runner{} = runner, token_id) do
+  def runner_connected(%Runners.Runner{} = runner, token_id, context \\ %RequestContext{}) do
     Audit.changeset(runner.account_id, "runner.connected",
       actor_kind: "runner",
       actor_id: runner.id,
@@ -226,34 +227,42 @@ defmodule Emisar.Audit.Events do
       subject_kind: "runner",
       subject_id: runner.id,
       subject_label: runner.name,
+      context: context,
       payload: %{token_id: token_id}
     )
   end
 
-  def runner_disconnected(account_id, runner_id, reason) do
+  def runner_disconnected(account_id, runner_id, reason, context \\ %RequestContext{}) do
     Audit.changeset(account_id, "runner.disconnected",
       actor_kind: "runner",
       actor_id: runner_id,
       subject_kind: "runner",
       subject_id: runner_id,
+      context: context,
       payload: %{reason: reason}
     )
   end
 
-  def runner_error(account_id, runner_id, %{} = payload) do
+  def runner_error(account_id, runner_id, %{} = payload, context \\ %RequestContext{}) do
     Audit.changeset(account_id, "runner.error",
       actor_kind: "runner",
       actor_id: runner_id,
       subject_kind: "runner",
       subject_id: runner_id,
+      context: context,
       payload: payload
     )
   end
 
   # A runner enrolling itself via an auth key on first connect — the
   # runner is the actor, no operator `%Subject{}` is involved.
-  def runner_registered(%Runners.Runner{} = runner, %Runners.AuthKey{} = key) do
+  def runner_registered(
+        %Runners.Runner{} = runner,
+        %Runners.AuthKey{} = key,
+        context \\ %RequestContext{}
+      ) do
     Audit.changeset(runner.account_id, "runner.registered",
+      context: context,
       actor_kind: "runner",
       actor_id: runner.id,
       actor_label: runner.name,
@@ -746,6 +755,14 @@ defmodule Emisar.Audit.Events do
     )
   end
 
+  # Actor identity + the request context that produced this event, both
+  # off the one `%Subject{}` every builder already receives — so the
+  # request's ip/ua/request_id rides the authenticated caller, not a
+  # process-dictionary side channel.
   defp actor(%Subject{} = subject),
-    do: [actor_kind: Subject.actor_kind(subject), actor_id: Subject.actor_id(subject)]
+    do: [
+      actor_kind: Subject.actor_kind(subject),
+      actor_id: Subject.actor_id(subject),
+      context: subject.context
+    ]
 end

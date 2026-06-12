@@ -6,6 +6,7 @@ defmodule EmisarWeb.UserConfirmationController do
   use EmisarWeb, :controller
 
   alias Emisar.Auth
+  alias EmisarWeb.RequestContext
 
   def confirm(conn, %{"token" => token}) do
     # Works for signed-in and signed-out users alike. Signed-in users go
@@ -13,7 +14,7 @@ defmodule EmisarWeb.UserConfirmationController do
     # signed-out users land on sign-in to continue.
     signed_in? = not is_nil(conn.assigns[:current_user])
 
-    case Auth.confirm_user_by_token(token) do
+    case Auth.confirm_user_by_token(token, RequestContext.from_conn(conn)) do
       {:ok, _user} ->
         conn
         |> put_flash(

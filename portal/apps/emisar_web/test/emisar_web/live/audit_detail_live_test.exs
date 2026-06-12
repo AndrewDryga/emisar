@@ -3,7 +3,7 @@ defmodule EmisarWeb.AuditDetailLiveTest do
 
   import Phoenix.LiveViewTest
 
-  alias Emisar.{Audit, Runs}
+  alias Emisar.{Audit, RequestContext, Runs}
 
   test "an action_run event shows the runner under the subject, not as a device", %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)
@@ -29,17 +29,14 @@ defmodule EmisarWeb.AuditDetailLiveTest do
     # the runbook engine writes — stamped with the runner's connect UA, as it
     # was before the source fix, to prove the device line no longer surfaces
     # "Runner (Go)" for it.
-    Audit.put_request_metadata(%{user_agent: "Go-http-client/1.1"})
-
     {:ok, event} =
       Audit.log(account.id, "policy.evaluated",
         actor_kind: "system",
         subject_kind: "action_run",
         subject_id: run.id,
-        subject_label: run.action_id
+        subject_label: run.action_id,
+        context: %RequestContext{user_agent: "Go-http-client/1.1"}
       )
-
-    Audit.clear_request_metadata()
 
     {:ok, _lv, html} = live(conn, ~p"/app/audit/#{event.id}")
 

@@ -12,6 +12,7 @@ defmodule EmisarWeb.UserAuth do
 
   alias Emisar.{Accounts, Auth}
   alias Emisar.Auth.Subject
+  alias EmisarWeb.RequestContext
 
   @remember_me_cookie "_emisar_user_remember_me"
 
@@ -37,10 +38,12 @@ defmodule EmisarWeb.UserAuth do
   session ID (CSRF defence in depth) and redirects.
   """
   def log_in_user(conn, user, params \\ %{}) do
+    context = RequestContext.from_conn(conn)
+
     token =
       Auth.create_session_token!(user, %{
-        ip_address: normalize_ip(forwarded_for(conn) || peer_ip(conn)),
-        user_agent: List.first(get_req_header(conn, "user-agent"))
+        ip_address: context.ip_address,
+        user_agent: context.user_agent
       })
 
     user_return_to = get_session(conn, :user_return_to)
@@ -82,7 +85,9 @@ defmodule EmisarWeb.UserAuth do
     user_token = get_session(conn, :user_token)
     # Audit-log the sign-out BEFORE deleting the token — the user lookup
     # is via the token, so dropping it first would lose the actor id.
-    if user = conn.assigns[:current_user], do: Auth.record_sign_out(user)
+    if user = conn.assigns[:current_user],
+      do: Auth.record_sign_out(user, RequestContext.from_conn(conn))
+
     user_token && Auth.delete_session_token(user_token)
 
     if live_socket_id = get_session(conn, :live_socket_id) do
@@ -173,7 +178,7 @@ defmodule EmisarWeb.UserAuth do
         end
 
       {:ok, membership} ->
-        context = conn_context(conn)
+        context = RequestContext.from_conn(conn)
 
         conn
         |> maybe_refresh_account_session(membership.account_id, requested_account_id)
@@ -231,34 +236,6 @@ defmodule EmisarWeb.UserAuth do
     |> put_flash(:error, message)
     |> redirect(to: ~p"/sign_in")
   end
-
-  defp conn_context(conn) do
-    %{
-      ip_address: normalize_ip(forwarded_for(conn) || peer_ip(conn)),
-      user_agent: List.first(get_req_header(conn, "user-agent")),
-      request_id: List.first(get_resp_header(conn, "x-request-id"))
-    }
-  end
-
-  defp forwarded_for(conn) do
-    case get_req_header(conn, "x-forwarded-for") do
-      [val | _] -> val |> String.split(",") |> List.first() |> String.trim()
-      [] -> nil
-    end
-  end
-
-  defp peer_ip(%{remote_ip: ip}) when is_tuple(ip),
-    do: ip |> :inet_parse.ntoa() |> to_string()
-
-  defp peer_ip(_), do: nil
-
-  # IPv6-listener sockets surface IPv4 clients as `::ffff:N.N.N.N`
-  # (the IPv4-mapped IPv6 encoding). Operators don't care about the
-  # wrapper — strip it so audit columns show `1.2.3.4`, not the
-  # awkward 20-character form that overflows the column.
-  defp normalize_ip(nil), do: nil
-  defp normalize_ip("::ffff:" <> ip4), do: ip4
-  defp normalize_ip(ip), do: ip
 
   defp signed_in_path(_conn), do: ~p"/app"
 
@@ -322,25 +299,6 @@ defmodule EmisarWeb.UserAuth do
         # lands here as its natural second step before the dashboard).
         {:halt, Phoenix.LiveView.redirect(socket, to: ~p"/app/mfa_setup")}
     end
-  end
-
-  # Stashes IP + user agent from the WebSocket connect into the
-  # LiveView process's audit metadata. Set once at mount; persists for
-  # the lifetime of the LV process so every `handle_event/3` that calls
-  # into the business layer gets the right IP without further plumbing.
-  #
-  # Requires `:peer_data` and `:user_agent` to be listed in the
-  # endpoint's `socket "/live"` `connect_info`.
-  def on_mount(:audit_meta, _params, _session, socket) do
-    peer = Phoenix.LiveView.get_connect_info(socket, :peer_data)
-    user_agent = Phoenix.LiveView.get_connect_info(socket, :user_agent)
-
-    Emisar.Audit.put_request_metadata(%{
-      ip_address: normalize_ip(format_peer_ip(peer)),
-      user_agent: user_agent
-    })
-
-    {:cont, socket}
   end
 
   # Tracks the account's pending-approval AND pending-pack-trust counts
@@ -454,11 +412,6 @@ defmodule EmisarWeb.UserAuth do
   defp pack_pending_count_for(nil), do: 0
   defp pack_pending_count_for(subject), do: Emisar.Catalog.count_pending_pack_versions(subject)
 
-  defp format_peer_ip(%{address: ip}) when is_tuple(ip),
-    do: ip |> :inet_parse.ntoa() |> to_string()
-
-  defp format_peer_ip(_), do: nil
-
   defp mount_current_user(session, socket) do
     Phoenix.Component.assign_new(socket, :current_user, fn ->
       with token when is_binary(token) <- session["user_token"],
@@ -487,7 +440,14 @@ defmodule EmisarWeb.UserAuth do
               {nil, nil, nil, []}
 
             {:ok, membership} ->
-              subject = Subject.for_user(user, membership.account, membership, %{})
+              subject =
+                Subject.for_user(
+                  user,
+                  membership.account,
+                  membership,
+                  RequestContext.from_socket(socket)
+                )
+
               {membership.account, membership, subject, load_switchable_accounts(subject)}
           end
       end

@@ -2,6 +2,7 @@ defmodule EmisarWeb.ResetPasswordLive do
   use EmisarWeb, :live_view
 
   alias Emisar.{Auth, Mailers, Users}
+  alias EmisarWeb.RequestContext
 
   def mount(params, _session, socket) do
     socket =
@@ -9,6 +10,9 @@ defmodule EmisarWeb.ResetPasswordLive do
       |> assign(:page_title, "Reset your password")
       |> assign(:sent_to, nil)
       |> assign(:reset_token, params["token"])
+      # Captured at mount — `get_connect_info/2` is mount-only, so the
+      # request/reset handlers read it from this assign.
+      |> assign(:request_context, RequestContext.from_socket(socket))
       |> assign(:request_form, to_form(Users.change_user(%Users.User{}), as: "user"))
       |> assign(:reset_form, to_form(Users.change_password(%Users.User{}), as: "user"))
 
@@ -125,7 +129,7 @@ defmodule EmisarWeb.ResetPasswordLive do
   def handle_event("request", %{"user" => %{"email" => email}}, socket) do
     case Users.fetch_user_by_email(email) do
       {:ok, user} ->
-        token = Auth.issue_password_reset_token!(user)
+        token = Auth.issue_password_reset_token!(user, [], socket.assigns.request_context)
         Mailers.UserNotifier.deliver_password_reset(user, token)
 
       {:error, :not_found} ->
@@ -141,7 +145,11 @@ defmodule EmisarWeb.ResetPasswordLive do
     changeset = Users.change_password(%Users.User{}, params)
 
     if changeset.valid? do
-      case Auth.reset_user_password(socket.assigns.reset_token, password) do
+      case Auth.reset_user_password(
+             socket.assigns.reset_token,
+             password,
+             socket.assigns.request_context
+           ) do
         {:ok, _user} ->
           {:noreply,
            socket

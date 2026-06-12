@@ -14,7 +14,7 @@ defmodule Emisar.Users do
   `Emisar.Accounts`.
   """
   alias Ecto.Multi
-  alias Emisar.{Audit, Crypto, Repo}
+  alias Emisar.{Audit, Crypto, Repo, RequestContext}
   alias Emisar.Auth.Subject
   alias Emisar.Users.User
 
@@ -76,11 +76,12 @@ defmodule Emisar.Users do
   audit trail is this function's concern — controllers never write audit
   rows themselves.
   """
-  def record_sign_in(%User{} = user, method) when is_binary(method) do
+  def record_sign_in(%User{} = user, method, context \\ %RequestContext{})
+      when is_binary(method) do
     Multi.new()
     |> Multi.update(:user, User.Changeset.sign_in(user))
     |> Audit.Multi.log_for_user(:audit, user, "user.signed_in",
-      extra: [payload: %{method: method}]
+      extra: [payload: %{method: method}, context: context]
     )
     |> Repo.commit_multi()
     |> case do
@@ -96,13 +97,14 @@ defmodule Emisar.Users do
   subject's own actor; admins use `Accounts.update_user_as_admin/3` for
   teammates.
   """
-  def update_user_profile(attrs, %Subject{actor: %User{id: user_id}}) do
+  def update_user_profile(attrs, %Subject{actor: %User{id: user_id}} = subject) do
     User.Query.not_deleted()
     |> User.Query.by_id(user_id)
     |> Repo.fetch_and_update(User.Query,
       with: &User.Changeset.profile(&1, attrs),
       audit: fn updated ->
         Audit.user_changeset(updated, "user.profile_updated",
+          context: subject.context,
           payload: %{full_name: updated.full_name}
         )
       end
@@ -119,7 +121,11 @@ defmodule Emisar.Users do
   and failed-password attempts (`user.email_change_failed`) since wrong-password
   on the email-change form is a credential probe worth seeing.
   """
-  def update_user_email(new_email, current_password, %Subject{actor: %User{id: user_id} = user})
+  def update_user_email(
+        new_email,
+        current_password,
+        %Subject{actor: %User{id: user_id} = user} = subject
+      )
       when is_binary(new_email) and is_binary(current_password) do
     User.Query.not_deleted()
     |> User.Query.by_id(user_id)
@@ -131,6 +137,7 @@ defmodule Emisar.Users do
       end,
       audit: fn updated ->
         Audit.user_changeset(updated, "user.email_changed",
+          context: subject.context,
           payload: %{from: user.email, to: updated.email}
         )
       end
@@ -140,6 +147,7 @@ defmodule Emisar.Users do
         # Failed-credential probe — log it standalone since the
         # transaction rolled back without an audit row.
         Audit.log_for_user(user, "user.email_change_failed",
+          context: subject.context,
           payload: %{reason: "invalid_current_password"}
         )
 
@@ -165,9 +173,13 @@ defmodule Emisar.Users do
   so every other device should sign out. Self-service — the user is the
   subject's own actor.
   """
-  def change_user_password(current_password, new_password, %Subject{
-        actor: %User{id: user_id} = user
-      })
+  def change_user_password(
+        current_password,
+        new_password,
+        %Subject{
+          actor: %User{id: user_id} = user
+        } = subject
+      )
       when is_binary(current_password) and is_binary(new_password) do
     User.Query.not_deleted()
     |> User.Query.by_id(user_id)
@@ -177,13 +189,14 @@ defmodule Emisar.Users do
           do: User.Changeset.password(loaded_user, %{password: new_password}),
           else: :invalid_current_password
       end,
-      audit: &Audit.user_changeset(&1, "user.password_changed")
+      audit: &Audit.user_changeset(&1, "user.password_changed", context: subject.context)
     )
     |> case do
       {:error, :invalid_current_password} ->
         # Failed-credential probe — log it standalone since the
         # transaction rolled back without an audit row.
         Audit.log_for_user(user, "user.password_change_failed",
+          context: subject.context,
           payload: %{reason: "invalid_current_password"}
         )
 

@@ -14,11 +14,12 @@ defmodule Emisar.Auth.Subject do
       :viewer | :api_client | :runner`)
     * `permissions` — `MapSet.t()` of `{module, action}` tuples; the
       Authorizers build entries via `build/2`
-    * `context` — extra metadata stamped onto audit events: `ip`,
-      `user_agent`, `request_id`. Filled in by the boundary, read by
-      `Audit` via `put_request_metadata/1`.
+    * `context` — the request's `%RequestContext{}` (ip / user_agent /
+      request_id / mcp_session). Filled in by the boundary; the
+      `Audit.Events` builders read it off the subject and stamp it onto
+      every event the caller produces.
   """
-  alias Emisar.{Accounts, Users}
+  alias Emisar.{Accounts, RequestContext, Users}
   alias Emisar.Auth.Role
 
   @type role :: :owner | :admin | :operator | :viewer | :api_client | :runner
@@ -34,7 +35,7 @@ defmodule Emisar.Auth.Subject do
           role: role() | nil,
           membership_id: binary() | nil,
           permissions: MapSet.t(),
-          context: map()
+          context: RequestContext.t()
         }
 
   defstruct account: nil,
@@ -42,14 +43,14 @@ defmodule Emisar.Auth.Subject do
             role: nil,
             membership_id: nil,
             permissions: MapSet.new(),
-            context: %{}
+            context: %RequestContext{}
 
   @doc "Build a subject from a `%Users.User{}` + their `%Accounts.Membership{}`."
   def for_user(
         %Users.User{} = user,
         %Accounts.Account{} = account,
         %Accounts.Membership{} = membership,
-        context \\ %{}
+        context \\ %RequestContext{}
       ) do
     role = role_atom(membership.role)
 
@@ -64,7 +65,7 @@ defmodule Emisar.Auth.Subject do
   end
 
   @doc "Build a subject for an API key call (MCP / programmatic)."
-  def for_api_key(api_key, %Accounts.Account{} = account, context \\ %{}) do
+  def for_api_key(api_key, %Accounts.Account{} = account, context \\ %RequestContext{}) do
     %__MODULE__{
       account: account,
       actor: api_key,
@@ -79,7 +80,7 @@ defmodule Emisar.Auth.Subject do
   end
 
   @doc "Build a subject for the runner WebSocket caller."
-  def for_runner(runner, %Accounts.Account{} = account, context \\ %{}) do
+  def for_runner(runner, %Accounts.Account{} = account, context \\ %RequestContext{}) do
     %__MODULE__{
       account: account,
       actor: runner,

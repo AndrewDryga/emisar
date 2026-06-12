@@ -12,6 +12,7 @@ defmodule EmisarWeb.Mcp.Auth do
 
   alias Emisar.{Accounts, ApiKeys, OAuth, PublicUrl}
   alias Emisar.Auth.Subject
+  alias EmisarWeb.RequestContext
 
   @doc """
   Resolves the request's bearer. On success assigns `:api_key` +
@@ -26,7 +27,10 @@ defmodule EmisarWeb.Mcp.Auth do
         {:ok,
          conn
          |> assign(:api_key, key)
-         |> assign(:current_subject, Subject.for_api_key(key, account))}
+         |> assign(
+           :current_subject,
+           Subject.for_api_key(key, account, RequestContext.from_conn(conn))
+         )}
 
       :error ->
         {:error, put_resp_header(conn, "www-authenticate", challenge())}

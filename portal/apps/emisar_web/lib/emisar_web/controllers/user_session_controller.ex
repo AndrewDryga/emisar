@@ -9,7 +9,7 @@ defmodule EmisarWeb.UserSessionController do
   use EmisarWeb, :controller
 
   alias Emisar.{Auth, Users}
-  alias EmisarWeb.UserAuth
+  alias EmisarWeb.{RequestContext, UserAuth}
 
   # How long a successful password verify lets the operator finish MFA
   # without re-entering their password. Short enough that a stolen
@@ -45,6 +45,8 @@ defmodule EmisarWeb.UserSessionController do
   end
 
   defp do_start_sign_in(conn, email, password, user_params) do
+    context = RequestContext.from_conn(conn)
+
     case Auth.fetch_user_by_email_and_password(email, password) do
       {:ok, user} ->
         otp = user_params["otp"]
@@ -61,9 +63,9 @@ defmodule EmisarWeb.UserSessionController do
             |> redirect(to: ~p"/sign_in/mfa")
 
           Auth.mfa_required?(user) ->
-            case verify_second_factor(user, otp, recovery) do
+            case verify_second_factor(user, otp, recovery, context) do
               :ok ->
-                finalize_sign_in(conn, user, user_params, "password+mfa")
+                finalize_sign_in(conn, user, user_params, "password+mfa", context)
 
               {:error, :replay} ->
                 conn
@@ -79,11 +81,11 @@ defmodule EmisarWeb.UserSessionController do
             end
 
           true ->
-            finalize_sign_in(conn, user, user_params, "password")
+            finalize_sign_in(conn, user, user_params, "password", context)
         end
 
       {:error, :not_found} ->
-        Auth.record_failed_sign_in(email, "bad_credentials")
+        Auth.record_failed_sign_in(email, "bad_credentials", context)
 
         conn
         |> put_flash(:error, "That email and password don't match anything.")
@@ -93,13 +95,15 @@ defmodule EmisarWeb.UserSessionController do
   end
 
   defp do_finish_mfa(conn, user_id, user_params) do
+    context = RequestContext.from_conn(conn)
+
     case Users.fetch_user_by_id(user_id) do
       {:ok, user} ->
-        case verify_second_factor(user, user_params["otp"], user_params["recovery_code"]) do
+        case verify_second_factor(user, user_params["otp"], user_params["recovery_code"], context) do
           :ok ->
             conn
             |> clear_pending_mfa()
-            |> finalize_sign_in(user, user_params, "password+mfa")
+            |> finalize_sign_in(user, user_params, "password+mfa", context)
 
           {:error, :replay} ->
             conn
@@ -122,8 +126,8 @@ defmodule EmisarWeb.UserSessionController do
     end
   end
 
-  defp finalize_sign_in(conn, user, user_params, method) do
-    Users.record_sign_in(user, method)
+  defp finalize_sign_in(conn, user, user_params, method, context) do
+    Users.record_sign_in(user, method, context)
     UserAuth.log_in_user(conn, user, user_params)
   end
 
@@ -171,18 +175,21 @@ defmodule EmisarWeb.UserSessionController do
   # against `mfa_last_used_at`) or a one-shot recovery code. The TOTP
   # path always wins when provided; the recovery code is the
   # phone-lost fallback.
-  defp verify_second_factor(user, otp, _recovery) when is_binary(otp) and otp != "",
-    do: Auth.verify_mfa(user, otp)
+  defp verify_second_factor(user, otp, _recovery, context) when is_binary(otp) and otp != "",
+    do: Auth.verify_mfa(user, otp, context)
 
-  defp verify_second_factor(user, _, recovery) when is_binary(recovery) and recovery != "",
-    do: Auth.consume_mfa_recovery_code(user, recovery)
+  defp verify_second_factor(user, _, recovery, context)
+       when is_binary(recovery) and recovery != "",
+       do: Auth.consume_mfa_recovery_code(user, recovery, context)
 
-  defp verify_second_factor(_, _, _), do: {:error, :invalid}
+  defp verify_second_factor(_, _, _, _), do: {:error, :invalid}
 
   def magic_link_confirm(conn, %{"token" => token}) do
-    case Auth.consume_magic_link_token(token) do
+    context = RequestContext.from_conn(conn)
+
+    case Auth.consume_magic_link_token(token, context) do
       {:ok, user} ->
-        Users.record_sign_in(user, "magic_link")
+        Users.record_sign_in(user, "magic_link", context)
         UserAuth.log_in_user(conn, user, %{})
 
       {:error, :invalid_or_expired} ->

@@ -43,6 +43,7 @@ defmodule EmisarWeb.AuditExportController do
 
   alias Emisar.{Accounts, ApiKeys, Audit}
   alias Emisar.Auth.Subject
+  alias EmisarWeb.RequestContext
 
   plug :authenticate
   plug :require_scope, "audit:read"
@@ -199,7 +200,10 @@ defmodule EmisarWeb.AuditExportController do
          {:ok, account} <- Accounts.fetch_account_by_id(key.account_id) do
       conn
       |> assign(:api_key, key)
-      |> assign(:current_subject, Subject.for_api_key(key, account))
+      |> assign(
+        :current_subject,
+        Subject.for_api_key(key, account, RequestContext.from_conn(conn))
+      )
     else
       _ ->
         conn

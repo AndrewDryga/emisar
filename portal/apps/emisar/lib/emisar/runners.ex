@@ -20,6 +20,7 @@ defmodule Emisar.Runners do
   alias Ecto.Multi
   alias Emisar.{Accounts, Audit, Auth, Crypto, Repo}
   alias Emisar.Auth.Subject
+  alias Emisar.RequestContext
   alias Emisar.Runners.{AuthKey, Authorizer, Presence, Runner, Token, UserRunnerScope}
   require Logger
 
@@ -411,21 +412,22 @@ defmodule Emisar.Runners do
 
   # Connection-lifecycle audit rows. The runner socket calls these (audit
   # is a domain concern — the web layer never assembles audit rows); they
-  # run in the socket process, so the request metadata it stashed in the
-  # process dictionary rides along. Fire-and-forget Audit.log/3 — there is
-  # no Multi to join (presence/PubSub aren't transactional).
+  # run in the socket process; the connect `%RequestContext{}` is threaded
+  # in so the runner's lifecycle events carry its IP/UA. Fire-and-forget
+  # Audit.record/1 — there is no Multi to join (presence/PubSub aren't
+  # transactional).
 
   @doc "Internal — runner socket: audit the WebSocket connect."
-  def audit_runner_connected(%Runner{} = runner, token_id),
-    do: Audit.record(Audit.Events.runner_connected(runner, token_id))
+  def audit_runner_connected(%Runner{} = runner, token_id, %RequestContext{} = context),
+    do: Audit.record(Audit.Events.runner_connected(runner, token_id, context))
 
   @doc "Internal — runner socket: audit the WebSocket close."
-  def audit_runner_disconnected(account_id, runner_id, reason),
-    do: Audit.record(Audit.Events.runner_disconnected(account_id, runner_id, reason))
+  def audit_runner_disconnected(account_id, runner_id, reason, %RequestContext{} = context),
+    do: Audit.record(Audit.Events.runner_disconnected(account_id, runner_id, reason, context))
 
   @doc "Internal — runner socket: audit an error envelope reported by the runner."
-  def audit_runner_error(account_id, runner_id, %{} = payload),
-    do: Audit.record(Audit.Events.runner_error(account_id, runner_id, payload))
+  def audit_runner_error(account_id, runner_id, %{} = payload, %RequestContext{} = context),
+    do: Audit.record(Audit.Events.runner_error(account_id, runner_id, payload, context))
 
   @doc "Internal — stamps disconnect history from the runner socket on close."
   def mark_disconnected(runner_or_id, reason \\ nil)
@@ -906,14 +908,16 @@ defmodule Emisar.Runners do
   Internal — called from the runner-register controller with only the
   raw secret in hand; the secret IS the auth, no Subject yet exists.
   """
-  def register_via_auth_key(raw, attrs) when is_binary(raw) do
+  def register_via_auth_key(raw_or_key, attrs, context \\ %RequestContext{})
+
+  def register_via_auth_key(raw, attrs, context) when is_binary(raw) do
     case peek_auth_key_by_secret(raw) do
       nil -> {:error, :auth_key_invalid}
-      %AuthKey{} = key -> register_via_auth_key(key, attrs)
+      %AuthKey{} = key -> register_via_auth_key(key, attrs, context)
     end
   end
 
-  def register_via_auth_key(%AuthKey{} = key, attrs) do
+  def register_via_auth_key(%AuthKey{} = key, attrs, context) do
     key = Repo.preload(key, :account)
     was_auto? = AuthKey.auto_unused?(key)
     external_id = registration_external_id(attrs)
@@ -936,7 +940,7 @@ defmodule Emisar.Runners do
     |> Multi.run(:registration, fn repo, _changes ->
       register_or_reuse_runner(repo, key, attrs, external_id)
     end)
-    |> maybe_audit_runner_registered(key)
+    |> maybe_audit_runner_registered(key, context)
     |> Multi.run(:token, fn _repo, %{registration: {runner, _fresh?}} ->
       {:ok, mint_runner_token(runner, key.id)}
     end)
@@ -975,10 +979,10 @@ defmodule Emisar.Runners do
 
   # Only a brand-new seat is audited as a registration — a reconnecting
   # runner that already has a row isn't.
-  defp maybe_audit_runner_registered(multi, key) do
+  defp maybe_audit_runner_registered(multi, key, context) do
     Multi.run(multi, :registered_audit, fn repo, %{registration: {runner, fresh?}} ->
       if fresh?,
-        do: repo.insert(Audit.Events.runner_registered(runner, key)),
+        do: repo.insert(Audit.Events.runner_registered(runner, key, context)),
         else: {:ok, nil}
     end)
   end
