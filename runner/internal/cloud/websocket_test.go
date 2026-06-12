@@ -213,6 +213,40 @@ func TestWebsocketDialerOmitsBlankExternalID(t *testing.T) {
 	srvConn.Close(websocket.StatusNormalClosure, "")
 }
 
+func TestReadTokenRejectsSymlinkAndLoosePerms(t *testing.T) {
+	dir := t.TempDir()
+	body := []byte(`{"token":"t","runner_id":"r"}`)
+
+	// 0600 regular file reads fine.
+	good := filepath.Join(dir, "token.json")
+	if err := os.WriteFile(good, body, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	d := &WebsocketDialer{TokenPath: good}
+	if tok, err := d.readToken(); err != nil || tok.Raw != "t" {
+		t.Fatalf("0600 token should read: tok=%+v err=%v", tok, err)
+	}
+
+	// Loose perms → refused (the secret was exposed).
+	loose := filepath.Join(dir, "loose.json")
+	if err := os.WriteFile(loose, body, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := (&WebsocketDialer{TokenPath: loose}).readToken(); err == nil {
+		t.Error("0644 token should be refused")
+	}
+
+	// A symlink at the token path → refused (O_NOFOLLOW), even if it points
+	// at a perfectly good 0600 file.
+	link := filepath.Join(dir, "link.json")
+	if err := os.Symlink(good, link); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := (&WebsocketDialer{TokenPath: link}).readToken(); err == nil {
+		t.Error("symlinked token path should be refused")
+	}
+}
+
 func TestWebsocketDialerReusesCachedToken(t *testing.T) {
 	fc, srv := newFakeCloud(t)
 

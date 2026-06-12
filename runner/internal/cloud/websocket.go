@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"nhooyr.io/websocket"
@@ -174,7 +175,28 @@ func (d *WebsocketDialer) readToken() (agentToken, error) {
 		return agentToken{}, errors.New("no token path")
 	}
 
-	bytes, err := os.ReadFile(d.TokenPath)
+	// The token is a bearer secret, so treat its path as hostile. O_NOFOLLOW
+	// refuses to follow a symlink swapped in at TokenPath (which could point
+	// the read somewhere it shouldn't, or be a marker for where a later write
+	// leaks); a non-0600 file means the token was exposed (bad umask, manual
+	// edit, tampering), so we reject it and let the caller re-register, which
+	// rewrites a fresh 0600 file. We always WRITE 0600, so a clean install
+	// never trips this.
+	f, err := os.OpenFile(d.TokenPath, os.O_RDONLY|syscall.O_NOFOLLOW, 0)
+	if err != nil {
+		return agentToken{}, err
+	}
+	defer f.Close()
+
+	info, err := f.Stat()
+	if err != nil {
+		return agentToken{}, err
+	}
+	if perm := info.Mode().Perm(); perm&0o077 != 0 {
+		return agentToken{}, fmt.Errorf("token file %s has insecure perms %#o (want 0600); refusing to reuse it", d.TokenPath, perm)
+	}
+
+	bytes, err := io.ReadAll(f)
 	if err != nil {
 		return agentToken{}, err
 	}
