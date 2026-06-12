@@ -181,5 +181,88 @@ defmodule Emisar.AuthTest do
       user = Repo.reload!(user)
       assert {:error, :invalid} = Auth.consume_mfa_recovery_code(user, code)
     end
+
+    test "disable_mfa clears the secret, enabled-at, and recovery codes" do
+      {_user, _account, subject} = owner_subject_fixture()
+      secret = Auth.generate_mfa_secret()
+
+      {:ok, _user, _codes} =
+        Auth.enable_mfa(secret, NimbleTOTP.verification_code(secret), subject)
+
+      assert {:ok, %User{mfa_secret: nil, mfa_enabled_at: nil, mfa_recovery_codes: []}} =
+               Auth.disable_mfa(subject)
+    end
+
+    test "regenerate_mfa_recovery_codes issues a fresh set and invalidates the old" do
+      {_user, _account, subject} = owner_subject_fixture()
+      secret = Auth.generate_mfa_secret()
+
+      {:ok, _user, [old_code | _]} =
+        Auth.enable_mfa(secret, NimbleTOTP.verification_code(secret), subject)
+
+      assert {:ok, %User{mfa_enabled_at: %DateTime{}} = user, new_codes} =
+               Auth.regenerate_mfa_recovery_codes(subject)
+
+      assert length(new_codes) == 10
+      # MFA stays enabled; the old plaintext code no longer matches, a new one does.
+      assert {:error, :invalid} = Auth.consume_mfa_recovery_code(user, old_code)
+      assert :ok = Auth.consume_mfa_recovery_code(Repo.reload!(user), hd(new_codes))
+    end
+  end
+
+  describe "session revocation (self-service)" do
+    setup do
+      account = account_fixture()
+      user = user_fixture()
+      _ = membership_fixture(account_id: account.id, user_id: user.id, role: "owner")
+      %{user: user, subject: subject_for(user, account, role: :owner)}
+    end
+
+    test "revoke_session removes one of the caller's own sessions by id", %{
+      user: user,
+      subject: subject
+    } do
+      _t1 = Auth.create_session_token!(user)
+      _t2 = Auth.create_session_token!(user)
+      {:ok, [session | _], _} = Auth.list_sessions_for_user(subject)
+
+      assert :ok = Auth.revoke_session(session.id, subject)
+      {:ok, remaining, _} = Auth.list_sessions_for_user(subject)
+      assert length(remaining) == 1
+    end
+
+    test "revoke_session can't kill another user's session — scoped to the caller", %{
+      subject: subject
+    } do
+      other_account = account_fixture()
+      other = user_fixture()
+      _ = membership_fixture(account_id: other_account.id, user_id: other.id, role: "owner")
+      other_subject = subject_for(other, other_account, role: :owner)
+      _ = Auth.create_session_token!(other)
+      {:ok, [other_session], _} = Auth.list_sessions_for_user(other_subject)
+
+      assert {:error, :not_found} = Auth.revoke_session(other_session.id, subject)
+      # Still alive for its real owner.
+      assert {:ok, [_], _} = Auth.list_sessions_for_user(other_subject)
+    end
+
+    test "revoke_session with a non-uuid id is a clean :not_found", %{subject: subject} do
+      assert {:error, :not_found} = Auth.revoke_session("not-a-uuid", subject)
+    end
+
+    test "revoke_and_disconnect_other_sessions! keeps only the current session", %{
+      user: user,
+      subject: subject
+    } do
+      keep = Auth.create_session_token!(user)
+      _other1 = Auth.create_session_token!(user)
+      _other2 = Auth.create_session_token!(user)
+
+      assert Auth.revoke_and_disconnect_other_sessions!(keep, subject) == 2
+
+      {:ok, remaining, _} = Auth.list_sessions_for_user(subject)
+      assert length(remaining) == 1
+      assert {:ok, %User{}} = Auth.fetch_user_by_session_token(keep)
+    end
   end
 end
