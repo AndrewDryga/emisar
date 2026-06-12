@@ -50,6 +50,21 @@ defmodule Emisar.AuditTest do
       assert event.request_id == nil
       assert event.mcp_session_id == nil
     end
+
+    test "over-long request metadata is truncated, not rejected (audit can't be evaded)" do
+      account = account_fixture()
+
+      {:ok, event} =
+        Audit.log(account.id, "audit.test",
+          actor_kind: "system",
+          user_agent: String.duplicate("A", 500)
+        )
+
+      # The insert SUCCEEDS — a giant `user-agent` on a failed sign-in
+      # can't suppress the audit row — and the value is bounded to the
+      # varchar(255) column rather than overflowing it.
+      assert String.length(event.user_agent) == 255
+    end
   end
 
   describe "Audit.Events builders inherit the subject's request context" do
