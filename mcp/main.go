@@ -46,9 +46,11 @@ import (
 const bridgeName = "emisar-mcp"
 
 // Includes the long-poll window the portal applies on tools/call
-// (up to 60s) plus headroom. Connections idle longer than this
-// shouldn't happen; if they do, fail visibly.
-const httpTimeout = 90 * time.Second
+// (up to 90s, the portal's max_get_run_wait_ms) plus headroom. A
+// timeout equal to the poll cap would race the portal's graceful
+// "waiting" response at the boundary. Connections idle longer than
+// this shouldn't happen; if they do, fail visibly.
+const httpTimeout = 120 * time.Second
 
 // Version is the build version, stamped by `-ldflags "-X main.Version=..."`
 // from the release pipeline; "dev" when built locally.
