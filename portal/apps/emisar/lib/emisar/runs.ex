@@ -326,13 +326,17 @@ defmodule Emisar.Runs do
   defp replay_outcome(%ActionRun{} = run),
     do: {:ok, :running, run}
 
-  # Per-user runner ACLs (v1). If the caller is operator-driven and
-  # supplies `requested_by_membership_id`, the membership's runner
-  # scopes must include this runner. MCP/system paths pass nil and
-  # bypass — their own auth gate (api_key.runner_filter +
-  # runner_group_filter) is the relevant check there.
-  # `runner_in_account/2` runs first in the with chain, so the runner
-  # is guaranteed to belong to `account_id` by the time we get here.
+  # Per-user runner ACLs (v1). When the caller supplies a
+  # `requested_by_membership_id`, the membership's runner scopes must
+  # include this runner. Operator UI AND MCP both supply it — an
+  # `emk-`/OAuth key carries its creator's membership
+  # (`created_by_membership_id`, set at mint), so revoking a user's scope
+  # shrinks every key they minted. Do NOT "simplify" MCP to pass nil here:
+  # nil means "no per-user scope" (the system / runbook-continuation
+  # dispatch, which has no user), and routing a scoped key through it would
+  # unscope the key. `runner_in_account/2` runs first in the with chain, so
+  # the runner is guaranteed to belong to `account_id` by the time we get
+  # here.
   defp runner_in_membership_scope(_runner_id, _account_id, nil), do: :ok
 
   defp runner_in_membership_scope(runner_id, _account_id, membership_id) do
