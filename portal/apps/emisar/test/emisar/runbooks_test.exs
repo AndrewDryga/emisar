@@ -35,6 +35,21 @@ defmodule Emisar.RunbooksTest do
     runbook
   end
 
+  defp draft_runbook!(subject, title) do
+    {:ok, runbook} =
+      Runbooks.create_runbook(
+        %{
+          "title" => title,
+          "name" => title,
+          "slug" => title,
+          "definition" => %{"steps" => uptime_steps(1)}
+        },
+        subject
+      )
+
+    runbook
+  end
+
   defp uptime_steps(count) do
     for n <- 1..count, do: %{"id" => "step#{n}", "action_id" => "linux.uptime", "args" => %{}}
   end
@@ -197,6 +212,87 @@ defmodule Emisar.RunbooksTest do
 
       assert {_msg, opts} = changeset.errors[:runbook_execution_id]
       assert opts[:constraint_name] == "action_runs_execution_step_runner_index"
+    end
+  end
+
+  describe "reads (list + fetch)" do
+    test "list_runbooks returns the caller's own runbooks" do
+      {_user, _account, subject} = owner_subject_fixture()
+      alpha = draft_runbook!(subject, "alpha-book")
+      beta = draft_runbook!(subject, "beta-book")
+
+      assert {:ok, runbooks, _meta} = Runbooks.list_runbooks(subject)
+      ids = Enum.map(runbooks, & &1.id)
+      assert alpha.id in ids
+      assert beta.id in ids
+    end
+
+    test "list_runbooks never returns another account's runbooks" do
+      {_user, _account_a, subject_a} = owner_subject_fixture()
+      _ = draft_runbook!(subject_a, "mine-book")
+
+      {_user, _account_b, subject_b} = owner_subject_fixture()
+      _ = draft_runbook!(subject_b, "theirs-book")
+
+      {:ok, runbooks, _meta} = Runbooks.list_runbooks(subject_a)
+      titles = Enum.map(runbooks, & &1.title)
+      assert "mine-book" in titles
+      refute "theirs-book" in titles
+    end
+
+    test "fetch_runbook_by_id returns the caller's own runbook" do
+      {_user, _account, subject} = owner_subject_fixture()
+      runbook = draft_runbook!(subject, "fetchme-book")
+
+      assert {:ok, fetched} = Runbooks.fetch_runbook_by_id(runbook.id, subject)
+      assert fetched.id == runbook.id
+    end
+
+    test "fetch_runbook_by_id can't reach across accounts" do
+      {_user, _account_a, subject_a} = owner_subject_fixture()
+      {_user, _account_b, subject_b} = owner_subject_fixture()
+      theirs = draft_runbook!(subject_b, "secret-book")
+
+      assert {:error, :not_found} = Runbooks.fetch_runbook_by_id(theirs.id, subject_a)
+    end
+
+    test "fetch_runbook_by_id with a non-uuid id is a clean :not_found" do
+      {_user, _account, subject} = owner_subject_fixture()
+      assert {:error, :not_found} = Runbooks.fetch_runbook_by_id("not-a-uuid", subject)
+    end
+  end
+
+  describe "save_new_version/3" do
+    test "bumps the version, persists the new attrs, and leaves the old row intact" do
+      {_user, _account, subject} = owner_subject_fixture()
+      v1 = draft_runbook!(subject, "ver-book")
+
+      assert {:ok, v2} = Runbooks.save_new_version(v1, %{"title" => "ver-book take two"}, subject)
+
+      assert v2.version == v1.version + 1
+      assert v2.title == "ver-book take two"
+      assert v2.id != v1.id
+      # The prior version is its own row and stays fetchable.
+      assert {:ok, _} = Runbooks.fetch_runbook_by_id(v1.id, subject)
+    end
+
+    test "a viewer (no manage permission) is refused" do
+      {_user, account, subject} = owner_subject_fixture()
+      v1 = draft_runbook!(subject, "guard-book")
+      viewer = subject_for(user_fixture(), account, role: :viewer)
+
+      assert {:error, :unauthorized} =
+               Runbooks.save_new_version(v1, %{"title" => "nope"}, viewer)
+    end
+
+    test "an owner of another account can't version this runbook" do
+      {_user, _account_a, subject_a} = owner_subject_fixture()
+      v1 = draft_runbook!(subject_a, "owned-book")
+
+      {_user, _account_b, subject_b} = owner_subject_fixture()
+
+      assert {:error, :not_found} =
+               Runbooks.save_new_version(v1, %{"title" => "hijack"}, subject_b)
     end
   end
 end
