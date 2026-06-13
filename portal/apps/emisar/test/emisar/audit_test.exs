@@ -3,7 +3,7 @@ defmodule Emisar.AuditTest do
 
   import Emisar.Fixtures
 
-  alias Emisar.{Audit, RequestContext}
+  alias Emisar.{Approvals, Audit, RequestContext, Runbooks, Runs}
 
   describe "log/3 with a %RequestContext{}" do
     test "stamps IP/UA/request_id/mcp_session from the :context struct" do
@@ -186,6 +186,71 @@ defmodule Emisar.AuditTest do
 
       refute Map.has_key?(refs["user"], user_b.id)
       refute Map.has_key?(refs["runner"], runner_b.id)
+    end
+
+    test "resolves auth_key, action_run, approval_request, and runbook labels" do
+      account = account_fixture()
+      user = user_fixture()
+      _ = membership_fixture(account_id: account.id, user_id: user.id, role: "owner")
+      subject = subject_for(user, account, role: :owner)
+      runner = runner_fixture(account_id: account.id)
+
+      {_raw, auth_key} =
+        auth_key_fixture(
+          account_id: account.id,
+          created_by_id: user.id,
+          description: "enroll-prod"
+        )
+
+      {:ok, run} =
+        Runs.create_run(%{
+          account_id: account.id,
+          runner_id: runner.id,
+          action_id: "linux.uptime",
+          source: "operator",
+          args: %{}
+        })
+
+      {:ok, request} = Approvals.create_request(run, user.id, "needs approval")
+
+      {:ok, runbook} =
+        Runbooks.create_runbook(
+          %{
+            "title" => "deploy-book",
+            "name" => "deploy-book",
+            "slug" => "deploy-book",
+            "definition" => %{
+              "steps" => [%{"id" => "s1", "action_id" => "linux.uptime", "args" => %{}}]
+            }
+          },
+          subject
+        )
+
+      {:ok, e_auth_key} =
+        Audit.log(account.id, "auth_key.touched",
+          subject_kind: "auth_key",
+          subject_id: auth_key.id
+        )
+
+      {:ok, e_run} =
+        Audit.log(account.id, "run.touched", subject_kind: "action_run", subject_id: run.id)
+
+      {:ok, e_request} =
+        Audit.log(account.id, "approval.touched",
+          subject_kind: "approval_request",
+          subject_id: request.id
+        )
+
+      {:ok, e_runbook} =
+        Audit.log(account.id, "runbook.touched", subject_kind: "runbook", subject_id: runbook.id)
+
+      refs = Audit.resolve_references([e_auth_key, e_run, e_request, e_runbook])
+
+      assert refs["auth_key"][auth_key.id] == "enroll-prod"
+      assert refs["action_run"][run.id] == "linux.uptime"
+      # The approval_request resolver labels by id (no friendlier handle exists).
+      assert refs["approval_request"][request.id] == request.id
+      assert refs["runbook"][runbook.id] == "deploy-book"
     end
   end
 
