@@ -29,7 +29,11 @@ defmodule EmisarWeb.RunNewLive do
          |> assign(:runner, runner)
          |> assign(:args_schema, args_schema)
          |> assign_form(initial_args(args_schema))
-         |> assign(:reason, "")}
+         |> assign(:reason, "")
+         |> assign(
+           :can_dispatch?,
+           Runs.subject_can_dispatch_run?(socket.assigns.current_subject)
+         )}
     end
   end
 
@@ -39,6 +43,17 @@ defmodule EmisarWeb.RunNewLive do
       {:error, :not_found} -> nil
     end
   end
+
+  # High/critical dispatches confirm and echo the action + target, so a
+  # mis-aimed click on a destructive action is caught; low/medium dispatch
+  # behind just the disable-with spinner (nil omits the data-confirm attr).
+  # `risk` is an Ecto.Enum atom, not a string.
+  defp dispatch_confirm(%{risk: risk} = action, runner, runner_id)
+       when risk in [:high, :critical] do
+    "Dispatch #{action.action_id} (#{risk} risk) to #{(runner && runner.name) || runner_id} now? It runs on the host immediately."
+  end
+
+  defp dispatch_confirm(_action, _runner, _runner_id), do: nil
 
   def handle_event("validate", params, socket) do
     # Actions with no arg schema render only the `reason` field, so the
@@ -233,6 +248,25 @@ defmodule EmisarWeb.RunNewLive do
           </ul>
         </section>
 
+        <%!-- Offline-runner notice. The runner is only looked up on the
+             connected render, so this stays quiet on the dead pass. We
+             let the operator dispatch anyway (a direct/bookmarked link is
+             a fine reason to queue) — runner_detail disables Run instead,
+             but here we warn it'll queue rather than block. --%>
+        <section
+          :if={@runner && not @runner.online?}
+          class="rounded-xl border border-zinc-700 bg-zinc-900/40 p-4"
+        >
+          <h3 class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-zinc-300">
+            <.icon name="hero-signal-slash" class="h-4 w-4 text-zinc-400" /> Runner offline
+          </h3>
+          <p class="mt-2 text-sm text-zinc-400">
+            {@runner.name} isn't connected right now. You can still dispatch — the run queues as
+            <span class="font-mono text-zinc-300">pending</span>
+            and executes when the runner reconnects.
+          </p>
+        </section>
+
         <%!-- The form — primary surface. Reason is always required;
              args render only when the action declares any, so the
              "Arguments" header (and its "no arguments" microcopy)
@@ -265,9 +299,22 @@ defmodule EmisarWeb.RunNewLive do
             />
 
             <:actions>
-              <.button class="w-full" phx-disable-with="Dispatching...">
+              <.button
+                :if={@can_dispatch?}
+                class="w-full"
+                phx-disable-with="Dispatching..."
+                data-confirm={dispatch_confirm(@action, @runner, @runner_id)}
+              >
                 Dispatch to runner <span aria-hidden="true">→</span>
               </.button>
+              <%!-- Viewers can reach this page but can't dispatch; the
+                   handler also gates (IL-15) — this hides the dead button. --%>
+              <p
+                :if={not @can_dispatch?}
+                class="rounded-lg border border-zinc-800 bg-zinc-900/40 px-4 py-3 text-center text-sm text-zinc-400"
+              >
+                Your role can't dispatch runs. Ask an operator, admin, or owner to run this.
+              </p>
             </:actions>
           </.simple_form>
         </section>

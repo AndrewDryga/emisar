@@ -168,4 +168,57 @@ defmodule EmisarWeb.RunNewLiveTest do
 
     assert html =~ "You don&#39;t have permission to do that."
   end
+
+  test "a high-risk action's dispatch button asks for confirmation", %{conn: conn} do
+    {conn, _user, account} = register_and_log_in(conn)
+    runner = runner_fixture(account_id: account.id)
+    action = action_fixture(runner: runner, action_id: "linux.reboot", risk: "critical")
+
+    {:ok, lv, _html} = live(conn, ~p"/app/runs/new/#{runner.id}/#{action.action_id}")
+
+    assert has_element?(lv, "button[data-confirm]")
+    assert render(lv) =~ "runs on the host immediately"
+  end
+
+  test "a low-risk action's dispatch button does not confirm", %{conn: conn} do
+    {conn, _user, account} = register_and_log_in(conn)
+    runner = runner_fixture(account_id: account.id)
+    action = action_fixture(runner: runner, action_id: "linux.uptime", risk: "low")
+
+    {:ok, lv, _html} = live(conn, ~p"/app/runs/new/#{runner.id}/#{action.action_id}")
+
+    assert has_element?(lv, "button", "Dispatch to runner")
+    refute has_element?(lv, "button[data-confirm]")
+  end
+
+  test "an offline runner warns the run will queue", %{conn: conn} do
+    {conn, _user, account} = register_and_log_in(conn)
+    runner = runner_fixture(account_id: account.id, connected?: false)
+    action = action_fixture(runner: runner, action_id: "linux.uptime")
+
+    # The runner is only looked up on the connected render, so assert
+    # against render/1.
+    {:ok, lv, _html} = live(conn, ~p"/app/runs/new/#{runner.id}/#{action.action_id}")
+    html = render(lv)
+
+    assert html =~ "Runner offline"
+    assert html =~ "queues as"
+  end
+
+  test "a viewer sees a note instead of the dispatch button", %{conn: conn} do
+    {_owner_conn, _owner, account} = register_and_log_in(conn)
+    runner = runner_fixture(account_id: account.id)
+    action = action_fixture(runner: runner, action_id: "linux.uptime")
+
+    viewer = user_fixture()
+    _ = membership_fixture(account_id: account.id, user_id: viewer.id, role: "viewer")
+
+    {:ok, lv, html} =
+      build_conn()
+      |> log_in_user(viewer)
+      |> live(~p"/app/runs/new/#{runner.id}/#{action.action_id}")
+
+    refute has_element?(lv, "button", "Dispatch to runner")
+    assert html =~ "Your role can&#39;t dispatch runs"
+  end
 end
