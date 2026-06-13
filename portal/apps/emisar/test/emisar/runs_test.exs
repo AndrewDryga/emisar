@@ -923,4 +923,30 @@ defmodule Emisar.RunsTest do
       assert {:error, :missing_request_id} = Runs.finalize_from_result("runner-123", %{})
     end
   end
+
+  describe "Authorizer.for_subject runner-scoping" do
+    test "a runner subject's run reads are scoped to that runner, not account-wide" do
+      account = account_fixture()
+      runner = runner_fixture(account_id: account.id)
+      peer = runner_fixture(account_id: account.id)
+      {:ok, mine} = Runs.create_run(base_attrs(account.id, runner.id))
+      {:ok, _theirs} = Runs.create_run(base_attrs(account.id, peer.id))
+
+      runner_subject = Emisar.Auth.Subject.for_runner(runner, account)
+
+      ids =
+        ActionRun.Query.all()
+        |> Runs.Authorizer.for_subject(runner_subject)
+        |> Repo.all()
+        |> Enum.map(& &1.id)
+
+      # A runner socket sees only its own runs, even within the account.
+      assert ids == [mine.id]
+    end
+
+    test "an account-less / actor-less subject leaves the query unscoped (fallback)" do
+      query = ActionRun.Query.all()
+      assert Runs.Authorizer.for_subject(query, %Emisar.Auth.Subject{}) == query
+    end
+  end
 end
