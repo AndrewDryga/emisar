@@ -969,4 +969,102 @@ defmodule Emisar.ApprovalsTest do
                Runs.dispatch_run(attrs, subject)
     end
   end
+
+  # An MCP-sourced run (carries api_key_id) parked behind a pending
+  # request — the shape approve_request needs to mint a durable grant.
+  defp approvable_mcp_run do
+    account = account_fixture()
+    user = user_fixture()
+    _ = membership_fixture(account_id: account.id, user_id: user.id, role: "owner")
+    subject = subject_for(user, account, role: :owner)
+    {_, key} = api_key_fixture(account_id: account.id, created_by_id: user.id)
+    runner = runner_fixture(account_id: account.id)
+
+    {:ok, run} =
+      Runs.create_run(%{
+        account_id: account.id,
+        runner_id: runner.id,
+        action_id: "linux.uptime",
+        source: "mcp",
+        api_key_id: key.id,
+        args: %{},
+        args_sha256: "abc123"
+      })
+
+    {:ok, request} = Approvals.create_request(run, user.id, "x")
+    {subject, key, request}
+  end
+
+  describe "list_approval_requests_for_account/2" do
+    test "lists pending requests with no filter, narrows by status, scopes to the account" do
+      {account, run} = run_fixture()
+      {:ok, request} = Approvals.create_request(run, user_fixture().id, "x")
+      subject = operator_subject(account)
+
+      # No :status filter — the pending request is returned.
+      assert {:ok, requests, _meta} = Approvals.list_approval_requests_for_account(subject)
+      assert Enum.any?(requests, &(&1.id == request.id))
+
+      # A non-matching status filter narrows it out.
+      assert {:ok, approved_only, _meta} =
+               Approvals.list_approval_requests_for_account(subject, status: :approved)
+
+      refute Enum.any?(approved_only, &(&1.id == request.id))
+
+      # Another account never sees it.
+      {other_account, _run} = run_fixture()
+
+      assert {:ok, theirs, _meta} =
+               Approvals.list_approval_requests_for_account(operator_subject(other_account))
+
+      refute Enum.any?(theirs, &(&1.id == request.id))
+    end
+  end
+
+  describe "deny_request/3 with the default reason" do
+    test "cancels the run with the built-in 'approval denied' message" do
+      {account, run} = run_fixture()
+      {:ok, request} = Approvals.create_request(run, user_fixture().id, "x")
+      subject = operator_subject(account)
+
+      assert {:ok, {%Request{status: :denied}, cancelled_run}} =
+               Approvals.deny_request(request, subject)
+
+      assert cancelled_run.status == :cancelled
+    end
+  end
+
+  describe "list_grants_for_account/2 read options" do
+    test "applies every preload and the include_expired filter (an empty account is fine)" do
+      subject = operator_subject(account_fixture())
+
+      assert {:ok, [], _meta} =
+               Approvals.list_grants_for_account(subject,
+                 include_expired: true,
+                 preload: [:api_key, :runner, :granted_by, :revoked_by, :approval_request_run]
+               )
+    end
+  end
+
+  describe "approve_request grant TTLs" do
+    test ":one_hour mints a grant expiring ~1h out" do
+      {subject, key, request} = approvable_mcp_run()
+
+      {:ok, _} = Approvals.approve_request(request, subject, nil, duration: :one_hour)
+
+      [grant] = grants_for_api_key(key.id)
+      assert grant.expires_at != nil
+      assert DateTime.diff(grant.expires_at, DateTime.utc_now(), :minute) in 59..60
+    end
+
+    test ":thirty_days mints a grant expiring ~30d out" do
+      {subject, key, request} = approvable_mcp_run()
+
+      {:ok, _} = Approvals.approve_request(request, subject, nil, duration: :thirty_days)
+
+      [grant] = grants_for_api_key(key.id)
+      assert grant.expires_at != nil
+      assert DateTime.diff(grant.expires_at, DateTime.utc_now(), :day) in 29..30
+    end
+  end
 end
