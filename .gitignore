@@ -48,3 +48,4 @@ AUDIT.md
 **/.agent/LOG.md
 **/.agent/LOG.archive.md
 .expert/*.log
+.claude/.batch-active
