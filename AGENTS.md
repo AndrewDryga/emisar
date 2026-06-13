@@ -15,13 +15,14 @@ Context compaction drops everything except this file (re-injected from disk) and
 3. **`<project>/.agent/LOG.md`** (if present) — your own recent chain-of-thought: what you were doing and *why*, and the next step you set yourself. This is how intent survives a compaction.
 4. **`<project>/.agent/TASKS.md`** — the work queue. Resume at the first unchecked `[ ]`.
 
-Three products, each with its own `AGENTS.md` + `.agent/`:
+Four top-level areas, each with its own `AGENTS.md` + `.agent/`:
 
 | Project | Language | What it is | Read before editing |
 |---|---|---|---|
 | `portal/` | Elixir / Phoenix | the control plane (web, MCP, policy, approvals, audit, billing) | `portal/AGENTS.md` |
 | `runner/` | Go | the on-host runner that executes actions | `runner/AGENTS.md` |
 | `mcp/` | Go | the stdio↔HTTP MCP bridge for LLM clients | `mcp/AGENTS.md` |
+| `packs/` | YAML | the action-pack catalog — what runners may execute | `packs/AGENTS.md` |
 
 ---
 
