@@ -149,6 +149,14 @@ defmodule EmisarWeb.TeamLiveTest do
       assert Emisar.Repo.reload!(membership).role == :operator
     end
 
+    test "the role select confirms the privilege grant before changing", %{lv: lv} do
+      # Every other team action confirms; the role select must too, so an
+      # admin can't fat-finger an escalation. The handler still authorizes —
+      # this is purely the accidental-click guard.
+      assert has_element?(lv, "form[phx-change='change_role'][data-confirm]")
+      assert render(lv) =~ "Admins and owners can manage members, billing, and runners"
+    end
+
     test "an unknown role value is rejected", %{lv: lv, membership: membership} do
       html =
         render_click(lv, "change_role", %{"membership_id" => membership.id, "role" => "root"})

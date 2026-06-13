@@ -624,7 +624,17 @@ defmodule EmisarWeb.TeamLive do
                 </div>
 
                 <%= if can_manage?(assigns) and not self_owner?(membership, @current_user.id) and not Accounts.Membership.disabled?(membership) do %>
-                  <form phx-change="change_role" class="shrink-0">
+                  <%!-- A role change is a privilege grant — confirm it like every
+                       other team action (suspend/remove/…), which this select alone
+                       lacked. The handler still authorizes (IL-15); this only stops
+                       an accidental one-click escalation. The option `selected` binds
+                       to the true role, so a cancelled change self-heals to server
+                       truth on the next render. --%>
+                  <form
+                    phx-change="change_role"
+                    class="shrink-0"
+                    data-confirm={"Change #{(membership.user && (membership.user.full_name || membership.user.email)) || "this member"}'s role? Admins and owners can manage members, billing, and runners."}
+                  >
                     <input type="hidden" name="membership_id" value={membership.id} />
                     <select
                       name="role"
