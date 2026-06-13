@@ -82,7 +82,7 @@ conventions**) *and* the worked examples in `<project>/.agent/rules/`. Build *to
    rule recorded) to `<project>/.agent/LOG.md`; flip `- [w]` → `- [x]`. **Then** the next `- [ ]`.
 
 - **Blocked?** `- [B]` + a `PENDING_DECISIONS.md` entry (decision · options · recommendation); move on.
-- **Spot unrelated work?** `BACKLOG.md`; stay on the current item.
+- **Spot a mess?** Small, safe cleanup → fix it in place (boy-scout rule, creed #7). Bigger or unrelated → `BACKLOG.md`; stay on the current item.
 - **Never** hold a `- [w]` you're not working — finish it, `[B]` it, or revert to `- [ ]`.
 
 ## 3. Finish
