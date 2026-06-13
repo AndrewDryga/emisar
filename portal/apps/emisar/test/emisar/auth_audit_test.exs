@@ -452,7 +452,9 @@ defmodule Emisar.AuthAuditTest do
             slug: "ops-#{System.unique_integer()}",
             title: "Restart",
             description: "go",
-            definition: %{"steps" => [%{"id" => "s1", "action_id" => "linux.uptime", "args" => %{}}]}
+            definition: %{
+              "steps" => [%{"id" => "s1", "action_id" => "linux.uptime", "args" => %{}}]
+            }
           },
           subject
         )
