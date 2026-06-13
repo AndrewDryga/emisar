@@ -44,8 +44,10 @@ erl_crash.dump
 docs/
 AUDIT.md
 
-# Agent working memory — LOG.md is local chain-of-thought, not shared (see AGENTS.md).
-**/.agent/LOG.md
-**/.agent/LOG.archive.md
+# .agent/ is local working state — only rules/ (the shared taste KB) is committed.
+# Tasks, backlog, ideas, pending-decisions, log, archive all stay on the machine
+# (no commit noise, no cross-agent merge conflicts). See AGENTS.md.
+**/.agent/*
+!**/.agent/rules
 .expert/*.log
 .claude/.batch-active

@@ -40,7 +40,7 @@ Generalize from these; defer to the project `AGENTS.md` for specifics.
 
 ## The `.agent/` working state (per project)
 
-Each project has an `.agent/` folder — durable working memory the BOOT protocol reads back. Files:
+Each project has an `.agent/` folder — durable working memory the BOOT protocol reads back. **Only `rules/` is committed (the shared taste KB); everything else here is local working state and git-ignored** — the queue, log, ideas, backlog, and decisions stay on the machine, so they never create commit noise or cross-agent merge conflicts. Files:
 
 - **`TASKS.md`** — the work queue. Four states, nothing else, so skipped work has nowhere to hide:
   - `[ ]` todo · `[w]` **claimed / in progress** · `[x]` **done _and_ gated-green _and_ committed** · `[B]` blocked.
@@ -49,7 +49,7 @@ Each project has an `.agent/` folder — durable working memory the BOOT protoco
 - **`LOG.md`** — your chain-of-thought, so the *what + why* survives compaction. Append a short entry when you make a decision, finish a task, or set yourself a next step. Newest first under `## Recent`; when `## Recent` passes ~50 lines, move older entries to `LOG.archive.md`. **Not committed** — it is local working memory (git-ignored).
 - **`PENDING_DECISIONS.md`** — anything you can't do without a human call (a product decision, an ambiguous spec, a one-way-door migration). Write: the decision needed · the options · your recommendation. Mark the task `[B]` and move on. Never guess on an irreversible choice.
 - **`IDEAS.md`** — product ideas as short implementation sketches. **Never auto-implemented.** A human details and approves an idea first; only then is it *moved* into `TASKS.md`. The work loop reads `TASKS.md` only — it never pulls work from `IDEAS.md`.
-- **`rules/`** — the taste knowledge base (see *The taste pipeline* below).
+- **`rules/`** — the taste knowledge base, **the one committed part of `.agent/`** (shared across the team and both tools; see *The taste pipeline* below).
 
 ### Definition of Done
 
