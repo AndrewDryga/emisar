@@ -99,6 +99,53 @@ defmodule EmisarWeb.AuditLiveTest do
       # The live label takes precedence over the snapshot.
       assert html =~ "renamed-prod"
     end
+
+    test "the actor links into a filtered audit view, and the date form renders", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      actor_id = Ecto.UUID.generate()
+
+      {:ok, _} =
+        Audit.log(account.id, "user.invited",
+          actor_kind: "user",
+          actor_id: actor_id,
+          actor_label: "alice@example.com"
+        )
+
+      {:ok, _lv, html} = live(conn, ~p"/app/audit")
+
+      # The actor value links to "what did this identity do", not its
+      # resource page.
+      assert html =~ "/app/audit?actor_id=#{actor_id}"
+      assert html =~ "From (UTC)"
+      assert html =~ "To (UTC)"
+    end
+
+    test "filtering by actor_id narrows the list and shows a clearable chip", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      actor_a = Ecto.UUID.generate()
+      actor_b = Ecto.UUID.generate()
+
+      {:ok, _} =
+        Audit.log(account.id, "user.invited",
+          actor_kind: "user",
+          actor_id: actor_a,
+          actor_label: "alice"
+        )
+
+      {:ok, _} =
+        Audit.log(account.id, "policy.updated",
+          actor_kind: "user",
+          actor_id: actor_b,
+          actor_label: "bob"
+        )
+
+      {:ok, _lv, html} = live(conn, ~p"/app/audit?actor_id=#{actor_a}")
+
+      assert html =~ "Actor:"
+      assert html =~ "alice"
+      # bob's event is filtered out entirely.
+      refute html =~ "bob"
+    end
   end
 
   describe "GET /app/audit/:id" do

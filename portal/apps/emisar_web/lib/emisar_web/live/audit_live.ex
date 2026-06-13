@@ -90,6 +90,16 @@ defmodule EmisarWeb.AuditLive do
     do: {:noreply, assign(socket, :export_secret, nil)}
 
   def handle_event("filter", params, socket) do
+    # The LiveTable filter form doesn't carry the identity/date params, so
+    # merge them back or a dropdown change would silently drop an active
+    # actor/date filter.
+    preserved = Map.take(socket.assigns.filter_params, ["actor_id", "from", "to"])
+    {:noreply, LiveTable.apply_filter(socket, ~p"/app/audit", Map.merge(preserved, params))}
+  end
+
+  def handle_event("filter_dates", %{"from" => from, "to" => to}, socket) do
+    # Keep the LiveTable filters + actor filter; replace the date bounds.
+    params = Map.merge(socket.assigns.filter_params, %{"from" => from, "to" => to})
     {:noreply, LiveTable.apply_filter(socket, ~p"/app/audit", params)}
   end
 
@@ -105,18 +115,36 @@ defmodule EmisarWeb.AuditLive do
 
   defp load(socket, params) do
     filters = Audit.Event.Query.filters()
-    opts = LiveTable.params_to_opts(params, filters)
+    actor_id = blank_to_nil(params["actor_id"])
+
+    # Identity (actor_id) + date-range (from/to) ride as URL params outside
+    # the LiveTable filter form, so they're threaded into list_events opts
+    # directly. Dates are parsed as UTC wallclock (operators read the column
+    # in UTC). The raw strings re-populate the date inputs.
+    socket =
+      socket
+      |> assign(:filters, filters)
+      |> assign(:filter_params, params)
+      |> assign(:actor_id, actor_id)
+      |> assign(:from, params["from"] || "")
+      |> assign(:to, params["to"] || "")
+
+    opts =
+      params
+      |> LiveTable.params_to_opts(filters)
+      |> Keyword.merge(
+        actor_id: actor_id,
+        occurred_after: parse_datetime(params["from"]),
+        occurred_before: parse_datetime(params["to"])
+      )
 
     case Audit.list_events(socket.assigns.current_subject, opts) do
       {:ok, events, meta} ->
-        refs = Audit.resolve_references(events)
-
         socket
         |> assign(:events, events)
         |> assign(:metadata, meta)
-        |> assign(:refs, refs)
-        |> assign(:filter_params, params)
-        |> assign(:filters, filters)
+        |> assign(:refs, Audit.resolve_references(events))
+        |> assign(:actor_label, actor_label_for(actor_id, events))
 
       # A clean reload can fail too (e.g. a tightened list permission) —
       # degrade to an empty page rather than recursing forever.
@@ -125,13 +153,32 @@ defmodule EmisarWeb.AuditLive do
         |> assign(:events, [])
         |> assign(:metadata, %Emisar.Repo.Paginator.Metadata{count: 0, limit: 0})
         |> assign(:refs, %{})
-        |> assign(:filter_params, params)
-        |> assign(:filters, filters)
+        |> assign(:actor_label, actor_id)
 
       # Bad filter/page params from a hand-edited URL — retry once, clean.
       {:error, _} ->
         load(socket, %{})
     end
+  end
+
+  defp blank_to_nil(value) when value in [nil, ""], do: nil
+  defp blank_to_nil(value), do: value
+
+  # datetime-local input → UTC DateTime. nil/blank skips the bound; an
+  # unparseable value is dropped (the filter just doesn't apply).
+  defp parse_datetime(value) when value in [nil, ""], do: nil
+
+  defp parse_datetime(value) when is_binary(value) do
+    case DateTime.from_iso8601(value <> ":00Z") do
+      {:ok, datetime, _} -> datetime
+      _ -> nil
+    end
+  end
+
+  defp actor_label_for(nil, _events), do: nil
+
+  defp actor_label_for(actor_id, events) do
+    Enum.find_value(events, actor_id, fn e -> e.actor_id == actor_id && e.actor_label end)
   end
 
   def render(assigns) do
@@ -147,6 +194,57 @@ defmodule EmisarWeb.AuditLive do
       section={:audit}
     >
       <:title>Audit log</:title>
+
+      <%!-- Date-range + identity filters live outside the LiveTable filter
+           bar (it only does list/boolean filters). "What did X do" and
+           "what happened last Tuesday" are the receipt's two core
+           questions. --%>
+      <div class="mb-4 flex flex-wrap items-end gap-3">
+        <form phx-submit="filter_dates" class="flex flex-wrap items-end gap-2">
+          <label class="flex flex-col gap-1 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+            From (UTC)
+            <input
+              type="datetime-local"
+              name="from"
+              value={@from}
+              class="rounded-lg border-0 bg-zinc-900 px-2 py-1 text-xs text-zinc-200 ring-1 ring-zinc-800 focus:ring-indigo-500"
+            />
+          </label>
+          <label class="flex flex-col gap-1 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+            To (UTC)
+            <input
+              type="datetime-local"
+              name="to"
+              value={@to}
+              class="rounded-lg border-0 bg-zinc-900 px-2 py-1 text-xs text-zinc-200 ring-1 ring-zinc-800 focus:ring-indigo-500"
+            />
+          </label>
+          <button class="rounded-lg bg-zinc-800 px-3 py-1.5 text-xs font-medium text-zinc-200 hover:bg-zinc-700">
+            Apply dates
+          </button>
+          <.link
+            :if={@from != "" or @to != ""}
+            patch={~p"/app/audit?#{Map.drop(@filter_params, ["from", "to"])}"}
+            class="text-xs text-zinc-500 hover:text-zinc-300"
+          >
+            Clear dates
+          </.link>
+        </form>
+
+        <div
+          :if={@actor_id}
+          class="flex items-center gap-2 rounded-lg bg-indigo-500/10 px-3 py-1.5 text-xs text-indigo-200 ring-1 ring-indigo-500/30"
+        >
+          <span>Actor: <span class="font-medium">{@actor_label}</span></span>
+          <.link
+            patch={~p"/app/audit?#{Map.drop(@filter_params, ["actor_id"])}"}
+            class="font-semibold text-indigo-300 hover:text-indigo-100"
+            aria-label="Clear actor filter"
+          >
+            ✕
+          </.link>
+        </div>
+      </div>
 
       <LiveTable.live_table
         id="audit-events"
@@ -179,7 +277,13 @@ defmodule EmisarWeb.AuditLive do
           </div>
         </:col>
         <:col :let={event} label="Actor">
-          <.ref kind={event.actor_kind} id={event.actor_id} label={event.actor_label} refs={@refs} />
+          <.ref
+            kind={event.actor_kind}
+            id={event.actor_id}
+            label={event.actor_label}
+            refs={@refs}
+            audit_link?={true}
+          />
         </:col>
         <:col :let={event} label="Subject">
           <.ref
@@ -368,6 +472,10 @@ defmodule EmisarWeb.AuditLive do
   attr :id, :any, default: nil
   attr :label, :string, default: nil
   attr :refs, :map, default: %{}
+  # When true, the value links to this actor's filtered audit view
+  # (`?actor_id=…`) — "what did this identity do" — instead of the
+  # actor's own resource page. Used for the actor column.
+  attr :audit_link?, :boolean, default: false
 
   def ref(%{kind: nil} = assigns), do: ~H[<span class="text-xs text-zinc-500">—</span>]
 
@@ -386,7 +494,7 @@ defmodule EmisarWeb.AuditLive do
     assigns =
       assign(assigns,
         text: resolve_label(assigns.refs, assigns.kind, assigns.id, assigns.label),
-        href: ref_path(assigns.kind, assigns.id)
+        href: ref_href(assigns)
       )
 
     ~H"""
@@ -433,14 +541,20 @@ defmodule EmisarWeb.AuditLive do
   end
 
   defp any_filter_active?(params, filters) do
-    Enum.any?(filters, fn f ->
-      case Map.get(params, to_string(f.name)) do
-        nil -> false
-        "" -> false
-        _ -> true
-      end
-    end)
+    Enum.any?(["actor_id", "from", "to"], &(blank_to_nil(params[&1]) != nil)) or
+      Enum.any?(filters, fn f ->
+        case Map.get(params, to_string(f.name)) do
+          nil -> false
+          "" -> false
+          _ -> true
+        end
+      end)
   end
+
+  defp ref_href(%{audit_link?: true, id: id}) when not is_nil(id),
+    do: ~p"/app/audit?actor_id=#{id}"
+
+  defp ref_href(%{kind: kind, id: id}), do: ref_path(kind, id)
 
   defp ref_path("runner", id) when is_binary(id), do: ~p"/app/runners/#{id}"
   defp ref_path("action_run", id) when is_binary(id), do: ~p"/app/runs/#{id}"

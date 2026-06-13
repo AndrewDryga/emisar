@@ -251,6 +251,9 @@ defmodule Emisar.Audit.Event.Query do
   def by_subject_id(queryable, id),
     do: where(queryable, [events: e], e.subject_id == ^id)
 
+  def by_actor_id(queryable, id),
+    do: where(queryable, [events: e], e.actor_id == ^id)
+
   def occurred_after(queryable, ts),
     do: where(queryable, [events: e], e.occurred_at > ^ts)
 

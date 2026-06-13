@@ -357,6 +357,41 @@ defmodule Emisar.AuditTest do
       {:ok, rows, %{count: 2}} = Audit.list_events(subject)
       assert length(rows) == 2
     end
+
+    test "actor_id narrows the list to one identity" do
+      account = account_fixture()
+      subject = subject_for(user_fixture(), account, role: :owner)
+      actor_a = Ecto.UUID.generate()
+      actor_b = Ecto.UUID.generate()
+      {:ok, _} = Audit.log(account.id, "x", actor_kind: "user", actor_id: actor_a)
+      {:ok, _} = Audit.log(account.id, "x", actor_kind: "user", actor_id: actor_b)
+
+      {:ok, events, _} = Audit.list_events(subject, actor_id: actor_a)
+      assert Enum.map(events, & &1.actor_id) == [actor_a]
+    end
+
+    test "occurred_after / occurred_before bound the window" do
+      account = account_fixture()
+      subject = subject_for(user_fixture(), account, role: :owner)
+      {:ok, _} = Audit.log(account.id, "x", actor_kind: "system")
+
+      future = DateTime.add(DateTime.utc_now(), 3600, :second)
+      past = DateTime.add(DateTime.utc_now(), -3600, :second)
+
+      assert {:ok, [], _} = Audit.list_events(subject, occurred_after: future)
+      assert {:ok, [_ | _], _} = Audit.list_events(subject, occurred_before: future)
+      assert {:ok, [_ | _], _} = Audit.list_events(subject, occurred_after: past)
+    end
+
+    test "actor_id can't surface another account's events" do
+      account_a = account_fixture()
+      subject_a = subject_for(user_fixture(), account_a, role: :owner)
+      account_b = account_fixture()
+      actor = Ecto.UUID.generate()
+      {:ok, _} = Audit.log(account_b.id, "x", actor_kind: "user", actor_id: actor)
+
+      assert {:ok, [], _} = Audit.list_events(subject_a, actor_id: actor)
+    end
   end
 
   describe "list_for_export/2 (SIEM forward sweep)" do
