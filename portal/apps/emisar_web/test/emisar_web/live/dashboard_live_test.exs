@@ -23,6 +23,14 @@ defmodule EmisarWeb.DashboardLiveTest do
       assert message =~ "suspended"
     end
 
+    test "redirects a logged-in user with no account to onboarding", %{conn: conn} do
+      # A bare user (no membership at all) isn't locked out — they're sent to
+      # onboarding to create their first account.
+      conn = log_in_user(conn, Emisar.Fixtures.user_fixture())
+
+      assert {:error, {:redirect, %{to: "/onboarding"}}} = live(conn, ~p"/app")
+    end
+
     test "unconfirmed users see the verify-email banner and can resend", %{conn: conn} do
       {conn, user, _account} = register_and_log_in(conn)
       # register_and_log_in confirms by default — simulate the unverified state.
