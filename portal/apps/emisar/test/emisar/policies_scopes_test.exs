@@ -104,6 +104,32 @@ defmodule Emisar.PoliciesScopesTest do
       assert {:deny, _, _, policy} = Policies.evaluate_with_policy(account.id, attrs, "prod")
       assert policy.scope_type == :group
     end
+
+    test "a scoped decision's reason names the override it came from" do
+      {_user, account, subject} = owner_subject_fixture()
+      {:ok, _} = Policies.save_rules(@allow_all, subject)
+      {:ok, _} = Policies.save_scoped_rules(@deny_all, :runner, "runner-1", subject)
+      {:ok, _} = Policies.save_scoped_rules(@deny_all, :group, "prod", subject)
+
+      runner = %{action_id: "linux.uptime", risk: :low, runner_id: "runner-1"}
+      assert {:deny, _, reason, _} = Policies.evaluate_with_policy(account.id, runner, nil)
+      assert reason =~ "this runner's policy override"
+
+      group = %{action_id: "linux.uptime", risk: :low, runner_id: "any"}
+
+      assert {:deny, _, group_reason, _} =
+               Policies.evaluate_with_policy(account.id, group, "prod")
+
+      assert group_reason =~ ~s(the "prod" group policy override)
+
+      # An account-scoped decision keeps the plain reason — no scope annotation.
+      other = %{action_id: "linux.uptime", risk: :low, runner_id: "elsewhere"}
+
+      assert {:allow, _, account_reason, _} =
+               Policies.evaluate_with_policy(account.id, other, nil)
+
+      refute account_reason =~ "policy override"
+    end
   end
 
   describe "scoped CRUD (save / fetch / list / delete)" do

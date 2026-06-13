@@ -341,8 +341,20 @@ defmodule Emisar.Policies do
     }
 
     {decision, matched, reason} = evaluate(policy, match_ctx, attrs[:args] || %{})
-    {decision, matched, reason, policy}
+    {decision, matched, annotate_scope(reason, policy), policy}
   end
+
+  # Annotate the decision reason with the override scope it came from, so an
+  # operator (and the LLM, which shows the reason verbatim) can tell a
+  # runner/group override apart from the account-wide policy. Account-scoped
+  # and nil policies keep the plain reason.
+  defp annotate_scope(reason, %Policy{scope_type: :runner}),
+    do: reason <> " — via this runner's policy override"
+
+  defp annotate_scope(reason, %Policy{scope_type: :group, scope_value: group}),
+    do: reason <> ~s( — via the "#{group}" group policy override)
+
+  defp annotate_scope(reason, _policy), do: reason
 
   defp rule_name(%{"name" => name}) when is_binary(name) and name != "", do: name
   defp rule_name(%{"action" => action}) when is_binary(action), do: action
