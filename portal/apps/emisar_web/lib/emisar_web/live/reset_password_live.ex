@@ -2,7 +2,7 @@ defmodule EmisarWeb.ResetPasswordLive do
   use EmisarWeb, :live_view
 
   alias Emisar.{Auth, Mailers, Users}
-  alias EmisarWeb.RequestContext
+  alias EmisarWeb.{RequestContext, Throttle}
 
   def mount(params, _session, socket) do
     socket =
@@ -127,13 +127,17 @@ defmodule EmisarWeb.ResetPasswordLive do
   end
 
   def handle_event("request", %{"user" => %{"email" => email}}, socket) do
-    case Users.fetch_user_by_email(email) do
-      {:ok, user} ->
-        token = Auth.issue_password_reset_token!(user, [], socket.assigns.request_context)
-        Mailers.UserNotifier.deliver_password_reset(user, token)
+    # Throttle by recipient so this form can't bomb an inbox. The key is the
+    # normalised email — an ETS bucket key, NOT a DB lookup (citext owns the
+    # DB comparison), so the no-app-downcase rule doesn't apply. No `else`:
+    # a throttled OR an unknown email both fall through to the same "sent"
+    # panel below, leaking neither account existence nor the throttle.
+    key = email |> to_string() |> String.trim() |> String.downcase()
 
-      {:error, :not_found} ->
-        :ok
+    with :ok <- Throttle.check("password_reset", key, 5, 900_000),
+         {:ok, user} <- Users.fetch_user_by_email(email) do
+      token = Auth.issue_password_reset_token!(user, [], socket.assigns.request_context)
+      Mailers.UserNotifier.deliver_password_reset(user, token)
     end
 
     {:noreply, assign(socket, :sent_to, email)}

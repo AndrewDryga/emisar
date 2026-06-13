@@ -2,7 +2,7 @@ defmodule EmisarWeb.MagicLinkLive do
   use EmisarWeb, :live_view
 
   alias Emisar.{Auth, Mailers, Users}
-  alias EmisarWeb.RequestContext
+  alias EmisarWeb.{RequestContext, Throttle}
 
   def mount(_params, _session, socket) do
     {:ok,
@@ -66,13 +66,17 @@ defmodule EmisarWeb.MagicLinkLive do
   end
 
   def handle_event("send", %{"user" => %{"email" => email}}, socket) do
-    case Users.fetch_user_by_email(email) do
-      {:ok, user} ->
-        token = Auth.issue_magic_link_token!(user, socket.assigns.request_context)
-        Mailers.UserNotifier.deliver_magic_link(user, token)
+    # Throttle by recipient so this form can't bomb an inbox. The key is the
+    # normalised email — an ETS bucket key, NOT a DB lookup (citext owns the
+    # DB comparison), so the no-app-downcase rule doesn't apply. No `else`:
+    # a throttled OR an unknown email both fall through to the same "sent"
+    # panel below, leaking neither account existence nor the throttle.
+    key = email |> to_string() |> String.trim() |> String.downcase()
 
-      {:error, :not_found} ->
-        :ok
+    with :ok <- Throttle.check("magic_link", key, 5, 900_000),
+         {:ok, user} <- Users.fetch_user_by_email(email) do
+      token = Auth.issue_magic_link_token!(user, socket.assigns.request_context)
+      Mailers.UserNotifier.deliver_magic_link(user, token)
     end
 
     {:noreply, assign(socket, :sent_to, email)}

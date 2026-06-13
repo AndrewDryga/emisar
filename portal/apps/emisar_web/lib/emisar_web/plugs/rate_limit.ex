@@ -15,9 +15,10 @@ defmodule EmisarWeb.Plugs.RateLimit do
     * `:bearer` — a SHA-256 of the `Authorization: Bearer` token, so a leaked
       key is capped across IPs. Falls back to the IP when no bearer is present.
 
-  Disabled in the test environment (`config :emisar_web, rate_limit_enabled:
-  false`) so the fast suite doesn't trip shared counters; `RateLimiter.check/3`
-  is unit-tested directly instead.
+  The on/off switch and the `RateLimiter` delegation live in
+  `EmisarWeb.Throttle` (shared with the LiveView send paths that can't sit
+  behind a plug); it is off in the test env so the fast suite doesn't trip
+  shared counters.
   """
   @behaviour Plug
 
@@ -35,19 +36,11 @@ defmodule EmisarWeb.Plugs.RateLimit do
 
   @impl Plug
   def call(conn, %{bucket: bucket, limit: limit, window_ms: window_ms, by: by}) do
-    if enabled?() do
-      key = {bucket, key_for(conn, by)}
-
-      case EmisarWeb.RateLimiter.check(key, limit, window_ms) do
-        :ok -> conn
-        {:error, :rate_limited} -> reject(conn, window_ms)
-      end
-    else
-      conn
+    case EmisarWeb.Throttle.check(bucket, key_for(conn, by), limit, window_ms) do
+      :ok -> conn
+      {:error, :rate_limited} -> reject(conn, window_ms)
     end
   end
-
-  defp enabled?, do: Application.get_env(:emisar_web, :rate_limit_enabled, true)
 
   defp reject(conn, window_ms) do
     retry_after = window_ms |> div(1000) |> max(1)

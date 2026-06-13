@@ -11,6 +11,15 @@ defmodule EmisarWeb.UserSessionController do
   alias Emisar.{Auth, Users}
   alias EmisarWeb.{RequestContext, UserAuth}
 
+  # Brute-force / credential-stuffing throttle. `create` is the password
+  # verify AND the MFA-code step (the pending-MFA POST lands here too), so
+  # one per-IP cap covers both. By IP, never by email — an email key would
+  # let an attacker lock a victim out of their own sign-in. Generous enough
+  # that a NAT'd team behind one egress IP isn't blocked; tight enough that
+  # 30/min/IP is far too slow to brute-force a password.
+  plug EmisarWeb.Plugs.RateLimit,
+       [bucket: "sign_in", limit: 30, window_ms: 60_000] when action == :create
+
   # How long a successful password verify lets the operator finish MFA
   # without re-entering their password. Short enough that a stolen
   # device can't replay an old pending-MFA cookie hours later; long
