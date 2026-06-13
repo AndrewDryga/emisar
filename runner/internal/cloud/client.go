@@ -3,7 +3,6 @@ package cloud
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -783,29 +782,4 @@ func toProtocolRedactions(hits []redact.Hit) []RedactionSummary {
 		out = append(out, RedactionSummary{Name: h.Name, Type: h.Type, Count: h.Count})
 	}
 	return out
-}
-
-// LoggedDialer is a placeholder Dialer that logs the dial intent and
-// returns ErrNotConfigured. It exists so `emisar connect` can be invoked
-// end-to-end while the real cloud is being built. Replace with a
-// websocket-backed Dialer once the control plane URL is real.
-type LoggedDialer struct {
-	URL    string
-	Logger *slog.Logger
-}
-
-// ErrNotConfigured is returned by LoggedDialer.Dial.
-var ErrNotConfigured = errors.New("cloud transport not configured (build a real Dialer)")
-
-// Dial logs and returns ErrNotConfigured.
-func (d LoggedDialer) Dial(ctx context.Context) (Conn, string, error) {
-	log := d.Logger
-	if log == nil {
-		log = slog.Default()
-	}
-	log.Info("cloud.dial_skipped",
-		"url", d.URL,
-		"reason", "no websocket transport wired yet",
-	)
-	return nil, "", ErrNotConfigured
 }
