@@ -20,6 +20,14 @@ defmodule Emisar.RunsTest do
     )
   end
 
+  defp deny_all_rules do
+    %{
+      "schema_version" => 2,
+      "defaults" => %{"low" => "deny", "medium" => "deny", "high" => "deny", "critical" => "deny"},
+      "overrides" => []
+    }
+  end
+
   describe "create_run/1" do
     test "auto-assigns request_id + queued_at" do
       account = account_fixture()
@@ -362,6 +370,45 @@ defmodule Emisar.RunsTest do
 
       assert run.policy_id == policy.id
       assert run.policy_version == policy.vsn
+    end
+  end
+
+  describe "dispatch_run/2 resolves per-runner / per-group policy overrides" do
+    test "a runner-scoped override governs that runner, replacing the account allow" do
+      account = account_fixture()
+      runner = runner_fixture(account_id: account.id, group: "db")
+      _ = action_fixture(runner: runner)
+      owner = subject_for(user_fixture(), account, role: :owner)
+
+      # Account policy allows everything; this runner's override denies it.
+      _ = policy_fixture(account_id: account.id)
+      {:ok, _} = Emisar.Policies.save_scoped_rules(deny_all_rules(), :runner, runner.id, owner)
+
+      assert {:error, :denied_by_policy, _reason} =
+               Runs.dispatch_run(base_attrs(account.id, runner.id), owner)
+
+      assert {:ok, [%{status: :denied, policy_decision: "deny"}], _meta} =
+               Runs.list_recent_runs(owner, limit: 50)
+    end
+
+    test "a group-scoped override governs its group; other groups keep the account default" do
+      account = account_fixture()
+      db_runner = runner_fixture(account_id: account.id, group: "db")
+      web_runner = runner_fixture(account_id: account.id, group: "web")
+      _ = action_fixture(runner: db_runner)
+      _ = action_fixture(runner: web_runner)
+      owner = subject_for(user_fixture(), account, role: :owner)
+
+      _ = policy_fixture(account_id: account.id)
+      {:ok, _} = Emisar.Policies.save_scoped_rules(deny_all_rules(), :group, "db", owner)
+
+      # The db-group runner is denied by the group override…
+      assert {:error, :denied_by_policy, _reason} =
+               Runs.dispatch_run(base_attrs(account.id, db_runner.id), owner)
+
+      # …while a web-group runner falls through to the allowing account default.
+      assert {:ok, :running, %ActionRun{}} =
+               Runs.dispatch_run(base_attrs(account.id, web_runner.id), owner)
     end
   end
 
