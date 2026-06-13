@@ -1919,6 +1919,46 @@ defmodule EmisarWeb.CoreComponents do
     """
   end
 
+  @doc """
+  Conversion CTA for the foot of a marketing page — a convinced reader gets
+  one obvious next step. The primary action is always "Start free"; pass a
+  contextual secondary (`secondary_label` + `secondary_path`, the latter a
+  `~p` route or a `mailto:`). `note` defaults to the free-tier reassurance.
+  """
+  attr :headline, :string, required: true
+  attr :subcopy, :string, required: true
+  attr :secondary_label, :string, required: true
+  attr :secondary_path, :string, required: true
+  attr :note, :string, default: "Three runners. Seven-day audit. No credit card."
+
+  def marketing_cta(assigns) do
+    ~H"""
+    <section class="pb-24 sm:pb-32">
+      <div class="mx-auto max-w-3xl px-6 lg:px-8">
+        <div class="rounded-xl border border-indigo-500/30 bg-zinc-950 p-8 text-center sm:p-10">
+          <h2 class="text-2xl font-bold tracking-tight text-white sm:text-3xl">{@headline}</h2>
+          <p class="mx-auto mt-3 max-w-xl text-sm leading-6 text-zinc-400">{@subcopy}</p>
+          <div class="mt-7 flex flex-col items-center justify-center gap-3 sm:flex-row">
+            <.link
+              href={~p"/sign_up"}
+              class="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-indigo-500 px-5 py-2.5 text-sm font-semibold text-zinc-950 hover:bg-indigo-400 sm:w-auto"
+            >
+              Start free <.icon name="hero-arrow-right" class="h-4 w-4" />
+            </.link>
+            <.link
+              href={@secondary_path}
+              class="inline-flex w-full items-center justify-center gap-2 rounded-lg px-5 py-2.5 text-sm font-semibold text-zinc-100 ring-1 ring-zinc-800 hover:ring-zinc-700 sm:w-auto"
+            >
+              {@secondary_label}
+            </.link>
+          </div>
+          <p class="mt-4 text-xs text-zinc-500">{@note}</p>
+        </div>
+      </div>
+    </section>
+    """
+  end
+
   # Version of the emisar_web app, read at compile time from mix.exs so
   # the footer never drifts from the actual release. `vsn` comes back as
   # a charlist; convert once at compile time.

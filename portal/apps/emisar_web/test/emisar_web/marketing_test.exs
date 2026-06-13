@@ -39,6 +39,22 @@ defmodule EmisarWeb.MarketingTest do
     end
   end
 
+  test "deep pages a convinced reader lands on carry a Start-free conversion CTA",
+       %{conn: conn} do
+    for route <- ~w(
+          /use-cases/cassandra-ops
+          /use-cases/postgres-ops
+          /compare/raw-ssh-for-ai
+          /compare/custom-mcp-server
+          /docs/connect-an-llm
+          /security
+        ) do
+      html = conn |> get(route) |> html_response(200)
+      assert html =~ "Start free", "no Start-free CTA on #{route}"
+      assert html =~ ~s(href="/sign_up"), "no sign-up link on #{route}"
+    end
+  end
+
   test "landing page mentions the positioning", %{conn: conn} do
     html = conn |> get(~p"/") |> html_response(200)
     assert html =~ "emisar"
