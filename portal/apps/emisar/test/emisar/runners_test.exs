@@ -807,4 +807,28 @@ defmodule Emisar.RunnersTest do
       assert missing.group == "keep-me"
     end
   end
+
+  describe "Authorizer.for_subject runner-scoping" do
+    test "a runner subject sees only its own runner row, not its account peers" do
+      account = account_fixture()
+      runner = runner_fixture(account_id: account.id)
+      _peer = runner_fixture(account_id: account.id)
+
+      runner_subject = Emisar.Auth.Subject.for_runner(runner, account)
+
+      ids =
+        Runner.Query.all()
+        |> Runners.Authorizer.for_subject(runner_subject)
+        |> Repo.all()
+        |> Enum.map(& &1.id)
+
+      # Cross-runner visibility within an account is intentionally impossible.
+      assert ids == [runner.id]
+    end
+
+    test "an account-less / actor-less subject leaves the query unscoped (fallback)" do
+      query = Runner.Query.all()
+      assert Runners.Authorizer.for_subject(query, %Emisar.Auth.Subject{}) == query
+    end
+  end
 end
