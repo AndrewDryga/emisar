@@ -141,6 +141,51 @@
     </div>
   </section>
 
+  <%!-- How it works — answers "how hard is adoption?" right at the decision point --%>
+  <section class="py-20 sm:py-24">
+    <div class="mx-auto max-w-5xl px-6 lg:px-8">
+      <div class="mx-auto max-w-3xl text-center">
+        <p class="text-sm font-semibold text-indigo-400">Up and running in minutes</p>
+        <h2 class="mt-2 text-3xl font-bold tracking-tight text-zinc-50 sm:text-4xl">
+          From sign-up to your first audited action
+        </h2>
+      </div>
+      <div class="mx-auto mt-12 grid max-w-4xl grid-cols-1 gap-6 sm:grid-cols-3">
+        <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-6">
+          <div class="text-xs font-semibold uppercase tracking-wider text-indigo-400">Step 1</div>
+          <h3 class="mt-2 text-base font-semibold text-zinc-100">Create an account</h3>
+          <p class="mt-2 text-sm leading-6 text-zinc-400">
+            Free, no credit card. You're in the dashboard in under a minute.
+          </p>
+        </div>
+        <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-6">
+          <div class="text-xs font-semibold uppercase tracking-wider text-indigo-400">Step 2</div>
+          <h3 class="mt-2 text-base font-semibold text-zinc-100">Install a runner</h3>
+          <p class="mt-2 text-sm leading-6 text-zinc-400">
+            One command on a Linux or macOS host — the dashboard hands you the install
+            one-liner and watches it connect.
+          </p>
+        </div>
+        <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-6">
+          <div class="text-xs font-semibold uppercase tracking-wider text-indigo-400">Step 3</div>
+          <h3 class="mt-2 text-base font-semibold text-zinc-100">Run an action</h3>
+          <p class="mt-2 text-sm leading-6 text-zinc-400">
+            Dispatch from the dashboard, or point Claude, ChatGPT, or Cursor at your
+            account's MCP endpoint — and let policy decide.
+          </p>
+        </div>
+      </div>
+      <div class="mt-8 text-center">
+        <.link
+          navigate={~p"/docs/quickstart"}
+          class="inline-flex items-center gap-1 text-sm font-semibold text-indigo-400 hover:text-indigo-300"
+        >
+          Read the quickstart <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
+        </.link>
+      </div>
+    </div>
+  </section>
+
   <%!-- Comparison table --%>
   <section class="border-y border-zinc-900 bg-zinc-950/40 py-24 sm:py-32">
     <div class="mx-auto max-w-7xl px-6 lg:px-8">
