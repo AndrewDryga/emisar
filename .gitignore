@@ -42,6 +42,9 @@ erl_crash.dump
 /.env
 
 docs/
-NIGHT_TASKS.md
-NEEDS-REVIEW.md
 AUDIT.md
+
+# Agent working memory — LOG.md is local chain-of-thought, not shared (see AGENTS.md).
+**/.agent/LOG.md
+**/.agent/LOG.archive.md
+.expert/*.log
