@@ -103,4 +103,45 @@ defmodule EmisarWeb.BillingLiveTest do
       assert html =~ "have permission to do that."
     end
   end
+
+  describe "subscription health banner" do
+    test "a past_due subscription shows the rose payment banner + a manage action", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      insert_subscription(account, "past_due")
+
+      {:ok, lv, html} = live(conn, ~p"/app/settings/billing")
+
+      assert html =~ "Payment past due"
+      assert html =~ "update your card"
+      # The owner can fix it — the banner surfaces the billing portal.
+      assert has_element?(lv, "button[phx-click='manage_billing']", "Manage billing")
+    end
+
+    test "a canceled subscription shows the amber banner", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      insert_subscription(account, "canceled")
+
+      {:ok, _lv, html} = live(conn, ~p"/app/settings/billing")
+
+      assert html =~ "Subscription canceled"
+    end
+
+    test "a healthy account shows no failure banner", %{conn: conn} do
+      {conn, _user, _account} = register_and_log_in(conn)
+
+      {:ok, _lv, html} = live(conn, ~p"/app/settings/billing")
+
+      refute html =~ "Payment past due"
+      refute html =~ "Subscription canceled"
+    end
+  end
+
+  defp insert_subscription(account, status) do
+    {:ok, subscription} =
+      %{account_id: account.id, plan: "team", status: status}
+      |> Emisar.Billing.Subscription.Changeset.upsert()
+      |> Emisar.Repo.insert()
+
+    subscription
+  end
 end
