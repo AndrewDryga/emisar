@@ -67,6 +67,16 @@ defmodule Emisar.OAuthTest do
     test "requires at least one redirect uri" do
       assert {:error, _changeset} = OAuth.register_client(%{"client_name" => "X"})
     end
+
+    test "accepts an http://localhost loopback redirect (native/dev clients)" do
+      assert {:ok, %Client{} = client} =
+               OAuth.register_client(%{
+                 "client_name" => "Native App",
+                 "redirect_uris" => ["http://localhost:8723/callback"]
+               })
+
+      assert "http://localhost:8723/callback" in client.redirect_uris
+    end
   end
 
   describe "issue_code/3 authorization gate" do
