@@ -32,8 +32,11 @@ func main() {
 operations. Commands arrive from a control plane over an outbound websocket;
 the runner re-validates, executes, redacts, and journals locally. Policy
 authoring, approval workflow, and audit storage live in the cloud.`,
-		SilenceUsage: true,
-		Version:      Version,
+		// SilenceErrors: main prints the error itself (below); without this
+		// cobra prints it too, so a failing command shows the error twice.
+		SilenceUsage:  true,
+		SilenceErrors: true,
+		Version:       Version,
 	}
 	root.PersistentFlags().StringVar(&flagConfig, "config", "", "path to config.yaml (default: $EMISAR_CONFIG, else /etc/emisar/config.yaml)")
 	root.PersistentFlags().StringSliceVar(&flagPacksDir, "packs-dir", nil, "extra pack search dirs (overrides config)")
@@ -43,6 +46,7 @@ authoring, approval workflow, and audit storage live in the cloud.`,
 	root.AddCommand(packCmd())
 	root.AddCommand(actionCmd())
 	root.AddCommand(stateCmd())
+	root.AddCommand(doctorCmd())
 	root.AddCommand(eventsCmd())
 	root.AddCommand(auditCmd())
 	root.AddCommand(versionCmd())
