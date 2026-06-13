@@ -56,7 +56,7 @@ Each project has an `.agent/` folder — durable working memory the BOOT protoco
 
 A task becomes `[x]` only when ALL hold: the project gate ran **green** (exact command is in the project `AGENTS.md`), the change is **committed** (one focused commit per task), and `LOG.md` has an entry. No changelog file — `git log` is the changelog.
 
-### The work loop (what `/goal`, `/loop`, `/work` all follow)
+### The work loop (what `/batch`, `/goal`, `/loop`, `/work` all follow)
 
 Pick the first `[ ]` in `TASKS.md` and **immediately flip it to `[w]`** to claim it — a parallel agent skips `[w]`, so you won't both grab the same task (claim with an edit, which fails safe if another agent changed the file first; on a collision, re-read and take the next `[ ]`). Then: do it (wear the hats; obey the project `AGENTS.md`) → run the gate → fix until green → commit → append to `LOG.md` → flip `[w]` to `[x]` → next. If blocked: mark `[B]` and write `PENDING_DECISIONS.md`. If you abandon a claim, set it back to `[ ]` so it gets picked up. If you spot unrelated work along the way — a bug, debt, a missing test — jot it in `BACKLOG.md` and stay on the current task; capture it without derailing. **Never stop holding a `[w]`, and do not stop while an actionable `[ ]` remains** (`[w]`/`[x]`/`[B]` don't block the Stop hook — a `[w]` is some agent's live claim). At the end of a batch, re-verify every `[x]` against `git log`, and reclaim any orphaned `[w]` left by an interrupted session (set it back to `[ ]`).
 
