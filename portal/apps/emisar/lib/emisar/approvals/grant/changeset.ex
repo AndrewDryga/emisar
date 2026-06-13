@@ -21,13 +21,6 @@ defmodule Emisar.Approvals.Grant.Changeset do
     |> validate_required([:account_id, :api_key_id, :action_id, :granted_at])
   end
 
-  def usage(%Grant{} = grant, now \\ DateTime.utc_now()) do
-    change(grant,
-      last_used_at: now,
-      uses_count: grant.uses_count + 1
-    )
-  end
-
   def revoke(%Grant{} = grant, by_user_id) do
     change(grant, revoked_at: DateTime.utc_now(), revoked_by_id: by_user_id)
   end
