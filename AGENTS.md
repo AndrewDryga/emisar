@@ -55,11 +55,31 @@ Each project has an `.agent/` folder — durable working memory the BOOT protoco
 
 ### Definition of Done
 
-A task becomes `[x]` only when ALL hold: the project gate ran **green** (exact command is in the project `AGENTS.md`), the change is **committed** (one focused commit per task), and `LOG.md` has an entry. No changelog file — `git log` is the changelog.
+A task becomes `[x]` only when **all** of these hold:
+
+- the project gate ran **green** (exact command in the project `AGENTS.md`),
+- the change is **committed** — one focused commit per task,
+- `LOG.md` has an entry.
+
+No changelog file — `git log` is the changelog.
 
 ### The work loop (what `/batch`, `/goal`, `/loop`, `/work` all follow)
 
-Pick the first `[ ]` in `TASKS.md` and **immediately flip it to `[w]`** to claim it — a parallel agent skips `[w]`, so you won't both grab the same task (claim with an edit, which fails safe if another agent changed the file first; on a collision, re-read and take the next `[ ]`). Then: do it (wear the hats; obey the project `AGENTS.md`) → run the gate → fix until green → commit → append to `LOG.md` → flip `[w]` to `[x]` → next. If blocked: mark `[B]` and write `PENDING_DECISIONS.md`. If you abandon a claim, set it back to `[ ]` so it gets picked up. If you spot something off along the way — a bug, debt, a missing test, a small mess — **fix it in place when it's a small, safe cleanup** (boy-scout rule, creed #7); when it's bigger, risky, or would derail/sprawl the commit, jot it in `BACKLOG.md` and stay on the current task. Capture what you don't fix; never walk past a mess. **Never stop holding a `[w]`, and do not stop while an actionable `[ ]` remains** (`[w]`/`[x]`/`[B]` don't block the Stop hook — a `[w]` is some agent's live claim). At the end of a batch, re-verify every `[x]` against `git log`, and reclaim any orphaned `[w]` left by an interrupted session (set it back to `[ ]`).
+Work the first `[ ]` in `TASKS.md`, then the next, until none remain:
+
+1. **Claim** — flip `[ ]` → `[w]` with an edit (it fails safe if another agent changed the file first; on a collision, re-read and take the next `[ ]`). A parallel agent skips `[w]`, so you won't both grab the same task.
+2. **Do it** — wear the hats; obey the project's `AGENTS.md`.
+3. **Gate** — run the project gate; fix until green.
+4. **Commit** — one focused commit for the task.
+5. **Record** — append a *what + why* line to `LOG.md`, flip `[w]` → `[x]`, and move to the next `[ ]`.
+
+When the loop is interrupted:
+
+- **Blocked?** Mark `[B]` and write the `PENDING_DECISIONS.md` entry; move on.
+- **Abandoning a claim?** Set it back to `[ ]` so it gets picked up.
+- **Spot something off** — a bug, debt, a missing test, a small mess? **Fix it in place when it's a small, safe cleanup** (boy-scout rule, creed #7); when it's bigger, risky, or would derail/sprawl the commit, jot it in `BACKLOG.md` and stay on the current task. Capture what you don't fix; never walk past a mess.
+
+**Don't-stop contract:** never stop holding a `[w]`, and do not stop while an actionable `[ ]` remains (`[w]`/`[x]`/`[B]` don't block the Stop hook — a `[w]` is some agent's live claim). At the end of a batch, re-verify every `[x]` against `git log`, and reclaim any orphaned `[w]` left by an interrupted session (set it back to `[ ]`).
 
 ---
 
