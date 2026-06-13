@@ -45,6 +45,7 @@ Each project has an `.agent/` folder — durable working memory the BOOT protoco
 - **`TASKS.md`** — the work queue. Three states, nothing else, so skipped work has nowhere to hide:
   - `[ ]` todo · `[x]` **done _and_ gated-green _and_ committed** · `[B]` blocked.
   - A `[B]` item **must** have a matching entry in `PENDING_DECISIONS.md`. There is no fourth state — you never silently drop or half-finish a task.
+- **`BACKLOG.md`** — actionable work you *discover* outside the current task's scope: a bug, tech debt, a missing test, a refactor you shouldn't do right now. Capture it here the moment you see it — don't derail the current goal, don't lose the finding — then keep going. **Not auto-worked**, and **not scanned by the Stop hook**, so it never blocks a batch; a human (or a later, deliberate pass) promotes an item into `TASKS.md` → `## Active`. (Distinct from `IDEAS.md` = product features needing approval, and `PENDING_DECISIONS.md` = needs a human call.)
 - **`LOG.md`** — your chain-of-thought, so the *what + why* survives compaction. Append a short entry when you make a decision, finish a task, or set yourself a next step. Newest first under `## Recent`; when `## Recent` passes ~50 lines, move older entries to `LOG.archive.md`. **Not committed** — it is local working memory (git-ignored).
 - **`PENDING_DECISIONS.md`** — anything you can't do without a human call (a product decision, an ambiguous spec, a one-way-door migration). Write: the decision needed · the options · your recommendation. Mark the task `[B]` and move on. Never guess on an irreversible choice.
 - **`IDEAS.md`** — product ideas as short implementation sketches. **Never auto-implemented.** A human details and approves an idea first; only then is it *moved* into `TASKS.md`. The work loop reads `TASKS.md` only — it never pulls work from `IDEAS.md`.
@@ -56,7 +57,7 @@ A task becomes `[x]` only when ALL hold: the project gate ran **green** (exact c
 
 ### The work loop (what `/goal`, `/loop`, `/work` all follow)
 
-Pick the first `[ ]` in `TASKS.md` → do it (wear the hats; obey the project `AGENTS.md`) → run the gate → fix until green → commit → append to `LOG.md` → tick `[x]` → next. If blocked: write `PENDING_DECISIONS.md`, mark `[B]`, continue to the next `[ ]`. **Do not stop while an actionable `[ ]` remains.** At the end of a batch, re-verify every `[x]` you claimed against `git log` — eyeball passes miss work.
+Pick the first `[ ]` in `TASKS.md` → do it (wear the hats; obey the project `AGENTS.md`) → run the gate → fix until green → commit → append to `LOG.md` → tick `[x]` → next. If blocked: write `PENDING_DECISIONS.md`, mark `[B]`, continue to the next `[ ]`. If you spot unrelated work along the way — a bug, debt, a missing test — jot it in `BACKLOG.md` and stay on the current task; capture it without derailing. **Do not stop while an actionable `[ ]` remains.** At the end of a batch, re-verify every `[x]` you claimed against `git log` — eyeball passes miss work.
 
 ---
 

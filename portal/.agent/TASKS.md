@@ -15,10 +15,5 @@ Completed work before 2026-06-12 is in `ARCHIVE.md`; `git log` is the record aft
       _(Also swept `context-fn` — same shape — and folded `mix credo` into all three
       IL-20 gate commands. Left `iron-review`'s grep methodology + the deliberately
       abbreviated frontend/deploy/document/testing gates alone.)_
-- [ ] _(repo-wide, deferred)_ Codex command-wrappers — spike the `.codex/prompts/`
-      path + format, then add thin wrappers that point at `AGENTS.md` / `.agent/rules`
-      (no knowledge duplication). The AGENTS.md foundation already makes Codex read
-      instructions + state; this is only the slash-command convenience layer.
-- [ ] _(repo-wide, deferred)_ Thin the portal skills into wrappers over `AGENTS.md`
-      + `.agent/rules` instead of restating rules inline, so a Codex prompt can point
-      at the same knowledge.
+_(Codex command-wrappers and portal-skill-thinning moved to `BACKLOG.md` — they're
+deferred, repo-wide follow-ups, not part of an active batch.)_
