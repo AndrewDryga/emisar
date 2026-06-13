@@ -636,6 +636,25 @@ defmodule Emisar.Catalog do
   end
 
   @doc """
+  Runner ids currently advertising `pack_id` at `pack_version` — the blast
+  radius of trusting that version (which hosts will be allowed to run it).
+  Account-scoped via the subject. Returns `{:ok, [runner_id]}`.
+  """
+  def runner_ids_advertising_pack(pack_id, pack_version, %Subject{} = subject) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_catalog_permission()) do
+      runner_ids =
+        RunnerAction.Query.all()
+        |> RunnerAction.Query.by_pack(pack_id, pack_version)
+        |> RunnerAction.Query.distinct_runner_ids()
+        |> Authorizer.for_subject(subject)
+        |> Repo.all()
+
+      {:ok, runner_ids}
+    end
+  end
+
+  @doc """
   Cheap COUNT(*) of pack versions pending trust review — drives the
   sidebar + dashboard "needs review" badge. Same Subject gate + account
   scoping as `list_pack_versions/2`; returns `0` when the caller lacks

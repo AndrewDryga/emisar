@@ -19,6 +19,19 @@ defmodule Emisar.Catalog.RunnerAction.Query do
   def by_risk(queryable, risk),
     do: where(queryable, [runner_actions: a], a.risk == ^risk)
 
+  def by_pack(queryable, pack_id, pack_version),
+    do:
+      where(
+        queryable,
+        [runner_actions: a],
+        a.pack_id == ^pack_id and a.pack_version == ^pack_version
+      )
+
+  # Distinct runner ids advertising the filtered actions — the blast radius
+  # of trusting a pack (which hosts will run it).
+  def distinct_runner_ids(queryable),
+    do: queryable |> distinct(true) |> select([runner_actions: a], a.runner_id)
+
   def by_account_runner_and_action(queryable, account_id, runner_id, action_id) do
     queryable
     |> where(

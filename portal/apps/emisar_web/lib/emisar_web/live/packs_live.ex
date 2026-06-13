@@ -22,7 +22,7 @@ defmodule EmisarWeb.PacksLive do
   """
   use EmisarWeb, :live_view
 
-  alias Emisar.Catalog
+  alias Emisar.{Catalog, Runners}
 
   def mount(_params, _session, socket) do
     socket = assign(socket, :page_title, "Packs")
@@ -38,6 +38,7 @@ defmodule EmisarWeb.PacksLive do
        |> assign(:loading?, true)
        |> assign(:pack_count, 0)
        |> assign(:pending_count, 0)
+       |> assign(:advertising, %{})
        |> stream(:packs, [])}
     end
   end
@@ -57,7 +58,31 @@ defmodule EmisarWeb.PacksLive do
     |> assign(:pending_count, pending)
     # Keep the sidebar badge in step after Trust/Reject on this page.
     |> assign(:pending_packs_count, pending)
+    |> assign(:advertising, advertising_runners(rows, socket.assigns.current_subject))
     |> stream(:packs, groups, reset: true)
+  end
+
+  # Blast radius of a pending trust decision: which runners advertise each
+  # pending version (so the operator sees one canary box vs the whole fleet).
+  # Keyed by pack_version id; only pending versions are looked up.
+  defp advertising_runners(rows, subject) do
+    runners_by_id =
+      case Runners.list_runners_for_account(subject) do
+        {:ok, runners, _meta} -> Map.new(runners, &{&1.id, &1})
+        _ -> %{}
+      end
+
+    rows
+    |> Enum.filter(&(&1.trust_state == :pending))
+    |> Map.new(fn version ->
+      ids =
+        case Catalog.runner_ids_advertising_pack(version.pack_id, version.version, subject) do
+          {:ok, ids} -> ids
+          _ -> []
+        end
+
+      {version.id, ids |> Enum.map(&Map.get(runners_by_id, &1)) |> Enum.reject(&is_nil/1)}
+    end)
   end
 
   defp fetch_rows(socket) do
@@ -127,6 +152,7 @@ defmodule EmisarWeb.PacksLive do
       |> assign(:pack_count, pack_count)
       |> assign(:pending_count, pending)
       |> assign(:pending_packs_count, pending)
+      |> assign(:advertising, advertising_runners(rows, socket.assigns.current_subject))
 
     if versions == [] do
       stream_delete(socket, :packs, %{id: pack_id})
@@ -261,6 +287,22 @@ defmodule EmisarWeb.PacksLive do
                   <dt class="font-mono text-zinc-500">advertising:</dt>
                   <dd class="font-mono text-amber-300 break-all">{v.pending_hash || "—"}</dd>
                 </dl>
+                <%!-- Blast radius — which hosts this trust click unblocks.
+                     One canary box vs the whole fleet is the difference
+                     between a safe and a scary Trust. --%>
+                <div
+                  :if={@advertising[v.id] not in [nil, []]}
+                  class="mt-2 text-[11px] leading-relaxed text-amber-100/80"
+                >
+                  <span class="font-semibold">{length(@advertising[v.id])}</span>
+                  runner(s) advertise this — trusting unblocks dispatch on:
+                  <span
+                    :for={r <- @advertising[v.id]}
+                    class="ml-1 inline-block rounded bg-amber-900/40 px-1.5 py-0.5 font-mono text-amber-200"
+                  >
+                    {r.name}<span class="text-amber-400/70"> · {r.group}</span>
+                  </span>
+                </div>
                 <%!-- Trust/Reject mutate authorization state — owner/admin
                      only. The context gate (manage_catalog) is defense in
                      depth; hide the buttons for viewers/operators too so
@@ -276,9 +318,9 @@ defmodule EmisarWeb.PacksLive do
                     phx-value-id={v.id}
                     data-confirm={
                       if is_nil(v.hash) do
-                        "Approve #{pack.id} v#{v.version}? Cloud will allow its actions to run against the advertised contents."
+                        "Approve #{pack.id} v#{v.version}? Cloud will allow its actions to run on #{length(@advertising[v.id] || [])} advertising runner(s)."
                       else
-                        "Adopt the new hash as trusted for #{pack.id} v#{v.version}? Future dispatches will authorize against the advertised contents."
+                        "Adopt the new hash as trusted for #{pack.id} v#{v.version}? It authorizes dispatch on #{length(@advertising[v.id] || [])} advertising runner(s)."
                       end
                     }
                     class="rounded bg-amber-500 px-3 py-1 text-xs font-semibold text-amber-950 hover:bg-amber-400"

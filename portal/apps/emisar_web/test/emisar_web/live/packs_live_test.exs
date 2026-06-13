@@ -50,6 +50,43 @@ defmodule EmisarWeb.PacksLiveTest do
       assert html =~ "phx-click=\"reject\""
     end
 
+    test "the pending card names the runners advertising the pack (blast radius)", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+
+      runner =
+        Emisar.Fixtures.runner_fixture(
+          account_id: account.id,
+          name: "canary-01",
+          group: "staging"
+        )
+
+      {:ok, _} =
+        Emisar.Catalog.observe_state(runner, %{
+          "hostname" => "host-1",
+          "version" => "0.1.0",
+          "labels" => %{},
+          "actions" => [
+            %{
+              "id" => "acme.tool",
+              "pack_id" => "acme-tools",
+              "title" => "Tool",
+              "kind" => "exec",
+              "risk" => "low",
+              "description" => "t",
+              "args" => []
+            }
+          ],
+          "packs" => %{"acme-tools" => %{"version" => "9.9", "hash" => "abc123"}}
+        })
+
+      {:ok, lv, _dead} = live(conn, ~p"/app/packs")
+      html = render(lv)
+
+      assert html =~ "runner(s) advertise this"
+      assert html =~ "canary-01"
+      assert html =~ "staging"
+    end
+
     test "Trust adopts the pending hash and clears the pending badge", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
       pack_version = observe_pending_pack!(account)

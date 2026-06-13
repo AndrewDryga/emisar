@@ -640,4 +640,36 @@ defmodule Emisar.CatalogTest do
       assert Catalog.most_severe_risk_by_action([]) == %{}
     end
   end
+
+  describe "runner_ids_advertising_pack/3" do
+    test "returns distinct advertising runners, account-scoped" do
+      account = account_fixture()
+      subject = subject_for(user_fixture(), account, role: :owner)
+      r1 = runner_fixture(account_id: account.id)
+      r2 = runner_fixture(account_id: account.id)
+
+      pending =
+        state_payload(
+          packs: %{"linux-core" => %{"version" => "1.0", "hash" => "abc"}},
+          actions: [
+            action("linux.uptime", pack_id: "linux-core"),
+            action("linux.df", pack_id: "linux-core")
+          ]
+        )
+
+      {:ok, _} = Catalog.observe_state(r1, pending)
+      {:ok, _} = Catalog.observe_state(r2, pending)
+
+      # Same pack advertised in another account must not leak in.
+      other = account_fixture()
+      other_runner = runner_fixture(account_id: other.id)
+      {:ok, _} = Catalog.observe_state(other_runner, pending)
+
+      {:ok, ids} = Catalog.runner_ids_advertising_pack("linux-core", "1.0", subject)
+
+      # r1 advertises two actions but appears once (distinct); the foreign
+      # account's runner is scoped out.
+      assert Enum.sort(ids) == Enum.sort([r1.id, r2.id])
+    end
+  end
 end
