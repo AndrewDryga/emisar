@@ -40,11 +40,48 @@ defmodule EmisarWeb.AuditDetailLiveTest do
 
     {:ok, _lv, html} = live(conn, ~p"/app/audit/#{event.id}")
 
-    # Runner is a subject property: name (group) version, linked to the runner.
-    assert html =~ "runner: web-01 (frontend) 0.7.4"
+    # Runner is a subject property: name (group) version. The "runner:" label is
+    # plain; only the name links to the runner. The subject's id renders too.
+    assert html =~ "runner:"
+    assert html =~ "web-01 (frontend) 0.7.4"
     assert html =~ ~p"/app/runners/#{runner.id}"
+    assert html =~ run.id
 
     # The bare Go HTTP client UA is no longer rendered as a device.
     refute html =~ "Runner (Go)"
+  end
+
+  test ~S(a runner_version of "-" renders as no version, not a dangling dash), %{conn: conn} do
+    {conn, _user, account} = register_and_log_in(conn)
+
+    runner =
+      Emisar.Fixtures.runner_fixture(%{
+        account_id: account.id,
+        name: "ci-bot-runner",
+        group: "ci",
+        runner_version: "-"
+      })
+
+    {:ok, run} =
+      Runs.create_run(%{
+        account_id: account.id,
+        runner_id: runner.id,
+        action_id: "ci.lint",
+        source: "mcp",
+        args: %{}
+      })
+
+    {:ok, event} =
+      Audit.log(account.id, "policy.evaluated",
+        actor_kind: "system",
+        subject_kind: "action_run",
+        subject_id: run.id,
+        subject_label: run.action_id
+      )
+
+    {:ok, _lv, html} = live(conn, ~p"/app/audit/#{event.id}")
+
+    assert html =~ "ci-bot-runner (ci)"
+    refute html =~ "ci-bot-runner (ci) -"
   end
 end

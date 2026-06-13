@@ -320,16 +320,20 @@ defmodule EmisarWeb.AuditDetailLive do
       <div class="mt-1 text-sm">
         <EmisarWeb.AuditLive.ref kind={@kind} id={@id} label={@label} refs={@refs} />
       </div>
-      <p :if={@id} class="mt-1 break-all font-mono text-[10px] text-zinc-500">{@id}</p>
+      <p :if={@id} class="mt-1 text-[10px] text-zinc-500">
+        <span class="font-semibold uppercase tracking-wider">id</span>
+        <span class="break-all font-mono">{@id}</span>
+      </p>
       <%!-- Runner line — which host an action_run executed on. A property
            of the subject (the run), with a link to the runner. No icon —
            just `runner: name (group) version`. --%>
-      <p :if={@runner} class="mt-1 text-[11px]">
+      <p :if={@runner} class="mt-1 text-[11px] text-zinc-400">
+        <span class="text-zinc-500">runner:</span>
         <.link
           navigate={~p"/app/runners/#{@runner.id}"}
           class="text-indigo-300 hover:text-indigo-200"
         >
-          runner: {runner_label(@runner)}
+          {runner_label(@runner)}
         </.link>
       </p>
       <%!-- Device line — what the ACTOR was using. Browser/OS for human
@@ -420,7 +424,8 @@ defmodule EmisarWeb.AuditDetailLive do
         do: runner.name,
         else: "#{runner.name} (#{runner.group})"
 
-    if runner.runner_version in [nil, ""],
+    # "-" is the runner's no-version placeholder — don't render a dangling dash.
+    if runner.runner_version in [nil, "", "-"],
       do: base,
       else: "#{base} #{runner.runner_version}"
   end

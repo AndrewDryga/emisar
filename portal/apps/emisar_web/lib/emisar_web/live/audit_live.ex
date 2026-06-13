@@ -390,15 +390,15 @@ defmodule EmisarWeb.AuditLive do
       )
 
     ~H"""
-    <%= if @href do %>
-      <.link navigate={@href} class="text-xs text-indigo-300 hover:text-indigo-200">
-        <span class="text-zinc-500">{@kind}:</span> {@text}
-      </.link>
-    <% else %>
-      <span class="text-xs text-zinc-400">
-        <span class="text-zinc-500">{@kind}:</span> {@text}
-      </span>
-    <% end %>
+    <span class="text-xs text-zinc-400">
+      <%!-- The "kind:" prefix is a plain label — only the value links. --%>
+      <span class="text-zinc-500">{@kind}:</span>
+      <%= if @href do %>
+        <.link navigate={@href} class="text-indigo-300 hover:text-indigo-200">{@text}</.link>
+      <% else %>
+        {@text}
+      <% end %>
+    </span>
     """
   end
 
