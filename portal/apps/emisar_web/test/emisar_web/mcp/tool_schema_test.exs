@@ -102,6 +102,24 @@ defmodule EmisarWeb.Mcp.ToolSchemaTest do
       refute "label" in schema.required
     end
 
+    test "required args containing 'reason' or 'runners' do not result in duplicate required fields" do
+      schema =
+        ToolSchema.build(
+          action(
+            args: [
+              %{"name" => "reason", "type" => "string", "required" => true},
+              %{"name" => "runners", "type" => "string_array", "required" => true}
+            ]
+          ),
+          ["r1", "r2"]
+        )
+
+      assert "reason" in schema.required
+      assert "runners" in schema.required
+      assert Enum.count(schema.required, &(&1 == "reason")) == 1
+      assert Enum.count(schema.required, &(&1 == "runners")) == 1
+    end
+
     test "validation map carries enum/pattern/min/max/min_items/max_items" do
       schema =
         ToolSchema.build(

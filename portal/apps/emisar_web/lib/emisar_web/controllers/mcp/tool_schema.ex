@@ -40,6 +40,7 @@ defmodule EmisarWeb.Mcp.ToolSchema do
     required =
       ["reason" | arg_required]
       |> then(&if runners_required, do: ["runners" | &1], else: &1)
+      |> Enum.uniq()
 
     %{
       "$schema": "https://json-schema.org/draft/2020-12/schema",
