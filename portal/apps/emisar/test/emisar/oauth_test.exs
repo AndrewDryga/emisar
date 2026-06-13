@@ -327,4 +327,24 @@ defmodule Emisar.OAuthTest do
       assert 0 = OAuth.delete_expired_authorization_codes(future)
     end
   end
+
+  describe "malformed token-endpoint requests are rejected cleanly" do
+    test "exchange_code with missing params is :invalid_request, not a crash" do
+      assert {:error, :invalid_request} = OAuth.exchange_code(%{})
+    end
+
+    test "refresh with missing params is :invalid_request, not a crash" do
+      assert {:error, :invalid_request} = OAuth.refresh(%{})
+    end
+
+    test "fetch_client with a non-binary id is a clean :not_found" do
+      assert {:error, :not_found} = OAuth.fetch_client(nil)
+    end
+
+    test "supported_scopes advertises the scopes the server will grant" do
+      scopes = OAuth.supported_scopes()
+      assert is_list(scopes)
+      assert "mcp" in scopes
+    end
+  end
 end
