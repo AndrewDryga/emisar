@@ -1,7 +1,7 @@
 ---
 name: batch
 description: Drain a project's .agent/TASKS.md queue autonomously and run-to-completion — claim each `[ ]`, do it, gate it green, COMMIT IT ON ITS OWN, tick `[x]` — without quitting early. Arms the Stop-hook sentinel for the run and disarms it when the queue is clear. Use to "work all the tasks" / drain a backlog / run an unattended batch over a project's queue.
-effort: high
+effort: max
 argument-hint: "[project: portal|runner|mcp|packs — default: every project with open tasks]"
 allowed-tools: Read, Grep, Glob, Bash, Write, Edit
 ---
