@@ -311,6 +311,10 @@ defmodule EmisarWeb.TeamLive do
         socket
         |> assign(:memberships, memberships)
         |> assign(:metadata, meta)
+        |> assign(
+          :mfa_stats,
+          mfa_stats(socket.assigns.current_account, socket.assigns.current_subject)
+        )
         |> assign(:filter_params, params)
         |> assign(:scopes_by_membership, scopes_by_membership)
         |> assign(:runners_by_id, runners_by_id)
@@ -323,6 +327,7 @@ defmodule EmisarWeb.TeamLive do
         socket
         |> assign(:memberships, [])
         |> assign(:metadata, %Emisar.Repo.Paginator.Metadata{count: 0, limit: 0})
+        |> assign(:mfa_stats, %{total: 0, enrolled: 0})
         |> assign(:filter_params, params)
         |> assign(:scopes_by_membership, %{})
         |> assign(:runners_by_id, %{})
@@ -335,8 +340,13 @@ defmodule EmisarWeb.TeamLive do
     end
   end
 
-  defp mfa_enrolled_count(memberships) do
-    Enum.count(memberships, fn membership -> membership.user && membership.user.mfa_enabled_at end)
+  # Account-wide, not page-scoped: a security stat computed from one
+  # paginated page reads "all enrolled" while page 2 has gaps.
+  defp mfa_stats(account, subject) do
+    case Accounts.team_mfa_stats(account, subject) do
+      {:ok, stats} -> stats
+      {:error, _} -> %{total: 0, enrolled: 0}
+    end
   end
 
   # Render a scope chip's value — humanizes runner-uuids into names.
@@ -463,10 +473,10 @@ defmodule EmisarWeb.TeamLive do
                amber chip so the owner sees follow-up at a glance. --%>
           <div class="mt-4 flex flex-wrap items-center gap-2 text-xs">
             <span class="text-zinc-400">
-              2FA enrolled: <strong class="text-zinc-100">{mfa_enrolled_count(@memberships)}</strong>
-              of <strong class="text-zinc-100">{length(@memberships)}</strong>
+              2FA enrolled: <strong class="text-zinc-100">{@mfa_stats.enrolled}</strong>
+              of <strong class="text-zinc-100">{@mfa_stats.total}</strong>
             </span>
-            <%= if (n = length(@memberships) - mfa_enrolled_count(@memberships)) > 0 do %>
+            <%= if (n = @mfa_stats.total - @mfa_stats.enrolled) > 0 do %>
               <.chip tone={if @current_account.require_mfa, do: :amber, else: :default}>
                 {n} without 2FA
               </.chip>

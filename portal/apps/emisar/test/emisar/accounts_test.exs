@@ -704,4 +704,49 @@ defmodule Emisar.AccountsTest do
       assert {:error, :unauthorized} = Accounts.end_all_sessions_for(membership, subject_b)
     end
   end
+
+  describe "team_mfa_stats/2" do
+    test "counts members and MFA enrollment account-wide (not per page)" do
+      {owner, account, subject} = owner_subject_fixture()
+      enroll_mfa(owner)
+
+      enrolled_member = user_fixture()
+      enroll_mfa(enrolled_member)
+      membership_fixture(account_id: account.id, user_id: enrolled_member.id, role: "admin")
+
+      unenrolled_member = user_fixture()
+      membership_fixture(account_id: account.id, user_id: unenrolled_member.id, role: "viewer")
+
+      assert {:ok, %{total: 3, enrolled: 2}} = Accounts.team_mfa_stats(account, subject)
+    end
+
+    test "counts only the subject's own account" do
+      {owner, account, subject} = owner_subject_fixture()
+      enroll_mfa(owner)
+
+      # A separate account with its own enrolled member must not leak in.
+      other_member = user_fixture()
+      enroll_mfa(other_member)
+      other_account = account_fixture()
+      membership_fixture(account_id: other_account.id, user_id: other_member.id)
+
+      assert {:ok, %{total: 1, enrolled: 1}} = Accounts.team_mfa_stats(account, subject)
+    end
+
+    test "refuses a subject from another account" do
+      {_owner, account, _subject} = owner_subject_fixture()
+      {_other_owner, _other_account, other_subject} = owner_subject_fixture()
+
+      assert {:error, :unauthorized} = Accounts.team_mfa_stats(account, other_subject)
+    end
+  end
+
+  defp enroll_mfa(user) do
+    {:ok, user} =
+      user
+      |> Ecto.Changeset.change(mfa_enabled_at: DateTime.utc_now())
+      |> Repo.update()
+
+    user
+  end
 end

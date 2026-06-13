@@ -98,6 +98,13 @@ defmodule Emisar.Accounts.Membership.Query do
     |> preload([memberships: m, user: user], user: user)
   end
 
+  @doc "Restrict to memberships whose (non-deleted) user has completed MFA enrollment."
+  def with_mfa_enrolled(queryable) do
+    queryable
+    |> with_joined_user()
+    |> where([user: u], not is_nil(u.mfa_enabled_at))
+  end
+
   # -- Pagination + preloads -------------------------------------------
 
   @impl Emisar.Repo.Query

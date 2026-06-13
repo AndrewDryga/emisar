@@ -242,4 +242,26 @@ defmodule EmisarWeb.TeamLiveTest do
       refute Emisar.Repo.reload!(account).require_mfa
     end
   end
+
+  describe "2FA enrollment stat" do
+    test "renders account-wide enrollment, not just the visible page", %{conn: conn} do
+      {conn, _owner, account} = register_and_log_in(conn)
+
+      member = Emisar.Fixtures.user_fixture()
+      member |> Ecto.Changeset.change(mfa_enabled_at: DateTime.utc_now()) |> Emisar.Repo.update()
+
+      Emisar.Fixtures.membership_fixture(
+        account_id: account.id,
+        user_id: member.id,
+        role: "admin"
+      )
+
+      {:ok, _lv, html} = live(conn, ~p"/app/settings/team")
+
+      # Owner (unenrolled) + the enrolled member → 1 of 2, 1 without. The
+      # counts come from Accounts.team_mfa_stats (account-wide), not @memberships.
+      assert html =~ "2FA enrolled:"
+      assert html =~ "1 without 2FA"
+    end
+  end
 end

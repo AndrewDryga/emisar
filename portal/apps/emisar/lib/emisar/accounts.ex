@@ -226,6 +226,34 @@ defmodule Emisar.Accounts do
   end
 
   @doc """
+  Account-wide 2FA enrollment for the team security stat: total members
+  and how many have completed MFA — real counts, not a per-page tally that
+  reads falsely reassuring on a multi-page team. Requires `view_own_account`
+  and that `subject` is in the account. Returns
+  `{:ok, %{total: non_neg_integer, enrolled: non_neg_integer}}`.
+  """
+  def team_mfa_stats(%Account{id: account_id}, %Subject{} = subject) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.view_own_account_permission()
+           ),
+         :ok <- Subject.ensure_in_account(subject, account_id, :unauthorized) do
+      base = Membership.Query.not_deleted() |> Membership.Query.by_account_id(account_id)
+
+      total = base |> Authorizer.for_subject(subject) |> Repo.aggregate(:count)
+
+      enrolled =
+        base
+        |> Membership.Query.with_mfa_enrolled()
+        |> Authorizer.for_subject(subject)
+        |> Repo.aggregate(:count)
+
+      {:ok, %{total: total, enrolled: enrolled}}
+    end
+  end
+
+  @doc """
   Internal: account-scoped membership page for system fan-outs (the approval
   notifier, which emails every approver). No `%Subject{}` — the caller is a
   background job already scoped to this account; pages via `opts` like the
