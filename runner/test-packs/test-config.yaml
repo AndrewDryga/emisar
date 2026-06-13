@@ -17,7 +17,7 @@ paths:
   data_dir: /tmp/emisar-test/data
   work_dir: /tmp/emisar-test/work
   packs:
-    - /workspace/examples/packs
+    - /packs
 
 events:
   jsonl_path: /tmp/emisar-test/events.jsonl

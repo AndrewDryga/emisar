@@ -8,18 +8,18 @@ substrings.
 ## Layout
 
 ```
-runner/
-├── examples/packs/<pack>/
-│   ├── pack.yaml
-│   ├── actions/*.yaml
-│   └── test/
-│       └── cases.yaml      # one entry per action under actions/
-└── test-packs/
-    ├── Dockerfile           # builds emisar-runner-tools (all CLI binaries)
-    ├── docker-compose.yaml  # backing services (postgres, redis, …)
-    ├── harness.sh           # run a single pack's cases
-    ├── run-all.sh           # run every pack with a cases.yaml
-    └── fixtures/            # seed configs, init SQL, etc.
+packs/<pack>/                # at the repo root (a sibling of runner/)
+├── pack.yaml
+├── actions/*.yaml
+└── test/
+    └── cases.yaml          # one entry per action under actions/
+
+runner/test-packs/           # mounted in the container at /workspace/test-packs
+├── Dockerfile               # builds emisar-runner-tools (all CLI binaries)
+├── docker-compose.yaml      # backing services (postgres, redis, …); mounts packs/ at /packs
+├── harness.sh               # run a single pack's cases
+├── run-all.sh               # run every pack with a cases.yaml
+└── fixtures/                # seed configs, init SQL, etc.
 ```
 
 ## cases.yaml schema

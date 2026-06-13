@@ -42,6 +42,6 @@ can. Privilege is the runner's config, never an argument the agent controls.
 ## Install (staging only)
 
 ```sh
-emisar pack validate examples/packs/shell
-emisar pack install examples/packs/shell    # on a STAGING runner, on purpose
+emisar pack validate packs/shell
+emisar pack install packs/shell    # on a STAGING runner, on purpose
 ```

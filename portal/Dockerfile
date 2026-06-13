@@ -37,11 +37,11 @@ ENV MIX_ENV="prod"
 COPY install.sh /install.sh
 COPY install-mcp.sh /install-mcp.sh
 
-# EmisarWeb.PacksRegistry walks runner/examples/packs at compile time;
-# its default relative path bottoms out at /runner/examples/packs inside
-# the container. Copy the YAMLs there so the registry can scan them.
-# Layer-cached separately so pack edits don't bust deps.compile.
-COPY runner/examples/packs /runner/examples/packs
+# EmisarWeb.PacksRegistry walks packs/ at compile time; its default
+# relative path bottoms out at /packs inside the container. Copy the
+# YAMLs there so the registry can scan them. Layer-cached separately so
+# pack edits don't bust deps.compile.
+COPY packs /packs
 
 # Install deps first so docker layer-caches them.
 COPY portal/mix.exs portal/mix.lock ./

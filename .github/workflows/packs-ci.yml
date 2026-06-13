@@ -1,6 +1,6 @@
 name: Packs CI
 
-# Validates every action pack under runner/examples/packs/ against
+# Validates every action pack under packs/ against
 # the runner's spec checker. Catches: bad YAML, missing required
 # fields, dangling action references in pack.yaml, script-path
 # escapes, ID-shape violations, unknown risk tiers.
@@ -13,7 +13,7 @@ on:
   pull_request:
     branches: [main]
     paths:
-      - "runner/examples/packs/**"
+      - "packs/**"
       - "runner/internal/packs/**"
       - "runner/pkg/packspec/**"
       - "runner/pkg/actionspec/**"
@@ -27,7 +27,7 @@ on:
   push:
     branches: [main]
     paths:
-      - "runner/examples/packs/**"
+      - "packs/**"
       - "runner/internal/packs/**"
       - "runner/pkg/packspec/**"
       - "runner/pkg/actionspec/**"
@@ -68,7 +68,7 @@ jobs:
           /tmp/emisar version
 
       - name: validate every pack
-        # Iterate over runner/examples/packs/* and run `emisar pack
+        # Iterate over packs/* and run `emisar pack
         # validate` on each. Collect failures so the report names
         # every bad pack instead of bailing on the first one — makes
         # PR triage faster.
@@ -81,9 +81,9 @@ jobs:
           set -euo pipefail
           shopt -s nullglob
 
-          packs=(runner/examples/packs/*/)
+          packs=(packs/*/)
           if [ ${#packs[@]} -lt 1 ]; then
-            echo "::error::no packs found under runner/examples/packs/ — did the layout change?"
+            echo "::error::no packs found under packs/ — did the layout change?"
             exit 1
           fi
 
@@ -111,5 +111,5 @@ jobs:
           # Visible signal in CI logs so "validated N packs" is a clear
           # marker — easy to catch a regression where pattern matching
           # silently skips a pack dir.
-          count=$(find runner/examples/packs -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')
+          count=$(find packs -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')
           echo "validated $count packs"

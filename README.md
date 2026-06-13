@@ -74,9 +74,9 @@ build` puts the binary at `bin/emisar`:
 make build
 
 # 2. Validate the bundled example packs
-./bin/emisar pack validate ./runner/examples/packs/linux-core
-./bin/emisar pack validate ./runner/examples/packs/cassandra
-./bin/emisar pack validate ./runner/examples/packs/showcase
+./bin/emisar pack validate ./packs/linux-core
+./bin/emisar pack validate ./packs/cassandra
+./bin/emisar pack validate ./packs/showcase
 
 # 3. See what the runner would advertise to cloud
 ./bin/emisar --config ./runner/examples/config.yaml state | jq
@@ -135,9 +135,9 @@ runner/                          Go module — on-host runner binary
   internal/config                  config loader
   pkg/actionspec                   action spec types (YAML schema)
   pkg/packspec                     pack manifest types
-  examples/packs/                  example packs — linux-core, cassandra, showcase, + 50+ more
   examples/config.yaml             example runner config
 mcp/                             Go module — stdio MCP bridge for Claude Code / Cursor / etc.
+packs/                           action pack catalog (YAML) — linux-core, cassandra, docker, + 70 more; consumed by the runner + portal
 docs/                            architecture, security, action-packs, cloud-boundary, wire-protocol
 docker-compose.yml               Full local stack: Postgres, portal, seeder, and runners
 install.sh                       supervised install (systemd / launchd) — run against tarball

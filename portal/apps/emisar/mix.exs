@@ -68,7 +68,7 @@ defmodule Emisar.MixProject do
 
       # Misc primitives
       {:jason, "~> 1.4"},
-      # Compile-time pack baseline reads runner/examples/packs/*.yaml
+      # Compile-time pack baseline reads packs/*.yaml
       # to know each shipped pack's canonical hash. Auto-trust pinning
       # only — never started at runtime.
       {:yaml_elixir, "~> 2.12", runtime: false}

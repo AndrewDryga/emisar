@@ -17,7 +17,7 @@ packs:
 Validate locally:
 
 ```sh
-emisar pack validate examples/packs/postgres
+emisar pack validate packs/postgres
 ```
 
 ---

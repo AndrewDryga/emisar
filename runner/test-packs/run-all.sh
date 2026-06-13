@@ -7,7 +7,7 @@
 set -uo pipefail
 
 PATTERN="${1:-}"
-PACK_ROOT="${PACK_ROOT:-/workspace/examples/packs}"
+PACK_ROOT="${PACK_ROOT:-/packs}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 HARNESS="$HERE/harness.sh"
 REPORT_DIR="${REPORT_DIR:-/reports}"

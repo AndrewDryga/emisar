@@ -6,19 +6,19 @@ on:
     paths:
       - "portal/**"
       - "install.sh"
-      - "runner/examples/packs/**"
+      - "packs/**"
       - ".github/workflows/portal-ci.yml"
   pull_request:
     branches: [main]
     paths:
       - "portal/**"
       - "install.sh"
-      - "runner/examples/packs/**"
+      - "packs/**"
       - ".github/workflows/portal-ci.yml"
 
-# install.sh + runner/examples/packs/** are real source inputs to the
+# install.sh + packs/** are real source inputs to the
 # portal release: InstallController embeds install.sh via @external_resource
-# and EmisarWeb.PacksRegistry compile-scans runner/examples/packs/. A
+# and EmisarWeb.PacksRegistry compile-scans packs/. A
 # change to either silently rebuilds the release artefact, so it must
 # also re-run portal-ci.
 
@@ -115,7 +115,7 @@ jobs:
 
       - name: Docker build (release image)
         # Build context must be the REPO ROOT (the Dockerfile pulls in
-        # ../install.sh and ../runner/examples/packs); the default
+        # ../install.sh and ../packs); the default
         # working-directory: portal would scope the context too tight.
         # Override here only — other steps stay in portal/.
         working-directory: ${{ github.workspace }}

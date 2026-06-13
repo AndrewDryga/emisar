@@ -25,15 +25,16 @@ if [ -z "$AUTH_KEY" ]; then
   exit 1
 fi
 
-# runner/ directory (this script's parent's parent), regardless of where
-# the script is invoked from. Used as the docker build context.
-RUNNER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# repo root (this script lives at runner/docker/run.sh, so up two),
+# regardless of where the script is invoked from. Used as the docker build
+# context so the Dockerfile can COPY the sibling packs/ dir.
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 echo ">>> building $IMAGE"
 docker build \
-  -f "$RUNNER_DIR/docker/Dockerfile" \
+  -f "$REPO_ROOT/runner/docker/Dockerfile" \
   -t "$IMAGE" \
-  "$RUNNER_DIR"
+  "$REPO_ROOT"
 
 echo ">>> running $IMAGE"
 exec docker run --rm -it \

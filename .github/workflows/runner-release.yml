@@ -89,7 +89,7 @@ jobs:
         run: |
           set -euo pipefail
           shopt -s nullglob
-          packs=(runner/examples/packs/*/)
+          packs=(packs/*/)
           if [ ${#packs[@]} -lt 1 ]; then
             echo "::error::no packs found — refusing to release"
             exit 1
@@ -176,7 +176,7 @@ jobs:
             -o "../dist/emisar" .)
           # Bundle runner binary + install.sh + sample packs + docs
           # into the tarball install.sh expects. Tarball internals
-          # keep the flat shape (examples/packs at the root) so the
+          # keep the flat shape (packs/ at the root) so the
           # script's hard-coded paths work after extraction.
           name="emisar-${VERSION}-${GOOS}-${GOARCH}"
           mkdir -p "dist/${name}"
@@ -191,12 +191,12 @@ jobs:
           chmod +x "dist/${name}/install.sh"
           # Bundle only a SMALL curated default set so install.sh can set
           # up host-appropriate starter packs offline. The full catalog
-          # (~58 packs) is fetched on demand via `emisar pack install
+          # (~73 packs) is fetched on demand via `emisar pack install
           # <name>` from the registry — we do NOT ship all of them.
           mkdir -p "dist/${name}/packs"
           for pack in linux-core debugging debian dnf-rpm systemd-deep docker; do
-            if [ -d "runner/examples/packs/${pack}" ]; then
-              cp -R "runner/examples/packs/${pack}" "dist/${name}/packs/${pack}"
+            if [ -d "packs/${pack}" ]; then
+              cp -R "packs/${pack}" "dist/${name}/packs/${pack}"
             else
               echo "::error::bundled default pack ${pack} not found"
               exit 1

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Run every action in a pack's test/cases.yaml.
 # Usage: harness.sh <pack-name>
-# Reads cases from /workspace/examples/packs/<pack>/test/cases.yaml
+# Reads cases from /packs/<pack>/test/cases.yaml
 # Exit 0 if every case passes, 1 otherwise.
 #
 # cases.yaml schema:
@@ -21,7 +21,7 @@ set -uo pipefail
 
 PACK="${1:?usage: harness.sh <pack-name>}"
 EMISAR="${EMISAR:-/opt/emisar/bin/emisar}"
-PACK_DIR="${PACK_DIR:-/workspace/examples/packs}"
+PACK_DIR="${PACK_DIR:-/packs}"
 CASES_FILE="$PACK_DIR/$PACK/test/cases.yaml"
 
 if [ ! -f "$CASES_FILE" ]; then

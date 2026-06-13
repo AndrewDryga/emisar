@@ -4,10 +4,11 @@
 #   runner  — minimal distroless-ish base + the binary + example packs
 #
 # Used in dev to test the runner against a local Phoenix server without
-# needing to install the binary on the host. Build context is the
-# runner module (runner/), so COPY paths are relative to that.
+# needing to install the binary on the host. Build context is the REPO
+# ROOT so the sibling packs/ dir is reachable; the runner source is
+# copied from runner/.
 #
-#   docker build -f runner/docker/Dockerfile -t emisar/runner runner/
+#   docker build -f runner/docker/Dockerfile -t emisar/runner .
 #   docker run --rm \
 #     -e EMISAR_AUTH_KEY=emkey-auth-... \
 #     -e EMISAR_URL=http://host.docker.internal:4000 \
@@ -21,11 +22,11 @@ FROM golang:1.26-alpine AS builder
 WORKDIR /src
 
 # Cache deps in a separate layer
-COPY go.mod go.sum ./
+COPY runner/go.mod runner/go.sum ./
 RUN go mod download
 
 # Source — the runner module's full source tree
-COPY . ./
+COPY runner/ ./
 
 # Strip symbols + omit DWARF for a smaller binary
 RUN CGO_ENABLED=0 GOOS=linux go build \
@@ -55,8 +56,8 @@ RUN apt-get update -y \
     && chown -R emisar:emisar /etc/emisar /var/lib/emisar /var/log/emisar /opt/emisar
 
 COPY --from=builder /out/emisar /usr/local/bin/emisar
-COPY --chown=emisar:emisar examples/packs /opt/emisar/packs
-COPY --chown=emisar:emisar docker/config.yaml /etc/emisar/config.yaml
+COPY --chown=emisar:emisar packs /opt/emisar/packs
+COPY --chown=emisar:emisar runner/docker/config.yaml /etc/emisar/config.yaml
 
 USER emisar
 WORKDIR /var/lib/emisar

@@ -1,7 +1,7 @@
 defmodule Emisar.Catalog.PackBaseline do
   @moduledoc """
   Compile-time baseline of canonical pack hashes for every pack shipped
-  in `runner/examples/packs/`.
+  in `packs/`.
 
   Used by `Catalog.observe_state/2` to decide what to do on first sight
   of a `(pack_id, version)`:
@@ -26,7 +26,7 @@ defmodule Emisar.Catalog.PackBaseline do
   """
 
   @packs_path System.get_env("EMISAR_PACKS_DIR") ||
-                Path.expand("../../../../../../runner/examples/packs", __DIR__)
+                Path.expand("../../../../../../packs", __DIR__)
 
   # The module is best-effort: if the packs dir is missing at compile
   # time (unusual CI layout), we ship with an empty baseline rather

@@ -16,6 +16,9 @@ services:
     image: emisar-runner-tools:latest
     volumes:
       - ../:/workspace:ro
+      # packs/ now lives at the repo root (sibling of runner/); mount it
+      # where the harness + runner config expect it.
+      - ../../packs:/packs:ro
       - ./bin:/opt/emisar/bin:ro
       - ./reports:/reports
       - /var/run/docker.sock:/var/run/docker.sock

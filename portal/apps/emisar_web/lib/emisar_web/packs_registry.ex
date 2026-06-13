@@ -6,8 +6,8 @@ defmodule EmisarWeb.PacksRegistry do
 
   ## Source of truth
 
-  The pack YAML files at `runner/examples/packs/<id>/pack.yaml` plus
-  `runner/examples/packs/<id>/actions/*.yaml`. This module walks that
+  The pack YAML files at `packs/<id>/pack.yaml` plus
+  `packs/<id>/actions/*.yaml`. This module walks that
   directory at compile time, parses every file with `YamlElixir`, and
   bakes the result into the BEAM module. **There is no hardcoded list.**
 
@@ -19,7 +19,7 @@ defmodule EmisarWeb.PacksRegistry do
 
   By default the packs dir is resolved relative to this module's
   source file (`apps/emisar_web/lib/emisar_web/packs_registry.ex` →
-  up 5 → repo root → `runner/examples/packs`). Override at compile
+  up 5 → repo root → `packs`). Override at compile
   time with `EMISAR_PACKS_DIR=/absolute/path` when building in a
   different layout (e.g. CI artifacts, Docker build).
   """
@@ -27,7 +27,7 @@ defmodule EmisarWeb.PacksRegistry do
   alias EmisarWeb.PacksRegistry.{Action, Pack}
 
   @repo_url "https://github.com/andrewdryga/emisar"
-  @packs_root "#{@repo_url}/tree/main/runner/examples/packs"
+  @packs_root "#{@repo_url}/tree/main/packs"
 
   # Ubiquitous helper binaries — present on nearly every host and used by
   # many packs only to TALK to a service (curl hits an HTTP API). They say
@@ -40,7 +40,7 @@ defmodule EmisarWeb.PacksRegistry do
   # -- Compile-time scan -----------------------------------------------
 
   @packs_path System.get_env("EMISAR_PACKS_DIR") ||
-                Path.expand("../../../../../runner/examples/packs", __DIR__)
+                Path.expand("../../../../../packs", __DIR__)
 
   unless File.dir?(@packs_path) do
     raise """
