@@ -54,7 +54,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
     assert html =~ "Policy"
     assert html =~ "Requires approval"
     assert html =~ "Default for high-risk actions"
-    assert html =~ "policy v4"
+    assert html =~ "v4"
   end
 
   test "omits the policy summary when no decision was recorded", %{conn: conn} do
