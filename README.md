@@ -66,12 +66,12 @@ install, and full operational commands.
 ## Quick start (dev / local)
 
 Commands run from the repo root. The runner is its own Go module under
-`runner/` (see [Repository layout](#repository-layout) below) — `make
-build` puts the binary at `bin/emisar`:
+`runner/` (see [Repository layout](#repository-layout) below); building it puts the binary at `bin/emisar`:
 
 ```sh
 # 1. Build the runner + MCP bridge
-make build
+(cd runner && go build -o ../bin/emisar .)
+(cd mcp && go build -o ../bin/emisar-mcp .)
 
 # 2. Validate the bundled example packs
 ./bin/emisar pack validate ./packs/linux-core
@@ -141,7 +141,6 @@ packs/                           action pack catalog (YAML) — linux-core, cass
 docs/                            architecture, security, action-packs, cloud-boundary, wire-protocol
 docker-compose.yml               Full local stack: Postgres, portal, seeder, and runners
 install.sh                       supervised install (systemd / launchd) — run against tarball
-Makefile                         dev orchestrator (build, test, lint across modules)
 ```
 
 ## License

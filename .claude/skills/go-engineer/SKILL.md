@@ -39,7 +39,7 @@ go mod tidy && git diff --exit-code go.mod go.sum
 go test -race -count=1 ./...
 ```
 
-Linux-only runner behavior (Pdeathsig, `/var/log` symlinks): `make test-linux`.
+Linux-only runner behavior (Pdeathsig, `/var/log` symlinks): build + run `runner/docker/Dockerfile.test` — `docker build -f runner/docker/Dockerfile.test -t emisar-test runner/ && docker run --rm emisar-test`.
 Show the output — never "should work". Don't pipe `go test`/`gofmt` through
 `head`/`tail` (the pipe's exit code masks the tool's).
 

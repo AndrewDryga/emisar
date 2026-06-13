@@ -6,8 +6,7 @@
 coverage.out
 
 # Stray dev binaries — `go build` from inside a module dir writes here
-# (named after the dir). Build the real ones via `make build`, which
-# puts them under /bin/.
+# (named after the dir). Build into /bin/ with `go build -o ../bin/…`.
 /runner/runner
 /mcp/mcp
 /mcp/bin/
@@ -17,7 +16,7 @@ coverage.out
 # Local runtime state from the example config
 /runner/examples/var/
 
-# Cross-compile output from `make build-all`
+# Cross-compile output (the release workflows' go build matrix)
 emisar-*-linux-*
 emisar-*-darwin-*
 
@@ -42,7 +41,6 @@ erl_crash.dump
 /.env
 
 docs/
-AUDIT.md
 
 # .agent/ is local working state — only rules/ (the shared taste KB) is committed.
 # Tasks, backlog, ideas, pending-decisions, log, archive all stay on the machine

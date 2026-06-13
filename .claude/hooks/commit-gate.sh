@@ -34,6 +34,6 @@ unformatted=$(gofmt -l -s "${go_files[@]}" 2>/dev/null)
 {
   echo "commit blocked — staged Go files are not gofmt-clean:"
   printf '%s\n' "$unformatted" | sed 's/^/  /'
-  echo "Fix: gofmt -w -s <files>  (or: make fmt), then re-stage and commit."
+  echo "Fix: gofmt -w -s <files>, then re-stage and commit."
 } >&2
 exit 2

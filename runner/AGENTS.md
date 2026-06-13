@@ -15,7 +15,7 @@ go mod tidy && git diff --exit-code go.mod go.sum   # tidy must be a no-op
 go test -race -count=1 ./...
 ```
 
-`make ci-local` (repo root) runs vet + fmt-check + shellcheck + test across both Go modules. Linux-only behavior (Pdeathsig, `/var/log` symlinks) verifies via `make test-linux` (Debian container). Run each as a standalone command — never pipe `go test`/`gofmt` through `head`/`tail`; the pipe's exit code masks the tool's.
+Run the same gate from `mcp/` for that module. Linux-only behavior (Pdeathsig, `/var/log` symlinks) verifies in a Debian container — `docker build -f runner/docker/Dockerfile.test -t emisar-test runner/ && docker run --rm emisar-test`. Run each as a standalone command — never pipe `go test`/`gofmt` through `head`/`tail`; the pipe's exit code masks the tool's.
 
 ## Architecture (where things live)
 
