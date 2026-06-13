@@ -1,9 +1,11 @@
 defmodule Emisar.Policies.Policy do
   @moduledoc """
-  The single policy bundle for an account. The DB enforces one row per
-  `account_id` via a unique index; there is no list view, no draft, no
-  versioning — operators edit this one row in place. The runner doesn't
-  see it; cloud evaluates the rules before sending `run_action`.
+  A policy bundle scoped to an account, a single runner, or a runner group.
+  Each `(account_id, scope_type, scope_value)` has at most one live row
+  (partial unique index). Dispatch resolves the MOST SPECIFIC scope (runner >
+  group > account) and evaluates it wholesale — a scoped policy fully replaces
+  the account default for that runner/group, it doesn't layer on top. The
+  runner never sees any of it; cloud evaluates the rules before `run_action`.
   """
   use Emisar, :schema
 
@@ -17,6 +19,12 @@ defmodule Emisar.Policies.Policy do
     # "run 123 was decided under policy v5" even after the rules map is
     # later modified.
     field :vsn, :integer, default: 1
+
+    # Scope this bundle applies to. `scope_value` is the runner_id for
+    # `:runner`, the group name for `:group`, and "" for the account default.
+    field :scope_type, Ecto.Enum, values: [:account, :runner, :group], default: :account
+    field :scope_value, :string, default: ""
+
     field :deleted_at, :utc_datetime_usec
 
     belongs_to :account, Emisar.Accounts.Account, where: [deleted_at: nil]

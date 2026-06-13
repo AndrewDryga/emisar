@@ -80,8 +80,70 @@ defmodule Emisar.Policies do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_policies_permission()) do
       Policy.Query.not_deleted()
+      |> Policy.Query.account_scope()
       |> Authorizer.for_subject(subject)
       |> Repo.fetch(Policy.Query)
+    end
+  end
+
+  @doc """
+  The account's runner/group policy overrides (every non-account scope),
+  newest scope grouping first. The account default is read via
+  `fetch_policy/1`; this is the list the editor shows beneath it.
+  """
+  def list_scoped_policies(%Subject{} = subject) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_policies_permission()) do
+      results =
+        Policy.Query.not_deleted()
+        |> Policy.Query.scoped_overrides()
+        |> Policy.Query.ordered_by_scope()
+        |> Authorizer.for_subject(subject)
+        |> Repo.all()
+
+      {:ok, results}
+    end
+  end
+
+  @doc """
+  Fetch one runner/group override by its scope, for the editor. `:not_found`
+  when no override exists for that scope yet (the form starts from the
+  account default in that case).
+  """
+  def fetch_scoped_policy(scope_type, scope_value, %Subject{} = subject)
+      when scope_type in [:runner, :group] do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_policies_permission()) do
+      Policy.Query.not_deleted()
+      |> Policy.Query.by_scope(scope_type, scope_value)
+      |> Authorizer.for_subject(subject)
+      |> Repo.fetch(Policy.Query)
+    end
+  end
+
+  @doc """
+  Soft-delete a runner/group override: that runner/group falls back to the
+  next-broader scope (group, then the account default) on the next dispatch.
+  The account default itself isn't deletable through this path.
+  """
+  def delete_scoped_policy(%Policy{scope_type: scope_type} = policy, %Subject{} = subject)
+      when scope_type in [:runner, :group] do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.manage_policies_permission()
+           ),
+         :ok <- Subject.ensure_in_account(subject, policy.account_id) do
+      Multi.new()
+      |> Multi.update(:policy, Policy.Changeset.delete(policy))
+      |> Multi.insert(:audit, fn %{policy: deleted} ->
+        Audit.Events.policy_scope_deleted(subject, deleted)
+      end)
+      |> Repo.commit_multi()
+      |> case do
+        {:ok, %{policy: deleted}} -> {:ok, deleted}
+        {:error, reason} -> {:error, reason}
+      end
     end
   end
 
@@ -93,28 +155,56 @@ defmodule Emisar.Policies do
   actually changed; the audit diff reads its before-snapshot as a step
   of the same transaction.
   """
-  def save_rules(rules, %Subject{account: %{id: account_id}, actor: %{id: user_id}} = subject) do
+  def save_rules(rules, %Subject{} = subject), do: upsert_policy(rules, :account, "", subject)
+
+  @doc """
+  Subject-gated save of a runner or group policy override. Upsert keyed on
+  `(account, scope)` — first save or edit, one live row per scope. The
+  runner_id / group name in `scope_value` is the override's identity;
+  dispatch resolution picks it over the account default for that runner/group.
+  """
+  def save_scoped_rules(rules, scope_type, scope_value, %Subject{} = subject)
+      when scope_type in [:runner, :group],
+      do: upsert_policy(rules, scope_type, scope_value, subject)
+
+  defp upsert_policy(
+         rules,
+         scope_type,
+         scope_value,
+         %Subject{account: %{id: account_id}, actor: %{id: user_id}} = subject
+       ) do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(
              subject,
              Authorizer.manage_policies_permission()
            ) do
       changeset =
-        Policy.Changeset.create(%{account_id: account_id, updated_by_id: user_id, rules: rules})
+        Policy.Changeset.create(%{
+          account_id: account_id,
+          updated_by_id: user_id,
+          rules: rules,
+          scope_type: scope_type,
+          scope_value: scope_value
+        })
 
       Multi.new()
-      |> Multi.run(:before, fn _repo, _changes -> {:ok, peek_policy_for_account(account_id)} end)
+      |> Multi.run(:before, fn _repo, _changes ->
+        {:ok, peek_scoped_policy(account_id, scope_type, scope_value)}
+      end)
       |> Multi.insert(:policy, changeset,
         # The conflict target must repeat the partial index's predicate
         # or Postgres won't match the soft-delete-aware unique index.
         on_conflict: Policy.Query.rules_upsert_conflict(),
-        conflict_target: {:unsafe_fragment, "(account_id) WHERE deleted_at IS NULL"},
+        conflict_target:
+          {:unsafe_fragment, "(account_id, scope_type, scope_value) WHERE deleted_at IS NULL"},
         returning: true
       )
       |> Multi.insert(:audit, fn %{before: before, policy: updated} ->
-        # First-ever save has no before-row; a bare %Policy{} makes the
-        # builder diff against the implicit defaults (rules nil → default_rules).
-        Audit.Events.policy_updated(subject, before || %Policy{}, updated)
+        # First-ever save of a scope has no before-row; a bare %Policy{}
+        # carrying the scope makes the builder diff against the implicit
+        # defaults (rules nil → default_rules).
+        before = before || %Policy{scope_type: scope_type, scope_value: scope_value}
+        Audit.Events.policy_updated(subject, before, updated)
       end)
       |> Repo.commit_multi()
       |> case do
@@ -153,6 +243,34 @@ defmodule Emisar.Policies do
   def peek_policy_for_account(account_id) do
     Policy.Query.not_deleted()
     |> Policy.Query.by_account_id(account_id)
+    |> Policy.Query.account_scope()
+    |> Repo.peek()
+  end
+
+  @doc """
+  Internal — the most specific policy governing a dispatch to `runner_id`
+  (in `group`): a policy scoped to that runner, else that group, else the
+  account default, else `nil` (no policy → `evaluate/3` default-denies).
+  One query fetches the ≤3 candidates; precedence (runner > group > account)
+  is resolved in memory. A scoped policy REPLACES the account default for
+  that runner/group — it isn't layered on top.
+  """
+  def resolve_policy(account_id, runner_id, group) do
+    candidates =
+      Policy.Query.not_deleted()
+      |> Policy.Query.by_account_id(account_id)
+      |> Policy.Query.resolvable_for(runner_id, group)
+      |> Repo.all()
+
+    Enum.find(candidates, &(&1.scope_type == :runner)) ||
+      Enum.find(candidates, &(&1.scope_type == :group)) ||
+      Enum.find(candidates, &(&1.scope_type == :account))
+  end
+
+  defp peek_scoped_policy(account_id, scope_type, scope_value) do
+    Policy.Query.not_deleted()
+    |> Policy.Query.by_account_id(account_id)
+    |> Policy.Query.by_scope(scope_type, scope_value)
     |> Repo.peek()
   end
 
@@ -205,8 +323,11 @@ defmodule Emisar.Policies do
   defp atomize("deny"), do: :deny
   defp atomize(_), do: :deny
 
-  def evaluate_with_policy(account_id, attrs) when is_binary(account_id) do
-    policy = peek_policy_for_account(account_id)
+  def evaluate_with_policy(account_id, attrs, group) when is_binary(account_id) do
+    # Resolve the runner/group override (or the account default) for this
+    # dispatch's runner; `group` is the runner's group, looked up by the
+    # caller (Runs) so Policies stays out of the Runners table.
+    policy = resolve_policy(account_id, attrs[:runner_id], group)
 
     # `evaluate/3` matches on `action_id` (override globs) + `risk` (tier
     # defaults) only. The catalog-authoritative `kind` in `attrs` is the

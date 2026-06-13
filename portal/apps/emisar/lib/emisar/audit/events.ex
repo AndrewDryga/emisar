@@ -555,11 +555,31 @@ defmodule Emisar.Audit.Events do
           subject_kind: "policy",
           subject_id: updated.id,
           payload: %{
+            scope_type: to_string(updated.scope_type),
+            scope_value: updated.scope_value,
             before: before_rules,
             after: after_rules,
             from_version: old.vsn,
             to_version: updated.vsn,
             changes: Policies.diff_rules(before_rules, after_rules)
+          }
+        ]
+    )
+  end
+
+  @doc "A runner/group policy override was removed — that scope falls back to the account default."
+  def policy_scope_deleted(%Subject{} = subject, %Policies.Policy{} = policy) do
+    Audit.changeset(
+      policy.account_id,
+      "policy.scope_deleted",
+      actor(subject) ++
+        [
+          subject_kind: "policy",
+          subject_id: policy.id,
+          payload: %{
+            scope_type: to_string(policy.scope_type),
+            scope_value: policy.scope_value,
+            rules: policy.rules
           }
         ]
     )

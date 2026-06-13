@@ -22,10 +22,11 @@ defmodule Emisar.Policies.Policy.Changeset do
 
   def create(attrs) do
     %Policy{}
-    |> cast(attrs, [:account_id, :rules, :updated_by_id])
+    |> cast(attrs, [:account_id, :rules, :updated_by_id, :scope_type, :scope_value])
     |> validate_required([:account_id, :rules])
+    |> validate_scope()
     |> validate_rules()
-    |> unique_constraint(:account_id)
+    |> unique_constraint([:account_id, :scope_type, :scope_value])
   end
 
   def update(%Policy{} = policy, attrs) do
@@ -34,6 +35,25 @@ defmodule Emisar.Policies.Policy.Changeset do
     |> validate_required([:rules])
     |> validate_rules()
     |> maybe_bump_vsn(policy)
+  end
+
+  # The account default carries an empty scope_value; a runner/group override
+  # requires the runner_id / group name that identifies it. Scope is set once
+  # at create and never edited (you delete the override instead).
+  defp validate_scope(changeset) do
+    case get_field(changeset, :scope_type) do
+      :account ->
+        put_change(changeset, :scope_value, "")
+
+      scope when scope in [:runner, :group] ->
+        validate_length(changeset, :scope_value,
+          min: 1,
+          message: "is required for a #{scope} policy"
+        )
+
+      _ ->
+        changeset
+    end
   end
 
   # Bump the version whenever the rules map actually changes. Pure

@@ -437,8 +437,9 @@ defmodule Emisar.Runs do
   # spoof "low" to bypass a `:require_approval` on `high`.
   defp evaluate_and_dispatch(attrs, account_id, action) do
     eval_attrs = Map.merge(attrs, %{risk: action.risk, kind: action.kind})
+    group = runner_group(attrs[:runner_id])
 
-    case Emisar.Policies.evaluate_with_policy(account_id, eval_attrs) do
+    case Emisar.Policies.evaluate_with_policy(account_id, eval_attrs, group) do
       {:deny, matched, reason, policy} ->
         dispatch_deny(attrs, policy, reason, matched)
 
@@ -447,6 +448,16 @@ defmodule Emisar.Runs do
 
       {:require_approval, matched, reason, policy} ->
         dispatch_require_approval(attrs, policy, reason, matched)
+    end
+  end
+
+  # The dispatch runner's group, so Policies can resolve a group-scoped
+  # override. nil for a runner with no group (or none found) — resolution
+  # then skips the group tier and falls through to the account default.
+  defp runner_group(runner_id) do
+    case Emisar.Runners.peek_runner_by_id(runner_id) do
+      %{group: group} -> group
+      nil -> nil
     end
   end
 
