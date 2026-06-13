@@ -31,14 +31,20 @@ defmodule EmisarWeb.ApprovalDetailLive do
 
         title = "Approval · " <> ((run && run.action_id) || String.slice(request.id, 0, 8))
 
+        # Display-only label lookups (requester / decider emails) — defer
+        # behind connected?/1 so they don't run on the dead render; they
+        # fall back to a placeholder until the socket connects.
+        requested_by = if connected?(socket), do: lookup_user(request.requested_by_id), else: nil
+        decided_by = if connected?(socket), do: lookup_user(request.decided_by_id), else: nil
+
         {:ok,
          socket
          |> assign(:page_title, title)
          |> assign(:request, request)
          |> assign(:run, run)
          |> assign(:runner_connection, runner_connection(run))
-         |> assign(:requested_by, lookup_user(request.requested_by_id))
-         |> assign(:decided_by, lookup_user(request.decided_by_id))
+         |> assign(:requested_by, requested_by)
+         |> assign(:decided_by, decided_by)
          |> assign(:decision_reason, "")
          # Tracks the duration the operator picked in the grant-reuse
          # disclosure. "once" (the default) means "no grant" — in that

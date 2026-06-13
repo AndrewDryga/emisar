@@ -19,7 +19,17 @@ defmodule EmisarWeb.RunDetailLive do
           Runs.subscribe_run(run.account_id, run.id)
         end
 
-        {:ok, events, _meta} = Runs.list_events_for_run(run.id, subject, page: [limit: 500])
+        # The event list (up to 500 rows) is secondary to the run itself and
+        # streamed — defer it behind connected?/1 so the dead render doesn't
+        # run the heavy read a second time (same pattern as run_new_live).
+        events =
+          if connected?(socket) do
+            {:ok, evts, _meta} = Runs.list_events_for_run(run.id, subject, page: [limit: 500])
+            evts
+          else
+            []
+          end
+
         approval_request = lookup_approval(subject, run)
 
         {:ok,
