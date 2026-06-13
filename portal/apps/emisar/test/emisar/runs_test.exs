@@ -879,4 +879,48 @@ defmodule Emisar.RunsTest do
       assert :ok = Runs.recheck_run_pack_trust(run.id)
     end
   end
+
+  describe "dispatch_run input validation" do
+    test "rejects a missing action_id with :action_required" do
+      account = account_fixture()
+      runner = runner_fixture(account_id: account.id)
+      subject = subject_for(user_fixture(), account, role: :owner)
+
+      attrs = %{runner_id: runner.id, reason: "x", source: "operator", args: %{}}
+      assert {:error, :action_required} = Runs.dispatch_run(attrs, subject)
+    end
+
+    test "rejects a missing reason with :reason_required" do
+      account = account_fixture()
+      runner = runner_fixture(account_id: account.id)
+      subject = subject_for(user_fixture(), account, role: :owner)
+
+      attrs = %{runner_id: runner.id, action_id: "linux.uptime", source: "operator", args: %{}}
+      assert {:error, :reason_required} = Runs.dispatch_run(attrs, subject)
+    end
+  end
+
+  describe "list_recent_runs/2 with preloads" do
+    test "applies the :runner and :api_key preloads" do
+      {_user, account, subject} = owner_subject_fixture()
+      runner = runner_fixture(account_id: account.id)
+      {:ok, _run} = Runs.create_run(base_attrs(account.id, runner.id))
+
+      assert {:ok, [run], _meta} =
+               Runs.list_recent_runs(subject, preload: [:runner, :api_key], limit: 8)
+
+      assert run.runner.id == runner.id
+    end
+  end
+
+  describe "runner-event ingestion error paths" do
+    test "append_event/2 with an unknown run id returns :unknown_run" do
+      assert {:error, :unknown_run} =
+               Runs.append_event(Repo.generate_id(), %{seq: 1, kind: "progress", payload: %{}})
+    end
+
+    test "finalize_from_result with no request_id returns :missing_request_id" do
+      assert {:error, :missing_request_id} = Runs.finalize_from_result("runner-123", %{})
+    end
+  end
 end
