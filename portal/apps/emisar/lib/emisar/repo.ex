@@ -268,7 +268,7 @@ defmodule Emisar.Repo do
   end
 
   # Every Multi that includes an audit-event step (via `Audit.changeset`
-  # or `Audit.Multi.log`) auto-broadcasts each row to the account-wide
+  # or `Audit.Multi.log_for_user`) auto-broadcasts each row to the account-wide
   # `:audit` topic once the transaction commits. AuditLive subscribes
   # there and reloads, so the live audit log stays current without each
   # context having to remember to broadcast.

@@ -3,7 +3,7 @@ defmodule Emisar.Repo.FilterTest do
   `Repo.Filter.validate_value/2` is the type + allowed-value gate every
   LiveTable filter passes through — the boundary where URL-supplied filter
   params are checked before they reach the query, so type confusion can't
-  slip in. `merge_dynamic/3` combines the per-filter conditions. Both pure.
+  slip in. `merge_dynamic/2` combines the per-filter conditions. Both pure.
   """
   use ExUnit.Case, async: true
 
