@@ -54,6 +54,23 @@ defmodule Emisar.RunbooksTest do
     for n <- 1..count, do: %{"id" => "step#{n}", "action_id" => "linux.uptime", "args" => %{}}
   end
 
+  defp draft_with_steps(subject, steps) do
+    title = "rb-#{System.unique_integer([:positive])}"
+
+    {:ok, runbook} =
+      Runbooks.create_runbook(
+        %{
+          "title" => title,
+          "name" => title,
+          "slug" => title,
+          "definition" => %{"steps" => steps}
+        },
+        subject
+      )
+
+    runbook
+  end
+
   defp finish!(run), do: {:ok, _} = Runs.mark_finished(run, %{"status" => "success"})
 
   defp execution_runs(account, execution_id),
@@ -312,6 +329,40 @@ defmodule Emisar.RunbooksTest do
                )
 
       assert %{slug: ["has invalid format"]} = errors_on(changeset)
+    end
+  end
+
+  describe "publish step validation" do
+    test "a draft saves with an incomplete (blank-action) step — WIP is allowed" do
+      {_user, _account, subject} = owner_subject_fixture()
+      draft = draft_with_steps(subject, [%{"id" => "s1", "action_id" => "", "args" => %{}}])
+      assert draft.status == :draft
+    end
+
+    test "publishing a blank-action step is rejected" do
+      {_user, _account, subject} = owner_subject_fixture()
+      draft = draft_with_steps(subject, [%{"id" => "s1", "action_id" => "", "args" => %{}}])
+
+      assert {:error, %Ecto.Changeset{} = changeset} = Runbooks.publish(draft, subject)
+      assert "every step needs an action before publishing" in errors_on(changeset).definition
+    end
+
+    test "publishing an empty runbook is rejected" do
+      {_user, _account, subject} = owner_subject_fixture()
+      draft = draft_with_steps(subject, [])
+
+      assert {:error, %Ecto.Changeset{} = changeset} = Runbooks.publish(draft, subject)
+      assert "add at least one step before publishing" in errors_on(changeset).definition
+    end
+
+    test "publishing valid steps succeeds" do
+      {_user, _account, subject} = owner_subject_fixture()
+
+      draft =
+        draft_with_steps(subject, [%{"id" => "s1", "action_id" => "linux.uptime", "args" => %{}}])
+
+      assert {:ok, runbook} = Runbooks.publish(draft, subject)
+      assert runbook.status == :published
     end
   end
 end

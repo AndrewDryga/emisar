@@ -72,6 +72,46 @@ defmodule Emisar.Runbooks.Runbook.Changeset do
     |> validate_required([:account_id, :name, :slug, :title, :definition])
     |> validate_length(:name, min: 1, max: 80)
     |> validate_format(:slug, ~r/^[a-z][a-z0-9_-]{0,79}$/)
+    |> validate_publishable_steps()
     |> unique_constraint([:account_id, :slug, :version])
+  end
+
+  # A draft can be an unfinished work-in-progress, but a *published* runbook
+  # must actually run: a step with a blank action otherwise publishes fine and
+  # only blows up mid-fan-out at dispatch (step_attrs hands a nil action_id to
+  # dispatch_run — the worst place to find out). The empty-list case is the
+  # dispatch-time :empty_runbook guard pulled forward to save. Surfaced on
+  # :definition (no field input) via the editor's save_error_message/1.
+  #
+  # We do NOT require a per-step runner target: the engine resolves targets at
+  # dispatch (execution-level), not per step, so a step with an empty
+  # runner_selector still runs fine. Validating it would reject legitimate
+  # runbooks. (That the editor offers a per-step target the engine ignores is a
+  # separate cleanup — see BACKLOG.)
+  # `get_field` (not validate_change): publish changes only :status, so the
+  # existing :definition isn't in `changes` — we must validate its current
+  # value, not just an on-change edit.
+  defp validate_publishable_steps(changeset) do
+    if get_field(changeset, :status) == :published do
+      case publishable_steps_error(get_field(changeset, :definition)) do
+        nil -> changeset
+        message -> add_error(changeset, :definition, message)
+      end
+    else
+      changeset
+    end
+  end
+
+  defp publishable_steps_error(%{"steps" => steps}) when is_list(steps) and steps != [] do
+    if Enum.any?(steps, &blank_step_action?/1),
+      do: "every step needs an action before publishing",
+      else: nil
+  end
+
+  defp publishable_steps_error(_), do: "add at least one step before publishing"
+
+  defp blank_step_action?(step) do
+    action = step["action_id"] || step["action"]
+    not (is_binary(action) and String.trim(action) != "")
   end
 end
