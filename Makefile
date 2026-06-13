@@ -59,6 +59,13 @@ vet:
 	cd runner && $(GO) vet ./...
 	cd mcp    && $(GO) vet ./...
 
+# Blocking static-analysis gate (dead code, bugs). Pin matches CI.
+.PHONY: staticcheck
+staticcheck:
+	@command -v staticcheck >/dev/null 2>&1 || { echo "staticcheck not installed (go install honnef.co/go/tools/cmd/staticcheck@2026.1)"; exit 1; }
+	cd runner && staticcheck ./...
+	cd mcp    && staticcheck ./...
+
 .PHONY: shellcheck
 shellcheck:
 	@command -v shellcheck >/dev/null 2>&1 || { echo "shellcheck not installed (brew install shellcheck)"; exit 1; }
@@ -78,7 +85,7 @@ fmt-check:
 
 # Mirror of the CI checks. Run before pushing a branch.
 .PHONY: ci-local
-ci-local: vet fmt-check shellcheck test
+ci-local: vet fmt-check shellcheck staticcheck test
 
 .PHONY: clean
 clean:

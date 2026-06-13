@@ -111,6 +111,15 @@ jobs:
             echo "::warning::govulncheck reported findings — review and update deps"
           fi
 
+      - name: staticcheck
+        # Blocking lint gate (unlike govulncheck above): dead code / SA findings
+        # fail CI so the Go audit's clean reading can't silently regress. Pinned
+        # (not @latest) so a staticcheck release can't rebreak CI unexpectedly.
+        working-directory: runner
+        run: |
+          go install honnef.co/go/tools/cmd/staticcheck@2026.1
+          staticcheck ./...
+
   test:
     name: test (race)
     runs-on: ubuntu-latest
