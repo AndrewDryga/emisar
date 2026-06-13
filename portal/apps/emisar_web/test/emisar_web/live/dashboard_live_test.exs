@@ -6,6 +6,23 @@ defmodule EmisarWeb.DashboardLiveTest do
       assert {:error, {:redirect, %{to: "/sign_in"}}} = live(conn, ~p"/app")
     end
 
+    test "logs out and redirects a fully-suspended user", %{conn: conn} do
+      {conn, user, _account} = register_and_log_in(conn)
+
+      # Suspend the user's only membership: the session can no longer resolve
+      # an account, and all-suspended means access is revoked (not onboarding),
+      # so the auth pipeline signs them out with a flash.
+      {1, _} =
+        Emisar.Accounts.Membership.Query.all()
+        |> Emisar.Accounts.Membership.Query.by_user_id(user.id)
+        |> Emisar.Repo.update_all(set: [disabled_at: DateTime.utc_now()])
+
+      assert {:error, {:redirect, %{to: "/sign_in", flash: %{"error" => message}}}} =
+               live(conn, ~p"/app")
+
+      assert message =~ "suspended"
+    end
+
     test "unconfirmed users see the verify-email banner and can resend", %{conn: conn} do
       {conn, user, _account} = register_and_log_in(conn)
       # register_and_log_in confirms by default — simulate the unverified state.
