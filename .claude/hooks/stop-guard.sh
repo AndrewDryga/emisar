@@ -4,8 +4,9 @@
 # INERT BY DEFAULT so it never nags an interactive session. It enforces ONLY when
 # a batch is explicitly active — the sentinel file .claude/.batch-active exists.
 # During a batch it blocks Stop (exit 2) while any project's .agent/TASKS.md still
-# has an open `- [ ]` item. `- [B]` (blocked) items do NOT count — they've been
-# triaged to PENDING_DECISIONS.md.
+# has an open `- [ ]` item. `- [w]` (claimed/in-progress) and `- [B]` (blocked) do
+# NOT count — a `- [w]` is a live claim held by some agent (it resolves to [x], or
+# back to [ ] if abandoned); a `- [B]` is triaged to PENDING_DECISIONS.md.
 #
 # Escapes (any one clears the gate): finish the task, mark it `- [B]` and add a
 # PENDING_DECISIONS.md entry, or end the batch with `rm .claude/.batch-active`.
