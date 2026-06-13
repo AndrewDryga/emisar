@@ -15,7 +15,9 @@ functions** — consistency over preference.
 Every public function, no exceptions: `%Subject{}` is the **last required
 positional arg** (IL-3) → `Auth.Authorizer.ensure_has_permissions/2` before any
 DB touch → `Authorizer.for_subject` immediately before the `Repo` call (IL-4) →
-**tagged tuple** out, never a bare struct/`nil` (IL-5).
+**tagged tuple** out, never a bare struct/`nil` (IL-5). Give it a `@doc` stating
+that contract — the permission it requires + the return shape, not narration
+(`.agent/rules/doc-contract.md`) — as you write it, not in a later pass.
 
 ## Choose the shape
 

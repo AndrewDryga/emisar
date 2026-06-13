@@ -32,7 +32,7 @@ The per-layer rules + module templates are **`portal/AGENTS.md` §1–§5** — 
 3. **Query** — `lib/emisar/<context>/<schema>/query.ex` — `all/0` named binding, `not_deleted/1`, `by_id/2`, `by_account_id/2`, plus `cursor_fields/0`/`filters/0` as needed (§2, IL-6).
 4. **Changeset** — `lib/emisar/<context>/<schema>/changeset.ex` — one function per transition, pure, private `changeset/1` for shared validations (§4, IL-8).
 5. **Authorizer** — `lib/emisar/<context>/authorizer.ex` — `build(<Schema>, :view|:manage)` accessors; `list_permissions_for_role/1` over the real roles **`:owner, :admin, :operator, :viewer, :api_client, :runner`** (there is **no `:system`**) + `_ -> []`; `for_subject/2` = account-scope + `_` fallback (§5, IL-9).
-6. **Context** — `lib/emisar/<context>.ex` — the public API (§1, IL-1…IL-5).
+6. **Context** — `lib/emisar/<context>.ex` — the public API (§1, IL-1…IL-5); `@doc` each public fn with its contract — permission + return shape, not narration — and the `@moduledoc` names it the authorization boundary for the domain (`.agent/rules/doc-contract.md`).
 7. **Tests** — `test/emisar/<context>_test.exs` (skeleton below).
 
 ## Wiring (the part AGENTS.md doesn't show)
