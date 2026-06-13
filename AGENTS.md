@@ -80,7 +80,8 @@ A correction that only fixes the flagged line *will* be repeated. This pipeline 
 
 - **Instructions** — `AGENTS.md` is canonical. Codex reads it natively; Claude reads it through the `CLAUDE.md` symlink at each level (root + every project).
 - **State + rules** — `.agent/` is read and written identically by both tools.
-- **Enforcement** (Claude hooks under `.claude/`) and **commands** (Claude skills under `.claude/skills/`, Codex prompts) are per-tool wrappers: the *logic* lives in shared scripts (the project gate, the hooks) and the *knowledge* in `.agent/` + `AGENTS.md`. Never duplicate knowledge into a tool-specific file.
+- **Skills / commands** — one source: `.claude/skills/`. Claude reads it natively; Codex reads the **same files** via the `.codex/skills` → `../.claude/skills` symlink (Codex auto-discovers a project-level `.codex/skills/` and ignores Claude's extra frontmatter). No per-tool skill copies.
+- **Enforcement** — Claude hooks under `.claude/` (Stop, commit-gate); the *logic* lives in shared scripts so CI or another tool can reuse it. This layer is genuinely per-tool (Codex has no hook equivalent) — never duplicate *knowledge* into it.
 
 ---
 
@@ -91,4 +92,4 @@ Two kinds:
 - **Generic hats** — `/product-manager`, `/ux-designer`, `/security-engineer`, `/seo-marketing`, `/plan`, `/work` — apply repo-wide regardless of language. Wear one when a change leans hard on its domain.
 - **Per-product engineering skills** — language-specific. The Elixir set (`/context-fn`, `/new-context`, `/iron-review`, `/oban`, `/perf`, `/testing`, …) is **portal-only**. Go work in `runner/`/`mcp/` uses the Go engineering skill plus that project's `AGENTS.md`.
 
-Skills are thin entry points — the durable rules they apply live in `AGENTS.md` and `.agent/rules/`, so a Codex prompt can point at the same knowledge.
+Skills are thin entry points — the durable rules they apply live in `AGENTS.md` and `.agent/rules/`. Both tools share the **same** skill files: Claude via `.claude/skills/`, Codex via the `.codex/skills` → `../.claude/skills` symlink (auto-discovered when Codex runs in the repo).
