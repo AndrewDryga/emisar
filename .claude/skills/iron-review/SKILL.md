@@ -18,23 +18,9 @@ tree (`git diff` + untracked). A path or git ref narrows it.
 Read-only by default. With `--fix`, apply only the unambiguous mechanical fixes
 (see end) and re-verify; never "fix" a judgment finding without showing it first.
 
-## Step 1 — mechanical greps (run from `portal/apps/emisar/lib/emisar/`)
+## Step 1 — mechanical checks (Credo)
 
-Each is **zero hits on a clean tree**. The globs exclude the Query/Repo machinery; the `(^|[^.\w])` prefix stops `Path.join`/`Enum.join`/`Repo.preload`/Swoosh `from` from false-positiving.
-
-```sh
-# IL-1: import Ecto.Query outside Query/Repo modules
-rg 'import Ecto\.Query' -g '!**/query.ex' -g '!**/repo.ex' -g '!repo/**' -g '!**/user_token.ex' .
-# IL-2: Repo.get/get!/get_by
-rg '\bRepo\.(get|get!|get_by)\b' .
-# IL-1: inline Ecto DSL outside Query/Repo (unqualified macros only; Repo.preload is qualified, so allowed by IL-10 and won't match)
-rg '(^|[^.\w])(from|where|order_by|join|select|preload|limit|lock|group_by|having|distinct|offset)\(' \
-   -g '!**/query.ex' -g '!**/repo.ex' -g '!repo/**' -g '!**/user_token.ex' -g '!mailers/**' .
-# IL-6 / IL-8: Repo.<fn> CALLS inside a query/changeset module (Repo.Query/Repo.Filter module refs are fine)
-rg '\bRepo\.[a-z]' -g '**/query.ex' -g '**/changeset.ex' -g '!repo/**' .
-# IL-12: :float money field (schema fields + migrations)
-rg '(field|add) :(price|amount|cost|total|balance|fee|rate|charge|payment|budget|revenue|tax|cents|money)[a-z_]*, :float' . ../../priv/repo/migrations
-```
+Run `mix credo` from `portal/` and treat every finding as a failure — fix them all before reading further. The custom `Emisar.Checks.*` AST checks are the mechanical source of truth (IL-1, IL-2, IL-6, IL-7, IL-8, IL-12, IL-13, IL-14 + the house rules) and **replaced the old hand-grep battery**, so there is nothing to grep by hand. Details: `portal/AGENTS.md` → Enforcement.
 
 ## Step 2 — judgment checks (read the changed bodies)
 
@@ -88,7 +74,7 @@ to need a stream?) are SUGGESTIONS with the question stated, not BLOCKERS.
 Apply without asking only the unambiguous, behavior-preserving rewrites:
 `Repo.get(X, id)` → `Schema.Query.by_id/2` + `Repo.fetch/3`; `:float`→`:decimal` on
 a money field; moving an inline `where`/`order_by`/`join` into the Schema.Query
-module. Re-run Step 1 and `mix compile` after. Everything else — a missing
+module. Re-run `mix credo` and `mix compile` after. Everything else — a missing
 `for_subject` scope, a `String.to_atom`, a `raw/1`, any authz-shape gap — is
 **report-only**: it needs a human to confirm intent/source first (e.g.
 `String.to_existing_atom` raises if the atom was never defined).

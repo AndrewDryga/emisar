@@ -25,23 +25,15 @@ for what is really one new function — use `/context-fn` instead.
 
 ## Files to create (in this order)
 
-1. **Migration** — `priv/repo/migrations/<ts>_create_<table>.exs`
-   - `binary_id` PK/FKs (schemas `use Emisar, :schema` → UUIDv7). `add :deleted_at, :utc_datetime_usec` if soft-deletable.
-   - Every `belongs_to` gets a FK + index. Add the `unique_constraint` indexes the changeset relies on (e.g. `[:account_id, :slug]`).
-   - IL-12: money is `:decimal`/`:integer`, never `:float`.
-   - IL-11: this is greenfield — if you change the shape later, **edit this migration**, don't stack a corrective one (unless prod already ran it).
+The per-layer rules + module templates are **`portal/AGENTS.md` §1–§5** — read them and copy `Runbooks` (the cleanest reference) rather than restating shapes here. Create, in order:
 
-2. **Schema** — `lib/emisar/<context>/<schema>.ex` (`use Emisar, :schema`). Fields + associations ONLY (IL-7).
-
-3. **Query** — `lib/emisar/<context>/<schema>/query.ex` (`use Emisar, :query`). `all/0` with a named binding, `not_deleted/1`, `by_id/2`, `by_account_id/2`, plus `cursor_fields/0` if it paginates and `filters/0` if the LiveTable filters it (IL-6).
-
-4. **Changeset** — `lib/emisar/<context>/<schema>/changeset.ex` (`use Emisar, :changeset`). One function per transition; pure; private `changeset/1` for shared validations (IL-8).
-
-5. **Authorizer** — `lib/emisar/<context>/authorizer.ex` (`use Emisar.Auth.Authorizer`). `build(<Schema>, :view|:manage)` accessors; `list_permissions_for_role/1` clausing **`:owner, :admin, :operator, :viewer, :api_client, :system`** + `_ -> []`; `for_subject/2` with the `:system` bypass, account-scope, and `_` fallback (IL-9).
-
-6. **Context** — `lib/emisar/<context>.ex`. The public API. Every fn: `%Subject{}` last required arg → `ensure_has_permissions` → `Query` pipeline → `Authorizer.for_subject` → `Repo.fetch/list/fetch_and_update` → tagged tuple (IL-1…IL-5).
-
-7. **Tests** — `test/emisar/<context>_test.exs` (see skeleton below).
+1. **Migration** — `priv/repo/migrations/<ts>_create_<table>.exs`: `binary_id` PK/FKs, `add :deleted_at, :utc_datetime_usec` if soft-deletable, an index per `belongs_to` + the `unique_constraint` indexes the changeset relies on (e.g. `[:account_id, :slug]`). IL-12 (money `:decimal`/`:integer`, never `:float`) and IL-11 (greenfield — edit this migration later, don't stack a corrective one unless prod already ran it) apply.
+2. **Schema** — `lib/emisar/<context>/<schema>.ex` — fields + associations only (§3, IL-7).
+3. **Query** — `lib/emisar/<context>/<schema>/query.ex` — `all/0` named binding, `not_deleted/1`, `by_id/2`, `by_account_id/2`, plus `cursor_fields/0`/`filters/0` as needed (§2, IL-6).
+4. **Changeset** — `lib/emisar/<context>/<schema>/changeset.ex` — one function per transition, pure, private `changeset/1` for shared validations (§4, IL-8).
+5. **Authorizer** — `lib/emisar/<context>/authorizer.ex` — `build(<Schema>, :view|:manage)` accessors; `list_permissions_for_role/1` over the real roles **`:owner, :admin, :operator, :viewer, :api_client, :runner`** (there is **no `:system`**) + `_ -> []`; `for_subject/2` = account-scope + `_` fallback (§5, IL-9).
+6. **Context** — `lib/emisar/<context>.ex` — the public API (§1, IL-1…IL-5).
+7. **Tests** — `test/emisar/<context>_test.exs` (skeleton below).
 
 ## Wiring (the part AGENTS.md doesn't show)
 
