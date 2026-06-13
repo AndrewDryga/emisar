@@ -603,4 +603,105 @@ defmodule Emisar.AccountsTest do
       assert switched.subject_label == owner.email
     end
   end
+
+  describe "update_user_as_admin/3" do
+    test "an owner renames a member's profile" do
+      account = account_fixture()
+      owner = user_fixture()
+      _ = membership_fixture(account_id: account.id, user_id: owner.id, role: "owner")
+      target = user_fixture()
+
+      membership =
+        membership_fixture(account_id: account.id, user_id: target.id, role: "operator")
+
+      subject = subject_for(owner, account, role: :owner)
+
+      assert {:ok, %User{full_name: "Renamed By Admin"}} =
+               Accounts.update_user_as_admin(
+                 membership,
+                 %{"full_name" => "Renamed By Admin"},
+                 subject
+               )
+    end
+
+    test "a viewer (no manage_team) is refused" do
+      account = account_fixture()
+      _ = membership_fixture(account_id: account.id, user_id: user_fixture().id, role: "owner")
+      target = user_fixture()
+
+      membership =
+        membership_fixture(account_id: account.id, user_id: target.id, role: "operator")
+
+      viewer = user_fixture()
+      _ = membership_fixture(account_id: account.id, user_id: viewer.id, role: "viewer")
+      subject = subject_for(viewer, account, role: :viewer)
+
+      assert {:error, :unauthorized} =
+               Accounts.update_user_as_admin(membership, %{"full_name" => "x"}, subject)
+    end
+
+    test "an owner of another account can't edit this member (cross-account)" do
+      account = account_fixture()
+      _ = membership_fixture(account_id: account.id, user_id: user_fixture().id, role: "owner")
+      target = user_fixture()
+
+      membership =
+        membership_fixture(account_id: account.id, user_id: target.id, role: "operator")
+
+      {_owner_b, _account_b, subject_b} = owner_subject_fixture()
+
+      # This path passes :unauthorized to ensure_subject_in_account (the team
+      # UI already scoped the membership), so cross-account is :unauthorized.
+      assert {:error, :unauthorized} =
+               Accounts.update_user_as_admin(membership, %{"full_name" => "x"}, subject_b)
+    end
+  end
+
+  describe "end_all_sessions_for/2" do
+    test "an owner force-signs-out a member everywhere" do
+      account = account_fixture()
+      owner = user_fixture()
+      _ = membership_fixture(account_id: account.id, user_id: owner.id, role: "owner")
+      target = user_fixture()
+
+      membership =
+        membership_fixture(account_id: account.id, user_id: target.id, role: "operator")
+
+      subject = subject_for(owner, account, role: :owner)
+
+      token = Emisar.Auth.create_session_token!(target)
+      assert {:ok, %User{}} = Emisar.Auth.fetch_user_by_session_token(token)
+
+      assert :ok = Accounts.end_all_sessions_for(membership, subject)
+      assert {:error, :not_found} = Emisar.Auth.fetch_user_by_session_token(token)
+    end
+
+    test "a viewer (no manage_team) is refused" do
+      account = account_fixture()
+      _ = membership_fixture(account_id: account.id, user_id: user_fixture().id, role: "owner")
+      target = user_fixture()
+
+      membership =
+        membership_fixture(account_id: account.id, user_id: target.id, role: "operator")
+
+      viewer = user_fixture()
+      _ = membership_fixture(account_id: account.id, user_id: viewer.id, role: "viewer")
+      subject = subject_for(viewer, account, role: :viewer)
+
+      assert {:error, :unauthorized} = Accounts.end_all_sessions_for(membership, subject)
+    end
+
+    test "an owner of another account can't end this member's sessions (cross-account)" do
+      account = account_fixture()
+      _ = membership_fixture(account_id: account.id, user_id: user_fixture().id, role: "owner")
+      target = user_fixture()
+
+      membership =
+        membership_fixture(account_id: account.id, user_id: target.id, role: "operator")
+
+      {_owner_b, _account_b, subject_b} = owner_subject_fixture()
+
+      assert {:error, :unauthorized} = Accounts.end_all_sessions_for(membership, subject_b)
+    end
+  end
 end
