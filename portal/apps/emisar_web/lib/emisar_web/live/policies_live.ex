@@ -1,13 +1,19 @@
 defmodule EmisarWeb.PoliciesLive do
   @moduledoc """
-  Policy editor with a scope switcher. The same two-section editor
-  (risk-tier defaults + per-action overrides) edits one policy at a
-  time: the account default, or a per-runner / per-group override.
+  Policy editor. One page, everything live-editable:
 
-  A runner or group override **replaces** the account policy for that
-  scope — most specific wins (runner > group > account), it doesn't
-  layer on top. New overrides start from the account default's rules as
-  a convenient baseline, then the operator tweaks from there.
+    * **Account policy** — the base. Risk-tier defaults + per-action
+      overrides. Applies to every runner.
+    * **Targeted rulesets** — an inline list of per-runner / per-group
+      policies. Add one, pick a runner or group, edit its rules. A ruleset
+      **replaces** the account policy for that target (most specific wins:
+      runner > group > account), it doesn't layer on top — so what a card
+      shows is exactly what runs there.
+
+  Each card is its own form with its own Save (a scoped ruleset is its own
+  policy row, version, and audit entry). Events carry an `editor`
+  discriminator — `"account"` or a ruleset uid — so one set of handlers
+  drives every card.
   """
   use EmisarWeb, :live_view
 
@@ -20,14 +26,12 @@ defmodule EmisarWeb.PoliciesLive do
 
   def mount(_params, _session, socket) do
     socket = assign(socket, page_title: "Policy", loading?: not connected?(socket))
-    {:ok, if(connected?(socket), do: load_scope(socket, :account, ""), else: socket)}
+    {:ok, if(connected?(socket), do: load_all(socket), else: socket)}
   end
 
-  # Load everything the page needs for the active scope: the scope's
-  # policy (or a fresh form seeded from the account default for a not-yet-
-  # saved override), plus the runner/group pickers and the list of existing
-  # overrides that drive the switcher.
-  defp load_scope(socket, scope_type, scope_value) do
+  # Load every editor the page needs: the account policy, the existing
+  # runner/group rulesets, and the runner/group pickers new rulesets target.
+  defp load_all(socket) do
     subject = socket.assigns.current_subject
 
     account_policy =
@@ -36,36 +40,57 @@ defmodule EmisarWeb.PoliciesLive do
         {:error, _} -> nil
       end
 
-    account_rules = (account_policy && account_policy.rules) || Policies.default_rules()
-
-    {policy, rules} =
-      active_policy(scope_type, scope_value, account_policy, account_rules, subject)
-
-    defaults = normalize_defaults(rules["defaults"])
-    overrides = normalize_overrides(rules["overrides"])
-
     socket
     |> assign(:loading?, false)
-    |> assign(:scope_type, scope_type)
-    |> assign(:scope_value, scope_value)
-    |> assign(:policy, policy)
+    |> assign(:can_manage?, Policies.subject_can_manage_policies?(subject))
+    |> assign(:account, build_account_editor(account_policy))
+    |> assign(:rulesets, Enum.map(list_scoped(subject), &build_ruleset_editor/1))
     |> assign(:runners, list_runners(subject))
     |> assign(:groups, list_groups(subject))
-    |> assign(:scoped_policies, list_scoped(subject))
-    |> assign(:defaults, defaults)
-    |> assign(:overrides, overrides)
-    |> assign_form(Policies.change_policy(to_rules(defaults, overrides)))
   end
 
-  defp active_policy(:account, _value, account_policy, account_rules, _subject),
-    do: {account_policy, account_rules}
+  defp build_account_editor(policy) do
+    rules = (policy && policy.rules) || Policies.default_rules()
 
-  defp active_policy(scope, value, _account_policy, account_rules, subject) do
-    case Policies.fetch_scoped_policy(scope, value, subject) do
-      {:ok, policy} -> {policy, policy.rules}
-      # No row yet — a new override, seeded from the account baseline.
-      {:error, _} -> {nil, account_rules}
-    end
+    %{
+      uid: "account",
+      scope_type: :account,
+      scope_value: "",
+      defaults: normalize_defaults(rules["defaults"]),
+      overrides: normalize_overrides(rules["overrides"]),
+      policy: policy,
+      rules_errors: []
+    }
+  end
+
+  defp build_ruleset_editor(%Policies.Policy{} = policy) do
+    rules = policy.rules || Policies.default_rules()
+
+    %{
+      uid: policy.id,
+      scope_type: policy.scope_type,
+      scope_value: policy.scope_value,
+      defaults: normalize_defaults(rules["defaults"]),
+      overrides: normalize_overrides(rules["overrides"]),
+      policy: policy,
+      rules_errors: []
+    }
+  end
+
+  # A blank, not-yet-targeted ruleset, seeded from the account policy so the
+  # operator tweaks the live posture rather than starting from an empty one —
+  # important under replace-semantics, where a ruleset that dropped the
+  # account's deny-overrides would silently widen access for that target.
+  defp new_ruleset(account) do
+    %{
+      uid: "new-" <> Integer.to_string(System.unique_integer([:positive])),
+      scope_type: nil,
+      scope_value: "",
+      defaults: account.defaults,
+      overrides: account.overrides,
+      policy: nil,
+      rules_errors: []
+    }
   end
 
   defp list_runners(subject) do
@@ -91,133 +116,206 @@ defmodule EmisarWeb.PoliciesLive do
 
   # -- Events ---------------------------------------------------------
 
-  def handle_event("switch_scope", %{"scope" => "account"}, socket),
-    do: {:noreply, load_scope(socket, :account, "")}
-
-  def handle_event("switch_scope", %{"scope" => "runner", "value" => value}, socket),
-    do: {:noreply, load_scope(socket, :runner, value)}
-
-  def handle_event("switch_scope", %{"scope" => "group", "value" => value}, socket),
-    do: {:noreply, load_scope(socket, :group, value)}
-
-  def handle_event("add_runner_scope", %{"runner_id" => ""}, socket), do: {:noreply, socket}
-
-  def handle_event("add_runner_scope", %{"runner_id" => id}, socket),
-    do: {:noreply, load_scope(socket, :runner, id)}
-
-  def handle_event("add_group_scope", %{"group" => ""}, socket), do: {:noreply, socket}
-
-  def handle_event("add_group_scope", %{"group" => group}, socket),
-    do: {:noreply, load_scope(socket, :group, group)}
-
-  def handle_event("form_change", %{"policy" => params}, socket) do
-    defaults =
-      socket.assigns.defaults
-      |> merge_defaults(params["defaults"] || %{})
-      |> enforce_monotonic_defaults()
-
-    overrides = merge_overrides(socket.assigns.overrides, params["overrides"] || [])
-    changeset = Map.put(Policies.change_policy(to_rules(defaults, overrides)), :action, :validate)
-
-    {:noreply,
-     socket
-     |> assign(:defaults, defaults)
-     |> assign(:overrides, overrides)
-     |> assign_form(changeset)}
-  end
+  def handle_event("form_change", %{"editor" => editor_id, "policy" => params}, socket),
+    do: {:noreply, apply_policy_params(socket, editor_id, params)}
 
   def handle_event("form_change", _params, socket), do: {:noreply, socket}
 
-  def handle_event("add_override", _params, socket) do
-    overrides = socket.assigns.overrides ++ [empty_override()]
-    {:noreply, assign(socket, :overrides, overrides)}
+  def handle_event("add_override", %{"editor" => editor_id}, socket) do
+    {:noreply,
+     update_editor(socket, editor_id, fn editor ->
+       %{editor | overrides: editor.overrides ++ [empty_override()]}
+     end)}
   end
 
-  def handle_event("remove_override", %{"index" => idx}, socket) do
+  def handle_event("remove_override", %{"editor" => editor_id, "index" => idx}, socket) do
     case Integer.parse(idx) do
       {i, _} ->
-        overrides = List.delete_at(socket.assigns.overrides, i)
-        {:noreply, assign(socket, :overrides, overrides)}
+        {:noreply,
+         update_editor(socket, editor_id, fn editor ->
+           %{editor | overrides: List.delete_at(editor.overrides, i)}
+         end)}
 
       :error ->
         {:noreply, socket}
     end
   end
 
-  def handle_event("save", _params, socket) do
-    Permissions.gated(
-      socket,
-      Policies.subject_can_manage_policies?(socket.assigns.current_subject),
-      fn socket ->
-        rules = to_rules(socket.assigns.defaults, socket.assigns.overrides)
-
-        case save_active(socket, rules) do
-          {:ok, _policy} ->
-            {:noreply,
-             socket
-             |> put_flash(:info, "Policy saved.")
-             |> load_scope(socket.assigns.scope_type, socket.assigns.scope_value)}
-
-          {:error, %Ecto.Changeset{} = changeset} ->
-            {:noreply, assign_form(socket, Map.put(changeset, :action, :validate))}
-        end
-      end
-    )
-  end
-
-  def handle_event("delete_scope", _params, socket) do
-    Permissions.gated(
-      socket,
-      Policies.subject_can_manage_policies?(socket.assigns.current_subject),
-      fn socket ->
-        case socket.assigns.policy do
-          %Policies.Policy{scope_type: scope} = policy when scope in [:runner, :group] ->
-            delete_and_reload(socket, policy)
-
-          # Account scope or a not-yet-saved override — nothing to delete.
-          _ ->
-            {:noreply, socket}
-        end
-      end
-    )
-  end
-
-  defp save_active(socket, rules) do
-    subject = socket.assigns.current_subject
-
-    case socket.assigns.scope_type do
-      :account -> Policies.save_rules(rules, subject)
-      scope -> Policies.save_scoped_rules(rules, scope, socket.assigns.scope_value, subject)
+  def handle_event("add_ruleset", _params, socket) do
+    if Policies.subject_can_manage_policies?(socket.assigns.current_subject) do
+      {:noreply,
+       assign(socket, :rulesets, socket.assigns.rulesets ++ [new_ruleset(socket.assigns.account)])}
+    else
+      {:noreply, socket}
     end
   end
 
-  defp delete_and_reload(socket, policy) do
+  def handle_event("set_target", %{"uid" => uid, "target" => target}, socket) do
+    {scope_type, scope_value} = parse_target(target)
+
+    {:noreply,
+     update_editor(socket, uid, fn editor ->
+       %{editor | scope_type: scope_type, scope_value: scope_value}
+     end)}
+  end
+
+  def handle_event("set_target", _params, socket), do: {:noreply, socket}
+
+  def handle_event("remove_ruleset", %{"uid" => uid}, socket) do
+    case find_ruleset(socket, uid) do
+      # Saved ruleset — deleting it is a real mutation, so gate + audit.
+      %{policy: %Policies.Policy{} = policy} ->
+        Permissions.gated(
+          socket,
+          Policies.subject_can_manage_policies?(socket.assigns.current_subject),
+          &delete_ruleset(&1, policy, uid)
+        )
+
+      # Not-yet-saved card — just drop it from the page.
+      %{} ->
+        {:noreply,
+         assign(socket, :rulesets, Enum.reject(socket.assigns.rulesets, &(&1.uid == uid)))}
+
+      nil ->
+        {:noreply, socket}
+    end
+  end
+
+  def handle_event("save", %{"editor" => editor_id} = params, socket) do
+    Permissions.gated(
+      socket,
+      Policies.subject_can_manage_policies?(socket.assigns.current_subject),
+      fn socket ->
+        socket = apply_policy_params(socket, editor_id, params["policy"])
+        save_editor(socket, get_editor(socket, editor_id))
+      end
+    )
+  end
+
+  def handle_event("save", _params, socket), do: {:noreply, socket}
+
+  defp save_editor(socket, %{scope_type: :account} = editor),
+    do: persist(socket, editor, &Policies.save_rules/2)
+
+  defp save_editor(socket, %{scope_type: scope, scope_value: value} = editor)
+       when scope in [:runner, :group],
+       do:
+         persist(socket, editor, fn rules, subject ->
+           Policies.save_scoped_rules(rules, scope, value, subject)
+         end)
+
+  defp save_editor(socket, _editor),
+    do: {:noreply, put_flash(socket, :error, "Choose a runner or group for this ruleset first.")}
+
+  defp persist(socket, editor, save_fun) do
+    rules = to_rules(editor.defaults, editor.overrides)
+
+    case save_fun.(rules, socket.assigns.current_subject) do
+      {:ok, policy} ->
+        {:noreply,
+         socket |> put_flash(:info, "Policy saved.") |> replace_saved(editor.uid, policy)}
+
+      # The UI prevents invalid policies (constrained selects + monotonic
+      # enforcement + blank rows dropped), so this is a defensive net: show
+      # the rules-level error inline on the card it belongs to, not a flash.
+      {:error, %Ecto.Changeset{} = changeset} ->
+        {:noreply,
+         update_editor(socket, editor.uid, fn editor ->
+           %{editor | rules_errors: changeset_rules_errors(changeset)}
+         end)}
+
+      {:error, _reason} ->
+        {:noreply, put_flash(socket, :error, "Could not save policy.")}
+    end
+  end
+
+  # Swap the just-saved editor for one rebuilt from the returned row (a new
+  # ruleset's uid flips from `new-…` to the policy id), leaving every other
+  # card's in-progress edits untouched — no full reload, no lost work.
+  defp replace_saved(socket, "account", policy),
+    do: assign(socket, :account, build_account_editor(policy))
+
+  defp replace_saved(socket, old_uid, policy) do
+    rebuilt = build_ruleset_editor(policy)
+
+    rulesets =
+      Enum.map(socket.assigns.rulesets, fn ruleset ->
+        if ruleset.uid == old_uid, do: rebuilt, else: ruleset
+      end)
+
+    assign(socket, :rulesets, rulesets)
+  end
+
+  defp delete_ruleset(socket, policy, uid) do
     case Policies.delete_scoped_policy(policy, socket.assigns.current_subject) do
       {:ok, _deleted} ->
         {:noreply,
          socket
-         |> put_flash(:info, "Override removed — that scope falls back to the account default.")
-         |> load_scope(:account, "")}
+         |> put_flash(:info, "Ruleset removed — that scope falls back to the account policy.")
+         |> assign(:rulesets, Enum.reject(socket.assigns.rulesets, &(&1.uid == uid)))}
 
       {:error, _reason} ->
-        {:noreply, put_flash(socket, :error, "Could not remove override.")}
+        {:noreply, put_flash(socket, :error, "Could not remove ruleset.")}
     end
   end
 
-  # -- State helpers --------------------------------------------------
+  # -- Editor state ---------------------------------------------------
 
-  defp normalize_defaults(nil), do: default_defaults()
+  defp get_editor(socket, "account"), do: socket.assigns.account
+  defp get_editor(socket, uid), do: find_ruleset(socket, uid)
 
-  defp normalize_defaults(%{} = d) do
-    Enum.into(@tiers, %{}, fn tier ->
-      val = d[tier]
-      {tier, if(val in @decisions, do: val, else: default_decision(tier))}
+  defp find_ruleset(socket, uid), do: Enum.find(socket.assigns.rulesets, &(&1.uid == uid))
+
+  defp update_editor(socket, "account", fun),
+    do: assign(socket, :account, fun.(socket.assigns.account))
+
+  defp update_editor(socket, uid, fun) do
+    rulesets =
+      Enum.map(socket.assigns.rulesets, fn ruleset ->
+        if ruleset.uid == uid, do: fun.(ruleset), else: ruleset
+      end)
+
+    assign(socket, :rulesets, rulesets)
+  end
+
+  defp apply_policy_params(socket, editor_id, params) when is_map(params) do
+    update_editor(socket, editor_id, fn editor ->
+      defaults =
+        editor.defaults
+        |> merge_defaults(params["defaults"] || %{})
+        |> enforce_monotonic_defaults()
+
+      overrides = merge_overrides(editor.overrides, params["overrides"] || [])
+
+      %{
+        editor
+        | defaults: defaults,
+          overrides: overrides,
+          rules_errors: rules_errors(defaults, overrides)
+      }
     end)
   end
 
-  defp default_defaults do
-    Enum.into(@tiers, %{}, fn t -> {t, default_decision(t)} end)
+  defp apply_policy_params(socket, _editor_id, _params), do: socket
+
+  defp parse_target(target) do
+    case String.split(target, ":", parts: 2) do
+      ["runner", id] -> {:runner, id}
+      ["group", name] -> {:group, name}
+      _ -> {nil, ""}
+    end
   end
+
+  defp normalize_defaults(nil), do: default_defaults()
+
+  defp normalize_defaults(%{} = defaults) do
+    Enum.into(@tiers, %{}, fn tier ->
+      value = defaults[tier]
+      {tier, if(value in @decisions, do: value, else: default_decision(tier))}
+    end)
+  end
+
+  defp default_defaults, do: Enum.into(@tiers, %{}, fn tier -> {tier, default_decision(tier)} end)
 
   defp default_decision("low"), do: "allow"
   defp default_decision("medium"), do: "allow"
@@ -243,29 +341,26 @@ defmodule EmisarWeb.PoliciesLive do
 
   defp merge_defaults(state, form) when is_map(form) do
     Enum.into(@tiers, state, fn tier ->
-      val = form[tier] || state[tier]
-      {tier, if(val in @decisions, do: val, else: state[tier])}
+      value = form[tier] || state[tier]
+      {tier, if(value in @decisions, do: value, else: state[tier])}
     end)
   end
 
-  # Walk left-to-right, lifting any tier that's more permissive than
-  # its predecessor up to the predecessor's level. Means a change to
-  # `low=deny` instantly bumps medium/high/critical to deny too — the
-  # operator never sees a transient invalid state on the page.
+  # Walk left-to-right, lifting any tier that's more permissive than its
+  # predecessor up to the predecessor's level — so changing `low` to deny
+  # instantly bumps the rest, and the operator never sees a transient invalid
+  # state the server would reject.
   defp enforce_monotonic_defaults(defaults) do
     @tiers
     |> Enum.reduce({defaults, 0}, fn tier, {acc, floor_rank} ->
-      val = acc[tier]
-      cur_rank = Policies.decision_rank(val)
+      cur_rank = Policies.decision_rank(acc[tier])
 
-      {new_val, new_rank} =
-        if cur_rank < floor_rank do
-          {decision_at_rank(floor_rank), floor_rank}
-        else
-          {val, cur_rank}
-        end
+      {value, rank} =
+        if cur_rank < floor_rank,
+          do: {decision_at_rank(floor_rank), floor_rank},
+          else: {acc[tier], cur_rank}
 
-      {Map.put(acc, tier, new_val), new_rank}
+      {Map.put(acc, tier, value), rank}
     end)
     |> elem(0)
   end
@@ -281,23 +376,26 @@ defmodule EmisarWeb.PoliciesLive do
     |> Enum.with_index()
     |> Enum.map(fn {override, i} ->
       case Enum.at(form_list, i) do
-        nil -> override
-        form_ov -> Map.merge(override, Map.take(form_ov, ["name", "action", "decision"]))
+        nil ->
+          override
+
+        form_override ->
+          Map.merge(override, Map.take(form_override, ["name", "action", "decision"]))
       end
     end)
   end
 
   defp normalize_indexed(list) when is_list(list), do: list
 
-  defp normalize_indexed(%{} = m) do
-    m
-    |> Enum.sort_by(fn {k, _} ->
-      case Integer.parse(to_string(k)) do
+  defp normalize_indexed(%{} = map) do
+    map
+    |> Enum.sort_by(fn {key, _} ->
+      case Integer.parse(to_string(key)) do
         {n, _} -> n
         :error -> 0
       end
     end)
-    |> Enum.map(fn {_, v} -> v end)
+    |> Enum.map(fn {_, value} -> value end)
   end
 
   defp normalize_indexed(_), do: []
@@ -319,6 +417,15 @@ defmodule EmisarWeb.PoliciesLive do
     }
   end
 
+  defp rules_errors(defaults, overrides) do
+    to_rules(defaults, overrides)
+    |> Policies.change_policy()
+    |> changeset_rules_errors()
+  end
+
+  defp changeset_rules_errors(changeset),
+    do: for({:rules, {msg, _opts}} <- changeset.errors, do: msg)
+
   defp blank_action?(override), do: blank?(override["action"])
 
   defp blank?(nil), do: true
@@ -326,17 +433,13 @@ defmodule EmisarWeb.PoliciesLive do
   defp blank?(value) when is_binary(value), do: String.trim(value) == ""
   defp blank?(_), do: false
 
-  defp assign_form(socket, %Ecto.Changeset{} = changeset) do
-    assign(socket, :form, to_form(changeset, as: "policy"))
-  end
+  # -- Target helpers -------------------------------------------------
 
-  # -- Scope helpers --------------------------------------------------
+  defp target_name(%{scope_type: :runner, scope_value: id}, runners), do: runner_name(runners, id)
+  defp target_name(%{scope_type: :group, scope_value: group}, _runners), do: group
 
-  defp scope_label(:runner, value, runners), do: runner_name(runners, value)
-  defp scope_label(:group, value, _runners), do: value
-
-  # Resolve a runner id to its name for display; fall back to the id when
-  # the runner has since been deleted so the override stays identifiable.
+  # Resolve a runner id to its name; fall back to the id if the runner was
+  # since deleted so the ruleset stays identifiable.
   defp runner_name(runners, id) do
     case Enum.find(runners, &(&1.id == id)) do
       %{name: name} -> name
@@ -344,40 +447,33 @@ defmodule EmisarWeb.PoliciesLive do
     end
   end
 
-  defp active_scope_title(%{scope_type: :account}), do: "Account default"
+  defp target_selected?(ruleset, scope_type, scope_value),
+    do: ruleset.scope_type == scope_type and ruleset.scope_value == scope_value
 
-  defp active_scope_title(%{scope_type: :runner, scope_value: value, runners: runners}),
-    do: "Runner override · " <> runner_name(runners, value)
-
-  defp active_scope_title(%{scope_type: :group, scope_value: value}),
-    do: "Group override · " <> value
-
-  defp scope_active?(assigns, scope_type, scope_value),
-    do: assigns.scope_type == scope_type and assigns.scope_value == scope_value
-
-  # Runners / groups that don't yet have an override — the "add" pickers
-  # only offer new scopes; existing ones are reached through the pills.
-  defp addable_runners(runners, scoped_policies) do
-    taken = scope_values(scoped_policies, :runner)
-    Enum.reject(runners, &MapSet.member?(taken, &1.id))
+  # Runners / groups not already claimed by another ruleset — a target can
+  # only carry one. `current_uid` keeps this card's own pick in its list.
+  defp available_runners(runners, rulesets, current_uid) do
+    taken = taken_targets(rulesets, current_uid)
+    Enum.reject(runners, &MapSet.member?(taken, {:runner, &1.id}))
   end
 
-  defp addable_groups(groups, scoped_policies) do
-    taken = scope_values(scoped_policies, :group)
-    Enum.reject(groups, &MapSet.member?(taken, &1))
+  defp available_groups(groups, rulesets, current_uid) do
+    taken = taken_targets(rulesets, current_uid)
+    Enum.reject(groups, &MapSet.member?(taken, {:group, &1}))
   end
 
-  defp scope_values(scoped_policies, scope_type) do
-    for %{scope_type: ^scope_type, scope_value: value} <- scoped_policies,
+  defp taken_targets(rulesets, current_uid) do
+    for ruleset <- rulesets,
+        ruleset.uid != current_uid,
+        not is_nil(ruleset.scope_type),
         into: MapSet.new(),
-        do: value
+        do: {ruleset.scope_type, ruleset.scope_value}
   end
 
-  defp deletable_scope?(%{scope_type: scope, policy: policy}),
-    do: scope in [:runner, :group] and not is_nil(policy)
-
-  defp unsaved_scope?(%{scope_type: scope, policy: policy}),
-    do: scope in [:runner, :group] and is_nil(policy)
+  defp addable_any?(runners, groups, rulesets) do
+    available_runners(runners, rulesets, nil) != [] or
+      available_groups(groups, rulesets, nil) != []
+  end
 
   # -- Render ---------------------------------------------------------
 
@@ -394,9 +490,6 @@ defmodule EmisarWeb.PoliciesLive do
       section={:policies}
     >
       <:title>Policy</:title>
-      <:actions :if={not @loading? and Policies.subject_can_manage_policies?(@current_subject)}>
-        <.button type="submit" form="policy-form" phx-disable-with="Saving...">Save</.button>
-      </:actions>
 
       <.loading_state :if={@loading?} />
 
@@ -404,206 +497,273 @@ defmodule EmisarWeb.PoliciesLive do
         <section class="rounded-xl border border-zinc-900 bg-zinc-950/40 p-5">
           <h2 class="text-sm font-semibold text-zinc-100">How this works</h2>
           <p class="mt-2 text-sm leading-relaxed text-zinc-400">
-            Every action belongs to a <strong class="text-zinc-100">risk tier</strong>
-            (declared in the catalog). Pick what should happen by tier — that's the policy.
-            Use <strong class="text-zinc-100">overrides</strong>
-            to single out specific actions that don't fit their tier.
+            Every action has a <strong class="text-zinc-100">risk tier</strong>
+            from the catalog. Your <strong class="text-zinc-100">account policy</strong>
+            sets what happens per tier — allow, require approval, or deny — plus
+            <strong class="text-zinc-100">overrides</strong>
+            for the exceptions. Need different rules for one runner or a group? Add a
+            <strong class="text-zinc-100">targeted ruleset</strong>
+            below.
           </p>
         </section>
 
+        <p
+          :if={not @can_manage?}
+          class="rounded-lg border border-zinc-800 bg-zinc-900/40 px-4 py-2.5 text-xs text-zinc-400"
+        >
+          You can view the policy, but only owners and admins can change it.
+        </p>
+
         <section class="rounded-xl border border-zinc-900 bg-zinc-950/40 p-5">
           <header>
-            <h2 class="text-base font-semibold text-zinc-100">Scope</h2>
+            <h2 class="text-base font-semibold text-zinc-100">Account policy</h2>
             <p class="mt-0.5 text-xs text-zinc-500">
-              The account policy applies fleet-wide. A runner or group override
-              <strong class="text-zinc-300">replaces</strong>
-              it for that runner or group — most specific wins (runner &gt; group &gt; account),
-              it doesn't layer on top.
+              Applies to every runner unless a targeted ruleset below overrides it.
             </p>
           </header>
 
-          <div class="mt-4 flex flex-wrap gap-2">
-            <.scope_pill
-              label="Account default"
-              scope="account"
-              value=""
-              active={@scope_type == :account}
-            />
-            <.scope_pill
-              :for={policy <- @scoped_policies}
-              label={scope_label(policy.scope_type, policy.scope_value, @runners)}
-              kind={policy.scope_type}
-              scope={to_string(policy.scope_type)}
-              value={policy.scope_value}
-              active={scope_active?(assigns, policy.scope_type, policy.scope_value)}
-            />
-          </div>
-
-          <div
-            :if={Policies.subject_can_manage_policies?(@current_subject)}
-            class="mt-4 grid gap-3 sm:grid-cols-2"
-          >
-            <div :if={addable_runners(@runners, @scoped_policies) != []}>
-              <label class="block text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
-                Add a runner override
-              </label>
-              <select name="runner_id" phx-change="add_runner_scope" class={input_class()}>
-                <option value="">Pick a runner…</option>
-                <option :for={runner <- addable_runners(@runners, @scoped_policies)} value={runner.id}>
-                  {runner.name}
-                </option>
-              </select>
-            </div>
-
-            <div :if={addable_groups(@groups, @scoped_policies) != []}>
-              <label class="block text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
-                Add a group override
-              </label>
-              <select name="group" phx-change="add_group_scope" class={input_class()}>
-                <option value="">Pick a group…</option>
-                <option :for={group <- addable_groups(@groups, @scoped_policies)} value={group}>
-                  {group}
-                </option>
-              </select>
-            </div>
-          </div>
+          <.policy_fields
+            editor_id="account"
+            defaults={@account.defaults}
+            overrides={@account.overrides}
+            rules_errors={@account.rules_errors}
+            can_manage={@can_manage?}
+            save_label="Save account policy"
+          />
         </section>
 
-        <div class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-zinc-900 bg-zinc-950/40 px-5 py-3">
-          <div class="flex items-center gap-2 text-sm">
-            <span class="text-zinc-500">Editing</span>
-            <span class="font-medium text-zinc-100">{active_scope_title(assigns)}</span>
-            <span
-              :if={unsaved_scope?(assigns)}
-              class="rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-amber-300"
-            >
-              new
-            </span>
-          </div>
-          <button
-            :if={
-              deletable_scope?(assigns) and Policies.subject_can_manage_policies?(@current_subject)
-            }
-            type="button"
-            phx-click="delete_scope"
-            data-confirm="Remove this override? That runner/group falls back to the account default."
-            class="inline-flex items-center gap-1.5 rounded-lg border border-zinc-800 px-3 py-1.5 text-xs font-medium text-zinc-400 hover:border-rose-700 hover:text-rose-300"
-          >
-            <.icon name="hero-trash" class="h-3.5 w-3.5" /> Remove override
-          </button>
-        </div>
-
-        <form id="policy-form" phx-change="form_change" phx-submit="save" class="space-y-6">
-          <%!-- The policy is structured data (tier defaults + overrides) assembled
-               server-side into a single `rules` map, so every changeset error keys
-               to `:rules` rather than a single input. Render it inline at the top of
-               the form — rose-bordered, under the fields it concerns — not a flash. --%>
-          <div
-            :for={{msg, _opts} <- @form[:rules].errors}
-            class="rounded-lg border border-rose-500/40 bg-rose-500/5 px-4 py-3"
-          >
-            <p class="flex items-start gap-1.5 text-sm text-rose-400">
-              <.icon name="hero-exclamation-circle-mini" class="mt-0.5 h-4 w-4 flex-none" />
-              <span>{msg}</span>
-            </p>
-          </div>
-
-          <section class="rounded-xl border border-zinc-900 bg-zinc-950/40 p-5">
-            <header>
-              <h2 class="text-base font-semibold text-zinc-100">Risk-tier defaults</h2>
-              <p class="mt-0.5 text-xs text-zinc-500">
-                The default decision for any action in this tier. Overrides below win when they match.
+        <section class="space-y-4">
+          <header class="flex items-end justify-between gap-4">
+            <div>
+              <h2 class="text-base font-semibold text-zinc-100">Targeted rulesets</h2>
+              <p class="mt-0.5 max-w-xl text-xs text-zinc-500">
+                A ruleset <strong class="text-zinc-300">replaces</strong>
+                the account policy for one runner or group. Most specific wins — runner,
+                then group, then the account policy.
               </p>
-            </header>
-
-            <div class="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              <%= for tier <- ["low", "medium", "high", "critical"] do %>
-                <.tier_card
-                  tier={tier}
-                  value={@defaults[tier]}
-                  floor_rank={tier_floor_rank(@defaults, tier)}
-                  can_manage={Policies.subject_can_manage_policies?(@current_subject)}
-                />
-              <% end %>
             </div>
-
-            <p class="mt-3 text-xs leading-relaxed text-zinc-500">
-              Higher-risk tiers can't be more permissive than lower ones.
-              Setting <strong class="text-zinc-300">low</strong>
-              to <em>Deny</em>
-              forces the rest to <em>Deny</em>
-              too — there's no scenario where blocking a safe action while letting a critical one through makes sense.
-            </p>
-          </section>
-
-          <section class="rounded-xl border border-zinc-900 bg-zinc-950/40 p-5">
-            <header class="flex items-start justify-between gap-4">
-              <div>
-                <h2 class="text-base font-semibold text-zinc-100">Per-action overrides</h2>
-                <p class="mt-0.5 text-xs text-zinc-500">
-                  First match wins. Action supports wildcards (e.g. <code class="font-mono text-zinc-300">cassandra.*</code>).
-                </p>
-              </div>
-              <button
-                :if={Policies.subject_can_manage_policies?(@current_subject)}
-                type="button"
-                phx-click="add_override"
-                class="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-zinc-800 px-3 py-1.5 text-xs font-medium text-zinc-300 hover:border-indigo-500 hover:text-indigo-300"
-              >
-                <.icon name="hero-plus" class="h-3.5 w-3.5" /> Add override
-              </button>
-            </header>
-
-            <div
-              :if={@overrides == []}
-              class="mt-5 rounded-lg border border-dashed border-zinc-800 p-6 text-center text-xs text-zinc-500"
+            <button
+              :if={@can_manage?}
+              type="button"
+              phx-click="add_ruleset"
+              disabled={not addable_any?(@runners, @groups, @rulesets)}
+              class="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-zinc-800 px-3 py-1.5 text-xs font-medium text-zinc-300 hover:border-indigo-500 hover:text-indigo-300 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-zinc-800 disabled:hover:text-zinc-300"
             >
-              No overrides. The tier defaults above decide every action.
-            </div>
+              <.icon name="hero-plus" class="h-3.5 w-3.5" /> Add ruleset
+            </button>
+          </header>
 
-            <div :if={@overrides != []} class="mt-5 space-y-3">
-              <%= for {override, idx} <- Enum.with_index(@overrides) do %>
-                <.override_card
-                  override={override}
-                  index={idx}
-                  can_manage={Policies.subject_can_manage_policies?(@current_subject)}
-                />
-              <% end %>
-            </div>
-          </section>
-        </form>
+          <p
+            :if={@rulesets == []}
+            class="rounded-xl border border-dashed border-zinc-800 p-6 text-center text-xs text-zinc-500"
+          >
+            No targeted rulesets yet. Every runner uses the account policy above.
+            <span :if={@can_manage?}>
+              Add one to give a specific runner or group its own rules.
+            </span>
+          </p>
+
+          <.ruleset_card
+            :for={ruleset <- @rulesets}
+            ruleset={ruleset}
+            runners={@runners}
+            groups={@groups}
+            rulesets={@rulesets}
+            can_manage={@can_manage?}
+          />
+        </section>
       </div>
     </.dashboard_shell>
     """
   end
 
-  attr :label, :string, required: true
-  attr :scope, :string, required: true
-  attr :value, :string, required: true
-  attr :active, :boolean, required: true
-  attr :kind, :atom, default: :account
+  attr :ruleset, :map, required: true
+  attr :runners, :list, required: true
+  attr :groups, :list, required: true
+  attr :rulesets, :list, required: true
+  attr :can_manage, :boolean, required: true
 
-  defp scope_pill(assigns) do
+  defp ruleset_card(assigns) do
     ~H"""
-    <button
-      type="button"
-      phx-click="switch_scope"
-      phx-value-scope={@scope}
-      phx-value-value={@value}
-      class={[
-        "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium",
-        @active && "border-indigo-500 bg-indigo-500/10 text-indigo-200",
-        !@active && "border-zinc-800 text-zinc-400 hover:border-zinc-600 hover:text-zinc-200"
-      ]}
+    <div class="rounded-xl border border-zinc-900 bg-zinc-950/40 p-5">
+      <header class="flex items-start justify-between gap-4">
+        <div class="min-w-0 flex-1">
+          <%= if @ruleset.policy do %>
+            <div class="flex items-center gap-2">
+              <span class="rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
+                {@ruleset.scope_type}
+              </span>
+              <span class="truncate text-sm font-semibold text-zinc-100">
+                {target_name(@ruleset, @runners)}
+              </span>
+            </div>
+            <p class="mt-1 text-xs text-zinc-500">
+              Replaces the account policy for this {@ruleset.scope_type}.
+            </p>
+          <% else %>
+            <%!-- A form (not a lone select) so the uid rides along as a hidden
+                 field on the change event, the same shape as the team page. --%>
+            <form phx-change="set_target">
+              <input type="hidden" name="uid" value={@ruleset.uid} />
+              <label class="block text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                Apply this ruleset to
+              </label>
+              <select name="target" disabled={not @can_manage} class={[input_class(), "sm:max-w-xs"]}>
+                <option value="" selected={is_nil(@ruleset.scope_type)}>
+                  Choose a runner or group…
+                </option>
+                <optgroup
+                  :if={available_runners(@runners, @rulesets, @ruleset.uid) != []}
+                  label="Runners"
+                >
+                  <option
+                    :for={runner <- available_runners(@runners, @rulesets, @ruleset.uid)}
+                    value={"runner:" <> runner.id}
+                    selected={target_selected?(@ruleset, :runner, runner.id)}
+                  >
+                    {runner.name}
+                  </option>
+                </optgroup>
+                <optgroup
+                  :if={available_groups(@groups, @rulesets, @ruleset.uid) != []}
+                  label="Groups"
+                >
+                  <option
+                    :for={group <- available_groups(@groups, @rulesets, @ruleset.uid)}
+                    value={"group:" <> group}
+                    selected={target_selected?(@ruleset, :group, group)}
+                  >
+                    {group}
+                  </option>
+                </optgroup>
+              </select>
+            </form>
+          <% end %>
+        </div>
+
+        <button
+          :if={@can_manage}
+          type="button"
+          phx-click="remove_ruleset"
+          phx-value-uid={@ruleset.uid}
+          data-confirm={
+            @ruleset.policy &&
+              "Remove this ruleset? That #{@ruleset.scope_type} falls back to the account policy."
+          }
+          class="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-zinc-800 px-3 py-1.5 text-xs font-medium text-zinc-400 hover:border-rose-700 hover:text-rose-300"
+        >
+          <.icon name="hero-trash" class="h-3.5 w-3.5" /> Remove
+        </button>
+      </header>
+
+      <.policy_fields
+        :if={@ruleset.scope_type}
+        editor_id={@ruleset.uid}
+        defaults={@ruleset.defaults}
+        overrides={@ruleset.overrides}
+        rules_errors={@ruleset.rules_errors}
+        can_manage={@can_manage}
+        save_label="Save ruleset"
+      />
+      <p :if={is_nil(@ruleset.scope_type)} class="mt-4 text-xs text-zinc-500">
+        Pick a runner or group above, then set its rules.
+      </p>
+    </div>
+    """
+  end
+
+  attr :editor_id, :string, required: true
+  attr :defaults, :map, required: true
+  attr :overrides, :list, required: true
+  attr :rules_errors, :list, required: true
+  attr :can_manage, :boolean, required: true
+  attr :save_label, :string, required: true
+
+  defp policy_fields(assigns) do
+    ~H"""
+    <form
+      id={"policy-form-" <> @editor_id}
+      phx-change="form_change"
+      phx-submit="save"
+      class="mt-4 space-y-5"
     >
-      <span
-        :if={@kind != :account}
-        class="text-[10px] font-semibold uppercase tracking-wider text-zinc-500"
+      <input type="hidden" name="editor" value={@editor_id} />
+
+      <%!-- The policy is structured data assembled server-side into one
+           `rules` map, so a validation error keys to `:rules`, not a field.
+           Render it inline (rose border) on this card — never a flash. The
+           constrained selects + monotonic enforcement keep it empty in
+           practice; this is the defensive net. --%>
+      <div
+        :for={msg <- @rules_errors}
+        class="rounded-lg border border-rose-500/40 bg-rose-500/5 px-4 py-3"
       >
-        {@kind}
-      </span>
-      {@label}
-    </button>
+        <p class="flex items-start gap-1.5 text-sm text-rose-400">
+          <.icon name="hero-exclamation-circle-mini" class="mt-0.5 h-4 w-4 flex-none" />
+          <span>{msg}</span>
+        </p>
+      </div>
+
+      <div>
+        <h3 class="text-sm font-semibold text-zinc-200">Risk-tier defaults</h3>
+        <p class="mt-0.5 text-xs text-zinc-500">
+          The default decision for any action in this tier. Overrides below win when they match.
+        </p>
+        <div class="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <.tier_card
+            :for={tier <- ["low", "medium", "high", "critical"]}
+            tier={tier}
+            value={@defaults[tier]}
+            floor_rank={tier_floor_rank(@defaults, tier)}
+            can_manage={@can_manage}
+          />
+        </div>
+        <p class="mt-2 text-xs text-zinc-500">
+          Higher-risk tiers can't be more permissive than lower ones.
+        </p>
+      </div>
+
+      <div>
+        <div class="flex items-start justify-between gap-4">
+          <div>
+            <h3 class="text-sm font-semibold text-zinc-200">Per-action overrides</h3>
+            <p class="mt-0.5 text-xs text-zinc-500">
+              First match wins. Action supports wildcards (e.g. <code class="font-mono text-zinc-300">cassandra.*</code>).
+            </p>
+          </div>
+          <button
+            :if={@can_manage}
+            type="button"
+            phx-click="add_override"
+            phx-value-editor={@editor_id}
+            class="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-zinc-800 px-3 py-1.5 text-xs font-medium text-zinc-300 hover:border-indigo-500 hover:text-indigo-300"
+          >
+            <.icon name="hero-plus" class="h-3.5 w-3.5" /> Add override
+          </button>
+        </div>
+
+        <div
+          :if={@overrides == []}
+          class="mt-4 rounded-lg border border-dashed border-zinc-800 p-6 text-center text-xs text-zinc-500"
+        >
+          No overrides. The tier defaults above decide every action.
+        </div>
+
+        <div :if={@overrides != []} class="mt-4 space-y-3">
+          <.override_card
+            :for={{override, idx} <- Enum.with_index(@overrides)}
+            editor_id={@editor_id}
+            override={override}
+            index={idx}
+            can_manage={@can_manage}
+          />
+        </div>
+      </div>
+
+      <div :if={@can_manage} class="flex justify-end border-t border-zinc-900 pt-4">
+        <.button type="submit" phx-disable-with="Saving...">{@save_label}</.button>
+      </div>
+    </form>
     """
   end
 
@@ -624,49 +784,23 @@ defmodule EmisarWeb.PoliciesLive do
         class="mt-2 block w-full rounded-lg border-0 bg-zinc-900 px-2 py-1.5 text-sm text-zinc-100 ring-1 ring-zinc-800 focus:ring-indigo-500 disabled:opacity-50"
         disabled={!@can_manage}
       >
-        <%!-- Options ranked below the floor are disabled — they'd
-             make this tier more permissive than a lower-risk tier,
-             which the server rejects too. Disabled options stay
-             visible so the operator understands why they can't pick
-             them, instead of silently hiding the choices. --%>
-        <%= for {label, val} <- decision_options() do %>
-          <option
-            value={val}
-            selected={@value == val}
-            disabled={Policies.decision_rank(val) < @floor_rank}
-          >
-            {label}
-          </option>
-        <% end %>
+        <%!-- Options below the floor are disabled — they'd make this tier
+             more permissive than a lower-risk one, which the server rejects.
+             Kept visible (not hidden) so the operator sees why. --%>
+        <option
+          :for={{label, value} <- decision_options()}
+          value={value}
+          selected={@value == value}
+          disabled={Policies.decision_rank(value) < @floor_rank}
+        >
+          {label}
+        </option>
       </select>
     </label>
     """
   end
 
-  defp decision_options do
-    [{"Allow", "allow"}, {"Require approval", "require_approval"}, {"Deny", "deny"}]
-  end
-
-  # The rank below which a tier's decision can't drop. For `low` it's 0
-  # (anything goes); for any other tier it's the rank of the
-  # immediately-lower tier. Walking left-to-right because the LV's
-  # state has already been monotonized in `enforce_monotonic_defaults`,
-  # so we can read the lower tier's value directly.
-  defp tier_floor_rank(_defaults, "low"), do: 0
-  defp tier_floor_rank(defaults, "medium"), do: Policies.decision_rank(defaults["low"])
-  defp tier_floor_rank(defaults, "high"), do: Policies.decision_rank(defaults["medium"])
-  defp tier_floor_rank(defaults, "critical"), do: Policies.decision_rank(defaults["high"])
-
-  defp tier_border("low"), do: "border-emerald-500/20"
-  defp tier_border("medium"), do: "border-sky-500/20"
-  defp tier_border("high"), do: "border-amber-500/20"
-  defp tier_border("critical"), do: "border-rose-500/20"
-
-  defp tier_dot("low"), do: "bg-emerald-400"
-  defp tier_dot("medium"), do: "bg-sky-400"
-  defp tier_dot("high"), do: "bg-amber-400"
-  defp tier_dot("critical"), do: "bg-rose-400"
-
+  attr :editor_id, :string, required: true
   attr :override, :map, required: true
   attr :index, :integer, required: true
   attr :can_manage, :boolean, required: true
@@ -710,9 +844,13 @@ defmodule EmisarWeb.PoliciesLive do
             class={input_class()}
             disabled={!@can_manage}
           >
-            <%= for {label, val} <- decision_options() do %>
-              <option value={val} selected={@override["decision"] == val}>{label}</option>
-            <% end %>
+            <option
+              :for={{label, value} <- decision_options()}
+              value={value}
+              selected={@override["decision"] == value}
+            >
+              {label}
+            </option>
           </select>
         </div>
         <div class="sm:col-span-1 sm:flex sm:justify-end">
@@ -720,6 +858,7 @@ defmodule EmisarWeb.PoliciesLive do
             :if={@can_manage}
             type="button"
             phx-click="remove_override"
+            phx-value-editor={@editor_id}
             phx-value-index={@index}
             class="grid h-8 w-8 place-items-center rounded-lg border border-zinc-800 text-zinc-500 hover:border-rose-700 hover:text-rose-300"
             title="Remove override"
@@ -732,6 +871,27 @@ defmodule EmisarWeb.PoliciesLive do
     </div>
     """
   end
+
+  defp decision_options,
+    do: [{"Allow", "allow"}, {"Require approval", "require_approval"}, {"Deny", "deny"}]
+
+  # The rank below which a tier's decision can't drop: 0 for `low` (anything
+  # goes), otherwise the rank of the immediately-lower tier. Reads the lower
+  # tier directly because the state is already monotonized.
+  defp tier_floor_rank(_defaults, "low"), do: 0
+  defp tier_floor_rank(defaults, "medium"), do: Policies.decision_rank(defaults["low"])
+  defp tier_floor_rank(defaults, "high"), do: Policies.decision_rank(defaults["medium"])
+  defp tier_floor_rank(defaults, "critical"), do: Policies.decision_rank(defaults["high"])
+
+  defp tier_border("low"), do: "border-emerald-500/20"
+  defp tier_border("medium"), do: "border-sky-500/20"
+  defp tier_border("high"), do: "border-amber-500/20"
+  defp tier_border("critical"), do: "border-rose-500/20"
+
+  defp tier_dot("low"), do: "bg-emerald-400"
+  defp tier_dot("medium"), do: "bg-sky-400"
+  defp tier_dot("high"), do: "bg-amber-400"
+  defp tier_dot("critical"), do: "bg-rose-400"
 
   defp input_class do
     "mt-1 block w-full rounded-lg border-0 bg-zinc-900 px-2 py-1.5 text-sm text-zinc-100 ring-1 ring-zinc-800 focus:ring-indigo-500 disabled:opacity-50"
