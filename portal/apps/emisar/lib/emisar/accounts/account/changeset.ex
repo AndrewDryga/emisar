@@ -19,8 +19,6 @@ defmodule Emisar.Accounts.Account.Changeset do
     account |> cast(attrs, @update_fields) |> changeset()
   end
 
-  def delete(%Account{} = account), do: change(account, deleted_at: DateTime.utc_now())
-
   def link_paddle_customer(%Account{} = account, customer_id) when is_binary(customer_id),
     do: change(account, paddle_customer_id: customer_id)
 

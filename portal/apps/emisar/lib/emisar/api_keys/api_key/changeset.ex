@@ -74,7 +74,5 @@ defmodule Emisar.ApiKeys.ApiKey.Changeset do
     change(key, revoked_at: DateTime.utc_now(), revoked_by_id: by_user_id)
   end
 
-  def delete(%ApiKey{} = key), do: change(key, deleted_at: DateTime.utc_now())
-
   def valid_scopes, do: @valid_scopes
 end
