@@ -25,6 +25,10 @@ defmodule EmisarWeb.PoliciesLive do
   @decisions Policies.decisions()
   @tiers Policies.risk_tiers()
 
+  # Non-breaking spaces so the browser keeps the indent (ASCII whitespace in an
+  # <option> is stripped) — nests runners under their group in the target picker.
+  @runner_indent "    "
+
   def mount(_params, _session, socket) do
     socket = assign(socket, page_title: "Policy", loading?: not connected?(socket))
     {:ok, if(connected?(socket), do: load_all(socket), else: socket)}
@@ -451,17 +455,52 @@ defmodule EmisarWeb.PoliciesLive do
   defp target_selected?(ruleset, scope_type, scope_value),
     do: ruleset.scope_type == scope_type and ruleset.scope_value == scope_value
 
-  # Runners / groups not already claimed by another ruleset — a target can
-  # only carry one. `current_uid` keeps this card's own pick in its list.
-  defp available_runners(runners, rulesets, current_uid) do
-    taken = taken_targets(rulesets, current_uid)
-    Enum.reject(runners, &MapSet.member?(taken, {:runner, &1.id}))
+  # Ordered options for the target picker: each group as a selectable header,
+  # then its runners indented beneath, then any ungrouped runners — one tree, so
+  # groups are pickable (a native <optgroup> label isn't) with no separate
+  # runners-vs-groups split. A target another ruleset already claims is disabled
+  # (kept visible so the whole fleet reads at a glance). The current card's own
+  # pick is excluded from `taken`, so it stays selectable.
+  defp target_options(runners, groups, ruleset, rulesets) do
+    taken = taken_targets(rulesets, ruleset.uid)
+
+    grouped =
+      Enum.flat_map(groups, fn group ->
+        header = target_option(:group, group, group, ruleset, taken)
+        [header | Enum.map(runners_in_group(runners, group), &runner_option(&1, ruleset, taken))]
+      end)
+
+    case ungrouped_runners(runners) do
+      [] ->
+        grouped
+
+      ungrouped ->
+        header = %{value: "", label: "Ungrouped", disabled: true, selected: false}
+        grouped ++ [header | Enum.map(ungrouped, &runner_option(&1, ruleset, taken))]
+    end
   end
 
-  defp available_groups(groups, rulesets, current_uid) do
-    taken = taken_targets(rulesets, current_uid)
-    Enum.reject(groups, &MapSet.member?(taken, {:group, &1}))
+  defp target_option(scope_type, scope_value, name, ruleset, taken) do
+    taken? = MapSet.member?(taken, {scope_type, scope_value})
+
+    %{
+      value: "#{scope_type}:#{scope_value}",
+      label: if(taken?, do: name <> " — has a ruleset", else: name),
+      disabled: taken?,
+      selected: target_selected?(ruleset, scope_type, scope_value)
+    }
   end
+
+  defp runner_option(runner, ruleset, taken) do
+    option = target_option(:runner, runner.id, runner.name, ruleset, taken)
+    %{option | label: @runner_indent <> option.label}
+  end
+
+  defp runners_in_group(runners, group),
+    do: runners |> Enum.filter(&(&1.group == group)) |> Enum.sort_by(& &1.name)
+
+  defp ungrouped_runners(runners),
+    do: runners |> Enum.filter(&blank?(&1.group)) |> Enum.sort_by(& &1.name)
 
   defp taken_targets(rulesets, current_uid) do
     for ruleset <- rulesets,
@@ -471,9 +510,12 @@ defmodule EmisarWeb.PoliciesLive do
         do: {ruleset.scope_type, ruleset.scope_value}
   end
 
+  # Any target still free to claim — gates the "Add ruleset" button.
   defp addable_any?(runners, groups, rulesets) do
-    available_runners(runners, rulesets, nil) != [] or
-      available_groups(groups, rulesets, nil) != []
+    taken = taken_targets(rulesets, nil)
+
+    Enum.any?(groups, &(not MapSet.member?(taken, {:group, &1}))) or
+      Enum.any?(runners, &(not MapSet.member?(taken, {:runner, &1.id})))
   end
 
   # -- Render ---------------------------------------------------------
@@ -613,30 +655,18 @@ defmodule EmisarWeb.PoliciesLive do
                 <option value="" selected={is_nil(@ruleset.scope_type)}>
                   Choose a runner or group…
                 </option>
-                <optgroup
-                  :if={available_runners(@runners, @rulesets, @ruleset.uid) != []}
-                  label="Runners"
+                <%!-- One tree: each group is a selectable header with its runners
+                     indented beneath it. A native <optgroup> label can't be picked,
+                     so groups are plain options; a target another ruleset already
+                     claims is shown disabled. --%>
+                <option
+                  :for={option <- target_options(@runners, @groups, @ruleset, @rulesets)}
+                  value={option.value}
+                  disabled={option.disabled}
+                  selected={option.selected}
                 >
-                  <option
-                    :for={runner <- available_runners(@runners, @rulesets, @ruleset.uid)}
-                    value={"runner:" <> runner.id}
-                    selected={target_selected?(@ruleset, :runner, runner.id)}
-                  >
-                    {runner.name}
-                  </option>
-                </optgroup>
-                <optgroup
-                  :if={available_groups(@groups, @rulesets, @ruleset.uid) != []}
-                  label="Groups"
-                >
-                  <option
-                    :for={group <- available_groups(@groups, @rulesets, @ruleset.uid)}
-                    value={"group:" <> group}
-                    selected={target_selected?(@ruleset, :group, group)}
-                  >
-                    {group}
-                  </option>
-                </optgroup>
+                  {option.label}
+                </option>
               </select>
             </form>
           <% end %>

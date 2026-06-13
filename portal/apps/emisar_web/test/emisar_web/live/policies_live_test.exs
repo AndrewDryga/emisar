@@ -261,6 +261,22 @@ defmodule EmisarWeb.PoliciesLiveTest do
       assert policy.scope_value == "prod"
     end
 
+    test "the target picker lists groups as selectable options with their runners nested", ctx do
+      runner =
+        Emisar.Fixtures.runner_fixture(account_id: ctx.account.id, name: "web-1", group: "web")
+
+      {:ok, lv, _html} = live(ctx.conn, ~p"/app/policies")
+      html = lv |> render_click("add_ruleset", %{})
+
+      # One combined tree: the group is a selectable <option> (not an <optgroup>
+      # label that can't be picked), and its runner is an <option> too — no
+      # separate runners-vs-groups categories.
+      assert html =~ ~s(value="group:web")
+      assert html =~ ~s(value="runner:#{runner.id}")
+      assert html =~ "web-1"
+      refute html =~ "<optgroup"
+    end
+
     test "removing a saved ruleset falls the scope back to the default policy", ctx do
       runner =
         Emisar.Fixtures.runner_fixture(account_id: ctx.account.id, name: "db-1", group: "db")
