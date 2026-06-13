@@ -38,6 +38,25 @@ defmodule EmisarWeb.RateLimiterTest do
     assert RateLimiter.check(k, 1, 1) == :ok
   end
 
+  test "the periodic sweep reclaims expired windows so the table stays bounded" do
+    k = key("sweep")
+
+    # window_ms = 1 → the entry's window expires almost immediately.
+    assert RateLimiter.check(k, 1, 1) == :ok
+    assert ets_entries(k) != []
+
+    # Let its expires_at fall into the past, then run the sweep. Sending
+    # :sweep then calling :sys.get_state syncs on it (mailbox order), so the
+    # select_delete has run by the time get_state returns.
+    spin_past(System.system_time(:millisecond) + 2)
+    send(Process.whereis(RateLimiter), :sweep)
+    :sys.get_state(RateLimiter)
+
+    assert ets_entries(k) == []
+  end
+
+  defp ets_entries(key), do: :ets.match_object(RateLimiter, {{key, :_}, :_, :_})
+
   # Busy-wait until the wall clock ticks past `ms` (resolves in well under a
   # millisecond — no Process.sleep). Time is the synchronization here.
   defp spin_past(ms) do
