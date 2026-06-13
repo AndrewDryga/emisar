@@ -192,6 +192,46 @@ defmodule Emisar.RunnerScopesTest do
     end
   end
 
+  describe "runner_in_scope?/2 (the per-user runner ACL check)" do
+    test "nil or empty scopes mean unrestricted (all runners in scope)" do
+      runner = %{id: "runner-1", group: "db"}
+      assert Runners.runner_in_scope?(runner, nil)
+      assert Runners.runner_in_scope?(runner, [])
+    end
+
+    test "an explicit scope list passes on a runner-id or group match, denies otherwise" do
+      runner = %{id: "runner-1", group: "db"}
+
+      assert Runners.runner_in_scope?(runner, [
+               %Runners.UserRunnerScope{scope_type: :runner, scope_value: "runner-1"}
+             ])
+
+      assert Runners.runner_in_scope?(runner, [
+               %Runners.UserRunnerScope{scope_type: :group, scope_value: "db"}
+             ])
+
+      refute Runners.runner_in_scope?(runner, [
+               %Runners.UserRunnerScope{scope_type: :runner, scope_value: "other"},
+               %Runners.UserRunnerScope{scope_type: :group, scope_value: "web"}
+             ])
+
+      # A malformed scopes value (not nil, a list, or a membership) is denied.
+      refute Runners.runner_in_scope?(runner, :nonsense)
+    end
+
+    test "given a %Membership{}, it resolves that membership's scopes from the DB" do
+      {account, user, subject} = account_with_owner()
+      {:ok, membership} = Accounts.fetch_membership_for_session(user, nil)
+      in_group = runner_fixture(account_id: account.id, group: "dba")
+      out_group = runner_fixture(account_id: account.id, group: "app")
+
+      {:ok, :ok} = Runners.replace_runner_scopes(membership, [{"group", "dba"}], subject)
+
+      assert Runners.runner_in_scope?(in_group, membership)
+      refute Runners.runner_in_scope?(out_group, membership)
+    end
+  end
+
   defp account_with_owner do
     user = user_fixture()
 
