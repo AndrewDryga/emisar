@@ -34,6 +34,17 @@ defmodule Emisar.RunnersTest do
       assert is_binary(key.key_hash)
       assert key.description == "for dev"
     end
+
+    test "rejects max_uses: 0 at the write path, not just the form" do
+      {_account, _user, subject} = account_with_owner_subject()
+
+      # max_uses 0 mints a key that's dead on arrival; create/5 must enforce
+      # the same `> 0` guard the editor form does, not rely on it.
+      assert {:error, %Ecto.Changeset{} = changeset} =
+               Runners.create_auth_key(%{description: "dead", max_uses: 0}, subject)
+
+      assert %{max_uses: ["must be greater than 0"]} = errors_on(changeset)
+    end
   end
 
   describe "peek_auth_key_by_secret/1" do

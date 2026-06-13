@@ -21,8 +21,7 @@ defmodule Emisar.Runners.AuthKey.Changeset do
   def form(attrs \\ %{}) do
     %AuthKey{}
     |> cast(attrs, [:description, :group, :reusable, :max_uses])
-    |> validate_length(:description, max: 200)
-    |> validate_number(:max_uses, greater_than: 0)
+    |> validate_fields()
   end
 
   def create(account_id, user_id, prefix, hash, attrs) do
@@ -33,7 +32,16 @@ defmodule Emisar.Runners.AuthKey.Changeset do
     |> put_change(:key_prefix, prefix)
     |> put_change(:key_hash, hash)
     |> validate_required([:account_id])
+    |> validate_fields()
+  end
+
+  # Shared field validations so the write path (`create/5`) enforces exactly
+  # what the editor form (`form/1`) shows — a max_uses of 0 mints a key that's
+  # dead on arrival (uses_count 0 >= max_uses 0), so it's rejected at both.
+  defp validate_fields(changeset) do
+    changeset
     |> validate_length(:description, max: 200)
+    |> validate_number(:max_uses, greater_than: 0)
   end
 
   # Mirrors Emisar.Runners' mint size ("emkey-auth-" + 16 random chars);
