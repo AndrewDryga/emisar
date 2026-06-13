@@ -466,13 +466,28 @@ defmodule EmisarWeb.ApprovalDetailLive do
             </div>
           </details>
 
-          <button class="flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-500 px-3 py-2.5 text-sm font-semibold text-zinc-950 hover:bg-emerald-400">
+          <button
+            phx-disable-with="Approving…"
+            class="flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-500 px-3 py-2.5 text-sm font-semibold text-zinc-950 hover:bg-emerald-400 disabled:opacity-60"
+          >
             <.icon name="hero-check" class="h-4 w-4" /> Approve and send
           </button>
         </form>
 
-        <form phx-submit="deny" class="mt-3">
-          <button class="flex w-full items-center justify-center gap-2 rounded-lg border border-rose-500/40 px-3 py-2.5 text-sm font-medium text-rose-200 hover:bg-rose-500/10">
+        <%!-- Deny carries its own reason — the higher-stakes decision was
+             the one with nowhere to record *why*, leaving a blank reason in
+             the decision history. The handler already accepts it. --%>
+        <form phx-submit="deny" class="mt-3 space-y-3">
+          <textarea
+            name="reason"
+            rows="2"
+            placeholder="Why are you denying this? (optional, logged in the decision history)"
+            class="w-full resize-none rounded-lg border-0 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 ring-1 ring-zinc-800 placeholder:text-zinc-600 focus:ring-rose-500"
+          ></textarea>
+          <button
+            phx-disable-with="Denying…"
+            class="flex w-full items-center justify-center gap-2 rounded-lg border border-rose-500/40 px-3 py-2.5 text-sm font-medium text-rose-200 hover:bg-rose-500/10 disabled:opacity-60"
+          >
             <.icon name="hero-x-mark" class="h-4 w-4" /> Deny
           </button>
         </form>

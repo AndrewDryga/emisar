@@ -69,8 +69,15 @@ defmodule EmisarWeb.ApprovalsLive do
     grants_opts = LiveTable.params_to_opts(params, [], prefix: "grants_")
     decided_opts = LiveTable.params_to_opts(params, [], prefix: "decided_")
 
-    {:ok, pending, pending_meta} =
-      list_or_empty(Approvals.list_pending_approval_requests(subject, pending_opts))
+    # Pending is the held-action danger: an {:error, _} (incl. :unauthorized)
+    # collapsed to [] reads as "Nothing waiting", hiding a run awaiting a human.
+    # Track the error so the section can say "couldn't load" instead. (Grants
+    # and decided below are historical/secondary — list_or_empty is fine there.)
+    {pending, pending_meta, pending_error?} =
+      case Approvals.list_pending_approval_requests(subject, pending_opts) do
+        {:ok, list, meta} -> {list, meta, false}
+        _ -> {[], %Emisar.Repo.Paginator.Metadata{count: 0, limit: 0}, true}
+      end
 
     {:ok, grants, grants_meta} =
       list_or_empty(
@@ -96,6 +103,7 @@ defmodule EmisarWeb.ApprovalsLive do
     socket
     |> assign(:pending, pending)
     |> assign(:pending_metadata, pending_meta)
+    |> assign(:pending_error?, pending_error?)
     |> assign(:grants, grants)
     |> assign(:grants_metadata, grants_meta)
     |> assign(:decided, decided)
@@ -252,7 +260,15 @@ defmodule EmisarWeb.ApprovalsLive do
               </li>
             </:item>
             <:empty>
-              <div class="mx-auto max-w-md">
+              <div :if={@pending_error?} class="mx-auto max-w-md">
+                <.icon name="hero-exclamation-triangle" class="mx-auto h-8 w-8 text-rose-400/70" />
+                <p class="mt-3 text-rose-200">Couldn't load pending approvals.</p>
+                <p class="mt-1 text-xs leading-relaxed text-zinc-500">
+                  This is a load error, not an empty queue — a held action may be waiting.
+                  Refresh the page; if it persists, your access may have changed.
+                </p>
+              </div>
+              <div :if={not @pending_error?} class="mx-auto max-w-md">
                 <.icon name="hero-check-badge" class="mx-auto h-8 w-8 text-zinc-700" />
                 <p class="mt-3 text-zinc-300">Nothing waiting.</p>
                 <p class="mt-1 text-xs leading-relaxed text-zinc-500">

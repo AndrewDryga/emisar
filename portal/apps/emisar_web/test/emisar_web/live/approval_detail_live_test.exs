@@ -40,12 +40,16 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     {conn, user, account} = register_and_log_in(conn)
     request = pending_request(account, user)
 
-    {:ok, _lv, html} = live(conn, ~p"/app/approvals/#{request.id}")
+    {:ok, lv, html} = live(conn, ~p"/app/approvals/#{request.id}")
 
     # The panel renders the approve form (owner can decide) — this is the
     # exact path that raised KeyError on `@grant_duration` in production.
     assert html =~ "Decide"
     assert html =~ "Approve and send"
+    # Both decision buttons guard the most consequential click against a
+    # double-submit.
+    assert has_element?(lv, "button[phx-disable-with]", "Approve and send")
+    assert has_element?(lv, "button[phx-disable-with]", "Deny")
   end
 
   test "choosing a reuse window reveals the grant scope fields", %{conn: conn} do
@@ -72,13 +76,29 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
 
     {:ok, lv, _html} = live(conn, ~p"/app/approvals/#{request.id}")
 
-    # The Deny form is a bare button — it submits no `reason`, which used
-    # to raise FunctionClauseError in handle_event/3.
+    # The reason textarea is optional — an empty submit still denies (this
+    # path once raised FunctionClauseError on the missing `reason`).
     html =
       lv
       |> element("form[phx-submit='deny']")
       |> render_submit()
 
     assert html =~ "Denied."
+  end
+
+  test "denying captures the reason in the decision history", %{conn: conn} do
+    {conn, user, account} = register_and_log_in(conn)
+    request = pending_request(account, user)
+
+    {:ok, lv, _html} = live(conn, ~p"/app/approvals/#{request.id}")
+
+    html =
+      lv
+      |> form("form[phx-submit='deny']", %{"reason" => "duplicate of an earlier run"})
+      |> render_submit()
+
+    assert html =~ "Denied."
+    assert html =~ "duplicate of an earlier run"
+    assert Repo.reload!(request).decision_reason == "duplicate of an earlier run"
   end
 end
