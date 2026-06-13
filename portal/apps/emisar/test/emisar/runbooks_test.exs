@@ -295,4 +295,23 @@ defmodule Emisar.RunbooksTest do
                Runbooks.save_new_version(v1, %{"title" => "hijack"}, subject_b)
     end
   end
+
+  describe "create_runbook slug validation" do
+    test "rejects a slug that doesn't match the URL-safe format" do
+      {_user, _account, subject} = owner_subject_fixture()
+
+      assert {:error, %Ecto.Changeset{} = changeset} =
+               Runbooks.create_runbook(
+                 %{
+                   "title" => "Bad Slug Book",
+                   "name" => "bad-slug",
+                   "slug" => "Not A Valid Slug!",
+                   "definition" => %{"steps" => uptime_steps(1)}
+                 },
+                 subject
+               )
+
+      assert %{slug: ["has invalid format"]} = errors_on(changeset)
+    end
+  end
 end
