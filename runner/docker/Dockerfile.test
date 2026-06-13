@@ -1,0 +1,36 @@
+# Dockerfile.test builds a minimal Debian-based image with the Go
+# toolchain pinned to the repo's go.mod version. It exists so dev
+# machines (including macOS) can run the test suite in a real Linux
+# environment — important for verifying Pdeathsig, Setpgid, and the
+# /var/log → /private/var/log symlink behaviour that differs across
+# platforms.
+#
+# Usage (run from repo root):
+#   docker build -f runner/docker/Dockerfile.test -t emisar-test runner/
+#   docker run --rm emisar-test
+
+FROM golang:1.26-bookworm
+
+# bash is needed by the executor tests that use /bin/sh -c with trap.
+# (debian:bookworm-slim already has /bin/sh as dash; we want a real
+# bash for `trap 'exit 42' TERM` to work as our tests expect.)
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends bash ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /workspace
+
+# Pre-fetch modules so each `docker run` doesn't re-download them.
+# Cache layers: copy go.mod/go.sum first, then sources.
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Copy the rest of the runner module's source on top. Build context
+# is the runner/ directory, so this picks up cmd files, internal/,
+# pkg/, examples/, etc., but not the portal/ or mcp/ trees.
+COPY . .
+
+# Default command: race-enabled tests across the runner module.
+# Override with `docker run ... go test ./internal/executor/...` for
+# package-scoped runs.
+CMD ["go", "test", "-race", "-count=1", "./..."]
