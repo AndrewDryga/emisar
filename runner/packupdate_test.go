@@ -53,8 +53,7 @@ func TestFetchPackIndex_HTTPError(t *testing.T) {
 
 func TestUpdateOnePack_VerifiesHashAndSwapsAtomically(t *testing.T) {
 	const id = "redis"
-	// Example packs moved to the repo root (../packs) — see "Move packs to repo root".
-	srcDir := filepath.Join("..", "packs", id)
+	srcDir := writeSourcePack(t, id)
 
 	reg, err := packs.LoadOne(srcDir, packs.LoadOptions{})
 	if err != nil {
@@ -148,4 +147,51 @@ func tarDir(t *testing.T, root string) []byte {
 		t.Fatal(err)
 	}
 	return buf.Bytes()
+}
+
+// writeSourcePack builds a minimal, valid pack (pack.yaml + one action) under a
+// temp dir and returns its root. Self-contained on purpose: loading a shipped
+// pack by path is what red-flagged this test when packs moved to the repo root,
+// so the source the update flow exercises lives entirely inside the test.
+func writeSourcePack(t *testing.T, id string) string {
+	t.Helper()
+	root := filepath.Join(t.TempDir(), id)
+	files := map[string]string{
+		"pack.yaml": `schema_version: 1
+id: ` + id + `
+name: t
+version: 0.0.1
+description: t
+actions:
+  - actions/a.yaml
+`,
+		"actions/a.yaml": `schema_version: 1
+id: ` + id + `.a
+title: t
+kind: exec
+risk: low
+description: d
+side_effects: [none]
+args: []
+execution:
+  command:
+    binary: /bin/echo
+    argv: ["hi"]
+  timeout: 5s
+output:
+  parser: text
+  max_stdout_bytes: 1024
+  max_stderr_bytes: 1024
+`,
+	}
+	for rel, body := range files {
+		full := filepath.Join(root, rel)
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return root
 }
