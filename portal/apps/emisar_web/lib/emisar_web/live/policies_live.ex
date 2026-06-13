@@ -1,13 +1,18 @@
 defmodule EmisarWeb.PoliciesLive do
   @moduledoc """
-  Two-section policy editor. Risk-tier defaults at the top (one
-  decision per `low`/`medium`/`high`/`critical`), per-action overrides
-  below. Operators rarely need overrides — the tier defaults cover the
-  90% case in three clicks.
+  Policy editor with a scope switcher. The same two-section editor
+  (risk-tier defaults + per-action overrides) edits one policy at a
+  time: the account default, or a per-runner / per-group override.
+
+  A runner or group override **replaces** the account policy for that
+  scope — most specific wins (runner > group > account), it doesn't
+  layer on top. New overrides start from the account default's rules as
+  a convenient baseline, then the operator tweaks from there.
   """
   use EmisarWeb, :live_view
 
   alias Emisar.Policies
+  alias Emisar.Runners
   alias EmisarWeb.Permissions
 
   @decisions Policies.decisions()
@@ -15,29 +20,95 @@ defmodule EmisarWeb.PoliciesLive do
 
   def mount(_params, _session, socket) do
     socket = assign(socket, page_title: "Policy", loading?: not connected?(socket))
-    {:ok, if(connected?(socket), do: load(socket), else: socket)}
+    {:ok, if(connected?(socket), do: load_scope(socket, :account, ""), else: socket)}
   end
 
-  defp load(socket) do
-    policy =
-      case Policies.fetch_policy(socket.assigns.current_subject) do
-        {:ok, p} -> p
+  # Load everything the page needs for the active scope: the scope's
+  # policy (or a fresh form seeded from the account default for a not-yet-
+  # saved override), plus the runner/group pickers and the list of existing
+  # overrides that drive the switcher.
+  defp load_scope(socket, scope_type, scope_value) do
+    subject = socket.assigns.current_subject
+
+    account_policy =
+      case Policies.fetch_policy(subject) do
+        {:ok, policy} -> policy
         {:error, _} -> nil
       end
 
-    rules = (policy && policy.rules) || Policies.default_rules()
+    account_rules = (account_policy && account_policy.rules) || Policies.default_rules()
+
+    {policy, rules} =
+      active_policy(scope_type, scope_value, account_policy, account_rules, subject)
 
     defaults = normalize_defaults(rules["defaults"])
     overrides = normalize_overrides(rules["overrides"])
 
     socket
+    |> assign(:loading?, false)
+    |> assign(:scope_type, scope_type)
+    |> assign(:scope_value, scope_value)
     |> assign(:policy, policy)
+    |> assign(:runners, list_runners(subject))
+    |> assign(:groups, list_groups(subject))
+    |> assign(:scoped_policies, list_scoped(subject))
     |> assign(:defaults, defaults)
     |> assign(:overrides, overrides)
     |> assign_form(Policies.change_policy(to_rules(defaults, overrides)))
   end
 
+  defp active_policy(:account, _value, account_policy, account_rules, _subject),
+    do: {account_policy, account_rules}
+
+  defp active_policy(scope, value, _account_policy, account_rules, subject) do
+    case Policies.fetch_scoped_policy(scope, value, subject) do
+      {:ok, policy} -> {policy, policy.rules}
+      # No row yet — a new override, seeded from the account baseline.
+      {:error, _} -> {nil, account_rules}
+    end
+  end
+
+  defp list_runners(subject) do
+    case Runners.list_all_runners_for_account(subject) do
+      {:ok, runners} -> runners
+      {:error, _} -> []
+    end
+  end
+
+  defp list_groups(subject) do
+    case Runners.list_group_summaries(subject) do
+      {:ok, rows} -> rows |> Enum.map(&elem(&1, 0)) |> Enum.reject(&blank?/1) |> Enum.sort()
+      {:error, _} -> []
+    end
+  end
+
+  defp list_scoped(subject) do
+    case Policies.list_scoped_policies(subject) do
+      {:ok, policies} -> policies
+      {:error, _} -> []
+    end
+  end
+
   # -- Events ---------------------------------------------------------
+
+  def handle_event("switch_scope", %{"scope" => "account"}, socket),
+    do: {:noreply, load_scope(socket, :account, "")}
+
+  def handle_event("switch_scope", %{"scope" => "runner", "value" => value}, socket),
+    do: {:noreply, load_scope(socket, :runner, value)}
+
+  def handle_event("switch_scope", %{"scope" => "group", "value" => value}, socket),
+    do: {:noreply, load_scope(socket, :group, value)}
+
+  def handle_event("add_runner_scope", %{"runner_id" => ""}, socket), do: {:noreply, socket}
+
+  def handle_event("add_runner_scope", %{"runner_id" => id}, socket),
+    do: {:noreply, load_scope(socket, :runner, id)}
+
+  def handle_event("add_group_scope", %{"group" => ""}, socket), do: {:noreply, socket}
+
+  def handle_event("add_group_scope", %{"group" => group}, socket),
+    do: {:noreply, load_scope(socket, :group, group)}
 
   def handle_event("form_change", %{"policy" => params}, socket) do
     defaults =
@@ -80,15 +151,57 @@ defmodule EmisarWeb.PoliciesLive do
       fn socket ->
         rules = to_rules(socket.assigns.defaults, socket.assigns.overrides)
 
-        case Policies.save_rules(rules, socket.assigns.current_subject) do
+        case save_active(socket, rules) do
           {:ok, _policy} ->
-            {:noreply, socket |> put_flash(:info, "Policy saved.") |> load()}
+            {:noreply,
+             socket
+             |> put_flash(:info, "Policy saved.")
+             |> load_scope(socket.assigns.scope_type, socket.assigns.scope_value)}
 
           {:error, %Ecto.Changeset{} = changeset} ->
             {:noreply, assign_form(socket, Map.put(changeset, :action, :validate))}
         end
       end
     )
+  end
+
+  def handle_event("delete_scope", _params, socket) do
+    Permissions.gated(
+      socket,
+      Policies.subject_can_manage_policies?(socket.assigns.current_subject),
+      fn socket ->
+        case socket.assigns.policy do
+          %Policies.Policy{scope_type: scope} = policy when scope in [:runner, :group] ->
+            delete_and_reload(socket, policy)
+
+          # Account scope or a not-yet-saved override — nothing to delete.
+          _ ->
+            {:noreply, socket}
+        end
+      end
+    )
+  end
+
+  defp save_active(socket, rules) do
+    subject = socket.assigns.current_subject
+
+    case socket.assigns.scope_type do
+      :account -> Policies.save_rules(rules, subject)
+      scope -> Policies.save_scoped_rules(rules, scope, socket.assigns.scope_value, subject)
+    end
+  end
+
+  defp delete_and_reload(socket, policy) do
+    case Policies.delete_scoped_policy(policy, socket.assigns.current_subject) do
+      {:ok, _deleted} ->
+        {:noreply,
+         socket
+         |> put_flash(:info, "Override removed — that scope falls back to the account default.")
+         |> load_scope(:account, "")}
+
+      {:error, _reason} ->
+        {:noreply, put_flash(socket, :error, "Could not remove override.")}
+    end
   end
 
   # -- State helpers --------------------------------------------------
@@ -210,12 +323,61 @@ defmodule EmisarWeb.PoliciesLive do
 
   defp blank?(nil), do: true
   defp blank?(""), do: true
-  defp blank?(socket) when is_binary(socket), do: String.trim(socket) == ""
+  defp blank?(value) when is_binary(value), do: String.trim(value) == ""
   defp blank?(_), do: false
 
   defp assign_form(socket, %Ecto.Changeset{} = changeset) do
     assign(socket, :form, to_form(changeset, as: "policy"))
   end
+
+  # -- Scope helpers --------------------------------------------------
+
+  defp scope_label(:runner, value, runners), do: runner_name(runners, value)
+  defp scope_label(:group, value, _runners), do: value
+
+  # Resolve a runner id to its name for display; fall back to the id when
+  # the runner has since been deleted so the override stays identifiable.
+  defp runner_name(runners, id) do
+    case Enum.find(runners, &(&1.id == id)) do
+      %{name: name} -> name
+      nil -> id
+    end
+  end
+
+  defp active_scope_title(%{scope_type: :account}), do: "Account default"
+
+  defp active_scope_title(%{scope_type: :runner, scope_value: value, runners: runners}),
+    do: "Runner override · " <> runner_name(runners, value)
+
+  defp active_scope_title(%{scope_type: :group, scope_value: value}),
+    do: "Group override · " <> value
+
+  defp scope_active?(assigns, scope_type, scope_value),
+    do: assigns.scope_type == scope_type and assigns.scope_value == scope_value
+
+  # Runners / groups that don't yet have an override — the "add" pickers
+  # only offer new scopes; existing ones are reached through the pills.
+  defp addable_runners(runners, scoped_policies) do
+    taken = scope_values(scoped_policies, :runner)
+    Enum.reject(runners, &MapSet.member?(taken, &1.id))
+  end
+
+  defp addable_groups(groups, scoped_policies) do
+    taken = scope_values(scoped_policies, :group)
+    Enum.reject(groups, &MapSet.member?(taken, &1))
+  end
+
+  defp scope_values(scoped_policies, scope_type) do
+    for %{scope_type: ^scope_type, scope_value: value} <- scoped_policies,
+        into: MapSet.new(),
+        do: value
+  end
+
+  defp deletable_scope?(%{scope_type: scope, policy: policy}),
+    do: scope in [:runner, :group] and not is_nil(policy)
+
+  defp unsaved_scope?(%{scope_type: scope, policy: policy}),
+    do: scope in [:runner, :group] and is_nil(policy)
 
   # -- Render ---------------------------------------------------------
 
@@ -248,6 +410,88 @@ defmodule EmisarWeb.PoliciesLive do
             to single out specific actions that don't fit their tier.
           </p>
         </section>
+
+        <section class="rounded-xl border border-zinc-900 bg-zinc-950/40 p-5">
+          <header>
+            <h2 class="text-base font-semibold text-zinc-100">Scope</h2>
+            <p class="mt-0.5 text-xs text-zinc-500">
+              The account policy applies fleet-wide. A runner or group override
+              <strong class="text-zinc-300">replaces</strong>
+              it for that runner or group — most specific wins (runner &gt; group &gt; account),
+              it doesn't layer on top.
+            </p>
+          </header>
+
+          <div class="mt-4 flex flex-wrap gap-2">
+            <.scope_pill
+              label="Account default"
+              scope="account"
+              value=""
+              active={@scope_type == :account}
+            />
+            <.scope_pill
+              :for={policy <- @scoped_policies}
+              label={scope_label(policy.scope_type, policy.scope_value, @runners)}
+              kind={policy.scope_type}
+              scope={to_string(policy.scope_type)}
+              value={policy.scope_value}
+              active={scope_active?(assigns, policy.scope_type, policy.scope_value)}
+            />
+          </div>
+
+          <div
+            :if={Policies.subject_can_manage_policies?(@current_subject)}
+            class="mt-4 grid gap-3 sm:grid-cols-2"
+          >
+            <div :if={addable_runners(@runners, @scoped_policies) != []}>
+              <label class="block text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                Add a runner override
+              </label>
+              <select name="runner_id" phx-change="add_runner_scope" class={input_class()}>
+                <option value="">Pick a runner…</option>
+                <option :for={runner <- addable_runners(@runners, @scoped_policies)} value={runner.id}>
+                  {runner.name}
+                </option>
+              </select>
+            </div>
+
+            <div :if={addable_groups(@groups, @scoped_policies) != []}>
+              <label class="block text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                Add a group override
+              </label>
+              <select name="group" phx-change="add_group_scope" class={input_class()}>
+                <option value="">Pick a group…</option>
+                <option :for={group <- addable_groups(@groups, @scoped_policies)} value={group}>
+                  {group}
+                </option>
+              </select>
+            </div>
+          </div>
+        </section>
+
+        <div class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-zinc-900 bg-zinc-950/40 px-5 py-3">
+          <div class="flex items-center gap-2 text-sm">
+            <span class="text-zinc-500">Editing</span>
+            <span class="font-medium text-zinc-100">{active_scope_title(assigns)}</span>
+            <span
+              :if={unsaved_scope?(assigns)}
+              class="rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-amber-300"
+            >
+              new
+            </span>
+          </div>
+          <button
+            :if={
+              deletable_scope?(assigns) and Policies.subject_can_manage_policies?(@current_subject)
+            }
+            type="button"
+            phx-click="delete_scope"
+            data-confirm="Remove this override? That runner/group falls back to the account default."
+            class="inline-flex items-center gap-1.5 rounded-lg border border-zinc-800 px-3 py-1.5 text-xs font-medium text-zinc-400 hover:border-rose-700 hover:text-rose-300"
+          >
+            <.icon name="hero-trash" class="h-3.5 w-3.5" /> Remove override
+          </button>
+        </div>
 
         <form id="policy-form" phx-change="form_change" phx-submit="save" class="space-y-6">
           <%!-- The policy is structured data (tier defaults + overrides) assembled
@@ -330,6 +574,36 @@ defmodule EmisarWeb.PoliciesLive do
         </form>
       </div>
     </.dashboard_shell>
+    """
+  end
+
+  attr :label, :string, required: true
+  attr :scope, :string, required: true
+  attr :value, :string, required: true
+  attr :active, :boolean, required: true
+  attr :kind, :atom, default: :account
+
+  defp scope_pill(assigns) do
+    ~H"""
+    <button
+      type="button"
+      phx-click="switch_scope"
+      phx-value-scope={@scope}
+      phx-value-value={@value}
+      class={[
+        "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium",
+        @active && "border-indigo-500 bg-indigo-500/10 text-indigo-200",
+        !@active && "border-zinc-800 text-zinc-400 hover:border-zinc-600 hover:text-zinc-200"
+      ]}
+    >
+      <span
+        :if={@kind != :account}
+        class="text-[10px] font-semibold uppercase tracking-wider text-zinc-500"
+      >
+        {@kind}
+      </span>
+      {@label}
+    </button>
     """
   end
 

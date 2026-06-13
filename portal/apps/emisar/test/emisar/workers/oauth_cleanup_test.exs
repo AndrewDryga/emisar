@@ -48,6 +48,6 @@ defmodule Emisar.Workers.OAuthCleanupTest do
     {1, _} = AuthorizationCode.Query.all() |> Repo.update_all(set: [expires_at: past])
 
     assert :ok = OAuthCleanup.perform(%Oban.Job{args: %{}})
-    assert Repo.aggregate(AuthorizationCode.Query.all(), :count) == 0
+    refute Repo.exists?(AuthorizationCode.Query.all())
   end
 end

@@ -46,10 +46,14 @@ defmodule Emisar.Policies.Policy.Changeset do
         put_change(changeset, :scope_value, "")
 
       scope when scope in [:runner, :group] ->
-        validate_length(changeset, :scope_value,
-          min: 1,
-          message: "is required for a #{scope} policy"
-        )
+        # validate_length(min: 1) won't fire here: a blank scope_value equals
+        # the schema default, so cast registers no change and length validation
+        # skips it. Read the resolved field and reject a blank one explicitly.
+        if get_field(changeset, :scope_value) in [nil, ""] do
+          add_error(changeset, :scope_value, "is required for a #{scope} policy")
+        else
+          changeset
+        end
 
       _ ->
         changeset

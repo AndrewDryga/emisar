@@ -133,6 +133,41 @@ defmodule EmisarWeb.AuditSummaryTest do
     test "empty changes produce no chips" do
       assert [] = AuditSummary.summary_pairs(ev("policy.updated", %{"changes" => %{}}))
     end
+
+    test "a runner-scoped edit leads with a scope chip" do
+      pairs =
+        AuditSummary.summary_pairs(
+          ev("policy.updated", %{
+            "scope_type" => "runner",
+            "scope_value" => "runner-1",
+            "changes" => %{"defaults" => %{"low" => %{"from" => "allow", "to" => "deny"}}}
+          })
+        )
+
+      assert pairs == [{"scope", "runner: runner-1"}, {"tier defaults", "1"}]
+    end
+
+    test "an account-scoped edit gets no scope chip" do
+      pairs =
+        AuditSummary.summary_pairs(
+          ev("policy.updated", %{
+            "scope_type" => "account",
+            "scope_value" => "",
+            "changes" => %{"defaults" => %{"low" => %{"from" => "allow", "to" => "deny"}}}
+          })
+        )
+
+      assert pairs == [{"tier defaults", "1"}]
+    end
+  end
+
+  describe "policy.scope_deleted" do
+    test "names the removed override's scope" do
+      assert [{"scope", "group: db"}] =
+               AuditSummary.summary_pairs(
+                 ev("policy.scope_deleted", %{"scope_type" => "group", "scope_value" => "db"})
+               )
+    end
   end
 
   describe "graceful fallthrough" do

@@ -54,7 +54,11 @@ defmodule Emisar.PoliciesPersistenceTest do
       account = account_fixture()
 
       assert {:deny, [], "no policy configured for this account", nil} =
-               Policies.evaluate_with_policy(account.id, %{action_id: "linux.uptime", risk: :low}, nil)
+               Policies.evaluate_with_policy(
+                 account.id,
+                 %{action_id: "linux.uptime", risk: :low},
+                 nil
+               )
     end
 
     test "bridges the catalog's risk atom to the stored string tiers" do

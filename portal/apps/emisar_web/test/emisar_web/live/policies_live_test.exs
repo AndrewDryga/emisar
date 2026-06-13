@@ -199,4 +199,123 @@ defmodule EmisarWeb.PoliciesLiveTest do
                ~r/name="policy\[defaults\]\[medium\]".*?<option value="require_approval" selected/s
     end
   end
+
+  describe "runner / group overrides" do
+    setup %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      %{conn: conn, account: account, subject: Emisar.Fixtures.subject_for(user, account)}
+    end
+
+    test "an existing override renders as a pill labelled with the runner name", ctx do
+      runner =
+        Emisar.Fixtures.runner_fixture(account_id: ctx.account.id, name: "web-1", group: "web")
+
+      {:ok, _} = Policies.save_scoped_rules(deny_all(), :runner, runner.id, ctx.subject)
+
+      {:ok, _lv, html} = live(ctx.conn, ~p"/app/policies")
+
+      assert html =~ "Account default"
+      assert html =~ "web-1"
+    end
+
+    test "picking a runner from the add-picker and saving persists a runner-scoped policy", ctx do
+      runner =
+        Emisar.Fixtures.runner_fixture(account_id: ctx.account.id, name: "web-1", group: "web")
+
+      {:ok, lv, _html} = live(ctx.conn, ~p"/app/policies")
+
+      # The add-picker switches the editor to the not-yet-saved runner scope.
+      html =
+        lv
+        |> element("select[name='runner_id']")
+        |> render_change(%{"runner_id" => runner.id})
+
+      assert html =~ "Runner override · web-1"
+      assert html =~ "new"
+
+      lv |> form("#policy-form") |> render_submit()
+
+      assert {:ok, policy} = Policies.fetch_scoped_policy(:runner, runner.id, ctx.subject)
+      assert policy.scope_type == :runner
+      assert policy.scope_value == runner.id
+    end
+
+    test "picking a group from the add-picker and saving persists a group-scoped policy", ctx do
+      _runner =
+        Emisar.Fixtures.runner_fixture(account_id: ctx.account.id, name: "n1", group: "prod")
+
+      {:ok, lv, _html} = live(ctx.conn, ~p"/app/policies")
+
+      html =
+        lv
+        |> element("select[name='group']")
+        |> render_change(%{"group" => "prod"})
+
+      assert html =~ "Group override · prod"
+
+      lv |> form("#policy-form") |> render_submit()
+
+      assert {:ok, policy} = Policies.fetch_scoped_policy(:group, "prod", ctx.subject)
+      assert policy.scope_type == :group
+      assert policy.scope_value == "prod"
+    end
+
+    test "switching to a saved override loads it and exposes a remove button", ctx do
+      runner =
+        Emisar.Fixtures.runner_fixture(account_id: ctx.account.id, name: "db-1", group: "db")
+
+      {:ok, _} = Policies.save_scoped_rules(deny_all(), :runner, runner.id, ctx.subject)
+
+      {:ok, lv, _html} = live(ctx.conn, ~p"/app/policies")
+      html = lv |> element("button", "db-1") |> render_click()
+
+      assert html =~ "Runner override · db-1"
+      assert html =~ "Remove override"
+    end
+
+    test "removing an override falls the scope back to the account default", ctx do
+      runner =
+        Emisar.Fixtures.runner_fixture(account_id: ctx.account.id, name: "db-1", group: "db")
+
+      {:ok, _} = Policies.save_scoped_rules(deny_all(), :runner, runner.id, ctx.subject)
+
+      {:ok, lv, _html} = live(ctx.conn, ~p"/app/policies")
+      lv |> element("button", "db-1") |> render_click()
+      html = lv |> element("button", "Remove override") |> render_click()
+
+      assert html =~ "Override removed"
+      assert {:error, :not_found} = Policies.fetch_scoped_policy(:runner, runner.id, ctx.subject)
+    end
+
+    test "a viewer sees the policy read-only and a forged save is denied", ctx do
+      _runner =
+        Emisar.Fixtures.runner_fixture(account_id: ctx.account.id, name: "web-1", group: "web")
+
+      viewer = Emisar.Fixtures.user_fixture()
+
+      _ =
+        Emisar.Fixtures.membership_fixture(
+          account_id: ctx.account.id,
+          user_id: viewer.id,
+          role: "viewer"
+        )
+
+      {:ok, lv, html} = build_conn() |> log_in_user(viewer) |> live(~p"/app/policies")
+
+      # No management affordances: no add-picker, no Save button.
+      refute html =~ "Add a runner override"
+      refute html =~ ~s(form="policy-form")
+
+      # A forged save event is refused at the handler (apostrophe is HTML-escaped).
+      assert render_hook(lv, "save", %{}) =~ "have permission to do that"
+    end
+  end
+
+  defp deny_all do
+    %{
+      "schema_version" => 2,
+      "defaults" => %{"low" => "deny", "medium" => "deny", "high" => "deny", "critical" => "deny"},
+      "overrides" => []
+    }
+  end
 end

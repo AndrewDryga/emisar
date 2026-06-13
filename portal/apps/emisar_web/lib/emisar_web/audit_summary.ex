@@ -244,6 +244,7 @@ defmodule EmisarWeb.AuditSummary do
 
     chunks =
       [
+        scope_chunk(p),
         version_chunk,
         defaults_changed > 0 && {"tier defaults", to_string(defaults_changed)},
         n_added > 0 && {"+overrides", to_string(n_added)},
@@ -254,6 +255,9 @@ defmodule EmisarWeb.AuditSummary do
 
     chunks
   end
+
+  defp summarize("policy.scope_deleted", p),
+    do: [scope_chunk(p)] |> Enum.filter(& &1)
 
   defp summarize("policy.evaluated", p) do
     base = pairs(decision: get(p, :decision), reason: get(p, :reason))
@@ -280,6 +284,18 @@ defmodule EmisarWeb.AuditSummary do
       {_k, ""} -> []
       {k, v} -> [{to_string(k), to_string(v)}]
     end)
+  end
+
+  # Surfaces a runner/group policy override; the account default (the
+  # common case) gets no chip so the summary row stays uncluttered. The
+  # runner scope_value is the runner id — precise, and the detail page's
+  # payload carries it in full.
+  defp scope_chunk(p) do
+    case get(p, :scope_type) do
+      "runner" -> {"scope", "runner: " <> to_string(get(p, :scope_value))}
+      "group" -> {"scope", "group: " <> to_string(get(p, :scope_value))}
+      _ -> nil
+    end
   end
 
   defp format_bool(true), do: "yes"
