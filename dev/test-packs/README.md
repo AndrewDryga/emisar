@@ -14,7 +14,7 @@ packs/<pack>/                # at the repo root (a sibling of runner/)
 └── test/
     └── cases.yaml          # one entry per action under actions/
 
-runner/test-packs/           # mounted in the container at /workspace/test-packs
+dev/test-packs/              # mounted in the container at /workspace/test-packs
 ├── Dockerfile               # builds emisar-runner-tools (all CLI binaries)
 ├── docker-compose.yaml      # backing services (postgres, redis, …); mounts packs/ at /packs
 ├── harness.sh               # run a single pack's cases
@@ -51,16 +51,16 @@ cases:
 
 ```sh
 # Build the runner-tools image (one-time)
-docker compose -f test-packs/docker-compose.yaml build runner-tools
+docker compose -f dev/test-packs/docker-compose.yaml build runner-tools
 
 # Run every pack (boots all SUTs)
-docker compose -f test-packs/docker-compose.yaml up -d
-docker compose -f test-packs/docker-compose.yaml run --rm runner-tools \
+docker compose -f dev/test-packs/docker-compose.yaml up -d
+docker compose -f dev/test-packs/docker-compose.yaml run --rm runner-tools \
     /workspace/test-packs/run-all.sh
 
 # Run one pack
-docker compose -f test-packs/docker-compose.yaml up -d redis
-docker compose -f test-packs/docker-compose.yaml run --rm runner-tools \
+docker compose -f dev/test-packs/docker-compose.yaml up -d redis
+docker compose -f dev/test-packs/docker-compose.yaml run --rm runner-tools \
     /workspace/test-packs/harness.sh redis
 ```
 

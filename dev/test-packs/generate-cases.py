@@ -19,7 +19,7 @@ import sys
 import yaml
 from pathlib import Path
 
-ROOT = Path(__file__).parent.parent / "examples" / "packs"
+ROOT = Path(__file__).parent.parent.parent / "packs"
 OUT_FILE = "test/cases.yaml"
 
 # --- Per-pack policy --------------------------------------------------------

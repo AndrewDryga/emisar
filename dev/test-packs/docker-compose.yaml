@@ -15,9 +15,9 @@ services:
       dockerfile: Dockerfile
     image: emisar-runner-tools:latest
     volumes:
+      # /workspace = dev/ (this file's parent), so harness scripts resolve at
+      # /workspace/test-packs/...; packs/ is a repo-root sibling, mounted at /packs.
       - ../:/workspace:ro
-      # packs/ now lives at the repo root (sibling of runner/); mount it
-      # where the harness + runner config expect it.
       - ../../packs:/packs:ro
       - ./bin:/opt/emisar/bin:ro
       - ./reports:/reports

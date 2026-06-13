@@ -1,9 +1,9 @@
-# Dev-only fixtures
+# Dev-only fixtures & harnesses
 
-Files used **only** by the local docker-compose stack at the repo root.
-None of this ships with production releases — the runner tarball
-produced by the release workflow contains exactly the runner binary
-and its config skeleton.
+Local-only development scaffolding for the docker-compose stacks — fixtures
+for the root demo stack and the standalone pack-test harness. None of this
+ships with production releases — the runner tarball produced by the release
+workflow contains exactly the runner binary and its config skeleton.
 
 ## `runner-fixtures/`
 
@@ -29,3 +29,20 @@ volumes:
 Real Linux hosts (where production runners install via `install.sh`)
 already have the real `/usr/bin/systemctl`, `/usr/bin/journalctl`,
 `/var/log/syslog`, etc. The runner image is unchanged from production.
+
+## `test-packs/`
+
+A standalone docker-compose **integration harness** for the action packs —
+separate from the root demo stack. It boots the real backing services
+(postgres, redis, consul, …), then runs each pack's `test/cases.yaml`
+through the runner binary and asserts on exit code + stdout:
+
+```sh
+docker compose -f dev/test-packs/docker-compose.yaml up -d redis
+docker compose -f dev/test-packs/docker-compose.yaml run --rm runner-tools \
+    /workspace/test-packs/harness.sh redis
+```
+
+The pack catalog (`packs/`) is mounted read-only at `/packs`; the test cases
+live with each pack at `packs/<pack>/test/cases.yaml`. See
+`test-packs/README.md` for the full schema and skip rationale.
