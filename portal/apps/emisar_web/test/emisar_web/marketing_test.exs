@@ -192,4 +192,21 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "bg-indigo-400"
     end
   end
+
+  describe "structured data" do
+    test "a docs page emits BreadcrumbList JSON-LD (Home → Docs → page)", %{conn: conn} do
+      html = conn |> get(~p"/docs/runners") |> html_response(200)
+      assert html =~ ~s(type="application/ld+json")
+      assert html =~ "BreadcrumbList"
+      assert html =~ ~s("name":"Home")
+      assert html =~ ~s("name":"Docs")
+    end
+
+    test "a non-docs generated page emits a 2-level breadcrumb (no Docs crumb)", %{conn: conn} do
+      html = conn |> get(~p"/compare/raw-ssh-for-ai") |> html_response(200)
+      assert html =~ "BreadcrumbList"
+      assert html =~ ~s("name":"Home")
+      refute html =~ ~s("name":"Docs")
+    end
+  end
 end

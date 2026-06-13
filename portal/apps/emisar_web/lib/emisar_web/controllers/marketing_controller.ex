@@ -238,11 +238,31 @@ defmodule EmisarWeb.MarketingController do
         do: Keyword.put(base_attrs, :meta_description, description),
         else: base_attrs
 
-    attrs =
-      case Map.get(@page_json_ld, action) do
-        nil -> attrs
-        json -> Keyword.put(attrs, :json_ld, json)
-      end
+    # BreadcrumbList structured data for every generated page (home + pricing
+    # carry their own bespoke JSON-LD). Derived from the path — Home → Docs
+    # (for /docs/*) → this page — so search results can show the hierarchy. A
+    # bespoke `@page_json_ld` entry, when present, overrides the breadcrumb.
+    docs_crumb =
+      if String.starts_with?(path, "/docs/"), do: [{"Docs", @base <> "/docs"}], else: []
+
+    crumbs = [{"Home", @base <> "/"}] ++ docs_crumb ++ [{title, @base <> path}]
+
+    breadcrumb_ld =
+      Jason.encode!(
+        %{
+          "@context" => "https://schema.org",
+          "@type" => "BreadcrumbList",
+          "itemListElement" =>
+            crumbs
+            |> Enum.with_index(1)
+            |> Enum.map(fn {{name, item}, position} ->
+              %{"@type" => "ListItem", "position" => position, "name" => name, "item" => item}
+            end)
+        },
+        escape: :html_safe
+      )
+
+    attrs = Keyword.put(attrs, :json_ld, Map.get(@page_json_ld, action, breadcrumb_ld))
 
     template_atom = template
     attrs_literal = Macro.escape(attrs)
