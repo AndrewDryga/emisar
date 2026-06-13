@@ -47,8 +47,9 @@ If there's no plan yet and the change is non-trivial, run `/plan` first.
 ## Finish (IL-20 — verify before claiming done)
 
 ```sh
-cd portal && mix compile --warnings-as-errors && mix format --check-formatted && mix test
+cd portal && mix compile --warnings-as-errors && mix format --check-formatted && mix credo && mix test
 ```
-Run the sanity grep (AGENTS.md → Enforcement). Then **show the output** and give a
-plain status: what's done, what's verified, what's left. If something is unverified,
-say so — don't say "should work". Offer `/ship-review` before the PR.
+`mix credo` is the mechanical gate — the `Emisar.Checks.*` AST checks (AGENTS.md →
+Enforcement) must report zero. Then **show the output** and give a plain status:
+what's done, what's verified, what's left. If something is unverified, say so — don't
+say "should work". Offer `/ship-review` before the PR.

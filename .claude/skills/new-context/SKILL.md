@@ -85,9 +85,8 @@ Check `test/support/fixtures.ex` for the exact fixture names (`owner_subject_fix
 
 ## Finish
 
-1. Sanity grep (AGENTS.md → Enforcement) — must be zero hits.
-2. `cd portal && mix compile --warnings-as-errors && mix format && mix test test/emisar/<context>_test.exs` (IL-20).
-3. Run `/iron-review` on the diff.
+1. The IL-20 gate, green: `cd portal && mix compile --warnings-as-errors && mix format --check-formatted && mix credo && mix test test/emisar/<context>_test.exs`. `mix credo` is the mechanical check — the `Emisar.Checks.*` AST rules (AGENTS.md → Enforcement) must report zero.
+2. Run `/iron-review` on the diff.
 
 Stop and report what you built + the test output. Don't wire the LiveView in the
 same change unless asked — keep the context PR reviewable.

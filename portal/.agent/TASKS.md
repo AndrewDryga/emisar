@@ -8,10 +8,13 @@ Completed work before 2026-06-12 is in `ARCHIVE.md`; `git log` is the record aft
 
 ## Active
 
-- [ ] Fix the `work` and `new-context` skills — they still reference the retired
+- [x] Fix the `work` and `new-context` skills — they still reference the retired
       "sanity grep" enforcement model. Update to the current Credo model (custom
       `Emisar.Checks.*` AST checks, `mix credo`). Found during the AGENTS.md rename
       sweep; the rules themselves are correct, only the enforcement wording is stale.
+      _(Also swept `context-fn` — same shape — and folded `mix credo` into all three
+      IL-20 gate commands. Left `iron-review`'s grep methodology + the deliberately
+      abbreviated frontend/deploy/document/testing gates alone.)_
 - [ ] _(repo-wide, deferred)_ Codex command-wrappers — spike the `.codex/prompts/`
       path + format, then add thin wrappers that point at `AGENTS.md` / `.agent/rules`
       (no knowledge duplication). The AGENTS.md foundation already makes Codex read
