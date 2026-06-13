@@ -9,8 +9,8 @@ allowed-tools: Read, Grep, Glob, Bash, Write, Edit
 # Scaffold a new context (the standard shape)
 
 Build a complete, authorized, tested context. The module templates live in
-**`portal/CLAUDE.md` §1–§5** (already in context) — this skill is the *order*,
-the *wiring* CLAUDE.md doesn't cover, and the checklist. Copy an existing
+**`portal/AGENTS.md` §1–§5** (already in context) — this skill is the *order*,
+the *wiring* AGENTS.md doesn't cover, and the checklist. Copy an existing
 context (`Runbooks` is the cleanest reference) rather than inventing shapes.
 
 `<Context>` = plural domain (e.g. `Widgets`). `<Schema>` = singular (e.g. `Widget`).
@@ -43,7 +43,7 @@ for what is really one new function — use `/context-fn` instead.
 
 7. **Tests** — `test/emisar/<context>_test.exs` (see skeleton below).
 
-## Wiring (the part CLAUDE.md doesn't show)
+## Wiring (the part AGENTS.md doesn't show)
 
 **Register the authorizer** in the permission union, or the new permissions
 never reach any `%Subject{}`:
@@ -85,7 +85,7 @@ Check `test/support/fixtures.ex` for the exact fixture names (`owner_subject_fix
 
 ## Finish
 
-1. Sanity grep (CLAUDE.md → Enforcement) — must be zero hits.
+1. Sanity grep (AGENTS.md → Enforcement) — must be zero hits.
 2. `cd portal && mix compile --warnings-as-errors && mix format && mix test test/emisar/<context>_test.exs` (IL-20).
 3. Run `/iron-review` on the diff.
 

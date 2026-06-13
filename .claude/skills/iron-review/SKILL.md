@@ -8,7 +8,7 @@ allowed-tools: Read, Grep, Glob, Bash
 
 # Iron Law review
 
-Check `portal/` Elixir against the Iron Laws in `portal/CLAUDE.md`. The custom
+Check `portal/` Elixir against the Iron Laws in `portal/AGENTS.md`. The custom
 Credo checks (`Emisar.Checks.*`) cover the mechanical subset — start by running
 `mix credo` from `portal/` and treating any finding as a failure; this skill
 **adds the judgment laws** — including IL-15 and IL-16, whose safety depends on

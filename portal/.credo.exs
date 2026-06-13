@@ -72,7 +72,7 @@
       checks: %{
         enabled: [
           #
-          ## Emisar Iron Laws + house rules (portal/CLAUDE.md; sources in credo/checks/)
+          ## Emisar Iron Laws + house rules (portal/AGENTS.md; sources in credo/checks/)
           #
           {Emisar.Checks.IL01NoInlineEctoDsl, []},
           {Emisar.Checks.IL02NoRepoGet, []},
@@ -199,7 +199,7 @@
         ],
         disabled: [
           #
-          # House-rule conflicts (see portal/CLAUDE.md):
+          # House-rule conflicts (see portal/AGENTS.md):
           #  * AliasUsage is the INVERSE of the alias rule — cross-context
           #    modules are referenced THROUGH the owning context's alias
           #    (Users.User, Runners.Runner.Query); the PostToolUse hook

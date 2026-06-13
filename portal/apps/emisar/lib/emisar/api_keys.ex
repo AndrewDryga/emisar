@@ -267,7 +267,7 @@ defmodule Emisar.ApiKeys do
   Peeks at the presented bearer token, resolving it to an `%ApiKey{}`.
   Bumps `last_used_at` and — if the key is auto-generated — clears the
   auto flag and audit-logs `api_key.bound`. Returns the updated struct
-  or nil (`peek_*` per CLAUDE.md §1.1 — nil-or-struct credential
+  or nil (`peek_*` per AGENTS.md §1.1 — nil-or-struct credential
   lookup).
 
   Internal — called from the MCP controller's `:authenticate` plug

@@ -430,7 +430,7 @@ defmodule Emisar.Approvals do
 
   @doc """
   Peek a usable grant for the given dispatch. Returns the grant, or
-  `nil` if none matches — `peek_*` per CLAUDE.md §1.1 convention for
+  `nil` if none matches — `peek_*` per AGENTS.md §1.1 convention for
   nil-or-struct internal lookups.
 
   Matching is api_key-scoped (a grant given to one key never silently

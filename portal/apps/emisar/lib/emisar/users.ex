@@ -8,7 +8,7 @@ defmodule Emisar.Users do
   only through `Emisar.Accounts.Membership`, so nothing here is scoped by
   account. Public mutations are either *self-service* (the user is the
   `%Subject{}`'s own actor — that match is the authorization, per
-  CLAUDE.md §1.2) or *pre-Subject boundary* calls (registration,
+  AGENTS.md §1.2) or *pre-Subject boundary* calls (registration,
   sign-in) where the web layer hasn't resolved a tenant yet. Tenant
   membership, invitations, and team administration live in
   `Emisar.Accounts`.

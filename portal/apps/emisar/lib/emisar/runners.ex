@@ -807,7 +807,7 @@ defmodule Emisar.Runners do
   Peeks at the presented raw secret, resolving it to an `%AuthKey{}`.
   Returns nil when there's no match or the key is unusable (revoked/
   deleted/expired/single-use exhausted). Constant-time hash comparison.
-  `peek_*` per CLAUDE.md §1.1 — nil-or-struct credential lookup.
+  `peek_*` per AGENTS.md §1.1 — nil-or-struct credential lookup.
 
   Internal — only called from the runner-register controller before
   any Subject exists. The presented raw secret IS the auth.

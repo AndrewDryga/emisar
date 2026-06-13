@@ -9,7 +9,7 @@ allowed-tools: Read, Grep, Glob, Bash
 # Plan a change (the boring, shippable way)
 
 Produce a plan the user can approve, then hand to `/work`. Optimize for the
-smallest correct slice, not the grandest design. Read `portal/CLAUDE.md` (laws +
+smallest correct slice, not the grandest design. Read `portal/AGENTS.md` (laws +
 prime directive) and the contexts you'll touch **before** planning — plan against
 the real code, not a guess.
 

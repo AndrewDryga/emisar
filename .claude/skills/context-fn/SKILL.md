@@ -9,7 +9,7 @@ allowed-tools: Read, Grep, Glob, Bash, Write, Edit
 # Add a context function (the standard shape)
 
 Pick the shape by what the function does, then follow it exactly. Full rules:
-`portal/CLAUDE.md` §1. Read the target context first and **match its existing
+`portal/AGENTS.md` §1. Read the target context first and **match its existing
 functions** — consistency over preference.
 
 Every public function, no exceptions: `%Subject{}` is the **last required
