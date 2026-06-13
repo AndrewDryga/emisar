@@ -90,6 +90,32 @@ defmodule EmisarWeb.DashboardLiveTest do
       # LLM onboarding card still shows — no API key was minted in
       # this test.
       assert html =~ "Connect an LLM"
+      # A runner with nothing dispatched yet gets the dispatch nudge.
+      assert html =~ "Dispatch your first action"
+    end
+
+    test "the dispatch nudge appears with a runner-but-no-runs and clears after the first run",
+         %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      runner = Emisar.Fixtures.runner_fixture(account_id: account.id)
+
+      {:ok, _lv, html} = live(conn, ~p"/app")
+      assert html =~ "Dispatch your first action"
+      # Deep-linked to the runner's own catalog, not the runners list.
+      assert html =~ ~p"/app/runners/#{runner.id}"
+
+      {:ok, _run} =
+        Emisar.Runs.create_run(%{
+          account_id: account.id,
+          runner_id: runner.id,
+          action_id: "linux.uptime",
+          args: %{},
+          reason: "first run",
+          source: "operator"
+        })
+
+      {:ok, _lv2, html2} = live(conn, ~p"/app")
+      refute html2 =~ "Dispatch your first action"
     end
 
     test "account broadcasts reload the stats without a refresh", %{conn: conn} do

@@ -35,6 +35,7 @@ defmodule EmisarWeb.DashboardLive do
     |> assign(:loading?, false)
     |> assign(:runners_total, length(runners))
     |> assign(:runners_connected, Enum.count(runners, & &1.online?))
+    |> assign(:first_runner_id, first_runner_id(runners))
     |> assign(
       :recent_runs,
       list_or_empty(Runs.list_recent_runs(subject, limit: 6, preload: [:runner]))
@@ -75,6 +76,9 @@ defmodule EmisarWeb.DashboardLive do
   defp unwrap_ok({:ok, value}), do: value
   defp unwrap_ok(_), do: nil
 
+  defp first_runner_id([runner | _]), do: runner.id
+  defp first_runner_id([]), do: nil
+
   def render(assigns) do
     ~H"""
     <.dashboard_shell
@@ -98,6 +102,7 @@ defmodule EmisarWeb.DashboardLive do
         pending_approvals={@pending_approvals}
         pending_approvals_count={@pending_approvals_count}
         recent_runs={@recent_runs}
+        first_runner_id={@first_runner_id}
         run_stats={@run_stats}
         has_llm_connected?={@has_llm_connected?}
         billing={@billing}
@@ -108,21 +113,24 @@ defmodule EmisarWeb.DashboardLive do
     """
   end
 
-  # Onboarding checklist. Each card disappears the moment its
-  # condition is met — "no runners" goes away when the first runner
-  # registers, "no LLM" goes away when the first API key gets minted.
-  # When both are done, the whole block hides; the dashboard goes
-  # straight to stats. Same single-line-tile shape as the original
-  # bottom-of-page LLM nag — just hoisted to the top so a fresh
-  # account sees the next step instead of "0 runners, 0 runs".
+  # Onboarding checklist. Each card disappears the moment its step is
+  # done: "connect a runner" once the first registers, "dispatch your
+  # first action" once any run exists, "connect an LLM" once the first
+  # API key is minted. The block hides only when the account both has a
+  # run on the board and an LLM connected — so a fresh account always
+  # sees its next step at the top instead of "0 runners, 0 runs". The
+  # connect-runner and dispatch cards are mutually exclusive (one needs
+  # zero runners, the other needs at least one), so at most two show.
 
   attr :runners_total, :integer, required: true
   attr :has_llm_connected?, :boolean, required: true
+  attr :has_runs?, :boolean, required: true
+  attr :first_runner_id, :string, default: nil
 
   defp onboarding_checklist(assigns) do
     ~H"""
     <div
-      :if={@runners_total == 0 or not @has_llm_connected?}
+      :if={not @has_llm_connected? or not @has_runs?}
       class="mb-6 grid grid-cols-1 gap-3 lg:grid-cols-2"
     >
       <.onboarding_card
@@ -131,6 +139,13 @@ defmodule EmisarWeb.DashboardLive do
         icon="hero-cpu-chip"
         title="Connect a runner"
         body="Install the agent on a server you want to operate — one curl one-liner. The dashboard tracks the rest from heartbeat onwards."
+      />
+      <.onboarding_card
+        :if={@runners_total > 0 and not @has_runs?}
+        href={~p"/app/runners/#{@first_runner_id}"}
+        icon="hero-rocket-launch"
+        title="Dispatch your first action"
+        body="Open your runner, pick an action from its catalog, and run it. Policy decides allow, approve, or deny — and every run lands in the audit trail."
       />
       <.onboarding_card
         :if={not @has_llm_connected?}
@@ -179,6 +194,7 @@ defmodule EmisarWeb.DashboardLive do
   attr :pending_approvals, :list, required: true
   attr :pending_approvals_count, :integer, required: true
   attr :recent_runs, :list, required: true
+  attr :first_runner_id, :string, default: nil
   attr :run_stats, :map, required: true
   attr :has_llm_connected?, :boolean, required: true
   attr :billing, :map, required: true
@@ -190,6 +206,8 @@ defmodule EmisarWeb.DashboardLive do
     <.onboarding_checklist
       runners_total={@runners_total}
       has_llm_connected?={@has_llm_connected?}
+      has_runs?={@recent_runs != []}
+      first_runner_id={@first_runner_id}
     />
 
     <.plan_limit_banner :if={runner_headroom_warn?(@billing)} billing={@billing} />
