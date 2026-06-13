@@ -1,11 +1,11 @@
 defmodule Emisar.Audit.Multi do
   @moduledoc """
-  `Ecto.Multi` helpers for inserting audit-log rows inside a parent
-  transaction. Use these in place of `Emisar.Audit.log/3` whenever
-  the audit row must commit together with a parent state transition —
-  otherwise a downstream constraint failure or rollback can leave the
-  audit row orphaned (or vice versa, a state change without an audit
-  trail).
+  `Ecto.Multi` helper for inserting a user-scoped audit-log row inside a
+  parent transaction. Use it in place of `Emisar.Audit.log_for_user/3`
+  whenever the audit row must commit together with a parent state
+  transition — otherwise a downstream constraint failure or rollback can
+  leave the audit row orphaned (or vice versa, a state change without an
+  audit trail).
 
   Pair with `Emisar.Repo.commit_multi/2` so any `after_commit:`
   callback (PubSub broadcasts, emails, session-kill broadcasts) only
@@ -14,36 +14,6 @@ defmodule Emisar.Audit.Multi do
   alias Ecto.Multi
   alias Emisar.Audit
   alias Emisar.Users
-
-  @doc """
-  Adds an `Audit.Event` insert step to `multi`. `attrs_fn` receives
-  the multi's current `changes` map so the audit row can reference
-  freshly-inserted rows by their auto-generated ids:
-
-      Multi.new()
-      |> Multi.update(:policy, changeset)
-      |> Audit.Multi.log(:audit, fn %{policy: p} ->
-        {p.account_id, "policy.updated",
-         actor_id: subject.actor.id, subject_id: p.id, payload: %{...}}
-      end)
-      |> Repo.commit_multi()
-
-  `attrs_fn` returns either:
-    * `{account_id, event_type, attrs_keyword}` — the common case
-    * `nil` — skip the audit step (e.g. when a downstream condition
-      means there's nothing to log)
-  """
-  def log(multi, name, attrs_fn) when is_function(attrs_fn, 1) do
-    Multi.run(multi, name, fn _repo, changes ->
-      case attrs_fn.(changes) do
-        nil ->
-          {:ok, nil}
-
-        {account_id, event_type, attrs} ->
-          Audit.changeset(account_id, event_type, attrs) |> Emisar.Repo.insert()
-      end
-    end)
-  end
 
   @doc """
   Adds an audit step that logs an event for a `%Users.User{}`, looking up
