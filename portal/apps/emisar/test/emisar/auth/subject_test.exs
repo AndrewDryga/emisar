@@ -164,6 +164,48 @@ defmodule Emisar.Auth.SubjectTest do
       assert {:error, :unauthorized} =
                Emisar.Auth.Authorizer.ensure_has_permissions(viewer, {:one_of, perms})
     end
+
+    test "a plain list requires ALL permissions — holding every one passes" do
+      account = account_fixture()
+      user = user_fixture()
+
+      owner =
+        Subject.for_user(user, account, %Membership{
+          role: "owner",
+          user_id: user.id,
+          account_id: account.id
+        })
+
+      # Owner holds both of these.
+      perms = [
+        Emisar.Accounts.Authorizer.manage_security_settings_permission(),
+        Emisar.Accounts.Authorizer.manage_team_permission()
+      ]
+
+      assert :ok = Emisar.Auth.Authorizer.ensure_has_permissions(owner, perms)
+    end
+
+    test "a plain list is rejected when the subject lacks any one of them" do
+      account = account_fixture()
+      user = user_fixture()
+
+      admin =
+        Subject.for_user(user, account, %Membership{
+          role: "admin",
+          user_id: user.id,
+          account_id: account.id
+        })
+
+      # Admin holds manage_team but NOT manage_security_settings (owner-only),
+      # so requiring both fails.
+      perms = [
+        Emisar.Accounts.Authorizer.manage_team_permission(),
+        Emisar.Accounts.Authorizer.manage_security_settings_permission()
+      ]
+
+      assert {:error, :unauthorized} =
+               Emisar.Auth.Authorizer.ensure_has_permissions(admin, perms)
+    end
   end
 
   describe "for_api_key/3" do
