@@ -182,7 +182,8 @@ defmodule EmisarWeb.PacksLive do
         <.icon name="hero-cube" class="mx-auto h-8 w-8 text-zinc-700" />
         <p class="mt-3 text-sm text-zinc-400">No packs reported yet.</p>
         <p class="mt-1 text-xs text-zinc-500">
-          Runners advertise their loaded packs on each (re)connect.
+          A pack is the bundle of actions a runner can run. Connect a runner and the packs
+          it loads appear here to trust or reject.
         </p>
       </div>
 
