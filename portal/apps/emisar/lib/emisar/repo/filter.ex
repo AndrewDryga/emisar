@@ -13,15 +13,8 @@ defmodule Emisar.Repo.Filter do
   alias Emisar.Repo.Filter.Range
   alias Emisar.Repo.Query
 
-  @typedoc """
-  A list of `{name, value}` pairs. `:and` / `:or` groups allow boolean
-  trees.
-  """
-  @type filters :: [
-          {name :: atom(), value :: term()}
-          | {:or, filters()}
-          | {:and, filters()}
-        ]
+  @typedoc "A list of `{name, value}` pairs applied conjunctively."
+  @type filters :: [{name :: atom(), value :: term()}]
 
   @type numeric_type :: :integer | :number
   @type datetime_type :: :date | :time | :datetime
@@ -80,19 +73,9 @@ defmodule Emisar.Repo.Filter do
   def build_dynamic(queryable, _filters, [], acc), do: {queryable, acc}
   def build_dynamic(queryable, [], _definitions, acc), do: {queryable, acc}
 
-  def build_dynamic(queryable, [{op, nested} | rest], definitions, acc) when op in [:or, :and] do
-    {queryable, dynamic} =
-      Enum.reduce(nested, {queryable, nil}, fn nested_filter, {queryable, inner_acc} ->
-        {queryable, dynamic} = build_dynamic(queryable, nested_filter, definitions, nil)
-        {queryable, merge_dynamic(op, inner_acc, dynamic)}
-      end)
-
-    build_dynamic(queryable, rest, definitions, merge_dynamic(:and, acc, dynamic))
-  end
-
   def build_dynamic(queryable, [{name, value} | rest], definitions, acc) do
     with {:ok, {queryable, dynamic}} <- apply_filter(definitions, name, value, queryable) do
-      build_dynamic(queryable, rest, definitions, merge_dynamic(:and, acc, dynamic))
+      build_dynamic(queryable, rest, definitions, merge_dynamic(acc, dynamic))
     end
   end
 
@@ -202,8 +185,7 @@ defmodule Emisar.Repo.Filter do
   defp value_type_valid?(:datetime, %NaiveDateTime{}), do: true
   defp value_type_valid?(_type, _value), do: false
 
-  def merge_dynamic(_op, dynamic, nil), do: dynamic
-  def merge_dynamic(_op, nil, dynamic), do: dynamic
-  def merge_dynamic(:and, a, b), do: dynamic(^a and ^b)
-  def merge_dynamic(:or, a, b), do: dynamic(^a or ^b)
+  def merge_dynamic(dynamic, nil), do: dynamic
+  def merge_dynamic(nil, dynamic), do: dynamic
+  def merge_dynamic(a, b), do: dynamic(^a and ^b)
 end

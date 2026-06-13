@@ -75,17 +75,16 @@ defmodule Emisar.Repo.FilterTest do
     end
   end
 
-  describe "merge_dynamic/3" do
+  describe "merge_dynamic/2" do
     test "a nil operand returns the other side unchanged" do
       condition = dynamic(true)
-      assert Filter.merge_dynamic(:and, condition, nil) == condition
-      assert Filter.merge_dynamic(:and, nil, condition) == condition
+      assert Filter.merge_dynamic(condition, nil) == condition
+      assert Filter.merge_dynamic(nil, condition) == condition
     end
 
-    test "and / or combine two dynamics into a dynamic expression" do
+    test "two dynamics are combined conjunctively into a dynamic expression" do
       condition = dynamic(true)
-      assert %Ecto.Query.DynamicExpr{} = Filter.merge_dynamic(:and, condition, condition)
-      assert %Ecto.Query.DynamicExpr{} = Filter.merge_dynamic(:or, condition, condition)
+      assert %Ecto.Query.DynamicExpr{} = Filter.merge_dynamic(condition, condition)
     end
   end
 
@@ -116,12 +115,6 @@ defmodule Emisar.Repo.FilterTest do
       assert {:q, %Ecto.Query.DynamicExpr{}} =
                Filter.build_dynamic(:q, [{:active, false}], definitions(), nil)
     end
-
-    # NOTE: :or/:and group handling (build_dynamic clause for `{op, nested}`)
-    # is intentionally NOT tested here — it's an unused capability with a
-    # latent bug (it recurses with a bare filter tuple where a list is
-    # required, so any grouped filter crashes). Flagged for a fix-or-remove
-    # decision rather than pinned as working. See coverage-deadcode findings.
 
     test "an unknown filter name is a clean error" do
       assert {:error, {:unknown_filter, name: :nope}} =
