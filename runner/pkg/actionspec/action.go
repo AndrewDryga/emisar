@@ -106,6 +106,26 @@ type Example struct {
 	Args  map[string]any `yaml:"args" json:"args"`
 }
 
+// reservedArgNames are the top-level request fields the control plane owns
+// on every MCP action dispatch (POST /tools/:action_id): the audit reason,
+// the runners fan-out list, the idempotency_key retry control, the wait
+// sync-poll knob, and the action_id itself. The control plane strips these
+// from the request before the remaining keys reach the runner as action
+// args, so an action arg sharing one of these names could never receive a
+// value — and reason/runners/idempotency_key additionally collide with the
+// generated JSON-Schema properties the LLM sees. Reject the collision at
+// pack-validation time rather than letting it silently break dispatch.
+//
+// Keep in sync with the portal's drop list in
+// apps/emisar_web/lib/emisar_web/controllers/mcp_controller.ex.
+var reservedArgNames = map[string]struct{}{
+	"action_id":       {},
+	"reason":          {},
+	"runners":         {},
+	"wait":            {},
+	"idempotency_key": {},
+}
+
 // Validate checks that the action is internally consistent and ready to load.
 func (a *Action) Validate() error {
 	if a.SchemaVersion != SchemaVersion {
@@ -170,6 +190,9 @@ func (a *Action) Validate() error {
 	for i := range a.Args {
 		if err := a.Args[i].Validate(); err != nil {
 			return fmt.Errorf("action %s: %w", a.ID, err)
+		}
+		if _, reserved := reservedArgNames[a.Args[i].Name]; reserved {
+			return fmt.Errorf("action %s: arg %q is a reserved control-plane field (one of action_id/reason/runners/wait/idempotency_key) and would be stripped before reaching the runner; rename it", a.ID, a.Args[i].Name)
 		}
 		if _, dup := seen[a.Args[i].Name]; dup {
 			return fmt.Errorf("action %s: duplicate arg %q", a.ID, a.Args[i].Name)

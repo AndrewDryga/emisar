@@ -15,17 +15,17 @@ args:
     description: Service ID.
     validation:
       pattern: "^[a-zA-Z0-9_.\\-:]{1,128}$"
-  - name: reason
+  - name: note
     type: string
     required: false
     default: "operator action"
-    description: Reason.
+    description: Maintenance reason recorded by Consul.
     validation:
       pattern: "^.{1,255}$"
 execution:
   command:
     binary: consul
-    argv: ["maint", "-enable", "-service", "{{ args.service_id }}", "-reason", "{{ args.reason }}"]
+    argv: ["maint", "-enable", "-service", "{{ args.service_id }}", "-reason", "{{ args.note }}"]
   timeout: 15s
 output:
   parser: text

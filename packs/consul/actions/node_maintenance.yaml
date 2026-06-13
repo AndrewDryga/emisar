@@ -8,11 +8,11 @@ side_effects:
   - All node service health checks report critical.
   - Service discovery routes traffic away from this node.
 args:
-  - name: reason
+  - name: note
     type: string
     required: false
     default: "operator action"
-    description: Reason recorded in the health check.
+    description: Maintenance reason recorded in the health check.
     validation:
       pattern: "^.{1,255}$"
 execution:
@@ -22,7 +22,7 @@ execution:
       - "maint"
       - "-enable"
       - "-reason"
-      - "{{ args.reason }}"
+      - "{{ args.note }}"
   timeout: 15s
 output:
   parser: text

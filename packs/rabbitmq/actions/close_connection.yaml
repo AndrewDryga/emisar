@@ -14,11 +14,11 @@ args:
     description: Connection PID (from list_connections).
     validation:
       pattern: "^<[0-9.]+>$"
-  - name: reason
+  - name: note
     type: string
     required: false
     default: "Closed by operator"
-    description: Reason string.
+    description: Explanation recorded with the connection close.
     validation:
       pattern: "^.{1,255}$"
 execution:
@@ -27,7 +27,7 @@ execution:
     argv:
       - "close_connection"
       - "{{ args.pid }}"
-      - "{{ args.reason }}"
+      - "{{ args.note }}"
   timeout: 30s
 output:
   parser: text

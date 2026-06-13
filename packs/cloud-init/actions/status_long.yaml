@@ -5,23 +5,23 @@ kind: exec
 risk: low
 description: >
   Detailed status — per-stage state, last update, recoverable + last
-  errors, datasource detected. With `wait: true`, blocks until cloud-init
+  errors, datasource detected. With `block: true`, blocks until cloud-init
   finishes (useful right after boot).
 side_effects:
-  - One CLI call (may block up to timeout if wait=true).
+  - One CLI call (may block up to timeout if block=true).
   - Read-only.
 args:
-  - name: wait
+  - name: block
     type: boolean
     required: false
     default: false
-    description: Block until cloud-init exits the running state.
+    description: Block until cloud-init exits the running state (passes --wait).
 execution:
   command:
     binary: /bin/sh
     argv:
       - "-c"
-      - "if [ '{{ args.wait }}' = 'true' ]; then cloud-init status --long --wait; else cloud-init status --long; fi"
+      - "if [ '{{ args.block }}' = 'true' ]; then cloud-init status --long --wait; else cloud-init status --long; fi"
   timeout: 300s
 output:
   parser: text
@@ -32,4 +32,4 @@ examples:
     args: {}
   - title: Wait for boot
     args:
-      wait: true
+      block: true

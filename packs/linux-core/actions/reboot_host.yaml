@@ -18,10 +18,10 @@ side_effects:
   - Every running service stops; all open connections drop.
 
 args:
-  - name: reason
+  - name: note
     type: string
     required: true
-    description: Why this reboot is happening (logged + broadcast).
+    description: Message broadcast to logged-in users in the reboot warning.
     validation:
       pattern: "^[a-zA-Z0-9 .,_:;/\\-]{4,200}$"
 
@@ -31,7 +31,7 @@ execution:
     argv:
       - "-r"
       - "+1"
-      - "emisar-initiated reboot: {{ args.reason }}"
+      - "emisar-initiated reboot: {{ args.note }}"
   timeout: 30s
 
 output:
@@ -42,4 +42,4 @@ output:
 examples:
   - title: Reboot for kernel upgrade
     args:
-      reason: "kernel upgrade to 5.15.140 — pending /var/run/reboot-required"
+      note: "kernel upgrade to 5.15.140 — pending /var/run/reboot-required"

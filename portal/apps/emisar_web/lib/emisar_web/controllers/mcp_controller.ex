@@ -75,6 +75,11 @@ defmodule EmisarWeb.McpController do
     # body into params, so it may land here too. `idempotency_key` is a
     # control field (Layer 2), not an action arg — drop it so it never
     # reaches the runner.
+    #
+    # These are reserved arg names: `emisar pack validate` rejects any
+    # action arg sharing one (runner pkg/actionspec reservedArgNames), so
+    # a real action arg can never be silently stripped here. Keep the two
+    # lists in sync.
     action_args = Map.drop(params, ["action_id", "reason", "runners", "wait", "idempotency_key"])
 
     case Service.parse_wait(params["wait"], Service.max_wait_ms()) do

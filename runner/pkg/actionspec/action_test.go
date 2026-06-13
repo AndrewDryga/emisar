@@ -300,6 +300,21 @@ func TestAction_Validate(t *testing.T) {
 				{Name: "x", Type: ArgString},
 			}
 		}, "duplicate"},
+		{"reserved arg reason", func(a *Action) {
+			a.Args = []Arg{{Name: "reason", Type: ArgString}}
+		}, "reserved control-plane field"},
+		{"reserved arg runners", func(a *Action) {
+			a.Args = []Arg{{Name: "runners", Type: ArgStringArray}}
+		}, "reserved control-plane field"},
+		{"reserved arg idempotency_key", func(a *Action) {
+			a.Args = []Arg{{Name: "idempotency_key", Type: ArgString}}
+		}, "reserved control-plane field"},
+		{"reserved arg wait", func(a *Action) {
+			a.Args = []Arg{{Name: "wait", Type: ArgString}}
+		}, "reserved control-plane field"},
+		{"reserved arg action_id", func(a *Action) {
+			a.Args = []Arg{{Name: "action_id", Type: ArgString}}
+		}, "reserved control-plane field"},
 		{"bad redaction rule", func(a *Action) {
 			a.Output.Redact = []RedactionRule{{Name: "r", Type: "nope"}}
 		}, "redaction"},
@@ -329,6 +344,16 @@ func TestAction_Validate(t *testing.T) {
 			}
 		})
 	}
+
+	// A normal arg name — including `note`, the rename target packs use in
+	// place of a colliding `reason` — must still validate.
+	t.Run("non-reserved arg allowed", func(t *testing.T) {
+		a := good()
+		a.Args = []Arg{{Name: "note", Type: ArgString}}
+		if err := a.Validate(); err != nil {
+			t.Fatalf("non-reserved arg should validate, got %v", err)
+		}
+	})
 
 	// The env denylist must target only loader/shell-init hijack vectors,
 	// not ordinary configuration — a benign env key (incl. ENV, which is
