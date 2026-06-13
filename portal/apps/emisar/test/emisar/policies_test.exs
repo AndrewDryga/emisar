@@ -242,6 +242,60 @@ defmodule Emisar.PoliciesTest do
     end
   end
 
+  describe "rules-shape validation (the policy-editor guardrails)" do
+    defp rules_changeset(rules) do
+      Policy.Changeset.create(%{account_id: Ecto.UUID.generate(), rules: rules})
+    end
+
+    test "rejects an unknown top-level rule section" do
+      changeset = rules_changeset(%{"schema_version" => 2, "bogus_section" => %{}})
+      refute changeset.valid?
+      assert {"unknown rule sections:" <> _, _} = changeset.errors[:rules]
+    end
+
+    test "rejects an unknown risk tier in defaults" do
+      changeset = rules_changeset(%{"defaults" => %{"extreme" => "deny"}})
+      refute changeset.valid?
+      assert {"unknown risk tiers:" <> _, _} = changeset.errors[:rules]
+    end
+
+    test "rejects an unknown decision value in defaults" do
+      changeset = rules_changeset(%{"defaults" => %{"low" => "maybe"}})
+      refute changeset.valid?
+      assert {"unknown decisions:" <> _, _} = changeset.errors[:rules]
+    end
+
+    test "rejects defaults that isn't a JSON object" do
+      changeset = rules_changeset(%{"defaults" => "allow-everything"})
+      refute changeset.valid?
+      assert {"defaults must be a JSON object", _} = changeset.errors[:rules]
+    end
+
+    test "rejects an override that isn't a JSON object" do
+      changeset = rules_changeset(%{"overrides" => ["not-a-map"]})
+      refute changeset.valid?
+      assert {"each override must be a JSON object", _} = changeset.errors[:rules]
+    end
+
+    test "rejects overrides that isn't a list" do
+      changeset = rules_changeset(%{"overrides" => %{"not" => "a list"}})
+      refute changeset.valid?
+      assert {"overrides must be a list", _} = changeset.errors[:rules]
+    end
+
+    test "a minimal policy with neither defaults nor overrides is valid" do
+      assert rules_changeset(%{"schema_version" => 2}).valid?
+    end
+
+    test "updating with no rules change doesn't bump the version" do
+      rules = %{"schema_version" => 2, "defaults" => %{"low" => "allow"}}
+      policy = %Policy{vsn: 1, rules: rules}
+
+      changeset = Policy.Changeset.update(policy, %{updated_by_id: Ecto.UUID.generate()})
+      assert Ecto.Changeset.get_change(changeset, :vsn) == nil
+    end
+  end
+
   describe "catalogue accessors" do
     test "expose the tiers, decisions, and form changeset the editor renders" do
       assert Policies.risk_tiers() == ~w(low medium high critical)
