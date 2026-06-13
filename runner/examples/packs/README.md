@@ -1,6 +1,6 @@
 # Emisar example packs
 
-58 packs / ~975 actions covering Linux ops, web/proxy, databases,
+59 packs / ~976 actions covering Linux ops, web/proxy, databases,
 container orchestration, cloud, message buses, runtimes, observability,
 and infrastructure tools.
 
@@ -64,7 +64,7 @@ default — a config file or localhost).
 
 ## Pack inventory
 
-58 packs, ~975 actions, sorted by id. **Risk** is the pack's ceiling —
+59 packs, ~976 actions, sorted by id. **Risk** is the pack's ceiling —
 its highest-risk action (see tiers below). **Auth** legend is in the Auth
 model section above. Run `emisar pack info <id>` for a pack's full setup.
 
@@ -119,6 +119,7 @@ model section above. Run `emisar pack info <id>` for a pack's full setup.
 | `python-app` | 10 | low | PY_VENV (opt) |
 | `rabbitmq` | 18 | critical | local-host |
 | `redis` | 49 | critical | REDISCLI_AUTH (opt) |
+| `shell` ⚠️ | 1 | critical | local-host |
 | `showcase` | 5 | low | local-host |
 | `ssl-local` | 7 | low | local-host |
 | `systemd-deep` | 24 | high | local-host |
@@ -128,6 +129,13 @@ model section above. Run `emisar pack info <id>` for a pack's full setup.
 | `wireguard` | 8 | high | local-host |
 | `zfs` | 13 | critical | local-host |
 | `zookeeper` | 8 | low | local-host |
+
+> ⚠️ **`shell` is a staging-only break-glass pack** — its one action runs an
+> arbitrary `/bin/sh` script on the host, bypassing the declared-action
+> model. Install it only on staging runners used to verify fixes; never in
+> production. It is critical-risk (denied by default policy) and ships with
+> no `detect:` block, so it is never auto-suggested. See
+> [`shell/README.md`](shell/README.md).
 
 ---
 

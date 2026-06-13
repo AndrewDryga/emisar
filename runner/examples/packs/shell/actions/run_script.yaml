@@ -1,0 +1,44 @@
+schema_version: 1
+id: shell.run_script
+title: Run a shell script (/bin/sh -c)
+kind: exec
+risk: critical
+description: >
+  STAGING BREAK-GLASS — run an arbitrary shell script on the runner host via
+  `/bin/sh -c`. Bypasses the declared-action model: whatever you pass runs
+  verbatim, as the runner's user, with no per-argument schema and no
+  allow/deny bounds beyond the timeout and output caps. Use this ONLY on a
+  staging host to verify a fix before encoding it as a proper declared action
+  or runbook — never as a substitute for one, and never in production. Keep
+  scripts short and reviewable; the full text is recorded in the audit log.
+side_effects:
+  - Executes arbitrary shell on the runner host as the runner's service user.
+  - Can read, change, or destroy anything that user can reach — no schema, no allow/deny bounds.
+  - Full script text is journaled locally and in the cloud audit log.
+args:
+  - name: script
+    type: string
+    required: true
+    description: >
+      Shell script passed to `/bin/sh -c` as a single program. Prefer a few
+      reviewable lines — this verifies a fix, it is not a deploy tool.
+    validation:
+      max_length: 65536
+execution:
+  command:
+    binary: /bin/sh
+    argv: ["-c", "{{ args.script }}"]
+  timeout: 60s
+  timeout_min: 1s
+  timeout_max: 600s
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 65536
+examples:
+  - title: Verify a service recovered after a fix
+    args:
+      script: "systemctl is-active nginx && curl -fsS http://localhost/health"
+  - title: Inspect why a unit failed
+    args:
+      script: "journalctl -u myapp -n 50 --no-pager | tail -20"

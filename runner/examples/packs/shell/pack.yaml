@@ -1,0 +1,39 @@
+schema_version: 1
+
+id: shell
+name: Arbitrary shell (staging break-glass)
+version: 0.1.0
+description: >
+  STAGING-ONLY BREAK-GLASS. Runs an arbitrary operator-supplied shell
+  script on the runner host via `/bin/sh -c`. This is the one capability
+  emisar is built to avoid: it bypasses the declared-action model entirely
+  — whatever the script says, runs, as the runner's user. It exists so an
+  agent can verify a fix interactively on a staging host before that fix is
+  encoded as a proper declared action or runbook. DO NOT install this pack
+  on production runners and DO NOT enable it in production. Its single
+  action is critical-risk, so the default policy denies it until an operator
+  deliberately opts in; every run is fully audited.
+vendor: emisar
+homepage: https://github.com/andrewdryga/emisar
+
+requires:
+  os:
+    - linux
+
+# No `detect:` block, on purpose. This pack is opt-in only and must never be
+# auto-suggested by `emisar pack suggest`: an operator installs it by hand, on
+# a staging runner, deliberately.
+
+setup:
+  summary: >
+    Operates on the local runner host via /bin/sh — no credentials needed.
+    Intended ONLY for staging runners used to verify fixes before they are
+    encoded as declared actions.
+  notes:
+    - "STAGING ONLY. Do not install on production runners; do not enable in production."
+    - "Runs as the runner's service user — keep that user least-privileged. The script can do anything that user can."
+    - "The single action is critical-risk: the default cloud policy DENIES critical, so it cannot run until an operator adds a rule. Keep it at require_approval (e.g. a shell.run_script override) so every run is human-gated."
+    - "Every invocation records the full script text in the local journal and the cloud audit log."
+
+actions:
+  - actions/run_script.yaml
