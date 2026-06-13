@@ -53,7 +53,8 @@ func TestFetchPackIndex_HTTPError(t *testing.T) {
 
 func TestUpdateOnePack_VerifiesHashAndSwapsAtomically(t *testing.T) {
 	const id = "redis"
-	srcDir := filepath.Join("examples", "packs", id)
+	// Example packs moved to the repo root (../packs) — see "Move packs to repo root".
+	srcDir := filepath.Join("..", "packs", id)
 
 	reg, err := packs.LoadOne(srcDir, packs.LoadOptions{})
 	if err != nil {
