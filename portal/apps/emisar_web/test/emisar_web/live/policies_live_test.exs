@@ -1,6 +1,6 @@
 defmodule EmisarWeb.PoliciesLiveTest do
   @moduledoc """
-  Exercises the policy editor: the account policy (risk-tier defaults +
+  Exercises the policy editor: the default policy (risk-tier defaults +
   per-action overrides) and the inline targeted-ruleset list (add → pick a
   runner/group → save). Each card is its own form, discriminated by an
   `editor` field — `"account"` or a ruleset uid — so saves persist the
@@ -15,13 +15,13 @@ defmodule EmisarWeb.PoliciesLiveTest do
       assert {:error, {:redirect, %{to: "/sign_in"}}} = live(conn, ~p"/app/policies")
     end
 
-    test "renders the account policy + ruleset sections with the empty placeholders", %{
+    test "renders the default policy + ruleset sections with the empty placeholders", %{
       conn: conn
     } do
       {conn, _user, _account} = register_and_log_in(conn)
       {:ok, _lv, html} = live(conn, ~p"/app/policies")
 
-      assert html =~ "Account policy"
+      assert html =~ "Default policy"
       assert html =~ "Risk-tier defaults"
       assert html =~ "Per-action overrides"
       assert html =~ "Targeted rulesets"
@@ -209,7 +209,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
 
       {:ok, _lv, html} = live(ctx.conn, ~p"/app/policies")
 
-      assert html =~ "Account policy"
+      assert html =~ "Default policy"
       assert html =~ "Targeted rulesets"
       # The card shows the runner name, its own Save, and a Remove.
       assert html =~ "web-1"
@@ -261,7 +261,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
       assert policy.scope_value == "prod"
     end
 
-    test "removing a saved ruleset falls the scope back to the account default", ctx do
+    test "removing a saved ruleset falls the scope back to the default policy", ctx do
       runner =
         Emisar.Fixtures.runner_fixture(account_id: ctx.account.id, name: "db-1", group: "db")
 
@@ -291,7 +291,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
 
       # No management affordances: no "Add ruleset", no Save buttons.
       refute html =~ "Add ruleset"
-      refute html =~ "Save account policy"
+      refute html =~ "Save default policy"
       assert html =~ "only owners and admins can change it"
 
       # A forged save event is refused at the handler (apostrophe is HTML-escaped).

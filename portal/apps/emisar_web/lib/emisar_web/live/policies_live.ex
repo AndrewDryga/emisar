@@ -2,11 +2,12 @@ defmodule EmisarWeb.PoliciesLive do
   @moduledoc """
   Policy editor. One page, everything live-editable:
 
-    * **Account policy** — the base. Risk-tier defaults + per-action
-      overrides. Applies to every runner.
+    * **Default policy** — the base (the account-scoped policy, `scope_type:
+      :account`, labeled "Default policy" in the UI). Risk-tier defaults +
+      per-action overrides. Applies to every runner.
     * **Targeted rulesets** — an inline list of per-runner / per-group
       policies. Add one, pick a runner or group, edit its rules. A ruleset
-      **replaces** the account policy for that target (most specific wins:
+      **replaces** the default policy for that target (most specific wins:
       runner > group > account), it doesn't layer on top — so what a card
       shows is exactly what runs there.
 
@@ -29,7 +30,7 @@ defmodule EmisarWeb.PoliciesLive do
     {:ok, if(connected?(socket), do: load_all(socket), else: socket)}
   end
 
-  # Load every editor the page needs: the account policy, the existing
+  # Load every editor the page needs: the default (account-scoped) policy, the existing
   # runner/group rulesets, and the runner/group pickers new rulesets target.
   defp load_all(socket) do
     subject = socket.assigns.current_subject
@@ -77,7 +78,7 @@ defmodule EmisarWeb.PoliciesLive do
     }
   end
 
-  # A blank, not-yet-targeted ruleset, seeded from the account policy so the
+  # A blank, not-yet-targeted ruleset, seeded from the default policy so the
   # operator tweaks the live posture rather than starting from an empty one —
   # important under replace-semantics, where a ruleset that dropped the
   # account's deny-overrides would silently widen access for that target.
@@ -251,7 +252,7 @@ defmodule EmisarWeb.PoliciesLive do
       {:ok, _deleted} ->
         {:noreply,
          socket
-         |> put_flash(:info, "Ruleset removed — that scope falls back to the account policy.")
+         |> put_flash(:info, "Ruleset removed — that scope falls back to the default policy.")
          |> assign(:rulesets, Enum.reject(socket.assigns.rulesets, &(&1.uid == uid)))}
 
       {:error, _reason} ->
@@ -498,7 +499,7 @@ defmodule EmisarWeb.PoliciesLive do
           <h2 class="text-sm font-semibold text-zinc-100">How this works</h2>
           <p class="mt-2 text-sm leading-relaxed text-zinc-400">
             Every action has a <strong class="text-zinc-100">risk tier</strong>
-            from the catalog. Your <strong class="text-zinc-100">account policy</strong>
+            from the catalog. Your <strong class="text-zinc-100">default policy</strong>
             sets what happens per tier — allow, require approval, or deny — plus
             <strong class="text-zinc-100">overrides</strong>
             for the exceptions. Need different rules for one runner or a group? Add a
@@ -516,7 +517,7 @@ defmodule EmisarWeb.PoliciesLive do
 
         <section class="rounded-xl border border-zinc-900 bg-zinc-950/40 p-5">
           <header>
-            <h2 class="text-base font-semibold text-zinc-100">Account policy</h2>
+            <h2 class="text-base font-semibold text-zinc-100">Default policy</h2>
             <p class="mt-0.5 text-xs text-zinc-500">
               Applies to every runner unless a targeted ruleset below overrides it.
             </p>
@@ -528,7 +529,7 @@ defmodule EmisarWeb.PoliciesLive do
             overrides={@account.overrides}
             rules_errors={@account.rules_errors}
             can_manage={@can_manage?}
-            save_label="Save account policy"
+            save_label="Save default policy"
           />
         </section>
 
@@ -538,8 +539,8 @@ defmodule EmisarWeb.PoliciesLive do
               <h2 class="text-base font-semibold text-zinc-100">Targeted rulesets</h2>
               <p class="mt-0.5 max-w-xl text-xs text-zinc-500">
                 A ruleset <strong class="text-zinc-300">replaces</strong>
-                the account policy for one runner or group. Most specific wins — runner,
-                then group, then the account policy.
+                the default policy for one runner or group. Most specific wins — runner,
+                then group, then the default policy.
               </p>
             </div>
             <button
@@ -557,7 +558,7 @@ defmodule EmisarWeb.PoliciesLive do
             :if={@rulesets == []}
             class="rounded-xl border border-dashed border-zinc-800 p-6 text-center text-xs text-zinc-500"
           >
-            No targeted rulesets yet. Every runner uses the account policy above.
+            No targeted rulesets yet. Every runner uses the default policy above.
             <span :if={@can_manage?}>
               Add one to give a specific runner or group its own rules.
             </span>
@@ -598,7 +599,7 @@ defmodule EmisarWeb.PoliciesLive do
               </span>
             </div>
             <p class="mt-1 text-xs text-zinc-500">
-              Replaces the account policy for this {@ruleset.scope_type}.
+              Replaces the default policy for this {@ruleset.scope_type}.
             </p>
           <% else %>
             <%!-- A form (not a lone select) so the uid rides along as a hidden
@@ -648,7 +649,7 @@ defmodule EmisarWeb.PoliciesLive do
           phx-value-uid={@ruleset.uid}
           data-confirm={
             @ruleset.policy &&
-              "Remove this ruleset? That #{@ruleset.scope_type} falls back to the account policy."
+              "Remove this ruleset? That #{@ruleset.scope_type} falls back to the default policy."
           }
           class="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-zinc-800 px-3 py-1.5 text-xs font-medium text-zinc-400 hover:border-rose-700 hover:text-rose-300"
         >

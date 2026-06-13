@@ -76,7 +76,7 @@
 
       <h2 class="mt-10 text-2xl font-semibold text-zinc-50">Scope it to a runner or group</h2>
       <p class="mt-3 text-sm leading-6 text-zinc-400">
-        One account policy governs the whole fleet by default. When a single runner or a group of
+        Your default policy governs the whole fleet. When a single runner or a group of
         runners needs different rules — a locked-down database box, a more permissive staging
         group — add a <strong class="text-zinc-200">targeted ruleset</strong>
         for that runner or group, right on the Policy page.
@@ -84,11 +84,11 @@
       <p class="mt-3 text-sm leading-6 text-zinc-400">
         Resolution is <strong class="text-zinc-200">most-specific-wins</strong>: a dispatch to a
         runner is governed by that runner's ruleset if one exists, otherwise its group's ruleset,
-        otherwise the account policy. The ruleset that matches is evaluated <em>whole</em>
+        otherwise the default policy. The ruleset that matches is evaluated <em>whole</em>
         — its own
         tier defaults and overrides decide the action. A ruleset
         <strong class="text-zinc-200">replaces</strong>
-        the account policy for that runner or group; it doesn't layer on top, so what the editor
+        the default policy for that runner or group; it doesn't layer on top, so what the editor
         shows for a scope is exactly what runs there. Remove a ruleset and that scope falls back
         to the next-broader policy.
       </p>
