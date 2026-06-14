@@ -1,7 +1,7 @@
 defmodule EmisarWeb.RunDetailLive do
   use EmisarWeb, :live_view
 
-  alias Emisar.{Approvals, Runs}
+  alias Emisar.{Approvals, Runners, Runs}
   alias EmisarWeb.Permissions
 
   def mount(%{"id" => id}, _session, socket) do
@@ -17,6 +17,10 @@ defmodule EmisarWeb.RunDetailLive do
       {:ok, run} ->
         if connected?(socket) do
           Runs.subscribe_run(run.account_id, run.id)
+          # Watch the runner's live connection so a socket dropping mid-run
+          # surfaces as a banner — without it, an in-flight run whose runner
+          # vanished just looks slow until the timeout sweep errors it.
+          Runners.subscribe_connections(run.account_id)
         end
 
         # The event list (up to 500 rows) is secondary to the run itself and
@@ -37,6 +41,7 @@ defmodule EmisarWeb.RunDetailLive do
          |> assign(:page_title, "Run #{run.action_id}")
          |> assign(:run, run)
          |> assign(:approval_request, approval_request)
+         |> assign(:runner_connection, runner_connection(run))
          |> stream(:events, events)}
     end
   end
@@ -63,6 +68,11 @@ defmodule EmisarWeb.RunDetailLive do
 
   def handle_info({:run_event, event}, socket),
     do: {:noreply, stream_insert(socket, :events, event)}
+
+  # The runner's live connection changed — re-derive its state so an
+  # in-flight run reflects a runner that just dropped (or reconnected).
+  def handle_info(%{event: "presence_diff"}, socket),
+    do: {:noreply, assign(socket, :runner_connection, runner_connection(socket.assigns.run))}
 
   def handle_info(_, socket), do: {:noreply, socket}
 
@@ -108,7 +118,7 @@ defmodule EmisarWeb.RunDetailLive do
       <:actions>
         <button
           :if={
-            @run.status in ["sent", "running", "pending"] and
+            @run.status in [:sent, :running, :pending] and
               Runs.subject_can_cancel_run?(@current_subject)
           }
           phx-click="cancel"
@@ -171,7 +181,7 @@ defmodule EmisarWeb.RunDetailLive do
            `awaiting_approval` lingers from older code paths + seeds).
            Loud amber + a one-click jump to the approval page. --%>
       <div
-        :if={@run.status in ["pending_approval", "awaiting_approval"] and @approval_request}
+        :if={@run.status in [:pending_approval, :awaiting_approval] and @approval_request}
         class="mt-4 flex items-center justify-between gap-4 rounded-xl border border-amber-500/30 bg-amber-500/[0.06] p-4"
       >
         <div class="flex items-start gap-3">
@@ -203,6 +213,24 @@ defmodule EmisarWeb.RunDetailLive do
             <div class="text-sm font-semibold text-rose-100">Error</div>
             <p class="mt-1 whitespace-pre-wrap text-sm text-rose-200/90">{@run.error_message}</p>
           </div>
+        </div>
+      </div>
+
+      <%!-- Runner-dropped warning — the run is in flight but its runner's
+           socket is gone. Don't fake a terminal status; just flag that the
+           output may be incomplete until it reconnects (or the dispatch
+           timeout sweep errors the run). --%>
+      <div
+        :if={@run.status in [:sent, :running] and @runner_connection == :offline}
+        class="mt-4 flex items-start gap-3 rounded-xl border border-amber-500/30 bg-amber-500/[0.06] p-4"
+      >
+        <.icon name="hero-signal-slash" class="mt-0.5 h-5 w-5 flex-none text-amber-300" />
+        <div>
+          <div class="text-sm font-semibold text-amber-100">Runner disconnected</div>
+          <p class="mt-1 text-xs text-amber-200/80">
+            Its socket dropped while this run was in flight — output may be incomplete.
+            The run is marked errored if the runner doesn't reconnect shortly.
+          </p>
         </div>
       </div>
 
@@ -342,6 +370,14 @@ defmodule EmisarWeb.RunDetailLive do
 
   defp runner_label(_), do: "Unknown runner"
 
+  # Live connection state of the run's runner (:online | :offline). Keyed
+  # on runner_id/account_id — both columns, always loaded — so it survives
+  # a non-preloaded {:run_updated, run} broadcast replacing the assign.
+  defp runner_connection(%{runner_id: id, account_id: account_id}) when is_binary(id),
+    do: if(Runners.online?(account_id, id), do: :online, else: :offline)
+
+  defp runner_connection(_), do: :unknown
+
   # `allow` is the implicit happy path — if the run dispatched at all
   # we already know policy let it through. Showing the strip just
   # adds visual noise to every list-of-runs detail page. Surface it
@@ -357,7 +393,7 @@ defmodule EmisarWeb.RunDetailLive do
   # Everything else (sent / running / success / failed / errored) gets
   # the panel — empty is fine because chunks stream in via PubSub.
   defp show_output?(%{status: status})
-       when status in ["cancelled", "denied", "pending_approval", "awaiting_approval", "pending"],
+       when status in [:cancelled, :denied, :pending_approval, :awaiting_approval, :pending],
        do: false
 
   defp show_output?(_), do: true

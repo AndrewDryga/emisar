@@ -234,4 +234,37 @@ defmodule EmisarWeb.RunDetailLiveTest do
 
     assert render(lv) =~ "success"
   end
+
+  test "the cancel button renders for an in-flight run (status compared as an atom)", %{
+    conn: conn
+  } do
+    {conn, _user, account} = register_and_log_in(conn)
+    run = run_with(account, %{status: "sent"})
+
+    {:ok, _lv, html} = live(conn, ~p"/app/runs/#{run.id}")
+
+    # Regression: the button's `status in [...]` guard compared the Ecto.Enum
+    # atom against strings, so it never rendered.
+    assert html =~ "Cancel run"
+  end
+
+  test "an in-flight run whose runner is offline shows the disconnected banner", %{conn: conn} do
+    {conn, _user, account} = register_and_log_in(conn)
+    # run_with's runner is registered but never tracked in presence → offline.
+    run = run_with(account, %{status: "running"})
+
+    {:ok, _lv, html} = live(conn, ~p"/app/runs/#{run.id}")
+
+    assert html =~ "Runner disconnected"
+  end
+
+  test "an in-flight run on a connected runner shows no disconnect banner", %{conn: conn} do
+    {conn, _user, account} = register_and_log_in(conn)
+    runner = runner_fixture(account_id: account.id, connected?: true)
+    run = run_with(account, %{status: "running", runner_id: runner.id})
+
+    {:ok, _lv, html} = live(conn, ~p"/app/runs/#{run.id}")
+
+    refute html =~ "Runner disconnected"
+  end
 end
