@@ -171,7 +171,8 @@ defmodule EmisarWeb.TeamLiveTest do
       # admin can't fat-finger an escalation. The handler still authorizes —
       # this is purely the accidental-click guard.
       assert has_element?(lv, "form[phx-change='change_role'][data-confirm]")
-      assert render(lv) =~ "Admins and owners can manage members, billing, and runners"
+      # Role-accurate: admins only VIEW billing; only owners manage it.
+      assert render(lv) =~ "manage members and runners; only owners manage billing"
     end
 
     test "an unknown role value is rejected", %{lv: lv, membership: membership} do

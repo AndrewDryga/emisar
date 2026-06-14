@@ -657,7 +657,7 @@ defmodule EmisarWeb.TeamLive do
                   <form
                     phx-change="change_role"
                     class="shrink-0"
-                    data-confirm={"Change #{(membership.user && (membership.user.full_name || membership.user.email)) || "this member"}'s role? Admins and owners can manage members, billing, and runners."}
+                    data-confirm={"Change #{(membership.user && (membership.user.full_name || membership.user.email)) || "this member"}'s role? Admins and owners can manage members and runners; only owners manage billing."}
                   >
                     <input type="hidden" name="membership_id" value={membership.id} />
                     <select
