@@ -283,7 +283,7 @@ defmodule EmisarWeb.ApprovalsLive do
                   </.link>
                   gates a run as <code class="text-zinc-300">require_approval</code>
                   — for example a high-risk
-                  mutating action from an LLM. You'll get an email + a row here.
+                  mutating action from an LLM. You'll get an email too.
                 </p>
               </div>
             </:empty>
