@@ -700,25 +700,6 @@ defmodule EmisarWeb.AgentsLive do
     """
   end
 
-  attr :tone, :atom, required: true, values: [:emerald, :amber, :zinc]
-  attr :value, :integer, required: true
-  attr :label, :string, required: true
-  attr :hint, :string, default: nil
-
-  defp summary_stat(assigns) do
-    ~H"""
-    <div class="flex items-baseline gap-1.5">
-      <span class={["text-base font-semibold", summary_value_class(@tone)]}>{@value}</span>
-      <span class="text-zinc-400">{@label}</span>
-      <span :if={@hint} class="text-xs text-zinc-600">({@hint})</span>
-    </div>
-    """
-  end
-
-  defp summary_value_class(:emerald), do: "text-emerald-300"
-  defp summary_value_class(:amber), do: "text-amber-300"
-  defp summary_value_class(:zinc), do: "text-zinc-300"
-
   attr :key, :map, required: true
 
   defp client_status_pill(assigns) do

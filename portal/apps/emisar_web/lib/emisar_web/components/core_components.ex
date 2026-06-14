@@ -1046,6 +1046,31 @@ defmodule EmisarWeb.CoreComponents do
     """
   end
 
+  @doc """
+  One stat in a header summary band — a coloured `value` + `label` (+ optional
+  `hint`). Compose several in a flex row for an at-a-glance count strip (the
+  Runners fleet health + the LLM-agents page).
+  """
+  attr :tone, :atom, required: true, values: [:emerald, :amber, :rose, :zinc]
+  attr :value, :integer, required: true
+  attr :label, :string, required: true
+  attr :hint, :string, default: nil
+
+  def summary_stat(assigns) do
+    ~H"""
+    <div class="flex items-baseline gap-1.5">
+      <span class={["text-base font-semibold", summary_value_class(@tone)]}>{@value}</span>
+      <span class="text-zinc-400">{@label}</span>
+      <span :if={@hint} class="text-xs text-zinc-600">({@hint})</span>
+    </div>
+    """
+  end
+
+  defp summary_value_class(:emerald), do: "text-emerald-300"
+  defp summary_value_class(:amber), do: "text-amber-300"
+  defp summary_value_class(:rose), do: "text-rose-300"
+  defp summary_value_class(:zinc), do: "text-zinc-300"
+
   @doc "Coloured pill for run/runner status — takes a string or an Ecto.Enum atom."
   attr :status, :any, required: true
   attr :class, :string, default: ""

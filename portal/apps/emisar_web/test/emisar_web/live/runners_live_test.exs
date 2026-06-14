@@ -43,6 +43,24 @@ defmodule EmisarWeb.RunnersLiveTest do
       assert html =~ "a1"
       assert html =~ "b1"
     end
+
+    test "the fleet health strip summarizes the whole account's runner states", %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      subject = owner_subject(user, account)
+
+      Emisar.Fixtures.runner_fixture(account_id: account.id, connected?: true)
+      disabled = Emisar.Fixtures.runner_fixture(account_id: account.id, connected?: true)
+      {:ok, _} = Emisar.Runners.disable_runner(disabled, subject)
+
+      {:ok, _lv, html} = live(conn, ~p"/app/runners")
+
+      # The strip names each state (Offline always shows, even at 0) + the
+      # whole-account total: 1 online + 1 disabled = 2 runners.
+      assert html =~ "Online"
+      assert html =~ "Offline"
+      assert html =~ "Disabled"
+      assert html =~ "2 runners total"
+    end
   end
 
   describe "GET /app/runners/install" do

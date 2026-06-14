@@ -33,6 +33,12 @@ defmodule EmisarWeb.RunnersLive do
     # confusing — let the list itself be the source of truth.
     list_opts = Keyword.merge(opts, membership_id: socket.assigns.current_membership.id)
 
+    # Whole-account fleet health for the summary strip — counted from the
+    # presence-decorated runners (the group_summary DB aggregate can't know
+    # online?), like the dashboard. Account-wide (not scope-filtered), matching
+    # the group sidebar so the strip reflects the whole fleet, not just a page.
+    fleet = load_fleet_health(socket.assigns.current_subject)
+
     case Runners.list_runners_for_account(socket.assigns.current_subject, list_opts) do
       {:ok, runners, meta} ->
         groups =
@@ -47,6 +53,7 @@ defmodule EmisarWeb.RunnersLive do
         |> assign(:filter_params, params)
         |> assign(:filters, filters)
         |> assign(:groups, groups)
+        |> assign(:fleet, fleet)
 
       # A clean reload can fail too (e.g. a tightened list permission) —
       # degrade to an empty page rather than recursing forever.
@@ -57,11 +64,31 @@ defmodule EmisarWeb.RunnersLive do
         |> assign(:filter_params, params)
         |> assign(:filters, filters)
         |> assign(:groups, [])
+        |> assign(:fleet, fleet)
 
       # Bad filter/page params from a hand-edited URL — retry once, clean.
       {:error, _} ->
         load(socket, %{})
     end
+  end
+
+  defp load_fleet_health(subject) do
+    case Runners.list_all_runners_for_account(subject) do
+      {:ok, runners} -> fleet_health(runners)
+      _ -> %{online: 0, offline: 0, pending: 0, disabled: 0, total: 0}
+    end
+  end
+
+  defp fleet_health(runners) do
+    counts = Enum.frequencies_by(runners, &Runners.connection_state/1)
+
+    %{
+      online: Map.get(counts, :online, 0),
+      offline: Map.get(counts, :offline, 0),
+      pending: Map.get(counts, :pending, 0),
+      disabled: Map.get(counts, :disabled, 0),
+      total: length(runners)
+    }
   end
 
   def render(assigns) do
@@ -96,6 +123,30 @@ defmodule EmisarWeb.RunnersLive do
           <.loading_state />
         <% end %>
       <% else %>
+        <%!-- Fleet health at a glance, so "is anything down?" doesn't mean
+             scanning every dot. Whole-account (like the group sidebar +
+             list below), counted from presence — there's no `:stale` state
+             (heartbeat liveness is socket-enforced; see Runners.connection_state). --%>
+        <div class="mb-6 flex flex-wrap items-center gap-x-6 gap-y-2 rounded-xl border border-zinc-900 bg-zinc-950/40 px-5 py-3 text-sm">
+          <.summary_stat tone={:emerald} value={@fleet.online} label="Online" />
+          <.summary_stat tone={:rose} value={@fleet.offline} label="Offline" />
+          <.summary_stat
+            :if={@fleet.pending > 0}
+            tone={:amber}
+            value={@fleet.pending}
+            label="Pending"
+          />
+          <.summary_stat
+            :if={@fleet.disabled > 0}
+            tone={:zinc}
+            value={@fleet.disabled}
+            label="Disabled"
+          />
+          <div class="ml-auto text-xs text-zinc-500">
+            {@fleet.total} {if @fleet.total == 1, do: "runner", else: "runners"} total
+          </div>
+        </div>
+
         <%!-- Group sidebar shows whole-account totals; the runners
              list below is paginated and may show fewer rows per
              group than the count next to the header. That's
