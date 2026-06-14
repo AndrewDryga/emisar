@@ -16,6 +16,10 @@ defmodule EmisarWeb.TeamLiveTest do
       assert html =~ "Invite a teammate"
       assert html =~ "Send invite"
       refute html =~ "Only owners and admins can invite"
+      # Each assignable role is explained, not just named — assigning one is a
+      # privilege grant.
+      assert html =~ "Read-only access to runs"
+      assert html =~ "Dispatch runs and approve actions"
     end
   end
 

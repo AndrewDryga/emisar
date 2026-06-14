@@ -266,6 +266,22 @@ defmodule EmisarWeb.TeamLive do
   defp error_message(%Ecto.Changeset{}), do: "Could not apply change."
   defp error_message(_), do: "Could not apply change."
 
+  # One-line capability summary per role for the invite form. Kept in sync with
+  # the authorizers: owner manages billing + adds owners; admin manages members/
+  # runners/policies and approves runs but only *views* billing; operator
+  # dispatches + approves but manages nothing; viewer is read-only.
+  defp role_description("owner"), do: "Full control, including billing and adding owners."
+
+  defp role_description("admin"),
+    do: "Manage members, runners, and policies; approve runs; view-only billing."
+
+  defp role_description("operator"),
+    do: "Dispatch runs and approve actions — no team or billing management."
+
+  defp role_description("viewer"), do: "Read-only access to runs, runners, approvals, and audit."
+
+  defp role_description(_), do: nil
+
   defp do_invite(socket, email, role) do
     account = socket.assigns.current_account
     inviter = socket.assigns.current_user
@@ -552,6 +568,15 @@ defmodule EmisarWeb.TeamLive do
               <.button phx-disable-with="Sending...">Send invite</.button>
             </:actions>
           </.simple_form>
+
+          <%!-- Assigning a role is a privilege grant — spell out what each of
+               the assignable roles can do instead of a bare name. --%>
+          <dl class="mt-4 space-y-1 border-t border-zinc-900 pt-3 text-xs text-zinc-500">
+            <div :for={role <- @roles} :if={role_description(role)} class="flex gap-2">
+              <dt class="w-16 flex-none font-medium text-zinc-400">{String.capitalize(role)}</dt>
+              <dd>{role_description(role)}</dd>
+            </div>
+          </dl>
         </div>
 
         <%!-- Member list — uses LiveTable :cards with overflow={:visible}
