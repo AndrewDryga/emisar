@@ -618,12 +618,9 @@ defmodule EmisarWeb.ProfileLive do
                 Generate a TOTP secret, scan it with your authenticator app, then confirm with a
                 6-digit code to turn it on.
               </p>
-              <button
-                phx-click="start_mfa"
-                class="mt-4 rounded-lg bg-indigo-500 px-3 py-1.5 text-sm font-semibold text-zinc-950 hover:bg-indigo-400"
-              >
+              <.button phx-click="start_mfa" size="md" class="mt-4">
                 Set up 2FA
-              </button>
+              </.button>
           <% end %>
         </.settings_section>
 

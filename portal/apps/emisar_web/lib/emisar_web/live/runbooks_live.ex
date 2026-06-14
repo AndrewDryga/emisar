@@ -70,12 +70,9 @@ defmodule EmisarWeb.RunbooksLive do
     >
       <:title>Runbooks</:title>
       <:actions :if={Runbooks.subject_can_manage_runbooks?(@current_subject)}>
-        <.link
-          navigate={~p"/app/runbooks/new"}
-          class="inline-flex items-center gap-1.5 rounded-lg bg-indigo-500 px-3 py-1.5 text-sm font-semibold text-zinc-950 hover:bg-indigo-400"
-        >
-          <.icon name="hero-plus" class="h-4 w-4" /> New runbook
-        </.link>
+        <.button navigate={~p"/app/runbooks/new"} size="md" icon="hero-plus">
+          New runbook
+        </.button>
       </:actions>
 
       <%= if @runbooks == [] && @metadata.count == 0 do %>

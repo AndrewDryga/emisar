@@ -221,12 +221,9 @@ defmodule EmisarWeb.AuthKeysLive do
     >
       <:title>Auth keys</:title>
       <:actions :if={Runners.subject_can_manage_auth_keys?(@current_subject)}>
-        <button
-          phx-click={show_create()}
-          class="inline-flex items-center gap-1.5 rounded-lg bg-indigo-500 px-3 py-1.5 text-sm font-semibold text-zinc-950 hover:bg-indigo-400"
-        >
-          <.icon name="hero-plus" class="h-4 w-4" /> New key
-        </button>
+        <.button phx-click={show_create()} size="md" icon="hero-plus">
+          New key
+        </.button>
       </:actions>
 
       <.page_container max="5xl">

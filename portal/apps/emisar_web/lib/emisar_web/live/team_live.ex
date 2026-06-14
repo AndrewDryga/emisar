@@ -415,12 +415,9 @@ defmodule EmisarWeb.TeamLive do
     >
       <:title>Team</:title>
       <:actions :if={can_manage?(assigns)}>
-        <button
-          phx-click={show_invite()}
-          class="rounded-lg bg-indigo-500 px-3 py-1.5 text-sm font-semibold text-zinc-950 hover:bg-indigo-400"
-        >
+        <.button phx-click={show_invite()} size="md">
           Invite member
-        </button>
+        </.button>
       </:actions>
 
       <%!-- Single-column list. Each row is a member: avatar, name +

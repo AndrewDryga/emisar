@@ -78,12 +78,9 @@ defmodule EmisarWeb.RunnersLive do
     >
       <:title>Runners</:title>
       <:actions>
-        <.link
-          navigate={~p"/app/runners/install"}
-          class="inline-flex items-center gap-1.5 rounded-lg bg-indigo-500 px-3 py-1.5 text-sm font-semibold text-zinc-950 hover:bg-indigo-400"
-        >
-          <.icon name="hero-plus" class="h-4 w-4" /> Add a runner
-        </.link>
+        <.button navigate={~p"/app/runners/install"} size="md" icon="hero-plus">
+          Add a runner
+        </.button>
       </:actions>
 
       <%= if @runners == [] && @metadata.count == 0 do %>

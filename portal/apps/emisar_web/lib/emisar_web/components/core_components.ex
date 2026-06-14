@@ -159,22 +159,34 @@ defmodule EmisarWeb.CoreComponents do
   `danger` (bordered rose — destructive actions read identically everywhere),
   `success` (filled emerald — affirmative), `ghost` (text-only). Sizes: `lg`
   (default), `md`, `sm`. An optional leading `icon` (heroicon name) renders before
-  the label. `disabled` is honored by every variant.
+  the label. `disabled` is honored by every variant. Pass `navigate`/`patch`/
+  `href` and it renders a styled `<.link>` instead of a `<button>` — so a primary
+  action that navigates reads identically to one that submits.
 
   ## Examples
 
       <.button>Send!</.button>
       <.button variant="danger" size="sm" phx-click="revoke" phx-value-id={id}>Revoke</.button>
       <.button variant="success" icon="hero-check">Approve</.button>
+      <.button navigate={~p"/app/runbooks/new"} icon="hero-plus">New runbook</.button>
   """
   attr :type, :string, default: nil
   attr :variant, :string, default: "primary", values: ~w(primary secondary danger success ghost)
   attr :size, :string, default: "lg", values: ~w(sm md lg)
   attr :icon, :string, default: nil, doc: ~s(leading heroicon name, e.g. "hero-plus")
   attr :class, :string, default: nil
-  attr :rest, :global, include: ~w(disabled form name value)
+  attr :rest, :global, include: ~w(disabled form name value href navigate patch method download)
 
   slot :inner_block, required: true
+
+  def button(%{rest: rest} = assigns)
+      when is_map_key(rest, :href) or is_map_key(rest, :navigate) or is_map_key(rest, :patch) do
+    ~H"""
+    <.link class={[button_base(), button_variant(@variant), button_size(@size), @class]} {@rest}>
+      <.icon :if={@icon} name={@icon} class="h-4 w-4" />{render_slot(@inner_block)}
+    </.link>
+    """
+  end
 
   def button(assigns) do
     ~H"""
