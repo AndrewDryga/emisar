@@ -22,6 +22,7 @@ defmodule EmisarWeb.CoreComponents do
     router: EmisarWeb.Router,
     statics: EmisarWeb.static_paths()
 
+  alias EmisarWeb.TimeHelpers
   alias Phoenix.LiveView.JS
 
   @doc """
@@ -969,6 +970,33 @@ defmodule EmisarWeb.CoreComponents do
       <.icon name="hero-arrow-path" class="h-5 w-5 animate-spin" />
       <span>Loading…</span>
     </div>
+    """
+  end
+
+  @doc """
+  A compact run-summary row — the action_id (mono), an optional target-runner +
+  relative time, and the run's status badge — linking to the run. Used by the
+  "recent runs" lists. Pass `show_runner` where the target isn't already implied
+  by the surrounding page (the dashboard); omit it on a runner's own page.
+  """
+  attr :run, :map, required: true
+  attr :show_runner, :boolean, default: false
+
+  def run_row(assigns) do
+    ~H"""
+    <.link
+      navigate={~p"/app/runs/#{@run.id}"}
+      class="flex items-center justify-between gap-3 px-5 py-3 transition hover:bg-zinc-900/40"
+    >
+      <div class="min-w-0">
+        <div class="truncate font-mono text-sm text-zinc-200">{@run.action_id}</div>
+        <div class="truncate text-xs text-zinc-500">
+          <span :if={@show_runner && @run.runner}>{"on #{@run.runner.name} · "}</span>
+          {TimeHelpers.relative_time(@run.inserted_at)}
+        </div>
+      </div>
+      <.status_badge status={@run.status} class="shrink-0" />
+    </.link>
     """
   end
 

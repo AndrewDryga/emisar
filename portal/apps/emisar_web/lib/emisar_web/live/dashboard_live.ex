@@ -315,19 +315,7 @@ defmodule EmisarWeb.DashboardLive do
       <% else %>
         <ul class="divide-y divide-zinc-900">
           <li :for={run <- @recent_runs}>
-            <.link
-              navigate={~p"/app/runs/#{run.id}"}
-              class="flex items-center justify-between gap-3 px-5 py-3 transition hover:bg-zinc-900/40"
-            >
-              <div class="min-w-0">
-                <div class="truncate font-mono text-sm text-zinc-200">{run.action_id}</div>
-                <div class="truncate text-xs text-zinc-500">
-                  <span :if={run.runner}>{"on #{run.runner.name} · "}</span>
-                  {relative_time(run.inserted_at)}
-                </div>
-              </div>
-              <.status_badge status={run.status} class="shrink-0" />
-            </.link>
+            <.run_row run={run} show_runner />
           </li>
         </ul>
       <% end %>
