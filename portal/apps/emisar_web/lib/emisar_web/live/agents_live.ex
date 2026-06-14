@@ -861,7 +861,8 @@ defmodule EmisarWeb.AgentsLive do
               <div class="flex items-start gap-3 rounded-lg bg-amber-500/10 p-3 ring-1 ring-amber-500/30">
                 <.icon name="hero-information-circle" class="mt-0.5 h-4 w-4 flex-none text-amber-300" />
                 <div class="text-xs text-amber-100/90">
-                  Copy the bearer token below before you leave this page — we won't show it
+                  <span class="font-semibold text-amber-100">New key minted — it's live now.</span>
+                  Copy the bearer token below before you leave this page; we won't show it
                   again. If you lose it, pick the client again to mint a new one.
                 </div>
               </div>
@@ -887,9 +888,10 @@ defmodule EmisarWeb.AgentsLive do
               <div class="flex items-start gap-3 rounded-lg bg-amber-500/10 p-3 ring-1 ring-amber-500/30">
                 <.icon name="hero-information-circle" class="mt-0.5 h-4 w-4 flex-none text-amber-300" />
                 <div class="text-xs text-amber-100/90">
-                  The snippet below contains a freshly-minted API key — copy the full snippet,
-                  not just part of it. We won't be able to show this key again after you leave
-                  the page. If you lose it, pick the client again to mint a new one.
+                  <span class="font-semibold text-amber-100">New key minted — it's live now.</span>
+                  The snippet below contains it — copy the whole snippet, not just part. We
+                  won't show this key again after you leave the page; pick the client again to
+                  mint a new one.
                 </div>
               </div>
             <% end %>

@@ -62,6 +62,8 @@ defmodule EmisarWeb.AgentsLiveTest do
       assert html =~ "/api/mcp/rpc"
       assert html =~ "Authorization: Bearer emk-"
       assert html =~ "Steps for Claude.ai"
+      # The reveal reads as a new live credential, not setup copy.
+      assert html =~ "New key minted"
       assert html =~ "Settings &rarr; Connectors" or html =~ "Settings → Connectors"
 
       # The local-bridge snippet shape is NOT shown for this client.
@@ -104,6 +106,7 @@ defmodule EmisarWeb.AgentsLiveTest do
       assert html =~ "EMISAR_CLIENT"
       assert html =~ "claude-desktop"
       assert html =~ "emk-"
+      assert html =~ "New key minted"
 
       # Auto-unused — operator's list is still empty until an MCP call
       # promotes it.
