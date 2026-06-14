@@ -337,6 +337,32 @@ defmodule Emisar.AuditTest do
       assert Enum.all?(rows, &(&1.event_type == "user.invited"))
     end
 
+    test "the search filter matches event_type or request_id, with wildcards escaped" do
+      account = account_fixture()
+      subject = subject_for(user_fixture(), account, role: :owner)
+
+      log = fn type, req_id ->
+        {:ok, _} =
+          Audit.log(account.id, type,
+            actor_kind: "system",
+            context: %RequestContext{request_id: req_id}
+          )
+      end
+
+      log.("policy.updated", "req_trace")
+      # A would-be wildcard collision: if `_` weren't escaped, searching
+      # "req_trace" would also match this.
+      log.("user.invited", "reqZtrace")
+
+      # Paste a request_id → only its event; the `_` is matched literally.
+      assert {:ok, [hit], %{count: 1}} = Audit.list_events(subject, filter: [q: "req_trace"])
+      assert hit.request_id == "req_trace"
+
+      # A partial event_type also matches.
+      assert {:ok, [row], %{count: 1}} = Audit.list_events(subject, filter: [q: "policy"])
+      assert row.event_type == "policy.updated"
+    end
+
     test "actor_kind list filter accepts a list of kinds" do
       account = account_fixture()
       subject = subject_for(user_fixture(), account, role: :owner)

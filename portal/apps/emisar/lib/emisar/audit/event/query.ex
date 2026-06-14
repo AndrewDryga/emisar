@@ -350,6 +350,20 @@ defmodule Emisar.Audit.Event.Query do
   @impl Emisar.Repo.Query
   def filters,
     do: [
+      # Free-text trace: paste a request_id (or part of an event type) to pull
+      # every event tied to it. ILIKE on event_type + request_id, wildcards in
+      # the term escaped so a pasted id matches literally.
+      %Filter{
+        name: :q,
+        title: "Search (type or request id)",
+        type: :string,
+        fun: fn queryable, term ->
+          pattern = "%" <> escape_like(term) <> "%"
+
+          {queryable,
+           dynamic([events: e], ilike(e.event_type, ^pattern) or ilike(e.request_id, ^pattern))}
+        end
+      },
       %Filter{
         name: :event_type,
         title: "Type",
@@ -416,5 +430,16 @@ defmodule Emisar.Audit.Event.Query do
   # exactly the rows the audit dots color rose/amber.
   defp event_types_for_outcomes(outcomes) do
     for {type, _label} <- @known_event_types, Atom.to_string(outcome(type)) in outcomes, do: type
+  end
+
+  # Escape LIKE/ILIKE wildcards so a pasted id matches literally: a request_id
+  # like `req_…` carries `_` (a single-char wildcard) and `%`/`\` shouldn't act
+  # as patterns either. Backslash first, so the escapes we add aren't re-escaped;
+  # Postgres ILIKE uses `\` as the default escape char.
+  defp escape_like(term) do
+    term
+    |> String.replace("\\", "\\\\")
+    |> String.replace("%", "\\%")
+    |> String.replace("_", "\\_")
   end
 end

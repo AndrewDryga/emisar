@@ -118,6 +118,9 @@ defmodule EmisarWeb.AuditLiveTest do
       assert html =~ "/app/audit?actor_id=#{actor_id}"
       assert html =~ "From (UTC)"
       assert html =~ "To (UTC)"
+      # The free-text trace filter (paste a request_id/type) is wired in.
+      assert html =~ "Search (type or request id)"
+      assert html =~ ~s(name="q")
     end
 
     test "filtering by actor_id narrows the list and shows a clearable chip", %{conn: conn} do
