@@ -6,33 +6,49 @@ kind: exec
 risk: medium
 
 description: >
-  Last N failed logins from /var/log/btmp via `lastb`. Surfaces
-  username, terminal, source IP. High-signal for "is this host being
-  brute-forced?" Read-only but flagged medium-risk: the IPs and
-  usernames are sensitive PII.
+  Recent failed authentication attempts from the systemd journal — sshd's
+  "Failed password" / "Invalid user" plus pam_unix "authentication failure"
+  from su/sudo/login. High-signal for "is this host being brute-forced?"
+  Read-only, but flagged medium-risk: the source IPs and usernames are
+  sensitive PII. A healthy host with no failed auth returns nothing (the
+  journal query exits 1 on no match, which is treated as success).
 
 side_effects:
-  - One lastb invocation.
-  - Reads /var/log/btmp (root usually).
+  - One journalctl read of the auth/authpriv journal (root or the systemd-journal group).
+  - Output includes source IPs and usernames (PII).
+  - Read-only.
 
 args:
   - name: count
     type: integer
     required: false
     default: 50
-    description: How many failed attempts to return.
+    description: How many of the most recent failed attempts to return.
     validation:
       min: 1
       max: 500
 
 execution:
   command:
-    binary: lastb
+    binary: journalctl
+    # Both auth (sshd's own failures) and authpriv (pam_unix from
+    # su/sudo/login) — a single facility misses half. -n is applied AFTER
+    # --grep, so it returns the N most recent failures, not "failures within
+    # the last N journal lines". Do not narrow to _COMM=sshd: OpenSSH 10
+    # renamed the per-connection process sshd -> sshd-session.
     argv:
-      - "-F"
+      - "--facility=auth,authpriv"
+      - "--grep"
+      - "Failed password|Invalid user|Failed publickey|authentication failure|FAILED"
+      - "--no-pager"
       - "-n"
       - "{{ args.count }}"
   timeout: 10s
+  # journalctl --grep exits 1 when nothing matches — the healthy state for a
+  # brute-force detector. The query is fully hardcoded, so exit 1 can only
+  # mean "no matches", never a bad-argument error.
+  success_exit_codes:
+    - 1
 
 output:
   parser: text
