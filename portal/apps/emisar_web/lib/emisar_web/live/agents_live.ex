@@ -669,6 +669,16 @@ defmodule EmisarWeb.AgentsLive do
                 </div>
               </:meta>
               <:actions>
+                <%!-- What this agent actually did — deep-link the audit log
+                     filtered to this key's actor. Shown for revoked keys too:
+                     that's exactly when "what did it do" matters. Every role
+                     that can see this page also holds view_audit. --%>
+                <.link
+                  navigate={~p"/app/audit?#{[actor_kind: "api_key", actor_id: key.id]}"}
+                  class="text-xs text-indigo-400 hover:text-indigo-300"
+                >
+                  View activity →
+                </.link>
                 <.button
                   :if={
                     is_nil(key.revoked_at) and ApiKeys.subject_can_manage_api_keys?(@current_subject)

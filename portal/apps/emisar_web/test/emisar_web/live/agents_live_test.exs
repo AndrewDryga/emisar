@@ -154,6 +154,27 @@ defmodule EmisarWeb.AgentsLiveTest do
       assert html =~ user.email
     end
 
+    test "each agent links to its audit activity, including after it's revoked", %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      subject = owner_subject(user, account)
+
+      {:ok, _raw, key} =
+        ApiKeys.create_key(
+          %{name: "manual-bot", scopes: ["actions:read"], runner_filter: []},
+          subject
+        )
+
+      {:ok, _} = ApiKeys.revoke_api_key(key, subject)
+
+      {:ok, _lv, html} = live(conn, ~p"/app/agents")
+
+      # "What did this agent do" is exactly what you want after killing a key —
+      # the (revoked) row still deep-links the audit log filtered to its actor.
+      assert html =~ "View activity"
+      assert html =~ "actor_id=#{key.id}"
+      assert html =~ "actor_kind=api_key"
+    end
+
     test "agents list shows the MCP client a key reported (clientInfo)", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
       subject = owner_subject(user, account)
