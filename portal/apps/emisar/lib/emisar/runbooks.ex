@@ -222,6 +222,29 @@ defmodule Emisar.Runbooks do
   end
 
   @doc """
+  Resolve a runbook's steps to the full work-list — the blast radius — WITHOUT
+  dispatching, so the run form can show it before the operator commits. Requires
+  `dispatch_run` (the run page's gate); the runbook must be in the subject's
+  account. `{:ok, %{plan: [...], total: n, waves: w}}` — `plan` matches
+  `dispatch_runbook`'s, `waves` = ⌈total/#{@batch_size}⌉ — or the same
+  `{:error, :empty_runbook | {:step_no_runners, n}}` a dispatch would hit.
+  """
+  def resolve_plan(%Runbook{} = runbook, %Subject{} = subject) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Emisar.Runs.Authorizer.dispatch_run_permission()
+           ),
+         :ok <- Subject.ensure_in_account(subject, runbook.account_id),
+         steps = expand(runbook),
+         :ok <- ensure_steps(steps),
+         {:ok, work_list} <- resolve_work_list(runbook.account_id, steps) do
+      total = length(work_list)
+      {:ok, %{plan: build_plan(work_list), total: total, waves: ceil(total / @batch_size)}}
+    end
+  end
+
+  @doc """
   Called from `Runs.mark_finished` whenever a run reaches a terminal
   state. When the finished run's whole wave is terminal and nothing in
   the execution failed, dispatches the next wave of `#{@batch_size}`

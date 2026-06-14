@@ -4,6 +4,11 @@ defmodule EmisarWeb.RunbookRunLive do
   alias Emisar.{Catalog, Runbooks, Runners, Runs}
   alias EmisarWeb.Permissions
 
+  # The blast-radius assign's resting shape, so the render reads it without a
+  # nil-guard: `counts` (step_index => runner count), `total`/`waves` (nil until
+  # resolved), `no_runners_step` (the step a `group:` empties to, or nil).
+  @empty_blast %{counts: %{}, total: nil, waves: nil, no_runners_step: nil}
+
   def mount(%{"id" => id}, _session, socket) do
     case Runbooks.fetch_runbook_by_id(id, socket.assigns.current_subject) do
       {:ok, runbook} ->
@@ -60,6 +65,9 @@ defmodule EmisarWeb.RunbookRunLive do
     # Most-severe across runners — a group target hits every member, so
     # showing the recent-but-lower risk would under-warn.
     |> assign(:action_risk, Catalog.most_severe_risk_by_action(runner_actions))
+    # Blast radius: resolve the work-list NOW (no dispatch) so the operator sees
+    # how many runs each step fans out to + the wave total before pressing Start.
+    |> assign(:blast_radius, build_blast_radius(runbook, subject))
   end
 
   defp empty_run_form(socket) do
@@ -67,6 +75,30 @@ defmodule EmisarWeb.RunbookRunLive do
     |> assign(:runners, [])
     |> assign(:steps, [])
     |> assign(:action_risk, %{})
+    |> assign(:blast_radius, @empty_blast)
+  end
+
+  # Normalize `Runbooks.resolve_plan/2` for the render: per-step runner counts
+  # keyed by step index (so the plan rows match), the run + wave totals, or a
+  # `no_runners_step` warning when a step's target resolves to nothing (dispatch
+  # would refuse it — better the operator sees that here than after Start). The
+  # resting `@empty_blast` when the runbook can't resolve (empty / unauthorized).
+  defp build_blast_radius(runbook, subject) do
+    case Runbooks.resolve_plan(runbook, subject) do
+      {:ok, %{plan: plan, total: total, waves: waves}} ->
+        %{
+          @empty_blast
+          | counts: Enum.frequencies_by(plan, & &1.step_index),
+            total: total,
+            waves: waves
+        }
+
+      {:error, {:step_no_runners, step_number}} ->
+        %{@empty_blast | no_runners_step: step_number}
+
+      {:error, _} ->
+        @empty_blast
+    end
   end
 
   # Risk of a plan step's action, or nil when the catalog hasn't observed
@@ -337,6 +369,14 @@ defmodule EmisarWeb.RunbookRunLive do
             </h2>
             <span class="text-xs text-zinc-500">
               {length(@steps)} {if length(@steps) == 1, do: "step", else: "steps"}
+              <span :if={!@execution && @blast_radius.total} class="text-indigo-300/70">
+                → {@blast_radius.total} {if @blast_radius.total == 1, do: "run", else: "runs"} in {@blast_radius.waves} {if @blast_radius.waves ==
+                                                                                                                              1,
+                                                                                                                            do:
+                                                                                                                              "wave",
+                                                                                                                            else:
+                                                                                                                              "waves"}
+              </span>
               <span :if={@execution}>
                 · {finished_count(@run_statuses)}/{@execution.total} finished
                 <span :if={failed_count(@run_statuses) > 0} class="text-rose-400">
@@ -386,6 +426,19 @@ defmodule EmisarWeb.RunbookRunLive do
             </li>
           </ul>
 
+          <%!-- A group step that resolves to zero active runners makes dispatch
+               refuse the whole runbook — surface that here, before Start. --%>
+          <div
+            :if={!@execution && @blast_radius.no_runners_step}
+            class="flex items-start gap-2 border-b border-amber-500/20 bg-amber-500/[0.04] px-5 py-2.5 text-xs text-amber-300"
+          >
+            <.icon name="hero-exclamation-triangle" class="mt-0.5 h-3.5 w-3.5 flex-none" />
+            <span>
+              Step {@blast_radius.no_runners_step}'s target has no active runners — dispatch
+              will refuse it until one connects.
+            </span>
+          </div>
+
           <%!-- Plan steps, shown until the first dispatch. --%>
           <ol :if={!@execution && @steps != []} class="divide-y divide-zinc-900">
             <li
@@ -410,8 +463,10 @@ defmodule EmisarWeb.RunbookRunLive do
                 <p :if={step["description"]} class="mt-0.5 truncate text-xs text-zinc-500">
                   {step["description"]}
                 </p>
+                <% count = @blast_radius.counts[idx] %>
                 <p :if={target} class="mt-0.5 truncate text-xs text-indigo-300/70">
-                  → {target}
+                  → {target}<span :if={count}>
+                    · {count} {if count == 1, do: "runner", else: "runners"}</span>
                 </p>
                 <p :if={!target} class="mt-0.5 truncate text-xs text-amber-400/80">
                   → no target set

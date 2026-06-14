@@ -197,6 +197,53 @@ defmodule Emisar.RunbooksTest do
     end
   end
 
+  describe "resolve_plan/2 (blast radius, no dispatch)" do
+    test "returns the work-list total + wave count without creating any runs" do
+      {account, subject, runner} = account_with_runner()
+
+      # Three active runners in the group → a 2-step runbook fans out to 6 runs;
+      # at @batch_size 5 that's 2 waves — exercises the ceil, not just 1 wave.
+      for _ <- 1..2 do
+        peer = runner_fixture(account_id: account.id, group: runner.group)
+        action_fixture(runner: peer, action_id: "linux.uptime", risk: "low")
+      end
+
+      runbook =
+        published_runbook!(subject, "fleet-sweep", uptime_steps(2, group_target(runner.group)))
+
+      assert {:ok, %{total: 6, waves: 2, plan: plan}} = Runbooks.resolve_plan(runbook, subject)
+      assert length(plan) == 6
+
+      # Read-only: resolving the blast radius dispatches nothing.
+      assert {:ok, [], _} = Emisar.Runs.list_recent_runs(subject, limit: 10)
+    end
+
+    test "reports the step whose group has no active runners (the pre-dispatch warning)" do
+      {_account, subject, _runner} = account_with_runner()
+      runbook = published_runbook!(subject, "ghost-town", uptime_steps(1, group_target("ghost")))
+
+      assert {:error, {:step_no_runners, 1}} = Runbooks.resolve_plan(runbook, subject)
+    end
+
+    test "denies a subject without dispatch permission" do
+      {account, subject, runner} = account_with_runner()
+      runbook = published_runbook!(subject, "rb", uptime_steps(1, group_target(runner.group)))
+
+      viewer = subject_for(user_fixture(), account, role: :viewer)
+      assert {:error, :unauthorized} = Runbooks.resolve_plan(runbook, viewer)
+    end
+
+    test "refuses a runbook from another account" do
+      {_account, subject, runner} = account_with_runner()
+      runbook = published_runbook!(subject, "rb", uptime_steps(1, group_target(runner.group)))
+
+      {_user_b, _account_b, subject_b} = owner_subject_fixture()
+      # Cross-account is :not_found, not :unauthorized — account B can't tell A's
+      # runbook exists (same as dispatch_runbook's `Subject.ensure_in_account`).
+      assert {:error, :not_found} = Runbooks.resolve_plan(runbook, subject_b)
+    end
+  end
+
   describe "wave advancement" do
     test "releases the next wave only when the whole wave finishes" do
       {account, subject, runner} = account_with_runner()

@@ -197,6 +197,37 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       assert html =~ "group: default"
       refute html =~ ~s(name="target")
     end
+
+    test "the idle plan shows the blast radius — runner count per step + run total", %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+
+      # Two runners in the "default" group the runbook's lone step targets.
+      r1 = Emisar.Fixtures.runner_fixture(account_id: account.id, group: "default")
+      Emisar.Fixtures.action_fixture(runner: r1, action_id: "linux.uptime")
+      r2 = Emisar.Fixtures.runner_fixture(account_id: account.id, group: "default")
+      Emisar.Fixtures.action_fixture(runner: r2, action_id: "linux.uptime")
+      runbook = published_runbook!(user, account)
+
+      {:ok, _lv, html} = live(conn, ~p"/app/runbooks/#{runbook.id}/run")
+
+      # 1 step × 2 runners = 2 runs in 1 wave; the step shows its own count.
+      assert html =~ "2 runs"
+      assert html =~ "1 wave"
+      assert html =~ "2 runners"
+    end
+
+    test "the idle plan warns when a step's group has no active runners", %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+
+      # A runner exists (so the page loads) but not in the "default" group the
+      # step targets — it resolves to zero runners, surfaced before Start.
+      Emisar.Fixtures.runner_fixture(account_id: account.id, group: "elsewhere")
+      runbook = published_runbook!(user, account)
+
+      {:ok, _lv, html} = live(conn, ~p"/app/runbooks/#{runbook.id}/run")
+
+      assert html =~ "no active runners"
+    end
   end
 
   describe "dispatch validation" do
