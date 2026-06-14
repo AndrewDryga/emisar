@@ -1059,7 +1059,7 @@ defmodule EmisarWeb.CoreComponents do
   def summary_stat(assigns) do
     ~H"""
     <div class="flex items-baseline gap-1.5">
-      <span class={["text-base font-semibold", summary_value_class(@tone)]}>{@value}</span>
+      <span class={["font-semibold tabular-nums", summary_value_class(@tone)]}>{@value}</span>
       <span class="text-zinc-400">{@label}</span>
       <span :if={@hint} class="text-xs text-zinc-600">({@hint})</span>
     </div>
