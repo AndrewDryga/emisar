@@ -9,7 +9,7 @@ allowed-tools: Read, Grep, Glob, Bash, Write, Edit
 # Work the plan
 
 Implement one step at a time. The point is a green, reviewable change — not speed.
-If there's no plan yet and the change is non-trivial, run `/plan` first.
+If there's no plan yet and the change is non-trivial, run `/spec` first.
 
 ## The loop (per step)
 

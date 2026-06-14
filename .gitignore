@@ -47,4 +47,4 @@ docs/
 **/.agent/*
 !**/.agent/rules
 .expert/*.log
-.claude/.batch-active
+.claude/.sweep-active

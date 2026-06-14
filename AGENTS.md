@@ -63,7 +63,7 @@ A task becomes `[x]` only when **all** of these hold:
 
 No changelog file — `git log` is the changelog.
 
-### The work loop (what `/batch`, `/goal`, `/loop`, `/work` all follow)
+### The work loop (what `/sweep`, `/goal`, `/loop`, `/work` all follow)
 
 Work the first `[ ]` in `TASKS.md`, then the next, until none remain:
 
@@ -111,7 +111,7 @@ A correction that only fixes the flagged line *will* be repeated. This pipeline 
 
 Two kinds:
 
-- **Generic hats** — `/product-manager`, `/ux-designer`, `/security-engineer`, `/seo-marketing`, `/plan`, `/work` — apply repo-wide regardless of language. Wear one when a change leans hard on its domain.
+- **Generic hats** — `/product-manager`, `/ux-designer`, `/security-engineer`, `/seo-marketing`, `/spec`, `/work` — apply repo-wide regardless of language. Wear one when a change leans hard on its domain.
 - **Per-product engineering skills** — language-specific. The Elixir set (`/context-fn`, `/new-context`, `/iron-review`, `/oban`, `/perf`, `/testing`, …) is **portal-only**. Go work in `runner/`/`mcp/` uses the Go engineering skill plus that project's `AGENTS.md`.
 
 Skills are thin entry points — the durable rules they apply live in `AGENTS.md` and `.agent/rules/`. Both tools share the **same** skill files: Claude via `.claude/skills/`, Codex via the `.codex/skills` → `../.claude/skills` symlink (auto-discovered when Codex runs in the repo).

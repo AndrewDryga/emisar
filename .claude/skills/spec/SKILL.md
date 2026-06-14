@@ -1,12 +1,12 @@
 ---
-name: plan
+name: spec
 description: Design an opinionated, boring-by-default implementation plan for a portal/ change before writing code. Use when a change spans more than one file or context, when the approach isn't obvious, or when the user asks to plan/design/think through a feature. Produces a small-step, verifiable plan to approve before /work.
 effort: medium
 argument-hint: "<what you want to build>"
 allowed-tools: Read, Grep, Glob, Bash
 ---
 
-# Plan a change (the boring, shippable way)
+# /spec — plan a change (the boring, shippable way)
 
 Produce a plan the user can approve, then hand to `/work`. Optimize for the
 smallest correct slice, not the grandest design. Read `portal/AGENTS.md` (laws +

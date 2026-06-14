@@ -117,7 +117,7 @@ Project skills live in **`../.claude/skills/`** (repo root, so they're found fro
 
 | Skill | Use when |
 |-------|----------|
-| `/plan` | Designing a change that spans more than one file/context. Produces an opinionated, boring-by-default plan in the layered-context shape. |
+| `/spec` | Designing a change that spans more than one file/context. Produces an opinionated, boring-by-default plan in the layered-context shape. |
 | `/work` | Executing a plan step-by-step with compile/test gates between steps. |
 | `/ship-review` | Reviewing a diff before merge through the product hats **and** the Iron Laws, in parallel. The product-level companion to `/code-review` (bugs) and `/iron-review` (laws). |
 | `/new-context` | Scaffolding a whole new context (context + authorizer + schema + query + changeset + tests) in the standard shape. |

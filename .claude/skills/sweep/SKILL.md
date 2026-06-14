@@ -1,12 +1,12 @@
 ---
-name: batch
-description: Drain a project's .agent/TASKS.md queue autonomously and run-to-completion, taking EACH item to a ship-ready bar — claim `[ ]`, build it, gate it green, self-review it against the house rules (portal Iron Laws / runner security posture / pack conventions + the .agent/rules KB) AND every hat (security, UX, marketing, docs, code quality, tests), ITERATE until it's clean, then COMMIT IT ON ITS OWN and tick `[x]` — without quitting early. Arms the Stop-hook sentinel for the run. Use to "work all the tasks" / drain a backlog to a high bar / run an unattended batch.
+name: sweep
+description: Drain a project's .agent/TASKS.md queue autonomously and run-to-completion, taking EACH item to a ship-ready bar — claim `[ ]`, build it, gate it green, self-review it against the house rules (portal Iron Laws / runner security posture / pack conventions + the .agent/rules KB) AND every hat (security, UX, marketing, docs, code quality, tests), ITERATE until it's clean, then COMMIT IT ON ITS OWN and tick `[x]` — without quitting early. Arms the Stop-hook sentinel for the run. Use to "work all the tasks" / drain a backlog to a high bar / run an unattended sweep.
 effort: max
 argument-hint: "[project: portal|runner|mcp|packs — default: every project with open tasks]"
 allowed-tools: Read, Grep, Glob, Bash, Write, Edit
 ---
 
-# /batch — drain the TASKS queue to a ship-ready bar, one commit per item
+# /sweep — drain the TASKS queue to a ship-ready bar, one commit per item
 
 Runs the work loop (root `AGENTS.md` → "The work loop") to completion with the Stop hook
 armed, so it can't quit while work remains. **Scope:** the `$1` project's `.agent/TASKS.md`,
@@ -21,7 +21,7 @@ conventions**) *and* the worked examples in `<project>/.agent/rules/`. Build *to
 *check the diff against them*. Don't trust your first draft; review it and fix it.
 
 ## 1. Arm
-- `touch .claude/.batch-active` — arms `stop-guard.sh`: until you disarm, trying to stop while
+- `touch .claude/.sweep-active` — arms `stop-guard.sh`: until you disarm, trying to stop while
   any `- [ ]` remains is blocked. (Sentinel is git-ignored.)
 - Read the project's `AGENTS.md` in full — the gate **and the rule index** (portal Iron Laws +
   House opinions; runner/mcp security posture + Go house style; pack conventions) — **and every
@@ -36,7 +36,7 @@ conventions**) *and* the worked examples in `<project>/.agent/rules/`. Build *to
 1. **Claim** — flip `- [ ]` → `- [w]` (fail-safe Edit; on collision re-read + take the next).
    **Skip any `- [w]`** — a parallel agent's live claim.
 2. **Build** — wear the hats while building; obey the project's `AGENTS.md` laws, match the
-   `.agent/rules/` examples and the surrounding style exactly. `/plan` first if it spans more
+   `.agent/rules/` examples and the surrounding style exactly. `/spec` first if it spans more
    than one file/context.
 3. **Gate green** — the project's exact gate (`<project>/AGENTS.md` → "The gate" / IL-20). No
    green, no review.
@@ -88,10 +88,10 @@ conventions**) *and* the worked examples in `<project>/.agent/rules/`. Build *to
 ## 3. Finish
 - No `- [ ]` left: **completeness pass** — re-verify every `- [x]` against `git log` (one commit
   each) and that none shipped with an unaddressed review blocker or a house-rule violation.
-- **Disarm** — `rm -f .claude/.batch-active` (and `/goal clear` if you set a run goal).
+- **Disarm** — `rm -f .claude/.sweep-active` (and `/goal clear` if you set a run goal).
 - Report: items done (SHAs + what the review caught/fixed + any rule recorded), items `[B]`'d (+ why), `BACKLOG` adds.
 
 ## Aborting / resuming
-An interrupted batch deliberately leaves the sentinel in place so the next session resumes the
-queue (the Stop hook keeps it honest). Stop for real: `rm .claude/.batch-active`. Don't
+An interrupted sweep deliberately leaves the sentinel in place so the next session resumes the
+queue (the Stop hook keeps it honest). Stop for real: `rm .claude/.sweep-active`. Don't
 auto-reclaim a stale `- [w]` unless you're sure it's orphaned, not a live parallel claim.
