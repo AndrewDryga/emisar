@@ -123,7 +123,7 @@ defmodule EmisarWeb.RunsLive do
           <% end %>
         </:empty>
         <:col :let={run} label="When" class="w-24">
-          <span class="text-xs text-zinc-400">{relative_time(run.inserted_at)}</span>
+          <.local_time value={run.inserted_at} mode={:relative} class="text-xs text-zinc-400" />
         </:col>
         <:col :let={run} label="Action">
           <.link navigate={~p"/app/runs/#{run.id}"} class="font-mono text-sm hover:text-indigo-300">

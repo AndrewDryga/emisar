@@ -248,7 +248,7 @@ defmodule EmisarWeb.ApprovalsLive do
                     </div>
                     <div class="shrink-0 text-right">
                       <div class="text-xs text-amber-200/70">
-                        {relative_time(request.requested_at)}
+                        <.local_time value={request.requested_at} mode={:relative} />
                       </div>
                       <%!-- Held runs auto-cancel at expiry — surface it so an
                            approver can triage by urgency, not just arrival. --%>
@@ -416,9 +416,11 @@ defmodule EmisarWeb.ApprovalsLive do
                     </div>
                   </div>
                   <div class="flex shrink-0 items-center gap-3">
-                    <span class="text-xs text-zinc-500">
-                      {relative_time(request.decided_at || request.requested_at)}
-                    </span>
+                    <.local_time
+                      value={request.decided_at || request.requested_at}
+                      mode={:relative}
+                      class="text-xs text-zinc-500"
+                    />
                     <.status_badge status={request.status} />
                   </div>
                 </.link>

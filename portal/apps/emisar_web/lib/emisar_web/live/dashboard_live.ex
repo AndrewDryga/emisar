@@ -263,7 +263,7 @@ defmodule EmisarWeb.DashboardLive do
                   {request.context["action_id"] || "—"}
                 </div>
                 <div class="truncate text-xs text-amber-200/60">
-                  {relative_time(request.requested_at)}
+                  <.local_time value={request.requested_at} mode={:relative} />
                   <span :if={request.reason && request.reason != ""}>· {request.reason}</span>
                 </div>
               </div>

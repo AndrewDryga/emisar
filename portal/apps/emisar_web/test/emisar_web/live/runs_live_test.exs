@@ -40,6 +40,10 @@ defmodule EmisarWeb.RunsLiveTest do
     # Secondary columns (Source/Duration) collapse below lg so the table fits
     # a phone in an incident.
     assert html =~ "hidden lg:table-cell"
+    # The "When" timestamp renders as a hook-driven <time> (viewer-local),
+    # consistent with the rest of the app — not a raw server-UTC string.
+    assert html =~ ~s(phx-hook="LocalTime")
+    assert html =~ ~s(data-format="relative")
   end
 
   test "redirects anonymous users", %{conn: conn} do

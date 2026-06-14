@@ -692,7 +692,7 @@ defmodule EmisarWeb.ProfileLive do
                     </span>
                   </div>
                   <div class="mt-0.5 truncate text-xs text-zinc-500">
-                    Started {relative_time(session.inserted_at)}
+                    Started <.local_time value={session.inserted_at} mode={:relative} />
                     <%= if session_ip(session) do %>
                       · <span class="font-mono">{session_ip(session)}</span>
                     <% end %>
