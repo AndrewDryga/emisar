@@ -223,8 +223,27 @@ defmodule EmisarWeb.AgentsLive do
   # so the operator doesn't jump back to page 1 on revoke or every 5 s.
   defp reload(socket), do: load(socket, socket.assigns[:filter_params] || %{})
 
+  # Fill the static Owner filter's options with the account's real key creators
+  # (the filter's SQL still comes from the Query module's `fun`).
+  defp with_owner_options(subject) do
+    owners =
+      case ApiKeys.list_key_owner_options(subject) do
+        {:ok, options} -> options
+        _ -> []
+      end
+
+    Enum.map(ApiKeys.ApiKey.Query.filters(), fn
+      %{name: :owner} = filter -> %{filter | values: owners}
+      filter -> filter
+    end)
+  end
+
   defp load(socket, params) do
-    filters = ApiKeys.ApiKey.Query.filters()
+    # Default to live keys only — a connected-agents view shouldn't be cluttered
+    # with dead credentials; the operator opts into revoked via the Status filter.
+    params = Map.put_new(params, "status", "live")
+
+    filters = with_owner_options(socket.assigns.current_subject)
     opts = LiveTable.params_to_opts(params, filters)
 
     case ApiKeys.list_api_keys_for_account(

@@ -54,6 +54,29 @@ defmodule Emisar.ApiKeys do
   end
 
   @doc """
+  `{:ok, [{user_id, email}]}` — the distinct creators of the account's visible
+  agent keys (the same `visible_to_operators` + non-`audit:read` set the agents
+  list shows), for that page's "Owner" filter options. `%Subject{}` needs
+  `view_api_keys`.
+  """
+  def list_key_owner_options(%Subject{} = subject) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.view_api_keys_permission()
+           ) do
+      options =
+        ApiKey.Query.visible_to_operators()
+        |> ApiKey.Query.without_scope("audit:read")
+        |> ApiKey.Query.owner_options()
+        |> Authorizer.for_subject(subject)
+        |> Repo.all()
+
+      {:ok, options}
+    end
+  end
+
+  @doc """
   Lists audit-export tokens (`audit:read`) for the audit page. Same
   visibility rules + creator preload as the agents list, but scoped
   to the SIEM-export bucket only so the audit page renders just the

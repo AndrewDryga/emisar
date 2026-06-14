@@ -166,13 +166,46 @@ defmodule EmisarWeb.AgentsLiveTest do
 
       {:ok, _} = ApiKeys.revoke_api_key(key, subject)
 
-      {:ok, _lv, html} = live(conn, ~p"/app/agents")
+      # Revoked keys are excluded by default now — filter them in to see one.
+      {:ok, _lv, html} = live(conn, ~p"/app/agents?status=revoked")
 
       # "What did this agent do" is exactly what you want after killing a key —
       # the (revoked) row still deep-links the audit log filtered to its actor.
       assert html =~ "View activity"
       assert html =~ "actor_id=#{key.id}"
       assert html =~ "actor_kind=api_key"
+    end
+
+    test "revoked keys are hidden by default + an Owner filter is offered", %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      subject = owner_subject(user, account)
+
+      {:ok, _raw, _live} =
+        ApiKeys.create_key(
+          %{name: "live-bot", scopes: ["actions:read"], runner_filter: []},
+          subject
+        )
+
+      {:ok, _raw, dead} =
+        ApiKeys.create_key(
+          %{name: "dead-bot", scopes: ["actions:read"], runner_filter: []},
+          subject
+        )
+
+      {:ok, _} = ApiKeys.revoke_api_key(dead, subject)
+
+      # Default view: live only — no clutter from dead credentials.
+      {:ok, _lv, html} = live(conn, ~p"/app/agents")
+      assert html =~ "live-bot"
+      refute html =~ "dead-bot"
+      # The Owner filter is offered, with the creator as an option.
+      assert html =~ ~s(name="owner")
+      assert html =~ user.email
+
+      # Revoked are reachable via the Status filter.
+      {:ok, _lv, html} = live(conn, ~p"/app/agents?status=revoked")
+      assert html =~ "dead-bot"
+      refute html =~ "live-bot"
     end
 
     test "agents list shows the MCP client a key reported (clientInfo)", %{conn: conn} do

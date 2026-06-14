@@ -129,8 +129,28 @@ defmodule Emisar.ApiKeys.ApiKey.Query do
         type: {:list, :string},
         values: [{"live", "Live"}, {"revoked", "Revoked"}],
         fun: fn queryable, statuses -> {queryable, status_dynamic(statuses)} end
+      },
+      # Filter by who created the key. `values` are filled in by the LiveView
+      # from `owner_options/1` (only owners who actually have keys).
+      %Filter{
+        name: :owner,
+        title: "Owner",
+        type: {:list, :string},
+        values: [],
+        fun: fn queryable, ids -> {queryable, dynamic([api_keys: k], k.created_by_id in ^ids)} end
       }
     ]
+
+  @doc """
+  Distinct `{user_id, email}` options for the agents "Owner" filter — the users
+  who created a still-visible key in the account. Compose with `for_subject/2`.
+  """
+  def owner_options(queryable \\ visible_to_operators()) do
+    queryable
+    |> join(:inner, [api_keys: k], u in assoc(k, :created_by), as: :owner)
+    |> distinct(true)
+    |> select([owner: u], {u.id, u.email})
+  end
 
   defp status_dynamic(statuses) do
     cond do

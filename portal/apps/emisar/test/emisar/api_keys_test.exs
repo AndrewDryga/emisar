@@ -45,6 +45,40 @@ defmodule Emisar.ApiKeysTest do
     end
   end
 
+  describe "list_key_owner_options/1 + the owner filter" do
+    test "returns the distinct creators of the account's visible (non-audit) keys" do
+      {user, _account, subject} = owner_subject_pair()
+
+      {:ok, _raw, _k1} = ApiKeys.create_key(%{name: "a", scopes: ["actions:read"]}, subject)
+      {:ok, _raw, _k2} = ApiKeys.create_key(%{name: "b", scopes: ["actions:read"]}, subject)
+      # An audit-export key is on the audit list, not agents — its creator isn't
+      # an agents "owner".
+      {:ok, _raw, _siem} = ApiKeys.create_key(%{name: "siem", scopes: ["audit:read"]}, subject)
+
+      assert {:ok, [{owner_id, owner_email}]} = ApiKeys.list_key_owner_options(subject)
+      assert owner_id == user.id
+      assert owner_email == user.email
+    end
+
+    test "the owner filter narrows to a creator's keys; another account sees none" do
+      {user, _account, subject} = owner_subject_pair()
+      {:ok, _raw, _key} = ApiKeys.create_key(%{name: "mine", scopes: ["actions:read"]}, subject)
+
+      assert {:ok, [key], _} =
+               ApiKeys.list_api_keys_for_account(subject, filter: [owner: [user.id]])
+
+      assert key.name == "mine"
+
+      # A different creator id → nothing.
+      assert {:ok, [], _} =
+               ApiKeys.list_api_keys_for_account(subject, filter: [owner: [Ecto.UUID.generate()]])
+
+      # Cross-account: B's owner options never include A's creator.
+      {_user_b, _account_b, subject_b} = owner_subject_pair()
+      assert {:ok, []} = ApiKeys.list_key_owner_options(subject_b)
+    end
+  end
+
   describe "fetch_api_key_by_id/3" do
     test "returns the key inside the subject's account" do
       {_user, account, subject} = owner_subject_pair()
