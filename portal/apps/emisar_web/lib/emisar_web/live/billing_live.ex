@@ -458,25 +458,30 @@ defmodule EmisarWeb.BillingLive do
   # "fix your card" case; paused and canceled are amber FYIs. An unknown
   # status we don't model gets no banner — don't alarm on a state we can't
   # explain (Paddle owns the value space; see Subscription.Changeset).
+  #
+  # The copy stays purely informational + a nudge to fix billing — emisar does
+  # NOT gate features on subscription status today, so the banners must not
+  # imply "lose access / paid features" (that would be a promise the code
+  # doesn't keep). If enforcement is ever wired, revisit the wording then.
   defp subscription_alert("past_due"),
     do: %{
       tone: :rose,
       title: "Payment past due",
-      body: "Your last payment failed — update your card to keep your plan active."
+      body: "Your last payment failed — update your card so the next charge goes through."
     }
 
   defp subscription_alert("paused"),
     do: %{
       tone: :amber,
       title: "Subscription paused",
-      body: "Resume it from the billing portal to keep using paid features."
+      body: "Resume it from the billing portal when you're ready."
     }
 
   defp subscription_alert("canceled"),
     do: %{
       tone: :amber,
       title: "Subscription canceled",
-      body: "Resubscribe below to restore your paid features."
+      body: "Resubscribe below to start a new subscription."
     }
 
   defp subscription_alert(_), do: nil

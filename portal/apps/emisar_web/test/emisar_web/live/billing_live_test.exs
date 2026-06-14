@@ -124,6 +124,9 @@ defmodule EmisarWeb.BillingLiveTest do
       {:ok, _lv, html} = live(conn, ~p"/app/settings/billing")
 
       assert html =~ "Subscription canceled"
+      # Honest copy: nothing gates on subscription status, so the banner must
+      # not imply lost access / paid features.
+      refute html =~ "paid features"
     end
 
     test "a healthy account shows no failure banner", %{conn: conn} do
