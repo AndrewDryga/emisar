@@ -192,6 +192,43 @@ defmodule Emisar.PoliciesScopesTest do
     end
   end
 
+  describe "scope uniqueness — at most one live policy per (account, scope)" do
+    test "saving the same runner scope twice replaces in place, never duplicates" do
+      {_user, _account, subject} = owner_subject_fixture()
+
+      {:ok, first} = Policies.save_scoped_rules(@allow_all, :runner, "runner-1", subject)
+      {:ok, second} = Policies.save_scoped_rules(@deny_all, :runner, "runner-1", subject)
+
+      # Same row updated — the partial unique index + the upsert make a second
+      # live policy for the same scope impossible (no undefined "which wins").
+      assert first.id == second.id
+      assert second.rules["defaults"]["low"] == "deny"
+
+      {:ok, scoped} = Policies.list_scoped_policies(subject)
+      assert Enum.count(scoped, &(&1.scope_type == :runner and &1.scope_value == "runner-1")) == 1
+    end
+
+    test "a runner and a group with the same name are distinct policies" do
+      {_user, _account, subject} = owner_subject_fixture()
+
+      {:ok, runner_policy} = Policies.save_scoped_rules(@allow_all, :runner, "db", subject)
+      {:ok, group_policy} = Policies.save_scoped_rules(@deny_all, :group, "db", subject)
+
+      refute runner_policy.id == group_policy.id
+      {:ok, scoped} = Policies.list_scoped_policies(subject)
+      assert length(scoped) == 2
+    end
+
+    test "different runners get independent policies" do
+      {_user, _account, subject} = owner_subject_fixture()
+      {:ok, _} = Policies.save_scoped_rules(@allow_all, :runner, "runner-a", subject)
+      {:ok, _} = Policies.save_scoped_rules(@deny_all, :runner, "runner-b", subject)
+
+      {:ok, scoped} = Policies.list_scoped_policies(subject)
+      assert length(scoped) == 2
+    end
+  end
+
   defp account_scope?(%Policies.Policy{scope_type: :account}), do: true
   defp account_scope?(_), do: false
 end
