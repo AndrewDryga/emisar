@@ -70,6 +70,23 @@ defmodule EmisarWeb.ApprovalsLiveTest do
     assert render(lv) =~ "late-arriving request"
   end
 
+  test "an expired request shows its Expired outcome in recent decisions", %{conn: conn} do
+    {conn, user, account} = register_and_log_in(conn)
+    request = pending_request!(account, user.id, "lapsed without a decision")
+
+    # Backdate its TTL and run the real expiry sweep — it lands in Recent
+    # decisions as :expired with no decider, which used to render no outcome.
+    request
+    |> Ecto.Changeset.change(expires_at: DateTime.add(DateTime.utc_now(), -3600, :second))
+    |> Emisar.Repo.update!()
+
+    assert Approvals.expire_overdue_requests() == 1
+
+    {:ok, _lv, html} = live(conn, ~p"/app/approvals")
+
+    assert html =~ "· Expired"
+  end
+
   test "revoke_grant retires a standing grant", %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
     subject = subject_for(user, account)

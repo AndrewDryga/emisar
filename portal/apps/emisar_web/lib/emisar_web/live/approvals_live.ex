@@ -401,6 +401,12 @@ defmodule EmisarWeb.ApprovalsLive do
                           @user_labels
                         )}
                       </span>
+                      <%!-- An expired request lapsed with no decider, so it
+                           never matched the clause above — surface its
+                           outcome word too, just without a "by <user>". --%>
+                      <span :if={is_nil(request.decided_by_id)}>
+                        · {String.capitalize(to_string(request.status))}
+                      </span>
                     </div>
                   </div>
                   <div class="flex shrink-0 items-center gap-3">
