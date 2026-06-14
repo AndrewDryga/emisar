@@ -752,7 +752,7 @@ defmodule Emisar.RunsTest do
       assert stale_row.id == stale.id
     end
 
-    test "mark_runner_unreachable/2 transitions to :error with the provided message" do
+    test "mark_errored/2 transitions to :error with the provided message" do
       account = account_fixture()
       runner = runner_fixture(account_id: account.id)
       _ = action_fixture(runner: runner)
@@ -763,7 +763,7 @@ defmodule Emisar.RunsTest do
         Runs.dispatch_run(base_attrs(account.id, runner.id), subject)
 
       assert {:ok, %ActionRun{status: :error, error_message: msg, finished_at: %DateTime{}}} =
-               Runs.mark_runner_unreachable(run, "runner was disconnected")
+               Runs.mark_errored(run, "runner was disconnected")
 
       assert msg =~ "disconnected"
     end

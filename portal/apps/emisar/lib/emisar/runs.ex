@@ -626,9 +626,12 @@ defmodule Emisar.Runs do
   end
 
   @doc """
-  Re-emits the run_action envelope onto the runner's PubSub topic. Used
-  both for fresh dispatches and for the approve→send transition.
-  Internal — called from `dispatch_run/2` and `Approvals.approve_request/4`.
+  Re-emits the run_action envelope onto the runner's PubSub topic. Used for
+  fresh dispatches, the approve→send transition, and `RunDispatchTimeout`
+  re-sending a stale dispatch — the runner dedupes by `request_id`, so a
+  redelivery replays the cached result or runs it once (idempotent).
+  Internal — called from `dispatch_run/2`, `Approvals.approve_request/4`,
+  and `Emisar.Workers.RunDispatchTimeout`.
   """
   def dispatch_to_runner(%ActionRun{} = run) do
     payload = %{
@@ -743,13 +746,15 @@ defmodule Emisar.Runs do
   end
 
   @doc """
-  Internal — called by `Emisar.Workers.RunDispatchTimeout` when a run
-  has been sitting in `pending` / `sent` longer than the dispatch
-  threshold and the target runner is offline. Flips the run to
-  `:error` with an explanatory `error_message` so the operator sees
-  *something* instead of a row stuck in "sent" forever.
+  Internal — `Emisar.Workers.RunDispatchTimeout` terminally fails a
+  non-finished run (`:error` + `error_message`) when its dispatch can't
+  complete: the runner was offline/disabled/removed, disconnected
+  mid-run, or stayed online but never acknowledged the send past the
+  redispatch deadline. The reason explains which, so the operator sees a
+  terminal row with context instead of one stuck in `sent`/`running`
+  forever.
   """
-  def mark_runner_unreachable(%ActionRun{} = run, reason) when is_binary(reason) do
+  def mark_errored(%ActionRun{} = run, reason) when is_binary(reason) do
     transition(run, :error, %{finished_at: DateTime.utc_now(), error_message: reason})
   end
 

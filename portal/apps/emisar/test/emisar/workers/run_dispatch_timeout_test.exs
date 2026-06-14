@@ -1,9 +1,11 @@
 defmodule Emisar.Workers.RunDispatchTimeoutTest do
   @moduledoc """
-  Covers the mid-run zombie pass: a run stuck in `running` after its
+  Covers the mid-run zombie pass (a run stuck in `running` after its
   runner died must reach a terminal state, or every `wait_for_run`
-  long-poll spins forever. The pending/sent pass is covered alongside
-  the socket lifecycle in `EmisarWeb.RunnerSocketTest`.
+  long-poll spins forever) and the pending/sent recovery pass: an online
+  runner's stale dispatch is re-sent (idempotent), and one that stays
+  unacknowledged past the deadline goes terminal. The offline pending/sent
+  case is covered alongside the socket lifecycle in `EmisarWeb.RunnerSocketTest`.
   """
   use Emisar.DataCase, async: true
 
@@ -34,6 +36,51 @@ defmodule Emisar.Workers.RunDispatchTimeoutTest do
     runner
     |> Ecto.Changeset.change(last_disconnected_at: at)
     |> Repo.update!()
+  end
+
+  # A run dispatched (`:sent`) but never acknowledged, queued `seconds_ago`.
+  # Backdates `queued_at` (the sweep's staleness key) and `sent_at` (so a
+  # re-dispatch's fresh `mark_sent` is observable as a forward jump).
+  defp sent_run_for(runner, seconds_ago) do
+    {:ok, run} =
+      Runs.create_run(%{
+        account_id: runner.account_id,
+        runner_id: runner.id,
+        action_id: "linux.uptime",
+        args: %{},
+        reason: "test",
+        source: "operator"
+      })
+
+    {:ok, run} = Runs.mark_sent(run)
+    at = DateTime.utc_now() |> DateTime.add(-seconds_ago, :second)
+
+    run
+    |> Ecto.Changeset.change(queued_at: at, sent_at: at)
+    |> Repo.update!()
+  end
+
+  test "an online runner's stale sent run is re-dispatched, not failed" do
+    runner = runner_fixture(connected?: true)
+    run = sent_run_for(runner, 5 * 60)
+
+    assert :ok = RunDispatchTimeout.perform(%Oban.Job{args: %{}})
+
+    reloaded = Runs.peek_run_by_id(run.id)
+    assert reloaded.status == :sent
+    # mark_sent re-stamped sent_at — proof the dispatch was re-sent, not no-op'd.
+    assert DateTime.compare(reloaded.sent_at, run.sent_at) == :gt
+  end
+
+  test "an online runner that never acknowledges past the deadline goes terminal" do
+    runner = runner_fixture(connected?: true)
+    run = sent_run_for(runner, 20 * 60)
+
+    assert :ok = RunDispatchTimeout.perform(%Oban.Job{args: %{}})
+
+    reloaded = Runs.peek_run_by_id(run.id)
+    assert reloaded.status == :error
+    assert reloaded.error_message =~ "never acknowledged"
   end
 
   test "a running run whose runner has been offline past the grace goes terminal" do
