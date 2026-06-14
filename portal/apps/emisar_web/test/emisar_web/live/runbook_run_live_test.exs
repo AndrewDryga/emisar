@@ -147,6 +147,54 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       assert html =~ "an earlier step failed"
     end
 
+    test "a partial first-wave dispatch failure marks the failed row, one honest flash", %{
+      conn: conn
+    } do
+      {conn, user, account} = register_and_log_in(conn)
+      runner = Emisar.Fixtures.runner_fixture(account_id: account.id)
+      Emisar.Fixtures.action_fixture(runner: runner, action_id: "linux.uptime")
+      # A second runner that never advertised the action → its slot can't dispatch.
+      other = Emisar.Fixtures.runner_fixture(account_id: account.id)
+      Emisar.Fixtures.policy_fixture(account_id: account.id)
+      subject = owner_subject(user, account)
+
+      {:ok, runbook} =
+        Emisar.Runbooks.create_runbook(
+          %{
+            "title" => "partial",
+            "name" => "partial",
+            "slug" => "partial",
+            "definition" => %{
+              "steps" => [
+                %{
+                  "id" => "ok",
+                  "action_id" => "linux.uptime",
+                  "args" => %{},
+                  "runner_selector" => %{"runner_id" => [runner.id]}
+                },
+                %{
+                  "id" => "bad",
+                  "action_id" => "linux.uptime",
+                  "args" => %{},
+                  "runner_selector" => %{"runner_id" => [other.id]}
+                }
+              ]
+            }
+          },
+          subject
+        )
+
+      {:ok, runbook} = Emisar.Runbooks.publish(runbook, subject)
+
+      {:ok, lv, _} = live(conn, ~p"/app/runbooks/#{runbook.id}/run")
+      html = render_submit(lv, "dispatch", %{"reason" => "go"})
+
+      # The failed (step, runner) row is marked instead of staying grey, and the
+      # flash is one honest line — not a green "dispatched" beside a red "failed".
+      assert html =~ "dispatch failed"
+      assert html =~ "failed to dispatch"
+    end
+
     test "a run on an offline runner is flagged on its execution row", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
       runner = Emisar.Fixtures.runner_fixture(account_id: account.id, connected?: false)

@@ -129,7 +129,9 @@ defmodule EmisarWeb.RunbookRunLive do
         })
         |> assign(:run_statuses, Map.new(runs, &{&1.id, &1.status}))
         |> assign(:run_index, Map.new(runs, &{&1.id, &1}))
-        |> stream(:execution_runs, plan_rows(plan, socket.assigns.runners), reset: true)
+        # On rehydrate the dispatch already happened; any failures are persisted
+        # as runs (or simply absent), so there are no fresh dispatch errors to mark.
+        |> stream(:execution_runs, plan_rows(plan, socket.assigns.runners, []), reset: true)
         |> rehydrate_run_rows(runs)
 
       {:error, :not_found} ->
@@ -268,11 +270,12 @@ defmodule EmisarWeb.RunbookRunLive do
            |> assign(:run_statuses, %{})
            |> assign(:run_index, %{})
            |> assign(:run_outputs, %{})
-           |> stream(:execution_runs, plan_rows(execution.plan, socket.assigns.runners),
+           |> stream(
+             :execution_runs,
+             plan_rows(execution.plan, socket.assigns.runners, execution.errors),
              reset: true
            )
-           |> put_flash(:info, "Runbook dispatched — #{execution.total} runs planned.")
-           |> flash_dispatch_errors(execution.errors)}
+           |> flash_dispatch_result(execution)}
 
         {:error, :empty_runbook} ->
           {:noreply, put_flash(socket, :error, "Runbook has no steps to run.")}
@@ -293,13 +296,17 @@ defmodule EmisarWeb.RunbookRunLive do
     end
   end
 
-  defp flash_dispatch_errors(socket, []), do: socket
+  defp flash_dispatch_result(socket, %{errors: []} = execution),
+    do: put_flash(socket, :info, "Runbook dispatched — #{execution.total} runs planned.")
 
-  defp flash_dispatch_errors(socket, [first | _] = errors) do
+  # Some of the first wave failed to dispatch — one honest flash (not a green
+  # "dispatched" beside a red "failed"); the failed rows are marked below.
+  defp flash_dispatch_result(socket, %{errors: errors} = execution) do
     put_flash(
       socket,
       :error,
-      "#{length(errors)} of the first wave's runs failed to dispatch: #{format_reason(first)}"
+      "Runbook dispatched — #{execution.total} runs planned, but #{length(errors)} of the " <>
+        "first wave failed to dispatch (marked below)."
     )
   end
 
@@ -398,16 +405,28 @@ defmodule EmisarWeb.RunbookRunLive do
   # The execution table streams unified row structs (not raw runs): a
   # `:planned` placeholder per planned (step, runner), each flipped to its
   # live run by a shared dom_id. `run` is nil until the run arrives.
-  defp plan_rows(plan, runners), do: Enum.map(plan, &plan_row(&1, runners))
+  defp plan_rows(plan, runners, errors) do
+    failed = Map.new(errors, &{{&1.step_id, &1.runner_id}, &1.reason})
+    Enum.map(plan, &plan_row(&1, runners, failed))
+  end
 
-  defp plan_row(item, runners) do
+  defp plan_row(item, runners, failed) do
+    # A (step, runner) the first wave couldn't dispatch never gets a run, so
+    # mark its placeholder `:dispatch_failed` (+ why) instead of leaving it grey.
+    {status, dispatch_error} =
+      case Map.fetch(failed, {item.step_id, item.runner_id}) do
+        {:ok, reason} -> {:dispatch_failed, format_reason(reason)}
+        :error -> {:planned, nil}
+      end
+
     %{
       id: row_dom_id(item.step_id, item.runner_id),
       action_id: item.action_id,
       runner_name: runner_name(item.runner_id, runners),
-      status: :planned,
+      status: status,
       run: nil,
-      output: []
+      output: [],
+      dispatch_error: dispatch_error
     }
   end
 
@@ -418,7 +437,8 @@ defmodule EmisarWeb.RunbookRunLive do
       runner_name: run.runner.name,
       status: run.status,
       run: run,
-      output: Map.get(outputs, run.id, [])
+      output: Map.get(outputs, run.id, []),
+      dispatch_error: nil
     }
   end
 
@@ -527,6 +547,14 @@ defmodule EmisarWeb.RunbookRunLive do
                     title="Runner offline — this run may stall until it reconnects or times out"
                   >
                     <.icon name="hero-signal-slash" class="h-3 w-3" /> offline
+                  </span>
+                  <%!-- Why this (step, runner) never started — humanized from the
+                       dispatch error, so the rose "dispatch failed" badge isn't mute. --%>
+                  <span
+                    :if={row.dispatch_error}
+                    class="ml-1 inline-flex items-center gap-1 text-xs text-rose-400"
+                  >
+                    <.icon name="hero-exclamation-triangle" class="h-3 w-3" /> {row.dispatch_error}
                   </span>
                 </div>
                 <span :if={row.run && row.run.duration_ms} class="text-xs tabular-nums text-zinc-500">

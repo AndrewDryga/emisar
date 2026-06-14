@@ -1109,7 +1109,14 @@ defmodule EmisarWeb.CoreComponents do
   defp status_classes("planned"), do: "bg-zinc-500/10 text-zinc-400 ring-zinc-500/20"
 
   defp status_classes(s)
-       when s in ["failed", "error", "validation_failed", "unknown_action", "timed_out"],
+       when s in [
+              "failed",
+              "error",
+              "validation_failed",
+              "unknown_action",
+              "timed_out",
+              "dispatch_failed"
+            ],
        do: "bg-rose-500/10 text-rose-300 ring-rose-500/30"
 
   defp status_classes(_), do: "bg-zinc-500/10 text-zinc-300 ring-zinc-500/30"
@@ -1130,7 +1137,14 @@ defmodule EmisarWeb.CoreComponents do
   defp status_dot("planned"), do: "bg-zinc-600"
 
   defp status_dot(s)
-       when s in ["failed", "error", "validation_failed", "unknown_action", "timed_out"],
+       when s in [
+              "failed",
+              "error",
+              "validation_failed",
+              "unknown_action",
+              "timed_out",
+              "dispatch_failed"
+            ],
        do: "bg-rose-400"
 
   defp status_dot(_), do: "bg-zinc-500"
@@ -1140,6 +1154,7 @@ defmodule EmisarWeb.CoreComponents do
   defp format_status("validation_failed"), do: "validation failed"
   defp format_status("unknown_action"), do: "unknown action"
   defp format_status("timed_out"), do: "timed out"
+  defp format_status("dispatch_failed"), do: "dispatch failed"
   defp format_status(other), do: other
 
   # -- Generic page primitives ---------------------------------------

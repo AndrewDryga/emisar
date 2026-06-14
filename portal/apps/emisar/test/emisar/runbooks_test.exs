@@ -330,6 +330,38 @@ defmodule Emisar.RunbooksTest do
       refute Enum.any?(events, &(&1.event_type == "runbook.step_dispatch_failed"))
     end
 
+    test "a partial first-wave dispatch failure carries the (step, runner) it belongs to" do
+      {account, subject, runner} = account_with_runner()
+      # A second runner that never advertised the action → dispatching its slot
+      # fails while the first runner's succeeds (a partial wave failure).
+      other = runner_fixture(account_id: account.id)
+
+      steps = [
+        %{
+          "id" => "ok",
+          "action_id" => "linux.uptime",
+          "args" => %{},
+          "runner_selector" => runner_target(runner)
+        },
+        %{
+          "id" => "bad",
+          "action_id" => "linux.uptime",
+          "args" => %{},
+          "runner_selector" => runner_target(other)
+        }
+      ]
+
+      runbook = published_runbook!(subject, "partial-book", steps)
+
+      assert {:ok, %{runs: [_run], errors: [error]}} =
+               Runbooks.dispatch_runbook(runbook, "go", subject)
+
+      # The error is keyed so the run page can mark the exact placeholder row.
+      assert error.step_id == "bad"
+      assert error.runner_id == other.id
+      assert error.reason != nil
+    end
+
     test "the (execution, step, runner) unique index rejects a duplicate slot claim" do
       {_account, subject, runner} = account_with_runner()
       runbook = published_runbook!(subject, "race-book", uptime_steps(1, runner_target(runner)))

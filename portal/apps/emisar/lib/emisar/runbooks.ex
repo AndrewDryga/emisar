@@ -172,10 +172,10 @@ defmodule Emisar.Runbooks do
   (`%{step_id, step_index, action_id, runner_id}` per step×runner the
   execution will run, all waves) for the dispatch UI to render up front,
   keyed (`step_id`) to match each run's `runbook_step_id`; `errors` carries
-  this wave's row-less dispatch failures — or `{:error, reason}` when
-  nothing could be
-  dispatched: `:empty_runbook`, or `{:step_no_runners, n}` when step
-  `n`'s group resolves to no active runners.
+  this wave's dispatch failures as `%{step_id, runner_id, reason}` (same
+  `step_id` keying, so the UI can mark the matching placeholder row) — or
+  `{:error, reason}` when nothing could be dispatched: `:empty_runbook`, or
+  `{:step_no_runners, n}` when step `n`'s group resolves to no active runners.
   """
   def dispatch_runbook(%Runbook{} = runbook, reason, %Subject{} = subject)
       when is_binary(reason) do
@@ -207,7 +207,10 @@ defmodule Emisar.Runbooks do
       rows = length(runs) + Enum.count(outcomes, &(&1 == :row_exists))
 
       if rows == 0 and errors != [] do
-        {:error, hd(errors)}
+        # Nothing dispatched at all → the whole start failed; hand the caller
+        # the bare reason (the per-row identity is only useful when some rows
+        # did dispatch and others didn't).
+        {:error, hd(errors).reason}
       else
         {:ok,
          %{
@@ -375,14 +378,20 @@ defmodule Emisar.Runbooks do
           :row_exists
         else
           log_wave_dispatch_failure(runbook, execution, step, idx, runner_id, changeset)
-          {:error, changeset}
+          {:error, dispatch_failure(step, idx, runner_id, changeset)}
         end
 
       {:error, reason} ->
         log_wave_dispatch_failure(runbook, execution, step, idx, runner_id, reason)
-        {:error, reason}
+        {:error, dispatch_failure(step, idx, runner_id, reason)}
     end
   end
+
+  # A first-wave dispatch failure tagged with the (step, runner) it belongs to
+  # — keyed the same way `build_plan` keys its rows (`step_id_for/2`) so the run
+  # page can mark the exact placeholder row instead of leaving it grey.
+  defp dispatch_failure(step, idx, runner_id, reason),
+    do: %{step_id: step_id_for(step, idx), runner_id: runner_id, reason: reason}
 
   defp claimed_by_racer?(%Ecto.Changeset{errors: errors}) do
     Enum.any?(errors, fn {_field, {_msg, opts}} ->
