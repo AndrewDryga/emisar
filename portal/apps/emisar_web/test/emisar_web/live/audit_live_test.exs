@@ -48,6 +48,8 @@ defmodule EmisarWeb.AuditLiveTest do
       assert html =~ "10.0.5.12"
       assert html =~ "db-prod-01"
       assert html =~ ~p"/app/runners/#{runner.id}"
+      # Subject/IP columns collapse below lg so the table fits a phone.
+      assert html =~ "hidden lg:table-cell"
     end
 
     test "rows carry an outcome dot — rose for failures, amber for denials, neutral for routine",

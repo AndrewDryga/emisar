@@ -135,13 +135,13 @@ defmodule EmisarWeb.RunsLive do
             {(run.runner && run.runner.name) || String.slice(run.runner_id, 0, 8)}
           </span>
         </:col>
-        <:col :let={run} label="Source" class="w-28">
+        <:col :let={run} label="Source" class="w-28 hidden lg:table-cell">
           <span class="text-xs text-zinc-400">{run_actor(run)}</span>
         </:col>
         <:col :let={run} label="Status" class="w-32">
           <.status_badge status={run.status} />
         </:col>
-        <:col :let={run} label="Duration" class="w-20 text-right">
+        <:col :let={run} label="Duration" class="w-20 text-right hidden lg:table-cell">
           <span class="text-xs text-zinc-400">{format_duration(run.duration_ms)}</span>
         </:col>
       </LiveTable.live_table>

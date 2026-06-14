@@ -37,6 +37,9 @@ defmodule EmisarWeb.RunsLiveTest do
     {:ok, _lv, html} = live(conn, ~p"/app/runs")
 
     assert html =~ "Claude Code"
+    # Secondary columns (Source/Duration) collapse below lg so the table fits
+    # a phone in an incident.
+    assert html =~ "hidden lg:table-cell"
   end
 
   test "redirects anonymous users", %{conn: conn} do

@@ -340,7 +340,7 @@ defmodule EmisarWeb.AuditLive do
             audit_link?={true}
           />
         </:col>
-        <:col :let={event} label="Subject">
+        <:col :let={event} label="Subject" class="hidden lg:table-cell">
           <.ref
             kind={event.subject_kind}
             id={event.subject_id}
@@ -348,7 +348,7 @@ defmodule EmisarWeb.AuditLive do
             refs={@refs}
           />
         </:col>
-        <:col :let={event} label="IP" class="w-32">
+        <:col :let={event} label="IP" class="w-32 hidden lg:table-cell">
           <span class="font-mono text-xs text-zinc-500">{event.ip_address || "—"}</span>
         </:col>
         <:empty>
