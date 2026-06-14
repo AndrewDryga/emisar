@@ -95,6 +95,23 @@ defmodule EmisarWeb.RunnersLiveTest do
       assert html =~ ~s(href="/install.sh")
     end
 
+    test "reveals a troubleshooting checklist if no runner joins in time", %{conn: conn} do
+      {conn, _user, _account} = register_and_log_in(conn)
+
+      {:ok, lv, html} = live(conn, ~p"/app/runners/install")
+      # Hidden during the grace period — only the "waiting" pulse shows.
+      refute html =~ "Not seeing it yet?"
+
+      # The real watchdog is a ~35s Process.send_after; fire its message
+      # directly so the operator isn't left staring at an animated dot when
+      # the key, the firewall, or a non-systemd host is the problem.
+      send(lv.pid, :reveal_troubleshooting)
+      html = render(lv)
+      assert html =~ "Not seeing it yet?"
+      assert html =~ "truncated on paste"
+      assert html =~ "journalctl -u emisar -f"
+    end
+
     test "redirects anonymous users to /sign_in", %{conn: conn} do
       assert {:error, {:redirect, %{to: "/sign_in"}}} =
                live(conn, ~p"/app/runners/install")

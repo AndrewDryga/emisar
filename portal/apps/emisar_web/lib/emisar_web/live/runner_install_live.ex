@@ -22,23 +22,31 @@ defmodule EmisarWeb.RunnerInstallLive do
   alias Emisar.Runners
   alias EmisarWeb.UrlHelpers
 
+  # A runner usually joins within seconds of running the one-liner. If none
+  # has after this grace period, reveal a troubleshooting checklist — the
+  # likely funnel failure (wrong/truncated key, :443 firewalled, non-systemd
+  # host) is otherwise invisible behind a "waiting" pulse that never ends.
+  @troubleshoot_after_ms 35_000
+
   def mount(_params, _session, socket) do
-    account_id = socket.assigns.current_account.id
-
-    if connected?(socket) do
-      Runners.subscribe_connections(account_id)
-    end
-
-    install_command =
+    socket =
       if connected?(socket) do
-        mint_install_command(socket)
+        Runners.subscribe_connections(socket.assigns.current_account.id)
+        Process.send_after(self(), :reveal_troubleshooting, @troubleshoot_after_ms)
+
+        base = UrlHelpers.derive_base_url(socket)
+
+        socket
+        |> assign(:base_url, base)
+        |> assign(:install_command, mint_install_command(socket, base))
+      else
+        assign(socket, base_url: nil, install_command: nil)
       end
 
     {:ok,
      socket
      |> assign(:page_title, "Install a runner")
-     |> assign(:install_command, install_command)
-     |> assign(:waiting?, true)}
+     |> assign(:show_troubleshooting?, false)}
   end
 
   # A runner joined this account's presence (registered + connected) while
@@ -53,11 +61,14 @@ defmodule EmisarWeb.RunnerInstallLive do
      |> push_navigate(to: ~p"/app/runners")}
   end
 
+  # The grace period elapsed with no runner — surface the troubleshooting
+  # checklist (the presence-join navigate above pre-empts this when it works).
+  def handle_info(:reveal_troubleshooting, socket),
+    do: {:noreply, assign(socket, :show_troubleshooting?, true)}
+
   def handle_info(_, socket), do: {:noreply, socket}
 
-  defp mint_install_command(socket) do
-    base = UrlHelpers.derive_base_url(socket)
-
+  defp mint_install_command(socket, base) do
     case Runners.mint_install_key(socket.assigns.current_subject) do
       {:ok, raw, _key} ->
         # Leading space keeps the key out of shell history under
@@ -88,6 +99,8 @@ defmodule EmisarWeb.RunnerInstallLive do
 
       <.install_wizard
         install_command={@install_command}
+        base_url={@base_url}
+        show_troubleshooting={@show_troubleshooting?}
         on_failure_path={~p"/app/settings/runners/auth-keys"}
       />
     </.dashboard_shell>

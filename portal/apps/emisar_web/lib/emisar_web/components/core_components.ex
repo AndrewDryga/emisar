@@ -1496,14 +1496,17 @@ defmodule EmisarWeb.CoreComponents do
   end
 
   @doc """
-  Install-a-runner wizard. Rendered both on the dashboard's first-runner
-  empty state and on the standalone `/app/runners/install` page. Caller
-  pre-mints the install command and passes it as a string (or
-  `:mint_failed` to render the fallback).
+  Install-a-runner wizard for the standalone `/app/runners/install` page.
+  The caller pre-mints the install command and passes it as a string (or
+  `:mint_failed` to render the fallback); after a grace period with no
+  runner it flips `show_troubleshooting` to reveal a checklist (the host
+  must reach `base_url`).
 
       <.install_wizard install_command={@install_command} />
   """
   attr :install_command, :any, required: true
+  attr :base_url, :string, default: nil
+  attr :show_troubleshooting, :boolean, default: false
   attr :on_failure_path, :string, default: "/app/settings/runners/auth-keys"
 
   def install_wizard(assigns) do
@@ -1571,14 +1574,41 @@ defmodule EmisarWeb.CoreComponents do
                 </p>
               </div>
 
-              <div class="flex items-center gap-3 rounded-lg border border-zinc-800 bg-zinc-950/60 p-4">
-                <span class="relative flex h-3 w-3">
-                  <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-indigo-500/50">
+              <div class="rounded-lg border border-zinc-800 bg-zinc-950/60 p-4">
+                <div class="flex items-center gap-3">
+                  <span class="relative flex h-3 w-3">
+                    <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-indigo-500/50">
+                    </span>
+                    <span class="relative inline-flex h-3 w-3 rounded-full bg-indigo-400"></span>
                   </span>
-                  <span class="relative inline-flex h-3 w-3 rounded-full bg-indigo-400"></span>
-                </span>
-                <div class="text-sm text-zinc-300">
-                  Waiting for a runner to connect. This page will refresh automatically.
+                  <div class="text-sm text-zinc-300">
+                    Waiting for a runner to connect. This page will refresh automatically.
+                  </div>
+                </div>
+
+                <%!-- After the grace period with no join (the install page's
+                     watchdog flips show_troubleshooting) the likely funnel
+                     failure is a wrong/truncated key, :443 firewalled, or a
+                     non-systemd host — none of which the pulse alone reveals.
+                     Surface the same checks the quickstart doc carries. --%>
+                <div
+                  :if={@show_troubleshooting}
+                  class="mt-3 border-t border-zinc-800 pt-3 text-xs leading-5 text-zinc-400"
+                >
+                  <div class="font-semibold text-zinc-300">Not seeing it yet? Check the host:</div>
+                  <ul class="mt-1.5 space-y-1.5">
+                    <li>
+                      · it can reach <code class="font-mono text-zinc-300">{@base_url}</code>
+                      over outbound HTTPS (nothing needs to listen on it);
+                    </li>
+                    <li>
+                      · you ran the whole line with <code class="font-mono text-zinc-300">sudo</code>
+                      and the key wasn't truncated on paste;
+                    </li>
+                    <li>
+                      · it runs systemd — watch the runner's own logs with <code class="font-mono text-zinc-300">journalctl -u emisar -f</code>.
+                    </li>
+                  </ul>
                 </div>
               </div>
 
