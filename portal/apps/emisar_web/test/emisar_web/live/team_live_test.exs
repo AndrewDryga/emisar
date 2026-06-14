@@ -182,6 +182,11 @@ defmodule EmisarWeb.TeamLiveTest do
       assert Emisar.Repo.reload!(membership).deleted_at
     end
 
+    test "the remove confirm spells out that removal is permanent", %{lv: lv} do
+      # Heavier than the reversible suspend/reset confirms — it states what's lost.
+      assert render(lv) =~ "This is permanent"
+    end
+
     test "end_sessions kills the member's signed-in devices", %{
       lv: lv,
       member: member,

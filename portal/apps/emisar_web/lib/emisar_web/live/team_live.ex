@@ -935,7 +935,7 @@ defmodule EmisarWeb.TeamLive do
             <button
               phx-click="remove"
               phx-value-membership_id={@membership.id}
-              data-confirm={"Remove #{(@membership.user && @membership.user.email) || "this member"} from the team?"}
+              data-confirm={"Remove #{(@membership.user && @membership.user.email) || "this member"} from the team? This is permanent: they lose access immediately, their role and runner scopes are deleted, and they'd need a fresh invite to return. (Suspend instead to keep their access reversible.)"}
               class="block w-full rounded px-3 py-2 text-left text-rose-300 hover:bg-rose-500/10"
             >
               Remove from team
