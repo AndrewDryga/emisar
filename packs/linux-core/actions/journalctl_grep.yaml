@@ -22,13 +22,10 @@ args:
   - name: unit
     type: string
     required: true
-    description: Systemd unit name to inspect.
+    description: Systemd unit name to inspect (e.g. nginx, nomad, consul.service, foo@bar.service).
     validation:
-      enum:
-        - cassandra
-        - nginx
-        - postgresql
-        - docker
+      pattern: "^[A-Za-z0-9@._:-]{1,128}$"
+      max_length: 128
 
   - name: grep
     type: string
