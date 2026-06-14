@@ -81,6 +81,28 @@ defmodule Emisar.Runs do
   ]
 
   @doc """
+  Recent runs that terminally FAILED — the same `failed/error/timed_out` set the
+  dashboard headline counts — newest first, for the dashboard's attention panel.
+  `%Subject{}` needs `view_runs`. `{:ok, [run], %Metadata{}}`.
+  """
+  def list_recent_failed_runs(%Subject{} = subject, opts \\ []) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.view_runs_permission()
+           ) do
+      {preloads, opts} = Keyword.pop(opts, :preload, [])
+      limit = Keyword.get(opts, :limit, 5)
+
+      ActionRun.Query.all()
+      |> ActionRun.Query.status_in(@failed_statuses)
+      |> apply_run_preloads(preloads)
+      |> Authorizer.for_subject(subject)
+      |> Repo.list(ActionRun.Query, page: [limit: limit])
+    end
+  end
+
+  @doc """
   Rolled-up totals for the dashboard headline: total runs in window,
   successes, failures (failed/error/timed_out). Pending/running rows
   are excluded — only terminal outcomes count toward the success rate.

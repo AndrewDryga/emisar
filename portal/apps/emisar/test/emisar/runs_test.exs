@@ -988,6 +988,42 @@ defmodule Emisar.RunsTest do
     end
   end
 
+  describe "list_recent_failed_runs/2" do
+    test "returns only terminally-failed runs (failed/error/timed_out), not successes" do
+      {_user, account, subject} = owner_subject_fixture()
+      runner = runner_fixture(account_id: account.id)
+      _ = action_fixture(runner: runner, action_id: "linux.uptime", risk: "low")
+      _ = policy_fixture(account_id: account.id)
+
+      {:ok, :running, ok} = Runs.dispatch_run(base_attrs(account.id, runner.id), subject)
+      {:ok, _} = Runs.mark_finished(ok, %{"status" => "success", "duration_ms" => 5})
+
+      {:ok, :running, failed} = Runs.dispatch_run(base_attrs(account.id, runner.id), subject)
+      {:ok, _} = Runs.mark_finished(failed, %{"status" => "failed", "duration_ms" => 5})
+
+      {:ok, :running, errored} = Runs.dispatch_run(base_attrs(account.id, runner.id), subject)
+      {:ok, _} = Runs.mark_errored(errored, "runner vanished")
+
+      {:ok, rows, _} = Runs.list_recent_failed_runs(subject, limit: 5)
+
+      assert Enum.map(rows, & &1.id) |> Enum.sort() == Enum.sort([failed.id, errored.id])
+      assert Enum.all?(rows, &(&1.status in [:failed, :error, :timed_out]))
+    end
+
+    test "scopes to the subject's account — another account's failures aren't visible" do
+      {_user_a, account_a, subject_a} = owner_subject_fixture()
+      runner_a = runner_fixture(account_id: account_a.id)
+      _ = action_fixture(runner: runner_a, action_id: "linux.uptime", risk: "low")
+      _ = policy_fixture(account_id: account_a.id)
+
+      {:ok, :running, bad_a} = Runs.dispatch_run(base_attrs(account_a.id, runner_a.id), subject_a)
+      {:ok, _} = Runs.mark_finished(bad_a, %{"status" => "failed", "duration_ms" => 5})
+
+      {_user_b, _account_b, subject_b} = owner_subject_fixture()
+      assert {:ok, [], _} = Runs.list_recent_failed_runs(subject_b, limit: 5)
+    end
+  end
+
   describe "runner-event ingestion error paths" do
     test "append_event/2 with an unknown run id returns :unknown_run" do
       assert {:error, :unknown_run} =

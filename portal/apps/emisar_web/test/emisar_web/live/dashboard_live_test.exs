@@ -92,6 +92,8 @@ defmodule EmisarWeb.DashboardLiveTest do
       assert html =~ "Connect an LLM"
       # A runner with nothing dispatched yet gets the dispatch nudge.
       assert html =~ "Dispatch your first action"
+      # No runs yet, so the rose failures panel stays hidden.
+      refute html =~ "Recent failures"
     end
 
     test "the dispatch nudge appears with a runner-but-no-runs and clears after the first run",
@@ -116,6 +118,36 @@ defmodule EmisarWeb.DashboardLiveTest do
 
       {:ok, _lv2, html2} = live(conn, ~p"/app")
       refute html2 =~ "Dispatch your first action"
+    end
+
+    test "a failed run surfaces the Recent failures panel linking to the run", %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      subject = owner_subject(user, account)
+      runner = Emisar.Fixtures.runner_fixture(account_id: account.id)
+      Emisar.Fixtures.action_fixture(runner: runner, action_id: "linux.uptime", risk: "low")
+      Emisar.Fixtures.policy_fixture(account_id: account.id)
+
+      {:ok, :running, run} =
+        Emisar.Runs.dispatch_run(
+          %{
+            account_id: account.id,
+            runner_id: runner.id,
+            action_id: "linux.uptime",
+            args: %{},
+            reason: "test",
+            source: "operator"
+          },
+          subject
+        )
+
+      {:ok, _} = Emisar.Runs.mark_finished(run, %{"status" => "failed", "duration_ms" => 5})
+
+      {:ok, _lv, html} = live(conn, ~p"/app")
+
+      # The rose failures panel only renders when there's a failed run — its
+      # title + a deep link to the run prove the operator can act on it.
+      assert html =~ "Recent failures"
+      assert html =~ ~p"/app/runs/#{run.id}"
     end
 
     test "account broadcasts schedule a debounced stats reload", %{conn: conn} do
