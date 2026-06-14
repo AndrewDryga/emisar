@@ -245,6 +245,38 @@ defmodule Emisar.Audit do
     end
   end
 
+  @doc """
+  Distinct actors of `actor_kind` that appear in the account's audit log — the
+  options for the page's on-demand actor filter, as `{id, label}` sorted by
+  label (a bounded lookup, not a paginated list). Labels resolve cross-context
+  the same way the table's actor column does; an id whose row is gone (deleted
+  since the event, or only resolvable in another account) is dropped. Returns
+  `{:ok, [{id, label}]}` or `{:error, :unauthorized}`.
+  """
+  def list_actor_options(actor_kind, %Subject{} = subject) when is_binary(actor_kind) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_audit_permission()) do
+      ids =
+        Event.Query.all()
+        |> Event.Query.distinct_actor_ids_of_kind(actor_kind)
+        |> Authorizer.for_subject(subject)
+        |> Repo.all()
+
+      labels =
+        %{actor_kind => ids}
+        |> resolve_labels(subject.account.id)
+        |> Map.get(actor_kind, %{})
+
+      options =
+        ids
+        |> Enum.map(fn id -> {id, Map.get(labels, id)} end)
+        |> Enum.reject(fn {_id, label} -> is_nil(label) end)
+        |> Enum.sort_by(fn {_id, label} -> label end)
+
+      {:ok, options}
+    end
+  end
+
   defp filter_by_actor_id(queryable, nil), do: queryable
   defp filter_by_actor_id(queryable, id), do: Event.Query.by_actor_id(queryable, id)
 
@@ -369,15 +401,20 @@ defmodule Emisar.Audit do
   def resolve_references(events) when is_list(events) do
     account_id = events |> Enum.map(& &1.account_id) |> List.first()
 
-    ids_by_kind =
-      events
-      |> Enum.flat_map(fn event ->
-        [{event.actor_kind, event.actor_id}, {event.subject_kind, event.subject_id}]
-      end)
-      |> Enum.reject(fn {_, id} -> is_nil(id) end)
-      |> Enum.uniq()
-      |> Enum.group_by(fn {kind, _} -> kind end, fn {_, id} -> id end)
+    events
+    |> Enum.flat_map(fn event ->
+      [{event.actor_kind, event.actor_id}, {event.subject_kind, event.subject_id}]
+    end)
+    |> Enum.reject(fn {_, id} -> is_nil(id) end)
+    |> Enum.uniq()
+    |> Enum.group_by(fn {kind, _} -> kind end, fn {_, id} -> id end)
+    |> resolve_labels(account_id)
+  end
 
+  # Resolve a %{kind => [id]} map to %{kind => %{id => label}}, each kind's
+  # lookup scoped to account_id. Shared by resolve_references/1 (event
+  # actor/subject refs) and list_actor_options/2 (the actor picker).
+  defp resolve_labels(ids_by_kind, account_id) do
     %{
       # Users belong to accounts via memberships, not a column, so they
       # scope through the membership join rather than `by_account_id`.

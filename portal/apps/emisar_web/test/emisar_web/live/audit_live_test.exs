@@ -146,6 +146,22 @@ defmodule EmisarWeb.AuditLiveTest do
       # bob's event is filtered out entirely.
       refute html =~ "bob"
     end
+
+    test "selecting an actor kind surfaces a picker of that kind's resolved actors",
+         %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      {:ok, _} = Audit.log(account.id, "user.invited", actor_kind: "user", actor_id: user.id)
+
+      # No kind selected → no actor picker rendered.
+      {:ok, _lv, html} = live(conn, ~p"/app/audit")
+      refute html =~ ~s(name="actor_id")
+
+      # One kind selected → the picker appears, listing the resolved actor.
+      {:ok, _lv, html} = live(conn, ~p"/app/audit?actor_kind=user")
+      assert html =~ ~s(name="actor_id")
+      assert html =~ ~s(value="#{user.id}")
+      assert html =~ user.email
+    end
   end
 
   describe "GET /app/audit/:id" do

@@ -248,6 +248,33 @@ defmodule Emisar.Audit.Event.Query do
   def by_subject_kind(queryable, kind),
     do: where(queryable, [events: e], e.subject_kind == ^kind)
 
+  @doc """
+  Distinct `actor_id`s for actors of `kind` in the scoped events — the id set
+  the context resolves to labels for the audit page's on-demand "filter by
+  actor" picker.
+  """
+  def distinct_actor_ids_of_kind(queryable \\ all(), kind) do
+    queryable
+    |> where([events: e], e.actor_kind == ^kind and not is_nil(e.actor_id))
+    |> select([events: e], e.actor_id)
+    |> distinct(true)
+  end
+
+  @doc """
+  The `%Filter{}` for the dynamic actor picker, given its loaded `{id, label}`
+  options. The fun lives here (not the LiveView) so the Ecto.Query stays in the
+  query module (IL-1).
+  """
+  def actor_filter(options) do
+    %Filter{
+      name: :actor_id,
+      title: "Actor",
+      type: {:list, :string},
+      values: options,
+      fun: fn queryable, ids -> {queryable, dynamic([events: e], e.actor_id in ^ids)} end
+    }
+  end
+
   def by_subject_id(queryable, id),
     do: where(queryable, [events: e], e.subject_id == ^id)
 
@@ -315,7 +342,7 @@ defmodule Emisar.Audit.Event.Query do
       },
       %Filter{
         name: :actor_kind,
-        title: "Actor",
+        title: "Actor type",
         type: {:list, :string},
         values: [
           {"user", "User"},

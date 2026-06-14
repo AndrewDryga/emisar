@@ -94,7 +94,19 @@ defmodule EmisarWeb.AuditLive do
     # merge them back or a dropdown change would silently drop an active
     # actor/date filter.
     preserved = Map.take(socket.assigns.filter_params, ["actor_id", "from", "to"])
-    {:noreply, LiveTable.apply_filter(socket, ~p"/app/audit", Map.merge(preserved, params))}
+    merged = Map.merge(preserved, params)
+
+    # Switching the actor kind invalidates a previously-picked actor (its id
+    # belongs to the old kind), so drop it — else the new kind's picker reads
+    # "All" while the stale id quietly filters to nothing. Normalize blank/nil
+    # so an unrelated change doesn't drop a click-to-filter actor_id.
+    merged =
+      if blank_to_nil(params["actor_kind"]) !=
+           blank_to_nil(socket.assigns.filter_params["actor_kind"]),
+         do: Map.delete(merged, "actor_id"),
+         else: merged
+
+    {:noreply, LiveTable.apply_filter(socket, ~p"/app/audit", merged)}
   end
 
   def handle_event("filter_dates", %{"from" => from, "to" => to}, socket) do
@@ -113,8 +125,23 @@ defmodule EmisarWeb.AuditLive do
     end
   end
 
+  # When exactly one actor kind is selected in the filter bar, surface a "filter
+  # by actor" picker for that kind — its options are the distinct actors of that
+  # kind already in the account's log. Render-only: actor_id still applies via
+  # the opts path below, so it appears on demand instead of an always-empty
+  # dropdown.
+  defp actor_kind_filter(params, subject) do
+    with kind when is_binary(kind) <- blank_to_nil(params["actor_kind"]),
+         {:ok, [_ | _] = options} <- Audit.list_actor_options(kind, subject) do
+      [Audit.Event.Query.actor_filter(options)]
+    else
+      _ -> []
+    end
+  end
+
   defp load(socket, params) do
-    filters = Audit.Event.Query.filters()
+    base_filters = Audit.Event.Query.filters()
+    filters = base_filters ++ actor_kind_filter(params, socket.assigns.current_subject)
     actor_id = blank_to_nil(params["actor_id"])
 
     # Identity (actor_id) + date-range (from/to) ride as URL params outside
@@ -131,7 +158,7 @@ defmodule EmisarWeb.AuditLive do
 
     opts =
       params
-      |> LiveTable.params_to_opts(filters)
+      |> LiveTable.params_to_opts(base_filters)
       |> Keyword.merge(
         actor_id: actor_id,
         occurred_after: parse_datetime(params["from"]),

@@ -394,6 +394,72 @@ defmodule Emisar.AuditTest do
     end
   end
 
+  describe "list_actor_options/2 (the dynamic actor picker)" do
+    test "returns distinct actors of the kind with resolved labels, sorted" do
+      account = account_fixture()
+      owner = user_fixture()
+      _ = membership_fixture(account_id: account.id, user_id: owner.id, role: "owner")
+      subject = subject_for(owner, account, role: :owner)
+
+      alice = user_fixture(email: "alice@example.com")
+      bob = user_fixture(email: "bob@example.com")
+      _ = membership_fixture(account_id: account.id, user_id: alice.id)
+      _ = membership_fixture(account_id: account.id, user_id: bob.id)
+
+      # Two events for bob, one for alice — the picker dedupes to one option per
+      # actor, sorted by label (alice precedes bob regardless of event order).
+      {:ok, _} = Audit.log(account.id, "x", actor_kind: "user", actor_id: bob.id)
+      {:ok, _} = Audit.log(account.id, "y", actor_kind: "user", actor_id: bob.id)
+      {:ok, _} = Audit.log(account.id, "z", actor_kind: "user", actor_id: alice.id)
+
+      assert {:ok, [{alice_id, "alice@example.com"}, {bob_id, "bob@example.com"}]} =
+               Audit.list_actor_options("user", subject)
+
+      assert alice_id == alice.id
+      assert bob_id == bob.id
+    end
+
+    test "scopes to the requested kind only" do
+      account = account_fixture()
+      owner = user_fixture()
+      _ = membership_fixture(account_id: account.id, user_id: owner.id, role: "owner")
+      subject = subject_for(owner, account, role: :owner)
+
+      member = user_fixture()
+      _ = membership_fixture(account_id: account.id, user_id: member.id)
+      {_raw, key} = api_key_fixture(account_id: account.id, created_by_id: owner.id)
+
+      {:ok, _} = Audit.log(account.id, "u", actor_kind: "user", actor_id: member.id)
+      {:ok, _} = Audit.log(account.id, "k", actor_kind: "api_key", actor_id: key.id)
+
+      assert {:ok, [{id, _label}]} = Audit.list_actor_options("api_key", subject)
+      assert id == key.id
+    end
+
+    test "drops an actor only resolvable in another account (no cross-tenant leak)" do
+      account_a = account_fixture()
+      subject_a = subject_for(user_fixture(), account_a, role: :owner)
+
+      user_b = user_fixture()
+      account_b = account_fixture()
+      _ = membership_fixture(account_id: account_b.id, user_id: user_b.id)
+
+      # A's log references B's user (a mis-stamped id): it lives in A's events
+      # but is only resolvable in B, so it must not surface in A's picker.
+      {:ok, _} = Audit.log(account_a.id, "x", actor_kind: "user", actor_id: user_b.id)
+
+      assert {:ok, []} = Audit.list_actor_options("user", subject_a)
+    end
+
+    test "a kind with no resolvable actors yields no options" do
+      account = account_fixture()
+      subject = subject_for(user_fixture(), account, role: :owner)
+      {:ok, _} = Audit.log(account.id, "x", actor_kind: "system", actor_id: Ecto.UUID.generate())
+
+      assert {:ok, []} = Audit.list_actor_options("system", subject)
+    end
+  end
+
   describe "list_for_export/2 (SIEM forward sweep)" do
     defp seed_export_events(account, count) do
       base = DateTime.add(DateTime.utc_now(), -3600, :second)
