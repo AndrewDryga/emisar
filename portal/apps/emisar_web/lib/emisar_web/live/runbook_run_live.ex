@@ -31,7 +31,7 @@ defmodule EmisarWeb.RunbookRunLive do
           |> stream(:execution_runs, [])
 
         if connected?(socket) do
-          {:ok, load_run_form(socket, runbook)}
+          {:ok, socket |> load_run_form(runbook) |> maybe_rehydrate_execution(runbook)}
         else
           {:ok, empty_run_form(socket)}
         end
@@ -99,6 +99,51 @@ defmodule EmisarWeb.RunbookRunLive do
       {:error, _} ->
         @empty_blast
     end
+  end
+
+  # A live execution survives a refresh / reconnect — mount otherwise resets to
+  # the idle plan and the running execution vanishes. Re-query the runbook's
+  # latest in-flight execution and rebuild the streamed rows + counts from its
+  # persisted runs. The plan is re-resolved for the placeholders; if a step's
+  # group emptied since dispatch (resolve_plan errors), fall back to the runs
+  # alone so the operator still sees the live execution.
+  defp maybe_rehydrate_execution(socket, runbook) do
+    case Runs.fetch_active_runbook_execution(runbook.id, socket.assigns.current_subject) do
+      {:ok, %{execution_id: execution_id, runs: runs}} ->
+        plan = rehydrated_plan(runbook, socket.assigns.current_subject)
+
+        socket
+        |> assign(:execution, %{
+          execution_id: execution_id,
+          total: rehydrated_total(plan, runs),
+          plan: plan,
+          runs: [],
+          errors: []
+        })
+        |> assign(:run_statuses, Map.new(runs, &{&1.id, &1.status}))
+        |> assign(:run_index, Map.new(runs, &{&1.id, &1}))
+        |> stream(:execution_runs, plan_rows(plan, socket.assigns.runners), reset: true)
+        |> rehydrate_run_rows(runs)
+
+      {:error, :not_found} ->
+        socket
+    end
+  end
+
+  defp rehydrated_plan(runbook, subject) do
+    case Runbooks.resolve_plan(runbook, subject) do
+      {:ok, %{plan: plan}} -> plan
+      {:error, _} -> []
+    end
+  end
+
+  defp rehydrated_total([], runs), do: length(runs)
+  defp rehydrated_total(plan, _runs), do: length(plan)
+
+  defp rehydrate_run_rows(socket, runs) do
+    Enum.reduce(runs, socket, fn run, socket ->
+      stream_insert(socket, :execution_runs, live_row(run))
+    end)
   end
 
   # Risk of a plan step's action, or nil when the catalog hasn't observed

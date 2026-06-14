@@ -228,6 +228,27 @@ defmodule EmisarWeb.RunbookRunLiveTest do
 
       assert html =~ "no active runners"
     end
+
+    test "a refresh rehydrates a live execution instead of resetting to a blank Plan", %{
+      conn: conn
+    } do
+      {conn, user, account} = register_and_log_in(conn)
+      runner = Emisar.Fixtures.runner_fixture(account_id: account.id)
+      Emisar.Fixtures.action_fixture(runner: runner, action_id: "linux.uptime")
+      Emisar.Fixtures.policy_fixture(account_id: account.id)
+      runbook = published_runbook_targeting!(user, account, runner)
+
+      # Dispatch — the execution is now in flight (its run is non-terminal).
+      {:ok, lv, _html} = live(conn, ~p"/app/runbooks/#{runbook.id}/run")
+      assert render_submit(lv, "dispatch", %{"reason" => "go"}) =~ "Runbook dispatched"
+
+      # A fresh mount (the refresh) re-queries the live execution and rebuilds
+      # it — heading "Execution" + the run — instead of resetting to "Plan".
+      {:ok, _lv2, html} = live(conn, ~p"/app/runbooks/#{runbook.id}/run")
+      assert html =~ "Execution"
+      assert html =~ "linux.uptime"
+      assert html =~ "on #{runner.name}"
+    end
   end
 
   describe "dispatch validation" do

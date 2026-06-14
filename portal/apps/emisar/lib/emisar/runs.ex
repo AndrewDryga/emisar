@@ -673,6 +673,49 @@ defmodule Emisar.Runs do
   end
 
   @doc """
+  The runbook's most recent execution, if it's still in flight — so the run page
+  can rehydrate after a refresh / reconnect (mount otherwise resets to a blank
+  plan and the live execution silently vanishes). `%Subject{}` needs `view_runs`.
+  `{:ok, %{execution_id, runs}}` (runs in dispatch order, `:runner` preloaded for
+  the row render), or `{:error, :not_found}` when the runbook has no execution or
+  its latest one is fully settled.
+  """
+  def fetch_active_runbook_execution(runbook_id, %Subject{} = subject) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_runs_permission()) do
+      latest_query =
+        ActionRun.Query.all()
+        |> ActionRun.Query.by_runbook_id(runbook_id)
+        |> ActionRun.Query.ordered_by_recent()
+        |> ActionRun.Query.limit_to(1)
+        |> Authorizer.for_subject(subject)
+
+      case Repo.peek(latest_query) do
+        nil ->
+          {:error, :not_found}
+
+        %ActionRun{runbook_execution_id: execution_id} ->
+          runs_query =
+            ActionRun.Query.all()
+            |> ActionRun.Query.by_runbook_execution_id(execution_id)
+            |> ActionRun.Query.with_preloaded_runner()
+            |> ActionRun.Query.ordered_by_oldest()
+            |> Authorizer.for_subject(subject)
+
+          runs = Repo.all(runs_query)
+
+          if Enum.any?(runs, &active_run_status?(&1.status)),
+            do: {:ok, %{execution_id: execution_id, runs: runs}},
+            else: {:error, :not_found}
+      end
+    end
+  end
+
+  # A run still doing work — not yet settled (terminal or policy-denied). An
+  # execution with at least one is in flight and worth rehydrating.
+  defp active_run_status?(status), do: not (ActionRun.terminal?(status) or status == :denied)
+
+  @doc """
   Re-emits the run_action envelope onto the runner's PubSub topic. Used for
   fresh dispatches, the approve→send transition, and `RunDispatchTimeout`
   re-sending a stale dispatch — the runner dedupes by `request_id`, so a

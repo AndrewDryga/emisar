@@ -26,6 +26,9 @@ defmodule Emisar.Runs.ActionRun.Query do
   def by_runbook_execution_id(queryable, execution_id),
     do: where(queryable, [runs: r], r.runbook_execution_id == ^execution_id)
 
+  def by_runbook_id(queryable, runbook_id),
+    do: where(queryable, [runs: r], r.runbook_id == ^runbook_id)
+
   def by_status(queryable, status),
     do: where(queryable, [runs: r], r.status == ^status)
 

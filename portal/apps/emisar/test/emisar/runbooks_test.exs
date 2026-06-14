@@ -244,6 +244,51 @@ defmodule Emisar.RunbooksTest do
     end
   end
 
+  describe "Runs.fetch_active_runbook_execution/2 (refresh rehydration)" do
+    test "returns the in-flight execution's runs (runner preloaded) while non-terminal" do
+      {_account, subject, runner} = account_with_runner()
+      runbook = published_runbook!(subject, "live", uptime_steps(2, group_target(runner.group)))
+      {:ok, %{execution_id: execution_id}} = Runbooks.dispatch_runbook(runbook, "go", subject)
+
+      assert {:ok, %{execution_id: ^execution_id, runs: runs}} =
+               Emisar.Runs.fetch_active_runbook_execution(runbook.id, subject)
+
+      assert runs != []
+      assert Enum.all?(runs, &(&1.runbook_execution_id == execution_id))
+      # :runner is preloaded — the rehydration row render reads run.runner.name.
+      assert Enum.all?(runs, &(&1.runner.name == runner.name))
+    end
+
+    test "returns :not_found once every run in the latest execution is settled" do
+      {_account, subject, runner} = account_with_runner()
+      runbook = published_runbook!(subject, "done", uptime_steps(1, group_target(runner.group)))
+      {:ok, %{runs: [run]}} = Runbooks.dispatch_runbook(runbook, "go", subject)
+      {:ok, _} = Emisar.Runs.mark_finished(run, %{"status" => "success", "duration_ms" => 5})
+
+      assert {:error, :not_found} =
+               Emisar.Runs.fetch_active_runbook_execution(runbook.id, subject)
+    end
+
+    test "returns :not_found for a runbook that was never dispatched" do
+      {_account, subject, runner} = account_with_runner()
+      runbook = published_runbook!(subject, "fresh", uptime_steps(1, group_target(runner.group)))
+
+      assert {:error, :not_found} =
+               Emisar.Runs.fetch_active_runbook_execution(runbook.id, subject)
+    end
+
+    test "doesn't surface another account's execution" do
+      {_account, subject, runner} = account_with_runner()
+      runbook = published_runbook!(subject, "mine", uptime_steps(1, group_target(runner.group)))
+      {:ok, _} = Runbooks.dispatch_runbook(runbook, "go", subject)
+
+      {_user_b, _account_b, subject_b} = owner_subject_fixture()
+
+      assert {:error, :not_found} =
+               Emisar.Runs.fetch_active_runbook_execution(runbook.id, subject_b)
+    end
+  end
+
   describe "wave advancement" do
     test "releases the next wave only when the whole wave finishes" do
       {account, subject, runner} = account_with_runner()
