@@ -3,7 +3,7 @@ id: nomad.job_status_all
 title: nomad job status (all)
 kind: exec
 risk: low
-description: All jobs with type, priority, status, submit time.
+description: List all jobs with their type, priority, status, and submit time.
 side_effects: ["One API call.", "Read-only."]
 args: []
 execution:
