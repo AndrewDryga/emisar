@@ -31,6 +31,25 @@ defmodule EmisarWeb.UserSignUpLiveTest do
     assert html =~ "Use at least 12 characters"
   end
 
+  test "the password hint flips to a ✓ once it clears 12 characters", %{conn: conn} do
+    {:ok, lv, _html} = live(conn, ~p"/sign_up")
+
+    short =
+      lv
+      |> form("#registration_form", sign_up_params(%{"user" => %{"password" => "short"}}))
+      |> render_change()
+
+    assert short =~ "Use at least 12 characters"
+    refute short =~ "✓"
+
+    long =
+      lv
+      |> form("#registration_form", sign_up_params(%{"user" => %{"password" => "twelve-chars"}}))
+      |> render_change()
+
+    assert long =~ "✓ At least 12 characters"
+  end
+
   test "a valid sign-up creates user + workspace and arms the sign-in POST", %{conn: conn} do
     {:ok, lv, _html} = live(conn, ~p"/sign_up")
     params = sign_up_params()
@@ -75,12 +94,13 @@ defmodule EmisarWeb.UserSignUpLiveTest do
     assert {:ok, _user} = Users.fetch_user_by_email(params["user"]["email"])
   end
 
-  test "a blank workspace name flashes and creates nothing", %{conn: conn} do
+  test "a blank workspace name inline-errors and creates nothing", %{conn: conn} do
     {:ok, lv, _html} = live(conn, ~p"/sign_up")
     params = sign_up_params(%{"account_name" => "  "})
 
     html = lv |> form("#registration_form", params) |> render_submit()
 
+    # Inline under the field (like every other form), not a flash banner.
     assert html =~ "Tell us what to call your workspace."
     assert Users.fetch_user_by_email(params["user"]["email"]) == {:error, :not_found}
   end

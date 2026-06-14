@@ -11,6 +11,7 @@ defmodule EmisarWeb.UserSignUpLive do
      |> assign(:page_title, "Create an account")
      |> assign(:trigger_submit, false)
      |> assign(:account_name, "")
+     |> assign(:account_name_error, nil)
      |> assign_form(changeset)}
   end
 
@@ -40,14 +41,20 @@ defmodule EmisarWeb.UserSignUpLive do
           minlength="12"
           required
         />
-        <p class="text-xs text-zinc-500">
-          Use at least 12 characters. Mix in numbers or symbols for extra safety.
+        <%!-- Live strength tick — phx-change already streams the value, so
+             flip the hint to a ✓ once it clears the 12-char floor. --%>
+        <% password_ok? = String.length(@form[:password].value || "") >= 12 %>
+        <p class={["text-xs", if(password_ok?, do: "text-emerald-400", else: "text-zinc-500")]}>
+          {if password_ok?,
+            do: "✓ At least 12 characters.",
+            else: "Use at least 12 characters. Mix in numbers or symbols for extra safety."}
         </p>
         <.input
           name="account_name"
           value={@account_name}
           type="text"
           label="Team or company name"
+          errors={if @account_name_error, do: [@account_name_error], else: []}
           required
         />
 
@@ -77,6 +84,7 @@ defmodule EmisarWeb.UserSignUpLive do
     {:noreply,
      socket
      |> assign(:account_name, all["account_name"] || socket.assigns.account_name)
+     |> assign(:account_name_error, nil)
      |> assign_form(changeset)}
   end
 
@@ -84,10 +92,12 @@ defmodule EmisarWeb.UserSignUpLive do
     account_name = String.trim(all["account_name"] || "")
 
     if account_name == "" do
+      # Inline under the field (it's a hand-rolled input, not a changeset
+      # field) — matches every other form's inline-error behaviour, not a flash.
       {:noreply,
        socket
        |> assign(:account_name, "")
-       |> put_flash(:error, "Tell us what to call your workspace.")}
+       |> assign(:account_name_error, "Tell us what to call your workspace.")}
     else
       do_save(socket, user_params, account_name)
     end

@@ -52,8 +52,20 @@ defmodule EmisarWeb.UserAuth do
     |> renew_session()
     |> put_token_in_session(token)
     |> maybe_write_remember_me_cookie(token, params)
+    |> maybe_flash_just_registered(user)
     |> redirect(to: user_return_to || signed_in_path(conn))
   end
+
+  # The sign-up form posts here with `?_action=registered` and we auto-sign the
+  # new user in. Tell them a confirmation link is on the way — otherwise the
+  # email is silent. No "or your account locks" threat: unconfirmed accounts
+  # aren't gated (they just see the verify-email banner). Matching `params` in
+  # the head also no-ops safely when they're unfetched (direct unit calls).
+  defp maybe_flash_just_registered(%{params: %{"_action" => "registered"}} = conn, user) do
+    put_flash(conn, :info, "Welcome to emisar! We emailed a confirmation link to #{user.email}.")
+  end
+
+  defp maybe_flash_just_registered(conn, _user), do: conn
 
   defp maybe_write_remember_me_cookie(conn, token, %{"remember_me" => "true"}) do
     put_resp_cookie(conn, @remember_me_cookie, token, remember_me_options())

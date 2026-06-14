@@ -21,4 +21,20 @@ defmodule EmisarWeb.UserSessionControllerTest do
       assert redirected_to(conn) == "/"
     end
   end
+
+  describe "POST /sign_in?_action=registered (sign-up auto-login)" do
+    test "flashes the confirmation-email notice so it isn't silent", %{conn: conn} do
+      # register_and_log_in builds a real user+account; reuse the credentials in
+      # a fresh, signed-out conn to drive the registration auto-login POST.
+      {_logged_in, user, _account} = register_and_log_in(conn)
+
+      conn =
+        build_conn()
+        |> post(~p"/sign_in?_action=registered", %{
+          "user" => %{"email" => user.email, "password" => "very-long-password-here"}
+        })
+
+      assert Phoenix.Flash.get(conn.assigns.flash, :info) =~ "confirmation link to #{user.email}"
+    end
+  end
 end
