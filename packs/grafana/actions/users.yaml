@@ -1,6 +1,6 @@
 schema_version: 1
 id: grafana.users
-title: GET /api/users (org admin)
+title: GET /api/org/users (org admin)
 kind: exec
 risk: low
 description: All users in the current org. Requires an Admin-scoped token.
@@ -11,7 +11,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "{ [ -n \"$GRAFANA_TOKEN\" ] && printf 'Authorization: Bearer %s\\n' \"$GRAFANA_TOKEN\"; } | curl -sS -H @- \"${GRAFANA_URL:-http://127.0.0.1:3000}/api/users\""
+      - "{ [ -n \"$GRAFANA_TOKEN\" ] && printf 'Authorization: Bearer %s\\n' \"$GRAFANA_TOKEN\"; } | curl -sS -H @- \"${GRAFANA_URL:-http://127.0.0.1:3000}/api/org/users\""
   timeout: 30s
 output:
   parser: json
