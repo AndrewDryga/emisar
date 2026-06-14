@@ -57,6 +57,28 @@ defmodule EmisarWeb.RunDetailLiveTest do
     assert html =~ "v4"
   end
 
+  test "a denied run surfaces the denial + reason, not a bare cancellation", %{conn: conn} do
+    {conn, user, account} = register_and_log_in(conn)
+
+    run = run_with(account, %{})
+    {:ok, request} = Emisar.Approvals.create_request(run, user.id, "deploy")
+
+    {:ok, _} =
+      Emisar.Approvals.deny_request(
+        request,
+        owner_subject(user, account),
+        "not during the change freeze"
+      )
+
+    {:ok, _lv, html} = live(conn, ~p"/app/runs/#{run.id}")
+
+    # The run lands :cancelled, but the requester must see WHY — the denial
+    # reason the approver typed (stored on the run as "approval denied: …") —
+    # not a bare grey badge.
+    assert html =~ "Cancelled"
+    assert html =~ "approval denied: not during the change freeze"
+  end
+
   test "omits the policy summary when no decision was recorded", %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)
     run = run_with(account, %{})
