@@ -228,8 +228,35 @@ defmodule EmisarWeb.ProfileLiveTest do
       # Codes are shown exactly once — the panel goes away on dismiss
       # (the enable flash still mentions them, so check the element).
       assert has_element?(lv, "#mfa-recovery-codes-blob")
-      render_click(lv, "dismiss_recovery_codes", %{})
+
+      # The voluntary reveal offers a file download too (matching the enforced
+      # setup path) — a clipboard is too volatile for a lockout credential.
+      assert html =~ ~s(download="emisar-recovery-codes.txt")
+
+      # Once saved, the MFA-on view surfaces how many codes remain (a fresh 10,
+      # so no low-count nudge).
+      html = render_click(lv, "dismiss_recovery_codes", %{})
       refute has_element?(lv, "#mfa-recovery-codes-blob")
+      assert html =~ "10 recovery codes remaining"
+      refute html =~ "Regenerate for a fresh set"
+    end
+
+    test "a low recovery-code count nudges to regenerate (amber)", %{conn: conn} do
+      {conn, user, _account} = register_and_log_in(conn)
+
+      # MFA on with only 2 codes left (8 burned down on lost-device sign-ins) —
+      # tracked all along but never shown until now.
+      user
+      |> Ecto.Changeset.change(
+        mfa_enabled_at: DateTime.utc_now(),
+        mfa_recovery_codes: ["digest-1", "digest-2"]
+      )
+      |> Emisar.Repo.update!()
+
+      {:ok, _lv, html} = live(conn, ~p"/app/settings/profile")
+
+      assert html =~ "2 recovery codes remaining"
+      assert html =~ "Regenerate for a fresh set"
     end
 
     test "a wrong OTP leaves MFA off", %{conn: conn} do

@@ -269,6 +269,13 @@ defmodule EmisarWeb.ProfileLive do
   defp mfa_enabled?(%{mfa_enabled_at: %DateTime{}}), do: true
   defp mfa_enabled?(_), do: false
 
+  # Unused recovery-code digests left on the user (consumed ones are removed);
+  # `current_user` is kept fresh after enable/regenerate, so the count is too.
+  defp recovery_codes_remaining(%{mfa_recovery_codes: codes}) when is_list(codes),
+    do: length(codes)
+
+  defp recovery_codes_remaining(_), do: 0
+
   # Server-side QR rendering — keeps it dependency-free at the JS level
   # and avoids leaking the otpauth URI through a third-party image
   # service. The SVG inlines into the page; authenticator apps scan it
@@ -526,6 +533,18 @@ defmodule EmisarWeb.ProfileLive do
                   >
                     Copy all
                   </button>
+                  <%!-- A real file beats the volatile clipboard for a credential
+                       the user must keep — matches the enforced setup path. --%>
+                  <a
+                    href={
+                      "data:text/plain;charset=utf-8," <>
+                        URI.encode(Enum.join(@mfa_recovery_codes, "\n"))
+                    }
+                    download="emisar-recovery-codes.txt"
+                    class="rounded-lg bg-amber-500/20 px-3 py-1.5 text-xs font-semibold text-amber-100 hover:bg-amber-500/30"
+                  >
+                    Download .txt
+                  </a>
                   <.button
                     variant="secondary"
                     size="sm"
@@ -541,6 +560,19 @@ defmodule EmisarWeb.ProfileLive do
               <p class="text-sm text-zinc-300">
                 You're protected by a second factor. Disabling means a stolen password is enough
                 to sign in.
+              </p>
+              <%!-- Recovery codes burn down one per lost-device sign-in, but the
+                   count was never surfaced — nudge to regenerate before they run
+                   out and a lost authenticator becomes a lockout. --%>
+              <% remaining = recovery_codes_remaining(@current_user) %>
+              <p class={[
+                "mt-3 text-xs",
+                if(remaining <= 2, do: "font-medium text-amber-300", else: "text-zinc-500")
+              ]}>
+                {remaining} recovery {if remaining == 1, do: "code", else: "codes"} remaining.<span :if={
+                  remaining <= 2
+                }>
+                  Regenerate for a fresh set before a lost authenticator locks you out.</span>
               </p>
               <div class="mt-4 flex flex-wrap items-center gap-3">
                 <.button
