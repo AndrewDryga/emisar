@@ -141,6 +141,23 @@ defmodule EmisarWeb.TeamLiveTest do
       assert html =~ email
     end
 
+    test "inviting a suppressed address warns the inviter instead of a silent success", %{lv: lv} do
+      # The address hard-bounced / was spam-flagged earlier, so the mailer
+      # skips the send. The invite still exists, but the inviter must know the
+      # email won't arrive — otherwise the member sits "unconfirmed" forever.
+      email = "bounced-#{System.unique_integer([:positive])}@example.com"
+      {:ok, _} = Emisar.Mail.suppress(email, :hard_bounce)
+
+      html =
+        lv
+        |> form("#invite_form", %{"invite" => %{"email" => email, "role" => "operator"}})
+        |> render_submit()
+
+      assert html =~ "email that address"
+      assert html =~ "send them the join link another way"
+      refute html =~ "Invited #{email}."
+    end
+
     test "change_role promotes the member", %{lv: lv, membership: membership} do
       html =
         render_click(lv, "change_role", %{"membership_id" => membership.id, "role" => "operator"})

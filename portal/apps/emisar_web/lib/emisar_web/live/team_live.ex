@@ -272,11 +272,11 @@ defmodule EmisarWeb.TeamLive do
 
     case Accounts.invite_user_to_account(email, role, socket.assigns.current_subject) do
       {:ok, %{user: user, invitation_token: token}} ->
-        _ = Mailers.UserNotifier.deliver_account_invitation(user, inviter, account, token)
+        delivery = Mailers.UserNotifier.deliver_account_invitation(user, inviter, account, token)
 
         {:noreply,
          socket
-         |> put_flash(:info, "Invited #{email}.")
+         |> flash_invite_outcome(email, delivery)
          |> assign_form(invite_changeset())
          |> reload()}
 
@@ -287,6 +287,23 @@ defmodule EmisarWeb.TeamLive do
         {:noreply, put_flash(socket, :error, "Could not send invitation.")}
     end
   end
+
+  # The invitation row + token are created regardless of email delivery; the
+  # flash reflects whether we could actually reach the address. A suppressed
+  # recipient (hard-bounced or spam-flagged, recorded from the Postmark
+  # webhook) silently skips the send — tell the inviter so they relay the link
+  # another way instead of leaving the new member stuck "unconfirmed, never
+  # signed in" with no hint why.
+  defp flash_invite_outcome(socket, email, {:ok, %{suppressed: true}}) do
+    put_flash(
+      socket,
+      :error,
+      "Invited #{email}, but we can't email that address (it bounced or was marked spam) — send them the join link another way."
+    )
+  end
+
+  defp flash_invite_outcome(socket, email, _delivery),
+    do: put_flash(socket, :info, "Invited #{email}.")
 
   defp load(socket, params) do
     opts = LiveTable.params_to_opts(params)
