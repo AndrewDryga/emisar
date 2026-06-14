@@ -301,6 +301,11 @@ defmodule EmisarWeb.ApprovalDetailLive do
         <.meta_field label="When">
           <.local_time value={@request.requested_at} class="text-zinc-200" />
         </.meta_field>
+        <%!-- Only while held: a pending request auto-cancels at expiry, so the
+             approver sees how long they have; a decided one's expiry is moot. --%>
+        <.meta_field :if={@request.status == :pending} label="Expires">
+          <.approval_expiry expires_at={@request.expires_at} />
+        </.meta_field>
       </.meta_strip>
 
       <div class="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-[1fr_320px]">

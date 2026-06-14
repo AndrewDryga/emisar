@@ -1734,6 +1734,37 @@ defmodule EmisarWeb.CoreComponents do
   defp risk_classes(_), do: "bg-zinc-500/10 text-zinc-300 ring-zinc-500/30"
 
   @doc """
+  "expires in 3h" badge for a held approval request — amber when under two
+  hours remain so an approver can triage by urgency (the requester's run
+  auto-cancels at expiry). Renders nothing without an expiry.
+
+      <.approval_expiry expires_at={@request.expires_at} />
+  """
+  attr :expires_at, :any, default: nil
+  attr :class, :string, default: nil
+
+  def approval_expiry(assigns) do
+    ~H"""
+    <span
+      :if={@expires_at}
+      class={["inline-flex items-center gap-1 text-xs", expiry_class(@expires_at), @class]}
+    >
+      <.icon name="hero-clock" class="h-3 w-3" /> expires {TimeHelpers.relative_time(@expires_at)}
+    </span>
+    """
+  end
+
+  # Under two hours left → amber: an approval lapsing soon needs to stand out
+  # in the queue. Already-expired (the sweeper hasn't cancelled it yet) is moot,
+  # not urgent — keep it muted.
+  defp expiry_class(%DateTime{} = expires_at) do
+    seconds_left = DateTime.diff(expires_at, DateTime.utc_now(), :second)
+    if seconds_left > 0 and seconds_left <= 7200, do: "text-amber-400", else: "text-zinc-500"
+  end
+
+  defp expiry_class(_), do: "text-zinc-500"
+
+  @doc """
   A bounded, static preview of an action run's tail output — the last few
   progress chunks of a finished run, rendered like the live terminal
   (stderr in rose). Pass `events` in chronological order (oldest→newest);

@@ -46,6 +46,9 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     # exact path that raised KeyError on `@grant_duration` in production.
     assert html =~ "Decide"
     assert html =~ "Approve and send"
+    # A held request shows when it auto-cancels so the decider can triage.
+    assert html =~ "Expires"
+    assert html =~ "expires"
     # Both decision buttons guard the most consequential click against a
     # double-submit.
     assert has_element?(lv, "button[phx-disable-with]", "Approve and send")

@@ -58,6 +58,25 @@ defmodule EmisarWeb.ApprovalsLiveTest do
     assert html =~ "reboot for kernel patch"
   end
 
+  test "a pending request shows its expiry, amber only when it's about to lapse", %{conn: conn} do
+    {conn, user, account} = register_and_log_in(conn)
+    request = pending_request!(account, user.id, "kernel patch")
+
+    # Default 24h TTL → expiry shown but muted (not urgent yet).
+    {:ok, _lv, html} = live(conn, ~p"/app/approvals")
+    assert html =~ "expires"
+    refute html =~ "text-amber-400"
+
+    # Under two hours left → amber so an approver triages it ahead of fresher
+    # but less-urgent requests.
+    request
+    |> Ecto.Changeset.change(expires_at: DateTime.add(DateTime.utc_now(), 1800, :second))
+    |> Emisar.Repo.update!()
+
+    {:ok, _lv, html} = live(conn, ~p"/app/approvals")
+    assert html =~ "text-amber-400"
+  end
+
   test "an approval_updated broadcast reloads the queue", %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
 

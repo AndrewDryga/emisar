@@ -246,9 +246,14 @@ defmodule EmisarWeb.ApprovalsLive do
                         )}
                       </div>
                     </div>
-                    <span class="shrink-0 text-xs text-amber-200/70">
-                      {relative_time(request.requested_at)}
-                    </span>
+                    <div class="shrink-0 text-right">
+                      <div class="text-xs text-amber-200/70">
+                        {relative_time(request.requested_at)}
+                      </div>
+                      <%!-- Held runs auto-cancel at expiry — surface it so an
+                           approver can triage by urgency, not just arrival. --%>
+                      <.approval_expiry expires_at={request.expires_at} class="mt-0.5 justify-end" />
+                    </div>
                   </div>
                   <p
                     :if={request.reason && request.reason != ""}
