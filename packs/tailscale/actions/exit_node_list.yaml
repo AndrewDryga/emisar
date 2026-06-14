@@ -3,11 +3,29 @@ id: tailscale.exit_node_list
 title: tailscale exit-node list
 kind: exec
 risk: low
-description: Available exit nodes on the tailnet (hostname, country, city, status).
+description: >
+  Available exit nodes on the tailnet (hostname, country, city, status).
+  Succeeds with no rows when the tailnet has no exit nodes (a benign empty
+  state); a real failure (tailscaled down / not logged in) still reports failed.
 side_effects: ["One tailscale read.", "Read-only."]
 args: []
 execution:
-  command: {binary: tailscale, argv: ["exit-node", "list"]}
+  command:
+    # /bin/sh exception to the pack's "argv arrays, never a shell" rule:
+    # `tailscale exit-node list` exits 1 BOTH for the benign "no exit nodes on
+    # this tailnet" empty state AND for a real failure (tailscaled down / not
+    # logged in), with no --json or quiet flag to tell them apart — so a plain
+    # success_exit_codes: [1] would mask a real outage. This fixed wrapper
+    # (no args, no interpolation -> no injection) exits 0 only on success or
+    # the exact benign message, and propagates any real failure.
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - |
+        out=$(tailscale exit-node list 2>&1); rc=$?
+        printf '%s\n' "$out"
+        if [ "$rc" -eq 0 ] || printf '%s' "$out" | grep -q 'no exit nodes found'; then exit 0; fi
+        exit "$rc"
   timeout: 15s
 output:
   parser: text
