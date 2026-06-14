@@ -357,48 +357,23 @@ defmodule EmisarWeb.AuditLive do
         <%!-- One-shot reveal. The raw secret only ever exists in the
              socket assigns — refreshing the page hides it for good,
              same one-time-use pattern as the agents page snippets. --%>
-        <div
+        <%!-- The minted token, shown once via the shared <.secret_reveal>
+             — the single reviewed shown-once surface (same as agents +
+             install), not a third hand-rolled copy. Lives only in socket
+             assigns; a refresh hides it for good. --%>
+        <.secret_reveal
           :if={@export_secret}
-          class="border-t border-amber-500/30 bg-amber-500/[0.05] px-5 py-4"
+          title="Copy this token now — we won't show it again"
+          secret={@export_secret}
+          on_dismiss="dismiss_export_secret"
         >
-          <div class="flex items-start gap-3">
-            <.icon name="hero-information-circle" class="mt-0.5 h-4 w-4 flex-none text-amber-300" />
-            <div class="min-w-0 flex-1">
-              <p class="text-xs font-semibold text-amber-100">
-                Copy this token now — we won't show it again.
-              </p>
-              <div class="mt-2 overflow-hidden rounded-lg border border-zinc-800 bg-black/80">
-                <div class="flex items-center justify-between gap-3 border-b border-zinc-800 px-3 py-2">
-                  <p class="font-mono text-[10px] text-zinc-500">audit:read token</p>
-                  <.copy_button
-                    id="copy-export-token"
-                    target="#export-token"
-                    class="px-2 py-0.5 text-[11px]"
-                  >
-                    Copy
-                  </.copy_button>
-                </div>
-                <pre
-                  id="export-token"
-                  class="overflow-x-auto p-3 font-mono text-xs leading-5 text-zinc-200 break-all"
-                ><%= @export_secret %></pre>
-              </div>
-              <p class="mt-2 text-[11px] text-zinc-500">
-                Use with:
-                <code class="font-mono text-zinc-300">
-                  curl -H "Authorization: Bearer &lt;token&gt;" {@base_audit_url}
-                </code>
-              </p>
-            </div>
-            <button
-              type="button"
-              phx-click="dismiss_export_secret"
-              class="shrink-0 text-xs font-medium text-zinc-400 hover:text-zinc-200"
-            >
-              Dismiss
-            </button>
-          </div>
-        </div>
+          A read-only <span class="font-mono">audit:read</span>
+          token for shipping audit
+          events to a SIEM.
+          <:install_command label="Use with">
+            curl -H "Authorization: Bearer {@export_secret}" {@base_audit_url}
+          </:install_command>
+        </.secret_reveal>
 
         <%!-- Existing export tokens — listed with revoke. The agents
              page filters these out so SIEM-export tokens live here
