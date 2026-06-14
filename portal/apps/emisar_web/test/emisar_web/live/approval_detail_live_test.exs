@@ -36,6 +36,28 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     request
   end
 
+  test "a high-risk action shows its risk pill so the approver sees the stakes", %{conn: conn} do
+    {conn, user, account} = register_and_log_in(conn)
+    runner = Emisar.Fixtures.runner_fixture(account_id: account.id)
+    Emisar.Fixtures.action_fixture(runner: runner, action_id: "linux.reboot", risk: "high")
+
+    {:ok, run} =
+      Runs.create_run(%{
+        account_id: account.id,
+        runner_id: runner.id,
+        action_id: "linux.reboot",
+        source: "operator",
+        reason: "rolling restart",
+        args: %{}
+      })
+
+    {:ok, request} = Approvals.create_request(run, user.id, "please approve")
+
+    {:ok, _lv, html} = live(conn, ~p"/app/approvals/#{request.id}")
+    # The risk is looked up from the catalog and rendered as a pill.
+    assert html =~ "high"
+  end
+
   test "renders the decision panel for a decider without crashing", %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
     request = pending_request(account, user)

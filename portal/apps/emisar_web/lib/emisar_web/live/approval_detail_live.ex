@@ -1,7 +1,7 @@
 defmodule EmisarWeb.ApprovalDetailLive do
   use EmisarWeb, :live_view
 
-  alias Emisar.{Approvals, Runners, Runs, Users}
+  alias Emisar.{Approvals, Catalog, Runners, Runs, Users}
   alias EmisarWeb.Permissions
 
   def mount(%{"id" => id}, _session, socket) do
@@ -37,11 +37,19 @@ defmodule EmisarWeb.ApprovalDetailLive do
         requested_by = if connected?(socket), do: lookup_user(request.requested_by_id), else: nil
         decided_by = if connected?(socket), do: lookup_user(request.decided_by_id), else: nil
 
+        # Risk is the approver's headline signal but isn't on the request — look
+        # it up from the catalog (display-only, connected pass; nil if the action
+        # is no longer advertised).
+        action_risk =
+          if connected?(socket),
+            do: action_risk_for(request.context, socket.assigns.current_subject)
+
         {:ok,
          socket
          |> assign(:page_title, title)
          |> assign(:request, request)
          |> assign(:run, run)
+         |> assign(:action_risk, action_risk)
          |> assign(:runner_connection, runner_connection(run))
          |> assign(:requested_by, requested_by)
          |> assign(:decided_by, decided_by)
@@ -64,6 +72,16 @@ defmodule EmisarWeb.ApprovalDetailLive do
       _ -> nil
     end
   end
+
+  defp action_risk_for(%{"action_id" => action_id, "runner_id" => runner_id}, subject)
+       when is_binary(action_id) and is_binary(runner_id) do
+    case Catalog.fetch_action_by_id(action_id, runner_id, subject) do
+      {:ok, action} -> action.risk
+      {:error, _} -> nil
+    end
+  end
+
+  defp action_risk_for(_context, _subject), do: nil
 
   def handle_info({:approval_updated, %{id: id} = updated}, socket)
       when id == socket.assigns.request.id do
@@ -266,8 +284,11 @@ defmodule EmisarWeb.ApprovalDetailLive do
           <.status_badge status={@request.status} />
         </.meta_field>
         <.meta_field label="Action">
-          <span class="truncate font-mono text-zinc-200">
-            {@request.context["action_id"] || "—"}
+          <span class="inline-flex min-w-0 items-center gap-2">
+            <span class="truncate font-mono text-zinc-200">
+              {@request.context["action_id"] || "—"}
+            </span>
+            <.risk_pill :if={@action_risk} risk={@action_risk} class="flex-none" />
           </span>
         </.meta_field>
         <.meta_field label="Runner">
