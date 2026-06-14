@@ -101,4 +101,31 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     assert html =~ "duplicate of an earlier run"
     assert Repo.reload!(request).decision_reason == "duplicate of an earlier run"
   end
+
+  test "a decision that lost a race to expiry re-fetches and flips the panel", %{conn: conn} do
+    {conn, user, account} = register_and_log_in(conn)
+    request = pending_request(account, user)
+
+    {:ok, lv, html} = live(conn, ~p"/app/approvals/#{request.id}")
+    assert html =~ "Approve and send"
+
+    # The request expires out from under the open page — its live broadcast
+    # hasn't arrived yet, so simulate by expiring the row directly, then
+    # deciding (approve and deny share the decision_failed defense).
+    request
+    |> Ecto.Changeset.change(
+      status: :expired,
+      expires_at: DateTime.add(DateTime.utc_now(), -3600, :second)
+    )
+    |> Repo.update!()
+
+    html =
+      lv
+      |> form("form[phx-submit='deny']", %{"reason" => ""})
+      |> render_submit()
+
+    assert html =~ "expired before your decision landed"
+    # The form flipped to decision-history — no interactive decision left.
+    refute html =~ "Approve and send"
+  end
 end

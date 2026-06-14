@@ -109,8 +109,8 @@ defmodule EmisarWeb.ApprovalDetailLive do
             msg = approval_flash(opts)
             {:noreply, socket |> assign(:request, request) |> put_flash(:info, msg)}
 
-          _ ->
-            {:noreply, put_flash(socket, :error, "Could not approve.")}
+          {:error, reason} ->
+            decision_failed(socket, reason)
         end
       end
     )
@@ -129,12 +129,42 @@ defmodule EmisarWeb.ApprovalDetailLive do
           {:ok, {request, _run}} ->
             {:noreply, socket |> assign(:request, request) |> put_flash(:info, "Denied.")}
 
-          _ ->
-            {:noreply, put_flash(socket, :error, "Could not deny.")}
+          {:error, reason} ->
+            decision_failed(socket, reason)
         end
       end
     )
   end
+
+  # An approve/deny that didn't take: the request expired or was decided
+  # between render and this click (the live `:approval_updated` broadcast can
+  # race a fast click). Re-fetch so the panel flips to decision-history, then
+  # flash the real cause instead of leaving the form interactive.
+  defp decision_failed(socket, reason) do
+    {:noreply,
+     socket
+     |> refetch_request()
+     |> put_flash(:error, decision_error_message(reason))}
+  end
+
+  defp refetch_request(socket) do
+    case Approvals.fetch_approval_request_by_id(
+           socket.assigns.request.id,
+           socket.assigns.current_subject
+         ) do
+      {:ok, request} ->
+        socket
+        |> assign(:request, request)
+        |> assign(:decided_by, lookup_user(request.decided_by_id))
+
+      {:error, _} ->
+        socket
+    end
+  end
+
+  defp decision_error_message(:expired), do: "This request expired before your decision landed."
+  defp decision_error_message(:already_decided), do: "Someone else already decided this request."
+  defp decision_error_message(_), do: "Could not record your decision."
 
   defp parse_max_uses(v) when is_binary(v) do
     case Integer.parse(String.trim(v)) do
