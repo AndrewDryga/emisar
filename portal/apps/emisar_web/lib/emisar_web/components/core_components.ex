@@ -1378,18 +1378,21 @@ defmodule EmisarWeb.CoreComponents do
   end
 
   @doc """
-  Danger-zone card — the bordered rose container with title + body +
-  destructive button used on detail pages (runner detail, team member
-  remove, etc.).
+  Danger-zone card — the bordered rose container with title + body + a
+  destructive `<.button variant="danger">` it renders itself from the `confirm`
+  text and the button's `phx-click` (so call sites don't hand-roll the button).
+  Used on detail pages (runner detail, team member remove, etc.).
 
-      <.danger_zone title="Disable this runner" confirm="Disable? It can't reconnect.">
+      <.danger_zone title="Disable this runner" confirm="Disable? It can't reconnect." phx-click="disable">
         <:body>Removes from catalog and rejects future reconnects.</:body>
-        <:button phx-click="disable">Disable runner</:button>
+        Disable runner
       </.danger_zone>
   """
   slot :body, required: true
-  slot :button, required: true
+  slot :inner_block, required: true
   attr :title, :string, required: true
+  attr :confirm, :string, required: true
+  attr :rest, :global
 
   def danger_zone(assigns) do
     ~H"""
@@ -1398,7 +1401,11 @@ defmodule EmisarWeb.CoreComponents do
         <h3 class="text-sm font-semibold text-rose-200">{@title}</h3>
         <p class="mt-1 text-xs text-rose-300/70">{render_slot(@body)}</p>
       </div>
-      <div class="shrink-0">{render_slot(@button)}</div>
+      <div class="shrink-0">
+        <.button variant="danger" size="md" data-confirm={@confirm} {@rest}>
+          {render_slot(@inner_block)}
+        </.button>
+      </div>
     </section>
     """
   end

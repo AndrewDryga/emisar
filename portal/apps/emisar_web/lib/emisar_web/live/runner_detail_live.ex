@@ -293,20 +293,15 @@ defmodule EmisarWeb.RunnerDetailLive do
         :if={is_nil(@runner.disabled_at) and Runners.subject_can_manage_runners?(@current_subject)}
         class="mt-6"
       >
-        <.danger_zone title="Disable this runner">
+        <.danger_zone
+          title="Disable this runner"
+          confirm="Disable this runner? It will not be able to reconnect."
+          phx-click="disable"
+        >
           <:body>
             Removes it from the catalog and rejects future reconnects. Audit history is preserved.
           </:body>
-          <:button>
-            <.button
-              variant="danger"
-              size="md"
-              phx-click="disable"
-              data-confirm="Disable this runner? It will not be able to reconnect."
-            >
-              Disable runner
-            </.button>
-          </:button>
+          Disable runner
         </.danger_zone>
       </div>
 
@@ -342,23 +337,18 @@ defmodule EmisarWeb.RunnerDetailLive do
         :if={not @runner.online? and Runners.subject_can_manage_runners?(@current_subject)}
         class="mt-6"
       >
-        <.danger_zone title="Delete this runner">
+        <.danger_zone
+          title="Delete this runner"
+          confirm="Delete this runner row? The host can re-register on next connect."
+          phx-click="delete"
+        >
           <:body>
             Removes the runner row from your account. The host can re-register on its
             next connect (it will appear as a fresh runner with new tokens), which is
             the intended path when you want to recover from a wedged state or
             re-bootstrap a host. Run history and audit events are preserved.
           </:body>
-          <:button>
-            <.button
-              variant="danger"
-              size="md"
-              phx-click="delete"
-              data-confirm="Delete this runner row? The host can re-register on next connect."
-            >
-              Delete runner
-            </.button>
-          </:button>
+          Delete runner
         </.danger_zone>
       </div>
     </.dashboard_shell>
