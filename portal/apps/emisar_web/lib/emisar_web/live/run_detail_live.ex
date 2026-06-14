@@ -264,6 +264,24 @@ defmodule EmisarWeb.RunDetailLive do
         </div>
       </div>
 
+      <%!-- Queued but its target runner is offline — the run can't dispatch
+           until the runner reconnects (or the timeout sweep errors it). The
+           in-flight banner above ("output may be incomplete") is wrong here:
+           nothing's running yet, so say what's actually blocking it. --%>
+      <div
+        :if={@run.status == :pending and @runner_connection == :offline}
+        class="mt-4 flex items-start gap-3 rounded-xl border border-amber-500/30 bg-amber-500/[0.06] p-4"
+      >
+        <.icon name="hero-signal-slash" class="mt-0.5 h-5 w-5 flex-none text-amber-300" />
+        <div>
+          <div class="text-sm font-semibold text-amber-100">Queued — runner offline</div>
+          <p class="mt-1 text-xs text-amber-200/80">
+            Waiting for {runner_label(@run.runner)} to reconnect before this run can dispatch.
+            It's marked errored if the runner doesn't return before the dispatch timeout.
+          </p>
+        </div>
+      </div>
+
       <%!-- Operator's reason, full width. The policy decision renders
            as an inline strip below (only when it carries signal), not a
            side panel that would just echo the status chip. --%>

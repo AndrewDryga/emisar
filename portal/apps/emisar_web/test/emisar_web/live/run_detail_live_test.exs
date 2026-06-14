@@ -280,6 +280,18 @@ defmodule EmisarWeb.RunDetailLiveTest do
     assert html =~ "Runner disconnected"
   end
 
+  test "a queued run whose runner is offline explains why it's stuck", %{conn: conn} do
+    {conn, _user, account} = register_and_log_in(conn)
+    # Offline runner (registered, never in presence) + a not-yet-dispatched run.
+    run = run_with(account, %{status: "pending"})
+
+    {:ok, _lv, html} = live(conn, ~p"/app/runs/#{run.id}")
+
+    assert html =~ "Queued — runner offline"
+    # The in-flight banner's copy would be wrong for a run that hasn't dispatched.
+    refute html =~ "output may be incomplete"
+  end
+
   test "an in-flight run on a connected runner shows no disconnect banner", %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)
     runner = runner_fixture(account_id: account.id, connected?: true)
