@@ -44,16 +44,46 @@ defmodule EmisarWeb.RunNewLive do
     end
   end
 
-  # High/critical dispatches confirm and echo the action + target, so a
-  # mis-aimed click on a destructive action is caught; low/medium dispatch
-  # behind just the disable-with spinner (nil omits the data-confirm attr).
-  # `risk` is an Ecto.Enum atom, not a string.
-  defp dispatch_confirm(%{risk: risk} = action, runner, runner_id)
+  # High/critical dispatches confirm and echo the action + target + the args
+  # the operator entered, so a mis-aimed click on a destructive action is
+  # caught AND they see the blast radius (which container/signal/path), not
+  # just the action name. Low/medium dispatch behind just the disable-with
+  # spinner (nil omits the data-confirm attr). `risk` is an Ecto.Enum atom.
+  defp dispatch_confirm(%{risk: risk} = action, runner, runner_id, args_schema, form)
        when risk in [:high, :critical] do
-    "Dispatch #{action.action_id} (#{risk} risk) to #{(runner && runner.name) || runner_id} now? It runs on the host immediately."
+    target = (runner && runner.name) || runner_id
+
+    base =
+      "Dispatch #{action.action_id} (#{risk} risk) to #{target} now? It runs on the host immediately."
+
+    case args_blast_radius(args_schema, form.params) do
+      "" -> base
+      summary -> base <> "\n\n" <> summary
+    end
   end
 
-  defp dispatch_confirm(_action, _runner, _runner_id), do: nil
+  defp dispatch_confirm(_action, _runner, _runner_id, _args_schema, _form), do: nil
+
+  # The entered args in schema order, empties dropped, each value clipped so a
+  # long path can't blow up the native confirm dialog.
+  defp args_blast_radius(args_schema, params) do
+    lines =
+      Enum.flat_map(args_schema, fn arg ->
+        name = arg["name"]
+
+        case params[name] do
+          value when value in [nil, ""] -> []
+          value -> ["• #{name}: #{clip_arg(value)}"]
+        end
+      end)
+
+    if lines == [], do: "", else: "Arguments:\n" <> Enum.join(lines, "\n")
+  end
+
+  defp clip_arg(value) do
+    string = to_string(value)
+    if String.length(string) > 60, do: String.slice(string, 0, 57) <> "…", else: string
+  end
 
   def handle_event("validate", params, socket) do
     # Actions with no arg schema render only the `reason` field, so the
@@ -303,7 +333,7 @@ defmodule EmisarWeb.RunNewLive do
                 :if={@can_dispatch?}
                 class="w-full"
                 phx-disable-with="Dispatching..."
-                data-confirm={dispatch_confirm(@action, @runner, @runner_id)}
+                data-confirm={dispatch_confirm(@action, @runner, @runner_id, @args_schema, @form)}
               >
                 Dispatch to runner <span aria-hidden="true">→</span>
               </.button>

@@ -180,6 +180,39 @@ defmodule EmisarWeb.RunNewLiveTest do
     assert render(lv) =~ "runs on the host immediately"
   end
 
+  test "a high-risk confirm folds in the entered args (the blast radius)", %{conn: conn} do
+    {conn, _user, account} = register_and_log_in(conn)
+    runner = runner_fixture(account_id: account.id)
+
+    action =
+      action_fixture(
+        runner: runner,
+        action_id: "linux.tail_log",
+        risk: "high",
+        args_schema: %{
+          "args" => [
+            %{
+              "name" => "path",
+              "type" => "string",
+              "required" => true,
+              "description" => "Log path"
+            }
+          ]
+        }
+      )
+
+    {:ok, lv, _html} = live(conn, ~p"/app/runs/new/#{runner.id}/#{action.action_id}")
+
+    # Type a path → the confirm must echo it so the operator confirms WHAT
+    # runs (which file), not just the action name.
+    html =
+      lv
+      |> form("#dispatch_form", %{"args" => %{"path" => "/var/log/auth.log"}, "reason" => "x"})
+      |> render_change()
+
+    assert html =~ "path: /var/log/auth.log"
+  end
+
   test "a low-risk action's dispatch button does not confirm", %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)
     runner = runner_fixture(account_id: account.id)
