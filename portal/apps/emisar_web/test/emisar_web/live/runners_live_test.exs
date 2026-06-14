@@ -13,6 +13,17 @@ defmodule EmisarWeb.RunnersLiveTest do
       assert html =~ "Open install wizard"
     end
 
+    test "the dead/pre-connect empty render shows a loading placeholder, not the pitch",
+         %{conn: conn} do
+      {conn, _user, _account} = register_and_log_in(conn)
+
+      # A plain GET is the disconnected render — connected?/1 is false, so the
+      # onboarding pitch is deferred behind a loading placeholder.
+      html = conn |> get(~p"/app/runners") |> html_response(200)
+      assert html =~ "Loading"
+      refute html =~ "No runners yet"
+    end
+
     test "lists runners grouped by their `group` field", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
       subject = owner_subject(user, account)

@@ -87,11 +87,17 @@ defmodule EmisarWeb.RunnersLive do
       </:actions>
 
       <%= if @runners == [] && @metadata.count == 0 do %>
-        <.empty_state icon="hero-cpu-chip" title="No runners yet">
-          A runner is the emisar binary on one of your hosts. The install wizard mints a fresh
-          auth key and gives you a one-liner to paste on a Linux or macOS box.
-          <:cta navigate={~p"/app/runners/install"}>Open install wizard</:cta>
-        </.empty_state>
+        <%= if connected?(@socket) do %>
+          <.empty_state icon="hero-cpu-chip" title="No runners yet">
+            A runner is the emisar binary on one of your hosts. The install wizard mints a fresh
+            auth key and gives you a one-liner to paste on a Linux or macOS box.
+            <:cta navigate={~p"/app/runners/install"}>Open install wizard</:cta>
+          </.empty_state>
+        <% else %>
+          <%!-- Dead/pre-connect render — defer the onboarding pitch until the
+               live socket confirms there really are no runners. --%>
+          <.loading_state />
+        <% end %>
       <% else %>
         <%!-- Group sidebar shows whole-account totals; the runners
              list below is paginated and may show fewer rows per

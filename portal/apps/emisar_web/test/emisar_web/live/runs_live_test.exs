@@ -43,11 +43,23 @@ defmodule EmisarWeb.RunsLiveTest do
     assert {:error, {:redirect, %{to: "/sign_in"}}} = live(conn, ~p"/app/runs")
   end
 
-  test "renders the empty state before any runs exist", %{conn: conn} do
+  test "the connected empty render shows the onboarding pitch", %{conn: conn} do
     {conn, _user, _account} = register_and_log_in(conn)
 
     {:ok, _lv, html} = live(conn, ~p"/app/runs")
-    assert html =~ "Runs"
+    assert html =~ "No runs yet"
+  end
+
+  test "the dead/pre-connect empty render shows a loading placeholder, not the pitch",
+       %{conn: conn} do
+    {conn, _user, _account} = register_and_log_in(conn)
+
+    # A plain GET is the disconnected render — connected?/1 is false, so the
+    # onboarding pitch is deferred behind a loading placeholder rather than
+    # flashed before the live socket confirms the list is really empty.
+    html = conn |> get(~p"/app/runs") |> html_response(200)
+    assert html =~ "Loading"
+    refute html =~ "No runs yet"
   end
 
   test "an account-runs broadcast reloads the current page", %{conn: conn} do

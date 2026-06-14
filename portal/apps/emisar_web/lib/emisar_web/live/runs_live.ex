@@ -93,27 +93,33 @@ defmodule EmisarWeb.RunsLive do
                onboarding pitch (icon + concrete next step + links to
                the two surfaces that produce runs). The richer state
                only shows on a brand-new account so it's not noisy. --%>
-          <%= if any_filter_active?(@filter_params, @filters) do %>
-            <span class="text-zinc-500">No runs match these filters.</span>
-          <% else %>
-            <div class="mx-auto max-w-md">
-              <.icon name="hero-bolt" class="mx-auto h-8 w-8 text-zinc-700" />
-              <p class="mt-3 text-zinc-300">No runs yet.</p>
-              <p class="mt-1 text-xs leading-relaxed text-zinc-500">
-                Dispatch one from a
-                <.link navigate={~p"/app/runners"} class="text-indigo-400 hover:text-indigo-300">
-                  runner detail page
-                </.link>
-                or kick off a <.link
-                  navigate={~p"/app/runbooks"}
-                  class="text-indigo-400 hover:text-indigo-300"
-                >runbook</.link>.
-                Runs from an LLM (via the <.link
-                  navigate={~p"/app/agents"}
-                  class="text-indigo-400 hover:text-indigo-300"
-                >MCP API</.link>) land here too.
-              </p>
-            </div>
+          <%= cond do %>
+            <% any_filter_active?(@filter_params, @filters) -> %>
+              <span class="text-zinc-500">No runs match these filters.</span>
+            <% not connected?(@socket) -> %>
+              <%!-- Dead/pre-connect render: don't commit to the onboarding
+                   pitch before the live socket confirms the list is really
+                   empty — a populated account would otherwise flash it. --%>
+              <.loading_state />
+            <% true -> %>
+              <div class="mx-auto max-w-md">
+                <.icon name="hero-bolt" class="mx-auto h-8 w-8 text-zinc-700" />
+                <p class="mt-3 text-zinc-300">No runs yet.</p>
+                <p class="mt-1 text-xs leading-relaxed text-zinc-500">
+                  Dispatch one from a
+                  <.link navigate={~p"/app/runners"} class="text-indigo-400 hover:text-indigo-300">
+                    runner detail page
+                  </.link>
+                  or kick off a <.link
+                    navigate={~p"/app/runbooks"}
+                    class="text-indigo-400 hover:text-indigo-300"
+                  >runbook</.link>.
+                  Runs from an LLM (via the <.link
+                    navigate={~p"/app/agents"}
+                    class="text-indigo-400 hover:text-indigo-300"
+                  >MCP API</.link>) land here too.
+                </p>
+              </div>
           <% end %>
         </:empty>
         <:col :let={run} label="When" class="w-24">
