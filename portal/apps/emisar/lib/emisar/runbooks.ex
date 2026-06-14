@@ -167,9 +167,13 @@ defmodule Emisar.Runbooks do
 
   Requires `dispatch_run` permission; the runbook must be in the
   subject's account. Returns
-  `{:ok, %{execution_id: …, total: …, runs: […], errors: […]}}` once at
-  least one run row exists (`errors` carries this wave's row-less
-  dispatch failures), or `{:error, reason}` when nothing could be
+  `{:ok, %{execution_id: …, total: …, plan: […], runs: […], errors: […]}}`
+  once at least one run row exists — `plan` is the full resolved work-list
+  (`%{step_id, step_index, action_id, runner_id}` per step×runner the
+  execution will run, all waves) for the dispatch UI to render up front,
+  keyed (`step_id`) to match each run's `runbook_step_id`; `errors` carries
+  this wave's row-less dispatch failures — or `{:error, reason}` when
+  nothing could be
   dispatched: `:empty_runbook`, or `{:step_no_runners, n}` when step
   `n`'s group resolves to no active runners.
   """
@@ -209,6 +213,7 @@ defmodule Emisar.Runbooks do
          %{
            execution_id: execution.id,
            total: length(work_list),
+           plan: build_plan(work_list),
            runs: runs,
            errors: errors
          }}
@@ -430,4 +435,19 @@ defmodule Emisar.Runbooks do
   end
 
   defp step_id_for(step, idx), do: step["id"] || "step_#{idx + 1}"
+
+  # The full resolved work-list as lightweight plan rows for the dispatch UI:
+  # every (step, runner) the execution will run, keyed the same way the runs
+  # are (`step_id_for/2` ↔ a run's `runbook_step_id`), so the LiveView renders
+  # the whole plan up front and flips each row to its live run as runs arrive.
+  defp build_plan(work_list) do
+    Enum.map(work_list, fn {step, idx, runner_id} ->
+      %{
+        step_id: step_id_for(step, idx),
+        step_index: idx,
+        action_id: step["action"] || step["action_id"],
+        runner_id: runner_id
+      }
+    end)
+  end
 end

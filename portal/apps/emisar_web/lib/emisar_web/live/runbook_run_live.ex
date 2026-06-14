@@ -169,15 +169,19 @@ defmodule EmisarWeb.RunbookRunLive do
              socket.assigns.current_subject
            ) do
         {:ok, execution} ->
-          # The run rows stream in via the account-runs subscription (the
-          # engine broadcast each create before this returned), so the
-          # stream only needs resetting for a re-run.
+          # Render the whole plan as placeholder rows up front (one per
+          # step×runner the execution will run), then flip each in place to
+          # its live run as it streams in via the account-runs subscription —
+          # matched by (step_id, runner_id). The list is static; only statuses
+          # change. Reset clears a prior run's rows on a re-dispatch.
           {:noreply,
            socket
            |> assign(:execution, execution)
            |> assign(:run_statuses, %{})
            |> assign(:run_index, %{})
-           |> stream(:execution_runs, [], reset: true)
+           |> stream(:execution_runs, plan_rows(execution.plan, socket.assigns.runners),
+             reset: true
+           )
            |> put_flash(:info, "Runbook dispatched — #{execution.total} runs planned.")
            |> flash_dispatch_errors(execution.errors)}
 
@@ -214,11 +218,13 @@ defmodule EmisarWeb.RunbookRunLive do
     execution = socket.assigns.execution
 
     if execution && run.runbook_execution_id == execution.execution_id do
+      # Same dom_id as the placeholder (step_id, runner_id) → replaces it in
+      # place rather than appending a new row.
       {:noreply,
        socket
        |> assign(:run_statuses, Map.put(socket.assigns.run_statuses, run.id, run.status))
        |> assign(:run_index, Map.put(socket.assigns.run_index, run.id, run))
-       |> stream_insert(:execution_runs, run)}
+       |> stream_insert(:execution_runs, live_row(run))}
     else
       {:noreply, socket}
     end
@@ -230,7 +236,7 @@ defmodule EmisarWeb.RunbookRunLive do
   def handle_info(%{event: "presence_diff"}, socket) do
     socket =
       Enum.reduce(Map.values(socket.assigns.run_index), socket, fn run, socket ->
-        stream_insert(socket, :execution_runs, run)
+        stream_insert(socket, :execution_runs, live_row(run))
       end)
 
     {:noreply, socket}
@@ -258,6 +264,40 @@ defmodule EmisarWeb.RunbookRunLive do
     do: not Runners.online?(run.account_id, run.runner_id)
 
   defp offline_mid_run?(_), do: false
+
+  # The execution table streams unified row structs (not raw runs): a
+  # `:planned` placeholder per planned (step, runner), each flipped to its
+  # live run by a shared dom_id. `run` is nil until the run arrives.
+  defp plan_rows(plan, runners), do: Enum.map(plan, &plan_row(&1, runners))
+
+  defp plan_row(item, runners) do
+    %{
+      id: row_dom_id(item.step_id, item.runner_id),
+      action_id: item.action_id,
+      runner_name: runner_name(item.runner_id, runners),
+      status: :planned,
+      run: nil
+    }
+  end
+
+  defp live_row(run) do
+    %{
+      id: row_dom_id(run.runbook_step_id, run.runner_id),
+      action_id: run.action_id,
+      runner_name: run.runner.name,
+      status: run.status,
+      run: run
+    }
+  end
+
+  defp row_dom_id(step_id, runner_id), do: "run-#{step_id}-#{runner_id}"
+
+  defp runner_name(runner_id, runners) do
+    case Enum.find(runners, &(&1.id == runner_id)) do
+      nil -> "(unknown runner)"
+      runner -> runner.name
+    end
+  end
 
   def render(assigns) do
     ~H"""
@@ -315,29 +355,30 @@ defmodule EmisarWeb.RunbookRunLive do
             class="divide-y divide-zinc-900"
           >
             <li
-              :for={{dom_id, run} <- @streams.execution_runs}
+              :for={{dom_id, row} <- @streams.execution_runs}
               id={dom_id}
               class="flex items-center gap-3 px-5 py-2.5 text-sm"
             >
-              <.status_badge status={run.status} />
+              <.status_badge status={row.status} />
               <div class="min-w-0 flex-1">
-                <span class="truncate font-mono text-zinc-200">{run.action_id}</span>
+                <span class="truncate font-mono text-zinc-200">{row.action_id}</span>
                 <span class="ml-2 truncate text-xs text-zinc-500">
-                  on {run.runner.name}
+                  on {row.runner_name}
                 </span>
                 <span
-                  :if={offline_mid_run?(run)}
+                  :if={row.run && offline_mid_run?(row.run)}
                   class="ml-1 inline-flex items-center gap-1 text-xs text-amber-400"
                   title="Runner offline — this run may stall until it reconnects or times out"
                 >
                   <.icon name="hero-signal-slash" class="h-3 w-3" /> offline
                 </span>
               </div>
-              <span :if={run.duration_ms} class="text-xs tabular-nums text-zinc-500">
-                {run.duration_ms} ms
+              <span :if={row.run && row.run.duration_ms} class="text-xs tabular-nums text-zinc-500">
+                {row.run.duration_ms} ms
               </span>
               <.link
-                navigate={~p"/app/runs/#{run.id}"}
+                :if={row.run}
+                navigate={~p"/app/runs/#{row.run.id}"}
                 class="text-xs text-indigo-400 hover:text-indigo-300"
               >
                 View

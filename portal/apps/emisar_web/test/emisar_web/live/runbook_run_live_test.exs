@@ -58,7 +58,56 @@ defmodule EmisarWeb.RunbookRunLiveTest do
     runbook
   end
 
+  # N steps each targeting `runner` by id → N work-list items, so the engine
+  # dispatches the first wave (@batch_size = 5) and the rest stay planned.
+  defp published_runbook_with_steps!(user, account, runner, n) do
+    subject = owner_subject(user, account)
+
+    steps =
+      for i <- 1..n do
+        %{
+          "id" => "step#{i}",
+          "action_id" => "linux.uptime",
+          "args" => %{},
+          "runner_selector" => %{"runner_id" => [runner.id]}
+        }
+      end
+
+    {:ok, runbook} =
+      Emisar.Runbooks.create_runbook(
+        %{
+          "title" => "many steps",
+          "name" => "many steps",
+          "slug" => "many-steps",
+          "definition" => %{"steps" => steps}
+        },
+        subject
+      )
+
+    {:ok, runbook} = Emisar.Runbooks.publish(runbook, subject)
+    runbook
+  end
+
   describe "dispatch + live results" do
+    test "the whole plan renders up front as a static list of planned rows", %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      runner = Emisar.Fixtures.runner_fixture(account_id: account.id)
+      Emisar.Fixtures.action_fixture(runner: runner, action_id: "linux.uptime")
+      Emisar.Fixtures.policy_fixture(account_id: account.id)
+      runbook = published_runbook_with_steps!(user, account, runner, 6)
+
+      {:ok, lv, _} = live(conn, ~p"/app/runbooks/#{runbook.id}/run")
+      html = render_submit(lv, "dispatch", %{"reason" => "go"})
+
+      assert html =~ "6 runs planned"
+      # All 6 (step × runner) rows are there from the first render — each shows
+      # its action — not the ≤5 first-wave runs streaming in one at a time.
+      assert html |> String.split("linux.uptime") |> length() == 7
+      # The 6th item is beyond the first wave of 5, so it has no run yet and
+      # stays a planned placeholder (its dim-zinc ring is unique to :planned).
+      assert html =~ "ring-zinc-500/20"
+    end
+
     test "a run on an offline runner is flagged on its execution row", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
       runner = Emisar.Fixtures.runner_fixture(account_id: account.id, connected?: false)

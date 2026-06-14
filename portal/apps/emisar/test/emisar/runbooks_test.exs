@@ -112,6 +112,26 @@ defmodule Emisar.RunbooksTest do
       assert step1.reason == "runbook: deploy-check • step 1/3 — release 42"
     end
 
+    test "returns the full plan keyed to match the runs it creates" do
+      {_account, subject, runner} = account_with_runner()
+
+      runbook =
+        published_runbook!(subject, "plan-shape", uptime_steps(3, runner_target(runner)))
+
+      assert {:ok, %{plan: plan, runs: runs}} =
+               Runbooks.dispatch_runbook(runbook, "release", subject)
+
+      # One plan row per (step, runner) the execution will run — the dispatch
+      # UI renders these up front, then flips each to its live run.
+      assert Enum.map(plan, & &1.step_id) == ["step1", "step2", "step3"]
+      assert Enum.all?(plan, &(&1.runner_id == runner.id))
+
+      # Every created run matches a plan row exactly by (step_id, runner_id) —
+      # the key the LiveView flips a placeholder in place on.
+      plan_keys = MapSet.new(plan, &{&1.step_id, &1.runner_id})
+      assert Enum.all?(runs, &MapSet.member?(plan_keys, {&1.runbook_step_id, &1.runner_id}))
+    end
+
     test "a group target fans every step out across the group's active runners" do
       {account, subject, runner} = account_with_runner()
 
