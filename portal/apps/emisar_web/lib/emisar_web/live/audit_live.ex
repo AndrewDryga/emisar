@@ -201,27 +201,25 @@ defmodule EmisarWeb.AuditLive do
            questions. --%>
       <div class="mb-4 flex flex-wrap items-end gap-3">
         <form phx-submit="filter_dates" class="flex flex-wrap items-end gap-2">
-          <label class="flex flex-col gap-1 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
-            From (UTC)
+          <label class="flex flex-col text-xs font-medium text-zinc-400">
+            <span class="mb-1">From (UTC)</span>
             <input
               type="datetime-local"
               name="from"
               value={@from}
-              class="rounded-lg border-0 bg-zinc-900 px-2 py-1 text-xs text-zinc-200 ring-1 ring-zinc-800 focus:ring-indigo-500"
+              class="rounded-lg border border-zinc-700 bg-zinc-950 px-2 py-1.5 text-xs text-zinc-200 [color-scheme:dark]"
             />
           </label>
-          <label class="flex flex-col gap-1 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
-            To (UTC)
+          <label class="flex flex-col text-xs font-medium text-zinc-400">
+            <span class="mb-1">To (UTC)</span>
             <input
               type="datetime-local"
               name="to"
               value={@to}
-              class="rounded-lg border-0 bg-zinc-900 px-2 py-1 text-xs text-zinc-200 ring-1 ring-zinc-800 focus:ring-indigo-500"
+              class="rounded-lg border border-zinc-700 bg-zinc-950 px-2 py-1.5 text-xs text-zinc-200 [color-scheme:dark]"
             />
           </label>
-          <button class="rounded-lg bg-zinc-800 px-3 py-1.5 text-xs font-medium text-zinc-200 hover:bg-zinc-700">
-            Apply dates
-          </button>
+          <.button variant="secondary" size="sm" type="submit">Apply dates</.button>
           <.link
             :if={@from != "" or @to != ""}
             patch={~p"/app/audit?#{Map.drop(@filter_params, ["from", "to"])}"}
