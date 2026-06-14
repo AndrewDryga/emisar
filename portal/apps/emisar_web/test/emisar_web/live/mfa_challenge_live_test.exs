@@ -64,5 +64,11 @@ defmodule EmisarWeb.MfaChallengeLiveTest do
     recovery_html = render_click(lv, "toggle_recovery", %{})
     assert recovery_html =~ "one-time recovery codes"
     refute recovery_html =~ "authenticator app to finish signing in"
+
+    # Terminal escape for "lost device AND codes" shows only on the recovery
+    # path (no admin reset exists, so it honestly points to support@).
+    refute html =~ "Lost your recovery codes too?"
+    assert recovery_html =~ "Lost your recovery codes too?"
+    assert recovery_html =~ "support@emisar.dev"
   end
 end

@@ -94,6 +94,22 @@ defmodule EmisarWeb.MfaChallengeLive do
         </button>
       </p>
 
+      <%!-- Terminal escape once they're on the recovery path: with both the
+           authenticator AND the codes gone, the toggle + sign-in link just
+           loop, locking out an enforced-MFA member. There's no admin
+           "reset member 2FA" yet (BACKLOG), so support@ is the only honest
+           recovery path — don't promise an admin reset that can't happen. --%>
+      <p :if={@recovery?} class="mt-2 text-center text-xs text-zinc-500">
+        Lost your recovery codes too? Contact
+        <.link
+          href="mailto:support@emisar.dev"
+          class="font-medium text-indigo-400 hover:text-indigo-300"
+        >
+          support@emisar.dev
+        </.link>
+        to recover access.
+      </p>
+
       <p class="mt-2 text-center text-sm text-zinc-400">
         <.link href={~p"/sign_in"} class="font-medium text-indigo-400 hover:text-indigo-300">
           ← Back to sign in
