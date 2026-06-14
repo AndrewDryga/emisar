@@ -14,6 +14,9 @@ kill_timeout = "30s"
   PHX_HOST = "emisar.dev"
   PORT = "4000"
   POOL_SIZE = "20"
+  # Cluster the BEAM nodes via Fly's 6PN DNS so PubSub + Presence span machines
+  # (see rel/env.sh.eex). DNSCluster resolves this to every machine's AAAA.
+  DNS_CLUSTER_QUERY = "emisar.internal"
 
 [http_service]
   internal_port = 4000
