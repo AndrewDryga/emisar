@@ -341,15 +341,16 @@ defmodule EmisarWeb.ApprovalsLive do
                   </div>
                 </:meta>
                 <:actions>
-                  <button
+                  <.button
                     :if={Approvals.subject_can_decide_approval?(@current_subject)}
+                    variant="danger"
+                    size="sm"
                     phx-click="revoke_grant"
                     phx-value-id={g.id}
                     data-confirm={"Revoke this grant? Calls to #{g.action_id} from #{(g.api_key && g.api_key.name) || "the key"} will require fresh approval."}
-                    class="rounded-lg border border-rose-500/40 px-2.5 py-1 text-xs font-medium text-rose-200 hover:bg-rose-500/10"
                   >
                     Revoke
-                  </button>
+                  </.button>
                 </:actions>
               </.list_row>
             </:item>

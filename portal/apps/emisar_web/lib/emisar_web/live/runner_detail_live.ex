@@ -307,13 +307,14 @@ defmodule EmisarWeb.RunnerDetailLive do
             Removes it from the catalog and rejects future reconnects. Audit history is preserved.
           </:body>
           <:button>
-            <button
+            <.button
+              variant="danger"
+              size="md"
               phx-click="disable"
               data-confirm="Disable this runner? It will not be able to reconnect."
-              class="rounded-lg border border-rose-500/40 px-3 py-1.5 text-sm font-medium text-rose-200 hover:bg-rose-500/10"
             >
               Disable runner
-            </button>
+            </.button>
           </:button>
         </.danger_zone>
       </div>
@@ -358,13 +359,14 @@ defmodule EmisarWeb.RunnerDetailLive do
             re-bootstrap a host. Run history and audit events are preserved.
           </:body>
           <:button>
-            <button
+            <.button
+              variant="danger"
+              size="md"
               phx-click="delete"
               data-confirm="Delete this runner row? The host can re-register on next connect."
-              class="rounded-lg border border-rose-500/40 px-3 py-1.5 text-sm font-medium text-rose-200 hover:bg-rose-500/10"
             >
               Delete runner
-            </button>
+            </.button>
           </:button>
         </.danger_zone>
       </div>

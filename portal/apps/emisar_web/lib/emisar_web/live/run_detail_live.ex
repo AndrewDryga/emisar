@@ -116,17 +116,18 @@ defmodule EmisarWeb.RunDetailLive do
         </span>
       </:title>
       <:actions>
-        <button
+        <.button
           :if={
             @run.status in [:sent, :running, :pending] and
               Runs.subject_can_cancel_run?(@current_subject)
           }
+          variant="danger"
+          size="md"
           phx-click="cancel"
           data-confirm="Cancel this run? The runner will SIGTERM then SIGKILL."
-          class="rounded-lg border border-rose-500/40 px-3 py-1.5 text-sm font-medium text-rose-200 hover:bg-rose-500/10"
         >
           Cancel run
-        </button>
+        </.button>
       </:actions>
 
       <%!-- Single horizontal meta strip — status leads (so a glance

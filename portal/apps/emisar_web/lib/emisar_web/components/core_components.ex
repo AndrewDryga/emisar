@@ -154,12 +154,22 @@ defmodule EmisarWeb.CoreComponents do
   @doc """
   Renders a button.
 
+  Variants: `primary` (default, filled indigo), `secondary` (bordered neutral),
+  `danger` (bordered rose — destructive actions read identically everywhere),
+  `success` (filled emerald — affirmative), `ghost` (text-only). Sizes: `lg`
+  (default), `md`, `sm`. An optional leading `icon` (heroicon name) renders before
+  the label. `disabled` is honored by every variant.
+
   ## Examples
 
       <.button>Send!</.button>
-      <.button phx-click="go" class="ml-2">Send!</.button>
+      <.button variant="danger" size="sm" phx-click="revoke" phx-value-id={id}>Revoke</.button>
+      <.button variant="success" icon="hero-check">Approve</.button>
   """
   attr :type, :string, default: nil
+  attr :variant, :string, default: "primary", values: ~w(primary secondary danger success ghost)
+  attr :size, :string, default: "lg", values: ~w(sm md lg)
+  attr :icon, :string, default: nil, doc: ~s(leading heroicon name, e.g. "hero-plus")
   attr :class, :string, default: nil
   attr :rest, :global, include: ~w(disabled form name value)
 
@@ -169,20 +179,42 @@ defmodule EmisarWeb.CoreComponents do
     ~H"""
     <button
       type={@type}
-      class={[
-        "phx-submit-loading:opacity-75 inline-flex items-center justify-center gap-2",
-        "rounded-lg bg-indigo-500 px-4 py-2.5 text-sm font-semibold text-zinc-950",
-        "shadow-sm transition hover:bg-indigo-400 active:bg-indigo-600",
-        "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400",
-        "disabled:opacity-50 disabled:cursor-not-allowed",
-        @class
-      ]}
+      class={[button_base(), button_variant(@variant), button_size(@size), @class]}
       {@rest}
     >
-      {render_slot(@inner_block)}
+      <.icon :if={@icon} name={@icon} class="h-4 w-4" />{render_slot(@inner_block)}
     </button>
     """
   end
+
+  defp button_base do
+    "phx-submit-loading:opacity-75 inline-flex items-center justify-center gap-2 rounded-lg transition " <>
+      "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 " <>
+      "disabled:opacity-50 disabled:cursor-not-allowed"
+  end
+
+  defp button_variant("primary"),
+    do:
+      "bg-indigo-500 font-semibold text-zinc-950 shadow-sm hover:bg-indigo-400 active:bg-indigo-600 focus-visible:outline-indigo-400"
+
+  defp button_variant("success"),
+    do:
+      "bg-emerald-500 font-semibold text-zinc-950 shadow-sm hover:bg-emerald-400 active:bg-emerald-600 focus-visible:outline-emerald-400"
+
+  defp button_variant("danger"),
+    do:
+      "border border-rose-500/40 font-medium text-rose-200 hover:bg-rose-500/10 focus-visible:outline-rose-400"
+
+  defp button_variant("secondary"),
+    do:
+      "border border-zinc-800 font-medium text-zinc-200 hover:bg-zinc-900 focus-visible:outline-zinc-600"
+
+  defp button_variant("ghost"),
+    do: "font-medium text-zinc-300 hover:bg-zinc-900 focus-visible:outline-zinc-600"
+
+  defp button_size("lg"), do: "px-4 py-2.5 text-sm"
+  defp button_size("md"), do: "px-3 py-1.5 text-sm"
+  defp button_size("sm"), do: "px-2.5 py-1 text-xs"
 
   @doc """
   Renders an input with label and error messages.

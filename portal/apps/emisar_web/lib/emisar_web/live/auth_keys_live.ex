@@ -403,17 +403,18 @@ defmodule EmisarWeb.AuthKeysLive do
                 </span>
               </:meta>
               <:actions>
-                <button
+                <.button
                   :if={
                     is_nil(key.revoked_at) and Runners.subject_can_manage_auth_keys?(@current_subject)
                   }
+                  variant="danger"
+                  size="sm"
                   phx-click="revoke"
                   phx-value-id={key.id}
                   data-confirm="Revoke this auth key? Existing runners aren't affected; new registrations will fail."
-                  class="rounded-lg border border-rose-500/40 px-2.5 py-1 text-xs font-medium text-rose-200 hover:bg-rose-500/10"
                 >
                   Revoke
-                </button>
+                </.button>
               </:actions>
             </.list_row>
           </:item>

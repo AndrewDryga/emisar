@@ -666,17 +666,18 @@ defmodule EmisarWeb.AgentsLive do
                 </div>
               </:meta>
               <:actions>
-                <button
+                <.button
                   :if={
                     is_nil(key.revoked_at) and ApiKeys.subject_can_manage_api_keys?(@current_subject)
                   }
+                  variant="danger"
+                  size="sm"
                   phx-click="revoke"
                   phx-value-id={key.id}
                   data-confirm="Revoke this API key? The connected client will get 401s on its next call."
-                  class="rounded-lg border border-rose-500/40 px-2.5 py-1 text-xs font-medium text-rose-200 hover:bg-rose-500/10"
                 >
                   Revoke
-                </button>
+                </.button>
               </:actions>
             </.list_row>
           </:item>

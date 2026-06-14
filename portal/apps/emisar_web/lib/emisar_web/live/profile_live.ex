@@ -549,13 +549,14 @@ defmodule EmisarWeb.ProfileLive do
                 >
                   Regenerate recovery codes
                 </button>
-                <button
+                <.button
+                  variant="danger"
+                  size="md"
                   phx-click="disable_mfa"
                   data-confirm="Disable MFA on your account?"
-                  class="rounded-lg border border-rose-500/40 px-3 py-1.5 text-sm font-medium text-rose-200 hover:bg-rose-500/10"
                 >
                   Disable MFA
-                </button>
+                </.button>
               </div>
             <% @mfa_uri -> %>
               <div class="grid grid-cols-1 gap-6 sm:grid-cols-[auto_1fr]">
@@ -631,14 +632,15 @@ defmodule EmisarWeb.ProfileLive do
           hint="Each row is one signed-in browser or device. Revoke any you don't recognize — your current device stays signed in."
         >
           <:meta>
-            <button
+            <.button
               :if={length(@sessions) > 1}
+              variant="danger"
+              size="sm"
               phx-click="revoke_other_sessions"
               data-confirm="Sign out of every other browser and device?"
-              class="rounded-lg border border-rose-500/40 px-3 py-1.5 text-xs font-medium text-rose-200 hover:bg-rose-500/10"
             >
               Sign out everywhere else
-            </button>
+            </.button>
           </:meta>
 
           <ul class="divide-y divide-zinc-900 rounded-lg border border-zinc-900 bg-zinc-950/40 text-sm">

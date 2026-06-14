@@ -402,15 +402,17 @@ defmodule EmisarWeb.AuditLive do
                   <span :if={key.created_by}>· by {key.created_by.email}</span>
                 </div>
               </div>
-              <button
+              <.button
                 :if={is_nil(key.revoked_at)}
+                variant="danger"
+                size="sm"
+                class="shrink-0"
                 phx-click="revoke_export_key"
                 phx-value-id={key.id}
                 data-confirm="Revoke this export token? Any active SIEM collector using it will start receiving 401s."
-                class="shrink-0 rounded-lg border border-rose-500/40 px-2.5 py-1 text-xs font-medium text-rose-200 hover:bg-rose-500/10"
               >
                 Revoke
-              </button>
+              </.button>
             </li>
           </ul>
         </div>
