@@ -59,10 +59,6 @@ defmodule EmisarWeb.DashboardLive do
       :recent_runs,
       list_or_empty(Runs.list_recent_runs(subject, limit: 6, preload: [:runner]))
     )
-    |> assign(
-      :recent_failures,
-      list_or_empty(Runs.list_recent_failed_runs(subject, limit: 5, preload: [:runner]))
-    )
     |> assign(:run_stats, unwrap_ok(Runs.fetch_run_stats(subject, hours: 24)))
     |> assign(:pending_approvals, pending)
     |> assign(:has_llm_connected?, api_keys != [])
@@ -125,7 +121,6 @@ defmodule EmisarWeb.DashboardLive do
         pending_approvals={@pending_approvals}
         pending_approvals_count={@pending_approvals_count}
         recent_runs={@recent_runs}
-        recent_failures={@recent_failures}
         first_runner_id={@first_runner_id}
         run_stats={@run_stats}
         has_llm_connected?={@has_llm_connected?}
@@ -209,15 +204,12 @@ defmodule EmisarWeb.DashboardLive do
   #   1. Banners (plan-at-limit, all-runners-offline) — only when bad
   #   2. Stats row — three numbers, never four
   #   3. Pending approvals (amber) — full width, only when something waits.
-  #   4. Recent failures (rose) — full width, only when a run has failed, so a
-  #      failure is actionable (a link to the run), not just the stat-tile number.
-  #   5. Recent runs — last 6, single column, full width
+  #   4. Recent runs — last 6, single column, full width
   attr :runners_connected, :integer, required: true
   attr :runners_total, :integer, required: true
   attr :pending_approvals, :list, required: true
   attr :pending_approvals_count, :integer, required: true
   attr :recent_runs, :list, required: true
-  attr :recent_failures, :list, required: true
   attr :first_runner_id, :string, default: nil
   attr :run_stats, :map, required: true
   attr :has_llm_connected?, :boolean, required: true
@@ -276,38 +268,6 @@ defmodule EmisarWeb.DashboardLive do
                 </div>
               </div>
               <.icon name="hero-arrow-right" class="h-4 w-4 shrink-0 text-amber-300/70" />
-            </.link>
-          </li>
-        </ul>
-      </.attention_panel>
-    </div>
-
-    <%!-- Recent failures — runs that failed / errored / timed out, the trouble
-         the operator should look at. Rose (not the approvals amber) so it reads
-         as "something broke" at a glance; shown only when there's a failure. --%>
-    <div :if={@recent_failures != []} class="mt-6">
-      <.attention_panel
-        tone={:rose}
-        icon="hero-exclamation-triangle"
-        title="Recent failures"
-        count={length(@recent_failures)}
-        href={~p"/app/runs"}
-        cta="View runs"
-      >
-        <ul class="divide-y divide-rose-500/10">
-          <li :for={run <- @recent_failures}>
-            <.link
-              navigate={~p"/app/runs/#{run.id}"}
-              class="flex items-center justify-between gap-3 py-2.5 text-sm hover:opacity-90"
-            >
-              <div class="min-w-0">
-                <div class="truncate font-mono text-rose-100">{run.action_id}</div>
-                <div class="truncate text-xs text-rose-200/60">
-                  {run.status} · {relative_time(run.inserted_at)}<span :if={run.runner}>
-                    · {run.runner.name}</span>
-                </div>
-              </div>
-              <.icon name="hero-arrow-right" class="h-4 w-4 shrink-0 text-rose-300/70" />
             </.link>
           </li>
         </ul>
@@ -447,25 +407,24 @@ defmodule EmisarWeb.DashboardLive do
   attr :count, :integer, required: true
   attr :href, :string, required: true
   attr :cta, :string, required: true
-  attr :tone, :atom, default: :amber, values: [:amber, :rose]
   slot :inner_block, required: true
 
+  # Amber "needs a decision" panel (pending approvals — the only attention panel
+  # on the dashboard). The slot content carries its own matching amber tone.
   defp attention_panel(assigns) do
-    assigns = assign(assigns, :palette, panel_palette(assigns.tone))
-
     ~H"""
-    <section class={["rounded-xl border p-5", @palette.section]}>
+    <section class="rounded-xl border border-amber-500/30 bg-amber-500/[0.04] p-5">
       <header class="flex items-center justify-between gap-3">
         <div class="flex items-center gap-2">
-          <.icon name={@icon} class={"h-4 w-4 #{@palette.icon}"} />
-          <h3 class={["text-sm font-semibold", @palette.title]}>
+          <.icon name={@icon} class="h-4 w-4 text-amber-300" />
+          <h3 class="text-sm font-semibold text-amber-100">
             {@title}
-            <span class={["ml-1 rounded px-1.5 py-0.5 text-xs font-medium", @palette.badge]}>
+            <span class="ml-1 rounded bg-amber-500/20 px-1.5 py-0.5 text-xs font-medium text-amber-200">
               {@count}
             </span>
           </h3>
         </div>
-        <.link navigate={@href} class={["text-xs font-medium", @palette.cta]}>
+        <.link navigate={@href} class="text-xs font-medium text-amber-200 hover:text-amber-100">
           {@cta} →
         </.link>
       </header>
@@ -473,28 +432,6 @@ defmodule EmisarWeb.DashboardLive do
     </section>
     """
   end
-
-  # attention_panel frame colors per tone — amber = "needs a decision" (pending
-  # approvals), rose = "something failed" (run failures). Kept visually distinct
-  # so the two panels read apart at a glance; the slot content carries its own
-  # matching tone.
-  defp panel_palette(:rose),
-    do: %{
-      section: "border-rose-500/30 bg-rose-500/[0.04]",
-      icon: "text-rose-300",
-      title: "text-rose-100",
-      badge: "bg-rose-500/20 text-rose-200",
-      cta: "text-rose-200 hover:text-rose-100"
-    }
-
-  defp panel_palette(:amber),
-    do: %{
-      section: "border-amber-500/30 bg-amber-500/[0.04]",
-      icon: "text-amber-300",
-      title: "text-amber-100",
-      badge: "bg-amber-500/20 text-amber-200",
-      cta: "text-amber-200 hover:text-amber-100"
-    }
 
   defp runners_offline_banner(assigns) do
     ~H"""
