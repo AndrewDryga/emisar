@@ -102,7 +102,8 @@ defmodule EmisarWeb.AuditLiveTest do
       assert html =~ "renamed-prod"
     end
 
-    test "the actor links into a filtered audit view, and the date form renders", %{conn: conn} do
+    test "the actor links into a filtered audit view, and the date filters render in the bar",
+         %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
       actor_id = Ecto.UUID.generate()
 
@@ -118,14 +119,20 @@ defmodule EmisarWeb.AuditLiveTest do
       # The actor value links to "what did this identity do", not its
       # resource page.
       assert html =~ "/app/audit?actor_id=#{actor_id}"
+      # From/To are real %Filter{} inputs in the unified LiveTable bar now —
+      # not a separate hand-rolled date form.
       assert html =~ "From (UTC)"
       assert html =~ "To (UTC)"
+      assert html =~ ~s(name="from")
+      assert html =~ ~s(name="to")
+      assert html =~ ~s(type="datetime-local")
+      refute html =~ "Apply dates"
       # The free-text trace filter (paste a request_id/type) is wired in.
       assert html =~ "Search (type or request id)"
       assert html =~ ~s(name="q")
     end
 
-    test "a relative date preset narrows to recent events without UTC math", %{conn: conn} do
+    test "the From date filter narrows to recent events", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
 
       # Distinct actor_labels — event_type alone also appears in the filter
@@ -148,16 +155,19 @@ defmodule EmisarWeb.AuditLiveTest do
           actor_label: "fresh-actor"
         )
 
-      {:ok, lv, html} = live(conn, ~p"/app/audit")
-      assert html =~ "Last 24h"
+      # Unfiltered, the 3-day-old event shows.
+      {:ok, _lv, html} = live(conn, ~p"/app/audit")
       assert html =~ "ancient-actor"
 
-      # "Last 24h" patches to a from-bound; mounting it drops the 3-day-old one.
-      render_click(lv, "preset_range", %{"window" => "24h"})
-      to = assert_patch(lv)
-      assert to =~ "from="
+      # A From bound 24h ago (datetime-local "YYYY-MM-DDTHH:MM", read as UTC)
+      # drops the 3-day-old event and keeps the fresh one — applied through the
+      # unified filter mechanism, no preset buttons or UTC math needed.
+      from =
+        DateTime.utc_now()
+        |> DateTime.add(-86_400, :second)
+        |> Calendar.strftime("%Y-%m-%dT%H:%M")
 
-      {:ok, _lv2, html} = live(conn, to)
+      {:ok, _lv2, html} = live(conn, ~p"/app/audit?from=#{from}")
       assert html =~ "fresh-actor"
       refute html =~ "ancient-actor"
     end

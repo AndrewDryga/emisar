@@ -36,6 +36,10 @@ defmodule EmisarWeb.LiveTableTest do
     %Filter{name: name, type: :boolean, fun: fn q -> {q, true} end}
   end
 
+  defp datetime_filter(name) do
+    %Filter{name: name, type: :datetime, fun: fn q, _ -> {q, true} end}
+  end
+
   describe "params_to_opts/2" do
     test "empty params → empty filter + page opts" do
       assert [filter: [], page: []] = LiveTable.params_to_opts(%{}, [])
@@ -77,6 +81,20 @@ defmodule EmisarWeb.LiveTableTest do
 
       assert [filter: [archived: false], page: []] =
                LiveTable.params_to_opts(%{"archived" => "false"}, filters)
+    end
+
+    test "datetime filters parse the wallclock value to a UTC DateTime" do
+      filters = [datetime_filter(:from)]
+
+      assert [filter: [from: ~U[2026-06-14 10:30:00Z]], page: []] =
+               LiveTable.params_to_opts(%{"from" => "2026-06-14T10:30"}, filters)
+    end
+
+    test "an unparseable datetime drops the filter rather than erroring the list" do
+      filters = [datetime_filter(:from)]
+
+      assert [filter: [], page: []] =
+               LiveTable.params_to_opts(%{"from" => "not-a-date"}, filters)
     end
 
     test "blank string drops the filter (treated as \"not set\")" do

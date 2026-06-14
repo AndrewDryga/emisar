@@ -443,7 +443,7 @@ defmodule Emisar.AuditTest do
       assert Enum.map(events, & &1.actor_id) == [actor_a]
     end
 
-    test "occurred_after / occurred_before bound the window" do
+    test "the from / to date-range filters bound the window" do
       account = account_fixture()
       subject = subject_for(user_fixture(), account, role: :owner)
       {:ok, _} = Audit.log(account.id, "x", actor_kind: "system")
@@ -451,9 +451,10 @@ defmodule Emisar.AuditTest do
       future = DateTime.add(DateTime.utc_now(), 3600, :second)
       past = DateTime.add(DateTime.utc_now(), -3600, :second)
 
-      assert {:ok, [], _} = Audit.list_events(subject, occurred_after: future)
-      assert {:ok, [_ | _], _} = Audit.list_events(subject, occurred_before: future)
-      assert {:ok, [_ | _], _} = Audit.list_events(subject, occurred_after: past)
+      # from/to are LiveTable %Filter{} datetime filters now — applied via :filter.
+      assert {:ok, [], _} = Audit.list_events(subject, filter: [from: future])
+      assert {:ok, [_ | _], _} = Audit.list_events(subject, filter: [to: future])
+      assert {:ok, [_ | _], _} = Audit.list_events(subject, filter: [from: past])
     end
 
     test "actor_id can't surface another account's events" do

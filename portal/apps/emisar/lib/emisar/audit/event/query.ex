@@ -298,9 +298,8 @@ defmodule Emisar.Audit.Event.Query do
   def by_actor_id(queryable, id),
     do: where(queryable, [events: e], e.actor_id == ^id)
 
-  def occurred_after(queryable, ts),
-    do: where(queryable, [events: e], e.occurred_at > ^ts)
-
+  # Retention sweep cutoff (delete events strictly older than `ts`). The audit
+  # page's From/To window goes through the inclusive `:from`/`:to` filters above.
   def occurred_before(queryable, ts),
     do: where(queryable, [events: e], e.occurred_at < ^ts)
 
@@ -363,6 +362,21 @@ defmodule Emisar.Audit.Event.Query do
           {queryable,
            dynamic([events: e], ilike(e.event_type, ^pattern) or ilike(e.request_id, ^pattern))}
         end
+      },
+      # Date range — backed by the same %Filter{} mechanism as the rest, so the
+      # bar's clear (×) wipes them too. Inclusive bounds (a "From 10:00" pick
+      # includes 10:00:00); the LiveTable datetime input parses the UTC value.
+      %Filter{
+        name: :from,
+        title: "From (UTC)",
+        type: :datetime,
+        fun: fn queryable, ts -> {queryable, dynamic([events: e], e.occurred_at >= ^ts)} end
+      },
+      %Filter{
+        name: :to,
+        title: "To (UTC)",
+        type: :datetime,
+        fun: fn queryable, ts -> {queryable, dynamic([events: e], e.occurred_at <= ^ts)} end
       },
       %Filter{
         name: :event_type,

@@ -229,17 +229,13 @@ defmodule Emisar.Audit do
   def list_events(%Subject{} = subject, opts \\ []) do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_audit_permission()) do
-      # The audit page's identity + date-range filters ride as opts (they
-      # don't fit LiveTable's list/boolean filter form). Pop them off and
-      # compose the matching Query helpers; the rest is filter/page opts.
+      # actor_id rides as an opt — the dynamic "by actor" picker isn't in the
+      # static filters/0 list, so it can't go through :filter. The From/To
+      # window and everything else are LiveTable filters, applied via :filter.
       {actor_id, opts} = Keyword.pop(opts, :actor_id)
-      {after_ts, opts} = Keyword.pop(opts, :occurred_after)
-      {before_ts, opts} = Keyword.pop(opts, :occurred_before)
 
       Event.Query.all()
       |> filter_by_actor_id(actor_id)
-      |> filter_occurred_after(after_ts)
-      |> filter_occurred_before(before_ts)
       |> Authorizer.for_subject(subject)
       |> Repo.list(Event.Query, opts)
     end
@@ -279,16 +275,6 @@ defmodule Emisar.Audit do
 
   defp filter_by_actor_id(queryable, nil), do: queryable
   defp filter_by_actor_id(queryable, id), do: Event.Query.by_actor_id(queryable, id)
-
-  defp filter_occurred_after(queryable, nil), do: queryable
-
-  defp filter_occurred_after(queryable, %DateTime{} = ts),
-    do: Event.Query.occurred_after(queryable, ts)
-
-  defp filter_occurred_before(queryable, nil), do: queryable
-
-  defp filter_occurred_before(queryable, %DateTime{} = ts),
-    do: Event.Query.occurred_before(queryable, ts)
 
   @doc """
   SIEM export — cursor-paginated forward sweep of every event the

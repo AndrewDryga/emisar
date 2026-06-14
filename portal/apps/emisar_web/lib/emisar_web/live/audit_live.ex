@@ -90,10 +90,11 @@ defmodule EmisarWeb.AuditLive do
     do: {:noreply, assign(socket, :export_secret, nil)}
 
   def handle_event("filter", params, socket) do
-    # The LiveTable filter form doesn't carry the identity/date params, so
-    # merge them back or a dropdown change would silently drop an active
-    # actor/date filter.
-    preserved = Map.take(socket.assigns.filter_params, ["actor_id", "from", "to"])
+    # The filter form doesn't carry actor_id when the "by actor" picker is
+    # hidden (it's set by clicking a row's actor), so merge it back or a
+    # dropdown change would silently drop an active actor filter. From/To now
+    # live in the form, so the form params carry them.
+    preserved = Map.take(socket.assigns.filter_params, ["actor_id"])
     merged = Map.merge(preserved, params)
 
     # Switching the actor kind invalidates a previously-picked actor (its id
@@ -108,30 +109,6 @@ defmodule EmisarWeb.AuditLive do
 
     {:noreply, LiveTable.apply_filter(socket, ~p"/app/audit", merged)}
   end
-
-  def handle_event("filter_dates", %{"from" => from, "to" => to}, socket) do
-    # Keep the LiveTable filters + actor filter; replace the date bounds.
-    params = Map.merge(socket.assigns.filter_params, %{"from" => from, "to" => to})
-    {:noreply, LiveTable.apply_filter(socket, ~p"/app/audit", params)}
-  end
-
-  # Relative presets sidestep the UTC-vs-local math the From/To inputs force on
-  # an operator mid-incident — "last hour" needs no timezone reasoning. Set
-  # `from` to now − window (formatted like the datetime-local value
-  # `parse_datetime/1` parses) and clear `to` (= "until now").
-  def handle_event("preset_range", %{"window" => window}, socket) do
-    from =
-      DateTime.utc_now()
-      |> DateTime.add(-window_seconds(window), :second)
-      |> Calendar.strftime("%Y-%m-%dT%H:%M")
-
-    params = Map.merge(socket.assigns.filter_params, %{"from" => from, "to" => ""})
-    {:noreply, LiveTable.apply_filter(socket, ~p"/app/audit", params)}
-  end
-
-  defp window_seconds("1h"), do: 3600
-  defp window_seconds("24h"), do: 86_400
-  defp window_seconds("7d"), do: 604_800
 
   defp assign_export_keys(socket) do
     case ApiKeys.list_audit_export_keys_for_account(socket.assigns.current_subject,
@@ -174,26 +151,20 @@ defmodule EmisarWeb.AuditLive do
 
     actor_id = blank_to_nil(params["actor_id"])
 
-    # Identity (actor_id) + date-range (from/to) ride as URL params outside
-    # the LiveTable filter form, so they're threaded into list_events opts
-    # directly. Dates are parsed as UTC wallclock (operators read the column
-    # in UTC). The raw strings re-populate the date inputs.
+    # actor_id rides as a URL param outside the filter form (it's set by
+    # clicking a row's actor), so it's threaded into list_events directly.
+    # From/To are LiveTable datetime filters now — params_to_opts casts and
+    # applies them via the :filter opt like every other filter.
     socket =
       socket
       |> assign(:filters, filters)
       |> assign(:filter_params, params)
       |> assign(:actor_id, actor_id)
-      |> assign(:from, params["from"] || "")
-      |> assign(:to, params["to"] || "")
 
     opts =
       params
       |> LiveTable.params_to_opts(base_filters)
-      |> Keyword.merge(
-        actor_id: actor_id,
-        occurred_after: parse_datetime(params["from"]),
-        occurred_before: parse_datetime(params["to"])
-      )
+      |> Keyword.put(:actor_id, actor_id)
 
     case Audit.list_events(socket.assigns.current_subject, opts) do
       {:ok, events, meta} ->
@@ -221,17 +192,6 @@ defmodule EmisarWeb.AuditLive do
   defp blank_to_nil(value) when value in [nil, ""], do: nil
   defp blank_to_nil(value), do: value
 
-  # datetime-local input → UTC DateTime. nil/blank skips the bound; an
-  # unparseable value is dropped (the filter just doesn't apply).
-  defp parse_datetime(value) when value in [nil, ""], do: nil
-
-  defp parse_datetime(value) when is_binary(value) do
-    case DateTime.from_iso8601(value <> ":00Z") do
-      {:ok, datetime, _} -> datetime
-      _ -> nil
-    end
-  end
-
   defp actor_label_for(nil, _events), do: nil
 
   defp actor_label_for(actor_id, events) do
@@ -252,65 +212,20 @@ defmodule EmisarWeb.AuditLive do
     >
       <:title>Audit log</:title>
 
-      <%!-- Date-range + identity filters live outside the LiveTable filter
-           bar (it only does list/boolean filters). "What did X do" and
-           "what happened last Tuesday" are the receipt's two core
-           questions. --%>
-      <div class="mb-4 flex flex-wrap items-end gap-3">
-        <form phx-submit="filter_dates" class="flex flex-wrap items-end gap-2">
-          <label class="flex flex-col text-xs font-medium text-zinc-400">
-            <span class="mb-1">From (UTC)</span>
-            <input
-              type="datetime-local"
-              name="from"
-              value={@from}
-              class="rounded-lg border border-zinc-700 bg-zinc-950 px-2 py-1.5 text-xs text-zinc-200 [color-scheme:dark]"
-            />
-          </label>
-          <label class="flex flex-col text-xs font-medium text-zinc-400">
-            <span class="mb-1">To (UTC)</span>
-            <input
-              type="datetime-local"
-              name="to"
-              value={@to}
-              class="rounded-lg border border-zinc-700 bg-zinc-950 px-2 py-1.5 text-xs text-zinc-200 [color-scheme:dark]"
-            />
-          </label>
-          <.button variant="secondary" size="sm" type="submit">Apply dates</.button>
-          <%!-- Relative presets — no UTC math needed for the common
-               "what just happened" question. type="button" so they don't
-               submit the From/To form. --%>
-          <button
-            :for={{label, window} <- [{"Last hour", "1h"}, {"Last 24h", "24h"}, {"Last 7d", "7d"}]}
-            type="button"
-            phx-click="preset_range"
-            phx-value-window={window}
-            class="rounded-full border border-zinc-700 bg-zinc-900 px-2.5 py-1 text-xs text-zinc-400 hover:border-zinc-500 hover:text-zinc-200"
-          >
-            {label}
-          </button>
-          <.link
-            :if={@from != "" or @to != ""}
-            patch={~p"/app/audit?#{Map.drop(@filter_params, ["from", "to"])}"}
-            class="text-xs text-zinc-500 hover:text-zinc-300"
-          >
-            Clear dates
-          </.link>
-        </form>
-
-        <div
-          :if={@actor_id}
-          class="flex items-center gap-2 rounded-lg bg-indigo-500/10 px-3 py-1.5 text-xs text-indigo-200 ring-1 ring-indigo-500/30"
+      <%!-- Row-click "what did X do" chip with a one-click clear. Date range +
+           everything else live in the unified LiveTable filter bar below. --%>
+      <div
+        :if={@actor_id}
+        class="mb-4 flex w-max items-center gap-2 rounded-lg bg-indigo-500/10 px-3 py-1.5 text-xs text-indigo-200 ring-1 ring-indigo-500/30"
+      >
+        <span>Actor: <span class="font-medium">{@actor_label}</span></span>
+        <.link
+          patch={~p"/app/audit?#{Map.drop(@filter_params, ["actor_id"])}"}
+          class="font-semibold text-indigo-300 hover:text-indigo-100"
+          aria-label="Clear actor filter"
         >
-          <span>Actor: <span class="font-medium">{@actor_label}</span></span>
-          <.link
-            patch={~p"/app/audit?#{Map.drop(@filter_params, ["actor_id"])}"}
-            class="font-semibold text-indigo-300 hover:text-indigo-100"
-            aria-label="Clear actor filter"
-          >
-            ✕
-          </.link>
-        </div>
+          ✕
+        </.link>
       </div>
 
       <LiveTable.live_table
@@ -587,16 +502,11 @@ defmodule EmisarWeb.AuditLive do
     end
   end
 
-  defp any_filter_active?(params, filters) do
-    Enum.any?(["actor_id", "from", "to"], &(blank_to_nil(params[&1]) != nil)) or
-      Enum.any?(filters, fn f ->
-        case Map.get(params, to_string(f.name)) do
-          nil -> false
-          "" -> false
-          _ -> true
-        end
-      end)
-  end
+  # From/To now live in `filters`, so the shared LiveTable check covers them;
+  # actor_id is the one filter outside the bar (set by a row click), so it's
+  # tested explicitly.
+  defp any_filter_active?(params, filters),
+    do: blank_to_nil(params["actor_id"]) != nil or LiveTable.has_active_filters?(params, filters)
 
   defp ref_href(%{audit_link?: true, id: id}) when not is_nil(id),
     do: ~p"/app/audit?actor_id=#{id}"

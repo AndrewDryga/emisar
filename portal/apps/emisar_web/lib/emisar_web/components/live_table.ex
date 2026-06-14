@@ -323,6 +323,24 @@ defmodule EmisarWeb.LiveTable do
     """
   end
 
+  defp filter_input(%{filter: %Filter{type: :datetime}} = assigns) do
+    ~H"""
+    <label class="flex flex-col text-xs font-medium text-zinc-400">
+      <span class="mb-1">{@filter.title}</span>
+      <%!-- Apply on blur, not per spinner tick: a datetime-local emits an
+           event for every field edit, and a half-typed value parses to nil
+           (no bound) — debouncing to blur waits for the committed value. --%>
+      <input
+        type="datetime-local"
+        name={@filter.name}
+        value={@value}
+        phx-debounce="blur"
+        class="rounded-lg border border-zinc-700 bg-zinc-950 px-2 py-1.5 text-xs text-zinc-200 [color-scheme:dark]"
+      />
+    </label>
+    """
+  end
+
   defp filter_input(assigns) do
     ~H"""
     <label class="flex flex-col text-xs font-medium text-zinc-400">
@@ -453,6 +471,11 @@ defmodule EmisarWeb.LiveTable do
           v not in [nil, ""] do
         {f.name, cast_filter_value(f, v)}
       end
+      # Drop casts that came back nil (an unparseable datetime) so they don't
+      # reach Repo.Filter as `{name, nil}` and error the list. A `false`
+      # boolean cast is kept — the cast runs in the block, not as a generator,
+      # so its falsy value never filters the row out.
+      |> Enum.reject(fn {_name, value} -> is_nil(value) end)
 
     page_kv =
       cond do
@@ -499,5 +522,19 @@ defmodule EmisarWeb.LiveTable do
   defp cast_filter_value(%Filter{type: :boolean}, "true"), do: true
   defp cast_filter_value(%Filter{type: :boolean}, _), do: false
 
+  defp cast_filter_value(%Filter{type: :datetime}, value) when is_binary(value),
+    do: parse_datetime_local(value)
+
   defp cast_filter_value(_, value), do: value
+
+  # datetime-local input ("YYYY-MM-DDTHH:MM") → UTC DateTime. The wallclock
+  # value is read as UTC (audit columns render in UTC). An unparseable value
+  # casts to nil, which params_to_opts drops — the bound just doesn't apply,
+  # rather than erroring the whole list on a half-typed date.
+  defp parse_datetime_local(value) do
+    case DateTime.from_iso8601(value <> ":00Z") do
+      {:ok, datetime, _} -> datetime
+      _ -> nil
+    end
+  end
 end
