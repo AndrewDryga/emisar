@@ -1541,8 +1541,33 @@ defmodule EmisarWeb.CoreComponents do
                     Copy
                   </.copy_button>
                 </div>
-                <p class="mt-2 text-xs text-zinc-500">
-                  Paste as-is — the leading space keeps the key out of your shell history.
+                <%!-- The one-liner embeds a single-use enrollment key shown
+                     only here — a root-capable credential. The marketing
+                     quickstart tells the trust story, but the operator has left
+                     that page; carry it onto the page they actually install
+                     from so they don't paste it into a chat/ticket or run an
+                     unknown root script blind. --%>
+                <div class="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-xs leading-5 text-amber-200/90">
+                  <div class="flex items-center gap-2 font-semibold text-amber-200">
+                    <.icon name="hero-key" class="h-4 w-4" /> Live credential — won't be shown again
+                  </div>
+                  <p class="mt-1.5">
+                    The command runs with <code class="font-mono">sudo</code>
+                    and carries a single-use key that enrolls this host to run infrastructure
+                    actions on your fleet. Treat it like a password — paste it straight onto the
+                    host, never into a chat or ticket.
+                  </p>
+                </div>
+                <p class="mt-2 text-xs leading-5 text-zinc-500">
+                  The leading space keeps the key out of your shell history. It's a plain shell
+                  script — <.link
+                    href="/install.sh"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="font-semibold text-indigo-400 hover:text-indigo-300"
+                  >read it first →</.link>: it verifies the download's SHA-256, runs the runner as a
+                  dedicated <code class="font-mono text-zinc-400">emisar</code>
+                  user (not root) under a systemd unit, and only dials out — nothing listens on the host.
                 </p>
               </div>
 

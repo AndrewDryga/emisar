@@ -85,6 +85,14 @@ defmodule EmisarWeb.RunnersLiveTest do
       assert html =~ "Connect a runner"
       assert html =~ "curl -sSL"
       assert html =~ "EMISAR_AUTH_KEY=emkey-auth-"
+
+      # The command embeds a live root-capable credential — the wizard must
+      # say so (won't reshow, treat like a password) and let the operator
+      # read the script before running it, not just on the marketing page.
+      assert html =~ "Live credential"
+      assert html =~ "Treat it like a password"
+      assert html =~ "read it first"
+      assert html =~ ~s(href="/install.sh")
     end
 
     test "redirects anonymous users to /sign_in", %{conn: conn} do
