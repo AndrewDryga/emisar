@@ -5,9 +5,11 @@ defmodule Emisar.Mailers.UserNotifier do
   rendering engine is intentionally not LiveView's heex.
   """
   import Swoosh.Email
+  alias Emisar.Mail
   alias Emisar.Mailer
   alias Emisar.PublicUrl
   alias Emisar.Users
+  require Logger
 
   # Resolved at call-time (not compile-time) so `runtime.exs` env-var
   # overrides take effect without a recompile. Falls back to the
@@ -145,11 +147,28 @@ defmodule Emisar.Mailers.UserNotifier do
   end
 
   defp deliver(to, subject, body) do
-    new()
-    |> to(to)
-    |> from(from())
-    |> subject(subject)
-    |> text_body(body)
-    |> Mailer.deliver()
+    if Mail.suppressed?(to) do
+      # `to` hard-bounced or filed a spam complaint (recorded from the
+      # Postmark webhook). Sending again only degrades sender reputation,
+      # so skip it. The {:ok, _} shape keeps callers' success match intact.
+      Logger.info("mail_suppressed recipient=#{redact_email(to)} subject=#{inspect(subject)}")
+      {:ok, %{suppressed: true}}
+    else
+      new()
+      |> to(to)
+      |> from(from())
+      |> subject(subject)
+      |> text_body(body)
+      |> Mailer.deliver()
+    end
+  end
+
+  # Log recipients coarsely — first char + domain — so a suppression line
+  # in the drain doesn't carry a full address.
+  defp redact_email(email) when is_binary(email) do
+    case String.split(email, "@", parts: 2) do
+      [local, domain] -> String.first(local) <> "***@" <> domain
+      _ -> "***"
+    end
   end
 end

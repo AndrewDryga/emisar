@@ -42,6 +42,9 @@ config :emisar, paddle_client: Emisar.Billing.PaddleClient.Stub
 # In test we don't send emails
 config :emisar, Emisar.Mailer, adapter: Swoosh.Adapters.Test
 
+# A fixed secret so the Postmark webhook controller test can authenticate.
+config :emisar, postmark_webhook_secret: "pm_webhook_test"
+
 # Run `Approvals.notify_approvers/3` synchronously in tests so its DB
 # reads happen inside the test's sandbox checkout. With the async path
 # (Task.start) the spawned process can outlive the test and trigger

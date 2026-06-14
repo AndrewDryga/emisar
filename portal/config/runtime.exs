@@ -143,6 +143,10 @@ if config_env() == :prod do
       config :emisar, Emisar.Mailer, adapter: Swoosh.Adapters.Logger
   end
 
+  # Postmark bounce/complaint webhook auth (optional — unset disables the
+  # endpoint with a 503; the mailer still works, suppression just won't fill).
+  config :emisar, postmark_webhook_secret: System.get_env("POSTMARK_WEBHOOK_SECRET")
+
   # -- Sentry --------------------------------------------------------
   # Sentry DSN is opt-in via env. Leaving it unset disables uploads
   # (the client short-circuits before any HTTP call). config.exs

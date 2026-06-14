@@ -263,11 +263,12 @@ defmodule EmisarWeb.Router do
     post "/authorize", OAuthController, :authorize_submit
   end
 
-  # -- Paddle webhook -------------------------------------------------
+  # -- Provider webhooks ----------------------------------------------
 
   scope "/webhooks", EmisarWeb do
     pipe_through :api
     post "/paddle", PaddleWebhookController, :create
+    post "/postmark", PostmarkWebhookController, :create
   end
 
   # -- LiveDashboard mounts -------------------------------------------
