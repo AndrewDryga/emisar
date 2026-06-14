@@ -2,7 +2,7 @@ schema_version: 1
 
 id: vector
 name: Vector observability pipeline
-version: 0.1.0
+version: 0.1.1
 description: >
   Read-only ops for a Vector (vector.dev) pipeline running on the runner
   host: version + compiled-component inventory, offline config validation,

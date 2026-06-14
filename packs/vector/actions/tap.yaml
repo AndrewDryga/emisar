@@ -43,7 +43,7 @@ execution:
     binary: vector
     argv:
       - "tap"
-      - "--duration_ms"
+      - "--duration-ms"
       - "{{ args.duration_ms }}"
       - "--limit"
       - "{{ args.limit }}"
