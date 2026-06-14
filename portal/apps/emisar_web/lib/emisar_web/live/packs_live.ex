@@ -39,6 +39,7 @@ defmodule EmisarWeb.PacksLive do
        |> assign(:pack_count, 0)
        |> assign(:pending_count, 0)
        |> assign(:advertising, %{})
+       |> assign(:pack_actions, %{})
        |> stream(:packs, [])}
     end
   end
@@ -59,7 +60,25 @@ defmodule EmisarWeb.PacksLive do
     # Keep the sidebar badge in step after Trust/Reject on this page.
     |> assign(:pending_packs_count, pending)
     |> assign(:advertising, advertising_runners(rows, socket.assigns.current_subject))
+    |> assign(:pack_actions, pending_pack_actions(rows, socket.assigns.current_subject))
     |> stream(:packs, groups, reset: true)
+  end
+
+  # What trusting each pending version authorizes: its advertised actions +
+  # risk, keyed by pack_version id (only pending versions are looked up). So
+  # "Trust new contents" shows the capability, not just a hash.
+  defp pending_pack_actions(rows, subject) do
+    rows
+    |> Enum.filter(&(&1.trust_state == :pending))
+    |> Map.new(fn version ->
+      actions =
+        case Catalog.list_pack_actions(version.pack_id, version.version, subject) do
+          {:ok, actions} -> actions
+          _ -> []
+        end
+
+      {version.id, actions}
+    end)
   end
 
   # Blast radius of a pending trust decision: which runners advertise each
@@ -302,6 +321,25 @@ defmodule EmisarWeb.PacksLive do
                   >
                     {r.name}<span class="text-amber-400/70"> · {r.group}</span>
                   </span>
+                </div>
+                <%!-- What trusting this authorizes — the actions the version
+                     advertises + their risk, so "Trust new contents" isn't a
+                     blind click. (An added/removed diff vs the trusted hash
+                     needs a stored action-set history — see BACKLOG.) --%>
+                <div :if={@pack_actions[v.id] not in [nil, []]} class="mt-3">
+                  <div class="text-[11px] font-semibold text-amber-100/80">
+                    Trusting authorizes {length(@pack_actions[v.id])} action(s):
+                  </div>
+                  <ul class="mt-1 space-y-1">
+                    <li
+                      :for={action <- @pack_actions[v.id]}
+                      class="flex items-center gap-2 text-[11px]"
+                    >
+                      <.risk_pill risk={action.risk} class="flex-none" />
+                      <span class="font-mono text-zinc-300">{action.action_id}</span>
+                      <span :if={action.title} class="truncate text-zinc-500">{action.title}</span>
+                    </li>
+                  </ul>
                 </div>
                 <%!-- Trust/Reject mutate authorization state — owner/admin
                      only. The context gate (manage_catalog) is defense in

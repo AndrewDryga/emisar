@@ -87,6 +87,38 @@ defmodule EmisarWeb.PacksLiveTest do
       assert html =~ "staging"
     end
 
+    test "the pending card lists the pack's actions + risk so trust isn't blind", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      runner = Emisar.Fixtures.runner_fixture(account_id: account.id)
+
+      {:ok, _} =
+        Emisar.Catalog.observe_state(runner, %{
+          "hostname" => "host-1",
+          "version" => "0.1.0",
+          "labels" => %{},
+          "actions" => [
+            %{
+              "id" => "acme.danger",
+              "pack_id" => "acme-tools",
+              "title" => "Do the dangerous thing",
+              "kind" => "exec",
+              "risk" => "high",
+              "description" => "d",
+              "args" => []
+            }
+          ],
+          "packs" => %{"acme-tools" => %{"version" => "9.9", "hash" => "abc123"}}
+        })
+
+      {:ok, lv, _dead} = live(conn, ~p"/app/packs")
+      html = render(lv)
+
+      # The trust decision now shows WHAT it authorizes, not just the hash.
+      assert html =~ "Trusting authorizes"
+      assert html =~ "acme.danger"
+      assert html =~ "high"
+    end
+
     test "Trust adopts the pending hash and clears the pending badge", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
       pack_version = observe_pending_pack!(account)

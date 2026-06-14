@@ -655,6 +655,27 @@ defmodule Emisar.Catalog do
   end
 
   @doc """
+  The distinct actions a pack version advertises — the catalog rows deduped to
+  one per `action_id`, sorted, so a trust decision shows WHAT the version can do
+  (action + risk), not just its hash. Account-scoped via the subject. Returns
+  `{:ok, [%RunnerAction{}]}`.
+  """
+  def list_pack_actions(pack_id, pack_version, %Subject{} = subject) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_catalog_permission()) do
+      actions =
+        RunnerAction.Query.all()
+        |> RunnerAction.Query.by_pack(pack_id, pack_version)
+        |> RunnerAction.Query.ordered_by_action()
+        |> Authorizer.for_subject(subject)
+        |> Repo.all()
+        |> Enum.uniq_by(& &1.action_id)
+
+      {:ok, actions}
+    end
+  end
+
+  @doc """
   Cheap COUNT(*) of pack versions pending trust review — drives the
   sidebar + dashboard "needs review" badge. Same Subject gate + account
   scoping as `list_pack_versions/2`; returns `0` when the caller lacks

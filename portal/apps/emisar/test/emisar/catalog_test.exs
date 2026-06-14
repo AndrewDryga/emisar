@@ -155,6 +155,34 @@ defmodule Emisar.CatalogTest do
     end
   end
 
+  describe "list_pack_actions/3" do
+    test "returns the distinct actions a pack version advertises, scoped to the account" do
+      {account, subject} = account_with_owner()
+      runner = runner_fixture(account_id: account.id)
+
+      {:ok, _} =
+        Catalog.observe_state(
+          runner,
+          state_payload(
+            packs: %{"acme" => %{"version" => "2.0", "hash" => "h"}},
+            actions: [
+              action("acme.reload", pack_id: "acme", risk: "high"),
+              action("acme.status", pack_id: "acme", risk: "low")
+            ]
+          )
+        )
+
+      assert {:ok, actions} = Catalog.list_pack_actions("acme", "2.0", subject)
+      # Ordered by action_id, one row per action (deduped across runners).
+      assert Enum.map(actions, & &1.action_id) == ["acme.reload", "acme.status"]
+      assert Enum.map(actions, & &1.risk) == [:high, :low]
+
+      # Another account sees none of this account's pack actions.
+      {_account, other_subject} = account_with_owner()
+      assert {:ok, []} = Catalog.list_pack_actions("acme", "2.0", other_subject)
+    end
+  end
+
   describe "pack-trust PubSub" do
     test "broadcasts when pending appears and is resolved, but not on a no-op observe" do
       {account, subject} = account_with_owner()
