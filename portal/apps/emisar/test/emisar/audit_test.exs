@@ -254,6 +254,35 @@ defmodule Emisar.AuditTest do
     end
   end
 
+  describe "Event.Query.outcome/1 (one source for the dots + the Outcome filter)" do
+    test "failures and errors are :danger" do
+      for t <- ~w[user.sign_in_failed user.mfa_failed user.password_change_failed
+                  action_run.failed action_run.error runner.error action_run.timed_out] do
+        assert Audit.Event.Query.outcome(t) == :danger, "expected #{t} to be :danger"
+      end
+    end
+
+    test "denials and access taken away are :warn" do
+      for t <- ~w[approval.denied action_run.denied auth_key.revoked user.session_revoked
+                  runner.disabled runner.deleted membership.removed membership.suspended
+                  approval.expired action_run.cancelled approval.grant_revoked] do
+        assert Audit.Event.Query.outcome(t) == :warn, "expected #{t} to be :warn"
+      end
+    end
+
+    test "routine events are :neutral" do
+      for t <- ~w[action_run.success approval.approved api_key.created runner.connected
+                  runner.enabled user.signed_in session.account_switched policy.evaluated] do
+        assert Audit.Event.Query.outcome(t) == :neutral, "expected #{t} to be :neutral"
+      end
+    end
+
+    test "nil and non-binary fall back to :neutral" do
+      assert Audit.Event.Query.outcome(nil) == :neutral
+      assert Audit.Event.Query.outcome(42) == :neutral
+    end
+  end
+
   describe "list_events/2 (paginated + filterable)" do
     test "page size + Next cursor walk through every row in order" do
       account = account_fixture()
@@ -346,6 +375,24 @@ defmodule Emisar.AuditTest do
 
       kept = Enum.map(rows, & &1.event_type) |> Enum.sort()
       assert kept == ["approval.approved", "user.invited"]
+    end
+
+    test "outcome filter narrows to failures (danger) and denials (warn) by suffix" do
+      account = account_fixture()
+      subject = subject_for(user_fixture(), account, role: :owner)
+
+      {:ok, _} = Audit.log(account.id, "action_run.failed", actor_kind: "system")
+      {:ok, _} = Audit.log(account.id, "approval.denied", actor_kind: "user")
+      {:ok, _} = Audit.log(account.id, "approval.approved", actor_kind: "user")
+
+      # "danger" keeps only the failure; routine (approved) is excluded.
+      {:ok, danger, _} = Audit.list_events(subject, filter: [outcome: ["danger"]])
+      assert Enum.map(danger, & &1.event_type) == ["action_run.failed"]
+
+      # Both outcomes keep the failure + the denial, still dropping the routine.
+      {:ok, both, _} = Audit.list_events(subject, filter: [outcome: ["danger", "warn"]])
+      kept = Enum.map(both, & &1.event_type) |> Enum.sort()
+      assert kept == ["action_run.failed", "approval.denied"]
     end
 
     test "hide_noise off (default) keeps everything" do

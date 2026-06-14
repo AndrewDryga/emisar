@@ -127,39 +127,6 @@ defmodule EmisarWeb.TimeHelpers do
   end
 
   @doc """
-  Coarse outcome tone for an audit event type, so the log is scannable for
-  trouble at a glance. Failures and errors are `:danger`; denials and access
-  or resources being taken away (denied / revoked / disabled / deleted /
-  removed / suspended / expired / cancelled) are `:warn`; everything routine
-  is `:neutral`. Matched on the type suffix — no per-type table to keep in
-  sync as new event types are added.
-  """
-  def event_tone(type) when is_binary(type) do
-    cond do
-      String.ends_with?(type, ["_failed", ".failed", ".error", ".timed_out"]) ->
-        :danger
-
-      String.ends_with?(type, [
-        ".denied",
-        ".revoked",
-        "_revoked",
-        ".disabled",
-        ".deleted",
-        ".removed",
-        ".suspended",
-        ".expired",
-        ".cancelled"
-      ]) ->
-        :warn
-
-      true ->
-        :neutral
-    end
-  end
-
-  def event_tone(_), do: :neutral
-
-  @doc """
   Render a UTC timestamp as a `<time>` element whose textContent gets
   rewritten by the `LocalTime` JS hook into the viewer's local
   timezone. Non-JS users see the server-rendered UTC fallback.

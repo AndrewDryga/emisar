@@ -107,6 +107,23 @@ defmodule Emisar.Audit.Event.Query do
 
   def known_event_type_values, do: @known_event_types
 
+  # An event's OUTCOME from its type suffix: a failure (`:danger`), a warn-class
+  # denial/removal (`:warn`), or routine (`:neutral`). The audit list/detail
+  # dots color by this AND the "Outcome" filter narrows by it, so the two can
+  # never disagree — one source, read by both (the web reads it, never copies it).
+  @danger_suffixes ~w[_failed .failed .error .timed_out]
+  @warn_suffixes ~w[.denied .revoked _revoked .disabled .deleted .removed .suspended .expired .cancelled]
+
+  def outcome(event_type) when is_binary(event_type) do
+    cond do
+      String.ends_with?(event_type, @danger_suffixes) -> :danger
+      String.ends_with?(event_type, @warn_suffixes) -> :warn
+      true -> :neutral
+    end
+  end
+
+  def outcome(_), do: :neutral
+
   # Same set, grouped by the leading domain so a 34-item dropdown
   # becomes 7 small groups operators can scan instead of reading top
   # to bottom. The Filter UI renders these as <optgroup>s.
@@ -375,6 +392,16 @@ defmodule Emisar.Audit.Event.Query do
         end
       },
       %Filter{
+        name: :outcome,
+        title: "Outcome",
+        type: {:list, :string},
+        values: [{"danger", "Failures & errors"}, {"warn", "Denials & removals"}],
+        fun: fn queryable, outcomes ->
+          types = event_types_for_outcomes(outcomes)
+          {queryable, dynamic([events: e], e.event_type in ^types)}
+        end
+      },
+      %Filter{
         name: :hide_noise,
         title: "Hide noisy events",
         type: :boolean,
@@ -383,4 +410,11 @@ defmodule Emisar.Audit.Event.Query do
         end
       }
     ]
+
+  # The known event types whose suffix outcome (outcome/1) is one of `outcomes`
+  # — the "Outcome" filter resolves to these, so a danger/warn pick narrows to
+  # exactly the rows the audit dots color rose/amber.
+  defp event_types_for_outcomes(outcomes) do
+    for {type, _label} <- @known_event_types, Atom.to_string(outcome(type)) in outcomes, do: type
+  end
 end

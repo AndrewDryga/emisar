@@ -170,10 +170,10 @@ defmodule EmisarWeb.AuditDetailLive do
   defp pretty_payload(other), do: inspect(other)
 
   # Outcome dot in the title, matching the audit list — failures rose,
-  # denials/removals amber, routine neutral. `event_tone/1` (TimeHelpers)
-  # owns the classification.
+  # denials/removals amber, routine neutral. `Audit.Event.Query.outcome/1`
+  # owns the classification (shared with the list + the "Outcome" filter).
   defp tone_dot(event_type) do
-    case event_tone(event_type) do
+    case Audit.Event.Query.outcome(event_type) do
       :danger -> "bg-rose-400"
       :warn -> "bg-amber-400"
       :neutral -> "bg-zinc-700"

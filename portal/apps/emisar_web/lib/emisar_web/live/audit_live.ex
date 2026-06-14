@@ -521,9 +521,9 @@ defmodule EmisarWeb.AuditLive do
 
   # Colour for the leading outcome dot in the Event column — failures rose,
   # denials/removals amber, routine events a muted neutral. Keyed off
-  # `event_tone/1` so the classification lives in one place (TimeHelpers).
+  # `Audit.Event.Query.outcome/1` so the dot + the "Outcome" filter never disagree.
   defp tone_dot(event_type) do
-    case event_tone(event_type) do
+    case Audit.Event.Query.outcome(event_type) do
       :danger -> "bg-rose-400"
       :warn -> "bg-amber-400"
       :neutral -> "bg-zinc-700"
