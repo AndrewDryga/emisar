@@ -328,9 +328,20 @@ defmodule EmisarWeb.RunDetailLive do
         class="mt-6 overflow-hidden rounded-xl border border-zinc-900"
       >
         <header class="flex items-center justify-between border-b border-zinc-900 bg-zinc-950/60 px-4 py-2">
-          <h3 class="text-xs font-semibold uppercase tracking-wider text-zinc-400">
-            Output
-          </h3>
+          <div class="flex items-center gap-2">
+            <h3 class="text-xs font-semibold uppercase tracking-wider text-zinc-400">
+              Output
+            </h3>
+            <%!-- Streaming affordance — a pulsing pill while the run is still
+                 in flight, so an idle terminal reads as "more is coming",
+                 not "this is the final output". Gone once terminal. --%>
+            <span
+              :if={@run.status in [:sent, :running]}
+              class="inline-flex items-center gap-1 rounded-full bg-indigo-500/10 px-2 py-0.5 text-[10px] font-medium text-indigo-300 ring-1 ring-indigo-500/30"
+            >
+              <span class="h-1.5 w-1.5 animate-pulse rounded-full bg-indigo-400"></span> streaming…
+            </span>
+          </div>
           <span class="text-[11px] text-zinc-500">stderr in rose</span>
         </header>
         <%!-- Each chunk already carries its trailing newline (the runner

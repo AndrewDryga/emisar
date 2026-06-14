@@ -267,4 +267,22 @@ defmodule EmisarWeb.RunDetailLiveTest do
 
     refute html =~ "Runner disconnected"
   end
+
+  test "shows a streaming pill while in flight, gone once terminal", %{conn: conn} do
+    {conn, _user, account} = register_and_log_in(conn)
+    run = run_with(account, %{status: "running"})
+
+    {:ok, lv, html} = live(conn, ~p"/app/runs/#{run.id}")
+    assert html =~ "streaming"
+
+    {:ok, finished} =
+      Runs.finalize_from_result(run.runner_id, %{
+        "request_id" => run.request_id,
+        "status" => "success",
+        "exit_code" => 0
+      })
+
+    send(lv.pid, {:run_updated, finished})
+    refute render(lv) =~ "streaming"
+  end
 end
