@@ -399,7 +399,7 @@ func (e *Engine) Run(ctx context.Context, req Request) (*Result, error) {
 	} else if execRes.Status == executor.StatusFailed {
 		evType = audit.EventExecutionFailed
 		status = StatusError
-	} else if execRes.ExitCode != 0 {
+	} else if execRes.ExitCode != 0 && !successExit(execRes.ExitCode, act.Execution.SuccessExitCodes) {
 		status = StatusFailed
 	}
 
@@ -727,6 +727,20 @@ func parseOutput(parser actionspec.Parser, stdout string) (any, string) {
 		return nil, err.Error()
 	}
 	return v, ""
+}
+
+// successExit reports whether a non-zero exit code was declared benign for
+// this action via execution.success_exit_codes (e.g. iscsiadm's 21 for "no
+// active sessions"). The list is an exact allowlist — an undeclared non-zero
+// code still fails, so this never relaxes the executor to "any non-zero is
+// success".
+func successExit(code int, allow []int) bool {
+	for _, c := range allow {
+		if c == code {
+			return true
+		}
+	}
+	return false
 }
 
 func reasonForStatus(s Status, r *executor.Result) string {

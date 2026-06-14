@@ -128,6 +128,38 @@ func TestValidateOutputBounds(t *testing.T) {
 	}
 }
 
+func TestValidateSuccessExitCodes(t *testing.T) {
+	mk := func(codes ...int) *Action {
+		return &Action{ID: "p.a", Execution: Execution{SuccessExitCodes: codes}}
+	}
+	// Empty/unset is fine — the common case.
+	if err := validateSuccessExitCodes(mk()); err != nil {
+		t.Fatalf("no codes should pass: %v", err)
+	}
+	// Valid non-zero codes (single + multiple, full 1..255 range).
+	if err := validateSuccessExitCodes(mk(21)); err != nil {
+		t.Fatalf("21 should pass: %v", err)
+	}
+	if err := validateSuccessExitCodes(mk(1, 21, 255)); err != nil {
+		t.Fatalf("1,21,255 should pass: %v", err)
+	}
+	// 0 is always success — listing it is a mistake.
+	if err := validateSuccessExitCodes(mk(0)); err == nil {
+		t.Fatal("0 should fail (always success)")
+	}
+	// Out of range — a process can't return these.
+	if err := validateSuccessExitCodes(mk(256)); err == nil {
+		t.Fatal("256 should fail (out of range)")
+	}
+	if err := validateSuccessExitCodes(mk(-1)); err == nil {
+		t.Fatal("-1 should fail (out of range)")
+	}
+	// Duplicates are a typo, not intent.
+	if err := validateSuccessExitCodes(mk(21, 21)); err == nil {
+		t.Fatal("duplicate 21 should fail")
+	}
+}
+
 func TestParseExtendedDuration(t *testing.T) {
 	cases := []struct {
 		in      string

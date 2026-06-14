@@ -51,6 +51,13 @@ type Execution struct {
 	// override. If unset, defaults to Timeout (no override allowed).
 	TimeoutMin Duration `yaml:"timeout_min,omitempty"`
 	TimeoutMax Duration `yaml:"timeout_max,omitempty"`
+	// SuccessExitCodes lists non-zero exit codes the executor treats as
+	// success in addition to 0 — for tools that signal a benign state with a
+	// specific code (iscsiadm exits 21 for "no active sessions"; journalctl
+	// --grep exits 1 for "no matches"). Each must be 1..255 (0 is always
+	// success). The allowlist is exact: an unlisted non-zero code still fails,
+	// so it never softens the executor to "any non-zero is success".
+	SuccessExitCodes []int `yaml:"success_exit_codes,omitempty"`
 	// CancelGrace overrides the runner-wide cancel_grace for this action.
 	// Used when SIGTERM needs more time than the default (e.g., Cassandra
 	// repair clean-up). Zero means "use the config default."
@@ -155,6 +162,9 @@ func (a *Action) Validate() error {
 	if err := validateTimeoutBounds(a); err != nil {
 		return err
 	}
+	if err := validateSuccessExitCodes(a); err != nil {
+		return err
+	}
 	if a.Output.MaxStdoutBytes <= 0 {
 		return fmt.Errorf("action %s: output.max_stdout_bytes must be > 0", a.ID)
 	}
@@ -242,6 +252,24 @@ func validateTimeoutBounds(a *Action) error {
 	}
 	if t < tMin || t > tMax {
 		return fmt.Errorf("action %s: timeout default %s outside [%s, %s]", a.ID, t, tMin, tMax)
+	}
+	return nil
+}
+
+// validateSuccessExitCodes enforces that any declared benign exit code is a
+// real non-zero Unix exit status (1..255) and that the list has no duplicates.
+// 0 is always success, so listing it is a mistake; a code outside 1..255 can
+// never be returned by a process, so it would be dead config that hides a typo.
+func validateSuccessExitCodes(a *Action) error {
+	seen := make(map[int]struct{}, len(a.Execution.SuccessExitCodes))
+	for _, code := range a.Execution.SuccessExitCodes {
+		if code < 1 || code > 255 {
+			return fmt.Errorf("action %s: execution.success_exit_codes %d out of range (must be 1..255; 0 is always success)", a.ID, code)
+		}
+		if _, dup := seen[code]; dup {
+			return fmt.Errorf("action %s: execution.success_exit_codes has duplicate %d", a.ID, code)
+		}
+		seen[code] = struct{}{}
 	}
 	return nil
 }
