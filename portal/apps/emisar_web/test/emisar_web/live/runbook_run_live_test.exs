@@ -28,7 +28,54 @@ defmodule EmisarWeb.RunbookRunLiveTest do
     runbook
   end
 
+  # A published runbook whose lone step targets `runner` by id (so it
+  # dispatches even when that runner is offline — group selectors skip
+  # offline members, a runner-id selector passes through).
+  defp published_runbook_targeting!(user, account, runner) do
+    subject = owner_subject(user, account)
+
+    {:ok, runbook} =
+      Emisar.Runbooks.create_runbook(
+        %{
+          "title" => "targeted",
+          "name" => "targeted",
+          "slug" => "targeted",
+          "definition" => %{
+            "steps" => [
+              %{
+                "id" => "uptime",
+                "action_id" => "linux.uptime",
+                "args" => %{},
+                "runner_selector" => %{"runner_id" => [runner.id]}
+              }
+            ]
+          }
+        },
+        subject
+      )
+
+    {:ok, runbook} = Emisar.Runbooks.publish(runbook, subject)
+    runbook
+  end
+
   describe "dispatch + live results" do
+    test "a run on an offline runner is flagged on its execution row", %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      runner = Emisar.Fixtures.runner_fixture(account_id: account.id, connected?: false)
+      Emisar.Fixtures.action_fixture(runner: runner, action_id: "linux.uptime")
+      Emisar.Fixtures.policy_fixture(account_id: account.id)
+      runbook = published_runbook_targeting!(user, account, runner)
+
+      {:ok, lv, _html} = live(conn, ~p"/app/runbooks/#{runbook.id}/run")
+
+      html = render_submit(lv, "dispatch", %{"reason" => "go"})
+      assert html =~ "Runbook dispatched"
+
+      # The created run streams in via {:run_updated}; its runner is offline,
+      # so the row flags it — otherwise a stalled wave gives no "why".
+      assert render(lv) =~ "offline"
+    end
+
     test "dispatching stays on the page and streams the execution's runs in", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
       runner = Emisar.Fixtures.runner_fixture(account_id: account.id)

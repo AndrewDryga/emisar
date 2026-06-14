@@ -19,6 +19,10 @@ defmodule EmisarWeb.RunbookRunLive do
           |> assign(:errors, %{})
           |> assign(:execution, nil)
           |> assign(:run_statuses, %{})
+          # run_id => run, so a presence change can re-insert the streamed
+          # rows to refresh their offline markers (streams don't re-render
+          # on a bare assign change).
+          |> assign(:run_index, %{})
           |> stream(:execution_runs, [])
 
         if connected?(socket) do
@@ -40,9 +44,11 @@ defmodule EmisarWeb.RunbookRunLive do
     {:ok, runners, _} = Runners.list_runners_for_account(subject)
     {:ok, runner_actions} = Catalog.list_all_actions_for_account(subject)
 
-    # Execution runs stream in over the account topic as the engine
-    # creates + transitions them (`{:run_updated, run}`).
+    # Execution runs stream in over the account topic as the engine creates +
+    # transitions them (`{:run_updated, run}`); the connection feed lets a row
+    # flag its runner dropping mid-execution (why an in-flight wave stalled).
     Runs.subscribe_account_runs(socket.assigns.current_account.id)
+    Runners.subscribe_connections(socket.assigns.current_account.id)
 
     socket
     # Runners back the per-step target labels (runner-id selectors resolve
@@ -177,6 +183,7 @@ defmodule EmisarWeb.RunbookRunLive do
            socket
            |> assign(:execution, execution)
            |> assign(:run_statuses, %{})
+           |> assign(:run_index, %{})
            |> stream(:execution_runs, [], reset: true)
            |> put_flash(:info, "Runbook dispatched — #{execution.total} runs planned.")
            |> flash_dispatch_errors(execution.errors)}
@@ -217,10 +224,23 @@ defmodule EmisarWeb.RunbookRunLive do
       {:noreply,
        socket
        |> assign(:run_statuses, Map.put(socket.assigns.run_statuses, run.id, run.status))
+       |> assign(:run_index, Map.put(socket.assigns.run_index, run.id, run))
        |> stream_insert(:execution_runs, run)}
     else
       {:noreply, socket}
     end
+  end
+
+  # A runner connected/disconnected — streamed rows don't re-render on a bare
+  # assign change, so re-insert the execution's runs to refresh each row's
+  # offline marker against current presence.
+  def handle_info(%{event: "presence_diff"}, socket) do
+    socket =
+      Enum.reduce(Map.values(socket.assigns.run_index), socket, fn run, socket ->
+        stream_insert(socket, :execution_runs, run)
+      end)
+
+    {:noreply, socket}
   end
 
   # The shared badge hooks forward account-topic broadcasts to every
@@ -238,6 +258,13 @@ defmodule EmisarWeb.RunbookRunLive do
   defp run_settled?(status), do: Runs.ActionRun.terminal?(status) or status == :denied
 
   defp run_failed?(status), do: run_settled?(status) and status != :success
+
+  # An in-flight run whose runner's socket is currently gone — surfaces *why*
+  # a wave stalled instead of leaving the row looking merely slow.
+  defp offline_mid_run?(%{status: status} = run) when status in [:pending, :sent, :running],
+    do: not Runners.online?(run.account_id, run.runner_id)
+
+  defp offline_mid_run?(_), do: false
 
   def render(assigns) do
     ~H"""
@@ -304,6 +331,13 @@ defmodule EmisarWeb.RunbookRunLive do
                 <span class="truncate font-mono text-zinc-200">{run.action_id}</span>
                 <span class="ml-2 truncate text-xs text-zinc-500">
                   on {run.runner.name}
+                </span>
+                <span
+                  :if={offline_mid_run?(run)}
+                  class="ml-1 inline-flex items-center gap-1 text-xs text-amber-400"
+                  title="Runner offline — this run may stall until it reconnects or times out"
+                >
+                  <.icon name="hero-signal-slash" class="h-3 w-3" /> offline
                 </span>
               </div>
               <span :if={run.duration_ms} class="text-xs tabular-nums text-zinc-500">
