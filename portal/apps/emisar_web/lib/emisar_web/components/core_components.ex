@@ -1172,52 +1172,6 @@ defmodule EmisarWeb.CoreComponents do
   end
 
   @doc """
-  Section container with a bordered + rounded shell, a header row
-  (title + optional count + optional actions slot), and an inner-block
-  for the body (usually a `<ul>`).
-
-      <.list_section title="Members" count={length(@memberships)}>
-        <:actions>
-          <button>Invite</button>
-        </:actions>
-        <ul class="divide-y divide-zinc-900">...</ul>
-      </.list_section>
-
-  Set `noun` for the singular/plural label suffix ("3 keys" / "1 key").
-  """
-  attr :title, :string, required: true
-  attr :count, :integer, default: nil
-  attr :noun, :string, default: nil
-  attr :class, :string, default: nil
-  slot :actions
-  slot :inner_block, required: true
-
-  def list_section(assigns) do
-    ~H"""
-    <section class={["overflow-hidden rounded-xl border border-zinc-900 bg-zinc-950/40", @class]}>
-      <header class="flex items-center justify-between border-b border-zinc-900 px-5 py-3">
-        <h2 class="text-sm font-semibold text-zinc-100">
-          {@title}
-          <span
-            :if={is_integer(@count) and is_binary(@noun)}
-            class="ml-1 text-xs font-normal text-zinc-500"
-          >
-            ({@count} {pluralize_noun(@count, @noun)})
-          </span>
-        </h2>
-        <div :if={@actions != []} class="flex items-center gap-2">
-          {render_slot(@actions)}
-        </div>
-      </header>
-      {render_slot(@inner_block)}
-    </section>
-    """
-  end
-
-  defp pluralize_noun(1, noun), do: noun
-  defp pluralize_noun(_, noun), do: noun <> "s"
-
-  @doc """
   One `<li>` row for a list section, with the icon-disc + content
   + actions layout used by AuthKeys, Agents, Grants, Runbooks, etc.
 

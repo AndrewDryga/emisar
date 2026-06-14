@@ -625,8 +625,12 @@ defmodule EmisarWeb.AgentsLive do
 
       <%!-- Connected agents list — single-column rows matching the
            AuthKeys / Grants visual language. --%>
-      <section class="mt-8 overflow-hidden rounded-xl border border-zinc-900 bg-zinc-950/40">
-        <header class="border-b border-zinc-900 px-5 py-3">
+      <%!-- Plain heading above a standalone live_table (self-framed cards
+           panel), matching the Pending / Members sections — not a bordered
+           section wrapping it, which boxed the filter against a second
+           border. --%>
+      <section class="mt-8">
+        <header class="mb-3 flex items-center gap-2">
           <h2 class="text-sm font-semibold text-zinc-100">Connected agents</h2>
         </header>
 
@@ -638,7 +642,6 @@ defmodule EmisarWeb.AgentsLive do
           metadata={@metadata}
           filter_params={@filter_params}
           filters={@filters}
-          class="rounded-none border-0 border-t border-zinc-900"
         >
           <:item :let={key}>
             <.list_row icon={agent_icon(key.name)}>

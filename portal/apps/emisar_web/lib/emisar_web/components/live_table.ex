@@ -140,12 +140,9 @@ defmodule EmisarWeb.LiveTable do
           <% end %>
         </ul>
 
-        <%!-- Padded footer wrapper so the paginator chrome doesn't
-             touch the wrapping section's left/right border. Without
-             this, "N total" hugs the rounded edge of any outer
-             list_section. The bottom inner border keeps a soft seam
-             between the card list and the footer when the table is
-             nested inside a list_section. --%>
+        <%!-- Padded footer so the paginator chrome gets the same px-5
+             inset as the rows above instead of hugging the panel edge,
+             with a top-border seam separating it from the card list. --%>
         <div
           :if={
             @metadata.previous_page_cursor || @metadata.next_page_cursor || (@metadata.count || 0) > 0

@@ -90,51 +90,52 @@ defmodule EmisarWeb.RunbooksLive do
           </:cta>
         </.empty_state>
       <% else %>
-        <div class="mx-auto max-w-5xl space-y-4">
-          <.list_section title="Runbooks" count={@metadata.count} noun="runbook">
-            <LiveTable.live_table
-              layout={:cards}
-              id="runbooks"
-              path={~p"/app/runbooks"}
-              rows={@runbooks}
-              metadata={@metadata}
-              filter_params={@filter_params}
-              filters={@filters}
-              class="rounded-none border-0"
-            >
-              <:item :let={runbook}>
-                <.list_row icon="hero-book-open">
-                  <%!-- Row 1: title (link to editor) + status pill + version --%>
-                  <:title>
-                    <.link
-                      navigate={~p"/app/runbooks/#{runbook.id}/edit"}
-                      class="truncate font-medium text-zinc-100 hover:text-indigo-300"
-                    >
-                      {runbook.title}
-                    </.link>
-                    <.status_badge status={runbook.status} />
-                    <span class="font-mono text-[11px] text-zinc-500">v{runbook.version}</span>
-                  </:title>
-                  <:meta>
-                    <%!-- Row 2: description preview + slug --%>
-                    <span :if={runbook.description && runbook.description != ""}>
-                      {preview(runbook.description)} ·
-                    </span>
-                    <span class="font-mono">{runbook.slug}</span>
-                  </:meta>
-                  <:actions>
-                    <.link
-                      :if={runbook.status == :published}
-                      navigate={~p"/app/runbooks/#{runbook.id}/run"}
-                      class="rounded-lg bg-indigo-500/10 px-2.5 py-1 text-xs font-semibold text-indigo-300 ring-1 ring-indigo-500/30 hover:bg-indigo-500/20"
-                    >
-                      Run →
-                    </.link>
-                  </:actions>
-                </.list_row>
-              </:item>
-            </LiveTable.live_table>
-          </.list_section>
+        <%!-- Standalone live_table (self-framed cards panel) — matches runs/
+             runners. The dashboard_shell already titles the page + holds the
+             "New runbook" action, so no list_section wrapper here (it would
+             double the heading and box the filter against a second border). --%>
+        <div class="mx-auto max-w-5xl">
+          <LiveTable.live_table
+            layout={:cards}
+            id="runbooks"
+            path={~p"/app/runbooks"}
+            rows={@runbooks}
+            metadata={@metadata}
+            filter_params={@filter_params}
+            filters={@filters}
+          >
+            <:item :let={runbook}>
+              <.list_row icon="hero-book-open">
+                <%!-- Row 1: title (link to editor) + status pill + version --%>
+                <:title>
+                  <.link
+                    navigate={~p"/app/runbooks/#{runbook.id}/edit"}
+                    class="truncate font-medium text-zinc-100 hover:text-indigo-300"
+                  >
+                    {runbook.title}
+                  </.link>
+                  <.status_badge status={runbook.status} />
+                  <span class="font-mono text-[11px] text-zinc-500">v{runbook.version}</span>
+                </:title>
+                <:meta>
+                  <%!-- Row 2: description preview + slug --%>
+                  <span :if={runbook.description && runbook.description != ""}>
+                    {preview(runbook.description)} ·
+                  </span>
+                  <span class="font-mono">{runbook.slug}</span>
+                </:meta>
+                <:actions>
+                  <.link
+                    :if={runbook.status == :published}
+                    navigate={~p"/app/runbooks/#{runbook.id}/run"}
+                    class="rounded-lg bg-indigo-500/10 px-2.5 py-1 text-xs font-semibold text-indigo-300 ring-1 ring-indigo-500/30 hover:bg-indigo-500/20"
+                  >
+                    Run →
+                  </.link>
+                </:actions>
+              </.list_row>
+            </:item>
+          </LiveTable.live_table>
         </div>
       <% end %>
     </.dashboard_shell>
