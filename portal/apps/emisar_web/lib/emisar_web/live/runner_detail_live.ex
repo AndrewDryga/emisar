@@ -235,11 +235,15 @@ defmodule EmisarWeb.RunnerDetailLive do
                     Run
                   </.link>
                 <% else %>
+                  <%!-- Offline: not a link. aria-disabled + a signal-slash
+                       icon carry "can't run" without relying on the dimmed
+                       color alone (a11y) or the hover-only title. --%>
                   <span
+                    aria-disabled="true"
                     title={"Runner is #{conn_status(@runner)} — runs can't be dispatched from here until it reconnects"}
-                    class="shrink-0 cursor-not-allowed rounded-lg bg-zinc-900 px-2.5 py-1 text-xs font-semibold text-zinc-600 ring-1 ring-zinc-800"
+                    class="inline-flex shrink-0 cursor-not-allowed items-center gap-1 rounded-lg bg-zinc-900 px-2.5 py-1 text-xs font-semibold text-zinc-600 ring-1 ring-zinc-800"
                   >
-                    Run
+                    <.icon name="hero-signal-slash" class="h-3.5 w-3.5" /> Run
                   </span>
                 <% end %>
               </li>

@@ -22,6 +22,18 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
     assert html =~ runner.hostname
   end
 
+  test "an offline runner's Run affordance is aria-disabled with a non-color cue",
+       %{conn: conn, runner: runner} do
+    # setup's runner is offline, so the action row renders the disabled span.
+    Fixtures.action_fixture(runner: runner, action_id: "linux.uptime")
+
+    {:ok, _lv, html} = live(conn, ~p"/app/runners/#{runner.id}")
+
+    assert html =~ ~s(aria-disabled="true")
+    # The signal-slash icon is the non-color cue (not the dimmed text alone).
+    assert html =~ "hero-signal-slash"
+  end
+
   test "an unknown id bounces to the index as not-found", %{conn: conn} do
     assert {:error, {:live_redirect, %{to: "/app/runners", flash: flash}}} =
              live(conn, ~p"/app/runners/#{Ecto.UUID.generate()}")
