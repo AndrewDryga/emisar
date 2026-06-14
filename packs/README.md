@@ -1,8 +1,8 @@
 # Emisar example packs
 
-59 packs / ~976 actions covering Linux ops, web/proxy, databases,
+73 packs / 1,096 actions covering Linux ops, web/proxy, databases,
 container orchestration, cloud, message buses, runtimes, observability,
-and infrastructure tools.
+networking, storage, and infrastructure tools.
 
 Each pack is independent: a `pack.yaml` manifest + one YAML per action
 under `actions/`. Load a pack into a runner by pointing the runner config
@@ -64,7 +64,7 @@ default — a config file or localhost).
 
 ## Pack inventory
 
-59 packs, ~976 actions, sorted by id. **Risk** is the pack's ceiling —
+73 packs, 1,096 actions, sorted by id. **Risk** is the pack's ceiling —
 its highest-risk action (see tiers below). **Auth** legend is in the Auth
 model section above. Run `emisar pack info <id>` for a pack's full setup.
 
@@ -78,6 +78,7 @@ model section above. Run `emisar pack info <id>` for a pack's full setup.
 | `aws-rds` | 8 | high | AWS_* |
 | `aws-s3` | 8 | low | AWS_* (opt) |
 | `bind` | 11 | high | local-host |
+| `bonding` | 3 | low | local-host |
 | `caddy` | 11 | high | CADDY_ADMIN (opt) |
 | `cassandra` | 45 | critical | CQLSH_* (opt) |
 | `clickhouse` | 19 | critical | CH_* (opt) |
@@ -92,11 +93,13 @@ model section above. Run `emisar pack info <id>` for a pack's full setup.
 | `envoy` | 14 | high | ENVOY_ADMIN (opt) |
 | `fail2ban` | 8 | high | local-host |
 | `firewall` | 11 | critical | local-host |
+| `frr` | 5 | low | local-host |
 | `fs-search` | 15 | low | local-host |
 | `git-local` | 8 | low | GIT_REPO |
 | `github-cli` | 19 | high | GH_TOKEN (opt) |
 | `grafana` | 10 | low | GRAFANA_* |
 | `haproxy` | 12 | high | HAPROXY_SOCK |
+| `iscsi` | 4 | low | local-host |
 | `java-jvm` | 16 | critical | local-host |
 | `kafka` | 20 | critical | KAFKA_BOOTSTRAP |
 | `kubernetes` | 31 | critical | KUBECONFIG (opt) |
@@ -104,18 +107,22 @@ model section above. Run `emisar pack info <id>` for a pack's full setup.
 | `memcached` | 7 | critical | MEMCACHED_* (opt) |
 | `minio` | 12 | high | MC_HOST_minio |
 | `mongodb` | 23 | critical | MONGO_URI |
+| `multipath` | 4 | low | local-host |
 | `mysql` | 25 | high | MYSQL_* (opt) |
 | `network-tls` | 13 | low | local-host |
 | `nfs` | 9 | high | local-host |
 | `nginx` | 22 | critical | local-host |
+| `nic` | 6 | low | local-host |
 | `nodejs-pm2` | 15 | high | local-host |
 | `nomad` | 49 | critical | NOMAD_* (opt) |
+| `pfsense` | 22 | critical | PFSENSE_* |
 | `php-fpm` | 10 | low | PHP_FPM_STATUS_URL (opt) |
 | `podman` | 12 | high | local-host |
 | `postfix` | 14 | critical | local-host |
 | `postgres` | 48 | high | PG* |
 | `process-forensics` | 10 | high | local-host |
 | `prometheus` | 14 | high | PROM_URL |
+| `pure-flasharray` | 14 | low | PURE_* (opt) |
 | `python-app` | 10 | low | PY_VENV (opt) |
 | `rabbitmq` | 18 | critical | local-host |
 | `redis` | 49 | critical | REDISCLI_AUTH (opt) |
@@ -123,12 +130,19 @@ model section above. Run `emisar pack info <id>` for a pack's full setup.
 | `showcase` | 5 | low | local-host |
 | `ssl-local` | 7 | low | local-host |
 | `systemd-deep` | 24 | high | local-host |
+| `tailscale` | 9 | low | local-host |
 | `terraform-readonly` | 8 | medium | TF_DIR |
 | `time-sync` | 7 | high | local-host |
+| `traefik` | 16 | low | TRAEFIK_* (opt) |
+| `typesense` | 8 | low | TYPESENSE_* (opt) |
 | `vault` | 14 | critical | VAULT_* |
+| `vector` | 7 | low | VECTOR_API (opt) |
+| `victorialogs` | 7 | low | VL_* (opt) |
+| `victoriametrics` | 8 | low | VM_* (opt) |
 | `wireguard` | 8 | high | local-host |
 | `zfs` | 13 | critical | local-host |
 | `zookeeper` | 8 | low | local-host |
+| `zot` | 7 | low | ZOT_* (opt) |
 
 > ⚠️ **`shell` is a staging-only break-glass pack** — its one action runs an
 > arbitrary `/bin/sh` script on the host, bypassing the declared-action
