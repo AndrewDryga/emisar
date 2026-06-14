@@ -75,6 +75,10 @@ defmodule EmisarWeb.AgentsLive do
     {:noreply, load(socket, params)}
   end
 
+  def handle_event("filter", params, socket) do
+    {:noreply, LiveTable.apply_filter(socket, ~p"/app/agents", params)}
+  end
+
   # -- Events ----------------------------------------------------------
 
   def handle_event("select_client", %{"client" => "custom"}, socket) do
@@ -220,7 +224,8 @@ defmodule EmisarWeb.AgentsLive do
   defp reload(socket), do: load(socket, socket.assigns[:filter_params] || %{})
 
   defp load(socket, params) do
-    opts = LiveTable.params_to_opts(params)
+    filters = ApiKeys.ApiKey.Query.filters()
+    opts = LiveTable.params_to_opts(params, filters)
 
     case ApiKeys.list_api_keys_for_account(
            socket.assigns.current_subject,
@@ -231,6 +236,7 @@ defmodule EmisarWeb.AgentsLive do
         |> assign(:api_keys, keys)
         |> assign(:metadata, meta)
         |> assign(:filter_params, params)
+        |> assign(:filters, filters)
         |> assign(:active_count, count_status(keys, :active))
         |> assign(:idle_count, count_status(keys, :idle))
         |> assign(:never_used_count, count_status(keys, :never_used))
@@ -243,6 +249,7 @@ defmodule EmisarWeb.AgentsLive do
         |> assign(:api_keys, [])
         |> assign(:metadata, %Emisar.Repo.Paginator.Metadata{count: 0, limit: 0})
         |> assign(:filter_params, params)
+        |> assign(:filters, filters)
         |> assign(:active_count, 0)
         |> assign(:idle_count, 0)
         |> assign(:never_used_count, 0)
@@ -630,6 +637,7 @@ defmodule EmisarWeb.AgentsLive do
           rows={@api_keys}
           metadata={@metadata}
           filter_params={@filter_params}
+          filters={@filters}
           class="rounded-none border-0 border-t border-zinc-900"
         >
           <:item :let={key}>
@@ -1106,6 +1114,12 @@ defmodule EmisarWeb.AgentsLive do
         + <code class="font-mono text-zinc-300">actions:execute</code>
         scopes — the same shape the per-client tabs above use. The form below adds a
         name, description, and expiry on top of the shared scope picker.
+      </p>
+      <%!-- The scope picker narrows *runners*, not actions. Make the
+           action reach explicit so the operator knows what they're granting. --%>
+      <p class="mt-2 rounded-lg bg-amber-500/10 px-3 py-2 text-xs text-amber-200/90 ring-1 ring-amber-500/20">
+        This key can read and execute every action your trusted packs expose on the selected
+        runners; risky actions still require policy approval.
       </p>
 
       <.simple_form for={@form} id="api_key_form" phx-change="validate" phx-submit="create">

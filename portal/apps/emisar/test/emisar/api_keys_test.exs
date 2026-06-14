@@ -308,4 +308,40 @@ defmodule Emisar.ApiKeysTest do
       assert {:ok, 0} = ApiKeys.revoke_keys_for_membership(membership.id)
     end
   end
+
+  describe "list filters" do
+    test "status filter separates live from revoked keys" do
+      {_u, _a, subject} = owner_subject_pair()
+
+      {:ok, _raw, _live} =
+        ApiKeys.create_key(%{name: "live-one", scopes: ["actions:read"]}, subject)
+
+      {:ok, _raw, revoked} =
+        ApiKeys.create_key(%{name: "dead-one", scopes: ["actions:read"]}, subject)
+
+      {:ok, _} = ApiKeys.revoke_api_key(revoked, subject)
+
+      {:ok, live_only, _} =
+        ApiKeys.list_api_keys_for_account(subject, filter: [status: ["live"]])
+
+      assert Enum.map(live_only, & &1.name) == ["live-one"]
+
+      {:ok, revoked_only, _} =
+        ApiKeys.list_api_keys_for_account(subject, filter: [status: ["revoked"]])
+
+      assert Enum.map(revoked_only, & &1.name) == ["dead-one"]
+    end
+
+    test "name filter searches by case-insensitive substring" do
+      {_u, _a, subject} = owner_subject_pair()
+
+      {:ok, _raw, _} =
+        ApiKeys.create_key(%{name: "Claude Desktop", scopes: ["actions:read"]}, subject)
+
+      {:ok, _raw, _} = ApiKeys.create_key(%{name: "Cursor", scopes: ["actions:read"]}, subject)
+
+      {:ok, matched, _} = ApiKeys.list_api_keys_for_account(subject, filter: [name: "claude"])
+      assert Enum.map(matched, & &1.name) == ["Claude Desktop"]
+    end
+  end
 end

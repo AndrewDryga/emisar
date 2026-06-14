@@ -31,6 +31,21 @@ defmodule EmisarWeb.AgentsLiveTest do
       refute html =~ "EMISAR_API_KEY"
     end
 
+    test "the list has status/name filters + the custom panel states the capability",
+         %{conn: conn} do
+      {conn, _user, _account} = register_and_log_in(conn)
+      {:ok, lv, html} = live(conn, ~p"/app/agents")
+
+      # Part b — the list filter bar (always rendered).
+      assert html =~ "Name contains"
+      assert html =~ "Status"
+
+      # Part a — the capability copy appears once the operator opens the
+      # custom-key form (it's behind the "custom" client tab).
+      custom = render_click(lv, "select_client", %{"client" => "custom"})
+      assert custom =~ "read and execute every action"
+    end
+
     test "selecting Claude.ai (remote MCP) shows URL + bearer header instead of bridge snippet",
          %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)

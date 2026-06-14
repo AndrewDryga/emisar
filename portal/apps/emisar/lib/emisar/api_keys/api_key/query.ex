@@ -1,6 +1,8 @@
 defmodule Emisar.ApiKeys.ApiKey.Query do
   use Emisar, :query
 
+  alias Emisar.Repo.Filter
+
   def all,
     do: from(api_keys in Emisar.ApiKeys.ApiKey, as: :api_keys)
 
@@ -109,4 +111,33 @@ defmodule Emisar.ApiKeys.ApiKey.Query do
 
   @impl Emisar.Repo.Query
   def preloads, do: []
+
+  @impl Emisar.Repo.Query
+  def filters,
+    do: [
+      %Filter{
+        name: :name,
+        title: "Name contains",
+        type: :string,
+        fun: fn queryable, name ->
+          {queryable, dynamic([api_keys: k], ilike(k.name, ^"%#{name}%"))}
+        end
+      },
+      %Filter{
+        name: :status,
+        title: "Status",
+        type: {:list, :string},
+        values: [{"live", "Live"}, {"revoked", "Revoked"}],
+        fun: fn queryable, statuses -> {queryable, status_dynamic(statuses)} end
+      }
+    ]
+
+  defp status_dynamic(statuses) do
+    cond do
+      "live" in statuses and "revoked" in statuses -> dynamic(true)
+      "live" in statuses -> dynamic([api_keys: k], is_nil(k.revoked_at))
+      "revoked" in statuses -> dynamic([api_keys: k], not is_nil(k.revoked_at))
+      true -> dynamic(true)
+    end
+  end
 end
