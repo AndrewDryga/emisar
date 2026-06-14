@@ -75,7 +75,12 @@ defmodule EmisarWeb.RunbooksLive do
         </.button>
       </:actions>
 
-      <%= if @runbooks == [] && @metadata.count == 0 do %>
+      <%!-- Account-empty (create CTA) only when there's genuinely nothing AND no
+           filter is narrowing — otherwise a 0-match filter (e.g. ?status=draft)
+           would hide the filter bar and trap the operator. With a filter active,
+           the live_table renders its own "no matches" + the bar to clear it. --%>
+      <%= if @runbooks == [] && @metadata.count == 0 &&
+               not LiveTable.has_active_filters?(@filter_params, @filters) do %>
         <.empty_state icon="hero-book-open" title="No runbooks yet">
           Runbooks are cloud-side workflows that expand into ordered action dispatches.
           Compose multi-step procedures, publish them, and operators or LLMs can run them safely.
@@ -132,6 +137,7 @@ defmodule EmisarWeb.RunbooksLive do
                 </:actions>
               </.list_row>
             </:item>
+            <:empty>No runbooks match these filters.</:empty>
           </LiveTable.live_table>
         </div>
       <% end %>

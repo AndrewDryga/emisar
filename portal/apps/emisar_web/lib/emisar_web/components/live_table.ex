@@ -346,7 +346,13 @@ defmodule EmisarWeb.LiveTable do
   defp normalize_groups([{_label, list} | _] = values) when is_list(list), do: values
   defp normalize_groups(flat), do: [{nil, flat}]
 
-  defp has_active_filters?(params, filters) do
+  @doc """
+  True if any of `filters` has a non-blank value in `params`. A page uses this
+  to tell "no rows because the account is empty" (show a create-CTA empty state)
+  from "no rows because a filter excluded them all" (keep the filter bar so the
+  operator can clear it, rather than trapping them on a dead empty state).
+  """
+  def has_active_filters?(params, filters) do
     filters
     |> Enum.any?(fn f ->
       v = Map.get(params, to_string(f.name))

@@ -48,6 +48,20 @@ defmodule EmisarWeb.RunbooksLiveTest do
     assert html =~ ~p"/app/runbooks/new"
   end
 
+  test "an empty *filtered* result keeps the filter bar, not the create-CTA", %{conn: conn} do
+    {conn, _user, _account} = register_and_log_in(conn)
+
+    # No drafts exist, but a status filter is active. The operator must still
+    # see the filter bar to clear it — not the "No runbooks yet" create-CTA,
+    # which would trap them on a dead empty state with no way back.
+    {:ok, _lv, html} = live(conn, ~p"/app/runbooks?status=draft")
+
+    assert html =~ "No runbooks match these filters"
+    refute html =~ "No runbooks yet"
+    # The status filter control is still rendered so they can clear it.
+    assert html =~ ~s(name="status")
+  end
+
   test "lists runbooks; published rows get a Run link, drafts don't", %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
     published = create_runbook!(user, account, "Deploy check", published?: true)
