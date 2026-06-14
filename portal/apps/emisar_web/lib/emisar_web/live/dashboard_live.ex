@@ -3,6 +3,8 @@ defmodule EmisarWeb.DashboardLive do
 
   alias Emisar.{ApiKeys, Approvals, Billing, Catalog, Runners, Runs}
 
+  @reload_debounce_ms 500
+
   def mount(_params, _session, socket) do
     account_id = socket.assigns.current_account.id
 
@@ -16,11 +18,28 @@ defmodule EmisarWeb.DashboardLive do
     end
   end
 
-  def handle_info(%{event: "presence_diff"}, socket), do: {:noreply, load(socket)}
-  def handle_info({_event, _struct}, socket), do: {:noreply, load(socket)}
+  # A busy fleet emits many account-topic broadcasts per second, and load/1 is
+  # ~9 queries — far too heavy to run per message. Coalesce a burst into one
+  # reload via a short trailing debounce: the first message arms the timer,
+  # later ones are absorbed by the already-scheduled flag.
+  def handle_info(%{event: "presence_diff"}, socket), do: {:noreply, schedule_reload(socket)}
+  def handle_info({_event, _struct}, socket), do: {:noreply, schedule_reload(socket)}
+
+  def handle_info(:reload_dashboard, socket),
+    do: {:noreply, socket |> assign(:reload_scheduled?, false) |> load()}
+
   # Total catch-all: the badge hooks forward account-topic broadcasts to every
   # authenticated LV, so any other shape must be ignored, not crash.
   def handle_info(_msg, socket), do: {:noreply, socket}
+
+  defp schedule_reload(socket) do
+    if socket.assigns[:reload_scheduled?] do
+      socket
+    else
+      Process.send_after(self(), :reload_dashboard, @reload_debounce_ms)
+      assign(socket, :reload_scheduled?, true)
+    end
+  end
 
   defp load(socket) do
     account = socket.assigns.current_account

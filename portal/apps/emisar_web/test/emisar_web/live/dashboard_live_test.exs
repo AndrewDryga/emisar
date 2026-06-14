@@ -118,19 +118,23 @@ defmodule EmisarWeb.DashboardLiveTest do
       refute html2 =~ "Dispatch your first action"
     end
 
-    test "account broadcasts reload the stats without a refresh", %{conn: conn} do
+    test "account broadcasts schedule a debounced stats reload", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
 
       {:ok, lv, html} = live(conn, ~p"/app")
       assert html =~ "Connect a runner"
 
       # A runner registers elsewhere; the dashboard hears the account
-      # broadcast (2-tuple) or a presence_diff and re-reads its stats.
+      # broadcast (2-tuple) or a presence_diff and ARMS a debounced reload
+      # rather than re-querying per message. The reload fires on the
+      # :reload_dashboard timer — inject it directly to stand in for the timer.
       runner = Emisar.Fixtures.runner_fixture(account_id: account.id)
       send(lv.pid, {:runner_updated, runner})
+      send(lv.pid, :reload_dashboard)
       refute render(lv) =~ "Connect a runner"
 
       send(lv.pid, %{event: "presence_diff"})
+      send(lv.pid, :reload_dashboard)
       assert render(lv) =~ "Runners online"
 
       # Unrelated message shapes are ignored, never a crash.
