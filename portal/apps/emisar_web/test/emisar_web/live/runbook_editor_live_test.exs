@@ -120,6 +120,38 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       step = hd(runbook.definition["steps"])
       assert step["runner_selector"] == %{"group" => ["edge-eu", "edge-us"]}
     end
+
+    test "a step with no target selected is flagged inline, not only at publish", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      Emisar.Fixtures.runner_fixture(account_id: account.id, group: "edge-eu")
+
+      {:ok, lv, _html} = live(conn, ~p"/app/runbooks/new")
+
+      # A step targeting groups but with nothing picked → inline marker shows
+      # (mirrors the run view), instead of staying silent until publish.
+      html =
+        render_change(lv, "step_change", %{
+          "index" => "0",
+          "step_id" => "check",
+          "action_id" => "linux.uptime",
+          "selector_kind" => "group",
+          "selector_values" => []
+        })
+
+      assert html =~ "No target set"
+
+      # Pick a target → the marker clears.
+      html =
+        render_change(lv, "step_change", %{
+          "index" => "0",
+          "step_id" => "check",
+          "action_id" => "linux.uptime",
+          "selector_kind" => "group",
+          "selector_values" => ["edge-eu"]
+        })
+
+      refute html =~ "No target set"
+    end
   end
 
   describe "metadata validation" do

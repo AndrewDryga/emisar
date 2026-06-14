@@ -732,6 +732,16 @@ defmodule EmisarWeb.RunbookEditorLive do
                 do: "No runners connected yet.",
                 else: "No runner groups yet."}
             </p>
+            <%!-- Mirror the run view's "no target set": a step with nothing
+                 selected won't dispatch — flag it inline now, not only when
+                 publish/dispatch refuses the whole runbook. (Hidden when there's
+                 nothing to pick — the message above already explains that.) --%>
+            <p
+              :if={options != [] and (@step["selector_values"] || []) == []}
+              class="mt-1 text-[11px] text-amber-400/80"
+            >
+              No target set — this step won't run until you pick one.
+            </p>
           </div>
         </div>
       </form>
