@@ -88,16 +88,18 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       refute html =~ "ring-emerald-500/30"
     end
 
-    test "the target select offers runner groups alongside runners", %{conn: conn} do
+    test "the plan shows each step's own runner target (no run-time picker)", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
-      runner = Emisar.Fixtures.runner_fixture(account_id: account.id)
+      _runner = Emisar.Fixtures.runner_fixture(account_id: account.id)
       runbook = published_runbook!(user, account)
 
       {:ok, _lv, html} = live(conn, ~p"/app/runbooks/#{runbook.id}/run")
 
-      assert html =~ "Runner groups"
-      assert html =~ "group:#{runner.group}"
-      assert html =~ "runner:#{runner.id}"
+      # Targets come from the steps (set in the editor), not a run-time picker —
+      # the plan surfaces each step's target. This runbook's lone step targets
+      # the "default" group.
+      assert html =~ "group: default"
+      refute html =~ ~s(name="target")
     end
   end
 
@@ -109,9 +111,9 @@ defmodule EmisarWeb.RunbookRunLiveTest do
 
       {:ok, lv, _html} = live(conn, ~p"/app/runbooks/#{runbook.id}/run")
 
-      # A runner is preselected (mount picks the first), so the only missing run
-      # parameter is the required reason. Dispatching with it blank renders the
-      # message inline under the reason field (via <.error>)…
+      # Targets come from the steps now, so the only run-time parameter is the
+      # required reason. Dispatching with it blank renders the message inline
+      # under the reason field (via <.error>)…
       html = render_submit(lv, "dispatch", %{"reason" => ""})
 
       assert html =~ "Reason is required"

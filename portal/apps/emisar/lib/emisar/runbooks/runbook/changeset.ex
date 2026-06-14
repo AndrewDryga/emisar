@@ -79,15 +79,12 @@ defmodule Emisar.Runbooks.Runbook.Changeset do
   # A draft can be an unfinished work-in-progress, but a *published* runbook
   # must actually run: a step with a blank action otherwise publishes fine and
   # only blows up mid-fan-out at dispatch (step_attrs hands a nil action_id to
-  # dispatch_run — the worst place to find out). The empty-list case is the
-  # dispatch-time :empty_runbook guard pulled forward to save. Surfaced on
-  # :definition (no field input) via the editor's save_error_message/1.
+  # dispatch_run — the worst place to find out), and a step with no runner
+  # target has nowhere to run (the engine resolves each step against its own
+  # runner_selector). The empty-list case is the dispatch-time :empty_runbook
+  # guard pulled forward to save. Surfaced on :definition (no field input) via
+  # the editor's save_error_message/1.
   #
-  # We do NOT require a per-step runner target: the engine resolves targets at
-  # dispatch (execution-level), not per step, so a step with an empty
-  # runner_selector still runs fine. Validating it would reject legitimate
-  # runbooks. (That the editor offers a per-step target the engine ignores is a
-  # separate cleanup — see BACKLOG.)
   # `get_field` (not validate_change): publish changes only :status, so the
   # existing :definition isn't in `changes` — we must validate its current
   # value, not just an on-change edit.
@@ -103,9 +100,16 @@ defmodule Emisar.Runbooks.Runbook.Changeset do
   end
 
   defp publishable_steps_error(%{"steps" => steps}) when is_list(steps) and steps != [] do
-    if Enum.any?(steps, &blank_step_action?/1),
-      do: "every step needs an action before publishing",
-      else: nil
+    cond do
+      Enum.any?(steps, &blank_step_action?/1) ->
+        "every step needs an action before publishing"
+
+      Enum.any?(steps, &blank_step_target?/1) ->
+        "every step needs a runner or group target before publishing"
+
+      true ->
+        nil
+    end
   end
 
   defp publishable_steps_error(_), do: "add at least one step before publishing"
@@ -114,4 +118,21 @@ defmodule Emisar.Runbooks.Runbook.Changeset do
     action = step["action_id"] || step["action"]
     not (is_binary(action) and String.trim(action) != "")
   end
+
+  # The editor stores a step's target as runner_selector =>
+  # %{"runner_id" => [...]} | %{"group" => [...]}; "blank" = no kind, or an
+  # all-empty value list (the older single-string shape is accepted too).
+  defp blank_step_target?(step) do
+    case step["runner_selector"] do
+      %{"runner_id" => v} -> empty_targets?(v)
+      %{"group" => v} -> empty_targets?(v)
+      _ -> true
+    end
+  end
+
+  defp empty_targets?(v) when is_list(v),
+    do: not Enum.any?(v, &(is_binary(&1) and String.trim(&1) != ""))
+
+  defp empty_targets?(v) when is_binary(v), do: String.trim(v) == ""
+  defp empty_targets?(_), do: true
 end

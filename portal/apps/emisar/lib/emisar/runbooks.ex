@@ -156,19 +156,24 @@ defmodule Emisar.Runbooks do
   def expand(_), do: []
 
   @doc """
-  Dispatch a runbook against `target` — `{:runner, runner_id}` or
-  `{:group, group_name}` (every active runner in the group). Mints a
-  `runbook_execution_id` grouping the runs, expands steps × runners into
-  the work list, and dispatches the first wave of `#{@batch_size}`;
-  later waves fire from `dispatch_next_batch/1` as runs finish. Any
-  failed/denied run halts the waves that follow it.
+  Dispatch a runbook. Each step targets its own runner(s) via its
+  `runner_selector` (set in the editor): a `runner_id` list passed
+  through, or a `group` list resolved to those groups' active members at
+  dispatch. Mints a `runbook_execution_id` grouping the runs, expands
+  each step against its own runners into the work list, and dispatches
+  the first wave of `#{@batch_size}`; later waves fire from
+  `dispatch_next_batch/1` as runs finish. Any failed/denied run halts the
+  waves that follow it.
 
-  Returns `{:ok, %{execution_id: …, total: …, runs: […], errors: […]}}`
-  once at least one run row exists (`errors` carries this wave's
-  row-less dispatch failures), or `{:error, reason}` when nothing could
-  be dispatched at all.
+  Requires `dispatch_run` permission; the runbook must be in the
+  subject's account. Returns
+  `{:ok, %{execution_id: …, total: …, runs: […], errors: […]}}` once at
+  least one run row exists (`errors` carries this wave's row-less
+  dispatch failures), or `{:error, reason}` when nothing could be
+  dispatched: `:empty_runbook`, or `{:step_no_runners, n}` when step
+  `n`'s group resolves to no active runners.
   """
-  def dispatch_runbook(%Runbook{} = runbook, target, reason, %Subject{} = subject)
+  def dispatch_runbook(%Runbook{} = runbook, reason, %Subject{} = subject)
       when is_binary(reason) do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(
@@ -178,18 +183,16 @@ defmodule Emisar.Runbooks do
          :ok <- Subject.ensure_in_account(subject, runbook.account_id),
          steps = expand(runbook),
          :ok <- ensure_steps(steps),
-         dispatch = build_dispatch(target, reason),
-         {:ok, runner_ids} <- resolve_target(runbook.account_id, dispatch) do
+         {:ok, work_list} <- resolve_work_list(runbook.account_id, steps) do
       execution = %{
         id: Repo.generate_id(),
-        dispatch: dispatch,
+        dispatch: %{"reason" => reason},
         user_id: Subject.actor_id(subject),
         membership_id: subject.membership_id
       }
 
       outcomes =
-        steps
-        |> build_work_list(runner_ids)
+        work_list
         |> Enum.take(@batch_size)
         |> Enum.map(fn item ->
           dispatch_item(runbook, execution, item, &Emisar.Runs.dispatch_run(&1, subject))
@@ -205,7 +208,7 @@ defmodule Emisar.Runbooks do
         {:ok,
          %{
            execution_id: execution.id,
-           total: length(steps) * length(runner_ids),
+           total: length(work_list),
            runs: runs,
            errors: errors
          }}
@@ -259,36 +262,85 @@ defmodule Emisar.Runbooks do
       membership_id: nil
     }
 
-    with {:ok, runner_ids} <- resolve_target(runbook.account_id, execution.dispatch) do
-      dispatched = MapSet.new(existing, &{&1.runbook_step_id, &1.runner_id})
+    dispatched = MapSet.new(existing, &{&1.runbook_step_id, &1.runner_id})
 
-      runbook
-      |> expand()
-      |> build_work_list(runner_ids)
-      |> Enum.reject(fn {step, idx, runner_id} ->
-        MapSet.member?(dispatched, {step_id_for(step, idx), runner_id})
-      end)
-      |> Enum.take(@batch_size)
-      |> Enum.each(fn item ->
-        dispatch_item(
-          runbook,
-          execution,
-          item,
-          &Emisar.Runs.dispatch_run_for_account(&1, runbook.account_id)
-        )
-      end)
-    end
+    runbook
+    |> expand()
+    |> continuation_work_list(runbook.account_id)
+    |> Enum.reject(fn {step, idx, runner_id} ->
+      MapSet.member?(dispatched, {step_id_for(step, idx), runner_id})
+    end)
+    |> Enum.take(@batch_size)
+    |> Enum.each(fn item ->
+      dispatch_item(
+        runbook,
+        execution,
+        item,
+        &Emisar.Runs.dispatch_run_for_account(&1, runbook.account_id)
+      )
+    end)
 
     :noop
   end
 
-  # Steps × runners, step-major: step 1 fans out across the target's
-  # runners before step 2 starts claiming wave slots.
-  defp build_work_list(steps, runner_ids) do
-    for {step, idx} <- Enum.with_index(steps), runner_id <- runner_ids do
-      {step, idx, runner_id}
+  # Steps × each step's own runners, step-major: step 1 fans out across
+  # its runners before step 2 starts claiming wave slots. Fail-fast — a
+  # step whose group resolves to no active runners aborts the whole
+  # dispatch (`{:step_no_runners, n}`) so the operator fixes it rather
+  # than getting a silently-skipped step.
+  defp resolve_work_list(account_id, steps) do
+    steps
+    |> Enum.with_index()
+    |> Enum.reduce_while({:ok, []}, fn {step, idx}, {:ok, acc} ->
+      case step_runner_ids(account_id, step) do
+        [] -> {:halt, {:error, {:step_no_runners, idx + 1}}}
+        runner_ids -> {:cont, {:ok, acc ++ Enum.map(runner_ids, &{step, idx, &1})}}
+      end
+    end)
+  end
+
+  # The continuation path has no operator to halt for, so it's tolerant: a
+  # step that resolves to no runners this wave contributes nothing. Group
+  # membership is re-resolved every wave, so runners added/removed
+  # mid-execution are picked up / dropped.
+  defp continuation_work_list(steps, account_id) do
+    for {step, idx} <- Enum.with_index(steps),
+        runner_id <- step_runner_ids(account_id, step),
+        do: {step, idx, runner_id}
+  end
+
+  # A step's own runners from its `runner_selector`: a `runner_id` list
+  # passes through (dispatch_run re-validates each), a `group` list
+  # resolves to the union of those groups' active members at dispatch.
+  defp step_runner_ids(account_id, step) do
+    case step_selector(step) do
+      {"runner_id", [_ | _] = ids} ->
+        ids
+
+      {"group", [_ | _] = groups} ->
+        groups
+        |> Enum.flat_map(&Emisar.Runners.list_active_runners_in_group(account_id, &1))
+        |> Enum.map(& &1.id)
+        |> Enum.uniq()
+
+      _ ->
+        []
     end
   end
+
+  # The step's selector normalised to {kind, [values]} — accepts the list
+  # shape (%{"group" => ["a"]}) and the older single-value shape.
+  defp step_selector(step) do
+    case step["runner_selector"] do
+      %{"runner_id" => v} -> {"runner_id", normalize_selector(v)}
+      %{"group" => v} -> {"group", normalize_selector(v)}
+      _ -> {nil, []}
+    end
+  end
+
+  defp normalize_selector(v) when is_list(v), do: Enum.filter(v, &(is_binary(&1) and &1 != ""))
+  defp normalize_selector(v) when is_binary(v) and v != "", do: [v]
+  defp normalize_selector(_), do: []
 
   # One work-list item through the dispatcher. Returns `{:ok, run}`,
   # `:row_exists` (a policy denial wrote its denied row — the halt
@@ -338,25 +390,6 @@ defmodule Emisar.Runbooks do
 
   defp ensure_steps([]), do: {:error, :empty_runbook}
   defp ensure_steps(_steps), do: :ok
-
-  defp build_dispatch({:runner, runner_id}, reason) when is_binary(runner_id),
-    do: %{"target" => %{"runner_id" => runner_id}, "reason" => reason}
-
-  defp build_dispatch({:group, group}, reason) when is_binary(group),
-    do: %{"target" => %{"group" => group}, "reason" => reason}
-
-  # Group membership is resolved at every wave, so runners added to the
-  # group mid-execution pick up remaining steps and removed runners stop
-  # getting work. `dispatch_run` re-validates each runner per item.
-  defp resolve_target(_account_id, %{"target" => %{"runner_id" => runner_id}}),
-    do: {:ok, [runner_id]}
-
-  defp resolve_target(account_id, %{"target" => %{"group" => group}}) do
-    case Emisar.Runners.list_active_runners_in_group(account_id, group) do
-      [] -> {:error, :no_runners_in_group}
-      runners -> {:ok, Enum.map(runners, & &1.id)}
-    end
-  end
 
   defp failed_run?(%Emisar.Runs.ActionRun{status: :denied}), do: true
 

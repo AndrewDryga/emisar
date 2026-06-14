@@ -10,8 +10,7 @@ defmodule EmisarWeb.RunbookRunLive do
         # The runbook fetch above gates render/redirect, so it stays in
         # mount. The runner list + step expansion are heavier reads only
         # the connected page needs — defer them behind `connected?/1` so
-        # they don't run twice (IL-18). The dead pass renders an empty
-        # plan + target select.
+        # they don't run twice (IL-18). The dead pass renders an empty plan.
         socket =
           socket
           |> assign(:page_title, "Run #{runbook.title}")
@@ -46,24 +45,22 @@ defmodule EmisarWeb.RunbookRunLive do
     Runs.subscribe_account_runs(socket.assigns.current_account.id)
 
     socket
+    # Runners back the per-step target labels (runner-id selectors resolve
+    # to names) — each step carries its own target, set in the editor.
     |> assign(:runners, runners)
-    |> assign(:groups, runner_groups(runners))
     |> assign(:steps, Runbooks.expand(runbook))
     # action_id → risk, so the plan can show which steps are read-only
     # (low) vs which will stop for approval before a fleet-wide dispatch.
-    # Most-severe across runners — a group dispatch hits every member, so
+    # Most-severe across runners — a group target hits every member, so
     # showing the recent-but-lower risk would under-warn.
     |> assign(:action_risk, Catalog.most_severe_risk_by_action(runner_actions))
-    |> assign(:target, default_target(runners))
   end
 
   defp empty_run_form(socket) do
     socket
     |> assign(:runners, [])
-    |> assign(:groups, [])
     |> assign(:steps, [])
     |> assign(:action_risk, %{})
-    |> assign(:target, nil)
   end
 
   # Risk of a plan step's action, or nil when the catalog hasn't observed
@@ -71,33 +68,38 @@ defmodule EmisarWeb.RunbookRunLive do
   defp step_risk(action_risk, step),
     do: Map.get(action_risk, step["action_id"] || step["action"])
 
-  # Groups with at least one enabled runner — mirrors what a group
-  # dispatch would actually resolve to.
-  defp runner_groups(runners) do
-    runners
-    |> Enum.reject(& &1.disabled_at)
-    |> Enum.map(& &1.group)
-    |> Enum.reject(&(&1 in [nil, ""]))
-    |> Enum.uniq()
-    |> Enum.sort()
+  # Where a plan step will run, from its own runner_selector: group names
+  # as-is, runner ids resolved to names against the loaded runner list.
+  # nil when the step has no target (a draft being test-run).
+  defp step_target_label(step, runners) do
+    case step["runner_selector"] do
+      %{"group" => v} ->
+        case normalize_targets(v) do
+          [] -> nil
+          groups -> "group: " <> Enum.join(groups, ", ")
+        end
+
+      %{"runner_id" => v} ->
+        names = v |> normalize_targets() |> runner_names(runners)
+        if names == [], do: nil, else: Enum.join(names, ", ")
+
+      _ ->
+        nil
+    end
   end
 
-  defp default_target([]), do: nil
-  defp default_target([%{id: id} | _]), do: "runner:" <> id
+  defp normalize_targets(v) when is_list(v), do: Enum.filter(v, &(is_binary(&1) and &1 != ""))
+  defp normalize_targets(v) when is_binary(v) and v != "", do: [v]
+  defp normalize_targets(_), do: []
 
-  defp parse_target("runner:" <> runner_id), do: {:runner, runner_id}
-  defp parse_target("group:" <> group), do: {:group, group}
-  defp parse_target(_), do: nil
+  defp runner_names(ids, runners),
+    do: runners |> Enum.filter(&(&1.id in ids)) |> Enum.map(& &1.name)
 
   # Per-field validation of the operator-entered run parameters. Keyed by the
   # form field so the LiveView can render each message inline under its input.
-  defp run_param_errors(target, reason) do
+  # Targets now come from the steps, so reason is the only run-time input.
+  defp run_param_errors(reason) do
     %{}
-    |> put_error(
-      :target,
-      parse_target(target) == nil,
-      "Pick a runner or group to execute this runbook on."
-    )
     |> put_error(
       :reason,
       String.trim(reason || "") == "",
@@ -110,8 +112,8 @@ defmodule EmisarWeb.RunbookRunLive do
 
   # Drop a field's inline error once it's been filled in — leaves any still-
   # blank field's error in place so a partial fix doesn't hide the rest.
-  defp clear_resolved_errors(errors, target, reason) do
-    resolved = run_param_errors(target, reason)
+  defp clear_resolved_errors(errors, reason) do
+    resolved = run_param_errors(reason)
     Map.filter(errors, fn {field, _msg} -> Map.has_key?(resolved, field) end)
   end
 
@@ -134,17 +136,15 @@ defmodule EmisarWeb.RunbookRunLive do
   defp format_reason(_), do: "unknown error"
 
   def handle_event("validate", params, socket) do
-    target = params["target"] || socket.assigns.target
     reason = params["reason"] || socket.assigns.reason
 
     {:noreply,
      socket
-     |> assign(:target, target)
      |> assign(:reason, reason)
-     # Clear each field's error as soon as the operator fills it in. We only
+     # Clear the error as soon as the operator fills the field in. We only
      # *remove* errors here (never add) — a blank field shouldn't show "required"
      # until the operator actually tries to dispatch.
-     |> assign(:errors, clear_resolved_errors(socket.assigns.errors, target, reason))}
+     |> assign(:errors, clear_resolved_errors(socket.assigns.errors, reason))}
   end
 
   def handle_event("dispatch", params, socket) do
@@ -156,18 +156,16 @@ defmodule EmisarWeb.RunbookRunLive do
   end
 
   defp do_dispatch(socket, params) do
-    target = params["target"] || socket.assigns.target
     reason = (params["reason"] || socket.assigns.reason || "") |> String.trim()
-    errors = run_param_errors(target, reason)
+    errors = run_param_errors(reason)
 
-    # Missing target / reason are validations of operator-entered run parameters,
-    # so they render inline under their field, not in a flash.
+    # A missing reason is a validation of the one operator-entered run
+    # parameter, so it renders inline under the field, not in a flash.
     if errors != %{} do
       {:noreply, socket |> assign(:reason, reason) |> assign(:errors, errors)}
     else
       case Runbooks.dispatch_runbook(
              socket.assigns.runbook,
-             parse_target(target),
              reason,
              socket.assigns.current_subject
            ) do
@@ -186,8 +184,14 @@ defmodule EmisarWeb.RunbookRunLive do
         {:error, :empty_runbook} ->
           {:noreply, put_flash(socket, :error, "Runbook has no steps to run.")}
 
-        {:error, :no_runners_in_group} ->
-          {:noreply, put_flash(socket, :error, "No active runners in that group.")}
+        {:error, {:step_no_runners, step_number}} ->
+          {:noreply,
+           put_flash(
+             socket,
+             :error,
+             "Step #{step_number} has no available runners — its group is empty or its " <>
+               "runners are offline. Edit the runbook's targets and try again."
+           )}
 
         {:error, reason} ->
           {:noreply,
@@ -253,9 +257,9 @@ defmodule EmisarWeb.RunbookRunLive do
         <%!-- How-it-works strip — short paragraph, replaces the
              stranded `-mt-4` lead-in that fought the page padding. --%>
         <p class="text-sm leading-relaxed text-zinc-400">
-          Steps dispatch in parallel waves of five against the selected runner — or every
-          active runner in the selected group. A failed run stops the waves behind it;
-          results stream in below as they arrive.
+          Steps dispatch in parallel waves of five, each against the runner — or group — it
+          targets. A failed run stops the waves behind it; results stream in below as they
+          arrive.
         </p>
 
         <%!-- One table, not two. Idle: the plan (numbered steps). Once
@@ -324,6 +328,7 @@ defmodule EmisarWeb.RunbookRunLive do
                 {idx + 1}
               </span>
               <div class="min-w-0 flex-1 text-sm">
+                <% target = step_target_label(step, @runners) %>
                 <div class="flex items-center gap-2">
                   <span class="truncate font-mono text-zinc-200">
                     {step["action"] || step["action_id"] || "—"}
@@ -336,6 +341,12 @@ defmodule EmisarWeb.RunbookRunLive do
                 </div>
                 <p :if={step["description"]} class="mt-0.5 truncate text-xs text-zinc-500">
                   {step["description"]}
+                </p>
+                <p :if={target} class="mt-0.5 truncate text-xs text-indigo-300/70">
+                  → {target}
+                </p>
+                <p :if={!target} class="mt-0.5 truncate text-xs text-amber-400/80">
+                  → no target set
                 </p>
               </div>
             </li>
@@ -358,43 +369,12 @@ defmodule EmisarWeb.RunbookRunLive do
           </div>
         </section>
 
-        <%!-- Dispatch form — full width below the plan. Target select
-             (groups + runners) + reason textarea + big start button. --%>
+        <%!-- Dispatch form — full width below the plan. Targets come from
+             the steps now, so this is just the reason + start button. --%>
         <section class="rounded-xl border border-zinc-900 bg-zinc-950/40 p-5">
           <h2 class="text-sm font-semibold text-zinc-100">Dispatch</h2>
 
           <form phx-change="validate" phx-submit="dispatch" class="mt-4 space-y-4">
-            <div>
-              <label class="block text-sm font-medium text-zinc-200">Run on</label>
-              <%= if @runners == [] do %>
-                <p class="mt-2 rounded-lg bg-zinc-900/60 p-3 text-xs text-zinc-400">
-                  No runners registered. Connect one first.
-                </p>
-              <% else %>
-                <select name="target" class={field_class(@errors[:target])}>
-                  <optgroup :if={@groups != []} label="Runner groups">
-                    <option
-                      :for={group <- @groups}
-                      value={"group:" <> group}
-                      selected={@target == "group:" <> group}
-                    >
-                      {group} (group)
-                    </option>
-                  </optgroup>
-                  <optgroup label="Runners">
-                    <option
-                      :for={runner <- @runners}
-                      value={"runner:" <> runner.id}
-                      selected={@target == "runner:" <> runner.id}
-                    >
-                      {runner.name} ({runner.group})
-                    </option>
-                  </optgroup>
-                </select>
-                <.error :if={@errors[:target]}>{@errors[:target]}</.error>
-              <% end %>
-            </div>
-
             <div>
               <label class="block text-sm font-medium text-zinc-200">Reason (required)</label>
               <textarea

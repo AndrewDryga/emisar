@@ -1,9 +1,9 @@
 defmodule Emisar.RunbooksTest do
   @moduledoc """
-  The runbook wave engine: `dispatch_runbook/4` expands steps × target
-  runners into an execution, releases work in waves of five, and
-  `dispatch_next_batch/1` (fired from `Runs.mark_finished/2`) advances
-  the waves — halting behind any failed or denied run.
+  The runbook wave engine: `dispatch_runbook/3` expands each step against
+  its own target runner(s) into an execution, releases work in waves of
+  five, and `dispatch_next_batch/1` (fired from `Runs.mark_finished/2`)
+  advances the waves — halting behind any failed or denied run.
   """
   use Emisar.DataCase, async: true
 
@@ -50,9 +50,17 @@ defmodule Emisar.RunbooksTest do
     runbook
   end
 
-  defp uptime_steps(count) do
-    for n <- 1..count, do: %{"id" => "step#{n}", "action_id" => "linux.uptime", "args" => %{}}
+  # Uptime steps, each carrying `selector` as its per-step runner target
+  # (omitted when nil — drafts don't need one).
+  defp uptime_steps(count, selector \\ nil) do
+    for n <- 1..count do
+      step = %{"id" => "step#{n}", "action_id" => "linux.uptime", "args" => %{}}
+      if selector, do: Map.put(step, "runner_selector", selector), else: step
+    end
   end
+
+  defp runner_target(runner), do: %{"runner_id" => [runner.id]}
+  defp group_target(group), do: %{"group" => [group]}
 
   defp draft_with_steps(subject, steps) do
     title = "rb-#{System.unique_integer([:positive])}"
@@ -78,13 +86,15 @@ defmodule Emisar.RunbooksTest do
 
   defp step_ids(runs), do: runs |> Enum.map(& &1.runbook_step_id) |> Enum.sort()
 
-  describe "dispatch_runbook/4" do
+  describe "dispatch_runbook/3" do
     test "dispatches a small runbook in one wave, stamped with the execution" do
       {_account, subject, runner} = account_with_runner()
-      runbook = published_runbook!(subject, "deploy-check", uptime_steps(3))
+
+      runbook =
+        published_runbook!(subject, "deploy-check", uptime_steps(3, runner_target(runner)))
 
       assert {:ok, %{execution_id: execution_id, total: 3, runs: runs, errors: []}} =
-               Runbooks.dispatch_runbook(runbook, {:runner, runner.id}, "release 42", subject)
+               Runbooks.dispatch_runbook(runbook, "release 42", subject)
 
       assert step_ids(runs) == ["step1", "step2", "step3"]
 
@@ -93,10 +103,7 @@ defmodule Emisar.RunbooksTest do
         assert run.runbook_execution_id == execution_id
         assert run.runner_id == runner.id
 
-        assert run.runbook_dispatch == %{
-                 "target" => %{"runner_id" => runner.id},
-                 "reason" => "release 42"
-               }
+        assert run.runbook_dispatch == %{"reason" => "release 42"}
       end
 
       # The visible reason is prefixed per step; the raw operator reason
@@ -119,10 +126,11 @@ defmodule Emisar.RunbooksTest do
       _ = runner_fixture(account_id: account.id, group: "elsewhere")
       _ = runner_fixture(group: runner.group)
 
-      runbook = published_runbook!(subject, "fleet-sweep", uptime_steps(2))
+      runbook =
+        published_runbook!(subject, "fleet-sweep", uptime_steps(2, group_target(runner.group)))
 
       assert {:ok, %{total: 4, runs: runs, errors: []}} =
-               Runbooks.dispatch_runbook(runbook, {:group, runner.group}, "audit", subject)
+               Runbooks.dispatch_runbook(runbook, "audit", subject)
 
       assert length(runs) == 4
 
@@ -130,12 +138,12 @@ defmodule Emisar.RunbooksTest do
       assert dispatched_runner_ids == Enum.sort([runner.id, peer.id])
     end
 
-    test "a group with no active runners refuses dispatch" do
+    test "a step whose group has no active runners refuses dispatch" do
       {_account, subject, _runner} = account_with_runner()
-      runbook = published_runbook!(subject, "ghost-town", uptime_steps(1))
+      runbook = published_runbook!(subject, "ghost-town", uptime_steps(1, group_target("ghost")))
 
-      assert {:error, :no_runners_in_group} =
-               Runbooks.dispatch_runbook(runbook, {:group, "ghost"}, "audit", subject)
+      assert {:error, {:step_no_runners, 1}} =
+               Runbooks.dispatch_runbook(runbook, "audit", subject)
     end
 
     test "a policy denial writes the denied row into the execution" do
@@ -158,10 +166,10 @@ defmodule Emisar.RunbooksTest do
 
       runner = runner_fixture(account_id: account.id)
       _ = action_fixture(runner: runner, action_id: "linux.uptime", risk: "low")
-      runbook = published_runbook!(subject, "denied-book", uptime_steps(1))
+      runbook = published_runbook!(subject, "denied-book", uptime_steps(1, runner_target(runner)))
 
       assert {:ok, %{execution_id: execution_id, total: 1, runs: [], errors: []}} =
-               Runbooks.dispatch_runbook(runbook, {:runner, runner.id}, "try", subject)
+               Runbooks.dispatch_runbook(runbook, "try", subject)
 
       assert [denied] = execution_runs(account, execution_id)
       assert denied.status == :denied
@@ -172,10 +180,10 @@ defmodule Emisar.RunbooksTest do
   describe "wave advancement" do
     test "releases the next wave only when the whole wave finishes" do
       {account, subject, runner} = account_with_runner()
-      runbook = published_runbook!(subject, "seven-steps", uptime_steps(7))
+      runbook = published_runbook!(subject, "seven-steps", uptime_steps(7, runner_target(runner)))
 
       assert {:ok, %{execution_id: execution_id, total: 7, runs: wave1}} =
-               Runbooks.dispatch_runbook(runbook, {:runner, runner.id}, "go", subject)
+               Runbooks.dispatch_runbook(runbook, "go", subject)
 
       assert step_ids(wave1) == ["step1", "step2", "step3", "step4", "step5"]
 
@@ -192,10 +200,12 @@ defmodule Emisar.RunbooksTest do
 
     test "a failed run halts the waves behind it" do
       {account, subject, runner} = account_with_runner()
-      runbook = published_runbook!(subject, "halting-book", uptime_steps(7))
+
+      runbook =
+        published_runbook!(subject, "halting-book", uptime_steps(7, runner_target(runner)))
 
       assert {:ok, %{execution_id: execution_id, runs: [first | rest]}} =
-               Runbooks.dispatch_runbook(runbook, {:runner, runner.id}, "go", subject)
+               Runbooks.dispatch_runbook(runbook, "go", subject)
 
       {:ok, _} = Runs.mark_finished(first, %{"status" => "failed", "exit_code" => 1})
       Enum.each(rest, &finish!/1)
@@ -210,10 +220,10 @@ defmodule Emisar.RunbooksTest do
 
     test "the (execution, step, runner) unique index rejects a duplicate slot claim" do
       {_account, subject, runner} = account_with_runner()
-      runbook = published_runbook!(subject, "race-book", uptime_steps(1))
+      runbook = published_runbook!(subject, "race-book", uptime_steps(1, runner_target(runner)))
 
       assert {:ok, %{execution_id: execution_id, runs: [run]}} =
-               Runbooks.dispatch_runbook(runbook, {:runner, runner.id}, "go", subject)
+               Runbooks.dispatch_runbook(runbook, "go", subject)
 
       assert {:error, changeset} =
                Runs.create_run(%{
@@ -355,11 +365,29 @@ defmodule Emisar.RunbooksTest do
       assert "add at least one step before publishing" in errors_on(changeset).definition
     end
 
-    test "publishing valid steps succeeds" do
+    test "publishing a step with no runner target is rejected" do
       {_user, _account, subject} = owner_subject_fixture()
 
       draft =
         draft_with_steps(subject, [%{"id" => "s1", "action_id" => "linux.uptime", "args" => %{}}])
+
+      assert {:error, %Ecto.Changeset{} = changeset} = Runbooks.publish(draft, subject)
+
+      assert "every step needs a runner or group target before publishing" in errors_on(changeset).definition
+    end
+
+    test "publishing valid steps succeeds" do
+      {_user, _account, subject} = owner_subject_fixture()
+
+      draft =
+        draft_with_steps(subject, [
+          %{
+            "id" => "s1",
+            "action_id" => "linux.uptime",
+            "args" => %{},
+            "runner_selector" => %{"group" => ["prod"]}
+          }
+        ])
 
       assert {:ok, runbook} = Runbooks.publish(draft, subject)
       assert runbook.status == :published

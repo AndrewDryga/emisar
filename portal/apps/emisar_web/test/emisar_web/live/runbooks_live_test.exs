@@ -18,7 +18,14 @@ defmodule EmisarWeb.RunbooksLiveTest do
           "name" => title,
           "slug" => String.downcase(String.replace(title, " ", "-")),
           "definition" => %{
-            "steps" => [%{"id" => "s1", "action_id" => "linux.uptime", "args" => %{}}]
+            "steps" => [
+              %{
+                "id" => "s1",
+                "action_id" => "linux.uptime",
+                "args" => %{},
+                "runner_selector" => %{"group" => ["default"]}
+              }
+            ]
           }
         },
         subject

@@ -425,10 +425,28 @@ defmodule Emisar.RunsTest do
       _ = action_fixture(runner: runner, action_id: "linux.uptime", risk: "low")
       _ = policy_fixture(account_id: account.id)
 
-      good_steps =
-        for n <- 1..5, do: %{"id" => "step#{n}", "action_id" => "linux.uptime", "args" => %{}}
+      target = %{"runner_id" => [runner.id]}
 
-      steps = good_steps ++ [%{"id" => "step6", "action_id" => "linux.missing", "args" => %{}}]
+      good_steps =
+        for n <- 1..5 do
+          %{
+            "id" => "step#{n}",
+            "action_id" => "linux.uptime",
+            "args" => %{},
+            "runner_selector" => target
+          }
+        end
+
+      steps =
+        good_steps ++
+          [
+            %{
+              "id" => "step6",
+              "action_id" => "linux.missing",
+              "args" => %{},
+              "runner_selector" => target
+            }
+          ]
 
       {:ok, runbook} =
         Emisar.Runbooks.create_runbook(
@@ -444,7 +462,7 @@ defmodule Emisar.RunsTest do
       {:ok, runbook} = Emisar.Runbooks.publish(runbook, subject)
 
       {:ok, %{execution_id: execution_id, runs: wave1, errors: []}} =
-        Emisar.Runbooks.dispatch_runbook(runbook, {:runner, runner.id}, "ship it", subject)
+        Emisar.Runbooks.dispatch_runbook(runbook, "ship it", subject)
 
       assert length(wave1) == 5
 
@@ -482,8 +500,18 @@ defmodule Emisar.RunsTest do
             "slug" => "two-step-ok",
             "definition" => %{
               "steps" => [
-                %{"id" => "step1", "action_id" => "linux.uptime", "args" => %{}},
-                %{"id" => "step2", "action_id" => "linux.uptime", "args" => %{}}
+                %{
+                  "id" => "step1",
+                  "action_id" => "linux.uptime",
+                  "args" => %{},
+                  "runner_selector" => %{"runner_id" => [runner.id]}
+                },
+                %{
+                  "id" => "step2",
+                  "action_id" => "linux.uptime",
+                  "args" => %{},
+                  "runner_selector" => %{"runner_id" => [runner.id]}
+                }
               ]
             }
           },
@@ -493,7 +521,7 @@ defmodule Emisar.RunsTest do
       {:ok, runbook} = Emisar.Runbooks.publish(runbook, subject)
 
       {:ok, %{runs: runs, errors: []}} =
-        Emisar.Runbooks.dispatch_runbook(runbook, {:runner, runner.id}, "ship it", subject)
+        Emisar.Runbooks.dispatch_runbook(runbook, "ship it", subject)
 
       Enum.each(runs, fn run ->
         {:ok, _} = Runs.mark_finished(run, %{"status" => "success", "duration_ms" => 5})

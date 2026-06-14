@@ -453,7 +453,14 @@ defmodule Emisar.AuthAuditTest do
             title: "Restart",
             description: "go",
             definition: %{
-              "steps" => [%{"id" => "s1", "action_id" => "linux.uptime", "args" => %{}}]
+              "steps" => [
+                %{
+                  "id" => "s1",
+                  "action_id" => "linux.uptime",
+                  "args" => %{},
+                  "runner_selector" => %{"group" => ["default"]}
+                }
+              ]
             }
           },
           subject

@@ -172,7 +172,12 @@ defmodule Emisar.AuthorizationTest do
                    "status" => "published",
                    "definition" => %{
                      "steps" => [
-                       %{"id" => "1", "action_id" => "nomad.job_status_all", "args" => %{}}
+                       %{
+                         "id" => "1",
+                         "action_id" => "nomad.job_status_all",
+                         "args" => %{},
+                         "runner_selector" => %{"group" => ["ops"]}
+                       }
                      ]
                    }
                  },
@@ -214,12 +219,7 @@ defmodule Emisar.AuthorizationTest do
       subject_a: subject_a
     } do
       assert {:error, :not_found} =
-               Emisar.Runbooks.dispatch_runbook(
-                 runbook_b,
-                 {:runner, Ecto.UUID.generate()},
-                 "go",
-                 subject_a
-               )
+               Emisar.Runbooks.dispatch_runbook(runbook_b, "go", subject_a)
     end
   end
 
