@@ -686,13 +686,9 @@ defmodule EmisarWeb.TeamLive do
                   </p>
                   <:actions>
                     <.button phx-disable-with="Saving...">Save</.button>
-                    <button
-                      type="button"
-                      phx-click="cancel_edit"
-                      class="text-sm font-medium text-zinc-400 hover:text-zinc-200"
-                    >
+                    <.button variant="ghost" type="button" phx-click="cancel_edit">
                       Cancel
-                    </button>
+                    </.button>
                   </:actions>
                 </.simple_form>
               </div>
@@ -761,13 +757,9 @@ defmodule EmisarWeb.TeamLive do
 
                   <div class="flex items-center gap-3">
                     <.button phx-disable-with="Saving...">Save scope</.button>
-                    <button
-                      type="button"
-                      phx-click="cancel_scope_edit"
-                      class="text-sm font-medium text-zinc-400 hover:text-zinc-200"
-                    >
+                    <.button variant="ghost" type="button" phx-click="cancel_scope_edit">
                       Cancel
-                    </button>
+                    </.button>
                   </div>
                 </form>
               </div>

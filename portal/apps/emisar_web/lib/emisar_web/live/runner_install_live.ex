@@ -83,12 +83,7 @@ defmodule EmisarWeb.RunnerInstallLive do
     >
       <:title>Install a runner</:title>
       <:actions>
-        <.link
-          navigate={~p"/app/runners"}
-          class="rounded-lg border border-zinc-800 px-3 py-1.5 text-sm font-medium text-zinc-300 hover:bg-zinc-900"
-        >
-          ← Back to runners
-        </.link>
+        <.button variant="secondary" size="md" navigate={~p"/app/runners"}>← Back to runners</.button>
       </:actions>
 
       <.install_wizard

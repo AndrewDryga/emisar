@@ -313,7 +313,9 @@ defmodule EmisarWeb.PacksLive do
                   :if={Catalog.subject_can_manage_packs?(@current_subject)}
                   class="mt-3 flex flex-wrap gap-2"
                 >
-                  <button
+                  <.button
+                    variant="caution"
+                    size="sm"
                     phx-click="trust"
                     phx-value-id={v.id}
                     data-confirm={
@@ -323,11 +325,12 @@ defmodule EmisarWeb.PacksLive do
                         "Adopt the new hash as trusted for #{pack.id} v#{v.version}? It authorizes dispatch on #{length(@advertising[v.id] || [])} advertising runner(s)."
                       end
                     }
-                    class="rounded bg-amber-500 px-3 py-1 text-xs font-semibold text-amber-950 hover:bg-amber-400"
                   >
                     {if is_nil(v.hash), do: "Approve pack", else: "Trust new contents"}
-                  </button>
-                  <button
+                  </.button>
+                  <.button
+                    variant="secondary"
+                    size="sm"
                     phx-click="reject"
                     phx-value-id={v.id}
                     data-confirm={
@@ -337,10 +340,9 @@ defmodule EmisarWeb.PacksLive do
                         "Keep the trusted hash and discard the pending one?"
                       end
                     }
-                    class="rounded border border-zinc-700 bg-zinc-900 px-3 py-1 text-xs text-zinc-200 hover:bg-zinc-800"
                   >
                     Reject
-                  </button>
+                  </.button>
                 </div>
               </div>
             </li>

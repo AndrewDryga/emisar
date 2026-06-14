@@ -253,12 +253,9 @@ defmodule EmisarWeb.AuthKeysLive do
               Issuing a key doesn't reserve a slot — the runner only counts after it registers.
             </p>
           </div>
-          <.link
-            navigate={~p"/app/settings/billing"}
-            class="shrink-0 self-start rounded-lg bg-current/20 px-3 py-1.5 text-xs font-semibold hover:bg-current/30"
-          >
+          <.button variant="secondary" size="md" navigate={~p"/app/settings/billing"}>
             See plans →
-          </.link>
+          </.button>
         </div>
 
         <.secret_reveal

@@ -194,12 +194,14 @@ defmodule EmisarWeb.RunDetailLive do
             </p>
           </div>
         </div>
-        <.link
+        <.button
+          variant="caution"
+          size="md"
           navigate={~p"/app/approvals/#{@approval_request.id}"}
-          class="shrink-0 rounded-lg bg-amber-500 px-3 py-1.5 text-sm font-semibold text-zinc-950 hover:bg-amber-400"
+          class="shrink-0"
         >
           Review approval →
-        </.link>
+        </.button>
       </div>
 
       <%!-- Error banner — only when terminal-failed and we got a

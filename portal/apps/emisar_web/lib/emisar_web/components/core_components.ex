@@ -157,21 +157,35 @@ defmodule EmisarWeb.CoreComponents do
 
   Variants: `primary` (default, filled indigo), `secondary` (bordered neutral),
   `danger` (bordered rose — destructive actions read identically everywhere),
-  `success` (filled emerald — affirmative), `ghost` (text-only). Sizes: `lg`
-  (default), `md`, `sm`. An optional leading `icon` (heroicon name) renders before
-  the label. `disabled` is honored by every variant. Pass `navigate`/`patch`/
-  `href` and it renders a styled `<.link>` instead of a `<button>` — so a primary
-  action that navigates reads identically to one that submits.
+  `success` (filled emerald — affirmative), `caution` (filled amber — needs
+  attention but isn't "safe", e.g. trusting a pack's new contents), `ghost`
+  (text-only; tint with `tone="danger|caution|success"` for low-prominence inline
+  actions like remove/revoke/restore). Sizes: `lg` (default), `md`, `sm`. An
+  optional leading `icon` (heroicon name) renders before the label. `disabled` is
+  honored by every variant. Pass `navigate`/`patch`/`href` and it renders a styled
+  `<.link>` instead of a `<button>` — so a primary action that navigates reads
+  identically to one that submits.
 
   ## Examples
 
       <.button>Send!</.button>
       <.button variant="danger" size="sm" phx-click="revoke" phx-value-id={id}>Revoke</.button>
       <.button variant="success" icon="hero-check">Approve</.button>
+      <.button variant="caution" phx-click="trust">Trust new contents</.button>
+      <.button variant="ghost" tone="danger" phx-click="remove">Remove</.button>
       <.button navigate={~p"/app/runbooks/new"} icon="hero-plus">New runbook</.button>
   """
   attr :type, :string, default: nil
-  attr :variant, :string, default: "primary", values: ~w(primary secondary danger success ghost)
+
+  attr :variant, :string,
+    default: "primary",
+    values: ~w(primary secondary danger success caution ghost)
+
+  attr :tone, :string,
+    default: "neutral",
+    values: ~w(neutral danger caution success),
+    doc: ~s(tints a variant="ghost" text button)
+
   attr :size, :string, default: "lg", values: ~w(sm md lg)
   attr :icon, :string, default: nil, doc: ~s(leading heroicon name, e.g. "hero-plus")
   attr :class, :string, default: nil
@@ -182,7 +196,10 @@ defmodule EmisarWeb.CoreComponents do
   def button(%{rest: rest} = assigns)
       when is_map_key(rest, :href) or is_map_key(rest, :navigate) or is_map_key(rest, :patch) do
     ~H"""
-    <.link class={[button_base(), button_variant(@variant), button_size(@size), @class]} {@rest}>
+    <.link
+      class={[button_base(), button_variant(@variant, @tone), button_size(@size), @class]}
+      {@rest}
+    >
       <.icon :if={@icon} name={@icon} class="h-4 w-4" />{render_slot(@inner_block)}
     </.link>
     """
@@ -192,7 +209,7 @@ defmodule EmisarWeb.CoreComponents do
     ~H"""
     <button
       type={@type}
-      class={[button_base(), button_variant(@variant), button_size(@size), @class]}
+      class={[button_base(), button_variant(@variant, @tone), button_size(@size), @class]}
       {@rest}
     >
       <.icon :if={@icon} name={@icon} class="h-4 w-4" />{render_slot(@inner_block)}
@@ -206,23 +223,40 @@ defmodule EmisarWeb.CoreComponents do
       "disabled:opacity-50 disabled:cursor-not-allowed"
   end
 
-  defp button_variant("primary"),
+  defp button_variant("primary", _tone),
     do:
       "bg-indigo-500 font-semibold text-zinc-950 shadow-sm hover:bg-indigo-400 active:bg-indigo-600 focus-visible:outline-indigo-400"
 
-  defp button_variant("success"),
+  defp button_variant("success", _tone),
     do:
       "bg-emerald-500 font-semibold text-zinc-950 shadow-sm hover:bg-emerald-400 active:bg-emerald-600 focus-visible:outline-emerald-400"
 
-  defp button_variant("danger"),
+  # Caution: filled amber for attention-worthy actions where success-green
+  # would wrongly read as "safe" — e.g. trusting a pack's new contents.
+  defp button_variant("caution", _tone),
+    do:
+      "bg-amber-500 font-semibold text-amber-950 shadow-sm hover:bg-amber-400 active:bg-amber-600 focus-visible:outline-amber-400"
+
+  defp button_variant("danger", _tone),
     do:
       "border border-rose-500/40 font-medium text-rose-200 hover:bg-rose-500/10 focus-visible:outline-rose-400"
 
-  defp button_variant("secondary"),
+  defp button_variant("secondary", _tone),
     do:
       "border border-zinc-800 font-medium text-zinc-200 hover:bg-zinc-900 focus-visible:outline-zinc-600"
 
-  defp button_variant("ghost"),
+  # Ghost is the only tone-aware variant: a text-only button tinted by `tone`,
+  # for low-prominence inline actions (remove, revoke, suspend, restore).
+  defp button_variant("ghost", "danger"),
+    do: "font-medium text-rose-300 hover:bg-rose-500/10 focus-visible:outline-rose-400"
+
+  defp button_variant("ghost", "caution"),
+    do: "font-medium text-amber-300 hover:bg-amber-500/10 focus-visible:outline-amber-400"
+
+  defp button_variant("ghost", "success"),
+    do: "font-medium text-emerald-300 hover:bg-emerald-500/10 focus-visible:outline-emerald-400"
+
+  defp button_variant("ghost", _neutral),
     do: "font-medium text-zinc-300 hover:bg-zinc-900 focus-visible:outline-zinc-600"
 
   defp button_size("lg"), do: "px-4 py-2.5 text-sm"

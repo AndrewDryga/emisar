@@ -421,25 +421,22 @@ defmodule EmisarWeb.RunbookEditorLive do
         <% end %>
       </:title>
       <:actions>
-        <.link
-          navigate={~p"/app/runbooks"}
-          class="rounded-lg border border-zinc-800 px-3 py-1.5 text-sm font-medium text-zinc-300 hover:bg-zinc-900"
-        >
-          Cancel
-        </.link>
+        <.button variant="secondary" size="md" navigate={~p"/app/runbooks"}>Cancel</.button>
       </:actions>
 
       <div class="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_320px]">
         <section class="overflow-hidden rounded-xl border border-zinc-900 bg-zinc-950/40">
           <header class="flex items-center justify-between border-b border-zinc-900 px-5 py-3">
             <h2 class="text-sm font-semibold text-zinc-100">Steps</h2>
-            <button
+            <.button
+              variant="secondary"
+              size="md"
               type="button"
+              icon="hero-plus"
               phx-click="add_action_step"
-              class="inline-flex items-center gap-1.5 rounded-lg border border-zinc-800 px-2.5 py-1.5 text-xs font-medium text-zinc-300 hover:border-indigo-500 hover:text-indigo-300"
             >
-              <.icon name="hero-plus" class="h-3.5 w-3.5" /> Add step
-            </button>
+              Add step
+            </.button>
           </header>
 
           <div class="space-y-3 p-5">
@@ -488,14 +485,14 @@ defmodule EmisarWeb.RunbookEditorLive do
             <% end %>
 
             <div class="flex items-center justify-end gap-3 pt-2">
-              <button
+              <.button
+                variant="secondary"
                 type="button"
                 phx-click="save"
-                class="rounded-lg border border-zinc-800 px-4 py-2 text-sm font-medium text-zinc-200 hover:bg-zinc-900"
                 phx-disable-with="Saving..."
               >
                 Save draft
-              </button>
+              </.button>
               <.button type="button" phx-click="publish" phx-disable-with="Publishing...">
                 Publish
               </.button>

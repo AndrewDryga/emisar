@@ -585,15 +585,17 @@ defmodule EmisarWeb.PoliciesLive do
                 then group, then the default policy.
               </p>
             </div>
-            <button
+            <.button
               :if={@can_manage?}
+              variant="secondary"
+              size="md"
               type="button"
               phx-click="add_ruleset"
+              icon="hero-plus"
               disabled={not addable_any?(@runners, @groups, @rulesets)}
-              class="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-zinc-800 px-3 py-1.5 text-xs font-medium text-zinc-300 hover:border-indigo-500 hover:text-indigo-300 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-zinc-800 disabled:hover:text-zinc-300"
             >
-              <.icon name="hero-plus" class="h-3.5 w-3.5" /> Add ruleset
-            </button>
+              Add ruleset
+            </.button>
           </header>
 
           <p
@@ -672,19 +674,21 @@ defmodule EmisarWeb.PoliciesLive do
           <% end %>
         </div>
 
-        <button
+        <.button
           :if={@can_manage}
+          variant="secondary"
+          size="md"
           type="button"
           phx-click="remove_ruleset"
           phx-value-uid={@ruleset.uid}
+          icon="hero-trash"
           data-confirm={
             @ruleset.policy &&
               "Remove this ruleset? That #{@ruleset.scope_type} falls back to the default policy."
           }
-          class="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-zinc-800 px-3 py-1.5 text-xs font-medium text-zinc-400 hover:border-rose-700 hover:text-rose-300"
         >
-          <.icon name="hero-trash" class="h-3.5 w-3.5" /> Remove
-        </button>
+          Remove
+        </.button>
       </header>
 
       <.policy_fields
@@ -762,15 +766,17 @@ defmodule EmisarWeb.PoliciesLive do
               First match wins. Action supports wildcards (e.g. <code class="font-mono text-zinc-300">cassandra.*</code>).
             </p>
           </div>
-          <button
+          <.button
             :if={@can_manage}
+            variant="secondary"
+            size="md"
             type="button"
             phx-click="add_override"
             phx-value-editor={@editor_id}
-            class="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-zinc-800 px-3 py-1.5 text-xs font-medium text-zinc-300 hover:border-indigo-500 hover:text-indigo-300"
+            icon="hero-plus"
           >
-            <.icon name="hero-plus" class="h-3.5 w-3.5" /> Add override
-          </button>
+            Add override
+          </.button>
         </div>
 
         <div

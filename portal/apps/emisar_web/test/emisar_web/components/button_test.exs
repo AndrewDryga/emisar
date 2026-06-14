@@ -56,5 +56,13 @@ defmodule EmisarWeb.Components.ButtonTest do
       assert html =~ "px-2.5 py-1 text-xs"
       assert html =~ "hero-trash"
     end
+
+    test "caution is filled amber; ghost takes a color tone" do
+      assert render_button(%{variant: "caution"}) =~ "bg-amber-500"
+      assert render_button(%{variant: "ghost"}) =~ "text-zinc-300"
+      assert render_button(%{variant: "ghost", tone: "danger"}) =~ "text-rose-300"
+      assert render_button(%{variant: "ghost", tone: "caution"}) =~ "text-amber-300"
+      assert render_button(%{variant: "ghost", tone: "success"}) =~ "text-emerald-300"
+    end
   end
 end

@@ -369,14 +369,17 @@ defmodule EmisarWeb.AuditLive do
               token below, then point your collector at <code class="font-mono text-zinc-300">{@base_audit_url}</code>.
             </p>
           </div>
-          <button
+          <.button
             :if={is_nil(@export_secret)}
+            variant="secondary"
+            size="md"
+            class="shrink-0"
             type="button"
+            icon="hero-key"
             phx-click="create_export_key"
-            class="shrink-0 rounded-lg border border-zinc-800 px-3 py-1.5 text-xs font-medium text-zinc-200 hover:bg-zinc-900"
           >
-            <.icon name="hero-key" class="mr-1 inline h-3.5 w-3.5" /> Mint export token
-          </button>
+            Mint export token
+          </.button>
         </header>
 
         <%!-- One-shot reveal. The raw secret only ever exists in the

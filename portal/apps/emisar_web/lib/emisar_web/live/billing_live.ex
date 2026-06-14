@@ -272,31 +272,31 @@ defmodule EmisarWeb.BillingLive do
                  "team": the next priced plan up, or nil at the top / when the
                  only step up is a contact-sales tier (enterprise). --%>
             <% upgrade_to = next_upgrade_plan(@plans, @summary.plan) %>
-            <button
+            <.button
               :if={upgrade_to && Billing.subject_can_manage_billing?(@current_subject)}
               phx-click="upgrade"
               phx-value-plan={upgrade_to.key}
               phx-disable-with="Starting checkout…"
-              class="rounded-lg bg-indigo-500 px-4 py-2 text-sm font-semibold text-zinc-950 hover:bg-indigo-400 disabled:opacity-60"
             >
               Upgrade to {upgrade_to.name}
-            </button>
+            </.button>
             <%!-- "Manage subscription" surfaces the Paddle Customer
                  Portal — invoices, payment method, plan change,
                  cancellation. Available once the account has a
                  Paddle customer attached (any paid plan or
                  previous paid plan). --%>
-            <button
+            <.button
               :if={
                 @current_account.paddle_customer_id &&
                   Billing.subject_can_manage_billing?(@current_subject)
               }
+              variant="secondary"
               phx-click="manage_billing"
               phx-disable-with="Opening portal…"
-              class="inline-flex items-center gap-1.5 rounded-lg border border-zinc-800 px-4 py-2 text-sm font-medium text-zinc-200 hover:bg-zinc-900 disabled:opacity-60"
+              icon="hero-credit-card"
             >
-              <.icon name="hero-credit-card" class="h-4 w-4" /> Manage subscription
-            </button>
+              Manage subscription
+            </.button>
           </div>
 
           {runner_limit = plan_limit(@plans, @summary.plan, :runners_limit)}
@@ -366,21 +366,19 @@ defmodule EmisarWeb.BillingLive do
                       You're here
                     </span>
                   <% plan.key == "enterprise" -> %>
-                    <button
-                      phx-click="contact_sales"
-                      class="block w-full rounded-lg border border-zinc-700 px-3 py-2 text-center text-xs font-semibold text-zinc-200 hover:bg-zinc-900"
-                    >
+                    <.button variant="secondary" size="md" class="w-full" phx-click="contact_sales">
                       Contact sales
-                    </button>
+                    </.button>
                   <% Billing.subject_can_manage_billing?(@current_subject) -> %>
-                    <button
+                    <.button
+                      size="md"
+                      class="w-full"
                       phx-click="upgrade"
                       phx-value-plan={plan.key}
                       phx-disable-with="Starting checkout…"
-                      class="block w-full rounded-lg bg-indigo-500 px-3 py-2 text-center text-xs font-semibold text-zinc-950 hover:bg-indigo-400 disabled:opacity-60"
                     >
                       Upgrade to {plan.name}
-                    </button>
+                    </.button>
                   <% true -> %>
                     <span class="block w-full rounded-lg bg-zinc-900 px-3 py-2 text-center text-xs font-medium text-zinc-500">
                       Owners only

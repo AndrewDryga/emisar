@@ -323,12 +323,9 @@ defmodule EmisarWeb.RunnerDetailLive do
             </p>
           </div>
           <div class="shrink-0">
-            <button
-              phx-click="enable"
-              class="rounded-lg border border-emerald-500/40 px-3 py-1.5 text-sm font-medium text-emerald-200 hover:bg-emerald-500/10"
-            >
+            <.button variant="success" size="md" phx-click="enable">
               Enable runner
-            </button>
+            </.button>
           </div>
         </section>
       </div>

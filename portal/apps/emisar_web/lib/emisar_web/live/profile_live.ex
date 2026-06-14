@@ -526,14 +526,15 @@ defmodule EmisarWeb.ProfileLive do
                   >
                     Copy all
                   </button>
-                  <button
+                  <.button
+                    variant="secondary"
+                    size="sm"
                     type="button"
                     phx-click="dismiss_recovery_codes"
                     data-confirm="Got them stored somewhere safe?"
-                    class="rounded-lg border border-zinc-700 px-3 py-1.5 text-xs font-medium text-zinc-300 hover:bg-zinc-900"
                   >
                     I've saved them
-                  </button>
+                  </.button>
                 </div>
               </div>
             <% @mfa_enabled? -> %>
@@ -542,13 +543,14 @@ defmodule EmisarWeb.ProfileLive do
                 to sign in.
               </p>
               <div class="mt-4 flex flex-wrap items-center gap-3">
-                <button
+                <.button
+                  variant="secondary"
+                  size="md"
                   phx-click="regenerate_recovery_codes"
                   data-confirm="Generate a new set of recovery codes? Old codes will stop working."
-                  class="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm font-medium text-zinc-200 hover:bg-zinc-900"
                 >
                   Regenerate recovery codes
-                </button>
+                </.button>
                 <.button
                   variant="danger"
                   size="md"
@@ -602,13 +604,9 @@ defmodule EmisarWeb.ProfileLive do
                     />
                     <:actions>
                       <.button phx-disable-with="Verifying...">Confirm and enable</.button>
-                      <button
-                        type="button"
-                        phx-click="cancel_mfa"
-                        class="text-sm font-medium text-zinc-400 hover:text-zinc-200"
-                      >
+                      <.button variant="ghost" type="button" phx-click="cancel_mfa">
                         Cancel
-                      </button>
+                      </.button>
                     </:actions>
                   </.simple_form>
                 </div>
@@ -669,15 +667,18 @@ defmodule EmisarWeb.ProfileLive do
                   </div>
                 </div>
               </div>
-              <button
+              <.button
                 :if={not current_session?(session, @current_session_digest)}
+                variant="ghost"
+                tone="danger"
+                size="sm"
                 phx-click="revoke_session"
                 phx-value-id={session.id}
                 data-confirm="Sign out this session?"
-                class="shrink-0 text-xs font-medium text-rose-300 hover:text-rose-200"
+                class="shrink-0"
               >
                 Revoke
-              </button>
+              </.button>
             </li>
             <li :if={@sessions == []} class="px-4 py-6 text-center text-xs text-zinc-500">
               No active sessions.

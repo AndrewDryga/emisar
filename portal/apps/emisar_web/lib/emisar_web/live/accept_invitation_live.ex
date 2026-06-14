@@ -109,13 +109,9 @@ defmodule EmisarWeb.AcceptInvitationLive do
         as <span class="font-mono text-indigo-300">{@membership.role}</span>.
       </p>
 
-      <button
-        phx-click="accept_existing"
-        phx-disable-with="Accepting..."
-        class="block w-full rounded-lg bg-indigo-500 px-4 py-2.5 text-center text-sm font-semibold text-zinc-950 hover:bg-indigo-400"
-      >
+      <.button class="w-full" phx-click="accept_existing" phx-disable-with="Accepting...">
         Accept invitation <span aria-hidden="true">→</span>
-      </button>
+      </.button>
     </.auth_layout>
     """
   end
@@ -132,13 +128,9 @@ defmodule EmisarWeb.AcceptInvitationLive do
           Sign out first, then re-open the invitation link to accept it as {@membership.user.email}.
         </p>
 
-        <.link
-          href={~p"/sign_out"}
-          method="delete"
-          class="mt-2 block w-full rounded-lg border border-rose-500/40 px-4 py-2.5 text-center text-sm font-medium text-rose-200 hover:bg-rose-500/10"
-        >
+        <.button variant="danger" href={~p"/sign_out"} method="delete" class="mt-2 w-full">
           Sign out
-        </.link>
+        </.button>
       </div>
     </.auth_layout>
     """
