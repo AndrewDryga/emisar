@@ -464,6 +464,12 @@ defmodule Emisar.Runners do
   `fetch_runner_by_id/3` from presence). `:disabled` and `:pending`
   win over a stale socket so the operator UI reads true.
   """
+  # No heartbeat-age `:stale` state by design — liveness is enforced at the
+  # socket, not re-derived from `last_heartbeat_at`: the runner heartbeats every
+  # 30s and ends its session on a failed send, and the portal closes the socket
+  # after 90s with no heartbeat (EmisarWeb.RunnerSocket). A silent runner drops
+  # to `:offline` within 90s rather than lingering "online but stale", so an
+  # `online?` runner is one that has heartbeated recently — the binary is honest.
   def connection_state(%Runner{disabled_at: %DateTime{}}), do: :disabled
   def connection_state(%Runner{online?: true}), do: :online
   def connection_state(%Runner{last_connected_at: nil}), do: :pending
