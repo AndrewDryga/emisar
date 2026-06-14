@@ -3,12 +3,18 @@ id: iscsi.sessions
 title: iscsiadm -m session
 kind: exec
 risk: low
-description: Active iSCSI sessions — one line per session (transport, target IQN, sid).
+description: >
+  Active iSCSI sessions — one line per session (transport, target IQN, sid).
+  Returns nothing and succeeds when there are no active sessions (iscsiadm
+  exits 21 in that case, which is treated as success, not failure).
 side_effects: ["One iscsiadm read.", "Read-only."]
 args: []
 execution:
   command: {binary: iscsiadm, argv: ["-m", "session"]}
   timeout: 15s
+  # iscsiadm exits 21 ("No active sessions") on a healthy host with nothing
+  # attached — a benign empty state, not a failure.
+  success_exit_codes: [21]
 output:
   parser: text
   max_stdout_bytes: 16384
