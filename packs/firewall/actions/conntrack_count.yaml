@@ -13,7 +13,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "echo 'Total:'; conntrack -C 2>/dev/null; echo; echo 'Per-state:'; conntrack -L 2>/dev/null | awk '{print $1,$4}' | sort | uniq -c | sort -rn | head -20"
+      - "set -e; echo 'Total:'; conntrack -C; echo; echo 'Per-state:'; conntrack -L 2>/dev/null | awk '{print $1,$4}' | sort | uniq -c | sort -rn | head -20"
   timeout: 30s
 output:
   parser: text
