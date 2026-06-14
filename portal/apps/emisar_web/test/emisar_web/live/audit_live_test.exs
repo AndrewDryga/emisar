@@ -202,6 +202,11 @@ defmodule EmisarWeb.AuditLiveTest do
       {:ok, _lv, html} = live(conn, ~p"/app/audit?actor_kind=user")
       assert html =~ ~s(name="actor_id")
       assert html =~ ~s(value="#{user.id}")
+      # …and right after its Actor-type trigger — before the next (Subject)
+      # filter, not tacked on at the end.
+      assert :binary.match(html, ~s(name="actor_id")) <
+               :binary.match(html, ~s(name="subject_kind"))
+
       assert html =~ user.email
     end
   end

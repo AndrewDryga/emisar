@@ -159,7 +159,19 @@ defmodule EmisarWeb.AuditLive do
 
   defp load(socket, params) do
     base_filters = Audit.Event.Query.filters()
-    filters = base_filters ++ actor_kind_filter(params, socket.assigns.current_subject)
+
+    # Render the dynamic "by actor" picker right after its Actor-type filter,
+    # not tacked on at the end — the dependent control belongs next to its
+    # trigger. (base_filters stays the opts source; the actor filter is
+    # render-only — actor_id applies via the opts path below.)
+    actor_filter = actor_kind_filter(params, socket.assigns.current_subject)
+
+    filters =
+      Enum.flat_map(base_filters, fn
+        %{name: :actor_kind} = f -> [f | actor_filter]
+        f -> [f]
+      end)
+
     actor_id = blank_to_nil(params["actor_id"])
 
     # Identity (actor_id) + date-range (from/to) ride as URL params outside
