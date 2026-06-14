@@ -100,6 +100,19 @@ defmodule EmisarWeb.BillingLive do
     end)
   end
 
+  # The next plan up from `current` in @plan_order, returned only when it's
+  # self-serve checkoutable (a real monthly price) — so the hero never offers
+  # a hardcoded "team", and never an enterprise "Upgrade" (it's contact-sales).
+  defp next_upgrade_plan(plans, current) do
+    case Enum.drop_while(plans, &(&1.key != current)) do
+      [_current, next | _] -> if checkoutable?(next), do: next, else: nil
+      _ -> nil
+    end
+  end
+
+  defp checkoutable?(%{monthly_price_cents: cents}) when is_integer(cents) and cents > 0, do: true
+  defp checkoutable?(_), do: false
+
   defp member_count(socket) do
     case Accounts.list_memberships_for_account(
            socket.assigns.current_account,
@@ -255,14 +268,18 @@ defmodule EmisarWeb.BillingLive do
               </div>
             </div>
 
+            <%!-- The hero upgrade CTA tracks @plan_order instead of a hardcoded
+                 "team": the next priced plan up, or nil at the top / when the
+                 only step up is a contact-sales tier (enterprise). --%>
+            <% upgrade_to = next_upgrade_plan(@plans, @summary.plan) %>
             <button
-              :if={@summary.plan == "free" and Billing.subject_can_manage_billing?(@current_subject)}
+              :if={upgrade_to && Billing.subject_can_manage_billing?(@current_subject)}
               phx-click="upgrade"
-              phx-value-plan="team"
+              phx-value-plan={upgrade_to.key}
               phx-disable-with="Starting checkout…"
               class="rounded-lg bg-indigo-500 px-4 py-2 text-sm font-semibold text-zinc-950 hover:bg-indigo-400 disabled:opacity-60"
             >
-              Upgrade to Team
+              Upgrade to {upgrade_to.name}
             </button>
             <%!-- "Manage subscription" surfaces the Paddle Customer
                  Portal — invoices, payment method, plan change,
