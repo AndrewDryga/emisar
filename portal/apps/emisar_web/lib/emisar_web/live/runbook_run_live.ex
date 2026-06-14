@@ -659,7 +659,16 @@ defmodule EmisarWeb.RunbookRunLive do
               <p class="mt-1 text-xs text-zinc-500">Logged in audit + propagated to every step.</p>
             </div>
 
-            <.button class="w-full" phx-disable-with="Starting...">
+            <%!-- Re-dispatching resets the execution stream above, so confirm
+                 while one's already showing — otherwise a stray click wipes the
+                 run an operator is watching. --%>
+            <.button
+              class="w-full"
+              phx-disable-with="Starting..."
+              data-confirm={
+                @execution && "A run is already showing above — start a new one and replace it?"
+              }
+            >
               Start runbook
             </.button>
           </form>

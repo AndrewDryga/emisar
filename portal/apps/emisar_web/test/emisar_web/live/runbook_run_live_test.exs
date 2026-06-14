@@ -240,6 +240,22 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       assert html =~ ~p"/app/runs/"
     end
 
+    test "re-dispatch confirms once an execution is already showing", %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      runner = Emisar.Fixtures.runner_fixture(account_id: account.id)
+      Emisar.Fixtures.action_fixture(runner: runner, action_id: "linux.uptime")
+      Emisar.Fixtures.policy_fixture(account_id: account.id)
+      runbook = published_runbook!(user, account)
+
+      {:ok, lv, idle} = live(conn, ~p"/app/runbooks/#{runbook.id}/run")
+      # No confirm before any run — a first Start shouldn't nag.
+      refute idle =~ "start a new one and replace it"
+
+      html = render_submit(lv, "dispatch", %{"reason" => "go"})
+      # An execution is now streaming, so re-Start guards against wiping it.
+      assert html =~ "start a new one and replace it"
+    end
+
     test "the plan surfaces each step's action risk before dispatch", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
       runner = Emisar.Fixtures.runner_fixture(account_id: account.id)
