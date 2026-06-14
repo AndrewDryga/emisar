@@ -10,7 +10,7 @@ defmodule Emisar.Runbooks do
   alias Ecto.Multi
   alias Emisar.{Audit, Auth, Repo}
   alias Emisar.Auth.Subject
-  alias Emisar.Runbooks.{Authorizer, Runbook}
+  alias Emisar.Runbooks.{Authorizer, Runbook, StepSelector}
 
   # -- Reads -----------------------------------------------------------
 
@@ -313,7 +313,7 @@ defmodule Emisar.Runbooks do
   # passes through (dispatch_run re-validates each), a `group` list
   # resolves to the union of those groups' active members at dispatch.
   defp step_runner_ids(account_id, step) do
-    case step_selector(step) do
+    case StepSelector.parse(step["runner_selector"]) do
       {"runner_id", [_ | _] = ids} ->
         ids
 
@@ -327,20 +327,6 @@ defmodule Emisar.Runbooks do
         []
     end
   end
-
-  # The step's selector normalised to {kind, [values]} — accepts the list
-  # shape (%{"group" => ["a"]}) and the older single-value shape.
-  defp step_selector(step) do
-    case step["runner_selector"] do
-      %{"runner_id" => v} -> {"runner_id", normalize_selector(v)}
-      %{"group" => v} -> {"group", normalize_selector(v)}
-      _ -> {nil, []}
-    end
-  end
-
-  defp normalize_selector(v) when is_list(v), do: Enum.filter(v, &(is_binary(&1) and &1 != ""))
-  defp normalize_selector(v) when is_binary(v) and v != "", do: [v]
-  defp normalize_selector(_), do: []
 
   # One work-list item through the dispatcher. Returns `{:ok, run}`,
   # `:row_exists` (a policy denial wrote its denied row — the halt

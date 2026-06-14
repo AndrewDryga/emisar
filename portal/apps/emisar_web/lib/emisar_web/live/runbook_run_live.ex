@@ -78,25 +78,18 @@ defmodule EmisarWeb.RunbookRunLive do
   # as-is, runner ids resolved to names against the loaded runner list.
   # nil when the step has no target (a draft being test-run).
   defp step_target_label(step, runners) do
-    case step["runner_selector"] do
-      %{"group" => v} ->
-        case normalize_targets(v) do
-          [] -> nil
-          groups -> "group: " <> Enum.join(groups, ", ")
-        end
+    case Runbooks.StepSelector.parse(step["runner_selector"]) do
+      {"group", [_ | _] = groups} ->
+        "group: " <> Enum.join(groups, ", ")
 
-      %{"runner_id" => v} ->
-        names = v |> normalize_targets() |> runner_names(runners)
+      {"runner_id", [_ | _] = ids} ->
+        names = runner_names(ids, runners)
         if names == [], do: nil, else: Enum.join(names, ", ")
 
       _ ->
         nil
     end
   end
-
-  defp normalize_targets(v) when is_list(v), do: Enum.filter(v, &(is_binary(&1) and &1 != ""))
-  defp normalize_targets(v) when is_binary(v) and v != "", do: [v]
-  defp normalize_targets(_), do: []
 
   defp runner_names(ids, runners),
     do: runners |> Enum.filter(&(&1.id in ids)) |> Enum.map(& &1.name)

@@ -358,27 +358,19 @@ defmodule EmisarWeb.RunbookEditorLive do
 
   # JSON → editor state
   defp from_raw_step(raw) when is_map(raw) do
-    {kind, values} = selector_to_pair(raw["runner_selector"])
+    {kind, values} = Runbooks.StepSelector.parse(raw["runner_selector"])
 
     %{
       "id" => raw["id"] || "step",
       "type" => "action",
       "action_id" => raw["action_id"] || "",
-      "selector_kind" => kind,
+      # Default a targetless step to the "group" picker (matches
+      # example_action_step) — parse returns a nil kind when no selector.
+      "selector_kind" => kind || "group",
       "selector_values" => values,
       "args" => args_to_pairs(raw["args"] || %{})
     }
   end
-
-  # Accepts both the current list shape (%{"group" => ["a", "b"]}) and the
-  # earlier single-value shape (%{"group" => "a"}), normalising to a list.
-  defp selector_to_pair(%{"group" => v}), do: {"group", normalize_targets(v)}
-  defp selector_to_pair(%{"runner_id" => v}), do: {"runner_id", normalize_targets(v)}
-  defp selector_to_pair(_), do: {"group", []}
-
-  defp normalize_targets(v) when is_list(v), do: Enum.filter(v, &(is_binary(&1) and &1 != ""))
-  defp normalize_targets(v) when is_binary(v) and v != "", do: [v]
-  defp normalize_targets(_), do: []
 
   defp args_to_pairs(%{} = m) do
     Enum.map(m, fn {k, v} -> %{"key" => k, "value" => to_string(v)} end)

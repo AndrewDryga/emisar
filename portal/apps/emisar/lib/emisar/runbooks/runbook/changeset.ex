@@ -1,6 +1,6 @@
 defmodule Emisar.Runbooks.Runbook.Changeset do
   use Emisar, :changeset
-  alias Emisar.Runbooks.Runbook
+  alias Emisar.Runbooks.{Runbook, StepSelector}
 
   @fields ~w[name slug title description status definition]a
 
@@ -104,7 +104,7 @@ defmodule Emisar.Runbooks.Runbook.Changeset do
       Enum.any?(steps, &blank_step_action?/1) ->
         "every step needs an action before publishing"
 
-      Enum.any?(steps, &blank_step_target?/1) ->
+      Enum.any?(steps, &StepSelector.empty?(&1["runner_selector"])) ->
         "every step needs a runner or group target before publishing"
 
       true ->
@@ -118,21 +118,4 @@ defmodule Emisar.Runbooks.Runbook.Changeset do
     action = step["action_id"] || step["action"]
     not (is_binary(action) and String.trim(action) != "")
   end
-
-  # The editor stores a step's target as runner_selector =>
-  # %{"runner_id" => [...]} | %{"group" => [...]}; "blank" = no kind, or an
-  # all-empty value list (the older single-string shape is accepted too).
-  defp blank_step_target?(step) do
-    case step["runner_selector"] do
-      %{"runner_id" => v} -> empty_targets?(v)
-      %{"group" => v} -> empty_targets?(v)
-      _ -> true
-    end
-  end
-
-  defp empty_targets?(v) when is_list(v),
-    do: not Enum.any?(v, &(is_binary(&1) and String.trim(&1) != ""))
-
-  defp empty_targets?(v) when is_binary(v), do: String.trim(v) == ""
-  defp empty_targets?(_), do: true
 end

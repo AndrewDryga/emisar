@@ -203,7 +203,7 @@ defmodule EmisarWeb.Mcp.Service do
   end
 
   defp runbook_step(step, runners) do
-    {by, values} = runbook_selector(Map.get(step, "runner_selector"))
+    {by, values} = Runbooks.StepSelector.parse(Map.get(step, "runner_selector"))
 
     %{
       id: Map.get(step, "id"),
@@ -218,16 +218,6 @@ defmodule EmisarWeb.Mcp.Service do
 
   defp resolve_targets(_group, groups, runners),
     do: runners |> Enum.filter(&(&1.group in groups)) |> Enum.map(& &1.name) |> Enum.uniq()
-
-  # Accepts the list shape (%{"group" => ["a"]}) and the older single-value
-  # shape (%{"group" => "a"}), always returning {kind, [values]}.
-  defp runbook_selector(%{"group" => v}), do: {"group", normalize_targets(v)}
-  defp runbook_selector(%{"runner_id" => v}), do: {"runner_id", normalize_targets(v)}
-  defp runbook_selector(_), do: {"group", []}
-
-  defp normalize_targets(v) when is_list(v), do: Enum.filter(v, &(is_binary(&1) and &1 != ""))
-  defp normalize_targets(v) when is_binary(v) and v != "", do: [v]
-  defp normalize_targets(_), do: []
 
   defp runbook_steps(runbook), do: get_in(runbook.definition || %{}, ["steps"]) || []
 
