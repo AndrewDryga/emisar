@@ -113,11 +113,19 @@ defmodule EmisarWeb.UserSignUpLive do
              |> assign_form(Users.change_user(user))}
 
           {:error, _reason} ->
+            # Rare race: the user row committed but the workspace didn't. Still
+            # send the confirmation email (the success branch does too) so the
+            # user can verify and sign in — the onboarding redirect then walks
+            # them through creating a workspace. Without this they'd be a
+            # confirmed-account orphan with no link and no way to verify.
+            :ok = Auth.deliver_confirmation_instructions(user)
+
             {:noreply,
              socket
              |> put_flash(
-               :error,
-               "Account created but workspace setup failed. Sign in and finish setup."
+               :info,
+               "Your account is ready — check your email for a confirmation link. " <>
+                 "Confirm it and sign in, and we'll help you finish setting up your workspace."
              )
              |> push_navigate(to: ~p"/sign_in")}
         end

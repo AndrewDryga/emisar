@@ -54,6 +54,27 @@ defmodule EmisarWeb.UserSignUpLiveTest do
     assert [%{role: :owner, account: %{name: "Founder Co", plan: "free"}}] = memberships
   end
 
+  test "when workspace setup fails, the user gets a confirmation + a recovery path", %{conn: conn} do
+    {:ok, lv, _html} = live(conn, ~p"/sign_up")
+
+    # A valid user but an over-long workspace name passes the LV's blank check
+    # yet fails the account name-length validation (max 80) — so register_user
+    # succeeds and create_account_with_owner fails: the orphan-recovery branch.
+    params = sign_up_params(%{"account_name" => String.duplicate("x", 81)})
+
+    result = lv |> form("#registration_form", params) |> render_submit()
+
+    # Recovers to sign-in with concrete, reassuring copy (not a vague "setup
+    # failed" error) — follow the live redirect to render the flash there.
+    assert {:error, {:live_redirect, %{to: "/sign_in"}}} = result
+    assert {:ok, _lv, html} = follow_redirect(result, conn)
+    assert html =~ "check your email"
+
+    # The user row committed (the orphan); the confirmation email (sent in this
+    # branch too) + the onboarding redirect let them recover.
+    assert {:ok, _user} = Users.fetch_user_by_email(params["user"]["email"])
+  end
+
   test "a blank workspace name flashes and creates nothing", %{conn: conn} do
     {:ok, lv, _html} = live(conn, ~p"/sign_up")
     params = sign_up_params(%{"account_name" => "  "})
