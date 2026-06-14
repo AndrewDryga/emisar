@@ -115,6 +115,24 @@ defmodule EmisarWeb.AuditLive do
     {:noreply, LiveTable.apply_filter(socket, ~p"/app/audit", params)}
   end
 
+  # Relative presets sidestep the UTC-vs-local math the From/To inputs force on
+  # an operator mid-incident — "last hour" needs no timezone reasoning. Set
+  # `from` to now − window (formatted like the datetime-local value
+  # `parse_datetime/1` parses) and clear `to` (= "until now").
+  def handle_event("preset_range", %{"window" => window}, socket) do
+    from =
+      DateTime.utc_now()
+      |> DateTime.add(-window_seconds(window), :second)
+      |> Calendar.strftime("%Y-%m-%dT%H:%M")
+
+    params = Map.merge(socket.assigns.filter_params, %{"from" => from, "to" => ""})
+    {:noreply, LiveTable.apply_filter(socket, ~p"/app/audit", params)}
+  end
+
+  defp window_seconds("1h"), do: 3600
+  defp window_seconds("24h"), do: 86_400
+  defp window_seconds("7d"), do: 604_800
+
   defp assign_export_keys(socket) do
     case ApiKeys.list_audit_export_keys_for_account(socket.assigns.current_subject,
            page_size: 50,
@@ -247,6 +265,18 @@ defmodule EmisarWeb.AuditLive do
             />
           </label>
           <.button variant="secondary" size="sm" type="submit">Apply dates</.button>
+          <%!-- Relative presets — no UTC math needed for the common
+               "what just happened" question. type="button" so they don't
+               submit the From/To form. --%>
+          <button
+            :for={{label, window} <- [{"Last hour", "1h"}, {"Last 24h", "24h"}, {"Last 7d", "7d"}]}
+            type="button"
+            phx-click="preset_range"
+            phx-value-window={window}
+            class="rounded-full border border-zinc-700 bg-zinc-900 px-2.5 py-1 text-xs text-zinc-400 hover:border-zinc-500 hover:text-zinc-200"
+          >
+            {label}
+          </button>
           <.link
             :if={@from != "" or @to != ""}
             patch={~p"/app/audit?#{Map.drop(@filter_params, ["from", "to"])}"}

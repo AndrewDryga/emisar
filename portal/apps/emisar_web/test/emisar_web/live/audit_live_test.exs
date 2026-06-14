@@ -123,6 +123,43 @@ defmodule EmisarWeb.AuditLiveTest do
       assert html =~ ~s(name="q")
     end
 
+    test "a relative date preset narrows to recent events without UTC math", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+
+      # Distinct actor_labels — event_type alone also appears in the filter
+      # dropdown, so it can't tell a row apart from an option.
+      {:ok, old} =
+        Audit.log(account.id, "user.invited",
+          actor_kind: "user",
+          actor_id: Ecto.UUID.generate(),
+          actor_label: "ancient-actor"
+        )
+
+      old
+      |> Ecto.Changeset.change(occurred_at: DateTime.add(DateTime.utc_now(), -259_200, :second))
+      |> Emisar.Repo.update!()
+
+      {:ok, _} =
+        Audit.log(account.id, "policy.updated",
+          actor_kind: "user",
+          actor_id: Ecto.UUID.generate(),
+          actor_label: "fresh-actor"
+        )
+
+      {:ok, lv, html} = live(conn, ~p"/app/audit")
+      assert html =~ "Last 24h"
+      assert html =~ "ancient-actor"
+
+      # "Last 24h" patches to a from-bound; mounting it drops the 3-day-old one.
+      render_click(lv, "preset_range", %{"window" => "24h"})
+      to = assert_patch(lv)
+      assert to =~ "from="
+
+      {:ok, _lv2, html} = live(conn, to)
+      assert html =~ "fresh-actor"
+      refute html =~ "ancient-actor"
+    end
+
     test "filtering by actor_id narrows the list and shows a clearable chip", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
       actor_a = Ecto.UUID.generate()
