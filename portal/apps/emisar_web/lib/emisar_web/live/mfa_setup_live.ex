@@ -80,17 +80,43 @@ defmodule EmisarWeb.MfaSetupLive do
 
             <textarea id="mfa-recovery-codes-blob" class="hidden" readonly aria-hidden="true">{Enum.join(@mfa_recovery_codes, "\n")}</textarea>
 
-            <div class="flex items-center gap-3">
+            <div class="flex flex-wrap items-center gap-3">
               <.copy_button
                 target="#mfa-recovery-codes-blob"
                 class="bg-zinc-800 px-3 py-1.5 text-zinc-100 hover:bg-zinc-700 font-medium"
               >
                 Copy codes
               </.copy_button>
-              <.button phx-click="continue" phx-disable-with="Loading...">
-                Continue to dashboard <span aria-hidden="true">→</span>
-              </.button>
+              <%!-- A real file beats the volatile clipboard for a credential
+                   the operator must keep — clipboards get overwritten. --%>
+              <a
+                href={"data:text/plain;charset=utf-8," <> URI.encode(Enum.join(@mfa_recovery_codes, "\n"))}
+                download="emisar-recovery-codes.txt"
+                class="rounded-lg bg-zinc-800 px-3 py-1.5 text-sm font-medium text-zinc-100 hover:bg-zinc-700"
+              >
+                Download .txt
+              </a>
             </div>
+
+            <%!-- Gate Continue behind an explicit acknowledgement: an
+                 MFA-required member who skips saving these and later loses
+                 their authenticator is permanently locked out. --%>
+            <label class="flex items-center gap-2 text-xs text-zinc-300">
+              <input
+                type="checkbox"
+                phx-click="toggle_codes_saved"
+                checked={@codes_saved?}
+                class="rounded border-zinc-700 bg-zinc-900 text-indigo-500 focus:ring-indigo-500"
+              /> I've saved my recovery codes somewhere safe
+            </label>
+            <.button
+              phx-click="continue"
+              phx-disable-with="Loading..."
+              disabled={not @codes_saved?}
+              class="disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Continue to dashboard <span aria-hidden="true">→</span>
+            </.button>
           </div>
         <% @mfa_uri -> %>
           <div class="space-y-4">
@@ -152,6 +178,7 @@ defmodule EmisarWeb.MfaSetupLive do
            socket
            |> assign(:current_user, updated)
            |> assign(:mfa_recovery_codes, recovery_codes)
+           |> assign(:codes_saved?, false)
            |> assign(:mfa_secret, nil)
            |> assign(:mfa_uri, nil)
            |> assign(:mfa_qr_svg, nil)}
@@ -167,6 +194,10 @@ defmodule EmisarWeb.MfaSetupLive do
 
   def handle_event("continue", _params, socket) do
     {:noreply, push_navigate(socket, to: ~p"/app")}
+  end
+
+  def handle_event("toggle_codes_saved", _params, socket) do
+    {:noreply, update(socket, :codes_saved?, &(not &1))}
   end
 
   defp assign_mfa_form(socket) do

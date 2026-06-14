@@ -46,7 +46,11 @@ defmodule EmisarWeb.MfaChallengeLive do
     ~H"""
     <.auth_layout title="Two-factor authentication">
       <p class="mb-6 text-sm text-zinc-400">
-        Enter the 6-digit code from your authenticator app to finish signing in.
+        <%= if @recovery? do %>
+          Enter one of your one-time recovery codes to finish signing in.
+        <% else %>
+          Enter the 6-digit code from your authenticator app to finish signing in.
+        <% end %>
       </p>
 
       <.simple_form for={@form} id="mfa_form" action={~p"/sign_in"} method="post">
@@ -74,7 +78,9 @@ defmodule EmisarWeb.MfaChallengeLive do
         <% end %>
 
         <:actions>
-          <.button class="w-full">Sign in</.button>
+          <%!-- Disable on submit: a double-click would post the OTP twice
+               and burn the one-time code on the second (replay) attempt. --%>
+          <.button class="w-full" phx-disable-with="Signing in…">Sign in</.button>
         </:actions>
       </.simple_form>
 

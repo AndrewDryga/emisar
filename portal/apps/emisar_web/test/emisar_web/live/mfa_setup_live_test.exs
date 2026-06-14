@@ -43,6 +43,15 @@ defmodule EmisarWeb.MfaSetupLiveTest do
       |> render_submit()
 
     assert html =~ "Save your recovery codes"
+    # The codes are downloadable as a file, not just copyable.
+    assert html =~ "Download .txt"
+
+    # Continue is gated until the operator acknowledges saving the codes —
+    # an MFA-required member who skips this can lock themselves out.
+    assert has_element?(lv, "button[disabled]", "Continue to dashboard")
+
+    render_click(lv, "toggle_codes_saved", %{})
+    refute has_element?(lv, "button[disabled]", "Continue to dashboard")
 
     lv
     |> element("button", "Continue to dashboard")

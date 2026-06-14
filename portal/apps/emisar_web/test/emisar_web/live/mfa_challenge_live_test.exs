@@ -52,10 +52,17 @@ defmodule EmisarWeb.MfaChallengeLiveTest do
 
     {:ok, lv, html} = live(conn, ~p"/sign_in/mfa")
     assert html =~ "Two-factor authentication"
-    assert html =~ "authenticator app"
+    # Body intro (the "to finish signing in" suffix distinguishes it from the
+    # controller's pending-MFA flash, which shares the leading phrase).
+    assert html =~ "authenticator app to finish signing in"
+    # Every sibling auth form disables on submit; this one must too, or a
+    # double-click burns the one-time code.
+    assert html =~ "phx-disable-with"
 
-    # The lost-device path swaps the OTP input for the recovery code one.
+    # The lost-device path swaps the OTP input AND the intro copy — the
+    # "authenticator app" line shouldn't linger in recovery mode.
     recovery_html = render_click(lv, "toggle_recovery", %{})
-    assert recovery_html =~ "recovery"
+    assert recovery_html =~ "one-time recovery codes"
+    refute recovery_html =~ "authenticator app to finish signing in"
   end
 end
