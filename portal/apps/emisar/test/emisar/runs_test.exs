@@ -3,7 +3,7 @@ defmodule Emisar.RunsTest do
 
   import Emisar.Fixtures
 
-  alias Emisar.{Approvals, Runs}
+  alias Emisar.{Approvals, Repo, Runs}
   alias Emisar.Runs.{ActionRun, RunEvent}
 
   defp base_attrs(account_id, runner_id, attrs \\ %{}) do
@@ -1022,6 +1022,53 @@ defmodule Emisar.RunsTest do
     test "an account-less / actor-less subject leaves the query unscoped (fallback)" do
       query = ActionRun.Query.all()
       assert Runs.Authorizer.for_subject(query, %Emisar.Auth.Subject{}) == query
+    end
+  end
+
+  describe "redispatch_inflight_for_runner/1" do
+    test "re-dispatches the runner's in-flight :pending and :sent runs" do
+      account = account_fixture()
+      runner = runner_fixture(account_id: account.id)
+
+      {:ok, sent} = Runs.create_run(base_attrs(account.id, runner.id))
+      {:ok, sent} = Runs.mark_sent(sent)
+      # Backdate sent_at so a re-dispatch's fresh mark_sent jumps it forward.
+      past = DateTime.add(DateTime.utc_now(), -60, :second)
+      sent = sent |> Ecto.Changeset.change(sent_at: past) |> Repo.update!()
+
+      {:ok, pending} = Runs.create_run(base_attrs(account.id, runner.id))
+      assert pending.status == :pending
+
+      assert :ok = Runs.redispatch_inflight_for_runner(runner.id)
+
+      resent = Runs.peek_run_by_id(sent.id)
+      assert resent.status == :sent
+      assert DateTime.compare(resent.sent_at, sent.sent_at) == :gt
+      assert Runs.peek_run_by_id(pending.id).status == :sent
+    end
+
+    test "leaves :running, terminal, and other-runner runs untouched (no double-exec)" do
+      account = account_fixture()
+      runner = runner_fixture(account_id: account.id)
+      other = runner_fixture(account_id: account.id)
+
+      {:ok, running} = Runs.create_run(base_attrs(account.id, runner.id))
+      {:ok, running} = Runs.mark_sent(running)
+      {:ok, running} = Runs.mark_running(running)
+
+      {:ok, other_sent} = Runs.create_run(base_attrs(account.id, other.id))
+      {:ok, other_sent} = Runs.mark_sent(other_sent)
+
+      assert :ok = Runs.redispatch_inflight_for_runner(runner.id)
+
+      # A :running run is excluded by the [:pending, :sent] filter — never re-sent.
+      reloaded_running = Runs.peek_run_by_id(running.id)
+      assert reloaded_running.status == :running
+      assert DateTime.compare(reloaded_running.sent_at, running.sent_at) == :eq
+
+      # Another runner's in-flight run is out of scope — untouched.
+      reloaded_other = Runs.peek_run_by_id(other_sent.id)
+      assert DateTime.compare(reloaded_other.sent_at, other_sent.sent_at) == :eq
     end
   end
 end

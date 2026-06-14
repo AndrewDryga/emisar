@@ -600,6 +600,31 @@ defmodule Emisar.Runs do
   end
 
   @doc """
+  Internal — re-dispatch a runner's in-flight (`:pending`/`:sent`) runs the
+  moment its socket (re)connects, so a dispatch lost to the prior socket's drop
+  recovers in ~instant instead of waiting for the next `RunDispatchTimeout`
+  sweep (~1 min). Idempotent and safe to fire on every connect: `dispatch_to_runner`
+  re-emits and the runner dedupes by `request_id` (replays the cached result or
+  runs it once), and an empty in-flight set is a no-op. Called by
+  `EmisarWeb.RunnerSocket` after the socket has subscribed to the runner's
+  transport, so the re-emitted envelopes reach this live connection.
+  """
+  def redispatch_inflight_for_runner(runner_id) when is_binary(runner_id) do
+    runs =
+      ActionRun.Query.all()
+      |> ActionRun.Query.by_runner_id(runner_id)
+      |> ActionRun.Query.status_in([:pending, :sent])
+      |> Repo.all()
+
+    if runs != [] do
+      Logger.info("reconnect_redispatch runner=#{runner_id} runs=#{length(runs)}")
+      Enum.each(runs, &dispatch_to_runner/1)
+    end
+
+    :ok
+  end
+
+  @doc """
   Internal — used by `Emisar.Workers.RunDispatchTimeout` to find in-flight
   runs whose runner may have died mid-run. Plain list (real fleets keep few
   runs in flight); the worker decides per-run from the runner's presence and

@@ -65,6 +65,13 @@ defmodule EmisarWeb.RunnerSocket do
     Runners.connect_runner(runner)
     Runners.audit_runner_connected(runner, token.id, request_context)
 
+    # Recover any dispatch the *previous* socket dropped: this connection is now
+    # subscribed to the runner's transport, so re-emit the runner's in-flight
+    # runs and a lost run_action lands in ~instant instead of waiting for the
+    # RunDispatchTimeout sweep. Deferred to handle_info so it runs after init
+    # returns (off the connect path) and flows back through this live socket.
+    send(self(), :redispatch_inflight)
+
     {:ok, state}
   end
 
@@ -94,6 +101,22 @@ defmodule EmisarWeb.RunnerSocket do
   @impl true
   def handle_info({:cloud_to_runner, msg}, state) do
     {:push, {:text, Jason.encode!(Map.put(msg, "protocol_version", @protocol_version))}, state}
+  end
+
+  def handle_info(:redispatch_inflight, state) do
+    # Best-effort reconnect recovery — if it fails (e.g. a DB blip), log and
+    # carry on; the RunDispatchTimeout sweep still backstops the in-flight runs,
+    # so a recovery hiccup must not tear down an otherwise-healthy socket.
+    try do
+      Runs.redispatch_inflight_for_runner(state.runner_id)
+    rescue
+      error ->
+        Logger.warning(
+          "reconnect_redispatch failed runner=#{state.runner_id}: #{Exception.message(error)}"
+        )
+    end
+
+    {:ok, state}
   end
 
   def handle_info(:heartbeat_timeout, state) do

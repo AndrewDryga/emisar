@@ -238,6 +238,33 @@ defmodule EmisarWeb.RunnerSocketTest do
       assert timed_out.status == :error
       assert timed_out.error_message =~ "offline"
     end
+
+    test "a reconnecting runner re-receives its in-flight runs (instant recovery)",
+         %{runner: runner, token: token} do
+      # A run the *previous* socket received but never acked — :sent in the DB.
+      {:ok, run} =
+        Runs.create_run(%{
+          account_id: runner.account_id,
+          runner_id: runner.id,
+          action_id: "linux.uptime",
+          args: %{},
+          reason: "test",
+          source: "operator"
+        })
+
+      {:ok, run} = Runs.mark_sent(run)
+
+      # Reconnect through the real init path: the test process becomes the
+      # socket (subscribed to the cloud→runner topic). init queues
+      # :redispatch_inflight to our mailbox; drive it the way the WebSock loop
+      # would, then assert the in-flight run is re-emitted to this live socket.
+      assert {:ok, state} = RunnerSocket.init(%{token: token, runner: runner})
+      assert_receive :redispatch_inflight
+      assert {:ok, _state} = RunnerSocket.handle_info(:redispatch_inflight, state)
+
+      assert_receive {:cloud_to_runner, %{"type" => "run_action", "request_id" => req_id}}, 1_000
+      assert req_id == run.request_id
+    end
   end
 
   # Drives the real `handle_in/2` text seam and `handle_envelope/3` behind
