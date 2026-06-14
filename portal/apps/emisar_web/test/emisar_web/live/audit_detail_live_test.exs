@@ -49,6 +49,10 @@ defmodule EmisarWeb.AuditDetailLiveTest do
 
     # The bare Go HTTP client UA is no longer rendered as a device.
     refute html =~ "Runner (Go)"
+
+    # The payload is copyable (the JSON <pre> is the copy target).
+    assert html =~ ~s(id="audit-payload-json")
+    assert html =~ ~s(data-copy="#audit-payload-json")
   end
 
   test ~S(a runner_version of "-" renders as no version, not a dangling dash), %{conn: conn} do
