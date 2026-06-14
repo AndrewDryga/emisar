@@ -13,7 +13,11 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "systemctl list-units --type=service --no-legend --no-pager | awk '{print $1}' | while read u; do v=$(systemctl show \"$u\" -p WatchdogUSec --value 2>/dev/null); [ -n \"$v\" ] && [ \"$v\" != \"0\" ] && echo \"$u: $v\"; done"
+      # --plain omits the leading ● bullet on failed units (else awk picks it
+      # up as $1, yielding a false "●: …" row). `if/then/fi` (not `&& echo`)
+      # so the loop's last iteration on a no-watchdog unit doesn't make the
+      # whole pipeline exit 1 — it reported `failed` even on a successful list.
+      - "systemctl list-units --type=service --plain --no-legend --no-pager | awk '{print $1}' | while read u; do v=$(systemctl show \"$u\" -p WatchdogUSec --value 2>/dev/null); if [ -n \"$v\" ] && [ \"$v\" != \"0\" ]; then echo \"$u: $v\"; fi; done"
   timeout: 60s
 output:
   parser: text

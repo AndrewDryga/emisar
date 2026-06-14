@@ -21,7 +21,10 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "cat /proc/mdstat; for md in /dev/md[0-9]*; do [ -e \"$md\" ] && echo && mdadm --detail \"$md\"; done"
+      # `|| continue` (not `&& …`) so the no-array case — where the glob
+      # stays literal and `[ -e ]` is false — exits 0, while a real
+      # `mdadm --detail` failure on an actual array still surfaces non-zero.
+      - "cat /proc/mdstat; for md in /dev/md[0-9]*; do [ -e \"$md\" ] || continue; echo; mdadm --detail \"$md\"; done"
   timeout: 15s
 
 output:
