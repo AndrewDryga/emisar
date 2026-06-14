@@ -365,6 +365,23 @@ defmodule EmisarWeb.RunbookRunLive do
   defp failed_count(run_statuses),
     do: Enum.count(run_statuses, fn {_id, status} -> run_failed?(status) end)
 
+  # The engine stops launching waves once a run in the current wave failed/
+  # denied, so the planned-but-undispatched runs never get a row's worth of
+  # progress. Report how many that is — but only once the wave that gates the
+  # next batch has fully settled (no run still in flight) and a failure exists,
+  # so we don't cry "halted" during a normal between-waves lull. 0 = not halted.
+  defp halted_count(run_statuses, total) do
+    dispatched = map_size(run_statuses)
+    undispatched = total - dispatched
+
+    if undispatched > 0 and failed_count(run_statuses) > 0 and
+         finished_count(run_statuses) == dispatched do
+      undispatched
+    else
+      0
+    end
+  end
+
   # "denied" never reaches a terminal transition but is as settled as a
   # run gets — count it alongside the terminal states.
   defp run_settled?(status), do: Runs.ActionRun.terminal?(status) or status == :denied
@@ -468,6 +485,21 @@ defmodule EmisarWeb.RunbookRunLive do
               </span>
             </span>
           </header>
+
+          <%!-- The engine stops launching waves after a failed/denied run, so
+               the remaining placeholder rows never dispatch — without this they
+               sit grey and the page reads as stuck/broken. In-flight runs still
+               finish; only the un-launched waves are dropped. --%>
+          <div
+            :if={@execution && halted_count(@run_statuses, @execution.total) > 0}
+            class="flex items-start gap-2 border-b border-amber-500/20 bg-amber-500/[0.04] px-5 py-2.5 text-xs text-amber-300"
+          >
+            <.icon name="hero-exclamation-triangle" class="mt-0.5 h-3.5 w-3.5 flex-none" />
+            <span>
+              Halted — {halted_count(@run_statuses, @execution.total)} of the planned runs won't
+              dispatch because an earlier step failed. Any in-flight runs will still finish.
+            </span>
+          </div>
 
           <%!-- Live runs once dispatched. Each row updates in place as its
                run transitions (the status badge flips to success / failed). --%>

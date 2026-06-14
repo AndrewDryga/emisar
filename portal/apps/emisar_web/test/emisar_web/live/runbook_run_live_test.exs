@@ -108,6 +108,45 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       assert html =~ "ring-zinc-500/20"
     end
 
+    test "a halted execution says so instead of leaving planned rows grey", %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      runner = Emisar.Fixtures.runner_fixture(account_id: account.id)
+      Emisar.Fixtures.action_fixture(runner: runner, action_id: "linux.uptime")
+      Emisar.Fixtures.policy_fixture(account_id: account.id)
+      # 6 steps → 6 runs across 2 waves (batch size 5); wave 2 fires only if
+      # the whole first wave succeeds.
+      runbook = published_runbook_with_steps!(user, account, runner, 6)
+
+      {:ok, lv, _} = live(conn, ~p"/app/runbooks/#{runbook.id}/run")
+      assert render_submit(lv, "dispatch", %{"reason" => "go"}) =~ "6 runs planned"
+
+      # Settle the whole first wave with one failure → the engine refuses to
+      # launch wave 2, so its run is never dispatched and its row would sit grey.
+      subject = owner_subject(user, account)
+      {:ok, runs, _} = Emisar.Runs.list_recent_runs_for_runner(runner.id, subject)
+      [failed | rest] = Enum.take(runs, 5)
+
+      {:ok, _} =
+        Emisar.Runs.finalize_from_result(failed.runner_id, %{
+          "request_id" => failed.request_id,
+          "status" => "failed",
+          "exit_code" => 1
+        })
+
+      for run <- rest do
+        {:ok, _} =
+          Emisar.Runs.finalize_from_result(run.runner_id, %{
+            "request_id" => run.request_id,
+            "status" => "success",
+            "exit_code" => 0
+          })
+      end
+
+      html = render(lv)
+      assert html =~ "Halted"
+      assert html =~ "an earlier step failed"
+    end
+
     test "a run on an offline runner is flagged on its execution row", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
       runner = Emisar.Fixtures.runner_fixture(account_id: account.id, connected?: false)
