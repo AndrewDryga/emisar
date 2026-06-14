@@ -12,7 +12,7 @@ execution:
     argv:
       - "-c"
       - "{ [ -n \"$CONSUL_HTTP_TOKEN\" ] && printf 'X-Consul-Token: %s\\n' \"$CONSUL_HTTP_TOKEN\"; } | curl -sS -H @- \"${CONSUL_HTTP_ADDR:-http://127.0.0.1:8500}/v1/agent/host\""
-  timeout: 15s
+  timeout: 45s
 output:
   parser: json
   max_stdout_bytes: 131072

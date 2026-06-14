@@ -2,7 +2,7 @@ schema_version: 1
 
 id: cloud-init
 name: cloud-init operations
-version: 0.1.4
+version: 0.1.5
 description: >
   cloud-init introspection + boot diagnostics + stage re-runs. Use when
   an EC2/GCE/Azure VM finishes booting but the workload didn't come up

@@ -12,7 +12,7 @@ execution:
   command:
     binary: chronyc
     argv: ["sources", "-v"]
-  timeout: 15s
+  timeout: 45s
 output:
   parser: text
   max_stdout_bytes: 16384

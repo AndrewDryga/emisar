@@ -15,7 +15,7 @@ execution:
   command:
     binary: cat
     argv: ["/var/lib/cloud/instance/cloud-config.txt"]
-  timeout: 5s
+  timeout: 30s
 output:
   parser: text
   max_stdout_bytes: 1048576

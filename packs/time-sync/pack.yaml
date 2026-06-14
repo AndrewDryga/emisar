@@ -2,7 +2,7 @@ schema_version: 1
 
 id: time-sync
 name: Time sync diagnostics
-version: 0.1.4
+version: 0.1.5
 description: >
   Clock-sync state: chrony tracking + sources, NTP peer status, current
   time, drift estimate, timezone, plus fix actions (chronyc makestep,
