@@ -243,6 +243,17 @@ defmodule Emisar.RunbooksTest do
   end
 
   describe "reads (list + fetch)" do
+    test "list_runbooks filters by status" do
+      {_account, subject, runner} = account_with_runner()
+      published = published_runbook!(subject, "live-book", uptime_steps(1, runner_target(runner)))
+      draft = draft_runbook!(subject, "wip-book")
+
+      assert {:ok, rows, _} = Runbooks.list_runbooks(subject, filter: [status: ["published"]])
+      ids = Enum.map(rows, & &1.id)
+      assert published.id in ids
+      refute draft.id in ids
+    end
+
     test "list_runbooks returns the caller's own runbooks" do
       {_user, _account, subject} = owner_subject_fixture()
       alpha = draft_runbook!(subject, "alpha-book")

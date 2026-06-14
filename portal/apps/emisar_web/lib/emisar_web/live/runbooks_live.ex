@@ -20,13 +20,18 @@ defmodule EmisarWeb.RunbooksLive do
     {:noreply, load(socket, params)}
   end
 
+  def handle_event("filter", params, socket) do
+    {:noreply, LiveTable.apply_filter(socket, ~p"/app/runbooks", params)}
+  end
+
   def handle_info({:list_changed, :runbook, _event_type, _id}, socket),
     do: {:noreply, load(socket, socket.assigns[:filter_params] || %{})}
 
   def handle_info(_, socket), do: {:noreply, socket}
 
   defp load(socket, params) do
-    opts = LiveTable.params_to_opts(params)
+    filters = Runbooks.Runbook.Query.filters()
+    opts = LiveTable.params_to_opts(params, filters)
 
     case Runbooks.list_runbooks(socket.assigns.current_subject, opts) do
       {:ok, list, meta} ->
@@ -34,6 +39,7 @@ defmodule EmisarWeb.RunbooksLive do
         |> assign(:runbooks, list)
         |> assign(:metadata, meta)
         |> assign(:filter_params, params)
+        |> assign(:filters, filters)
 
       # A clean reload can fail too (e.g. a tightened list permission) —
       # degrade to an empty page rather than recursing forever.
@@ -42,6 +48,7 @@ defmodule EmisarWeb.RunbooksLive do
         |> assign(:runbooks, [])
         |> assign(:metadata, %Emisar.Repo.Paginator.Metadata{count: 0, limit: 0})
         |> assign(:filter_params, params)
+        |> assign(:filters, filters)
 
       # Bad filter/page params from a hand-edited URL — retry once, clean.
       {:error, _} ->
@@ -92,6 +99,7 @@ defmodule EmisarWeb.RunbooksLive do
               rows={@runbooks}
               metadata={@metadata}
               filter_params={@filter_params}
+              filters={@filters}
               class="rounded-none border-0"
             >
               <:item :let={runbook}>

@@ -1,6 +1,8 @@
 defmodule Emisar.Runbooks.Runbook.Query do
   use Emisar, :query
 
+  alias Emisar.Repo.Filter
+
   def all,
     do: from(runbooks in Emisar.Runbooks.Runbook, as: :runbooks)
 
@@ -22,6 +24,32 @@ defmodule Emisar.Runbooks.Runbook.Query do
   @impl Emisar.Repo.Query
   def cursor_fields,
     do: [{:runbooks, :asc, :title}, {:runbooks, :desc, :version}, {:runbooks, :asc, :id}]
+
+  @impl Emisar.Repo.Query
+  def filters,
+    do: [
+      %Filter{
+        name: :status,
+        title: "Status",
+        type: {:list, :string},
+        values: [{"published", "Published"}, {"draft", "Draft"}],
+        fun: fn queryable, statuses -> {queryable, status_dynamic(statuses)} end
+      }
+    ]
+
+  # The multi-select sends the chosen status strings; map them to the enum
+  # atoms through a whitelist (never String.to_atom on request input — IL-14).
+  # None / both selected is "all".
+  defp status_dynamic(statuses) do
+    case Enum.flat_map(statuses, &status_atom/1) do
+      [] -> dynamic(true)
+      atoms -> dynamic([runbooks: r], r.status in ^atoms)
+    end
+  end
+
+  defp status_atom("published"), do: [:published]
+  defp status_atom("draft"), do: [:draft]
+  defp status_atom(_), do: []
 
   # Label-batcher for `Audit.resolve_references/1`. The query module
   # already knows the named binding, so audit-side resolution can stay
