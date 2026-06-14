@@ -10,7 +10,9 @@ description: >
   to glance at the most recent activity for a service when triaging
   an alert, before deciding whether to grep deeper or pull more
   context. Output is run through the runner's redactor before it leaves
-  the host.
+  the host. On journald-only hosts (no rsyslog) the system log isn't a
+  file under /var/log — use linux.journalctl for syslog/messages; this
+  reads on-disk files (app, nginx, …).
 
 side_effects:
   - Reads a log file under /var/log.
@@ -57,7 +59,7 @@ examples:
     args:
       file: /var/log/nginx/error.log
       lines: 100
-  - title: Last 500 lines of syslog
+  - title: Last 500 lines of an app log
     args:
-      file: /var/log/syslog
+      file: /var/log/app/server.log
       lines: 500

@@ -11,7 +11,9 @@ description: >
   max_lines. Use to find recent occurrences of a specific identifier
   (request ID, user ID, IP) or to spot error patterns without dumping
   the whole file. Output is run through the runner's redactor before
-  it leaves the host.
+  it leaves the host. On journald-only hosts (no rsyslog) the system log
+  isn't a file under /var/log — use linux.journalctl for syslog/messages;
+  this reads on-disk files (app, nginx, …).
 
 side_effects:
   - Reads a log file under /var/log.
