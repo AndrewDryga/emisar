@@ -666,7 +666,10 @@ defmodule EmisarWeb.RunbookEditorLive do
         </div>
 
         <div>
-          <label class="block text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+          <label
+            for={"step-#{@index}-id"}
+            class="block text-[10px] font-semibold uppercase tracking-wider text-zinc-500"
+          >
             Step ID
             <span class="ml-1 text-[9px] font-normal normal-case tracking-normal text-zinc-600">
               — referenced by other steps; auto-derived from Action
@@ -674,6 +677,7 @@ defmodule EmisarWeb.RunbookEditorLive do
           </label>
           <input
             type="text"
+            id={"step-#{@index}-id"}
             name="step_id"
             value={@step["id"]}
             placeholder="step1"
@@ -683,10 +687,17 @@ defmodule EmisarWeb.RunbookEditorLive do
 
         <div class="grid grid-cols-1 gap-2 sm:grid-cols-3">
           <div class="sm:col-span-1">
-            <label class="block text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+            <label
+              for={"step-#{@index}-selector-kind"}
+              class="block text-[10px] font-semibold uppercase tracking-wider text-zinc-500"
+            >
               Runner by
             </label>
-            <select name="selector_kind" class={input_class()}>
+            <select
+              id={"step-#{@index}-selector-kind"}
+              name="selector_kind"
+              class={input_class()}
+            >
               <option value="group" selected={@step["selector_kind"] == "group"}>
                 group
               </option>
@@ -696,10 +707,13 @@ defmodule EmisarWeb.RunbookEditorLive do
             </select>
           </div>
           <div class="sm:col-span-2">
-            <label class="block text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+            <label
+              for={"step-#{@index}-selector-values"}
+              class="block text-[10px] font-semibold uppercase tracking-wider text-zinc-500"
+            >
               Targets
               <span class="ml-1 text-[9px] font-normal normal-case tracking-normal text-zinc-600">
-                — ⌘/Ctrl-click to pick more than one
+                — pick more than one with ⌘/Ctrl-click or Shift+↑/↓
               </span>
             </label>
             <% options =
@@ -709,7 +723,13 @@ defmodule EmisarWeb.RunbookEditorLive do
                 @runners,
                 @step["selector_values"] || []
               ) %>
-            <select name="selector_values[]" multiple size="4" class={[input_class(), "py-1"]}>
+            <select
+              id={"step-#{@index}-selector-values"}
+              name="selector_values[]"
+              multiple
+              size="4"
+              class={[input_class(), "py-1"]}
+            >
               <option
                 :for={{label, value} <- options}
                 value={value}

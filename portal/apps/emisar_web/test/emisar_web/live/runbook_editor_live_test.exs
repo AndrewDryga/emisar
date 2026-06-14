@@ -21,6 +21,19 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       assert after_count == before_count + 1
     end
 
+    test "step-card fields associate their label with the control via for/id", %{conn: conn} do
+      {conn, _user, _account} = register_and_log_in(conn)
+      {:ok, _lv, html} = live(conn, ~p"/app/runbooks/new")
+
+      # The new editor renders one step (index 0); each labelled field carries a
+      # matching label[for] + control[id] so the label is programmatically tied
+      # to its input/select (screen readers, click-to-focus).
+      for field <- ["id", "selector-kind", "selector-values"] do
+        assert html =~ ~s(for="step-0-#{field}")
+        assert html =~ ~s(id="step-0-#{field}")
+      end
+    end
+
     test "Action field renders before Step ID — picking action auto-derives id", %{conn: conn} do
       {conn, _user, _account} = register_and_log_in(conn)
       {:ok, lv, html} = live(conn, ~p"/app/runbooks/new")
