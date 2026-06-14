@@ -197,7 +197,7 @@ defmodule EmisarWeb.AuthKeysLive do
 
   defp put_expires(map, value) when is_binary(value) do
     case DateTime.from_iso8601(value <> ":00Z") do
-      {:ok, datetime, _} -> Map.put(map, :expires_at, DateTime.truncate(datetime, :microsecond))
+      {:ok, datetime, _} -> Map.put(map, :expires_at, datetime)
       _ -> map
     end
   end

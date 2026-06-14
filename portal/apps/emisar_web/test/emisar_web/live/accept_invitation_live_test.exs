@@ -34,11 +34,13 @@ defmodule EmisarWeb.AcceptInvitationLiveTest do
   end
 
   describe "token gate" do
-    test "a bogus token bounces to sign-in as expired", %{conn: _conn} do
+    test "a bogus token bounces to sign-in with cause-neutral copy", %{conn: _conn} do
       assert {:error, {:live_redirect, %{to: "/sign_in", flash: flash}}} =
                live(build_conn(), ~p"/accept_invitation/not-a-real-token")
 
-      assert flash["error"] == "That invitation expired or was already used."
+      # Cause-neutral: a mistyped/garbage token shouldn't claim "expired".
+      assert flash["error"] =~ "isn't valid"
+      refute flash["error"] =~ "expired"
     end
   end
 

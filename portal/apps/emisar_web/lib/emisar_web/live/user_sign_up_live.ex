@@ -40,6 +40,9 @@ defmodule EmisarWeb.UserSignUpLive do
           minlength="12"
           required
         />
+        <p class="text-xs text-zinc-500">
+          Use at least 12 characters. Mix in numbers or symbols for extra safety.
+        </p>
         <.input
           name="account_name"
           value={@account_name}

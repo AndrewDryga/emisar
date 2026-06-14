@@ -9,7 +9,11 @@ defmodule EmisarWeb.ProfileLiveTest do
   describe "email form validation" do
     test "a malformed email surfaces inline via phx-change, not a flash", %{conn: conn} do
       {conn, _user, _account} = register_and_log_in(conn)
-      {:ok, lv, _html} = live(conn, ~p"/app/settings/profile")
+      {:ok, lv, html} = live(conn, ~p"/app/settings/profile")
+
+      # The email form warns the change is immediate (the sign-in identity
+      # flips right away).
+      assert html =~ "takes effect immediately"
 
       # The email-format check is a field error driven by phx-change. On
       # submit the current-password challenge runs first, so the format

@@ -22,7 +22,10 @@ defmodule EmisarWeb.AcceptInvitationLive do
       {:error, :not_found} ->
         {:ok,
          socket
-         |> put_flash(:error, "That invitation expired or was already used.")
+         |> put_flash(
+           :error,
+           "That invitation link isn't valid. Ask whoever invited you to send a fresh one."
+         )
          |> push_navigate(to: ~p"/sign_in")}
 
       {:ok, membership} ->

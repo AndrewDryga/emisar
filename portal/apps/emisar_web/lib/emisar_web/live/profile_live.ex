@@ -406,6 +406,9 @@ defmodule EmisarWeb.ProfileLive do
               autocomplete="current-password"
               required
             />
+            <p class="text-xs text-amber-200/70">
+              This takes effect immediately — you'll sign in with the new address from now on.
+            </p>
             <:actions>
               <.button phx-disable-with="Updating...">Update email</.button>
             </:actions>

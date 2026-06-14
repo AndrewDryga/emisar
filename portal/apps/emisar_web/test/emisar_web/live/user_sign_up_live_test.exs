@@ -26,6 +26,9 @@ defmodule EmisarWeb.UserSignUpLiveTest do
 
     assert html =~ "Start your free workspace"
     assert html =~ "Team or company name"
+    # The password length expectation is stated up front (matches the reset
+    # screen), not left to a post-submit error.
+    assert html =~ "Use at least 12 characters"
   end
 
   test "a valid sign-up creates user + workspace and arms the sign-in POST", %{conn: conn} do
