@@ -9,6 +9,10 @@ defmodule EmisarWeb.RunbookRunLive do
   # resolved), `no_runners_step` (the step a `group:` empties to, or nil).
   @empty_blast %{counts: %{}, total: nil, waves: nil, no_runners_step: nil}
 
+  # Tail of a finished run's output shown inline on its execution row — a
+  # glanceable preview, not the full terminal (that's the run-detail page).
+  @output_preview_lines 8
+
   def mount(%{"id" => id}, _session, socket) do
     case Runbooks.fetch_runbook_by_id(id, socket.assigns.current_subject) do
       {:ok, runbook} ->
@@ -28,6 +32,9 @@ defmodule EmisarWeb.RunbookRunLive do
           # rows to refresh their offline markers (streams don't re-render
           # on a bare assign change).
           |> assign(:run_index, %{})
+          # run_id => tail events, fetched once per run as it finishes, so
+          # its output preview survives a presence re-render of the row.
+          |> assign(:run_outputs, %{})
           |> stream(:execution_runs, [])
 
         if connected?(socket) do
@@ -141,8 +148,12 @@ defmodule EmisarWeb.RunbookRunLive do
   defp rehydrated_total(plan, _runs), do: length(plan)
 
   defp rehydrate_run_rows(socket, runs) do
+    # Load the tail output of any run that already settled before this
+    # refresh, so a rehydrated terminal row shows its preview too.
+    socket = Enum.reduce(runs, socket, &maybe_load_output(&2, &1))
+
     Enum.reduce(runs, socket, fn run, socket ->
-      stream_insert(socket, :execution_runs, live_row(run))
+      stream_insert(socket, :execution_runs, live_row(run, socket.assigns.run_outputs))
     end)
   end
 
@@ -256,6 +267,7 @@ defmodule EmisarWeb.RunbookRunLive do
            |> assign(:execution, execution)
            |> assign(:run_statuses, %{})
            |> assign(:run_index, %{})
+           |> assign(:run_outputs, %{})
            |> stream(:execution_runs, plan_rows(execution.plan, socket.assigns.runners),
              reset: true
            )
@@ -297,11 +309,14 @@ defmodule EmisarWeb.RunbookRunLive do
     if execution && run.runbook_execution_id == execution.execution_id do
       # Same dom_id as the placeholder (step_id, runner_id) → replaces it in
       # place rather than appending a new row.
+      socket =
+        socket
+        |> assign(:run_statuses, Map.put(socket.assigns.run_statuses, run.id, run.status))
+        |> assign(:run_index, Map.put(socket.assigns.run_index, run.id, run))
+        |> maybe_load_output(run)
+
       {:noreply,
-       socket
-       |> assign(:run_statuses, Map.put(socket.assigns.run_statuses, run.id, run.status))
-       |> assign(:run_index, Map.put(socket.assigns.run_index, run.id, run))
-       |> stream_insert(:execution_runs, live_row(run))}
+       stream_insert(socket, :execution_runs, live_row(run, socket.assigns.run_outputs))}
     else
       {:noreply, socket}
     end
@@ -313,7 +328,7 @@ defmodule EmisarWeb.RunbookRunLive do
   def handle_info(%{event: "presence_diff"}, socket) do
     socket =
       Enum.reduce(Map.values(socket.assigns.run_index), socket, fn run, socket ->
-        stream_insert(socket, :execution_runs, live_row(run))
+        stream_insert(socket, :execution_runs, live_row(run, socket.assigns.run_outputs))
       end)
 
     {:noreply, socket}
@@ -322,6 +337,27 @@ defmodule EmisarWeb.RunbookRunLive do
   # The shared badge hooks forward account-topic broadcasts to every
   # authenticated LiveView — swallow whatever this page doesn't render.
   def handle_info(_message, socket), do: {:noreply, socket}
+
+  # Fetch a finished run's tail output once, the first time it settles — so
+  # the row can show an inline preview. In-flight runs and already-fetched
+  # ones are left alone (lazy: one read per run, not on every transition).
+  defp maybe_load_output(socket, run) do
+    if run_settled?(run.status) and not Map.has_key?(socket.assigns.run_outputs, run.id) do
+      case Runs.list_recent_events_for_run(
+             run.id,
+             @output_preview_lines,
+             socket.assigns.current_subject
+           ) do
+        {:ok, events} ->
+          assign(socket, :run_outputs, Map.put(socket.assigns.run_outputs, run.id, events))
+
+        {:error, _} ->
+          socket
+      end
+    else
+      socket
+    end
+  end
 
   defp finished_count(run_statuses),
     do: Enum.count(run_statuses, fn {_id, status} -> run_settled?(status) end)
@@ -353,17 +389,19 @@ defmodule EmisarWeb.RunbookRunLive do
       action_id: item.action_id,
       runner_name: runner_name(item.runner_id, runners),
       status: :planned,
-      run: nil
+      run: nil,
+      output: []
     }
   end
 
-  defp live_row(run) do
+  defp live_row(run, outputs) do
     %{
       id: row_dom_id(run.runbook_step_id, run.runner_id),
       action_id: run.action_id,
       runner_name: run.runner.name,
       status: run.status,
-      run: run
+      run: run,
+      output: Map.get(outputs, run.id, [])
     }
   end
 
@@ -442,32 +480,37 @@ defmodule EmisarWeb.RunbookRunLive do
             <li
               :for={{dom_id, row} <- @streams.execution_runs}
               id={dom_id}
-              class="flex items-center gap-3 px-5 py-2.5 text-sm"
+              class="px-5 py-2.5 text-sm"
             >
-              <.status_badge status={row.status} />
-              <div class="min-w-0 flex-1">
-                <span class="truncate font-mono text-zinc-200">{row.action_id}</span>
-                <span class="ml-2 truncate text-xs text-zinc-500">
-                  on {row.runner_name}
+              <div class="flex items-center gap-3">
+                <.status_badge status={row.status} />
+                <div class="min-w-0 flex-1">
+                  <span class="truncate font-mono text-zinc-200">{row.action_id}</span>
+                  <span class="ml-2 truncate text-xs text-zinc-500">
+                    on {row.runner_name}
+                  </span>
+                  <span
+                    :if={row.run && offline_mid_run?(row.run)}
+                    class="ml-1 inline-flex items-center gap-1 text-xs text-amber-400"
+                    title="Runner offline — this run may stall until it reconnects or times out"
+                  >
+                    <.icon name="hero-signal-slash" class="h-3 w-3" /> offline
+                  </span>
+                </div>
+                <span :if={row.run && row.run.duration_ms} class="text-xs tabular-nums text-zinc-500">
+                  {row.run.duration_ms} ms
                 </span>
-                <span
-                  :if={row.run && offline_mid_run?(row.run)}
-                  class="ml-1 inline-flex items-center gap-1 text-xs text-amber-400"
-                  title="Runner offline — this run may stall until it reconnects or times out"
+                <.link
+                  :if={row.run}
+                  navigate={~p"/app/runs/#{row.run.id}"}
+                  class="text-xs text-indigo-400 hover:text-indigo-300"
                 >
-                  <.icon name="hero-signal-slash" class="h-3 w-3" /> offline
-                </span>
+                  View
+                </.link>
               </div>
-              <span :if={row.run && row.run.duration_ms} class="text-xs tabular-nums text-zinc-500">
-                {row.run.duration_ms} ms
-              </span>
-              <.link
-                :if={row.run}
-                navigate={~p"/app/runs/#{row.run.id}"}
-                class="text-xs text-indigo-400 hover:text-indigo-300"
-              >
-                View
-              </.link>
+              <%!-- Tail of the run's output once it finishes — a glanceable
+                   preview; the full terminal is on the run-detail page. --%>
+              <.output_preview events={row.output} class="ml-9 mt-1.5 max-h-32" />
             </li>
           </ul>
 

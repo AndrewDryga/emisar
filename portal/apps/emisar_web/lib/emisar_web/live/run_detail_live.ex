@@ -451,11 +451,4 @@ defmodule EmisarWeb.RunDetailLive do
   defp matched_rules_label(nil), do: "—"
   defp matched_rules_label([]), do: "—"
   defp matched_rules_label(rules) when is_list(rules), do: Enum.join(rules, ", ")
-
-  # Output chunks live inside `payload["chunk"]` (the runner socket
-  # writes them that way). Older events that pre-date the schema
-  # migration may have written a top-level `chunk` directly; render
-  # whichever we find.
-  defp event_chunk(%{payload: %{"chunk" => chunk}}) when is_binary(chunk), do: chunk
-  defp event_chunk(_), do: ""
 end

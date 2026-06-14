@@ -1073,6 +1073,26 @@ defmodule Emisar.Runs do
     end
   end
 
+  @doc """
+  The most recent `limit` progress chunks for a run, in chronological
+  (`seq`-ASC) order — a tail preview of a finished run's output. The run is
+  fetched via `fetch_run_by_id/3` first so the subject's account scope and
+  permission gate apply. Returns `{:ok, [event]}`.
+  """
+  def list_recent_events_for_run(run_id, limit, %Subject{} = subject) when is_integer(limit) do
+    with {:ok, _run} <- fetch_run_by_id(run_id, subject) do
+      events =
+        RunEvent.Query.all()
+        |> RunEvent.Query.by_run_id(run_id)
+        |> RunEvent.Query.by_kind(:progress)
+        |> RunEvent.Query.recent_by_seq(limit)
+        |> Repo.all()
+        |> Enum.reverse()
+
+      {:ok, events}
+    end
+  end
+
   # -- PubSub ----------------------------------------------------------
 
   @doc "Subscribe the caller to the account's run create/transition feed (`{:run_updated, run}`)."

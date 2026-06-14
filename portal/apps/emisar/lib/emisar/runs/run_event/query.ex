@@ -57,6 +57,18 @@ defmodule Emisar.Runs.RunEvent.Query do
   def ordered_by_seq(queryable \\ all()),
     do: order_by(queryable, [events: e], asc: e.seq)
 
+  @doc """
+  The most recent events first — `seq` DESC, capped at `limit`. Owns both
+  the order and the limit so a caller can't get an unordered or unbounded
+  slice; the context reverses the page back to chronological order for a
+  tail preview (`Runs.list_recent_events_for_run/3`).
+  """
+  def recent_by_seq(queryable \\ all(), limit) when is_integer(limit) do
+    queryable
+    |> order_by([events: e], desc: e.seq)
+    |> limit(^limit)
+  end
+
   # -- Pagination ------------------------------------------------------
 
   @impl Emisar.Repo.Query

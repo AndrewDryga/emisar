@@ -1679,6 +1679,42 @@ defmodule EmisarWeb.CoreComponents do
   defp risk_classes(_), do: "bg-zinc-500/10 text-zinc-300 ring-zinc-500/30"
 
   @doc """
+  A bounded, static preview of an action run's tail output — the last few
+  progress chunks of a finished run, rendered like the live terminal
+  (stderr in rose). Pass `events` in chronological order (oldest→newest);
+  an empty list renders nothing.
+  """
+  attr :events, :list, required: true
+  attr :class, :string, default: nil
+
+  def output_preview(assigns) do
+    ~H"""
+    <%!-- Each chunk carries its own trailing newline (the runner streams
+         line-by-line), so chunks concatenate as inline spans inside one
+         <pre> and only the real newlines break lines — block elements or
+         template indentation would double the spacing. --%>
+    <pre
+      :if={@events != []}
+      class={[
+        "overflow-auto whitespace-pre-wrap break-all rounded-md bg-black p-2 font-mono text-[11px] leading-snug text-zinc-300",
+        @class
+      ]}
+    ><span
+        :for={event <- @events}
+        class={event.stream == "stderr" && "text-rose-300"}
+      >{event_chunk(event)}</span></pre>
+    """
+  end
+
+  @doc """
+  The output text of a run progress event — the runner writes the chunk
+  into `payload["chunk"]`. Non-chunk events (transitions, errors) render
+  as empty.
+  """
+  def event_chunk(%{payload: %{"chunk" => chunk}}) when is_binary(chunk), do: chunk
+  def event_chunk(_), do: ""
+
+  @doc """
   "Reveal once" banner for newly-created secrets — auth keys, API
   keys. Shown until dismissed; warns the operator the value won't be
   shown again.

@@ -667,6 +667,33 @@ defmodule Emisar.RunsTest do
       {_user_b, _account_b, subject_b} = owner_subject_fixture()
       assert {:error, :not_found} = Runs.list_events_for_run(run.id, subject_b)
     end
+
+    test "list_recent_events_for_run returns the chronological tail and refuses cross-account", %{
+      account: account,
+      runner: runner,
+      subject: subject
+    } do
+      {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
+
+      for seq <- 1..5 do
+        {:ok, _} =
+          Runs.append_event(run, %{
+            seq: seq,
+            kind: "progress",
+            payload: %{"chunk" => "line#{seq}"}
+          })
+      end
+
+      # A non-output event must not crowd out an output line in the preview.
+      {:ok, _} = Runs.append_event(run, %{seq: 6, kind: "transition", payload: %{}})
+
+      # Last 3 progress chunks, oldest→newest (the DESC+limit page reversed).
+      assert {:ok, [%RunEvent{seq: 3}, %RunEvent{seq: 4}, %RunEvent{seq: 5}]} =
+               Runs.list_recent_events_for_run(run.id, 3, subject)
+
+      {_user_b, _account_b, subject_b} = owner_subject_fixture()
+      assert {:error, :not_found} = Runs.list_recent_events_for_run(run.id, 3, subject_b)
+    end
   end
 
   describe "transition terminal protection" do

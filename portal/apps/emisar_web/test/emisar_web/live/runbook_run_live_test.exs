@@ -229,6 +229,40 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       assert html =~ "no active runners"
     end
 
+    test "a finished run shows an inline preview of its tail output", %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      runner = Emisar.Fixtures.runner_fixture(account_id: account.id)
+      Emisar.Fixtures.action_fixture(runner: runner, action_id: "linux.uptime")
+      Emisar.Fixtures.policy_fixture(account_id: account.id)
+      runbook = published_runbook_targeting!(user, account, runner)
+
+      {:ok, lv, _html} = live(conn, ~p"/app/runbooks/#{runbook.id}/run")
+      assert render_submit(lv, "dispatch", %{"reason" => "go"}) =~ "Runbook dispatched"
+
+      # The engine created the run on dispatch — append an output chunk, then
+      # finish it. The terminal {:run_updated} broadcast makes the row fetch
+      # and show its output tail inline, without leaving the page.
+      subject = owner_subject(user, account)
+      {:ok, [run], _} = Emisar.Runs.list_recent_runs_for_runner(runner.id, subject)
+
+      {:ok, _} =
+        Emisar.Runs.append_event(run, %{
+          seq: 1,
+          kind: "progress",
+          stream: "stdout",
+          payload: %{"chunk" => "preview-line\n"}
+        })
+
+      {:ok, _} =
+        Emisar.Runs.finalize_from_result(run.runner_id, %{
+          "request_id" => run.request_id,
+          "status" => "success",
+          "exit_code" => 0
+        })
+
+      assert render(lv) =~ "preview-line"
+    end
+
     test "a refresh rehydrates a live execution instead of resetting to a blank Plan", %{
       conn: conn
     } do
