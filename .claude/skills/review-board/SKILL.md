@@ -1,8 +1,8 @@
 ---
 name: review-board
-description: The full pre-merge review — convene a board of expert hats (pragmatic staff engineer, domain expert, security, UX, UI, PM, marketing, sales) as parallel review subagents, then synthesize ONE ranked verdict and a prioritized plan to fix everything. Supersedes running /security-review + /code-review + /ship-review separately — it's all of them, more hats, plus a fix plan you can hand to /sweep. Use before landing a PR, or whenever you want a thorough multi-perspective review of a change.
+description: The full pre-merge review — convene a board of expert hats (pragmatic staff engineer, domain expert, security, UX, UI, PM, marketing, sales) as parallel review subagents, then synthesize ONE ranked verdict and a prioritized plan to fix everything. Supersedes running /security-review + /code-review + /ship-review separately — it's all of them, more hats, plus a fix plan you can hand to /sweep. Works on a PR, a branch/ref, a commit or range, or your uncommitted local changes — use before landing anything, or whenever you want a thorough multi-perspective review.
 effort: max
-argument-hint: "[PR number | git ref | default: working tree + commits vs main]"
+argument-hint: "[nothing = local changes · commit hash · a..b range · branch/ref · PR number · -- pathspec]"
 allowed-tools: Read, Grep, Glob, Bash, Agent
 ---
 
@@ -10,17 +10,25 @@ allowed-tools: Read, Grep, Glob, Bash, Agent
 
 Convene a board of expert hats; each reviews the change through ONE lens **in parallel**;
 then YOU (the parent) synthesize one ranked verdict and an ordered plan to fix everything.
-This is the heavyweight, on-demand PR review — it subsumes `/security-review`, `/code-review`,
+This is the heavyweight, on-demand review — point it at a PR, a branch, a commit/range, or your
+uncommitted local changes. It subsumes `/security-review`, `/code-review`,
 and `/ship-review`'s product hats into one panel, across **all** areas (portal/runner/mcp/packs).
 **Read-only: the board reviews; it never edits.** The deliverable is a *fix plan*, not just notes.
 
-## 1. Scope the change
-Resolve what to review, then read it yourself first:
-- **PR number** → `gh pr view <n> --json title,body,files` + `gh pr diff <n>` — read the title/body for **intent**, not just the diff.
-- **git ref** → `git diff <ref>...HEAD`.
-- **default** (no arg) → `git diff main...HEAD` + `git status` (committed-not-pushed + working tree).
+## 1. Scope the change — PR, branch, commit, range, or local edits
+Resolve `$1` into a concrete diff + file list, then read it yourself first. Inputs:
+- **nothing (default)** → your **uncommitted local changes**: `git diff HEAD` (staged + unstaged) plus untracked files from `git status --porcelain`. The "review what I'm working on right now" case.
+- **a commit hash** (`a1b2c3d`) → that commit alone: `git show <hash>` / `git diff <hash>^..<hash>`.
+- **a range** (`a..b`, `a...b`, `HEAD~3..HEAD`) → `git diff <range>`.
+- **a branch / ref** (`feat-x`, a tag) → its diff vs the base: `git diff main...<ref>`.
+- **a PR number** (`123` / `#123`) → `gh pr view <n> --json title,body,files` + `gh pr diff <n>` (read the title/body for **intent**).
+- **a pathspec / file(s)** (`-- runner/…`) → narrows ANY of the above to those paths.
 
-Note which areas it touches — portal/ (Elixir), runner/ or mcp/ (Go), packs/ (YAML), the marketing site, billing/pricing, docs — and the **intent** (what problem it claims to solve). Both drive which hats you convene.
+**Mind a shared working tree.** With a concurrent agent (Codex) editing, "local changes" can include work that isn't yours — `git diff HEAD` shows everyone's. Narrow with a pathspec, or review a specific commit/range/PR instead, when you want only your slice.
+
+For **intent** on a non-PR scope, read the commit message(s) in range, or — for uncommitted work — the `.agent/TASKS.md` / `LOG.md` context; if what the change is *for* is unclear, say so (a reviewer who doesn't know the goal judges the wrong things).
+
+**Announce the resolved scope before convening the board** — the input mode + the exact file list. Note which areas it touches — portal/ (Elixir), runner/ or mcp/ (Go), packs/ (YAML), marketing, billing/pricing, docs — which drives the hats.
 
 ## 2. Convene the board (the hats the change earns)
 **Standing hats — always, for any code change:**
