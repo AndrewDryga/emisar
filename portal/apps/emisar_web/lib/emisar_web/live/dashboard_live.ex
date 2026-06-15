@@ -47,7 +47,6 @@ defmodule EmisarWeb.DashboardLive do
     {:ok, runners} = Runners.list_all_runners_for_account(subject)
     {:ok, pending, _} = Approvals.list_pending_approval_requests(subject)
     {:ok, api_keys, _} = ApiKeys.list_api_keys_for_account(subject)
-    memberships = list_memberships(account, subject)
 
     socket
     |> assign(:page_title, "Dashboard")
@@ -63,14 +62,16 @@ defmodule EmisarWeb.DashboardLive do
     |> assign(:pending_approvals, pending)
     |> assign(:has_llm_connected?, api_keys != [])
     |> assign(:billing, unwrap_ok(Billing.billing_summary(account, subject)))
-    |> assign(:team_mfa, team_mfa_stats(memberships, account))
+    |> assign(:team_mfa, team_mfa(account, subject))
     |> assign(:pending_packs_count, Catalog.count_pending_pack_versions(subject))
   end
 
-  defp list_memberships(account, subject) do
+  # Team-MFA tile data, or :unavailable when the membership read fails — so the
+  # tile shows "—" rather than a misleading "0 / 0" that reads as an empty team.
+  defp team_mfa(account, subject) do
     case Emisar.Accounts.list_memberships_for_account(account, subject, preload: [:user]) do
-      {:ok, list, _} -> list
-      _ -> []
+      {:ok, memberships, _} -> team_mfa_stats(memberships, account)
+      _ -> :unavailable
     end
   end
 
@@ -215,7 +216,7 @@ defmodule EmisarWeb.DashboardLive do
   attr :run_stats, :map, required: true
   attr :has_llm_connected?, :boolean, required: true
   attr :billing, :map, required: true
-  attr :team_mfa, :map, required: true
+  attr :team_mfa, :any, required: true
   attr :pending_packs_count, :integer, default: 0
 
   defp live_dashboard(assigns) do
@@ -485,7 +486,15 @@ defmodule EmisarWeb.DashboardLive do
   # Always links to the team page where the operator can chase the
   # missing enrollments.
 
-  attr :team_mfa, :map, required: true
+  attr :team_mfa, :any, required: true
+
+  defp team_security_stat(%{team_mfa: :unavailable} = assigns) do
+    ~H"""
+    <.link navigate={~p"/app/settings/team"} class="block">
+      <.stat label="Team 2FA" value={:unavailable} hint="Couldn't load team data" />
+    </.link>
+    """
+  end
 
   defp team_security_stat(assigns) do
     tone =

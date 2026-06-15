@@ -1702,13 +1702,23 @@ defmodule EmisarWeb.CoreComponents do
     ~H"""
     <.card padding="p-6" class={@class}>
       <div class="text-xs uppercase tracking-wider text-zinc-500">{@label}</div>
-      <div class="mt-2 text-3xl font-semibold text-zinc-50">{@value}</div>
+      <div class={["mt-2 text-3xl font-semibold", stat_value_class(@value)]}>
+        {stat_value(@value)}
+      </div>
       <%= if @hint do %>
         <div class="mt-1 text-xs text-zinc-500">{@hint}</div>
       <% end %>
     </.card>
     """
   end
+
+  # `value={:unavailable}` renders a muted em dash so a tile whose read failed
+  # reads "couldn't load", not a misleading 0 (the value is otherwise a count
+  # or an "N / M" string).
+  defp stat_value(:unavailable), do: "—"
+  defp stat_value(value), do: value
+  defp stat_value_class(:unavailable), do: "text-zinc-600"
+  defp stat_value_class(_), do: "text-zinc-50"
 
   @doc """
   Install-a-runner wizard for the standalone `/app/runners/install` page.
