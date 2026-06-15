@@ -31,6 +31,15 @@ defmodule Emisar.Approvals.Request.Query do
     do: where(queryable, [requests: r], not is_nil(r.expires_at) and r.expires_at < ^now)
 
   @doc """
+  Row lock for the finalize re-read in `record_decision` — the decision is
+  taken on the LOCKED request row so concurrent votes serialize and a
+  finalizing transition can't race another. `FOR NO KEY UPDATE`, matching the
+  run-transition lock.
+  """
+  def lock_for_update(queryable),
+    do: lock(queryable, "FOR NO KEY UPDATE")
+
+  @doc """
   Conditional UPDATE used by `claim_pending/4`: matches only rows still
   `status == "pending"` AND not past `expires_at` — so two concurrent
   operators racing to decide can't both win, and a request that lapsed

@@ -2,7 +2,8 @@ defmodule Emisar.Policies.Policy.Changeset do
   use Emisar, :changeset
   alias Emisar.Policies.Policy
 
-  @valid_sections ["schema_version", "defaults", "overrides"]
+  @valid_sections ["schema_version", "defaults", "overrides", "approval"]
+  @valid_approval_keys ["min_approvals", "allow_self_approval"]
   @valid_tiers ~w(low medium high critical)
   @valid_decisions ~w(allow require_approval deny)
 
@@ -84,7 +85,8 @@ defmodule Emisar.Policies.Policy.Changeset do
       rules when is_map(rules) ->
         with :ok <- check_sections(rules),
              :ok <- check_defaults(rules["defaults"]),
-             :ok <- check_overrides(rules["overrides"]) do
+             :ok <- check_overrides(rules["overrides"]),
+             :ok <- check_approval(rules["approval"]) do
           changeset
         else
           {:error, msg} -> add_error(changeset, :rules, msg)
@@ -158,4 +160,30 @@ defmodule Emisar.Policies.Policy.Changeset do
   end
 
   defp check_overrides(_), do: {:error, "overrides must be a list"}
+
+  # A missing "approval" section is valid — rules stored before this gate
+  # existed default to single-approver via Policies.{min_approvals_for,
+  # self_approval_allowed?}/1.
+  defp check_approval(nil), do: :ok
+
+  defp check_approval(%{} = approval) do
+    cond do
+      (extra = Map.keys(approval) -- @valid_approval_keys) != [] ->
+        {:error, "unknown approval keys: #{inspect(extra)}"}
+
+      not valid_min_approvals?(Map.get(approval, "min_approvals", 1)) ->
+        {:error, "min_approvals must be an integer >= 1"}
+
+      not is_boolean(Map.get(approval, "allow_self_approval", true)) ->
+        {:error, "allow_self_approval must be a boolean"}
+
+      true ->
+        :ok
+    end
+  end
+
+  defp check_approval(_), do: {:error, "approval must be a JSON object"}
+
+  defp valid_min_approvals?(n) when is_integer(n) and n >= 1, do: true
+  defp valid_min_approvals?(_), do: false
 end

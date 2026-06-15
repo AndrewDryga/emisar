@@ -1,7 +1,7 @@
 defmodule Emisar.Approvals.Authorizer do
   @moduledoc "Authorization for approval requests + standing grants."
   use Emisar.Auth.Authorizer
-  alias Emisar.Approvals.{Grant, Request}
+  alias Emisar.Approvals.{Decision, Grant, Request}
 
   def decide_approval_permission, do: build(Request, :decide)
   def view_approvals_permission, do: build(Request, :view)
@@ -30,6 +30,7 @@ defmodule Emisar.Approvals.Authorizer do
     case query_source(queryable) do
       :approval_requests -> Request.Query.by_account_id(queryable, account_id)
       :approval_grants -> Grant.Query.by_account_id(queryable, account_id)
+      :approval_decisions -> Decision.Query.by_account_id(queryable, account_id)
       _ -> queryable
     end
   end

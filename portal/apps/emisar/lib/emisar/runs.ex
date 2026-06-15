@@ -562,10 +562,23 @@ defmodule Emisar.Runs do
         # request; the policy reason ("why approval is required") stays
         # on run.policy_reason for the reviewer to see separately. The
         # require_approval decision commits atomically with the run.
+        # Snapshot the approval-gate posture onto the request so a later
+        # policy edit can't move this in-flight request's bar (mirrors the
+        # run-level policy_version snapshot).
+        request_opts = [
+          min_approvals: Emisar.Policies.min_approvals_for(policy.rules),
+          allow_self_approval: Emisar.Policies.self_approval_allowed?(policy.rules)
+        ]
+
         case create_run(attrs, audit: audit) do
           {:ok, run} ->
             with {:ok, _req} <-
-                   Emisar.Approvals.create_request(run, attrs[:requested_by_id], attrs[:reason]) do
+                   Emisar.Approvals.create_request(
+                     run,
+                     attrs[:requested_by_id],
+                     attrs[:reason],
+                     request_opts
+                   ) do
               {:ok, :pending_approval, run}
             end
 

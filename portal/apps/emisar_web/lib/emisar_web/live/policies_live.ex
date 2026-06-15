@@ -63,6 +63,7 @@ defmodule EmisarWeb.PoliciesLive do
       scope_value: "",
       defaults: normalize_defaults(rules["defaults"]),
       overrides: normalize_overrides(rules["overrides"]),
+      approval: normalize_approval(rules),
       policy: policy,
       rules_errors: []
     }
@@ -77,6 +78,7 @@ defmodule EmisarWeb.PoliciesLive do
       scope_value: policy.scope_value,
       defaults: normalize_defaults(rules["defaults"]),
       overrides: normalize_overrides(rules["overrides"]),
+      approval: normalize_approval(rules),
       policy: policy,
       rules_errors: []
     }
@@ -93,6 +95,7 @@ defmodule EmisarWeb.PoliciesLive do
       scope_value: "",
       defaults: account.defaults,
       overrides: account.overrides,
+      approval: account.approval,
       policy: nil,
       rules_errors: []
     }
@@ -213,7 +216,7 @@ defmodule EmisarWeb.PoliciesLive do
     do: {:noreply, put_flash(socket, :error, "Choose a runner or group for this ruleset first.")}
 
   defp persist(socket, editor, save_fun) do
-    rules = to_rules(editor.defaults, editor.overrides)
+    rules = to_rules(editor.defaults, editor.overrides, editor.approval)
 
     case save_fun.(rules, socket.assigns.current_subject) do
       {:ok, policy} ->
@@ -291,12 +294,14 @@ defmodule EmisarWeb.PoliciesLive do
         |> enforce_monotonic_defaults()
 
       overrides = merge_overrides(editor.overrides, params["overrides"] || [])
+      approval = merge_approval(editor.approval, params["approval"] || %{})
 
       %{
         editor
         | defaults: defaults,
           overrides: overrides,
-          rules_errors: rules_errors(defaults, overrides)
+          approval: approval,
+          rules_errors: rules_errors(defaults, overrides, approval)
       }
     end)
   end
@@ -343,6 +348,34 @@ defmodule EmisarWeb.PoliciesLive do
   defp normalize_overrides(_), do: []
 
   defp empty_override, do: %{"name" => "", "action" => "", "decision" => "allow"}
+
+  # The approval-gate editor state, read off the stored rules (defaults when
+  # the section is absent — rules saved before the gate existed).
+  defp normalize_approval(rules) when is_map(rules) do
+    %{
+      "min_approvals" => Policies.min_approvals_for(rules),
+      "allow_self_approval" => Policies.self_approval_allowed?(rules)
+    }
+  end
+
+  # A native checkbox posts its value only when checked, so an UNCHECKED
+  # allow_self_approval (the box absent from params) reads as false. The number
+  # input always posts; floor it at 1 to mirror the changeset.
+  defp merge_approval(state, form) when is_map(form) do
+    %{
+      "min_approvals" => parse_min_approvals(form["min_approvals"], state["min_approvals"]),
+      "allow_self_approval" => form["allow_self_approval"] == "true"
+    }
+  end
+
+  defp parse_min_approvals(value, fallback) when is_binary(value) do
+    case Integer.parse(String.trim(value)) do
+      {n, _} when n >= 1 -> n
+      _ -> fallback
+    end
+  end
+
+  defp parse_min_approvals(_value, fallback), do: fallback
 
   defp merge_defaults(state, form) when is_map(form) do
     Enum.into(@tiers, state, fn tier ->
@@ -405,7 +438,7 @@ defmodule EmisarWeb.PoliciesLive do
 
   defp normalize_indexed(_), do: []
 
-  defp to_rules(defaults, overrides) do
+  defp to_rules(defaults, overrides, approval) do
     %{
       "schema_version" => 2,
       "defaults" => defaults,
@@ -418,12 +451,13 @@ defmodule EmisarWeb.PoliciesLive do
             "action" => String.trim(override["action"]),
             "decision" => override["decision"]
           }
-        end)
+        end),
+      "approval" => approval
     }
   end
 
-  defp rules_errors(defaults, overrides) do
-    to_rules(defaults, overrides)
+  defp rules_errors(defaults, overrides, approval) do
+    to_rules(defaults, overrides, approval)
     |> Policies.change_policy()
     |> changeset_rules_errors()
   end
@@ -568,6 +602,7 @@ defmodule EmisarWeb.PoliciesLive do
             editor_id="account"
             defaults={@account.defaults}
             overrides={@account.overrides}
+            approval={@account.approval}
             rules_errors={@account.rules_errors}
             can_manage={@can_manage?}
             save_label="Save default policy"
@@ -695,6 +730,7 @@ defmodule EmisarWeb.PoliciesLive do
         editor_id={@ruleset.uid}
         defaults={@ruleset.defaults}
         overrides={@ruleset.overrides}
+        approval={@ruleset.approval}
         rules_errors={@ruleset.rules_errors}
         can_manage={@can_manage}
         save_label="Save ruleset"
@@ -709,6 +745,7 @@ defmodule EmisarWeb.PoliciesLive do
   attr :editor_id, :string, required: true
   attr :defaults, :map, required: true
   attr :overrides, :list, required: true
+  attr :approval, :map, required: true
   attr :rules_errors, :list, required: true
   attr :can_manage, :boolean, required: true
   attr :save_label, :string, required: true
@@ -793,6 +830,57 @@ defmodule EmisarWeb.PoliciesLive do
             index={idx}
             can_manage={@can_manage}
           />
+        </div>
+      </div>
+
+      <%!-- Approval requirements: who, and how many, must approve a gated
+           action. Defaults (1 distinct approver, self-approval allowed)
+           reproduce single-approver behavior. --%>
+      <div>
+        <h3 class="text-sm font-semibold text-zinc-200">Approval requirements</h3>
+        <p class="mt-0.5 text-xs text-zinc-500">
+          Applies to any action this policy sends to the approval queue.
+        </p>
+        <div class="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div class="rounded-lg border border-zinc-800 bg-black/30 p-3">
+            <.label variant={:eyebrow}>
+              Required approvals
+            </.label>
+            <input
+              type="number"
+              name="policy[approval][min_approvals]"
+              value={@approval["min_approvals"]}
+              min="1"
+              step="1"
+              class={input_class()}
+              disabled={!@can_manage}
+            />
+            <p class="mt-1 text-[11px] leading-relaxed text-zinc-500">
+              How many <em>distinct</em> operators must approve before the action runs.
+            </p>
+          </div>
+          <div class="rounded-lg border border-zinc-800 bg-black/30 p-3">
+            <.label variant={:eyebrow}>
+              Self-approval
+            </.label>
+            <%!-- Hidden "false" before the checkbox so an unchecked box still
+                 posts a value — a native checkbox posts nothing when off. --%>
+            <label class="mt-1 flex items-center gap-2 text-sm text-zinc-200">
+              <input type="hidden" name="policy[approval][allow_self_approval]" value="false" />
+              <input
+                type="checkbox"
+                name="policy[approval][allow_self_approval]"
+                value="true"
+                checked={@approval["allow_self_approval"]}
+                disabled={!@can_manage}
+                class="h-4 w-4 rounded border-zinc-700 bg-zinc-900 text-indigo-500 focus:ring-indigo-500 disabled:opacity-50"
+              />
+              <span>Let the requester approve their own action</span>
+            </label>
+            <p class="mt-1 text-[11px] leading-relaxed text-zinc-500">
+              Off (GitHub-style) requires a <em>different</em> operator to approve.
+            </p>
+          </div>
         </div>
       </div>
 

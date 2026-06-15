@@ -287,6 +287,35 @@ defmodule Emisar.PoliciesTest do
       assert rules_changeset(%{"schema_version" => 2}).valid?
     end
 
+    test "rejects min_approvals: 0 in the approval section" do
+      changeset = rules_changeset(%{"approval" => %{"min_approvals" => 0}})
+      refute changeset.valid?
+      assert {"min_approvals must be an integer >= 1", _} = changeset.errors[:rules]
+    end
+
+    test "rejects a non-boolean allow_self_approval" do
+      changeset = rules_changeset(%{"approval" => %{"allow_self_approval" => "yes"}})
+      refute changeset.valid?
+      assert {"allow_self_approval must be a boolean", _} = changeset.errors[:rules]
+    end
+
+    test "rejects an unknown key inside the approval section" do
+      changeset = rules_changeset(%{"approval" => %{"min_approvals" => 1, "bogus" => true}})
+      refute changeset.valid?
+      assert {"unknown approval keys:" <> _, _} = changeset.errors[:rules]
+    end
+
+    test "accepts a valid approval section" do
+      changeset =
+        rules_changeset(%{"approval" => %{"min_approvals" => 2, "allow_self_approval" => false}})
+
+      assert changeset.valid?
+    end
+
+    test "a missing approval section is valid (back-compat with rules stored before the gate)" do
+      assert rules_changeset(%{"schema_version" => 2, "defaults" => %{"low" => "allow"}}).valid?
+    end
+
     test "updating with no rules change doesn't bump the version" do
       rules = %{"schema_version" => 2, "defaults" => %{"low" => "allow"}}
       policy = %Policy{vsn: 1, rules: rules}
@@ -301,6 +330,33 @@ defmodule Emisar.PoliciesTest do
       assert Policies.risk_tiers() == ~w(low medium high critical)
       assert Policies.decisions() == ~w(allow require_approval deny)
       assert %Ecto.Changeset{} = Policies.change_policy()
+    end
+  end
+
+  describe "approval-gate accessors" do
+    test "min_approvals_for reads the section, floors at 1, tolerates a missing section" do
+      assert Policies.min_approvals_for(%{"approval" => %{"min_approvals" => 3}}) == 3
+      # Back-compat: rules stored before the section existed read as 1.
+      assert Policies.min_approvals_for(%{"defaults" => %{}}) == 1
+      assert Policies.min_approvals_for(%{}) == 1
+      assert Policies.min_approvals_for(nil) == 1
+      # Never below 1, even from a corrupt stored value.
+      assert Policies.min_approvals_for(%{"approval" => %{"min_approvals" => 0}}) == 1
+    end
+
+    test "self_approval_allowed? defaults true, only an explicit false forbids" do
+      assert Policies.self_approval_allowed?(%{"approval" => %{"allow_self_approval" => false}}) ==
+               false
+
+      assert Policies.self_approval_allowed?(%{"approval" => %{"allow_self_approval" => true}})
+      assert Policies.self_approval_allowed?(%{"defaults" => %{}})
+      assert Policies.self_approval_allowed?(%{})
+      assert Policies.self_approval_allowed?(nil)
+    end
+
+    test "the default rules reproduce single-approver, self-approval-allowed behavior" do
+      assert Policies.min_approvals_for(Policies.default_rules()) == 1
+      assert Policies.self_approval_allowed?(Policies.default_rules())
     end
   end
 

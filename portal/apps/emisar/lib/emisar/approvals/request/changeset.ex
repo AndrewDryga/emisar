@@ -11,7 +11,9 @@ defmodule Emisar.Approvals.Request.Changeset do
       :requested_at,
       :reason,
       :context,
-      :expires_at
+      :expires_at,
+      :min_approvals,
+      :allow_self_approval
     ])
     |> validate_required([:account_id, :run_id, :requested_at])
   end

@@ -388,6 +388,25 @@ defmodule Emisar.ApiKeys do
 
   def record_client_info(_key, _info), do: {:error, :invalid}
 
+  @doc """
+  The user id that created `api_key_id`, or `nil` when the key (or its
+  creator) is gone. No Subject — the approval gate resolves an MCP run's
+  accountable human from the api-key owner.
+
+  Internal — called by `Approvals.create_request` to stamp the effective
+  requester on a key-triggered run's approval request.
+  """
+  def fetch_owner_user_id(api_key_id) when is_binary(api_key_id) do
+    queryable =
+      ApiKey.Query.all()
+      |> ApiKey.Query.by_id(api_key_id)
+      |> ApiKey.Query.select_created_by_id()
+
+    Repo.one(queryable)
+  end
+
+  def fetch_owner_user_id(_api_key_id), do: nil
+
   # -- Authorization ---------------------------------------------------
 
   @doc "Whether `subject` may manage MCP API keys (admin+)."

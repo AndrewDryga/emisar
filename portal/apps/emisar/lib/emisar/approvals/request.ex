@@ -15,10 +15,18 @@ defmodule Emisar.Approvals.Request do
     field :decision_reason, :string
     field :expires_at, :utc_datetime_usec
 
+    # Approval-gate posture snapshotted from the policy at request creation,
+    # mirroring the run-level policy_version snapshot — a later policy edit
+    # can't move an in-flight request's bar.
+    field :min_approvals, :integer, default: 1
+    field :allow_self_approval, :boolean, default: true
+
     belongs_to :account, Emisar.Accounts.Account, where: [deleted_at: nil]
     belongs_to :run, Emisar.Runs.ActionRun
     belongs_to :requested_by, Emisar.Users.User, where: [deleted_at: nil]
     belongs_to :decided_by, Emisar.Users.User, where: [deleted_at: nil]
+
+    has_many :decisions, Emisar.Approvals.Decision
 
     timestamps()
   end

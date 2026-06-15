@@ -54,11 +54,58 @@ defmodule EmisarWeb.ApprovalDetailLive do
          |> assign(:requested_by, requested_by)
          |> assign(:decided_by, decided_by)
          |> assign(:decision_reason, "")
+         |> assign_decisions(request)
          # Tracks the duration the operator picked in the grant-reuse
          # disclosure. "once" (the default) means "no grant" — in that
          # mode the Match / Limit-to fields are irrelevant and hidden.
          |> assign(:grant_duration, "once")}
     end
+  end
+
+  # Loads the recorded votes + the distinct-approve tally and derives the two
+  # server-side flags the decision panel reads — whether THIS user already
+  # decided, and whether self-approval is forbidden for them. The context still
+  # re-checks both on the decision event (IL-15); these only drive the UI.
+  # Deferred behind connected?/1 (like the requester/decider/risk lookups) so the
+  # dead render does no DB work — the connected pass and the {:approval_updated, …}
+  # handler (always connected) load the real data.
+  defp assign_decisions(socket, request) do
+    if connected?(socket) do
+      load_decisions(socket, request)
+    else
+      socket
+      |> assign(:decisions, [])
+      |> assign(:approved_count, 0)
+      |> assign(:already_decided?, false)
+      |> assign(:self_blocked?, false)
+    end
+  end
+
+  defp load_decisions(socket, request) do
+    subject = socket.assigns.current_subject
+
+    decisions =
+      case Approvals.list_decisions_for_request(request, subject) do
+        {:ok, list} -> list
+        {:error, _} -> []
+      end
+
+    approved_count =
+      case Approvals.approved_count_for_request(request, subject) do
+        {:ok, n} -> n
+        {:error, _} -> 0
+      end
+
+    actor_id = subject.actor && subject.actor.id
+
+    socket
+    |> assign(:decisions, decisions)
+    |> assign(:approved_count, approved_count)
+    |> assign(:already_decided?, Enum.any?(decisions, &(&1.decider_id == actor_id)))
+    |> assign(
+      :self_blocked?,
+      not request.allow_self_approval and request.requested_by_id == actor_id
+    )
   end
 
   # Resolves a user_id → email for the request/decision labels. Tolerates
@@ -88,7 +135,8 @@ defmodule EmisarWeb.ApprovalDetailLive do
     {:noreply,
      socket
      |> assign(:request, updated)
-     |> assign(:decided_by, lookup_user(updated.decided_by_id))}
+     |> assign(:decided_by, lookup_user(updated.decided_by_id))
+     |> assign_decisions(updated)}
   end
 
   # A runner connected/disconnected in the account — refresh the target
@@ -123,8 +171,21 @@ defmodule EmisarWeb.ApprovalDetailLive do
                reason,
                opts
              ) do
-          {:ok, {request, _run}} ->
-            msg = approval_flash(opts)
+          # Threshold met — finalized + dispatched.
+          {:ok, {request, %_{} = _run}} ->
+            {:noreply,
+             socket
+             |> assign(:request, request)
+             |> assign_decisions(request)
+             |> put_flash(:info, approval_flash(opts))}
+
+          # Recorded but below the distinct-approver threshold — still pending.
+          {:ok, {request, :pending}} ->
+            socket = assign_decisions(socket, request)
+
+            msg =
+              "Recorded — #{socket.assigns.approved_count} of #{request.min_approvals} approvals."
+
             {:noreply, socket |> assign(:request, request) |> put_flash(:info, msg)}
 
           {:error, reason} ->
@@ -145,13 +206,23 @@ defmodule EmisarWeb.ApprovalDetailLive do
                blank_or(params["reason"])
              ) do
           {:ok, {request, _run}} ->
-            {:noreply, socket |> assign(:request, request) |> put_flash(:info, "Denied.")}
+            {:noreply,
+             socket
+             |> assign(:request, request)
+             |> assign_decisions(request)
+             |> put_flash(:info, "Denied.")}
 
           {:error, reason} ->
             decision_failed(socket, reason)
         end
       end
     )
+  end
+
+  # A self-approval refusal isn't a stale-state race — leave the panel as-is
+  # (don't re-fetch), just flash the cause.
+  defp decision_failed(socket, :self_approval_forbidden) do
+    {:noreply, put_flash(socket, :error, "You can't approve your own request.")}
   end
 
   # An approve/deny that didn't take: the request expired or was decided
@@ -174,6 +245,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
         socket
         |> assign(:request, request)
         |> assign(:decided_by, lookup_user(request.decided_by_id))
+        |> assign_decisions(request)
 
       {:error, _} ->
         socket
@@ -323,6 +395,11 @@ defmodule EmisarWeb.ApprovalDetailLive do
         <.meta_field label="When">
           <.local_time value={@request.requested_at} class="text-zinc-200" />
         </.meta_field>
+        <%!-- Only surface the tally for a multi-approver gate; a 1-of-1
+             request reads no differently than the single-approver flow. --%>
+        <.meta_field :if={@request.min_approvals > 1} label="Approvals">
+          <span class="text-zinc-200">{@approved_count} of {@request.min_approvals}</span>
+        </.meta_field>
         <%!-- Only while held: a pending request auto-cancels at expiry, so the
              approver sees how long they have; a decided one's expiry is moot. --%>
         <.meta_field :if={@request.status == :pending} label="Expires">
@@ -377,6 +454,37 @@ defmodule EmisarWeb.ApprovalDetailLive do
             <pre class="max-h-64 overflow-auto bg-black/40 p-4 font-mono text-xs text-zinc-300">{format_json(@run.args)}</pre>
           </section>
 
+          <%!-- Who has voted so far — surfaced for any multi-approver gate so
+               an approver sees who's already signed off (and that a deny
+               finalized). A single-approver request shows it only once decided
+               (the decision-history panel covers the lone vote). --%>
+          <section
+            :if={@decisions != [] and @request.min_approvals > 1}
+            class="overflow-hidden rounded-xl border border-zinc-900 bg-zinc-950/40"
+          >
+            <header class="flex items-center justify-between border-b border-zinc-900 px-4 py-2">
+              <h3 class="text-xs font-semibold uppercase tracking-wider text-zinc-500">
+                Decisions
+              </h3>
+              <span class="text-[11px] text-zinc-500">
+                {@approved_count} of {@request.min_approvals} approvals
+              </span>
+            </header>
+            <ul class="divide-y divide-zinc-900">
+              <li :for={decision <- @decisions} class="flex items-center gap-3 px-4 py-2 text-sm">
+                <.icon
+                  name={decision_icon(decision.decision)}
+                  class={"h-4 w-4 flex-none " <> decision_icon_class(decision.decision)}
+                />
+                <span class="min-w-0 flex-1 truncate text-zinc-200">
+                  {user_label(decision.decider, decision.decider_id)}
+                </span>
+                <span class="text-xs text-zinc-500">{decision_verb(decision.decision)}</span>
+                <.local_time value={decision.decided_at} class="text-xs text-zinc-500" />
+              </li>
+            </ul>
+          </section>
+
           <div :if={@run}>
             <.link
               navigate={~p"/app/runs/#{@run.id}"}
@@ -395,6 +503,10 @@ defmodule EmisarWeb.ApprovalDetailLive do
               can_decide?={Approvals.subject_can_decide_approval?(@current_subject)}
               grant_duration={@grant_duration}
               runner_state={@runner_connection}
+              self_blocked?={@self_blocked?}
+              already_decided?={@already_decided?}
+              approved_count={@approved_count}
+              min_approvals={@request.min_approvals}
             />
           <% else %>
             <.panel title="Decision history">
@@ -422,11 +534,26 @@ defmodule EmisarWeb.ApprovalDetailLive do
   # Connection state of the target runner (:online | :offline | :unknown)
   # so the operator knows whether an approval will actually dispatch.
   attr :runner_state, :atom, default: :unknown
+  # Server-computed UI gates. self_blocked? hides Approve when this user is the
+  # requester and self-approval is forbidden; already_decided? hides both forms
+  # once they've voted. The CONTEXT re-checks both (IL-15) — these are cosmetic.
+  attr :self_blocked?, :boolean, default: false
+  attr :already_decided?, :boolean, default: false
+  attr :approved_count, :integer, default: 0
+  attr :min_approvals, :integer, default: 1
 
   defp decision_panel(assigns) do
     ~H"""
     <.panel title="Decide">
       <:subtitle>Logged to the audit trail.</:subtitle>
+
+      <p
+        :if={@min_approvals > 1}
+        class="rounded-lg border border-zinc-800 bg-zinc-900/50 px-3 py-2 text-xs text-zinc-300"
+      >
+        This action needs <strong class="text-zinc-100">{@min_approvals} distinct approvals</strong>
+        — {@approved_count} so far.
+      </p>
 
       <div
         :if={@runner_state == :offline}
@@ -439,113 +566,149 @@ defmodule EmisarWeb.ApprovalDetailLive do
         </span>
       </div>
 
-      <%= if @can_decide? do %>
-        <%!-- Approve form. Default state = one-shot ("just this
-             call") which doesn't create a grant. Reuse-window UI
-             is collapsed behind a checkbox so the common path
-             is one click of the green button. --%>
-        <form phx-submit="approve" phx-change="grant_form_changed" class="mt-4 space-y-4">
-          <textarea
-            name="reason"
-            rows="2"
-            placeholder="Note (optional)"
-            class="w-full resize-none rounded-lg border-0 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 ring-1 ring-zinc-800 placeholder:text-zinc-600 focus:ring-indigo-500"
-          ></textarea>
+      <%= cond do %>
+        <% not @can_decide? -> %>
+          <p class="mt-4 rounded-lg bg-zinc-900/60 p-4 text-xs text-zinc-400">
+            Viewers can't decide approvals.
+          </p>
+        <% @already_decided? -> %>
+          <p class="mt-4 rounded-lg bg-zinc-900/60 p-4 text-xs text-zinc-400">
+            You've already recorded your decision on this request. Waiting on the remaining approvers.
+          </p>
+        <% true -> %>
+          <%!-- Approve form. Hidden when this user is the requester and the
+               policy forbids self-approval — the context refuses it anyway
+               (IL-15), this just removes the dead button. They can still Deny
+               their own request. --%>
+          <div
+            :if={@self_blocked?}
+            class="mt-4 flex items-start gap-2 rounded-lg border border-zinc-800 bg-zinc-900/50 p-3 text-xs text-zinc-300"
+          >
+            <.icon name="hero-information-circle" class="mt-0.5 h-4 w-4 flex-none text-zinc-400" />
+            <span>You can't approve your own request — a different operator must approve it.</span>
+          </div>
+          <%!-- Approve form. Default state = one-shot ("just this
+               call") which doesn't create a grant. Reuse-window UI
+               is collapsed behind a checkbox so the common path
+               is one click of the green button. --%>
+          <form
+            :if={not @self_blocked?}
+            phx-submit="approve"
+            phx-change="grant_form_changed"
+            class="mt-4 space-y-4"
+          >
+            <textarea
+              name="reason"
+              rows="2"
+              placeholder="Note (optional)"
+              class="w-full resize-none rounded-lg border-0 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 ring-1 ring-zinc-800 placeholder:text-zinc-600 focus:ring-indigo-500"
+            ></textarea>
 
-          <details class="group rounded-lg border border-zinc-800 bg-zinc-950/60 p-3">
-            <summary class="flex cursor-pointer items-center justify-between text-xs text-zinc-300 hover:text-zinc-100">
-              <span class="flex items-center gap-2">
-                <.icon name="hero-clock" class="h-3.5 w-3.5 text-zinc-400" />
-                Allow the LLM to reuse this approval
-              </span>
-              <.icon
-                name="hero-chevron-down"
-                class="h-4 w-4 text-zinc-500 transition group-open:rotate-180"
-              />
-            </summary>
-            <div class="mt-3 space-y-3">
-              <div>
-                <.label variant={:eyebrow}>
-                  For
-                </.label>
-                <select
-                  name="duration"
-                  class="mt-1 w-full rounded-lg border-0 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 ring-1 ring-zinc-800 focus:ring-indigo-500"
-                >
-                  <option value="once">Just this call (no grant)</option>
-                  <option value="one_hour">Next 1 hour</option>
-                  <option value="one_day">Next 24 hours</option>
-                  <option value="thirty_days">Next 30 days</option>
-                  <option value="ninety_days">Next 90 days</option>
-                </select>
-              </div>
-              <%!-- Match / Limit-to only matter when an actual grant is
+            <details class="group rounded-lg border border-zinc-800 bg-zinc-950/60 p-3">
+              <summary class="flex cursor-pointer items-center justify-between text-xs text-zinc-300 hover:text-zinc-100">
+                <span class="flex items-center gap-2">
+                  <.icon name="hero-clock" class="h-3.5 w-3.5 text-zinc-400" />
+                  Allow the LLM to reuse this approval
+                </span>
+                <.icon
+                  name="hero-chevron-down"
+                  class="h-4 w-4 text-zinc-500 transition group-open:rotate-180"
+                />
+              </summary>
+              <div class="mt-3 space-y-3">
+                <div>
+                  <.label variant={:eyebrow}>
+                    For
+                  </.label>
+                  <select
+                    name="duration"
+                    class="mt-1 w-full rounded-lg border-0 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 ring-1 ring-zinc-800 focus:ring-indigo-500"
+                  >
+                    <option value="once">Just this call (no grant)</option>
+                    <option value="one_hour">Next 1 hour</option>
+                    <option value="one_day">Next 24 hours</option>
+                    <option value="thirty_days">Next 30 days</option>
+                    <option value="ninety_days">Next 90 days</option>
+                  </select>
+                </div>
+                <%!-- Match / Limit-to only matter when an actual grant is
                    being minted. With duration="once" no grant is created,
                    so showing these fields was asking the operator to
                    configure parameters that get discarded. The form's
                    phx-change handler tracks duration → re-renders this
                    block. --%>
-              <div :if={@grant_duration != "once"}>
-                <.label variant={:eyebrow}>
-                  Match
-                </.label>
-                <select
-                  name="scope"
-                  class="mt-1 w-full rounded-lg border-0 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 ring-1 ring-zinc-800 focus:ring-indigo-500"
-                >
-                  <option value="exact_args">Same arguments only</option>
-                  <option value="any_args">Any arguments for this action</option>
-                </select>
-              </div>
-              <div :if={@grant_duration != "once"}>
-                <.label variant={:eyebrow}>
-                  Limit to (optional)
-                </.label>
-                <input
-                  type="number"
-                  name="max_uses"
-                  min="1"
-                  placeholder="unlimited"
-                  class="mt-1 w-full rounded-lg border-0 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 ring-1 ring-zinc-800 placeholder:text-zinc-600 focus:ring-indigo-500"
-                />
-                <p class="mt-1 text-[11px] leading-relaxed text-zinc-500">
-                  Cap how many times this grant can be used within the window. Leave blank for unlimited.
-                  Grants are reviewable + revocable on the <.link
-                    navigate={~p"/app/approvals"}
-                    class="text-indigo-400 hover:text-indigo-300"
+                <div :if={@grant_duration != "once"}>
+                  <.label variant={:eyebrow}>
+                    Match
+                  </.label>
+                  <select
+                    name="scope"
+                    class="mt-1 w-full rounded-lg border-0 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 ring-1 ring-zinc-800 focus:ring-indigo-500"
                   >
+                    <option value="exact_args">Same arguments only</option>
+                    <option value="any_args">Any arguments for this action</option>
+                  </select>
+                </div>
+                <div :if={@grant_duration != "once"}>
+                  <.label variant={:eyebrow}>
+                    Limit to (optional)
+                  </.label>
+                  <input
+                    type="number"
+                    name="max_uses"
+                    min="1"
+                    placeholder="unlimited"
+                    class="mt-1 w-full rounded-lg border-0 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 ring-1 ring-zinc-800 placeholder:text-zinc-600 focus:ring-indigo-500"
+                  />
+                  <p class="mt-1 text-[11px] leading-relaxed text-zinc-500">
+                    Cap how many times this grant can be used within the window. Leave blank for unlimited.
+                    Grants are reviewable + revocable on the <.link
+                      navigate={~p"/app/approvals"}
+                      class="text-indigo-400 hover:text-indigo-300"
+                    >
                     approvals page
                   </.link>.
-                </p>
+                  </p>
+                </div>
               </div>
-            </div>
-          </details>
+            </details>
 
-          <.button variant="success" class="w-full" icon="hero-check" phx-disable-with="Approving…">
-            Approve and send
-          </.button>
-        </form>
+            <.button
+              variant="success"
+              class="w-full"
+              icon="hero-check"
+              phx-disable-with="Approving…"
+            >
+              Approve and send
+            </.button>
+          </form>
 
-        <%!-- Deny carries its own reason — the higher-stakes decision was
-             the one with nowhere to record *why*, leaving a blank reason in
-             the decision history. The handler already accepts it. --%>
-        <form phx-submit="deny" class="mt-3 space-y-3">
-          <textarea
-            name="reason"
-            rows="2"
-            placeholder="Why are you denying this? (optional, logged in the decision history)"
-            class="w-full resize-none rounded-lg border-0 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 ring-1 ring-zinc-800 placeholder:text-zinc-600 focus:ring-rose-500"
-          ></textarea>
-          <.button variant="danger" class="w-full" icon="hero-x-mark" phx-disable-with="Denying…">
-            Deny
-          </.button>
-        </form>
-      <% else %>
-        <p class="mt-4 rounded-lg bg-zinc-900/60 p-4 text-xs text-zinc-400">
-          Viewers can't decide approvals.
-        </p>
+          <%!-- Deny carries its own reason — the higher-stakes decision was
+               the one with nowhere to record *why*, leaving a blank reason in
+               the decision history. The handler already accepts it. --%>
+          <form phx-submit="deny" class="mt-3 space-y-3">
+            <textarea
+              name="reason"
+              rows="2"
+              placeholder="Why are you denying this? (optional, logged in the decision history)"
+              class="w-full resize-none rounded-lg border-0 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 ring-1 ring-zinc-800 placeholder:text-zinc-600 focus:ring-rose-500"
+            ></textarea>
+            <.button variant="danger" class="w-full" icon="hero-x-mark" phx-disable-with="Denying…">
+              Deny
+            </.button>
+          </form>
       <% end %>
     </.panel>
     """
   end
+
+  # Decision-list rendering helpers (the enum loads as an atom).
+  defp decision_icon(:approve), do: "hero-check-circle"
+  defp decision_icon(:deny), do: "hero-x-circle"
+
+  defp decision_icon_class(:approve), do: "text-emerald-400"
+  defp decision_icon_class(:deny), do: "text-rose-400"
+
+  defp decision_verb(:approve), do: "approved"
+  defp decision_verb(:deny), do: "denied"
 end

@@ -20,7 +20,8 @@ defmodule Emisar.Approvals do
        LLM doesn't have to ask again next time within that window.
   """
   alias Ecto.Multi
-  alias Emisar.Approvals.{Authorizer, Grant, Request}
+  alias Emisar.ApiKeys
+  alias Emisar.Approvals.{Authorizer, Decision, Grant, Request}
   alias Emisar.{Audit, Auth, Repo, Runs}
   alias Emisar.Auth.Subject
   require Logger
@@ -121,6 +122,45 @@ defmodule Emisar.Approvals do
     end
   end
 
+  @doc """
+  The recorded votes on a request, oldest first, with each decider preloaded
+  for the UI tally. Requires `view` on approvals; account-scoped (via the
+  `:approval_decisions` Authorizer clause). Returns `{:ok, [decision]}`.
+  """
+  def list_decisions_for_request(%Request{} = request, %Subject{} = subject) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.view_approvals_permission()
+           ),
+         :ok <- Subject.ensure_in_account(subject, request.account_id) do
+      decisions =
+        Decision.Query.all()
+        |> Decision.Query.by_request_id(request.id)
+        |> Decision.Query.with_preloaded_decider()
+        |> Decision.Query.ordered_by_decided()
+        |> Authorizer.for_subject(subject)
+        |> Repo.all()
+
+      {:ok, decisions}
+    end
+  end
+
+  @doc """
+  Distinct-approver tally for a request — the "N" in "N of M approvals".
+  Requires `view`; account-scoped. Returns `{:ok, count}`.
+  """
+  def approved_count_for_request(%Request{} = request, %Subject{} = subject) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.view_approvals_permission()
+           ),
+         :ok <- Subject.ensure_in_account(subject, request.account_id) do
+      {:ok, Repo.one(Decision.Query.approved_distinct_decider_count(request.id))}
+    end
+  end
+
   # Default window for a pending approval to sit before the
   # ApprovalExpiry worker auto-rejects it. Anything past this is
   # almost certainly an on-call who lost the page / left the company —
@@ -140,20 +180,32 @@ defmodule Emisar.Approvals do
   @doc """
   Files an approval request for a gated run. Internal — called from
   `Runs.dispatch_run` which has already authorized via its own Subject.
-  `requested_by_id` is whoever asked for the run (user, api_key, etc).
+  `requested_by_id` is whoever asked for the run (UI/runbook); for an
+  MCP-triggered run it's `nil` and the effective requester is resolved to
+  the api-key owner. `opts` carries the gate snapshot: `:min_approvals`
+  (default 1) and `:allow_self_approval` (default true), stamped onto the
+  request so a later policy edit can't move this request's bar.
   """
-  def create_request(%Runs.ActionRun{} = run, requested_by_id, reason \\ nil) do
+  def create_request(%Runs.ActionRun{} = run, requested_by_id, reason \\ nil, opts \\ []) do
     now = DateTime.utc_now()
     expires_at = DateTime.add(now, @default_pending_ttl_hours * @one_hour_seconds, :second)
+
+    # Why: an MCP run's `requested_by_id` is nil (the run's requester is an
+    # api_key), so "self" must record the HUMAN behind the trigger — the
+    # api-key's owner. Stamping the owner here means `allow_self_approval=false`
+    # can't be laundered through one's own key by routing the run via MCP.
+    effective_requested_by = effective_requester(run, requested_by_id)
 
     result =
       Request.Changeset.create(%{
         account_id: run.account_id,
         run_id: run.id,
-        requested_by_id: requested_by_id,
+        requested_by_id: effective_requested_by,
         requested_at: now,
         expires_at: expires_at,
         reason: reason,
+        min_approvals: Keyword.get(opts, :min_approvals, 1),
+        allow_self_approval: Keyword.get(opts, :allow_self_approval, true),
         context: %{
           runner_id: run.runner_id,
           action_id: run.action_id,
@@ -169,10 +221,18 @@ defmodule Emisar.Approvals do
     # the sandbox connection isn't released while a background task
     # is still querying the DB — `:notify_approvers_async?` flips this.
     with {:ok, request} <- result do
-      run_notify(fn -> notify_approvers(request, run, requested_by_id) end)
+      run_notify(fn -> notify_approvers(request, run, effective_requested_by) end)
       {:ok, request}
     end
   end
+
+  # The passed requester wins when present (UI/runbook); otherwise an
+  # api-key-triggered run attributes the request to the key's owner.
+  defp effective_requester(%Runs.ActionRun{api_key_id: nil}, passed), do: passed
+  defp effective_requester(%Runs.ActionRun{}, passed) when is_binary(passed), do: passed
+
+  defp effective_requester(%Runs.ActionRun{api_key_id: api_key_id}, nil),
+    do: ApiKeys.fetch_owner_user_id(api_key_id)
 
   # Two modes:
   #
@@ -259,11 +319,11 @@ defmodule Emisar.Approvals do
   end
 
   @doc """
-  Approve a pending request and dispatch the gated run.
+  Record an approver's vote and, when the threshold is met, dispatch the
+  gated run. Requires `decide` on approvals; scoped to the subject's account.
 
-  `opts` is an optional keyword list that controls whether to mint a
-  durable `Grant` alongside the approval so future identical calls can
-  bypass the gate:
+  `opts` controls whether to mint a durable `Grant` alongside the FINALIZING
+  approval so future identical calls bypass the gate:
 
     * `:duration` — `:once` (no grant), `:one_hour`, `:one_day`,
       `:thirty_days`, or `:ninety_days`. Default: `:once`.
@@ -271,22 +331,38 @@ defmodule Emisar.Approvals do
       `:any_args` (any args for this action). Default: `:exact_args`.
     * `:max_uses` — for a windowed duration, cap on total executions
       (nil = unlimited within the window); `:once` is always one use.
-  """
-  def approve_request(request, subject, reason \\ nil, opts \\ [])
 
-  def approve_request(%Request{} = request, %Subject{} = subject, reason, opts) do
+  Returns `{:ok, {request, run}}` when the vote finalizes + dispatches,
+  `{:ok, {request, :pending}}` when recorded but below the distinct-approver
+  threshold, or `{:error, :self_approval_forbidden | :already_decided |
+  :expired | :unauthorized | :not_found | {:grant_failed, changeset}}`.
+  """
+  def approve_request(%Request{} = r, %Subject{} = s, reason \\ nil, opts \\ []),
+    do: record_decision(r, s, :approve, reason, opts)
+
+  @doc """
+  Deny a pending request — one deny finalizes DENIED, cancels the run, and no
+  later approve can out-vote it. Requires `decide`; scoped to the account.
+  Returns `{:ok, {request, run}}` or `{:error, :already_decided | :expired |
+  :unauthorized | :not_found}`.
+  """
+  def deny_request(%Request{} = r, %Subject{} = s, reason \\ nil),
+    do: record_decision(r, s, :deny, reason, [])
+
+  # The single decision path. Pre-Multi gates run in IL-3 order (permission →
+  # account scope → self-approval → pack-trust for approve); the Multi inserts
+  # this decider's Decision row (DB-unique per request+decider), re-reads the
+  # LOCKED request, and finalizes on the locked row so concurrent votes
+  # serialize. Dispatch fires only after a committed :approved transition.
+  defp record_decision(%Request{} = request, %Subject{} = subject, decision, reason, opts) do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(
              subject,
              Authorizer.decide_approval_permission()
            ),
          :ok <- Subject.ensure_in_account(subject, request.account_id),
-         # Re-gate pack trust before approving: the pack could have drifted
-         # to :pending (a tampered re-advertisement) since the run was
-         # parked. Approving re-dispatches directly, so without this the
-         # operator's "yes" against the trusted bytes would ship the new
-         # ones. Refuse early — the request stays pending, no stuck run.
-         :ok <- Runs.recheck_run_pack_trust(request.run_id) do
+         :ok <- check_self_approval(decision, request, subject),
+         :ok <- recheck_trust(decision, request) do
       by_user_id = Subject.actor_id(subject)
 
       grant_attrs = %{
@@ -295,105 +371,228 @@ defmodule Emisar.Approvals do
         max_uses: Keyword.get(opts, :max_uses)
       }
 
-      # The claim is part of the SAME transaction as the grant + audit:
-      # if the operator chose a durable window and the grant insert
-      # fails, the whole decision rolls back and the request stays
-      # pending for a retry. (Claiming first in its own commit left an
-      # approved request with no grant, no audit, and an undispatched
-      # run on that error path.)
       result =
         Multi.new()
-        |> Multi.run(:decided, fn _repo, _changes ->
-          claim_pending(request, :approved, by_user_id, reason)
+        |> Multi.run(:decision, fn _repo, _changes ->
+          insert_decision(request, by_user_id, decision, reason)
         end)
-        |> Multi.run(:run, fn _repo, _changes -> {:ok, Runs.fetch_run!(request.run_id)} end)
-        |> Multi.run(:grant, fn _repo, %{run: run} ->
-          if grant_attrs.duration != :once and run.api_key_id do
-            case create_grant(request, run, by_user_id, grant_attrs) do
-              {:ok, grant} -> {:ok, grant}
-              {:error, changeset} -> {:error, {:grant_failed, changeset}}
-            end
-          else
-            {:ok, nil}
-          end
-        end)
-        |> Multi.insert(:audit, fn %{grant: grant} ->
-          Audit.Events.approval_approved(subject, request, reason, grant, grant_attrs)
-        end)
-        |> Repo.commit_multi(after_commit: &broadcast_approval(&1.decided))
+        |> Multi.run(:locked, fn repo, _changes ->
+          locked =
+            Request.Query.all()
+            |> Request.Query.by_id(request.id)
+            |> Request.Query.lock_for_update()
+            |> repo.one()
 
-      # Deliver to the runner AFTER the transaction commits so the
-      # PubSub broadcast can't fire before the DB state is durable.
-      # The transition to :sent happens inside
-      # Runs.dispatch_to_runner/1 → Runs.mark_sent/1.
-      with {:ok, %{decided: decided, run: run}} <- result,
-           :ok <- Runs.dispatch_to_runner(run) do
-        run = Repo.reload!(run)
-        {:ok, {decided, run}}
+          {:ok, locked}
+        end)
+        |> Multi.run(:outcome, fn repo, %{locked: locked} ->
+          finalize(repo, locked, decision, by_user_id, reason, grant_attrs)
+        end)
+        |> Multi.insert(:audit, fn %{outcome: outcome} ->
+          Audit.Events.approval_decision_recorded(
+            subject,
+            request,
+            decision,
+            reason,
+            outcome.approved_count
+          )
+        end)
+        # The finalization transition gets its OWN audit row (approval.approved /
+        # approval.denied) so the log shows each vote and the release separately.
+        # Sub-threshold votes finalize nothing → no second row.
+        |> Multi.run(:finalize_audit, fn _repo, %{outcome: outcome} ->
+          insert_finalize_audit(subject, request, reason, outcome)
+        end)
+        |> Repo.commit_multi(after_commit: &after_decision/1)
+
+      with {:ok, %{outcome: outcome}} <- result do
+        decision_result(outcome)
       end
     end
   end
 
-  def deny_request(%Request{} = request, %Subject{} = subject, reason \\ nil) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.decide_approval_permission()
-           ),
-         :ok <- Subject.ensure_in_account(subject, request.account_id) do
-      by_user_id = Subject.actor_id(subject)
+  # Self-approval gate (server-side, IL-15 — UI hiding is cosmetic only).
+  # Only an APPROVE by the recorded requester is blocked, and only when the
+  # request's snapshotted posture forbids it. Deny and the permissive case
+  # fall through.
+  defp check_self_approval(:approve, %Request{allow_self_approval: false} = request, subject) do
+    if self?(subject, request), do: {:error, :self_approval_forbidden}, else: :ok
+  end
 
-      # Claim + cancel + audit commit together — a failed cancel rolls
-      # the claim back too, so the request stays pending instead of
-      # flipping to denied while its run stays live (the expiry sweep
-      # only re-visits pending requests).
-      Multi.new()
-      |> Multi.run(:decided, fn _repo, _changes ->
-        claim_pending(request, :denied, by_user_id, reason)
-      end)
-      |> Multi.run(:run, fn _repo, _changes ->
-        run = Runs.fetch_run!(request.run_id)
-        Runs.mark_cancelled(run, denial_reason(reason))
-      end)
-      |> Multi.insert(:audit, Audit.Events.approval_denied(subject, request, reason))
-      |> Repo.commit_multi(after_commit: &broadcast_approval(&1.decided))
-      |> case do
-        {:ok, %{decided: decided, run: run}} -> {:ok, {decided, run}}
-        {:error, reason} -> {:error, reason}
-      end
+  defp check_self_approval(_decision, _request, _subject), do: :ok
+
+  defp self?(%Subject{} = subject, %Request{requested_by_id: rb}) when is_binary(rb),
+    do: Subject.actor_id(subject) == rb
+
+  # No resolvable requester (e.g. an api-key whose creator was since deleted →
+  # nil owner) has no "self", so the self-approval gate is vacuous for it. That
+  # is not a bypass: min_approvals still requires N distinct approvers, and the
+  # ghost requester can't log in to approve. Failing closed here (block everyone)
+  # would instead strand such a request forever.
+  defp self?(_subject, _request), do: false
+
+  # Re-gate pack trust before an approve: the pack could have drifted to
+  # :pending (a tampered re-advertisement) since the run was parked. The
+  # finalizing approve re-dispatches, so without this the operator's "yes"
+  # against the trusted bytes would ship the new ones. Deny needs no trust
+  # check — it cancels.
+  defp recheck_trust(:approve, %Request{run_id: run_id}), do: Runs.recheck_run_pack_trust(run_id)
+  defp recheck_trust(:deny, _request), do: :ok
+
+  # Insert this decider's vote; a second vote by the same operator hits the
+  # (request_id, decider_id) unique index → :already_decided.
+  defp insert_decision(%Request{} = request, by_user_id, decision, reason) do
+    Decision.Changeset.create(request.account_id, request.id, by_user_id, %{
+      decision: decision,
+      reason: reason,
+      decided_at: DateTime.utc_now()
+    })
+    |> Repo.insert()
+    |> case do
+      {:ok, decision_row} -> {:ok, decision_row}
+      {:error, changeset} -> insert_decision_error(changeset)
     end
   end
 
-  defp denial_reason(nil), do: "approval denied"
-  defp denial_reason(reason), do: "approval denied: " <> reason
+  defp insert_decision_error(changeset) do
+    # The shared unique-error test — never a per-context copy.
+    if Emisar.Repo.Changeset.unique_constraint_error?(changeset),
+      do: {:error, :already_decided},
+      else: {:error, changeset}
+  end
 
-  # Atomically claim a pending approval request as decided. Two operators
-  # clicking Approve at the same moment would both pass the LiveView's
-  # `status == "pending"` precondition; only one's SQL update will see the
-  # `decide_pending` predicate evaluate true. The loser gets 0 rows
-  # affected — classified into `:already_decided` (someone won the race) vs
-  # `:expired` (the request lapsed past `expires_at` before this click; the
-  # decision UPDATE refuses an expired row) so the caller flashes the right
-  # message rather than double-dispatching or pretending an expired request
-  # was decided.
-  defp claim_pending(%Request{} = request, status, by_user_id, reason) do
+  # Finalize on the LOCKED request row. The locked row's status + the
+  # distinct-approve count read INSIDE the transaction are the only inputs —
+  # never the caller's stale struct. Returns an outcome map the audit step,
+  # after-commit, and return shape all read from `changes`.
+  defp finalize(_repo, nil, _decision, _by_user_id, _reason, _grant_attrs),
+    do: {:error, :not_found}
+
+  defp finalize(_repo, %Request{status: :pending} = locked, :deny, by_user_id, reason, _attrs) do
+    # One deny finalizes DENIED; the run is cancelled. No approve can override
+    # a denied request (its later decision insert may succeed, but the request
+    # is no longer pending, so finalize returns :already_decided for them).
+    # Cancel through Runs (cross-context write — never building its changeset).
+    with {:ok, denied} <- guarded_transition(locked, :denied, by_user_id, reason),
+         {:ok, run} <- Runs.mark_cancelled(Runs.fetch_run!(locked.run_id), denial_reason(reason)) do
+      {:ok, %{action: :cancelled, request: denied, run: run, approved_count: nil}}
+    end
+  end
+
+  defp finalize(repo, %Request{status: :pending} = locked, :approve, by_user_id, reason, attrs) do
+    count = repo.one(Decision.Query.approved_distinct_decider_count(locked.id))
+
+    if count >= locked.min_approvals,
+      do: finalize_approved(repo, locked, by_user_id, reason, attrs, count),
+      else: {:ok, %{action: :recorded_pending, request: locked, run: nil, approved_count: count}}
+  end
+
+  # Locked row already decided (another vote finalized first, or it expired):
+  # the vote is recorded but can't change the outcome.
+  defp finalize(_repo, %Request{status: :expired}, _decision, _by, _reason, _attrs),
+    do: {:error, :expired}
+
+  defp finalize(_repo, %Request{}, _decision, _by_user_id, _reason, _attrs),
+    do: {:error, :already_decided}
+
+  # Threshold met: flip to :approved on the locked row and mint the grant HERE
+  # (only on the finalizing approve, so sub-threshold votes never mint). The
+  # run dispatches after-commit.
+  defp finalize_approved(_repo, %Request{} = locked, by_user_id, reason, attrs, count) do
+    with {:ok, approved} <- guarded_transition(locked, :approved, by_user_id, reason),
+         run = Runs.fetch_run!(locked.run_id),
+         {:ok, grant} <- mint_grant(locked, run, by_user_id, attrs) do
+      {:ok,
+       %{
+         action: :dispatch,
+         request: approved,
+         run: run,
+         grant: grant,
+         grant_attrs: attrs,
+         approved_count: count
+       }}
+    end
+  end
+
+  # A grant is minted only for a windowed duration on an api-key-triggered
+  # run; `:once` and a runner-/operator-sourced run mint nothing.
+  defp mint_grant(%Request{}, %{api_key_id: nil}, _by_user_id, _attrs), do: {:ok, nil}
+  defp mint_grant(%Request{}, _run, _by_user_id, %{duration: :once}), do: {:ok, nil}
+
+  defp mint_grant(%Request{} = request, run, by_user_id, attrs) do
+    case create_grant(request, run, by_user_id, attrs) do
+      {:ok, grant} -> {:ok, grant}
+      {:error, changeset} -> {:error, {:grant_failed, changeset}}
+    end
+  end
+
+  # The guarded UPDATE — flips a still-pending, non-expired row to `status`,
+  # stamping decider/reason. 0 rows means another decision or the expiry landed
+  # between the lock and here → classify so the caller flashes the right cause.
+  defp guarded_transition(%Request{} = locked, status, by_user_id, reason) do
     now = DateTime.utc_now()
 
     {affected, _} =
-      Request.Query.decide_pending(request.id, status, by_user_id, reason, now)
+      Request.Query.decide_pending(locked.id, status, by_user_id, reason, now)
       |> Repo.update_all([])
 
     case affected do
       1 ->
-        decided =
-          Request.Query.all() |> Request.Query.by_id(request.id) |> Repo.fetch!(Request.Query)
+        transitioned =
+          Request.Query.all() |> Request.Query.by_id(locked.id) |> Repo.fetch!(Request.Query)
 
-        {:ok, decided}
+        {:ok, transitioned}
 
       0 ->
-        {:error, claim_blocked_reason(request.id, now)}
+        {:error, claim_blocked_reason(locked.id, now)}
     end
   end
+
+  # Finalization audit — only on a release. The dispatch branch carries the
+  # minted grant + attrs for `approval_approved`; a deny logs `approval_denied`.
+  defp insert_finalize_audit(subject, request, reason, %{
+         action: :dispatch,
+         grant: grant,
+         grant_attrs: grant_attrs
+       }) do
+    Audit.Events.approval_approved(subject, request, reason, grant, grant_attrs)
+    |> Repo.insert()
+  end
+
+  defp insert_finalize_audit(subject, request, reason, %{action: :cancelled}) do
+    Audit.Events.approval_denied(subject, request, reason)
+    |> Repo.insert()
+  end
+
+  defp insert_finalize_audit(_subject, _request, _reason, %{action: :recorded_pending}),
+    do: {:ok, nil}
+
+  # After-commit side effects, keyed off the committed outcome. Dispatch fires
+  # ONLY on a finalizing approve (:dispatch) — never on a sub-threshold vote.
+  defp after_decision(%{outcome: %{action: :dispatch, run: run, request: request}}) do
+    broadcast_approval(request)
+    Runs.dispatch_to_runner(run)
+  end
+
+  defp after_decision(%{outcome: %{request: request}}) do
+    broadcast_approval(request)
+    :ok
+  end
+
+  # Return shapes: a finalizing approve reloads the now-:sent run;
+  # recorded-but-sub-threshold returns {request, :pending}; a deny returns the
+  # cancelled run.
+  defp decision_result(%{action: :dispatch, request: request, run: run}),
+    do: {:ok, {request, Repo.reload!(run)}}
+
+  defp decision_result(%{action: :recorded_pending, request: request}),
+    do: {:ok, {request, :pending}}
+
+  defp decision_result(%{action: :cancelled, request: request, run: run}),
+    do: {:ok, {request, run}}
+
+  defp denial_reason(nil), do: "approval denied"
+  defp denial_reason(reason), do: "approval denied: " <> reason
 
   defp claim_blocked_reason(request_id, now) do
     query = Request.Query.all() |> Request.Query.by_id(request_id)

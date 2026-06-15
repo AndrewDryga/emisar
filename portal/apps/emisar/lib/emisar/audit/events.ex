@@ -594,6 +594,35 @@ defmodule Emisar.Audit.Events do
 
   # -- Approval decisions ----------------------------------------------
 
+  # Emitted for EVERY vote (including a sub-threshold approve), so the
+  # security log shows each operator's decision and the finalizing release
+  # (approval.approved / approval.denied) as separate rows. `count` is the
+  # distinct-approver tally after this vote (nil for a deny).
+  def approval_decision_recorded(
+        %Subject{} = subject,
+        %Approvals.Request{} = request,
+        decision,
+        reason,
+        count
+      ) do
+    Audit.changeset(
+      request.account_id,
+      "approval.decision_recorded",
+      actor(subject) ++
+        [
+          subject_kind: "approval_request",
+          subject_id: request.id,
+          payload: %{
+            run_id: request.run_id,
+            decision: decision,
+            reason: reason,
+            approved_count: count,
+            min_approvals: request.min_approvals
+          }
+        ]
+    )
+  end
+
   def approval_approved(
         %Subject{} = subject,
         %Approvals.Request{} = request,

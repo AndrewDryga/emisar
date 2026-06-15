@@ -4,7 +4,7 @@ defmodule Emisar.ApprovalsTest do
   import Emisar.Fixtures
 
   alias Emisar.{Approvals, Audit, Repo, Runs}
-  alias Emisar.Approvals.{Grant, Request}
+  alias Emisar.Approvals.{Decision, Grant, Request}
   alias Emisar.Runs.ActionRun
 
   defp run_fixture(opts \\ []) do
@@ -1085,6 +1085,322 @@ defmodule Emisar.ApprovalsTest do
       [grant] = grants_for_api_key(key.id)
       assert grant.expires_at != nil
       assert DateTime.diff(grant.expires_at, DateTime.utc_now(), :day) in 29..30
+    end
+  end
+
+  # -- Configurable approval gate (GitHub-style) -----------------------
+
+  # A fresh operator (owner) in the account, distinct from any other.
+  defp distinct_operator(account) do
+    user = user_fixture()
+    _ = membership_fixture(account_id: account.id, user_id: user.id, role: "owner")
+    subject_for(user, account, role: :owner)
+  end
+
+  # Count of distinct approve votes recorded on a request.
+  defp approved_count(request_id) do
+    Repo.one(Decision.Query.approved_distinct_decider_count(request_id))
+  end
+
+  # Account + an online (subscribed) runner + a parked request snapshotting
+  # `opts` (min_approvals / allow_self_approval). The requester is a separate
+  # user so self-approval is opt-in per test.
+  defp gated_request(opts \\ []) do
+    account = account_fixture()
+    runner = runner_fixture(account_id: account.id)
+    Emisar.Runners.subscribe_runner_transport(runner)
+
+    {:ok, run} =
+      Runs.create_run(%{
+        account_id: account.id,
+        runner_id: runner.id,
+        action_id: "linux.uptime",
+        source: "operator",
+        args: %{}
+      })
+
+    requester = Keyword.get(opts, :requested_by_id, user_fixture().id)
+
+    {:ok, request} =
+      Approvals.create_request(run, requester, "needs review",
+        min_approvals: Keyword.get(opts, :min_approvals, 1),
+        allow_self_approval: Keyword.get(opts, :allow_self_approval, true)
+      )
+
+    %{account: account, runner: runner, run: run, request: request, requester_id: requester}
+  end
+
+  describe "min_approvals threshold" do
+    test "min_approvals: 2 — first approve records pending (no dispatch), second distinct operator finalizes + dispatches" do
+      %{account: account, request: request, run: run} = gated_request(min_approvals: 2)
+      a = distinct_operator(account)
+      b = distinct_operator(account)
+
+      # First approve: recorded, sub-threshold — run NOT sent.
+      assert {:ok, {%Request{status: :pending}, :pending}} =
+               Approvals.approve_request(request, a, "lgtm-1")
+
+      refute_receive {:cloud_to_runner, _}, 100
+      assert %ActionRun{status: status1} = Repo.reload!(run)
+      refute status1 == :sent
+      assert approved_count(request.id) == 1
+
+      # Second DISTINCT operator: threshold met → approved + dispatched.
+      assert {:ok, {%Request{status: :approved}, %ActionRun{status: :sent}}} =
+               Approvals.approve_request(request, b, "lgtm-2")
+
+      assert_receive {:cloud_to_runner, %{"type" => "run_action"}}, 500
+      assert approved_count(request.id) == 2
+    end
+
+    test "min_approvals defaults to 1 — a single approve finalizes + dispatches (today's behavior)" do
+      %{account: account, request: request} = gated_request()
+      operator = distinct_operator(account)
+
+      assert {:ok, {%Request{status: :approved}, %ActionRun{status: :sent}}} =
+               Approvals.approve_request(request, operator, "ok")
+
+      assert_receive {:cloud_to_runner, %{"type" => "run_action"}}, 500
+    end
+  end
+
+  describe "self-approval gate" do
+    test "ABUSE: self-approval is refused server-side even when the UI would hide the button" do
+      # The requester is the operator approving. allow_self_approval: false.
+      requester = user_fixture()
+      account = account_fixture()
+      _ = membership_fixture(account_id: account.id, user_id: requester.id, role: "owner")
+      subject = subject_for(requester, account, role: :owner)
+      runner = runner_fixture(account_id: account.id)
+      Emisar.Runners.subscribe_runner_transport(runner)
+
+      {:ok, run} =
+        Runs.create_run(%{
+          account_id: account.id,
+          runner_id: runner.id,
+          action_id: "linux.uptime",
+          source: "operator",
+          args: %{}
+        })
+
+      {:ok, request} =
+        Approvals.create_request(run, requester.id, "x",
+          min_approvals: 1,
+          allow_self_approval: false
+        )
+
+      assert {:error, :self_approval_forbidden} =
+               Approvals.approve_request(request, subject, "approving my own")
+
+      assert %Request{status: :pending} = Repo.reload!(request)
+      assert approved_count(request.id) == 0
+      refute_receive {:cloud_to_runner, _}, 100
+    end
+
+    test "a DIFFERENT operator can still approve when self-approval is forbidden" do
+      %{account: account, request: request, requester_id: requester_id} =
+        gated_request(min_approvals: 1, allow_self_approval: false)
+
+      # Sanity: the requester is set and someone else is approving.
+      other = distinct_operator(account)
+      refute other.actor.id == requester_id
+
+      assert {:ok, {%Request{status: :approved}, %ActionRun{status: :sent}}} =
+               Approvals.approve_request(request, other, "ok")
+
+      assert_receive {:cloud_to_runner, %{"type" => "run_action"}}, 500
+    end
+  end
+
+  describe "distinctness (DB unique (request_id, decider_id))" do
+    test "ABUSE: a single operator approving twice counts once — second is :already_decided, not dispatched" do
+      %{account: account, request: request} = gated_request(min_approvals: 2)
+      operator = distinct_operator(account)
+
+      assert {:ok, {%Request{status: :pending}, :pending}} =
+               Approvals.approve_request(request, operator, "first")
+
+      # Same operator votes again under min 2 — the unique index rejects it.
+      assert {:error, :already_decided} =
+               Approvals.approve_request(request, operator, "again")
+
+      assert approved_count(request.id) == 1
+      assert %Request{status: :pending} = Repo.reload!(request)
+      refute_receive {:cloud_to_runner, _}, 100
+    end
+  end
+
+  describe "deny finalizes DENIED" do
+    test "ABUSE: one deny finalizes DENIED and a later approve cannot override it" do
+      %{account: account, request: request, run: run} = gated_request(min_approvals: 3)
+      a = distinct_operator(account)
+      b = distinct_operator(account)
+      c = distinct_operator(account)
+
+      # A approves (1 of 3) — still pending.
+      assert {:ok, {%Request{status: :pending}, :pending}} =
+               Approvals.approve_request(request, a, "yes")
+
+      # B denies — finalizes DENIED and cancels the run.
+      assert {:ok, {%Request{status: :denied}, %ActionRun{status: :cancelled}}} =
+               Approvals.deny_request(request, b, "no")
+
+      # C's later approve can't out-vote the deny.
+      assert {:error, :already_decided} = Approvals.approve_request(request, c, "let me in")
+
+      assert %Request{status: :denied} = Repo.reload!(request)
+      assert %ActionRun{status: :cancelled} = Repo.reload!(run)
+      refute_receive {:cloud_to_runner, _}, 100
+    end
+  end
+
+  describe "decision isolation" do
+    test "ABUSE: an owner of account B recording a decision on A's request → :not_found" do
+      %{request: request} = gated_request(min_approvals: 1)
+
+      account_b = account_fixture()
+      subject_b = distinct_operator(account_b)
+
+      assert {:error, :not_found} = Approvals.approve_request(request, subject_b, "wrong account")
+      assert {:error, :not_found} = Approvals.deny_request(request, subject_b, "wrong account")
+      assert approved_count(request.id) == 0
+    end
+
+    test "ABUSE: a viewer recording a decision → :unauthorized" do
+      %{account: account, request: request} = gated_request(min_approvals: 1)
+
+      viewer = user_fixture()
+      _ = membership_fixture(account_id: account.id, user_id: viewer.id, role: "viewer")
+      viewer_subject = subject_for(viewer, account, role: :viewer)
+
+      assert {:error, :unauthorized} = Approvals.approve_request(request, viewer_subject, "nope")
+      assert {:error, :unauthorized} = Approvals.deny_request(request, viewer_subject, "nope")
+      assert approved_count(request.id) == 0
+    end
+  end
+
+  describe "snapshot integrity" do
+    test "an in-flight request keeps its snapshotted threshold when the policy later changes" do
+      account = account_fixture()
+      runner = runner_fixture(account_id: account.id)
+      Emisar.Runners.subscribe_runner_transport(runner)
+
+      {:ok, run} =
+        Runs.create_run(%{
+          account_id: account.id,
+          runner_id: runner.id,
+          action_id: "linux.uptime",
+          source: "operator",
+          args: %{}
+        })
+
+      # Created under min 2 (the policy's posture at dispatch time).
+      {:ok, request} = Approvals.create_request(run, user_fixture().id, "x", min_approvals: 2)
+      assert request.min_approvals == 2
+
+      # A later policy edit to min 1 must NOT move this in-flight request's bar
+      # — it snapshots the value, not the live policy.
+      a = distinct_operator(account)
+      b = distinct_operator(account)
+
+      assert {:ok, {%Request{status: :pending}, :pending}} =
+               Approvals.approve_request(request, a, "one")
+
+      refute_receive {:cloud_to_runner, _}, 100
+
+      assert {:ok, {%Request{status: :approved}, %ActionRun{status: :sent}}} =
+               Approvals.approve_request(request, b, "two")
+    end
+  end
+
+  describe "MCP self-approval (closes the api-key bypass)" do
+    test "ABUSE: an MCP run (requested_by_id nil) attributes self to the api-key owner; the owner can't self-approve" do
+      account = account_fixture()
+      owner = user_fixture()
+      _ = membership_fixture(account_id: account.id, user_id: owner.id, role: "owner")
+      owner_subject = subject_for(owner, account, role: :owner)
+      {_, key} = api_key_fixture(account_id: account.id, created_by_id: owner.id)
+      runner = runner_fixture(account_id: account.id)
+      Emisar.Runners.subscribe_runner_transport(runner)
+
+      {:ok, run} =
+        Runs.create_run(%{
+          account_id: account.id,
+          runner_id: runner.id,
+          action_id: "linux.uptime",
+          source: "mcp",
+          api_key_id: key.id,
+          args: %{},
+          args_sha256: "abc123"
+        })
+
+      # MCP-triggered: requested_by_id is nil. The request must record the
+      # api-key OWNER as the effective requester.
+      {:ok, request} =
+        Approvals.create_request(run, nil, "x", min_approvals: 1, allow_self_approval: false)
+
+      assert request.requested_by_id == owner.id
+
+      # The owner (the human behind the key) cannot launder a self-approval
+      # through their own key.
+      assert {:error, :self_approval_forbidden} =
+               Approvals.approve_request(request, owner_subject, "self via my key")
+
+      assert %Request{status: :pending} = Repo.reload!(request)
+      refute_receive {:cloud_to_runner, _}, 100
+
+      # A DIFFERENT operator can approve.
+      other = distinct_operator(account)
+
+      assert {:ok, {%Request{status: :approved}, %ActionRun{status: :sent}}} =
+               Approvals.approve_request(request, other, "ok")
+
+      assert_receive {:cloud_to_runner, %{"type" => "run_action"}}, 500
+    end
+  end
+
+  describe "expiry with decisions present" do
+    test "expiry stays pending-only even with sub-threshold decision rows recorded" do
+      %{account: account, request: request, run: run} = gated_request(min_approvals: 2)
+      a = distinct_operator(account)
+
+      # One sub-threshold approve — a decision row exists, request still pending.
+      {:ok, {%Request{status: :pending}, :pending}} = Approvals.approve_request(request, a, "one")
+      assert approved_count(request.id) == 1
+
+      # Move the request's expiry into the past; the sweep flips only pending rows.
+      past = DateTime.add(DateTime.utc_now(), -3600, :second)
+
+      {1, _} =
+        Request.Query.all()
+        |> Request.Query.by_id(request.id)
+        |> Repo.update_all(set: [expires_at: past])
+
+      assert Approvals.expire_overdue_requests() == 1
+
+      assert %Request{status: :expired} = Repo.reload!(request)
+      assert %ActionRun{status: :cancelled} = Repo.reload!(run)
+      # The recorded decision row persists — expiry doesn't touch it.
+      assert approved_count(request.id) == 1
+    end
+  end
+
+  describe "per-vote audit" do
+    test "each vote logs approval.decision_recorded; only the release logs approval.approved" do
+      %{account: account, request: request} = gated_request(min_approvals: 2)
+      a = distinct_operator(account)
+      b = distinct_operator(account)
+
+      {:ok, _} = Approvals.approve_request(request, a, "one")
+      {:ok, _} = Approvals.approve_request(request, b, "two")
+
+      {:ok, events, _} = Audit.list_events(a, page: [limit: 50])
+      recorded = Enum.filter(events, &(&1.event_type == "approval.decision_recorded"))
+      approved = Enum.filter(events, &(&1.event_type == "approval.approved"))
+
+      # Two votes → two decision_recorded rows; one release → one approved row.
+      assert length(recorded) == 2
+      assert length(approved) == 1
     end
   end
 end

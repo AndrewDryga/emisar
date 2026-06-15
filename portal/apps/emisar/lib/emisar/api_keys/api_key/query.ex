@@ -12,6 +12,10 @@ defmodule Emisar.ApiKeys.ApiKey.Query do
   def by_id(queryable, id),
     do: where(queryable, [api_keys: k], k.id == ^id)
 
+  @doc "Selects only the creator's user id — for the approval gate's owner lookup."
+  def select_created_by_id(queryable),
+    do: select(queryable, [api_keys: k], k.created_by_id)
+
   def by_account_id(queryable, account_id),
     do: where(queryable, [api_keys: k], k.account_id == ^account_id)
 

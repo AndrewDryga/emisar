@@ -84,7 +84,10 @@ defmodule EmisarWeb.PoliciesLiveTest do
                    "action" => "cassandra.status_*",
                    "decision" => "allow"
                  }
-               ]
+               ],
+               # The editor always emits the approval section; untouched, it
+               # carries the single-approver defaults.
+               "approval" => %{"min_approvals" => 1, "allow_self_approval" => true}
              }
     end
 
@@ -192,6 +195,50 @@ defmodule EmisarWeb.PoliciesLiveTest do
 
       assert html =~
                ~r/name="policy\[defaults\]\[medium\]".*?<option value="require_approval" selected/s
+    end
+
+    test "approval requirements round-trip through the editor (2 approvers, no self-approval)",
+         %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/app/policies")
+
+      # An unchecked self-approval checkbox sends only the hidden "false"; the
+      # number input sends "2". Push the change as the browser would.
+      render_change(lv, "form_change", %{
+        "editor" => "account",
+        "policy" => %{
+          "defaults" => %{
+            "low" => "allow",
+            "medium" => "allow",
+            "high" => "require_approval",
+            "critical" => "deny"
+          },
+          "approval" => %{"min_approvals" => "2", "allow_self_approval" => "false"}
+        }
+      })
+
+      lv |> form("#policy-form-account") |> render_submit()
+
+      policy = Policies.peek_policy_for_account(account.id)
+      assert policy.rules["approval"] == %{"min_approvals" => 2, "allow_self_approval" => false}
+    end
+
+    test "an existing min_approvals reflects in the editor's number input", %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      subject = Emisar.Fixtures.subject_for(user, account)
+
+      {:ok, _} =
+        Policies.save_rules(
+          %{
+            "schema_version" => 2,
+            "approval" => %{"min_approvals" => 3, "allow_self_approval" => false}
+          },
+          subject
+        )
+
+      {:ok, _lv, html} = live(conn, ~p"/app/policies")
+
+      assert html =~ ~r/name="policy\[approval\]\[min_approvals\]"[^>]*value="3"/
     end
   end
 

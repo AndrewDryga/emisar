@@ -21,7 +21,7 @@ defmodule EmisarWeb.ApprovalDecisionGateLiveTest do
   alias Emisar.Approvals.Request
   alias Emisar.Runners.Runner
 
-  defp pending_request(account, requested_by) do
+  defp pending_request(account, requested_by, opts \\ []) do
     {:ok, runner} =
       Runner.Changeset.register(%{
         account_id: account.id,
@@ -42,7 +42,12 @@ defmodule EmisarWeb.ApprovalDecisionGateLiveTest do
         args: %{}
       })
 
-    {:ok, request} = Approvals.create_request(run, requested_by.id, "please approve")
+    {:ok, request} =
+      Approvals.create_request(run, requested_by.id, "please approve",
+        min_approvals: Keyword.get(opts, :min_approvals, 1),
+        allow_self_approval: Keyword.get(opts, :allow_self_approval, true)
+      )
+
     request
   end
 
@@ -136,6 +141,53 @@ defmodule EmisarWeb.ApprovalDecisionGateLiveTest do
 
       assert html =~ "Viewers can&#39;t decide approvals."
       assert reload_status(request.id) == :pending
+    end
+  end
+
+  describe "self-approval is gated server-side (IL-15)" do
+    test "the requester sees no Approve button and a crafted approve is refused — stays pending",
+         %{conn: conn} do
+      # The logged-in owner IS the requester; the policy snapshot forbids
+      # self-approval. The Approve form is hidden in the UI…
+      {conn, owner, account} = register_and_log_in(conn)
+      request = pending_request(account, owner, allow_self_approval: false)
+
+      {:ok, lv, html} = live(conn, ~p"/app/approvals/#{request.id}")
+
+      refute html =~ "Approve and send"
+      assert html =~ "You can&#39;t approve your own request"
+
+      # …and a hand-rolled approve event (bypassing the hidden button) is
+      # refused by the context, flashed, leaving the request pending (IL-15).
+      refused = render_hook(lv, "approve", %{"reason" => "approving my own"})
+      assert refused =~ "You can&#39;t approve your own request"
+      assert reload_status(request.id) == :pending
+    end
+
+    test "a different operator can approve the same request", %{conn: conn} do
+      {_conn, owner, account} = register_and_log_in(conn)
+      request = pending_request(account, owner, allow_self_approval: false)
+
+      # A second owner (not the requester) opens the page — they CAN approve.
+      other = Emisar.Fixtures.user_fixture()
+
+      _ =
+        Emisar.Fixtures.membership_fixture(
+          account_id: account.id,
+          user_id: other.id,
+          role: "owner"
+        )
+
+      {:ok, lv, html} =
+        build_conn() |> log_in_user(other) |> live(~p"/app/approvals/#{request.id}")
+
+      assert html =~ "Approve and send"
+
+      lv
+      |> element("form[phx-submit='approve']")
+      |> render_submit(%{"reason" => "ok"})
+
+      assert reload_status(request.id) == :approved
     end
   end
 end

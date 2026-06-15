@@ -45,12 +45,43 @@ defmodule Emisar.Policies do
       "high" => "require_approval",
       "critical" => "deny"
     },
-    "overrides" => []
+    "overrides" => [],
+    # GitHub-style approval gate. Defaults reproduce single-approver
+    # behavior: one approve dispatches, and the requester may self-approve.
+    "approval" => %{"min_approvals" => 1, "allow_self_approval" => true}
   }
 
   def default_rules, do: @default_rules
   def risk_tiers, do: @risk_tiers
   def decisions, do: @decisions
+
+  @doc """
+  Distinct-approver threshold from the (already-stored) `rules`. Floors at
+  1 — a missing `"approval"` section, a missing key, or any value < 1 reads
+  as 1, so rules persisted before this section existed stay single-approver.
+  """
+  def min_approvals_for(rules) when is_map(rules) do
+    case get_in(rules, ["approval", "min_approvals"]) do
+      n when is_integer(n) and n >= 1 -> n
+      _ -> 1
+    end
+  end
+
+  def min_approvals_for(_rules), do: 1
+
+  @doc """
+  Whether the requester may approve their own run, from the (already-stored)
+  `rules`. Defaults to `true` (today's behavior) when the `"approval"` section
+  or its key is absent.
+  """
+  def self_approval_allowed?(rules) when is_map(rules) do
+    case get_in(rules, ["approval", "allow_self_approval"]) do
+      false -> false
+      _ -> true
+    end
+  end
+
+  def self_approval_allowed?(_rules), do: true
 
   @doc """
   Decisions sit on a permissiveness ladder: allow < require_approval <
