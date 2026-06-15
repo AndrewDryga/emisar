@@ -384,8 +384,11 @@ defmodule EmisarWeb.AuthKeysLive do
                 <span class="font-mono text-[11px]">
                   {key.key_prefix}… · {key.uses_count} {if key.uses_count == 1,
                     do: "use",
-                    else: "uses"} ·
-                  last used {last_used(key.last_used_at)}
+                    else: "uses"} · last used{" "}<.local_time
+                    value={key.last_used_at}
+                    mode={:relative}
+                    placeholder="never"
+                  />
                   <span :if={key.created_by}>· by {key.created_by.email}</span>
                 </span>
               </:meta>

@@ -195,10 +195,12 @@ defmodule EmisarWeb.RunnersLive do
                     </span>
                   </div>
                   <div class="mt-0.5 truncate text-xs text-zinc-500">
-                    {runner.hostname || runner.external_id || "no host"} · {heartbeat_label(
-                      runner,
-                      state
-                    )}
+                    <%!-- {" "} guards the space before the component — HEEx trims
+                         the newline the formatter inserts between "·" and the tag. --%>
+                    {runner.hostname || runner.external_id || "no host"} ·{" "}<.heartbeat_status
+                      runner={runner}
+                      status={state}
+                    />
                   </div>
                 </div>
 
@@ -255,18 +257,37 @@ defmodule EmisarWeb.RunnersLive do
     """
   end
 
-  # "Last heartbeat 3m ago" / "Connected 5s ago — waiting for first
-  # heartbeat" / "Never connected". Composes status + timestamps into
-  # one human line — clearer than a "—" with "(connected X ago)"
-  # tacked on the side.
-  defp heartbeat_label(%{last_heartbeat_at: %DateTime{} = ts}, _status),
-    do: "last heartbeat #{relative_time(ts)}"
+  # "last heartbeat 3m ago" / "just connected — waiting for first
+  # heartbeat" / "last seen 5m ago" / "never connected". Composes
+  # status + timestamps into one human line — clearer than a "—" with
+  # "(connected X ago)" tacked on the side. The two time-bearing cases
+  # render the timestamp through <.local_time> (viewer-local, hoverable,
+  # live) like every other timestamp; {" "} keeps the prefix from
+  # abutting the <time> tag (HEEx trims the surrounding newline).
+  attr :runner, :map, required: true
+  attr :status, :string, required: true
 
-  defp heartbeat_label(%{last_connected_at: %DateTime{}}, "connected"),
-    do: "just connected — waiting for first heartbeat"
+  defp heartbeat_status(%{runner: %{last_heartbeat_at: %DateTime{} = ts}} = assigns) do
+    assigns = assign(assigns, :heartbeat_at, ts)
 
-  defp heartbeat_label(%{last_connected_at: %DateTime{} = ts}, _status),
-    do: "last seen #{relative_time(ts)}"
+    ~H"""
+    last heartbeat{" "}<.local_time value={@heartbeat_at} mode={:relative} />
+    """
+  end
 
-  defp heartbeat_label(_, _), do: "never connected"
+  defp heartbeat_status(
+         %{runner: %{last_connected_at: %DateTime{}}, status: "connected"} = assigns
+       ) do
+    ~H"just connected — waiting for first heartbeat"
+  end
+
+  defp heartbeat_status(%{runner: %{last_connected_at: %DateTime{} = ts}} = assigns) do
+    assigns = assign(assigns, :seen_at, ts)
+
+    ~H"""
+    last seen{" "}<.local_time value={@seen_at} mode={:relative} />
+    """
+  end
+
+  defp heartbeat_status(assigns), do: ~H"never connected"
 end

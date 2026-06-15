@@ -44,6 +44,31 @@ defmodule EmisarWeb.RunnersLiveTest do
       assert html =~ "b1"
     end
 
+    test "an offline runner's 'last seen' heartbeat renders through <.local_time>", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+
+      # An offline runner with connect history → the "last seen <time>" branch
+      # (not "just connected", which needs live presence). Stamping the column
+      # without tracking presence keeps it offline.
+      runner = Emisar.Fixtures.runner_fixture(account_id: account.id, connected?: false)
+
+      runner
+      |> Ecto.Changeset.change(last_connected_at: DateTime.utc_now())
+      |> Emisar.Repo.update!()
+
+      {:ok, _lv, html} = live(conn, ~p"/app/runners")
+
+      # Hook-driven, viewer-local <time> like the rest of the app…
+      assert html =~ ~s(phx-hook="LocalTime")
+      assert html =~ ~s(data-format="relative")
+      # …and the mid-sentence space survives (the {" "} guards): "last seen
+      # <time>" never abuts, and the "·" separator keeps its space before the
+      # composed status ("· last seen", not "·last seen").
+      assert html =~ ~r/last seen\s<time/
+      refute html =~ ~r/last seen<time/
+      assert html =~ ~r/·\slast seen/
+    end
+
     test "the fleet health strip summarizes the whole account's runner states", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
       subject = owner_subject(user, account)

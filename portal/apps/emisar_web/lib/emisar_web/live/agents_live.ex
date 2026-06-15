@@ -675,7 +675,11 @@ defmodule EmisarWeb.AgentsLive do
                 <%!-- Row 2: prefix + scope (runners + groups) + last call --%>
                 <div class="truncate font-mono text-[11px]">
                   {key.key_prefix}…
-                  · {format_key_scope(key, @runners)} · last call {last_used(key.last_used_at)}
+                  · {format_key_scope(key, @runners)} · last call{" "}<.local_time
+                    value={key.last_used_at}
+                    mode={:relative}
+                    placeholder="never"
+                  />
                   <span :if={key.created_by}>· by {key.created_by.email}</span>
                 </div>
 

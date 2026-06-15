@@ -122,6 +122,31 @@ defmodule EmisarWeb.ApprovalsLiveTest do
     assert html =~ "Grant revoked. New calls will require fresh approval."
   end
 
+  test "a grant's expiry + last-used render through <.local_time>, with spacing kept", %{
+    conn: conn
+  } do
+    {conn, user, account} = register_and_log_in(conn)
+    subject = subject_for(user, account)
+
+    request = pending_mcp_request!(account, user, "grant me a day")
+    # A one-day grant has an expiry → the "expires <time>" branch; minting it
+    # also stamps last_used_at (uses_count starts at 1), so "last used" renders
+    # a <time> too.
+    {:ok, _} = Approvals.approve_request(request, subject, "ok", duration: :one_day)
+
+    {:ok, _lv, html} = live(conn, ~p"/app/approvals")
+
+    # Viewer-local <time> for both (same model as the rest of the app).
+    assert html =~ ~s(phx-hook="LocalTime")
+    assert html =~ ~s(data-format="relative")
+    # Mid-sentence spacing survives the formatter line-break (the {" "} guards):
+    # "expires <time>" and "last used <time>" never abut their prefix.
+    assert html =~ ~r/expires\s<time/
+    refute html =~ ~r/expires<time/
+    assert html =~ ~r/last used\s<time/
+    refute html =~ ~r/last used<time/
+  end
+
   test "revoking an unknown grant flashes not-found", %{conn: conn} do
     {conn, _user, _account} = register_and_log_in(conn)
     {:ok, lv, _html} = live(conn, ~p"/app/approvals")

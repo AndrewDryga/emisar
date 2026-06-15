@@ -166,8 +166,20 @@ defmodule EmisarWeb.ApprovalsLive do
   defp format_uses(%{uses_count: c, max_uses: nil}), do: "#{c} #{pluralize(c, "use")}"
   defp format_uses(%{uses_count: c, max_uses: max}), do: "#{c} / #{max} uses"
 
-  defp expires_label(%{expires_at: nil}), do: "no expiry"
-  defp expires_label(%{expires_at: ts}), do: "expires #{relative_time(ts)}"
+  # A grant's expiry — "no expiry" when open-ended, else "expires 3m
+  # ago" with the timestamp through <.local_time> (viewer-local,
+  # hoverable, live); {" "} keeps "expires" off the <time> tag.
+  attr :grant, :map, required: true
+
+  defp expiry_status(%{grant: %{expires_at: %DateTime{} = ts}} = assigns) do
+    assigns = assign(assigns, :expires_at, ts)
+
+    ~H"""
+    expires{" "}<.local_time value={@expires_at} mode={:relative} />
+    """
+  end
+
+  defp expiry_status(assigns), do: ~H"no expiry"
 
   defp pluralize(1, word), do: word
   defp pluralize(_, word), do: word <> "s"
@@ -337,8 +349,16 @@ defmodule EmisarWeb.ApprovalsLive do
                     · {format_uses(g)}
                   </div>
 
+                  <%!-- Both render their timestamp through <.local_time>
+                       (viewer-local, hoverable, live); {" "} guards the space
+                       before each component tag from HEEx newline-trimming. --%>
                   <div class="mt-0.5">
-                    {expires_label(g)} · last used {last_used(g.last_used_at)}
+                    <.expiry_status grant={g} />
+                    · last used{" "}<.local_time
+                      value={g.last_used_at}
+                      mode={:relative}
+                      placeholder="never"
+                    />
                   </div>
                 </:meta>
                 <:actions>

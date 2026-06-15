@@ -116,4 +116,25 @@ defmodule EmisarWeb.AuthKeysLiveTest do
 
     assert render(lv) =~ "minted-elsewhere"
   end
+
+  test "last-used renders through <.local_time> — 'never' until used, then a time", %{conn: conn} do
+    {conn, user, account} = register_and_log_in(conn)
+    subject = Emisar.Fixtures.subject_for(user, account)
+
+    # A fresh key has never been used → <.local_time> renders its "never"
+    # placeholder as a <span> (so "last used" is followed by the placeholder
+    # span, with the {" "} space preserved), not a hook-driven <time>.
+    {:ok, _raw, key} = Runners.create_auth_key(%{description: "freshly-minted"}, subject)
+    {:ok, _lv, html} = live(conn, ~p"/app/settings/runners/auth-keys")
+    assert html =~ ~r/last used\s<span[^>]*>never<\/span>/
+
+    # Once stamped, it renders the time through the hook-driven <time>, and the
+    # mid-sentence space survives the formatter's line-break (the {" "} guard).
+    key |> Ecto.Changeset.change(last_used_at: DateTime.utc_now()) |> Emisar.Repo.update!()
+    {:ok, _lv, html} = live(conn, ~p"/app/settings/runners/auth-keys")
+    assert html =~ ~s(phx-hook="LocalTime")
+    assert html =~ ~s(data-format="relative")
+    assert html =~ ~r/last used\s<time/
+    refute html =~ ~r/last used<time/
+  end
 end

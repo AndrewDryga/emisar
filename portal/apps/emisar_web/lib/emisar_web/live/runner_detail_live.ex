@@ -162,7 +162,9 @@ defmodule EmisarWeb.RunnerDetailLive do
           <span class="truncate text-zinc-200">{@runner.group}</span>
         </.meta_field>
         <.meta_field label="Last heartbeat">
-          <span class="text-zinc-200">{heartbeat_label(@runner)}</span>
+          <span class="text-zinc-200">
+            <.local_time value={heartbeat_at(@runner)} mode={:relative} />
+          </span>
         </.meta_field>
         <.meta_field label="Active runs">
           <span class="text-zinc-200">{@runner.action_load}</span>
@@ -353,12 +355,13 @@ defmodule EmisarWeb.RunnerDetailLive do
   # and the first explicit heartbeat tick, `last_heartbeat_at` is
   # legitimately nil. Treat the connect time as a heartbeat so the
   # UI doesn't read "connected 23s ago … waiting for first heartbeat",
-  # which is self-contradictory.
-  defp heartbeat_label(%{last_heartbeat_at: %DateTime{} = ts}), do: relative_time(ts)
+  # which is self-contradictory. nil falls through to <.local_time>'s
+  # placeholder.
+  defp heartbeat_at(%{last_heartbeat_at: %DateTime{} = ts}), do: ts
 
-  defp heartbeat_label(%{last_connected_at: %DateTime{} = ts}), do: relative_time(ts)
+  defp heartbeat_at(%{last_connected_at: %DateTime{} = ts}), do: ts
 
-  defp heartbeat_label(_), do: "—"
+  defp heartbeat_at(_), do: nil
 
   # Labels are stored as a `:map` so the keys are strings and the order
   # is non-deterministic. Sort for stable rendering.

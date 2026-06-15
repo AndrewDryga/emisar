@@ -361,6 +361,54 @@ defmodule EmisarWeb.TeamLiveTest do
     end
   end
 
+  describe "member-row timestamps render through <.local_time>" do
+    test "the joined + sign-in times are hook-driven, with the prefix space kept", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      # A member who HAS signed in, so the "last sign-in <time>" branch renders
+      # (the harness owner has no recorded sign-in → "never signed in").
+      member = Emisar.Fixtures.user_fixture()
+
+      member
+      |> Ecto.Changeset.change(last_sign_in_at: DateTime.utc_now())
+      |> Emisar.Repo.update!()
+
+      Emisar.Fixtures.membership_fixture(
+        account_id: account.id,
+        user_id: member.id,
+        role: "operator"
+      )
+
+      {:ok, _lv, html} = live(conn, ~p"/app/settings/team")
+
+      # Both relative times render as the viewer-local <time> (consistent with
+      # the rest of the app), not a static server string.
+      assert html =~ ~s(phx-hook="LocalTime")
+      assert html =~ ~s(data-format="relative")
+      # Mid-sentence spacing survives the formatter's line-break (the {" "}
+      # guard): "joined <time>" and "last sign-in <time>", never abutting.
+      assert html =~ ~r/joined\s<time/
+      refute html =~ ~r/joined<time/
+      assert html =~ ~r/last sign-in\s<time/
+      refute html =~ ~r/last sign-in<time/
+    end
+
+    test "a member who has never signed in shows the static 'never signed in'", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      # A fresh, never-signed-in teammate — last_sign_in_at stays nil.
+      member = Emisar.Fixtures.user_fixture()
+
+      Emisar.Fixtures.membership_fixture(
+        account_id: account.id,
+        user_id: member.id,
+        role: "operator"
+      )
+
+      {:ok, _lv, html} = live(conn, ~p"/app/settings/team")
+
+      assert html =~ "never signed in"
+    end
+  end
+
   defp enroll_mfa(user) do
     {:ok, user} =
       user

@@ -683,10 +683,14 @@ defmodule EmisarWeb.TeamLive do
                       You
                     </span>
                   </div>
+                  <%!-- Both timestamps render through <.local_time> (viewer-local,
+                       hoverable, live); {" "} guards the space the formatter would
+                       otherwise let HEEx trim before each component tag. --%>
                   <div class="truncate text-xs text-zinc-500">
-                    {membership.user && membership.user.email} · joined {relative_time(
-                      membership.inserted_at
-                    )} · {sign_in_label(membership.user)}
+                    {membership.user && membership.user.email} · joined{" "}<.local_time
+                      value={membership.inserted_at}
+                      mode={:relative}
+                    /> ·{" "}<.sign_in_status user={membership.user} />
                   </div>
                   <%!-- Per-user runner ACLs (#238): show what runners
                        this member can reach. Empty = all (default).
@@ -1032,11 +1036,20 @@ defmodule EmisarWeb.TeamLive do
   # Two cases worth surfacing to admins: "active in the last 90 days"
   # is a no-op (don't clutter the row), "never signed in" hints at a
   # pending invite, and a stale last-sign-in flags a candidate for
-  # cleanup. Long-form so it reads in the row's secondary line.
-  defp sign_in_label(%{last_sign_in_at: nil}), do: "never signed in"
+  # cleanup. Long-form so it reads in the row's secondary line. The
+  # timestamp case renders through <.local_time> (viewer-local,
+  # hoverable, live); {" "} keeps "last sign-in" off the <time> tag.
+  attr :user, :map, default: nil
 
-  defp sign_in_label(%{last_sign_in_at: %DateTime{} = ts}),
-    do: "last sign-in #{relative_time(ts)}"
+  defp sign_in_status(%{user: %{last_sign_in_at: %DateTime{} = ts}} = assigns) do
+    assigns = assign(assigns, :signed_in_at, ts)
 
-  defp sign_in_label(_), do: "—"
+    ~H"""
+    last sign-in{" "}<.local_time value={@signed_in_at} mode={:relative} />
+    """
+  end
+
+  defp sign_in_status(%{user: %{last_sign_in_at: nil}} = assigns), do: ~H"never signed in"
+
+  defp sign_in_status(assigns), do: ~H"—"
 end

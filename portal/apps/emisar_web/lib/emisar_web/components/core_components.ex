@@ -1103,7 +1103,7 @@ defmodule EmisarWeb.CoreComponents do
         <div class="truncate font-mono text-sm text-zinc-200">{@run.action_id}</div>
         <div class="truncate text-xs text-zinc-500">
           <span :if={@show_runner && @run.runner}>{"on #{@run.runner.name} · "}</span>
-          {TimeHelpers.relative_time(@run.inserted_at)}
+          <TimeHelpers.local_time value={@run.inserted_at} mode={:relative} />
         </div>
       </div>
       <.status_badge status={@run.status} class="shrink-0" />
@@ -2074,7 +2074,11 @@ defmodule EmisarWeb.CoreComponents do
       :if={@expires_at}
       class={["inline-flex items-center gap-1 text-xs", expiry_class(@expires_at), @class]}
     >
-      <.icon name="hero-clock" class="h-3 w-3" /> expires {TimeHelpers.relative_time(@expires_at)}
+      <%!-- {" "} is a literal space HEEx won't trim — without it the
+           formatter drops the component to its own line and "expires"
+           abuts the time ("expires3h ago"). --%>
+      <.icon name="hero-clock" class="h-3 w-3" />
+      expires{" "}<TimeHelpers.local_time value={@expires_at} mode={:relative} />
     </span>
     """
   end

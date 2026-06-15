@@ -2,21 +2,6 @@ defmodule EmisarWeb.TimeHelpersTest do
   use ExUnit.Case, async: true
   import EmisarWeb.TimeHelpers
 
-  describe "last_used/1" do
-    test "renders nil as \"never\" (the convention every LV expects)" do
-      assert last_used(nil) == "never"
-    end
-
-    test "delegates non-nil timestamps to relative_time/2" do
-      ts = DateTime.utc_now() |> DateTime.add(-2 * 60, :second)
-      # The relative formatter is locale + window-sensitive; rather than
-      # pin its exact text, assert we got the SAME string as the helper
-      # we're delegating to. If `relative_time/2` changes, this test
-      # keeps passing as long as `last_used/1` keeps delegating.
-      assert last_used(ts) == relative_time(ts)
-    end
-  end
-
   describe "relative_time/2" do
     test "buckets past offsets" do
       now = DateTime.utc_now()

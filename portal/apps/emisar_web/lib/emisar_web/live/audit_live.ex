@@ -400,7 +400,11 @@ defmodule EmisarWeb.AuditLive do
                 </span>
               </:chips>
               <:meta>
-                {key.key_prefix}… · last used {last_used(key.last_used_at)}
+                {key.key_prefix}… · last used{" "}<.local_time
+                  value={key.last_used_at}
+                  mode={:relative}
+                  placeholder="never"
+                />
                 <span :if={key.created_by}>· by {key.created_by.email}</span>
               </:meta>
               <:actions>

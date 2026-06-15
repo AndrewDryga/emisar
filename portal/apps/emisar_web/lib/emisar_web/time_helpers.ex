@@ -79,14 +79,6 @@ defmodule EmisarWeb.TimeHelpers do
   def format_duration(ms), do: "#{div(ms, 60_000)}m"
 
   @doc """
-  Common "last used X ago" formatter. nil → "never" (the column the LV
-  expects when a key/runner has never been touched); a timestamp gets
-  the standard `relative_time/2` rendering.
-  """
-  def last_used(nil), do: "never"
-  def last_used(ts), do: relative_time(ts)
-
-  @doc """
   Pretty-prints a map (e.g. a run's args) as indented JSON for `<pre>`
   blocks. `nil` renders as `"{}"`.
   """
