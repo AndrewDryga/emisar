@@ -848,6 +848,10 @@ defmodule Emisar.Accounts do
   """
   def invite_user_to_account(email, role, %Subject{account: %Account{id: account_id}} = subject)
       when is_binary(email) and is_binary(role) do
+    # Team seats are intentionally NOT capped (no Billing.check_limit(:members)
+    # here, unlike the runner cap): giving away collaboration is a deliberate
+    # growth lever — Free's members_limit + the Team meter are aspirational, not
+    # gates. Revisit only if seat-based pricing lands. (PENDING_DECISIONS, 2026-06-14.)
     with :ok <- ensure_invite_permitted(role, subject) do
       # Trim only: `users.email` is citext, so lookup + uniqueness are
       # case-insensitive without app-side normalization (and registration
