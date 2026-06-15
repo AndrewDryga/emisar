@@ -442,6 +442,12 @@ defmodule Emisar.Catalog do
       pack_id: pack_id,
       pack_version: pack_version,
       title: descriptor["title"] || descriptor["id"],
+      # `kind`/`risk` are RUNNER-ADVERTISED. The dispatch gate reads them
+      # catalog-authoritative (runs.ex) so the MCP/operator CALLER can't spoof
+      # "low", but the runner that ships the pack authors them: for a pack with a
+      # compiled baseline the risk lives inside the trusted hash; for a TOFU pack
+      # (no baseline) trusting the hash = trusting the declared risk — an accepted
+      # limitation, like the runner-declared group. See docs/security-model.md.
       kind: descriptor["kind"] || "exec",
       risk: descriptor["risk"] || "low",
       description: descriptor["description"],
