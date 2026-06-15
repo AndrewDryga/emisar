@@ -313,16 +313,19 @@ defmodule EmisarWeb.UserAuth do
     end
   end
 
-  # Tracks the account's pending-approval AND pending-pack-trust counts
-  # so both sidebar badges stay live across every authenticated LV
-  # without each one re-implementing the subscribe/handle_info dance.
+  # Tracks the account's pending-approval count, pending-pack-trust count, AND
+  # the fleet-offline alert so all three nav cues stay live across every
+  # authenticated LV without each one re-implementing the subscribe/handle_info
+  # dance.
   #
-  # First connect computes the counts + subscribes to the account's
-  # approvals and packs topics; `attach_hook`s then refresh whenever a
-  # request is created/decided or a pack flips pending/resolved. The
-  # approvals hook returns `{:cont, ...}` so the host LV's own
-  # `handle_info/2` (e.g. reload the approvals table) still runs; the
-  # packs hook `{:halt}`s — no host LV needs that message forwarded.
+  # First connect computes them + subscribes to the account's approvals, packs,
+  # and runner-connections topics; `attach_hook`s then refresh whenever a request
+  # is created/decided, a pack flips pending/resolved, or a runner connects/
+  # disconnects. The approvals hook returns `{:cont, ...}` so the host LV's own
+  # `handle_info/2` (e.g. reload the approvals table) still runs; the packs hook
+  # `{:halt}`s — no host LV needs that message; the fleet hook forwards
+  # `presence_diff` (the dashboard reloads on it) but `{:halt}`s its own debounce
+  # tick. The fleet recompute is debounced (the connections topic is hot).
   def on_mount(:track_pending_approvals, _params, _session, socket) do
     socket =
       socket
@@ -332,11 +335,15 @@ defmodule EmisarWeb.UserAuth do
       |> Phoenix.Component.assign_new(:pending_packs_count, fn ->
         pack_pending_count_for(socket.assigns[:current_subject])
       end)
+      |> Phoenix.Component.assign_new(:fleet_all_offline?, fn ->
+        fleet_offline_for(socket.assigns[:current_subject])
+      end)
 
     if Phoenix.LiveView.connected?(socket) and socket.assigns[:current_account] do
       account_id = socket.assigns.current_account.id
       Emisar.Approvals.subscribe_account_approvals(account_id)
       Emisar.Catalog.subscribe_account_packs(account_id)
+      Emisar.Runners.subscribe_connections(account_id)
 
       {:cont,
        socket
@@ -349,6 +356,11 @@ defmodule EmisarWeb.UserAuth do
          :refresh_pending_packs,
          :handle_info,
          &refresh_pending_packs/2
+       )
+       |> Phoenix.LiveView.attach_hook(
+         :refresh_fleet_offline,
+         :handle_info,
+         &refresh_fleet_offline/2
        )}
     else
       {:cont, socket}
@@ -397,6 +409,34 @@ defmodule EmisarWeb.UserAuth do
 
   defp refresh_pending_packs(_msg, socket), do: {:cont, socket}
 
+  # Fleet-offline nav alert. The runner-connections topic is high-frequency (a
+  # busy fleet flaps), and this hook runs on EVERY page, so a `presence_diff`
+  # only ARMS a 500ms trailing debounce (mirrors dashboard_live) — the recompute
+  # runs at most ~2×/s per page, not once per flap. `presence_diff` is forwarded
+  # (`:cont`) so a host LV that watches it (the dashboard) still reloads; the
+  # internal `:recompute_fleet_offline` tick HALTS — no host LV expects it.
+  defp refresh_fleet_offline(%{event: "presence_diff"}, socket),
+    do: {:cont, schedule_fleet_recompute(socket)}
+
+  defp refresh_fleet_offline(:recompute_fleet_offline, socket) do
+    {:halt,
+     Phoenix.Component.assign(socket, %{
+       fleet_all_offline?: fleet_offline_for(socket.assigns[:current_subject]),
+       fleet_recompute_scheduled?: false
+     })}
+  end
+
+  defp refresh_fleet_offline(_msg, socket), do: {:cont, socket}
+
+  defp schedule_fleet_recompute(socket) do
+    if socket.assigns[:fleet_recompute_scheduled?] do
+      socket
+    else
+      Process.send_after(self(), :recompute_fleet_offline, 500)
+      Phoenix.Component.assign(socket, :fleet_recompute_scheduled?, true)
+    end
+  end
+
   defp resend_confirmation_email("resend_confirmation", _params, socket) do
     socket =
       case socket.assigns[:current_user] do
@@ -423,6 +463,11 @@ defmodule EmisarWeb.UserAuth do
   # live by `refresh_pending_packs` on the account's packs topic.
   defp pack_pending_count_for(nil), do: 0
   defp pack_pending_count_for(subject), do: Emisar.Catalog.count_pending_pack_versions(subject)
+
+  # Fleet-offline alert: computed at mount (assign_new) and kept live by
+  # `refresh_fleet_offline` on the account's runner-connections topic.
+  defp fleet_offline_for(nil), do: false
+  defp fleet_offline_for(subject), do: Emisar.Runners.fleet_all_offline?(subject)
 
   defp mount_current_user(session, socket) do
     Phoenix.Component.assign_new(socket, :current_user, fn ->

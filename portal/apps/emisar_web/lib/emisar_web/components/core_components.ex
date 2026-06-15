@@ -664,6 +664,7 @@ defmodule EmisarWeb.CoreComponents do
   attr :section, :atom, default: :dashboard
   attr :pending_approvals_count, :integer, default: 0
   attr :pending_packs_count, :integer, default: 0
+  attr :fleet_all_offline?, :boolean, default: false
   attr :flash, :map, default: %{}
 
   slot :inner_block, required: true
@@ -687,6 +688,7 @@ defmodule EmisarWeb.CoreComponents do
           section={@section}
           pending_approvals_count={@pending_approvals_count}
           pending_packs_count={@pending_packs_count}
+          fleet_all_offline?={@fleet_all_offline?}
         />
         <.shell_user current_user={@current_user} />
       </aside>
@@ -727,6 +729,7 @@ defmodule EmisarWeb.CoreComponents do
             section={@section}
             pending_approvals_count={@pending_approvals_count}
             pending_packs_count={@pending_packs_count}
+            fleet_all_offline?={@fleet_all_offline?}
           />
           <.shell_user current_user={@current_user} />
         </aside>
@@ -859,6 +862,7 @@ defmodule EmisarWeb.CoreComponents do
   attr :current_subject, :map, required: true
   attr :pending_approvals_count, :integer, default: 0
   attr :pending_packs_count, :integer, default: 0
+  attr :fleet_all_offline?, :boolean, default: false
 
   defp shell_nav(assigns) do
     ~H"""
@@ -866,7 +870,13 @@ defmodule EmisarWeb.CoreComponents do
       <.nav_link to={~p"/app"} active={@section == :dashboard} icon="hero-home">Dashboard</.nav_link>
 
       <.nav_group label="Runners" />
-      <.nav_link to={~p"/app/runners"} active={@section == :runners} icon="hero-cpu-chip">
+      <.nav_link
+        to={~p"/app/runners"}
+        active={@section == :runners}
+        icon="hero-cpu-chip"
+        alert={@fleet_all_offline?}
+        alert_label="All runners offline"
+      >
         Runners
       </.nav_link>
       <.nav_link
@@ -1018,6 +1028,14 @@ defmodule EmisarWeb.CoreComponents do
         "hide the badge; positive integers render as e.g. `3`; values ≥ 100 render as `99+` so " <>
         "the pill never overflows the rail."
 
+  attr :alert, :boolean,
+    default: false,
+    doc:
+      "A small amber alert dot on the right edge (e.g. the whole fleet is offline), independent " <>
+        "of the count `badge`. Pair with `alert_label` for the screen-reader text."
+
+  attr :alert_label, :string, default: nil, doc: "Visually-hidden text announcing the alert dot."
+
   slot :inner_block, required: true
 
   def nav_link(assigns) do
@@ -1039,6 +1057,9 @@ defmodule EmisarWeb.CoreComponents do
       >
         {badge_label(@badge)}
       </span>
+      <span :if={@alert} class="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400" aria-hidden="true">
+      </span>
+      <span :if={@alert} class="sr-only">{@alert_label}</span>
     </.link>
     """
   end

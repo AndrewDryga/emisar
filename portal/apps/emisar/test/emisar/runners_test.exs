@@ -438,6 +438,42 @@ defmodule Emisar.RunnersTest do
     end
   end
 
+  describe "fleet_all_offline?/1" do
+    test "true when there are billable runners and every one is offline" do
+      {_user, account, subject} = owner_subject_fixture()
+      _r1 = runner_fixture(account_id: account.id, connected?: false)
+      _r2 = runner_fixture(account_id: account.id, connected?: false)
+
+      assert Runners.fleet_all_offline?(subject)
+    end
+
+    test "false when at least one runner is online" do
+      {_user, account, subject} = owner_subject_fixture()
+      _offline = runner_fixture(account_id: account.id, connected?: false)
+      online = runner_fixture(account_id: account.id, connected?: false)
+      {:ok, _} = Runners.connect_runner(online)
+
+      refute Runners.fleet_all_offline?(subject)
+    end
+
+    test "false when the account has no billable runners (nothing to alert on)" do
+      {_user, _account, subject} = owner_subject_fixture()
+
+      refute Runners.fleet_all_offline?(subject)
+    end
+
+    test "false (no badge) for a subject without view_runners" do
+      {_owner, account, _owner_subject} = owner_subject_fixture()
+      _r = runner_fixture(account_id: account.id, connected?: false)
+      # An in-account subject that holds no permissions — exercises the gate's
+      # deny branch directly (no membership role actually lacks view_runners, so
+      # the realistic no-badge caller is a runner/system subject, not a UI user).
+      no_view = %Emisar.Auth.Subject{account: account, role: :runner, permissions: MapSet.new()}
+
+      refute Runners.fleet_all_offline?(no_view)
+    end
+  end
+
   describe "connection state & presence" do
     test "connection_state/1 maps online / disabled / pending / offline" do
       now = DateTime.utc_now()

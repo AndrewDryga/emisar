@@ -144,4 +144,27 @@ defmodule EmisarWeb.RunnersLiveTest do
       assert html =~ "Advertised actions"
     end
   end
+
+  describe "fleet-offline nav alert (Option B)" do
+    test "shows the 'All runners offline' nav alert when the whole fleet is offline", %{
+      conn: conn
+    } do
+      {conn, _user, account} = register_and_log_in(conn)
+      _runner = Emisar.Fixtures.runner_fixture(account_id: account.id, connected?: false)
+
+      {:ok, _lv, html} = live(conn, ~p"/app/runners")
+
+      # The runners page has no all-offline banner, so this text is the nav badge.
+      assert html =~ "All runners offline"
+    end
+
+    test "no nav alert when at least one runner is online", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      _runner = Emisar.Fixtures.runner_fixture(account_id: account.id, connected?: true)
+
+      {:ok, _lv, html} = live(conn, ~p"/app/runners")
+
+      refute html =~ "All runners offline"
+    end
+  end
 end

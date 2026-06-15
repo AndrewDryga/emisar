@@ -464,6 +464,25 @@ defmodule Emisar.Runners do
   def connection_metas(account_id), do: Presence.list(Presence.topic(account_id))
 
   @doc """
+  Whether the account's whole active fleet is offline — there's at least one
+  billable (active, non-disabled) runner and every one of them is currently
+  disconnected. Drives the "all runners offline" nav alert (Option B). Requires
+  `view_runners`; returns `false` for a subject with no account or without the
+  permission — i.e. no badge. A bare boolean, matching the sidebar count badges.
+  """
+  def fleet_all_offline?(%Subject{account: %{id: account_id}} = subject) do
+    case Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_runners_permission()) do
+      :ok ->
+        count_billable_runners(account_id) > 0 and map_size(connection_metas(account_id)) == 0
+
+      _ ->
+        false
+    end
+  end
+
+  def fleet_all_offline?(%Subject{}), do: false
+
+  @doc """
   Derived connection state for a runner struct carrying the virtual
   `online?` field (set by `list_runners_for_account/2` and
   `fetch_runner_by_id/3` from presence). `:disabled` and `:pending`

@@ -195,12 +195,17 @@ defmodule EmisarWeb.RunNewLive do
     end
   end
 
+  # No-op for the broadcasts the on_mount badge/fleet hooks forward (approvals,
+  # pack trust, runner presence). The hooks own those nav cues; this page ignores them.
+  def handle_info(_msg, socket), do: {:noreply, socket}
+
   def render(assigns) do
     ~H"""
     <.dashboard_shell
       current_subject={@current_subject}
       pending_approvals_count={@pending_approvals_count}
       pending_packs_count={@pending_packs_count}
+      fleet_all_offline?={@fleet_all_offline?}
       current_user={@current_user}
       current_account={@current_account}
       switchable_accounts={@switchable_accounts}

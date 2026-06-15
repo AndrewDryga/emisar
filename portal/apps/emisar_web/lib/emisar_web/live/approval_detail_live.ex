@@ -266,6 +266,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
       current_subject={@current_subject}
       pending_approvals_count={@pending_approvals_count}
       pending_packs_count={@pending_packs_count}
+      fleet_all_offline?={@fleet_all_offline?}
       current_user={@current_user}
       current_account={@current_account}
       switchable_accounts={@switchable_accounts}
