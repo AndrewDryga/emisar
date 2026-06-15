@@ -135,10 +135,12 @@ defmodule Emisar.Users do
           do: User.Changeset.email(loaded_user, %{email: new_email}),
           else: :invalid_current_password
       end,
-      audit: fn updated ->
+      # `changeset.data` is the locked pre-update row — the accurate "from",
+      # not `user.email` off the (possibly stale) socket-snapshot subject.
+      audit: fn updated, changeset ->
         Audit.user_changeset(updated, "user.email_changed",
           context: subject.context,
-          payload: %{from: user.email, to: updated.email}
+          payload: %{from: changeset.data.email, to: updated.email}
         )
       end
     )
