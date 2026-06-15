@@ -1,13 +1,15 @@
 defmodule EmisarWeb.RunbookRunLive do
   use EmisarWeb, :live_view
 
-  alias Emisar.{Catalog, Runbooks, Runners, Runs}
+  alias Emisar.{Catalog, Policies, Runbooks, Runners, Runs}
   alias EmisarWeb.Permissions
 
   # The blast-radius assign's resting shape, so the render reads it without a
   # nil-guard: `counts` (step_index => runner count), `total`/`waves` (nil until
-  # resolved), `no_runners_step` (the step a `group:` empties to, or nil).
-  @empty_blast %{counts: %{}, total: nil, waves: nil, no_runners_step: nil}
+  # resolved), `no_runners_step` (the step a `group:` empties to, or nil), `plan`
+  # (the resolved %{step_index, action_id, runner_id} work-list, reused to predict
+  # each step's policy decision).
+  @empty_blast %{counts: %{}, total: nil, waves: nil, no_runners_step: nil, plan: []}
 
   # Tail of a finished run's output shown inline on its execution row — a
   # glanceable preview, not the full terminal (that's the run-detail page).
@@ -62,6 +64,9 @@ defmodule EmisarWeb.RunbookRunLive do
     Runs.subscribe_account_runs(socket.assigns.current_account.id)
     Runners.subscribe_connections(socket.assigns.current_account.id)
 
+    action_risk = Catalog.most_severe_risk_by_action(runner_actions)
+    blast_radius = build_blast_radius(runbook, subject)
+
     socket
     # Runners back the per-step target labels (runner-id selectors resolve
     # to names) — each step carries its own target, set in the editor.
@@ -71,10 +76,17 @@ defmodule EmisarWeb.RunbookRunLive do
     # (low) vs which will stop for approval before a fleet-wide dispatch.
     # Most-severe across runners — a group target hits every member, so
     # showing the recent-but-lower risk would under-warn.
-    |> assign(:action_risk, Catalog.most_severe_risk_by_action(runner_actions))
+    |> assign(:action_risk, action_risk)
     # Blast radius: resolve the work-list NOW (no dispatch) so the operator sees
     # how many runs each step fans out to + the wave total before pressing Start.
-    |> assign(:blast_radius, build_blast_radius(runbook, subject))
+    |> assign(:blast_radius, blast_radius)
+    # step_index => :require_approval | :deny — the decision dispatch's policy
+    # will reach for that step, so the operator isn't surprised mid-run by a
+    # step queueing for a human (or being blocked) instead of running.
+    |> assign(
+      :step_decisions,
+      predict_step_decisions(blast_radius.plan, runners, action_risk, subject)
+    )
   end
 
   defp empty_run_form(socket) do
@@ -83,6 +95,7 @@ defmodule EmisarWeb.RunbookRunLive do
     |> assign(:steps, [])
     |> assign(:action_risk, %{})
     |> assign(:blast_radius, @empty_blast)
+    |> assign(:step_decisions, %{})
   end
 
   # Normalize `Runbooks.resolve_plan/2` for the render: per-step runner counts
@@ -97,7 +110,8 @@ defmodule EmisarWeb.RunbookRunLive do
           @empty_blast
           | counts: Enum.frequencies_by(plan, & &1.step_index),
             total: total,
-            waves: waves
+            waves: waves,
+            plan: plan
         }
 
       {:error, {:step_no_runners, step_number}} ->
@@ -107,6 +121,52 @@ defmodule EmisarWeb.RunbookRunLive do
         @empty_blast
     end
   end
+
+  # step_index => :require_approval | :deny — the policy verdict dispatch will
+  # reach for each step. Built from the SAME (runner, group, action, risk) inputs
+  # dispatch feeds `Policies.evaluate_with_policy/3`, through `predict_decisions/2`
+  # (one policy read per distinct runner — no N+1), so the plan's prediction
+  # matches the real verdict. A step is gated by the MOST-restrictive decision
+  # across its target runners (a group fans out to all members): deny > approval.
+  defp predict_step_decisions([], _runners, _action_risk, _subject), do: %{}
+
+  defp predict_step_decisions(plan, runners, action_risk, subject) do
+    runner_groups = Map.new(runners, &{&1.id, &1.group})
+
+    targets =
+      Enum.map(plan, fn item ->
+        %{
+          runner_id: item.runner_id,
+          group: Map.get(runner_groups, item.runner_id),
+          action_id: item.action_id,
+          risk: Map.get(action_risk, item.action_id)
+        }
+      end)
+
+    case Policies.predict_decisions(targets, subject) do
+      {:ok, decisions} ->
+        Enum.reduce(plan, %{}, fn item, acc ->
+          decision = Map.get(decisions, {item.runner_id, item.action_id})
+          merge_step_decision(acc, item.step_index, decision)
+        end)
+
+      {:error, _} ->
+        %{}
+    end
+  end
+
+  # Keep only the surprising verdicts (a planned `:allow` runs as expected, so
+  # it gets no marker), and let the most-restrictive one per step win.
+  defp merge_step_decision(acc, _step_index, :allow), do: acc
+  defp merge_step_decision(acc, _step_index, nil), do: acc
+
+  defp merge_step_decision(acc, step_index, decision) do
+    Map.update(acc, step_index, decision, &more_restrictive(&1, decision))
+  end
+
+  defp more_restrictive(:deny, _), do: :deny
+  defp more_restrictive(_, :deny), do: :deny
+  defp more_restrictive(current, _), do: current
 
   # A live execution survives a refresh / reconnect — mount otherwise resets to
   # the idle plan and the running execution vanishes. Re-query the runbook's
@@ -163,6 +223,11 @@ defmodule EmisarWeb.RunbookRunLive do
   # it (no connected runner advertises it yet) — the pill then hides.
   defp step_risk(action_risk, step),
     do: Map.get(action_risk, step["action_id"] || step["action"])
+
+  # The predicted policy decision for a step by index (`:require_approval` /
+  # `:deny`), or nil when it runs straight through (an `:allow`, or the plan
+  # couldn't resolve) — the marker then hides.
+  defp step_decision(step_decisions, idx), do: Map.get(step_decisions, idx)
 
   # The runbook's headline risk: the most-severe risk across its steps, so the
   # operator sees the worst this run can do before pressing Start. nil (the pill
@@ -622,6 +687,25 @@ defmodule EmisarWeb.RunbookRunLive do
                     risk={step_risk(@action_risk, step)}
                     class="flex-none"
                   />
+                  <%!-- What this step's policy will decide at dispatch, so a
+                       mid-run pause (or a refusal) isn't a surprise. "Pauses for
+                       approval" is the POLICY stance — a standing grant could let
+                       it run without pausing, so the tooltip avoids a false
+                       promise. A `:deny` step would FAIL on dispatch; flag it too. --%>
+                  <span
+                    :if={step_decision(@step_decisions, idx) == :require_approval}
+                    class="flex-none"
+                    title="Per policy, this step queues for human approval before it runs. A standing grant may let it run without pausing."
+                  >
+                    <.tag tone={:amber}>Pauses for approval</.tag>
+                  </span>
+                  <span
+                    :if={step_decision(@step_decisions, idx) == :deny}
+                    class="flex-none"
+                    title="Policy denies this step — dispatch will refuse it. Edit the policy or the runbook's targets."
+                  >
+                    <.tag tone={:rose}>Blocked by policy</.tag>
+                  </span>
                 </div>
                 <p :if={step["description"]} class="mt-0.5 truncate text-xs text-zinc-500">
                   {step["description"]}

@@ -318,6 +318,54 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       assert html =~ "ring-rose-500/40"
     end
 
+    test "the plan marks a step that will pause for approval, but not an allowed one", %{
+      conn: conn
+    } do
+      {conn, user, account} = register_and_log_in(conn)
+      runner = Emisar.Fixtures.runner_fixture(account_id: account.id, group: "default")
+      # The account's default policy (seeded on creation) gates high → approval,
+      # low → allow. Advertise one low and one high action so the plan marks the
+      # high step "Pauses for approval" and leaves the low one unmarked.
+      Emisar.Fixtures.action_fixture(runner: runner, action_id: "linux.uptime", risk: "low")
+      Emisar.Fixtures.action_fixture(runner: runner, action_id: "linux.reboot", risk: "high")
+      subject = owner_subject(user, account)
+
+      {:ok, runbook} =
+        Emisar.Runbooks.create_runbook(
+          %{
+            "title" => "approval mix",
+            "name" => "approval mix",
+            "slug" => "approval-mix",
+            "definition" => %{
+              "steps" => [
+                %{
+                  "id" => "read",
+                  "action_id" => "linux.uptime",
+                  "args" => %{},
+                  "runner_selector" => %{"group" => ["default"]}
+                },
+                %{
+                  "id" => "reboot",
+                  "action_id" => "linux.reboot",
+                  "args" => %{},
+                  "runner_selector" => %{"group" => ["default"]}
+                }
+              ]
+            }
+          },
+          subject
+        )
+
+      {:ok, runbook} = Emisar.Runbooks.publish(runbook, subject)
+
+      {:ok, _lv, html} = live(conn, ~p"/app/runbooks/#{runbook.id}/run")
+
+      # The high-risk reboot step is marked; exactly one step carries the marker
+      # (the low-risk uptime step runs straight through, so it stays unmarked).
+      assert html =~ "Pauses for approval"
+      assert html |> String.split("Pauses for approval") |> length() == 2
+    end
+
     test "a step with no catalog entry shows no risk pill", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
       Emisar.Fixtures.runner_fixture(account_id: account.id)

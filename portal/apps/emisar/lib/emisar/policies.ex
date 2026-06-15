@@ -154,6 +154,58 @@ defmodule Emisar.Policies do
   end
 
   @doc """
+  Predict the policy decision dispatch would reach for a batch of pending
+  targets, so the runbook run plan can mark which steps will pause for
+  approval (or be denied) BEFORE the operator presses Start. Each target is
+  `%{runner_id, group, action_id, risk}` — the runner's `group` is the
+  caller's to supply (from its loaded runner list, exactly as dispatch looks
+  it up), keeping Policies out of the Runners table. Requires
+  `view_policies`; scopes every policy read to the subject's account. Returns
+  `{:ok, %{{runner_id, action_id} => :allow | :require_approval | :deny}}`.
+
+  Mirrors dispatch's `evaluate_with_policy/3` (the
+  `resolve_policy` + `evaluate/3` pair `Runs.evaluate_and_dispatch` calls), so
+  the prediction matches the real verdict — NOT a re-implementation. The one
+  honest gap is dispatch's grant fast-path: a standing grant can let a
+  `:require_approval` action run without pausing, which can't be known ahead of
+  a specific run, so this reflects the POLICY stance only (the marker is worded
+  accordingly).
+
+  Resolves each DISTINCT `(runner_id, group)` policy ONCE and evaluates every
+  target against the cached policy in memory — N targets sharing a runner cost
+  one policy read, not N.
+  """
+  def predict_decisions(targets, %Subject{account: %{id: account_id}} = subject)
+      when is_list(targets) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_policies_permission()) do
+      policies = resolve_policies_for_targets(account_id, targets)
+
+      decisions =
+        Map.new(targets, fn %{runner_id: runner_id, action_id: action_id} = target ->
+          policy = Map.get(policies, {runner_id, target[:group]})
+          match_ctx = %{"action_id" => action_id, "risk" => to_string(target[:risk] || "low")}
+          {decision, _matched, _reason} = evaluate(policy, match_ctx, %{})
+          {{runner_id, action_id}, decision}
+        end)
+
+      {:ok, decisions}
+    end
+  end
+
+  # One `resolve_policy` read per distinct `(runner_id, group)` — the N+1 guard.
+  # `resolve_policy` filters `by_account_id`, so the subject's account scopes
+  # the read; the caller already passed the view-policies gate above.
+  defp resolve_policies_for_targets(account_id, targets) do
+    targets
+    |> Enum.map(&{&1.runner_id, &1[:group]})
+    |> Enum.uniq()
+    |> Map.new(fn {runner_id, group} ->
+      {{runner_id, group}, resolve_policy(account_id, runner_id, group)}
+    end)
+  end
+
+  @doc """
   The account's runner/group policy overrides (every non-account scope),
   newest scope grouping first. The account default is read via
   `fetch_policy/1`; this is the list the editor shows beneath it.
