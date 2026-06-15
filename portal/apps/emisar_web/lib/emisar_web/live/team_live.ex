@@ -2,7 +2,7 @@ defmodule EmisarWeb.TeamLive do
   use EmisarWeb, :live_view
 
   alias Emisar.{Accounts, Mailers, Runners}
-  alias EmisarWeb.LiveTable
+  alias EmisarWeb.{LiveTable, Permissions}
   alias Phoenix.LiveView.JS
 
   # String forms of the canonical role enum — the invite/role forms work
@@ -214,6 +214,24 @@ defmodule EmisarWeb.TeamLive do
         {:error, reason} -> {:error, error_message(reason)}
       end
     end)
+  end
+
+  def handle_event("reset_mfa", %{"membership_id" => id}, socket) do
+    Permissions.gated(
+      socket,
+      Accounts.subject_can_manage_team?(socket.assigns.current_subject),
+      fn socket ->
+        with_membership(socket, id, fn membership ->
+          case Accounts.reset_member_mfa(membership, socket.assigns.current_subject) do
+            {:ok, _user} ->
+              {:ok, "2FA reset — they'll set up a new authenticator on next sign-in."}
+
+            {:error, reason} ->
+              {:error, error_message(reason)}
+          end
+        end)
+      end
+    )
   end
 
   # The per-row "Resend confirmation" button (current user, unconfirmed)
@@ -967,6 +985,21 @@ defmodule EmisarWeb.TeamLive do
               class="block w-full rounded px-3 py-2 text-left text-zinc-300 hover:bg-zinc-900"
             >
               Force password reset
+            </button>
+            <%!-- Only offered when the member actually has 2FA enrolled —
+                 the recovery path for someone locked out of both their
+                 authenticator and their recovery codes. It's an
+                 MFA-BYPASS action (it lets them enroll a NEW factor), so
+                 the confirm spells out the account-takeover risk if the
+                 admin is wrong about who's really asking. --%>
+            <button
+              :if={@membership.user && not is_nil(@membership.user.mfa_enabled_at)}
+              phx-click="reset_mfa"
+              phx-value-membership_id={@membership.id}
+              data-confirm={"Reset 2FA for #{@membership.user.email}? Their authenticator and recovery codes are wiped and they'll enroll a NEW factor on next sign-in. Only do this for someone you've confirmed is locked out — a new factor is an account-takeover vector if you're wrong about who's asking."}
+              class="block w-full rounded px-3 py-2 text-left text-amber-300 hover:bg-amber-500/10"
+            >
+              Reset 2FA
             </button>
             <button
               phx-click="end_sessions"

@@ -541,6 +541,85 @@ defmodule Emisar.AccountsTest do
     end
   end
 
+  describe "reset_member_mfa/2" do
+    test "an owner clears a member's MFA + writes the user.mfa_reset_by_admin audit row" do
+      account = account_fixture()
+      owner = user_fixture()
+      _ = membership_fixture(account_id: account.id, user_id: owner.id, role: "owner")
+      target_user = enroll_member_mfa(user_fixture())
+
+      target =
+        membership_fixture(account_id: account.id, user_id: target_user.id, role: "operator")
+
+      owner_subject = subject_for(owner, account, role: :owner)
+
+      assert {:ok, %User{} = updated} = Accounts.reset_member_mfa(target, owner_subject)
+
+      # Every MFA field is wiped — the member can no longer present a factor.
+      assert is_nil(updated.mfa_enabled_at)
+      assert is_nil(updated.mfa_secret)
+      assert updated.mfa_recovery_codes == []
+
+      # And it's persisted, not just on the returned struct.
+      {:ok, reloaded} = Users.fetch_user_by_id(target_user.id)
+      assert is_nil(reloaded.mfa_enabled_at)
+      refute Emisar.Auth.mfa_required?(reloaded)
+
+      events = Emisar.Audit.list_events(owner_subject, page: [limit: 10]) |> elem(1)
+      assert Enum.any?(events, &(&1.event_type == "user.mfa_reset_by_admin"))
+    end
+
+    test "a viewer (no manage_team) is refused" do
+      account = account_fixture()
+      _ = membership_fixture(account_id: account.id, user_id: user_fixture().id, role: "owner")
+      target_user = enroll_member_mfa(user_fixture())
+
+      target =
+        membership_fixture(account_id: account.id, user_id: target_user.id, role: "operator")
+
+      viewer = user_fixture()
+      _ = membership_fixture(account_id: account.id, user_id: viewer.id, role: "viewer")
+      subject = subject_for(viewer, account, role: :viewer)
+
+      assert {:error, :unauthorized} = Accounts.reset_member_mfa(target, subject)
+
+      # The member's factor is untouched.
+      {:ok, reloaded} = Users.fetch_user_by_id(target_user.id)
+      refute is_nil(reloaded.mfa_enabled_at)
+    end
+
+    test "an admin can't reset an owner's MFA (hierarchy)" do
+      account = account_fixture()
+      owner = enroll_member_mfa(user_fixture())
+      owner_m = membership_fixture(account_id: account.id, user_id: owner.id, role: "owner")
+
+      admin = user_fixture()
+      _ = membership_fixture(account_id: account.id, user_id: admin.id, role: "admin")
+      subject = subject_for(admin, account, role: :admin)
+
+      assert {:error, :insufficient_privileges} = Accounts.reset_member_mfa(owner_m, subject)
+
+      {:ok, reloaded} = Users.fetch_user_by_id(owner.id)
+      refute is_nil(reloaded.mfa_enabled_at)
+    end
+
+    test "an owner of another account can't reset this member's MFA (cross-account)" do
+      account = account_fixture()
+      _ = membership_fixture(account_id: account.id, user_id: user_fixture().id, role: "owner")
+      target_user = enroll_member_mfa(user_fixture())
+
+      target =
+        membership_fixture(account_id: account.id, user_id: target_user.id, role: "operator")
+
+      {_owner_b, _account_b, subject_b} = owner_subject_fixture()
+
+      assert {:error, :unauthorized} = Accounts.reset_member_mfa(target, subject_b)
+
+      {:ok, reloaded} = Users.fetch_user_by_id(target_user.id)
+      refute is_nil(reloaded.mfa_enabled_at)
+    end
+  end
+
   describe "soft-deleted associations are excluded from preloads" do
     test "account preload skips a soft-deleted membership (preloader honors :where)" do
       account = account_fixture()
@@ -790,6 +869,23 @@ defmodule Emisar.AccountsTest do
     {:ok, user} =
       user
       |> Ecto.Changeset.change(mfa_enabled_at: DateTime.utc_now())
+      |> Repo.update()
+
+    user
+  end
+
+  # Fully enroll a member's MFA — secret + recovery codes too, not just
+  # the timestamp — so reset_member_mfa's "every field is wiped" assertion
+  # is meaningful (clearing only the timestamp wouldn't prove the secret
+  # and codes were dropped).
+  defp enroll_member_mfa(user) do
+    {:ok, user} =
+      user
+      |> Ecto.Changeset.change(
+        mfa_secret: "JBSWY3DPEHPK3PXP",
+        mfa_enabled_at: DateTime.utc_now(),
+        mfa_recovery_codes: ["digest-a", "digest-b"]
+      )
       |> Repo.update()
 
     user

@@ -221,6 +221,55 @@ defmodule EmisarWeb.TeamLiveTest do
     end
   end
 
+  describe "reset a member's 2FA" do
+    setup %{conn: conn} do
+      {conn, owner, account} = register_and_log_in(conn)
+      member = Emisar.Fixtures.user_fixture()
+
+      membership =
+        Emisar.Fixtures.membership_fixture(
+          account_id: account.id,
+          user_id: member.id,
+          role: "operator"
+        )
+
+      %{conn: conn, owner: owner, account: account, member: member, membership: membership}
+    end
+
+    test "the Reset 2FA action is offered only when the member is enrolled", %{
+      conn: conn,
+      member: member,
+      membership: membership
+    } do
+      {:ok, lv, _html} = live(conn, ~p"/app/settings/team")
+      refute has_element?(lv, "button[phx-click='reset_mfa']")
+
+      enroll_mfa(member)
+      {:ok, lv, _html} = live(conn, ~p"/app/settings/team")
+
+      assert has_element?(
+               lv,
+               "button[phx-click='reset_mfa'][phx-value-membership_id='#{membership.id}']"
+             )
+    end
+
+    test "an owner resets the member's 2FA and they must re-enroll", %{
+      conn: conn,
+      member: member,
+      membership: membership
+    } do
+      enroll_mfa(member)
+      {:ok, lv, _html} = live(conn, ~p"/app/settings/team")
+
+      html = render_click(lv, "reset_mfa", %{"membership_id" => membership.id})
+
+      assert html =~ "2FA reset"
+      reloaded = Emisar.Repo.reload!(member)
+      assert is_nil(reloaded.mfa_enabled_at)
+      refute Emisar.Auth.mfa_required?(reloaded)
+    end
+  end
+
   describe "account-wide MFA toggle" do
     test "an owner without MFA hits the lockout guard", %{conn: conn} do
       {conn, _owner, _account} = register_and_log_in(conn)
@@ -310,5 +359,18 @@ defmodule EmisarWeb.TeamLiveTest do
 
       refute html =~ "Email bouncing"
     end
+  end
+
+  defp enroll_mfa(user) do
+    {:ok, user} =
+      user
+      |> Ecto.Changeset.change(
+        mfa_secret: "JBSWY3DPEHPK3PXP",
+        mfa_enabled_at: DateTime.utc_now(),
+        mfa_recovery_codes: ["digest-a", "digest-b"]
+      )
+      |> Emisar.Repo.update()
+
+    user
   end
 end

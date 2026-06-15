@@ -394,4 +394,22 @@ defmodule Emisar.Users do
       audit: Keyword.fetch!(opts, :audit)
     )
   end
+
+  @doc """
+  Internal — Accounts team admin: clear the member's MFA enrollment
+  (secret + enrolled-at + recovery digests, replay stamp) under the row
+  lock, so a member locked out of both their authenticator and recovery
+  codes re-enrolls a fresh factor on next sign-in. Same write as the
+  self-service `Auth.disable_mfa/1` (`User.Changeset.mfa/4` with nils),
+  but driven by an admin — the caller supplies the `:audit` event
+  (`user.mfa_reset_by_admin`, with the acting subject + membership).
+  """
+  def reset_user_mfa(user_id, opts) do
+    User.Query.not_deleted()
+    |> User.Query.by_id(user_id)
+    |> Repo.fetch_and_update(User.Query,
+      with: &User.Changeset.mfa(&1, nil, nil, []),
+      audit: Keyword.fetch!(opts, :audit)
+    )
+  end
 end

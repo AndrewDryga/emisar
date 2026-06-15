@@ -170,6 +170,13 @@ defmodule Emisar.Audit.Events do
       ),
       do: user_event(subject, membership, user, "user.sessions_revoked")
 
+  def user_mfa_reset_by_admin(
+        %Subject{} = subject,
+        %Accounts.Membership{} = membership,
+        %Users.User{} = user
+      ),
+      do: user_event(subject, membership, user, "user.mfa_reset_by_admin")
+
   def user_updated_by_admin(
         %Subject{} = subject,
         %Accounts.Membership{} = membership,

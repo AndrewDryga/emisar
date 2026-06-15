@@ -678,6 +678,44 @@ defmodule Emisar.Accounts do
   end
 
   @doc """
+  Admin-triggered MFA reset: clears a member's enrolled second factor
+  (TOTP secret + recovery codes) so a member locked out of BOTH their
+  authenticator and their recovery codes can re-enroll on next sign-in —
+  the only path out of a full lockout short of support. Same
+  authorization shape as the rest of `ensure_can_modify_membership`: the
+  admin must be in the target's account and outrank them (an admin can't
+  reset an owner's MFA), and can't reset their own (self-service
+  `Auth.disable_mfa/1` is that path). Audit-logged as
+  `user.mfa_reset_by_admin`.
+
+  This is an MFA-bypass surface — clearing a factor lets that member
+  enroll a NEW one — so it is gated, hierarchy-checked, and audited
+  exactly like `force_password_reset/2`, never self-matched.
+  """
+  def reset_member_mfa(%Membership{} = membership, %Subject{} = subject) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.manage_team_permission()),
+         :ok <- ensure_subject_in_account(subject, membership.account_id) do
+      # Users clears the MFA fields + inserts our audit atomically under
+      # the row lock; the member's old factor stops working the moment
+      # this commits. The membership guard runs on a locked re-read in the
+      # same transaction so the hierarchy is judged on the CURRENT role.
+      Multi.new()
+      |> lock_target_membership(membership, &ensure_can_modify_membership(&1, subject))
+      |> Multi.run(:user, fn _repo, %{target: loaded_membership} ->
+        Users.reset_user_mfa(loaded_membership.user_id,
+          audit: &Audit.Events.user_mfa_reset_by_admin(subject, loaded_membership, &1)
+        )
+      end)
+      |> Repo.commit_multi()
+      |> case do
+        {:ok, %{user: user}} -> {:ok, user}
+        {:error, reason} -> {:error, reason}
+      end
+    end
+  end
+
+  @doc """
   Admin-triggered profile edit for another member. Lets owners/admins
   set or fix a teammate's display name from the team page without
   making the teammate sign in to do it themselves.

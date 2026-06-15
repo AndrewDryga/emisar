@@ -96,11 +96,14 @@ defmodule EmisarWeb.MfaChallengeLive do
 
       <%!-- Terminal escape once they're on the recovery path: with both the
            authenticator AND the codes gone, the toggle + sign-in link just
-           loop, locking out an enforced-MFA member. There's no admin
-           "reset member 2FA" yet (BACKLOG), so support@ is the only honest
-           recovery path — don't promise an admin reset that can't happen. --%>
+           loop, locking out an enforced-MFA member. The fastest fix is an
+           account owner/admin clearing their 2FA from the Team page
+           (Accounts.reset_member_mfa/2), which lets them enroll a fresh
+           factor on next sign-in; support@ stays as the fallback for a
+           member with no reachable admin. --%>
       <p :if={@recovery?} class="mt-2 text-center text-xs text-zinc-500">
-        Lost your recovery codes too? Contact
+        Lost your recovery codes too? Ask an account owner or admin to reset your 2FA from the
+        Team page, or contact
         <.link
           href="mailto:support@emisar.dev"
           class="font-medium text-indigo-400 hover:text-indigo-300"
