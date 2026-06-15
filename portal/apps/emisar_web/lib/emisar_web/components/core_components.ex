@@ -1801,6 +1801,55 @@ defmodule EmisarWeb.CoreComponents do
       "mt-4 inline-flex items-center gap-2 text-sm font-medium text-indigo-400 hover:text-indigo-300"
 
   @doc """
+  "A runner is offline" notice — a `hero-signal-slash` block whose colour
+  encodes SEVERITY, the one place that convention lives so it can't drift:
+
+    * `:info` (zinc) — informational, nothing's wrong (e.g. "you can still
+      dispatch; the run queues until it reconnects").
+    * `:caution` (amber) — this run/action may be affected.
+    * `:critical` (rose) — the whole fleet is down; nothing can dispatch.
+
+      <.offline_notice severity={:caution} title="Queued — runner offline">
+        Waiting for {name} to reconnect before this run can dispatch.
+        <:action><.link navigate={~p"/app/runners"}>View runners</.link></:action>
+      </.offline_notice>
+  """
+  attr :severity, :atom, default: :caution, values: [:info, :caution, :critical]
+  attr :title, :string, required: true
+  attr :class, :string, default: nil
+  slot :inner_block, required: true
+  slot :action
+
+  def offline_notice(assigns) do
+    ~H"""
+    <div class={["flex items-start gap-3 rounded-xl border p-4", offline_box(@severity), @class]}>
+      <.icon name="hero-signal-slash" class={offline_icon(@severity)} />
+      <div class="flex-1">
+        <p class={["text-sm font-semibold", offline_title(@severity)]}>{@title}</p>
+        <p class={["mt-1 text-xs", offline_body(@severity)]}>{render_slot(@inner_block)}</p>
+      </div>
+      <div :if={@action != []} class="shrink-0 self-start">{render_slot(@action)}</div>
+    </div>
+    """
+  end
+
+  defp offline_box(:info), do: "border-zinc-700 bg-zinc-900/40"
+  defp offline_box(:caution), do: "border-amber-500/30 bg-amber-500/[0.06]"
+  defp offline_box(:critical), do: "border-rose-500/40 bg-rose-500/10"
+
+  defp offline_icon(:info), do: "mt-0.5 h-5 w-5 flex-none text-zinc-400"
+  defp offline_icon(:caution), do: "mt-0.5 h-5 w-5 flex-none text-amber-300"
+  defp offline_icon(:critical), do: "mt-0.5 h-5 w-5 flex-none text-rose-300"
+
+  defp offline_title(:info), do: "text-zinc-200"
+  defp offline_title(:caution), do: "text-amber-100"
+  defp offline_title(:critical), do: "text-rose-100"
+
+  defp offline_body(:info), do: "text-zinc-400"
+  defp offline_body(:caution), do: "text-amber-200/80"
+  defp offline_body(:critical), do: "text-rose-200/90"
+
+  @doc """
   Risk pill — used on action descriptors. Colours mirror the runner's
   declared risk level (`low|medium|high|critical`); takes the risk as a
   string (pack-manifest data) or an Ecto.Enum atom (catalog rows).

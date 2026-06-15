@@ -431,22 +431,18 @@ defmodule EmisarWeb.DashboardLive do
 
   defp runners_offline_banner(assigns) do
     ~H"""
-    <div class="mb-4 flex items-start gap-3 rounded-xl border border-rose-500/40 bg-rose-500/10 p-4">
-      <.icon name="hero-signal-slash" class="mt-0.5 h-5 w-5 flex-none text-rose-300" />
-      <div class="flex-1 text-sm">
-        <p class="font-semibold text-rose-100">All runners offline</p>
-        <p class="mt-1 text-xs text-rose-200/90">
-          No actions can be dispatched until a runner reconnects. Check the runner
-          host's logs or the systemd/launchd unit.
-        </p>
-      </div>
-      <.link
-        navigate={~p"/app/runners"}
-        class="shrink-0 self-start rounded-lg bg-rose-500/20 px-3 py-1.5 text-xs font-semibold text-rose-100 hover:bg-rose-500/30"
-      >
-        View runners →
-      </.link>
-    </div>
+    <.offline_notice severity={:critical} title="All runners offline" class="mb-4">
+      No actions can be dispatched until a runner reconnects. Check the runner
+      host's logs or the systemd/launchd unit.
+      <:action>
+        <.link
+          navigate={~p"/app/runners"}
+          class="rounded-lg bg-rose-500/20 px-3 py-1.5 text-xs font-semibold text-rose-100 hover:bg-rose-500/30"
+        >
+          View runners →
+        </.link>
+      </:action>
+    </.offline_notice>
     """
   end
 

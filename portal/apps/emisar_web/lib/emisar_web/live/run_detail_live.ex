@@ -250,37 +250,29 @@ defmodule EmisarWeb.RunDetailLive do
            socket is gone. Don't fake a terminal status; just flag that the
            output may be incomplete until it reconnects (or the dispatch
            timeout sweep errors the run). --%>
-      <div
+      <.offline_notice
         :if={@run.status in [:sent, :running] and @runner_connection == :offline}
-        class="mt-4 flex items-start gap-3 rounded-xl border border-amber-500/30 bg-amber-500/[0.06] p-4"
+        severity={:caution}
+        title="Runner disconnected"
+        class="mt-4"
       >
-        <.icon name="hero-signal-slash" class="mt-0.5 h-5 w-5 flex-none text-amber-300" />
-        <div>
-          <div class="text-sm font-semibold text-amber-100">Runner disconnected</div>
-          <p class="mt-1 text-xs text-amber-200/80">
-            Its socket dropped while this run was in flight — output may be incomplete.
-            The run is marked errored if the runner doesn't reconnect shortly.
-          </p>
-        </div>
-      </div>
+        Its socket dropped while this run was in flight — output may be incomplete.
+        The run is marked errored if the runner doesn't reconnect shortly.
+      </.offline_notice>
 
       <%!-- Queued but its target runner is offline — the run can't dispatch
            until the runner reconnects (or the timeout sweep errors it). The
            in-flight banner above ("output may be incomplete") is wrong here:
            nothing's running yet, so say what's actually blocking it. --%>
-      <div
+      <.offline_notice
         :if={@run.status == :pending and @runner_connection == :offline}
-        class="mt-4 flex items-start gap-3 rounded-xl border border-amber-500/30 bg-amber-500/[0.06] p-4"
+        severity={:caution}
+        title="Queued — runner offline"
+        class="mt-4"
       >
-        <.icon name="hero-signal-slash" class="mt-0.5 h-5 w-5 flex-none text-amber-300" />
-        <div>
-          <div class="text-sm font-semibold text-amber-100">Queued — runner offline</div>
-          <p class="mt-1 text-xs text-amber-200/80">
-            Waiting for {runner_label(@run.runner)} to reconnect before this run can dispatch.
-            It's marked errored if the runner doesn't return before the dispatch timeout.
-          </p>
-        </div>
-      </div>
+        Waiting for {runner_label(@run.runner)} to reconnect before this run can dispatch.
+        It's marked errored if the runner doesn't return before the dispatch timeout.
+      </.offline_notice>
 
       <%!-- Operator's reason, full width. The policy decision renders
            as an inline strip below (only when it carries signal), not a

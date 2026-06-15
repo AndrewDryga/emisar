@@ -279,19 +279,11 @@ defmodule EmisarWeb.RunNewLive do
              let the operator dispatch anyway (a direct/bookmarked link is
              a fine reason to queue) — runner_detail disables Run instead,
              but here we warn it'll queue rather than block. --%>
-        <section
-          :if={@runner && not @runner.online?}
-          class="rounded-xl border border-zinc-700 bg-zinc-900/40 p-4"
-        >
-          <h3 class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-zinc-300">
-            <.icon name="hero-signal-slash" class="h-4 w-4 text-zinc-400" /> Runner offline
-          </h3>
-          <p class="mt-2 text-sm text-zinc-400">
-            {@runner.name} isn't connected right now. You can still dispatch — the run queues as
-            <span class="font-mono text-zinc-300">pending</span>
-            and executes when the runner reconnects.
-          </p>
-        </section>
+        <.offline_notice :if={@runner && not @runner.online?} severity={:info} title="Runner offline">
+          {@runner.name} isn't connected right now. You can still dispatch — the run queues as
+          <span class="font-mono text-zinc-300">pending</span>
+          and executes when the runner reconnects.
+        </.offline_notice>
 
         <%!-- The form — primary surface. Reason is always required;
              args render only when the action declares any, so the
