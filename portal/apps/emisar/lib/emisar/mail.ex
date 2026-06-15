@@ -22,6 +22,32 @@ defmodule Emisar.Mail do
   def suppressed?(_), do: false
 
   @doc """
+  Internal — of the given `emails`, the subset that is suppressed, returned as
+  the CALLER's own strings. Called by `Accounts.suppressed_member_emails/2` to
+  flag bouncing member/invite addresses on the Team page. The caller supplies
+  an already account-scoped list (we never expose the global list); the result
+  is a `MapSet` keyed to the input strings, so a render-time
+  `MapSet.member?(set, member.email)` is an exact hit.
+  """
+  def suppressed_emails(emails) when is_list(emails) do
+    trimmed = Enum.map(emails, &String.trim/1)
+
+    # Match case-insensitively — the suppression `email` is citext and the
+    # provider may report a bounced address in a different case than we store
+    # the member's — but return the input strings. This downcase is an in-memory
+    # reconciliation of two stored values, not a citext-column lookup.
+    suppressed =
+      Suppression.Query.by_emails(trimmed)
+      |> Repo.all()
+      |> MapSet.new(&String.downcase(&1.email))
+
+    for email <- trimmed,
+        MapSet.member?(suppressed, String.downcase(email)),
+        into: MapSet.new(),
+        do: email
+  end
+
+  @doc """
   Internal — records `email` as suppressed (from the Postmark webhook).
   Upserts by email: a later bounce/complaint refreshes the reason + detail
   rather than racing on the unique index. Returns `{:ok, suppression}` or

@@ -8,7 +8,7 @@ defmodule Emisar.Accounts do
   """
   alias Ecto.Multi
   alias Emisar.Accounts.{Account, Authorizer, Membership}
-  alias Emisar.{ApiKeys, Audit, Auth, Crypto, Repo, Slug, Users}
+  alias Emisar.{ApiKeys, Audit, Auth, Crypto, Mail, Repo, Slug, Users}
   alias Emisar.Auth.Subject
   require Logger
 
@@ -250,6 +250,34 @@ defmodule Emisar.Accounts do
         |> Repo.aggregate(:count)
 
       {:ok, %{total: total, enrolled: enrolled}}
+    end
+  end
+
+  @doc """
+  Of this account's members and pending invitations, the set of emails on the
+  global deliverability suppression list — addresses that hard-bounced or filed
+  a complaint, so an invite/notification to them was dropped. Surfaced on the
+  Team page so an admin can see why a teammate never got their invite (and
+  contact support to clear it). Derives the emails server-side and only ever
+  checks this account's own addresses, so no caller can probe the global list.
+  Requires `view_own_account` and that `subject` is in the account. Returns
+  `{:ok, MapSet.t(String.t())}`.
+  """
+  def suppressed_member_emails(%Account{id: account_id}, %Subject{} = subject) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.view_own_account_permission()
+           ),
+         :ok <- Subject.ensure_in_account(subject, account_id, :unauthorized) do
+      emails =
+        Membership.Query.not_deleted()
+        |> Membership.Query.by_account_id(account_id)
+        |> Membership.Query.select_user_emails()
+        |> Authorizer.for_subject(subject)
+        |> Repo.all()
+
+      {:ok, Mail.suppressed_emails(emails)}
     end
   end
 

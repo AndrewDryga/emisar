@@ -39,6 +39,27 @@ defmodule Emisar.MailTest do
     test "suppressed?/1 is false for a non-binary" do
       refute Mail.suppressed?(nil)
     end
+
+    test "suppressed_emails/1 returns the suppressed subset, keyed to the caller's strings" do
+      {:ok, _} = Mail.suppress("bounced@example.com", :hard_bounce, "bounce")
+      {:ok, _} = Mail.suppress("complained@example.com", :spam_complaint, "complaint")
+
+      # Given the caller's own (differing) casing; the result keeps the INPUT
+      # strings so a render check against them is exact, while the match itself
+      # is case-insensitive (citext + the downcase reconciliation).
+      result =
+        Mail.suppressed_emails([
+          "Bounced@Example.com",
+          "complained@example.com",
+          "fine@example.com"
+        ])
+
+      assert result == MapSet.new(["Bounced@Example.com", "complained@example.com"])
+    end
+
+    test "suppressed_emails/1 is empty for an empty list" do
+      assert Mail.suppressed_emails([]) == MapSet.new()
+    end
   end
 
   describe "the mailer skips suppressed recipients" do

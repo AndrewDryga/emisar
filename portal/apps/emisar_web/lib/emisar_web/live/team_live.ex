@@ -353,6 +353,10 @@ defmodule EmisarWeb.TeamLive do
         |> assign(:runners_by_id, runners_by_id)
         |> assign(:runner_groups, runner_groups)
         |> assign(:current_role, current_role(memberships, socket.assigns.current_user.id))
+        |> assign(
+          :suppressed_emails,
+          suppressed_emails(socket.assigns.current_account, socket.assigns.current_subject)
+        )
 
       # A clean reload can fail too (e.g. a tightened list permission) —
       # degrade to an empty page rather than recursing forever.
@@ -366,6 +370,7 @@ defmodule EmisarWeb.TeamLive do
         |> assign(:runners_by_id, %{})
         |> assign(:runner_groups, [])
         |> assign(:current_role, nil)
+        |> assign(:suppressed_emails, MapSet.new())
 
       # Bad filter/page params from a hand-edited URL — retry once, clean.
       {:error, _} ->
@@ -379,6 +384,15 @@ defmodule EmisarWeb.TeamLive do
     case Accounts.team_mfa_stats(account, subject) do
       {:ok, stats} -> stats
       {:error, _} -> %{total: 0, enrolled: 0}
+    end
+  end
+
+  # The set of member emails on the deliverability suppression list — drives
+  # the "Email bouncing" badge. Degrades to empty (no badges) on a denied read.
+  defp suppressed_emails(account, subject) do
+    case Accounts.suppressed_member_emails(account, subject) do
+      {:ok, emails} -> emails
+      {:error, _} -> MapSet.new()
     end
   end
 
@@ -626,6 +640,21 @@ defmodule EmisarWeb.TeamLive do
                       title="This user signed up but hasn't confirmed their email."
                     >
                       Unconfirmed
+                    </span>
+                    <%!-- Email on the deliverability suppression list (a hard
+                         bounce or spam complaint) — invites and notifications
+                         to this address are silently dropped, so it's the real
+                         answer to "why didn't they get the invite?". We expose
+                         no un-suppress control; clearing it is a support action
+                         (per the product call), hence the tooltip copy. --%>
+                    <span
+                      :if={
+                        membership.user && MapSet.member?(@suppressed_emails, membership.user.email)
+                      }
+                      class="rounded bg-rose-500/15 px-1.5 py-0.5 text-[10px] font-medium text-rose-200 ring-1 ring-rose-500/30"
+                      title="This address bounced or filed a spam complaint, so emails to it are blocked. Contact support to clear it."
+                    >
+                      Email bouncing
                     </span>
                     <%!-- MFA status. Three states worth distinguishing:
                          (1) enrolled — quiet emerald check, the happy

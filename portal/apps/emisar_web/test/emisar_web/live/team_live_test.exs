@@ -291,4 +291,24 @@ defmodule EmisarWeb.TeamLiveTest do
       assert html =~ "1 without 2FA"
     end
   end
+
+  describe "deliverability (email suppression) badge" do
+    test "flags a member whose email is on the suppression list", %{conn: conn} do
+      {conn, user, _account} = register_and_log_in(conn)
+      {:ok, _} = Emisar.Mail.suppress(user.email, :hard_bounce, "bounce")
+
+      {:ok, _lv, html} = live(conn, ~p"/app/settings/team")
+
+      assert html =~ "Email bouncing"
+      assert html =~ "Contact support to clear it"
+    end
+
+    test "shows no badge when no member email is suppressed", %{conn: conn} do
+      {conn, _user, _account} = register_and_log_in(conn)
+
+      {:ok, _lv, html} = live(conn, ~p"/app/settings/team")
+
+      refute html =~ "Email bouncing"
+    end
+  end
 end

@@ -5,6 +5,7 @@ defmodule Emisar.AccountsTest do
 
   alias Emisar.Accounts
   alias Emisar.Accounts.{Account, Membership}
+  alias Emisar.Mail
   alias Emisar.Users
   alias Emisar.Users.User
 
@@ -585,6 +586,50 @@ defmodule Emisar.AccountsTest do
 
       assert {:error, :unauthorized} =
                Accounts.list_memberships_for_account(account_b, subject_a)
+    end
+  end
+
+  describe "suppressed_member_emails/2" do
+    test "returns the account's member emails that are on the suppression list" do
+      {_owner, account, subject} = owner_subject_fixture()
+      bouncing = user_fixture(email: "bouncing@example.com")
+      _ = membership_fixture(account_id: account.id, user_id: bouncing.id)
+      _fine = membership_fixture(account_id: account.id)
+
+      {:ok, _} = Mail.suppress("bouncing@example.com", :hard_bounce, "bounce")
+
+      assert {:ok, suppressed} = Accounts.suppressed_member_emails(account, subject)
+      assert suppressed == MapSet.new(["bouncing@example.com"])
+    end
+
+    test "is empty when no member email is suppressed" do
+      {_owner, account, subject} = owner_subject_fixture()
+      _ = membership_fixture(account_id: account.id)
+
+      assert {:ok, suppressed} = Accounts.suppressed_member_emails(account, subject)
+      assert MapSet.size(suppressed) == 0
+    end
+
+    test "never surfaces a suppression that belongs only to another account" do
+      {_owner_a, account_a, subject_a} = owner_subject_fixture()
+      {_owner_b, account_b, _} = owner_subject_fixture()
+
+      # An address suppressed globally, but a member only of account B.
+      b_member = user_fixture(email: "b-only@example.com")
+      _ = membership_fixture(account_id: account_b.id, user_id: b_member.id)
+      {:ok, _} = Mail.suppress("b-only@example.com", :hard_bounce, "bounce")
+
+      # Account A asks for ITS suppressed emails — B's bouncing address must not leak.
+      assert {:ok, suppressed} = Accounts.suppressed_member_emails(account_a, subject_a)
+      refute MapSet.member?(suppressed, "b-only@example.com")
+      assert MapSet.size(suppressed) == 0
+    end
+
+    test "a subject cannot read another account's suppressed emails" do
+      {_owner_a, _account_a, subject_a} = owner_subject_fixture()
+      {_owner_b, account_b, _} = owner_subject_fixture()
+
+      assert {:error, :unauthorized} = Accounts.suppressed_member_emails(account_b, subject_a)
     end
   end
 

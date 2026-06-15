@@ -105,6 +105,13 @@ defmodule Emisar.Accounts.Membership.Query do
     |> where([user: u], not is_nil(u.mfa_enabled_at))
   end
 
+  @doc "Select only the (non-deleted) members' emails — the deliverability overlay."
+  def select_user_emails(queryable) do
+    queryable
+    |> with_joined_user()
+    |> select([user: u], u.email)
+  end
+
   # -- Pagination + preloads -------------------------------------------
 
   @impl Emisar.Repo.Query
