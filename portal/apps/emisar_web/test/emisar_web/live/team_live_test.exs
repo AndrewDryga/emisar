@@ -247,14 +247,43 @@ defmodule EmisarWeb.TeamLiveTest do
       refute Emisar.Repo.reload!(membership).disabled_at
     end
 
-    test "remove soft-deletes the membership", %{lv: lv, membership: membership} do
-      assert render_click(lv, "remove", %{"membership_id" => membership.id}) =~ "Member removed."
+    test "remove soft-deletes the membership through the typed-confirm dialog", %{
+      lv: lv,
+      member: member,
+      membership: membership
+    } do
+      # Drive the dialog: type the member's email, then Confirm.
+      dialog = "remove-member-#{membership.id}"
+      type_confirm_token(lv, dialog, member.email)
+      assert confirm_dialog(lv, dialog, "Remove member") =~ "Member removed."
       assert Emisar.Repo.reload!(membership).deleted_at
     end
 
-    test "the remove confirm spells out that removal is permanent", %{lv: lv} do
+    test "the remove dialog spells out that removal is permanent", %{lv: lv} do
       # Heavier than the reversible suspend/reset confirms — it states what's lost.
-      assert render(lv) =~ "This is permanent"
+      assert render(lv) =~ "they lose access immediately"
+      assert render(lv) =~ "need a fresh invite to return"
+    end
+
+    test "remove's typed-confirm: Confirm won't fire until the email matches", %{
+      lv: lv,
+      membership: membership
+    } do
+      dialog = "remove-member-#{membership.id}"
+
+      # Empty + wrong token → Confirm disabled, `remove` never dispatched.
+      assert_raise ArgumentError, ~r/disabled/, fn ->
+        confirm_dialog(lv, dialog, "Remove member")
+      end
+
+      type_confirm_token(lv, dialog, "wrong@example.com")
+
+      assert_raise ArgumentError, ~r/disabled/, fn ->
+        confirm_dialog(lv, dialog, "Remove member")
+      end
+
+      # The membership is untouched — no bypassing event fired.
+      refute Emisar.Repo.reload!(membership).deleted_at
     end
 
     test "end_sessions kills the member's signed-in devices", %{

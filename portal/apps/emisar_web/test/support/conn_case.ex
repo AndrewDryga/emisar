@@ -78,4 +78,27 @@ defmodule EmisarWeb.ConnCase do
   def owner_subject(user, account) do
     Emisar.Fixtures.subject_for(user, account, role: :owner)
   end
+
+  @doc """
+  Types `token` into the typed-confirm field of the `<.confirm_dialog>` with
+  the given `dialog_id` (drives its `phx-change="confirm_typed"` form) and
+  returns the rendered HTML. The `confirm_typed` handler holds the value in
+  `@typed`, which (de)activates the Confirm button.
+  """
+  def type_confirm_token(lv, dialog_id, token) do
+    lv
+    |> Phoenix.LiveViewTest.element("##{dialog_id} form")
+    |> Phoenix.LiveViewTest.render_change(%{"confirm_token" => token})
+  end
+
+  @doc """
+  Clicks the Confirm button (`label`) inside the `<.confirm_dialog>` with the
+  given `dialog_id`, dispatching the destructive event its `on_confirm` carries.
+  Returns the rendered HTML.
+  """
+  def confirm_dialog(lv, dialog_id, label) do
+    lv
+    |> Phoenix.LiveViewTest.element("##{dialog_id} button", label)
+    |> Phoenix.LiveViewTest.render_click()
+  end
 end

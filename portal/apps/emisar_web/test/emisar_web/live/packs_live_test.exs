@@ -46,8 +46,11 @@ defmodule EmisarWeb.PacksLiveTest do
       html = render(lv)
 
       assert html =~ "acme-tools"
+      # Trust stays a direct click; Reject (irreversible-feeling) now opens the
+      # typed-confirm dialog instead of dispatching `reject` straight away.
       assert html =~ "phx-click=\"trust\""
-      assert html =~ "phx-click=\"reject\""
+      assert html =~ "open_reject"
+      assert has_element?(lv, "#reject-pack")
     end
 
     test "the pending card names the runners advertising the pack (blast radius)", %{conn: conn} do
@@ -176,7 +179,61 @@ defmodule EmisarWeb.PacksLiveTest do
       refute render(lv) =~ "phx-click=\"trust\""
     end
 
-    test "Reject on a never-trusted custom pack drops the row", %{conn: conn} do
+    test "Reject through the typed-confirm dialog drops a never-trusted custom pack", %{
+      conn: conn
+    } do
+      {conn, _user, account} = register_and_log_in(conn)
+      pack_version = observe_pending_pack!(account)
+
+      {:ok, lv, _html} = live(conn, ~p"/app/packs")
+
+      # Open the page-level reject dialog (stashes this version as the target),
+      # type the pack token, then Confirm.
+      render_click(lv, "open_reject", %{
+        "id" => pack_version.id,
+        "pack_id" => pack_version.pack_id,
+        "version" => pack_version.version
+      })
+
+      type_confirm_token(lv, "reject-pack", "acme-tools v9.9")
+      html = confirm_dialog(lv, "reject-pack", "Reject pack")
+
+      assert html =~ "Rejected drift on acme-tools"
+      # The flash quotes the pack name, so scope the absence check to the list.
+      refute has_element?(lv, "#packs li", "acme-tools")
+    end
+
+    test "reject's typed-confirm: Confirm won't fire until the pack token matches", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      pack_version = observe_pending_pack!(account)
+
+      {:ok, lv, _html} = live(conn, ~p"/app/packs")
+
+      render_click(lv, "open_reject", %{
+        "id" => pack_version.id,
+        "pack_id" => pack_version.pack_id,
+        "version" => pack_version.version
+      })
+
+      # Empty + wrong token → Confirm disabled, `reject` never dispatched.
+      assert_raise ArgumentError, ~r/disabled/, fn ->
+        confirm_dialog(lv, "reject-pack", "Reject pack")
+      end
+
+      type_confirm_token(lv, "reject-pack", "acme-tools v0.0")
+
+      assert_raise ArgumentError, ~r/disabled/, fn ->
+        confirm_dialog(lv, "reject-pack", "Reject pack")
+      end
+
+      # The pending row is untouched — no bypassing event fired.
+      assert has_element?(lv, "#packs li", "acme-tools")
+    end
+
+    test "the reject handler still works (and stays gated) when its event is dispatched directly",
+         %{conn: conn} do
+      # The dialog is UX friction, not the gate: a crafted `reject` that bypasses
+      # the modal is still served by the unchanged, server-authz-gated handler.
       {conn, _user, account} = register_and_log_in(conn)
       pack_version = observe_pending_pack!(account)
 
@@ -184,7 +241,6 @@ defmodule EmisarWeb.PacksLiveTest do
       html = render_click(lv, "reject", %{"id" => pack_version.id})
 
       assert html =~ "Rejected drift on acme-tools"
-      # The flash quotes the pack name, so scope the absence check to the list.
       refute has_element?(lv, "#packs li", "acme-tools")
     end
 

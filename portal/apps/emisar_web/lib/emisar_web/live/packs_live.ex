@@ -23,6 +23,7 @@ defmodule EmisarWeb.PacksLive do
   use EmisarWeb, :live_view
 
   alias Emisar.{Catalog, Runners}
+  alias EmisarWeb.ConfirmDialog
 
   def mount(_params, _session, socket) do
     socket = assign(socket, :page_title, "Packs")
@@ -31,6 +32,13 @@ defmodule EmisarWeb.PacksLive do
     # "View contents" disclosure (see `inspect_pack`), keyed by version id —
     # trusted versions can be many, so we never eagerly look them all up.
     socket = assign(socket, :inspected_actions, %{})
+
+    # Reject is IRREVERSIBLE-feeling (the trusted/pending decision flips
+    # dispatch authorization), so it routes through a typed-confirm modal. The
+    # pack rows live in a `phx-update="stream"` (static once pushed), so the
+    # dialog can't live per-row — instead one page-level dialog reads the pack
+    # being rejected from `@reject_target`, set by the `open_reject` event.
+    socket = socket |> ConfirmDialog.init() |> assign(:reject_target, nil)
 
     if connected?(socket) do
       {:ok, socket |> load_packs() |> assign(:loading?, false)}
@@ -174,6 +182,24 @@ defmodule EmisarWeb.PacksLive do
         {:noreply, put_flash(socket, :error, "Could not reject pack — try again.")}
     end
   end
+
+  # Stash which pack version the reject dialog targets (the rows are a stream,
+  # so the dialog is page-level and reads this assign). Typed-confirm is UX
+  # friction only — `reject` above stays the server gate.
+  def handle_event(
+        "open_reject",
+        %{"id" => id, "pack_id" => pack_id, "version" => version},
+        socket
+      ) do
+    target = %{id: id, token: "#{pack_id} v#{version}"}
+    {:noreply, socket |> assign(:reject_target, target) |> ConfirmDialog.reset()}
+  end
+
+  def handle_event("confirm_typed", params, socket),
+    do: {:noreply, ConfirmDialog.put_typed(socket, params)}
+
+  def handle_event("confirm_reset", _params, socket),
+    do: {:noreply, ConfirmDialog.reset(socket)}
 
   # Lazily load a trusted version's action set the first time its "View
   # contents" disclosure is opened (one query per opened disclosure, not per
@@ -492,17 +518,19 @@ defmodule EmisarWeb.PacksLive do
                   >
                     {if is_nil(v.hash), do: "Approve pack", else: "Trust new contents"}
                   </.button>
+                  <%!-- IRREVERSIBLE-feeling — typed-confirm modal instead of
+                       data-confirm. The button only OPENS the page-level dialog
+                       (stashing this version as the target); `reject` still fires
+                       from Confirm and stays server-authz-gated (manage_catalog). --%>
                   <.button
                     variant="secondary"
                     size="sm"
-                    phx-click="reject"
-                    phx-value-id={v.id}
-                    data-confirm={
-                      if is_nil(v.hash) do
-                        "Reject this pack? Its actions stay blocked. If the runner keeps advertising it on later heartbeats it will reappear here pending re-decision."
-                      else
-                        "Keep the trusted hash and discard the pending one?"
-                      end
+                    type="button"
+                    phx-click={
+                      JS.push("open_reject",
+                        value: %{id: v.id, pack_id: pack.id, version: v.version}
+                      )
+                      |> show_confirm_dialog("reject-pack")
                     }
                   >
                     Reject
@@ -553,6 +581,30 @@ defmodule EmisarWeb.PacksLive do
           </ul>
         </li>
       </ul>
+
+      <%!-- One page-level reject dialog (the rows are a stream, so it can't be
+           per-row). It's always in the DOM so the trigger's `show` finds it;
+           `open_reject` then fills @reject_target with the version's token +
+           id. With no target the token is blank, so Confirm stays disabled.
+           Confirm fires `reject` (still server-authz-gated) then closes. --%>
+      <.confirm_dialog
+        id="reject-pack"
+        title="Reject this pack version"
+        confirm_label="Reject pack"
+        confirm_token={(@reject_target && @reject_target.token) || ""}
+        typed={@typed}
+        on_confirm={
+          JS.push("reject", value: %{id: @reject_target && @reject_target.id})
+          |> hide_confirm_dialog("reject-pack")
+        }
+      >
+        <:body>
+          Rejects <span class="font-mono font-medium text-rose-100">
+            {(@reject_target && @reject_target.token) || "this pack version"}
+          </span>: its actions stay blocked and dispatch keeps refusing it. If a runner keeps
+          advertising the hash, it reappears here pending another decision.
+        </:body>
+      </.confirm_dialog>
     </.dashboard_shell>
     """
   end

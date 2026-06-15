@@ -2,7 +2,7 @@ defmodule EmisarWeb.RunnerDetailLive do
   use EmisarWeb, :live_view
 
   alias Emisar.{Catalog, Runners, Runs}
-  alias EmisarWeb.{LiveTable, Permissions}
+  alias EmisarWeb.{ConfirmDialog, LiveTable, Permissions}
 
   def mount(%{"id" => id}, _session, socket) do
     account_id = socket.assigns.current_account.id
@@ -25,7 +25,8 @@ defmodule EmisarWeb.RunnerDetailLive do
           {:ok,
            socket
            |> assign(:page_title, runner.name)
-           |> assign(:runner, runner)}
+           |> assign(:runner, runner)
+           |> ConfirmDialog.init()}
         else
           {:ok,
            socket
@@ -125,6 +126,14 @@ defmodule EmisarWeb.RunnerDetailLive do
       end
     )
   end
+
+  # Typed-confirm state for the "Delete this runner" dialog (UX friction only —
+  # `delete` above stays the server gate).
+  def handle_event("confirm_typed", params, socket),
+    do: {:noreply, ConfirmDialog.put_typed(socket, params)}
+
+  def handle_event("confirm_reset", _params, socket),
+    do: {:noreply, ConfirmDialog.reset(socket)}
 
   def render(assigns) do
     ~H"""
@@ -332,11 +341,10 @@ defmodule EmisarWeb.RunnerDetailLive do
         :if={not @runner.online? and Runners.subject_can_manage_runners?(@current_subject)}
         class="mt-6"
       >
-        <.confirm_zone
-          title="Delete this runner"
-          confirm="Delete this runner row? The host can re-register on next connect."
-          phx-click="delete"
-        >
+        <%!-- IRREVERSIBLE — typed-confirm modal instead of data-confirm. The
+             button only OPENS the dialog; `delete` still fires from Confirm
+             and stays server-authz-gated (Runners.subject_can_manage_runners?). --%>
+        <.confirm_zone title="Delete this runner" phx-click={show_confirm_dialog("delete-runner")}>
           <:body>
             Removes the runner row from your account. The host can re-register on its
             next connect (it will appear as a fresh runner with new tokens), which is
@@ -345,6 +353,21 @@ defmodule EmisarWeb.RunnerDetailLive do
           </:body>
           Delete runner
         </.confirm_zone>
+
+        <.confirm_dialog
+          id="delete-runner"
+          title="Delete this runner"
+          confirm_label="Delete runner"
+          confirm_token={@runner.name}
+          typed={@typed}
+          on_confirm={JS.push("delete") |> hide_confirm_dialog("delete-runner")}
+        >
+          <:body>
+            Removes <span class="font-medium text-rose-100">{@runner.name}</span>
+            from your account. The host can re-register on its next connect as a fresh
+            runner with new tokens. Run history and audit events are preserved.
+          </:body>
+        </.confirm_dialog>
       </div>
     </.dashboard_shell>
     """

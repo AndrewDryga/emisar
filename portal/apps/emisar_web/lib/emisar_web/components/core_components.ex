@@ -1874,6 +1874,157 @@ defmodule EmisarWeb.CoreComponents do
   defp confirm_zone_variant(:success), do: "success"
 
   @doc ~S"""
+  Centered, danger-toned confirmation modal with a **typed-confirm**: the
+  operator must type `confirm_token` (the member's email, the runner's name, …)
+  before the Confirm button enables. Reserve it for IRREVERSIBLE destructive
+  actions — removing a member, deleting a runner, revoking a key. Low-stakes
+  reversible actions ("End all sessions", "Suspend") keep native `data-confirm`.
+
+  **The typed-confirm is UX friction to prevent accidents, NOT authorization.**
+  It only decides whether Confirm *dispatches the event in the UI*; the real gate
+  stays server-side in the action's `handle_event` (its `Permissions.gated` /
+  context `%Subject{}` check). A crafted event that fires `on_confirm` directly,
+  bypassing this modal, is still refused by that gate — keep it that way.
+
+  Gating is LiveView-state (verifiable in a test): the `<.input>` is
+  `phx-change="confirm_typed"`, so the page holds the typed value in `@typed`
+  (via `EmisarWeb.ConfirmDialog`); the Confirm `<.button>` is
+  `disabled={@typed != @confirm_token}`. Open the dialog from the trigger with
+  `show_confirm_dialog(id)`; it closes on Cancel, Escape, or backdrop click,
+  resetting the typed value each time so a stale entry can't pre-enable Confirm.
+
+  `on_confirm` is the JS/event the enabled Confirm runs — build it at the call
+  site so the destructive event carries its own value and closes the dialog:
+
+      <.button phx-click={show_confirm_dialog("remove-#{m.id}")}>Remove from team</.button>
+
+      <.confirm_dialog
+        id={"remove-#{m.id}"}
+        title="Remove from team"
+        confirm_label="Remove member"
+        confirm_token={m.user.email}
+        typed={@typed}
+        on_confirm={
+          JS.push("remove", value: %{membership_id: m.id}) |> hide_confirm_dialog("remove-#{m.id}")
+        }
+      >
+        <:body>
+          Permanently removes <span class="font-medium text-rose-100">{m.user.email}</span>;
+          they lose access immediately and need a fresh invite to return.
+        </:body>
+      </.confirm_dialog>
+
+  The token, title, and body render escaped through HEEx (IL-16) — they carry
+  operator/runner data.
+  """
+  attr :id, :string, required: true
+  attr :title, :string, required: true
+  attr :confirm_label, :string, required: true
+  attr :confirm_token, :string, required: true, doc: "the exact string the operator must type"
+  attr :typed, :string, default: "", doc: "the live-typed value held by the page (@typed)"
+  attr :on_confirm, :any, required: true, doc: "JS/event the enabled Confirm dispatches"
+  slot :body, required: true
+
+  def confirm_dialog(assigns) do
+    ~H"""
+    <div
+      id={@id}
+      class="relative z-50 hidden"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby={"#{@id}-title"}
+      phx-window-keydown={hide_confirm_dialog(@id)}
+      phx-key="escape"
+    >
+      <%!-- Backdrop — clicking it closes the dialog (and resets the typed value). --%>
+      <div
+        id={"#{@id}-backdrop"}
+        class="fixed inset-0 bg-black/70 backdrop-blur-sm"
+        phx-click={hide_confirm_dialog(@id)}
+        aria-hidden="true"
+      >
+      </div>
+
+      <div class="fixed inset-0 flex items-center justify-center p-4">
+        <div class="w-full max-w-md rounded-xl border border-rose-900/50 bg-zinc-950 p-6 shadow-2xl">
+          <div class="flex items-start gap-3">
+            <span class="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-rose-500/15 text-rose-300">
+              <.icon name="hero-exclamation-triangle" class="h-5 w-5" />
+            </span>
+            <div class="min-w-0 flex-1">
+              <h2 id={"#{@id}-title"} class="text-sm font-semibold text-rose-100">{@title}</h2>
+              <p class="mt-1 text-xs leading-relaxed text-rose-300/70">{render_slot(@body)}</p>
+            </div>
+          </div>
+
+          <%!-- Typed-confirm: the page's "confirm_typed" handler holds this in
+               @typed; the Confirm button below is disabled until it equals the
+               token. Server authz is unaffected — this is friction only. The
+               token renders through HEEx escaped (IL-16) — it's operator data.
+               The input lives in a form so `phx-change` serializes it; Enter
+               (`phx-submit`) just re-stores the value — it never dispatches the
+               destructive event, which only fires from the Confirm button. --%>
+          <form phx-change="confirm_typed" phx-submit="confirm_typed" class="mt-4">
+            <.label for={"#{@id}-input"} variant={:eyebrow}>
+              Type <span class="font-mono text-rose-200">{@confirm_token}</span> to confirm
+            </.label>
+            <.input
+              id={"#{@id}-input"}
+              type="text"
+              name="confirm_token"
+              value={@typed}
+              class="font-mono"
+              autocomplete="off"
+              phx-debounce="50"
+            />
+          </form>
+
+          <div class="mt-6 flex items-center justify-end gap-3">
+            <.button variant="secondary" size="md" type="button" phx-click={hide_confirm_dialog(@id)}>
+              Cancel
+            </.button>
+            <%!-- Enabled only when the typed value matches a NON-empty token —
+                 a blank token can never be confirmed, so a page-level dialog
+                 with no target selected yet stays inert. --%>
+            <.button
+              variant="danger"
+              size="md"
+              type="button"
+              disabled={@confirm_token in ["", nil] or @typed != @confirm_token}
+              phx-click={@on_confirm}
+            >
+              {@confirm_label}
+            </.button>
+          </div>
+        </div>
+      </div>
+    </div>
+    """
+  end
+
+  @doc """
+  Opens a `<.confirm_dialog>` by id — reveals it, resets the page's typed value
+  (so a prior entry can't pre-enable Confirm), and focuses the type-to-confirm
+  input. Wire it to the trigger's `phx-click`.
+  """
+  def show_confirm_dialog(js \\ %JS{}, id) do
+    js
+    |> JS.push("confirm_reset")
+    |> show("##{id}")
+    |> JS.focus(to: "##{id}-input")
+  end
+
+  @doc """
+  Closes a `<.confirm_dialog>` by id and resets the page's typed value. Used by
+  Cancel, the backdrop, and Escape.
+  """
+  def hide_confirm_dialog(js \\ %JS{}, id) do
+    js
+    |> hide("##{id}")
+    |> JS.push("confirm_reset")
+  end
+
+  @doc ~S"""
   Statistic tile used on the dashboard.
 
       <.stat label="Runners online" value={@runners_connected} hint={"of #{@total} total"} />

@@ -2,7 +2,7 @@ defmodule EmisarWeb.AuthKeysLive do
   use EmisarWeb, :live_view
 
   alias Emisar.Runners
-  alias EmisarWeb.{LiveTable, Permissions, UrlHelpers}
+  alias EmisarWeb.{ConfirmDialog, LiveTable, Permissions, UrlHelpers}
   alias Phoenix.LiveView.JS
 
   def mount(_params, _session, socket) do
@@ -24,6 +24,7 @@ defmodule EmisarWeb.AuthKeysLive do
        # IL-18: only hit the billing read on the connected mount; the
        # cap-warning banner just stays hidden until it loads.
        |> assign(:billing, connected?(socket) && fetch_billing(socket))
+       |> ConfirmDialog.init()
        |> assign_form(Runners.change_auth_key(%{"group" => "default"}))}
     else
       {:ok,
@@ -79,6 +80,14 @@ defmodule EmisarWeb.AuthKeysLive do
       &do_revoke(&1, id)
     )
   end
+
+  # Typed-confirm state for the "Revoke auth key" dialog (UX friction only —
+  # `revoke` above stays the server gate).
+  def handle_event("confirm_typed", params, socket),
+    do: {:noreply, ConfirmDialog.put_typed(socket, params)}
+
+  def handle_event("confirm_reset", _params, socket),
+    do: {:noreply, ConfirmDialog.reset(socket)}
 
   def handle_event("filter", params, socket) do
     {:noreply, LiveTable.apply_filter(socket, ~p"/app/settings/runners/auth-keys", params)}
@@ -393,18 +402,38 @@ defmodule EmisarWeb.AuthKeysLive do
                 </span>
               </:meta>
               <:actions>
+                <%!-- IRREVERSIBLE — typed-confirm modal instead of data-confirm.
+                     The button only OPENS the dialog; `revoke` still fires from
+                     Confirm and stays server-authz-gated (subject_can_manage_auth_keys?). --%>
                 <.button
                   :if={
                     is_nil(key.revoked_at) and Runners.subject_can_manage_auth_keys?(@current_subject)
                   }
                   variant="danger"
                   size="sm"
-                  phx-click="revoke"
-                  phx-value-id={key.id}
-                  data-confirm="Revoke this auth key? Existing runners aren't affected; new registrations will fail."
+                  type="button"
+                  phx-click={show_confirm_dialog("revoke-key-#{key.id}")}
                 >
                   Revoke
                 </.button>
+                <.confirm_dialog
+                  :if={is_nil(key.revoked_at)}
+                  id={"revoke-key-#{key.id}"}
+                  title="Revoke auth key"
+                  confirm_label="Revoke key"
+                  confirm_token={key.key_prefix}
+                  typed={@typed}
+                  on_confirm={
+                    JS.push("revoke", value: %{id: key.id})
+                    |> hide_confirm_dialog("revoke-key-#{key.id}")
+                  }
+                >
+                  <:body>
+                    Permanently revokes <span class="font-mono font-medium text-rose-100">{key.key_prefix}…</span>.
+                    Existing runners aren't affected, but new registrations with this key will
+                    fail. This can't be undone — issue a fresh key instead.
+                  </:body>
+                </.confirm_dialog>
               </:actions>
             </.list_row>
           </:item>

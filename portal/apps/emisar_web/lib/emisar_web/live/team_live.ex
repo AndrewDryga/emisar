@@ -2,7 +2,7 @@ defmodule EmisarWeb.TeamLive do
   use EmisarWeb, :live_view
 
   alias Emisar.{Accounts, Mailers, Runners}
-  alias EmisarWeb.{LiveTable, Permissions}
+  alias EmisarWeb.{ConfirmDialog, LiveTable, Permissions}
   alias Phoenix.LiveView.JS
 
   # String forms of the canonical role enum — the invite/role forms work
@@ -20,6 +20,7 @@ defmodule EmisarWeb.TeamLive do
      |> assign(:editing_id, nil)
      |> assign(:edit_form, nil)
      |> assign(:scope_editing_id, nil)
+     |> ConfirmDialog.init()
      |> assign_form(invite_changeset())}
   end
 
@@ -179,6 +180,14 @@ defmodule EmisarWeb.TeamLive do
       end
     end)
   end
+
+  # Typed-confirm state for the "Remove from team" dialog (UX friction only —
+  # `remove` above stays the server gate).
+  def handle_event("confirm_typed", params, socket),
+    do: {:noreply, ConfirmDialog.put_typed(socket, params)}
+
+  def handle_event("confirm_reset", _params, socket),
+    do: {:noreply, ConfirmDialog.reset(socket)}
 
   def handle_event("suspend", %{"membership_id" => id}, socket) do
     with_membership(socket, id, fn membership ->
@@ -742,6 +751,7 @@ defmodule EmisarWeb.TeamLive do
                   membership={membership}
                   current_user_id={@current_user.id}
                   can_manage?={can_manage?(assigns)}
+                  typed={@typed}
                 />
               </div>
 
@@ -919,6 +929,7 @@ defmodule EmisarWeb.TeamLive do
   attr :membership, :map, required: true
   attr :current_user_id, :string, required: true
   attr :can_manage?, :boolean, required: true
+  attr :typed, :string, required: true
 
   defp member_actions(assigns) do
     ~H"""
@@ -1007,16 +1018,40 @@ defmodule EmisarWeb.TeamLive do
               End all sessions
             </button>
             <div class="my-1 border-t border-zinc-800"></div>
+            <%!-- IRREVERSIBLE — typed-confirm modal instead of native
+                 data-confirm. The button only OPENS the dialog; `remove`
+                 still fires from Confirm and stays server-authz-gated. --%>
             <button
-              phx-click="remove"
-              phx-value-membership_id={@membership.id}
-              data-confirm={"Remove #{(@membership.user && @membership.user.email) || "this member"} from the team? This is permanent: they lose access immediately, their role and runner scopes are deleted, and they'd need a fresh invite to return. (Suspend instead to keep their access reversible.)"}
+              type="button"
+              phx-click={show_confirm_dialog("remove-member-#{@membership.id}")}
               class="block w-full rounded px-3 py-2 text-left text-rose-300 hover:bg-rose-500/10"
             >
               Remove from team
             </button>
           </div>
         </details>
+
+        <.confirm_dialog
+          id={"remove-member-#{@membership.id}"}
+          title="Remove from team"
+          confirm_label="Remove member"
+          confirm_token={(@membership.user && @membership.user.email) || @membership.id}
+          typed={@typed}
+          on_confirm={
+            JS.push("remove", value: %{membership_id: @membership.id})
+            |> hide_confirm_dialog("remove-member-#{@membership.id}")
+          }
+        >
+          <:body>
+            Permanently removes
+            <span class="font-medium text-rose-100">
+              {(@membership.user && @membership.user.email) || "this member"}
+            </span>
+            from the team: they lose access immediately, their role and runner scopes are
+            deleted, and they'd need a fresh invite to return. Suspend instead to keep their
+            access reversible.
+          </:body>
+        </.confirm_dialog>
     <% end %>
     """
   end

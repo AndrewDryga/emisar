@@ -120,12 +120,38 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
     refute Emisar.Repo.reload!(runner).disabled_at
   end
 
-  test "delete soft-deletes and navigates back to the index", %{conn: conn, runner: runner} do
+  test "delete soft-deletes and navigates back to the index via the typed-confirm dialog", %{
+    conn: conn,
+    runner: runner
+  } do
     {:ok, lv, _html} = live(conn, ~p"/app/runners/#{runner.id}")
 
-    render_click(lv, "delete", %{})
+    # Drive the dialog: type the runner's name, then Confirm.
+    type_confirm_token(lv, "delete-runner", runner.name)
+    confirm_dialog(lv, "delete-runner", "Delete runner")
     assert_redirect(lv, "/app/runners")
     assert Emisar.Repo.reload!(runner).deleted_at
+  end
+
+  test "delete's typed-confirm: Confirm won't fire until the runner name matches", %{
+    conn: conn,
+    runner: runner
+  } do
+    {:ok, lv, _html} = live(conn, ~p"/app/runners/#{runner.id}")
+
+    # Empty + wrong token → Confirm disabled, `delete` never dispatched.
+    assert_raise ArgumentError, ~r/disabled/, fn ->
+      confirm_dialog(lv, "delete-runner", "Delete runner")
+    end
+
+    type_confirm_token(lv, "delete-runner", "not-the-runner-name")
+
+    assert_raise ArgumentError, ~r/disabled/, fn ->
+      confirm_dialog(lv, "delete-runner", "Delete runner")
+    end
+
+    # The runner is untouched — no bypassing event fired.
+    refute Emisar.Repo.reload!(runner).deleted_at
   end
 
   test "a presence_diff broadcast refreshes the status badge", %{conn: conn, runner: runner} do

@@ -76,12 +76,39 @@ defmodule EmisarWeb.AuthKeysLiveTest do
     refute html =~ raw_secret
     assert html =~ "bootstrap for prod image"
 
-    # Revoke it via the row control — the row flips out of the active list.
-    [key_id] = Regex.run(~r/phx-value-id="([0-9a-f-]+)"/, html, capture: :all_but_first)
+    # Revoke it through the typed-confirm dialog. The dialog id is
+    # `revoke-key-<id>`; the token to type is the key prefix.
+    [key_id] = Regex.run(~r/revoke-key-([0-9a-f-]+)/, html, capture: :all_but_first)
 
-    html = render_click(lv, "revoke", %{"id" => key_id})
+    [key_prefix] =
+      Regex.run(~r/Type <span[^>]*>([^<]+)<\/span> to confirm/, html, capture: :all_but_first)
+
+    dialog = "revoke-key-#{key_id}"
+
+    type_confirm_token(lv, dialog, key_prefix)
+    html = confirm_dialog(lv, dialog, "Revoke key")
     assert html =~ "Key revoked."
     refute html =~ "bootstrap for prod image"
+  end
+
+  test "revoke's typed-confirm: Confirm stays disabled (and won't fire) until the prefix matches",
+       %{conn: conn} do
+    {conn, user, account} = register_and_log_in(conn)
+    subject = Emisar.Fixtures.subject_for(user, account, role: :owner)
+    {:ok, _raw, key} = Runners.create_auth_key(%{description: "guarded-key"}, subject)
+
+    {:ok, lv, _html} = live(conn, ~p"/app/settings/runners/auth-keys")
+    dialog = "revoke-key-#{key.id}"
+
+    # Empty token → Confirm disabled; the dialog won't dispatch `revoke`.
+    assert_raise ArgumentError, ~r/disabled/, fn -> confirm_dialog(lv, dialog, "Revoke key") end
+
+    # Wrong token → still disabled, still won't fire.
+    type_confirm_token(lv, dialog, "not-the-prefix")
+    assert_raise ArgumentError, ~r/disabled/, fn -> confirm_dialog(lv, dialog, "Revoke key") end
+
+    # The key is untouched — a bypassing event was never fired.
+    assert render(lv) =~ "guarded-key"
   end
 
   test "a viewer cannot mint an auth key", %{conn: conn} do
