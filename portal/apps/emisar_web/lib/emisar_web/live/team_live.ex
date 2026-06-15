@@ -462,17 +462,13 @@ defmodule EmisarWeb.TeamLive do
              at-a-glance per-member MFA status. Lives at the top because
              this is the highest-leverage account setting on the page;
              everything below is per-member admin. --%>
-        <section class="rounded-xl border border-zinc-900 bg-zinc-950/40 p-5">
-          <div class="flex items-start justify-between gap-4">
-            <div class="min-w-0">
-              <h2 class="text-sm font-semibold text-zinc-100">Security</h2>
-              <p class="mt-1 text-xs text-zinc-500 leading-relaxed">
-                When enforced, members without 2FA are funneled to their profile to set it up
-                before they can use the rest of the app. Owners can't enable this until they've
-                enrolled themselves — prevents lock-outs.
-              </p>
-            </div>
-
+        <.panel title="Security">
+          <:subtitle>
+            When enforced, members without 2FA are funneled to their profile to set it up
+            before they can use the rest of the app. Owners can't enable this until they've
+            enrolled themselves — prevents lock-outs.
+          </:subtitle>
+          <:actions>
             <%= cond do %>
               <% Accounts.subject_can_manage_account_security?(@current_subject) -> %>
                 <button
@@ -496,12 +492,12 @@ defmodule EmisarWeb.TeamLive do
               <% true -> %>
                 <span class="shrink-0 text-[11px] text-zinc-600">Owner-only</span>
             <% end %>
-          </div>
+          </:actions>
 
           <%!-- Member status row — shows who's enrolled / not. When
                require_mfa is on, the un-enrolled count gets a loud
                amber chip so the owner sees follow-up at a glance. --%>
-          <div class="mt-4 flex flex-wrap items-center gap-2 text-xs">
+          <div class="flex flex-wrap items-center gap-2 text-xs">
             <span class="text-zinc-400">
               2FA enrolled: <strong class="text-zinc-100">{@mfa_stats.enrolled}</strong>
               of <strong class="text-zinc-100">{@mfa_stats.total}</strong>
@@ -517,7 +513,7 @@ defmodule EmisarWeb.TeamLive do
               <.chip tone={:indigo}>Enforced</.chip>
             <% end %>
           </div>
-        </section>
+        </.panel>
 
         <%!-- Invite panel — collapsed by default; revealed by header
              button. Avoids a permanent "fill out this form" sidebar

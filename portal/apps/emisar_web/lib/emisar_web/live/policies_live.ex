@@ -537,9 +537,8 @@ defmodule EmisarWeb.PoliciesLive do
       <.loading_state :if={@loading?} />
 
       <div :if={not @loading?} class="mx-auto max-w-4xl space-y-6">
-        <section class="rounded-xl border border-zinc-900 bg-zinc-950/40 p-5">
-          <h2 class="text-sm font-semibold text-zinc-100">How this works</h2>
-          <p class="mt-2 text-sm leading-relaxed text-zinc-400">
+        <.panel title="How this works">
+          <p class="text-sm leading-relaxed text-zinc-400">
             Every action has a <strong class="text-zinc-100">risk tier</strong>
             from the catalog. Your <strong class="text-zinc-100">default policy</strong>
             sets what happens per tier — allow, require approval, or deny — plus
@@ -548,7 +547,7 @@ defmodule EmisarWeb.PoliciesLive do
             <strong class="text-zinc-100">targeted ruleset</strong>
             below.
           </p>
-        </section>
+        </.panel>
 
         <p
           :if={not @can_manage?}
@@ -557,13 +556,8 @@ defmodule EmisarWeb.PoliciesLive do
           You can view the policy, but only owners and admins can change it.
         </p>
 
-        <section class="rounded-xl border border-zinc-900 bg-zinc-950/40 p-5">
-          <header>
-            <h2 class="text-base font-semibold text-zinc-100">Default policy</h2>
-            <p class="mt-0.5 text-xs text-zinc-500">
-              Applies to every runner unless a targeted ruleset below overrides it.
-            </p>
-          </header>
+        <.panel title="Default policy">
+          <:subtitle>Applies to every runner unless a targeted ruleset below overrides it.</:subtitle>
 
           <.policy_fields
             editor_id="account"
@@ -573,7 +567,7 @@ defmodule EmisarWeb.PoliciesLive do
             can_manage={@can_manage?}
             save_label="Save default policy"
           />
-        </section>
+        </.panel>
 
         <section class="space-y-4">
           <header class="flex items-end justify-between gap-4">

@@ -424,13 +424,12 @@ defmodule EmisarWeb.ApprovalDetailLive do
 
   defp decision_panel(assigns) do
     ~H"""
-    <section class="rounded-xl border border-zinc-900 bg-zinc-950/60 p-5">
-      <h3 class="text-sm font-semibold text-zinc-100">Decide</h3>
-      <p class="mt-1 text-xs text-zinc-500">Logged to the audit trail.</p>
+    <.panel title="Decide">
+      <:subtitle>Logged to the audit trail.</:subtitle>
 
       <div
         :if={@runner_state == :offline}
-        class="mt-4 flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/[0.06] p-3 text-xs text-amber-200"
+        class="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/[0.06] p-3 text-xs text-amber-200"
       >
         <.icon name="hero-signal-slash" class="mt-0.5 h-4 w-4 flex-none text-amber-300" />
         <span>
@@ -545,7 +544,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
           Viewers can't decide approvals.
         </p>
       <% end %>
-    </section>
+    </.panel>
     """
   end
 end

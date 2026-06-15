@@ -222,12 +222,8 @@ defmodule EmisarWeb.RunNewLive do
         <%!-- Action context — what you're about to do. Description
              prose + meta strip (risk/kind/pack). Replaces the
              stranded right-side info card. --%>
-        <section
-          :if={@action.description && @action.description != ""}
-          class="rounded-xl border border-zinc-900 bg-zinc-950/40 p-5"
-        >
-          <h2 :if={@action.title} class="text-sm font-semibold text-zinc-100">{@action.title}</h2>
-          <p class="mt-1 text-sm leading-relaxed text-zinc-400">{@action.description}</p>
+        <.panel :if={@action.description && @action.description != ""} title={@action.title}>
+          <p class="text-sm leading-relaxed text-zinc-400">{@action.description}</p>
 
           <%!-- Pack-provided examples — short canonical invocations
                with sample args. Big UX win when an operator has the
@@ -247,7 +243,7 @@ defmodule EmisarWeb.RunNewLive do
               </li>
             </ul>
           </div>
-        </section>
+        </.panel>
 
         <.meta_strip cols={3}>
           <.meta_field label="Risk">
