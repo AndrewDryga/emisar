@@ -1867,6 +1867,7 @@ defmodule EmisarWeb.CoreComponents do
   attr :icon, :string, required: true
   attr :title, :string, required: true
   attr :variant, :atom, default: :boxed, values: [:boxed, :bare]
+  attr :tone, :atom, default: :zinc, values: [:zinc, :danger]
   attr :class, :string, default: nil
   slot :inner_block, required: true
 
@@ -1878,8 +1879,8 @@ defmodule EmisarWeb.CoreComponents do
   def empty_state(assigns) do
     ~H"""
     <div class={[empty_state_wrapper(@variant), @class]}>
-      <.icon name={@icon} class={empty_state_icon(@variant)} />
-      <h2 class={empty_state_title(@variant)}>{@title}</h2>
+      <.icon name={@icon} class={empty_state_icon(@variant, @tone)} />
+      <h2 class={empty_state_title(@variant, @tone)}>{@title}</h2>
       <p class={empty_state_body(@variant)}>{render_slot(@inner_block)}</p>
 
       <%= for cta <- @cta do %>
@@ -1899,11 +1900,21 @@ defmodule EmisarWeb.CoreComponents do
 
   defp empty_state_wrapper(:bare), do: "mx-auto max-w-md text-center"
 
-  defp empty_state_icon(:boxed), do: "mx-auto h-10 w-10 text-zinc-700"
-  defp empty_state_icon(:bare), do: "mx-auto h-8 w-8 text-zinc-700"
+  defp empty_state_icon(:boxed, tone), do: "mx-auto h-10 w-10 " <> empty_state_icon_color(tone)
+  defp empty_state_icon(:bare, tone), do: "mx-auto h-8 w-8 " <> empty_state_icon_color(tone)
 
-  defp empty_state_title(:boxed), do: "mt-4 text-base font-semibold text-zinc-200"
-  defp empty_state_title(:bare), do: "mt-3 text-sm font-medium text-zinc-300"
+  defp empty_state_icon_color(:zinc), do: "text-zinc-700"
+  defp empty_state_icon_color(:danger), do: "text-rose-400/70"
+
+  defp empty_state_title(:boxed, tone),
+    do: "mt-4 text-base font-semibold " <> empty_state_title_color(:boxed, tone)
+
+  defp empty_state_title(:bare, tone),
+    do: "mt-3 text-sm font-medium " <> empty_state_title_color(:bare, tone)
+
+  defp empty_state_title_color(:boxed, :zinc), do: "text-zinc-200"
+  defp empty_state_title_color(:bare, :zinc), do: "text-zinc-300"
+  defp empty_state_title_color(_variant, :danger), do: "text-rose-200"
 
   defp empty_state_body(:boxed), do: "mt-2 text-sm text-zinc-500"
   defp empty_state_body(:bare), do: "mt-1 text-xs leading-relaxed text-zinc-500"

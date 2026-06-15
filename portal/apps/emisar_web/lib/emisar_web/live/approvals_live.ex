@@ -258,14 +258,16 @@ defmodule EmisarWeb.ApprovalsLive do
               </li>
             </:item>
             <:empty>
-              <div :if={@pending_error?} class="mx-auto max-w-md">
-                <.icon name="hero-exclamation-triangle" class="mx-auto h-8 w-8 text-rose-400/70" />
-                <p class="mt-3 text-rose-200">Couldn't load pending approvals.</p>
-                <p class="mt-1 text-xs leading-relaxed text-zinc-500">
-                  This is a load error, not an empty queue — a held action may be waiting.
-                  Refresh the page; if it persists, your access may have changed.
-                </p>
-              </div>
+              <.empty_state
+                :if={@pending_error?}
+                variant={:bare}
+                tone={:danger}
+                icon="hero-exclamation-triangle"
+                title="Couldn't load pending approvals."
+              >
+                This is a load error, not an empty queue — a held action may be waiting.
+                Refresh the page; if it persists, your access may have changed.
+              </.empty_state>
               <.empty_state
                 :if={not @pending_error?}
                 variant={:bare}
