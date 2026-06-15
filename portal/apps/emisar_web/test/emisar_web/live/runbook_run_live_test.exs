@@ -273,6 +273,51 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       assert html =~ "ring-rose-500/30"
     end
 
+    test "the plan headline shows the runbook's most-severe step risk", %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      runner = Emisar.Fixtures.runner_fixture(account_id: account.id)
+      # Two steps at different risks — the headline must show the WORST
+      # (critical), not the first or whichever was seen last.
+      Emisar.Fixtures.action_fixture(runner: runner, action_id: "linux.uptime", risk: "low")
+      Emisar.Fixtures.action_fixture(runner: runner, action_id: "linux.reboot", risk: "critical")
+      subject = owner_subject(user, account)
+
+      {:ok, runbook} =
+        Emisar.Runbooks.create_runbook(
+          %{
+            "title" => "mixed risk",
+            "name" => "mixed risk",
+            "slug" => "mixed-risk",
+            "definition" => %{
+              "steps" => [
+                %{
+                  "id" => "read",
+                  "action_id" => "linux.uptime",
+                  "args" => %{},
+                  "runner_selector" => %{"group" => ["default"]}
+                },
+                %{
+                  "id" => "reboot",
+                  "action_id" => "linux.reboot",
+                  "args" => %{},
+                  "runner_selector" => %{"group" => ["default"]}
+                }
+              ]
+            }
+          },
+          subject
+        )
+
+      {:ok, runbook} = Emisar.Runbooks.publish(runbook, subject)
+
+      {:ok, _lv, html} = live(conn, ~p"/app/runbooks/#{runbook.id}/run")
+
+      # The "Plan" heading carries a critical pill — the worst across the steps.
+      assert html =~ "Plan"
+      assert html =~ "critical"
+      assert html =~ "ring-rose-500/40"
+    end
+
     test "a step with no catalog entry shows no risk pill", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
       Emisar.Fixtures.runner_fixture(account_id: account.id)

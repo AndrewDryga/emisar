@@ -6,7 +6,7 @@ defmodule EmisarWeb.RunbooksLive do
   """
   use EmisarWeb, :live_view
 
-  alias Emisar.Runbooks
+  alias Emisar.{Catalog, Runbooks}
   alias EmisarWeb.LiveTable
 
   def mount(_params, _session, socket) do
@@ -37,6 +37,7 @@ defmodule EmisarWeb.RunbooksLive do
       {:ok, list, meta} ->
         socket
         |> assign(:runbooks, list)
+        |> assign(:runbook_risk, resolve_max_risks(list, socket.assigns.current_subject))
         |> assign(:metadata, meta)
         |> assign(:filter_params, params)
         |> assign(:filters, filters)
@@ -46,6 +47,7 @@ defmodule EmisarWeb.RunbooksLive do
       {:error, _} when map_size(params) == 0 ->
         socket
         |> assign(:runbooks, [])
+        |> assign(:runbook_risk, %{})
         |> assign(:metadata, %Emisar.Repo.Paginator.Metadata{count: 0, limit: 0})
         |> assign(:filter_params, params)
         |> assign(:filters, filters)
@@ -55,6 +57,35 @@ defmodule EmisarWeb.RunbooksLive do
         load(socket, %{})
     end
   end
+
+  # `%{runbook_id => most-severe step risk}` for the whole page in ONE catalog
+  # read — gather every step's action across all listed runbooks, resolve their
+  # risks in a single account-scoped query, then fold each runbook's worst from
+  # that map (no per-runbook DB call — IL-1). A runbook whose steps' actions
+  # aren't in the catalog yet is absent from the map, so its row shows no pill
+  # (max_risk never returns a false low for unresolved steps).
+  defp resolve_max_risks(runbooks, subject) do
+    action_ids =
+      runbooks
+      |> Enum.flat_map(&runbook_action_ids/1)
+      |> Enum.uniq()
+
+    case Catalog.risk_by_action_ids(action_ids, subject) do
+      {:ok, risk_by_action} ->
+        Map.new(runbooks, fn runbook ->
+          risks = Enum.map(runbook_action_ids(runbook), &Map.get(risk_by_action, &1))
+          {runbook.id, Catalog.max_risk(risks)}
+        end)
+
+      {:error, _} ->
+        %{}
+    end
+  end
+
+  # The action id of each of a runbook's steps (steps use `action`/`action_id`
+  # interchangeably, same as the dispatch path).
+  defp runbook_action_ids(runbook),
+    do: runbook |> Runbooks.expand() |> Enum.map(&(&1["action_id"] || &1["action"]))
 
   def render(assigns) do
     ~H"""
@@ -119,6 +150,10 @@ defmodule EmisarWeb.RunbooksLive do
                   </.link>
                   <.status_badge status={runbook.status} />
                   <span class="font-mono text-[11px] text-zinc-500">v{runbook.version}</span>
+                  <%!-- Headline risk — the most-severe step's risk, so the
+                       operator sees how dangerous a runbook is before opening
+                       it. Hidden when no step's action is in the catalog. --%>
+                  <.risk_pill :if={@runbook_risk[runbook.id]} risk={@runbook_risk[runbook.id]} />
                 </:title>
                 <:meta>
                   <%!-- Row 2: description preview + slug --%>

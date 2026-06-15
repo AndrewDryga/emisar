@@ -586,6 +586,44 @@ defmodule Emisar.Catalog do
     end
   end
 
+  @doc """
+  `%{action_id => most-severe risk}` for a set of `action_id`s, in ONE
+  account-scoped query — the runbook list resolves every listed runbook's
+  steps' risks at once (no per-runbook DB call). Same `view_catalog` gate +
+  account scoping as the other catalog reads; returns `{:ok, %{}}` for an
+  empty id list without touching the DB.
+
+  Only `action_id`s a connected runner advertises appear in the map — an
+  unobserved step is simply absent, which `max_risk/1` treats conservatively
+  (no false-low). Folds the rows through `most_severe_risk_by_action/1`, so an
+  action advertised by several runners at mixed risk keeps the worst.
+  """
+  def risk_by_action_ids([], %Subject{} = subject) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.view_catalog_permission()
+           ) do
+      {:ok, %{}}
+    end
+  end
+
+  def risk_by_action_ids(action_ids, %Subject{} = subject) when is_list(action_ids) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.view_catalog_permission()
+           ) do
+      actions =
+        RunnerAction.Query.all()
+        |> RunnerAction.Query.by_action_ids(action_ids)
+        |> Authorizer.for_subject(subject)
+        |> Repo.all()
+
+      {:ok, most_severe_risk_by_action(actions)}
+    end
+  end
+
   # Severity rank for `RunnerAction.risk` (an Ecto.Enum) — lets us pick the
   # WORST risk when the same action is advertised by more than one runner.
   @risk_rank %{low: 0, medium: 1, high: 2, critical: 3}
@@ -609,6 +647,25 @@ defmodule Emisar.Catalog do
     if Map.get(@risk_rank, candidate, 0) > Map.get(@risk_rank, current, 0),
       do: candidate,
       else: current
+  end
+
+  @doc """
+  The single most-severe risk across a list of risks (atoms, or `nil` for an
+  unresolved step), using the same `@risk_rank` as `most_severe_risk_by_action/1`.
+  Returns that worst risk, or `nil` when the list is empty.
+
+  Conservative on the unknown: an unresolvable risk in the list (a step whose
+  action no connected runner advertises, so it's `nil`) sorts at the bottom of
+  the rank and never *lowers* the result — but if EVERY risk is unknown the
+  result is `nil`, so the caller shows no pill rather than a falsely-low one.
+  This is a security product: a critical step must never be under-flagged, and
+  a runbook of all-unknown steps must not read as "low".
+  """
+  def max_risk(risks) when is_list(risks) do
+    case Enum.reject(risks, &is_nil/1) do
+      [] -> nil
+      [first | rest] -> Enum.reduce(rest, first, &most_severe(&2, &1))
+    end
   end
 
   @doc """

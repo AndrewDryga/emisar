@@ -97,6 +97,40 @@ defmodule EmisarWeb.RunbooksLiveTest do
     refute html =~ ~p"/app/runbooks/new"
   end
 
+  test "a runbook row shows its most-severe step risk so it's visible before opening", %{
+    conn: conn
+  } do
+    {conn, user, account} = register_and_log_in(conn)
+
+    # The runbook's lone step is linux.uptime — advertise it as high-risk so its
+    # list row carries a high (rose) risk pill, the headline cue before opening.
+    runner = Emisar.Fixtures.runner_fixture(account_id: account.id)
+    Emisar.Fixtures.action_fixture(runner: runner, action_id: "linux.uptime", risk: "high")
+    _ = create_runbook!(user, account, "Risky deploy", published?: true)
+
+    {:ok, _lv, html} = live(conn, ~p"/app/runbooks")
+
+    assert html =~ "Risky deploy"
+    assert html =~ "high"
+    assert html =~ "ring-rose-500/30"
+  end
+
+  test "a runbook whose action isn't in the catalog shows no risk pill", %{conn: conn} do
+    {conn, user, account} = register_and_log_in(conn)
+
+    # No action_fixture for linux.uptime — the catalog hasn't observed it, so the
+    # row renders without a risk pill (never a false-low) rather than guessing.
+    # A draft (not published) so the emerald "published" status badge — which
+    # shares the low-risk pill's ring color — can't be mistaken for a pill.
+    _ = create_runbook!(user, account, "Unobserved")
+
+    {:ok, _lv, html} = live(conn, ~p"/app/runbooks")
+
+    assert html =~ "Unobserved"
+    refute html =~ "ring-rose-500/30"
+    refute html =~ "ring-emerald-500/30"
+  end
+
   test "refreshes when the account's runbook feed broadcasts", %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
 

@@ -164,6 +164,12 @@ defmodule EmisarWeb.RunbookRunLive do
   defp step_risk(action_risk, step),
     do: Map.get(action_risk, step["action_id"] || step["action"])
 
+  # The runbook's headline risk: the most-severe risk across its steps, so the
+  # operator sees the worst this run can do before pressing Start. nil (the pill
+  # hides) when no step's action is in the catalog yet — never a false low.
+  defp plan_max_risk(action_risk, steps),
+    do: steps |> Enum.map(&step_risk(action_risk, &1)) |> Catalog.max_risk()
+
   # Where a plan step will run, from its own runner_selector: group names
   # as-is, runner ids resolved to names against the loaded runner list.
   # nil when the step has no target (a draft being test-run).
@@ -485,8 +491,16 @@ defmodule EmisarWeb.RunbookRunLive do
           class="overflow-hidden rounded-xl border border-zinc-900 bg-zinc-950/40"
         >
           <header class="flex items-center justify-between border-b border-zinc-900 px-5 py-3">
-            <h2 class="text-sm font-semibold text-zinc-100">
+            <h2 class="flex items-center gap-2 text-sm font-semibold text-zinc-100">
               {if @execution, do: "Execution", else: "Plan"}
+              <%!-- Headline risk: the most-severe step's risk, so the operator
+                   sees the worst this runbook can do at a glance. Hidden when no
+                   step's action is in the catalog yet (never a false low). --%>
+              <.risk_pill
+                :if={plan_max_risk(@action_risk, @steps)}
+                risk={plan_max_risk(@action_risk, @steps)}
+                class="flex-none"
+              />
             </h2>
             <span class="text-xs text-zinc-500">
               {length(@steps)} {if length(@steps) == 1, do: "step", else: "steps"}

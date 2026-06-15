@@ -832,6 +832,86 @@ defmodule Emisar.CatalogTest do
     end
   end
 
+  describe "max_risk/1" do
+    test "is nil for an empty list (no pill rather than a false low)" do
+      assert Catalog.max_risk([]) == nil
+    end
+
+    test "returns the most-severe risk across a mix" do
+      assert Catalog.max_risk([:low, :critical, :medium]) == :critical
+      assert Catalog.max_risk([:low, :medium]) == :medium
+      assert Catalog.max_risk([:high]) == :high
+    end
+
+    test "ignores an unresolved (nil) risk without lowering the result" do
+      # A step whose action no runner advertises is nil — it must NOT drag a
+      # critical runbook down to low. The worst known risk still wins.
+      assert Catalog.max_risk([nil, :critical]) == :critical
+      assert Catalog.max_risk([:low, nil, :high]) == :high
+    end
+
+    test "is nil when every risk is unresolved (all-unknown ≠ low)" do
+      # A runbook whose every step is unobserved reads as "unknown" (no pill),
+      # never as a falsely-low risk.
+      assert Catalog.max_risk([nil, nil]) == nil
+    end
+  end
+
+  describe "risk_by_action_ids/2" do
+    test "resolves only the requested ids, keeping the worst across runners" do
+      {account, subject} = account_with_owner()
+      r1 = runner_fixture(account_id: account.id)
+      r2 = runner_fixture(account_id: account.id)
+
+      # `shared.op` advertised at two different risks across runners → worst wins.
+      {:ok, _} =
+        Catalog.observe_state(
+          r1,
+          state_payload(
+            actions: [action("shared.op", risk: "low"), action("calm.read", risk: "low")]
+          )
+        )
+
+      {:ok, _} =
+        Catalog.observe_state(r2, state_payload(actions: [action("shared.op", risk: "high")]))
+
+      # `untracked` is requested but no runner advertises it → absent (so a
+      # caller's max_risk treats it as unknown, never a false low).
+      assert {:ok, risk_by_action} =
+               Catalog.risk_by_action_ids(["shared.op", "calm.read", "untracked"], subject)
+
+      assert risk_by_action == %{"shared.op" => :high, "calm.read" => :low}
+    end
+
+    test "an empty id list short-circuits to an empty map" do
+      {_account, subject} = account_with_owner()
+      assert {:ok, %{}} = Catalog.risk_by_action_ids([], subject)
+    end
+
+    test "is account-scoped — another account's actions don't leak" do
+      {account, _subject} = account_with_owner()
+      runner = runner_fixture(account_id: account.id)
+
+      {:ok, _} =
+        Catalog.observe_state(
+          runner,
+          state_payload(actions: [action("secret.op", risk: "critical")])
+        )
+
+      {_other_account, other_subject} = account_with_owner()
+      assert {:ok, %{}} = Catalog.risk_by_action_ids(["secret.op"], other_subject)
+    end
+
+    test "a subject without view_catalog is denied" do
+      {account, _subject} = account_with_owner()
+      no_view = %Emisar.Auth.Subject{account: account, role: :runner, permissions: MapSet.new()}
+
+      assert {:error, :unauthorized} = Catalog.risk_by_action_ids(["x"], no_view)
+      # The empty-list clause gates too — no DB-free bypass of the permission check.
+      assert {:error, :unauthorized} = Catalog.risk_by_action_ids([], no_view)
+    end
+  end
+
   describe "runner_ids_advertising_pack/3" do
     test "returns distinct advertising runners, account-scoped" do
       account = account_fixture()
