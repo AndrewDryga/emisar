@@ -40,6 +40,7 @@ defmodule EmisarWeb.PacksLive do
        |> assign(:pending_count, 0)
        |> assign(:advertising, %{})
        |> assign(:pack_actions, %{})
+       |> assign(:pack_diffs, %{})
        |> stream(:packs, [])}
     end
   end
@@ -60,25 +61,39 @@ defmodule EmisarWeb.PacksLive do
     # Keep the sidebar badge in step after Trust/Reject on this page.
     |> assign(:pending_packs_count, pending)
     |> assign(:advertising, advertising_runners(rows, socket.assigns.current_subject))
-    |> assign(:pack_actions, pending_pack_actions(rows, socket.assigns.current_subject))
+    |> assign_pending_pack_actions(rows)
     |> stream(:packs, groups, reset: true)
   end
 
-  # What trusting each pending version authorizes: its advertised actions +
-  # risk, keyed by pack_version id (only pending versions are looked up). So
-  # "Trust new contents" shows the capability, not just a hash.
-  defp pending_pack_actions(rows, subject) do
-    rows
-    |> Enum.filter(&(&1.trust_state == :pending))
-    |> Map.new(fn version ->
-      actions =
-        case Catalog.list_pack_actions(version.pack_id, version.version, subject) do
-          {:ok, actions} -> actions
-          _ -> []
-        end
+  # What trusting each pending version authorizes, keyed by pack_version id
+  # (only pending versions are looked up). Two assigns built from one read of
+  # the advertised actions:
+  #
+  #   * `pack_actions` — the full advertised action set + risk, so "Trust new
+  #     contents" shows the capability, not just a hash.
+  #   * `pack_diffs` — when this version was trusted before (has a stored
+  #     manifest), what CHANGED vs then: added / removed / risk-or-kind
+  #     changed. An added critical action is exactly what an operator must see
+  #     before re-trusting a re-advertised hash.
+  defp assign_pending_pack_actions(socket, rows) do
+    subject = socket.assigns.current_subject
 
-      {version.id, actions}
-    end)
+    details =
+      rows
+      |> Enum.filter(&(&1.trust_state == :pending))
+      |> Map.new(fn version ->
+        actions =
+          case Catalog.list_pack_actions(version.pack_id, version.version, subject) do
+            {:ok, actions} -> actions
+            _ -> []
+          end
+
+        {version.id, {actions, Catalog.action_set_changes(version, actions)}}
+      end)
+
+    socket
+    |> assign(:pack_actions, Map.new(details, fn {id, {actions, _diff}} -> {id, actions} end))
+    |> assign(:pack_diffs, Map.new(details, fn {id, {_actions, diff}} -> {id, diff} end))
   end
 
   # Blast radius of a pending trust decision: which runners advertise each
@@ -172,6 +187,7 @@ defmodule EmisarWeb.PacksLive do
       |> assign(:pending_count, pending)
       |> assign(:pending_packs_count, pending)
       |> assign(:advertising, advertising_runners(rows, socket.assigns.current_subject))
+      |> assign_pending_pack_actions(rows)
 
     if versions == [] do
       stream_delete(socket, :packs, %{id: pack_id})
@@ -312,10 +328,69 @@ defmodule EmisarWeb.PacksLive do
                     {r.name}<span class="text-amber-400/70"> · {r.group}</span>
                   </span>
                 </div>
-                <%!-- What trusting this authorizes — the actions the version
-                     advertises + their risk, so "Trust new contents" isn't a
-                     blind click. (An added/removed diff vs the trusted hash
-                     needs a stored action-set history — see BACKLOG.) --%>
+                <%!-- What CHANGED since this hash was last trusted — diffed
+                     against the action set snapshotted at that Trust
+                     (`trusted_manifest`). Only shown when a manifest exists
+                     (a re-advertised hash, not a first-time pending). An added
+                     critical action or a low→critical escalation is the
+                     headline danger an operator must see before re-trusting. --%>
+                <div
+                  :if={diff_has_changes?(@pack_diffs[v.id])}
+                  class="mt-3 rounded border border-rose-800/60 bg-rose-950/30 p-3"
+                >
+                  <div class="flex items-center gap-1.5 text-[11px] font-semibold text-rose-100">
+                    <.icon name="hero-arrows-right-left" class="h-3.5 w-3.5" />
+                    Changes since you last trusted this pack:
+                  </div>
+                  <ul class="mt-2 space-y-1">
+                    <li
+                      :for={a <- @pack_diffs[v.id].added}
+                      class="flex items-center gap-2 text-[11px]"
+                    >
+                      <span class="w-12 flex-none font-semibold uppercase tracking-wide text-rose-300">
+                        + added
+                      </span>
+                      <.risk_pill risk={a.risk} class="flex-none" />
+                      <span class="truncate font-mono text-zinc-200">{a.action_id}</span>
+                    </li>
+                    <li
+                      :for={c <- @pack_diffs[v.id].changed}
+                      class="flex items-center gap-2 text-[11px]"
+                    >
+                      <span class={[
+                        "w-12 flex-none font-semibold uppercase tracking-wide",
+                        if(c.risk_escalated?, do: "text-rose-300", else: "text-amber-300")
+                      ]}>
+                        ~ changed
+                      </span>
+                      <span class="flex items-center gap-1">
+                        <.risk_pill risk={c.old_risk} class="flex-none opacity-60" />
+                        <.icon name="hero-arrow-right" class="h-3 w-3 text-zinc-500" />
+                        <.risk_pill risk={c.new_risk} class="flex-none" />
+                      </span>
+                      <span class="truncate font-mono text-zinc-200">{c.action_id}</span>
+                      <span
+                        :if={c.old_kind != c.new_kind}
+                        class="flex-none text-zinc-500"
+                      >
+                        {c.old_kind} → {c.new_kind}
+                      </span>
+                    </li>
+                    <li
+                      :for={r <- @pack_diffs[v.id].removed}
+                      class="flex items-center gap-2 text-[11px] text-zinc-500"
+                    >
+                      <span class="w-12 flex-none font-semibold uppercase tracking-wide">
+                        − removed
+                      </span>
+                      <.risk_pill risk={r.risk} class="flex-none opacity-50" />
+                      <span class="truncate font-mono line-through">{r.action_id}</span>
+                    </li>
+                  </ul>
+                </div>
+                <%!-- What trusting this authorizes — the FULL advertised action
+                     set + risk (the diff above shows only what moved), so
+                     "Trust new contents" isn't a blind click. --%>
                 <div :if={@pack_actions[v.id] not in [nil, []]} class="mt-3">
                   <div class="text-[11px] font-semibold text-amber-100/80">
                     Trusting authorizes {length(@pack_actions[v.id])} action(s):
@@ -400,4 +475,11 @@ defmodule EmisarWeb.PacksLive do
 
   defp short_hash(nil), do: "—"
   defp short_hash(h) when is_binary(h), do: String.slice(h, 0, 12)
+
+  # The diff block renders only when there's something to show — a re-advertised
+  # hash whose action set moved vs the stored `trusted_manifest`. nil (dead
+  # render, or a version with no manifest) and an all-empty diff render nothing.
+  defp diff_has_changes?(%{added: [], removed: [], changed: []}), do: false
+  defp diff_has_changes?(%{added: _, removed: _, changed: _}), do: true
+  defp diff_has_changes?(nil), do: false
 end

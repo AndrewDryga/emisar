@@ -590,6 +590,169 @@ defmodule Emisar.CatalogTest do
     end
   end
 
+  describe "trusted_manifest capture + action_set_changes/2" do
+    # Trust a pack version after observing `actions`, returning the now-trusted
+    # %PackVersion{} (with its snapshotted manifest loaded).
+    defp trust_with_actions(runner, subject, hash, actions) do
+      {:ok, _} =
+        Catalog.observe_state(
+          runner,
+          state_payload(
+            packs: %{"acme" => %{"version" => "1.0", "hash" => hash}},
+            actions: actions
+          )
+        )
+
+      {:ok, [pack_version], _} = Catalog.list_pack_versions(subject)
+      {:ok, trusted} = Catalog.trust_pack_version(pack_version.id, subject)
+      trusted
+    end
+
+    test "trusting snapshots the current action set into trusted_manifest" do
+      {_user, account, subject} = owner_subject_fixture()
+      runner = runner_fixture(account_id: account.id)
+
+      trusted =
+        trust_with_actions(runner, subject, "sha256:V1", [
+          action("acme.status", pack_id: "acme", risk: "low", kind: "exec"),
+          action("acme.reload", pack_id: "acme", risk: "high", kind: "script")
+        ])
+
+      # JSONB → string keys/values, one entry per action_id.
+      assert trusted.trusted_manifest == %{
+               "acme.status" => %{"risk" => "low", "kind" => "exec"},
+               "acme.reload" => %{"risk" => "high", "kind" => "script"}
+             }
+    end
+
+    test "a re-advertised hash that ADDS a (critical) action → diff lists it as added" do
+      {_user, account, subject} = owner_subject_fixture()
+      runner = runner_fixture(account_id: account.id)
+
+      _ =
+        trust_with_actions(runner, subject, "sha256:V1", [
+          action("acme.status", pack_id: "acme", risk: "low")
+        ])
+
+      # New hash adds a critical action → flips back to pending.
+      {:ok, _} =
+        Catalog.observe_state(
+          runner,
+          state_payload(
+            packs: %{"acme" => %{"version" => "1.0", "hash" => "sha256:V2"}},
+            actions: [
+              action("acme.status", pack_id: "acme", risk: "low"),
+              action("acme.wipe", pack_id: "acme", risk: "critical")
+            ]
+          )
+        )
+
+      {:ok, [pending], _} = Catalog.list_pack_versions(subject)
+      assert pending.trust_state == :pending
+      {:ok, advertised} = Catalog.list_pack_actions("acme", "1.0", subject)
+
+      diff = Catalog.action_set_changes(pending, advertised)
+      assert [%{action_id: "acme.wipe", risk: "critical"}] = diff.added
+      assert diff.removed == []
+      assert diff.changed == []
+    end
+
+    test "a dropped action → removed; a low→critical escalation → changed with old+new" do
+      {_user, account, subject} = owner_subject_fixture()
+      runner = runner_fixture(account_id: account.id)
+
+      _ =
+        trust_with_actions(runner, subject, "sha256:V1", [
+          action("acme.status", pack_id: "acme", risk: "low"),
+          action("acme.gone", pack_id: "acme", risk: "medium")
+        ])
+
+      # acme.gone disappears; acme.status escalates low → critical.
+      {:ok, _} =
+        Catalog.observe_state(
+          runner,
+          state_payload(
+            packs: %{"acme" => %{"version" => "1.0", "hash" => "sha256:V2"}},
+            actions: [action("acme.status", pack_id: "acme", risk: "critical")]
+          )
+        )
+
+      {:ok, [pending], _} = Catalog.list_pack_versions(subject)
+      {:ok, advertised} = Catalog.list_pack_actions("acme", "1.0", subject)
+      diff = Catalog.action_set_changes(pending, advertised)
+
+      assert [%{action_id: "acme.gone", risk: "medium"}] = diff.removed
+      assert diff.added == []
+
+      assert [
+               %{
+                 action_id: "acme.status",
+                 old_risk: "low",
+                 new_risk: "critical",
+                 risk_escalated?: true
+               }
+             ] = diff.changed
+    end
+
+    test "a pending version with a nil manifest (never trusted) → empty diff, no crash" do
+      {_user, account, subject} = owner_subject_fixture()
+      runner = runner_fixture(account_id: account.id)
+
+      # First-sight custom pack lands pending with NO trusted_manifest.
+      {:ok, _} =
+        Catalog.observe_state(
+          runner,
+          state_payload(
+            packs: %{"acme" => %{"version" => "1.0", "hash" => "sha256:NEW"}},
+            actions: [action("acme.status", pack_id: "acme", risk: "low")]
+          )
+        )
+
+      {:ok, [pending], _} = Catalog.list_pack_versions(subject)
+      assert pending.trusted_manifest == nil
+      {:ok, advertised} = Catalog.list_pack_actions("acme", "1.0", subject)
+
+      assert Catalog.action_set_changes(pending, advertised) == %{
+               added: [],
+               removed: [],
+               changed: []
+             }
+    end
+
+    test "the trusted_manifest is account-scoped — account B can't read account A's" do
+      {_user_a, account_a, subject_a} = owner_subject_fixture()
+      runner_a = runner_fixture(account_id: account_a.id)
+
+      _ =
+        trust_with_actions(runner_a, subject_a, "sha256:V1", [
+          action("acme.secret", pack_id: "acme", risk: "high")
+        ])
+
+      # Account B observes the same pack id/version — its own pending row, no
+      # manifest, and it never sees account A's pack_version at all.
+      {_user_b, account_b, subject_b} = owner_subject_fixture()
+      runner_b = runner_fixture(account_id: account_b.id)
+
+      {:ok, _} =
+        Catalog.observe_state(
+          runner_b,
+          state_payload(
+            packs: %{"acme" => %{"version" => "1.0", "hash" => "sha256:OTHER"}},
+            actions: [action("acme.other", pack_id: "acme", risk: "low")]
+          )
+        )
+
+      {:ok, [pending_b], _} = Catalog.list_pack_versions(subject_b)
+      assert pending_b.account_id == account_b.id
+      assert pending_b.trusted_manifest == nil
+
+      # Account A's trusted row is the only one A sees, carrying A's manifest.
+      {:ok, [trusted_a], _} = Catalog.list_pack_versions(subject_a)
+      assert trusted_a.account_id == account_a.id
+      assert Map.has_key?(trusted_a.trusted_manifest, "acme.secret")
+    end
+  end
+
   describe "check_pack_trusted/1" do
     test "trusted state → :ok" do
       {_user, account, subject} = owner_subject_fixture()

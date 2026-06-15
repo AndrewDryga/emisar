@@ -27,13 +27,18 @@ defmodule Emisar.Catalog.PackVersion.Changeset do
     })
   end
 
-  @doc "Adopt pending_hash as the trusted hash. Audited via Audit.log."
-  def trust(%PackVersion{} = pack_version, %{} = subject) do
+  @doc """
+  Adopt pending_hash as the trusted hash and snapshot the action set
+  (`action_id => {risk, kind}`) trusted alongside it, so a later
+  re-advertised hash can be diffed against it. Audited via Audit.log.
+  """
+  def trust(%PackVersion{} = pack_version, %{} = trusted_manifest, %{} = subject) do
     pack_version
     |> change(%{
       hash: pack_version.pending_hash,
       pending_hash: nil,
       trust_state: :trusted,
+      trusted_manifest: trusted_manifest,
       pinned_at: DateTime.utc_now(),
       pinned_by_id: subject_user_id(subject)
     })

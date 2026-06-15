@@ -142,6 +142,59 @@ defmodule EmisarWeb.PacksLiveTest do
       refute has_element?(lv, "#packs li", "acme-tools")
     end
 
+    test "a re-advertised hash shows the action-set DIFF (added critical action) on the re-trust card",
+         %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      runner = Emisar.Fixtures.runner_fixture(account_id: account.id)
+      subject = Emisar.Fixtures.subject_for(user, account)
+
+      # Trust v1 (one low action) — snapshots the manifest.
+      {:ok, _} =
+        Emisar.Catalog.observe_state(runner, %{
+          "hostname" => "h",
+          "version" => "0.1.0",
+          "labels" => %{},
+          "actions" => [
+            %{"id" => "acme.status", "pack_id" => "acme-tools", "risk" => "low", "kind" => "exec"}
+          ],
+          "packs" => %{"acme-tools" => %{"version" => "9.9", "hash" => "v1"}}
+        })
+
+      {:ok, [pack_version], _} = Emisar.Catalog.list_pack_versions(subject)
+      {:ok, _} = Emisar.Catalog.trust_pack_version(pack_version.id, subject)
+
+      # A new hash that ADDS a critical action → flips back to pending.
+      {:ok, _} =
+        Emisar.Catalog.observe_state(runner, %{
+          "hostname" => "h",
+          "version" => "0.1.0",
+          "labels" => %{},
+          "actions" => [
+            %{
+              "id" => "acme.status",
+              "pack_id" => "acme-tools",
+              "risk" => "low",
+              "kind" => "exec"
+            },
+            %{
+              "id" => "acme.wipe",
+              "pack_id" => "acme-tools",
+              "risk" => "critical",
+              "kind" => "exec"
+            }
+          ],
+          "packs" => %{"acme-tools" => %{"version" => "9.9", "hash" => "v2"}}
+        })
+
+      {:ok, lv, _dead} = live(conn, ~p"/app/packs")
+      html = render(lv)
+
+      assert html =~ "Changes since you last trusted"
+      assert html =~ "added"
+      assert html =~ "acme.wipe"
+      assert html =~ "critical"
+    end
+
     test "a viewer sees the pack but no Trust/Reject controls", %{conn: conn} do
       {_owner_conn, _user, account} = register_and_log_in(conn)
       _ = observe_pending_pack!(account)

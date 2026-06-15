@@ -16,6 +16,12 @@ defmodule Emisar.Catalog.PackVersion do
   `pinned_at` / `pinned_by_id` record the most recent trust decision.
   System pins (auto-trust on library match, TOFU on unknown pack) leave
   `pinned_by_id` null.
+
+  `trusted_manifest` snapshots the action set (`action_id => {risk, kind}`)
+  as it was when this hash was trusted, so a re-advertised hash that flips
+  the row back to `:pending` can be DIFFED against it — surfacing an added
+  `critical` action before the operator re-trusts. Null until the first
+  Trust (and for rows trusted before this feature); null means "no diff".
   """
   use Emisar, :schema
 
@@ -25,6 +31,7 @@ defmodule Emisar.Catalog.PackVersion do
     field :hash, :string
     field :pending_hash, :string
     field :trust_state, Ecto.Enum, values: [:trusted, :pending], default: :trusted
+    field :trusted_manifest, :map
     field :pinned_at, :utc_datetime_usec
     field :first_seen_at, :utc_datetime_usec
     field :last_seen_at, :utc_datetime_usec

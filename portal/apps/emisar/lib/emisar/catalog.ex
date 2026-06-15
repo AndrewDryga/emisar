@@ -25,7 +25,7 @@ defmodule Emisar.Catalog do
   alias Ecto.Multi
   alias Emisar.{Audit, Auth, Repo, Runners}
   alias Emisar.Auth.Subject
-  alias Emisar.Catalog.{Authorizer, PackBaseline, PackVersion, RunnerAction}
+  alias Emisar.Catalog.{ActionSetDiff, Authorizer, PackBaseline, PackVersion, RunnerAction}
   require Logger
 
   @doc """
@@ -219,9 +219,11 @@ defmodule Emisar.Catalog do
   # -- Trust / Reject mutators -----------------------------------------
 
   @doc """
-  Adopt the pending hash as the new trusted hash. Records who clicked,
-  audits the adoption in the same transaction as the flip. Returns
-  `{:error, :not_pending}` when there's nothing pending to adopt.
+  Adopt the pending hash as the new trusted hash. Snapshots the action set
+  advertised for this `(pack_id, version)` into `trusted_manifest` in the
+  SAME transaction as the flip, so a later re-advertised hash can be diffed
+  against what was trusted. Records who clicked and audits the adoption.
+  Returns `{:error, :not_pending}` when there's nothing pending to adopt.
   """
   def trust_pack_version(pack_version_id, %Subject{} = subject) do
     with :ok <-
@@ -233,8 +235,11 @@ defmodule Emisar.Catalog do
       |> Multi.run(:before, fn repo, _changes ->
         lock_pending_pack_version(repo, pack_version_id, subject)
       end)
-      |> Multi.run(:pack_version, fn repo, %{before: pending} ->
-        repo.update(PackVersion.Changeset.trust(pending, subject))
+      |> Multi.run(:manifest, fn repo, %{before: pending} ->
+        {:ok, snapshot_action_set(repo, pending)}
+      end)
+      |> Multi.run(:pack_version, fn repo, %{before: pending, manifest: manifest} ->
+        repo.update(PackVersion.Changeset.trust(pending, manifest, subject))
       end)
       |> Multi.insert(:audit, fn %{before: pending} ->
         Audit.Events.pack_trust_adopted(subject, pending)
@@ -335,6 +340,19 @@ defmodule Emisar.Catalog do
     else
       {:error, :not_found}
     end
+  end
+
+  # The action set advertised RIGHT NOW for this pack version — read inside the
+  # trust transaction (so the snapshot is consistent with the hash being
+  # adopted) and reduced to `action_id => {risk, kind}`. `RunnerAction` rows are
+  # per-runner, so dedupe by action_id (same shape as `list_pack_actions/3`).
+  defp snapshot_action_set(repo, %PackVersion{} = pack_version) do
+    RunnerAction.Query.all()
+    |> RunnerAction.Query.by_account_id(pack_version.account_id)
+    |> RunnerAction.Query.by_pack(pack_version.pack_id, pack_version.version)
+    |> repo.all()
+    |> Enum.uniq_by(& &1.action_id)
+    |> ActionSetDiff.manifest_from_actions()
   end
 
   def fetch_pack_version_by_id(id, %Subject{} = subject) do
@@ -680,6 +698,22 @@ defmodule Emisar.Catalog do
       {:ok, actions}
     end
   end
+
+  @doc """
+  Diff a pending pack version's NEWLY-advertised action set against the
+  `trusted_manifest` snapshotted when its hash was last trusted — so the
+  re-trust UI shows what changed (added / removed / risk-or-kind-changed),
+  not just a new hash.
+
+  Pure over already-authorized data: pass the `%PackVersion{}` (loaded via a
+  Subject-gated read) and its advertised `%RunnerAction{}` rows (from
+  `list_pack_actions/3`). A nil manifest (trusted before this feature, or never
+  trusted) yields an empty diff — the UI falls back to listing the actions.
+  Returns `%{added: [...], removed: [...], changed: [...]}`.
+  """
+  def action_set_changes(%PackVersion{} = pack_version, advertised_actions)
+      when is_list(advertised_actions),
+      do: ActionSetDiff.changes(advertised_actions, pack_version.trusted_manifest)
 
   @doc """
   Cheap COUNT(*) of pack versions pending trust review — drives the
