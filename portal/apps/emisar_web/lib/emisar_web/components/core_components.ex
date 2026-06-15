@@ -300,6 +300,121 @@ defmodule EmisarWeb.CoreComponents do
   defp icon_button_tone("danger"), do: "hover:text-rose-300 focus-visible:outline-rose-400"
 
   @doc """
+  A click-to-open dropdown built on native `<details>` — no JS, so it opens on
+  click and closes on outside-click / Esc / re-click for free, and works before
+  LiveView connects.
+
+  The `:trigger` slot is the `<summary>` content (the button/icon the operator
+  clicks); the default slot is the panel. The component owns the a11y plumbing
+  every site was hand-repeating — hiding the default `<summary>` disclosure
+  triangle (`list-none` + the WebKit/standard marker pseudo-elements) — and the
+  panel's `absolute` anchor. `group` on the `<details>` lets trigger/panel markup
+  use `group-open:` modifiers (e.g. swapping a chevron when open).
+
+  `align` anchors the panel: `:right` (default) right-aligns it under the trigger
+  (a per-row actions menu); `:left` left-aligns it; `:stretch` spans the trigger
+  width within small insets (the workspace switcher). Per-site skinning rides
+  `summary_class` (the trigger's own pill/row styling) and `panel_class` (width,
+  padding, text size, and the z-index / offset / shadow each site needs — these
+  are deliberately NOT baked in, so a site that must stack above more chrome
+  isn't fighting Tailwind utility precedence).
+
+  ## Example
+
+      <.dropdown summary_class="rounded px-2 py-1 ring-1 ring-zinc-800" panel_class="z-10 mt-2 w-56 p-1 text-xs shadow-xl">
+        <:trigger>Actions <span class="group-open:hidden">▾</span></:trigger>
+        <.menu_item phx-click="edit">Edit</.menu_item>
+        <.menu_item tone="danger" phx-click="remove">Remove</.menu_item>
+      </.dropdown>
+  """
+  attr :align, :atom, default: :right, values: [:left, :right, :stretch]
+  attr :summary_class, :string, default: nil, doc: "trigger (summary) skin — pill/row styling"
+
+  attr :panel_class, :string,
+    default: nil,
+    doc: "panel skin — width, padding, text size, z-index, offset, shadow"
+
+  attr :class, :string, default: nil, doc: "extra classes on the <details> shell"
+  attr :rest, :global
+
+  slot :trigger, required: true, doc: "the <summary> content — the control the operator clicks"
+  slot :inner_block, required: true, doc: "the panel content (menu items)"
+
+  def dropdown(assigns) do
+    ~H"""
+    <details class={["group relative", @class]} {@rest}>
+      <summary class={[
+        "cursor-pointer list-none [&::-webkit-details-marker]:hidden [&::marker]:hidden",
+        @summary_class
+      ]}>
+        {render_slot(@trigger)}
+      </summary>
+      <div class={[
+        "absolute rounded-lg border border-zinc-800 bg-zinc-950",
+        dropdown_align(@align),
+        @panel_class
+      ]}>
+        {render_slot(@inner_block)}
+      </div>
+    </details>
+    """
+  end
+
+  defp dropdown_align(:right), do: "right-0"
+  defp dropdown_align(:left), do: "left-0"
+  defp dropdown_align(:stretch), do: "left-2 right-2 top-full lg:left-4 lg:right-4"
+
+  @doc """
+  A full-width menu row for a `<.dropdown>` panel — a left-aligned button (or
+  link) with an optional leading `icon`. `tone` mirrors `<.button variant="ghost">`
+  exactly (neutral → zinc, `caution` → amber, `danger` → rose, `success` →
+  emerald), so an action reads the same color whether it sits inline or in a menu.
+
+  The action rides the global `:rest` — `phx-click`/`phx-value-*`/`data-confirm`
+  for a button, or `navigate`/`patch`/`href` to render a `<.link>` instead — so
+  each row keeps its own (still server-authz-gated) behavior. `:if` on the call
+  site controls whether the row renders at all.
+
+  ## Example
+
+      <.menu_item phx-click="start_edit" phx-value-membership_id={id}>Edit name</.menu_item>
+      <.menu_item tone="danger" phx-click="remove" data-confirm="Sure?">Remove</.menu_item>
+  """
+  attr :icon, :string, default: nil, doc: "leading heroicon name"
+  attr :tone, :string, default: "neutral", values: ~w(neutral danger caution success)
+  attr :class, :string, default: nil
+  attr :rest, :global, include: ~w(disabled href navigate patch method download)
+
+  slot :inner_block, required: true
+
+  def menu_item(%{rest: rest} = assigns)
+      when is_map_key(rest, :href) or is_map_key(rest, :navigate) or is_map_key(rest, :patch) do
+    ~H"""
+    <.link class={[menu_item_base(), menu_item_tone(@tone), @class]} {@rest}>
+      <.icon :if={@icon} name={@icon} class="h-4 w-4 shrink-0" />{render_slot(@inner_block)}
+    </.link>
+    """
+  end
+
+  def menu_item(assigns) do
+    ~H"""
+    <button type="button" class={[menu_item_base(), menu_item_tone(@tone), @class]} {@rest}>
+      <.icon :if={@icon} name={@icon} class="h-4 w-4 shrink-0" />{render_slot(@inner_block)}
+    </button>
+    """
+  end
+
+  defp menu_item_base,
+    do: "flex w-full items-center gap-2 rounded px-3 py-2 text-left"
+
+  # Tone mirrors button_variant("ghost", tone) — same hover tints, so a menu row
+  # and an inline ghost button of the same tone are visually identical.
+  defp menu_item_tone("danger"), do: "text-rose-300 hover:bg-rose-500/10"
+  defp menu_item_tone("caution"), do: "text-amber-300 hover:bg-amber-500/10"
+  defp menu_item_tone("success"), do: "text-emerald-300 hover:bg-emerald-500/10"
+  defp menu_item_tone(_neutral), do: "text-zinc-300 hover:bg-zinc-900"
+
+  @doc """
   Renders an input with label and error messages.
 
   A `Phoenix.HTML.FormField` may be passed as argument,
@@ -983,8 +1098,13 @@ defmodule EmisarWeb.CoreComponents do
     assigns = assign(assigns, :other_accounts, others)
 
     ~H"""
-    <details class="group relative border-b border-zinc-900">
-      <summary class="flex h-16 cursor-pointer list-none items-center gap-3 px-2 transition hover:bg-zinc-900/40 lg:px-6">
+    <.dropdown
+      class="border-b border-zinc-900"
+      align={:stretch}
+      summary_class="flex h-16 items-center gap-3 px-2 transition hover:bg-zinc-900/40 lg:px-6"
+      panel_class="z-30 mt-1 overflow-hidden shadow-2xl"
+    >
+      <:trigger>
         <img src={~p"/images/emisar-icon.svg"} alt="" class="h-8 w-8 shrink-0" />
         <div class="min-w-0 flex-1">
           <div class="truncate font-bold tracking-tight">emisar</div>
@@ -994,52 +1114,50 @@ defmodule EmisarWeb.CoreComponents do
           name="hero-chevron-up-down"
           class="h-4 w-4 shrink-0 text-zinc-500 transition group-open:text-zinc-300"
         />
-      </summary>
+      </:trigger>
 
-      <div class="absolute left-2 right-2 top-full z-30 mt-1 overflow-hidden rounded-lg border border-zinc-800 bg-zinc-950 shadow-2xl lg:left-4 lg:right-4">
-        <div class="border-b border-zinc-900 px-3 py-2">
-          <p class="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
-            Switch workspace
-          </p>
-        </div>
-
-        <ul class="max-h-[60vh] overflow-y-auto py-1">
-          <li>
-            <div class="flex items-center gap-2 px-3 py-2 text-sm">
-              <.icon name="hero-check" class="h-4 w-4 shrink-0 text-emerald-400" />
-              <span class="truncate font-medium">{@current_account.name}</span>
-            </div>
-          </li>
-          <%= for account <- @other_accounts do %>
-            <li>
-              <form action={~p"/app/accounts/switch"} method="post" class="contents">
-                <input type="hidden" name="_csrf_token" value={Phoenix.Controller.get_csrf_token()} />
-                <input type="hidden" name="account_id" value={account.id} />
-                <button
-                  type="submit"
-                  class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-zinc-200 transition hover:bg-zinc-900"
-                >
-                  <span class="grid h-4 w-4 shrink-0 place-items-center rounded-sm bg-zinc-800 text-[10px] font-semibold uppercase text-zinc-400">
-                    {String.first(account.name)}
-                  </span>
-                  <span class="truncate">{account.name}</span>
-                </button>
-              </form>
-            </li>
-          <% end %>
-        </ul>
-
-        <div class="border-t border-zinc-900 p-1">
-          <.link
-            navigate={~p"/onboarding"}
-            class="flex items-center gap-2 rounded-md px-3 py-2 text-sm text-zinc-300 transition hover:bg-zinc-900 hover:text-zinc-100"
-          >
-            <.icon name="hero-plus" class="h-4 w-4 shrink-0" />
-            <span>Create new workspace</span>
-          </.link>
-        </div>
+      <div class="border-b border-zinc-900 px-3 py-2">
+        <p class="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
+          Switch workspace
+        </p>
       </div>
-    </details>
+
+      <ul class="max-h-[60vh] overflow-y-auto py-1">
+        <li>
+          <div class="flex items-center gap-2 px-3 py-2 text-sm">
+            <.icon name="hero-check" class="h-4 w-4 shrink-0 text-emerald-400" />
+            <span class="truncate font-medium">{@current_account.name}</span>
+          </div>
+        </li>
+        <%= for account <- @other_accounts do %>
+          <li>
+            <form action={~p"/app/accounts/switch"} method="post" class="contents">
+              <input type="hidden" name="_csrf_token" value={Phoenix.Controller.get_csrf_token()} />
+              <input type="hidden" name="account_id" value={account.id} />
+              <button
+                type="submit"
+                class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-zinc-200 transition hover:bg-zinc-900"
+              >
+                <span class="grid h-4 w-4 shrink-0 place-items-center rounded-sm bg-zinc-800 text-[10px] font-semibold uppercase text-zinc-400">
+                  {String.first(account.name)}
+                </span>
+                <span class="truncate">{account.name}</span>
+              </button>
+            </form>
+          </li>
+        <% end %>
+      </ul>
+
+      <div class="border-t border-zinc-900 p-1">
+        <.link
+          navigate={~p"/onboarding"}
+          class="flex items-center gap-2 rounded-md px-3 py-2 text-sm text-zinc-300 transition hover:bg-zinc-900 hover:text-zinc-100"
+        >
+          <.icon name="hero-plus" class="h-4 w-4 shrink-0" />
+          <span>Create new workspace</span>
+        </.link>
+      </div>
+    </.dropdown>
     """
   end
 

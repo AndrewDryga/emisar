@@ -948,88 +948,75 @@ defmodule EmisarWeb.TeamLive do
       <% not @can_manage? -> %>
         <span></span>
       <% true -> %>
-        <details class="group relative inline-block text-left">
-          <summary class="cursor-pointer list-none rounded px-2 py-1 text-xs font-medium text-zinc-300 ring-1 ring-zinc-800 hover:bg-zinc-900 [&::-webkit-details-marker]:hidden [&::marker]:hidden">
+        <.dropdown
+          class="inline-block text-left"
+          summary_class="rounded px-2 py-1 text-xs font-medium text-zinc-300 ring-1 ring-zinc-800 hover:bg-zinc-900"
+          panel_class="z-10 mt-2 w-56 p-1 text-xs shadow-xl"
+        >
+          <:trigger>
             Actions
             <span class="text-zinc-500 group-open:hidden">▾</span><span class="hidden text-zinc-500 group-open:inline">▴</span>
-          </summary>
-          <div class="absolute right-0 z-10 mt-2 w-56 rounded-lg border border-zinc-800 bg-zinc-950 p-1 text-xs shadow-xl">
-            <button
-              phx-click="start_edit"
-              phx-value-membership_id={@membership.id}
-              class="block w-full rounded px-3 py-2 text-left text-zinc-300 hover:bg-zinc-900"
-            >
-              Edit name
-            </button>
-            <button
-              phx-click="start_scope_edit"
-              phx-value-membership_id={@membership.id}
-              class="block w-full rounded px-3 py-2 text-left text-zinc-300 hover:bg-zinc-900"
-            >
-              Set runner scope
-            </button>
-            <%= if Emisar.Accounts.Membership.disabled?(@membership) do %>
-              <button
-                phx-click="reinstate"
-                phx-value-membership_id={@membership.id}
-                class="block w-full rounded px-3 py-2 text-left text-emerald-300 hover:bg-emerald-500/10"
-              >
-                Restore access
-              </button>
-            <% else %>
-              <button
-                phx-click="suspend"
-                phx-value-membership_id={@membership.id}
-                data-confirm="Suspend this member? They will be signed out and can't sign back in until restored."
-                class="block w-full rounded px-3 py-2 text-left text-amber-300 hover:bg-amber-500/10"
-              >
-                Suspend access
-              </button>
-            <% end %>
-            <button
-              phx-click="force_password_reset"
-              phx-value-membership_id={@membership.id}
-              data-confirm="Email them a password-reset link and sign out every session?"
-              class="block w-full rounded px-3 py-2 text-left text-zinc-300 hover:bg-zinc-900"
-            >
-              Force password reset
-            </button>
-            <%!-- Only offered when the member actually has 2FA enrolled —
-                 the recovery path for someone locked out of both their
-                 authenticator and their recovery codes. It's an
-                 MFA-BYPASS action (it lets them enroll a NEW factor), so
-                 the confirm spells out the account-takeover risk if the
-                 admin is wrong about who's really asking. --%>
-            <button
-              :if={@membership.user && not is_nil(@membership.user.mfa_enabled_at)}
-              phx-click="reset_mfa"
-              phx-value-membership_id={@membership.id}
-              data-confirm={"Reset 2FA for #{@membership.user.email}? Their authenticator and recovery codes are wiped and they'll enroll a NEW factor on next sign-in. Only do this for someone you've confirmed is locked out — a new factor is an account-takeover vector if you're wrong about who's asking."}
-              class="block w-full rounded px-3 py-2 text-left text-amber-300 hover:bg-amber-500/10"
-            >
-              Reset 2FA
-            </button>
-            <button
-              phx-click="end_sessions"
-              phx-value-membership_id={@membership.id}
-              data-confirm="End every active session for this member?"
-              class="block w-full rounded px-3 py-2 text-left text-zinc-300 hover:bg-zinc-900"
-            >
-              End all sessions
-            </button>
-            <div class="my-1 border-t border-zinc-800"></div>
-            <%!-- IRREVERSIBLE — typed-confirm modal instead of native
-                 data-confirm. The button only OPENS the dialog; `remove`
-                 still fires from Confirm and stays server-authz-gated. --%>
-            <button
-              type="button"
-              phx-click={show_confirm_dialog("remove-member-#{@membership.id}")}
-              class="block w-full rounded px-3 py-2 text-left text-rose-300 hover:bg-rose-500/10"
-            >
-              Remove from team
-            </button>
-          </div>
-        </details>
+          </:trigger>
+          <.menu_item phx-click="start_edit" phx-value-membership_id={@membership.id}>
+            Edit name
+          </.menu_item>
+          <.menu_item phx-click="start_scope_edit" phx-value-membership_id={@membership.id}>
+            Set runner scope
+          </.menu_item>
+          <.menu_item
+            :if={Emisar.Accounts.Membership.disabled?(@membership)}
+            tone="success"
+            phx-click="reinstate"
+            phx-value-membership_id={@membership.id}
+          >
+            Restore access
+          </.menu_item>
+          <.menu_item
+            :if={not Emisar.Accounts.Membership.disabled?(@membership)}
+            tone="caution"
+            phx-click="suspend"
+            phx-value-membership_id={@membership.id}
+            data-confirm="Suspend this member? They will be signed out and can't sign back in until restored."
+          >
+            Suspend access
+          </.menu_item>
+          <.menu_item
+            phx-click="force_password_reset"
+            phx-value-membership_id={@membership.id}
+            data-confirm="Email them a password-reset link and sign out every session?"
+          >
+            Force password reset
+          </.menu_item>
+          <%!-- Only offered when the member actually has 2FA enrolled —
+               the recovery path for someone locked out of both their
+               authenticator and their recovery codes. It's an
+               MFA-BYPASS action (it lets them enroll a NEW factor), so
+               the confirm spells out the account-takeover risk if the
+               admin is wrong about who's really asking. --%>
+          <.menu_item
+            :if={@membership.user && not is_nil(@membership.user.mfa_enabled_at)}
+            tone="caution"
+            phx-click="reset_mfa"
+            phx-value-membership_id={@membership.id}
+            data-confirm={"Reset 2FA for #{@membership.user.email}? Their authenticator and recovery codes are wiped and they'll enroll a NEW factor on next sign-in. Only do this for someone you've confirmed is locked out — a new factor is an account-takeover vector if you're wrong about who's asking."}
+          >
+            Reset 2FA
+          </.menu_item>
+          <.menu_item
+            phx-click="end_sessions"
+            phx-value-membership_id={@membership.id}
+            data-confirm="End every active session for this member?"
+          >
+            End all sessions
+          </.menu_item>
+          <div class="my-1 border-t border-zinc-800"></div>
+          <%!-- IRREVERSIBLE — typed-confirm modal instead of native
+               data-confirm. The button only OPENS the dialog; `remove`
+               still fires from Confirm and stays server-authz-gated. --%>
+          <.menu_item tone="danger" phx-click={show_confirm_dialog("remove-member-#{@membership.id}")}>
+            Remove from team
+          </.menu_item>
+        </.dropdown>
 
         <.confirm_dialog
           id={"remove-member-#{@membership.id}"}
