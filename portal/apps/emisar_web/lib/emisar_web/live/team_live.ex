@@ -543,14 +543,7 @@ defmodule EmisarWeb.TeamLive do
             We'll email a join link for <span class="font-medium text-zinc-300">{@current_account.name}</span>.
           </:subtitle>
           <:actions>
-            <button
-              type="button"
-              phx-click={hide_invite()}
-              class="rounded-md p-1 text-zinc-500 hover:bg-zinc-900 hover:text-zinc-200"
-              aria-label="Close invite panel"
-            >
-              <.icon name="hero-x-mark" class="h-4 w-4" />
-            </button>
+            <.icon_button icon="hero-x-mark" label="Close invite panel" phx-click={hide_invite()} />
           </:actions>
 
           <.simple_form

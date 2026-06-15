@@ -579,41 +579,30 @@ defmodule EmisarWeb.RunbookEditorLive do
       <div class="flex items-center justify-between gap-3">
         <span class="font-mono text-xs text-zinc-500">Step #{@index + 1}</span>
         <div class="flex items-center gap-1">
-          <button
-            type="button"
+          <.icon_button
+            icon="hero-arrow-up"
+            label="Move up"
             phx-click="move_step"
             phx-value-index={@index}
             phx-value-dir="up"
             disabled={@index == 0}
-            class="rounded p-1 text-zinc-500 hover:text-zinc-200 disabled:opacity-30"
-            title="Move up"
-            aria-label="Move up"
-          >
-            <.icon name="hero-arrow-up" class="h-3.5 w-3.5" />
-          </button>
-          <button
-            type="button"
+          />
+          <.icon_button
+            icon="hero-arrow-down"
+            label="Move down"
             phx-click="move_step"
             phx-value-index={@index}
             phx-value-dir="down"
             disabled={@index == @total - 1}
-            class="rounded p-1 text-zinc-500 hover:text-zinc-200 disabled:opacity-30"
-            title="Move down"
-            aria-label="Move down"
-          >
-            <.icon name="hero-arrow-down" class="h-3.5 w-3.5" />
-          </button>
-          <button
-            type="button"
+          />
+          <.icon_button
+            icon="hero-trash"
+            label="Remove step"
+            tone="danger"
             phx-click="remove_step"
             phx-value-index={@index}
             data-confirm="Remove this step?"
-            class="rounded p-1 text-zinc-500 hover:text-rose-300"
-            title="Remove step"
-            aria-label="Remove step"
-          >
-            <.icon name="hero-trash" class="h-3.5 w-3.5" />
-          </button>
+          />
         </div>
       </div>
 

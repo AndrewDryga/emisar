@@ -285,14 +285,7 @@ defmodule EmisarWeb.AuthKeysLive do
             Reusable keys suit stable fleets; single-use keys are right for autoscalers.
           </:subtitle>
           <:actions>
-            <button
-              type="button"
-              phx-click={hide_create()}
-              class="rounded-md p-1 text-zinc-500 hover:bg-zinc-900 hover:text-zinc-200"
-              aria-label="Close"
-            >
-              <.icon name="hero-x-mark" class="h-4 w-4" />
-            </button>
+            <.icon_button icon="hero-x-mark" label="Close" phx-click={hide_create()} />
           </:actions>
 
           <.simple_form

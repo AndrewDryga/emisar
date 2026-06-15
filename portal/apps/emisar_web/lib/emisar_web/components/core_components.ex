@@ -264,6 +264,42 @@ defmodule EmisarWeb.CoreComponents do
   defp button_size("sm"), do: "px-2.5 py-1 text-xs"
 
   @doc """
+  An icon-only button. `label` is REQUIRED — it becomes both `aria-label` and
+  `title`, so an icon-only control is never nameless to a screen reader or a
+  mouse user. For a text+icon button use `<.button icon=>`. `tone` covers the
+  two treatments in use (neutral, danger-on-hover); pass any positioning via
+  `class`. Event bindings (`phx-click`, `phx-value-*`, `data-confirm`) and
+  `disabled` ride the global `:rest`.
+  """
+  attr :icon, :string, required: true
+  attr :label, :string, required: true
+  attr :tone, :string, default: "neutral", values: ~w(neutral danger)
+  attr :class, :string, default: nil
+  attr :rest, :global, include: ~w(disabled)
+
+  def icon_button(assigns) do
+    ~H"""
+    <button
+      type="button"
+      aria-label={@label}
+      title={@label}
+      class={[
+        "rounded-md p-1 text-zinc-500 transition-colors hover:bg-zinc-900 disabled:opacity-30 disabled:hover:bg-transparent",
+        "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2",
+        icon_button_tone(@tone),
+        @class
+      ]}
+      {@rest}
+    >
+      <.icon name={@icon} class="h-4 w-4" />
+    </button>
+    """
+  end
+
+  defp icon_button_tone("neutral"), do: "hover:text-zinc-200 focus-visible:outline-zinc-600"
+  defp icon_button_tone("danger"), do: "hover:text-rose-300 focus-visible:outline-rose-400"
+
+  @doc """
   Renders an input with label and error messages.
 
   A `Phoenix.HTML.FormField` may be passed as argument,
