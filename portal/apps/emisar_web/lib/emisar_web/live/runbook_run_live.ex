@@ -642,10 +642,8 @@ defmodule EmisarWeb.RunbookRunLive do
 
         <%!-- Dispatch form — full width below the plan. Targets come from
              the steps now, so this is just the reason + start button. --%>
-        <section class="rounded-xl border border-zinc-900 bg-zinc-950/40 p-5">
-          <h2 class="text-sm font-semibold text-zinc-100">Dispatch</h2>
-
-          <form phx-change="validate" phx-submit="dispatch" class="mt-4 space-y-4">
+        <.panel title="Dispatch">
+          <form phx-change="validate" phx-submit="dispatch" class="space-y-4">
             <div>
               <label class="block text-sm font-medium text-zinc-200">Reason (required)</label>
               <textarea
@@ -672,7 +670,7 @@ defmodule EmisarWeb.RunbookRunLive do
               Start runbook
             </.button>
           </form>
-        </section>
+        </.panel>
       </div>
     </.dashboard_shell>
     """

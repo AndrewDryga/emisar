@@ -501,10 +501,8 @@ defmodule EmisarWeb.RunbookEditorLive do
         </section>
 
         <aside class="space-y-4">
-          <section class="rounded-xl border border-zinc-900 bg-zinc-950/40 p-5">
-            <h2 class="text-sm font-semibold text-zinc-100">Metadata</h2>
-
-            <form phx-change="meta_change" class="mt-4 space-y-4">
+          <.panel title="Metadata">
+            <form phx-change="meta_change" class="space-y-4">
               <div>
                 <label
                   class="block text-[10px] font-semibold uppercase tracking-wider text-zinc-500"
@@ -558,11 +556,10 @@ defmodule EmisarWeb.RunbookEditorLive do
                 ><%= @description %></textarea>
               </div>
             </form>
-          </section>
+          </.panel>
 
-          <section :if={@runbook} class="rounded-xl border border-zinc-900 bg-zinc-950/40 p-5">
-            <h2 class="text-sm font-semibold text-zinc-100">Version</h2>
-            <dl class="mt-3 space-y-2 text-xs text-zinc-400">
+          <.panel :if={@runbook} title="Version">
+            <dl class="space-y-2 text-xs text-zinc-400">
               <.kv label="Current">v{@runbook.version}</.kv>
               <.kv label="Status"><.status_badge status={@runbook.status} /></.kv>
               <.kv label="Saving creates">v{@runbook.version + 1}</.kv>
@@ -570,7 +567,7 @@ defmodule EmisarWeb.RunbookEditorLive do
             <p :if={@runbook.status == :published} class="mt-4 text-xs text-zinc-500 leading-relaxed">
               Published runbooks are immutable — saving creates a new draft version.
             </p>
-          </section>
+          </.panel>
         </aside>
       </div>
     </.dashboard_shell>

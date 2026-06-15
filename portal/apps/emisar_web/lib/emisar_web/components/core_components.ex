@@ -1160,27 +1160,72 @@ defmodule EmisarWeb.CoreComponents do
   # -- Generic page primitives ---------------------------------------
 
   @doc """
-  Canonical "card" surface. One place to evolve the dark border /
-  background combo so every page picks it up.
+  Canonical "card" surface — the one place the dark border/background combo
+  lives, so every page picks it up. `bg-zinc-950/40` and the in-app `p-5`
+  density are the defaults; pass `padding` for a looser tile (stat, onboarding).
 
       <.card>
         ...
       </.card>
-      <.card padding="p-8" class="lg:col-span-2">...</.card>
+      <.card padding="p-6" class="lg:col-span-2">...</.card>
   """
   attr :class, :string, default: nil
-  attr :padding, :string, default: "p-6"
+  attr :padding, :string, default: "p-5"
   slot :inner_block, required: true
 
   def card(assigns) do
     ~H"""
     <div class={[
-      "rounded-xl border border-zinc-900 bg-zinc-950/60",
+      "rounded-xl border border-zinc-900 bg-zinc-950/40",
       @padding,
       @class
     ]}>
       {render_slot(@inner_block)}
     </div>
+    """
+  end
+
+  @doc """
+  Section card with a header — a `<.card>` plus the canonical title row, so
+  every "panel with a heading" reads the same (one heading size, one subtitle
+  style, actions right-aligned). Pass `title` (and optional `:subtitle` /
+  `:actions`); the body is the default slot.
+
+      <.panel title="Default policy">
+        <:subtitle>Applies to every runner unless a ruleset overrides it.</:subtitle>
+        <.policy_fields ... />
+      </.panel>
+
+      <.panel title="Security">
+        <:subtitle>When enforced, members without 2FA are funneled…</:subtitle>
+        <:actions><.button>Enforce</.button></:actions>
+        ...
+      </.panel>
+  """
+  attr :title, :string, default: nil
+  attr :class, :string, default: nil
+  attr :padding, :string, default: "p-5"
+  slot :subtitle
+  slot :actions
+  slot :inner_block, required: true
+
+  def panel(assigns) do
+    ~H"""
+    <.card padding={@padding} class={@class}>
+      <header
+        :if={@title || @subtitle != [] || @actions != []}
+        class="mb-4 flex items-start justify-between gap-4"
+      >
+        <div class="min-w-0">
+          <h2 :if={@title} class="text-sm font-semibold text-zinc-100">{@title}</h2>
+          <p :if={@subtitle != []} class="mt-1 text-xs leading-relaxed text-zinc-500">
+            {render_slot(@subtitle)}
+          </p>
+        </div>
+        <div :if={@actions != []} class="shrink-0">{render_slot(@actions)}</div>
+      </header>
+      {render_slot(@inner_block)}
+    </.card>
     """
   end
 
@@ -1500,7 +1545,7 @@ defmodule EmisarWeb.CoreComponents do
 
   def stat(assigns) do
     ~H"""
-    <.card class={@class}>
+    <.card padding="p-6" class={@class}>
       <div class="text-xs uppercase tracking-wider text-zinc-500">{@label}</div>
       <div class="mt-2 text-3xl font-semibold text-zinc-50">{@value}</div>
       <%= if @hint do %>

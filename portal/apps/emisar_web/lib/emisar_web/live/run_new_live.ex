@@ -304,17 +304,12 @@ defmodule EmisarWeb.RunNewLive do
              Same progressive-disclosure rule as elsewhere: don't show
              a section just to tell the operator there's nothing in
              it. --%>
-        <section class="rounded-xl border border-zinc-900 bg-zinc-950/40 p-5">
-          <h2 class="text-sm font-semibold text-zinc-100">
-            {if(@args_schema == [], do: "Dispatch", else: "Arguments")}
-          </h2>
-
+        <.panel title={if(@args_schema == [], do: "Dispatch", else: "Arguments")}>
           <.simple_form
             for={@form}
             id="dispatch_form"
             phx-submit="dispatch"
             phx-change="validate"
-            class="mt-4"
           >
             <.arg_input :for={arg <- @args_schema} arg={arg} form={@form} />
 
@@ -347,7 +342,7 @@ defmodule EmisarWeb.RunNewLive do
               </p>
             </:actions>
           </.simple_form>
-        </section>
+        </.panel>
       </div>
     </.dashboard_shell>
     """

@@ -396,9 +396,8 @@ defmodule EmisarWeb.ApprovalDetailLive do
               runner_state={@runner_connection}
             />
           <% else %>
-            <section class="rounded-xl border border-zinc-900 bg-zinc-950/40 p-5">
-              <h3 class="text-sm font-semibold text-zinc-100">Decision history</h3>
-              <dl class="mt-3 space-y-2 text-sm">
+            <.panel title="Decision history">
+              <dl class="space-y-2 text-sm">
                 <.kv label="Status"><.status_badge status={@request.status} /></.kv>
                 <.kv label="Decided"><.local_time value={@request.decided_at} /></.kv>
                 <.kv label="By">{user_label(@decided_by, @request.decided_by_id)}</.kv>
@@ -406,7 +405,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
                   <span class="text-xs text-zinc-300">{@request.decision_reason}</span>
                 </.kv>
               </dl>
-            </section>
+            </.panel>
           <% end %>
         </aside>
       </div>
