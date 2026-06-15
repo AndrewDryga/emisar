@@ -80,6 +80,26 @@ defmodule Emisar.ApprovalsTest do
                Approvals.fetch_approval_request_by_run_id(run.id, other_subject)
     end
 
+    test "fetch_approval_request_by_run_id still returns a DENIED request — the decision record persists" do
+      {account, run} = run_fixture()
+      operator = user_fixture()
+      {:ok, request} = Approvals.create_request(run, operator.id, "x")
+      subject = operator_subject(account)
+      {:ok, _} = Approvals.deny_request(request, subject, "not during the change freeze")
+
+      # Denying UPDATES status (no delete, no soft-delete) and the fetch is
+      # status-agnostic (`all()`), so a denied request stays fetchable — the
+      # run_detail banner, approval-detail page, and "Review approval" links all
+      # depend on it. (2026-06-14 investigation: the dev-time {:ok}→:not_found
+      # flake was a sandbox/broadcast artifact, NOT a worker removing denied
+      # requests — the expiry sweeper is pending-only. This test guards the
+      # conclusion against a future status filter that would re-break it.)
+      assert {:ok, %Request{id: id, status: :denied}} =
+               Approvals.fetch_approval_request_by_run_id(run.id, subject)
+
+      assert id == request.id
+    end
+
     test "list_approval_requests_for_account filters by status" do
       {account, run} = run_fixture()
       operator = user_fixture()

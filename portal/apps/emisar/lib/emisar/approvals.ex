@@ -101,6 +101,12 @@ defmodule Emisar.Approvals do
   Looks up the (single) approval request for a run. There is a
   unique-by-design relationship: one run produces at most one approval
   request, since policy is evaluated once at dispatch time.
+
+  Status-agnostic by design (`Query.all()`, no status filter): returns the
+  request whatever its status, because the run-detail banner + approval-detail
+  page must show a DECIDED request's outcome. Denying/approving updates status
+  (never deletes), and the expiry sweeper only touches pending rows, so a
+  decided request always persists and stays fetchable.
   """
   def fetch_approval_request_by_run_id(run_id, %Subject{} = subject) do
     with :ok <-
