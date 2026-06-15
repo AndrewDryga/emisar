@@ -356,9 +356,14 @@ defmodule Emisar.Runners do
       runner_version: payload["version"] || runner.runner_version,
       packs: payload["packs"] || runner.packs,
       external_id: payload["runner_id"] || runner.external_id,
-      # A config `runner.group` rename reaches the cloud here, on reconnect —
-      # so update it. Keep the existing group when the payload's is missing or
-      # blank (never wipe a runner's group to "").
+      # `group` is RUNNER-DECLARED: a config `runner.group` rename reaches the
+      # cloud here on reconnect, so update it (keep the existing group when the
+      # payload's is missing/blank — never wipe to ""). Deliberately trusted:
+      # group selects which policy override governs dispatches to THIS runner
+      # (Policies.resolve_policy), so a compromised host could declare a looser
+      # group — but it already owns the box the runner executes on, so it gains
+      # nothing it couldn't do locally. The host is the trust anchor. Pin to the
+      # auth key if you need it operator-authoritative. See docs/security-model.md.
       group: nonblank(payload["group"]) || runner.group
     })
     |> Repo.update()
