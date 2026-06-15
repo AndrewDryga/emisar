@@ -147,6 +147,55 @@ defmodule EmisarWeb.PoliciesLiveTest do
       assert html =~ ~s(value="second")
     end
 
+    test "warns when an override is shadowed by an earlier broader glob (deny copy)", %{
+      conn: conn
+    } do
+      {conn, _user, _account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/app/policies")
+
+      lv |> render_click("add_override", %{"editor" => "account"})
+      lv |> render_click("add_override", %{"editor" => "account"})
+
+      # A broad allow above a specific deny: first-match means the deny is dead.
+      html =
+        lv
+        |> form("#policy-form-account", %{
+          "policy" => %{
+            "overrides" => %{
+              "0" => %{"name" => "allow-nginx", "action" => "nginx_*", "decision" => "allow"},
+              "1" => %{"name" => "block-reload", "action" => "nginx_reload", "decision" => "deny"}
+            }
+          }
+        })
+        |> render_change()
+
+      assert html =~ "Shadowed by rule 1 above"
+      # The deny case gets the sharpened copy.
+      assert html =~ "this <strong>deny</strong>"
+    end
+
+    test "no shadow warning when the specific deny comes first", %{conn: conn} do
+      {conn, _user, _account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/app/policies")
+
+      lv |> render_click("add_override", %{"editor" => "account"})
+      lv |> render_click("add_override", %{"editor" => "account"})
+
+      html =
+        lv
+        |> form("#policy-form-account", %{
+          "policy" => %{
+            "overrides" => %{
+              "0" => %{"name" => "block-reload", "action" => "nginx_reload", "decision" => "deny"},
+              "1" => %{"name" => "allow-nginx", "action" => "nginx_*", "decision" => "allow"}
+            }
+          }
+        })
+        |> render_change()
+
+      refute html =~ "Shadowed by rule"
+    end
+
     test "a valid edit saves cleanly — the rules error is a defensive inline net, never a flash",
          %{conn: conn} do
       {conn, _user, _account} = register_and_log_in(conn)

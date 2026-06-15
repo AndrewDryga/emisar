@@ -823,11 +823,16 @@ defmodule EmisarWeb.PoliciesLive do
         </div>
 
         <div :if={@overrides != []} class="mt-4 space-y-3">
+          <%!-- First-match wins, so an override whose glob is subsumed by an
+               earlier one is dead. Surface it inline (display-only, pure CPU on
+               the in-memory rows) so an operator doesn't believe a deny they
+               buried under a broader allow is in force. --%>
           <.override_card
             :for={{override, idx} <- Enum.with_index(@overrides)}
             editor_id={@editor_id}
             override={override}
             index={idx}
+            shadowed_by={shadowed_by(@overrides, idx)}
             can_manage={@can_manage}
           />
         </div>
@@ -927,6 +932,7 @@ defmodule EmisarWeb.PoliciesLive do
   attr :editor_id, :string, required: true
   attr :override, :map, required: true
   attr :index, :integer, required: true
+  attr :shadowed_by, :integer, required: true
   attr :can_manage, :boolean, required: true
 
   defp override_card(assigns) do
@@ -992,12 +998,40 @@ defmodule EmisarWeb.PoliciesLive do
           </button>
         </div>
       </div>
+
+      <%!-- A dead rule (its glob is covered by an earlier one) — advisory, not
+           blocking. `shadowed_by` is the 0-based index of the earlier rule, so
+           +1 for the operator's 1-based count. Sharpen the copy for a deny:
+           that's the case where the operator believes they blocked something. --%>
+      <p
+        :if={@shadowed_by != nil}
+        class="mt-2 flex items-start gap-1.5 text-xs text-amber-300"
+      >
+        <.icon name="hero-exclamation-triangle-mini" class="mt-0.5 h-3.5 w-3.5 flex-none" />
+        <span :if={@override["decision"] == "deny"}>
+          Shadowed by rule {@shadowed_by + 1} above — this <strong>deny</strong>
+          never applies (first match wins).
+        </span>
+        <span :if={@override["decision"] != "deny"}>
+          Shadowed by rule {@shadowed_by + 1} above — this rule never applies (first match wins).
+        </span>
+      </p>
     </div>
     """
   end
 
   defp decision_options,
     do: [{"Allow", "allow"}, {"Require approval", "require_approval"}, {"Deny", "deny"}]
+
+  # The index of the earlier override that shadows the row at `index`, or nil.
+  # Derived from the live (possibly-unsaved) rows via the pure `Policies`
+  # accessor — first-match means an override under a broader earlier glob is
+  # dead.
+  defp shadowed_by(overrides, index) do
+    %{"overrides" => overrides}
+    |> Policies.shadowed_overrides()
+    |> Enum.find_value(fn %{index: i, shadowed_by: j} -> if i == index, do: j end)
+  end
 
   # The rank below which a tier's decision can't drop: 0 for `low` (anything
   # goes), otherwise the rank of the immediately-lower tier. Reads the lower

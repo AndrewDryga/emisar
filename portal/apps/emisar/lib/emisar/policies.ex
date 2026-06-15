@@ -30,7 +30,7 @@ defmodule Emisar.Policies do
   alias Ecto.Multi
   alias Emisar.{Audit, Auth, Repo}
   alias Emisar.Auth.Subject
-  alias Emisar.Policies.{Authorizer, Policy}
+  alias Emisar.Policies.{Authorizer, Glob, Policy}
 
   @risk_tiers ~w(low medium high critical)
   @decisions ~w(allow require_approval deny)
@@ -96,6 +96,42 @@ defmodule Emisar.Policies do
   # only through malformed stored rules (the changeset validates the
   # decision set), and a corrupt tier must read as deny, not allow.
   def decision_rank(_), do: 2
+
+  @doc """
+  The shadowed (dead) overrides in `rules`. Overrides are first-match, so an
+  override at index `i` is dead when an EARLIER override at index `j < i` has a
+  glob whose match-set ⊇ this one's — dispatch always picks `j`, and `i` never
+  applies. Returns `[%{index: i, shadowed_by: j}]` reporting the first such `j`.
+
+  Decision-agnostic — any shadowed override is dead code, though a shadowed
+  `deny` is the security motivation (the operator believes they blocked an
+  action that a broader earlier `allow` actually lets through). Pure (no Subject
+  / Repo, like `min_approvals_for/1`); tolerates a missing/empty `"overrides"`
+  and skips overrides with a missing/blank `"action"` (they can't meaningfully
+  subsume or be subsumed).
+  """
+  def shadowed_overrides(rules) when is_map(rules) do
+    globs = Enum.map(rules["overrides"] || [], &override_action/1)
+
+    for {glob, i} <- Enum.with_index(globs),
+        is_binary(glob),
+        j = first_subsumer(globs, glob, i),
+        not is_nil(j),
+        do: %{index: i, shadowed_by: j}
+  end
+
+  def shadowed_overrides(_rules), do: []
+
+  # Index of the first earlier override whose glob subsumes `glob` (skipping
+  # blank-glob earlier rows, which can't subsume anything), or nil.
+  defp first_subsumer(globs, glob, i) do
+    globs
+    |> Enum.take(i)
+    |> Enum.find_index(fn earlier -> is_binary(earlier) and Glob.subsumes?(earlier, glob) end)
+  end
+
+  defp override_action(%{"action" => action}) when is_binary(action) and action != "", do: action
+  defp override_action(_), do: nil
 
   @doc """
   Changeset for the policy editor form (no Subject — like
@@ -344,7 +380,7 @@ defmodule Emisar.Policies do
 
   defp override_matches?(%{"action" => pattern}, action_id)
        when is_binary(pattern) and pattern != "",
-       do: glob_match?(pattern, action_id)
+       do: Glob.match?(pattern, action_id)
 
   defp override_matches?(_, _), do: false
 
@@ -466,22 +502,5 @@ defmodule Emisar.Policies do
       end)
 
     %{"added" => added, "removed" => removed, "changed" => changed}
-  end
-
-  # Action ids are matched case-INSENSITIVELY. A deny override like
-  # `*.drop_*` must also catch `cassandra.DROP_table` (the safe direction
-  # for a security matcher — a case slip can't downgrade a deny into the
-  # tier default, which for low/medium is allow), and it keeps policy
-  # matching consistent with the case-insensitive `ilike` the Runs page
-  # already uses to filter by action_id. Anchored (`^…$`) and
-  # `Regex.escape`d so literal dots/underscores aren't wildcards — only `*`.
-  defp glob_match?(pattern, str) do
-    if String.contains?(pattern, "*") do
-      escaped = pattern |> Regex.escape() |> String.replace("\\*", ".*")
-      regex = Regex.compile!("^" <> escaped <> "$", "i")
-      Regex.match?(regex, str)
-    else
-      String.downcase(pattern) == String.downcase(str)
-    end
   end
 end

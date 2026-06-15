@@ -390,4 +390,82 @@ defmodule Emisar.PoliciesTest do
       assert [%{"action" => "c.*", "from" => _, "to" => _}] = diff["overrides"]["changed"]
     end
   end
+
+  describe "shadowed_overrides/1" do
+    test "a later deny shadowed by an earlier broader allow is dead" do
+      rules = %{
+        "overrides" => [
+          %{"name" => "allow-nginx", "action" => "nginx_*", "decision" => "allow"},
+          %{"name" => "block-reload", "action" => "nginx_reload", "decision" => "deny"}
+        ]
+      }
+
+      assert Policies.shadowed_overrides(rules) == [%{index: 1, shadowed_by: 0}]
+    end
+
+    test "the reverse order is fine — the specific deny matches first" do
+      rules = %{
+        "overrides" => [
+          %{"action" => "nginx_reload", "decision" => "deny"},
+          %{"action" => "nginx_*", "decision" => "allow"}
+        ]
+      }
+
+      assert Policies.shadowed_overrides(rules) == []
+    end
+
+    test "an identical-pattern duplicate is shadowed by the first" do
+      rules = %{
+        "overrides" => [
+          %{"action" => "nginx_*", "decision" => "allow"},
+          %{"action" => "nginx_*", "decision" => "deny"}
+        ]
+      }
+
+      assert Policies.shadowed_overrides(rules) == [%{index: 1, shadowed_by: 0}]
+    end
+
+    test "disjoint globs never shadow each other" do
+      rules = %{
+        "overrides" => [
+          %{"action" => "nginx_*", "decision" => "allow"},
+          %{"action" => "apache_*", "decision" => "deny"}
+        ]
+      }
+
+      assert Policies.shadowed_overrides(rules) == []
+    end
+
+    test "reports the FIRST subsumer when several earlier rows cover a row" do
+      rules = %{
+        "overrides" => [
+          %{"action" => "*", "decision" => "allow"},
+          %{"action" => "nginx_*", "decision" => "require_approval"},
+          %{"action" => "nginx_reload", "decision" => "deny"}
+        ]
+      }
+
+      assert Policies.shadowed_overrides(rules) == [
+               %{index: 1, shadowed_by: 0},
+               %{index: 2, shadowed_by: 0}
+             ]
+    end
+
+    test "blank-action rows can't subsume or be subsumed — they're skipped" do
+      rules = %{
+        "overrides" => [
+          %{"action" => "", "decision" => "allow"},
+          %{"action" => "nginx_*", "decision" => "deny"}
+        ]
+      }
+
+      assert Policies.shadowed_overrides(rules) == []
+    end
+
+    test "empty / missing overrides → []" do
+      assert Policies.shadowed_overrides(%{"overrides" => []}) == []
+      assert Policies.shadowed_overrides(%{}) == []
+      assert Policies.shadowed_overrides(nil) == []
+    end
+  end
 end
