@@ -27,6 +27,11 @@ defmodule EmisarWeb.PacksLive do
   def mount(_params, _session, socket) do
     socket = assign(socket, :page_title, "Packs")
 
+    # Trusted versions' actions are loaded lazily, one query per opened
+    # "View contents" disclosure (see `inspect_pack`), keyed by version id —
+    # trusted versions can be many, so we never eagerly look them all up.
+    socket = assign(socket, :inspected_actions, %{})
+
     if connected?(socket) do
       {:ok, socket |> load_packs() |> assign(:loading?, false)}
     else
@@ -170,6 +175,53 @@ defmodule EmisarWeb.PacksLive do
     end
   end
 
+  # Lazily load a trusted version's action set the first time its "View
+  # contents" disclosure is opened (one query per opened disclosure, not per
+  # page — trusted versions can be many). The result is cached in
+  # `inspected_actions` keyed by version id; the disclosure renders the actions
+  # once present and stays open thereafter. We re-insert the affected pack
+  # group so the stream child re-renders against the new assign (a stream item
+  # is otherwise static once pushed). The Catalog read re-checks `view_catalog`
+  # itself (IL-15) — `pack_id`/`version` come from the rendered row, so a
+  # crafted event can't reach another account's actions.
+  def handle_event(
+        "inspect_pack",
+        %{"id" => id, "pack-id" => pack_id, "version" => version},
+        socket
+      ) do
+    if Map.has_key?(socket.assigns.inspected_actions, id) do
+      {:noreply, socket}
+    else
+      actions =
+        case Catalog.list_pack_actions(pack_id, version, socket.assigns.current_subject) do
+          {:ok, actions} -> actions
+          _ -> []
+        end
+
+      socket = update(socket, :inspected_actions, &Map.put(&1, id, actions))
+      {:noreply, reinsert_pack_group(socket, pack_id)}
+    end
+  end
+
+  # Re-render one pack group's stream item against the current assigns (a
+  # stream child is static once pushed, so the just-loaded `inspected_actions`
+  # only appears after a re-insert). One query for the group's versions; unlike
+  # `restream_pack` this doesn't recompute the pending panels — inspecting a
+  # trusted version changes nothing about what's pending.
+  defp reinsert_pack_group(socket, pack_id) do
+    versions =
+      socket
+      |> fetch_rows()
+      |> Enum.filter(&(&1.pack_id == pack_id))
+      |> sort_versions()
+
+    if versions == [] do
+      socket
+    else
+      stream_insert(socket, :packs, %{id: pack_id, versions: versions})
+    end
+  end
+
   # After a Trust/Reject, recompute just the affected pack group and update
   # the stream in place: `stream_delete` if every version of the pack is
   # gone (a never-trusted custom pack's only version was Rejected → its row
@@ -199,6 +251,24 @@ defmodule EmisarWeb.PacksLive do
   # No-op for the broadcasts the on_mount badge/fleet hooks forward (approvals,
   # pack trust, runner presence). The hooks own those nav cues; this page ignores them.
   def handle_info(_msg, socket), do: {:noreply, socket}
+
+  # The action + risk rows a pack version contains — shared by the pending
+  # "Trust new contents" panel and the trusted "View contents" disclosure so
+  # both render the identical list. `action_id`/`title` are runner-advertised
+  # (attacker-influenced); they render through escaped HEEx, never `raw/1`.
+  attr :actions, :list, required: true
+
+  defp pack_action_list(assigns) do
+    ~H"""
+    <ul class="mt-1 space-y-1">
+      <li :for={action <- @actions} class="flex items-center gap-2 text-[11px]">
+        <.risk_pill risk={action.risk} class="flex-none" />
+        <span class="font-mono text-zinc-300">{action.action_id}</span>
+        <span :if={action.title} class="truncate text-zinc-500">{action.title}</span>
+      </li>
+    </ul>
+    """
+  end
 
   def render(assigns) do
     ~H"""
@@ -395,16 +465,7 @@ defmodule EmisarWeb.PacksLive do
                   <div class="text-[11px] font-semibold text-amber-100/80">
                     Trusting authorizes {length(@pack_actions[v.id])} action(s):
                   </div>
-                  <ul class="mt-1 space-y-1">
-                    <li
-                      :for={action <- @pack_actions[v.id]}
-                      class="flex items-center gap-2 text-[11px]"
-                    >
-                      <.risk_pill risk={action.risk} class="flex-none" />
-                      <span class="font-mono text-zinc-300">{action.action_id}</span>
-                      <span :if={action.title} class="truncate text-zinc-500">{action.title}</span>
-                    </li>
-                  </ul>
+                  <.pack_action_list actions={@pack_actions[v.id]} />
                 </div>
                 <%!-- Trust/Reject mutate authorization state — owner/admin
                      only. The context gate (manage_catalog) is defense in
@@ -448,6 +509,46 @@ defmodule EmisarWeb.PacksLive do
                   </.button>
                 </div>
               </div>
+
+              <%!-- A trusted version's contents stay auditable after the Trust
+                   decision: a collapsed disclosure that lazily loads the
+                   action + risk set (one query when first opened — see
+                   `inspect_pack`) so an operator can re-inspect what's
+                   authorized without waiting for a re-advertise. --%>
+              <details
+                :if={v.trust_state == :trusted}
+                class="group rounded border border-zinc-900 bg-zinc-950/40"
+              >
+                <summary
+                  phx-click="inspect_pack"
+                  phx-value-id={v.id}
+                  phx-value-pack-id={pack.id}
+                  phx-value-version={v.version}
+                  class="flex cursor-pointer list-none items-center gap-1.5 px-3 py-2 text-[11px] text-zinc-400 hover:text-zinc-200"
+                >
+                  <.icon
+                    name="hero-chevron-right"
+                    class="h-3.5 w-3.5 transition-transform group-open:rotate-90"
+                  />
+                  <span class="group-open:hidden">View contents</span>
+                  <span class="hidden group-open:inline">Trusted contents</span>
+                </summary>
+                <div class="border-t border-zinc-900 px-3 py-2">
+                  <p :if={is_nil(@inspected_actions[v.id])} class="text-[11px] text-zinc-500">
+                    Loading…
+                  </p>
+                  <p
+                    :if={@inspected_actions[v.id] == []}
+                    class="text-[11px] text-zinc-500"
+                  >
+                    No actions advertised for this version right now.
+                  </p>
+                  <.pack_action_list
+                    :if={@inspected_actions[v.id] not in [nil, []]}
+                    actions={@inspected_actions[v.id]}
+                  />
+                </div>
+              </details>
             </li>
           </ul>
         </li>

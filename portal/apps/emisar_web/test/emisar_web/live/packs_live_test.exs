@@ -119,6 +119,52 @@ defmodule EmisarWeb.PacksLiveTest do
       assert html =~ "high"
     end
 
+    test "a trusted version exposes a View contents disclosure that lazily lists its actions",
+         %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      runner = Emisar.Fixtures.runner_fixture(account_id: account.id)
+      subject = Emisar.Fixtures.subject_for(user, account)
+
+      {:ok, _} =
+        Emisar.Catalog.observe_state(runner, %{
+          "hostname" => "host-1",
+          "version" => "0.1.0",
+          "labels" => %{},
+          "actions" => [
+            %{
+              "id" => "acme.audit",
+              "pack_id" => "acme-tools",
+              "title" => "Audit thing",
+              "kind" => "exec",
+              "risk" => "medium",
+              "description" => "a",
+              "args" => []
+            }
+          ],
+          "packs" => %{"acme-tools" => %{"version" => "9.9", "hash" => "abc123"}}
+        })
+
+      {:ok, [pack_version], _} = Emisar.Catalog.list_pack_versions(subject)
+      {:ok, _} = Emisar.Catalog.trust_pack_version(pack_version.id, subject)
+
+      {:ok, lv, _dead} = live(conn, ~p"/app/packs")
+
+      # Collapsed by default — the action list isn't rendered until opened.
+      assert render(lv) =~ "View contents"
+      refute render(lv) =~ "acme.audit"
+
+      # Opening the disclosure lazily loads + renders the action id + risk.
+      html =
+        render_click(lv, "inspect_pack", %{
+          "id" => pack_version.id,
+          "pack-id" => pack_version.pack_id,
+          "version" => pack_version.version
+        })
+
+      assert html =~ "acme.audit"
+      assert html =~ "medium"
+    end
+
     test "Trust adopts the pending hash and clears the pending badge", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
       pack_version = observe_pending_pack!(account)
