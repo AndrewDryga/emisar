@@ -60,7 +60,7 @@ defmodule EmisarWeb.AcceptInvitationLive do
       <p class="mb-6 text-sm text-zinc-400">
         You've been invited to join
         <span class="font-semibold text-zinc-200">{@membership.account.name}</span>
-        as <span class="font-mono text-indigo-300">{@membership.role}</span>.
+        as <.chip>{@membership.role}</.chip>.
       </p>
 
       <.simple_form
@@ -106,7 +106,7 @@ defmodule EmisarWeb.AcceptInvitationLive do
         You're signed in as <span class="font-mono text-zinc-200">{@membership.user.email}</span>
         — accept your invitation to join
         <span class="font-semibold text-zinc-200">{@membership.account.name}</span>
-        as <span class="font-mono text-indigo-300">{@membership.role}</span>.
+        as <.chip>{@membership.role}</.chip>.
       </p>
 
       <.button class="w-full" phx-click="accept_existing" phx-disable-with="Accepting...">

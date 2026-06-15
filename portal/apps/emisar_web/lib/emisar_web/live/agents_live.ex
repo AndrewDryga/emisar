@@ -1087,9 +1087,9 @@ defmodule EmisarWeb.AgentsLive do
         </div>
         <div class="grid grid-cols-[max-content,1fr] gap-x-3 gap-y-1 p-4 font-mono text-xs leading-6 text-zinc-200">
           <span class="text-zinc-500">URL:</span>
-          <span id={"rpc-url-#{@client_id}"} class="break-all text-emerald-300">{@rpc_url}</span>
+          <span id={"rpc-url-#{@client_id}"} class="break-all text-zinc-200">{@rpc_url}</span>
           <span class="text-zinc-500">Header:</span>
-          <span id={"auth-hdr-#{@client_id}"} class="break-all text-emerald-300">{@auth_header}</span>
+          <span id={"auth-hdr-#{@client_id}"} class="break-all text-zinc-200">{@auth_header}</span>
         </div>
       </div>
 
