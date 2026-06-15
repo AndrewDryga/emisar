@@ -1157,6 +1157,17 @@ defmodule EmisarWeb.CoreComponents do
   defp format_status("dispatch_failed"), do: "dispatch failed"
   defp format_status(other), do: other
 
+  @doc """
+  A runner's `Runners.connection_state/1` atom → the display status string that
+  `<.status_badge>` / `<.connection_dot>` understand (`:online` → "connected",
+  `:offline` → "disconnected"). One place so the runners list + detail pages
+  can't drift on the connection vocabulary.
+  """
+  def connection_status(:online), do: "connected"
+  def connection_status(:offline), do: "disconnected"
+  def connection_status(:disabled), do: "disabled"
+  def connection_status(:pending), do: "pending"
+
   # -- Generic page primitives ---------------------------------------
 
   @doc """

@@ -175,6 +175,7 @@ defmodule EmisarWeb.RunnersLive do
           </:group_header>
 
           <:item :let={runner}>
+            <% state = connection_status(Runners.connection_state(runner)) %>
             <li class="px-5 py-3">
               <.link
                 navigate={~p"/app/runners/#{runner.id}"}
@@ -183,7 +184,7 @@ defmodule EmisarWeb.RunnersLive do
                 <%!-- Connection dot: green/pulsing when live, amber
                      when known-but-disconnected, zinc when never
                      seen. Clearer than reading a status badge first. --%>
-                <.connection_dot status={derived_status(runner)} />
+                <.connection_dot status={state} />
 
                 <div class="min-w-0 flex-1">
                   <div class="flex items-center gap-2">
@@ -195,7 +196,7 @@ defmodule EmisarWeb.RunnersLive do
                   <div class="mt-0.5 truncate text-xs text-zinc-500">
                     {runner.hostname || runner.external_id || "no host"} · {heartbeat_label(
                       runner,
-                      derived_status(runner)
+                      state
                     )}
                   </div>
                 </div>
@@ -204,7 +205,7 @@ defmodule EmisarWeb.RunnersLive do
                   <div class="hidden text-xs text-zinc-400 sm:block">
                     {runner.action_load} active
                   </div>
-                  <.status_badge status={derived_status(runner)} class="shrink-0" />
+                  <.status_badge status={state} class="shrink-0" />
                 </div>
               </.link>
             </li>
@@ -227,17 +228,6 @@ defmodule EmisarWeb.RunnersLive do
       {^group, n} -> n
       _ -> nil
     end)
-  end
-
-  # Map the presence-derived connection state onto the status-badge /
-  # connection-dot vocabulary the components already speak.
-  defp derived_status(runner) do
-    case Runners.connection_state(runner) do
-      :online -> "connected"
-      :offline -> "disconnected"
-      :disabled -> "disabled"
-      :pending -> "pending"
-    end
   end
 
   attr :status, :string, required: true
