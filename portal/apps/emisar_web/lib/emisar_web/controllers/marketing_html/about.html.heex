@@ -9,9 +9,9 @@
   <section class="py-24 sm:py-32">
     <div class="mx-auto max-w-4xl px-6 lg:px-8">
       <p class="text-base font-semibold text-indigo-400">About</p>
-      <h1 class="mt-2 text-6xl font-bold tracking-tight text-zinc-50 md:text-7xl">
+      <.marketing_heading tag="h1" scale={:display} class="mt-2">
         LLMs are useful.<br />Production isn't a playground.
-      </h1>
+      </.marketing_heading>
       <p class="mt-8 max-w-2xl text-lg leading-8 text-zinc-400">
         We're building the boring, defensible layer that lets AI agents help operate real
         infrastructure — without becoming the next 3 a.m. incident.
@@ -126,20 +126,15 @@
   <section class="py-24 sm:py-32">
     <div class="mx-auto max-w-4xl px-6 lg:px-8">
       <div class="rounded-2xl border border-indigo-500/30 bg-zinc-950 p-12 text-center sm:p-16">
-        <h2 class="text-4xl font-bold tracking-tight text-zinc-50 sm:text-5xl">
+        <.marketing_heading tag="h2" scale={:section}>
           Free forever for 3 runners.
-        </h2>
+        </.marketing_heading>
         <p class="mx-auto mt-6 max-w-xl text-lg leading-8 text-zinc-400">
           Install on one host, point your LLM at it, see exactly what it tried to do — before
           you decide whether to keep it.
         </p>
         <div class="mt-10 flex items-center justify-center gap-6">
-          <.link
-            href={~p"/sign_up"}
-            class="rounded-lg bg-indigo-500 px-6 py-3 text-sm font-semibold text-zinc-950 hover:bg-indigo-400"
-          >
-            Get started
-          </.link>
+          <.marketing_button href={~p"/sign_up"} size={:lg}>Get started</.marketing_button>
           <.link
             href={~p"/docs"}
             class="text-sm font-semibold text-zinc-100 hover:text-indigo-300"

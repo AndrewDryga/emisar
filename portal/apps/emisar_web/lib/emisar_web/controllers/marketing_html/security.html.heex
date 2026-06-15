@@ -9,9 +9,9 @@
   <section class="py-24 sm:py-32">
     <div class="mx-auto max-w-4xl px-6 lg:px-8">
       <p class="text-base font-semibold text-indigo-400">Security &amp; compliance</p>
-      <h1 class="mt-2 text-6xl font-bold tracking-tight text-zinc-50 md:text-7xl">
+      <.marketing_heading tag="h1" scale={:display} class="mt-2">
         Built so your security team says yes.
-      </h1>
+      </.marketing_heading>
       <p class="mt-8 max-w-2xl text-lg leading-8 text-zinc-400">
         emisar exists because giving an LLM raw shell access is reckless. Every layer here
         is designed so the LLM is the least-privileged participant in the system — and
@@ -217,9 +217,9 @@
   <section class="py-24 sm:py-32">
     <div class="mx-auto max-w-4xl px-6 lg:px-8">
       <p class="text-base font-semibold text-indigo-400">Independent standard</p>
-      <h2 class="mt-2 text-4xl font-bold tracking-tight text-zinc-50 sm:text-5xl">
+      <.marketing_heading tag="h2" scale={:section} class="mt-2">
         Built for &ldquo;assume breach.&rdquo;
-      </h2>
+      </.marketing_heading>
       <p class="mt-6 text-lg leading-8 text-zinc-400">
         Anthropic — the lab behind Claude — published <a
           href="https://cdn.prod.website-files.com/6889473510b50328dbb70ae6/6a1611a04085d7cd3dadc924_Claude-eBook-Zero-Trust-for-AI-Agents-05182026.pdf"
@@ -275,14 +275,14 @@
           >SECURITY.md</a>.
         </p>
         <div class="mt-8 flex items-center gap-6">
-          <a
+          <.marketing_button
+            external
             href="https://github.com/andrewdryga/emisar/blob/main/.github/SECURITY.md"
-            target="_blank"
-            rel="noopener noreferrer"
-            class="inline-flex items-center gap-1.5 rounded-lg bg-indigo-500 px-6 py-3 text-sm font-semibold text-zinc-950 hover:bg-indigo-400"
+            size={:lg}
+            icon="hero-arrow-top-right-on-square"
           >
-            Read SECURITY.md <.icon name="hero-arrow-top-right-on-square" class="h-4 w-4" />
-          </a>
+            Read SECURITY.md
+          </.marketing_button>
           <a
             href="mailto:security@emisar.dev"
             class="text-sm font-semibold text-zinc-100 hover:text-indigo-300"

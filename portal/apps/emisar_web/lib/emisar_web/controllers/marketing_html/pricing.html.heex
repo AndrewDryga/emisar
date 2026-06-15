@@ -9,9 +9,9 @@
   <section class="py-24 sm:py-32">
     <div class="mx-auto max-w-7xl px-6 lg:px-8">
       <div class="mx-auto max-w-3xl text-center">
-        <h1 class="text-6xl font-bold tracking-tight text-zinc-50 md:text-7xl">
+        <.marketing_heading tag="h1" scale={:display}>
           Pricing
-        </h1>
+        </.marketing_heading>
         <p class="mt-6 text-lg leading-8 text-zinc-400">
           Per-runner, not per-seat. Free covers one user and three runners;
           Team and Enterprise include unlimited users.
@@ -28,12 +28,15 @@
             <span class="text-5xl font-bold tracking-tight text-zinc-50">$0</span>
             <span class="text-sm font-semibold text-zinc-400">/ forever</span>
           </p>
-          <.link
+          <.marketing_button
+            variant={:secondary}
             href={~p"/sign_up"}
-            class="mt-8 block rounded-lg border border-zinc-800 px-6 py-3 text-center text-sm font-semibold text-zinc-100 hover:border-indigo-500 hover:text-indigo-300"
+            size={:lg}
+            block
+            class="mt-8"
           >
             Start free
-          </.link>
+          </.marketing_button>
           <ul class="mt-8 space-y-3 text-sm text-zinc-300">
             <li class="flex items-start gap-3">
               <.icon name="hero-check" class="mt-0.5 h-5 w-5 flex-none text-zinc-500" /> 3 runners
@@ -67,12 +70,9 @@
             <span class="text-5xl font-bold tracking-tight text-zinc-50">$20</span>
             <span class="text-sm font-semibold text-zinc-400">/ runner / mo</span>
           </p>
-          <.link
-            href={~p"/sign_up"}
-            class="mt-8 block rounded-lg bg-indigo-500 px-6 py-3 text-center text-sm font-semibold text-zinc-950 hover:bg-indigo-400"
-          >
+          <.marketing_button href={~p"/sign_up"} size={:lg} block class="mt-8">
             Start free
-          </.link>
+          </.marketing_button>
           <ul class="mt-8 space-y-3 text-sm text-zinc-300">
             <li class="flex items-start gap-3">
               <.icon name="hero-check" class="mt-0.5 h-5 w-5 flex-none text-indigo-400" />
@@ -104,12 +104,15 @@
           <p class="mt-6 flex items-baseline gap-x-1">
             <span class="text-5xl font-bold tracking-tight text-zinc-50">Custom</span>
           </p>
-          <a
+          <.marketing_button
+            variant={:secondary}
             href="mailto:sales@emisar.dev"
-            class="mt-8 block rounded-lg border border-zinc-800 px-6 py-3 text-center text-sm font-semibold text-zinc-100 hover:border-indigo-500 hover:text-indigo-300"
+            size={:lg}
+            block
+            class="mt-8"
           >
             Talk to sales
-          </a>
+          </.marketing_button>
           <ul class="mt-8 space-y-3 text-sm text-zinc-300">
             <li class="flex items-start gap-3">
               <.icon name="hero-check" class="mt-0.5 h-5 w-5 flex-none text-zinc-500" />
@@ -190,9 +193,9 @@
   <section class="border-y border-zinc-900 bg-zinc-950/40 py-24 sm:py-32">
     <div class="mx-auto max-w-7xl px-6 lg:px-8">
       <div class="mx-auto max-w-3xl text-center">
-        <h2 class="text-4xl font-bold tracking-tight text-zinc-50 sm:text-5xl">
+        <.marketing_heading tag="h2" scale={:section}>
           Compare plans
-        </h2>
+        </.marketing_heading>
       </div>
       <div class="mx-auto mt-12 max-w-5xl overflow-x-auto rounded-2xl border border-zinc-900">
         <table class="w-full min-w-[720px] divide-y divide-zinc-900 text-sm">
@@ -294,9 +297,9 @@
   <%!-- FAQ --%>
   <section class="py-24 sm:py-32">
     <div class="mx-auto max-w-4xl px-6 lg:px-8">
-      <h2 class="text-4xl font-bold tracking-tight text-zinc-50 sm:text-5xl">
+      <.marketing_heading tag="h2" scale={:section}>
         Frequently asked questions
-      </h2>
+      </.marketing_heading>
       <div class="mt-12 divide-y divide-zinc-900 rounded-2xl border border-zinc-900 bg-zinc-950/60">
         <%= for {q, a} <- @faqs do %>
           <details class="group">

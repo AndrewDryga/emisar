@@ -55,6 +55,28 @@ defmodule EmisarWeb.MarketingTest do
     end
   end
 
+  test "shared CTA button + heading scale render on representative pages", %{conn: conn} do
+    # Hero: the home title uses the larger :display scale; a docs page uses
+    # the standard :hero scale. Both are a single <h1> with the documented
+    # size class — the scale standardizes sizing without touching the tag.
+    home = conn |> get(~p"/") |> html_response(200)
+    assert home =~ ~s(<h1 class="font-bold tracking-tight text-zinc-50 text-6xl md:text-7xl")
+
+    docs = conn |> get(~p"/docs/quickstart") |> html_response(200)
+    assert docs =~ ~s(<h1 class="font-bold tracking-tight text-zinc-50 text-4xl md:text-5xl)
+
+    # The pricing tier buttons route through the one marketing-CTA component:
+    # full-width pills, primary (Team) and secondary (Free/Enterprise).
+    pricing = conn |> get(~p"/pricing") |> html_response(200)
+    assert pricing =~ "bg-indigo-500 text-zinc-950 hover:bg-indigo-400"
+    assert pricing =~ "ring-1 ring-zinc-800 hover:ring-zinc-700"
+
+    # The outbound CTA (Open an issue) keeps its safe-rel pair after routing
+    # through the component's external branch.
+    docs_index = conn |> get(~p"/docs") |> html_response(200)
+    assert docs_index =~ ~s(rel="noopener noreferrer")
+  end
+
   test "landing page mentions the positioning", %{conn: conn} do
     html = conn |> get(~p"/") |> html_response(200)
     assert html =~ "emisar"

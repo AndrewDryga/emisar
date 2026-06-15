@@ -3053,6 +3053,113 @@ defmodule EmisarWeb.CoreComponents do
   end
 
   @doc """
+  The one call-to-action button for the marketing site — every "Start free",
+  "Get started", "Talk to sales", "Read the docs"-style button routes through
+  here so they stay visually identical across the 27 pages. The in-app
+  `<.button>` is a separate visual world; marketing buttons live here.
+
+  Renders an `<.link>` when given `href`/`navigate` in `:rest`, otherwise a
+  `<button>` (so it works for the sign-up form's submit). Pass `external` for
+  an outbound link (adds `target="_blank"` + the `noopener noreferrer` rel),
+  and `icon` for a trailing heroicon (the conventional right-arrow affordance).
+
+      <.marketing_button navigate={~p"/sign_up"} icon="hero-arrow-right">Start free</.marketing_button>
+      <.marketing_button variant={:secondary} navigate={~p"/docs"}>Read the docs</.marketing_button>
+      <.marketing_button external href="https://github.com/...">Read the source</.marketing_button>
+  """
+  attr :variant, :atom, default: :primary, values: [:primary, :secondary]
+  attr :size, :atom, default: :md, values: [:sm, :md, :lg]
+  attr :block, :boolean, default: false, doc: "full-width (pricing-card buttons)"
+  attr :external, :boolean, default: false, doc: "outbound link — opens a new, isolated tab"
+  attr :icon, :string, default: nil, doc: ~s(trailing heroicon, e.g. "hero-arrow-right")
+  attr :type, :string, default: nil, doc: ~s(button type when rendering a <button>, e.g. "submit")
+  attr :class, :string, default: nil
+  attr :rest, :global, include: ~w(href navigate patch form name value)
+  slot :inner_block, required: true
+
+  def marketing_button(%{external: true} = assigns) do
+    ~H"""
+    <.link
+      target="_blank"
+      rel="noopener noreferrer"
+      class={marketing_button_class(@variant, @size, @block, @class)}
+      {@rest}
+    >
+      {render_slot(@inner_block)}<.icon :if={@icon} name={@icon} class="h-4 w-4" />
+    </.link>
+    """
+  end
+
+  def marketing_button(%{rest: rest} = assigns)
+      when is_map_key(rest, :href) or is_map_key(rest, :navigate) or is_map_key(rest, :patch) do
+    ~H"""
+    <.link class={marketing_button_class(@variant, @size, @block, @class)} {@rest}>
+      {render_slot(@inner_block)}<.icon :if={@icon} name={@icon} class="h-4 w-4" />
+    </.link>
+    """
+  end
+
+  def marketing_button(assigns) do
+    ~H"""
+    <button type={@type} class={marketing_button_class(@variant, @size, @block, @class)} {@rest}>
+      {render_slot(@inner_block)}<.icon :if={@icon} name={@icon} class="h-4 w-4" />
+    </button>
+    """
+  end
+
+  # Base: inline flex + gap so a trailing icon sits tight, rounded-lg pill,
+  # one type ramp. `block` makes it a full-width card button (pricing tiers).
+  defp marketing_button_class(variant, size, block, extra) do
+    [
+      if(block, do: "flex w-full", else: "inline-flex"),
+      "items-center justify-center gap-2 whitespace-nowrap rounded-lg text-sm font-semibold transition",
+      marketing_button_size(size),
+      marketing_button_variant(variant),
+      extra
+    ]
+  end
+
+  defp marketing_button_size(:sm), do: "px-4 py-2"
+  defp marketing_button_size(:md), do: "px-5 py-2.5"
+  defp marketing_button_size(:lg), do: "px-6 py-3"
+
+  defp marketing_button_variant(:primary), do: "bg-indigo-500 text-zinc-950 hover:bg-indigo-400"
+
+  defp marketing_button_variant(:secondary),
+    do: "bg-transparent text-zinc-100 ring-1 ring-zinc-800 hover:ring-zinc-700"
+
+  @doc """
+  Heading for marketing pages — the type scale lives here so headings at the
+  same level look the same across pages. Pass `tag` (the semantic level, kept
+  as-is per page — this never changes the HTML hierarchy) and `scale` (the
+  visual size). `:hero` is the standard page title; `:display` is the larger
+  top-level-landing title (home, pricing, security, about, docs index).
+
+      <.marketing_heading tag="h1" scale={:hero}>Quickstart</.marketing_heading>
+      <.marketing_heading tag="h1" scale={:display} class="mt-2">Pricing</.marketing_heading>
+  """
+  attr :tag, :string, required: true, values: ~w(h1 h2 h3)
+  attr :scale, :atom, default: :hero, values: [:display, :hero, :section]
+  attr :class, :string, default: nil
+  slot :inner_block, required: true
+
+  def marketing_heading(assigns) do
+    ~H"""
+    <.dynamic_tag
+      tag_name={@tag}
+      class={["font-bold tracking-tight text-zinc-50", marketing_heading_scale(@scale), @class]}
+    >
+      {render_slot(@inner_block)}
+    </.dynamic_tag>
+    """
+  end
+
+  defp marketing_heading_scale(:display), do: "text-6xl md:text-7xl"
+  defp marketing_heading_scale(:hero), do: "text-4xl md:text-5xl"
+  # Big centered section header (CTA blocks, "How it works" section tops).
+  defp marketing_heading_scale(:section), do: "text-4xl sm:text-5xl"
+
+  @doc """
   Conversion CTA for the foot of a marketing page — a convinced reader gets
   one obvious next step. The primary action is always "Start free"; pass a
   contextual secondary (`secondary_label` + `secondary_path`, the latter a
@@ -3072,18 +3179,12 @@ defmodule EmisarWeb.CoreComponents do
           <h2 class="text-2xl font-bold tracking-tight text-white sm:text-3xl">{@headline}</h2>
           <p class="mx-auto mt-3 max-w-xl text-sm leading-6 text-zinc-400">{@subcopy}</p>
           <div class="mt-7 flex flex-col items-center justify-center gap-3 sm:flex-row">
-            <.link
-              href={~p"/sign_up"}
-              class="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-indigo-500 px-5 py-2.5 text-sm font-semibold text-zinc-950 hover:bg-indigo-400 sm:w-auto"
-            >
-              Start free <.icon name="hero-arrow-right" class="h-4 w-4" />
-            </.link>
-            <.link
-              href={@secondary_path}
-              class="inline-flex w-full items-center justify-center gap-2 rounded-lg px-5 py-2.5 text-sm font-semibold text-zinc-100 ring-1 ring-zinc-800 hover:ring-zinc-700 sm:w-auto"
-            >
+            <.marketing_button href={~p"/sign_up"} icon="hero-arrow-right" class="w-full sm:w-auto">
+              Start free
+            </.marketing_button>
+            <.marketing_button variant={:secondary} href={@secondary_path} class="w-full sm:w-auto">
               {@secondary_label}
-            </.link>
+            </.marketing_button>
           </div>
           <p class="mt-4 text-xs text-zinc-500">{@note}</p>
         </div>

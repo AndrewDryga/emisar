@@ -9,9 +9,9 @@
   <section class="py-16 sm:py-20">
     <div class="mx-auto max-w-4xl px-6 lg:px-8">
       <p class="text-sm font-semibold text-indigo-400">Registry</p>
-      <h1 class="mt-2 text-4xl font-bold tracking-tight text-zinc-50 md:text-5xl">
+      <.marketing_heading tag="h1" scale={:hero} class="mt-2">
         Action packs
-      </h1>
+      </.marketing_heading>
       <p class="mt-6 text-lg leading-8 text-zinc-400">
         Packs are versioned bundles of YAML-declared actions a runner advertises to the
         cloud. Drop one into <code class="rounded bg-zinc-900 px-1 py-0.5 text-sm">/etc/emisar/packs</code>,
@@ -100,18 +100,12 @@
           yourself; the schema reference and the curated-registry bar live in the docs.
         </p>
         <div class="mt-5 flex items-center justify-center gap-3">
-          <.link
-            navigate={~p"/docs/publishing-packs"}
-            class="rounded-lg bg-indigo-500 px-4 py-2 text-sm font-semibold text-zinc-950 hover:bg-indigo-400"
-          >
+          <.marketing_button navigate={~p"/docs/publishing-packs"} size={:sm}>
             Authoring guide
-          </.link>
-          <.link
-            navigate={~p"/docs/action-packs"}
-            class="rounded-lg border border-zinc-800 px-4 py-2 text-sm font-medium text-zinc-200 hover:bg-zinc-900"
-          >
+          </.marketing_button>
+          <.marketing_button variant={:secondary} navigate={~p"/docs/action-packs"} size={:sm}>
             YAML reference
-          </.link>
+          </.marketing_button>
         </div>
       </div>
     </div>

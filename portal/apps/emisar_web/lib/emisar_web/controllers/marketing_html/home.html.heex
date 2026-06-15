@@ -21,27 +21,21 @@
           </span>
           Public beta
         </p>
-        <h1 class="text-5xl font-bold tracking-tight text-white sm:text-7xl">
+        <.marketing_heading tag="h1" scale={:display}>
           Give AI tools approved infrastructure actions, not SSH.
-        </h1>
+        </.marketing_heading>
         <p class="mx-auto mt-8 max-w-2xl text-lg leading-relaxed text-zinc-300">
           Connect Claude, ChatGPT, Cursor, or any MCP client to a finite action catalog,
           enforced on-host with pack trust, policy gates, human approvals, a searchable audit
           trail, and a hash-chained runner journal.
         </p>
         <div class="mt-10 flex flex-wrap items-center justify-center gap-4">
-          <.link
-            href={~p"/sign_up"}
-            class="inline-flex items-center gap-2 whitespace-nowrap rounded-lg bg-indigo-500 px-5 py-2.5 text-sm font-semibold text-zinc-950 hover:bg-indigo-400"
-          >
-            Start free <.icon name="hero-arrow-right" class="h-4 w-4" />
-          </.link>
-          <.link
-            href={~p"/docs/quickstart"}
-            class="inline-flex items-center gap-2 whitespace-nowrap rounded-lg bg-transparent px-5 py-2.5 text-sm font-semibold text-zinc-100 ring-1 ring-zinc-800 hover:ring-zinc-700"
-          >
+          <.marketing_button href={~p"/sign_up"} icon="hero-arrow-right">
+            Start free
+          </.marketing_button>
+          <.marketing_button variant={:secondary} href={~p"/docs/quickstart"}>
             Run the quickstart
-          </.link>
+          </.marketing_button>
         </div>
         <p class="mt-6 text-xs text-zinc-400">
           Free for 3 runners &middot; No credit card &middot;
@@ -705,12 +699,9 @@
       </div>
 
       <div class="mt-12 flex justify-center">
-        <.link
-          href={~p"/pricing"}
-          class="inline-flex items-center gap-2 rounded-lg bg-transparent px-5 py-2.5 text-sm font-semibold text-zinc-100 ring-1 ring-zinc-800 hover:ring-zinc-700"
-        >
-          Compare all plans <.icon name="hero-arrow-right" class="h-4 w-4" />
-        </.link>
+        <.marketing_button variant={:secondary} href={~p"/pricing"} icon="hero-arrow-right">
+          Compare all plans
+        </.marketing_button>
       </div>
     </div>
   </section>
@@ -745,9 +736,9 @@
     <div class="mx-auto max-w-5xl px-6 lg:px-8">
       <div class="overflow-hidden rounded-lg border border-indigo-500/30 bg-zinc-950 p-12 sm:p-16">
         <div class="text-center">
-          <h2 class="text-4xl font-bold tracking-tight text-white sm:text-5xl">
+          <.marketing_heading tag="h2" scale={:section}>
             Sleep tonight. Sign up free.
-          </h2>
+          </.marketing_heading>
           <p class="mx-auto mt-6 max-w-xl text-lg text-zinc-400 leading-relaxed">
             Three runners. Seven-day audit. No credit card. Read the quickstart and
             ship your first policy-gated LLM action.
@@ -765,12 +756,9 @@
               placeholder="you@company.com"
               class="w-full rounded-lg border-0 bg-zinc-900/80 px-4 py-2.5 text-sm text-white ring-1 ring-zinc-800 placeholder:text-zinc-500 focus:ring-2 focus:ring-indigo-500"
             />
-            <button
-              type="submit"
-              class="inline-flex w-full items-center justify-center gap-2 whitespace-nowrap rounded-lg bg-indigo-500 px-5 py-2.5 text-sm font-semibold text-zinc-950 hover:bg-indigo-400 sm:w-auto"
-            >
-              Start free <.icon name="hero-arrow-right" class="h-4 w-4" />
-            </button>
+            <.marketing_button type="submit" icon="hero-arrow-right" class="w-full sm:w-auto">
+              Start free
+            </.marketing_button>
           </form>
           <p class="mt-4 text-xs text-zinc-400">
             No credit card. Cancel anytime. Your audit log is yours to export.

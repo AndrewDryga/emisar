@@ -12,9 +12,9 @@
   <section class="py-24 sm:py-32">
     <div class="mx-auto max-w-4xl px-6 lg:px-8">
       <p class="text-base font-semibold text-indigo-400">Zero Trust for AI Agents</p>
-      <h1 class="mt-2 text-5xl font-bold tracking-tight text-zinc-50 md:text-6xl">
+      <.marketing_heading tag="h1" scale={:display} class="mt-2">
         Anthropic wrote the framework. emisar enforces it.
-      </h1>
+      </.marketing_heading>
       <p class="mt-8 max-w-2xl text-lg leading-8 text-zinc-400">
         The lab behind Claude published
         <a
@@ -208,12 +208,13 @@
         volume and wiped 33 hours of metrics, contained on a single approval.
       </p>
       <div class="mt-8">
-        <.link
+        <.marketing_button
           navigate={~p"/use-cases/csi-data-loss"}
-          class="inline-flex items-center gap-1.5 rounded-lg bg-indigo-500 px-6 py-3 text-sm font-semibold text-zinc-950 hover:bg-indigo-400"
+          size={:lg}
+          icon="hero-arrow-right"
         >
-          Read the case study <.icon name="hero-arrow-right" class="h-4 w-4" />
-        </.link>
+          Read the case study
+        </.marketing_button>
       </div>
     </div>
   </section>

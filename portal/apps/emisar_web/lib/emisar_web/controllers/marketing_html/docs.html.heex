@@ -9,9 +9,9 @@
   <section class="py-24 sm:py-32">
     <div class="mx-auto max-w-4xl px-6 lg:px-8">
       <p class="text-base font-semibold text-indigo-400">Documentation</p>
-      <h1 class="mt-2 text-6xl font-bold tracking-tight text-zinc-50 md:text-7xl">
+      <.marketing_heading tag="h1" scale={:display} class="mt-2">
         Docs
-      </h1>
+      </.marketing_heading>
       <p class="mt-8 max-w-2xl text-lg leading-8 text-zinc-400">
         Install a runner, author packs, wire in an LLM. The full reference and example packs
         live in the <.external_link href="https://github.com/andrewdryga/emisar">GitHub repo</.external_link>.
@@ -143,21 +143,21 @@
   <%!-- Help CTA --%>
   <section class="border-t border-zinc-900 py-24 sm:py-32">
     <div class="mx-auto max-w-4xl px-6 text-center lg:px-8">
-      <h2 class="text-4xl font-bold tracking-tight text-zinc-50 sm:text-5xl">
+      <.marketing_heading tag="h2" scale={:section}>
         Stuck on something?
-      </h2>
+      </.marketing_heading>
       <p class="mx-auto mt-6 max-w-xl text-lg leading-8 text-zinc-400">
         Open an issue on GitHub or email us. We answer fast.
       </p>
       <div class="mt-10 flex items-center justify-center gap-6">
-        <a
+        <.marketing_button
+          external
           href="https://github.com/andrewdryga/emisar/issues"
-          target="_blank"
-          rel="noopener noreferrer"
-          class="inline-flex items-center gap-1.5 rounded-lg bg-indigo-500 px-6 py-3 text-sm font-semibold text-zinc-950 hover:bg-indigo-400"
+          size={:lg}
+          icon="hero-arrow-top-right-on-square"
         >
-          Open an issue <.icon name="hero-arrow-top-right-on-square" class="h-4 w-4" />
-        </a>
+          Open an issue
+        </.marketing_button>
         <a
           href="mailto:support@emisar.dev"
           class="text-sm font-semibold text-zinc-100 hover:text-indigo-300"
