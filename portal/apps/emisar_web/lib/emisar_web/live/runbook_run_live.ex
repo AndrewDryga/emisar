@@ -453,6 +453,17 @@ defmodule EmisarWeb.RunbookRunLive do
     end
   end
 
+  # True while a dispatched run is still in flight — finished_count hasn't caught
+  # up to the planned total and the engine hasn't halted between waves. Drives
+  # hiding the dispatch/re-run form mid-run (no double-dispatch); flips false once
+  # the run completes or halts, so the form returns as the re-run form.
+  defp run_in_progress?(nil, _run_statuses), do: false
+
+  defp run_in_progress?(execution, run_statuses) do
+    finished_count(run_statuses) < execution.total and
+      halted_count(run_statuses, execution.total) == 0
+  end
+
   # "denied" never reaches a terminal transition but is as settled as a
   # run gets — count it alongside the terminal states.
   defp run_settled?(status), do: Runs.ActionRun.terminal?(status) or status == :denied
@@ -732,9 +743,11 @@ defmodule EmisarWeb.RunbookRunLive do
           </div>
         </section>
 
-        <%!-- Dispatch form — full width below the plan. Targets come from
-             the steps now, so this is just the reason + start button. --%>
-        <.panel title="Dispatch">
+        <%!-- Dispatch form — full width below the plan; doubles as the re-run
+             form once a run settles. Hidden while a run is IN PROGRESS so a
+             stray submit can't double-dispatch mid-run (a "running" note takes
+             its place); it returns when every run finishes or the run halts. --%>
+        <.panel :if={not run_in_progress?(@execution, @run_statuses)} title="Dispatch">
           <form phx-change="validate" phx-submit="dispatch" class="space-y-4">
             <div>
               <%!-- Non-FormField field: `reason` posts a top-level key and its
@@ -767,6 +780,15 @@ defmodule EmisarWeb.RunbookRunLive do
               Start runbook
             </.button>
           </form>
+        </.panel>
+
+        <%!-- Stands in for the dispatch form while a run is in progress, so the
+             form's absence reads as intentional rather than missing. --%>
+        <.panel :if={run_in_progress?(@execution, @run_statuses)} title="Dispatch">
+          <p class="flex items-center gap-2 text-sm text-zinc-400">
+            <.icon name="hero-arrow-path" class="h-4 w-4 flex-none animate-spin text-indigo-400" />
+            Runbook is running — you can start another run once it finishes.
+          </p>
         </.panel>
       </div>
     </.dashboard_shell>

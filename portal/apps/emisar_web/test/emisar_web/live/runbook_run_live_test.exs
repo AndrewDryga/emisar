@@ -240,7 +240,8 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       assert html =~ ~p"/app/runs/"
     end
 
-    test "re-dispatch confirms once an execution is already showing", %{conn: conn} do
+    test "the dispatch form is hidden while a run is in progress (no double-dispatch mid-run)",
+         %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
       runner = Emisar.Fixtures.runner_fixture(account_id: account.id)
       Emisar.Fixtures.action_fixture(runner: runner, action_id: "linux.uptime")
@@ -248,12 +249,16 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       runbook = published_runbook!(user, account)
 
       {:ok, lv, idle} = live(conn, ~p"/app/runbooks/#{runbook.id}/run")
-      # No confirm before any run — a first Start shouldn't nag.
+      # Idle: the dispatch form is shown, and a first Start doesn't nag with a confirm.
+      assert idle =~ "Start runbook"
       refute idle =~ "start a new one and replace it"
 
+      # Once dispatched, a run is in progress → the form is hidden so a stray
+      # submit can't double-dispatch mid-run; a "running" note stands in its place.
+      # (It returns as the re-run form — with the replace-confirm — once runs settle.)
       html = render_submit(lv, "dispatch", %{"reason" => "go"})
-      # An execution is now streaming, so re-Start guards against wiping it.
-      assert html =~ "start a new one and replace it"
+      assert html =~ "Runbook is running"
+      refute html =~ "Start runbook"
     end
 
     test "the plan surfaces each step's action risk before dispatch", %{conn: conn} do
