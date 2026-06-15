@@ -1066,18 +1066,22 @@ defmodule EmisarWeb.CoreComponents do
 
   def summary_stat(assigns) do
     ~H"""
-    <div class="flex items-baseline gap-1.5">
-      <span class={["font-semibold tabular-nums", summary_value_class(@tone)]}>{@value}</span>
+    <div class="flex items-center gap-1.5">
+      <span class={["h-1.5 w-1.5 shrink-0 rounded-full", summary_dot_class(@tone)]} aria-hidden="true">
+      </span>
+      <span class="tabular-nums text-zinc-100">{@value}</span>
       <span class="text-zinc-400">{@label}</span>
       <span :if={@hint} class="text-xs text-zinc-600">({@hint})</span>
     </div>
     """
   end
 
-  defp summary_value_class(:emerald), do: "text-emerald-300"
-  defp summary_value_class(:amber), do: "text-amber-300"
-  defp summary_value_class(:rose), do: "text-rose-300"
-  defp summary_value_class(:zinc), do: "text-zinc-300"
+  # The status colour lives on the dot, not the number — the count itself reads
+  # neutral so the strip stays a quiet at-a-glance band.
+  defp summary_dot_class(:emerald), do: "bg-emerald-400"
+  defp summary_dot_class(:amber), do: "bg-amber-400"
+  defp summary_dot_class(:rose), do: "bg-rose-400"
+  defp summary_dot_class(:zinc), do: "bg-zinc-600"
 
   @doc "Coloured pill for run/runner status — takes a string or an Ecto.Enum atom."
   attr :status, :any, required: true
