@@ -1,2 +1,8 @@
-elixir 1.20.0-otp-29
+# asdf toolchain for emisar — `asdf install` from the repo root provisions the dev
+# environment for all three languages. erlang + elixir match CI exactly
+# (.github/workflows/portal-ci.yml: 29.0.1 / 1.20.0). golang: the go.work + both
+# go.mod floor is 1.26.3 (runner/ + mcp/); 1.26.4 is the latest compatible patch.
+# Go has no asdf plugin by default — run `asdf plugin add golang` once, then install.
 erlang 29.0.1
+elixir 1.20.0-otp-29
+golang 1.26.4
