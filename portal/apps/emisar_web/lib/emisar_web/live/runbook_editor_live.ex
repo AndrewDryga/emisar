@@ -417,13 +417,14 @@ defmodule EmisarWeb.RunbookEditorLive do
       section={:runbooks}
     >
       <:title>
-        <.back_link navigate={~p"/app/runbooks"}>Runbooks</.back_link>
-        <%= if @runbook do %>
-          Edit runbook <span class="font-mono text-base text-zinc-400">{@runbook.slug}</span>
-          <span class="ml-2 text-sm font-normal text-zinc-500">v{@runbook.version}</span>
-        <% else %>
-          New runbook
-        <% end %>
+        <.detail_header back="Runbooks" navigate={~p"/app/runbooks"}>
+          <%= if @runbook do %>
+            Edit runbook <span class="font-mono text-base text-zinc-400">{@runbook.slug}</span>
+            <span class="ml-2 text-sm font-normal text-zinc-500">v{@runbook.version}</span>
+          <% else %>
+            New runbook
+          <% end %>
+        </.detail_header>
       </:title>
       <:actions>
         <.button variant="secondary" size="md" navigate={~p"/app/runbooks"}>Cancel</.button>

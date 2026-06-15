@@ -311,14 +311,14 @@ defmodule EmisarWeb.PacksLive do
     >
       <:title>Packs</:title>
 
-      <p class="mt-2 max-w-2xl text-sm text-zinc-400">
+      <.page_intro>
         Each <em>(pack, version)</em>
         has a pinned trusted hash. Runners advertising the same
         contents match the pin; a different hash flips the pack into
         <strong class="text-amber-300">pending</strong>
         — dispatch refuses runs against it until
         you Trust (adopt the new contents) or Reject (keep the pinned hash).
-      </p>
+      </.page_intro>
 
       <div
         :if={@pending_count > 0}

@@ -64,14 +64,18 @@ defmodule EmisarWeb.AuditDetailLive do
       section={:audit}
     >
       <:title>
-        <.back_link navigate={~p"/app/audit"}>Audit log</.back_link>
-        <span
-          class={["mr-2 inline-block h-2 w-2 rounded-full align-middle", tone_dot(@event.event_type)]}
-          aria-hidden="true"
-        >
-        </span>
-        <span class="font-semibold">{format_event_type(@event.event_type)}</span>
-        <span class="ml-2 font-mono text-xs font-normal text-zinc-500">{@event.event_type}</span>
+        <.detail_header back="Audit log" navigate={~p"/app/audit"}>
+          <span
+            class={[
+              "mr-2 inline-block h-2 w-2 rounded-full align-middle",
+              tone_dot(@event.event_type)
+            ]}
+            aria-hidden="true"
+          >
+          </span>
+          <span class="font-semibold">{format_event_type(@event.event_type)}</span>
+          <span class="ml-2 font-mono text-xs font-normal text-zinc-500">{@event.event_type}</span>
+        </.detail_header>
       </:title>
       <% posture = parse_client_posture(@event.user_agent) %>
 

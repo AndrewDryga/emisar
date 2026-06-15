@@ -110,11 +110,12 @@ defmodule EmisarWeb.RunDetailLive do
       section={:runs}
     >
       <:title>
-        <.back_link navigate={~p"/app/runs"}>Runs</.back_link>
-        <span class="font-mono text-base">{@run.action_id}</span>
-        <span :if={@run.runner} class="ml-2 text-sm font-normal text-zinc-400">
-          on {runner_label(@run.runner)}
-        </span>
+        <.detail_header back="Runs" navigate={~p"/app/runs"}>
+          <span class="font-mono text-base">{@run.action_id}</span>
+          <span :if={@run.runner} class="ml-2 text-sm font-normal text-zinc-400">
+            on {runner_label(@run.runner)}
+          </span>
+        </.detail_header>
       </:title>
       <:actions>
         <.button

@@ -1500,6 +1500,45 @@ defmodule EmisarWeb.CoreComponents do
   end
 
   @doc """
+  The intro line that sits directly under an index page's title — one place so
+  every list page opens the same way (a `<.dashboard_shell>` `:title` carries
+  the page name; this carries the explanation under it). The default slot is the
+  subtitle (a readable-width lead paragraph); `:actions` right-aligns alongside
+  it; `:help` renders a longer "how it works" card below, for pages that need to
+  teach the model before the list (Policy). Pass whichever slots the page needs.
+
+      <.page_intro>
+        Each <em>(pack, version)</em> has a pinned trusted hash…
+      </.page_intro>
+
+      <.page_intro>
+        <:help>
+          Every action has a <strong>risk tier</strong> from the catalog…
+        </:help>
+      </.page_intro>
+  """
+  attr :class, :string, default: nil
+  slot :inner_block, doc: "the subtitle lead line (rich inline markup allowed)"
+  slot :actions, doc: "right-aligned buttons beside the subtitle"
+  slot :help, doc: "a longer how-it-works body, rendered in a card below"
+
+  def page_intro(assigns) do
+    ~H"""
+    <div :if={@inner_block != [] or @actions != [] or @help != []} class={["space-y-4", @class]}>
+      <div :if={@inner_block != [] or @actions != []} class="flex items-start justify-between gap-4">
+        <p :if={@inner_block != []} class="max-w-2xl text-sm leading-relaxed text-zinc-400">
+          {render_slot(@inner_block)}
+        </p>
+        <div :if={@actions != []} class="shrink-0">{render_slot(@actions)}</div>
+      </div>
+      <.panel :if={@help != []} title="How this works">
+        <p class="text-sm leading-relaxed text-zinc-400">{render_slot(@help)}</p>
+      </.panel>
+    </div>
+    """
+  end
+
+  @doc """
   The bare heading-row above an UNbordered list/table section (distinct from
   `<.panel>`, which owns a bordered header). A `text-sm` section title, an
   optional inline `<.count_badge>`, and an optional `:actions` slot.
@@ -1772,6 +1811,34 @@ defmodule EmisarWeb.CoreComponents do
       </.link>
       <span class="mx-2 text-zinc-700" aria-hidden="true">/</span>
     </span>
+    """
+  end
+
+  @doc """
+  The title block for a title-less detail page (run, approval, runner, audit,
+  runbook editor) — a `<.back_link>` breadcrumb to the parent list followed by
+  the entity heading. Goes in the `<.dashboard_shell>` `:title` slot, so every
+  detail page opens with the same "where am I / what is this" shape and one
+  place owns the breadcrumb + heading spacing. The heading markup is the default
+  slot, so each page keeps its own (mono id, status dot, version suffix, …).
+
+  The horizontal `<.meta_strip>` stays a sibling in the page body — it lives in
+  a different region (the scrolling `<main>`, not the sticky title bar), so it
+  can't share this DOM node.
+
+      <:title>
+        <.detail_header back="Runners" navigate={~p"/app/runners"}>
+          {@runner.name}
+        </.detail_header>
+      </:title>
+  """
+  attr :navigate, :string, required: true
+  attr :back, :string, required: true, doc: "the parent list's breadcrumb label"
+  slot :inner_block, required: true
+
+  def detail_header(assigns) do
+    ~H"""
+    <.back_link navigate={@navigate}>{@back}</.back_link>{render_slot(@inner_block)}
     """
   end
 

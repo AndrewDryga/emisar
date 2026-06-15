@@ -346,8 +346,9 @@ defmodule EmisarWeb.ApprovalDetailLive do
       section={:approvals}
     >
       <:title>
-        <.back_link navigate={~p"/app/approvals"}>Approvals</.back_link>
-        Approval · <span class="font-mono text-base">{@request.context["action_id"] || "—"}</span>
+        <.detail_header back="Approvals" navigate={~p"/app/approvals"}>
+          Approval · <span class="font-mono text-base">{@request.context["action_id"] || "—"}</span>
+        </.detail_header>
       </:title>
       <%!-- Meta strip: at-a-glance facts. Status leads — same pattern
            as RunDetail / RunnerDetail — then action, runner,

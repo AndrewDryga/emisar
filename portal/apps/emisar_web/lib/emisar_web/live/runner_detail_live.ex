@@ -149,8 +149,9 @@ defmodule EmisarWeb.RunnerDetailLive do
       section={:runners}
     >
       <:title>
-        <.back_link navigate={~p"/app/runners"}>Runners</.back_link>
-        {@runner.name}
+        <.detail_header back="Runners" navigate={~p"/app/runners"}>
+          {@runner.name}
+        </.detail_header>
       </:title>
       <%!-- Connection meta strip — same shape as RunDetail /
            ApprovalDetail. Status leads so the connection state is the
