@@ -540,7 +540,20 @@ defmodule EmisarWeb.AgentsLive do
           -e EMISAR_URL=#{url} \\
           -e EMISAR_API_KEY=#{key} \\
           -e EMISAR_CLIENT=claude-code\
-      """
+      """,
+      # Verified against Anthropic's docs: a `permissions.allow` entry of
+      # `mcp__<server>__*` auto-approves every tool from that MCP server
+      # (server name `emisar` matches the `claude mcp add emisar` above).
+      auto_permit: %{
+        location: "~/.claude/settings.json (Claude Code's settings — not an emisar file)",
+        body: """
+        {
+          "permissions": {
+            "allow": ["mcp__emisar__*"]
+          }
+        }\
+        """
+      }
     }
   end
 
@@ -556,7 +569,15 @@ defmodule EmisarWeb.AgentsLive do
     %{
       kind: :local,
       location: "~/.cursor/mcp.json",
-      body: mcp_json_snippet(url, key, "emisar-mcp", "cursor")
+      body: mcp_json_snippet(url, key, "emisar-mcp", "cursor"),
+      # Cursor has no per-server allowlist in mcp.json — auto-run is a global
+      # agent toggle (Settings → set tool approval to auto-run / "Yolo").
+      # Honest pointer rather than an invented config key.
+      auto_permit: %{
+        pointer:
+          "Cursor controls this globally, not per-server: in Settings, set the agent's tool-approval to auto-run (\"Yolo\" mode). There's no per-server allowlist in mcp.json.",
+        doc_url: "https://docs.cursor.com/context/mcp"
+      }
     }
   end
 
@@ -564,7 +585,18 @@ defmodule EmisarWeb.AgentsLive do
     %{
       kind: :local,
       location: "~/.gemini/settings.json",
-      body: mcp_json_snippet(url, key, "/usr/local/bin/emisar-mcp", "gemini")
+      body: mcp_json_snippet(url, key, "/usr/local/bin/emisar-mcp", "gemini"),
+      # Verified against Gemini CLI's docs: `"trust": true` on an MCP server
+      # bypasses all tool-call confirmations for that server. Same file as
+      # the snippet above — add the one key to the existing `emisar` block.
+      auto_permit: %{
+        location: "~/.gemini/settings.json — add to the \"emisar\" server block above",
+        body: """
+        "emisar": {
+          "trust": true
+        }\
+        """
+      }
     }
   end
 
@@ -576,7 +608,15 @@ defmodule EmisarWeb.AgentsLive do
       [mcp_servers.emisar]
       command = "/usr/local/bin/emisar-mcp"
       env = { EMISAR_URL = "#{url}", EMISAR_API_KEY = "#{key}", EMISAR_CLIENT = "codex" }\
-      """
+      """,
+      # Codex CLI has no per-server tool auto-approve key — approvals are a
+      # global `approval_policy` in config.toml (openai/codex#24135). Honest
+      # pointer rather than an invented per-server setting.
+      auto_permit: %{
+        pointer:
+          "Codex controls this globally, not per-server: set approval_policy in ~/.codex/config.toml (e.g. \"on-request\"/\"never\"). There's no per-MCP-server allowlist key.",
+        doc_url: "https://developers.openai.com/codex/config-basic"
+      }
     }
   end
 
@@ -939,6 +979,12 @@ defmodule EmisarWeb.AgentsLive do
               </p>
             </div>
 
+            <.auto_permit_block
+              client_id={@selected_client}
+              client_label={client_label(@selected_client)}
+              auto_permit={Map.get(@config, :auto_permit)}
+            />
+
             <.scope_block
               runners={@runners}
               selected_runner_ids={@selected_runner_ids}
@@ -1009,6 +1055,95 @@ defmodule EmisarWeb.AgentsLive do
         </.link>
       </p>
     </div>
+    """
+  end
+
+  # Optional "stop the per-tool prompts" step. emisar already gates every
+  # action SERVER-SIDE (per-account policy + human approval on risky ones),
+  # so the client's own "allow this tool?" prompt is redundant for emisar's
+  # MCP tools — auto-permitting them in the CLIENT only drops that prompt, it
+  # never bypasses emisar's policy/approval gate. Collapsed by default: it's
+  # secondary to the connect steps. Dispatches on the auto-permit shape — a
+  # verified config snippet, or an honest pointer for clients with no
+  # per-server allowlist — so we never show an invented setting.
+  attr :client_id, :string, required: true
+  attr :client_label, :string, required: true
+  attr :auto_permit, :any, required: true
+
+  defp auto_permit_block(%{auto_permit: nil} = assigns), do: ~H""
+
+  defp auto_permit_block(%{auto_permit: %{body: _}} = assigns) do
+    ~H"""
+    <details class="rounded-lg border border-zinc-800 bg-zinc-950/40">
+      <summary class="flex cursor-pointer items-center justify-between gap-3 px-4 py-3 text-sm text-zinc-200 hover:bg-zinc-900/40">
+        <span class="font-medium">
+          Skip the per-tool prompts <span class="text-zinc-500">(optional)</span>
+        </span>
+        <span class="text-xs text-zinc-500">click to expand</span>
+      </summary>
+      <div class="border-t border-zinc-900 px-4 pb-4 pt-3">
+        <.auto_permit_why client_label={@client_label} />
+        <p class="mt-3 text-[11px] text-zinc-500 font-mono">{@auto_permit.location}</p>
+        <div class="mt-2 overflow-hidden rounded-lg border border-zinc-800 bg-black/80">
+          <div class="flex items-center justify-between gap-3 border-b border-zinc-800 px-4 py-2.5">
+            <p class="font-mono text-[11px] text-zinc-500">
+              {@client_label}'s setting — not an emisar config
+            </p>
+            <.copy_button id={"copy-permit-#{@client_id}"} target={"#permit-#{@client_id}"}>
+              Copy
+            </.copy_button>
+          </div>
+          <pre
+            id={"permit-#{@client_id}"}
+            class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-200"
+          ><%= @auto_permit.body %></pre>
+        </div>
+      </div>
+    </details>
+    """
+  end
+
+  defp auto_permit_block(%{auto_permit: %{pointer: _}} = assigns) do
+    ~H"""
+    <details class="rounded-lg border border-zinc-800 bg-zinc-950/40">
+      <summary class="flex cursor-pointer items-center justify-between gap-3 px-4 py-3 text-sm text-zinc-200 hover:bg-zinc-900/40">
+        <span class="font-medium">
+          Skip the per-tool prompts <span class="text-zinc-500">(optional)</span>
+        </span>
+        <span class="text-xs text-zinc-500">click to expand</span>
+      </summary>
+      <div class="border-t border-zinc-900 px-4 pb-4 pt-3">
+        <.auto_permit_why client_label={@client_label} />
+        <p class="mt-3 text-xs text-zinc-400">{@auto_permit.pointer}</p>
+        <p class="mt-2 text-[11px] text-zinc-500">
+          <.link
+            href={@auto_permit.doc_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            class="text-indigo-400 hover:text-indigo-300"
+          >
+            {@client_label} MCP docs →
+          </.link>
+        </p>
+      </div>
+    </details>
+    """
+  end
+
+  # The shared WHY — stated the same way for the snippet and pointer variants:
+  # safe BECAUSE emisar gates server-side; the client toggle only removes its
+  # own prompt.
+  attr :client_label, :string, required: true
+
+  defp auto_permit_why(assigns) do
+    ~H"""
+    <p class="text-xs text-zinc-400">
+      emisar gates every action <strong class="text-zinc-200">server-side</strong>
+      — per-account policy, and human approval on risky ones — so {@client_label}'s
+      per-tool "allow this?" prompt is redundant for emisar's tools. Safe to silence:
+      this only drops {@client_label}'s prompt. A risky action still pauses for approval
+      at emisar, and an out-of-policy one is still denied.
+    </p>
     """
   end
 

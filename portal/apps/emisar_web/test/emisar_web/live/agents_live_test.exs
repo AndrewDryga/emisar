@@ -313,6 +313,36 @@ defmodule EmisarWeb.AgentsLiveTest do
       assert Repo.all(ApiKey) == []
     end
 
+    test "Claude Code setup offers the optional auto-permit step with the verified rule",
+         %{conn: conn} do
+      {conn, _user, _account} = register_and_log_in(conn)
+      {:ok, lv, _} = live(conn, ~p"/app/agents")
+
+      html = lv |> render_click("select_client", %{"client" => "claude_code"})
+
+      # The optional step is present, framed as safe BECAUSE emisar gates
+      # server-side (auto-permit only drops the client's own prompt).
+      assert html =~ "Skip the per-tool prompts"
+      assert html =~ "server-side"
+      # The verified Claude Code rule — wildcard over the emisar MCP server.
+      assert html =~ "mcp__emisar__*"
+      assert html =~ "permissions"
+    end
+
+    test "Codex setup gives an honest pointer, not an invented per-server key",
+         %{conn: conn} do
+      {conn, _user, _account} = register_and_log_in(conn)
+      {:ok, lv, _} = live(conn, ~p"/app/agents")
+
+      html = lv |> render_click("select_client", %{"client" => "codex"})
+
+      # No per-server allowlist exists for Codex — we point at its global
+      # approval_policy instead of fabricating a config key.
+      assert html =~ "Skip the per-tool prompts"
+      assert html =~ "approval_policy"
+      assert html =~ "globally, not per-server"
+    end
+
     test "survives an account-topic broadcast it doesn't render", %{conn: conn} do
       {conn, _user, _account} = register_and_log_in(conn)
       {:ok, lv, _} = live(conn, ~p"/app/agents")

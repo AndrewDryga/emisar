@@ -118,6 +118,18 @@ defmodule EmisarWeb.MarketingTest do
     assert html =~ "How does billing work?"
   end
 
+  test "quickstart documents the optional auto-permit step, framed as safe server-side gating",
+       %{conn: conn} do
+    html = conn |> get(~p"/docs/quickstart") |> html_response(200)
+
+    # The optional subsection + the WHY (safe BECAUSE emisar gates server-side).
+    assert html =~ "Optional: stop the per-tool prompts"
+    assert html =~ "server-side"
+    assert html =~ "never bypasses emisar"
+    # The verified Claude Code rule, server-rendered for the SEO surface.
+    assert html =~ "mcp__emisar__*"
+  end
+
   test "docs states the supported deployment boundary", %{conn: conn} do
     html = conn |> get(~p"/docs") |> html_response(200)
 

@@ -153,6 +153,56 @@
         </.link>.
       </p>
 
+      <%!-- Optional, secondary to step 5: most clients prompt "allow this tool?"
+           per call. Because emisar gates server-side, that client prompt is
+           redundant for emisar's tools and safe to silence — the framing the
+           agents page uses, repeated here for the public docs/SEO surface. --%>
+      <div class="mt-6 rounded-xl border border-zinc-800 bg-zinc-950/60 p-5 text-sm leading-6 text-zinc-400">
+        <h3 class="text-base font-semibold text-zinc-100">Optional: stop the per-tool prompts</h3>
+        <p class="mt-2">
+          Most clients ask <em>"allow this tool?"</em>
+          the first time a model calls one. emisar already gates every action
+          <strong class="text-zinc-200">server-side</strong>
+          — per-account policy, and human approval on risky ones — so that client prompt is
+          redundant for emisar's tools. You can safely tell your client to stop prompting for the
+          <code class="font-mono text-indigo-300">emisar</code>
+          MCP server: it only silences the client's prompt. A risky action still pauses for
+          approval at emisar, and an out-of-policy one is still denied — auto-permitting in the
+          client never bypasses emisar's gate.
+        </p>
+        <ul class="mt-3 space-y-2">
+          <li class="flex items-start gap-2.5">
+            <span class="flex-none text-zinc-600">—</span>
+            <span>
+              <strong class="text-zinc-300">Claude Code</strong>
+              — add <code class="font-mono text-indigo-300">"mcp__emisar__*"</code>
+              to <code class="font-mono">permissions.allow</code>
+              in <code class="font-mono">~/.claude/settings.json</code>.
+            </span>
+          </li>
+          <li class="flex items-start gap-2.5">
+            <span class="flex-none text-zinc-600">—</span>
+            <span>
+              <strong class="text-zinc-300">Gemini CLI</strong>
+              — set <code class="font-mono text-indigo-300">"trust": true</code>
+              on the <code class="font-mono">emisar</code>
+              server in <code class="font-mono">~/.gemini/settings.json</code>.
+            </span>
+          </li>
+          <li class="flex items-start gap-2.5">
+            <span class="flex-none text-zinc-600">—</span>
+            <span>
+              <strong class="text-zinc-300">Cursor, Codex CLI</strong>
+              — these approve globally, not per-server (Cursor's agent auto-run; Codex's <code class="font-mono">approval_policy</code>). The
+              <.link navigate={~p"/app/agents"} class="text-indigo-400 hover:text-indigo-300">
+                LLM agents
+              </.link>
+              page has the exact per-client steps.
+            </span>
+          </li>
+        </ul>
+      </div>
+
       <h2 class="mt-10 text-2xl font-semibold text-zinc-50">6 · The workflow we recommend</h2>
       <p class="mt-3 text-sm leading-relaxed text-zinc-400">
         emisar is built for the incident, not the steady state. Use it to
