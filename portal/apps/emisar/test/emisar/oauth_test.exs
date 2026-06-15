@@ -162,6 +162,22 @@ defmodule Emisar.OAuthTest do
                })
     end
 
+    test "rejects a too-short PKCE verifier (RFC 7636 §4.1)", %{subject: subject, client: client} do
+      # A 20-char verifier whose challenge DOES match — without the length guard,
+      # pkce_ok? would accept it; the guard rejects the entropy downgrade first.
+      short = "abcdefghij0123456789"
+      challenge = Base.url_encode64(:crypto.hash(:sha256, short), padding: false)
+      code = issue!(subject, client, challenge)
+
+      assert {:error, :invalid_grant} =
+               OAuth.exchange_code(%{
+                 "code" => code,
+                 "client_id" => client.id,
+                 "redirect_uri" => @redirect,
+                 "code_verifier" => short
+               })
+    end
+
     test "the code is single-use", %{subject: subject, client: client} do
       {verifier, challenge} = pkce()
       code = issue!(subject, client, challenge)

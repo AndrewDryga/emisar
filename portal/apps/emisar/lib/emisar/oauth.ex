@@ -158,6 +158,7 @@ defmodule Emisar.OAuth do
            :ok <- check_code_live(code),
            :ok <- check(code.client_id == client_id, :invalid_grant),
            :ok <- check(constant_eq(code.redirect_uri, redirect_uri), :invalid_grant),
+           :ok <- check(valid_code_verifier?(verifier), :invalid_grant),
            :ok <- check(pkce_ok?(code, verifier), :invalid_grant) do
         {:ok, code}
       else
@@ -330,6 +331,13 @@ defmodule Emisar.OAuth do
 
   # Plain method is not allowed (S256 required by MCP).
   defp pkce_ok?(_, _), do: false
+
+  # RFC 7636 §4.1 — the code_verifier is 43–128 chars of the unreserved set.
+  # Reject a malformed/too-short verifier (a non-conformant or malicious client
+  # downgrading the PKCE entropy) before it's ever S256-hashed.
+  defp valid_code_verifier?(verifier) do
+    byte_size(verifier) in 43..128 and verifier =~ ~r/\A[A-Za-z0-9._~-]+\z/
+  end
 
   defp list_param(params, key, default \\ []) do
     case params[key] do
