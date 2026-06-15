@@ -117,6 +117,21 @@ defmodule EmisarWeb.AuditLive do
     {:noreply, LiveTable.apply_filter(socket, ~p"/app/audit", merged)}
   end
 
+  def handle_event("preset", %{"window" => window}, socket) do
+    # Quick relative-range chips set :from to (now − window) and clear :to, so
+    # "Last 24h" is the last 24h up to NOW (a stale upper bound would make it a
+    # weird window). Whitelisted window → an unknown (crafted) value is a no-op,
+    # never a crash or an arbitrary bound. Other active filters are preserved.
+    case preset_from(window) do
+      nil ->
+        {:noreply, socket}
+
+      from ->
+        merged = socket.assigns.filter_params |> Map.put("from", from) |> Map.delete("to")
+        {:noreply, LiveTable.apply_filter(socket, ~p"/app/audit", merged)}
+    end
+  end
+
   defp assign_export_keys(socket) do
     case ApiKeys.list_audit_export_keys_for_account(socket.assigns.current_subject,
            page_size: 50,
@@ -126,6 +141,30 @@ defmodule EmisarWeb.AuditLive do
       _ -> assign(socket, :export_keys, [])
     end
   end
+
+  # Quick relative-range presets for the audit date filter — re-adds the buttons
+  # the date-unification dropped, now setting the unified bar's :from.
+  defp audit_presets, do: [{"Last hour", "1h"}, {"Last 24h", "24h"}, {"Last 7 days", "7d"}]
+
+  # Window → the "YYYY-MM-DDTHH:MM" UTC string the :from datetime filter parses
+  # (now minus the window). Computed at click time so the range stays anchored to
+  # "now", not page-render time. Unknown window → nil (no-op).
+  defp preset_from(window) do
+    case preset_seconds(window) do
+      nil ->
+        nil
+
+      seconds ->
+        DateTime.utc_now()
+        |> DateTime.add(-seconds, :second)
+        |> Calendar.strftime("%Y-%m-%dT%H:%M")
+    end
+  end
+
+  defp preset_seconds("1h"), do: 3600
+  defp preset_seconds("24h"), do: 86_400
+  defp preset_seconds("7d"), do: 604_800
+  defp preset_seconds(_), do: nil
 
   # When exactly one actor kind is selected in the filter bar, surface a "filter
   # by actor" picker for that kind — its options are the distinct actors of that
@@ -249,6 +288,22 @@ defmodule EmisarWeb.AuditLive do
         >
           ✕
         </.link>
+      </div>
+
+      <%!-- Quick relative-range presets — set the unified bar's From to
+           (now − window); the date filter below consumes it. Re-adds the
+           presets the date-unification dropped, without a second bar. --%>
+      <div class="mb-4 flex w-max items-center gap-1.5 text-xs">
+        <span class="text-zinc-500">Quick range:</span>
+        <button
+          :for={{label, window} <- audit_presets()}
+          type="button"
+          phx-click="preset"
+          phx-value-window={window}
+          class="rounded-md bg-zinc-900 px-2 py-1 font-medium text-zinc-300 ring-1 ring-zinc-800 hover:bg-zinc-800 hover:text-zinc-100"
+        >
+          {label}
+        </button>
       </div>
 
       <LiveTable.live_table

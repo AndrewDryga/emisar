@@ -172,6 +172,57 @@ defmodule EmisarWeb.AuditLiveTest do
       refute html =~ "ancient-actor"
     end
 
+    test "a relative-range preset chip narrows to the window (sets From to now − window)",
+         %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+
+      {:ok, old} =
+        Audit.log(account.id, "user.invited",
+          actor_kind: "user",
+          actor_id: Ecto.UUID.generate(),
+          actor_label: "ancient-actor"
+        )
+
+      old
+      |> Ecto.Changeset.change(occurred_at: DateTime.add(DateTime.utc_now(), -259_200, :second))
+      |> Emisar.Repo.update!()
+
+      {:ok, _} =
+        Audit.log(account.id, "policy.updated",
+          actor_kind: "user",
+          actor_id: Ecto.UUID.generate(),
+          actor_label: "fresh-actor"
+        )
+
+      {:ok, lv, html} = live(conn, ~p"/app/audit")
+      assert html =~ "ancient-actor"
+
+      # Click "Last 24h": sets the unified bar's From to now − 24h, dropping the
+      # 3-day-old event and keeping the fresh one — same effect as typing it.
+      html = lv |> element("button", "Last 24h") |> render_click()
+      assert html =~ "fresh-actor"
+      refute html =~ "ancient-actor"
+    end
+
+    test "a crafted preset window is a no-op (whitelist), not a crash or an arbitrary bound",
+         %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+
+      {:ok, _} =
+        Audit.log(account.id, "user.invited",
+          actor_kind: "user",
+          actor_id: Ecto.UUID.generate(),
+          actor_label: "still-here"
+        )
+
+      {:ok, lv, _html} = live(conn, ~p"/app/audit")
+
+      # A forged window (not 1h/24h/7d) falls through to nil → no filter applied,
+      # no crash. The list is unchanged.
+      html = render_hook(lv, "preset", %{"window" => "99y; nonsense"})
+      assert html =~ "still-here"
+    end
+
     test "filtering by actor_id narrows the list and shows a clearable chip", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
       actor_a = Ecto.UUID.generate()
