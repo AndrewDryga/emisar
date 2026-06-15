@@ -38,6 +38,17 @@ defmodule Emisar.RunsTest do
       assert %DateTime{} = run.queued_at
     end
 
+    test "rejects oversized args (a hostile MCP client can't write a multi-MB row)" do
+      account = account_fixture()
+      runner = runner_fixture(account_id: account.id)
+      huge = %{"blob" => String.duplicate("x", 300_000)}
+
+      assert {:error, %Ecto.Changeset{} = changeset} =
+               Runs.create_run(base_attrs(account.id, runner.id, %{args: huge}))
+
+      assert Keyword.has_key?(changeset.errors, :args)
+    end
+
     test "second insert with same (api_key_id, idempotency_key) returns {:replay, original}" do
       # Closes the TOCTOU race in dispatch_run: the pre-flight peek is a
       # best-effort optimization; the unique index `(api_key_id,
