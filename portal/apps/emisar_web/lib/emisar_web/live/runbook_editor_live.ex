@@ -508,49 +508,38 @@ defmodule EmisarWeb.RunbookEditorLive do
         <aside class="space-y-4">
           <.panel title="Metadata">
             <form phx-change="meta_change" class="space-y-4">
-              <div>
-                <.label variant={:eyebrow} for="runbook_title">
-                  Title
-                </.label>
-                <input
-                  type="text"
-                  id="runbook_title"
-                  name="title"
-                  value={@title}
-                  required
-                  placeholder="e.g. Cassandra: rolling repair"
-                  class={input_class(field_errors(@form, :title))}
-                />
-                <.error :for={msg <- field_errors(@form, :title)}>{msg}</.error>
-              </div>
-
-              <div>
-                <.label variant={:eyebrow} for="runbook_slug">
-                  Slug
-                </.label>
-                <input
-                  type="text"
-                  id="runbook_slug"
-                  name="slug"
-                  value={@slug}
-                  placeholder="auto from title"
-                  class={[input_class(field_errors(@form, :slug)), "font-mono text-xs"]}
-                />
-                <.error :for={msg <- field_errors(@form, :slug)}>{msg}</.error>
-              </div>
-
-              <div>
-                <.label variant={:eyebrow} for="runbook_description">
-                  Description
-                </.label>
-                <textarea
-                  id="runbook_description"
-                  name="description"
-                  rows="4"
-                  placeholder="Optional human-readable summary."
-                  class={input_class()}
-                ><%= @description %></textarea>
-              </div>
+              <%!-- Flat `name=` (not the form's `runbook[title]`) — the metadata
+                   form posts top-level keys that `meta_change` reads directly;
+                   the `field=` only supplies the value + the post-validate error
+                   display, which `<.input>` gates via `used_input?`. --%>
+              <.input
+                field={@form[:title]}
+                name="title"
+                id="runbook_title"
+                label="Title"
+                label_variant={:eyebrow}
+                required
+                placeholder="e.g. Cassandra: rolling repair"
+              />
+              <.input
+                field={@form[:slug]}
+                name="slug"
+                id="runbook_slug"
+                label="Slug"
+                label_variant={:eyebrow}
+                class="font-mono text-xs"
+                placeholder="auto from title"
+              />
+              <.input
+                field={@form[:description]}
+                type="textarea"
+                name="description"
+                id="runbook_description"
+                label="Description"
+                label_variant={:eyebrow}
+                rows="4"
+                placeholder="Optional human-readable summary."
+              />
             </form>
           </.panel>
 
@@ -626,13 +615,12 @@ defmodule EmisarWeb.RunbookEditorLive do
             </.label>
             <.risk_pill :if={@risk} risk={@risk} class="flex-none" />
           </div>
-          <input
-            type="text"
+          <.input
             name="action_id"
             value={@step["action_id"]}
             list="catalog-actions"
             placeholder="linux.uptime"
-            class={[input_class(), "font-mono text-xs"]}
+            class="font-mono text-xs"
           />
         </div>
 
@@ -643,13 +631,12 @@ defmodule EmisarWeb.RunbookEditorLive do
               — referenced by other steps; auto-derived from Action
             </span>
           </.label>
-          <input
-            type="text"
+          <.input
             id={"step-#{@index}-id"}
             name="step_id"
             value={@step["id"]}
             placeholder="step1"
-            class={[input_class(), "font-mono text-xs"]}
+            class="font-mono text-xs"
           />
         </div>
 
@@ -757,21 +744,20 @@ defmodule EmisarWeb.RunbookEditorLive do
           <form phx-change="arg_change" class="grid grid-cols-[1fr_1fr_auto] items-center gap-1.5">
             <input type="hidden" name="index" value={@index} />
             <input type="hidden" name="arg" value={j} />
-            <input
-              type="text"
-              name="key"
-              value={arg["key"]}
-              placeholder="key"
-              list={"args-#{datalist_id(@action_id)}"}
-              class={[input_class(), "min-w-0 font-mono text-xs"]}
-            />
-            <input
-              type="text"
-              name="value"
-              value={arg["value"]}
-              placeholder="value"
-              class={[input_class(), "min-w-0 text-xs"]}
-            />
+            <%!-- min-w-0 rides the grid-item wrapper (not <.input>'s inner
+                 input) so a long value can't blow the two 1fr columns out. --%>
+            <div class="min-w-0">
+              <.input
+                name="key"
+                value={arg["key"]}
+                placeholder="key"
+                list={"args-#{datalist_id(@action_id)}"}
+                class="font-mono text-xs"
+              />
+            </div>
+            <div class="min-w-0">
+              <.input name="value" value={arg["value"]} placeholder="value" class="text-xs" />
+            </div>
             <button
               type="button"
               phx-click="remove_arg"
@@ -790,35 +776,18 @@ defmodule EmisarWeb.RunbookEditorLive do
     """
   end
 
-  defp input_class do
-    "mt-1 block w-full rounded-lg border-0 bg-zinc-900 px-2 py-1.5 text-sm text-zinc-100 ring-1 ring-zinc-800 focus:ring-indigo-500"
-  end
-
-  # Metadata-field input classes with the rose ring when the field has a
-  # validation error — same border-highlight treatment `<.input>` applies.
-  defp input_class([]), do: input_class()
-
-  defp input_class([_ | _]) do
-    "mt-1 block w-full rounded-lg border-0 bg-zinc-900 px-2 py-1.5 text-sm text-zinc-100 " <>
-      "ring-1 ring-rose-500/50 focus:ring-rose-500"
-  end
-
-  # Translated errors for one metadata form field, mirroring `<.input>`:
-  # only shown once the changeset carries an `:action` (post validate/submit),
-  # so a fresh form paints no errors.
-  defp field_errors(%Phoenix.HTML.Form{source: %Ecto.Changeset{action: nil}}, _field), do: []
-
-  defp field_errors(form, field) do
-    form[field].errors |> Enum.map(&translate_error/1)
-  end
-
   # A `definition` error comes from the structured step builder, not a metadata
   # input — surface it as one concise line on the Steps panel. nil → nothing to
-  # show (no save attempted, or only field errors that already render inline).
+  # show (no save attempted, or only field errors that already render inline,
+  # which `<.input>` paints under their own inputs once the changeset has an
+  # `:action`). The metadata text fields now route through `<.input>`, so this
+  # is the only field error the editor renders by hand.
   defp save_error_message(%Phoenix.HTML.Form{source: %Ecto.Changeset{action: nil}}), do: nil
 
   defp save_error_message(form) do
-    case field_errors(form, :definition) do
+    errors = Enum.map(form[:definition].errors, &translate_error/1)
+
+    case errors do
       [msg | _] -> "Steps: #{msg}"
       [] -> nil
     end

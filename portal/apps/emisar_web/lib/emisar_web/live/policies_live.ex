@@ -841,16 +841,14 @@ defmodule EmisarWeb.PoliciesLive do
         </p>
         <div class="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div class="rounded-lg border border-zinc-800 bg-black/30 p-3">
-            <.label variant={:eyebrow}>
-              Required approvals
-            </.label>
-            <input
+            <.input
               type="number"
               name="policy[approval][min_approvals]"
               value={@approval["min_approvals"]}
+              label="Required approvals"
+              label_variant={:eyebrow}
               min="1"
               step="1"
-              class={input_class()}
               disabled={!@can_manage}
             />
             <p class="mt-1 text-[11px] leading-relaxed text-zinc-500">
@@ -933,28 +931,22 @@ defmodule EmisarWeb.PoliciesLive do
     <div class="rounded-lg border border-zinc-800 bg-black/30 p-3">
       <div class="space-y-2 sm:grid sm:grid-cols-12 sm:items-end sm:gap-2 sm:space-y-0">
         <div class="sm:col-span-3">
-          <.label variant={:eyebrow}>
-            Name
-          </.label>
-          <input
-            type="text"
+          <.input
             name={"policy[overrides][#{@index}][name]"}
             value={@override["name"]}
+            label="Name"
+            label_variant={:eyebrow}
             placeholder="optional"
-            class={input_class()}
             disabled={!@can_manage}
           />
         </div>
         <div class="sm:col-span-5">
-          <.label variant={:eyebrow}>
-            Action (glob ok)
-          </.label>
-          <input
-            type="text"
+          <.input
             name={"policy[overrides][#{@index}][action]"}
             value={@override["action"]}
+            label="Action (glob ok)"
+            label_variant={:eyebrow}
             placeholder="e.g. cassandra.repair or linux.*"
-            class={input_class()}
             disabled={!@can_manage}
           />
         </div>
@@ -1036,8 +1028,4 @@ defmodule EmisarWeb.PoliciesLive do
   defp tier_dot("medium"), do: "bg-sky-400"
   defp tier_dot("high"), do: "bg-amber-400"
   defp tier_dot("critical"), do: "bg-rose-400"
-
-  defp input_class do
-    "mt-1 block w-full rounded-lg border-0 bg-zinc-900 px-2 py-1.5 text-sm text-zinc-100 ring-1 ring-zinc-800 focus:ring-indigo-500 disabled:opacity-50"
-  end
 end

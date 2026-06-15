@@ -277,13 +277,6 @@ defmodule EmisarWeb.RunbookRunLive do
     Map.filter(errors, fn {field, _msg} -> Map.has_key?(resolved, field) end)
   end
 
-  # Dispatch-field classes, swapping in the rose ring when the field has an
-  # inline error — same border-highlight treatment `<.input>` applies.
-  @field_base "mt-2 block w-full rounded-lg border-0 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-100 ring-1 ring-inset focus:ring-2"
-
-  defp field_class(nil), do: [@field_base, "ring-zinc-800 focus:ring-indigo-500"]
-  defp field_class(_error), do: [@field_base, "ring-rose-500/50 focus:ring-rose-500"]
-
   # Genuine, non-field dispatch failures (policy denial, runner offline, a
   # run-row constraint) are surfaced in a concise flash — they aren't a single
   # input the operator can correct in place.
@@ -744,15 +737,20 @@ defmodule EmisarWeb.RunbookRunLive do
         <.panel title="Dispatch">
           <form phx-change="validate" phx-submit="dispatch" class="space-y-4">
             <div>
-              <label class="block text-sm font-medium text-zinc-200">Reason (required)</label>
-              <textarea
+              <%!-- Non-FormField field: `reason` posts a top-level key and its
+                   error is a plain map entry (set only on dispatch, never on
+                   `validate`), so pass value/errors explicitly. List.wrap turns
+                   the single message into the list `<.input>`'s `<.error>`s want. --%>
+              <.input
+                type="textarea"
                 name="reason"
+                value={@reason}
+                label="Reason (required)"
+                errors={List.wrap(@errors[:reason])}
                 rows="2"
                 required
                 placeholder="Why are you running this runbook now?"
-                class={field_class(@errors[:reason])}
-              ><%= @reason %></textarea>
-              <.error :if={@errors[:reason]}>{@errors[:reason]}</.error>
+              />
               <p class="mt-1 text-xs text-zinc-500">Logged in audit + propagated to every step.</p>
             </div>
 

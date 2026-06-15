@@ -345,6 +345,10 @@ defmodule EmisarWeb.CoreComponents do
   attr :options, :list, doc: "the options to pass to Phoenix.HTML.Form.options_for_select/2"
   attr :multiple, :boolean, default: false, doc: "the multiple flag for select inputs"
 
+  attr :class, :string,
+    default: nil,
+    doc: "extra (non-conflicting) classes on the input — e.g. font-mono for a slug/id field"
+
   attr :rest, :global,
     include: ~w(accept autocomplete capture cols disabled form list max maxlength min minlength
                 multiple pattern placeholder readonly required rows size step)
@@ -414,7 +418,7 @@ defmodule EmisarWeb.CoreComponents do
   def input(%{type: "textarea"} = assigns) do
     ~H"""
     <div>
-      <.label for={@id}>{@label}</.label>
+      <.label :if={@label} for={@id} variant={@label_variant}>{@label}</.label>
       <textarea
         id={@id}
         name={@name}
@@ -423,7 +427,8 @@ defmodule EmisarWeb.CoreComponents do
           "min-h-[6rem] ring-1 ring-inset placeholder:text-zinc-600",
           "focus:ring-2 focus:ring-inset",
           @errors == [] && "ring-zinc-800 focus:ring-indigo-500",
-          @errors != [] && "ring-rose-500/50 focus:ring-rose-500"
+          @errors != [] && "ring-rose-500/50 focus:ring-rose-500",
+          @class
         ]}
         {@rest}
       >{Phoenix.HTML.Form.normalize_value("textarea", @value)}</textarea>
@@ -436,7 +441,7 @@ defmodule EmisarWeb.CoreComponents do
   def input(assigns) do
     ~H"""
     <div>
-      <.label for={@id}>{@label}</.label>
+      <.label :if={@label} for={@id} variant={@label_variant}>{@label}</.label>
       <input
         type={@type}
         name={@name}
@@ -447,7 +452,8 @@ defmodule EmisarWeb.CoreComponents do
           "ring-1 ring-inset placeholder:text-zinc-600",
           "focus:ring-2 focus:ring-inset",
           @errors == [] && "ring-zinc-800 focus:ring-indigo-500",
-          @errors != [] && "ring-rose-500/50 focus:ring-rose-500"
+          @errors != [] && "ring-rose-500/50 focus:ring-rose-500",
+          @class
         ]}
         {@rest}
       />

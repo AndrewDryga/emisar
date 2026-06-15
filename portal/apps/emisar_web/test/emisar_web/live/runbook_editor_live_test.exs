@@ -207,6 +207,32 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       assert html =~ "has invalid format"
       refute html =~ "Could not save runbook"
     end
+
+    test "a fresh form paints no field error before any change/save", %{conn: conn} do
+      {conn, _user, _account} = register_and_log_in(conn)
+      {:ok, _lv, html} = live(conn, ~p"/app/runbooks/new")
+
+      # Title is required + blank on a new form, but `<.input>` gates errors on
+      # `used_input?` — an untouched field shows nothing until validate/save.
+      refute html =~ "can&#39;t be blank"
+      refute html =~ "can't be blank"
+      refute html =~ "has invalid format"
+    end
+
+    test "a valid title + slug round-trips through meta_change with no error", %{conn: conn} do
+      {conn, _user, _account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/app/runbooks/new")
+
+      html = render_change(lv, "meta_change", %{"title" => "Repair", "slug" => "rolling-repair"})
+
+      # The typed values are reflected back into the inputs…
+      assert html =~ ~s(value="Repair")
+      assert html =~ ~s(value="rolling-repair")
+      # …and a valid field shows no error even though the form has been validated.
+      refute html =~ "has invalid format"
+      refute html =~ "can&#39;t be blank"
+      refute html =~ "can't be blank"
+    end
   end
 
   describe "save / publish lifecycle" do
