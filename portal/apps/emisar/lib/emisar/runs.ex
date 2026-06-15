@@ -6,7 +6,7 @@ defmodule Emisar.Runs do
   Transport for sending, and tracks progress + final result.
   """
   alias Ecto.Multi
-  alias Emisar.{Audit, Auth, Crypto, Repo}
+  alias Emisar.{ApiKeys, Audit, Auth, Crypto, Repo}
   alias Emisar.Auth.Subject
   alias Emisar.Runs.{ActionRun, Authorizer, RunEvent}
   require Logger
@@ -41,7 +41,9 @@ defmodule Emisar.Runs do
   the context-function convention.
 
   Options: `preload:` — associations the caller renders (`:runner`,
-  `:api_key`); `limit:` — page size (default 8).
+  `:api_key`); `limit:` — page size (default 8); `scope:` — `:account`
+  (default) for the whole account's runs, or `:own` for just this API
+  key's runs (the MCP `recent_runs` recall path).
   """
   def list_recent_runs(%Subject{} = subject, opts \\ []) do
     with :ok <-
@@ -50,9 +52,11 @@ defmodule Emisar.Runs do
              Authorizer.view_runs_permission()
            ) do
       {preloads, opts} = Keyword.pop(opts, :preload, [])
+      {scope, opts} = Keyword.pop(opts, :scope, :account)
       limit = Keyword.get(opts, :limit, 8)
 
       ActionRun.Query.all()
+      |> apply_run_scope(scope, subject)
       |> apply_run_preloads(preloads)
       |> Authorizer.for_subject(subject)
       |> Repo.list(ActionRun.Query, page: [limit: limit])
@@ -155,6 +159,14 @@ defmodule Emisar.Runs do
       other -> other
     end
   end
+
+  # `:own` narrows to the calling agent's own runs (its API key) — the MCP
+  # `recent_runs` "recall what I ran" path; only an API-key subject has "own"
+  # runs, so any other actor falls through to `:account` (the for_subject scope).
+  defp apply_run_scope(query, :own, %Subject{actor: %ApiKeys.ApiKey{id: api_key_id}}),
+    do: ActionRun.Query.by_api_key_id(query, api_key_id)
+
+  defp apply_run_scope(query, _scope, _subject), do: query
 
   # Rendering concerns are the caller's: pass `preload:` only for the
   # associations the page actually shows. Unknown atoms raise (caller bug).

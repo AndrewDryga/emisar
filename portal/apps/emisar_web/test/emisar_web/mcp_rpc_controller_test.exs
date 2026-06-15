@@ -506,6 +506,66 @@ defmodule EmisarWeb.McpRpcControllerTest do
     |> Enum.map_join("\n", & &1["text"])
   end
 
+  describe "recent_runs tool" do
+    test "tools/list includes the read-only recent_runs tool",
+         %{conn: conn, account: account, user: user} do
+      raw = make_api_key!(account, user)
+
+      names =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> rpc("tools/list")
+        |> json_response(200)
+        |> get_in(["result", "tools"])
+        |> Enum.map(& &1["name"])
+
+      assert "recent_runs" in names
+    end
+
+    test "an actions:read key gets its own dispatched runs back",
+         %{conn: conn, account: account, user: user} do
+      runner = make_runner!(account, name: "host-1")
+      subject = Emisar.Fixtures.subject_for(user, account, role: :owner)
+
+      {:ok, raw, key} =
+        ApiKeys.create_key(%{name: "reader-#{unique()}", scopes: ["actions:read"]}, subject)
+
+      # A run this key dispatched (carries its api_key_id) so scope=own returns it.
+      {:ok, run} =
+        Runs.create_run(%{
+          account_id: account.id,
+          runner_id: runner.id,
+          action_id: "linux.uptime",
+          source: "mcp",
+          api_key_id: key.id,
+          args: %{}
+        })
+
+      body =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> rpc("tools/call", %{"name" => "recent_runs", "arguments" => %{}})
+        |> json_response(200)
+
+      assert body["result"]["isError"] == false
+      assert content_text(body) =~ run.id
+      assert content_text(body) =~ "linux.uptime"
+    end
+
+    test "an execute-only key calling recent_runs is refused with actions:read",
+         %{conn: conn, account: account, user: user} do
+      raw = make_api_key!(account, user, scopes: ["actions:execute"])
+
+      conn =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> rpc("tools/call", %{"name" => "recent_runs", "arguments" => %{}})
+
+      assert %{"error" => %{"code" => -32002, "data" => %{"required" => "actions:read"}}} =
+               json_response(conn, 200)
+    end
+  end
+
   describe "malformed frames + scope denials" do
     test "a non-2.0 frame is rejected with -32600", %{conn: conn, account: account, user: user} do
       raw = make_api_key!(account, user)

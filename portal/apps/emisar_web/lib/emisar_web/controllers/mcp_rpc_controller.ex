@@ -92,7 +92,8 @@ defmodule EmisarWeb.McpRpcController do
           [
             ContentBlocks.wait_for_run_tool(),
             ContentBlocks.list_runbooks_tool(),
-            ContentBlocks.get_runbook_tool()
+            ContentBlocks.get_runbook_tool(),
+            ContentBlocks.recent_runs_tool()
           ]
 
       {:ok, %{tools: tools}}
@@ -120,6 +121,11 @@ defmodule EmisarWeb.McpRpcController do
       name == "get_runbook" ->
         with :ok <- require_scope(conn, "actions:read") do
           handle_get_runbook(conn, args)
+        end
+
+      name == "recent_runs" ->
+        with :ok <- require_scope(conn, "actions:read") do
+          handle_recent_runs(conn, args)
         end
 
       true ->
@@ -318,6 +324,31 @@ defmodule EmisarWeb.McpRpcController do
         {:ok, %{content: content, isError: true}}
     end
   end
+
+  # -- recent_runs ----------------------------------------------------
+
+  defp handle_recent_runs(conn, args) do
+    limit = parse_limit(Map.get(args, "limit"))
+    scope = parse_scope(Map.get(args, "scope"))
+
+    case Service.recent_runs(conn, limit, scope) do
+      {:ok, runs} ->
+        {content, is_err} = ContentBlocks.from_recent_runs(runs)
+        {:ok, %{content: content, isError: is_err}}
+
+      {:error, :unauthorized} ->
+        {content, _} =
+          ContentBlocks.error_content("Not allowed", "This API key can't read runs.")
+
+        {:ok, %{content: content, isError: true}}
+    end
+  end
+
+  defp parse_limit(n) when is_integer(n) and n > 0, do: min(n, 100)
+  defp parse_limit(_), do: 20
+
+  defp parse_scope("account"), do: :account
+  defp parse_scope(_), do: :own
 
   # -- Arg parsing ----------------------------------------------------
 

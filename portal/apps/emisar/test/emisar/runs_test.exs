@@ -1026,6 +1026,60 @@ defmodule Emisar.RunsTest do
     end
   end
 
+  describe "list_recent_runs/2 :scope" do
+    setup do
+      account = account_fixture()
+      runner = runner_fixture(account_id: account.id)
+      {_raw, key} = api_key_fixture(account_id: account.id)
+
+      # One run the key dispatched (source: mcp, carries the api_key_id) and
+      # one operator run with no api_key_id, so :own and :account differ.
+      {:ok, mine} =
+        Runs.create_run(base_attrs(account.id, runner.id, %{source: "mcp", api_key_id: key.id}))
+
+      {:ok, operator_run} = Runs.create_run(base_attrs(account.id, runner.id))
+
+      {:ok, account: account, key: key, mine: mine, operator_run: operator_run}
+    end
+
+    test "scope: :own returns only this API key's runs", %{
+      account: account,
+      key: key,
+      mine: mine
+    } do
+      subject = Emisar.Auth.Subject.for_api_key(key, account)
+
+      assert {:ok, runs, _meta} = Runs.list_recent_runs(subject, scope: :own, limit: 50)
+      assert Enum.map(runs, & &1.id) == [mine.id]
+    end
+
+    test "scope: :account returns every agent's runs in the account", %{
+      account: account,
+      key: key,
+      mine: mine,
+      operator_run: operator_run
+    } do
+      subject = Emisar.Auth.Subject.for_api_key(key, account)
+
+      assert {:ok, runs, _meta} = Runs.list_recent_runs(subject, scope: :account, limit: 50)
+      assert MapSet.new(runs, & &1.id) == MapSet.new([mine.id, operator_run.id])
+    end
+
+    test "a second account's key sees none of the first account's runs (cross-account)", %{
+      key: key
+    } do
+      other_account = account_fixture()
+      {_raw, other_key} = api_key_fixture(account_id: other_account.id)
+      subject = Emisar.Auth.Subject.for_api_key(other_key, other_account)
+
+      # Even scope: :account is bounded by for_subject to the caller's account,
+      # and this account has no runs — the first account's key.id leaks nothing.
+      assert {:ok, [], _meta} = Runs.list_recent_runs(subject, scope: :account, limit: 50)
+      assert {:ok, [], _meta} = Runs.list_recent_runs(subject, scope: :own, limit: 50)
+      refute other_key.id == key.id
+    end
+  end
+
   describe "runner-event ingestion error paths" do
     test "append_event/2 with an unknown run id returns :unknown_run" do
       assert {:error, :unknown_run} =

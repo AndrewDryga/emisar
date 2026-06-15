@@ -93,6 +93,39 @@ defmodule EmisarWeb.Mcp.ContentBlocks do
     }
   end
 
+  @doc "Synthetic tool descriptor for `recent_runs` (read-only)."
+  @spec recent_runs_tool() :: map()
+  def recent_runs_tool do
+    %{
+      name: "recent_runs",
+      description:
+        "List the most recent action runs this agent (API key) dispatched, newest first — so you " <>
+          "can recall what you already ran on a host and how it turned out (status, exit code) before " <>
+          "re-running it. `scope: \"own\"` (default) returns only your own runs; " <>
+          "`scope: \"account\"` widens to every agent in the account. Read-only.",
+      inputSchema: %{
+        "$schema" => "https://json-schema.org/draft/2020-12/schema",
+        "type" => "object",
+        "additionalProperties" => false,
+        "properties" => %{
+          "limit" => %{
+            "type" => "integer",
+            "minimum" => 1,
+            "maximum" => 100,
+            "description" => "Max runs to return, newest first (default 20)."
+          },
+          "scope" => %{
+            "type" => "string",
+            "enum" => ["own", "account"],
+            "description" =>
+              "\"own\" (default) = only this key's runs; " <>
+                "\"account\" = all agents in the account."
+          }
+        }
+      }
+    }
+  end
+
   @doc "Render the `list_runbooks` summaries: a short intro plus the runbooks as JSON."
   @spec from_runbook_list([map()]) :: {[map()], boolean()}
   def from_runbook_list(summaries) when is_list(summaries) do
@@ -117,6 +150,17 @@ defmodule EmisarWeb.Mcp.ContentBlocks do
         "risk/approval (a high-risk step may return pending_approval; use wait_for_run as usual)."
 
     {[text_block(guidance), text_block(Jason.encode!(detail, pretty: true))], false}
+  end
+
+  @doc "Render `recent_runs`: a one-line intro plus the runs as compact JSON, newest first."
+  @spec from_recent_runs([map()]) :: {[map()], boolean()}
+  def from_recent_runs(runs) when is_list(runs) do
+    intro =
+      if runs == [],
+        do: "No matching runs yet.",
+        else: "#{length(runs)} recent run(s), newest first."
+
+    {[text_block(intro), text_block(Jason.encode!(runs, pretty: true))], false}
   end
 
   @doc """

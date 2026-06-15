@@ -224,6 +224,35 @@ defmodule EmisarWeb.Mcp.Service do
   defp blank?(s), do: s in [nil, ""]
   defp nil_if_blank(s), do: if(blank?(s), do: nil, else: s)
 
+  # -- Recent runs (read-only) ----------------------------------------
+
+  @doc """
+  The `recent_runs` synthetic tool: the calling agent's (or the whole
+  account's) most recent runs, newest first, as compact summaries.
+  """
+  @spec recent_runs(Plug.Conn.t(), pos_integer(), :own | :account) ::
+          {:ok, [map()]} | {:error, :unauthorized}
+  def recent_runs(conn, limit, scope) do
+    subject = conn.assigns.current_subject
+
+    case Runs.list_recent_runs(subject, scope: scope, limit: limit, preload: [:runner]) do
+      {:ok, runs, _meta} -> {:ok, Enum.map(runs, &run_summary/1)}
+      {:error, :unauthorized} -> {:error, :unauthorized}
+    end
+  end
+
+  defp run_summary(run) do
+    %{
+      run_id: run.id,
+      action_id: run.action_id,
+      runner: run.runner && run.runner.name,
+      status: run.status,
+      exit_code: run.exit_code,
+      reason: run.reason,
+      finished_at: run.finished_at
+    }
+  end
+
   # -- Dispatch --------------------------------------------------------
 
   @type dispatch_opts :: %{
