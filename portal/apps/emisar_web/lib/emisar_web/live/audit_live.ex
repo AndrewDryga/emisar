@@ -107,6 +107,13 @@ defmodule EmisarWeb.AuditLive do
          do: Map.delete(merged, "actor_id"),
          else: merged
 
+    # Same for the subject picker — a changed subject kind invalidates its pick.
+    merged =
+      if blank_to_nil(params["subject_kind"]) !=
+           blank_to_nil(socket.assigns.filter_params["subject_kind"]),
+         do: Map.delete(merged, "subject_id"),
+         else: merged
+
     {:noreply, LiveTable.apply_filter(socket, ~p"/app/audit", merged)}
   end
 
@@ -134,27 +141,42 @@ defmodule EmisarWeb.AuditLive do
     end
   end
 
+  # Same shape for the Subject column: when a subject kind is selected, surface a
+  # "filter by subject" picker for that kind (its distinct subjects in the log).
+  defp subject_kind_filter(params, subject) do
+    with kind when is_binary(kind) <- blank_to_nil(params["subject_kind"]),
+         {:ok, [_ | _] = options} <- Audit.list_subject_options(kind, subject) do
+      [Audit.Event.Query.subject_filter(options)]
+    else
+      _ -> []
+    end
+  end
+
   defp load(socket, params) do
     base_filters = Audit.Event.Query.filters()
 
-    # Render the dynamic "by actor" picker right after its Actor-type filter,
-    # not tacked on at the end — the dependent control belongs next to its
-    # trigger. (base_filters stays the opts source; the actor filter is
-    # render-only — actor_id applies via the opts path below.)
-    actor_filter = actor_kind_filter(params, socket.assigns.current_subject)
+    # Render each dynamic picker right after its kind filter (the dependent
+    # control belongs next to its trigger), not tacked on at the end.
+    # base_filters stays the opts source; the actor/subject pickers are
+    # render-only — actor_id/subject_id apply via the opts path below.
+    subject = socket.assigns.current_subject
+    actor_filter = actor_kind_filter(params, subject)
+    subject_filter = subject_kind_filter(params, subject)
 
     filters =
       Enum.flat_map(base_filters, fn
         %{name: :actor_kind} = f -> [f | actor_filter]
+        %{name: :subject_kind} = f -> [f | subject_filter]
         f -> [f]
       end)
 
     actor_id = blank_to_nil(params["actor_id"])
+    subject_id = blank_to_nil(params["subject_id"])
 
-    # actor_id rides as a URL param outside the filter form (it's set by
-    # clicking a row's actor), so it's threaded into list_events directly.
-    # From/To are LiveTable datetime filters now — params_to_opts casts and
-    # applies them via the :filter opt like every other filter.
+    # actor_id rides as a URL param outside the form (set by clicking a row's
+    # actor); subject_id is set by its dynamic picker. Both aren't in
+    # base_filters, so they're threaded into list_events directly. From/To are
+    # LiveTable datetime filters — params_to_opts applies them via :filter.
     socket =
       socket
       |> assign(:filters, filters)
@@ -164,7 +186,7 @@ defmodule EmisarWeb.AuditLive do
     opts =
       params
       |> LiveTable.params_to_opts(base_filters)
-      |> Keyword.put(:actor_id, actor_id)
+      |> Keyword.merge(actor_id: actor_id, subject_id: subject_id)
 
     case Audit.list_events(socket.assigns.current_subject, opts) do
       {:ok, events, meta} ->

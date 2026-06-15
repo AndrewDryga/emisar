@@ -298,6 +298,29 @@ defmodule Emisar.Audit.Event.Query do
   def by_actor_id(queryable, id),
     do: where(queryable, [events: e], e.actor_id == ^id)
 
+  @doc "Distinct `subject_id`s of `kind` — options for the on-demand subject picker."
+  def distinct_subject_ids_of_kind(queryable \\ all(), kind) do
+    queryable
+    |> where([events: e], e.subject_kind == ^kind and not is_nil(e.subject_id))
+    |> select([events: e], e.subject_id)
+    |> distinct(true)
+  end
+
+  @doc """
+  The `%Filter{}` for the dynamic subject picker, mirroring `actor_filter/1` —
+  given its loaded `{id, label}` options. Fun lives here to keep the query in
+  the query module (IL-1).
+  """
+  def subject_filter(options) do
+    %Filter{
+      name: :subject_id,
+      title: "Subject",
+      type: {:list, :string},
+      values: options,
+      fun: fn queryable, ids -> {queryable, dynamic([events: e], e.subject_id in ^ids)} end
+    }
+  end
+
   # Retention sweep cutoff (delete events strictly older than `ts`). The audit
   # page's From/To window goes through the inclusive `:from`/`:to` filters above.
   def occurred_before(queryable, ts),
@@ -349,18 +372,16 @@ defmodule Emisar.Audit.Event.Query do
   @impl Emisar.Repo.Query
   def filters,
     do: [
-      # Free-text trace: paste a request_id (or part of an event type) to pull
-      # every event tied to it. ILIKE on event_type + request_id, wildcards in
-      # the term escaped so a pasted id matches literally.
+      # Request-id trace: paste a request_id to pull every event tied to it.
+      # ILIKE so a partial paste still matches; wildcards escaped to match
+      # literally. (Type filtering is the `event_type` dropdown below.)
       %Filter{
-        name: :q,
-        title: "Search (type or request id)",
+        name: :request_id,
+        title: "Request ID",
         type: :string,
         fun: fn queryable, term ->
           pattern = "%" <> escape_like(term) <> "%"
-
-          {queryable,
-           dynamic([events: e], ilike(e.event_type, ^pattern) or ilike(e.request_id, ^pattern))}
+          {queryable, dynamic([events: e], ilike(e.request_id, ^pattern))}
         end
       },
       # Date range — backed by the same %Filter{} mechanism as the rest, so the

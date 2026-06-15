@@ -337,7 +337,7 @@ defmodule Emisar.AuditTest do
       assert Enum.all?(rows, &(&1.event_type == "user.invited"))
     end
 
-    test "the search filter matches event_type or request_id, with wildcards escaped" do
+    test "the request_id filter matches request_id, with wildcards escaped" do
       account = account_fixture()
       subject = subject_for(user_fixture(), account, role: :owner)
 
@@ -355,12 +355,10 @@ defmodule Emisar.AuditTest do
       log.("user.invited", "reqZtrace")
 
       # Paste a request_id → only its event; the `_` is matched literally.
-      assert {:ok, [hit], %{count: 1}} = Audit.list_events(subject, filter: [q: "req_trace"])
-      assert hit.request_id == "req_trace"
+      assert {:ok, [hit], %{count: 1}} =
+               Audit.list_events(subject, filter: [request_id: "req_trace"])
 
-      # A partial event_type also matches.
-      assert {:ok, [row], %{count: 1}} = Audit.list_events(subject, filter: [q: "policy"])
-      assert row.event_type == "policy.updated"
+      assert hit.request_id == "req_trace"
     end
 
     test "actor_kind list filter accepts a list of kinds" do
@@ -441,6 +439,18 @@ defmodule Emisar.AuditTest do
 
       {:ok, events, _} = Audit.list_events(subject, actor_id: actor_a)
       assert Enum.map(events, & &1.actor_id) == [actor_a]
+    end
+
+    test "subject_id narrows the list to one subject" do
+      account = account_fixture()
+      subject = subject_for(user_fixture(), account, role: :owner)
+      subj_a = Ecto.UUID.generate()
+      subj_b = Ecto.UUID.generate()
+      {:ok, _} = Audit.log(account.id, "x", subject_kind: "user", subject_id: subj_a)
+      {:ok, _} = Audit.log(account.id, "x", subject_kind: "user", subject_id: subj_b)
+
+      {:ok, events, _} = Audit.list_events(subject, subject_id: subj_a)
+      assert Enum.map(events, & &1.subject_id) == [subj_a]
     end
 
     test "the from / to date-range filters bound the window" do

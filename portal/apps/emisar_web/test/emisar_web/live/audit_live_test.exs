@@ -127,9 +127,9 @@ defmodule EmisarWeb.AuditLiveTest do
       assert html =~ ~s(name="to")
       assert html =~ ~s(type="datetime-local")
       refute html =~ "Apply dates"
-      # The free-text trace filter (paste a request_id/type) is wired in.
-      assert html =~ "Search (type or request id)"
-      assert html =~ ~s(name="q")
+      # The request-id trace filter is wired in (type filtering is the Type dropdown).
+      assert html =~ "Request ID"
+      assert html =~ ~s(name="request_id")
     end
 
     test "the From date filter narrows to recent events", %{conn: conn} do
@@ -218,6 +218,26 @@ defmodule EmisarWeb.AuditLiveTest do
                :binary.match(html, ~s(name="subject_kind"))
 
       assert html =~ user.email
+    end
+
+    test "selecting a subject kind surfaces a picker of that kind's resolved subjects",
+         %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      {:ok, _} = Audit.log(account.id, "user.invited", subject_kind: "user", subject_id: user.id)
+
+      # No subject kind selected → no subject picker rendered.
+      {:ok, _lv, html} = live(conn, ~p"/app/audit")
+      refute html =~ ~s(name="subject_id")
+
+      # Pick "user" → the picker appears with the resolved subject (the user's
+      # email), right after its Subject trigger — same shape as the actor picker.
+      {:ok, _lv, html} = live(conn, ~p"/app/audit?subject_kind=user")
+      assert html =~ ~s(name="subject_id")
+      assert html =~ ~s(value="#{user.id}")
+      assert html =~ user.email
+
+      assert :binary.match(html, ~s(name="subject_kind")) <
+               :binary.match(html, ~s(name="subject_id"))
     end
   end
 

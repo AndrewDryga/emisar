@@ -229,13 +229,15 @@ defmodule Emisar.Audit do
   def list_events(%Subject{} = subject, opts \\ []) do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_audit_permission()) do
-      # actor_id rides as an opt — the dynamic "by actor" picker isn't in the
-      # static filters/0 list, so it can't go through :filter. The From/To
-      # window and everything else are LiveTable filters, applied via :filter.
+      # actor_id / subject_id ride as opts — the dynamic "by actor" / "by
+      # subject" pickers aren't in the static filters/0 list, so they can't go
+      # through :filter. Everything else is a LiveTable filter, applied via :filter.
       {actor_id, opts} = Keyword.pop(opts, :actor_id)
+      {subject_id, opts} = Keyword.pop(opts, :subject_id)
 
       Event.Query.all()
       |> filter_by_actor_id(actor_id)
+      |> filter_by_subject_id(subject_id)
       |> Authorizer.for_subject(subject)
       |> Repo.list(Event.Query, opts)
     end
@@ -273,8 +275,41 @@ defmodule Emisar.Audit do
     end
   end
 
+  @doc """
+  Distinct subjects of `subject_kind` in the account's audit log — the options
+  for the page's on-demand "filter by subject" picker, as `{id, label}` sorted by
+  label. Mirrors `list_actor_options/2`. Returns `{:ok, [{id, label}]}` or
+  `{:error, :unauthorized}`.
+  """
+  def list_subject_options(subject_kind, %Subject{} = subject) when is_binary(subject_kind) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_audit_permission()) do
+      ids =
+        Event.Query.all()
+        |> Event.Query.distinct_subject_ids_of_kind(subject_kind)
+        |> Authorizer.for_subject(subject)
+        |> Repo.all()
+
+      labels =
+        %{subject_kind => ids}
+        |> resolve_labels(subject.account.id)
+        |> Map.get(subject_kind, %{})
+
+      options =
+        ids
+        |> Enum.map(fn id -> {id, Map.get(labels, id)} end)
+        |> Enum.reject(fn {_id, label} -> is_nil(label) end)
+        |> Enum.sort_by(fn {_id, label} -> label end)
+
+      {:ok, options}
+    end
+  end
+
   defp filter_by_actor_id(queryable, nil), do: queryable
   defp filter_by_actor_id(queryable, id), do: Event.Query.by_actor_id(queryable, id)
+
+  defp filter_by_subject_id(queryable, nil), do: queryable
+  defp filter_by_subject_id(queryable, id), do: Event.Query.by_subject_id(queryable, id)
 
   @doc """
   SIEM export — cursor-paginated forward sweep of every event the
