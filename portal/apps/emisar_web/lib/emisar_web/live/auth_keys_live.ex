@@ -274,18 +274,17 @@ defmodule EmisarWeb.AuthKeysLive do
         <%!-- Create panel — collapsed by default, opened by header
              button. Avoids a permanent form panel competing with the
              list when no key is being issued. --%>
-        <section
+        <.panel
           :if={Runners.subject_can_manage_auth_keys?(@current_subject)}
           id="create-panel"
-          class="hidden rounded-xl border border-zinc-900 bg-zinc-950/60 p-6"
+          class="hidden"
+          padding="p-6"
+          title="Issue a new auth key"
         >
-          <div class="flex items-start justify-between gap-3">
-            <div>
-              <h2 class="text-base font-semibold text-zinc-100">Issue a new auth key</h2>
-              <p class="mt-1 text-sm text-zinc-500">
-                Reusable keys suit stable fleets; single-use keys are right for autoscalers.
-              </p>
-            </div>
+          <:subtitle>
+            Reusable keys suit stable fleets; single-use keys are right for autoscalers.
+          </:subtitle>
+          <:actions>
             <button
               type="button"
               phx-click={hide_create()}
@@ -294,14 +293,14 @@ defmodule EmisarWeb.AuthKeysLive do
             >
               <.icon name="hero-x-mark" class="h-4 w-4" />
             </button>
-          </div>
+          </:actions>
 
           <.simple_form
             for={@form}
             id="auth_key_form"
             phx-change="validate"
             phx-submit="create"
-            class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2"
+            class="grid grid-cols-1 gap-4 sm:grid-cols-2"
           >
             <.input
               field={@form[:description]}
@@ -359,7 +358,7 @@ defmodule EmisarWeb.AuthKeysLive do
               <.button phx-disable-with="Creating...">Create key</.button>
             </:actions>
           </.simple_form>
-        </section>
+        </.panel>
 
         <%!-- Key list — the LiveTable :cards shell renders the filter row, the
              bordered card list, and the count in its paginator footer, so this

@@ -1182,15 +1182,19 @@ defmodule EmisarWeb.CoreComponents do
   """
   attr :class, :string, default: nil
   attr :padding, :string, default: "p-5"
+  attr :rest, :global
   slot :inner_block, required: true
 
   def card(assigns) do
     ~H"""
-    <div class={[
-      "rounded-xl border border-zinc-900 bg-zinc-950/40",
-      @padding,
-      @class
-    ]}>
+    <div
+      class={[
+        "rounded-xl border border-zinc-900 bg-zinc-950/40",
+        @padding,
+        @class
+      ]}
+      {@rest}
+    >
       {render_slot(@inner_block)}
     </div>
     """
@@ -1216,13 +1220,14 @@ defmodule EmisarWeb.CoreComponents do
   attr :title, :string, default: nil
   attr :class, :string, default: nil
   attr :padding, :string, default: "p-5"
+  attr :rest, :global
   slot :subtitle
   slot :actions
   slot :inner_block, required: true
 
   def panel(assigns) do
     ~H"""
-    <.card padding={@padding} class={@class}>
+    <.card padding={@padding} class={@class} {@rest}>
       <header
         :if={@title || @subtitle != [] || @actions != []}
         class="mb-4 flex items-start justify-between gap-4"

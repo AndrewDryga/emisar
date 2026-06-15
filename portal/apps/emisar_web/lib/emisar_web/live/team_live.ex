@@ -518,18 +518,17 @@ defmodule EmisarWeb.TeamLive do
         <%!-- Invite panel — collapsed by default; revealed by header
              button. Avoids a permanent "fill out this form" sidebar
              dominating the page when no invite is in flight. --%>
-        <div
+        <.panel
           :if={can_manage?(assigns)}
           id="invite-panel"
-          class="hidden rounded-xl border border-zinc-900 bg-zinc-950/60 p-6"
+          class="hidden"
+          padding="p-6"
+          title="Invite a teammate"
         >
-          <div class="flex items-start justify-between gap-3">
-            <div>
-              <h2 class="text-base font-semibold text-zinc-100">Invite a teammate</h2>
-              <p class="mt-1 text-sm text-zinc-500">
-                We'll email a join link for <span class="font-medium text-zinc-300">{@current_account.name}</span>.
-              </p>
-            </div>
+          <:subtitle>
+            We'll email a join link for <span class="font-medium text-zinc-300">{@current_account.name}</span>.
+          </:subtitle>
+          <:actions>
             <button
               type="button"
               phx-click={hide_invite()}
@@ -538,14 +537,14 @@ defmodule EmisarWeb.TeamLive do
             >
               <.icon name="hero-x-mark" class="h-4 w-4" />
             </button>
-          </div>
+          </:actions>
 
           <.simple_form
             for={@form}
             id="invite_form"
             phx-change="validate"
             phx-submit="invite"
-            class="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-[1fr_auto_auto] sm:items-end"
+            class="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_auto_auto] sm:items-end"
           >
             <.input
               field={@form[:email]}
@@ -573,7 +572,7 @@ defmodule EmisarWeb.TeamLive do
               <dd>{role_description(role)}</dd>
             </div>
           </dl>
-        </div>
+        </.panel>
 
         <%!-- Member list — uses LiveTable :cards with overflow={:visible}
              so the per-row `<details>` action dropdown can escape the

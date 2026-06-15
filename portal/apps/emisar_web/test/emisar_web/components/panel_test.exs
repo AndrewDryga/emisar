@@ -67,6 +67,18 @@ defmodule EmisarWeb.Components.PanelTest do
       assert html =~ "body"
     end
 
+    test "global attrs (id, …) pass through to the surface element" do
+      assigns = %{}
+
+      html =
+        rendered_to_string(~H"""
+        <CoreComponents.panel id="create-panel" class="hidden" title="X">body</CoreComponents.panel>
+        """)
+
+      assert html =~ ~s(id="create-panel")
+      assert html =~ "hidden"
+    end
+
     test "no title/subtitle/actions → no header chrome, just the body" do
       assigns = %{}
 
