@@ -2,7 +2,7 @@ schema_version: 1
 
 id: terraform-readonly
 name: Terraform read-only ops
-version: 0.1.1
+version: 0.1.2
 description: >
   Read-only Terraform CLI actions for inspecting a workspace. NO apply,
   NO destroy, NO state mutation — those should happen in CI, not via a
