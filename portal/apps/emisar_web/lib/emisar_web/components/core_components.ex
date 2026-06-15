@@ -1254,6 +1254,51 @@ defmodule EmisarWeb.CoreComponents do
   end
 
   @doc """
+  The bare heading-row above an UNbordered list/table section (distinct from
+  `<.panel>`, which owns a bordered header). A `text-sm` section title, an
+  optional inline `<.count_badge>`, and an optional `:actions` slot.
+
+      <.section_header title="Pending" count={@pending_metadata.count} count_tone={:amber} />
+      <.section_header title="Connected agents" />
+  """
+  attr :title, :string, required: true
+  attr :count, :integer, default: nil
+  attr :count_tone, :atom, default: :amber, values: [:amber, :zinc, :indigo]
+  attr :class, :string, default: nil
+  slot :actions
+
+  def section_header(assigns) do
+    ~H"""
+    <header class={["mb-3 flex items-center gap-2", @class]}>
+      <h2 class="text-sm font-semibold text-zinc-100">{@title}</h2>
+      <.count_badge count={@count} tone={@count_tone} />
+      {render_slot(@actions)}
+    </header>
+    """
+  end
+
+  @doc """
+  Small count pill beside a section title. Renders nothing for a nil/zero count.
+  """
+  attr :count, :integer, default: nil
+  attr :tone, :atom, default: :amber, values: [:amber, :zinc, :indigo]
+
+  def count_badge(assigns) do
+    ~H"""
+    <span
+      :if={@count && @count > 0}
+      class={["rounded px-1.5 py-0.5 text-xs font-medium", count_badge_tone(@tone)]}
+    >
+      {@count}
+    </span>
+    """
+  end
+
+  defp count_badge_tone(:amber), do: "bg-amber-500/20 text-amber-200"
+  defp count_badge_tone(:zinc), do: "bg-zinc-800 text-zinc-300"
+  defp count_badge_tone(:indigo), do: "bg-indigo-500/20 text-indigo-200"
+
+  @doc """
   Key-value row for detail panes:
 
       <.kv label="Hostname">{@runner.hostname || "—"}</.kv>

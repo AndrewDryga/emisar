@@ -208,15 +208,7 @@ defmodule EmisarWeb.ApprovalsLive do
       <.page_container max="5xl">
         <%!-- 1. PENDING --%>
         <section>
-          <header class="mb-3 flex items-center gap-2">
-            <h2 class="text-sm font-semibold text-zinc-100">Pending</h2>
-            <span
-              :if={@pending_metadata.count > 0}
-              class="rounded bg-amber-500/20 px-1.5 py-0.5 text-xs font-medium text-amber-200"
-            >
-              {@pending_metadata.count}
-            </span>
-          </header>
+          <.section_header title="Pending" count={@pending_metadata.count} />
 
           <LiveTable.live_table
             layout={:cards}
@@ -373,9 +365,7 @@ defmodule EmisarWeb.ApprovalsLive do
 
         <%!-- 3. RECENT DECISIONS --%>
         <section>
-          <header class="mb-3 flex items-center gap-2">
-            <h2 class="text-sm font-semibold text-zinc-100">Recent decisions</h2>
-          </header>
+          <.section_header title="Recent decisions" />
 
           <LiveTable.live_table
             layout={:cards}

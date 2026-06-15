@@ -649,9 +649,7 @@ defmodule EmisarWeb.AgentsLive do
            section wrapping it, which boxed the filter against a second
            border. --%>
       <section class="mt-8">
-        <header class="mb-3 flex items-center gap-2">
-          <h2 class="text-sm font-semibold text-zinc-100">Connected agents</h2>
-        </header>
+        <.section_header title="Connected agents" />
 
         <LiveTable.live_table
           layout={:cards}
