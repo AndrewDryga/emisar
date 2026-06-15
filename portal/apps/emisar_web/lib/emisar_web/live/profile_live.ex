@@ -671,47 +671,41 @@ defmodule EmisarWeb.ProfileLive do
           </:meta>
 
           <ul class="divide-y divide-zinc-900 rounded-lg border border-zinc-900 bg-zinc-950/40 text-sm">
-            <li
-              :for={session <- @sessions}
-              class="flex items-center justify-between gap-3 px-4 py-3"
-            >
-              <div class="flex min-w-0 items-center gap-3">
-                <span class="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-zinc-900 text-zinc-400">
-                  <.icon name={session_device_icon(session)} class="h-4 w-4" />
+            <.list_row :for={session <- @sessions} icon={session_device_icon(session)}>
+              <:title>
+                <span class="truncate font-medium text-zinc-100">
+                  {session_device_label(session)}
                 </span>
-                <div class="min-w-0">
-                  <div class="flex items-center gap-2">
-                    <span class="truncate font-medium text-zinc-100">
-                      {session_device_label(session)}
-                    </span>
-                    <span
-                      :if={current_session?(session, @current_session_digest)}
-                      class="rounded bg-indigo-500/15 px-1.5 py-0.5 text-[10px] font-medium text-indigo-200 ring-1 ring-indigo-500/30"
-                    >
-                      This device
-                    </span>
-                  </div>
-                  <div class="mt-0.5 truncate text-xs text-zinc-500">
-                    Started <.local_time value={session.inserted_at} mode={:relative} />
-                    <%= if session_ip(session) do %>
-                      · <span class="font-mono">{session_ip(session)}</span>
-                    <% end %>
-                  </div>
-                </div>
-              </div>
-              <.button
-                :if={not current_session?(session, @current_session_digest)}
-                variant="ghost"
-                tone="danger"
-                size="sm"
-                phx-click="revoke_session"
-                phx-value-id={session.id}
-                data-confirm="Sign out this session?"
-                class="shrink-0"
-              >
-                Revoke
-              </.button>
-            </li>
+              </:title>
+              <:chips>
+                <span
+                  :if={current_session?(session, @current_session_digest)}
+                  class="rounded bg-indigo-500/15 px-1.5 py-0.5 text-[10px] font-medium text-indigo-200 ring-1 ring-indigo-500/30"
+                >
+                  This device
+                </span>
+              </:chips>
+              <:meta>
+                Started <.local_time value={session.inserted_at} mode={:relative} />
+                <%= if session_ip(session) do %>
+                  · <span class="font-mono">{session_ip(session)}</span>
+                <% end %>
+              </:meta>
+              <:actions>
+                <.button
+                  :if={not current_session?(session, @current_session_digest)}
+                  variant="ghost"
+                  tone="danger"
+                  size="sm"
+                  phx-click="revoke_session"
+                  phx-value-id={session.id}
+                  data-confirm="Sign out this session?"
+                  class="shrink-0"
+                >
+                  Revoke
+                </.button>
+              </:actions>
+            </.list_row>
             <li :if={@sessions == []} class="px-4 py-6 text-center text-xs text-zinc-500">
               No active sessions.
             </li>

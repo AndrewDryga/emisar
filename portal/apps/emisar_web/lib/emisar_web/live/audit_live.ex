@@ -361,40 +361,39 @@ defmodule EmisarWeb.AuditLive do
              exclusively. --%>
         <div :if={@export_keys != []} class="border-t border-zinc-900">
           <ul class="divide-y divide-zinc-900">
-            <li :for={key <- @export_keys} class="flex items-start gap-4 px-5 py-3">
-              <span class="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-zinc-900 text-zinc-400">
-                <.icon name="hero-document-text" class="h-3.5 w-3.5" />
-              </span>
-              <div class="min-w-0 flex-1">
-                <div class="flex flex-wrap items-center gap-2">
-                  <span class="truncate text-sm font-medium text-zinc-100">{key.name}</span>
-                  <span class="inline-flex items-center rounded-md bg-indigo-500/10 px-1.5 py-0.5 font-mono text-[10px] text-indigo-200 ring-1 ring-indigo-500/30">
-                    audit:read
-                  </span>
-                  <span
-                    :if={key.revoked_at}
-                    class="inline-flex items-center rounded-md bg-rose-500/10 px-1.5 py-0.5 text-[10px] text-rose-200 ring-1 ring-rose-500/30"
-                  >
-                    Revoked
-                  </span>
-                </div>
-                <div class="mt-0.5 truncate font-mono text-[11px] text-zinc-500">
-                  {key.key_prefix}… · last used {last_used(key.last_used_at)}
-                  <span :if={key.created_by}>· by {key.created_by.email}</span>
-                </div>
-              </div>
-              <.button
-                :if={is_nil(key.revoked_at)}
-                variant="danger"
-                size="sm"
-                class="shrink-0"
-                phx-click="revoke_export_key"
-                phx-value-id={key.id}
-                data-confirm="Revoke this export token? Any active SIEM collector using it will start receiving 401s."
-              >
-                Revoke
-              </.button>
-            </li>
+            <.list_row :for={key <- @export_keys} icon="hero-document-text">
+              <:title>
+                <span class="truncate text-sm font-medium text-zinc-100">{key.name}</span>
+              </:title>
+              <:chips>
+                <span class="inline-flex items-center rounded-md bg-indigo-500/10 px-1.5 py-0.5 font-mono text-[10px] text-indigo-200 ring-1 ring-indigo-500/30">
+                  audit:read
+                </span>
+                <span
+                  :if={key.revoked_at}
+                  class="inline-flex items-center rounded-md bg-rose-500/10 px-1.5 py-0.5 text-[10px] text-rose-200 ring-1 ring-rose-500/30"
+                >
+                  Revoked
+                </span>
+              </:chips>
+              <:meta>
+                {key.key_prefix}… · last used {last_used(key.last_used_at)}
+                <span :if={key.created_by}>· by {key.created_by.email}</span>
+              </:meta>
+              <:actions>
+                <.button
+                  :if={is_nil(key.revoked_at)}
+                  variant="danger"
+                  size="sm"
+                  class="shrink-0"
+                  phx-click="revoke_export_key"
+                  phx-value-id={key.id}
+                  data-confirm="Revoke this export token? Any active SIEM collector using it will start receiving 401s."
+                >
+                  Revoke
+                </.button>
+              </:actions>
+            </.list_row>
           </ul>
         </div>
       </section>

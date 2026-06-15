@@ -1392,6 +1392,7 @@ defmodule EmisarWeb.CoreComponents do
   attr :icon, :string, default: nil
   attr :icon_tone, :atom, default: :zinc, values: [:zinc, :emerald, :amber, :rose, :indigo]
   attr :class, :string, default: nil
+  slot :leading, doc: "a custom leading element (avatar, connection dot) — replaces the icon disc"
   slot :title, required: true
   slot :chips
   slot :meta
@@ -1400,8 +1401,9 @@ defmodule EmisarWeb.CoreComponents do
   def list_row(assigns) do
     ~H"""
     <li class={["flex items-start gap-4 px-5 py-4", @class]}>
+      <div :if={@leading != []} class="shrink-0">{render_slot(@leading)}</div>
       <span
-        :if={@icon}
+        :if={@leading == [] && @icon}
         class={["grid h-9 w-9 shrink-0 place-items-center rounded-lg", row_icon_class(@icon_tone)]}
       >
         <.icon name={@icon} class="h-4 w-4" />

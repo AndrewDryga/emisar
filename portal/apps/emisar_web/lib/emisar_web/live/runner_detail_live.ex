@@ -215,38 +215,40 @@ defmodule EmisarWeb.RunnerDetailLive do
             </.empty_state>
           <% else %>
             <ul class="divide-y divide-zinc-900">
-              <li :for={action <- @actions} class="flex items-center gap-4 px-5 py-3">
-                <div class="min-w-0 flex-1">
+              <.list_row :for={action <- @actions}>
+                <:title>
                   <span class="truncate font-mono text-sm text-zinc-100">{action.action_id}</span>
-                  <div :if={action.title} class="truncate text-xs text-zinc-500">
-                    {action.title}
-                  </div>
-                </div>
-                <.risk_pill risk={action.risk} />
-                <%!-- Dispatch only makes sense when the runner is online —
-                     otherwise the run sits in `pending` until reconnect.
-                     Gate the button visually so operators don't queue up
-                     work against a disconnected/disabled runner. --%>
-                <%= if @runner.online? do %>
-                  <.link
-                    navigate={~p"/app/runs/new/#{@runner.id}/#{action.action_id}"}
-                    class="shrink-0 rounded-lg bg-indigo-500/10 px-2.5 py-1 text-xs font-semibold text-indigo-300 ring-1 ring-indigo-500/30 hover:bg-indigo-500/20"
-                  >
-                    Run
-                  </.link>
-                <% else %>
-                  <%!-- Offline: not a link. aria-disabled + a signal-slash
-                       icon carry "can't run" without relying on the dimmed
-                       color alone (a11y) or the hover-only title. --%>
-                  <span
-                    aria-disabled="true"
-                    title={"Runner is #{connection_status(Runners.connection_state(@runner))} — runs can't be dispatched from here until it reconnects"}
-                    class="inline-flex shrink-0 cursor-not-allowed items-center gap-1 rounded-lg bg-zinc-900 px-2.5 py-1 text-xs font-semibold text-zinc-600 ring-1 ring-zinc-800"
-                  >
-                    <.icon name="hero-signal-slash" class="h-3.5 w-3.5" /> Run
-                  </span>
-                <% end %>
-              </li>
+                </:title>
+                <:meta :if={action.title}>
+                  {action.title}
+                </:meta>
+                <:actions>
+                  <.risk_pill risk={action.risk} />
+                  <%!-- Dispatch only makes sense when the runner is online —
+                       otherwise the run sits in `pending` until reconnect.
+                       Gate the button visually so operators don't queue up
+                       work against a disconnected/disabled runner. --%>
+                  <%= if @runner.online? do %>
+                    <.link
+                      navigate={~p"/app/runs/new/#{@runner.id}/#{action.action_id}"}
+                      class="shrink-0 rounded-lg bg-indigo-500/10 px-2.5 py-1 text-xs font-semibold text-indigo-300 ring-1 ring-indigo-500/30 hover:bg-indigo-500/20"
+                    >
+                      Run
+                    </.link>
+                  <% else %>
+                    <%!-- Offline: not a link. aria-disabled + a signal-slash
+                         icon carry "can't run" without relying on the dimmed
+                         color alone (a11y) or the hover-only title. --%>
+                    <span
+                      aria-disabled="true"
+                      title={"Runner is #{connection_status(Runners.connection_state(@runner))} — runs can't be dispatched from here until it reconnects"}
+                      class="inline-flex shrink-0 cursor-not-allowed items-center gap-1 rounded-lg bg-zinc-900 px-2.5 py-1 text-xs font-semibold text-zinc-600 ring-1 ring-zinc-800"
+                    >
+                      <.icon name="hero-signal-slash" class="h-3.5 w-3.5" /> Run
+                    </span>
+                  <% end %>
+                </:actions>
+              </.list_row>
             </ul>
 
             <div
