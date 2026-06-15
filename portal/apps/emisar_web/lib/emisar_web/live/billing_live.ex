@@ -338,13 +338,9 @@ defmodule EmisarWeb.BillingLive do
                 <h3 class="text-lg font-semibold text-zinc-100">{plan.name}</h3>
                 <%= cond do %>
                   <% current_plan?(plan, @summary) -> %>
-                    <span class="rounded bg-indigo-500/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-indigo-200 ring-1 ring-indigo-500/30">
-                      Current
-                    </span>
+                    <.tag tone={:indigo}>Current</.tag>
                   <% plan.key == "team" -> %>
-                    <span class="rounded bg-amber-500/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-amber-200 ring-1 ring-amber-500/30">
-                      Most popular
-                    </span>
+                    <.tag tone={:amber}>Most popular</.tag>
                   <% true -> %>
                     <span></span>
                 <% end %>

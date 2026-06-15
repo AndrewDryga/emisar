@@ -244,12 +244,7 @@ defmodule EmisarWeb.PacksLive do
               <h2 class="font-mono text-sm text-zinc-100">{pack.id}</h2>
               <span class="text-xs text-zinc-500">·</span>
               <span class="text-xs text-zinc-500">{version_count_label(pack.versions)}</span>
-              <span
-                :if={any_pending?(pack.versions)}
-                class="ml-2 rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-amber-200 ring-1 ring-amber-500/30"
-              >
-                Pending
-              </span>
+              <.tag :if={any_pending?(pack.versions)} tone={:amber} class="ml-2">Pending</.tag>
             </div>
           </header>
 
@@ -263,18 +258,8 @@ defmodule EmisarWeb.PacksLive do
                   <span class="truncate font-mono text-[11px] text-zinc-500" title={v.hash}>
                     sha256:{short_hash(v.hash)}
                   </span>
-                  <span
-                    :if={v.trust_state == :trusted}
-                    class="rounded bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-emerald-200 ring-1 ring-emerald-500/20"
-                  >
-                    Trusted
-                  </span>
-                  <span
-                    :if={v.trust_state == :pending}
-                    class="rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-amber-200 ring-1 ring-amber-500/30"
-                  >
-                    Pending
-                  </span>
+                  <.tag :if={v.trust_state == :trusted} tone={:emerald}>Trusted</.tag>
+                  <.tag :if={v.trust_state == :pending} tone={:amber}>Pending</.tag>
                 </div>
                 <div class="shrink-0 text-right text-xs text-zinc-500">
                   <div>last seen <.local_time value={v.last_seen_at} class="text-zinc-300" /></div>
