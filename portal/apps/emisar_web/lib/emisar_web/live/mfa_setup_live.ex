@@ -101,14 +101,12 @@ defmodule EmisarWeb.MfaSetupLive do
             <%!-- Gate Continue behind an explicit acknowledgement: an
                  MFA-required member who skips saving these and later loses
                  their authenticator is permanently locked out. --%>
-            <label class="flex items-center gap-2 text-xs text-zinc-300">
-              <input
-                type="checkbox"
-                phx-click="toggle_codes_saved"
-                checked={@codes_saved?}
-                class="rounded border-zinc-700 bg-zinc-900 text-indigo-500 focus:ring-indigo-500"
-              /> I've saved my recovery codes somewhere safe
-            </label>
+            <.checkbox
+              class="flex items-center gap-2 text-xs text-zinc-300"
+              phx-click="toggle_codes_saved"
+              checked={@codes_saved?}
+              label="I've saved my recovery codes somewhere safe"
+            />
             <.button
               phx-click="continue"
               phx-disable-with="Loading..."

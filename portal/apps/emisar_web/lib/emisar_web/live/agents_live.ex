@@ -1229,19 +1229,15 @@ defmodule EmisarWeb.AgentsLive do
             Tick groups this key may target. Auto-includes runners later added to the same group.
           </p>
           <div class="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
-            <label
+            <.checkbox
               :for={group <- @groups}
               class="flex items-center gap-2.5 rounded border border-zinc-800 bg-zinc-950/40 px-2 py-1.5 text-sm text-zinc-300 hover:border-indigo-500/40"
+              name="runner_group_filter[]"
+              value={group}
+              checked={group in @selected_runner_groups}
             >
-              <input
-                type="checkbox"
-                name="runner_group_filter[]"
-                value={group}
-                checked={group in @selected_runner_groups}
-                class="h-4 w-4 rounded border-zinc-700 bg-zinc-900 text-indigo-500 focus:ring-2 focus:ring-indigo-500/40"
-              />
               <span class="truncate">{group}</span>
-            </label>
+            </.checkbox>
           </div>
         </fieldset>
 
@@ -1257,20 +1253,16 @@ defmodule EmisarWeb.AgentsLive do
             </p>
           <% else %>
             <div class="mt-2 max-h-40 space-y-1 overflow-y-auto rounded-lg border border-zinc-800 bg-zinc-950/40 p-2">
-              <label
+              <.checkbox
                 :for={runner <- @runners}
                 class="flex items-center gap-2.5 rounded px-1.5 py-1 text-sm text-zinc-300 hover:bg-zinc-900/60"
+                name="runner_filter[]"
+                value={runner.id}
+                checked={runner.id in @selected_runner_ids}
               >
-                <input
-                  type="checkbox"
-                  name="runner_filter[]"
-                  value={runner.id}
-                  checked={runner.id in @selected_runner_ids}
-                  class="h-4 w-4 rounded border-zinc-700 bg-zinc-900 text-indigo-500 focus:ring-2 focus:ring-indigo-500/40"
-                />
                 <span class="flex-1 truncate">{runner.name}</span>
                 <span class="text-xs text-zinc-500">{runner.group}</span>
-              </label>
+              </.checkbox>
             </div>
           <% end %>
         </fieldset>

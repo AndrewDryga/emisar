@@ -655,9 +655,6 @@ defmodule EmisarWeb.RunbookEditorLive do
           <div class="sm:col-span-2">
             <.label variant={:eyebrow} for={"step-#{@index}-selector-values"}>
               Targets
-              <span class="ml-1 text-[9px] font-normal normal-case tracking-normal text-zinc-600">
-                — pick more than one with ⌘/Ctrl-click or Shift+↑/↓
-              </span>
             </.label>
             <% selected = @step["selector_values"] || [] %>
             <% options =
@@ -665,11 +662,9 @@ defmodule EmisarWeb.RunbookEditorLive do
               |> Enum.map(fn {label, value} ->
                 %{value: value, label: label, disabled: false, selected: value in selected}
               end) %>
-            <.select
+            <.multi_select
               id={"step-#{@index}-selector-values"}
               name="selector_values[]"
-              multiple
-              size="4"
               options={options}
             />
             <p :if={options == []} class="mt-1 text-[11px] text-zinc-500">

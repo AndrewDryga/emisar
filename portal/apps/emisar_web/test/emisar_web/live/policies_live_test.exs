@@ -307,6 +307,15 @@ defmodule EmisarWeb.PoliciesLiveTest do
       {:ok, _lv, html} = live(conn, ~p"/app/policies")
 
       assert html =~ ~r/name="policy\[approval\]\[min_approvals\]"[^>]*value="3"/
+
+      # The self-approval <.checkbox> renders its hidden "false" companion so an
+      # unchecked box still posts a value, and reflects the stored false
+      # (unchecked) state.
+      assert html =~
+               ~r/<input[^>]*type="hidden"[^>]*name="policy\[approval\]\[allow_self_approval\]"[^>]*value="false"/
+
+      refute html =~
+               ~r/<input[^>]*type="checkbox"[^>]*name="policy\[approval\]\[allow_self_approval\]"[^>]*checked/
     end
   end
 

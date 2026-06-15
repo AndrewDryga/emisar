@@ -47,10 +47,15 @@ defmodule EmisarWeb.MfaSetupLiveTest do
     assert html =~ "Download .txt"
 
     # Continue is gated until the operator acknowledges saving the codes —
-    # an MFA-required member who skips this can lock themselves out.
+    # an MFA-required member who skips this can lock themselves out. The
+    # acknowledgement checkbox starts unchecked.
     assert has_element?(lv, "button[disabled]", "Continue to dashboard")
+    refute has_element?(lv, "input[type=checkbox][checked]")
 
-    render_click(lv, "toggle_codes_saved", %{})
+    html = render_click(lv, "toggle_codes_saved", %{})
+    # The <.checkbox checked={@codes_saved?}> reflects the toggled state, and
+    # Continue un-gates.
+    assert html =~ ~r/<input[^>]*type="checkbox"[^>]*checked/
     refute has_element?(lv, "button[disabled]", "Continue to dashboard")
 
     lv

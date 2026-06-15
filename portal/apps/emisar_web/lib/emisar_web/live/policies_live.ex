@@ -859,20 +859,18 @@ defmodule EmisarWeb.PoliciesLive do
             <.label variant={:eyebrow}>
               Self-approval
             </.label>
-            <%!-- Hidden "false" before the checkbox so an unchecked box still
-                 posts a value — a native checkbox posts nothing when off. --%>
-            <label class="mt-1 flex items-center gap-2 text-sm text-zinc-200">
-              <input type="hidden" name="policy[approval][allow_self_approval]" value="false" />
-              <input
-                type="checkbox"
-                name="policy[approval][allow_self_approval]"
-                value="true"
-                checked={@approval["allow_self_approval"]}
-                disabled={!@can_manage}
-                class="h-4 w-4 rounded border-zinc-700 bg-zinc-900 text-indigo-500 focus:ring-indigo-500 disabled:opacity-50"
-              />
-              <span>Let the requester approve their own action</span>
-            </label>
+            <%!-- `unchecked_value` emits the companion hidden input so an
+                 unchecked box still posts a value — a native checkbox posts
+                 nothing when off. --%>
+            <.checkbox
+              class="mt-1 flex items-center gap-2 text-sm text-zinc-200"
+              name="policy[approval][allow_self_approval]"
+              value="true"
+              unchecked_value="false"
+              checked={@approval["allow_self_approval"]}
+              disabled={!@can_manage}
+              label="Let the requester approve their own action"
+            />
             <p class="mt-1 text-[11px] leading-relaxed text-zinc-500">
               Off (GitHub-style) requires a <em>different</em> operator to approve.
             </p>

@@ -793,10 +793,8 @@ defmodule EmisarWeb.TeamLive do
                       <span class="text-xs font-medium uppercase tracking-wider text-zinc-400">
                         Groups
                       </span>
-                      <.select
+                      <.multi_select
                         name="groups[]"
-                        multiple
-                        size={min(max(length(@runner_groups), 3), 6)}
                         options={
                           Enum.map(@runner_groups, fn g ->
                             %{
@@ -809,19 +807,14 @@ defmodule EmisarWeb.TeamLive do
                           end)
                         }
                       />
-                      <p class="mt-1 text-[10px] text-zinc-500">
-                        Cmd/Ctrl-click to select multiple.
-                      </p>
                     </label>
 
                     <label class="block">
                       <span class="text-xs font-medium uppercase tracking-wider text-zinc-400">
                         Individual runners
                       </span>
-                      <.select
+                      <.multi_select
                         name="runners[]"
-                        multiple
-                        size={min(max(map_size(@runners_by_id), 3), 6)}
                         options={
                           Enum.map(@runners_by_id, fn {id, r} ->
                             %{

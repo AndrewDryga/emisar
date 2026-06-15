@@ -523,6 +523,124 @@ defmodule EmisarWeb.CoreComponents do
   end
 
   @doc """
+  A standalone checkbox — the standard indigo accent + `focus:ring-2` ring +
+  clickable label — for the boxes that are NOT a changeset form field: a bare
+  `name`/`checked` driven by `phx-click`/`phx-change`/`phx-value-*` (a toggle,
+  an array member like `runner_filter[]`). For a checkbox bound to a form field
+  reach for `<.input type="checkbox">` instead — it derives name/checked from
+  the field. Sibling to `<.select>`: one place the box styling lives so the
+  hand-rolled copies can't drift (e.g. one had dropped `focus:ring-2`).
+
+  The label is either the `label` string or, for rich content, the inner block
+  (a truncated runner name, a `<span>` with an `<em>`). `class` styles the
+  wrapping `<label>` (the per-site border/hover/text-size). `disabled` rides
+  the global `:rest` alongside the event bindings.
+
+  A native checkbox posts nothing when off, so a `phx-change` form that must
+  see the unchecked value passes `unchecked_value` (e.g. `"false"`) to emit the
+  companion hidden input — omit it for `phx-click` toggles and `name="x[]"`
+  array boxes, where a hidden value would be meaningless or corrupt the array.
+
+      <.checkbox name="agree" checked={@agreed?} phx-click="toggle" label="I agree" />
+      <.checkbox name="x[]" value={id} checked={id in @selected}>
+        <span class="truncate">{name}</span>
+      </.checkbox>
+  """
+  attr :checked, :boolean, default: false
+  attr :label, :string, default: nil
+
+  attr :unchecked_value, :string,
+    default: nil,
+    doc: "emit a hidden companion input with this value"
+
+  attr :class, :string,
+    default: "flex items-center gap-3 text-sm text-zinc-300",
+    doc: "classes on the wrapping <label>"
+
+  attr :rest, :global, include: ~w(name value disabled form)
+  slot :inner_block, doc: "rich label content; overrides `label` when given"
+
+  def checkbox(assigns) do
+    ~H"""
+    <label class={@class}>
+      <input
+        :if={@unchecked_value}
+        type="hidden"
+        name={@rest[:name]}
+        value={@unchecked_value}
+        disabled={@rest[:disabled]}
+      />
+      <input
+        type="checkbox"
+        checked={@checked}
+        class="h-4 w-4 rounded border-zinc-700 bg-zinc-900 text-indigo-500 focus:ring-2 focus:ring-indigo-500/40 focus:ring-offset-0 disabled:opacity-50"
+        {@rest}
+      />
+      <%= if @inner_block != [] do %>
+        {render_slot(@inner_block)}
+      <% else %>
+        {@label}
+      <% end %>
+    </label>
+    """
+  end
+
+  @doc """
+  A multi-`<select>` (Cmd/Ctrl-click to add) — wraps `<.select multiple>` so the
+  markup stays in one place, and owns the two things every call site otherwise
+  duplicates: the `size` heuristic (clamp the visible rows to the option count,
+  3–6, so the box is neither a one-line scroll nor a wall) and the one standard
+  "pick multiple" hint, so the copy can't drift (it had: "⌘/Ctrl-click or
+  Shift+↑/↓" one place, "Cmd/Ctrl-click to select multiple." another).
+
+  Same per-option contract as `<.select>`: option maps `%{value:, label:,
+  disabled:, selected:}`, rendered escaped through HEEx (IL-16). Pass `hint?:
+  false` to suppress the hint where space is tight; `size` to override the
+  clamp.
+
+      <.multi_select name="groups[]" options={@group_options} />
+  """
+  attr :id, :any, default: nil
+  attr :name, :any, required: true
+  attr :label, :string, default: nil
+  attr :label_variant, :atom, default: :default, values: [:default, :eyebrow]
+  attr :hint?, :boolean, default: true
+  attr :size, :integer, default: nil, doc: "overrides the row-count clamp"
+  attr :errors, :list, default: []
+
+  attr :options, :list,
+    required: true,
+    doc: "option maps: %{value:, label:, disabled:, selected:}"
+
+  attr :rest, :global, include: ~w(disabled form)
+
+  def multi_select(assigns) do
+    # `assign_new` won't override the `nil` the attr default already set, so
+    # fall back explicitly when no `size` was passed.
+    assigns = assign(assigns, :size, assigns.size || multi_select_size(assigns.options))
+
+    ~H"""
+    <.select
+      id={@id}
+      name={@name}
+      label={@label}
+      label_variant={@label_variant}
+      multiple
+      size={@size}
+      options={@options}
+      errors={@errors}
+      {@rest}
+    />
+    <p :if={@hint?} class="mt-1 text-[10px] text-zinc-500">⌘/Ctrl-click to select multiple.</p>
+    """
+  end
+
+  # Show enough rows to scan without scrolling, but cap it so a long fleet
+  # doesn't grow the box into a wall; floor at 3 so a one-option list still
+  # reads as a multi-select.
+  defp multi_select_size(options), do: options |> length() |> max(3) |> min(6)
+
+  @doc """
   Renders a form label. `:default` is the standard `text-sm` form label;
   `:eyebrow` is the compact small-caps label the dense editors use above their
   fields. One component so the two field-label treatments don't drift into more.
