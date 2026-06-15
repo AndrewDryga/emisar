@@ -8,6 +8,17 @@ defmodule Emisar.Runners.Runner.Changeset do
   use Emisar, :changeset
   alias Emisar.Runners.Runner
 
+  # Generous caps on runner-advertised fields. A frame is already bounded to
+  # ~1 MB by the socket, but a hostile authenticated runner could loop
+  # state/register advertisements to grow its own account's row (and every
+  # render of it). `hostname` is a DNS name (≤253 chars); `runner_version` is a
+  # semver-ish string — 255 is far above either. `labels`/`packs` are free-form
+  # jsonb a real runner keeps to a handful of KB, so 64 KB serialized is well
+  # above any honest advertisement while bounding the gross-abuse row.
+  @max_hostname_length 255
+  @max_runner_version_length 255
+  @max_json_bytes 65_536
+
   # -- Bootstrap paths -------------------------------------------------
 
   @doc "Inserted by the runner socket on first auth-key registration."
@@ -26,6 +37,7 @@ defmodule Emisar.Runners.Runner.Changeset do
     |> validate_required([:account_id, :name, :external_id, :group])
     |> validate_length(:name, min: 1, max: 80)
     |> validate_length(:group, min: 1, max: 80)
+    |> validate_advertised_fields()
     |> unique_constraint([:account_id, :external_id])
     |> unique_constraint(:name,
       name: :runners_account_id_name_index,
@@ -45,6 +57,7 @@ defmodule Emisar.Runners.Runner.Changeset do
     |> put_change(:account_id, account.id)
     |> validate_required([:name, :external_id, :group])
     |> validate_length(:name, min: 1, max: 80)
+    |> validate_advertised_fields()
     |> unique_constraint([:account_id, :external_id])
     |> unique_constraint(:name,
       name: :runners_account_id_name_index,
@@ -82,7 +95,37 @@ defmodule Emisar.Runners.Runner.Changeset do
     # `group` is included so a config `runner.group` rename propagates on the
     # next reconnect; the caller only passes a non-blank value (otherwise the
     # existing group is kept), so this never wipes a group to "".
-    cast(runner, attrs, [:hostname, :labels, :runner_version, :packs, :group])
+    runner
+    |> cast(attrs, [:hostname, :labels, :runner_version, :packs, :group])
+    |> validate_advertised_fields()
+  end
+
+  # Bound the runner-controlled fields so a hostile authenticated runner can't
+  # grow its account's row by advertising oversized values. Each check only
+  # fires when its field is in this changeset, so the bootstrap paths (which
+  # cast a subset) reuse the same helper.
+  defp validate_advertised_fields(changeset) do
+    changeset
+    |> validate_length(:hostname, max: @max_hostname_length)
+    |> validate_length(:runner_version, max: @max_runner_version_length)
+    |> validate_json_size(:labels)
+    |> validate_json_size(:packs)
+  end
+
+  defp validate_json_size(changeset, field) do
+    case get_change(changeset, field) do
+      nil ->
+        changeset
+
+      value ->
+        case Jason.encode(value) do
+          {:ok, json} when byte_size(json) > @max_json_bytes ->
+            add_error(changeset, field, "is too large (max #{@max_json_bytes} bytes serialized)")
+
+          _ ->
+            changeset
+        end
+    end
   end
 
   # Connect/disconnect stamp the durable "last seen" history only.
