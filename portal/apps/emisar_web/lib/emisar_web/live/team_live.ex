@@ -725,14 +725,12 @@ defmodule EmisarWeb.TeamLive do
                     data-confirm={"Change #{(membership.user && (membership.user.full_name || membership.user.email)) || "this member"}'s role? Admins and owners can manage members and runners; only owners manage billing."}
                   >
                     <input type="hidden" name="membership_id" value={membership.id} />
-                    <select
+                    <.input
                       name="role"
-                      class="rounded-lg border-0 bg-zinc-900 px-2 py-1 text-xs text-zinc-200 ring-1 ring-zinc-800 focus:ring-indigo-500"
-                    >
-                      <option :for={r <- @roles} value={r} selected={to_string(membership.role) == r}>
-                        {String.capitalize(r)}
-                      </option>
-                    </select>
+                      type="select"
+                      value={to_string(membership.role)}
+                      options={Enum.map(@roles, &{String.capitalize(&1), &1})}
+                    />
                   </form>
                 <% else %>
                   <span class="shrink-0 rounded-md bg-zinc-900 px-2 py-1 text-xs font-medium text-zinc-300 ring-1 ring-zinc-800">
@@ -795,20 +793,22 @@ defmodule EmisarWeb.TeamLive do
                       <span class="text-xs font-medium uppercase tracking-wider text-zinc-400">
                         Groups
                       </span>
-                      <select
+                      <.select
                         name="groups[]"
                         multiple
                         size={min(max(length(@runner_groups), 3), 6)}
-                        class="mt-1 block w-full rounded-lg border-0 bg-zinc-900 px-2 py-2 text-sm text-zinc-200 ring-1 ring-zinc-800 focus:ring-indigo-500"
-                      >
-                        <option
-                          :for={g <- @runner_groups}
-                          value={g}
-                          selected={scope_selected?(membership.id, @scopes_by_membership, :group, g)}
-                        >
-                          {g}
-                        </option>
-                      </select>
+                        options={
+                          Enum.map(@runner_groups, fn g ->
+                            %{
+                              value: g,
+                              label: g,
+                              disabled: false,
+                              selected:
+                                scope_selected?(membership.id, @scopes_by_membership, :group, g)
+                            }
+                          end)
+                        }
+                      />
                       <p class="mt-1 text-[10px] text-zinc-500">
                         Cmd/Ctrl-click to select multiple.
                       </p>
@@ -818,22 +818,22 @@ defmodule EmisarWeb.TeamLive do
                       <span class="text-xs font-medium uppercase tracking-wider text-zinc-400">
                         Individual runners
                       </span>
-                      <select
+                      <.select
                         name="runners[]"
                         multiple
                         size={min(max(map_size(@runners_by_id), 3), 6)}
-                        class="mt-1 block w-full rounded-lg border-0 bg-zinc-900 px-2 py-2 text-sm text-zinc-200 ring-1 ring-zinc-800 focus:ring-indigo-500"
-                      >
-                        <option
-                          :for={{id, r} <- @runners_by_id}
-                          value={id}
-                          selected={
-                            scope_selected?(membership.id, @scopes_by_membership, :runner, id)
-                          }
-                        >
-                          {r.name} <span :if={r.group}>({r.group})</span>
-                        </option>
-                      </select>
+                        options={
+                          Enum.map(@runners_by_id, fn {id, r} ->
+                            %{
+                              value: id,
+                              label: if(r.group, do: "#{r.name} (#{r.group})", else: r.name),
+                              disabled: false,
+                              selected:
+                                scope_selected?(membership.id, @scopes_by_membership, :runner, id)
+                            }
+                          end)
+                        }
+                      />
                     </label>
                   </div>
 

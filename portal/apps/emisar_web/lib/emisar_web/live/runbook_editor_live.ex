@@ -655,21 +655,15 @@ defmodule EmisarWeb.RunbookEditorLive do
 
         <div class="grid grid-cols-1 gap-2 sm:grid-cols-3">
           <div class="sm:col-span-1">
-            <.label variant={:eyebrow} for={"step-#{@index}-selector-kind"}>
-              Runner by
-            </.label>
-            <select
+            <.input
               id={"step-#{@index}-selector-kind"}
               name="selector_kind"
-              class={input_class()}
-            >
-              <option value="group" selected={@step["selector_kind"] == "group"}>
-                group
-              </option>
-              <option value="runner_id" selected={@step["selector_kind"] == "runner_id"}>
-                runner
-              </option>
-            </select>
+              type="select"
+              label="Runner by"
+              label_variant={:eyebrow}
+              value={@step["selector_kind"]}
+              options={[{"group", "group"}, {"runner", "runner_id"}]}
+            />
           </div>
           <div class="sm:col-span-2">
             <.label variant={:eyebrow} for={"step-#{@index}-selector-values"}>
@@ -678,28 +672,19 @@ defmodule EmisarWeb.RunbookEditorLive do
                 — pick more than one with ⌘/Ctrl-click or Shift+↑/↓
               </span>
             </.label>
+            <% selected = @step["selector_values"] || [] %>
             <% options =
-              selector_options(
-                @step["selector_kind"],
-                @groups,
-                @runners,
-                @step["selector_values"] || []
-              ) %>
-            <select
+              selector_options(@step["selector_kind"], @groups, @runners, selected)
+              |> Enum.map(fn {label, value} ->
+                %{value: value, label: label, disabled: false, selected: value in selected}
+              end) %>
+            <.select
               id={"step-#{@index}-selector-values"}
               name="selector_values[]"
               multiple
               size="4"
-              class={[input_class(), "py-1"]}
-            >
-              <option
-                :for={{label, value} <- options}
-                value={value}
-                selected={value in (@step["selector_values"] || [])}
-              >
-                {label}
-              </option>
-            </select>
+              options={options}
+            />
             <p :if={options == []} class="mt-1 text-[11px] text-zinc-500">
               {if @step["selector_kind"] == "runner_id",
                 do: "No runners connected yet.",

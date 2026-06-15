@@ -617,19 +617,20 @@ defmodule EmisarWeb.ApprovalDetailLive do
               </summary>
               <div class="mt-3 space-y-3">
                 <div>
-                  <.label variant={:eyebrow}>
-                    For
-                  </.label>
-                  <select
+                  <.input
                     name="duration"
-                    class="mt-1 w-full rounded-lg border-0 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 ring-1 ring-zinc-800 focus:ring-indigo-500"
-                  >
-                    <option value="once">Just this call (no grant)</option>
-                    <option value="one_hour">Next 1 hour</option>
-                    <option value="one_day">Next 24 hours</option>
-                    <option value="thirty_days">Next 30 days</option>
-                    <option value="ninety_days">Next 90 days</option>
-                  </select>
+                    type="select"
+                    label="For"
+                    label_variant={:eyebrow}
+                    value={@grant_duration}
+                    options={[
+                      {"Just this call (no grant)", "once"},
+                      {"Next 1 hour", "one_hour"},
+                      {"Next 24 hours", "one_day"},
+                      {"Next 30 days", "thirty_days"},
+                      {"Next 90 days", "ninety_days"}
+                    ]}
+                  />
                 </div>
                 <%!-- Match / Limit-to only matter when an actual grant is
                    being minted. With duration="once" no grant is created,
@@ -638,16 +639,20 @@ defmodule EmisarWeb.ApprovalDetailLive do
                    phx-change handler tracks duration → re-renders this
                    block. --%>
                 <div :if={@grant_duration != "once"}>
-                  <.label variant={:eyebrow}>
-                    Match
-                  </.label>
-                  <select
+                  <%!-- Not value-bound: the LV doesn't track scope, so it
+                       defaults to "Same arguments only" each render — the
+                       parse on approve reads whatever's posted. --%>
+                  <.input
                     name="scope"
-                    class="mt-1 w-full rounded-lg border-0 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 ring-1 ring-zinc-800 focus:ring-indigo-500"
-                  >
-                    <option value="exact_args">Same arguments only</option>
-                    <option value="any_args">Any arguments for this action</option>
-                  </select>
+                    type="select"
+                    label="Match"
+                    label_variant={:eyebrow}
+                    value={nil}
+                    options={[
+                      {"Same arguments only", "exact_args"},
+                      {"Any arguments for this action", "any_args"}
+                    ]}
+                  />
                 </div>
                 <div :if={@grant_duration != "once"}>
                   <.label variant={:eyebrow}>

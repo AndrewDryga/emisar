@@ -121,6 +121,30 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       assert step["runner_selector"] == %{"group" => ["edge-eu", "edge-us"]}
     end
 
+    test "the kind + targets selects reflect the picked values after a change", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      Emisar.Fixtures.runner_fixture(account_id: account.id, group: "edge-eu")
+      Emisar.Fixtures.runner_fixture(account_id: account.id, group: "edge-us")
+
+      {:ok, lv, _html} = live(conn, ~p"/app/runbooks/new")
+
+      html =
+        render_change(lv, "step_change", %{
+          "index" => "0",
+          "step_id" => "check",
+          "action_id" => "linux.uptime",
+          "selector_kind" => "group",
+          "selector_values" => ["edge-eu"]
+        })
+
+      # selector_kind (a plain single-value <.input type="select">) marks the
+      # current kind selected; selector_values (the multi-select <.select>)
+      # marks the picked group selected and leaves the unpicked one alone.
+      assert html =~ ~r/<option(?=[^>]*\bvalue="group")(?=[^>]*\bselected)[^>]*>/
+      assert html =~ ~r/<option(?=[^>]*\bvalue="edge-eu")(?=[^>]*\bselected)[^>]*>/
+      refute html =~ ~r/<option(?=[^>]*\bvalue="edge-us")(?=[^>]*\bselected)[^>]*>/
+    end
+
     test "a step with no target selected is flagged inline, not only at publish", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
       Emisar.Fixtures.runner_fixture(account_id: account.id, group: "edge-eu")

@@ -37,6 +37,25 @@ defmodule EmisarWeb.PoliciesLiveTest do
       assert html =~ "No targeted rulesets"
     end
 
+    test "a tier select disables decisions below its floor and pre-selects the current value", %{
+      conn: conn
+    } do
+      # Seeded defaults are low/medium=allow, high=require_approval, critical=deny.
+      # The critical floor is the high tier's rank (require_approval), so "Allow"
+      # would be more permissive than high and is rendered disabled-but-visible;
+      # the stored "deny" is pre-selected. This is the per-option state the
+      # shared <.select> must carry through (options_for_select can't).
+      {conn, _user, _account} = register_and_log_in(conn)
+      {:ok, _lv, html} = live(conn, ~p"/app/policies")
+
+      [critical] =
+        Regex.run(~r/name="policy\[defaults\]\[critical\]".*?<\/select>/s, html)
+
+      assert critical =~ ~r/<option(?=[^>]*\bvalue="allow")(?=[^>]*\bdisabled)[^>]*>/
+      assert critical =~ ~r/<option(?=[^>]*\bvalue="deny")(?=[^>]*\bselected)[^>]*>/
+      refute critical =~ ~r/<option(?=[^>]*\bvalue="deny")(?=[^>]*\bdisabled)[^>]*>/
+    end
+
     test "tweak defaults + add an override → save → persisted as v2 JSON", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/policies")
@@ -371,6 +390,25 @@ defmodule EmisarWeb.PoliciesLiveTest do
       assert html =~ ~s(value="runner:#{runner.id}")
       assert html =~ "web-1"
       refute html =~ "<optgroup"
+    end
+
+    test "a target another ruleset already claims renders disabled in a new picker", ctx do
+      # The picker shows every runner/group, but one already bound to a saved
+      # ruleset is disabled-but-visible so the operator sees why it can't be
+      # re-targeted. This per-option `disabled` is exactly why the picker uses
+      # the shared <.select> rather than <.input type="select">.
+      runner =
+        Emisar.Fixtures.runner_fixture(account_id: ctx.account.id, name: "web-1", group: "web")
+
+      {:ok, _} = Policies.save_scoped_rules(deny_all(), :runner, runner.id, ctx.subject)
+
+      {:ok, lv, _html} = live(ctx.conn, ~p"/app/policies")
+      html = lv |> render_click("add_ruleset", %{})
+
+      # In the new (unsaved) card's picker, the taken runner is disabled and
+      # labelled as already having a ruleset.
+      assert html =~ ~r/<option(?=[^>]*\bvalue="runner:#{runner.id}")(?=[^>]*\bdisabled)[^>]*>/
+      assert html =~ "web-1 — has a ruleset"
     end
 
     test "removing a saved ruleset falls the scope back to the default policy", ctx do

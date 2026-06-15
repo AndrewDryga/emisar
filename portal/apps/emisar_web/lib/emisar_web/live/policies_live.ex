@@ -682,28 +682,21 @@ defmodule EmisarWeb.PoliciesLive do
           <% else %>
             <%!-- A form (not a lone select) so the uid rides along as a hidden
                  field on the change event, the same shape as the team page. --%>
-            <form phx-change="set_target">
+            <form phx-change="set_target" class="sm:max-w-xs">
               <input type="hidden" name="uid" value={@ruleset.uid} />
-              <.label variant={:eyebrow}>
-                Apply this ruleset to
-              </.label>
-              <select name="target" disabled={not @can_manage} class={[input_class(), "sm:max-w-xs"]}>
-                <option value="" selected={is_nil(@ruleset.scope_type)}>
-                  Choose a runner or group…
-                </option>
-                <%!-- One tree: each group is a selectable header with its runners
-                     indented beneath it. A native <optgroup> label can't be picked,
-                     so groups are plain options; a target another ruleset already
-                     claims is shown disabled. --%>
-                <option
-                  :for={option <- target_options(@runners, @groups, @ruleset, @rulesets)}
-                  value={option.value}
-                  disabled={option.disabled}
-                  selected={option.selected}
-                >
-                  {option.label}
-                </option>
-              </select>
+              <%!-- One tree: each group is a selectable header with its runners
+                   indented beneath it. A native <optgroup> label can't be picked,
+                   so groups are plain options; a target another ruleset already
+                   claims is shown disabled. --%>
+              <.select
+                name="target"
+                label="Apply this ruleset to"
+                label_variant={:eyebrow}
+                disabled={not @can_manage}
+                prompt="Choose a runner or group…"
+                prompt_selected={is_nil(@ruleset.scope_type)}
+                options={target_options(@runners, @groups, @ruleset, @rulesets)}
+              />
             </form>
           <% end %>
         </div>
@@ -908,23 +901,23 @@ defmodule EmisarWeb.PoliciesLive do
         <span class="text-xs font-semibold uppercase tracking-wider text-zinc-200">{@tier}</span>
         <span class={["h-1.5 w-1.5 rounded-full", tier_dot(@tier)]}></span>
       </div>
-      <select
+      <%!-- Options below the floor are disabled — they'd make this tier
+           more permissive than a lower-risk one, which the server rejects.
+           Kept visible (not hidden) so the operator sees why. --%>
+      <.select
         name={"policy[defaults][#{@tier}]"}
-        class="mt-2 block w-full rounded-lg border-0 bg-zinc-900 px-2 py-1.5 text-sm text-zinc-100 ring-1 ring-zinc-800 focus:ring-indigo-500 disabled:opacity-50"
         disabled={!@can_manage}
-      >
-        <%!-- Options below the floor are disabled — they'd make this tier
-             more permissive than a lower-risk one, which the server rejects.
-             Kept visible (not hidden) so the operator sees why. --%>
-        <option
-          :for={{label, value} <- decision_options()}
-          value={value}
-          selected={@value == value}
-          disabled={Policies.decision_rank(value) < @floor_rank}
-        >
-          {label}
-        </option>
-      </select>
+        options={
+          Enum.map(decision_options(), fn {label, value} ->
+            %{
+              value: value,
+              label: label,
+              disabled: Policies.decision_rank(value) < @floor_rank,
+              selected: @value == value
+            }
+          end)
+        }
+      />
     </label>
     """
   end
@@ -966,22 +959,15 @@ defmodule EmisarWeb.PoliciesLive do
           />
         </div>
         <div class="sm:col-span-3">
-          <.label variant={:eyebrow}>
-            Decision
-          </.label>
-          <select
+          <.input
             name={"policy[overrides][#{@index}][decision]"}
-            class={input_class()}
+            type="select"
+            label="Decision"
+            label_variant={:eyebrow}
+            value={@override["decision"]}
+            options={decision_options()}
             disabled={!@can_manage}
-          >
-            <option
-              :for={{label, value} <- decision_options()}
-              value={value}
-              selected={@override["decision"] == value}
-            >
-              {label}
-            </option>
-          </select>
+          />
         </div>
         <div class="sm:col-span-1 sm:flex sm:justify-end">
           <button

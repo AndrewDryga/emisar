@@ -115,6 +115,34 @@ defmodule EmisarWeb.TeamLiveTest do
       assert Enum.any?(scopes, &(&1.scope_type == :group and &1.scope_value == "dba"))
       assert Enum.any?(scopes, &(&1.scope_type == :runner and &1.scope_value == runner.id))
     end
+
+    test "the scope multi-selects pre-select the member's existing scopes", %{conn: conn} do
+      {conn, owner, account} = register_and_log_in(conn, %{account: %{name: "ScopeOrg2"}})
+      subject = Emisar.Fixtures.subject_for(owner, account, role: :owner)
+
+      email = "scoped2-#{System.unique_integer([:positive])}@example.com"
+      {:ok, %{membership: m}} = Emisar.Accounts.invite_user_to_account(email, "admin", subject)
+      {:ok, runner} = Emisar.Runners.create_runner(%{"name" => "r9", "group" => "dba"}, subject)
+
+      # Pre-existing scope: one group + one runner.
+      {:ok, :ok} =
+        Emisar.Runners.replace_runner_scopes(
+          m,
+          [{"group", "dba"}, {"runner", runner.id}],
+          subject
+        )
+
+      {:ok, lv, _html} = live(conn, ~p"/app/settings/team")
+      html = render_click(lv, "start_scope_edit", %{"membership_id" => m.id})
+
+      # Both multi-selects mark the stored scope's option selected, so the
+      # editor opens reflecting current state (selection round-trips through
+      # the shared <.select>).
+      assert html =~ ~s(name="groups[]")
+      assert html =~ ~s(name="runners[]")
+      assert html =~ ~r/<option(?=[^>]*\bvalue="dba")(?=[^>]*\bselected)[^>]*>/
+      assert html =~ ~r/<option(?=[^>]*\bvalue="#{runner.id}")(?=[^>]*\bselected)[^>]*>/
+    end
   end
 
   describe "member administration" do
@@ -168,6 +196,26 @@ defmodule EmisarWeb.TeamLiveTest do
 
       assert html =~ "Role updated."
       assert Emisar.Repo.reload!(membership).role == :operator
+    end
+
+    test "the role select renders every role and pre-selects the member's current one", %{
+      lv: lv,
+      membership: membership
+    } do
+      # The member is seeded as a viewer; the inline role <select> must render
+      # all roles and mark the current one selected (value round-trips through
+      # the shared <.input type="select">). Scope to the member's own role form
+      # (its hidden membership_id) — the invite panel carries its own role select.
+      assert membership.role == :viewer
+      form = element(lv, "form[phx-change='change_role']:has(input[value='#{membership.id}'])")
+      html = render(form)
+
+      assert html =~ ~s(name="role")
+      assert html =~ ~r/<option(?=[^>]*\bvalue="viewer")(?=[^>]*\bselected)[^>]*>/
+      assert html =~ "Operator"
+      assert html =~ "Admin"
+      # The current role is the only selected option in this member's select.
+      refute html =~ ~r/<option(?=[^>]*\bvalue="operator")(?=[^>]*\bselected)[^>]*>/
     end
 
     test "the role select confirms the privilege grant before changing", %{lv: lv} do

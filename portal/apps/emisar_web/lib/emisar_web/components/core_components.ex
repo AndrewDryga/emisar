@@ -328,6 +328,7 @@ defmodule EmisarWeb.CoreComponents do
   attr :id, :any, default: nil
   attr :name, :any
   attr :label, :string, default: nil
+  attr :label_variant, :atom, default: :default, values: [:default, :eyebrow]
   attr :value, :any
 
   attr :type, :string,
@@ -388,7 +389,7 @@ defmodule EmisarWeb.CoreComponents do
   def input(%{type: "select"} = assigns) do
     ~H"""
     <div>
-      <.label for={@id}>{@label}</.label>
+      <.label for={@id} variant={@label_variant}>{@label}</.label>
       <select
         id={@id}
         name={@name}
@@ -450,6 +451,66 @@ defmodule EmisarWeb.CoreComponents do
         ]}
         {@rest}
       />
+      <.error :for={msg <- @errors}>{msg}</.error>
+    </div>
+    """
+  end
+
+  @doc """
+  Renders a `<select>` whose options carry their own `disabled`/`selected` —
+  the cases `Phoenix.HTML.Form.options_for_select/2` (and thus `input/1`'s
+  `type="select"`) can't express. Each option is a map
+  `%{value:, label:, disabled:, selected:}`. For a plain single-value picker
+  bound to a form field, reach for `<.input type="select">` instead; this is
+  for per-option control (a disabled "already taken" target, a tier floor) and
+  multi-selects with computed per-option selection.
+
+  Styling mirrors `input/1`'s select branch so the two read identically; the
+  optional rose ring renders when `errors` is non-empty. Labels and values
+  render escaped through HEEx (IL-16) — option text includes account data.
+  """
+  attr :id, :any, default: nil
+  attr :name, :any, required: true
+  attr :label, :string, default: nil
+  attr :label_variant, :atom, default: :default, values: [:default, :eyebrow]
+  attr :prompt, :string, default: nil, doc: "a leading empty-value option"
+  attr :prompt_selected, :boolean, default: false, doc: "marks the prompt option selected"
+  attr :multiple, :boolean, default: false
+  attr :errors, :list, default: []
+
+  attr :options, :list,
+    required: true,
+    doc: "option maps: %{value:, label:, disabled:, selected:}"
+
+  attr :rest, :global, include: ~w(disabled size form)
+
+  def select(assigns) do
+    ~H"""
+    <div>
+      <.label :if={@label} for={@id} variant={@label_variant}>{@label}</.label>
+      <select
+        id={@id}
+        name={@name}
+        class={[
+          "mt-2 block w-full rounded-lg border-0 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-100",
+          "ring-1 ring-inset placeholder:text-zinc-600",
+          "focus:ring-2 focus:ring-inset",
+          @errors == [] && "ring-zinc-800 focus:ring-indigo-500",
+          @errors != [] && "ring-rose-500/50 focus:ring-rose-500"
+        ]}
+        multiple={@multiple}
+        {@rest}
+      >
+        <option :if={@prompt} value="" selected={@prompt_selected}>{@prompt}</option>
+        <option
+          :for={option <- @options}
+          value={option.value}
+          disabled={option.disabled}
+          selected={option.selected}
+        >
+          {option.label}
+        </option>
+      </select>
       <.error :for={msg <- @errors}>{msg}</.error>
     </div>
     """

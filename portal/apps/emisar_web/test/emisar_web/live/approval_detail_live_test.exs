@@ -68,6 +68,12 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     # exact path that raised KeyError on `@grant_duration` in production.
     assert html =~ "Decide"
     assert html =~ "Approve and send"
+    # The reuse-window duration select renders its options and defaults to
+    # "once" (the tracked @grant_duration), which keeps the grant fields hidden.
+    assert html =~ ~s(name="duration")
+    assert html =~ "Just this call (no grant)"
+    assert html =~ "Next 90 days"
+    assert html =~ ~r/<option(?=[^>]*\bvalue="once")(?=[^>]*\bselected)[^>]*>/
     # A held request shows when it auto-cancels so the decider can triage.
     assert html =~ "Expires"
     assert html =~ "expires"
@@ -93,6 +99,10 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
       |> render_change(%{"duration" => "one_day"})
 
     assert changed =~ "Same arguments only"
+    # The picked duration round-trips into the value-bound select (the LV
+    # tracks it as @grant_duration), and the scope picker appears.
+    assert changed =~ ~r/<option(?=[^>]*\bvalue="one_day")(?=[^>]*\bselected)[^>]*>/
+    assert changed =~ ~s(name="scope")
   end
 
   test "denying does not crash when the form carries no reason", %{conn: conn} do
