@@ -1584,12 +1584,31 @@ defmodule EmisarWeb.CoreComponents do
   defp count_badge_tone(:indigo), do: "bg-indigo-500/20 text-indigo-200"
 
   @doc """
-  Key-value row for detail panes:
+  Key-value row for detail panes. `:row` (default) is a label-left /
+  value-right flex row; `:grid` emits a bare `<dt>`/`<dd>` pair (no wrapper)
+  for a mono, column-aligned readout — drop it inside a
+  `<dl class="grid grid-cols-[max-content,1fr] gap-x-3">` so labels and values
+  line up across rows (the `:grid` value defaults zinc-300; wrap it in a colored
+  span to flag a row, e.g. a changed hash):
 
       <.kv label="Hostname">{@runner.hostname || "—"}</.kv>
+
+      <dl class="grid grid-cols-[max-content,1fr] gap-x-3 gap-y-0.5 text-[11px]">
+        <.kv layout={:grid} label="trusted:">{hash || "— (none yet)"}</.kv>
+      </dl>
   """
   attr :label, :string, required: true
+  attr :layout, :atom, default: :row, values: [:row, :grid]
   slot :inner_block, required: true
+
+  def kv(%{layout: :grid} = assigns) do
+    # No wrapping div: the <dt>/<dd> are direct children of the caller's grid
+    # <dl> so its columns align label and value across every row.
+    ~H"""
+    <dt class="font-mono text-zinc-500">{@label}</dt>
+    <dd class="break-all font-mono text-zinc-300">{render_slot(@inner_block)}</dd>
+    """
+  end
 
   def kv(assigns) do
     ~H"""

@@ -88,6 +88,13 @@ defmodule EmisarWeb.PacksLiveTest do
       assert html =~ "runner(s) advertise this"
       assert html =~ "canary-01"
       assert html =~ "staging"
+
+      # The mono trusted/advertising readout (the <.kv layout={:grid}> rows):
+      # a never-trusted pack has no baseline hash, and advertises abc123.
+      assert html =~ "trusted:"
+      assert html =~ "— (none yet)"
+      assert html =~ "advertising:"
+      assert html =~ "abc123"
     end
 
     test "the pending card lists the pack's actions + risk so trust isn't blind", %{conn: conn} do

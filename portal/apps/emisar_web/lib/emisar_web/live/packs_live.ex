@@ -403,10 +403,11 @@ defmodule EmisarWeb.PacksLive do
                   for <code>{pack.id}</code> v{v.version} until you decide.
                 </p>
                 <dl class="mt-2 grid grid-cols-[max-content,1fr] gap-x-3 gap-y-0.5 text-[11px]">
-                  <dt class="font-mono text-zinc-500">trusted:</dt>
-                  <dd class="font-mono text-zinc-300 break-all">{v.hash || "— (none yet)"}</dd>
-                  <dt class="font-mono text-zinc-500">advertising:</dt>
-                  <dd class="font-mono text-amber-300 break-all">{v.pending_hash || "—"}</dd>
+                  <.kv layout={:grid} label="trusted:">{v.hash || "— (none yet)"}</.kv>
+                  <%!-- Amber flags the hash that CHANGED — the reason dispatch is blocked. --%>
+                  <.kv layout={:grid} label="advertising:">
+                    <span class="text-amber-300">{v.pending_hash || "—"}</span>
+                  </.kv>
                 </dl>
                 <%!-- Blast radius — which hosts this trust click unblocks.
                      One canary box vs the whole fleet is the difference
