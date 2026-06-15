@@ -273,19 +273,20 @@ defmodule EmisarWeb.ApprovalsLive do
                   Refresh the page; if it persists, your access may have changed.
                 </p>
               </div>
-              <div :if={not @pending_error?} class="mx-auto max-w-md">
-                <.icon name="hero-check-badge" class="mx-auto h-8 w-8 text-zinc-700" />
-                <p class="mt-3 text-zinc-300">Nothing waiting.</p>
-                <p class="mt-1 text-xs leading-relaxed text-zinc-500">
-                  Approvals show up here when
-                  <.link navigate={~p"/app/policies"} class="text-indigo-400 hover:text-indigo-300">
-                    policy
-                  </.link>
-                  gates a run as <code class="text-zinc-300">require_approval</code>
-                  — for example a high-risk
-                  mutating action from an LLM. You'll get an email too.
-                </p>
-              </div>
+              <.empty_state
+                :if={not @pending_error?}
+                variant={:bare}
+                icon="hero-check-badge"
+                title="Nothing waiting."
+              >
+                Approvals show up here when
+                <.link navigate={~p"/app/policies"} class="text-indigo-400 hover:text-indigo-300">
+                  policy
+                </.link>
+                gates a run as <code class="text-zinc-300">require_approval</code>
+                — for example a high-risk
+                mutating action from an LLM. You'll get an email too.
+              </.empty_state>
             </:empty>
           </LiveTable.live_table>
         </section>
@@ -360,16 +361,12 @@ defmodule EmisarWeb.ApprovalsLive do
               </.list_row>
             </:item>
             <:empty>
-              <div class="mx-auto max-w-md">
-                <.icon name="hero-key" class="mx-auto h-8 w-8 text-zinc-700" />
-                <p class="mt-3 text-zinc-300">No active grants.</p>
-                <p class="mt-1 text-xs leading-relaxed text-zinc-500">
-                  Grants appear when you approve a run with a duration other than
-                  <em>just this call</em>
-                  — they let the same LLM client re-run the same action
-                  inside the window without re-asking. Revocable here at any time.
-                </p>
-              </div>
+              <.empty_state variant={:bare} icon="hero-key" title="No active grants.">
+                Grants appear when you approve a run with a duration other than
+                <em>just this call</em>
+                — they let the same LLM client re-run the same action
+                inside the window without re-asking. Revocable here at any time.
+              </.empty_state>
             </:empty>
           </LiveTable.live_table>
         </section>
@@ -427,14 +424,14 @@ defmodule EmisarWeb.ApprovalsLive do
               </li>
             </:item>
             <:empty>
-              <div class="mx-auto max-w-md">
-                <.icon name="hero-clipboard-document-check" class="mx-auto h-8 w-8 text-zinc-700" />
-                <p class="mt-3 text-zinc-300">No decided approvals yet.</p>
-                <p class="mt-1 text-xs leading-relaxed text-zinc-500">
-                  When you approve or deny a pending request, the decision lands here.
-                  Useful for re-checking who approved what, and when.
-                </p>
-              </div>
+              <.empty_state
+                variant={:bare}
+                icon="hero-clipboard-document-check"
+                title="No decided approvals yet."
+              >
+                When you approve or deny a pending request, the decision lands here.
+                Useful for re-checking who approved what, and when.
+              </.empty_state>
             </:empty>
           </LiveTable.live_table>
         </section>

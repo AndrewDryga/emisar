@@ -1750,6 +1750,7 @@ defmodule EmisarWeb.CoreComponents do
   """
   attr :icon, :string, required: true
   attr :title, :string, required: true
+  attr :variant, :atom, default: :boxed, values: [:boxed, :bare]
   attr :class, :string, default: nil
   slot :inner_block, required: true
 
@@ -1760,26 +1761,44 @@ defmodule EmisarWeb.CoreComponents do
 
   def empty_state(assigns) do
     ~H"""
-    <div class={[
-      "rounded-xl border border-dashed border-zinc-800 bg-zinc-950/40 p-12 text-center",
-      @class
-    ]}>
-      <.icon name={@icon} class="mx-auto h-10 w-10 text-zinc-700" />
-      <h2 class="mt-4 text-base font-semibold text-zinc-200">{@title}</h2>
-      <p class="mt-2 text-sm text-zinc-500">{render_slot(@inner_block)}</p>
+    <div class={[empty_state_wrapper(@variant), @class]}>
+      <.icon name={@icon} class={empty_state_icon(@variant)} />
+      <h2 class={empty_state_title(@variant)}>{@title}</h2>
+      <p class={empty_state_body(@variant)}>{render_slot(@inner_block)}</p>
 
       <%= for cta <- @cta do %>
-        <.link
-          navigate={cta[:navigate]}
-          href={cta[:href]}
-          class="mt-6 inline-flex items-center gap-2 rounded-lg bg-indigo-500 px-4 py-2 text-sm font-semibold text-zinc-950 hover:bg-indigo-400"
-        >
+        <.link navigate={cta[:navigate]} href={cta[:href]} class={empty_state_cta(@variant)}>
           {render_slot(cta)} <span aria-hidden="true">→</span>
         </.link>
       <% end %>
     </div>
     """
   end
+
+  # `boxed` — the dashed-border standalone empty (a whole page with nothing in
+  # it yet). `bare` — borderless + compact, for a LiveTable `:empty` slot that
+  # already sits inside a bordered card. Same anatomy, lighter chrome.
+  defp empty_state_wrapper(:boxed),
+    do: "rounded-xl border border-dashed border-zinc-800 bg-zinc-950/40 p-12 text-center"
+
+  defp empty_state_wrapper(:bare), do: "mx-auto max-w-md text-center"
+
+  defp empty_state_icon(:boxed), do: "mx-auto h-10 w-10 text-zinc-700"
+  defp empty_state_icon(:bare), do: "mx-auto h-8 w-8 text-zinc-700"
+
+  defp empty_state_title(:boxed), do: "mt-4 text-base font-semibold text-zinc-200"
+  defp empty_state_title(:bare), do: "mt-3 text-sm font-medium text-zinc-300"
+
+  defp empty_state_body(:boxed), do: "mt-2 text-sm text-zinc-500"
+  defp empty_state_body(:bare), do: "mt-1 text-xs leading-relaxed text-zinc-500"
+
+  defp empty_state_cta(:boxed),
+    do:
+      "mt-6 inline-flex items-center gap-2 rounded-lg bg-indigo-500 px-4 py-2 text-sm font-semibold text-zinc-950 hover:bg-indigo-400"
+
+  defp empty_state_cta(:bare),
+    do:
+      "mt-4 inline-flex items-center gap-2 text-sm font-medium text-indigo-400 hover:text-indigo-300"
 
   @doc """
   Risk pill — used on action descriptors. Colours mirror the runner's

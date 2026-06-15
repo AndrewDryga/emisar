@@ -714,14 +714,10 @@ defmodule EmisarWeb.AgentsLive do
             </.list_row>
           </:item>
           <:empty>
-            <div class="mx-auto max-w-md">
-              <.icon name="hero-cpu-chip" class="mx-auto h-8 w-8 text-zinc-700" />
-              <p class="mt-3 text-zinc-300">No LLMs connected yet.</p>
-              <p class="mt-1 text-xs leading-relaxed text-zinc-500">
-                Pick a client above — we mint a key + pre-fill the snippet (local) or
-                URL + token (cloud). The agent shows up here on its first MCP call.
-              </p>
-            </div>
+            <.empty_state variant={:bare} icon="hero-cpu-chip" title="No LLMs connected yet.">
+              Pick a client above — we mint a key + pre-fill the snippet (local) or
+              URL + token (cloud). The agent shows up here on its first MCP call.
+            </.empty_state>
           </:empty>
         </LiveTable.live_table>
       </section>

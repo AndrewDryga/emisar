@@ -412,18 +412,14 @@ defmodule EmisarWeb.AuthKeysLive do
             </.list_row>
           </:item>
           <:empty>
-            <div class="mx-auto max-w-md">
-              <.icon name="hero-key" class="mx-auto h-8 w-8 text-zinc-700" />
-              <p class="mt-3 text-zinc-300">No auth keys yet.</p>
-              <p class="mt-1 text-xs leading-relaxed text-zinc-500">
-                Auth keys are the bearer secret a fresh runner uses to register
-                with cloud. Click
-                <span class="rounded bg-zinc-900 px-1.5 py-0.5 text-[11px] font-medium text-zinc-300">
-                  New key
-                </span>
-                above, then run the install command on the host.
-              </p>
-            </div>
+            <.empty_state variant={:bare} icon="hero-key" title="No auth keys yet.">
+              Auth keys are the bearer secret a fresh runner uses to register
+              with cloud. Click
+              <span class="rounded bg-zinc-900 px-1.5 py-0.5 text-[11px] font-medium text-zinc-300">
+                New key
+              </span>
+              above, then run the install command on the host.
+            </.empty_state>
           </:empty>
         </LiveTable.live_table>
 

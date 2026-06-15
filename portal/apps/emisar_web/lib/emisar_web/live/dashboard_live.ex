@@ -291,24 +291,20 @@ defmodule EmisarWeb.DashboardLive do
         <%!-- Brand-new-account state. Cover both shapes: no runners
              registered yet (point to install) AND have-runners-but-
              no-runs-yet (point to a runner detail or runbook). --%>
-        <div class="mx-auto max-w-md px-5 py-10 text-center">
-          <.icon name="hero-bolt" class="mx-auto h-8 w-8 text-zinc-700" />
-          <p class="mt-3 text-sm text-zinc-300">No runs yet.</p>
-          <p class="mt-1 text-xs leading-relaxed text-zinc-500">
-            Register a
-            <.link navigate={~p"/app/runners"} class="text-indigo-400 hover:text-indigo-300">
-              runner
-            </.link>
-            and dispatch an action from its detail page, or kick off a <.link
-              navigate={~p"/app/runbooks"}
-              class="text-indigo-400 hover:text-indigo-300"
-            >runbook</.link>.
-            LLM-driven runs (via the <.link
-              navigate={~p"/app/agents"}
-              class="text-indigo-400 hover:text-indigo-300"
-            >MCP API</.link>) land here too.
-          </p>
-        </div>
+        <.empty_state variant={:bare} icon="hero-bolt" title="No runs yet." class="px-5 py-10">
+          Register a
+          <.link navigate={~p"/app/runners"} class="text-indigo-400 hover:text-indigo-300">
+            runner
+          </.link>
+          and dispatch an action from its detail page, or kick off a <.link
+            navigate={~p"/app/runbooks"}
+            class="text-indigo-400 hover:text-indigo-300"
+          >runbook</.link>.
+          LLM-driven runs (via the <.link
+            navigate={~p"/app/agents"}
+            class="text-indigo-400 hover:text-indigo-300"
+          >MCP API</.link>) land here too.
+        </.empty_state>
       <% else %>
         <ul class="divide-y divide-zinc-900">
           <li :for={run <- @recent_runs}>

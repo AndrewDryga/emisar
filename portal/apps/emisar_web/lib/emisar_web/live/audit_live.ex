@@ -286,24 +286,20 @@ defmodule EmisarWeb.AuditLive do
           <%= if any_filter_active?(@filter_params, @filters) do %>
             <span class="text-zinc-500">No events match these filters.</span>
           <% else %>
-            <div class="mx-auto max-w-md">
-              <.icon name="hero-document-text" class="mx-auto h-8 w-8 text-zinc-700" />
-              <p class="mt-3 text-zinc-300">No audit events yet.</p>
-              <p class="mt-1 text-xs leading-relaxed text-zinc-500">
-                They appear as soon as something happens — a
-                <.link navigate={~p"/app/runners"} class="text-indigo-400 hover:text-indigo-300">
-                  runner
-                </.link>
-                connects, an operator dispatches a <.link
-                  navigate={~p"/app/runs"}
-                  class="text-indigo-400 hover:text-indigo-300"
-                >run</.link>,
-                an approval is decided, or a pack is observed on the <.link
-                  navigate={~p"/app/packs"}
-                  class="text-indigo-400 hover:text-indigo-300"
-                >Packs page</.link>.
-              </p>
-            </div>
+            <.empty_state variant={:bare} icon="hero-document-text" title="No audit events yet.">
+              They appear as soon as something happens — a
+              <.link navigate={~p"/app/runners"} class="text-indigo-400 hover:text-indigo-300">
+                runner
+              </.link>
+              connects, an operator dispatches a <.link
+                navigate={~p"/app/runs"}
+                class="text-indigo-400 hover:text-indigo-300"
+              >run</.link>,
+              an approval is decided, or a pack is observed on the <.link
+                navigate={~p"/app/packs"}
+                class="text-indigo-400 hover:text-indigo-300"
+              >Packs page</.link>.
+            </.empty_state>
           <% end %>
         </:empty>
       </LiveTable.live_table>
