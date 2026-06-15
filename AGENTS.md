@@ -114,4 +114,6 @@ Two kinds:
 - **Generic hats** — `/product-manager`, `/ux-designer`, `/security-engineer`, `/seo-marketing`, `/spec`, `/work` — apply repo-wide regardless of language. Wear one when a change leans hard on its domain.
 - **Per-product engineering skills** — language-specific. The Elixir set (`/context-fn`, `/new-context`, `/iron-review`, `/oban`, `/perf`, `/testing`, …) is **portal-only**. Go work in `runner/`/`mcp/` uses the Go engineering skill plus that project's `AGENTS.md`.
 
+For a thorough pre-merge review, **`/review-board`** convenes the relevant hats above as parallel review subagents and synthesizes one ranked verdict + a prioritized fix plan — it supersedes running `/security-review`, `/code-review`, and `/ship-review` separately, and the fix plan can be queued straight into `.agent/TASKS.md` for `/sweep`.
+
 Skills are thin entry points — the durable rules they apply live in `AGENTS.md` and `.agent/rules/`. Both tools share the **same** skill files: Claude via `.claude/skills/`, Codex via the `.codex/skills` → `../.claude/skills` symlink (auto-discovered when Codex runs in the repo).
