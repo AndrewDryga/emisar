@@ -310,18 +310,30 @@ defmodule Emisar.Repo do
     {paginator_opts, opts} = Keyword.pop(opts, :page, [])
 
     with {:ok, paginator_opts} <- Paginator.init(query_module, order_by, paginator_opts),
-         {:ok, queryable} <- Filter.filter(queryable, query_module, filter) do
+         {:ok, queryable} <- Filter.filter(queryable, query_module, filter),
+         keyset_query = Paginator.query(queryable, paginator_opts),
+         {:ok, rows} <- run_keyset_query(keyset_query, opts) do
       count = __MODULE__.aggregate(queryable, :count, :id)
-
-      {results, metadata} =
-        queryable
-        |> Paginator.query(paginator_opts)
-        |> __MODULE__.all(opts)
-        |> Paginator.metadata(paginator_opts)
+      {results, metadata} = Paginator.metadata(rows, paginator_opts)
 
       {results, ecto_preloads} = Preloader.preload(results, preload, query_module)
       results = __MODULE__.preload(results, ecto_preloads)
       {:ok, results, %{metadata | count: count}}
     end
+  end
+
+  # A structurally-valid `:safe`-decoded cursor can still carry a value whose
+  # type doesn't match its keyset column (a string where the column is a
+  # UUID/integer). That survives `decode_cursor` and only fails when the keyset
+  # WHERE is bound + executed — Ecto raises `Ecto.Query.CastError`, or Postgrex
+  # raises `DBConnection.EncodeError` when the schema has no type to pre-cast
+  # against. Map both to the same clean `:invalid_cursor` the malformed-cursor
+  # path returns, so a crafted `?after=` is a 4xx-able outcome, not a self-500.
+  # Narrow on purpose: a genuine query/connection fault still raises.
+  defp run_keyset_query(keyset_query, opts) do
+    {:ok, __MODULE__.all(keyset_query, opts)}
+  rescue
+    Ecto.Query.CastError -> {:error, :invalid_cursor}
+    DBConnection.EncodeError -> {:error, :invalid_cursor}
   end
 end

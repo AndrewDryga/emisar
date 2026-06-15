@@ -384,6 +384,27 @@ defmodule Emisar.AuditTest do
                Audit.list_events(subject, page: [cursor: "garbage"])
     end
 
+    test "a well-formed but type-mismatched cursor is :invalid_cursor, not a 500" do
+      account = account_fixture()
+      subject = subject_for(user_fixture(), account, role: :owner)
+      {:ok, _} = Audit.log(account.id, "user.invited", actor_kind: "user")
+
+      # Event's keyset is [{:events, :desc, :occurred_at}, {:events, :asc, :id}].
+      # Forge a cursor that decodes cleanly (a real DateTime + a string) but
+      # carries a string where the UUID `id` column is expected — it survives
+      # the :safe decode + nil-check and only fails when the keyset WHERE is
+      # bound. Previously that raised a self-inflicted 500.
+      now_ns = DateTime.to_unix(DateTime.utc_now(), :nanosecond)
+
+      cursor =
+        {:after, [{DateTime, now_ns}, {:t, "not-a-uuid"}]}
+        |> :erlang.term_to_binary()
+        |> Base.url_encode64(padding: false)
+
+      assert {:error, :invalid_cursor} =
+               Audit.list_events(subject, page: [cursor: cursor])
+    end
+
     test "hide_noise filter excludes the canonical noisy event types" do
       account = account_fixture()
       subject = subject_for(user_fixture(), account, role: :owner)
