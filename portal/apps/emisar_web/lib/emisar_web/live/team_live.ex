@@ -516,6 +516,9 @@ defmodule EmisarWeb.TeamLive do
                 <button
                   type="button"
                   phx-click="toggle_require_mfa"
+                  role="switch"
+                  aria-checked={to_string(@current_account.require_mfa)}
+                  aria-label="Enforce 2FA account-wide"
                   data-confirm={
                     if @current_account.require_mfa,
                       do: "Stop enforcing 2FA account-wide?",

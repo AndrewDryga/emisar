@@ -394,6 +394,29 @@ defmodule EmisarWeb.TeamLiveTest do
       assert html =~ "Only the account owner can change this setting."
       refute Emisar.Repo.reload!(account).require_mfa
     end
+
+    test "the toggle is a role=switch with aria-checked reflecting state, and still fires",
+         %{conn: conn} do
+      {conn, owner, account} = register_and_log_in(conn)
+      enroll_mfa(owner)
+
+      # Off: a screen reader announces it as an unchecked switch.
+      {:ok, lv, html} = live(conn, ~p"/app/settings/team")
+      switch = element(lv, ~s(button[phx-click="toggle_require_mfa"]))
+      assert html =~ ~s(role="switch")
+      assert render(switch) =~ ~s(aria-checked="false")
+      # The accessible name names the control (a placeholder/visible label
+      # would otherwise be the only cue).
+      assert html =~ ~s(aria-label="Enforce 2FA account-wide")
+
+      # Clicking the switch fires the (server-authz-gated) handler.
+      assert render_click(switch) =~ "Account-wide MFA enforced."
+      assert Emisar.Repo.reload!(account).require_mfa
+
+      # On: the switch now reports aria-checked="true".
+      {:ok, _lv, html} = live(conn, ~p"/app/settings/team")
+      assert html =~ ~s(aria-checked="true")
+    end
   end
 
   describe "2FA enrollment stat" do

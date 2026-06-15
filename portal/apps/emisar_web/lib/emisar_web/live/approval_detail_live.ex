@@ -598,12 +598,19 @@ defmodule EmisarWeb.ApprovalDetailLive do
             phx-change="grant_form_changed"
             class="mt-4 space-y-4"
           >
-            <textarea
+            <%!-- Bare name (uncontrolled): the LV doesn't track this note, the
+                 approve handler reads whatever's posted. `aria-label` names it
+                 for AT (the placeholder is not an accessible name); `min-h-0`
+                 undoes the component's default min-height for a compact 2-row box. --%>
+            <.input
+              type="textarea"
               name="reason"
+              value={nil}
               rows="2"
+              aria-label="Approval note"
               placeholder="Note (optional)"
-              class="w-full resize-none rounded-lg border-0 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 ring-1 ring-zinc-800 placeholder:text-zinc-600 focus:ring-indigo-500"
-            ></textarea>
+              class="min-h-0 resize-none"
+            />
 
             <details class="group rounded-lg border border-zinc-800 bg-zinc-950/60 p-3">
               <summary class="flex cursor-pointer items-center justify-between text-xs text-zinc-300 hover:text-zinc-100">
@@ -656,15 +663,18 @@ defmodule EmisarWeb.ApprovalDetailLive do
                   />
                 </div>
                 <div :if={@grant_duration != "once"}>
-                  <.label variant={:eyebrow}>
-                    Limit to (optional)
-                  </.label>
-                  <input
+                  <%!-- Explicit `id` so the eyebrow label's `for` associates;
+                       bare name (uncontrolled), the approve handler reads the
+                       posted value. --%>
+                  <.input
                     type="number"
+                    id="grant_max_uses"
                     name="max_uses"
+                    value={nil}
+                    label="Limit to (optional)"
+                    label_variant={:eyebrow}
                     min="1"
                     placeholder="unlimited"
-                    class="mt-1 w-full rounded-lg border-0 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 ring-1 ring-zinc-800 placeholder:text-zinc-600 focus:ring-indigo-500"
                   />
                   <p class="mt-1 text-[11px] leading-relaxed text-zinc-500">
                     Cap how many times this grant can be used within the window. Leave blank for unlimited.
@@ -693,12 +703,18 @@ defmodule EmisarWeb.ApprovalDetailLive do
                the one with nowhere to record *why*, leaving a blank reason in
                the decision history. The handler already accepts it. --%>
           <form phx-submit="deny" class="mt-3 space-y-3">
-            <textarea
+            <%!-- `tone="danger"` tints the focus ring rose — this is the
+                 destructive decision. `aria-label` names it for AT. --%>
+            <.input
+              type="textarea"
               name="reason"
+              value={nil}
+              tone="danger"
               rows="2"
+              aria-label="Reason for denial"
               placeholder="Why are you denying this? (optional, logged in the decision history)"
-              class="w-full resize-none rounded-lg border-0 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 ring-1 ring-zinc-800 placeholder:text-zinc-600 focus:ring-rose-500"
-            ></textarea>
+              class="min-h-0 resize-none"
+            />
             <.button variant="danger" class="w-full" icon="hero-x-mark" phx-disable-with="Denying…">
               Deny
             </.button>

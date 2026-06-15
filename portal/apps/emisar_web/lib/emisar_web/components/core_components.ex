@@ -446,6 +446,11 @@ defmodule EmisarWeb.CoreComponents do
   attr :label_variant, :atom, default: :default, values: [:default, :eyebrow]
   attr :value, :any
 
+  attr :tone, :string,
+    default: "neutral",
+    values: ~w(neutral danger),
+    doc: ~s(tints the focus ring rose for a destructive field — e.g. a deny reason)
+
   attr :type, :string,
     default: "text",
     values: ~w(checkbox color date datetime-local email file month number password
@@ -516,8 +521,7 @@ defmodule EmisarWeb.CoreComponents do
           "mt-2 block w-full rounded-lg border-0 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-100",
           "ring-1 ring-inset placeholder:text-zinc-600",
           "focus:ring-2 focus:ring-inset",
-          @errors == [] && "ring-zinc-800 focus:ring-indigo-500",
-          @errors != [] && "ring-rose-500/50 focus:ring-rose-500"
+          input_ring(@errors, @tone)
         ]}
         multiple={@multiple}
         {@rest}
@@ -541,8 +545,7 @@ defmodule EmisarWeb.CoreComponents do
           "mt-2 block w-full rounded-lg border-0 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-100",
           "min-h-[6rem] ring-1 ring-inset placeholder:text-zinc-600",
           "focus:ring-2 focus:ring-inset",
-          @errors == [] && "ring-zinc-800 focus:ring-indigo-500",
-          @errors != [] && "ring-rose-500/50 focus:ring-rose-500",
+          input_ring(@errors, @tone),
           @class
         ]}
         {@rest}
@@ -566,8 +569,7 @@ defmodule EmisarWeb.CoreComponents do
           "mt-2 block w-full rounded-lg border-0 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-100",
           "ring-1 ring-inset placeholder:text-zinc-600",
           "focus:ring-2 focus:ring-inset",
-          @errors == [] && "ring-zinc-800 focus:ring-indigo-500",
-          @errors != [] && "ring-rose-500/50 focus:ring-rose-500",
+          input_ring(@errors, @tone),
           @class
         ]}
         {@rest}
@@ -576,6 +578,14 @@ defmodule EmisarWeb.CoreComponents do
     </div>
     """
   end
+
+  # Resting + focus ring for an input/select/textarea. An actual validation
+  # error always wins with the rose ring; absent errors, `tone="danger"` tints
+  # only the FOCUS ring rose (a destructive field, e.g. a deny reason) while
+  # neutral keeps the indigo focus.
+  defp input_ring([], "danger"), do: "ring-zinc-800 focus:ring-rose-500"
+  defp input_ring([], _neutral), do: "ring-zinc-800 focus:ring-indigo-500"
+  defp input_ring(_errors, _tone), do: "ring-rose-500/50 focus:ring-rose-500"
 
   @doc """
   Renders a `<select>` whose options carry their own `disabled`/`selected` —
@@ -787,6 +797,32 @@ defmodule EmisarWeb.CoreComponents do
     <p class="mt-2 flex items-center gap-1.5 text-sm text-rose-400">
       <.icon name="hero-exclamation-circle-mini" class="h-4 w-4 flex-none" />
       {render_slot(@inner_block)}
+    </p>
+    """
+  end
+
+  @doc """
+  A card/section-level error banner — the shared rose box (icon + message) for
+  a failure that has no single form field to attach to: a structural save error
+  keyed to a whole map (`:rules`, `:definition`), not the per-field inline
+  `<.error>`. The message renders escaped through HEEx (IL-16) — it can carry a
+  changeset/validation string. Pass the message as the inner block; `class`
+  appends positioning (e.g. a top margin).
+
+      <.error_banner :if={msg = save_error_message(@form)}>{msg}</.error_banner>
+      <.error_banner :for={msg <- @rules_errors}>{msg}</.error_banner>
+  """
+  attr :class, :string, default: nil
+  slot :inner_block, required: true
+
+  def error_banner(assigns) do
+    ~H"""
+    <p class={[
+      "flex items-start gap-1.5 rounded-lg border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-200",
+      @class
+    ]}>
+      <.icon name="hero-exclamation-circle-mini" class="mt-0.5 h-4 w-4 flex-none" />
+      <span>{render_slot(@inner_block)}</span>
     </p>
     """
   end

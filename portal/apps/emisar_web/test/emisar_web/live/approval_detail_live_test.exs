@@ -105,6 +105,29 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     assert changed =~ ~s(name="scope")
   end
 
+  test "the three free-text decision controls each have an accessible name", %{conn: conn} do
+    {conn, user, account} = register_and_log_in(conn)
+    request = pending_request(account, user)
+
+    {:ok, lv, html} = live(conn, ~p"/app/approvals/#{request.id}")
+
+    # The approve note + deny reason are placeholder-only by design, so they
+    # carry an aria-label (a placeholder is not an accessible name for AT).
+    assert html =~ ~s(aria-label="Approval note")
+    assert html =~ ~s(aria-label="Reason for denial")
+
+    # The max-uses input is only shown once a real grant window is picked; it
+    # gets a visible eyebrow label associated by for/id.
+    changed =
+      lv
+      |> element("form[phx-change='grant_form_changed']")
+      |> render_change(%{"duration" => "one_day"})
+
+    assert changed =~ ~s(<label for="grant_max_uses")
+    assert changed =~ ~s(id="grant_max_uses")
+    assert changed =~ ~s(name="max_uses")
+  end
+
   test "denying does not crash when the form carries no reason", %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
     request = pending_request(account, user)

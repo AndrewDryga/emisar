@@ -758,15 +758,7 @@ defmodule EmisarWeb.PoliciesLive do
            Render it inline (rose border) on this card — never a flash. The
            constrained selects + monotonic enforcement keep it empty in
            practice; this is the defensive net. --%>
-      <div
-        :for={msg <- @rules_errors}
-        class="rounded-lg border border-rose-500/40 bg-rose-500/5 px-4 py-3"
-      >
-        <p class="flex items-start gap-1.5 text-sm text-rose-400">
-          <.icon name="hero-exclamation-circle-mini" class="mt-0.5 h-4 w-4 flex-none" />
-          <span>{msg}</span>
-        </p>
-      </div>
+      <.error_banner :for={msg <- @rules_errors}>{msg}</.error_banner>
 
       <div>
         <h3 class="text-sm font-semibold text-zinc-200">Risk-tier defaults</h3>
