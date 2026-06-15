@@ -504,12 +504,9 @@ defmodule EmisarWeb.RunbookEditorLive do
           <.panel title="Metadata">
             <form phx-change="meta_change" class="space-y-4">
               <div>
-                <label
-                  class="block text-[10px] font-semibold uppercase tracking-wider text-zinc-500"
-                  for="runbook_title"
-                >
+                <.label variant={:eyebrow} for="runbook_title">
                   Title
-                </label>
+                </.label>
                 <input
                   type="text"
                   id="runbook_title"
@@ -523,12 +520,9 @@ defmodule EmisarWeb.RunbookEditorLive do
               </div>
 
               <div>
-                <label
-                  class="block text-[10px] font-semibold uppercase tracking-wider text-zinc-500"
-                  for="runbook_slug"
-                >
+                <.label variant={:eyebrow} for="runbook_slug">
                   Slug
-                </label>
+                </.label>
                 <input
                   type="text"
                   id="runbook_slug"
@@ -541,12 +535,9 @@ defmodule EmisarWeb.RunbookEditorLive do
               </div>
 
               <div>
-                <label
-                  class="block text-[10px] font-semibold uppercase tracking-wider text-zinc-500"
-                  for="runbook_description"
-                >
+                <.label variant={:eyebrow} for="runbook_description">
                   Description
-                </label>
+                </.label>
                 <textarea
                   id="runbook_description"
                   name="description"
@@ -636,9 +627,9 @@ defmodule EmisarWeb.RunbookEditorLive do
              named. --%>
         <div>
           <div class="flex items-center justify-between gap-2">
-            <label class="block text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+            <.label variant={:eyebrow}>
               Action
-            </label>
+            </.label>
             <.risk_pill :if={@risk} risk={@risk} class="flex-none" />
           </div>
           <input
@@ -652,15 +643,12 @@ defmodule EmisarWeb.RunbookEditorLive do
         </div>
 
         <div>
-          <label
-            for={"step-#{@index}-id"}
-            class="block text-[10px] font-semibold uppercase tracking-wider text-zinc-500"
-          >
+          <.label variant={:eyebrow} for={"step-#{@index}-id"}>
             Step ID
             <span class="ml-1 text-[9px] font-normal normal-case tracking-normal text-zinc-600">
               — referenced by other steps; auto-derived from Action
             </span>
-          </label>
+          </.label>
           <input
             type="text"
             id={"step-#{@index}-id"}
@@ -673,12 +661,9 @@ defmodule EmisarWeb.RunbookEditorLive do
 
         <div class="grid grid-cols-1 gap-2 sm:grid-cols-3">
           <div class="sm:col-span-1">
-            <label
-              for={"step-#{@index}-selector-kind"}
-              class="block text-[10px] font-semibold uppercase tracking-wider text-zinc-500"
-            >
+            <.label variant={:eyebrow} for={"step-#{@index}-selector-kind"}>
               Runner by
-            </label>
+            </.label>
             <select
               id={"step-#{@index}-selector-kind"}
               name="selector_kind"
@@ -693,15 +678,12 @@ defmodule EmisarWeb.RunbookEditorLive do
             </select>
           </div>
           <div class="sm:col-span-2">
-            <label
-              for={"step-#{@index}-selector-values"}
-              class="block text-[10px] font-semibold uppercase tracking-wider text-zinc-500"
-            >
+            <.label variant={:eyebrow} for={"step-#{@index}-selector-values"}>
               Targets
               <span class="ml-1 text-[9px] font-normal normal-case tracking-normal text-zinc-600">
                 — pick more than one with ⌘/Ctrl-click or Shift+↑/↓
               </span>
-            </label>
+            </.label>
             <% options =
               selector_options(
                 @step["selector_kind"],
@@ -769,9 +751,9 @@ defmodule EmisarWeb.RunbookEditorLive do
     <div class="mt-3">
       <div class="flex items-center justify-between">
         <div>
-          <label class="block text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+          <.label variant={:eyebrow}>
             Args
-          </label>
+          </.label>
           <p :if={@known_args != []} class="mt-0.5 text-[10px] text-zinc-500">
             Known for <code class="font-mono text-zinc-400">{@action_id}</code>:
             <%= for {n, i} <- Enum.with_index(@known_args) do %>

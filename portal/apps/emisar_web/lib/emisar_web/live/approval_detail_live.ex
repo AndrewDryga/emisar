@@ -464,9 +464,9 @@ defmodule EmisarWeb.ApprovalDetailLive do
             </summary>
             <div class="mt-3 space-y-3">
               <div>
-                <label class="block text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                <.label variant={:eyebrow}>
                   For
-                </label>
+                </.label>
                 <select
                   name="duration"
                   class="mt-1 w-full rounded-lg border-0 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 ring-1 ring-zinc-800 focus:ring-indigo-500"
@@ -485,9 +485,9 @@ defmodule EmisarWeb.ApprovalDetailLive do
                    phx-change handler tracks duration → re-renders this
                    block. --%>
               <div :if={@grant_duration != "once"}>
-                <label class="block text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                <.label variant={:eyebrow}>
                   Match
-                </label>
+                </.label>
                 <select
                   name="scope"
                   class="mt-1 w-full rounded-lg border-0 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 ring-1 ring-zinc-800 focus:ring-indigo-500"
@@ -497,9 +497,9 @@ defmodule EmisarWeb.ApprovalDetailLive do
                 </select>
               </div>
               <div :if={@grant_duration != "once"}>
-                <label class="block text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                <.label variant={:eyebrow}>
                   Limit to (optional)
-                </label>
+                </.label>
                 <input
                   type="number"
                   name="max_uses"

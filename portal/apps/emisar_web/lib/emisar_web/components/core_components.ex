@@ -420,18 +420,26 @@ defmodule EmisarWeb.CoreComponents do
   end
 
   @doc """
-  Renders a label.
+  Renders a form label. `:default` is the standard `text-sm` form label;
+  `:eyebrow` is the compact small-caps label the dense editors use above their
+  fields. One component so the two field-label treatments don't drift into more.
   """
   attr :for, :string, default: nil
+  attr :variant, :atom, default: :default, values: [:default, :eyebrow]
   slot :inner_block, required: true
 
   def label(assigns) do
     ~H"""
-    <label for={@for} class="block text-sm font-medium text-zinc-200">
+    <label for={@for} class={label_variant(@variant)}>
       {render_slot(@inner_block)}
     </label>
     """
   end
+
+  defp label_variant(:default), do: "block text-sm font-medium text-zinc-200"
+
+  defp label_variant(:eyebrow),
+    do: "block text-[10px] font-semibold uppercase tracking-wider text-zinc-500"
 
   @doc """
   Generates a generic error message.

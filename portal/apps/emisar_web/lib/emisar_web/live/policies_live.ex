@@ -644,9 +644,9 @@ defmodule EmisarWeb.PoliciesLive do
                  field on the change event, the same shape as the team page. --%>
             <form phx-change="set_target">
               <input type="hidden" name="uid" value={@ruleset.uid} />
-              <label class="block text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+              <.label variant={:eyebrow}>
                 Apply this ruleset to
-              </label>
+              </.label>
               <select name="target" disabled={not @can_manage} class={[input_class(), "sm:max-w-xs"]}>
                 <option value="" selected={is_nil(@ruleset.scope_type)}>
                   Choose a runner or group…
@@ -841,9 +841,9 @@ defmodule EmisarWeb.PoliciesLive do
     <div class="rounded-lg border border-zinc-800 bg-black/30 p-3">
       <div class="space-y-2 sm:grid sm:grid-cols-12 sm:items-end sm:gap-2 sm:space-y-0">
         <div class="sm:col-span-3">
-          <label class="block text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+          <.label variant={:eyebrow}>
             Name
-          </label>
+          </.label>
           <input
             type="text"
             name={"policy[overrides][#{@index}][name]"}
@@ -854,9 +854,9 @@ defmodule EmisarWeb.PoliciesLive do
           />
         </div>
         <div class="sm:col-span-5">
-          <label class="block text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+          <.label variant={:eyebrow}>
             Action (glob ok)
-          </label>
+          </.label>
           <input
             type="text"
             name={"policy[overrides][#{@index}][action]"}
@@ -867,9 +867,9 @@ defmodule EmisarWeb.PoliciesLive do
           />
         </div>
         <div class="sm:col-span-3">
-          <label class="block text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+          <.label variant={:eyebrow}>
             Decision
-          </label>
+          </.label>
           <select
             name={"policy[overrides][#{@index}][decision]"}
             class={input_class()}
