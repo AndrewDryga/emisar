@@ -1633,37 +1633,60 @@ defmodule EmisarWeb.CoreComponents do
   end
 
   @doc """
-  Danger-zone card — the bordered rose container with title + body + a
-  destructive `<.button variant="danger">` it renders itself from the `confirm`
-  text and the button's `phx-click` (so call sites don't hand-roll the button).
-  Used on detail pages (runner detail, team member remove, etc.).
+  Confirmation-zone card — a bordered container with title + body + a `<.button>`
+  it renders itself from the slot label and the button's `phx-click` (so call
+  sites don't hand-roll the button). `tone` colors it and picks the button
+  variant: `:danger` (rose — disable/delete, the default) or `:success` (emerald
+  — enable/restore), so every consequential-action panel reads alike. Pass
+  `confirm` for a destructive action's `data-confirm` dialog; omit it for a safe
+  restorative one. Used on detail pages (runner detail, team member remove, etc.).
 
-      <.danger_zone title="Disable this runner" confirm="Disable? It can't reconnect." phx-click="disable">
+      <.confirm_zone title="Disable this runner" confirm="Disable? It can't reconnect." phx-click="disable">
         <:body>Removes from catalog and rejects future reconnects.</:body>
         Disable runner
-      </.danger_zone>
+      </.confirm_zone>
+
+      <.confirm_zone tone={:success} title="Enable this runner" phx-click="enable">
+        <:body>Clears the disabled flag so the host can reconnect.</:body>
+        Enable runner
+      </.confirm_zone>
   """
   slot :body, required: true
   slot :inner_block, required: true
   attr :title, :string, required: true
-  attr :confirm, :string, required: true
+  attr :tone, :atom, default: :danger, values: [:danger, :success]
+  attr :confirm, :string, default: nil
   attr :rest, :global
 
-  def danger_zone(assigns) do
+  def confirm_zone(assigns) do
     ~H"""
-    <section class="flex items-start justify-between gap-4 rounded-xl border border-rose-900/40 bg-rose-950/20 p-5">
+    <section class={[
+      "flex items-start justify-between gap-4 rounded-xl border p-5",
+      confirm_zone_section(@tone)
+    ]}>
       <div>
-        <h3 class="text-sm font-semibold text-rose-200">{@title}</h3>
-        <p class="mt-1 text-xs text-rose-300/70">{render_slot(@body)}</p>
+        <h3 class={["text-sm font-semibold", confirm_zone_title(@tone)]}>{@title}</h3>
+        <p class={["mt-1 text-xs", confirm_zone_body(@tone)]}>{render_slot(@body)}</p>
       </div>
       <div class="shrink-0">
-        <.button variant="danger" size="md" data-confirm={@confirm} {@rest}>
+        <.button variant={confirm_zone_variant(@tone)} size="md" data-confirm={@confirm} {@rest}>
           {render_slot(@inner_block)}
         </.button>
       </div>
     </section>
     """
   end
+
+  # `:danger` keeps the original rose danger-zone styling; `:success` is the
+  # emerald twin for restorative actions, so both read alike structurally.
+  defp confirm_zone_section(:danger), do: "border-rose-900/40 bg-rose-950/20"
+  defp confirm_zone_section(:success), do: "border-emerald-500/30 bg-emerald-500/[0.04]"
+  defp confirm_zone_title(:danger), do: "text-rose-200"
+  defp confirm_zone_title(:success), do: "text-emerald-100"
+  defp confirm_zone_body(:danger), do: "text-rose-300/70"
+  defp confirm_zone_body(:success), do: "text-emerald-300/70"
+  defp confirm_zone_variant(:danger), do: "danger"
+  defp confirm_zone_variant(:success), do: "success"
 
   @doc ~S"""
   Statistic tile used on the dashboard.

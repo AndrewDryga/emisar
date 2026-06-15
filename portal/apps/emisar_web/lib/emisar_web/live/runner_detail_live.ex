@@ -296,7 +296,7 @@ defmodule EmisarWeb.RunnerDetailLive do
         :if={is_nil(@runner.disabled_at) and Runners.subject_can_manage_runners?(@current_subject)}
         class="mt-6"
       >
-        <.danger_zone
+        <.confirm_zone
           title="Disable this runner"
           confirm="Disable this runner? It will not be able to reconnect."
           phx-click="disable"
@@ -305,7 +305,7 @@ defmodule EmisarWeb.RunnerDetailLive do
             Removes it from the catalog and rejects future reconnects. Audit history is preserved.
           </:body>
           Disable runner
-        </.danger_zone>
+        </.confirm_zone>
       </div>
 
       <%!-- Enable: the inverse of disable. Shown only while the runner is
@@ -317,27 +317,20 @@ defmodule EmisarWeb.RunnerDetailLive do
         }
         class="mt-6"
       >
-        <section class="flex items-start justify-between gap-4 rounded-xl border border-emerald-500/30 bg-emerald-500/[0.04] p-5">
-          <div>
-            <h3 class="text-sm font-semibold text-emerald-100">Enable this runner</h3>
-            <p class="mt-1 text-xs text-zinc-400">
-              Clears the disabled flag so the host can reconnect and reappear in the catalog.
-              Counts against your plan's runner limit.
-            </p>
-          </div>
-          <div class="shrink-0">
-            <.button variant="success" size="md" phx-click="enable">
-              Enable runner
-            </.button>
-          </div>
-        </section>
+        <.confirm_zone tone={:success} title="Enable this runner" phx-click="enable">
+          <:body>
+            Clears the disabled flag so the host can reconnect and reappear in the catalog.
+            Counts against your plan's runner limit.
+          </:body>
+          Enable runner
+        </.confirm_zone>
       </div>
 
       <div
         :if={not @runner.online? and Runners.subject_can_manage_runners?(@current_subject)}
         class="mt-6"
       >
-        <.danger_zone
+        <.confirm_zone
           title="Delete this runner"
           confirm="Delete this runner row? The host can re-register on next connect."
           phx-click="delete"
@@ -349,7 +342,7 @@ defmodule EmisarWeb.RunnerDetailLive do
             re-bootstrap a host. Run history and audit events are preserved.
           </:body>
           Delete runner
-        </.danger_zone>
+        </.confirm_zone>
       </div>
     </.dashboard_shell>
     """
