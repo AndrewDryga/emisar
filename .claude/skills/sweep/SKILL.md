@@ -26,13 +26,34 @@ conventions**) *and* the worked examples in `<project>/.agent/rules/`. Build *to
 - Read the project's `AGENTS.md` in full — the gate **and the rule index** (portal Iron Laws +
   House opinions; runner/mcp security posture + Go house style; pack conventions) — **and every
   `<project>/.agent/rules/*.md`** (the worked-example taste KB). These are the bar you build to,
-  not just check against — load them before you touch code. Announce the queue + open-`[ ]` count.
+  not just check against — load them before you touch code. (You'll announce the queue after the tidy step — next.)
 - **Optional `/goal`** — you may set a run goal (`/goal drain <project>'s queue: every item
   house-rule-clean, ship-review-clean and committed; don't stop`) to harden don't-quit-early on
   top of the sentinel, and/or a **per-task `/goal`** for a stubborn item so its
   build→review→iterate cycle runs to completion. Clear it at Finish.
 
-## 2. The loop — for the first `- [ ]`, repeat until none remain
+## 2. Tidy the working state (before the first task)
+Start clean — never work around stale state. For each project in scope, reconcile its
+`.agent/` files. They're local + git-ignored, so this is housekeeping, not commits; use
+fail-safe edits (re-read on collision — a parallel agent may be touching the same file).
+
+- **Prune done tasks.** Remove every `- [x]` from `TASKS.md` that's backed by a commit
+  (`git log`) — the done record lives in git, not the queue. An `- [x]` with **no** matching
+  commit isn't verifiably done: leave it and surface it for triage, never silently prune it.
+- **Unblock resolved decisions.** For each `PENDING_DECISIONS.md` entry that now carries a
+  human resolution, fold the decision into its `- [B]` task, flip `- [B]` → `- [ ]`, and drop
+  the entry. **Never resolve one yourself** — only a human-answered entry unblocks (that's the
+  whole point of `PENDING_DECISIONS`).
+- **Trim the log.** If `LOG.md`'s `## Recent` is past ~50 lines, move the oldest entries to
+  `LOG.archive.md` (the AGENTS.md convention).
+- **Reclaim only *certainly* orphaned claims.** A `- [w]` left by a dead prior session → back
+  to `- [ ]`. Leave any `- [w]` that could be a live parallel claim (you run Claude + Codex at
+  once); when unsure, don't touch it.
+- Leave `IDEAS.md` and `BACKLOG.md` alone — deliberate holding areas, not trash.
+
+Now **announce the cleaned queue**: open `- [ ]` count, anything unblocked, anything surfaced.
+
+## 3. The loop — for the first `- [ ]`, repeat until none remain
 1. **Claim** — flip `- [ ]` → `- [w]` (fail-safe Edit; on collision re-read + take the next).
    **Skip any `- [w]`** — a parallel agent's live claim.
 2. **Build** — wear the hats while building; obey the project's `AGENTS.md` laws, match the
@@ -85,7 +106,7 @@ conventions**) *and* the worked examples in `<project>/.agent/rules/`. Build *to
 - **Spot a mess?** Small, safe cleanup → fix it in place (boy-scout rule, creed #7). Bigger or unrelated → `BACKLOG.md`; stay on the current item.
 - **Never** hold a `- [w]` you're not working — finish it, `[B]` it, or revert to `- [ ]`.
 
-## 3. Finish
+## 4. Finish
 - No `- [ ]` left: **completeness pass** — re-verify every `- [x]` against `git log` (one commit
   each) and that none shipped with an unaddressed review blocker or a house-rule violation.
 - **Disarm** — `rm -f .claude/.sweep-active` (and `/goal clear` if you set a run goal).
