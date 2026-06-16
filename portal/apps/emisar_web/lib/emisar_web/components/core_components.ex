@@ -1534,9 +1534,32 @@ defmodule EmisarWeb.CoreComponents do
   end
 
   @doc """
-  One stat in a header summary band — a coloured `value` + `label` (+ optional
-  `hint`). Compose several in a flex row for an at-a-glance count strip (the
-  Runners fleet health + the LLM-agents page).
+  The header summary band — a quiet, at-a-glance count strip wrapping several
+  `summary_stat/1`s in one bordered flex row (the Runners fleet health, the
+  LLM-agents page). The optional `:trailing` slot right-aligns extra context
+  (e.g. an "N keys total"). The band's chrome lives here so the pages that use
+  it can't drift apart.
+
+      <.summary_band>
+        <.summary_stat tone={:emerald} value={@fleet.online} label="Online" />
+        <.summary_stat tone={:rose} value={@fleet.offline} label="Offline" />
+      </.summary_band>
+  """
+  slot :inner_block, required: true
+  slot :trailing
+
+  def summary_band(assigns) do
+    ~H"""
+    <div class="mb-6 flex flex-wrap items-center gap-x-6 gap-y-2 rounded-xl border border-zinc-900 bg-zinc-950/40 px-5 py-3 text-xs">
+      {render_slot(@inner_block)}
+      <div :if={@trailing != []} class="ml-auto text-zinc-500">{render_slot(@trailing)}</div>
+    </div>
+    """
+  end
+
+  @doc """
+  One stat in a `summary_band/1` — a coloured `value` + `label` (+ optional
+  `hint`). The band owns the row chrome; this owns the dot + count.
   """
   attr :tone, :atom, required: true, values: [:emerald, :amber, :rose, :zinc]
   attr :value, :integer, required: true

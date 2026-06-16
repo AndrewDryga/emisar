@@ -658,19 +658,18 @@ defmodule EmisarWeb.AgentsLive do
     >
       <:title>LLM agents</:title>
 
-      <%!-- Header summary strip — 4 stats in a single horizontal
-           band instead of 4 separate tiles. Lower visual weight so
-           the connect-a-client panel can lead. --%>
-      <div class="mb-6 flex flex-wrap items-center gap-x-6 gap-y-2 rounded-xl border border-zinc-900 bg-zinc-950/40 px-5 py-3 text-sm">
+      <%!-- Quiet summary band (shared with Runners) so the connect-a-client
+           panel below can lead. --%>
+      <.summary_band>
         <.summary_stat tone={:emerald} value={@active_count} label="Active" hint="last 5 min" />
         <.summary_stat tone={:amber} value={@idle_count} label="Idle" hint="last 24 h" />
         <.summary_stat tone={:zinc} value={@never_used_count} label="Never used" />
-        <div class="ml-auto text-xs text-zinc-500">
+        <:trailing>
           {@metadata.count || @issued_count} {if (@metadata.count || @issued_count) == 1,
             do: "key",
             else: "keys"} total
-        </div>
-      </div>
+        </:trailing>
+      </.summary_band>
 
       <%!-- Connect-a-client guide (always visible, pre-filled key) --%>
       <.connect_panel

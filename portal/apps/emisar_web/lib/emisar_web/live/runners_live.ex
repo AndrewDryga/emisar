@@ -130,7 +130,7 @@ defmodule EmisarWeb.RunnersLive do
         <%!-- Health-at-a-glance, small + muted like the per-group totals below.
              The whole-account total is NOT repeated here — it lives in the group
              header(s), so it isn't duplicated above and below the table. --%>
-        <div class="mb-6 flex flex-wrap items-center gap-x-6 gap-y-2 rounded-xl border border-zinc-900 bg-zinc-950/40 px-5 py-3 text-xs">
+        <.summary_band>
           <.summary_stat tone={:emerald} value={@fleet.online} label="Online" />
           <.summary_stat tone={:rose} value={@fleet.offline} label="Offline" />
           <.summary_stat
@@ -145,7 +145,7 @@ defmodule EmisarWeb.RunnersLive do
             value={@fleet.disabled}
             label="Disabled"
           />
-        </div>
+        </.summary_band>
 
         <%!-- Group sidebar shows whole-account totals; the runners
              list below is paginated and may show fewer rows per
