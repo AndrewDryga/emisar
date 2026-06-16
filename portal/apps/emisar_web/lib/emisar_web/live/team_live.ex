@@ -725,25 +725,31 @@ defmodule EmisarWeb.TeamLive do
                 </div>
 
                 <%= if can_manage?(assigns) and not self_owner?(membership, @current_user.id) and not Accounts.Membership.disabled?(membership) do %>
-                  <%!-- A role change is a privilege grant — confirm it like every
-                       other team action (suspend/remove/…), which this select alone
-                       lacked. The handler still authorizes (IL-15); this only stops
-                       an accidental one-click escalation. The option `selected` binds
-                       to the true role, so a cancelled change self-heals to server
-                       truth on the next render. --%>
-                  <form
-                    phx-change="change_role"
-                    class="shrink-0"
-                    data-confirm={"Change #{(membership.user && (membership.user.full_name || membership.user.email)) || "this member"}'s role? Admins and owners can manage members and runners; only owners manage billing."}
+                  <%!-- A role change is a privilege grant — a dropdown (same skin as
+                       the Actions menu beside it) whose items each carry their own
+                       confirm, so the dialog fires only when you pick a DIFFERENT
+                       role, never just on opening the control. The handler still
+                       authorizes (IL-15). --%>
+                  <.dropdown
+                    class="inline-block shrink-0 text-left"
+                    summary_class="rounded px-2 py-1 text-xs font-medium text-zinc-300 ring-1 ring-zinc-800 hover:bg-zinc-900"
+                    panel_class="z-10 mt-2 w-40 p-1 text-xs shadow-xl"
                   >
-                    <input type="hidden" name="membership_id" value={membership.id} />
-                    <.input
-                      name="role"
-                      type="select"
-                      value={to_string(membership.role)}
-                      options={Enum.map(@roles, &{String.capitalize(&1), &1})}
-                    />
-                  </form>
+                    <:trigger>
+                      {String.capitalize(to_string(membership.role))}
+                      <span class="text-zinc-500 group-open:hidden">▾</span><span class="hidden text-zinc-500 group-open:inline">▴</span>
+                    </:trigger>
+                    <.menu_item
+                      :for={role <- @roles}
+                      :if={role != to_string(membership.role)}
+                      phx-click="change_role"
+                      phx-value-membership_id={membership.id}
+                      phx-value-role={role}
+                      data-confirm={"Change #{member_name(membership) || "this member"}'s role to #{String.capitalize(role)}?"}
+                    >
+                      {String.capitalize(role)}
+                    </.menu_item>
+                  </.dropdown>
                 <% else %>
                   <span class="shrink-0 rounded-md bg-zinc-900 px-2 py-1 text-xs font-medium text-zinc-300 ring-1 ring-zinc-800">
                     {String.capitalize(to_string(membership.role))}
@@ -777,12 +783,14 @@ defmodule EmisarWeb.TeamLive do
                     update their own sign-in email (with a current-
                     password check) on their Profile page.
                   </p>
-                  <:actions>
+                  <%!-- Cancel sits next to Save (not pushed right by simple_form's
+                       <:actions> justify-between), matching the scope editor below. --%>
+                  <div class="flex items-center gap-3 pt-2">
                     <.button phx-disable-with="Saving...">Save</.button>
                     <.button variant="ghost" type="button" phx-click="cancel_edit">
                       Cancel
                     </.button>
-                  </:actions>
+                  </div>
                 </.simple_form>
               </div>
 
@@ -1050,6 +1058,11 @@ defmodule EmisarWeb.TeamLive do
     do: true
 
   defp self_owner?(_, _), do: false
+
+  # The member's display name for a confirm/flash — name, else email, else nil
+  # (the user is always preloaded here). Callers supply the "this member" fallback.
+  defp member_name(%Accounts.Membership{} = membership),
+    do: membership.user && (membership.user.full_name || membership.user.email)
 
   # Two cases worth surfacing to admins: "active in the last 90 days"
   # is a no-op (don't clutter the row), "never signed in" hints at a

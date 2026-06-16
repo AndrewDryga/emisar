@@ -111,7 +111,14 @@
         Beyond self-service, an owner or admin can flip
         <strong class="text-zinc-200">Require MFA</strong>
         on the account: members without MFA
-        are routed to enrollment before they can touch anything else.
+        are routed to enrollment before they can touch anything else. On the Enterprise plan, a
+        <.link
+          navigate={~p"/docs/sso"}
+          class="text-indigo-300 hover:text-indigo-200"
+        >
+          single sign-on
+        </.link>
+        session can satisfy that requirement when your IdP enforces MFA.
       </p>
 
       <h2 class="mt-10 text-2xl font-semibold text-zinc-50">Sessions &amp; credentials</h2>
@@ -160,6 +167,12 @@
           class="inline-flex items-center gap-1 font-medium text-indigo-400 hover:text-indigo-300"
         >
           Everything lands in audit <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
+        </.link>
+        <.link
+          navigate={~p"/docs/sso"}
+          class="inline-flex items-center gap-1 font-medium text-indigo-400 hover:text-indigo-300"
+        >
+          SSO &amp; directory sync <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
         </.link>
       </div>
     </div>

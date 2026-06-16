@@ -113,6 +113,7 @@ defmodule EmisarWeb.LiveTable do
         path={@path}
         filters={@filters}
         params={@filter_params}
+        disabled={filters_inert?(@rows, @filter_params, @filters)}
       />
 
       <%= if Enum.empty?(@rows) do %>
@@ -171,6 +172,7 @@ defmodule EmisarWeb.LiveTable do
         path={@path}
         filters={@filters}
         params={@filter_params}
+        disabled={filters_inert?(@rows, @filter_params, @filters)}
       />
 
       <%= if Enum.empty?(@rows) do %>
@@ -248,14 +250,22 @@ defmodule EmisarWeb.LiveTable do
   attr :path, :any, required: true
   attr :filters, :list, required: true
   attr :params, :map, required: true
+  attr :disabled, :boolean, default: false
 
   defp filter_form(assigns) do
     ~H"""
-    <form id={@id} phx-change="filter" phx-submit="filter" class="flex flex-wrap items-end gap-3">
+    <form
+      id={@id}
+      phx-change="filter"
+      phx-submit="filter"
+      class={["flex flex-wrap items-end gap-3", @disabled && "opacity-50"]}
+      aria-disabled={@disabled}
+    >
       <.filter_input
         :for={filter <- @filters}
         filter={filter}
         value={Map.get(@params, to_string(filter.name))}
+        disabled={@disabled}
       />
       <.link
         :if={has_active_filters?(@params, @filters)}
@@ -272,6 +282,7 @@ defmodule EmisarWeb.LiveTable do
 
   attr :filter, :any, required: true
   attr :value, :any, default: nil
+  attr :disabled, :boolean, default: false
 
   defp filter_input(%{filter: %Filter{type: {:list, _}}} = assigns) do
     assigns =
@@ -284,7 +295,8 @@ defmodule EmisarWeb.LiveTable do
       <span class="mb-1">{@filter.title}</span>
       <select
         name={"#{@filter.name}"}
-        class="rounded-lg border border-zinc-700 bg-zinc-950 py-1.5 pl-2.5 pr-8 text-xs text-zinc-200"
+        disabled={@disabled}
+        class="rounded-lg border border-zinc-700 bg-zinc-950 py-1.5 pl-2.5 pr-8 text-xs text-zinc-200 disabled:cursor-not-allowed"
       >
         <option value="">All</option>
         <%= for {group_label, options} <- @groups do %>
@@ -315,7 +327,8 @@ defmodule EmisarWeb.LiveTable do
           name={@filter.name}
           value="true"
           checked={@value == "true"}
-          class="h-4 w-4 rounded border-zinc-700 bg-zinc-950 text-indigo-500 focus:ring-indigo-500"
+          disabled={@disabled}
+          class="h-4 w-4 rounded border-zinc-700 bg-zinc-950 text-indigo-500 focus:ring-indigo-500 disabled:cursor-not-allowed"
         />
         {@filter.title}
       </span>
@@ -335,7 +348,8 @@ defmodule EmisarWeb.LiveTable do
         name={@filter.name}
         value={@value}
         phx-debounce="blur"
-        class="rounded-lg border border-zinc-700 bg-zinc-950 px-2 py-1.5 text-xs text-zinc-200 [color-scheme:dark]"
+        disabled={@disabled}
+        class="rounded-lg border border-zinc-700 bg-zinc-950 px-2 py-1.5 text-xs text-zinc-200 [color-scheme:dark] disabled:cursor-not-allowed"
       />
     </label>
     """
@@ -350,7 +364,8 @@ defmodule EmisarWeb.LiveTable do
         name={@filter.name}
         value={@value}
         phx-debounce="300"
-        class="rounded-lg border border-zinc-700 bg-zinc-950 px-2 py-1.5 text-xs text-zinc-200"
+        disabled={@disabled}
+        class="rounded-lg border border-zinc-700 bg-zinc-950 px-2 py-1.5 text-xs text-zinc-200 disabled:cursor-not-allowed"
       />
     </label>
     """
@@ -377,6 +392,12 @@ defmodule EmisarWeb.LiveTable do
       v not in [nil, ""]
     end)
   end
+
+  # Filters are inert (rendered disabled) only when there's genuinely nothing to
+  # filter — no rows AND no active filter. An empty result that IS filtered keeps
+  # its controls live so the operator can clear back to the full set.
+  defp filters_inert?(rows, params, filters),
+    do: Enum.empty?(rows) and not has_active_filters?(params, filters)
 
   # -- Paginator ------------------------------------------------------
 

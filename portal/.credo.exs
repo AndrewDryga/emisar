@@ -85,6 +85,7 @@
           {Emisar.Checks.ContextCryptoBoundary, []},
           {Emisar.Checks.CrossContextDeepAlias, []},
           {Emisar.Checks.InlineBroadcast, []},
+          {Emisar.Checks.MultilineAliasGroup, []},
           {Emisar.Checks.NoDateTimeTruncate, []},
           {Emisar.Checks.NoIfOnArgField, []},
           {Emisar.Checks.NoPipeInBranchHead, []},

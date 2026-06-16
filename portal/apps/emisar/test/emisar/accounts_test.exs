@@ -526,7 +526,7 @@ defmodule Emisar.AccountsTest do
         membership_fixture(account_id: account.id, user_id: target_user.id, role: "operator")
 
       target_subject = subject_for(target_user, account, role: :operator)
-      _ = Emisar.Auth.create_session_token!(target_user)
+      _ = Emisar.Auth.create_session_token!(target_user, :password, false)
       assert {:ok, [_], _} = Emisar.Auth.list_sessions_for_user(target_subject)
 
       owner_subject = subject_for(owner, account, role: :owner)
@@ -793,11 +793,11 @@ defmodule Emisar.AccountsTest do
 
       subject = subject_for(owner, account, role: :owner)
 
-      token = Emisar.Auth.create_session_token!(target)
-      assert {:ok, %User{}} = Emisar.Auth.fetch_user_by_session_token(token)
+      token = Emisar.Auth.create_session_token!(target, :password, false)
+      assert {:ok, %User{}, _auth} = Emisar.Auth.fetch_user_and_token_by_session_token(token)
 
       assert :ok = Accounts.end_all_sessions_for(membership, subject)
-      assert {:error, :not_found} = Emisar.Auth.fetch_user_by_session_token(token)
+      assert {:error, :not_found} = Emisar.Auth.fetch_user_and_token_by_session_token(token)
     end
 
     test "a viewer (no manage_team) is refused" do

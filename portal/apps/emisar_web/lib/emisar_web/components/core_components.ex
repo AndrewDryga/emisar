@@ -342,7 +342,7 @@ defmodule EmisarWeb.CoreComponents do
 
   def dropdown(assigns) do
     ~H"""
-    <details class={["group relative", @class]} {@rest}>
+    <details class={["group relative", @class]} phx-click-away={JS.remove_attribute("open")} {@rest}>
       <summary class={[
         "cursor-pointer list-none [&::-webkit-details-marker]:hidden [&::marker]:hidden",
         @summary_class
@@ -1270,6 +1270,14 @@ defmodule EmisarWeb.CoreComponents do
       </.nav_link>
       <.nav_link to={~p"/app/settings/team"} active={@section == :team} icon="hero-user-group">
         Team
+      </.nav_link>
+      <.nav_link
+        :if={Emisar.SSO.subject_can_configure_sso?(@current_subject)}
+        to={~p"/app/settings/sso"}
+        active={@section == :sso}
+        icon="hero-key"
+      >
+        Single sign-on
       </.nav_link>
       <.nav_link to={~p"/app/settings/billing"} active={@section == :billing} icon="hero-credit-card">
         Billing

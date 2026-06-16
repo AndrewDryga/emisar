@@ -60,6 +60,17 @@ defmodule Emisar.MailTest do
     test "suppressed_emails/1 is empty for an empty list" do
       assert Mail.suppressed_emails([]) == MapSet.new()
     end
+
+    test "suppressed_emails/1 drops nil/blank entries (SSO members have no email)" do
+      {:ok, _} = Mail.suppress("bounced@example.com", :hard_bounce, "bounce")
+
+      # A list with only nils (e.g. an all-SSO team) must not reach the query.
+      assert Mail.suppressed_emails([nil, nil]) == MapSet.new()
+
+      # A mix of nil + real addresses still resolves the real ones.
+      result = Mail.suppressed_emails([nil, "bounced@example.com", "  ", "fine@example.com"])
+      assert result == MapSet.new(["bounced@example.com"])
+    end
   end
 
   describe "the mailer skips suppressed recipients" do

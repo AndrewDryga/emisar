@@ -31,28 +31,39 @@ defmodule Emisar.AuthTest do
   describe "session tokens" do
     test "create + lookup round-trip" do
       user = user_fixture()
-      token = Auth.create_session_token!(user)
+      token = Auth.create_session_token!(user, :password, false)
       assert is_binary(token)
-      assert {:ok, %User{id: id}} = Auth.fetch_user_by_session_token(token)
+
+      assert {:ok, %User{id: id}, %{auth_method: :password, mfa: false, user_identity_id: nil}} =
+               Auth.fetch_user_and_token_by_session_token(token)
+
       assert id == user.id
+    end
+
+    test "session provenance round-trips on lookup" do
+      user = user_fixture()
+      token = Auth.create_session_token!(user, :password, true)
+
+      assert {:ok, %User{}, %{auth_method: :password, mfa: true, user_identity_id: nil}} =
+               Auth.fetch_user_and_token_by_session_token(token)
     end
 
     test "delete_session_token invalidates the token" do
       user = user_fixture()
-      token = Auth.create_session_token!(user)
+      token = Auth.create_session_token!(user, :password, false)
       :ok = Auth.delete_session_token(token)
-      assert {:error, :not_found} = Auth.fetch_user_by_session_token(token)
+      assert {:error, :not_found} = Auth.fetch_user_and_token_by_session_token(token)
     end
 
     test "a session past its validity window no longer resolves" do
       user = user_fixture()
-      token = Auth.create_session_token!(user)
+      token = Auth.create_session_token!(user, :password, false)
 
       {1, _} =
         Emisar.Auth.UserToken.Query.by_user_id(user.id)
         |> Repo.update_all(set: [inserted_at: DateTime.add(DateTime.utc_now(), -61, :day)])
 
-      assert {:error, :not_found} = Auth.fetch_user_by_session_token(token)
+      assert {:error, :not_found} = Auth.fetch_user_and_token_by_session_token(token)
     end
   end
 
@@ -85,7 +96,7 @@ defmodule Emisar.AuthTest do
   describe "password reset" do
     test "reset_user_password swaps the hash and invalidates sessions" do
       user = user_fixture(password: @password)
-      session_token = Auth.create_session_token!(user)
+      session_token = Auth.create_session_token!(user, :password, false)
       raw = Auth.issue_password_reset_token!(user)
       new_password = "brand-new-password-x"
 
@@ -97,7 +108,7 @@ defmodule Emisar.AuthTest do
       assert {:error, :not_found} = Auth.fetch_user_by_email_and_password(user.email, @password)
 
       # Existing session was nuked.
-      assert {:error, :not_found} = Auth.fetch_user_by_session_token(session_token)
+      assert {:error, :not_found} = Auth.fetch_user_and_token_by_session_token(session_token)
     end
 
     test "garbage token returns invalid_or_expired" do
@@ -222,8 +233,8 @@ defmodule Emisar.AuthTest do
       user: user,
       subject: subject
     } do
-      _t1 = Auth.create_session_token!(user)
-      _t2 = Auth.create_session_token!(user)
+      _t1 = Auth.create_session_token!(user, :password, false)
+      _t2 = Auth.create_session_token!(user, :password, false)
       {:ok, [session | _], _} = Auth.list_sessions_for_user(subject)
 
       assert :ok = Auth.revoke_session(session.id, subject)
@@ -238,7 +249,7 @@ defmodule Emisar.AuthTest do
       other = user_fixture()
       _ = membership_fixture(account_id: other_account.id, user_id: other.id, role: "owner")
       other_subject = subject_for(other, other_account, role: :owner)
-      _ = Auth.create_session_token!(other)
+      _ = Auth.create_session_token!(other, :password, false)
       {:ok, [other_session], _} = Auth.list_sessions_for_user(other_subject)
 
       assert {:error, :not_found} = Auth.revoke_session(other_session.id, subject)
@@ -254,15 +265,15 @@ defmodule Emisar.AuthTest do
       user: user,
       subject: subject
     } do
-      keep = Auth.create_session_token!(user)
-      _other1 = Auth.create_session_token!(user)
-      _other2 = Auth.create_session_token!(user)
+      keep = Auth.create_session_token!(user, :password, false)
+      _other1 = Auth.create_session_token!(user, :password, false)
+      _other2 = Auth.create_session_token!(user, :password, false)
 
       assert Auth.revoke_and_disconnect_other_sessions!(keep, subject) == 2
 
       {:ok, remaining, _} = Auth.list_sessions_for_user(subject)
       assert length(remaining) == 1
-      assert {:ok, %User{}} = Auth.fetch_user_by_session_token(keep)
+      assert {:ok, %User{}, _auth} = Auth.fetch_user_and_token_by_session_token(keep)
     end
   end
 end

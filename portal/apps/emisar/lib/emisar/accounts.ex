@@ -8,7 +8,7 @@ defmodule Emisar.Accounts do
   """
   alias Ecto.Multi
   alias Emisar.Accounts.{Account, Authorizer, Membership}
-  alias Emisar.{ApiKeys, Audit, Auth, Crypto, Mail, Repo, Slug, Users}
+  alias Emisar.{ApiKeys, Audit, Auth, Crypto, Mail, Repo, Slug, SSO, Users}
   alias Emisar.Auth.Subject
   require Logger
 
@@ -294,6 +294,36 @@ defmodule Emisar.Accounts do
     |> Membership.Query.by_account_id(account_id)
     |> Membership.Query.with_preloaded_user()
     |> Repo.list(Membership.Query, opts)
+  end
+
+  @doc """
+  Internal — SSO: create a membership for a JIT-provisioned user at the
+  provider's `default_role`. No `%Subject{}` — the caller is the pre-auth SSO
+  callback, scoped to the provider's account; composed into the SSO JIT
+  `Multi` via `Multi.run`. The JIT user is always brand-new, so the
+  `(account, user)` unique can't fire here.
+  """
+  # Defense in depth: `:owner` is never assignable via sync (the provider
+  # changeset rejects it as a default_role too) — owner is a deliberate human
+  # grant needing `manage_owners`.
+  def provision_sso_membership(_account_id, _user_id, :owner), do: {:error, :owner_not_assignable}
+
+  def provision_sso_membership(account_id, user_id, role) do
+    %{account_id: account_id, user_id: user_id, role: role}
+    |> Membership.Changeset.create()
+    |> Repo.insert()
+  end
+
+  @doc """
+  Internal — directory sync: the membership joining `account_id` + `user_id`,
+  nil-or-struct (a SCIM reconcile reads it back for the response resource).
+  No `%Subject{}` — the caller is the provider-scoped SCIM path. Returns the
+  row regardless of `disabled_at` (a deprovisioned member still has one).
+  """
+  def peek_sync_membership(account_id, user_id) do
+    Membership.Query.not_deleted()
+    |> Membership.Query.by_account_and_user(account_id, user_id)
+    |> Repo.peek()
   end
 
   @doc """
@@ -624,6 +654,111 @@ defmodule Emisar.Accounts do
       )
     end
   end
+
+  @doc """
+  Internal — directory sync: suspend a member because the IdP deprovisioned
+  them (SCIM `active:false` / DELETE). No `%Subject{}` — the SCIM bearer's
+  provider-scope is the authorization, validated at the web boundary; the
+  `provider` is threaded only to attribute the audit to the directory.
+
+  Mirrors `suspend_membership/2`'s mechanics exactly — `disabled_at` under
+  the row lock, then kill sessions + revoke API keys + broadcast — and the
+  **last-active-owner guard still fires**: a directory deprovision can never
+  lock out the account's last owner (§9 N5). Returns
+  `{:ok, membership} | {:error, :last_owner | :not_found}`.
+  """
+  def sync_suspend_membership(%Membership{} = membership, %SSO.IdentityProvider{} = provider) do
+    Membership.Query.not_deleted()
+    |> Membership.Query.by_id(membership.id)
+    |> Repo.fetch_and_update(Membership.Query,
+      with: fn loaded_membership ->
+        # The guard judges the row's CURRENT role under the lock.
+        case ensure_not_last_active_owner(loaded_membership) do
+          :ok -> Membership.Changeset.suspend(loaded_membership)
+          {:error, reason} -> reason
+        end
+      end,
+      audit: &Audit.Events.membership_deprovisioned_via_scim(&1, provider),
+      after_commit: [
+        &broadcast_membership_suspended/1,
+        &disconnect_user_sessions/1,
+        &revoke_membership_api_keys/1
+      ]
+    )
+  end
+
+  @doc """
+  Internal — directory sync: reinstate a member the IdP re-provisioned
+  (SCIM `active:true`). No `%Subject{}` — see `sync_suspend_membership/2`.
+  Clears `disabled_at` under the row lock + broadcasts. Returns
+  `{:ok, membership} | {:error, :not_found}`.
+  """
+  def sync_reinstate_membership(%Membership{} = membership, %SSO.IdentityProvider{} = provider) do
+    Membership.Query.not_deleted()
+    |> Membership.Query.by_id(membership.id)
+    |> Repo.fetch_and_update(Membership.Query,
+      with: &Membership.Changeset.reinstate/1,
+      audit: &Audit.Events.membership_reprovisioned_via_scim(&1, provider),
+      after_commit: &broadcast_membership_reinstated/1
+    )
+  end
+
+  @doc """
+  Internal — directory sync: set a member's role from their mapped IdP groups
+  (Slice 2b). No `%Subject{}` — the SCIM bearer's provider-scope is the
+  authorization, validated at the web boundary; the `provider` is threaded
+  only to attribute the audit to the directory.
+
+  Defense in depth even though group→role mappings already exclude `:owner`
+  (decision 7): the `:with` **refuses `:owner`** under the lock, and it **never
+  demotes the account's last active owner** (`ensure_not_last_active_owner` when
+  the CURRENT role is `:owner` and the new role isn't — §9 N5). Idempotent: if
+  the role already matches, returns `{:ok, membership}` with no write or audit.
+  Returns `{:ok, membership} | {:error, :owner_not_assignable | :last_owner |
+  :not_found | %Ecto.Changeset{}}`.
+  """
+  def sync_set_membership_role(
+        %Membership{role: role} = membership,
+        role,
+        %SSO.IdentityProvider{}
+      ),
+      do: {:ok, membership}
+
+  def sync_set_membership_role(
+        %Membership{} = membership,
+        role,
+        %SSO.IdentityProvider{} = provider
+      ) do
+    Membership.Query.not_deleted()
+    |> Membership.Query.by_id(membership.id)
+    |> Repo.fetch_and_update(Membership.Query,
+      with: fn loaded_membership ->
+        # The guards judge the row's CURRENT role under the lock — the
+        # caller's struct is a stale socket snapshot.
+        with :ok <- ensure_sync_role_assignable(role),
+             :ok <- ensure_demotion_keeps_an_owner(loaded_membership, role) do
+          Membership.Changeset.update(loaded_membership, %{role: role})
+        else
+          {:error, reason} -> reason
+        end
+      end,
+      # `changeset.data` is the locked pre-update row — record the role that
+      # was actually replaced. Skip the audit when the locked row already
+      # carried this role (a concurrent reconcile beat us to it — no change).
+      audit: fn _updated, changeset ->
+        if changeset.data.role == role,
+          do: nil,
+          else: Audit.Events.membership_role_synced_via_scim(changeset.data, provider, role)
+      end,
+      after_commit: &broadcast_membership_role_changed/1
+    )
+  end
+
+  # Directory sync can never grant owner — owner stays a deliberate human
+  # assignment (decision 7). The group→role mapping changeset already excludes
+  # it; this is the write-path backstop.
+  defp ensure_sync_role_assignable(:owner), do: {:error, :owner_not_assignable}
+  defp ensure_sync_role_assignable(_role), do: :ok
 
   @doc """
   Admin-triggered password reset: invalidates every active session for

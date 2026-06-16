@@ -25,7 +25,8 @@ defmodule Emisar.Auth.Permissions do
     Emisar.Policies.Authorizer,
     Emisar.Runbooks.Authorizer,
     Emisar.Runs.Authorizer,
-    Emisar.Runners.Authorizer
+    Emisar.Runners.Authorizer,
+    Emisar.SSO.Authorizer
   ]
 
   @doc """

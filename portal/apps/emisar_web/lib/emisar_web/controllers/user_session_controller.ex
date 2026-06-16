@@ -137,7 +137,8 @@ defmodule EmisarWeb.UserSessionController do
 
   defp finalize_sign_in(conn, user, user_params, method, context) do
     Users.record_sign_in(user, method, context)
-    UserAuth.log_in_user(conn, user, user_params)
+    # `:password` is the method; `mfa` is whether the TOTP step ran this session.
+    UserAuth.log_in_user(conn, user, :password, method == "password+mfa", user_params)
   end
 
   # -- Pending-MFA session helpers --------------------------------------
@@ -199,7 +200,7 @@ defmodule EmisarWeb.UserSessionController do
     case Auth.consume_magic_link_token(token, context) do
       {:ok, user} ->
         Users.record_sign_in(user, "magic_link", context)
-        UserAuth.log_in_user(conn, user, %{})
+        UserAuth.log_in_user(conn, user, :magic_link, false, %{})
 
       {:error, :invalid_or_expired} ->
         conn

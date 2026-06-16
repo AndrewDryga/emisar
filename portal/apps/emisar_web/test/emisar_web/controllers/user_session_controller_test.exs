@@ -13,7 +13,7 @@ defmodule EmisarWeb.UserSessionControllerTest do
       refute Plug.Conn.get_session(conn, :user_token)
       # The token is actually killed server-side, not just dropped from the
       # session — a stolen copy can't be replayed.
-      assert {:error, :not_found} = Emisar.Auth.fetch_user_by_session_token(token)
+      assert {:error, :not_found} = Emisar.Auth.fetch_user_and_token_by_session_token(token)
     end
 
     test "is a harmless redirect when no one is signed in", %{conn: conn} do

@@ -42,34 +42,38 @@ defmodule Emisar.Auth do
   # -- Session tokens ---------------------------------------------------
 
   @doc """
-  Mint a session token and persist it. Returns the raw token for the
-  cookie. `metadata` (optional) carries `ip_address` + `user_agent`
-  captured from the inbound request so the Profile page can show
-  per-session device info; missing keys are tolerated. Pre-Subject
-  boundary — the session controller calls this right after verifying
-  credentials.
+  Mint a session token and persist it. Returns the raw token for the cookie.
+  `auth_method` (how the session was authenticated) and `mfa` (was a second
+  factor verified) are required provenance — stamped onto the token so every
+  later request resolves how it signed in; `opts` carry the SSO-only
+  `:user_identity_id`. `metadata` (optional) carries `ip_address` +
+  `user_agent` for the Profile sessions list; missing keys are tolerated.
+  Pre-Subject boundary — the session controller calls this right after
+  verifying credentials.
   """
-  def create_session_token!(%Users.User{} = user, metadata \\ %{}) do
+  def create_session_token!(%Users.User{} = user, auth_method, mfa, metadata \\ %{}, opts \\ []) do
     {token, digest} = Crypto.session_token()
-    Repo.insert!(UserToken.Changeset.session(user, digest, metadata))
+    Repo.insert!(UserToken.Changeset.session(user, digest, metadata, auth_method, mfa, opts))
     token
   end
 
   @doc """
-  Looks up the user behind a session token. Returns `{:ok, user}` on
-  a hit or `{:error, :not_found}` for expired / unknown / non-binary
-  tokens. Pre-auth boundary — no Subject.
+  Looks up the user behind a session token, returning `{:ok, user, token}` —
+  the `%UserToken{}` rides alongside so the boundary reads its provenance
+  (`auth_method` / `mfa` / `user_identity_id`) off it and stamps the
+  `%Subject{}`. The user is preloaded scoped to live users, so a soft-deleted
+  user's token resolves to `{:error, :not_found}` — as do expired / unknown /
+  non-binary tokens. Pre-auth boundary — no Subject.
   """
-  def fetch_user_by_session_token(token) when is_binary(token) do
+  def fetch_user_and_token_by_session_token(token) when is_binary(token) do
     UserToken.Query.by_token_digest(Crypto.hash(token))
     |> UserToken.Query.by_context("session")
     |> UserToken.Query.not_expired("session")
-    |> UserToken.Query.with_joined_user()
-    |> UserToken.Query.select_user()
+    |> UserToken.Query.with_preloaded_user()
     |> Repo.one()
     |> case do
-      nil -> {:error, :not_found}
-      %Users.User{} = user -> {:ok, user}
+      %UserToken{user: %Users.User{} = user} = token -> {:ok, user, token}
+      _ -> {:error, :not_found}
     end
   end
 

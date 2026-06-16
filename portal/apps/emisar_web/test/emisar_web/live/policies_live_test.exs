@@ -325,13 +325,17 @@ defmodule EmisarWeb.PoliciesLiveTest do
       %{conn: conn, account: account, subject: Emisar.Fixtures.subject_for(user, account)}
     end
 
-    test "an existing runner ruleset renders as a card labelled with the runner name", ctx do
+    test "an existing runner ruleset renders as a card labelled with the runner name", %{
+      conn: conn,
+      account: account,
+      subject: subject
+    } do
       runner =
-        Emisar.Fixtures.runner_fixture(account_id: ctx.account.id, name: "web-1", group: "web")
+        Emisar.Fixtures.runner_fixture(account_id: account.id, name: "web-1", group: "web")
 
-      {:ok, _} = Policies.save_scoped_rules(deny_all(), :runner, runner.id, ctx.subject)
+      {:ok, _} = Policies.save_scoped_rules(deny_all(), :runner, runner.id, subject)
 
-      {:ok, _lv, html} = live(ctx.conn, ~p"/app/policies")
+      {:ok, _lv, html} = live(conn, ~p"/app/policies")
 
       assert html =~ "Default policy"
       assert html =~ "Targeted rulesets"
@@ -341,11 +345,15 @@ defmodule EmisarWeb.PoliciesLiveTest do
       assert html =~ "Remove"
     end
 
-    test "add a ruleset → pick a runner → save → persists a runner-scoped policy", ctx do
+    test "add a ruleset → pick a runner → save → persists a runner-scoped policy", %{
+      conn: conn,
+      account: account,
+      subject: subject
+    } do
       runner =
-        Emisar.Fixtures.runner_fixture(account_id: ctx.account.id, name: "web-1", group: "web")
+        Emisar.Fixtures.runner_fixture(account_id: account.id, name: "web-1", group: "web")
 
-      {:ok, lv, _html} = live(ctx.conn, ~p"/app/policies")
+      {:ok, lv, _html} = live(conn, ~p"/app/policies")
 
       lv |> render_click("add_ruleset", %{})
 
@@ -361,16 +369,20 @@ defmodule EmisarWeb.PoliciesLiveTest do
 
       lv |> form(~s(form[id^="policy-form-new-"])) |> render_submit()
 
-      assert {:ok, policy} = Policies.fetch_scoped_policy(:runner, runner.id, ctx.subject)
+      assert {:ok, policy} = Policies.fetch_scoped_policy(:runner, runner.id, subject)
       assert policy.scope_type == :runner
       assert policy.scope_value == runner.id
     end
 
-    test "add a ruleset → pick a group → save → persists a group-scoped policy", ctx do
+    test "add a ruleset → pick a group → save → persists a group-scoped policy", %{
+      conn: conn,
+      account: account,
+      subject: subject
+    } do
       _runner =
-        Emisar.Fixtures.runner_fixture(account_id: ctx.account.id, name: "n1", group: "prod")
+        Emisar.Fixtures.runner_fixture(account_id: account.id, name: "n1", group: "prod")
 
-      {:ok, lv, _html} = live(ctx.conn, ~p"/app/policies")
+      {:ok, lv, _html} = live(conn, ~p"/app/policies")
 
       lv |> render_click("add_ruleset", %{})
 
@@ -380,16 +392,19 @@ defmodule EmisarWeb.PoliciesLiveTest do
 
       lv |> form(~s(form[id^="policy-form-new-"])) |> render_submit()
 
-      assert {:ok, policy} = Policies.fetch_scoped_policy(:group, "prod", ctx.subject)
+      assert {:ok, policy} = Policies.fetch_scoped_policy(:group, "prod", subject)
       assert policy.scope_type == :group
       assert policy.scope_value == "prod"
     end
 
-    test "the target picker lists groups as selectable options with their runners nested", ctx do
+    test "the target picker lists groups as selectable options with their runners nested", %{
+      conn: conn,
+      account: account
+    } do
       runner =
-        Emisar.Fixtures.runner_fixture(account_id: ctx.account.id, name: "web-1", group: "web")
+        Emisar.Fixtures.runner_fixture(account_id: account.id, name: "web-1", group: "web")
 
-      {:ok, lv, _html} = live(ctx.conn, ~p"/app/policies")
+      {:ok, lv, _html} = live(conn, ~p"/app/policies")
       html = lv |> render_click("add_ruleset", %{})
 
       # One combined tree: the group is a selectable <option> (not an <optgroup>
@@ -401,17 +416,21 @@ defmodule EmisarWeb.PoliciesLiveTest do
       refute html =~ "<optgroup"
     end
 
-    test "a target another ruleset already claims renders disabled in a new picker", ctx do
+    test "a target another ruleset already claims renders disabled in a new picker", %{
+      conn: conn,
+      account: account,
+      subject: subject
+    } do
       # The picker shows every runner/group, but one already bound to a saved
       # ruleset is disabled-but-visible so the operator sees why it can't be
       # re-targeted. This per-option `disabled` is exactly why the picker uses
       # the shared <.select> rather than <.input type="select">.
       runner =
-        Emisar.Fixtures.runner_fixture(account_id: ctx.account.id, name: "web-1", group: "web")
+        Emisar.Fixtures.runner_fixture(account_id: account.id, name: "web-1", group: "web")
 
-      {:ok, _} = Policies.save_scoped_rules(deny_all(), :runner, runner.id, ctx.subject)
+      {:ok, _} = Policies.save_scoped_rules(deny_all(), :runner, runner.id, subject)
 
-      {:ok, lv, _html} = live(ctx.conn, ~p"/app/policies")
+      {:ok, lv, _html} = live(conn, ~p"/app/policies")
       html = lv |> render_click("add_ruleset", %{})
 
       # In the new (unsaved) card's picker, the taken runner is disabled and
@@ -420,28 +439,32 @@ defmodule EmisarWeb.PoliciesLiveTest do
       assert html =~ "web-1 — has a ruleset"
     end
 
-    test "removing a saved ruleset falls the scope back to the default policy", ctx do
+    test "removing a saved ruleset falls the scope back to the default policy", %{
+      conn: conn,
+      account: account,
+      subject: subject
+    } do
       runner =
-        Emisar.Fixtures.runner_fixture(account_id: ctx.account.id, name: "db-1", group: "db")
+        Emisar.Fixtures.runner_fixture(account_id: account.id, name: "db-1", group: "db")
 
-      {:ok, saved} = Policies.save_scoped_rules(deny_all(), :runner, runner.id, ctx.subject)
+      {:ok, saved} = Policies.save_scoped_rules(deny_all(), :runner, runner.id, subject)
 
-      {:ok, lv, _html} = live(ctx.conn, ~p"/app/policies")
+      {:ok, lv, _html} = live(conn, ~p"/app/policies")
       html = lv |> render_click("remove_ruleset", %{"uid" => saved.id})
 
       assert html =~ "Ruleset removed"
-      assert {:error, :not_found} = Policies.fetch_scoped_policy(:runner, runner.id, ctx.subject)
+      assert {:error, :not_found} = Policies.fetch_scoped_policy(:runner, runner.id, subject)
     end
 
-    test "a viewer sees the policy read-only and a forged save is denied", ctx do
+    test "a viewer sees the policy read-only and a forged save is denied", %{account: account} do
       _runner =
-        Emisar.Fixtures.runner_fixture(account_id: ctx.account.id, name: "web-1", group: "web")
+        Emisar.Fixtures.runner_fixture(account_id: account.id, name: "web-1", group: "web")
 
       viewer = Emisar.Fixtures.user_fixture()
 
       _ =
         Emisar.Fixtures.membership_fixture(
-          account_id: ctx.account.id,
+          account_id: account.id,
           user_id: viewer.id,
           role: "viewer"
         )

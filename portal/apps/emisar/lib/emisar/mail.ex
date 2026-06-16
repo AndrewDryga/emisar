@@ -30,21 +30,32 @@ defmodule Emisar.Mail do
   `MapSet.member?(set, member.email)` is an exact hit.
   """
   def suppressed_emails(emails) when is_list(emails) do
-    trimmed = Enum.map(emails, &String.trim/1)
+    # Drop nils/blanks before the query — SSO-provisioned members can have no
+    # email (`users.email` is nullable), and an empty/nil-only list must not
+    # reach `email in ^[...]` (it has nothing to match anyway).
+    trimmed =
+      emails
+      |> Enum.filter(&is_binary/1)
+      |> Enum.map(&String.trim/1)
+      |> Enum.reject(&(&1 == ""))
 
-    # Match case-insensitively — the suppression `email` is citext and the
-    # provider may report a bounced address in a different case than we store
-    # the member's — but return the input strings. This downcase is an in-memory
-    # reconciliation of two stored values, not a citext-column lookup.
-    suppressed =
-      Suppression.Query.by_emails(trimmed)
-      |> Repo.all()
-      |> MapSet.new(&String.downcase(&1.email))
+    if trimmed == [] do
+      MapSet.new()
+    else
+      # Match case-insensitively — the suppression `email` is citext and the
+      # provider may report a bounced address in a different case than we store
+      # the member's — but return the input strings. This downcase is an
+      # in-memory reconciliation of two stored values, not a citext lookup.
+      suppressed =
+        Suppression.Query.by_emails(trimmed)
+        |> Repo.all()
+        |> MapSet.new(&String.downcase(&1.email))
 
-    for email <- trimmed,
-        MapSet.member?(suppressed, String.downcase(email)),
-        into: MapSet.new(),
-        do: email
+      for email <- trimmed,
+          MapSet.member?(suppressed, String.downcase(email)),
+          into: MapSet.new(),
+          do: email
+    end
   end
 
   @doc """

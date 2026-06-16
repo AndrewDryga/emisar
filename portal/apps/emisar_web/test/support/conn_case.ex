@@ -34,7 +34,7 @@ defmodule EmisarWeb.ConnCase do
   into the session and returning the conn.
   """
   def log_in_user(conn, user) do
-    token = Emisar.Auth.create_session_token!(user)
+    token = Emisar.Auth.create_session_token!(user, :password, false)
 
     conn
     |> Phoenix.ConnTest.init_test_session(%{})

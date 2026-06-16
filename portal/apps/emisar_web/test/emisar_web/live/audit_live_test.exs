@@ -250,6 +250,30 @@ defmodule EmisarWeb.AuditLiveTest do
       refute html =~ "bob"
     end
 
+    test "filtering by sign-in method narrows to that method's events", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+
+      {:ok, _} =
+        Audit.log(account.id, "user.invited",
+          actor_kind: "user",
+          actor_label: "via-sso",
+          auth_method: "sso"
+        )
+
+      {:ok, _} =
+        Audit.log(account.id, "policy.updated",
+          actor_kind: "user",
+          actor_label: "via-password",
+          auth_method: "password"
+        )
+
+      {:ok, _lv, html} = live(conn, ~p"/app/audit?auth_method=sso")
+
+      assert html =~ "via-sso"
+      # the password-session event is filtered out.
+      refute html =~ "via-password"
+    end
+
     test "selecting an actor kind surfaces a picker of that kind's resolved actors",
          %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)

@@ -11,7 +11,12 @@ defmodule Emisar.Application do
       {Phoenix.PubSub, name: Emisar.PubSub.Server},
       Emisar.Runners.Presence,
       {Finch, name: Emisar.Finch},
-      {Oban, Application.fetch_env!(:emisar, Oban)}
+      {Oban, Application.fetch_env!(:emisar, Oban)},
+      # Per-account OIDC provider-config workers (discovery + JWKS cache)
+      # are started lazily under this supervisor, named via the registry by
+      # provider id. See `Emisar.SSO.OIDC.Oidcc`.
+      {Registry, keys: :unique, name: Emisar.SSO.OIDC.Registry},
+      {DynamicSupervisor, strategy: :one_for_one, name: Emisar.SSO.OIDC.ProviderSupervisor}
     ]
 
     Supervisor.start_link(children, strategy: :one_for_one, name: Emisar.Supervisor)

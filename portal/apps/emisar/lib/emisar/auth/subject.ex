@@ -18,12 +18,20 @@ defmodule Emisar.Auth.Subject do
       request_id / mcp_session). Filled in by the boundary; the
       `Audit.Events` builders read it off the subject and stamp it onto
       every event the caller produces.
+    * `auth_method` — how this session was authenticated (`:password |
+      :magic_link | :sso`), or nil for an API key / runner (the actor IS
+      the credential). Stamped onto every audit row.
+    * `mfa` — whether a second factor was verified this session (TOTP, or an
+      MFA-enforcing IdP). `true`/`false` for a user session, nil otherwise.
+    * `user_identity_id` — the `%SSO.UserIdentity{}` behind an `:sso`
+      session; nil otherwise.
   """
   alias Emisar.{Accounts, RequestContext, Users}
   alias Emisar.Auth.Role
 
   @type role :: :owner | :admin | :operator | :viewer | :api_client | :runner
   @type permission :: {module(), atom()}
+  @type auth_method :: :password | :magic_link | :sso
   @type actor ::
           Emisar.Users.User.t()
           | Emisar.ApiKeys.ApiKey.t()
@@ -35,7 +43,10 @@ defmodule Emisar.Auth.Subject do
           role: role() | nil,
           membership_id: binary() | nil,
           permissions: MapSet.t(),
-          context: RequestContext.t()
+          context: RequestContext.t(),
+          auth_method: auth_method() | nil,
+          mfa: boolean() | nil,
+          user_identity_id: binary() | nil
         }
 
   defstruct account: nil,
@@ -43,14 +54,24 @@ defmodule Emisar.Auth.Subject do
             role: nil,
             membership_id: nil,
             permissions: MapSet.new(),
-            context: %RequestContext{}
+            context: %RequestContext{},
+            auth_method: nil,
+            mfa: nil,
+            user_identity_id: nil
 
-  @doc "Build a subject from a `%Users.User{}` + their `%Accounts.Membership{}`."
+  @doc """
+  Build a subject from a `%Users.User{}` + their `%Accounts.Membership{}`.
+  `opts` carry session provenance — `:auth_method` (how this session was
+  authenticated), `:mfa` (was a second factor verified), and
+  `:user_identity_id` (the SSO identity behind it) — threaded from the
+  session row so every audit row records it.
+  """
   def for_user(
         %Users.User{} = user,
         %Accounts.Account{} = account,
         %Accounts.Membership{} = membership,
-        context \\ %RequestContext{}
+        context \\ %RequestContext{},
+        opts \\ []
       ) do
     role = role_atom(membership.role)
 
@@ -60,7 +81,10 @@ defmodule Emisar.Auth.Subject do
       role: role,
       membership_id: membership.id,
       permissions: Emisar.Auth.Permissions.for_role(role),
-      context: context
+      context: context,
+      auth_method: Keyword.get(opts, :auth_method),
+      mfa: Keyword.get(opts, :mfa),
+      user_identity_id: Keyword.get(opts, :user_identity_id)
     }
   end
 

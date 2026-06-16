@@ -75,7 +75,10 @@ defmodule Emisar.AuditTest do
       %{account: account, user: user}
     end
 
-    test "a builder stamps actor + the subject's context onto the event", ctx do
+    test "a builder stamps actor + the subject's context onto the event", %{
+      user: user,
+      account: account
+    } do
       context = %RequestContext{
         ip_address: "203.0.113.7",
         user_agent: "Mozilla/5.0",
@@ -83,13 +86,13 @@ defmodule Emisar.AuditTest do
         mcp_session_id: "sess_evt"
       }
 
-      subject = subject_for(ctx.user, ctx.account, role: :owner, context: context)
+      subject = subject_for(user, account, role: :owner, context: context)
 
-      {:ok, event} = Audit.record(Audit.Events.account_updated(subject, ctx.account))
+      {:ok, event} = Audit.record(Audit.Events.account_updated(subject, account))
 
       # Actor identity comes off the subject…
       assert event.actor_kind == "user"
-      assert event.actor_id == ctx.user.id
+      assert event.actor_id == user.id
       # …and so does the request metadata — the lever that lets every
       # builder inherit ip/ua/request_id/mcp_session without threading a conn.
       assert event.ip_address == "203.0.113.7"
@@ -98,16 +101,55 @@ defmodule Emisar.AuditTest do
       assert event.mcp_session_id == "sess_evt"
     end
 
-    test "a subject with the default (empty) context yields no request metadata", ctx do
-      subject = subject_for(ctx.user, ctx.account, role: :owner)
+    test "a subject with the default (empty) context yields no request metadata", %{
+      user: user,
+      account: account
+    } do
+      subject = subject_for(user, account, role: :owner)
 
-      {:ok, event} = Audit.record(Audit.Events.account_updated(subject, ctx.account))
+      {:ok, event} = Audit.record(Audit.Events.account_updated(subject, account))
 
-      assert event.actor_id == ctx.user.id
+      assert event.actor_id == user.id
       assert event.ip_address == nil
       assert event.user_agent == nil
       assert event.request_id == nil
       assert event.mcp_session_id == nil
+    end
+
+    test "a builder stamps the subject's auth provenance onto the event", %{
+      user: user,
+      account: account
+    } do
+      identity_id = Repo.generate_id()
+
+      subject =
+        subject_for(user, account,
+          role: :owner,
+          auth_method: :sso,
+          mfa: true,
+          user_identity_id: identity_id
+        )
+
+      {:ok, event} = Audit.record(Audit.Events.account_updated(subject, account))
+
+      # How the actor authenticated rides the subject onto every audit row
+      # (decision 6) — string method for the column, the mfa flag, and the
+      # identity id for SSO.
+      assert event.auth_method == "sso"
+      assert event.mfa == true
+      assert event.user_identity_id == identity_id
+    end
+
+    test "a subject with no auth method leaves the provenance fields nil", %{
+      user: user,
+      account: account
+    } do
+      subject = subject_for(user, account, role: :owner)
+
+      {:ok, event} = Audit.record(Audit.Events.account_updated(subject, account))
+
+      assert event.auth_method == nil
+      assert event.user_identity_id == nil
     end
   end
 

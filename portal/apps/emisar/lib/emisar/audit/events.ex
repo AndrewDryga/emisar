@@ -11,18 +11,8 @@ defmodule Emisar.Audit.Events do
   inserted with `Audit.record/1`; only an event with no fixed
   actor/subject shape falls back to raw `Audit.log/3`.
   """
-  alias Emisar.{
-    Accounts,
-    ApiKeys,
-    Approvals,
-    Catalog,
-    OAuth,
-    Policies,
-    Runbooks,
-    Runners,
-    Runs,
-    Users
-  }
+  alias Emisar.{Accounts, ApiKeys, Approvals, Catalog, OAuth, Policies}
+  alias Emisar.{Runbooks, Runners, Runs, SSO, Users}
 
   alias Emisar.Audit
   alias Emisar.Auth.Subject
@@ -765,6 +755,204 @@ defmodule Emisar.Audit.Events do
     )
   end
 
+  # -- SSO -------------------------------------------------------------
+
+  @doc "A user JIT-provisioned by an SSO login. Actor is the system (the IdP via JIT), not a member."
+  def user_provisioned_via_sso(%Users.User{} = user, %SSO.IdentityProvider{} = provider) do
+    Audit.changeset(provider.account_id, "user.provisioned_via_sso",
+      actor_kind: "system",
+      subject_kind: "user",
+      subject_id: user.id,
+      subject_label: user.email || user.full_name,
+      payload: %{
+        provider_id: provider.id,
+        provider_kind: to_string(provider.kind),
+        role: to_string(provider.default_role)
+      }
+    )
+  end
+
+  # -- Directory sync (SCIM) -------------------------------------------
+  # IdP-pushed membership changes are their own actor class: the actor is
+  # the directory connection (`directory_sync` + the provider id), so an
+  # operator auditing an offboarding sees *which* directory did it, not a
+  # generic "system" (decision 7).
+
+  @doc "A user provisioned by inbound SCIM. Actor is the directory-sync connection, not a member."
+  def user_provisioned_via_scim(%Users.User{} = user, %SSO.IdentityProvider{} = provider) do
+    Audit.changeset(provider.account_id, "user.provisioned_via_scim",
+      actor_kind: "directory_sync",
+      actor_id: provider.id,
+      actor_label: provider.name,
+      subject_kind: "user",
+      subject_id: user.id,
+      subject_label: user.email || user.full_name,
+      payload: %{
+        provider_id: provider.id,
+        provider_kind: to_string(provider.kind),
+        role: to_string(provider.default_role)
+      }
+    )
+  end
+
+  @doc "A membership suspended by an inbound SCIM deprovision (`active:false`/DELETE)."
+  def membership_deprovisioned_via_scim(
+        %Accounts.Membership{} = membership,
+        %SSO.IdentityProvider{} = provider
+      ),
+      do:
+        directory_sync_membership_event(membership, provider, "membership.deprovisioned_via_scim")
+
+  @doc "A suspended membership reinstated by an inbound SCIM `active:true`."
+  def membership_reprovisioned_via_scim(
+        %Accounts.Membership{} = membership,
+        %SSO.IdentityProvider{} = provider
+      ),
+      do:
+        directory_sync_membership_event(membership, provider, "membership.reprovisioned_via_scim")
+
+  @doc "A membership role recomputed from the member's mapped IdP groups (Slice 2b). `membership` is the pre-update row, for the from→to payload."
+  def membership_role_synced_via_scim(
+        %Accounts.Membership{} = membership,
+        %SSO.IdentityProvider{} = provider,
+        new_role
+      ) do
+    Audit.changeset(membership.account_id, "membership.role_synced_via_scim",
+      actor_kind: "directory_sync",
+      actor_id: provider.id,
+      actor_label: provider.name,
+      subject_kind: "user",
+      subject_id: membership.user_id,
+      payload: %{
+        provider_id: provider.id,
+        provider_kind: to_string(provider.kind),
+        from: to_string(membership.role),
+        to: to_string(new_role)
+      }
+    )
+  end
+
+  defp directory_sync_membership_event(
+         %Accounts.Membership{} = membership,
+         %SSO.IdentityProvider{} = provider,
+         event_type
+       ) do
+    Audit.changeset(membership.account_id, event_type,
+      actor_kind: "directory_sync",
+      actor_id: provider.id,
+      actor_label: provider.name,
+      subject_kind: "user",
+      subject_id: membership.user_id,
+      payload: %{provider_id: provider.id, provider_kind: to_string(provider.kind)}
+    )
+  end
+
+  @doc "An IdP group→role mapping created by an operator (Slice 2b config)."
+  def group_role_mapping_created(
+        %Subject{} = subject,
+        %SSO.IdentityProvider{} = provider,
+        %SSO.GroupRoleMapping{} = mapping
+      ),
+      do: group_role_mapping_event(subject, mapping, "sso.group_mapping_created", provider)
+
+  @doc "An IdP group→role mapping updated by an operator (role / display change)."
+  def group_role_mapping_updated(%Subject{} = subject, %SSO.GroupRoleMapping{} = mapping),
+    do: group_role_mapping_event(subject, mapping, "sso.group_mapping_updated", nil)
+
+  @doc "An IdP group→role mapping deleted by an operator."
+  def group_role_mapping_deleted(%Subject{} = subject, %SSO.GroupRoleMapping{} = mapping),
+    do: group_role_mapping_event(subject, mapping, "sso.group_mapping_deleted", nil)
+
+  defp group_role_mapping_event(
+         %Subject{} = subject,
+         %SSO.GroupRoleMapping{} = mapping,
+         event_type,
+         provider
+       ) do
+    Audit.changeset(
+      mapping.account_id,
+      event_type,
+      actor(subject) ++
+        [
+          subject_kind: "identity_provider",
+          subject_id: provider_id(provider, mapping),
+          subject_label: mapping.external_group_display || mapping.external_group_id,
+          payload: %{
+            external_group_id: mapping.external_group_id,
+            role: to_string(mapping.role)
+          }
+        ]
+    )
+  end
+
+  defp provider_id(%SSO.IdentityProvider{id: id}, _mapping), do: id
+  defp provider_id(nil, %SSO.GroupRoleMapping{provider_id: id}), do: id
+
+  def identity_provider_configured(%Subject{} = subject, %SSO.IdentityProvider{} = provider),
+    do: identity_provider_event(subject, provider, "sso.provider_configured")
+
+  def identity_provider_updated(%Subject{} = subject, %SSO.IdentityProvider{} = provider),
+    do: identity_provider_event(subject, provider, "sso.provider_updated")
+
+  def identity_provider_deleted(%Subject{} = subject, %SSO.IdentityProvider{} = provider),
+    do: identity_provider_event(subject, provider, "sso.provider_deleted")
+
+  defp identity_provider_event(
+         %Subject{} = subject,
+         %SSO.IdentityProvider{} = provider,
+         event_type
+       ) do
+    Audit.changeset(
+      provider.account_id,
+      event_type,
+      actor(subject) ++
+        [
+          subject_kind: "identity_provider",
+          subject_id: provider.id,
+          subject_label: provider.name,
+          payload: %{kind: to_string(provider.kind)}
+        ]
+    )
+  end
+
+  @doc "An admin approved a pending manual SSO link request — the captured identity is now provisioned. Actor is the admin."
+  def sso_link_request_approved(
+        %Subject{} = subject,
+        %Users.User{} = user,
+        %SSO.IdentityProvider{} = provider
+      ) do
+    Audit.changeset(
+      provider.account_id,
+      "sso.link_request_approved",
+      actor(subject) ++
+        [
+          subject_kind: "user",
+          subject_id: user.id,
+          subject_label: user.email || user.full_name,
+          payload: %{
+            provider_id: provider.id,
+            provider_kind: to_string(provider.kind),
+            role: to_string(provider.default_role)
+          }
+        ]
+    )
+  end
+
+  @doc "An admin dismissed a pending manual SSO link request without provisioning. Actor is the admin."
+  def sso_link_request_dismissed(%Subject{} = subject, %SSO.LinkRequest{} = request) do
+    Audit.changeset(
+      request.account_id,
+      "sso.link_request_dismissed",
+      actor(subject) ++
+        [
+          subject_kind: "identity_provider",
+          subject_id: request.provider_id,
+          subject_label: request.email || request.full_name || request.provider_identifier,
+          payload: %{provider_id: request.provider_id}
+        ]
+    )
+  end
+
   # -- Internals -------------------------------------------------------
 
   defp runner_event(%Subject{} = subject, %Runners.Runner{} = runner, event_type) do
@@ -811,14 +999,21 @@ defmodule Emisar.Audit.Events do
     )
   end
 
-  # Actor identity + the request context that produced this event, both
-  # off the one `%Subject{}` every builder already receives — so the
-  # request's ip/ua/request_id rides the authenticated caller, not a
+  # Actor identity, session provenance, and the request context that
+  # produced this event — all off the one `%Subject{}` every builder
+  # already receives. So the request's ip/ua/request_id AND how the
+  # caller authenticated ride the authenticated caller, not a
   # process-dictionary side channel.
   defp actor(%Subject{} = subject),
     do: [
       actor_kind: Subject.actor_kind(subject),
       actor_id: Subject.actor_id(subject),
+      auth_method: format_auth_method(subject.auth_method),
+      mfa: subject.mfa,
+      user_identity_id: subject.user_identity_id,
       context: subject.context
     ]
+
+  defp format_auth_method(nil), do: nil
+  defp format_auth_method(method) when is_atom(method), do: Atom.to_string(method)
 end

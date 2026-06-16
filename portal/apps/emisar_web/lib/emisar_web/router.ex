@@ -46,6 +46,14 @@ defmodule EmisarWeb.Router do
     plug :accepts, ["json"]
   end
 
+  # Inbound SCIM 2.0 (RFC 7644). Bearer-only, CSRF-free — the IdP pushes
+  # cross-origin, never a browser form. SCIM's `application/scim+json`
+  # content-type resolves to the `json` extension via MIME's `+json` suffix,
+  # so `:accepts ["json"]` accepts it and Plug.Parsers' :json entry parses it.
+  pipeline :scim do
+    plug :accepts, ["json"]
+  end
+
   # -- Health (no logging, no session) --------------------------------
 
   scope "/" do
@@ -89,6 +97,7 @@ defmodule EmisarWeb.Router do
     get "/docs/policies-and-approvals", MarketingController, :docs_policies
     get "/docs/runbooks", MarketingController, :docs_runbooks
     get "/docs/teams-and-access", MarketingController, :docs_teams
+    get "/docs/sso", MarketingController, :docs_sso
     get "/docs/runners", MarketingController, :docs_runners
     get "/docs/audit-and-siem", MarketingController, :docs_audit
     get "/sitemap.xml", SitemapController, :show
@@ -105,6 +114,7 @@ defmodule EmisarWeb.Router do
       on_mount: [{EmisarWeb.UserAuth, :mount_current_user}] do
       live "/sign_up", UserSignUpLive
       live "/sign_in", UserSignInLive
+      live "/sign_in/sso", SSOSignInLive
       live "/sign_in/magic", MagicLinkLive
       live "/sign_in/mfa", MfaChallengeLive
       live "/reset_password", ResetPasswordLive
@@ -113,6 +123,8 @@ defmodule EmisarWeb.Router do
 
     post "/sign_in", UserSessionController, :create
     get "/sign_in/magic/:token", UserSessionController, :magic_link_confirm
+    get "/sign_in/sso/callback", SSOController, :callback
+    get "/sign_in/sso/:provider_id", SSOController, :begin
   end
 
   # Email confirmation must run whether or not you're signed in — the link
@@ -176,6 +188,8 @@ defmodule EmisarWeb.Router do
       live "/settings/runners/auth-keys", AuthKeysLive, :index
       live "/agents", AgentsLive, :index
       live "/settings/team", TeamLive, :index
+      live "/settings/sso", SSOSettingsLive, :index
+      live "/settings/sso/new", SSOSettingsLive, :new
       live "/settings/billing", BillingLive, :index
       live "/settings/profile", ProfileLive, :index
     end
@@ -230,6 +244,37 @@ defmodule EmisarWeb.Router do
     # API-key auth as MCP, but gated on the `audit:read` scope so log
     # shipping can be granted independently of tool-execution rights.
     get "/audit", AuditExportController, :index
+  end
+
+  # -- Inbound SCIM 2.0 directory sync --------------------------------
+  #
+  # The IdP pushes the directory lifecycle here (create / deactivate /
+  # reactivate / delete). Each route resolves its provider from the
+  # per-provider `ems-` bearer (`SCIM.Auth`) — the token's provider-scope
+  # is the authorization. Discovery endpoints sit behind the same auth
+  # (IdPs send the bearer when probing). Mirrors the `/api/mcp` shape:
+  # bearer-only, no session, no CSRF.
+
+  scope "/scim/v2", EmisarWeb.SCIM do
+    pipe_through :scim
+
+    get "/ServiceProviderConfig", DiscoveryController, :service_provider_config
+    get "/ResourceTypes", DiscoveryController, :resource_types
+    get "/Schemas", DiscoveryController, :schemas
+
+    get "/Users", UserController, :index
+    post "/Users", UserController, :create
+    get "/Users/:id", UserController, :show
+    patch "/Users/:id", UserController, :update
+    put "/Users/:id", UserController, :replace
+    delete "/Users/:id", UserController, :delete
+
+    get "/Groups", GroupController, :index
+    post "/Groups", GroupController, :create
+    get "/Groups/:id", GroupController, :show
+    patch "/Groups/:id", GroupController, :update
+    put "/Groups/:id", GroupController, :replace
+    delete "/Groups/:id", GroupController, :delete
   end
 
   # -- OAuth 2.1 authorization server (remote MCP clients) ------------

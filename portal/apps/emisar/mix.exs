@@ -56,6 +56,10 @@ defmodule Emisar.MixProject do
       # Auth — password hashing and TOTP for MFA
       {:bcrypt_elixir, "~> 3.3"},
       {:nimble_totp, "~> 1.0"},
+      # OIDC relying-party (SSO). OpenID-certified Erlang lib (EEF
+      # Security WG); wrapped behind `Emisar.SSO.OIDC` (IL-19). Brings
+      # `jose` (JWT/JWKS) transitively. /deps-audit cleared 2026-06-15.
+      {:oidcc, "~> 3.7"},
       # Pure-Elixir QR encoder — used to render scannable TOTP QRs
       # server-side as SVG so the profile MFA setup doesn't need a
       # third-party JS lib or an external image service.

@@ -13,17 +13,24 @@ defmodule EmisarWeb.MfaSetupLive do
   """
   use EmisarWeb, :live_view
 
-  alias Emisar.Auth
+  alias Emisar.{Auth, SSO}
   alias EmisarWeb.MfaQr
 
   def mount(_params, _session, socket) do
     user = socket.assigns.current_user
     account = socket.assigns.current_account
+    auth = socket.assigns[:current_auth] || %{auth_method: nil, mfa: nil, user_identity_id: nil}
 
     cond do
       # Nothing to enroll — already compliant (or the account stopped
       # enforcing while this tab was open). Don't strand the user here.
       user.mfa_enabled_at != nil or not account.require_mfa ->
+        {:ok, push_navigate(socket, to: ~p"/app")}
+
+      # An SSO session whose provider satisfies MFA is exempt from the account's
+      # requirement (mirrors `UserAuth.on_mount(:ensure_mfa_compliant)`), so
+      # don't strand it in enrollment.
+      auth.auth_method == :sso and SSO.identity_satisfies_mfa?(auth.user_identity_id) ->
         {:ok, push_navigate(socket, to: ~p"/app")}
 
       # The secret must be generated exactly once, on the connected

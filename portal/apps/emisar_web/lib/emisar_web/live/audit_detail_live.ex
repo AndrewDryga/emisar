@@ -107,6 +107,8 @@ defmodule EmisarWeb.AuditDetailLive do
           label={@event.actor_label}
           refs={@refs}
           user_agent={@event.user_agent}
+          auth_method={@event.auth_method}
+          mfa={@event.mfa}
           mcp_session={@event.mcp_session_id}
           mcp_client={if posture.bridge?, do: posture.client}
           mcp_client_host={if posture.bridge?, do: posture.host}
@@ -323,6 +325,8 @@ defmodule EmisarWeb.AuditDetailLive do
   attr :mcp_client, :string, default: nil
   attr :mcp_client_host, :string, default: nil
   attr :mcp_client_os, :string, default: nil
+  attr :auth_method, :string, default: nil
+  attr :mfa, :boolean, default: nil
 
   defp entity_card(%{kind: nil} = assigns) do
     ~H"""
@@ -370,6 +374,26 @@ defmodule EmisarWeb.AuditDetailLive do
         <.icon name={device_icon(@user_agent)} class="h-3 w-3 shrink-0 text-zinc-600" />
         <span class="truncate">{device}</span>
       </p>
+      <%!-- How the human actor authenticated this session + whether a second
+           factor was verified (provenance — decision 6). Absent for API keys
+           and runners (the credential IS the actor). So an auditor can see, on
+           any action, the sign-in method and 2FA state without opening JSON. --%>
+      <p :if={@auth_method} class="mt-2 flex items-center gap-1.5 text-[11px] text-zinc-500">
+        <.icon name="hero-finger-print" class="h-3 w-3 shrink-0 text-zinc-600" />
+        <span>via <span class="text-zinc-300">{auth_method_label(@auth_method)}</span></span>
+        <span
+          :if={@mfa == true}
+          class="rounded bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-medium text-emerald-300 ring-1 ring-emerald-500/30"
+        >
+          2FA
+        </span>
+        <span
+          :if={@mfa == false}
+          class="rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] font-medium text-zinc-500"
+        >
+          no 2FA
+        </span>
+      </p>
       <%!-- MCP coordinates for this actor: the client the LLM connected
            through (bridge only) and the session it was on. They belong to
            the actor, so they live here rather than in the event meta strip. --%>
@@ -399,6 +423,11 @@ defmodule EmisarWeb.AuditDetailLive do
   # session list, so the audit page and the profile page agree about
   # "what does this string mean." Strips the verbose Mozilla/AppleWebKit
   # cruft into something a reader can scan.
+  defp auth_method_label("password"), do: "Password"
+  defp auth_method_label("magic_link"), do: "Magic link"
+  defp auth_method_label("sso"), do: "SSO"
+  defp auth_method_label(other), do: other
+
   defp device_label(ua) when is_binary(ua) do
     # The runner (and any bare Go HTTP client that didn't set a custom UA)
     # isn't a "device" worth showing on the actor — return nil so the line

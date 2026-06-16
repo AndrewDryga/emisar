@@ -188,8 +188,8 @@ defmodule Emisar.AuthAuditTest do
     setup do
       {user, account, subject} = owner_subject_fixture()
       # Mint two sessions for the user.
-      _ = Auth.create_session_token!(user)
-      keep = Auth.create_session_token!(user)
+      _ = Auth.create_session_token!(user, :password, false)
+      keep = Auth.create_session_token!(user, :password, false)
       %{user: user, account: account, keep: keep, subject: subject}
     end
 

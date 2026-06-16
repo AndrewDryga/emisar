@@ -14,6 +14,7 @@ defmodule EmisarWeb.MarketingTest do
     /docs/policies-and-approvals
     /docs/runbooks
     /docs/teams-and-access
+    /docs/sso
     /docs/runners
     /docs/audit-and-siem
     /changelog
@@ -135,6 +136,29 @@ defmodule EmisarWeb.MarketingTest do
 
     assert html =~ "supported product is the hosted emisar control plane today"
     refute html =~ "Run the control plane in your own VPC"
+  end
+
+  test "SSO docs page covers login, SCIM deprovisioning, and the subject-not-email binding",
+       %{conn: conn} do
+    html = conn |> get(~p"/docs/sso") |> html_response(200)
+
+    # The two halves of the feature.
+    assert html =~ "Single sign-on"
+    assert html =~ "directory sync"
+    # The registered callback + SCIM base URL the operator must wire up.
+    assert html =~ "/sign_in/sso/callback"
+    assert html =~ "/scim/v2"
+    # The headline value + the honest security posture (must match the built behavior).
+    assert html =~ "issuer + subject, not email"
+    assert html =~ "suspends"
+    refute html =~ "deletes the user"
+    # Owner is never assignable via sync.
+    assert html =~ "Owner is never assignable through"
+  end
+
+  test "the sitemap lists the SSO docs page", %{conn: conn} do
+    body = conn |> get(~p"/sitemap.xml") |> response(200)
+    assert body =~ "https://emisar.dev/docs/sso</loc>"
   end
 
   test "marketing pages include a large social preview image", %{conn: conn} do

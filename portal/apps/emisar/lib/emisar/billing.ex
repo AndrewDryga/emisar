@@ -40,6 +40,7 @@ defmodule Emisar.Billing do
       audit_retention_days: 365,
       features: [
         "Everything in Team",
+        "Single sign-on (OIDC) + SCIM directory sync",
         "365-day audit retention",
         "Security and procurement review",
         "Design-partner deployment planning",
@@ -50,6 +51,10 @@ defmodule Emisar.Billing do
 
   def plans, do: @plans
   def plan(name) when is_binary(name), do: Map.get(@plans, name)
+
+  @doc "True when the account's plan includes SSO + directory sync (enterprise only)."
+  def sso_available?(%Accounts.Account{plan: "enterprise"}), do: true
+  def sso_available?(%Accounts.Account{}), do: false
 
   # Internal nil-or-struct helper. Used by `upsert_subscription/2` and
   # webhook event application. Not exposed to LiveView/MCP because

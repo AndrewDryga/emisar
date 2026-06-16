@@ -75,7 +75,7 @@ defmodule EmisarWeb.RunnersLive do
   defp load_fleet_health(subject) do
     case Runners.list_all_runners_for_account(subject) do
       {:ok, runners} -> fleet_health(runners)
-      _ -> %{online: 0, offline: 0, pending: 0, disabled: 0, total: 0}
+      _ -> %{online: 0, offline: 0, pending: 0, disabled: 0}
     end
   end
 
@@ -86,8 +86,7 @@ defmodule EmisarWeb.RunnersLive do
       online: Map.get(counts, :online, 0),
       offline: Map.get(counts, :offline, 0),
       pending: Map.get(counts, :pending, 0),
-      disabled: Map.get(counts, :disabled, 0),
-      total: length(runners)
+      disabled: Map.get(counts, :disabled, 0)
     }
   end
 
@@ -128,7 +127,10 @@ defmodule EmisarWeb.RunnersLive do
              scanning every dot. Whole-account (like the group sidebar +
              list below), counted from presence — there's no `:stale` state
              (heartbeat liveness is socket-enforced; see Runners.connection_state). --%>
-        <div class="mb-6 flex flex-wrap items-center gap-x-6 gap-y-2 rounded-xl border border-zinc-900 bg-zinc-950/40 px-5 py-3 text-sm">
+        <%!-- Health-at-a-glance, small + muted like the per-group totals below.
+             The whole-account total is NOT repeated here — it lives in the group
+             header(s), so it isn't duplicated above and below the table. --%>
+        <div class="mb-6 flex flex-wrap items-center gap-x-6 gap-y-2 rounded-xl border border-zinc-900 bg-zinc-950/40 px-5 py-3 text-xs">
           <.summary_stat tone={:emerald} value={@fleet.online} label="Online" />
           <.summary_stat tone={:rose} value={@fleet.offline} label="Offline" />
           <.summary_stat
@@ -143,9 +145,6 @@ defmodule EmisarWeb.RunnersLive do
             value={@fleet.disabled}
             label="Disabled"
           />
-          <div class="ml-auto text-xs text-zinc-500">
-            {@fleet.total} {if @fleet.total == 1, do: "runner", else: "runners"} total
-          </div>
         </div>
 
         <%!-- Group sidebar shows whole-account totals; the runners

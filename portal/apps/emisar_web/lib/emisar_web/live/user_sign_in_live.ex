@@ -48,6 +48,12 @@ defmodule EmisarWeb.UserSignInLive do
         >
           Email me a magic link instead
         </.link>
+        <.link
+          href={~p"/sign_in/sso"}
+          class="text-center font-medium text-indigo-400 hover:text-indigo-300"
+        >
+          Continue with single sign-on
+        </.link>
         <p class="text-center text-zinc-400">
           New here?
           <.link href={~p"/sign_up"} class="font-medium text-indigo-400 hover:text-indigo-300">

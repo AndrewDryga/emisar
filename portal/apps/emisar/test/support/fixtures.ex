@@ -33,7 +33,11 @@ defmodule Emisar.Fixtures do
       fetch_membership(account.id, user.id) ||
         %Membership{role: Atom.to_string(role), user_id: user.id, account_id: account.id}
 
-    Subject.for_user(user, account, membership, context)
+    Subject.for_user(user, account, membership, context,
+      auth_method: opts[:auth_method],
+      mfa: opts[:mfa],
+      user_identity_id: opts[:user_identity_id]
+    )
   end
 
   @doc """

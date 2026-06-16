@@ -28,6 +28,33 @@ defmodule Emisar.Users.User.Changeset do
 
   def profile(user, attrs), do: cast(user, attrs, [:full_name])
 
+  @doc """
+  Create an SSO-provisioned user. Email is **optional** (a no-email IdP, or an
+  unverified claim → nil) and is NOT required; when present it still hits the
+  citext unique index, so a collision surfaces as a constraint error (mapped to
+  `:email_taken`, never a silent merge). No password — the IdP is the
+  credential; `confirmed_at` is set (the IdP is the email authority).
+  """
+  def sso_create(attrs) do
+    %User{}
+    |> cast(attrs, [:email, :full_name])
+    |> validate_optional_email()
+    |> put_change(:confirmed_at, DateTime.utc_now())
+  end
+
+  defp validate_optional_email(changeset) do
+    if get_change(changeset, :email) do
+      changeset
+      |> validate_format(:email, ~r/^[^\s]+@[^\s]+$/,
+        message: "must have the @ sign and no spaces"
+      )
+      |> validate_length(:email, max: 160)
+      |> unique_constraint(:email)
+    else
+      changeset
+    end
+  end
+
   def confirm(%User{} = user),
     do: change(user, confirmed_at: DateTime.utc_now())
 

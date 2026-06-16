@@ -10,17 +10,8 @@ defmodule Emisar.CapabilitiesTest do
 
   alias Emisar.Auth.{Authorizer, Subject}
 
-  alias Emisar.{
-    Accounts,
-    ApiKeys,
-    Approvals,
-    Billing,
-    Catalog,
-    Policies,
-    Runbooks,
-    Runners,
-    Runs
-  }
+  alias Emisar.{Accounts, ApiKeys, Approvals, Billing, Catalog}
+  alias Emisar.{Policies, Runbooks, Runners, Runs}
 
   @roles [:owner, :admin, :operator, :viewer]
 

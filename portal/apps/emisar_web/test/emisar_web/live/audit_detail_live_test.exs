@@ -55,6 +55,24 @@ defmodule EmisarWeb.AuditDetailLiveTest do
     assert html =~ ~s(data-copy="#audit-payload-json")
   end
 
+  test "the actor card surfaces the sign-in method + 2FA state (provenance, not JSON)", %{
+    conn: conn
+  } do
+    {conn, user, account} = register_and_log_in(conn)
+
+    subject =
+      Emisar.Fixtures.subject_for(user, account, role: :owner, auth_method: :sso, mfa: true)
+
+    {:ok, event} = Audit.record(Audit.Events.account_updated(subject, account))
+
+    {:ok, _lv, html} = live(conn, ~p"/app/audit/#{event.id}")
+
+    # "via SSO" with a 2FA badge — answerable at a glance, not buried in JSON.
+    assert html =~ "via"
+    assert html =~ "SSO"
+    assert html =~ "2FA"
+  end
+
   test ~S(a runner_version of "-" renders as no version, not a dangling dash), %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)
 

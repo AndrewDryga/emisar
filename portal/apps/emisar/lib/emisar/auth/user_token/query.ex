@@ -38,21 +38,10 @@ defmodule Emisar.Auth.UserToken.Query do
   defp validity_in_days("reset_password"), do: @reset_validity_in_days
   defp validity_in_days("magic_link"), do: @magic_link_validity_in_minutes / (24 * 60)
 
-  def with_joined_user(queryable \\ all()) do
-    with_named_binding(queryable, :user, fn queryable, binding ->
-      join(
-        queryable,
-        :inner,
-        [tokens: t],
-        user in ^Emisar.Users.User.Query.not_deleted(),
-        on: t.user_id == user.id,
-        as: ^binding
-      )
-    end)
+  @doc ~S(Preload the token's user, scoped to live users — a soft-deleted user's token preloads no user.)
+  def with_preloaded_user(queryable \\ all()) do
+    preload(queryable, user: ^Emisar.Users.User.Query.not_deleted())
   end
-
-  def select_user(queryable),
-    do: select(queryable, [user: u], u)
 
   def lock_for_update(queryable),
     do: lock(queryable, "FOR NO KEY UPDATE")

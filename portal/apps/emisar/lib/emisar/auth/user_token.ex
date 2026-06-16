@@ -14,8 +14,15 @@ defmodule Emisar.Auth.UserToken do
     field :context, :string
     field :sent_to, :string
     field :metadata, :map, default: %{}
+    # How the session was authenticated — carried onto %Auth.Subject{} and
+    # stamped on every audit row (provenance). `auth_method` is the method;
+    # `mfa` records whether a second factor was verified this session (kept
+    # separate so "SSO + enforced TOTP" is expressible). `user_identity` is :sso.
+    field :auth_method, Ecto.Enum, values: [:password, :magic_link, :sso]
+    field :mfa, :boolean, default: false
 
     belongs_to :user, Emisar.Users.User, where: [deleted_at: nil]
+    belongs_to :user_identity, Emisar.SSO.UserIdentity, where: [deleted_at: nil]
 
     timestamps(updated_at: false)
   end

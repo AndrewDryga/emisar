@@ -10,11 +10,16 @@ defmodule EmisarWeb.UserAuth do
   import Plug.Conn
   import Phoenix.Controller
 
-  alias Emisar.{Accounts, Auth}
+  alias Emisar.{Accounts, Auth, SSO}
   alias Emisar.Auth.Subject
   alias EmisarWeb.RequestContext
 
   @remember_me_cookie "_emisar_user_remember_me"
+
+  # Session provenance for an unauthenticated request — no method, no SSO
+  # identity. `fetch_user_and_token_by_session_token/1` returns the `%UserToken{}`
+  # on a hit; this is the miss/anonymous default the Subject build reads from.
+  @no_auth %{auth_method: nil, mfa: nil, user_identity_id: nil}
 
   # Built per-call rather than as a module attribute so `secure:` can
   # be flipped at runtime via the FORCE_SSL env knob (see runtime.exs).
@@ -33,18 +38,23 @@ defmodule EmisarWeb.UserAuth do
   # -- Public surface -------------------------------------------------
 
   @doc """
-  Logs in `user`, persisting the session token in the cookie, and
-  optionally setting the "remember me" cookie. Always renews the
-  session ID (CSRF defence in depth) and redirects.
+  Logs in `user`, persisting the session token in the cookie, and optionally
+  setting the "remember me" cookie. Always renews the session ID (CSRF defence
+  in depth) and redirects. `auth_method` (how they signed in) and `mfa` (was a
+  second factor verified) are stamped onto the persisted token so they reach
+  every audit row; `opts` carry the SSO-only `:user_identity_id`.
   """
-  def log_in_user(conn, user, params \\ %{}) do
+  def log_in_user(conn, user, auth_method, mfa, params \\ %{}, opts \\ []) do
     context = RequestContext.from_conn(conn)
 
     token =
-      Auth.create_session_token!(user, %{
-        ip_address: context.ip_address,
-        user_agent: context.user_agent
-      })
+      Auth.create_session_token!(
+        user,
+        auth_method,
+        mfa,
+        %{ip_address: context.ip_address, user_agent: context.user_agent},
+        opts
+      )
 
     user_return_to = get_session(conn, :user_return_to)
 
@@ -118,15 +128,17 @@ defmodule EmisarWeb.UserAuth do
   def fetch_current_user(conn, _opts) do
     {user_token, conn} = ensure_user_token(conn)
 
-    user =
+    {user, auth} =
       with token when is_binary(token) <- user_token,
-           {:ok, user} <- Auth.fetch_user_by_session_token(token) do
-        user
+           {:ok, user, auth} <- Auth.fetch_user_and_token_by_session_token(token) do
+        {user, auth}
       else
-        _ -> nil
+        _ -> {nil, @no_auth}
       end
 
-    assign(conn, :current_user, user)
+    conn
+    |> assign(:current_user, user)
+    |> assign(:current_auth, auth)
   end
 
   defp ensure_user_token(conn) do
@@ -198,9 +210,18 @@ defmodule EmisarWeb.UserAuth do
         |> assign(:current_membership, membership)
         |> assign(
           :current_subject,
-          Subject.for_user(user, membership.account, membership, context)
+          Subject.for_user(user, membership.account, membership, context, auth_opts(conn.assigns))
         )
     end
+  end
+
+  # Session provenance (auth_method / mfa / user_identity_id) for the Subject,
+  # pulled off the `:current_auth` assign the boundary stashed (a `%UserToken{}`
+  # or `@no_auth`). So every audit row the subject produces records how the
+  # operator signed in.
+  defp auth_opts(assigns) do
+    auth = Map.get(assigns, :current_auth, @no_auth)
+    [auth_method: auth.auth_method, mfa: auth.mfa, user_identity_id: auth.user_identity_id]
   end
 
   # If the session asked for an account the user can no longer reach
@@ -291,6 +312,7 @@ defmodule EmisarWeb.UserAuth do
   def on_mount(:ensure_mfa_compliant, _params, _session, socket) do
     user = socket.assigns[:current_user]
     account = socket.assigns[:current_account]
+    auth = socket.assigns[:current_auth] || @no_auth
 
     cond do
       is_nil(user) or is_nil(account) ->
@@ -300,6 +322,12 @@ defmodule EmisarWeb.UserAuth do
         {:cont, socket}
 
       user.mfa_enabled_at != nil ->
+        {:cont, socket}
+
+      # An SSO session is exempt ONLY when its provider satisfies MFA (the IdP
+      # enforces the second factor — decision 4 / N2). A provider marked
+      # satisfies_mfa: false still funnels the user into emisar TOTP.
+      auth.auth_method == :sso and SSO.identity_satisfies_mfa?(auth.user_identity_id) ->
         {:cont, socket}
 
       socket.view == EmisarWeb.ProfileLive ->
@@ -470,14 +498,26 @@ defmodule EmisarWeb.UserAuth do
   defp fleet_offline_for(subject), do: Emisar.Runners.fleet_all_offline?(subject)
 
   defp mount_current_user(session, socket) do
-    Phoenix.Component.assign_new(socket, :current_user, fn ->
-      with token when is_binary(token) <- session["user_token"],
-           {:ok, user} <- Auth.fetch_user_by_session_token(token) do
-        user
-      else
-        _ -> nil
-      end
-    end)
+    # When a parent LiveView already mounted the user, inherit both assigns
+    # rather than re-hitting the DB (the assign_new contract). Otherwise
+    # resolve the user AND its session provenance in ONE token lookup — the
+    # auth map rides onto the Subject so every audit row records how the
+    # operator signed in.
+    if Map.has_key?(socket.assigns, :current_user) do
+      Phoenix.Component.assign_new(socket, :current_auth, fn -> @no_auth end)
+    else
+      {user, auth} =
+        with token when is_binary(token) <- session["user_token"],
+             {:ok, user, auth} <- Auth.fetch_user_and_token_by_session_token(token) do
+          {user, auth}
+        else
+          _ -> {nil, @no_auth}
+        end
+
+      socket
+      |> Phoenix.Component.assign(:current_user, user)
+      |> Phoenix.Component.assign(:current_auth, auth)
+    end
   end
 
   defp mount_current_account(socket, session) do
@@ -502,7 +542,8 @@ defmodule EmisarWeb.UserAuth do
                   user,
                   membership.account,
                   membership,
-                  RequestContext.from_socket(socket)
+                  RequestContext.from_socket(socket),
+                  auth_opts(socket.assigns)
                 )
 
               {membership.account, membership, subject, load_switchable_accounts(subject)}

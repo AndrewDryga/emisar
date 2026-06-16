@@ -123,6 +123,16 @@ defmodule Emisar.Crypto do
     do: hash(verifier) |> Base.url_encode64(padding: false)
 
   @doc """
+  OIDC relying-party login transaction secrets, minted here so the SSO
+  wrapper never inlines a byte length: `oidc_state/0` (CSRF), `oidc_nonce/0`
+  (ID-token replay), and `pkce_verifier/0` (the PKCE code_verifier — 64 random
+  bytes ≈ 86 url-safe chars, within RFC 7636's 43–128).
+  """
+  def oidc_state, do: random_secret()
+  def oidc_nonce, do: random_secret()
+  def pkce_verifier, do: random_secret(64)
+
+  @doc """
   Mint a prefixed bearer secret for a credential looked up by a visible
   prefix (API keys, runner auth keys, runner tokens).
 
@@ -138,6 +148,20 @@ defmodule Emisar.Crypto do
     raw = prefix <> random_secret()
     {raw, String.slice(raw, 0, prefix_size), hash(raw)}
   end
+
+  # Per-provider SCIM bearer credential (`ems-` = emisar-scim), an
+  # admin-grade token that can provision/deprovision a whole account — same
+  # 12-char prefix lookup as the MCP API keys (`emk-`).
+  @scim_token_prefix_size 12
+
+  @doc """
+  Mint a per-provider SCIM bearer token as `{raw, lookup_prefix, hash}`.
+  Hand `raw` to the operator once; store `lookup_prefix` + `hash`.
+  """
+  def scim_token, do: mint("ems-", @scim_token_prefix_size)
+
+  @doc "Length of the stored SCIM-token lookup prefix — the slice taken from a presented bearer."
+  def scim_token_prefix_size, do: @scim_token_prefix_size
 
   # 80-bit base32 recovery codes match the GitHub / Google Workspace
   # shape: unguessable, yet short enough to copy by hand.

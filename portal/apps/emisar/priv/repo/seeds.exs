@@ -74,7 +74,7 @@ account =
     {:error, :not_found} ->
       {:ok, account} =
         Accounts.create_account_with_owner(
-          %{name: "Demo Corp", slug: "demo", plan: "team"},
+          %{name: "Demo Corp", slug: "demo", plan: "enterprise"},
           user
         )
 
@@ -803,7 +803,7 @@ if existing_runs == [] do
   # decision so it doesn't pollute "pending" lists.
   approved_req
   |> Ecto.Changeset.change(
-    status: "approved",
+    status: :approved,
     decided_by_id: alex.id,
     decided_at: hours_ago.(25),
     decision_reason: "matches the deploy window, smoke tests green"
@@ -811,7 +811,7 @@ if existing_runs == [] do
   |> Repo.update!()
 
   approved_run
-  |> Ecto.Changeset.change(status: "success", finished_at: hours_ago.(24))
+  |> Ecto.Changeset.change(status: :success, finished_at: hours_ago.(24))
   |> Repo.update!()
 
   # A denied one too.
@@ -840,7 +840,7 @@ if existing_runs == [] do
 
   denied_req
   |> Ecto.Changeset.change(
-    status: "denied",
+    status: :denied,
     decided_by_id: user.id,
     decided_at: days_ago.(2),
     decision_reason: "Agents shouldn't be running anything on the laptops group."
@@ -848,7 +848,7 @@ if existing_runs == [] do
   |> Repo.update!()
 
   denied_run
-  |> Ecto.Changeset.change(status: "cancelled", finished_at: days_ago.(2))
+  |> Ecto.Changeset.change(status: :cancelled, finished_at: days_ago.(2))
   |> Repo.update!()
 
   IO.puts(
@@ -948,3 +948,76 @@ case Runners.list_auth_keys(owner_subject) do
   _ ->
     :ok
 end
+
+# -- Extra accounts: the plan tiers + an empty one, so the billing / upsell /
+#    runner-limit states AND the SSO-is-Enterprise gate are all visible by
+#    switching accounts in one seeded dev DB. (The main "demo" account is
+#    enterprise — above — so SSO/SCIM is testable there.) -------------------
+seed_plan_account = fn name, slug, plan ->
+  email = "owner@#{slug}.test"
+
+  owner =
+    case Users.fetch_user_by_email(email) do
+      {:error, :not_found} ->
+        {:ok, u} =
+          Users.register_user(%{
+            full_name: "#{name} Owner",
+            email: email,
+            password: "Sleep-tight-1234"
+          })
+
+        {:ok, u} = u |> User.Changeset.confirm() |> Repo.update()
+        u
+
+      {:ok, u} ->
+        u
+    end
+
+  acct =
+    case Repo.fetch(Account.Query.not_deleted() |> Account.Query.by_slug(slug), Account.Query) do
+      {:error, :not_found} ->
+        {:ok, a} =
+          Accounts.create_account_with_owner(%{name: name, slug: slug, plan: plan}, owner)
+
+        a
+
+      {:ok, a} ->
+        a
+    end
+
+  subject =
+    Subject.for_user(
+      owner,
+      acct,
+      %Emisar.Accounts.Membership{role: "owner", user_id: owner.id, account_id: acct.id}
+    )
+
+  {acct, owner, subject}
+end
+
+# Free + Team accounts WITH data (a runner + two finished runs each) so a
+# non-enterprise account looks lived-in and its plan's runner limit shows.
+for {name, slug, plan} <- [{"Acme Logistics", "acme", "free"}, {"Globex Corp", "globex", "team"}] do
+  {acct, owner, subject} = seed_plan_account.(name, slug, plan)
+
+  {:ok, runner} = Runners.create_runner(%{name: "#{slug}-prod-1", group: "prod"}, subject)
+
+  for {action, hrs} <- [{"linux.uptime", 2}, {"linux.disk_usage", 9}] do
+    {:ok, run} =
+      Runs.create_run(%{
+        account_id: acct.id,
+        runner_id: runner.id,
+        action_id: action,
+        source: "operator",
+        requested_by_id: owner.id
+      })
+
+    run |> Ecto.Changeset.change(status: :success, finished_at: hours_ago.(hrs)) |> Repo.update!()
+  end
+
+  IO.puts(IO.ANSI.cyan() <> "✓ #{name} (slug=#{slug}, #{plan}) — with data" <> IO.ANSI.reset())
+end
+
+# An empty Free account — to see the onboarding / empty-state surfaces.
+_ = seed_plan_account.("Initech", "initech", "free")
+IO.puts(IO.ANSI.cyan() <> "✓ Initech (slug=initech, free) — empty" <> IO.ANSI.reset())

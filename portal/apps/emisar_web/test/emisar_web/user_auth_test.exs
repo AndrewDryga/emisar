@@ -21,7 +21,13 @@ defmodule EmisarWeb.UserAuthTest do
       conn: conn
     } do
       conn =
-        UserAuth.log_in_user(conn, Emisar.Fixtures.user_fixture(), %{"remember_me" => "true"})
+        UserAuth.log_in_user(
+          conn,
+          Emisar.Fixtures.user_fixture(),
+          :password,
+          false,
+          %{"remember_me" => "true"}
+        )
 
       assert Plug.Conn.get_session(conn, :user_token)
       assert %{max_age: max_age, value: value} = conn.resp_cookies[@remember_me_cookie]
@@ -32,7 +38,7 @@ defmodule EmisarWeb.UserAuthTest do
     test "without remember_me, only the session token is set — no persistent cookie", %{
       conn: conn
     } do
-      conn = UserAuth.log_in_user(conn, Emisar.Fixtures.user_fixture())
+      conn = UserAuth.log_in_user(conn, Emisar.Fixtures.user_fixture(), :password, false)
 
       assert Plug.Conn.get_session(conn, :user_token)
       refute conn.resp_cookies[@remember_me_cookie]

@@ -244,6 +244,27 @@ defmodule Emisar.Users do
   end
 
   @doc """
+  Internal — SSO: provision a FRESH user for a just-in-time SSO login. Never
+  matches an existing user by email (the takeover guard, §9 C1) — a colliding
+  email surfaces as `:email_taken`, never a silent merge. Composed into the
+  SSO context's JIT `Multi` via `Multi.run`.
+  """
+  def provision_sso_user(attrs) do
+    changeset = User.Changeset.sso_create(attrs)
+
+    case Repo.insert(changeset) do
+      {:ok, %User{} = user} -> {:ok, user}
+      {:error, %Ecto.Changeset{} = changeset} -> map_sso_provision_error(changeset)
+    end
+  end
+
+  defp map_sso_provision_error(changeset) do
+    if Repo.Changeset.unique_constraint_error?(changeset),
+      do: {:error, :email_taken},
+      else: {:error, changeset}
+  end
+
+  @doc """
   Internal — Auth: enable MFA (secret + enrolled-at + recovery digests)
   or disable (nils), under the row lock. `opts[:audit]` supplies the
   event changeset — MFA flips are credential-grade and always audited.

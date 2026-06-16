@@ -26,6 +26,10 @@ defmodule EmisarWeb.RunbookRunLive do
           socket
           |> assign(:page_title, "Run #{runbook.title}")
           |> assign(:runbook, runbook)
+          # False until the connected pass loads the plan + rehydrates any active
+          # run, so the dead render shows a loading state instead of flashing the
+          # empty plan + dispatch form (which then flip to the live execution).
+          |> assign(:loaded?, false)
           |> assign(:reason, "")
           |> assign(:errors, %{})
           |> assign(:execution, nil)
@@ -40,7 +44,11 @@ defmodule EmisarWeb.RunbookRunLive do
           |> stream(:execution_runs, [])
 
         if connected?(socket) do
-          {:ok, socket |> load_run_form(runbook) |> maybe_rehydrate_execution(runbook)}
+          {:ok,
+           socket
+           |> load_run_form(runbook)
+           |> maybe_rehydrate_execution(runbook)
+           |> assign(:loaded?, true)}
         else
           {:ok, empty_run_form(socket)}
         end
@@ -550,12 +558,24 @@ defmodule EmisarWeb.RunbookRunLive do
           arrive.
         </p>
 
+        <%!-- Dead/pre-connect render: the plan + active-run state load on
+             connect, so show a neutral placeholder rather than the empty plan
+             and dispatch form (which would flash, then flip to the live run). --%>
+        <div
+          :if={not @loaded?}
+          class="rounded-xl border border-zinc-900 bg-zinc-950/40 px-5 py-10 text-center text-sm text-zinc-500"
+        >
+          <.icon name="hero-arrow-path" class="mr-2 inline h-4 w-4 animate-spin text-zinc-500" />
+          Loading…
+        </div>
+
         <%!-- One table, not two. Idle: the plan (numbered steps). Once
              dispatched: the live runs replace those rows in place, while
              the planned-step count stays in the header for context — a
              step fans out to one run per targeted runner, so there can be
              more runs than steps. --%>
         <section
+          :if={@loaded?}
           id="execution"
           class="overflow-hidden rounded-xl border border-zinc-900 bg-zinc-950/40"
         >
@@ -747,7 +767,7 @@ defmodule EmisarWeb.RunbookRunLive do
              form once a run settles. Hidden while a run is IN PROGRESS so a
              stray submit can't double-dispatch mid-run (a "running" note takes
              its place); it returns when every run finishes or the run halts. --%>
-        <.panel :if={not run_in_progress?(@execution, @run_statuses)} title="Dispatch">
+        <.panel :if={@loaded? and not run_in_progress?(@execution, @run_statuses)} title="Dispatch">
           <form phx-change="validate" phx-submit="dispatch" class="space-y-4">
             <div>
               <%!-- Non-FormField field: `reason` posts a top-level key and its
@@ -784,7 +804,7 @@ defmodule EmisarWeb.RunbookRunLive do
 
         <%!-- Stands in for the dispatch form while a run is in progress, so the
              form's absence reads as intentional rather than missing. --%>
-        <.panel :if={run_in_progress?(@execution, @run_statuses)} title="Dispatch">
+        <.panel :if={@loaded? and run_in_progress?(@execution, @run_statuses)} title="Dispatch">
           <p class="flex items-center gap-2 text-sm text-zinc-400">
             <.icon name="hero-arrow-path" class="h-4 w-4 flex-none animate-spin text-indigo-400" />
             Runbook is running — you can start another run once it finishes.

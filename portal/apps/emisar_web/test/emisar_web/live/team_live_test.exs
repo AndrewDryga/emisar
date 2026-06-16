@@ -198,33 +198,41 @@ defmodule EmisarWeb.TeamLiveTest do
       assert Emisar.Repo.reload!(membership).role == :operator
     end
 
-    test "the role select renders every role and pre-selects the member's current one", %{
+    test "the role dropdown offers every OTHER role and omits the current one", %{
       lv: lv,
       membership: membership
     } do
-      # The member is seeded as a viewer; the inline role <select> must render
-      # all roles and mark the current one selected (value round-trips through
-      # the shared <.input type="select">). Scope to the member's own role form
-      # (its hidden membership_id) — the invite panel carries its own role select.
+      # The member is seeded as a viewer; the role dropdown (a <.dropdown> matching
+      # the Actions menu) carries a change_role item for every role EXCEPT the
+      # current one. Scope to this member's items via phx-value-membership_id — the
+      # invite panel carries its own (unrelated) role <select>.
       assert membership.role == :viewer
-      form = element(lv, "form[phx-change='change_role']:has(input[value='#{membership.id}'])")
-      html = render(form)
 
-      assert html =~ ~s(name="role")
-      assert html =~ ~r/<option(?=[^>]*\bvalue="viewer")(?=[^>]*\bselected)[^>]*>/
-      assert html =~ "Operator"
-      assert html =~ "Admin"
-      # The current role is the only selected option in this member's select.
-      refute html =~ ~r/<option(?=[^>]*\bvalue="operator")(?=[^>]*\bselected)[^>]*>/
+      for role <- ~w(operator admin owner) do
+        assert has_element?(
+                 lv,
+                 "button[phx-click='change_role'][phx-value-membership_id='#{membership.id}'][phx-value-role='#{role}']"
+               )
+      end
+
+      # The current role is not offered as a change target.
+      refute has_element?(
+               lv,
+               "button[phx-click='change_role'][phx-value-membership_id='#{membership.id}'][phx-value-role='viewer']"
+             )
     end
 
-    test "the role select confirms the privilege grant before changing", %{lv: lv} do
-      # Every other team action confirms; the role select must too, so an
-      # admin can't fat-finger an escalation. The handler still authorizes —
-      # this is purely the accidental-click guard.
-      assert has_element?(lv, "form[phx-change='change_role'][data-confirm]")
-      # Role-accurate: admins only VIEW billing; only owners manage it.
-      assert render(lv) =~ "manage members and runners; only owners manage billing"
+    test "each role item confirms the privilege grant before changing", %{
+      lv: lv,
+      membership: membership
+    } do
+      # Every other team action confirms; each role item must too, so an admin
+      # can't fat-finger an escalation. The dialog fires only on a real pick (the
+      # item's click), never on opening the control. The handler still authorizes.
+      assert has_element?(
+               lv,
+               "button[phx-click='change_role'][phx-value-membership_id='#{membership.id}'][data-confirm]"
+             )
     end
 
     test "an unknown role value is rejected", %{lv: lv, membership: membership} do

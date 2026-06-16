@@ -22,6 +22,10 @@ defmodule Emisar.Audit.Event do
     field :user_agent, :string
     field :request_id, :string
     field :mcp_session_id, :string
+    # How the actor authenticated this session (provenance, decision 6).
+    field :auth_method, :string
+    field :mfa, :boolean
+    field :user_identity_id, Ecto.UUID
     field :payload, :map, default: %{}
     field :inserted_at, :utc_datetime_usec, autogenerate: {DateTime, :utc_now, []}
 

@@ -79,12 +79,12 @@ defmodule EmisarWeb.RunnersLiveTest do
 
       {:ok, _lv, html} = live(conn, ~p"/app/runners")
 
-      # The strip names each state (Offline always shows, even at 0) + the
-      # whole-account total: 1 online + 1 disabled = 2 runners.
+      # The strip names each state (Offline always shows, even at 0). The
+      # whole-account total is NOT repeated here — it lives in the group
+      # header(s) below, so it's not duplicated above and below the table.
       assert html =~ "Online"
       assert html =~ "Offline"
       assert html =~ "Disabled"
-      assert html =~ "2 runners total"
     end
   end
 

@@ -1,0 +1,270 @@
+<div class="bg-zinc-950 text-zinc-100">
+  <.marketing_nav current_user={@current_user} current={:docs} />
+
+  <section class="py-16 sm:py-24">
+    <div class="mx-auto max-w-3xl px-6 lg:px-8">
+      <p class="text-sm font-semibold text-indigo-400">Docs / Single sign-on</p>
+      <.marketing_heading tag="h1" scale={:hero} class="mt-2">
+        Single sign-on &amp; directory sync
+      </.marketing_heading>
+      <p class="mt-6 text-lg leading-8 text-zinc-400">
+        On the Enterprise plan, your team signs in to emisar with your own identity provider —
+        Google Workspace, Okta, Keycloak, or any compliant OIDC — and your directory drives the
+        rest. Provision people from the IdP, and when someone is offboarded there, their emisar
+        access is revoked automatically: sessions ended, API keys revoked, no manual cleanup.
+      </p>
+      <p class="mt-4 text-sm leading-6 text-zinc-500">
+        Two pieces, set up independently: <strong class="text-zinc-200">SSO login</strong>
+        (sign in through your IdP) and
+        <strong class="text-zinc-200">directory sync (SCIM)</strong>
+        (provision and deprovision from the directory). You can run login on its own; directory
+        sync builds on a configured connection.
+      </p>
+
+      <h2 class="mt-12 text-2xl font-semibold text-zinc-50">Setting up SSO login</h2>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        Settings → <strong class="text-zinc-200">Single sign-on</strong>
+        (Enterprise plan; an owner or admin). Create an OAuth/OIDC app at your provider first,
+        then add a connection here:
+      </p>
+      <ul class="mt-4 space-y-2 text-sm leading-6 text-zinc-400">
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-600">—</span>
+          <span>
+            <strong class="text-zinc-200">Provider</strong>
+            — Google Workspace, Okta, Keycloak, or generic OpenID Connect. The named ones are
+            presets over one standard discovery-based OIDC flow; there's no separate integration
+            to wait for.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-600">—</span>
+          <span>
+            <strong class="text-zinc-200">Issuer URL</strong>
+            — the provider's OIDC issuer (must be HTTPS). Its discovery document is fetched from
+            there, so you don't paste endpoints by hand.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-600">—</span>
+          <span>
+            <strong class="text-zinc-200">Client ID</strong>
+            and <strong class="text-zinc-200">client secret</strong>
+            from that app. The secret is write-only — it's stored hashed-secret style and never
+            rendered back; leave it blank when editing to keep the current one.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-600">—</span>
+          <span>
+            <strong class="text-zinc-200">Default role</strong>
+            — the role a newly provisioned member lands at (viewer / operator / admin). Sync
+            never grants <span class="text-zinc-300">owner</span>; that stays a deliberate human grant.
+            See <.link
+              navigate={~p"/docs/teams-and-access"}
+              class="text-indigo-300 hover:text-indigo-200"
+            >roles</.link>.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-600">—</span>
+          <span>
+            <strong class="text-zinc-200">Allowed email domain</strong>
+            (optional) — restricts sign-in to verified addresses on that domain and routes that
+            domain's sign-ins to this connection. Leave blank to accept any address the provider
+            asserts.
+          </span>
+        </li>
+      </ul>
+      <p class="mt-4 text-sm leading-6 text-zinc-400">
+        Register one <strong class="text-zinc-200">redirect / callback URL</strong>
+        at your IdP:
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/sign_in/sso/callback</code>
+        on your emisar host. That's the fixed value emisar uses — it's never taken from the
+        request.
+      </p>
+
+      <h3 class="mt-8 text-lg font-semibold text-zinc-100">How members sign in</h3>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        On the sign-in page, members click <strong class="text-zinc-200">"Continue with single sign-on"</strong>, which sends them to <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/sign_in/sso</code>; if you set an
+        allowed email domain, entering an address on it routes them straight to your provider. They
+        authenticate at the IdP and come back signed in.
+      </p>
+
+      <h3 class="mt-8 text-lg font-semibold text-zinc-100">
+        Identities are matched by the IdP's subject, never by email
+      </h3>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        emisar binds an SSO login to the provider plus the IdP's stable subject identifier (the
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sub</code>
+        claim, or whichever <strong class="text-zinc-200">identifier claim</strong>
+        your provider uses) — <strong class="text-zinc-200">never by email address</strong>.
+        Email-matching an SSO login onto an existing account is a known account-takeover vector, so
+        we don't do it. The practical consequence: a just-in-time provisioned SSO user is a
+        distinct principal, not a merge into a pre-existing password account that happens to share
+        an email. If an SSO email collides with an existing user, sign-in is refused rather than
+        silently linked — an admin links the identity deliberately.
+      </p>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        <strong class="text-zinc-200">First login provisions the user</strong>
+        at the connection's default role (with the directory as the email authority — no password
+        is set, so the password path can't be used for an SSO-only user).
+      </p>
+
+      <h3 class="mt-8 text-lg font-semibold text-zinc-100">
+        SSO sessions and your MFA requirement
+      </h3>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        Each connection has a per-provider toggle — <em>"sign-in through this provider satisfies
+          the account's 2FA requirement."</em>
+        When it's on, an SSO session satisfies an account that
+        <.link navigate={~p"/docs/teams-and-access"} class="text-indigo-300 hover:text-indigo-200">
+          requires MFA
+        </.link>
+        without a second emisar TOTP prompt — your IdP enforces the MFA. Turn it off if you'd
+        rather emisar still challenge. Password sign-in is unaffected and is challenged as usual.
+      </p>
+
+      <h2 class="mt-12 text-2xl font-semibold text-zinc-50">Directory sync (SCIM 2.0)</h2>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        On a configured connection, enable <strong class="text-zinc-200">directory sync</strong>
+        to let your IdP push the user lifecycle to emisar over SCIM 2.0 — the standard Okta, Entra,
+        Google, and JumpCloud all speak as a provisioning client. Enabling it gives you two things
+        to paste into your provider's SCIM connector:
+      </p>
+      <ul class="mt-4 space-y-2 text-sm leading-6 text-zinc-400">
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-600">—</span>
+          <span>
+            a <strong class="text-zinc-200">SCIM base URL</strong>
+            — <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/scim/v2</code>
+            on your emisar host, and
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-600">—</span>
+          <span>
+            a <strong class="text-zinc-200">bearer token</strong>, shown once when you enable or
+            rotate it. Like every emisar secret, it's write-only after that — copy it then.
+          </span>
+        </li>
+      </ul>
+      <p class="mt-4 text-sm leading-6 text-zinc-400">What the sync does:</p>
+      <ul class="mt-3 space-y-2 text-sm leading-6 text-zinc-400">
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-600">—</span>
+          <span>
+            <strong class="text-zinc-200">Provisioning</strong>
+            creates the user and their membership at the connection's default role — so access is
+            in place before their first login.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-600">—</span>
+          <span>
+            <strong class="text-zinc-200">Deprovisioning</strong>
+            — when the IdP marks a user inactive or removes them — <strong class="text-zinc-200">suspends
+            the member</strong>: their sessions are killed and their API keys revoked immediately,
+            so an offboard in your directory revokes emisar access automatically. It does
+            <strong class="text-zinc-200">not</strong>
+            delete the user — the audit trail is preserved. Reactivation in the directory restores
+            access.
+          </span>
+        </li>
+      </ul>
+      <div class="mt-4 rounded-xl border border-indigo-500/30 bg-indigo-500/5 p-4 text-sm leading-6 text-zinc-300">
+        <p class="font-semibold text-zinc-100">
+          Setup note: match the SCIM externalId to the OIDC subject
+        </p>
+        <p class="mt-2">
+          Configure your IdP so the SCIM
+          <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">externalId</code>
+          it sends is the same stable identifier as the OIDC
+          <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sub</code>
+          (the connection's identifier claim). Then a user's SSO login and their synced directory
+          record resolve to the same emisar identity — no email-matching anywhere. If the two sides
+          can't be configured to share an identifier, that connection can't be reconciled this way.
+        </p>
+      </div>
+
+      <h2 class="mt-12 text-2xl font-semibold text-zinc-50">Group → role mapping</h2>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">
+        With directory sync on, map an IdP group (by its SCIM <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">externalId</code>) to an emisar role
+        — <strong class="text-zinc-200">viewer</strong>, <strong class="text-zinc-200">operator</strong>,
+        or <strong class="text-zinc-200">admin</strong>. A member in several mapped groups gets the
+        <strong class="text-zinc-200">highest</strong>
+        role mapped to any of them.
+        <strong class="text-zinc-200">Owner is never assignable through
+          sync</strong>
+        — it stays a deliberate human assignment.
+      </p>
+
+      <h2 class="mt-12 text-2xl font-semibold text-zinc-50">Security notes</h2>
+      <ul class="mt-4 space-y-2 text-sm leading-6 text-zinc-400">
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-600">—</span>
+          <span>
+            Identities are bound by
+            <strong class="text-zinc-200">issuer + subject, not email</strong>
+            — so an SSO login can never claim a pre-existing account on a matching address.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-600">—</span>
+          <span>
+            The
+            <strong class="text-zinc-200">SCIM bearer token is an admin-grade credential</strong>
+            — it can provision and deprovision across the account. Treat it like a password, and
+            rotate it from the connection's panel if it's ever exposed (your IdP loses access until
+            you paste the new one).
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-600">—</span>
+          <span>
+            Deprovisioning <strong class="text-zinc-200">suspends, never deletes</strong>
+            — to keep
+            the audit log of what the member did intact.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-600">—</span>
+          <span>
+            Every SSO and directory-sync action lands in the
+            <.link
+              navigate={~p"/docs/audit-and-siem"}
+              class="text-indigo-300 hover:text-indigo-200"
+            >
+              audit log
+            </.link>
+            with its authentication method, so you can answer "who did this, signed in how" — and
+            see that the directory, not a person, suspended an offboarded member.
+          </span>
+        </li>
+      </ul>
+
+      <div class="mt-12 flex flex-wrap gap-x-6 gap-y-3 border-t border-zinc-900 pt-8 text-sm">
+        <.link
+          navigate={~p"/docs/teams-and-access"}
+          class="inline-flex items-center gap-1 font-medium text-indigo-400 hover:text-indigo-300"
+        >
+          Roles &amp; access model <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
+        </.link>
+        <.link
+          navigate={~p"/docs/audit-and-siem"}
+          class="inline-flex items-center gap-1 font-medium text-indigo-400 hover:text-indigo-300"
+        >
+          The audit trail <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
+        </.link>
+        <.link
+          navigate={~p"/security"}
+          class="inline-flex items-center gap-1 font-medium text-indigo-400 hover:text-indigo-300"
+        >
+          Security overview <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
+        </.link>
+      </div>
+    </div>
+  </section>
+
+  <.marketing_footer />
+</div>

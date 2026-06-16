@@ -420,6 +420,22 @@ defmodule Emisar.Audit.Event.Query do
         ],
         fun: fn queryable, kinds -> {queryable, dynamic([events: e], e.actor_kind in ^kinds)} end
       },
+      # Sign-in method (provenance). Lets a security buyer answer "show me every
+      # action taken via SSO last week" — `auth_method` is stamped on every event
+      # a user session produces (nil for API-key / runner actors).
+      %Filter{
+        name: :auth_method,
+        title: "Sign-in method",
+        type: {:list, :string},
+        values: [
+          {"password", "Password"},
+          {"magic_link", "Magic link"},
+          {"sso", "SSO"}
+        ],
+        fun: fn queryable, methods ->
+          {queryable, dynamic([events: e], e.auth_method in ^methods)}
+        end
+      },
       %Filter{
         name: :subject_kind,
         title: "Subject",

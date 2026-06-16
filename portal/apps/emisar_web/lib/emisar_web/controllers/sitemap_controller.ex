@@ -23,6 +23,7 @@ defmodule EmisarWeb.SitemapController do
     "/docs/policies-and-approvals",
     "/docs/runbooks",
     "/docs/teams-and-access",
+    "/docs/sso",
     "/docs/runners",
     "/docs/audit-and-siem",
     "/docs/security-model",

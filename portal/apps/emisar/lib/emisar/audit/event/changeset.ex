@@ -26,6 +26,9 @@ defmodule Emisar.Audit.Event.Changeset do
       :user_agent,
       :request_id,
       :mcp_session_id,
+      :auth_method,
+      :mfa,
+      :user_identity_id,
       :payload
     ])
     |> truncate_request_meta()

@@ -57,6 +57,21 @@ defmodule EmisarWeb.RunsLiveTest do
     assert html =~ "No runs yet"
   end
 
+  test "filters are disabled on a genuinely empty list, live once a filter is active", %{
+    conn: conn
+  } do
+    {conn, _user, _account} = register_and_log_in(conn)
+
+    # No runs + no active filter → nothing to filter → the Status select is disabled.
+    {:ok, lv, _html} = live(conn, ~p"/app/runs")
+    assert has_element?(lv, "#runs-filter select[disabled]")
+
+    # An active filter (even though it matches nothing) keeps the controls live,
+    # so the operator can always clear back to the full set.
+    {:ok, lv2, _html} = live(conn, ~p"/app/runs?status=success")
+    refute has_element?(lv2, "#runs-filter select[disabled]")
+  end
+
   test "the dead/pre-connect empty render shows a loading placeholder, not the pitch",
        %{conn: conn} do
     {conn, _user, _account} = register_and_log_in(conn)
