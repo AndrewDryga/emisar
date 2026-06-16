@@ -127,6 +127,7 @@ defmodule EmisarWeb.DashboardLive do
         run_stats={@run_stats}
         has_llm_connected?={@has_llm_connected?}
         billing={@billing}
+        can_manage_billing={Billing.subject_can_manage_billing?(@current_subject)}
         team_mfa={@team_mfa}
         pending_packs_count={@pending_packs_count}
       />
@@ -216,6 +217,7 @@ defmodule EmisarWeb.DashboardLive do
   attr :run_stats, :map, required: true
   attr :has_llm_connected?, :boolean, required: true
   attr :billing, :map, required: true
+  attr :can_manage_billing, :boolean, default: false
   attr :team_mfa, :any, required: true
   attr :pending_packs_count, :integer, default: 0
 
@@ -228,6 +230,16 @@ defmodule EmisarWeb.DashboardLive do
       first_runner_id={@first_runner_id}
     />
 
+    <.subscription_banner status={@billing.subscription_status}>
+      <:cta :if={@can_manage_billing}>
+        <.link
+          navigate={~p"/app/settings/billing"}
+          class="shrink-0 rounded-lg bg-zinc-100 px-3 py-1.5 text-xs font-semibold text-zinc-950 hover:bg-white"
+        >
+          Manage billing
+        </.link>
+      </:cta>
+    </.subscription_banner>
     <.plan_limit_banner :if={runner_headroom_warn?(@billing)} billing={@billing} />
     <.runners_offline_banner :if={@runners_total > 0 and @runners_connected == 0} />
     <.packs_pending_banner :if={@pending_packs_count > 0} count={@pending_packs_count} />

@@ -828,6 +828,81 @@ defmodule EmisarWeb.CoreComponents do
   end
 
   @doc """
+  Banner shown above a billing surface when the account's Paddle subscription
+  needs attention (past_due / paused / canceled). Healthy/nil/unknown status →
+  renders nothing. Shared by the billing page and the dashboard so the copy +
+  severity live in one place.
+
+  Copy is purely informational — emisar does NOT gate features on subscription
+  status, so it must never imply lost access (that would be a promise the code
+  doesn't keep; if enforcement is ever wired, revisit the wording). Pass a
+  `:cta` slot for the "Manage billing" affordance — a portal button on the
+  billing page, a link to it on the dashboard — and omit it where the viewer
+  can't manage billing.
+
+      <.subscription_banner status={@summary.subscription_status}>
+        <:cta :if={Billing.subject_can_manage_billing?(@current_subject)}>…</:cta>
+      </.subscription_banner>
+  """
+  attr :status, :any, default: nil
+  attr :class, :any, default: nil
+  slot :cta
+
+  def subscription_banner(assigns) do
+    assigns = assign(assigns, :alert, subscription_alert(assigns.status))
+
+    ~H"""
+    <div
+      :if={@alert}
+      class={[
+        "flex flex-wrap items-center justify-between gap-3 rounded-xl border px-4 py-3 text-sm",
+        @alert.tone == :rose && "border-rose-500/40 bg-rose-500/10 text-rose-200",
+        @alert.tone == :amber && "border-amber-500/40 bg-amber-500/10 text-amber-200",
+        @class
+      ]}
+    >
+      <div class="flex items-start gap-2">
+        <.icon name="hero-exclamation-triangle" class="mt-0.5 h-4 w-4 flex-none" />
+        <span>
+          <span class="font-semibold">{@alert.title}</span>
+          <span class="text-zinc-300">— {@alert.body}</span>
+        </span>
+      </div>
+      {render_slot(@cta)}
+    </div>
+    """
+  end
+
+  # Maps a Paddle subscription status to a banner. active/trialing/nil are
+  # healthy (no banner); past_due is the loud "fix your card" case; paused and
+  # canceled are amber FYIs. An unknown status we don't model gets no banner —
+  # don't alarm on a state we can't explain (Paddle owns the value space; see
+  # Subscription.Changeset). Copy is advisory only — emisar does not gate on
+  # subscription status, so it must not imply lost access.
+  defp subscription_alert("past_due"),
+    do: %{
+      tone: :rose,
+      title: "Payment past due",
+      body: "Your last payment failed — update your card so the next charge goes through."
+    }
+
+  defp subscription_alert("paused"),
+    do: %{
+      tone: :amber,
+      title: "Subscription paused",
+      body: "Resume it from the billing portal when you're ready."
+    }
+
+  defp subscription_alert("canceled"),
+    do: %{
+      tone: :amber,
+      title: "Subscription canceled",
+      body: "Resubscribe from billing to start a new subscription."
+    }
+
+  defp subscription_alert(_), do: nil
+
+  @doc """
   Renders a [Heroicon](https://heroicons.com).
 
   Heroicons come in three styles – outline, solid, and mini.

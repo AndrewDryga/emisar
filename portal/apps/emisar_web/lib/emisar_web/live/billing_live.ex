@@ -220,10 +220,17 @@ defmodule EmisarWeb.BillingLive do
       </.empty_state>
 
       <.page_container :if={not @loading? and not is_nil(@summary)} max="6xl">
-        <.subscription_banner
-          status={@summary.subscription_status}
-          can_manage={Billing.subject_can_manage_billing?(@current_subject)}
-        />
+        <.subscription_banner status={@summary.subscription_status}>
+          <:cta :if={Billing.subject_can_manage_billing?(@current_subject)}>
+            <button
+              phx-click="manage_billing"
+              phx-disable-with="Opening portal…"
+              class="shrink-0 rounded-lg bg-zinc-100 px-3 py-1.5 text-xs font-semibold text-zinc-950 hover:bg-white"
+            >
+              Manage billing
+            </button>
+          </:cta>
+        </.subscription_banner>
         <%!-- Current-plan strip across the top. Plan name + price on
              the left, three usage bars on the right. Replaces a tall
              narrow sidebar card that wasted the page real estate. --%>
@@ -419,71 +426,4 @@ defmodule EmisarWeb.BillingLive do
     </div>
     """
   end
-
-  attr :status, :any, default: nil
-  attr :can_manage, :boolean, required: true
-
-  defp subscription_banner(assigns) do
-    assigns = assign(assigns, :alert, subscription_alert(assigns.status))
-
-    ~H"""
-    <div
-      :if={@alert}
-      class={[
-        "flex flex-wrap items-center justify-between gap-3 rounded-xl border px-4 py-3 text-sm",
-        @alert.tone == :rose && "border-rose-500/40 bg-rose-500/10 text-rose-200",
-        @alert.tone == :amber && "border-amber-500/40 bg-amber-500/10 text-amber-200"
-      ]}
-    >
-      <div class="flex items-start gap-2">
-        <.icon name="hero-exclamation-triangle" class="mt-0.5 h-4 w-4 flex-none" />
-        <span>
-          <span class="font-semibold">{@alert.title}</span>
-          <span class="text-zinc-300">— {@alert.body}</span>
-        </span>
-      </div>
-      <button
-        :if={@can_manage}
-        phx-click="manage_billing"
-        phx-disable-with="Opening portal…"
-        class="shrink-0 rounded-lg bg-zinc-100 px-3 py-1.5 text-xs font-semibold text-zinc-950 hover:bg-white"
-      >
-        Manage billing
-      </button>
-    </div>
-    """
-  end
-
-  # Maps a Paddle subscription status to a banner above the plan strip.
-  # active/trialing/nil are healthy (no banner); past_due is the loud
-  # "fix your card" case; paused and canceled are amber FYIs. An unknown
-  # status we don't model gets no banner — don't alarm on a state we can't
-  # explain (Paddle owns the value space; see Subscription.Changeset).
-  #
-  # The copy stays purely informational + a nudge to fix billing — emisar does
-  # NOT gate features on subscription status today, so the banners must not
-  # imply "lose access / paid features" (that would be a promise the code
-  # doesn't keep). If enforcement is ever wired, revisit the wording then.
-  defp subscription_alert("past_due"),
-    do: %{
-      tone: :rose,
-      title: "Payment past due",
-      body: "Your last payment failed — update your card so the next charge goes through."
-    }
-
-  defp subscription_alert("paused"),
-    do: %{
-      tone: :amber,
-      title: "Subscription paused",
-      body: "Resume it from the billing portal when you're ready."
-    }
-
-  defp subscription_alert("canceled"),
-    do: %{
-      tone: :amber,
-      title: "Subscription canceled",
-      body: "Resubscribe below to start a new subscription."
-    }
-
-  defp subscription_alert(_), do: nil
 end

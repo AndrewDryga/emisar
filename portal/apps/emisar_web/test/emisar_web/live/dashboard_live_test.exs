@@ -142,4 +142,41 @@ defmodule EmisarWeb.DashboardLiveTest do
       assert render(lv) =~ "Runners online"
     end
   end
+
+  describe "billing-status banner" do
+    test "a past_due subscription surfaces the alert + a manage-billing link for an owner",
+         %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      Emisar.Fixtures.subscription_fixture(account, "team", status: "past_due")
+
+      {:ok, lv, html} = live(conn, ~p"/app")
+
+      assert html =~ "Payment past due"
+      # The owner can act — the banner links to the billing page (manage there).
+      assert has_element?(lv, "a[href='/app/settings/billing']", "Manage billing")
+    end
+
+    test "a healthy account shows no billing banner", %{conn: conn} do
+      {conn, _user, _account} = register_and_log_in(conn)
+
+      {:ok, _lv, html} = live(conn, ~p"/app")
+
+      refute html =~ "Payment past due"
+      refute html =~ "Subscription canceled"
+    end
+
+    test "a viewer sees the alert but not the manage action (it's owner-gated)", %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      Emisar.Fixtures.subscription_fixture(account, "team", status: "past_due")
+      {:ok, membership} = Emisar.Accounts.fetch_membership_for_session(user, nil)
+      Emisar.Fixtures.force_membership_role(membership, "viewer")
+
+      {:ok, lv, html} = live(conn, ~p"/app")
+
+      # Every member should KNOW there's a payment problem…
+      assert html =~ "Payment past due"
+      # …but only an owner gets the manage affordance.
+      refute has_element?(lv, "a[href='/app/settings/billing']", "Manage billing")
+    end
+  end
 end
