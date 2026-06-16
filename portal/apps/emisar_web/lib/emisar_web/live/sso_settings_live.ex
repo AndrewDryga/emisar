@@ -968,6 +968,7 @@ defmodule EmisarWeb.SSOSettingsLive do
           <span class="font-semibold text-zinc-300">3.</span>
           Set the <span class="text-zinc-300">Issuer URL</span>
           below to <span class="font-mono text-zinc-300">{issuer_hint(@kind)}</span>.
+          <span class="text-zinc-500">{issuer_where_hint(@kind)}</span>
         </li>
         <li>
           <span class="font-semibold text-zinc-300">4.</span>
@@ -1004,8 +1005,26 @@ defmodule EmisarWeb.SSOSettingsLive do
   defp issuer_hint("keycloak"), do: "https://YOUR-HOST/realms/YOUR-REALM"
   defp issuer_hint(_), do: "your provider's OIDC issuer URL (the discovery base)"
 
+  # Where to FIND the issuer — it's an org/realm-level value, not on the app
+  # page, which is the usual point of confusion.
+  defp issuer_where_hint("okta"),
+    do:
+      "It's your Okta org URL — the domain you use for the admin console, not a per-app field. Find it top-right in the console, or under Security → API → Authorization Servers (the org row's Issuer URI)."
+
+  defp issuer_where_hint("google_workspace"),
+    do: "Always this exact value for Google — nothing to look up."
+
+  defp issuer_where_hint("keycloak"),
+    do:
+      "Your realm's base URL; Realm settings → Endpoints → OpenID Endpoint Configuration confirms the exact value."
+
+  defp issuer_where_hint(_),
+    do:
+      "Whatever URL serves its OIDC discovery document at /.well-known/openid-configuration — emisar fetches it from there."
+
   defp scim_location_hint(:okta),
-    do: "on the app's Provisioning tab (To App → enable API integration)"
+    do:
+      "in a SEPARATE Okta app — Okta's OIDC apps can't do SCIM, so add the \"SCIM 2.0 Test App (OAuth Bearer Token)\" from the OIN catalog, then open its Provisioning tab → Configure API Integration → Enable API integration"
 
   defp scim_location_hint(:google_workspace),
     do:
@@ -1166,10 +1185,12 @@ defmodule EmisarWeb.SSOSettingsLive do
           </li>
           <li>
             <span class="font-semibold text-zinc-300">2.</span>
-            Use the <span class="text-zinc-300">base URL</span>
-            and <span class="text-zinc-300">bearer token</span>
-            above — authentication is that
-            token in the <code class="rounded bg-zinc-900 px-1 py-0.5">Authorization</code>
+            Set the <span class="text-zinc-300">base URL</span>
+            above as the connector's SCIM endpoint and paste the
+            <span class="text-zinc-300">bearer token</span>
+            into its <span class="text-zinc-300">API token</span>
+            field (rotate above if you didn't copy it) — it's sent in the
+            <code class="rounded bg-zinc-900 px-1 py-0.5">Authorization</code>
             header.
           </li>
           <li>
@@ -1180,6 +1201,13 @@ defmodule EmisarWeb.SSOSettingsLive do
             claim carries — so a member's SSO login and their synced record are one identity.
           </li>
         </ol>
+        <p :if={@provider.kind == :okta} class="mt-3 text-[11px] leading-relaxed text-zinc-500">
+          The SCIM app is a second Okta integration, separate from your sign-in app — its own
+          SSO doesn't need to be functional. Okta defaults both the OIDC
+          <code class="rounded bg-zinc-900 px-1 py-0.5">sub</code>
+          and the SCIM <code class="rounded bg-zinc-900 px-1 py-0.5">externalId</code>
+          to the Okta user id, so step 3 usually needs no change.
+        </p>
       </div>
 
       <%!-- Group → role mapping — only when directory sync is on. Maps an IdP
