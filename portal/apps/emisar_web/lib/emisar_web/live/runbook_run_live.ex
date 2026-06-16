@@ -186,6 +186,12 @@ defmodule EmisarWeb.RunbookRunLive do
     case Runs.fetch_active_runbook_execution(runbook.id, socket.assigns.current_subject) do
       {:ok, %{execution_id: execution_id, runs: runs}} ->
         plan = rehydrated_plan(runbook, socket.assigns.current_subject)
+        # Load the tail output of any run that already settled before this
+        # refresh, so its rehydrated terminal row shows the preview too.
+        socket = Enum.reduce(runs, socket, &maybe_load_output(&2, &1))
+
+        rows =
+          merged_execution_rows(plan, socket.assigns.runners, runs, socket.assigns.run_outputs)
 
         socket
         |> assign(:execution, %{
@@ -197,10 +203,10 @@ defmodule EmisarWeb.RunbookRunLive do
         })
         |> assign(:run_statuses, Map.new(runs, &{&1.id, &1.status}))
         |> assign(:run_index, Map.new(runs, &{&1.id, &1}))
-        # On rehydrate the dispatch already happened; any failures are persisted
-        # as runs (or simply absent), so there are no fresh dispatch errors to mark.
-        |> stream(:execution_runs, plan_rows(plan, socket.assigns.runners, []), reset: true)
-        |> rehydrate_run_rows(runs)
+        # ONE ordered pass, in plan order. Streaming the placeholders and THEN
+        # re-inserting the runs (the old shape) shoved every dispatched run to
+        # the end of the list on reload — scrambling the step order.
+        |> stream(:execution_runs, rows, reset: true)
 
       {:error, :not_found} ->
         socket
@@ -216,16 +222,6 @@ defmodule EmisarWeb.RunbookRunLive do
 
   defp rehydrated_total([], runs), do: length(runs)
   defp rehydrated_total(plan, _runs), do: length(plan)
-
-  defp rehydrate_run_rows(socket, runs) do
-    # Load the tail output of any run that already settled before this
-    # refresh, so a rehydrated terminal row shows its preview too.
-    socket = Enum.reduce(runs, socket, &maybe_load_output(&2, &1))
-
-    Enum.reduce(runs, socket, fn run, socket ->
-      stream_insert(socket, :execution_runs, live_row(run, socket.assigns.run_outputs))
-    end)
-  end
 
   # Risk of a plan step's action, or nil when the catalog hasn't observed
   # it (no connected runner advertises it yet) — the pill then hides.
@@ -491,6 +487,32 @@ defmodule EmisarWeb.RunbookRunLive do
   defp plan_rows(plan, runners, errors) do
     failed = Map.new(errors, &{{&1.step_id, &1.runner_id}, &1.reason})
     Enum.map(plan, &plan_row(&1, runners, failed))
+  end
+
+  # Rehydrate rows in PLAN order: each (step, runner) slot shows its run if one
+  # was dispatched (matched by the shared step_id/runner_id), else its
+  # placeholder. Runs whose plan slot no longer resolves (a step's group changed
+  # since dispatch) are appended in dispatch order so nothing the operator saw
+  # disappears. Built as one ordered list so a single `stream(reset: true)`
+  # renders it — no follow-up `stream_insert` to reshuffle the order.
+  defp merged_execution_rows(plan, runners, runs, outputs) do
+    by_slot = Map.new(runs, &{{&1.runbook_step_id, &1.runner_id}, &1})
+    planned_slots = MapSet.new(plan, &{&1.step_id, &1.runner_id})
+
+    plan_part =
+      Enum.map(plan, fn item ->
+        case Map.fetch(by_slot, {item.step_id, item.runner_id}) do
+          {:ok, run} -> live_row(run, outputs)
+          :error -> plan_row(item, runners, %{})
+        end
+      end)
+
+    orphan_part =
+      runs
+      |> Enum.reject(&MapSet.member?(planned_slots, {&1.runbook_step_id, &1.runner_id}))
+      |> Enum.map(&live_row(&1, outputs))
+
+    plan_part ++ orphan_part
   end
 
   defp plan_row(item, runners, failed) do

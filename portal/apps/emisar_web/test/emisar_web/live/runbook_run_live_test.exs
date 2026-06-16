@@ -484,6 +484,30 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       assert html =~ "linux.uptime"
       assert html =~ "on #{runner.name}"
     end
+
+    test "a refresh keeps dispatched runs in step order, not shoved below the planned rows", %{
+      conn: conn
+    } do
+      {conn, user, account} = register_and_log_in(conn)
+      runner = Emisar.Fixtures.runner_fixture(account_id: account.id)
+      Emisar.Fixtures.action_fixture(runner: runner, action_id: "linux.uptime")
+      Emisar.Fixtures.policy_fixture(account_id: account.id)
+      # 7 steps, 1 runner → wave 1 dispatches steps 1-5; steps 6-7 stay planned.
+      runbook = published_runbook_with_steps!(user, account, runner, 7)
+
+      {:ok, lv, _html} = live(conn, ~p"/app/runbooks/#{runbook.id}/run")
+      assert render_submit(lv, "dispatch", %{"reason" => "go"}) =~ "Runbook dispatched"
+
+      # The refresh rehydrates from the DB. A dispatched run (step 1) must render
+      # ABOVE a still-planned placeholder (step 6) — the old rehydrate streamed
+      # the placeholders then re-inserted the runs, shoving every dispatched run
+      # to the end of the list and scrambling the step order.
+      {:ok, _lv2, html} = live(conn, ~p"/app/runbooks/#{runbook.id}/run")
+
+      {step1_at, _} = :binary.match(html, "run-step1-")
+      {step6_at, _} = :binary.match(html, "run-step6-")
+      assert step1_at < step6_at
+    end
   end
 
   describe "dispatch validation" do
