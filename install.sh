@@ -47,7 +47,14 @@ LOG_DIR="${LOG_DIR:-/var/log/emisar}"
 SERVICE_USER="${SERVICE_USER:-emisar}"
 SERVICE_GROUP="${SERVICE_GROUP:-emisar}"
 ASSUME_YES="${ASSUME_YES:-0}"
-PRE_PACKS="${EMISAR_PACKS:-}"     # explicit packs to install (--packs); skips host detection
+# Pack selection. EMISAR_PACKS being *present in the environment* — even
+# empty — means the operator is managing packs explicitly: install exactly
+# the listed set (possibly none) and skip host detection / suggestions. So
+# we test set-ness (${VAR+set}), not non-emptiness: a templated
+# `EMISAR_PACKS='${emisar_packs}'` that renders empty is still an explicit
+# "no extra packs", not an invitation to suggest. --packs sets it too.
+PRE_PACKS="${EMISAR_PACKS:-}"     # the explicit list itself (may be empty)
+PACKS_EXPLICIT=0; [ -n "${EMISAR_PACKS+set}" ] && PACKS_EXPLICIT=1
 NO_START="${NO_START:-0}"
 NO_SERVICE="${NO_SERVICE:-0}"     # skip user + service unit + activation
 MODE="install"                    # install|uninstall
@@ -93,6 +100,11 @@ RUNNER_ROLE, RUNNER_ENVIRONMENT.
 EMISAR_URL + EMISAR_AUTH_KEY are baked into config.yaml + runner.env
 at install time so the runner boots without a follow-up edit.
 RUNNER_GROUP defaults to `hostname -s`; RUNNER_ENVIRONMENT to `prod`.
+
+Setting EMISAR_PACKS (the env form of --packs), even to an empty string,
+makes the pack list explicit: the installer installs exactly those packs
+and never host-detects or prompts to add suggested ones. Leave it unset
+to get the host-matched starter packs.
 USAGE
 }
 
@@ -123,7 +135,7 @@ while [ $# -gt 0 ]; do
     --log-dir) LOG_DIR="$2"; shift 2;;
     --user) SERVICE_USER="$2"; SERVICE_GROUP="$2"; shift 2;;
     --yes|-y) ASSUME_YES=1; shift;;
-    --packs) PRE_PACKS="$2"; shift 2;;
+    --packs) PRE_PACKS="$2"; PACKS_EXPLICIT=1; shift 2;;
     --help|-h) usage; exit 0;;
     *) echo "unknown flag: $1" >&2; usage >&2; exit 2;;
   esac
@@ -786,17 +798,29 @@ install_suggested_packs() {
   fi
 }
 
-# install_named_packs installs an explicit, operator-given pack list
+# install_named_packs installs an explicit, operator-given pack set
 # (--packs / EMISAR_PACKS): no host detection, no prompt. Each name is
 # installed from the bundle if present (offline), else fetched from the
 # registry. Invalid names and individual failures warn but never abort.
+# An explicit-but-empty set installs nothing — and still suggests nothing.
 install_named_packs() {
   local bundle="$1/packs"
   local dst="${ETC_DIR}/packs"
-  mkdir -p "${dst}"
 
+  # Split the explicit list the way the loop below does. An empty result
+  # (EMISAR_PACKS='' / ' ' / ',' — e.g. a templated value that rendered
+  # empty) is an explicit "no extra packs now": install nothing, and
+  # crucially do NOT fall back to host detection or suggestions.
+  local requested
+  requested="$(printf '%s' "${PRE_PACKS}" | tr ',' ' ')"
+  if [ -z "$(printf '%s' "${requested}" | tr -d '[:space:]')" ]; then
+    log "EMISAR_PACKS is set but empty — installing no packs (explicit set); add later with: ${BIN_DIR}/emisar pack install <name>"
+    return 0
+  fi
+
+  mkdir -p "${dst}"
   local p src origin
-  for p in $(printf '%s' "${PRE_PACKS}" | tr ',' ' '); do
+  for p in ${requested}; do
     # A pack name is a single path segment; reject anything that could
     # escape the bundle dir or malform the registry URL (we run as root).
     case "${p}" in
@@ -940,7 +964,9 @@ do_install() {
 
   ensure_dirs
   install_binary "${extracted}"
-  if [ -n "${PRE_PACKS}" ]; then
+  # EMISAR_PACKS set (even empty) or --packs given ⇒ the pack set is
+  # explicit: install exactly it, never host-detect or suggest.
+  if [ "${PACKS_EXPLICIT}" = "1" ]; then
     install_named_packs "${extracted}"
   else
     install_default_packs "${extracted}"
