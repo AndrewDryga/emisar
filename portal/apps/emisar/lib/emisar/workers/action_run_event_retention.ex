@@ -33,7 +33,7 @@ defmodule Emisar.Workers.ActionRunEventRetention do
   end
 
   defp prune_account(%Accounts.Account{} = account) do
-    plan = Billing.plan(account.plan) || Billing.plan("free")
+    plan = Billing.plan(Billing.account_plan(account)) || Billing.plan("free")
     cutoff = DateTime.utc_now() |> DateTime.add(-plan.audit_retention_days * 86_400, :second)
 
     pruned = delete_in_batches(account.id, cutoff, 0)

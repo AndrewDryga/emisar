@@ -70,7 +70,7 @@ defmodule EmisarWeb.UserSignUpLiveTest do
       |> Emisar.Repo.all()
       |> Emisar.Repo.preload(:account)
 
-    assert [%{role: :owner, account: %{name: "Founder Co", plan: "free"}}] = memberships
+    assert [%{role: :owner, account: %{name: "Founder Co"}}] = memberships
   end
 
   test "when workspace setup fails, the user gets a confirmation + a recovery path", %{conn: conn} do

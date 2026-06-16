@@ -6,7 +6,8 @@
 # real-shaped data when an operator first opens the app — instead of
 # empty-state cards everywhere.
 
-alias Emisar.{Accounts, Approvals, Audit, Catalog, Policies, Repo, Runbooks, Runners, Runs, Users}
+alias Emisar.{Accounts, Approvals, Audit, Billing, Catalog, Policies, Repo}
+alias Emisar.{Runbooks, Runners, Runs, Users}
 alias Emisar.Accounts.Account
 alias Emisar.Approvals.Request, as: ApprovalRequest
 alias Emisar.Auth.Subject
@@ -19,6 +20,17 @@ now = fn -> DateTime.utc_now() |> DateTime.truncate(:microsecond) end
 mins_ago = &DateTime.add(now.(), -&1 * 60, :second)
 hours_ago = &DateTime.add(now.(), -&1 * 3600, :second)
 days_ago = &DateTime.add(now.(), -&1 * 86_400, :second)
+
+# Plan now lives on the account's subscription (no `accounts.plan` column) —
+# mint one for a paid tier; free accounts simply have no subscription.
+# Idempotent: upsert_subscription peeks-then-updates, so re-seeding refreshes it.
+seed_subscription = fn %Account{} = account, plan ->
+  if plan != "free" do
+    {:ok, _} = Billing.upsert_subscription(account.id, %{plan: plan, status: "active"})
+  end
+
+  account
+end
 
 # Aggregate stream chunks: total byte size and sha256 of the
 # concatenation. Used to populate ActionRun.{stdout,stderr}_{bytes,sha256}
@@ -74,7 +86,7 @@ account =
     {:error, :not_found} ->
       {:ok, account} =
         Accounts.create_account_with_owner(
-          %{name: "Demo Corp", slug: "demo", plan: "enterprise"},
+          %{name: "Demo Corp", slug: "demo"},
           user
         )
 
@@ -83,6 +95,9 @@ account =
     {:ok, account} ->
       account
   end
+
+# The demo account is enterprise so SSO/SCIM is testable here.
+seed_subscription.(account, "enterprise")
 
 IO.puts(
   IO.ANSI.cyan() <>
@@ -977,13 +992,15 @@ seed_plan_account = fn name, slug, plan ->
     case Repo.fetch(Account.Query.not_deleted() |> Account.Query.by_slug(slug), Account.Query) do
       {:error, :not_found} ->
         {:ok, a} =
-          Accounts.create_account_with_owner(%{name: name, slug: slug, plan: plan}, owner)
+          Accounts.create_account_with_owner(%{name: name, slug: slug}, owner)
 
         a
 
       {:ok, a} ->
         a
     end
+
+  seed_subscription.(acct, plan)
 
   subject =
     Subject.for_user(

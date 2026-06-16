@@ -20,7 +20,7 @@ defmodule Emisar.Workers.AuditRetention do
   end
 
   defp prune_account(%Accounts.Account{} = account) do
-    plan = Billing.plan(account.plan) || Billing.plan("free")
+    plan = Billing.plan(Billing.account_plan(account)) || Billing.plan("free")
     days = plan.audit_retention_days
     cutoff = DateTime.utc_now() |> DateTime.add(-days * 86_400, :second)
 

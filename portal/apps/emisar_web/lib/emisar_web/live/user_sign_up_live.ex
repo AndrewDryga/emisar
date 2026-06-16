@@ -109,8 +109,7 @@ defmodule EmisarWeb.UserSignUpLive do
         case Accounts.create_account_with_owner(
                %{
                  name: account_name,
-                 slug: Accounts.suggest_unique_slug(account_name),
-                 plan: "free"
+                 slug: Accounts.suggest_unique_slug(account_name)
                },
                user
              ) do

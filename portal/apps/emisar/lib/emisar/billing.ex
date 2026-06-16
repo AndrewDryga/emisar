@@ -52,9 +52,27 @@ defmodule Emisar.Billing do
   def plans, do: @plans
   def plan(name) when is_binary(name), do: Map.get(@plans, name)
 
+  @doc """
+  The account's current plan name — derived from its mirrored Paddle
+  subscription (the source of truth), falling back to "free" when the
+  account has never subscribed. This is the ONE source for plan gating;
+  there is no `plan` column on `accounts`.
+
+  Status-agnostic by design: a past_due/canceled subscription still
+  resolves to its plan — billing status is advisory today (see the
+  billing-status enforcement decision), so this derivation must not start
+  restricting on status. An unknown/renamed plan name is returned as
+  stored; callers degrade it through `plan/1` (nil → free-tier limits),
+  matching the read-tolerant posture the dropped column had.
+  """
+  def account_plan(%Accounts.Account{} = account),
+    do: plan_from_subscription(peek_subscription_for_account(account.id))
+
+  defp plan_from_subscription(%Subscription{plan: plan}) when is_binary(plan), do: plan
+  defp plan_from_subscription(_), do: "free"
+
   @doc "True when the account's plan includes SSO + directory sync (enterprise only)."
-  def sso_available?(%Accounts.Account{plan: "enterprise"}), do: true
-  def sso_available?(%Accounts.Account{}), do: false
+  def sso_available?(%Accounts.Account{} = account), do: account_plan(account) == "enterprise"
 
   # Internal nil-or-struct helper. Used by `upsert_subscription/2` and
   # webhook event application. Not exposed to LiveView/MCP because
@@ -97,10 +115,12 @@ defmodule Emisar.Billing do
   flows that already authorized upstream. The check itself is
   account-scoped (the runner counting), not subject-scoped.
   """
-  def check_limit(%Accounts.Account{plan: plan_name} = account, resource) do
-    # Fall back to the free plan when the account's plan name isn't a
-    # current plan (legacy/renamed) — the same guard billing_summary and
-    # audit_retention use, and it avoids Map.get on a nil plan.
+  def check_limit(%Accounts.Account{} = account, resource) do
+    # Resolve the plan from the account's subscription; fall back to the
+    # free plan when the name isn't a current plan (legacy/renamed) — the
+    # same guard billing_summary and audit_retention use, and it avoids
+    # Map.get on a nil plan.
+    plan_name = account_plan(account)
     plan = plan(plan_name) || plan("free")
     limit = Map.get(plan, limit_key(resource))
 
@@ -341,14 +361,15 @@ defmodule Emisar.Billing do
   # same map `start_checkout/3` reads). Invert it to map the webhook's
   # price id back to a plan. If it can't be resolved (price id absent or
   # not configured — e.g. the sales-led enterprise tier), fall back to the
-  # account's current plan, then "free", so the subscription can persist
-  # rather than failing `validate_required([:plan])` and stranding the account.
+  # account's current plan (its existing subscription, via `account_plan/1`),
+  # else "free", so the subscription can persist rather than failing
+  # `validate_required([:plan])` and stranding the account's entitlement.
   defp plan_for_subscription(%Accounts.Account{} = account, price_id) do
     price_to_plan =
       Application.get_env(:emisar, :paddle_price_ids, %{})
       |> Map.new(fn {plan, pid} -> {pid, plan} end)
 
-    price_to_plan[price_id] || account.plan || "free"
+    price_to_plan[price_id] || account_plan(account)
   end
 
   # nil-tolerant adapter: Paddle payloads may omit the customer id.
@@ -401,14 +422,15 @@ defmodule Emisar.Billing do
              Authorizer.view_billing_permission()
            ),
          :ok <- ensure_subject_owns_account(account, subject) do
-      plan_def = plan(account.plan) || plan("free")
+      subscription = peek_subscription_for_account(account.id)
+      plan_name = plan_from_subscription(subscription)
+      plan_def = plan(plan_name) || plan("free")
       runner_count = current_count(account, :runners)
       member_count = current_count(account, :members)
-      subscription = peek_subscription_for_account(account.id)
 
       {:ok,
        %{
-         plan: account.plan,
+         plan: plan_name,
          plan_name: plan_def.name,
          runner_count: runner_count,
          runner_limit: plan_def.runners_limit,

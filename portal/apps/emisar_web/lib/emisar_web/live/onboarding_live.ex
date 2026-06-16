@@ -80,7 +80,7 @@ defmodule EmisarWeb.OnboardingLive do
     user = socket.assigns.current_user
 
     case Accounts.create_account_with_owner(
-           %{name: name, slug: Accounts.suggest_unique_slug(name), plan: "free"},
+           %{name: name, slug: Accounts.suggest_unique_slug(name)},
            user
          ) do
       {:ok, account} ->

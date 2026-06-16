@@ -27,7 +27,10 @@ defmodule Emisar.Audit.Events do
       subject_kind: "account",
       subject_id: account.id,
       subject_label: account.name,
-      payload: %{plan: account.plan, slug: account.slug}
+      # A brand-new account has no subscription yet, so it is always on the
+      # free plan at creation — recorded literally to avoid a cross-context
+      # Billing call from the audit layer.
+      payload: %{plan: "free", slug: account.slug}
     )
   end
 

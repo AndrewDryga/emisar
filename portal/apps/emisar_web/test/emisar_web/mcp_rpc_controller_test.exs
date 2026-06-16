@@ -26,7 +26,7 @@ defmodule EmisarWeb.McpRpcControllerTest do
 
     {:ok, account} =
       Accounts.create_account_with_owner(
-        %{name: "acct-#{unique()}", slug: "acct-#{unique()}", plan: "free"},
+        %{name: "acct-#{unique()}", slug: "acct-#{unique()}"},
         user
       )
 

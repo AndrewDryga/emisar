@@ -17,7 +17,7 @@ shows) writes a comparison that compiles clean and never matches.
 Applies to every `Ecto.Enum`: run/approval/runbook `status`, membership `role`,
 action `risk`, pack `trust_state`, policy/scope `scope_type`, run `source`,
 event `kind`. The two deliberate `:string` look-alikes — `Subscription.status`
-and `Account.plan` (see §3) — DO compare as strings; know which you hold.
+and `Subscription.plan` (see §3) — DO compare as strings; know which you hold.
 
 **✅ Good**
 

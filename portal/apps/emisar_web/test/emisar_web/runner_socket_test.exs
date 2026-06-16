@@ -16,9 +16,13 @@ defmodule EmisarWeb.RunnerSocketTest do
 
       {:ok, account} =
         Emisar.Accounts.create_account_with_owner(
-          %{name: "OwnerCo", slug: Emisar.Accounts.suggest_unique_slug("OwnerCo"), plan: "team"},
+          %{name: "OwnerCo", slug: Emisar.Accounts.suggest_unique_slug("OwnerCo")},
           user
         )
+
+      # Team plan (via a subscription) so the registration tests below aren't
+      # capped at free's 3-runner limit; plan lives on the subscription now.
+      Emisar.Fixtures.subscription_fixture(account, "team")
 
       subject = Emisar.Fixtures.subject_for(user, account, role: :owner)
       {:ok, raw_key, _key} = Runners.create_auth_key(%{description: "test"}, subject)
@@ -64,9 +68,13 @@ defmodule EmisarWeb.RunnerSocketTest do
 
       {:ok, account} =
         Emisar.Accounts.create_account_with_owner(
-          %{name: "OwnerCo", slug: Emisar.Accounts.suggest_unique_slug("OwnerCo"), plan: "team"},
+          %{name: "OwnerCo", slug: Emisar.Accounts.suggest_unique_slug("OwnerCo")},
           user
         )
+
+      # Team plan (via a subscription) so the registration tests below aren't
+      # capped at free's 3-runner limit; plan lives on the subscription now.
+      Emisar.Fixtures.subscription_fixture(account, "team")
 
       subject = Emisar.Fixtures.subject_for(user, account, role: :owner)
 
@@ -92,7 +100,7 @@ defmodule EmisarWeb.RunnerSocketTest do
 
       {:ok, account} =
         Emisar.Accounts.create_account_with_owner(
-          %{name: "FreeCo", slug: Emisar.Accounts.suggest_unique_slug("FreeCo"), plan: "free"},
+          %{name: "FreeCo", slug: Emisar.Accounts.suggest_unique_slug("FreeCo")},
           user
         )
 
@@ -180,9 +188,13 @@ defmodule EmisarWeb.RunnerSocketTest do
 
       {:ok, account} =
         Emisar.Accounts.create_account_with_owner(
-          %{name: "OwnerCo", slug: Emisar.Accounts.suggest_unique_slug("OwnerCo"), plan: "team"},
+          %{name: "OwnerCo", slug: Emisar.Accounts.suggest_unique_slug("OwnerCo")},
           user
         )
+
+      # Team plan (via a subscription) so the registration tests below aren't
+      # capped at free's 3-runner limit; plan lives on the subscription now.
+      Emisar.Fixtures.subscription_fixture(account, "team")
 
       runner = Fixtures.runner_fixture(account_id: account.id, connected?: false)
       _ = Fixtures.action_fixture(runner: runner)
@@ -578,9 +590,13 @@ defmodule EmisarWeb.RunnerSocketTest do
 
     {:ok, account} =
       Emisar.Accounts.create_account_with_owner(
-        %{name: "OwnerCo", slug: Emisar.Accounts.suggest_unique_slug("OwnerCo"), plan: "team"},
+        %{name: "OwnerCo", slug: Emisar.Accounts.suggest_unique_slug("OwnerCo")},
         user
       )
+
+    # Team plan (via a subscription) so registration isn't capped at free's
+    # 3-runner limit; plan lives on the subscription now.
+    Emisar.Fixtures.subscription_fixture(account, "team")
 
     runner = Fixtures.runner_fixture(account_id: account.id, connected?: false)
     _ = Fixtures.action_fixture(runner: runner)

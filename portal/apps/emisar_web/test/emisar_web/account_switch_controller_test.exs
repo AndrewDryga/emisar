@@ -12,8 +12,7 @@ defmodule EmisarWeb.AccountSwitchControllerTest do
 
   defp second_account_for(user, attrs \\ %{}) do
     base = %{
-      name: "Second Co #{System.unique_integer([:positive])}",
-      plan: "free"
+      name: "Second Co #{System.unique_integer([:positive])}"
     }
 
     attrs = Map.merge(base, attrs)

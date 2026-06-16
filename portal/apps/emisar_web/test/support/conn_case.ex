@@ -56,11 +56,13 @@ defmodule EmisarWeb.ConnCase do
         Map.get(attrs, :user, %{})
       )
 
-    account_attrs =
-      Map.merge(
-        %{name: "Test Co", plan: "free"},
-        Map.get(attrs, :account, %{})
-      )
+    # Plan lives on the account's subscription now (no `accounts.plan`
+    # column). Pop a `:plan` override and mint a matching subscription for a
+    # paid tier, mirroring `Fixtures.account_fixture`'s shim.
+    {plan, account_overrides} =
+      attrs |> Map.get(:account, %{}) |> Map.new() |> Map.pop(:plan, "free")
+
+    account_attrs = Map.merge(%{name: "Test Co"}, account_overrides)
 
     {:ok, user} = Emisar.Users.register_user(user_attrs)
     user = Emisar.Fixtures.confirm_user(user)
@@ -70,6 +72,8 @@ defmodule EmisarWeb.ConnCase do
         Map.put(account_attrs, :slug, Emisar.Accounts.suggest_unique_slug(account_attrs.name)),
         user
       )
+
+    if plan != "free", do: Emisar.Fixtures.subscription_fixture(account, plan)
 
     {log_in_user(conn, user), user, account}
   end

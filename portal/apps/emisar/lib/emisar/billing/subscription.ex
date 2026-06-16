@@ -9,6 +9,13 @@ defmodule Emisar.Billing.Subscription do
   schema "subscriptions" do
     field :paddle_subscription_id, :string
     field :paddle_price_id, :string
+    # `plan` and `status` are deliberately :string, not Ecto.Enum: this row is
+    # a Paddle mirror, so the value space is vendor-owned. A renamed/legacy/
+    # sales-led plan name (or an unseen status) must still LOAD and degrade
+    # gracefully — `Billing.account_plan/1` reads `plan` as the single source
+    # for gating and `Billing.plan/1` maps an unknown name to free-tier limits,
+    # where an enum would raise on every fetch. Writes validate presence, not
+    # inclusion (Subscription.Changeset); Paddle is the source of truth.
     field :plan, :string
     field :status, :string
     field :quantity, :integer, default: 1

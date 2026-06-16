@@ -22,7 +22,7 @@ defmodule EmisarWeb.MfaChallengeLiveTest do
 
     {:ok, account} =
       Emisar.Accounts.create_account_with_owner(
-        %{name: "MFA Co", slug: "mfa-co-#{System.unique_integer([:positive])}", plan: "free"},
+        %{name: "MFA Co", slug: "mfa-co-#{System.unique_integer([:positive])}"},
         user
       )
 

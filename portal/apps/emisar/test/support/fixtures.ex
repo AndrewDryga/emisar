@@ -8,7 +8,7 @@ defmodule Emisar.Fixtures do
   so tests using `async: true` never collide.
   """
 
-  alias Emisar.{Accounts, ApiKeys, Policies, Repo, RequestContext, Runners, Users}
+  alias Emisar.{Accounts, ApiKeys, Billing, Policies, Repo, RequestContext, Runners, Users}
   alias Emisar.Accounts.{Account, Membership}
   alias Emisar.Auth.Subject
   alias Emisar.Runners.Runner
@@ -51,19 +51,24 @@ defmodule Emisar.Fixtures do
     |> Repo.peek()
   end
 
-  @doc "Subject for a fresh user + account pair as the account owner."
+  @doc """
+  Subject for a fresh user + account pair as the account owner. A non-"free"
+  `:plan` in `account_attrs` mints a matching subscription (plan lives on the
+  subscription, not the account).
+  """
   def owner_subject_fixture(account_attrs \\ %{}) do
     user = user_fixture()
+    {plan, account_attrs} = pop_plan(account_attrs)
 
     base = %{
       name: unique_account_name(),
-      slug: unique_slug(),
-      plan: "free"
+      slug: unique_slug()
     }
 
     {:ok, account} =
-      Accounts.create_account_with_owner(Map.merge(base, Map.new(account_attrs)), user)
+      Accounts.create_account_with_owner(Map.merge(base, account_attrs), user)
 
+    maybe_seed_plan(account, plan)
     subject = subject_for(user, account, role: :owner)
     {user, account, subject}
   end
@@ -106,22 +111,44 @@ defmodule Emisar.Fixtures do
 
   # -- Account ----------------------------------------------------------
 
-  @doc "Persists an account. Defaults to plan: \"free\"."
+  @doc ~S|Persists an account. A non-"free" `:plan` mints a matching subscription (plan lives on the subscription, not the account).|
   def account_fixture(attrs \\ %{}) do
+    {plan, attrs} = pop_plan(attrs)
+
     base = %{
       name: unique_account_name(),
-      slug: unique_slug(),
-      plan: "free"
+      slug: unique_slug()
     }
 
     {:ok, account} =
       base
-      |> Map.merge(Map.new(attrs))
+      |> Map.merge(attrs)
       |> Account.Changeset.create()
       |> Repo.insert()
 
+    maybe_seed_plan(account, plan)
     account
   end
+
+  @doc """
+  Mints (or refreshes) the account's subscription at `plan` — the way a real
+  account lands on a paid tier (Paddle webhook → `Billing.upsert_subscription`).
+  `opts` overrides defaults (`status: "active"`).
+  """
+  def subscription_fixture(%Account{} = account, plan, opts \\ []) when is_binary(plan) do
+    attrs = Map.merge(%{plan: plan, status: "active"}, Map.new(opts))
+    {:ok, subscription} = Billing.upsert_subscription(account.id, attrs)
+    subscription
+  end
+
+  # Plan lives on the subscription now; fixture callers still pass `plan:` for
+  # convenience. Pop it and mint a subscription only for a real paid tier.
+  defp pop_plan(attrs), do: attrs |> Map.new() |> Map.pop(:plan, "free")
+
+  defp maybe_seed_plan(%Account{} = account, plan) when is_binary(plan) and plan != "free",
+    do: subscription_fixture(account, plan)
+
+  defp maybe_seed_plan(_account, _plan), do: :ok
 
   # -- Membership -------------------------------------------------------
 

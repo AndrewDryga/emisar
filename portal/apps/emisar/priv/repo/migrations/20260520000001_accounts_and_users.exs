@@ -14,14 +14,12 @@ defmodule Emisar.Repo.Migrations.AccountsAndUsers do
       add :id, :binary_id, primary_key: true
       add :name, :string, null: false
       add :slug, :citext, null: false
-      add :plan, :string, null: false, default: "free"
       add :paddle_customer_id, :string
       add :require_mfa, :boolean, null: false, default: false
       timestamps(type: :utc_datetime_usec)
     end
 
     create unique_index(:accounts, [:slug])
-    create index(:accounts, [:plan])
     create index(:accounts, [:paddle_customer_id])
 
     create table(:users, primary_key: false) do

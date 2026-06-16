@@ -85,8 +85,7 @@ defmodule EmisarWeb.AuthFlowTest do
         Emisar.Accounts.create_account_with_owner(
           %{
             name: "MFA Test",
-            slug: "mfa-test-#{System.unique_integer([:positive])}",
-            plan: "free"
+            slug: "mfa-test-#{System.unique_integer([:positive])}"
           },
           user
         )

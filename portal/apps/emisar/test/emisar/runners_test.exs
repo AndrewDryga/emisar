@@ -805,15 +805,17 @@ defmodule Emisar.RunnersTest do
 
     test "an unknown/legacy plan name falls back to free limits, not a crash" do
       {account, _user, _subject} = account_with_owner_subject()
-      # A plan name no longer in Billing.plans() (legacy/renamed) used to
-      # raise BadMapError on Map.get(nil, :runners_limit). It must fall
-      # back to the free plan instead.
-      legacy = %{account | plan: "legacy-pro"}
+      # A subscription plan no longer in Billing.plans() (legacy/renamed)
+      # used to raise BadMapError on Map.get(nil, :runners_limit). It must
+      # fall back to the free plan's limits instead. Plan is read from the
+      # subscription now, and Paddle owns the value space — so an unknown
+      # name can legitimately persist and must degrade gracefully.
+      subscription_fixture(account, "legacy-pro")
 
-      assert :ok = Billing.check_limit(legacy, :runners)
+      assert :ok = Billing.check_limit(account, :runners)
 
       for _ <- 1..3, do: runner_fixture(account_id: account.id, connected?: false)
-      assert {:error, :over_limit, "legacy-pro", 3} = Billing.check_limit(legacy, :runners)
+      assert {:error, :over_limit, "legacy-pro", 3} = Billing.check_limit(account, :runners)
     end
   end
 

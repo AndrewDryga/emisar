@@ -15,6 +15,63 @@ defmodule Emisar.BillingTest do
     end
   end
 
+  describe "account_plan/1 + sso_available?/1 — plan is derived from the subscription" do
+    test "no subscription → free, SSO locked" do
+      account = account_fixture()
+
+      assert Billing.account_plan(account) == "free"
+      refute Billing.sso_available?(account)
+    end
+
+    test "the subscription's plan is the account's plan" do
+      account = account_fixture()
+      subscription_fixture(account, "team")
+
+      assert Billing.account_plan(account) == "team"
+      # Team is not enterprise, so SSO stays locked.
+      refute Billing.sso_available?(account)
+    end
+
+    test "an enterprise subscription unlocks SSO" do
+      account = account_fixture()
+      subscription_fixture(account, "enterprise")
+
+      assert Billing.account_plan(account) == "enterprise"
+      assert Billing.sso_available?(account)
+    end
+
+    test "status-agnostic: a canceled subscription still grants its plan" do
+      # Billing status is advisory today — it informs (banners), it never
+      # restricts — so a lapsed subscription keeps resolving to its plan
+      # until status enforcement becomes a deliberate product decision.
+      account = account_fixture()
+      subscription_fixture(account, "enterprise", status: "canceled")
+
+      assert Billing.account_plan(account) == "enterprise"
+      assert Billing.sso_available?(account)
+    end
+
+    test "a webhook plan change is reflected immediately — the account row is never touched" do
+      # Regression for the single-source fix: the Paddle webhook only ever
+      # writes subscriptions.plan, so plan gating must read from there, not a
+      # stale accounts.plan copy. Before this change a paid customer's account
+      # stayed on "free" and SSO was wrongly unavailable.
+      Application.put_env(:emisar, :paddle_price_ids, %{"enterprise" => "pri_ent_01"})
+      on_exit(fn -> Application.delete_env(:emisar, :paddle_price_ids) end)
+
+      account = account_fixture(%{paddle_customer_id: "ctm_upgrade_01"})
+      refute Billing.sso_available?(account)
+
+      event = subscription_created_event("evt_upgrade", account.paddle_customer_id, "pri_ent_01")
+      assert :ok = Billing.record_and_apply_event("evt_upgrade", "subscription.created", event)
+
+      # The SAME in-memory struct (never re-fetched) now resolves to
+      # enterprise — proof the gate reads the subscription, not the account.
+      assert Billing.account_plan(account) == "enterprise"
+      assert Billing.sso_available?(account)
+    end
+  end
+
   describe "headroom/2" do
     test ":ok when more than one slot free" do
       assert Billing.headroom(%{runner_count: 1, runner_limit: 3}, :runners) == :ok
