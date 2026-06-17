@@ -32,6 +32,24 @@ defmodule Emisar.Accounts do
   end
 
   @doc """
+  Resolve an account from a `/app/:account_id_or_slug` path segment — a UUID
+  (API / SSO / redirects) or the slug (the canonical UI form). Pre-Subject:
+  the per-account sign-in page resolves it before anyone is authenticated, so
+  it scopes nothing — knowing a slug grants no access (the slug gate on the
+  authenticated routes is the authz boundary).
+  """
+  def fetch_account_by_id_or_slug(id_or_slug) when is_binary(id_or_slug) do
+    queryable = Account.Query.not_deleted()
+
+    queryable =
+      if Repo.valid_uuid?(id_or_slug),
+        do: Account.Query.by_id(queryable, id_or_slug),
+        else: Account.Query.by_slug(queryable, id_or_slug)
+
+    Repo.fetch(queryable, Account.Query)
+  end
+
+  @doc """
   Accounts the subject's user is a (non-suspended) member of,
   name-ordered. Returns `{:ok, [account], %Paginator.Metadata{}}`. Drives
   the account picker.

@@ -114,15 +114,21 @@ defmodule EmisarWeb.Router do
       on_mount: [{EmisarWeb.UserAuth, :mount_current_user}] do
       live "/sign_up", UserSignUpLive
       live "/sign_in", UserSignInLive
-      live "/sign_in/sso", SSOSignInLive
       live "/sign_in/magic", MagicLinkLive
       live "/sign_in/mfa", MfaChallengeLive
+
+      # Per-account ("branded") sign-in — the slug picks the tenant; offers SSO + userpass + magic.
+      live "/app/:account_id_or_slug/sign_in", AccountSignInLive
       live "/reset_password", ResetPasswordLive
       live "/reset_password/:token", ResetPasswordLive
     end
 
     post "/sign_in", UserSessionController, :create
     get "/sign_in/magic/:token", UserSessionController, :magic_link_confirm
+
+    # SSO landing: pick a team (recent-accounts cookie + manual entry) → its branded sign-in page.
+    get "/sign_in/sso", SSOSignInController, :new
+    post "/sign_in/sso", SSOSignInController, :create
     get "/sign_in/sso/callback", SSOController, :callback
     get "/sign_in/sso/:provider_id", SSOController, :begin
   end

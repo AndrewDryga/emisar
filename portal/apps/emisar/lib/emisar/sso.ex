@@ -115,12 +115,13 @@ defmodule Emisar.SSO do
 
   # -- Sign-in discovery (pre-Subject) ---------------------------------
 
-  @doc "Internal — sign-in: the enabled provider routing this email domain, if any."
-  def fetch_enabled_provider_by_email_domain(domain) when is_binary(domain) do
+  @doc "Internal — sign-in: an account's enabled SSO providers, name-ordered, for the per-account sign-in page (pre-Subject)."
+  def list_enabled_providers_for_account(account_id) when is_binary(account_id) do
     IdentityProvider.Query.not_deleted()
     |> IdentityProvider.Query.enabled()
-    |> IdentityProvider.Query.by_email_domain(domain)
-    |> peek_or_not_found()
+    |> IdentityProvider.Query.by_account_id(account_id)
+    |> IdentityProvider.Query.ordered_by_name()
+    |> Repo.all()
   end
 
   @doc "Internal — sign-in: an enabled provider by id, for the begin-auth redirect (pre-Subject)."

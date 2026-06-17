@@ -94,7 +94,8 @@ defmodule EmisarWeb.SSOControllerTest do
 
   describe "GET /sign_in/sso/callback" do
     test "a valid stash + verified claims logs the user in with :sso provenance", %{conn: conn} do
-      provider = provider_fixture(enterprise_account())
+      account = enterprise_account()
+      provider = provider_fixture(account)
       # Claims ride the callback as query params, so booleans would arrive as
       # strings ("email_verified" => "true"); use the all-string `hd` path,
       # which the verified-email rule honors and which survives the round-trip.
@@ -112,7 +113,10 @@ defmodule EmisarWeb.SSOControllerTest do
         })
         |> get(~p"/sign_in/sso/callback", %{"_claims" => claims})
 
-      assert redirected_to(conn) == ~p"/app"
+      # SSO lands on the account whose IdP this is (its slug), not bare /app.
+      assert redirected_to(conn) == ~p"/app/#{account}"
+      # …and the account is remembered for the SSO landing page (signed cookie).
+      assert Map.has_key?(conn.resp_cookies, "emisar_recent_accounts")
 
       # The session carries a real token, the stash is cleared, and the
       # persisted token row records the SSO sign-in method.

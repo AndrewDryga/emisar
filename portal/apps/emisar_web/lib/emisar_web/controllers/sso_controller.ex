@@ -10,8 +10,10 @@ defmodule EmisarWeb.SSOController do
   `signed_in_path` — so there is no open-redirect surface here (H2).
   """
   use EmisarWeb, :controller
+  alias Emisar.Accounts
   alias Emisar.SSO
   alias Emisar.Users
+  alias EmisarWeb.RecentAccounts
   alias EmisarWeb.RequestContext
   alias EmisarWeb.UserAuth
 
@@ -43,13 +45,19 @@ defmodule EmisarWeb.SSOController do
 
     with %{provider_id: provider_id} = stash <- get_session(conn, @stash_key),
          {:ok, provider} <- SSO.fetch_provider_for_sign_in(provider_id),
-         {:ok, %{user: user, identity: identity}} <- SSO.complete_auth(provider, params, stash) do
+         {:ok, %{user: user, identity: identity}} <- SSO.complete_auth(provider, params, stash),
+         {:ok, account} <- Accounts.fetch_account_by_id(provider.account_id) do
       Users.record_sign_in(user, "sso", context)
 
-      # `mfa: true` — the IdP performed the second factor when the provider is
-      # configured to enforce it (provenance, not the gate).
+      # Land on the account whose IdP this is (not the user's stale default), and
+      # remember it for the SSO landing page's one-click return. `mfa: true` — the
+      # IdP performed the second factor when the provider enforces it (provenance,
+      # not the gate). `user_return_to` is read by log_in_user *before* it renews
+      # the session; the recent-accounts cookie is separate, so renew keeps it.
       conn
       |> delete_session(@stash_key)
+      |> put_session(:user_return_to, ~p"/app/#{account}")
+      |> RecentAccounts.put(%{slug: account.slug, name: account.name})
       |> UserAuth.log_in_user(user, :sso, SSO.provider_satisfies_mfa?(provider), %{},
         user_identity_id: identity.id
       )

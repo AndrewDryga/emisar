@@ -17,9 +17,6 @@ defmodule Emisar.SSO.IdentityProvider.Query do
   def enabled(queryable),
     do: where(queryable, [providers: p], p.enabled)
 
-  def by_email_domain(queryable, domain),
-    do: where(queryable, [providers: p], p.allowed_email_domain == ^domain)
-
   # The SCIM bearer lookup — resolves the live provider by its token prefix.
   def by_scim_token_prefix(queryable, prefix),
     do: where(queryable, [providers: p], p.scim_token_prefix == ^prefix)
