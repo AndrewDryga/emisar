@@ -591,7 +591,9 @@ defmodule EmisarWeb.SSOSettingsLive do
     do:
       "A user with that email already exists. Approving would create a duplicate, so this request can't be auto-approved."
 
-  defp error_message(_), do: "Could not complete that action."
+  defp error_message(_),
+    do:
+      "That action didn't complete. Refresh to see the connection's current state, then try again."
 
   # The create form and any open inline edit form coexist in the DOM, so each
   # gets its own `id` — otherwise their inputs collide on `provider_<field>`.

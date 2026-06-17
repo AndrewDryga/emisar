@@ -338,8 +338,12 @@ defmodule EmisarWeb.TeamLive do
     do: "You can't change your own membership from here. Use Profile."
 
   defp error_message(:not_found), do: "User no longer exists."
-  defp error_message(%Ecto.Changeset{}), do: "Could not apply change."
-  defp error_message(_), do: "Could not apply change."
+
+  defp error_message(%Ecto.Changeset{}),
+    do: "That change wasn't valid. Refresh to see the member's current state, then try again."
+
+  defp error_message(_),
+    do: "That change didn't apply. Refresh to see the member's current state, then try again."
 
   # One-line capability summary per role for the invite form. Kept in sync with
   # the authorizers: owner manages billing + adds owners; admin manages members/

@@ -254,7 +254,9 @@ defmodule EmisarWeb.ApprovalDetailLive do
 
   defp decision_error_message(:expired), do: "This request expired before your decision landed."
   defp decision_error_message(:already_decided), do: "Someone else already decided this request."
-  defp decision_error_message(_), do: "Could not record your decision."
+
+  defp decision_error_message(_),
+    do: "Your decision didn't record. Refresh to see the request's current state, then try again."
 
   defp parse_max_uses(v) when is_binary(v) do
     case Integer.parse(String.trim(v)) do
