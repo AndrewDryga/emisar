@@ -558,6 +558,20 @@ defmodule Emisar.RunsTest do
 
       assert_receive {:run_event, %RunEvent{seq: 1}}, 500
     end
+
+    test "a re-sent (run_id, seq) is classified :duplicate_event, not a changeset" do
+      account = account_fixture()
+      runner = runner_fixture(account_id: account.id)
+      {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
+
+      assert {:ok, %RunEvent{seq: 1}} =
+               Runs.append_event(run, %{seq: 1, kind: "progress", payload: %{"line" => "a"}})
+
+      # The runner re-sends the same chunk (its retry) — a benign duplicate the
+      # socket drops quietly, distinct from a malformed event it must log.
+      assert {:error, :duplicate_event} =
+               Runs.append_event(run, %{seq: 1, kind: "progress", payload: %{"line" => "a"}})
+    end
   end
 
   describe "finalize_from_result/2" do

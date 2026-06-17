@@ -1049,8 +1049,13 @@ defmodule Emisar.Runs do
         if run.status == :sent, do: mark_running(run)
         {:ok, event}
 
-      err ->
-        err
+      {:error, %Ecto.Changeset{} = changeset} ->
+        # A re-sent chunk (same run_id + seq) hits the unique index — a benign
+        # idempotent duplicate. Classify it as an atom so the caller drops it
+        # quietly, while a genuinely malformed event still surfaces as a changeset.
+        if Repo.Changeset.unique_constraint_error?(changeset),
+          do: {:error, :duplicate_event},
+          else: {:error, changeset}
     end
   end
 

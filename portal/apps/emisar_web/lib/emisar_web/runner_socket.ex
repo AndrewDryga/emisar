@@ -227,7 +227,20 @@ defmodule EmisarWeb.RunnerSocket do
            }) do
       {:ok, state}
     else
-      _ -> {:ok, state}
+      {:error, %Ecto.Changeset{} = changeset} ->
+        # A malformed/unpersistable progress chunk — log it so genuine schema
+        # drift surfaces instead of vanishing. (A re-sent duplicate seq is
+        # classified :duplicate_event by Runs.append_event and drops quietly below.)
+        Logger.warning(
+          "runner #{state.runner_id} dropped an invalid action_progress chunk: #{inspect(changeset.errors)}"
+        )
+
+        {:ok, state}
+
+      _ ->
+        # Foreign/unknown request_id, an already-finalized run, or a duplicate
+        # re-sent chunk — all benign; drop quietly.
+        {:ok, state}
     end
   end
 
