@@ -1,7 +1,7 @@
-defmodule EmisarWeb.Mcp.ToolSchemaTest do
+defmodule EmisarWeb.MCP.ToolSchemaTest do
   use ExUnit.Case, async: true
 
-  alias EmisarWeb.Mcp.ToolSchema
+  alias EmisarWeb.MCP.ToolSchema
 
   defp action(opts \\ []) do
     %{args_schema: %{"args" => Keyword.get(opts, :args, [])}}

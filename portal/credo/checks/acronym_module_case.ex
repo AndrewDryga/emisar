@@ -14,10 +14,7 @@ defmodule Emisar.Checks.AcronymModuleCase do
       """
     ]
 
-  # `Mcp` is intentionally omitted: the existing `EmisarWeb.Mcp.*` namespace (27 sites,
-  # predating this rule) would all fire. Add `Mcp: "MCP"` here once that namespace is
-  # renamed Mcp -> MCP — the dir stays `mcp/` (snake_case paths are fine).
-  @miscased %{Scim: "SCIM", Sso: "SSO", Oidc: "OIDC"}
+  @miscased %{Scim: "SCIM", Sso: "SSO", Oidc: "OIDC", Mcp: "MCP"}
 
   @doc false
   @impl true

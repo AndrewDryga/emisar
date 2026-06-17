@@ -102,7 +102,7 @@ defmodule EmisarWeb.Router do
     get "/docs/audit-and-siem", MarketingController, :docs_audit
     get "/sitemap.xml", SitemapController, :show
     get "/install.sh", InstallController, :show
-    get "/install-mcp.sh", InstallMcpController, :show
+    get "/install-mcp.sh", InstallMCPController, :show
   end
 
   # -- Auth surface (only when signed-out) ----------------------------
@@ -252,15 +252,15 @@ defmodule EmisarWeb.Router do
     scope "/mcp" do
       # JSON-RPC 2.0 / MCP-over-HTTP. Single endpoint the stdio bridge
       # and remote-MCP clients (Claude / ChatGPT cloud connectors) use.
-      post "/rpc", McpRpcController, :handle
+      post "/rpc", MCPRpcController, :handle
 
       # REST routes — still in use by HTTP-only integrations (OpenAI
       # function-calling shim, generic curl examples, etc.). The
       # JSON-RPC endpoint above is the canonical MCP surface.
-      get "/runners", McpController, :list_runners
-      get "/tools", McpController, :list_tools
-      post "/tools/:action_id", McpController, :run_tool
-      get "/runs/:id", McpController, :get_run
+      get "/runners", MCPController, :list_runners
+      get "/tools", MCPController, :list_tools
+      post "/tools/:action_id", MCPController, :run_tool
+      get "/runs/:id", MCPController, :get_run
     end
 
     # SIEM-shaped audit export — cursor-paginated NDJSON over the same

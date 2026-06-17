@@ -1,4 +1,4 @@
-defmodule EmisarWeb.InstallMcpController do
+defmodule EmisarWeb.InstallMCPController do
   @moduledoc """
   Serves the canonical `install-mcp.sh` from the repo root.
 

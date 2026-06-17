@@ -1,4 +1,4 @@
-defmodule EmisarWeb.Mcp.Auth do
+defmodule EmisarWeb.MCP.Auth do
   @moduledoc """
   Shared bearer authentication for the MCP HTTP surfaces — the JSON-RPC
   `/api/mcp/rpc` endpoint and the REST `/api/mcp/*` routes. Resolves a

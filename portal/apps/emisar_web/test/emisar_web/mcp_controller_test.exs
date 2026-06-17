@@ -1,4 +1,4 @@
-defmodule EmisarWeb.McpControllerTest do
+defmodule EmisarWeb.MCPControllerTest do
   @moduledoc """
   Covers the MCP HTTP surface end-to-end. Focuses on the runner-aware
   redesign: discovery via /runners, runner-enum in /tools' inputSchema,

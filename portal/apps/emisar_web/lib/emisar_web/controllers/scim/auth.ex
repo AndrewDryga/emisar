@@ -9,7 +9,7 @@ defmodule EmisarWeb.SCIM.Auth do
 
   On any failure (missing, malformed, or unknown/disabled bearer) it halts
   with HTTP 401, the SCIM error body, and a `WWW-Authenticate: Bearer`
-  challenge. Mirrors `EmisarWeb.Mcp.Auth`, but the SCIM surface shapes its
+  challenge. Mirrors `EmisarWeb.MCP.Auth`, but the SCIM surface shapes its
   own 401 (a SCIM Error resource), so this plug renders it directly.
   """
   import Plug.Conn

@@ -1,4 +1,4 @@
-defmodule EmisarWeb.Mcp.ContentBlocks do
+defmodule EmisarWeb.MCP.ContentBlocks do
   @moduledoc """
   Render a Service.dispatch_tool result (or a Service.fetch_run payload)
   as MCP "content blocks" — the shape MCP clients render to the user.

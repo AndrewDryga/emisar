@@ -1,4 +1,4 @@
-defmodule EmisarWeb.Mcp.Idempotency do
+defmodule EmisarWeb.MCP.Idempotency do
   @moduledoc """
   MCP idempotency-key handling. Two layers:
 

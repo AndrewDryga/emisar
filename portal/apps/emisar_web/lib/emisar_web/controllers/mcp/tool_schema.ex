@@ -1,4 +1,4 @@
-defmodule EmisarWeb.Mcp.ToolSchema do
+defmodule EmisarWeb.MCP.ToolSchema do
   @moduledoc """
   Builds JSON Schema 2020-12 input descriptors for the MCP `/tools`
   endpoint. One descriptor per distinct `action_id`, listing every
@@ -8,7 +8,7 @@ defmodule EmisarWeb.Mcp.ToolSchema do
     * `runners` (conditional) — fan-out target list; required unless
       exactly one runner advertises the action.
     * `idempotency_key` (optional) — LLM-controlled at-most-once retry
-      (Layer 2). See `EmisarWeb.Mcp.Idempotency` for the contract.
+      (Layer 2). See `EmisarWeb.MCP.Idempotency` for the contract.
 
   Emisar's own arg types (`duration`, `string_array`, `integer_array`)
   don't exist in JSON Schema, so we widen to the underlying primitive

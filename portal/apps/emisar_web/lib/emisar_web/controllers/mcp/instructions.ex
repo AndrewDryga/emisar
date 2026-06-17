@@ -1,4 +1,4 @@
-defmodule EmisarWeb.Mcp.Instructions do
+defmodule EmisarWeb.MCP.Instructions do
   @moduledoc """
   Server usage guide returned in the MCP `initialize` response's
   `instructions` field. MCP clients feed this to the LLM as context, so

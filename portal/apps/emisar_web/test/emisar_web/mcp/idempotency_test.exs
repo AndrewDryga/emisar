@@ -1,7 +1,7 @@
-defmodule EmisarWeb.Mcp.IdempotencyTest do
+defmodule EmisarWeb.MCP.IdempotencyTest do
   use ExUnit.Case, async: true
 
-  alias EmisarWeb.Mcp.Idempotency
+  alias EmisarWeb.MCP.Idempotency
 
   defp conn_with_header(value) do
     %Plug.Conn{req_headers: [{"idempotency-key", value}]}

@@ -1,20 +1,20 @@
-defmodule EmisarWeb.Mcp.Service do
+defmodule EmisarWeb.MCP.Service do
   @moduledoc """
   Shared business layer behind every MCP surface — the REST controller
-  (`EmisarWeb.McpController`) and the JSON-RPC controller
-  (`EmisarWeb.Mcp.RpcController`).
+  (`EmisarWeb.MCPController`) and the JSON-RPC controller
+  (`EmisarWeb.MCPRpcController`).
 
   Returns plain data structures (lists, maps). Wrapping into HTTP /
   JSON-RPC envelopes is the caller's job.
 
   Every function takes a `conn` and reads `conn.assigns.api_key`
   + `conn.assigns.current_subject` (both set by the auth plug shared
-  with McpController). No DB access bypasses the existing context
+  with MCPController). No DB access bypasses the existing context
   modules — `Catalog`, `Runners`, `Runs`.
   """
 
   alias Emisar.{Catalog, Runbooks, Runners, Runs}
-  alias EmisarWeb.Mcp.{Idempotency, ToolSchema}
+  alias EmisarWeb.MCP.{Idempotency, ToolSchema}
   require Logger
 
   # Same caps the REST handlers use; keep them in lockstep so

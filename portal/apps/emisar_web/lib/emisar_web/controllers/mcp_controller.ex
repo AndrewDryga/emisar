@@ -1,4 +1,4 @@
-defmodule EmisarWeb.McpController do
+defmodule EmisarWeb.MCPController do
   @moduledoc """
   MCP / LLM tool surface. Authenticates via API key in the
   `Authorization: Bearer <key>` header.
@@ -31,7 +31,7 @@ defmodule EmisarWeb.McpController do
   dispatch.
 
   All business logic — runner resolution, dispatch, long-poll, payload
-  building — lives in `EmisarWeb.Mcp.Service`, shared with the JSON-RPC
+  building — lives in `EmisarWeb.MCP.Service`, shared with the JSON-RPC
   controller. This controller only authenticates, shapes HTTP params into
   the args Service expects, and renders the REST HTTP envelope (status
   codes + JSON shape).
@@ -39,7 +39,7 @@ defmodule EmisarWeb.McpController do
 
   use EmisarWeb, :controller
 
-  alias EmisarWeb.Mcp.{Auth, Idempotency, Service}
+  alias EmisarWeb.MCP.{Auth, Idempotency, Service}
 
   # A leaked key is the abuse vector — cap per key (falls back to IP for
   # unauthenticated hammering). 300/min is generous for a real LLM agent.
@@ -232,7 +232,7 @@ defmodule EmisarWeb.McpController do
   # -- Plugs ----------------------------------------------------------
 
   # Bearer resolution (emk- + emo-) and the RFC 9728 challenge live in the
-  # shared `Mcp.Auth`; here we only shape the REST 401 body.
+  # shared `MCP.Auth`; here we only shape the REST 401 body.
   defp authenticate(conn, _opts) do
     case Auth.authenticate(conn) do
       {:ok, conn} ->

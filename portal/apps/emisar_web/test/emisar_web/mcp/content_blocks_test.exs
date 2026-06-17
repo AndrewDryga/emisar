@@ -1,4 +1,4 @@
-defmodule EmisarWeb.Mcp.ContentBlocksTest do
+defmodule EmisarWeb.MCP.ContentBlocksTest do
   @moduledoc """
   Rendering of dispatch results into MCP content blocks. Guards the two
   bugs surfaced when testing the live server from Claude Code:
@@ -9,7 +9,7 @@ defmodule EmisarWeb.Mcp.ContentBlocksTest do
   """
   use ExUnit.Case, async: true
 
-  alias EmisarWeb.Mcp.ContentBlocks
+  alias EmisarWeb.MCP.ContentBlocks
 
   defp text(blocks), do: Enum.map_join(blocks, "\n", & &1.text)
 

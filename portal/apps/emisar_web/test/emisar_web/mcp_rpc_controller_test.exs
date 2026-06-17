@@ -1,4 +1,4 @@
-defmodule EmisarWeb.McpRpcControllerTest do
+defmodule EmisarWeb.MCPRpcControllerTest do
   @moduledoc """
   Covers POST /api/mcp/rpc — the MCP-over-HTTP / JSON-RPC endpoint.
   Same Bearer-token auth as the REST surface; same Service module

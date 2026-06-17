@@ -1,4 +1,4 @@
-defmodule EmisarWeb.McpRpcController do
+defmodule EmisarWeb.MCPRpcController do
   @moduledoc """
   MCP-over-HTTP — JSON-RPC 2.0 on a single POST endpoint at
   `/api/mcp/rpc`. The canonical MCP server implementation. Same
@@ -23,14 +23,14 @@ defmodule EmisarWeb.McpRpcController do
   `mcp/main.go` is a thin transport shim that reads stdio JSON-RPC,
   forwards the same JSON body to this endpoint, and writes the JSON-RPC
   response back to stdout. All MCP shaping (tool descriptors, content
-  blocks, synthetic tools) lives in this controller + `Mcp.Service` +
-  `Mcp.ContentBlocks`.
+  blocks, synthetic tools) lives in this controller + `MCP.Service` +
+  `MCP.ContentBlocks`.
   """
 
   use EmisarWeb, :controller
 
   alias Emisar.ApiKeys
-  alias EmisarWeb.Mcp.{Auth, ContentBlocks, Idempotency, Instructions, Service}
+  alias EmisarWeb.MCP.{Auth, ContentBlocks, Idempotency, Instructions, Service}
 
   @protocol_version "2024-11-05"
   @server_name "emisar"
@@ -376,7 +376,7 @@ defmodule EmisarWeb.McpRpcController do
   # -- Auth -----------------------------------------------------------
   #
   # Bearer resolution (emk- static keys + emo- OAuth tokens) and the
-  # RFC 9728 WWW-Authenticate challenge live in the shared `Mcp.Auth`;
+  # RFC 9728 WWW-Authenticate challenge live in the shared `MCP.Auth`;
   # here we only shape the JSON-RPC 401 envelope.
 
   defp authenticate(conn, _opts) do
