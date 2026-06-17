@@ -299,7 +299,9 @@ const streamReaderBuf = 64 * 1024
 // but counted (and truncated=true). When onChunk is non-nil, completed
 // lines are pushed to it instead of being captured.
 //
-// A final partial line (no trailing newline at EOF) is still shipped.
+// A final partial line (no trailing newline at EOF) is still shipped. A line
+// longer than the read buffer is processed in buffer-sized pieces, so a child
+// emitting a huge newline-free blob can't force one unbounded allocation.
 func streamPipe(r io.Reader, limit int, stream Stream, onChunk func(Stream, []byte)) (streamResult, error) {
 	br := bufio.NewReaderSize(r, streamReaderBuf)
 	h := sha256.New()
@@ -311,7 +313,14 @@ func streamPipe(r io.Reader, limit int, stream Stream, onChunk func(Stream, []by
 	total := 0
 	truncated := false
 	for {
-		line, err := br.ReadBytes('\n')
+		line, err := br.ReadSlice('\n')
+		if err == bufio.ErrBufferFull {
+			// A line longer than the read buffer: ship/hash THIS bounded piece and
+			// keep reading — never accumulate a whole (possibly unbounded, attacker-
+			// influenced) line in RAM. ReadSlice's slice is transient, but `ship` and
+			// the hash both copy, so processing it here is safe.
+			err = nil
+		}
 		if len(line) > 0 {
 			h.Write(line)
 			total += len(line)
