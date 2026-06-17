@@ -103,6 +103,7 @@
           {Emisar.Checks.SubscribeNeedsConnected, []},
           {Emisar.Checks.TestContextPattern, []},
           {Emisar.Checks.TestNoProcessSleep, []},
+          {Emisar.Checks.VendorViaWrapper, []},
           {Emisar.Checks.WebNoAuditLog, []},
           {Emisar.Checks.WebNoContextChangeset, []},
           {Emisar.Checks.WebNoRepoCalls, []},
