@@ -12,7 +12,7 @@ defmodule Emisar.Checks.WebNoAuditLog do
       owns the `user.signed_in` audit row.)
 
       Reads through the `Audit` context (`Audit.list_events/2`, …) are fine —
-      only the write helpers (`Audit.log*`, `Audit.Events.*`) are matched.
+      only the write helpers (`Audit.log*`, `Audit.record`, `Audit.Events.*`) are matched.
       """
     ]
 
@@ -44,7 +44,11 @@ defmodule Emisar.Checks.WebNoAuditLog do
 
   defp walk(ast, ctx), do: {ast, ctx}
 
-  defp audit_write?(fun), do: String.starts_with?(Atom.to_string(fun), "log")
+  # The Audit context's write API — `log`, `log_for_user`, `record` — never from the web.
+  defp audit_write?(fun) do
+    name = Atom.to_string(fun)
+    String.starts_with?(name, "log") or name == "record"
+  end
 
   defp issue_for(ctx, meta, trigger) do
     format_issue(
