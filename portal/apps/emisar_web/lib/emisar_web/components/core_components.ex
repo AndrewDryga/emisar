@@ -2042,24 +2042,35 @@ defmodule EmisarWeb.CoreComponents do
   @doc """
   Small inline chip — the rounded label that sits next to a row title
   or inside a chips slot. Variants: `:default` (zinc), `:indigo`,
-  `:amber`, `:rose`, `:emerald`. With `mono`, renders monospace text.
+  `:amber`, `:rose`, `:emerald`. With `mono`, renders monospace text;
+  with `upcase`, the uppercase-semibold status-tag look (a pack's trust
+  state, a plan's "Current"/"Most popular").
 
       <.chip>group: default</.chip>
       <.chip tone={:rose}>Suspended</.chip>
+      <.chip upcase tone={:emerald}>Trusted</.chip>
   """
   attr :tone, :atom,
     default: :default,
     values: [:default, :indigo, :amber, :rose, :emerald]
 
   attr :mono, :boolean, default: false
+
+  attr :upcase, :boolean,
+    default: false,
+    doc: "uppercase + semibold weight, for status/label tags"
+
+  attr :class, :string, default: nil
   slot :inner_block, required: true
 
   def chip(assigns) do
     ~H"""
     <span class={[
-      "rounded px-1.5 py-0.5 text-[10px] font-medium",
+      "rounded px-1.5 py-0.5 text-[10px]",
+      if(@upcase, do: "font-semibold uppercase tracking-wider", else: "font-medium"),
       chip_class(@tone),
-      @mono && "font-mono"
+      @mono && "font-mono",
+      @class
     ]}>
       {render_slot(@inner_block)}
     </span>
@@ -2721,37 +2732,6 @@ defmodule EmisarWeb.CoreComponents do
   defp risk_classes("high"), do: "bg-rose-500/10 text-rose-300 ring-rose-500/30"
   defp risk_classes("critical"), do: "bg-rose-600/15 text-rose-200 ring-rose-500/40"
   defp risk_classes(_), do: "bg-zinc-500/10 text-zinc-300 ring-zinc-500/30"
-
-  @doc """
-  Square uppercase status/label tag — `<.chip>`'s ringed sibling, for short
-  labels like a pack's trust state or a plan's "Current"/"Most popular". One
-  padding + one tone-opacity per color. (`<.risk_pill>` is the larger text-xs
-  variant reserved for the risk tier.)
-
-      <.tag tone={:emerald}>Trusted</.tag>
-      <.tag tone={:amber} class="ml-2">Pending</.tag>
-  """
-  attr :tone, :atom, default: :zinc, values: [:zinc, :emerald, :amber, :rose, :indigo]
-  attr :class, :string, default: nil
-  slot :inner_block, required: true
-
-  def tag(assigns) do
-    ~H"""
-    <span class={[
-      "rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider ring-1 ring-inset",
-      tag_tone(@tone),
-      @class
-    ]}>
-      {render_slot(@inner_block)}
-    </span>
-    """
-  end
-
-  defp tag_tone(:emerald), do: "bg-emerald-500/15 text-emerald-200 ring-emerald-500/30"
-  defp tag_tone(:amber), do: "bg-amber-500/15 text-amber-200 ring-amber-500/30"
-  defp tag_tone(:rose), do: "bg-rose-500/15 text-rose-200 ring-rose-500/30"
-  defp tag_tone(:indigo), do: "bg-indigo-500/15 text-indigo-200 ring-indigo-500/30"
-  defp tag_tone(_), do: "bg-zinc-500/15 text-zinc-300 ring-zinc-500/30"
 
   @doc """
   "expires in 3h" badge for a held approval request — amber when under two

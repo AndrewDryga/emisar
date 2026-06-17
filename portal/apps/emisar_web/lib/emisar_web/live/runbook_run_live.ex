@@ -750,14 +750,14 @@ defmodule EmisarWeb.RunbookRunLive do
                     class="flex-none"
                     title="Per policy, this step queues for human approval before it runs. A standing grant may let it run without pausing."
                   >
-                    <.tag tone={:amber}>Pauses for approval</.tag>
+                    <.chip upcase tone={:amber}>Pauses for approval</.chip>
                   </span>
                   <span
                     :if={step_decision(@step_decisions, idx) == :deny}
                     class="flex-none"
                     title="Policy denies this step — dispatch will refuse it. Edit the policy or the runbook's targets."
                   >
-                    <.tag tone={:rose}>Blocked by policy</.tag>
+                    <.chip upcase tone={:rose}>Blocked by policy</.chip>
                   </span>
                 </div>
                 <p :if={step["description"]} class="mt-0.5 truncate text-xs text-zinc-500">

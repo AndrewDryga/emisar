@@ -362,7 +362,9 @@ defmodule EmisarWeb.PacksLive do
               <h2 class="font-mono text-sm text-zinc-100">{pack.id}</h2>
               <span class="text-xs text-zinc-500">·</span>
               <span class="text-xs text-zinc-500">{version_count_label(pack.versions)}</span>
-              <.tag :if={any_pending?(pack.versions)} tone={:amber} class="ml-2">Pending</.tag>
+              <.chip :if={any_pending?(pack.versions)} upcase tone={:amber} class="ml-2">
+                Pending
+              </.chip>
             </div>
           </header>
 
@@ -376,8 +378,8 @@ defmodule EmisarWeb.PacksLive do
                   <span class="truncate font-mono text-[11px] text-zinc-500" title={v.hash}>
                     sha256:{short_hash(v.hash)}
                   </span>
-                  <.tag :if={v.trust_state == :trusted} tone={:emerald}>Trusted</.tag>
-                  <.tag :if={v.trust_state == :pending} tone={:amber}>Pending</.tag>
+                  <.chip :if={v.trust_state == :trusted} upcase tone={:emerald}>Trusted</.chip>
+                  <.chip :if={v.trust_state == :pending} upcase tone={:amber}>Pending</.chip>
                 </div>
                 <div class="shrink-0 text-right text-xs text-zinc-500">
                   <div>last seen <.local_time value={v.last_seen_at} class="text-zinc-300" /></div>
