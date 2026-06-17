@@ -55,6 +55,26 @@ const bridgeName = "emisar-mcp"
 // this shouldn't happen; if they do, fail visibly.
 const httpTimeout = 120 * time.Second
 
+// maxResponseBytes caps the portal response we'll buffer. The network is
+// untrusted and http.Client.Timeout bounds time, not bytes — without a cap a
+// hostile/MITM'd endpoint could stream gigabytes and OOM the bridge. Generous
+// vs the largest legit MCP frame (a full tools/list catalog).
+const maxResponseBytes = 32 * 1024 * 1024
+
+// maxFrameBytes caps a single inbound JSON-RPC line. An over-long frame is
+// rejected (the session kept alive), never allowed to kill the bridge.
+const maxFrameBytes = 16 * 1024 * 1024
+
+// newHTTPClient builds the bridge's HTTP client: a hard request timeout plus a
+// redirect refusal — the RPC endpoint never legitimately redirects, and
+// following a 3xx would chase the Bearer API key to an attacker-chosen host.
+func newHTTPClient() *http.Client {
+	return &http.Client{
+		Timeout:       httpTimeout,
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}
+}
+
 // Version is the build version, stamped by `-ldflags "-X main.Version=..."`
 // from the release pipeline; "dev" when built locally.
 var Version = "dev"
@@ -117,7 +137,7 @@ func main() {
 		endpoint:  base + "/api/mcp/rpc",
 		apiKey:    apiKey,
 		userAgent: buildUserAgent(),
-		client:    &http.Client{Timeout: httpTimeout},
+		client:    newHTTPClient(),
 		sessionID: newSessionID(),
 	}
 
@@ -142,38 +162,54 @@ type bridge struct {
 // verbatim to the portal, and writes the response to w. Notifications
 // (POST returns 202 with empty body) are silently dropped, per spec.
 func (b *bridge) serve(r io.Reader, w io.Writer) error {
-	scanner := bufio.NewScanner(r)
-	scanner.Buffer(make([]byte, 64*1024), 8*1024*1024)
+	br := bufio.NewReaderSize(r, 64*1024)
 
-	for scanner.Scan() {
-		line := bytes.TrimSpace(scanner.Bytes())
-		if len(line) == 0 {
-			continue
+	for {
+		raw, readErr := br.ReadString('\n')
+		line := bytes.TrimSpace([]byte(raw))
+
+		switch {
+		case len(line) == 0:
+			// blank line (or a bare EOF) — nothing to forward
+
+		case len(line) > maxFrameBytes:
+			// An over-long frame rejects THIS line but keeps the session alive —
+			// the bridge is the LLM's only path to the cloud; one bad frame must
+			// not tear it down (the old Scanner ErrTooLong → os.Exit did exactly that).
+			fmt.Fprintf(os.Stderr, "emisar-mcp: dropping a request frame over %d bytes\n", maxFrameBytes)
+			_, _ = fmt.Fprint(w, `{"jsonrpc":"2.0","id":null,"error":{"code":-32600,"message":"request frame too large"}}`+"\n")
+
+		default:
+			resp, err := b.forward(line)
+			switch {
+			case err != nil:
+				// Network-level error: a synthetic JSON-RPC error so the client
+				// sees something actionable. Keep the detail on stderr — don't
+				// leak the resolved host/IP into the LLM transcript.
+				fmt.Fprintf(os.Stderr, "emisar-mcp: forward error: %v\n", err)
+				_, _ = fmt.Fprint(w, `{"jsonrpc":"2.0","id":null,"error":{"code":-32603,"message":"upstream transport error"}}`+"\n")
+
+			case len(resp) == 0:
+				// 202-no-body — notification; nothing to write.
+
+			default:
+				// Ensure newline-delimited so the client's line reader frames.
+				if _, werr := w.Write(resp); werr != nil {
+					return werr
+				}
+				if !bytes.HasSuffix(resp, []byte("\n")) {
+					_, _ = w.Write([]byte("\n"))
+				}
+			}
 		}
 
-		resp, err := b.forward(line)
-		if err != nil {
-			// Network-level error: emit a synthetic JSON-RPC error so the
-			// client sees something actionable instead of a closed pipe.
-			_, _ = fmt.Fprintf(w, `{"jsonrpc":"2.0","id":null,"error":{"code":-32603,"message":%q}}`+"\n", err.Error())
-			continue
-		}
-
-		if len(resp) == 0 {
-			// 202-no-body — notification; nothing to write.
-			continue
-		}
-
-		// Ensure newline-delimited so the client's line reader frames.
-		if _, err := w.Write(resp); err != nil {
-			return err
-		}
-		if !bytes.HasSuffix(resp, []byte("\n")) {
-			_, _ = w.Write([]byte("\n"))
+		if readErr != nil {
+			if readErr == io.EOF {
+				return nil
+			}
+			return readErr
 		}
 	}
-
-	return scanner.Err()
 }
 
 // forward POSTs the JSON-RPC frame to the portal and returns the
@@ -209,7 +245,7 @@ func (b *bridge) forward(frame []byte) ([]byte, error) {
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := readCappedBody(resp.Body, maxResponseBytes)
 	if err != nil {
 		return nil, err
 	}
@@ -225,6 +261,21 @@ func (b *bridge) forward(frame []byte) ([]byte, error) {
 
 	// 200 (normal result) or 4xx (auth / shape errors are already
 	// shaped as JSON-RPC error frames by the portal) — forward as-is.
+	return body, nil
+}
+
+// readCappedBody reads at most limit bytes from r, returning an error if the
+// source has more — the portal response is untrusted (a hostile or MITM'd
+// endpoint could stream unbounded bytes), and http.Client.Timeout bounds time,
+// not size. Reading limit+1 lets a body of exactly limit through.
+func readCappedBody(r io.Reader, limit int) ([]byte, error) {
+	body, err := io.ReadAll(io.LimitReader(r, int64(limit)+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(body) > limit {
+		return nil, fmt.Errorf("portal response exceeds %d bytes", limit)
+	}
 	return body, nil
 }
 

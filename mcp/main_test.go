@@ -9,7 +9,6 @@ import (
 	"runtime"
 	"strings"
 	"testing"
-	"time"
 )
 
 // The bridge is a thin stdio↔HTTP shim. Its only jobs are:
@@ -247,6 +246,66 @@ func TestForward_4xxIsReturnedVerbatim(t *testing.T) {
 	}
 }
 
+// -- readCappedBody: bound the untrusted portal response ------------
+
+func TestReadCappedBody(t *testing.T) {
+	const limit = 8
+	for _, tc := range []struct {
+		name    string
+		body    string
+		wantErr bool
+	}{
+		{"under the limit", "1234567", false},
+		{"exactly the limit", "12345678", false},
+		{"over the limit", "123456789", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := readCappedBody(strings.NewReader(tc.body), limit)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("%d bytes over limit %d: want an error", len(tc.body), limit)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if string(got) != tc.body {
+				t.Errorf("got %q, want the full body %q", got, tc.body)
+			}
+		})
+	}
+}
+
+func TestForward_RefusesRedirect(t *testing.T) {
+	// A redirect must NOT be followed — doing so replays the Authorization
+	// Bearer to the 3xx target. The RPC endpoint never legitimately redirects.
+	var targetHit bool
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		targetHit = true
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":"leaked"}`))
+	}))
+	defer target.Close()
+
+	redirector := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Location", target.URL)
+		w.WriteHeader(http.StatusFound)
+	}))
+	defer redirector.Close()
+
+	b := newTestBridge(redirector)
+	got, err := b.forward([]byte(`{"jsonrpc":"2.0","id":1}`))
+	if err != nil {
+		t.Fatalf("forward: %v", err)
+	}
+	if targetHit {
+		t.Fatal("redirect was followed — the Bearer API key would leak to the redirect target")
+	}
+	if strings.Contains(string(got), "leaked") {
+		t.Errorf("got the redirect target's body, want the 3xx response: %q", got)
+	}
+}
+
 // -- serve: stdin/stdout framing -----------------------------------
 
 func TestServe_NewlineDelimitsResponses(t *testing.T) {
@@ -315,6 +374,35 @@ func TestServe_NetworkErrorEmitsJSONRPCError(t *testing.T) {
 	}
 }
 
+func TestServe_OversizedFrameKeepsServing(t *testing.T) {
+	// An over-long frame must be rejected for that line ALONE — the session
+	// (the LLM's only path to the cloud) keeps serving the next frame. The old
+	// bufio.Scanner returned ErrTooLong → serve error → os.Exit(1), killing it.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":2,"result":"ok"}`))
+	}))
+	defer srv.Close()
+
+	b := newTestBridge(srv)
+
+	oversized := strings.Repeat("x", maxFrameBytes+1)
+	normal := `{"jsonrpc":"2.0","id":2,"method":"ping"}`
+	in := strings.NewReader(oversized + "\n" + normal + "\n")
+	var out bytes.Buffer
+
+	if err := b.serve(in, &out); err != nil && !errors.Is(err, io.EOF) {
+		t.Fatalf("serve: %v", err)
+	}
+
+	body := out.String()
+	if !strings.Contains(body, "-32600") {
+		t.Errorf("oversized frame should yield a -32600 error frame, got %q", body)
+	}
+	if !strings.Contains(body, `"result":"ok"`) {
+		t.Error("the frame after an oversized one was not served — the session died")
+	}
+}
+
 // -- buildUserAgent: stamps client + host ---------------------------
 
 func TestBuildUserAgent_ContainsBridgeAndClient(t *testing.T) {
@@ -349,7 +437,7 @@ func newTestBridge(srv *httptest.Server) *bridge {
 		endpoint:  srv.URL,
 		apiKey:    "k",
 		userAgent: "ua",
-		client:    &http.Client{Timeout: 5 * time.Second},
+		client:    newHTTPClient(),
 		sessionID: "sess",
 	}
 }
