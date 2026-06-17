@@ -1114,6 +1114,31 @@ defmodule EmisarWeb.CoreComponents do
   end
 
   @doc """
+  A horizontal rule with a centered label ("or") — separates the primary
+  sign-in method from the alternatives so the auth pages read as one path with
+  fallbacks, not a wall of equal options. The label background matches the
+  auth-page surface (zinc-950) so the rule appears to pass behind it.
+
+      <.or_separator />
+      <.or_separator label="or with email" />
+  """
+  attr :label, :string, default: "or"
+  attr :class, :string, default: nil
+
+  def or_separator(assigns) do
+    ~H"""
+    <div class={["relative my-6", @class]}>
+      <div class="absolute inset-0 flex items-center" aria-hidden="true">
+        <div class="w-full border-t border-zinc-800"></div>
+      </div>
+      <div class="relative flex justify-center">
+        <span class="bg-zinc-950 px-3 text-xs uppercase tracking-wider text-zinc-500">{@label}</span>
+      </div>
+    </div>
+    """
+  end
+
+  @doc """
   Shell for authenticated product pages: sidebar + topbar + main.
   Expects @current_user, @current_account in assigns.
   `:pending_approvals_count` is set by the `:track_pending_approvals`

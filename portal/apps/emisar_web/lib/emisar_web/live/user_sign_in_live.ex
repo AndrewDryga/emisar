@@ -41,26 +41,25 @@ defmodule EmisarWeb.UserSignInLive do
         </:actions>
       </.simple_form>
 
-      <div class="mt-8 flex flex-col gap-3 text-sm">
-        <.link
-          href={~p"/sign_in/magic"}
-          class="text-center font-medium text-indigo-400 hover:text-indigo-300"
-        >
-          Email me a magic link instead
-        </.link>
-        <.link
-          href={~p"/sign_in/sso"}
-          class="text-center font-medium text-indigo-400 hover:text-indigo-300"
-        >
-          Sign in with your team's SSO
-        </.link>
-        <p class="text-center text-zinc-400">
-          New here?
-          <.link href={~p"/sign_up"} class="font-medium text-indigo-400 hover:text-indigo-300">
-            Create an account
-          </.link>
-        </p>
+      <.or_separator />
+
+      <%!-- Alternatives as distinct secondary buttons, not a stack of identical
+           text links — password is the primary path, these are the fallbacks. --%>
+      <div class="space-y-3">
+        <.button variant="secondary" href={~p"/sign_in/magic"} class="w-full">
+          Email me a sign-in link
+        </.button>
+        <.button variant="secondary" href={~p"/sign_in/sso"} class="w-full">
+          Sign in with SSO
+        </.button>
       </div>
+
+      <p class="mt-8 text-center text-sm text-zinc-400">
+        New to emisar?
+        <.link href={~p"/sign_up"} class="font-medium text-indigo-400 hover:text-indigo-300">
+          Create an account
+        </.link>
+      </p>
     </.auth_layout>
     """
   end

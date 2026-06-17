@@ -31,8 +31,8 @@ defmodule EmisarWeb.SSOSignInTest do
     test "renders the team-address form, not the old email-domain field", %{conn: conn} do
       html = conn |> get(~p"/sign_in/sso") |> html_response(200)
 
-      assert html =~ "Single sign-on"
-      assert html =~ "Team address"
+      assert html =~ "Sign in with SSO"
+      assert html =~ "Which team are you signing in to"
       refute html =~ "Work email"
     end
   end

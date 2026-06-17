@@ -37,10 +37,8 @@ defmodule EmisarWeb.AccountSignInLive do
         <.button :for={provider <- @providers} href={~p"/sign_in/sso/#{provider.id}"} class="w-full">
           Continue with {provider.name} <span aria-hidden="true">→</span>
         </.button>
-        <p class="py-2 text-center text-xs uppercase tracking-wider text-zinc-600">
-          or sign in with your email
-        </p>
       </div>
+      <.or_separator :if={@providers != []} label="or with email" />
 
       <.simple_form for={@form} id="login_form" action={~p"/sign_in"} phx-update="ignore">
         <%!-- Land back on THIS team after sign-in (server validates it's a local /app/<slug>). --%>
@@ -71,20 +69,19 @@ defmodule EmisarWeb.AccountSignInLive do
         </:actions>
       </.simple_form>
 
-      <div class="mt-8 flex flex-col gap-3 text-sm">
-        <.link
-          href={~p"/sign_in/magic"}
-          class="text-center font-medium text-indigo-400 hover:text-indigo-300"
-        >
-          Email me a magic link instead
-        </.link>
+      <.or_separator />
+      <.button variant="secondary" href={~p"/sign_in/magic"} class="w-full">
+        Email me a sign-in link
+      </.button>
+
+      <p class="mt-8 text-center text-sm">
         <.link
           navigate={~p"/sign_in/sso"}
-          class="text-center font-medium text-indigo-400 hover:text-indigo-300"
+          class="font-medium text-indigo-400 hover:text-indigo-300"
         >
           Sign in to a different team
         </.link>
-      </div>
+      </p>
     </.auth_layout>
     """
   end

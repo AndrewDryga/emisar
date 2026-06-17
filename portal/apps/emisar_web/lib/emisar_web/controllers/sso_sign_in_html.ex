@@ -3,8 +3,8 @@ defmodule EmisarWeb.SSOSignInHTML do
 
   def new(assigns) do
     ~H"""
-    <.auth_layout title="Single sign-on">
-      <div :if={@recent != []} class="mb-6 space-y-3">
+    <.auth_layout title="Sign in with SSO">
+      <div :if={@recent != []} class="space-y-3">
         <p class="text-sm text-zinc-400">Continue to a team you've used before:</p>
         <.button
           :for={team <- @recent}
@@ -14,22 +14,24 @@ defmodule EmisarWeb.SSOSignInHTML do
         >
           {team["name"]} <span aria-hidden="true">→</span>
         </.button>
-        <p class="py-1 text-center text-xs uppercase tracking-wider text-zinc-600">
-          or enter a team address
-        </p>
       </div>
+      <.or_separator :if={@recent != []} label="or enter your team" />
 
       <.simple_form for={@form} action={~p"/sign_in/sso"}>
         <p class="text-sm leading-relaxed text-zinc-400">
-          Enter your team's address and we'll take you to its sign-in page.
+          Which team are you signing in to? We'll take you to its sign-in page.
         </p>
         <.input
           field={@form[:slug]}
-          label="Team address"
+          label="Your team's address"
           placeholder="acme"
           autocomplete="off"
           required
         />
+        <p class="text-xs leading-relaxed text-zinc-500">
+          The name in your emisar URL — e.g. <code class="text-zinc-400">acme</code>
+          for <span class="text-zinc-400">app/acme</span>. Ask your admin if you're not sure.
+        </p>
         <:actions>
           <.button class="w-full">
             Continue <span aria-hidden="true">→</span>
