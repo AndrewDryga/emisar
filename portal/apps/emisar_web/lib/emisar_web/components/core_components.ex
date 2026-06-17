@@ -1613,10 +1613,11 @@ defmodule EmisarWeb.CoreComponents do
 
   @doc """
   The header summary band — a quiet, at-a-glance count strip wrapping several
-  `summary_stat/1`s in one bordered flex row (the Runners fleet health, the
-  LLM-agents page). The optional `:trailing` slot right-aligns extra context
-  (e.g. an "N keys total"). The band's chrome lives here so the pages that use
-  it can't drift apart.
+  `summary_stat/1`s in one bordered flex row at the top of a LIST page (the
+  Runners fleet health, the LLM-agents page). Not `<.stat>` (the dashboard's
+  big-number tile) nor `<.meta_strip>` (a detail page's under-title meta). The
+  optional `:trailing` slot right-aligns extra context (e.g. an "N keys total").
+  The band's chrome lives here so the pages that use it can't drift apart.
 
       <.summary_band>
         <.summary_stat tone={:emerald} value={@fleet.online} label="Online" />
@@ -1983,9 +1984,10 @@ defmodule EmisarWeb.CoreComponents do
 
   @doc """
   Horizontal meta strip wrapper — the bordered rounded box that holds
-  `<.meta_field>` cells under page titles on detail pages. Pass `cols`
-  for an explicit column count at `lg+`; defaults to auto-fitting via
-  `sm:grid-cols-3`.
+  `<.meta_field>` key-value cells under page titles on DETAIL pages (a run's
+  runner / risk / pack / time). Not `<.summary_band>` (a list page's count
+  strip) nor `<.stat>` (the dashboard tile). Pass `cols` for an explicit column
+  count at `lg+`; defaults to auto-fitting via `sm:grid-cols-3`.
 
       <.meta_strip cols={6}>
         <.meta_field label="Runner">acme-db-01</.meta_field>
@@ -2425,7 +2427,9 @@ defmodule EmisarWeb.CoreComponents do
   end
 
   @doc ~S"""
-  Statistic tile used on the dashboard.
+  Statistic **tile** — a big number in its own card, for the dashboard's metrics
+  grid. The widest of the stat trio: `<.summary_stat>` is the quiet count strip
+  atop a list page; `<.meta_field>` is the key-value strip under a detail title.
 
       <.stat label="Runners online" value={@runners_connected} hint={"of #{@total} total"} />
   """
