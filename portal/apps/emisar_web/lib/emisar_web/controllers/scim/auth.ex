@@ -20,13 +20,34 @@ defmodule EmisarWeb.SCIM.Auth do
   def init(opts), do: opts
 
   def call(conn, _opts) do
-    with ["Bearer " <> raw] <- get_req_header(conn, "authorization"),
+    with {:ok, raw} <- bearer_token(get_req_header(conn, "authorization")),
          {:ok, provider} <- SSO.authenticate_scim_token(raw) do
       assign(conn, :scim_provider, provider)
     else
       _ -> unauthorized(conn)
     end
   end
+
+  # Tolerant bearer parse. The scheme keyword is case-insensitive (RFC 7235
+  # §2.1 — `bearer` == `Bearer`), and IdP connectors + copy-paste routinely add
+  # surrounding whitespace, so we accept either case, collapse the scheme/token
+  # separator, and trim the token. This only normalizes the envelope — the
+  # constant-time hash compare in `SSO.authenticate_scim_token/1` is still the
+  # sole authenticator, and a token never carries significant whitespace. A
+  # missing scheme (a bare token) is still rejected.
+  defp bearer_token([value]) when is_binary(value) do
+    parts = value |> String.trim() |> String.split(~r/\s+/, parts: 2)
+
+    case parts do
+      [scheme, token] when token != "" ->
+        if String.downcase(scheme) == "bearer", do: {:ok, token}, else: :error
+
+      _ ->
+        :error
+    end
+  end
+
+  defp bearer_token(_headers), do: :error
 
   defp unauthorized(conn) do
     conn

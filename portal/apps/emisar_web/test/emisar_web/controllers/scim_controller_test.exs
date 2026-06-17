@@ -119,6 +119,35 @@ defmodule EmisarWeb.SCIMControllerTest do
       assert get_resp_header(conn, "www-authenticate") == ["Bearer"]
     end
 
+    test "a lowercase `bearer` scheme is accepted (RFC 7235 — the scheme is case-insensitive)",
+         %{conn: conn} do
+      %{token: token} = scim_provider()
+
+      conn =
+        conn |> put_req_header("authorization", "bearer " <> token) |> get(~p"/scim/v2/Users")
+
+      assert json_response(conn, 200)
+    end
+
+    test "surrounding + collapsed whitespace on the bearer is tolerated (paste artifacts)",
+         %{conn: conn} do
+      %{token: token} = scim_provider()
+
+      conn =
+        conn
+        |> put_req_header("authorization", "  Bearer   " <> token <> "  ")
+        |> get(~p"/scim/v2/Users")
+
+      assert json_response(conn, 200)
+    end
+
+    test "a bare token with no scheme → 401 (a scheme is still required)", %{conn: conn} do
+      %{token: token} = scim_provider()
+
+      conn = conn |> put_req_header("authorization", token) |> get(~p"/scim/v2/Users")
+      assert json_response(conn, 401)
+    end
+
     test "a disabled-SCIM provider's old bearer → 401", %{conn: conn} do
       %{provider: provider, token: token, subject: subject} = scim_provider()
       {:ok, _provider} = SSO.disable_scim(provider, subject)
