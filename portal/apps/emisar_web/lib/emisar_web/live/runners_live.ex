@@ -54,9 +54,11 @@ defmodule EmisarWeb.RunnersLive do
         |> assign(:filters, filters)
         |> assign(:groups, groups)
         |> assign(:fleet, fleet)
+        |> assign(:load_error?, false)
 
-      # A clean reload can fail too (e.g. a tightened list permission) —
-      # degrade to an empty page rather than recursing forever.
+      # A clean reload can fail too (e.g. a tightened list permission) — show a
+      # load-error state, NOT a silent empty fleet (that would read "no runners"
+      # when really the read failed and a host may well be connected).
       {:error, _} when map_size(params) == 0 ->
         socket
         |> assign(:runners, [])
@@ -65,6 +67,7 @@ defmodule EmisarWeb.RunnersLive do
         |> assign(:filters, filters)
         |> assign(:groups, [])
         |> assign(:fleet, fleet)
+        |> assign(:load_error?, true)
 
       # Bad filter/page params from a hand-edited URL — retry once, clean.
       {:error, _} ->
@@ -116,109 +119,117 @@ defmodule EmisarWeb.RunnersLive do
         can dispatch an action to it.
       </.page_intro>
 
-      <%= if @runners == [] && @metadata.count == 0 do %>
-        <%= if connected?(@socket) do %>
+      <%= cond do %>
+        <% @load_error? -> %>
+          <.empty_state
+            tone={:danger}
+            icon="hero-exclamation-triangle"
+            title="Couldn't load your fleet"
+          >
+            This is a load error, not an empty fleet — a host may well be connected. Refresh the
+            page; if it persists, your access to this account may have changed.
+          </.empty_state>
+        <% @runners == [] && @metadata.count == 0 && connected?(@socket) -> %>
           <.empty_state icon="hero-cpu-chip" title="No runners yet">
             A runner is the emisar binary on one of your hosts. The install wizard mints a fresh
             auth key and gives you a one-liner to paste on a Linux or macOS box.
             <:cta navigate={~p"/app/#{@current_account}/runners/install"}>Open install wizard</:cta>
           </.empty_state>
-        <% else %>
+        <% @runners == [] && @metadata.count == 0 -> %>
           <%!-- Dead/pre-connect render — defer the onboarding pitch until the
                live socket confirms there really are no runners. --%>
           <.loading_state />
-        <% end %>
-      <% else %>
-        <%!-- Fleet health at a glance, so "is anything down?" doesn't mean
+        <% true -> %>
+          <%!-- Fleet health at a glance, so "is anything down?" doesn't mean
              scanning every dot. Whole-account (like the group sidebar +
              list below), counted from presence — there's no `:stale` state
              (heartbeat liveness is socket-enforced; see Runners.connection_state). --%>
-        <%!-- Health-at-a-glance, small + muted like the per-group totals below.
+          <%!-- Health-at-a-glance, small + muted like the per-group totals below.
              The whole-account total is NOT repeated here — it lives in the group
              header(s), so it isn't duplicated above and below the table. --%>
-        <.summary_band>
-          <.summary_stat tone={:emerald} value={@fleet.online} label="Online" />
-          <.summary_stat tone={:rose} value={@fleet.offline} label="Offline" />
-          <.summary_stat
-            :if={@fleet.pending > 0}
-            tone={:amber}
-            value={@fleet.pending}
-            label="Pending"
-          />
-          <.summary_stat
-            :if={@fleet.disabled > 0}
-            tone={:zinc}
-            value={@fleet.disabled}
-            label="Disabled"
-          />
-        </.summary_band>
+          <.summary_band>
+            <.summary_stat tone={:emerald} value={@fleet.online} label="Online" />
+            <.summary_stat tone={:rose} value={@fleet.offline} label="Offline" />
+            <.summary_stat
+              :if={@fleet.pending > 0}
+              tone={:amber}
+              value={@fleet.pending}
+              label="Pending"
+            />
+            <.summary_stat
+              :if={@fleet.disabled > 0}
+              tone={:zinc}
+              value={@fleet.disabled}
+              label="Disabled"
+            />
+          </.summary_band>
 
-        <%!-- Group sidebar shows whole-account totals; the runners
+          <%!-- Group sidebar shows whole-account totals; the runners
              list below is paginated and may show fewer rows per
              group than the count next to the header. That's
              intentional — operators expect group counts to be
              source-of-truth, not "what fits on this page". --%>
-        <LiveTable.live_table
-          layout={:cards}
-          id="runners"
-          path={~p"/app/#{@current_account}/runners"}
-          rows={sort_by_group(@runners)}
-          metadata={@metadata}
-          filter_params={@filter_params}
-          group_by={fn runner -> runner.group || "(no group)" end}
-        >
-          <:group_header :let={group_label}>
-            <li class="border-b border-zinc-900 bg-zinc-950/60 px-5 py-2 flex items-baseline gap-2">
-              <h2 class="text-xs font-semibold uppercase tracking-wider text-zinc-200">
-                {group_label}
-              </h2>
-              <span class="text-[11px] text-zinc-500">
-                {group_total(@groups, group_label)} {if group_total(@groups, group_label) == 1,
-                  do: "runner",
-                  else: "runners"} total
-              </span>
-            </li>
-          </:group_header>
+          <LiveTable.live_table
+            layout={:cards}
+            id="runners"
+            path={~p"/app/#{@current_account}/runners"}
+            rows={sort_by_group(@runners)}
+            metadata={@metadata}
+            filter_params={@filter_params}
+            group_by={fn runner -> runner.group || "(no group)" end}
+          >
+            <:group_header :let={group_label}>
+              <li class="border-b border-zinc-900 bg-zinc-950/60 px-5 py-2 flex items-baseline gap-2">
+                <h2 class="text-xs font-semibold uppercase tracking-wider text-zinc-200">
+                  {group_label}
+                </h2>
+                <span class="text-[11px] text-zinc-500">
+                  {group_total(@groups, group_label)} {if group_total(@groups, group_label) == 1,
+                    do: "runner",
+                    else: "runners"} total
+                </span>
+              </li>
+            </:group_header>
 
-          <:item :let={runner}>
-            <% state = connection_status(Runners.connection_state(runner)) %>
-            <li class="px-5 py-3">
-              <.link
-                navigate={~p"/app/#{@current_account}/runners/#{runner.id}"}
-                class="flex items-center gap-4 transition hover:opacity-90"
-              >
-                <%!-- Connection dot: green/pulsing when live, amber
+            <:item :let={runner}>
+              <% state = connection_status(Runners.connection_state(runner)) %>
+              <li class="px-5 py-3">
+                <.link
+                  navigate={~p"/app/#{@current_account}/runners/#{runner.id}"}
+                  class="flex items-center gap-4 transition hover:opacity-90"
+                >
+                  <%!-- Connection dot: green/pulsing when live, amber
                      when known-but-disconnected, zinc when never
                      seen. Clearer than reading a status badge first. --%>
-                <.connection_dot status={state} />
+                  <.connection_dot status={state} />
 
-                <div class="min-w-0 flex-1">
-                  <div class="flex items-center gap-2">
-                    <span class="truncate font-medium text-zinc-100">{runner.name}</span>
-                    <span :if={runner.runner_version} class="font-mono text-[11px] text-zinc-500">
-                      v{runner.runner_version}
-                    </span>
-                  </div>
-                  <div class="mt-0.5 truncate text-xs text-zinc-500">
-                    <%!-- {" "} guards the space before the component — HEEx trims
+                  <div class="min-w-0 flex-1">
+                    <div class="flex items-center gap-2">
+                      <span class="truncate font-medium text-zinc-100">{runner.name}</span>
+                      <span :if={runner.runner_version} class="font-mono text-[11px] text-zinc-500">
+                        v{runner.runner_version}
+                      </span>
+                    </div>
+                    <div class="mt-0.5 truncate text-xs text-zinc-500">
+                      <%!-- {" "} guards the space before the component — HEEx trims
                          the newline the formatter inserts between "·" and the tag. --%>
-                    {runner.hostname || runner.external_id || "no host"} ·{" "}<.heartbeat_status
-                      runner={runner}
-                      status={state}
-                    />
+                      {runner.hostname || runner.external_id || "no host"} ·{" "}<.heartbeat_status
+                        runner={runner}
+                        status={state}
+                      />
+                    </div>
                   </div>
-                </div>
 
-                <div class="flex items-center gap-4 text-right">
-                  <div class="hidden text-xs text-zinc-400 sm:block">
-                    {runner.action_load} active
+                  <div class="flex items-center gap-4 text-right">
+                    <div class="hidden text-xs text-zinc-400 sm:block">
+                      {runner.action_load} active
+                    </div>
+                    <.status_badge status={state} class="shrink-0" />
                   </div>
-                  <.status_badge status={state} class="shrink-0" />
-                </div>
-              </.link>
-            </li>
-          </:item>
-        </LiveTable.live_table>
+                </.link>
+              </li>
+            </:item>
+          </LiveTable.live_table>
       <% end %>
     </.dashboard_shell>
     """

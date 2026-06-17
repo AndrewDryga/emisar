@@ -237,15 +237,18 @@ defmodule EmisarWeb.AuditLive do
         |> assign(:metadata, meta)
         |> assign(:refs, Audit.resolve_references(events))
         |> assign(:actor_label, actor_label_for(actor_id, events))
+        |> assign(:load_error?, false)
 
-      # A clean reload can fail too (e.g. a tightened list permission) —
-      # degrade to an empty page rather than recursing forever.
+      # A clean reload can fail too (e.g. a tightened list permission) — flag it
+      # so the log says "couldn't load" instead of a silent empty list. Audit is
+      # the receipt: "nothing happened" must never be confused with "read failed".
       {:error, _} when map_size(params) == 0 ->
         socket
         |> assign(:events, [])
         |> assign(:metadata, %Emisar.Repo.Paginator.Metadata{count: 0, limit: 0})
         |> assign(:refs, %{})
         |> assign(:actor_label, actor_id)
+        |> assign(:load_error?, true)
 
       # Bad filter/page params from a hand-edited URL — retry once, clean.
       {:error, _} ->
@@ -371,26 +374,37 @@ defmodule EmisarWeb.AuditLive do
                when the operator is just over-filtering. Empty-account
                state gets richer copy that names the surfaces that
                actually produce events. --%>
-          <%= if any_filter_active?(@filter_params, @filters) do %>
-            <span class="text-zinc-500">No events match these filters.</span>
-          <% else %>
-            <.empty_state variant={:bare} icon="hero-document-text" title="No audit events yet.">
-              They appear as soon as something happens — a
-              <.link
-                navigate={~p"/app/#{@current_account}/runners"}
-                class="text-indigo-400 hover:text-indigo-300"
+          <%= cond do %>
+            <% @load_error? -> %>
+              <.empty_state
+                variant={:bare}
+                tone={:danger}
+                icon="hero-exclamation-triangle"
+                title="Couldn't load the audit log"
               >
-                runner
-              </.link>
-              connects, an operator dispatches a <.link
-                navigate={~p"/app/#{@current_account}/runs"}
-                class="text-indigo-400 hover:text-indigo-300"
-              >run</.link>,
-              an approval is decided, or a pack is observed on the <.link
-                navigate={~p"/app/#{@current_account}/packs"}
-                class="text-indigo-400 hover:text-indigo-300"
-              >Packs page</.link>.
-            </.empty_state>
+                This is a load error, not an empty log. Refresh the page; if it persists, your
+                access to this account may have changed.
+              </.empty_state>
+            <% any_filter_active?(@filter_params, @filters) -> %>
+              <span class="text-zinc-500">No events match these filters.</span>
+            <% true -> %>
+              <.empty_state variant={:bare} icon="hero-document-text" title="No audit events yet.">
+                They appear as soon as something happens — a
+                <.link
+                  navigate={~p"/app/#{@current_account}/runners"}
+                  class="text-indigo-400 hover:text-indigo-300"
+                >
+                  runner
+                </.link>
+                connects, an operator dispatches a <.link
+                  navigate={~p"/app/#{@current_account}/runs"}
+                  class="text-indigo-400 hover:text-indigo-300"
+                >run</.link>,
+                an approval is decided, or a pack is observed on the <.link
+                  navigate={~p"/app/#{@current_account}/packs"}
+                  class="text-indigo-400 hover:text-indigo-300"
+                >Packs page</.link>.
+              </.empty_state>
           <% end %>
         </:empty>
       </LiveTable.live_table>

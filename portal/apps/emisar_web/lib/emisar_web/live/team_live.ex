@@ -436,9 +436,11 @@ defmodule EmisarWeb.TeamLive do
           :require_sso_available?,
           SSO.list_enabled_providers_for_account(socket.assigns.current_account.id) != []
         )
+        |> assign(:load_error?, false)
 
-      # A clean reload can fail too (e.g. a tightened list permission) —
-      # degrade to an empty page rather than recursing forever.
+      # A clean reload can fail too (e.g. a tightened list permission) — flag it
+      # so the page says "couldn't load" instead of a silent empty team (you're
+      # always a member of your own team, so [] means the read failed).
       {:error, _} when map_size(params) == 0 ->
         socket
         |> assign(:memberships, [])
@@ -451,6 +453,7 @@ defmodule EmisarWeb.TeamLive do
         |> assign(:current_role, nil)
         |> assign(:suppressed_emails, MapSet.new())
         |> assign(:require_sso_available?, false)
+        |> assign(:load_error?, true)
 
       # Bad filter/page params from a hand-edited URL — retry once, clean.
       {:error, _} ->
@@ -967,12 +970,26 @@ defmodule EmisarWeb.TeamLive do
             </li>
           </:item>
           <:empty>
-            <%!-- This branch is technically defensive — the current user is
-                 always a member of the account they're viewing, so an
-                 entirely empty list shouldn't happen. Keep meaningful
-                 copy anyway so it can never accidentally land as a
-                 mystery blank panel. --%>
-            <.empty_state variant={:bare} icon="hero-users" title="No team members yet.">
+            <.empty_state
+              :if={@load_error?}
+              variant={:bare}
+              tone={:danger}
+              icon="hero-exclamation-triangle"
+              title="Couldn't load your team"
+            >
+              This is a load error, not an empty team — you're always a member of your own.
+              Refresh the page; if it persists, your access to this account may have changed.
+            </.empty_state>
+            <%!-- The non-error empty is defensive — the current user is always a
+                 member of the account they're viewing, so an entirely empty list
+                 shouldn't happen. Keep meaningful copy anyway so it can never
+                 accidentally land as a mystery blank panel. --%>
+            <.empty_state
+              :if={not @load_error?}
+              variant={:bare}
+              icon="hero-users"
+              title="No team members yet."
+            >
               Use the
               <span class="rounded bg-zinc-900 px-1.5 py-0.5 text-[11px] font-medium text-zinc-300">
                 Invite

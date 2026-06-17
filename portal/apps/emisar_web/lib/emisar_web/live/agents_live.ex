@@ -265,9 +265,11 @@ defmodule EmisarWeb.AgentsLive do
         |> assign(:idle_count, count_status(keys, :idle))
         |> assign(:never_used_count, count_status(keys, :never_used))
         |> assign(:issued_count, length(active_keys(keys)))
+        |> assign(:load_error?, false)
 
-      # A clean reload can fail too (e.g. a tightened list permission) —
-      # degrade to an empty page rather than recursing forever.
+      # A clean reload can fail too (e.g. a tightened list permission) — flag it
+      # so the list says "couldn't load" instead of a silent empty list (which
+      # would read "no keys" when really the read failed).
       {:error, _} when map_size(params) == 0 ->
         socket
         |> assign(:api_keys, [])
@@ -278,6 +280,7 @@ defmodule EmisarWeb.AgentsLive do
         |> assign(:idle_count, 0)
         |> assign(:never_used_count, 0)
         |> assign(:issued_count, 0)
+        |> assign(:load_error?, true)
 
       # Bad filter/page params from a hand-edited URL — retry once, clean.
       {:error, _} ->
@@ -764,7 +767,22 @@ defmodule EmisarWeb.AgentsLive do
             </.list_row>
           </:item>
           <:empty>
-            <.empty_state variant={:bare} icon="hero-cpu-chip" title="No LLMs connected yet.">
+            <.empty_state
+              :if={@load_error?}
+              variant={:bare}
+              tone={:danger}
+              icon="hero-exclamation-triangle"
+              title="Couldn't load your access keys"
+            >
+              This is a load error, not an empty list — keys may well exist. Refresh the page;
+              if it persists, your access to this account may have changed.
+            </.empty_state>
+            <.empty_state
+              :if={not @load_error?}
+              variant={:bare}
+              icon="hero-cpu-chip"
+              title="No LLMs connected yet."
+            >
               Pick a client above — we mint a key + pre-fill the snippet (local) or
               URL + token (cloud). The agent shows up here on its first MCP call.
             </.empty_state>
