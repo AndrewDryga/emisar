@@ -137,9 +137,12 @@ services:
   # nginx/postgres logs). The runner image itself stays
   # production-pristine — only this compose file knows about them.
   runner-1: &runner
+    # Build context is the REPO ROOT (matching the portal) — runner/docker/Dockerfile
+    # COPYs both `packs/` (now at the repo root) and `runner/...`, so it can't build
+    # from a `./runner` context.
     build:
-      context: ./runner
-      dockerfile: docker/Dockerfile
+      context: .
+      dockerfile: runner/docker/Dockerfile
     image: emisar/runner:dev
     hostname: runner-1
     depends_on:
