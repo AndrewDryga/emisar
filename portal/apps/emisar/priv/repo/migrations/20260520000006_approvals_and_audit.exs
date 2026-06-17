@@ -3,7 +3,7 @@ defmodule Emisar.Repo.Migrations.ApprovalsAndAudit do
 
   def change do
     # Approval requests: created when a run is decided to be allowed
-    # *if approved*. Holds the run in :awaiting_approval until an
+    # *if approved*. Holds the run in :pending_approval until an
     # operator clicks approve or deny in the UI.
     create table(:approval_requests, primary_key: false) do
       add :id, :binary_id, primary_key: true

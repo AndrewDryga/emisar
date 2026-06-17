@@ -19,7 +19,7 @@ defmodule Emisar.Runs.ActionRunTest do
     end
 
     test "in-flight statuses are not terminal" do
-      for s <- [:pending, :awaiting_approval, :sent, :running] do
+      for s <- [:pending, :pending_approval, :sent, :running] do
         refute ActionRun.terminal?(s), "expected #{s} to be non-terminal"
       end
     end

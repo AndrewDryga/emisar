@@ -6,7 +6,7 @@ defmodule Emisar.Runs.ActionRun do
                                      validation_failed, unknown_action,
                                      cancelled, timed_out}
 
-  Or:    pending -> awaiting_approval -> sent -> ...
+  Or:    pending -> pending_approval -> sent -> ...
   """
   use Emisar, :schema
 
@@ -55,7 +55,6 @@ defmodule Emisar.Runs.ActionRun do
     field :status, Ecto.Enum,
       values: [
         :pending,
-        :awaiting_approval,
         :pending_approval,
         :denied,
         :sent,

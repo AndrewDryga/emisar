@@ -191,12 +191,10 @@ defmodule EmisarWeb.RunDetailLive do
         </.meta_field>
       </.meta_strip>
 
-      <%!-- Approval banner — fires for both flavors of "needs human"
-           status (`pending_approval` is what dispatch_run writes;
-           `awaiting_approval` lingers from older code paths + seeds).
-           Loud amber + a one-click jump to the approval page. --%>
+      <%!-- Approval banner — the run is held on a human decision. Loud amber
+           + a one-click jump to the approval page. --%>
       <div
-        :if={@run.status in [:pending_approval, :awaiting_approval] and @approval_request}
+        :if={@run.status == :pending_approval and @approval_request}
         class="mt-4 flex items-center justify-between gap-4 rounded-xl border border-amber-500/30 bg-amber-500/[0.06] p-4"
       >
         <div class="flex items-start gap-3">
@@ -455,7 +453,7 @@ defmodule EmisarWeb.RunDetailLive do
   # Everything else (sent / running / success / failed / errored) gets
   # the panel — empty is fine because chunks stream in via PubSub.
   defp show_output?(%{status: status})
-       when status in [:cancelled, :denied, :pending_approval, :awaiting_approval, :pending],
+       when status in [:cancelled, :denied, :pending_approval, :pending],
        do: false
 
   defp show_output?(_), do: true

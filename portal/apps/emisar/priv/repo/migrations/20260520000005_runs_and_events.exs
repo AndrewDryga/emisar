@@ -46,7 +46,7 @@ defmodule Emisar.Repo.Migrations.RunsAndEvents do
       add :matched_rules, {:array, :string}, null: false, default: []
 
       # Approval state. If the policy required approval, the run sits
-      # in :awaiting_approval until granted (see approvals table).
+      # in :pending_approval until granted (see approvals table).
       add :requires_approval, :boolean, null: false, default: false
       add :approval_request_id, :binary_id
 

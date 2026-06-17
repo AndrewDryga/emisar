@@ -351,16 +351,15 @@ defmodule Emisar.Runs do
   #
   #   * `denied` — policy already rejected; return the deny tuple so MCP
   #     renders it as `denied_by_policy` rather than as a running run.
-  #   * `pending_approval` / `awaiting_approval` — block on the same
-  #     approval; `wait_for_run` is still the right tool.
+  #   * `pending_approval` — blocks on a human approval; `wait_for_run` is
+  #     still the right tool.
   #   * anything else (sent, running, terminal) — the run exists and the
   #     LLM can long-poll via `/runs/:id?wait=…` for the final state.
   defp replay_outcome(%ActionRun{status: :denied, policy_reason: reason}),
     do: {:error, :denied_by_policy, reason || "policy denied this call"}
 
-  defp replay_outcome(%ActionRun{status: status} = run)
-       when status in [:pending_approval, :awaiting_approval],
-       do: {:ok, :pending_approval, run}
+  defp replay_outcome(%ActionRun{status: :pending_approval} = run),
+    do: {:ok, :pending_approval, run}
 
   defp replay_outcome(%ActionRun{} = run),
     do: {:ok, :running, run}

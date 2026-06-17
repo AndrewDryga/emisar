@@ -757,7 +757,7 @@ if existing_runs == [] do
       args: %{},
       reason: "post-deploy nginx reload",
       requested_by_id: sam.id,
-      status: "awaiting_approval",
+      status: "pending_approval",
       requires_approval: true,
       policy_decision: "require_approval",
       policy_reason: "Default for medium-risk actions"
@@ -781,7 +781,7 @@ if existing_runs == [] do
       requested_by_id: user.id,
       source: "mcp",
       api_key_id: agent_key.id,
-      status: "awaiting_approval",
+      status: "pending_approval",
       requires_approval: true,
       policy_decision: "require_approval",
       policy_reason: "Default for high-risk actions"
@@ -804,7 +804,7 @@ if existing_runs == [] do
       args: %{"fleet" => "eu-canary", "sha" => "9a7c4f0"},
       reason: "main → canary, deploy job #4218",
       requested_by_id: sam.id,
-      status: "awaiting_approval",
+      status: "pending_approval",
       requires_approval: true,
       policy_decision: "require_approval",
       policy_reason: "Default for high-risk actions"
@@ -839,7 +839,7 @@ if existing_runs == [] do
       requested_by_id: user.id,
       source: "mcp",
       api_key_id: agent_key.id,
-      status: "awaiting_approval",
+      status: "pending_approval",
       requires_approval: true,
       policy_decision: "require_approval",
       policy_reason: "Override: deny-laptop-from-agent"
