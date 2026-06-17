@@ -155,6 +155,11 @@ defmodule EmisarWeb.Router do
     # no-membership/suspended user), so this just forwards to the canonical URL.
     get "/", AccountRedirectController, :show
 
+    # require_sso step-up shim: :ensure_sso_compliant bounces a non-SSO session here;
+    # it logs out and lands on the account's branded SSO sign-in. OUTSIDE the slug
+    # live_session below, so it never re-triggers the gate (no redirect loop).
+    get "/:account_id_or_slug/sso_required", SSORequiredController, :show
+
     # Outside the slug scope on purpose: this is where ensure_mfa_compliant
     # SENDS a non-compliant member, so it must mount without that gate.
     live_session :mfa_setup,
@@ -172,6 +177,7 @@ defmodule EmisarWeb.Router do
         on_mount: [
           {EmisarWeb.UserAuth, :ensure_authenticated},
           {EmisarWeb.UserAuth, :ensure_account_slug},
+          {EmisarWeb.UserAuth, :ensure_sso_compliant},
           {EmisarWeb.UserAuth, :ensure_mfa_compliant},
           {EmisarWeb.UserAuth, :track_pending_approvals},
           {EmisarWeb.UserAuth, :email_confirmation}

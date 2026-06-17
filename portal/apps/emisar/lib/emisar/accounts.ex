@@ -153,7 +153,7 @@ defmodule Emisar.Accounts do
   # owner-only permission on top of the manage_own_account gate already
   # checked at the entry; a plain rename/rebrand needs nothing more.
   defp ensure_security_change_permitted(%Ecto.Changeset{} = changeset, %Subject{} = subject) do
-    if Map.has_key?(changeset.changes, :require_mfa) do
+    if security_setting_changed?(changeset) do
       Auth.Authorizer.ensure_has_permissions(
         subject,
         Authorizer.manage_security_settings_permission()
@@ -163,17 +163,26 @@ defmodule Emisar.Accounts do
     end
   end
 
-  # A require_mfa change is a security event; everything else is a plain
-  # account.updated. The UI never changes both in one request.
+  # require_mfa and require_sso are the owner-only security settings.
+  defp security_setting_changed?(%Ecto.Changeset{changes: changes}),
+    do: Map.has_key?(changes, :require_mfa) or Map.has_key?(changes, :require_sso)
+
+  # A require_mfa / require_sso change is a security event; everything else is a
+  # plain account.updated. The UI never changes more than one in a request.
   defp account_update_audit(
          %Account{} = account,
          %Ecto.Changeset{} = changeset,
          %Subject{} = subject
        ) do
-    if Map.has_key?(changeset.changes, :require_mfa) do
-      Audit.Events.account_require_mfa_set(subject, account)
-    else
-      Audit.Events.account_updated(subject, account)
+    cond do
+      Map.has_key?(changeset.changes, :require_mfa) ->
+        Audit.Events.account_require_mfa_set(subject, account)
+
+      Map.has_key?(changeset.changes, :require_sso) ->
+        Audit.Events.account_require_sso_set(subject, account)
+
+      true ->
+        Audit.Events.account_updated(subject, account)
     end
   end
 

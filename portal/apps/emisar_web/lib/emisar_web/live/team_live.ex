@@ -1,7 +1,7 @@
 defmodule EmisarWeb.TeamLive do
   use EmisarWeb, :live_view
 
-  alias Emisar.{Accounts, Mailers, Runners}
+  alias Emisar.{Accounts, Mailers, Runners, SSO}
   alias EmisarWeb.{ConfirmDialog, LiveTable, Permissions}
   alias Phoenix.LiveView.JS
 
@@ -105,6 +105,54 @@ defmodule EmisarWeb.TeamLive do
 
           {:error, _} ->
             {:noreply, put_flash(socket, :error, "Could not update MFA setting.")}
+        end
+    end
+  end
+
+  def handle_event("toggle_require_sso", _params, socket) do
+    account = socket.assigns.current_account
+    value = not account.require_sso
+
+    cond do
+      not Accounts.subject_can_manage_account_security?(socket.assigns.current_subject) ->
+        {:noreply, put_flash(socket, :error, "Only the account owner can change this setting.")}
+
+      # Prevent a lockout — requiring SSO with no enabled connection would leave
+      # everyone (owners included) with no way in.
+      value and SSO.list_enabled_providers_for_account(account.id) == [] ->
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           "Add an enabled SSO connection before requiring single sign-on."
+         )}
+
+      true ->
+        case Accounts.update_account(
+               account,
+               %{require_sso: value},
+               socket.assigns.current_subject
+             ) do
+          {:ok, account} ->
+            {:noreply,
+             socket
+             |> assign(:current_account, account)
+             |> assign(:require_sso_available?, true)
+             |> put_flash(
+               :info,
+               if(value,
+                 do:
+                   "Single sign-on now required. Members sign in through your identity provider.",
+                 else: "Single sign-on requirement turned off."
+               )
+             )}
+
+          {:error, :unauthorized} ->
+            {:noreply,
+             put_flash(socket, :error, "Only the account owner can change this setting.")}
+
+          {:error, _} ->
+            {:noreply, put_flash(socket, :error, "Could not update SSO setting.")}
         end
     end
   end
@@ -384,6 +432,10 @@ defmodule EmisarWeb.TeamLive do
           :suppressed_emails,
           suppressed_emails(socket.assigns.current_account, socket.assigns.current_subject)
         )
+        |> assign(
+          :require_sso_available?,
+          SSO.list_enabled_providers_for_account(socket.assigns.current_account.id) != []
+        )
 
       # A clean reload can fail too (e.g. a tightened list permission) —
       # degrade to an empty page rather than recursing forever.
@@ -398,6 +450,7 @@ defmodule EmisarWeb.TeamLive do
         |> assign(:runner_groups, [])
         |> assign(:current_role, nil)
         |> assign(:suppressed_emails, MapSet.new())
+        |> assign(:require_sso_available?, false)
 
       # Bad filter/page params from a hand-edited URL — retry once, clean.
       {:error, _} ->
@@ -557,6 +610,57 @@ defmodule EmisarWeb.TeamLive do
             <%= if @current_account.require_mfa do %>
               <.chip tone={:indigo}>Enforced</.chip>
             <% end %>
+          </div>
+        </.panel>
+
+        <%!-- SSO-enforcement card — owner-only. Can't be turned on without an
+             enabled SSO connection (that would lock everyone out), so it links
+             to set one up first. --%>
+        <.panel title="Single sign-on">
+          <:subtitle>
+            When required, members sign in through this account's identity provider —
+            password and magic-link sign-ins are bounced to SSO. Needs an SSO connection.
+          </:subtitle>
+          <:actions>
+            <%= cond do %>
+              <% not Accounts.subject_can_manage_account_security?(@current_subject) -> %>
+                <span class="shrink-0 text-[11px] text-zinc-600">Owner-only</span>
+              <% not @require_sso_available? and not @current_account.require_sso -> %>
+                <.link
+                  navigate={~p"/app/#{@current_account}/settings/sso"}
+                  class="shrink-0 text-xs font-medium text-indigo-400 hover:text-indigo-300"
+                >
+                  Set up SSO first →
+                </.link>
+              <% true -> %>
+                <button
+                  type="button"
+                  phx-click="toggle_require_sso"
+                  role="switch"
+                  aria-checked={to_string(@current_account.require_sso)}
+                  aria-label="Require single sign-on account-wide"
+                  data-confirm={
+                    if @current_account.require_sso,
+                      do: "Stop requiring single sign-on?",
+                      else: "Require single sign-on for everyone on this account?"
+                  }
+                  class={[
+                    "shrink-0 rounded-lg px-3 py-1.5 text-xs font-semibold",
+                    if(@current_account.require_sso,
+                      do: "border border-rose-500/40 text-rose-200 hover:bg-rose-500/10",
+                      else: "bg-indigo-500 text-zinc-950 hover:bg-indigo-400"
+                    )
+                  ]}
+                >
+                  {if @current_account.require_sso, do: "Stop requiring SSO", else: "Require SSO"}
+                </button>
+            <% end %>
+          </:actions>
+
+          <div class="flex flex-wrap items-center gap-2 text-xs">
+            <.chip tone={if @current_account.require_sso, do: :indigo, else: :default}>
+              {if @current_account.require_sso, do: "Required", else: "Optional"}
+            </.chip>
           </div>
         </.panel>
 

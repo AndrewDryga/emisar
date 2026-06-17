@@ -164,6 +164,27 @@ defmodule Emisar.AccountsTest do
     end
   end
 
+  describe "update_account/3 — require_sso (owner-only security setting)" do
+    test "an owner can enable require_sso" do
+      {_owner, account, owner_subject} = owner_subject_fixture()
+
+      assert {:ok, %Account{require_sso: true}} =
+               Accounts.update_account(account, %{require_sso: true}, owner_subject)
+    end
+
+    test "a non-owner (admin) cannot — it's a security setting, owner-only" do
+      {_owner, account, _owner_subject} = owner_subject_fixture()
+      admin = user_fixture()
+      _ = membership_fixture(account_id: account.id, user_id: admin.id, role: "admin")
+      admin_subject = subject_for(admin, account, role: :admin)
+
+      assert {:error, :unauthorized} =
+               Accounts.update_account(account, %{require_sso: true}, admin_subject)
+
+      refute Repo.reload!(account).require_sso
+    end
+  end
+
   describe "invite_user_to_account/3" do
     test "creates a placeholder user for an unknown email" do
       inviter = user_fixture()

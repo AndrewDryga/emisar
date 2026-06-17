@@ -71,6 +71,19 @@ defmodule Emisar.Audit.Events do
     )
   end
 
+  def account_require_sso_set(%Subject{} = subject, %Accounts.Account{} = account) do
+    Audit.changeset(
+      account.id,
+      "account.require_sso_set",
+      actor(subject) ++
+        [
+          subject_kind: "account",
+          subject_id: account.id,
+          payload: %{require_sso: account.require_sso}
+        ]
+    )
+  end
+
   # -- Membership ------------------------------------------------------
 
   def membership_role_changed(%Subject{} = subject, %Accounts.Membership{} = membership, new_role) do

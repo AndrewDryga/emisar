@@ -1131,6 +1131,19 @@ defmodule Emisar.SSO do
 
   def identity_satisfies_mfa?(_), do: false
 
+  @doc "Internal — require_sso enforcement: is this session's SSO identity one of the account's own? (pre-Subject)"
+  def identity_belongs_to_account?(user_identity_id, account_id)
+      when is_binary(user_identity_id) and is_binary(account_id) do
+    queryable = UserIdentity.Query.not_deleted() |> UserIdentity.Query.by_id(user_identity_id)
+
+    case Repo.peek(queryable) do
+      %UserIdentity{account_id: ^account_id} -> true
+      _ -> false
+    end
+  end
+
+  def identity_belongs_to_account?(_user_identity_id, _account_id), do: false
+
   defp provider_satisfies_mfa_by_id?(provider_id) do
     queryable =
       IdentityProvider.Query.not_deleted() |> IdentityProvider.Query.by_id(provider_id)

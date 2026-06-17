@@ -268,9 +268,14 @@ defmodule EmisarWeb.UserAuth do
     end
   end
 
-  # Same as log_out_user/1 but lets the caller stamp a specific flash
-  # message before the session is renewed.
-  defp log_out_user_with_flash(conn, message) do
+  @doc """
+  Log the session out (delete the token, disconnect live sockets, renew the
+  session) and redirect to `to` with an error flash. Drives the suspended-account
+  bounce (default `/sign_in`) and the require_sso step-up, which lands the user on
+  that account's branded sign-in. The flash is set AFTER renew_session, so it
+  survives to the next request.
+  """
+  def log_out_user_with_flash(conn, message, to \\ ~p"/sign_in") do
     user_token = get_session(conn, :user_token)
     user_token && Auth.delete_session_token(user_token)
 
@@ -282,7 +287,7 @@ defmodule EmisarWeb.UserAuth do
     |> renew_session()
     |> delete_resp_cookie(@remember_me_cookie)
     |> put_flash(:error, message)
-    |> redirect(to: ~p"/sign_in")
+    |> redirect(to: to)
   end
 
   defp signed_in_path(_conn), do: ~p"/app"
@@ -344,6 +349,32 @@ defmodule EmisarWeb.UserAuth do
 
       {:error, :not_found} ->
         raise EmisarWeb.NotFoundError
+    end
+  end
+
+  # require_sso enforcement (approach B). Composed AFTER :ensure_account_slug, so
+  # current_account + the session's auth provenance are set. When the account
+  # mandates SSO and this session wasn't authenticated via THAT account's own SSO
+  # (a password/magic session — OR an SSO session for a DIFFERENT account, since
+  # each account demands its own IdP), bounce to the /sso_required shim, which
+  # logs the session out and lands on the account's branded sign-in (a LiveView
+  # on_mount can't clear the plug session itself). Misconfig (require_sso on with
+  # no usable provider) is recoverable, not a lockout: the shim logs out and the
+  # branded page shows whatever sign-in methods exist.
+  def on_mount(:ensure_sso_compliant, _params, _session, socket) do
+    account = socket.assigns[:current_account]
+    auth = socket.assigns[:current_auth] || @no_auth
+
+    cond do
+      is_nil(account) or not account.require_sso ->
+        {:cont, socket}
+
+      auth.auth_method == :sso and
+          SSO.identity_belongs_to_account?(auth.user_identity_id, account.id) ->
+        {:cont, socket}
+
+      true ->
+        {:halt, Phoenix.LiveView.redirect(socket, to: ~p"/app/#{account}/sso_required")}
     end
   end
 
