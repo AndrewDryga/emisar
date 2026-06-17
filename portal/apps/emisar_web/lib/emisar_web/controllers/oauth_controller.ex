@@ -212,6 +212,7 @@ defmodule EmisarWeb.OAuthController do
   defp oauth_error(:invalid_grant), do: "invalid_grant"
   defp oauth_error(:invalid_client), do: "invalid_client"
   defp oauth_error(:unsupported_grant_type), do: "unsupported_grant_type"
+  defp oauth_error(:server_error), do: "server_error"
   defp oauth_error(_), do: "invalid_request"
 
   # -- Registration response ------------------------------------------

@@ -174,7 +174,7 @@ defmodule Emisar.OAuth do
     |> Multi.run(:burned, fn repo, %{code: code} ->
       repo.update(AuthorizationCode.Changeset.consume(code))
     end)
-    |> Multi.run(:tokens, fn _repo, %{code: code} -> {:ok, mint_token_pair!(code)} end)
+    |> Multi.run(:tokens, fn _repo, %{code: code} -> mint_token_pair(code) end)
     |> Repo.commit_multi()
     |> case do
       {:ok, %{tokens: tokens}} -> {:ok, tokens}
@@ -223,15 +223,14 @@ defmodule Emisar.OAuth do
       repo.update(Token.Changeset.revoke(token))
     end)
     |> Multi.run(:tokens, fn _repo, %{token: token} ->
-      {:ok,
-       mint_token_pair!(%{
-         client_id: token.client_id,
-         account_id: token.account_id,
-         membership_id: token.membership_id,
-         api_key_id: token.api_key_id,
-         scope: token.scope,
-         resource: token.resource
-       })}
+      mint_token_pair(%{
+        client_id: token.client_id,
+        account_id: token.account_id,
+        membership_id: token.membership_id,
+        api_key_id: token.api_key_id,
+        scope: token.scope,
+        resource: token.resource
+      })
     end)
     |> Repo.commit_multi()
     |> case do
@@ -293,12 +292,16 @@ defmodule Emisar.OAuth do
 
   # -- Internal -------------------------------------------------------
 
-  defp mint_token_pair!(source) do
+  # Returns {:ok, token_response} | {:error, :server_error}. Runs inside the
+  # exchange/refresh Multi, so an insert failure (e.g. a token-hash collision)
+  # must surface as a value the token endpoint can shape into an OAuth error —
+  # never an assertive match that raises and 500s the /oauth/token request.
+  defp mint_token_pair(source) do
     access = "emo-" <> Crypto.random_secret()
     offline? = String.contains?(source.scope || "", "offline_access")
     refresh = if offline?, do: "emor-" <> Crypto.random_secret(), else: nil
 
-    {:ok, _token} =
+    changeset =
       %{
         access_token_hash: Crypto.hash(access),
         refresh_token_hash: refresh && Crypto.hash(refresh),
@@ -312,15 +315,21 @@ defmodule Emisar.OAuth do
         refresh_expires_at: refresh && secs_from_now(@refresh_ttl_s)
       }
       |> Token.Changeset.create()
-      |> Repo.insert()
 
-    %{
-      access_token: access,
-      token_type: "Bearer",
-      expires_in: @access_ttl_s,
-      refresh_token: refresh,
-      scope: source.scope
-    }
+    case Repo.insert(changeset) do
+      {:ok, _token} ->
+        {:ok,
+         %{
+           access_token: access,
+           token_type: "Bearer",
+           expires_in: @access_ttl_s,
+           refresh_token: refresh,
+           scope: source.scope
+         }}
+
+      {:error, %Ecto.Changeset{}} ->
+        {:error, :server_error}
+    end
   end
 
   defp check_code_live(%AuthorizationCode{used_at: used}) when not is_nil(used),
