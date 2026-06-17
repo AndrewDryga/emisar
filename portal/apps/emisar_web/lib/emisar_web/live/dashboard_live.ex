@@ -310,7 +310,7 @@ defmodule EmisarWeb.DashboardLive do
 
     <%!-- Recent runs — full width, no parallel "activity" mirror at
          the bottom (that just duplicated the audit page). --%>
-    <div class="mt-8 overflow-hidden rounded-xl border border-zinc-900 bg-zinc-950/40">
+    <.card class="mt-8 overflow-hidden" padding="">
       <header class="flex items-center justify-between border-b border-zinc-900 px-5 py-3">
         <h2 class="text-sm font-semibold text-zinc-100">Recent runs</h2>
         <.link
@@ -349,7 +349,7 @@ defmodule EmisarWeb.DashboardLive do
           </li>
         </ul>
       <% end %>
-    </div>
+    </.card>
     """
   end
 

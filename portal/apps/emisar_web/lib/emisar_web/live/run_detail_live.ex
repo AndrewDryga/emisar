@@ -280,17 +280,14 @@ defmodule EmisarWeb.RunDetailLive do
       <%!-- Operator's reason, full width. The policy decision renders
            as an inline strip below (only when it carries signal), not a
            side panel that would just echo the status chip. --%>
-      <section
-        :if={@run.reason && @run.reason != ""}
-        class="mt-4 rounded-xl border border-zinc-900 bg-zinc-950/40 p-4"
-      >
+      <.card :if={@run.reason && @run.reason != ""} class="mt-4" padding="p-4">
         <h3 class="text-xs font-semibold uppercase tracking-wider text-zinc-500">
           Operator's reason
         </h3>
         <p class="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-zinc-200">
           {@run.reason}
         </p>
-      </section>
+      </.card>
 
       <%!-- Policy decision strip — single horizontal line. Hidden for
            `allow` (the boring default the run wouldn't exist without).
@@ -298,9 +295,10 @@ defmodule EmisarWeb.RunDetailLive do
            matched rules inline so there's no duplicated decision and
            no whole-section visual weight for what's effectively one
            data point. --%>
-      <div
+      <.card
         :if={show_policy?(@run)}
-        class="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border border-zinc-900 bg-zinc-950/40 px-4 py-2.5 text-sm"
+        class="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm"
+        padding="px-4 py-2.5"
       >
         <span class="text-xs font-semibold uppercase tracking-wider text-zinc-500">
           Policy
@@ -324,17 +322,14 @@ defmodule EmisarWeb.RunDetailLive do
         <span :if={is_integer(@run.policy_version)} class="text-xs text-zinc-500">
           · Policy <span class="font-mono text-zinc-400">v{@run.policy_version}</span>
         </span>
-      </div>
+      </.card>
 
       <%!-- Arguments before output. Operators read the page top→down:
            "what was called → what came back". Putting args first
            groups all the input context (reason, policy, args) above
            the result, so the operator doesn't have to scroll past a
            tall output panel to recall what was actually invoked. --%>
-      <section
-        :if={@run.args && @run.args != %{}}
-        class="mt-6 overflow-hidden rounded-xl border border-zinc-900 bg-zinc-950/40"
-      >
+      <.card :if={@run.args && @run.args != %{}} class="mt-6 overflow-hidden" padding="">
         <header class="flex items-center justify-between border-b border-zinc-900 px-4 py-2">
           <h3 class="text-xs font-semibold uppercase tracking-wider text-zinc-400">Arguments</h3>
           <span :if={@run.args_sha256} class="font-mono text-[11px] text-zinc-500">
@@ -342,14 +337,15 @@ defmodule EmisarWeb.RunDetailLive do
           </span>
         </header>
         <pre class="max-h-64 overflow-auto bg-black/40 p-4 font-mono text-xs text-zinc-300">{format_json(@run.args)}</pre>
-      </section>
+      </.card>
 
       <%!-- The exact shell command the runner ran. Sensitive arg values
            are redacted runner-side (shown as [REDACTED]) — this is the
            audit-grade record of what actually executed. --%>
-      <section
+      <.card
         :if={@run.executed_command && @run.executed_command != ""}
-        class="mt-6 overflow-hidden rounded-xl border border-zinc-900 bg-zinc-950/40"
+        class="mt-6 overflow-hidden"
+        padding=""
       >
         <header class="flex items-center justify-between border-b border-zinc-900 px-4 py-2">
           <h3 class="text-xs font-semibold uppercase tracking-wider text-zinc-400">
@@ -358,7 +354,7 @@ defmodule EmisarWeb.RunDetailLive do
           <span class="text-[11px] text-zinc-600">secrets redacted</span>
         </header>
         <pre class="overflow-auto bg-black/40 p-4 font-mono text-xs text-zinc-200">{@run.executed_command}</pre>
-      </section>
+      </.card>
 
       <%!-- Output stream — the main event. Full width, large, dark
            terminal-style background. Stderr lines render in rose so
@@ -366,9 +362,10 @@ defmodule EmisarWeb.RunDetailLive do
            the panel would just be blank (cancelled, denied, anything
            still awaiting approval) — saves the operator from staring
            at an empty terminal. --%>
-      <section
+      <.card
         :if={show_output?(@run)}
-        class="mt-6 overflow-hidden rounded-xl border border-zinc-900"
+        class="mt-6 overflow-hidden"
+        padding=""
       >
         <header class="flex items-center justify-between border-b border-zinc-900 bg-zinc-950/60 px-4 py-2">
           <div class="flex items-center gap-2">
@@ -402,7 +399,7 @@ defmodule EmisarWeb.RunDetailLive do
             id={id}
             class={event.stream == "stderr" && "text-rose-300"}
           >{event_chunk(event)}</span></pre>
-      </section>
+      </.card>
     </.dashboard_shell>
     """
   end

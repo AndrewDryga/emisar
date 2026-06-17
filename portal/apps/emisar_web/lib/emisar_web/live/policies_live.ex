@@ -665,7 +665,7 @@ defmodule EmisarWeb.PoliciesLive do
 
   defp ruleset_card(assigns) do
     ~H"""
-    <div class="rounded-xl border border-zinc-900 bg-zinc-950/40 p-5">
+    <.card>
       <header class="flex items-start justify-between gap-4">
         <div class="min-w-0 flex-1">
           <%= if @ruleset.policy do %>
@@ -732,7 +732,7 @@ defmodule EmisarWeb.PoliciesLive do
       <p :if={is_nil(@ruleset.scope_type)} class="mt-4 text-xs text-zinc-500">
         Pick a runner or group above, then set its rules.
       </p>
-    </div>
+    </.card>
     """
   end
 

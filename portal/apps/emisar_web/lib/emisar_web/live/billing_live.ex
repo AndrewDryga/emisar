@@ -235,7 +235,7 @@ defmodule EmisarWeb.BillingLive do
         <%!-- Current-plan strip across the top. Plan name + price on
              the left, three usage bars on the right. Replaces a tall
              narrow sidebar card that wasted the page real estate. --%>
-        <section class="rounded-xl border border-zinc-900 bg-zinc-950/40 p-6">
+        <.card padding="p-6">
           <div class="flex flex-wrap items-start justify-between gap-4">
             <div>
               <div class="text-xs font-medium uppercase tracking-wider text-zinc-500">
@@ -329,7 +329,7 @@ defmodule EmisarWeb.BillingLive do
               pct={usage_pct(@member_count, member_limit)}
             />
           </div>
-        </section>
+        </.card>
 
         <%!-- Plan cards. Three across on desktop, single column on
              phones. Current plan visually pinned, popular plan

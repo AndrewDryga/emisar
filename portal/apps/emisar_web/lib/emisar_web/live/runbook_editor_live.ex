@@ -434,7 +434,7 @@ defmodule EmisarWeb.RunbookEditorLive do
       </:actions>
 
       <div class="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_320px]">
-        <section class="overflow-hidden rounded-xl border border-zinc-900 bg-zinc-950/40">
+        <.card class="overflow-hidden" padding="">
           <header class="flex items-center justify-between border-b border-zinc-900 px-5 py-3">
             <h2 class="text-sm font-semibold text-zinc-100">Steps</h2>
             <.button
@@ -501,7 +501,7 @@ defmodule EmisarWeb.RunbookEditorLive do
               </.button>
             </div>
           </div>
-        </section>
+        </.card>
 
         <aside class="space-y-4">
           <.panel title="Metadata">

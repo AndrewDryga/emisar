@@ -399,10 +399,11 @@ defmodule EmisarWeb.AuditLive do
            itself leads the page. Admin-only `audit:read` tokens live
            here, not on the LLM agents page (which is for MCP connections).
            Lists existing tokens with revoke + the mint affordance. --%>
-      <section
+      <.card
         :if={ApiKeys.subject_can_manage_api_keys?(@current_subject)}
         id="siem-export"
-        class="mt-8 overflow-hidden rounded-xl border border-zinc-900 bg-zinc-950/40"
+        class="mt-8 overflow-hidden"
+        padding=""
       >
         <header class="flex flex-wrap items-start justify-between gap-3 px-5 py-3">
           <div>
@@ -491,7 +492,7 @@ defmodule EmisarWeb.AuditLive do
             </.list_row>
           </ul>
         </div>
-      </section>
+      </.card>
     </.dashboard_shell>
     """
   end

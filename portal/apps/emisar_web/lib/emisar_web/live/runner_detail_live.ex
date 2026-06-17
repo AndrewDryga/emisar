@@ -187,9 +187,10 @@ defmodule EmisarWeb.RunnerDetailLive do
            disconnect reason shows only when the runner is actually
            disconnected (otherwise it's just historical noise from the
            last drop). --%>
-      <div
+      <.card
         :if={runner_labels(@runner) != [] or disconnect_note?(@runner)}
-        class="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-zinc-900 bg-zinc-950/40 px-4 py-2.5 text-sm"
+        class="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm"
+        padding="px-4 py-2.5"
       >
         <div :if={runner_labels(@runner) != []} class="flex flex-wrap items-center gap-1.5">
           <span class="text-xs font-semibold uppercase tracking-wider text-zinc-500">Labels</span>
@@ -206,14 +207,14 @@ defmodule EmisarWeb.RunnerDetailLive do
             Disconnect reason: <span class="font-mono">{@runner.last_disconnect_reason}</span>
           </span>
         </div>
-      </div>
+      </.card>
 
       <div class="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
         <%!-- Recent runs in a sidebar — operator scanning a runner is
              usually trying to figure out "is this thing healthy?" so
              the catalog gets the wide column, recent runs sit
              alongside as a freshness check. --%>
-        <section class="overflow-hidden rounded-xl border border-zinc-900 bg-zinc-950/40 lg:col-span-2 lg:order-1">
+        <.card class="overflow-hidden lg:col-span-2 lg:order-1" padding="">
           <header class="flex items-center justify-between border-b border-zinc-900 px-5 py-3">
             <h2 class="text-sm font-semibold text-zinc-100">Advertised actions</h2>
             <span class="text-xs text-zinc-500">
@@ -279,9 +280,9 @@ defmodule EmisarWeb.RunnerDetailLive do
               />
             </div>
           <% end %>
-        </section>
+        </.card>
 
-        <section class="overflow-hidden rounded-xl border border-zinc-900 bg-zinc-950/40 lg:order-2">
+        <.card class="overflow-hidden lg:order-2" padding="">
           <header class="border-b border-zinc-900 px-5 py-3">
             <h2 class="text-sm font-semibold text-zinc-100">Recent runs</h2>
           </header>
@@ -297,7 +298,7 @@ defmodule EmisarWeb.RunnerDetailLive do
               </li>
             </ul>
           <% end %>
-        </section>
+        </.card>
       </div>
 
       <%!-- Danger zone — destructive actions live in their own

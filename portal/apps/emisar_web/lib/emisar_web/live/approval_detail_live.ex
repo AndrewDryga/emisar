@@ -412,17 +412,14 @@ defmodule EmisarWeb.ApprovalDetailLive do
       <div class="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-[1fr_320px]">
         <%!-- Left: context — reason, policy, args, link to run --%>
         <div class="space-y-4">
-          <section
-            :if={@request.reason && @request.reason != ""}
-            class="rounded-xl border border-zinc-900 bg-zinc-950/40 p-4"
-          >
+          <.card :if={@request.reason && @request.reason != ""} padding="p-4">
             <h3 class="text-xs font-semibold uppercase tracking-wider text-zinc-500">
               Operator's reason
             </h3>
             <p class="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-zinc-200">
               {@request.reason}
             </p>
-          </section>
+          </.card>
 
           <section
             :if={@run && @run.policy_reason}
@@ -441,10 +438,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
             </div>
           </section>
 
-          <section
-            :if={@run && @run.args && @run.args != %{}}
-            class="overflow-hidden rounded-xl border border-zinc-900 bg-zinc-950/40"
-          >
+          <.card :if={@run && @run.args && @run.args != %{}} class="overflow-hidden" padding="">
             <header class="flex items-center justify-between border-b border-zinc-900 px-4 py-2">
               <h3 class="text-xs font-semibold uppercase tracking-wider text-zinc-500">
                 Arguments
@@ -454,15 +448,16 @@ defmodule EmisarWeb.ApprovalDetailLive do
               </span>
             </header>
             <pre class="max-h-64 overflow-auto bg-black/40 p-4 font-mono text-xs text-zinc-300">{format_json(@run.args)}</pre>
-          </section>
+          </.card>
 
           <%!-- Who has voted so far — surfaced for any multi-approver gate so
                an approver sees who's already signed off (and that a deny
                finalized). A single-approver request shows it only once decided
                (the decision-history panel covers the lone vote). --%>
-          <section
+          <.card
             :if={@decisions != [] and @request.min_approvals > 1}
-            class="overflow-hidden rounded-xl border border-zinc-900 bg-zinc-950/40"
+            class="overflow-hidden"
+            padding=""
           >
             <header class="flex items-center justify-between border-b border-zinc-900 px-4 py-2">
               <h3 class="text-xs font-semibold uppercase tracking-wider text-zinc-500">
@@ -485,7 +480,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
                 <.local_time value={decision.decided_at} class="text-xs text-zinc-500" />
               </li>
             </ul>
-          </section>
+          </.card>
 
           <div :if={@run}>
             <.link

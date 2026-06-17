@@ -136,9 +136,10 @@ defmodule EmisarWeb.AuditDetailLive do
            there; this row lets it breathe and stays out of the
            page-title chrome. Hidden when the event type has no
            special summary (most do not). --%>
-      <section
+      <.card
         :if={AuditSummary.summary_pairs(@event) != []}
-        class="mt-4 flex flex-wrap items-center gap-2 rounded-xl border border-zinc-900 bg-zinc-950/40 px-4 py-3"
+        class="mt-4 flex flex-wrap items-center gap-2"
+        padding="px-4 py-3"
       >
         <span class="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
           Summary
@@ -150,7 +151,7 @@ defmodule EmisarWeb.AuditDetailLive do
           <span class="font-mono text-zinc-500">{elem(pair, 0)}:</span>
           <span class="text-zinc-200">{elem(pair, 1)}</span>
         </span>
-      </section>
+      </.card>
 
       <%!-- Policy-update diff — special-case rendering for the one
            event type where the payload diff is the whole reason
@@ -163,7 +164,7 @@ defmodule EmisarWeb.AuditDetailLive do
 
       <%!-- Payload — primary content on the page. Wide and tall,
            terminal-style for the JSON. --%>
-      <section class="mt-6 overflow-hidden rounded-xl border border-zinc-900">
+      <.card class="mt-6 overflow-hidden" padding="">
         <header class="flex items-center justify-between gap-3 border-b border-zinc-900 bg-zinc-950/60 px-4 py-2">
           <h3 class="text-xs font-semibold uppercase tracking-wider text-zinc-400">Payload</h3>
           <span
@@ -185,7 +186,7 @@ defmodule EmisarWeb.AuditDetailLive do
           id="audit-payload-json"
           class="max-h-[60vh] overflow-auto bg-black p-4 font-mono text-xs leading-relaxed text-zinc-300"
         >{pretty_payload(@event.payload)}</pre>
-      </section>
+      </.card>
     </.dashboard_shell>
     """
   end
@@ -221,9 +222,10 @@ defmodule EmisarWeb.AuditDetailLive do
       |> assign(:changed, overrides["changed"] || [])
 
     ~H"""
-    <section
+    <.card
       :if={@defaults_diff != %{} or @added != [] or @removed != [] or @changed != []}
-      class="mt-6 overflow-hidden rounded-xl border border-zinc-900"
+      class="mt-6 overflow-hidden"
+      padding=""
     >
       <header class="border-b border-zinc-900 bg-zinc-950/60 px-4 py-2">
         <h3 class="text-xs font-semibold uppercase tracking-wider text-zinc-400">
@@ -308,7 +310,7 @@ defmodule EmisarWeb.AuditDetailLive do
           </div>
         <% end %>
       </div>
-    </section>
+    </.card>
     """
   end
 
@@ -334,16 +336,16 @@ defmodule EmisarWeb.AuditDetailLive do
 
   defp entity_card(%{kind: nil} = assigns) do
     ~H"""
-    <div class="flex-1 rounded-xl border border-zinc-900 bg-zinc-950/40 p-4">
+    <.card class="flex-1" padding="p-4">
       <div class="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">{@role}</div>
       <p class="mt-1 text-sm text-zinc-500">— (not recorded)</p>
-    </div>
+    </.card>
     """
   end
 
   defp entity_card(assigns) do
     ~H"""
-    <div class="min-w-0 flex-1 rounded-xl border border-zinc-900 bg-zinc-950/40 p-4">
+    <.card class="min-w-0 flex-1" padding="p-4">
       <div class="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">{@role}</div>
       <div class="mt-1 text-sm">
         <EmisarWeb.AuditLive.ref
@@ -425,7 +427,7 @@ defmodule EmisarWeb.AuditDetailLive do
           MCP session <span class="text-zinc-400">{@mcp_session}</span>
         </p>
       </div>
-    </div>
+    </.card>
     """
   end
 

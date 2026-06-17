@@ -588,23 +588,25 @@ defmodule EmisarWeb.RunbookRunLive do
         <%!-- Dead/pre-connect render: the plan + active-run state load on
              connect, so show a neutral placeholder rather than the empty plan
              and dispatch form (which would flash, then flip to the live run). --%>
-        <div
+        <.card
           :if={not @loaded?}
-          class="rounded-xl border border-zinc-900 bg-zinc-950/40 px-5 py-10 text-center text-sm text-zinc-500"
+          class="text-center text-sm text-zinc-500"
+          padding="px-5 py-10"
         >
           <.icon name="hero-arrow-path" class="mr-2 inline h-4 w-4 animate-spin text-zinc-500" />
           Loading…
-        </div>
+        </.card>
 
         <%!-- One table, not two. Idle: the plan (numbered steps). Once
              dispatched: the live runs replace those rows in place, while
              the planned-step count stays in the header for context — a
              step fans out to one run per targeted runner, so there can be
              more runs than steps. --%>
-        <section
+        <.card
           :if={@loaded?}
           id="execution"
-          class="overflow-hidden rounded-xl border border-zinc-900 bg-zinc-950/40"
+          class="overflow-hidden"
+          padding=""
         >
           <header class="flex items-center justify-between border-b border-zinc-900 px-5 py-3">
             <h2 class="flex items-center gap-2 text-sm font-semibold text-zinc-100">
@@ -788,7 +790,7 @@ defmodule EmisarWeb.RunbookRunLive do
             </.link>
             first.
           </div>
-        </section>
+        </.card>
 
         <%!-- Dispatch form — full width below the plan; doubles as the re-run
              form once a run settles. Hidden while a run is IN PROGRESS so a
