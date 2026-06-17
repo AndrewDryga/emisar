@@ -10,7 +10,21 @@ defmodule EmisarWeb.RecentAccounts do
   @cookie "emisar_recent_accounts"
   @max 5
   # A year — long enough that a returning operator still sees their team.
-  @opts [sign: true, max_age: 60 * 60 * 24 * 365, same_site: "Lax", http_only: true, secure: true]
+  @max_age 60 * 60 * 24 * 365
+
+  # `secure` follows the same runtime knob as the session + remember-me cookies
+  # (UserAuth.remember_me_options/0): forced on behind HTTPS, off so local dev over
+  # http://localhost still returns the cookie. A hardcoded `secure: true` would
+  # silently drop the recent-teams buttons in dev.
+  defp opts do
+    [
+      sign: true,
+      max_age: @max_age,
+      same_site: "Lax",
+      http_only: true,
+      secure: Application.get_env(:emisar_web, :force_secure_cookies, false)
+    ]
+  end
 
   @doc "The remembered accounts (most-recent-first), or `[]`. Reads the signed cookie."
   def list(conn) do
@@ -26,6 +40,6 @@ defmodule EmisarWeb.RecentAccounts do
   def put(conn, %{slug: slug, name: name}) when is_binary(slug) do
     entry = %{"slug" => slug, "name" => name}
     rest = Enum.reject(list(conn), &(&1["slug"] == slug))
-    Plug.Conn.put_resp_cookie(conn, @cookie, Enum.take([entry | rest], @max), @opts)
+    Plug.Conn.put_resp_cookie(conn, @cookie, Enum.take([entry | rest], @max), opts())
   end
 end

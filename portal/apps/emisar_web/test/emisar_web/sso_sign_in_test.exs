@@ -79,4 +79,40 @@ defmodule EmisarWeb.SSOSignInTest do
       assert_error_sent 404, fn -> get(conn, ~p"/app/no-such-team/sign_in") end
     end
   end
+
+  describe "branded sign-in lands on that team" do
+    test "email/password carrying the branded page's return_to lands on that team", %{conn: conn} do
+      {_conn, user, account} = register_and_log_in(conn)
+
+      # A fresh (signed-out) sign-in posting the branded page's hidden return_to.
+      conn =
+        post(build_conn(), ~p"/sign_in",
+          user: %{
+            "email" => user.email,
+            "password" => "very-long-password-here",
+            "return_to" => ~p"/app/#{account}"
+          }
+        )
+
+      assert redirected_to(conn) == ~p"/app/#{account}"
+    end
+
+    test "a forged non-local return_to is ignored — no open redirect", %{conn: conn} do
+      {_conn, user, _account} = register_and_log_in(conn)
+
+      conn =
+        post(build_conn(), ~p"/sign_in",
+          user: %{
+            "email" => user.email,
+            "password" => "very-long-password-here",
+            "return_to" => "https://evil.test/phish"
+          }
+        )
+
+      # Falls back to the default landing (bare /app → the user's account), never
+      # the external URL.
+      assert redirected_to(conn) == ~p"/app"
+      refute redirected_to(conn) =~ "evil.test"
+    end
+  end
 end

@@ -43,6 +43,8 @@ defmodule EmisarWeb.AccountSignInLive do
       </div>
 
       <.simple_form for={@form} id="login_form" action={~p"/sign_in"} phx-update="ignore">
+        <%!-- Land back on THIS team after sign-in (server validates it's a local /app/<slug>). --%>
+        <input type="hidden" name="user[return_to]" value={~p"/app/#{@account}"} />
         <.input field={@form[:email]} type="email" label="Work email" autocomplete="email" required />
         <.input
           field={@form[:password]}

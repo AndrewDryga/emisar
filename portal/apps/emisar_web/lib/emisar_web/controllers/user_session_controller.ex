@@ -28,6 +28,7 @@ defmodule EmisarWeb.UserSessionController do
   @pending_mfa_ttl_seconds 5 * 60
 
   def create(conn, %{"user" => user_params}) do
+    conn = put_return_to(conn, user_params)
     pending = get_pending_mfa(conn)
 
     cond do
@@ -52,6 +53,16 @@ defmodule EmisarWeb.UserSessionController do
         |> redirect(to: ~p"/sign_in")
     end
   end
+
+  # A sign-in begun on a team's branded page (/app/:slug/sign_in) carries a
+  # return_to so userpass + the MFA step land on THAT team, not the user's stale
+  # default. Whitelisted to a local /app/<slug> path — never an open redirect; the
+  # slug gate still re-authorizes membership on arrival, so a forged ref just 404s.
+  defp put_return_to(conn, %{"return_to" => rt}) when is_binary(rt) do
+    if rt =~ ~r{^/app/[a-z0-9-]+$}, do: put_session(conn, :user_return_to, rt), else: conn
+  end
+
+  defp put_return_to(conn, _params), do: conn
 
   defp do_start_sign_in(conn, email, password, user_params) do
     context = RequestContext.from_conn(conn)

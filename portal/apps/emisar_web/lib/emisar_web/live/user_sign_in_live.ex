@@ -52,7 +52,7 @@ defmodule EmisarWeb.UserSignInLive do
           href={~p"/sign_in/sso"}
           class="text-center font-medium text-indigo-400 hover:text-indigo-300"
         >
-          Continue with single sign-on
+          Sign in with your team's SSO
         </.link>
         <p class="text-center text-zinc-400">
           New here?
