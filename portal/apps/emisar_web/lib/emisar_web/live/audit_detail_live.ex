@@ -393,18 +393,8 @@ defmodule EmisarWeb.AuditDetailLive do
       <p :if={@auth_method} class="mt-2 flex items-center gap-1.5 text-[11px] text-zinc-500">
         <.icon name="hero-finger-print" class="h-3 w-3 shrink-0 text-zinc-600" />
         <span>via <span class="text-zinc-300">{auth_method_label(@auth_method)}</span></span>
-        <span
-          :if={@mfa == true}
-          class="rounded bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-medium text-emerald-300 ring-1 ring-emerald-500/30"
-        >
-          2FA
-        </span>
-        <span
-          :if={@mfa == false}
-          class="rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] font-medium text-zinc-500"
-        >
-          no 2FA
-        </span>
+        <.chip :if={@mfa == true} tone={:emerald}>2FA</.chip>
+        <.chip :if={@mfa == false}>no 2FA</.chip>
       </p>
       <%!-- MCP coordinates for this actor: the client the LLM connected
            through (bridge only) and the session it was on. They belong to

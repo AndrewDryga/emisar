@@ -670,9 +670,7 @@ defmodule EmisarWeb.PoliciesLive do
         <div class="min-w-0 flex-1">
           <%= if @ruleset.policy do %>
             <div class="flex items-center gap-2">
-              <span class="rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
-                {@ruleset.scope_type}
-              </span>
+              <.chip upcase>{@ruleset.scope_type}</.chip>
               <span class="truncate text-sm font-semibold text-zinc-100">
                 {target_name(@ruleset, @runners)}
               </span>

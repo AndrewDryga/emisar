@@ -207,12 +207,7 @@ defmodule EmisarWeb.RunnerDetailLive do
       >
         <div :if={runner_labels(@runner) != []} class="flex flex-wrap items-center gap-1.5">
           <span class="text-xs font-semibold uppercase tracking-wider text-zinc-500">Labels</span>
-          <span
-            :for={{k, v} <- runner_labels(@runner)}
-            class="rounded bg-zinc-900 px-1.5 py-0.5 font-mono text-[11px] text-zinc-300"
-          >
-            {k}={v}
-          </span>
+          <.chip :for={{k, v} <- runner_labels(@runner)} mono>{k}={v}</.chip>
         </div>
         <div :if={disconnect_note?(@runner)} class="flex items-center gap-1.5 text-rose-300/90">
           <.icon name="hero-bolt-slash" class="h-3.5 w-3.5" />

@@ -472,15 +472,8 @@ defmodule EmisarWeb.AuditLive do
                 <span class="truncate text-sm font-medium text-zinc-100">{key.name}</span>
               </:title>
               <:chips>
-                <span class="inline-flex items-center rounded-md bg-indigo-500/10 px-1.5 py-0.5 font-mono text-[10px] text-indigo-200 ring-1 ring-indigo-500/30">
-                  audit:read
-                </span>
-                <span
-                  :if={key.revoked_at}
-                  class="inline-flex items-center rounded-md bg-rose-500/10 px-1.5 py-0.5 text-[10px] text-rose-200 ring-1 ring-rose-500/30"
-                >
-                  Revoked
-                </span>
+                <.chip tone={:indigo} mono>audit:read</.chip>
+                <.chip :if={key.revoked_at} tone={:rose}>Revoked</.chip>
               </:chips>
               <:meta>
                 {key.key_prefix}… · last used{" "}<.local_time

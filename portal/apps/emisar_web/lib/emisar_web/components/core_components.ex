@@ -2096,19 +2096,25 @@ defmodule EmisarWeb.CoreComponents do
     default: false,
     doc: "uppercase + semibold weight, for status/label tags"
 
+  attr :icon, :string, default: nil, doc: "optional leading heroicon — renders inline-flex"
   attr :class, :string, default: nil
+  attr :rest, :global, doc: "extra attributes (e.g. title for a tooltip)"
   slot :inner_block, required: true
 
   def chip(assigns) do
     ~H"""
-    <span class={[
-      "rounded px-1.5 py-0.5 text-[10px]",
-      if(@upcase, do: "font-semibold uppercase tracking-wider", else: "font-medium"),
-      chip_class(@tone),
-      @mono && "font-mono",
-      @class
-    ]}>
-      {render_slot(@inner_block)}
+    <span
+      class={[
+        "rounded px-1.5 py-0.5 text-[10px]",
+        @icon && "inline-flex items-center gap-1",
+        if(@upcase, do: "font-semibold uppercase tracking-wider", else: "font-medium"),
+        chip_class(@tone),
+        @mono && "font-mono",
+        @class
+      ]}
+      {@rest}
+    >
+      <.icon :if={@icon} name={@icon} class="h-3 w-3" />{render_slot(@inner_block)}
     </span>
     """
   end

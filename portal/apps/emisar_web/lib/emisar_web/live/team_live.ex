@@ -768,37 +768,34 @@ defmodule EmisarWeb.TeamLive do
                       {(membership.user && (membership.user.full_name || membership.user.email)) ||
                         "(unknown)"}
                     </span>
-                    <span
-                      :if={Accounts.Membership.disabled?(membership)}
-                      class="rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium text-amber-200 ring-1 ring-amber-500/30"
-                    >
+                    <.chip :if={Accounts.Membership.disabled?(membership)} tone={:amber}>
                       Suspended
-                    </span>
+                    </.chip>
                     <%!-- Unconfirmed = signed up but never clicked the
                          email confirmation link. Useful signal when an
                          admin is wondering why a member can't sign in. --%>
-                    <span
+                    <.chip
                       :if={membership.user && is_nil(membership.user.confirmed_at)}
-                      class="rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium text-amber-200 ring-1 ring-amber-500/30"
+                      tone={:amber}
                       title="This user signed up but hasn't confirmed their email."
                     >
                       Unconfirmed
-                    </span>
+                    </.chip>
                     <%!-- Email on the deliverability suppression list (a hard
                          bounce or spam complaint) — invites and notifications
                          to this address are silently dropped, so it's the real
                          answer to "why didn't they get the invite?". We expose
                          no un-suppress control; clearing it is a support action
                          (per the product call), hence the tooltip copy. --%>
-                    <span
+                    <.chip
                       :if={
                         membership.user && MapSet.member?(@suppressed_emails, membership.user.email)
                       }
-                      class="rounded bg-rose-500/15 px-1.5 py-0.5 text-[10px] font-medium text-rose-200 ring-1 ring-rose-500/30"
+                      tone={:rose}
                       title="This address bounced or filed a spam complaint, so emails to it are blocked. Contact support to clear it."
                     >
                       Email bouncing
-                    </span>
+                    </.chip>
                     <%!-- MFA status. Three states worth distinguishing:
                          (1) enrolled — quiet emerald check, the happy
                          default; (2) not enrolled, account doesn't
@@ -807,12 +804,9 @@ defmodule EmisarWeb.TeamLive do
                          rose, because that user can't sign in right
                          now and an admin should chase them. --%>
                     <.mfa_badge user={membership.user} require_mfa?={@current_account.require_mfa} />
-                    <span
-                      :if={membership.user_id == @current_user.id}
-                      class="rounded bg-indigo-500/15 px-1.5 py-0.5 text-[10px] font-medium text-indigo-200 ring-1 ring-indigo-500/30"
-                    >
+                    <.chip :if={membership.user_id == @current_user.id} tone={:indigo}>
                       You
-                    </span>
+                    </.chip>
                   </div>
                   <%!-- Both timestamps render through <.local_time> (viewer-local,
                        hoverable, live); {" "} guards the space the formatter would
@@ -876,9 +870,9 @@ defmodule EmisarWeb.TeamLive do
                     </.menu_item>
                   </.dropdown>
                 <% else %>
-                  <span class="shrink-0 rounded-md bg-zinc-900 px-2 py-1 text-xs font-medium text-zinc-300 ring-1 ring-zinc-800">
+                  <.chip class="shrink-0">
                     {String.capitalize(to_string(membership.role))}
-                  </span>
+                  </.chip>
                 <% end %>
 
                 <.member_actions
@@ -1009,9 +1003,7 @@ defmodule EmisarWeb.TeamLive do
               title="No team members yet."
             >
               Use the
-              <span class="rounded bg-zinc-900 px-1.5 py-0.5 text-[11px] font-medium text-zinc-300">
-                Invite
-              </span>
+              <.chip>Invite</.chip>
               form above to send a magic-link to a new member.
             </.empty_state>
           </:empty>
@@ -1045,34 +1037,31 @@ defmodule EmisarWeb.TeamLive do
 
   defp mfa_badge(%{user: %{mfa_enabled_at: %DateTime{}}} = assigns) do
     ~H"""
-    <span
-      class="inline-flex items-center gap-1 rounded bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-medium text-emerald-200 ring-1 ring-emerald-500/30"
+    <.chip
+      tone={:emerald}
+      icon="hero-shield-check"
       title="Two-factor authentication is enrolled."
     >
-      <.icon name="hero-shield-check" class="h-3 w-3" /> 2FA
-    </span>
+      2FA
+    </.chip>
     """
   end
 
   defp mfa_badge(%{require_mfa?: true} = assigns) do
     ~H"""
-    <span
-      class="inline-flex items-center gap-1 rounded bg-rose-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-rose-200 ring-1 ring-rose-500/40"
+    <.chip
+      tone={:rose}
+      icon="hero-shield-exclamation"
       title="Account requires 2FA but this user hasn't enrolled. They can't sign in until they do."
     >
-      <.icon name="hero-shield-exclamation" class="h-3 w-3" /> 2FA required
-    </span>
+      2FA required
+    </.chip>
     """
   end
 
   defp mfa_badge(assigns) do
     ~H"""
-    <span
-      class="inline-flex items-center gap-1 rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] font-medium text-zinc-400 ring-1 ring-zinc-700"
-      title="No two-factor authentication enrolled."
-    >
-      No 2FA
-    </span>
+    <.chip title="No two-factor authentication enrolled.">No 2FA</.chip>
     """
   end
 

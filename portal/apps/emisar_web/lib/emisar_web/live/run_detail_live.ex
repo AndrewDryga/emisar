@@ -312,12 +312,9 @@ defmodule EmisarWeb.RunDetailLive do
         <span class="text-xs font-semibold uppercase tracking-wider text-zinc-500">
           Policy
         </span>
-        <span class={[
-          "rounded px-1.5 py-0.5 text-[10px] font-medium",
-          policy_decision_class(@run.policy_decision)
-        ]}>
+        <.chip tone={policy_decision_tone(@run.policy_decision)}>
           {policy_label(@run.policy_decision)}
-        </span>
+        </.chip>
         <span
           :if={@run.policy_reason && @run.policy_reason != ""}
           class="text-zinc-300"
@@ -458,14 +455,10 @@ defmodule EmisarWeb.RunDetailLive do
 
   defp show_output?(_), do: true
 
-  defp policy_decision_class("allow"),
-    do: "bg-emerald-500/10 text-emerald-300 ring-1 ring-emerald-500/30"
-
-  defp policy_decision_class("require_approval"),
-    do: "bg-amber-500/10 text-amber-300 ring-1 ring-amber-500/30"
-
-  defp policy_decision_class("deny"), do: "bg-rose-500/10 text-rose-300 ring-1 ring-rose-500/30"
-  defp policy_decision_class(_), do: "bg-zinc-700/40 text-zinc-300 ring-1 ring-zinc-700"
+  defp policy_decision_tone("allow"), do: :emerald
+  defp policy_decision_tone("require_approval"), do: :amber
+  defp policy_decision_tone("deny"), do: :rose
+  defp policy_decision_tone(_), do: :default
 
   defp matched_rules_label(nil), do: "—"
   defp matched_rules_label([]), do: "—"

@@ -684,12 +684,9 @@ defmodule EmisarWeb.ProfileLive do
                 </span>
               </:title>
               <:chips>
-                <span
-                  :if={current_session?(session, @current_session_digest)}
-                  class="rounded bg-indigo-500/15 px-1.5 py-0.5 text-[10px] font-medium text-indigo-200 ring-1 ring-indigo-500/30"
-                >
+                <.chip :if={current_session?(session, @current_session_digest)} tone={:indigo}>
                   This device
-                </span>
+                </.chip>
               </:chips>
               <:meta>
                 Started <.local_time value={session.inserted_at} mode={:relative} />
