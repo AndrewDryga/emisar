@@ -27,13 +27,14 @@ defmodule EmisarWeb.RunsLive do
      LiveTable.apply_filter(socket, ~p"/app/#{socket.assigns.current_account}/runs", params)}
   end
 
-  def handle_info({_event, _}, socket) do
-    # PubSub-driven refresh — re-run the current filter/page.
+  def handle_info({:run_updated, _run}, socket) do
+    # A run in this account changed — re-run the current filter/page.
     {:noreply, load_runs(socket, socket.assigns.filter_params)}
   end
 
-  # Total catch-all: the badge hooks forward account-topic broadcasts to every
-  # authenticated LV, so any other shape must be ignored, not crash.
+  # Total catch-all: the badge hooks forward EVERY account-topic broadcast
+  # (runner connection, approval, pack updates) to every authenticated LV, so
+  # any other shape is ignored — only a run change re-queries the runs list.
   def handle_info(_msg, socket), do: {:noreply, socket}
 
   defp load_runs(socket, params) do

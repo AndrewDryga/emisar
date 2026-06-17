@@ -25,7 +25,13 @@ defmodule EmisarWeb.TeamLive do
   end
 
   def handle_params(params, _uri, socket) do
-    {:noreply, load(socket, params)}
+    # Gate load/2's reads behind connected? — they run once on the live mount,
+    # not also on the dead render (IL-18). The dead render shows <.loading_state>.
+    if connected?(socket) do
+      {:noreply, socket |> assign(:loading?, false) |> load(params)}
+    else
+      {:noreply, assign(socket, :loading?, true)}
+    end
   end
 
   def handle_info({:list_changed, :team, _event_type, _id}, socket),
@@ -555,17 +561,19 @@ defmodule EmisarWeb.TeamLive do
       width={:settings}
     >
       <:title>Team</:title>
-      <:actions :if={can_manage?(assigns)}>
+      <:actions :if={not @loading? and can_manage?(assigns)}>
         <.button phx-click={show_invite()} size="md">
           Invite member
         </.button>
       </:actions>
 
+      <.loading_state :if={@loading?} />
+
       <%!-- Single-column list. Each row is a member: avatar, name +
            email, role pill, joined, "..." menu. Inline edit form
            opens directly under the row instead of in a bolted-on
            extra table column. --%>
-      <div class="space-y-6">
+      <div :if={not @loading?} class="space-y-6">
         <%!-- Security card — account-wide MFA toggle (owner-only) +
              at-a-glance per-member MFA status. Lives at the top because
              this is the highest-leverage account setting on the page;
