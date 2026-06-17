@@ -366,6 +366,36 @@ defmodule Emisar.Accounts do
   end
 
   @doc """
+  Resolve the membership for an `/app/:account_id_or_slug` path segment,
+  scoped to the user's OWN memberships. The segment is a UUID (API / SSO /
+  temporary redirects) or the slug (the canonical UI form). A non-member or
+  unknown ref both return `{:error, :not_found}` — indistinguishable, so a
+  slugged URL never confirms a tenant exists (404, never 403). Suspended
+  (`disabled_at`) members and soft-deleted accounts/users are excluded.
+
+  Pre-Subject: the slug IS the cross-account authz input, re-resolved on
+  every authenticated mount (`UserAuth.on_mount(:ensure_account_slug)`), not
+  trusted from the session.
+  """
+  def fetch_membership_by_account_id_or_slug(%Users.User{id: user_id}, account_id_or_slug) do
+    Membership.Query.not_deleted()
+    |> Membership.Query.by_user_id(user_id)
+    |> Membership.Query.not_disabled()
+    |> scope_to_account_ref(account_id_or_slug)
+    |> Membership.Query.with_preloaded_account()
+    |> Membership.Query.with_preloaded_user()
+    |> Repo.fetch(Membership.Query)
+  end
+
+  defp scope_to_account_ref(queryable, account_id_or_slug) do
+    if Repo.valid_uuid?(account_id_or_slug) do
+      Membership.Query.by_account_id(queryable, account_id_or_slug)
+    else
+      Membership.Query.by_account_slug(queryable, account_id_or_slug)
+    end
+  end
+
+  @doc """
   Audit a session account switch. The switch itself is web session state
   (no rows change), but the audit trail of it is the domain's record —
   controllers never write audit rows. Takes the membership resolved by

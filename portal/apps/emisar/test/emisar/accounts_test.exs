@@ -99,6 +99,71 @@ defmodule Emisar.AccountsTest do
     end
   end
 
+  describe "fetch_membership_by_account_id_or_slug/2" do
+    test "resolves the user's membership by the account slug" do
+      user = user_fixture()
+      account = account_fixture()
+      membership = membership_fixture(account_id: account.id, user_id: user.id)
+
+      assert {:ok, %Membership{id: id, account: %Account{} = resolved, user: %User{}}} =
+               Accounts.fetch_membership_by_account_id_or_slug(user, account.slug)
+
+      assert id == membership.id
+      assert resolved.id == account.id
+    end
+
+    test "resolves by the account id too (the UUID form for API/SSO/redirects)" do
+      user = user_fixture()
+      account = account_fixture()
+      membership = membership_fixture(account_id: account.id, user_id: user.id)
+
+      assert {:ok, %Membership{id: id}} =
+               Accounts.fetch_membership_by_account_id_or_slug(user, account.id)
+
+      assert id == membership.id
+    end
+
+    test "a non-member's slug is indistinguishable from an unknown one (404, never a leak)" do
+      member = user_fixture()
+      account = account_fixture()
+      _ = membership_fixture(account_id: account.id, user_id: member.id)
+
+      outsider = user_fixture()
+
+      # The account exists, but the outsider isn't a member: SAME :not_found as
+      # a slug no account has — so a URL never confirms a tenant exists (404, not 403).
+      assert {:error, :not_found} =
+               Accounts.fetch_membership_by_account_id_or_slug(outsider, account.slug)
+
+      assert {:error, :not_found} =
+               Accounts.fetch_membership_by_account_id_or_slug(outsider, "no-such-team")
+    end
+
+    test "a member of account A cannot resolve account B (cross-account, by slug or id)" do
+      user = user_fixture()
+      account_a = account_fixture()
+      account_b = account_fixture()
+      _ = membership_fixture(account_id: account_a.id, user_id: user.id)
+      _ = membership_fixture(account_id: account_b.id, user_id: user_fixture().id)
+
+      assert {:error, :not_found} =
+               Accounts.fetch_membership_by_account_id_or_slug(user, account_b.slug)
+
+      assert {:error, :not_found} =
+               Accounts.fetch_membership_by_account_id_or_slug(user, account_b.id)
+    end
+
+    test "a suspended membership does not resolve" do
+      user = user_fixture()
+      {_owner_user, account, owner_subject} = owner_subject_fixture()
+      membership = membership_fixture(account_id: account.id, user_id: user.id, role: "operator")
+      assert {:ok, _} = Accounts.suspend_membership(membership, owner_subject)
+
+      assert {:error, :not_found} =
+               Accounts.fetch_membership_by_account_id_or_slug(user, account.slug)
+    end
+  end
+
   describe "invite_user_to_account/3" do
     test "creates a placeholder user for an unknown email" do
       inviter = user_fixture()

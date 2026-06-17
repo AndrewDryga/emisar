@@ -16,6 +16,10 @@ defmodule Emisar.Accounts.Membership.Query do
   def by_account_id(queryable, account_id),
     do: where(queryable, [memberships: m], m.account_id == ^account_id)
 
+  @doc "Scope to the membership whose (non-deleted) account has this slug. Slug is citext, so the match is case-insensitive."
+  def by_account_slug(queryable, slug),
+    do: queryable |> with_joined_account() |> where([account: a], a.slug == ^slug)
+
   def by_user_id(queryable, user_id),
     do: where(queryable, [memberships: m], m.user_id == ^user_id)
 
