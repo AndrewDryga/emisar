@@ -483,6 +483,11 @@ defmodule EmisarWeb.TeamLive do
     end
   end
 
+  # Operator-facing label for a scope's type — "Group" / "Runner", not the raw
+  # lowercase atom.
+  defp scope_type_label(:group), do: "Group"
+  defp scope_type_label(:runner), do: "Runner"
+
   # Render a scope chip's value — humanizes runner-uuids into names.
   defp scope_label(%{scope_type: :group, scope_value: v}, _groups, _runners),
     do: v
@@ -680,7 +685,7 @@ defmodule EmisarWeb.TeamLive do
           id="invite-panel"
           class="hidden"
           padding="p-6"
-          title="Invite a teammate"
+          title="Invite a member"
         >
           <:subtitle>
             We'll email a join link for <span class="font-medium text-zinc-300">{@current_account.name}</span>.
@@ -700,7 +705,7 @@ defmodule EmisarWeb.TeamLive do
               field={@form[:email]}
               type="email"
               label="Email"
-              placeholder="teammate@company.com"
+              placeholder="name@company.com"
               required
             />
             <.input
@@ -830,7 +835,11 @@ defmodule EmisarWeb.TeamLive do
                           scope:
                         </span>
                         <.chip :for={scope <- scopes} tone={:indigo}>
-                          {scope.scope_type}: {scope_label(scope, @runner_groups, @runners_by_id)}
+                          {scope_type_label(scope.scope_type)}: {scope_label(
+                            scope,
+                            @runner_groups,
+                            @runners_by_id
+                          )}
                         </.chip>
                     <% end %>
                   </div>
@@ -999,7 +1008,7 @@ defmodule EmisarWeb.TeamLive do
               <span class="rounded bg-zinc-900 px-1.5 py-0.5 text-[11px] font-medium text-zinc-300">
                 Invite
               </span>
-              form above to send a magic-link to a teammate.
+              form above to send a magic-link to a new member.
             </.empty_state>
           </:empty>
         </LiveTable.live_table>

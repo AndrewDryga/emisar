@@ -415,17 +415,12 @@ defmodule EmisarWeb.ApprovalsLive do
                     </div>
                     <div class="truncate text-xs text-zinc-500">
                       on {runner_label(request, @runner_labels)}
+                      <%!-- The status badge on the right carries the outcome word
+                           (approved / denied / expired); the meta just attributes
+                           the decider. An expired request has none, so it shows
+                           only the badge. --%>
                       <span :if={request.decided_by_id}>
-                        · {String.capitalize(to_string(request.status))} by {user_label(
-                          request.decided_by_id,
-                          @user_labels
-                        )}
-                      </span>
-                      <%!-- An expired request lapsed with no decider, so it
-                           never matched the clause above — surface its
-                           outcome word too, just without a "by <user>". --%>
-                      <span :if={is_nil(request.decided_by_id)}>
-                        · {String.capitalize(to_string(request.status))}
+                        · decided by {user_label(request.decided_by_id, @user_labels)}
                       </span>
                     </div>
                   </div>

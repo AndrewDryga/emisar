@@ -282,24 +282,27 @@ defmodule EmisarWeb.ApprovalDetailLive do
   # the LV on every approve click.
   defp approval_flash(opts) do
     scope = Keyword.fetch!(opts, :scope)
+    max_uses = Keyword.get(opts, :max_uses)
 
     case Keyword.fetch!(opts, :duration) do
-      :once ->
-        "Approved for this call only."
-
-      :one_hour ->
-        "Approved. Standing grant active for the next hour (#{scope_label(scope)})."
-
-      :one_day ->
-        "Approved. Standing grant active for the next 24 hours (#{scope_label(scope)})."
-
-      :thirty_days ->
-        "Approved. Standing grant active for the next 30 days (#{scope_label(scope)}). Revoke from the Approvals page."
-
-      :ninety_days ->
-        "Approved. Standing grant active for the next 90 days (#{scope_label(scope)}). Revoke from the Approvals page."
+      :once -> "Approved for this call only."
+      :one_hour -> grant_flash("the next hour", scope, max_uses)
+      :one_day -> grant_flash("the next 24 hours", scope, max_uses)
+      :thirty_days -> grant_flash("the next 30 days", scope, max_uses) <> revoke_hint()
+      :ninety_days -> grant_flash("the next 90 days", scope, max_uses) <> revoke_hint()
     end
   end
+
+  defp grant_flash(window, scope, max_uses),
+    do:
+      "Approved. Standing grant active for #{window} (#{scope_label(scope)}#{uses_suffix(max_uses)})."
+
+  defp revoke_hint, do: " Revoke from the Approvals page."
+
+  # Echo the reuse cap so the approver sees exactly what they granted — an
+  # unlimited grant (nil) reads as the duration window alone.
+  defp uses_suffix(nil), do: ""
+  defp uses_suffix(n), do: ", up to #{n} #{if n == 1, do: "use", else: "uses"}"
 
   defp scope_label(:any_args), do: "any arguments"
   defp scope_label(_), do: "same arguments only"

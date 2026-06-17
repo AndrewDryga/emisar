@@ -263,6 +263,7 @@ defmodule EmisarWeb.AgentsLive do
         |> assign(:filters, filters)
         |> assign(:active_count, count_status(keys, :active))
         |> assign(:idle_count, count_status(keys, :idle))
+        |> assign(:dormant_count, count_status(keys, :dormant))
         |> assign(:never_used_count, count_status(keys, :never_used))
         |> assign(:issued_count, length(active_keys(keys)))
         |> assign(:load_error?, false)
@@ -278,6 +279,7 @@ defmodule EmisarWeb.AgentsLive do
         |> assign(:filters, filters)
         |> assign(:active_count, 0)
         |> assign(:idle_count, 0)
+        |> assign(:dormant_count, 0)
         |> assign(:never_used_count, 0)
         |> assign(:issued_count, 0)
         |> assign(:load_error?, true)
@@ -672,6 +674,7 @@ defmodule EmisarWeb.AgentsLive do
       <.summary_band>
         <.summary_stat tone={:emerald} value={@active_count} label="Active" hint="last 5 min" />
         <.summary_stat tone={:amber} value={@idle_count} label="Idle" hint="last 24 h" />
+        <.summary_stat tone={:zinc} value={@dormant_count} label="Dormant" hint="24 h+" />
         <.summary_stat tone={:zinc} value={@never_used_count} label="Never used" />
         <:trailing>
           {@metadata.count || @issued_count} {if (@metadata.count || @issued_count) == 1,

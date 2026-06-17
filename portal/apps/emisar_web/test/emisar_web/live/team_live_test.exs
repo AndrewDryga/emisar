@@ -13,7 +13,7 @@ defmodule EmisarWeb.TeamLiveTest do
       {conn, _user, account} = register_and_log_in(conn)
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/team")
 
-      assert html =~ "Invite a teammate"
+      assert html =~ "Invite a member"
       assert html =~ "Send invite"
       refute html =~ "Only owners and admins can invite"
       # Each assignable role is explained, not just named — assigning one is a
