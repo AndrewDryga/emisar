@@ -328,7 +328,10 @@ defmodule EmisarWeb.PacksLive do
         <div class="flex items-center gap-2 text-sm text-amber-200">
           <.icon name="hero-shield-exclamation" class="h-4 w-4" />
           <strong>
-            {@pending_count} pack version{if @pending_count == 1, do: "", else: "s"} need trust review.
+            {@pending_count} pack version{if @pending_count == 1, do: "", else: "s"} need{if @pending_count ==
+                                                                                               1,
+                                                                                             do: "s",
+                                                                                             else: ""} trust review.
           </strong>
         </div>
         <p class="mt-1 text-xs text-amber-100/70">

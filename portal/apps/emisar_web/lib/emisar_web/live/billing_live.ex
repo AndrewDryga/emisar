@@ -312,8 +312,8 @@ defmodule EmisarWeb.BillingLive do
             </.button>
           </div>
 
-          {runner_limit = plan_limit(@plans, @summary.plan, :runners_limit)}
-          {member_limit = plan_limit(@plans, @summary.plan, :members_limit)}
+          <% runner_limit = plan_limit(@plans, @summary.plan, :runners_limit) %>
+          <% member_limit = plan_limit(@plans, @summary.plan, :members_limit) %>
 
           <div class="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
             <.usage_meter

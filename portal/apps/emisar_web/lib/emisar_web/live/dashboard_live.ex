@@ -499,7 +499,9 @@ defmodule EmisarWeb.DashboardLive do
       <.icon name="hero-shield-exclamation" class="mt-0.5 h-5 w-5 flex-none text-amber-300" />
       <div class="flex-1 text-sm">
         <p class="font-semibold text-amber-100">
-          {@count} pack version{if @count == 1, do: "", else: "s"} need trust review
+          {@count} pack version{if @count == 1, do: "", else: "s"} need{if @count == 1,
+            do: "s",
+            else: ""} trust review
         </p>
         <p class="mt-1 text-xs text-amber-200/90">
           Dispatch is blocked against these until an admin trusts or rejects the new hash.
