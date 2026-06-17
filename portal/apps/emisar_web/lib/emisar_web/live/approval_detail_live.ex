@@ -353,6 +353,19 @@ defmodule EmisarWeb.ApprovalDetailLive do
           Approval · <span class="font-mono text-base">{@request.context["action_id"] || "—"}</span>
         </.detail_header>
       </:title>
+      <:actions>
+        <%!-- The decision trail for this request (requested / approved / denied /
+             expired), beyond the votes shown below. Subject-scoped by the audit
+             page, so the link only pre-filters. --%>
+        <.link
+          navigate={
+            ~p"/app/#{@current_account}/audit?#{[subject_kind: "approval_request", subject_id: @request.id]}"
+          }
+          class="text-xs font-medium text-indigo-400 hover:text-indigo-300"
+        >
+          View activity →
+        </.link>
+      </:actions>
       <%!-- Meta strip: at-a-glance facts. Status leads — same pattern
            as RunDetail / RunnerDetail — then action, runner,
            requester, when. --%>

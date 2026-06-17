@@ -119,6 +119,17 @@ defmodule EmisarWeb.RunDetailLive do
         </.detail_header>
       </:title>
       <:actions>
+        <%!-- Close the loop: this run's slice of the audit trail (every event
+             whose subject is this run). Subject-scoped by the audit page itself,
+             so the link just pre-filters — it can't widen access. --%>
+        <.link
+          navigate={
+            ~p"/app/#{@current_account}/audit?#{[subject_kind: "action_run", subject_id: @run.id]}"
+          }
+          class="text-xs font-medium text-indigo-400 hover:text-indigo-300"
+        >
+          View activity →
+        </.link>
         <.button
           :if={
             @run.status in [:sent, :running, :pending] and

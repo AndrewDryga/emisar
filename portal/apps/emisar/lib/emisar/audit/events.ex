@@ -723,7 +723,10 @@ defmodule Emisar.Audit.Events do
       "run.cancel_requested",
       actor(subject) ++
         [
-          subject_kind: "run",
+          # "action_run" — the canonical run subject_kind (every other run event +
+          # the audit ref_path use it); "run" here dropped cancel-requests out of a
+          # run's filtered audit trail.
+          subject_kind: "action_run",
           subject_id: run.id,
           payload: %{from_status: run.status, reason: reason}
         ]

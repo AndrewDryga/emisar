@@ -872,6 +872,7 @@ defmodule EmisarWeb.TeamLive do
                   membership={membership}
                   current_user_id={@current_user.id}
                   can_manage?={can_manage?(assigns)}
+                  current_account={@current_account}
                   typed={@typed}
                 />
               </div>
@@ -1066,6 +1067,7 @@ defmodule EmisarWeb.TeamLive do
   attr :membership, :map, required: true
   attr :current_user_id, :string, required: true
   attr :can_manage?, :boolean, required: true
+  attr :current_account, :map, required: true
   attr :typed, :string, required: true
 
   defp member_actions(assigns) do
@@ -1083,7 +1085,18 @@ defmodule EmisarWeb.TeamLive do
           <span class="text-xs text-zinc-500">you</span>
         </div>
       <% not @can_manage? -> %>
-        <span></span>
+        <%!-- Viewers can't manage a member but can audit them — every role on
+             this page holds view_audit. The link is subject-scoped by the audit
+             page; it only pre-filters to this member as actor. --%>
+        <.link
+          :if={@membership.user_id}
+          navigate={
+            ~p"/app/#{@current_account}/audit?#{[actor_kind: "user", actor_id: @membership.user_id]}"
+          }
+          class="shrink-0 text-xs font-medium text-indigo-400 hover:text-indigo-300"
+        >
+          View activity →
+        </.link>
       <% true -> %>
         <.dropdown
           class="inline-block text-left"
@@ -1094,6 +1107,15 @@ defmodule EmisarWeb.TeamLive do
             Actions
             <span class="text-zinc-500 group-open:hidden">▾</span><span class="hidden text-zinc-500 group-open:inline">▴</span>
           </:trigger>
+          <.menu_item
+            :if={@membership.user_id}
+            navigate={
+              ~p"/app/#{@current_account}/audit?#{[actor_kind: "user", actor_id: @membership.user_id]}"
+            }
+            icon="hero-clipboard-document-list"
+          >
+            View activity
+          </.menu_item>
           <.menu_item phx-click="start_edit" phx-value-membership_id={@membership.id}>
             Edit name
           </.menu_item>

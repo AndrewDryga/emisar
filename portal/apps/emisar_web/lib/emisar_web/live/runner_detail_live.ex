@@ -154,6 +154,19 @@ defmodule EmisarWeb.RunnerDetailLive do
           {@runner.name}
         </.detail_header>
       </:title>
+      <:actions>
+        <%!-- This runner's slice of the audit trail (events whose subject is it):
+             registrations, trust decisions, state changes. Subject-scoped by the
+             audit page, so the link only pre-filters. --%>
+        <.link
+          navigate={
+            ~p"/app/#{@current_account}/audit?#{[subject_kind: "runner", subject_id: @runner.id]}"
+          }
+          class="text-xs font-medium text-indigo-400 hover:text-indigo-300"
+        >
+          View activity →
+        </.link>
+      </:actions>
       <%!-- Connection meta strip — same shape as RunDetail /
            ApprovalDetail. Status leads so the connection state is the
            first thing the eye lands on; everything else (hostname,
