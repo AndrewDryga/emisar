@@ -23,47 +23,40 @@ defmodule EmisarWeb.OnboardingLive do
 
   def render(assigns) do
     ~H"""
-    <div class="mx-auto flex min-h-screen max-w-2xl flex-col items-center justify-center px-6 py-12">
-      <div class="mb-10">
-        <.brand size={:md} />
-      </div>
-
-      <h1 class="text-3xl font-bold tracking-tight">Set up your workspace</h1>
-      <p class="mt-2 text-center text-zinc-400">
+    <.auth_layout title="Set up your workspace">
+      <p class="mb-6 text-sm text-zinc-400">
         One quick step. You'll invite teammates and connect runners next.
       </p>
 
-      <.card class="mt-10 w-full" padding="p-8">
-        <.simple_form
-          for={@form}
-          id="onboarding_form"
-          phx-change="validate"
-          phx-submit="create"
-          phx-trigger-action={@trigger_submit}
-          action={~p"/app/accounts/switch"}
-          method="post"
-        >
-          <.input
-            field={@form[:name]}
-            type="text"
-            label="What's your team or company called?"
-            placeholder="Acme Corp"
-            required
-          />
-          <input type="hidden" name="account_id" value={@created_account_id} />
+      <.simple_form
+        for={@form}
+        id="onboarding_form"
+        phx-change="validate"
+        phx-submit="create"
+        phx-trigger-action={@trigger_submit}
+        action={~p"/app/accounts/switch"}
+        method="post"
+      >
+        <.input
+          field={@form[:name]}
+          type="text"
+          label="What's your team or company called?"
+          placeholder="Acme Corp"
+          required
+        />
+        <input type="hidden" name="account_id" value={@created_account_id} />
 
-          <:actions>
-            <.button class="w-full" phx-disable-with="Creating...">
-              Create workspace <span aria-hidden="true">→</span>
-            </.button>
-          </:actions>
-        </.simple_form>
-      </.card>
+        <:actions>
+          <.button class="w-full" phx-disable-with="Creating...">
+            Create workspace <span aria-hidden="true">→</span>
+          </.button>
+        </:actions>
+      </.simple_form>
 
       <p class="mt-6 text-xs text-zinc-500">
         Starts on the Free plan: 3 runners, 1 user, 7-day audit retention. You can upgrade any time.
       </p>
-    </div>
+    </.auth_layout>
     """
   end
 

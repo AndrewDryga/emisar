@@ -338,17 +338,15 @@ defmodule EmisarWeb.PacksLive do
 
       <.loading_state :if={@loading?} />
 
-      <div
+      <.empty_state
         :if={@pack_count == 0 and not @loading?}
-        class="mt-8 rounded-xl border border-dashed border-zinc-800 p-10 text-center"
+        icon="hero-cube"
+        title="No packs reported yet"
+        class="mt-8"
       >
-        <.icon name="hero-cube" class="mx-auto h-8 w-8 text-zinc-700" />
-        <p class="mt-3 text-sm text-zinc-400">No packs reported yet.</p>
-        <p class="mt-1 text-xs text-zinc-500">
-          A pack is the bundle of actions a runner can run. Connect a runner and the packs
-          it loads appear here to trust or reject.
-        </p>
-      </div>
+        A pack is the bundle of actions a runner can run. Connect a runner and the packs
+        it loads appear here to trust or reject.
+      </.empty_state>
 
       <ul id="packs" phx-update="stream" class="mt-6 space-y-4">
         <li
