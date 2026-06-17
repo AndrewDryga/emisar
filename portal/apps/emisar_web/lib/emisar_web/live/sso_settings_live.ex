@@ -583,6 +583,10 @@ defmodule EmisarWeb.SSOSettingsLive do
   defp error_message(:unauthorized), do: "You don't have permission to configure single sign-on."
   defp error_message(:not_found), do: "That no longer exists — it may have just been removed."
 
+  defp error_message(:require_sso_last_provider),
+    do:
+      "This is the only active SSO connection and the account requires single sign-on. Turn off the SSO requirement (Team → Single sign-on) before disabling or deleting it."
+
   defp error_message(:email_taken),
     do:
       "A user with that email already exists. Approving would create a duplicate, so this request can't be auto-approved."

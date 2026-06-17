@@ -373,6 +373,13 @@ defmodule EmisarWeb.UserAuth do
           SSO.identity_belongs_to_account?(auth.user_identity_id, account.id) ->
         {:cont, socket}
 
+      # Defensive fail-open: require_sso is on but the account has no usable SSO
+      # connection (one removed out-of-band). Allow access rather than brick
+      # everyone — recoverable (re-enable a connection and enforcement resumes).
+      # The provider write paths guard against reaching this through the UI.
+      SSO.list_enabled_providers_for_account(account.id) == [] ->
+        {:cont, socket}
+
       true ->
         {:halt, Phoenix.LiveView.redirect(socket, to: ~p"/app/#{account}/sso_required")}
     end

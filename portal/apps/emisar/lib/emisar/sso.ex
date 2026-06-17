@@ -84,7 +84,13 @@ defmodule Emisar.SSO do
       |> IdentityProvider.Query.by_id(id)
       |> Authorizer.for_subject(subject)
       |> Repo.fetch_and_update(IdentityProvider.Query,
-        with: &IdentityProvider.Changeset.update(&1, attrs),
+        with: fn loaded_provider ->
+          changeset = IdentityProvider.Changeset.update(loaded_provider, attrs)
+
+          if disabling_last_required_provider?(loaded_provider, changeset),
+            do: :require_sso_last_provider,
+            else: changeset
+        end,
         audit: &Audit.Events.identity_provider_updated(subject, &1)
       )
     end
@@ -97,10 +103,41 @@ defmodule Emisar.SSO do
       |> IdentityProvider.Query.by_id(id)
       |> Authorizer.for_subject(subject)
       |> Repo.fetch_and_update(IdentityProvider.Query,
-        with: &IdentityProvider.Changeset.delete/1,
+        with: fn loaded_provider ->
+          if removing_last_required_provider?(loaded_provider),
+            do: :require_sso_last_provider,
+            else: IdentityProvider.Changeset.delete(loaded_provider)
+        end,
         audit: &Audit.Events.identity_provider_deleted(subject, &1)
       )
     end
+  end
+
+  # Lock-out guard — the mirror of team_live's enable-side check: when the account
+  # requires SSO, the LAST enabled connection can't be disabled or deleted out from
+  # under it (else everyone, owners included, is bricked). Judged inside the
+  # provider's fetch_and_update :with (under the row lock); the reads join the same
+  # transaction. Returning the atom (not a changeset) aborts as {:error, atom}.
+  defp disabling_last_required_provider?(provider, changeset),
+    do:
+      Ecto.Changeset.get_change(changeset, :enabled) == false and
+        last_required_provider?(provider)
+
+  defp removing_last_required_provider?(provider),
+    do: provider.enabled and last_required_provider?(provider)
+
+  defp last_required_provider?(provider),
+    do: account_requires_sso?(provider.account_id) and not another_enabled_provider?(provider)
+
+  defp account_requires_sso?(account_id),
+    do: match?({:ok, %{require_sso: true}}, Accounts.fetch_account_by_id(account_id))
+
+  defp another_enabled_provider?(provider) do
+    IdentityProvider.Query.not_deleted()
+    |> IdentityProvider.Query.enabled()
+    |> IdentityProvider.Query.by_account_id(provider.account_id)
+    |> IdentityProvider.Query.excluding_id(provider.id)
+    |> Repo.exists?()
   end
 
   defp configure_multi(account_id, attrs, subject) do
@@ -1131,7 +1168,15 @@ defmodule Emisar.SSO do
 
   def identity_satisfies_mfa?(_), do: false
 
-  @doc "Internal — require_sso enforcement: is this session's SSO identity one of the account's own? (pre-Subject)"
+  @doc """
+  Internal — require_sso enforcement: is this session's SSO identity one of the
+  account's own? (Pre-Subject.) Matches by the identity's `account_id` ALONE — it
+  deliberately does NOT re-check that the provider is still enabled/not-deleted, so
+  an already-signed-in SSO session survives a provider being disabled (until the
+  token expires) rather than ripping live sessions out on a config change (mirrors
+  `identity_satisfies_mfa?/1`). The last-enabled-provider removal guard
+  (`update_provider`/`delete_provider`) is what keeps the account from being stranded.
+  """
   def identity_belongs_to_account?(user_identity_id, account_id)
       when is_binary(user_identity_id) and is_binary(account_id) do
     queryable = UserIdentity.Query.not_deleted() |> UserIdentity.Query.by_id(user_identity_id)

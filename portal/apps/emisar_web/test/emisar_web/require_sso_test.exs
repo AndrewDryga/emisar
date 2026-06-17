@@ -59,6 +59,7 @@ defmodule EmisarWeb.RequireSSOTest do
 
     test "require_sso ON — a password session is bounced to the SSO step-up", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
+      _ = enabled_provider(account)
       require_sso!(account)
 
       assert {:error, {:redirect, %{to: to}}} = live(conn, ~p"/app/#{account}/runners")
@@ -76,9 +77,11 @@ defmodule EmisarWeb.RequireSSOTest do
 
     test "require_sso ON — an SSO session for a DIFFERENT account is still bounced", %{conn: conn} do
       {_conn, user, account} = register_and_log_in(conn)
+      # This account HAS a usable connection (so the gate is live, not failing open)…
+      _ = enabled_provider(account)
       require_sso!(account)
 
-      # The user's SSO identity belongs to some OTHER account, not this one.
+      # …but the user's SSO identity belongs to some OTHER account, not this one.
       {_c2, _u2, other} = register_and_log_in(build_conn())
       other_provider = enabled_provider(other)
       foreign_identity = identity_for(other, other_provider, user)
@@ -87,6 +90,16 @@ defmodule EmisarWeb.RequireSSOTest do
                live(sso_session(user, foreign_identity), ~p"/app/#{account}/runners")
 
       assert to == ~p"/app/#{account}/sso_required"
+    end
+
+    test "require_sso ON with NO enabled connection — fails OPEN, not a brick", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      require_sso!(account)
+
+      # No enabled provider exists, so the gate can't ever be satisfied — it fails
+      # OPEN rather than locking everyone out (the provider write paths prevent
+      # reaching this via the UI; this covers an out-of-band removal). Recoverable.
+      assert {:ok, _lv, _html} = live(conn, ~p"/app/#{account}/runners")
     end
   end
 

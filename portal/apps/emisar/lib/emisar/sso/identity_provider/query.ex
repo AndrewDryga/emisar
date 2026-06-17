@@ -11,6 +11,9 @@ defmodule Emisar.SSO.IdentityProvider.Query do
   def by_id(queryable, id),
     do: where(queryable, [providers: p], p.id == ^id)
 
+  def excluding_id(queryable, id),
+    do: where(queryable, [providers: p], p.id != ^id)
+
   def by_account_id(queryable, account_id),
     do: where(queryable, [providers: p], p.account_id == ^account_id)
 

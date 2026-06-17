@@ -146,6 +146,53 @@ defmodule Emisar.SSOTest do
     end
   end
 
+  describe "require_sso lock-out guard on provider removal" do
+    setup do
+      {_user, account, subject} = enterprise_owner()
+      account = account |> Ecto.Changeset.change(require_sso: true) |> Repo.update!()
+      %{account: account, subject: subject}
+    end
+
+    test "cannot delete the last enabled connection", %{account: account, subject: subject} do
+      provider = provider_fixture(account)
+
+      assert {:error, :require_sso_last_provider} = SSO.delete_provider(provider, subject)
+      refute Repo.reload!(provider).deleted_at
+    end
+
+    test "cannot disable the last enabled connection", %{account: account, subject: subject} do
+      provider = provider_fixture(account)
+
+      assert {:error, :require_sso_last_provider} =
+               SSO.update_provider(provider, %{enabled: false}, subject)
+
+      assert Repo.reload!(provider).enabled
+    end
+
+    test "CAN delete one connection while another enabled one remains", %{
+      account: account,
+      subject: subject
+    } do
+      # Two enabled connections of DIFFERENT kinds (the unique index is one enabled
+      # provider per (account, kind)).
+      keep = provider_fixture(account, %{name: "Keep", kind: :okta})
+      extra = provider_fixture(account, %{name: "Extra", kind: :keycloak})
+
+      assert {:ok, _} = SSO.delete_provider(extra, subject)
+      assert Repo.reload!(keep).enabled
+    end
+
+    test "CAN delete the last connection once require_sso is off", %{
+      account: account,
+      subject: subject
+    } do
+      account |> Ecto.Changeset.change(require_sso: false) |> Repo.update!()
+      provider = provider_fixture(account)
+
+      assert {:ok, _} = SSO.delete_provider(provider, subject)
+    end
+  end
+
   # -- Login resolution + JIT ------------------------------------------
 
   describe "complete_auth/3 — resolution + JIT" do
