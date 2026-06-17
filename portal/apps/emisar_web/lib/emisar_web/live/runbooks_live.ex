@@ -109,6 +109,11 @@ defmodule EmisarWeb.RunbooksLive do
         </.button>
       </:actions>
 
+      <.page_intro>
+        Published playbooks your operators and LLMs can run as one gated sequence; drafts stay
+        private until you publish them.
+      </.page_intro>
+
       <%!-- Account-empty (create CTA) only when there's genuinely nothing AND no
            filter is narrowing — otherwise a 0-match filter (e.g. ?status=draft)
            would hide the filter bar and trap the operator. With a filter active,

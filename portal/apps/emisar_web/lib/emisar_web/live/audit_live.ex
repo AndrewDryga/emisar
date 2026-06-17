@@ -278,6 +278,10 @@ defmodule EmisarWeb.AuditLive do
     >
       <:title>Audit log</:title>
 
+      <.page_intro>
+        The tamper-evident record of every action, approval, and access change in this account.
+      </.page_intro>
+
       <%!-- Row-click "what did X do" chip with a one-click clear. Date range +
            everything else live in the unified LiveTable filter bar below. --%>
       <div

@@ -111,6 +111,11 @@ defmodule EmisarWeb.RunnersLive do
         </.button>
       </:actions>
 
+      <.page_intro>
+        Live connection state for every host in your fleet — a runner must be connected before you
+        can dispatch an action to it.
+      </.page_intro>
+
       <%= if @runners == [] && @metadata.count == 0 do %>
         <%= if connected?(@socket) do %>
           <.empty_state icon="hero-cpu-chip" title="No runners yet">

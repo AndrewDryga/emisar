@@ -570,7 +570,11 @@ defmodule EmisarWeb.RunbookRunLive do
       section={:runbooks}
       width={:form}
     >
-      <:title>Run <span class="font-mono text-base">{@runbook.title}</span></:title>
+      <:title>
+        <.detail_header back="Runbooks" navigate={~p"/app/#{@current_account}/runbooks"}>
+          Run <span class="font-mono text-base">{@runbook.title}</span>
+        </.detail_header>
+      </:title>
 
       <div class="space-y-6">
         <%!-- How-it-works strip — short paragraph, replaces the

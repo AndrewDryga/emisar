@@ -242,6 +242,10 @@ defmodule EmisarWeb.AuthKeysLive do
         </.button>
       </:actions>
 
+      <.page_intro>
+        Single-use enrollment keys — each registers one new host as a runner, then it's spent.
+      </.page_intro>
+
       <div class="space-y-6">
         <%!-- Runner-cap warning: a key minted here is useless if the
              runner that tries to use it bounces off a 402. --%>

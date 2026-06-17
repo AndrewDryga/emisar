@@ -82,6 +82,11 @@ defmodule EmisarWeb.RunsLive do
     >
       <:title>Runs</:title>
 
+      <.page_intro>
+        Every action dispatched across your fleet, newest first — each row opens to its arguments,
+        output, and audit record.
+      </.page_intro>
+
       <LiveTable.live_table
         id="runs"
         path={~p"/app/#{@current_account}/runs"}
