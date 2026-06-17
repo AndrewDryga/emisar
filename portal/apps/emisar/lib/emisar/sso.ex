@@ -198,6 +198,15 @@ defmodule Emisar.SSO do
           do: resolve_or_provision_identity(provider, identifier, claims),
           else: {:error, changeset}
 
+      {:error, :email_taken} ->
+        # The email matches an existing user. If they're a member, park a link
+        # request for an admin to approve (never auto-merge, C1); otherwise it's
+        # a genuine collision (a non-member owns that email) — fail closed.
+        case capture_member_link(provider, identifier, claims["email"], claims["name"], claims) do
+          :captured -> {:error, :identity_pending_approval}
+          :no_match -> {:error, :email_taken}
+        end
+
       {:error, reason} ->
         {:error, reason}
     end
@@ -207,27 +216,59 @@ defmodule Emisar.SSO do
   # is captured as a pending link request (the real `sub` + claims, so an admin
   # recognizes the person) and parked — re-attempts upsert, never pile up.
   defp provision_for(%IdentityProvider{provisioner: :manual} = provider, identifier, claims) do
-    _ = capture_link_request(provider, identifier, claims)
+    _ = capture_link_request(provider, identifier, claims["email"], claims["name"], claims)
     {:error, :identity_pending_approval}
   end
 
-  defp capture_link_request(%IdentityProvider{} = provider, identifier, claims) do
-    # The display email is the raw claim (helps the admin recognize who's
-    # asking); the binding on approval still uses `verified_email/1` (H1).
+  # Capture (or refresh) a pending link request. When the email matches an
+  # EXISTING account member, the request records them (`matched_user_id`) so an
+  # admin can link the IdP identity to that user instead of failing/duplicating
+  # — never an auto-merge (C1): the admin's approval is still the gate. The
+  # display email is the raw value (helps the admin recognize who's asking); the
+  # binding on approval uses the captured id, not the email.
+  defp capture_link_request(%IdentityProvider{} = provider, identifier, email, full_name, claims) do
     attrs = %{
       provider_identifier: identifier,
-      email: claims["email"],
-      full_name: claims["name"],
-      claims: claims
+      email: email,
+      full_name: full_name,
+      claims: claims,
+      matched_user_id: matched_member_id(provider, email)
     }
 
     changeset = LinkRequest.Changeset.create(provider.account_id, provider.id, attrs)
 
     Repo.insert(changeset,
-      on_conflict: {:replace, [:email, :full_name, :claims, :updated_at]},
+      on_conflict: {:replace, [:email, :full_name, :claims, :matched_user_id, :updated_at]},
       conflict_target: [:provider_id, :provider_identifier]
     )
   end
+
+  # Collision variant (for `:jit`/SCIM): park a link request ONLY when the email
+  # matches an existing member, so an admin has someone to link to. A non-member
+  # collision has no link target — the caller keeps the genuine `:email_taken`
+  # (C1). Returns `:captured | :no_match`.
+  defp capture_member_link(%IdentityProvider{} = provider, identifier, email, full_name, claims) do
+    if matched_member_id(provider, email) do
+      _ = capture_link_request(provider, identifier, email, full_name, claims)
+      :captured
+    else
+      :no_match
+    end
+  end
+
+  # The existing account MEMBER an inbound email matches, if any. Restricted to
+  # members (never pulls an outsider into the account); a lookup for the admin,
+  # not a merge.
+  defp matched_member_id(%IdentityProvider{} = provider, email) when is_binary(email) do
+    with {:ok, user} <- Users.fetch_user_by_email(email),
+         %Accounts.Membership{} <- Accounts.peek_sync_membership(provider.account_id, user.id) do
+      user.id
+    else
+      _ -> nil
+    end
+  end
+
+  defp matched_member_id(_provider, _email), do: nil
 
   defp build_provision_multi(%IdentityProvider{} = provider, identifier, claims, opts \\ []) do
     created_by = Keyword.get(opts, :created_by, :provider)
@@ -412,6 +453,15 @@ defmodule Emisar.SSO do
         if Repo.Changeset.unique_constraint_error?(changeset),
           do: scim_provision_user(provider, attrs),
           else: {:error, changeset}
+
+      {:error, :email_taken} ->
+        # The SCIM email matches an existing user. If they're a member, park a
+        # link request for an admin to approve (Okta retries and self-heals once
+        # linked); a non-member is a genuine collision. Always 409; never merge (C1).
+        email = attrs[:email] || attrs["email"]
+        full_name = attrs[:full_name] || attrs["full_name"]
+        _ = capture_member_link(provider, external_id, email, full_name, %{})
+        {:error, :email_taken}
 
       {:error, reason} ->
         {:error, reason}
@@ -975,9 +1025,10 @@ defmodule Emisar.SSO do
     end
   end
 
+  # No existing user matched → provision a fresh user (the original flow).
   defp approve_link_request_multi(
          %IdentityProvider{} = provider,
-         %LinkRequest{} = request,
+         %LinkRequest{matched_user_id: nil} = request,
          subject
        ) do
     provider
@@ -987,6 +1038,57 @@ defmodule Emisar.SSO do
       audit: &Audit.Events.sso_link_request_approved(subject, &1, provider)
     )
     |> Multi.delete(:link_request, request)
+  end
+
+  # An existing account member matched → bind this IdP identity to THAT user (no
+  # new user, no email merge — the admin's approval is the gate). The identity
+  # stores the captured id as BOTH provider_identifier + scim_external_id
+  # (decision 4) so OIDC login and SCIM converge on it afterward; the user's
+  # existing membership is left as-is (never downgraded, never granted owner).
+  defp approve_link_request_multi(
+         %IdentityProvider{} = provider,
+         %LinkRequest{} = request,
+         subject
+       ) do
+    Multi.new()
+    |> Multi.run(:user, fn _repo, _changes ->
+      fetch_matched_member(provider, request)
+    end)
+    |> Multi.run(:identity, fn _repo, %{user: user} ->
+      link_identity(provider, user, request)
+    end)
+    |> Multi.run(:membership, fn _repo, %{user: user} ->
+      ensure_active_membership(provider, user)
+    end)
+    |> Multi.insert(:audit, fn %{user: user} ->
+      Audit.Events.sso_existing_user_linked(subject, user, provider)
+    end)
+    |> Multi.delete(:link_request, request)
+  end
+
+  # Re-verify at approval time (the match was recorded at capture): the matched
+  # user must still exist AND still be a member of this account.
+  defp fetch_matched_member(%IdentityProvider{} = provider, %LinkRequest{} = request) do
+    with {:ok, user} <- Users.fetch_user_by_id(request.matched_user_id),
+         %Accounts.Membership{} <- Accounts.peek_sync_membership(provider.account_id, user.id) do
+      {:ok, user}
+    else
+      _ -> {:error, :matched_user_unavailable}
+    end
+  end
+
+  defp link_identity(%IdentityProvider{} = provider, user, %LinkRequest{} = request) do
+    attrs = %{
+      provider_identifier: request.provider_identifier,
+      scim_external_id: request.provider_identifier,
+      claims: request.claims,
+      created_by: :admin,
+      provisioned_via: :manual
+    }
+
+    provider.account_id
+    |> UserIdentity.Changeset.create(provider.id, user.id, attrs)
+    |> Repo.insert()
   end
 
   # Account-scoped fetches for the already-permission-gated approve/dismiss paths.

@@ -941,6 +941,28 @@ defmodule Emisar.Audit.Events do
     )
   end
 
+  @doc "An admin linked an IdP identity to an EXISTING emisar user (no new user created). Actor is the admin."
+  def sso_existing_user_linked(
+        %Subject{} = subject,
+        %Users.User{} = user,
+        %SSO.IdentityProvider{} = provider
+      ) do
+    Audit.changeset(
+      provider.account_id,
+      "sso.existing_user_linked",
+      actor(subject) ++
+        [
+          subject_kind: "user",
+          subject_id: user.id,
+          subject_label: user.email || user.full_name,
+          payload: %{
+            provider_id: provider.id,
+            provider_kind: to_string(provider.kind)
+          }
+        ]
+    )
+  end
+
   @doc "An admin dismissed a pending manual SSO link request without provisioning. Actor is the admin."
   def sso_link_request_dismissed(%Subject{} = subject, %SSO.LinkRequest{} = request) do
     Audit.changeset(

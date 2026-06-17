@@ -397,6 +397,114 @@ defmodule Emisar.SSOTest do
     end
   end
 
+  describe "linking an existing member" do
+    setup do
+      {_owner, account, subject} = enterprise_owner()
+      provider = provider_fixture(account, provisioner: :manual, default_role: :operator)
+      # An existing member whose email the IdP asserts. Role :admin so we can
+      # prove a link never downgrades them to the provider's :operator default.
+      member = user_fixture(%{email: "member@acme.test"})
+      _ = membership_fixture(account_id: account.id, user_id: member.id, role: :admin)
+      %{account: account, subject: subject, provider: provider, member: member}
+    end
+
+    test "a capture whose email matches an existing member records the matched user", %{
+      provider: provider,
+      member: member
+    } do
+      request =
+        capture_request(provider, %{
+          "sub" => "okta|m",
+          "email" => "member@acme.test",
+          "name" => "Member"
+        })
+
+      assert request.matched_user_id == member.id
+    end
+
+    test "a :jit login matching an existing member is parked for approval (not auto-merged)" do
+      {_owner, account, _subject} = enterprise_owner()
+      provider = provider_fixture(account, provisioner: :jit)
+      member = user_fixture(%{email: "jit@acme.test"})
+      _ = membership_fixture(account_id: account.id, user_id: member.id, role: :viewer)
+      claims = %{"sub" => "okta|jit", "email" => "jit@acme.test", "email_verified" => true}
+
+      assert {:error, :identity_pending_approval} =
+               SSO.complete_auth(provider, callback(claims), %{})
+
+      assert [request] = link_requests(provider.id)
+      assert request.matched_user_id == member.id
+    end
+
+    test "approving a matched request links the identity to the EXISTING user — no dup, role kept",
+         %{account: account, subject: subject, provider: provider, member: member} do
+      request =
+        capture_request(provider, %{
+          "sub" => "okta|m",
+          "email" => "member@acme.test",
+          "name" => "Member"
+        })
+
+      assert request.matched_user_id == member.id
+      assert {:ok, %{user: user, identity: identity}} = SSO.approve_link_request(request, subject)
+
+      # Bound to the EXISTING user (not a fresh one); the sub is stored as both ids.
+      assert user.id == member.id
+      assert identity.user_id == member.id
+      assert identity.provider_identifier == "okta|m"
+      assert identity.scim_external_id == "okta|m"
+      assert identity.created_by == :admin
+      assert link_requests(provider.id) == []
+
+      # The member's existing role is untouched (not downgraded to :operator).
+      assert fetch_membership(account.id, member.id).role == :admin
+
+      # The bound sub now signs in AS the existing user.
+      claims = %{"sub" => "okta|m", "email" => "member@acme.test", "email_verified" => true}
+      assert {:ok, %{user: signed_in}} = SSO.complete_auth(provider, callback(claims), %{})
+      assert signed_in.id == member.id
+    end
+
+    test "approving a matched request denies a viewer (stays pending)", %{
+      account: account,
+      provider: provider
+    } do
+      request = capture_request(provider, %{"sub" => "okta|m", "email" => "member@acme.test"})
+
+      assert {:error, :unauthorized} = SSO.approve_link_request(request, viewer_in(account))
+      assert [_still_pending] = link_requests(provider.id)
+    end
+
+    test "approving a matched request is account-scoped — B cannot approve A's", %{
+      provider: provider
+    } do
+      {_ub, _account_b, sb} = enterprise_owner()
+      request = capture_request(provider, %{"sub" => "okta|m", "email" => "member@acme.test"})
+
+      assert {:error, :not_found} = SSO.approve_link_request(request, sb)
+      assert [_still_pending] = link_requests(provider.id)
+    end
+
+    test "a SCIM push matching an existing member parks a request + 409s; approve heals the next push",
+         %{subject: subject, provider: provider, member: member} do
+      attrs = %{external_id: "okta|scim", email: "member@acme.test", full_name: "Member"}
+
+      # Collision → :email_taken (the controller renders 409), but a matched request is parked.
+      assert {:error, :email_taken} = SSO.scim_provision_user(provider, attrs)
+      assert [request] = link_requests(provider.id)
+      assert request.matched_user_id == member.id
+      assert request.provider_identifier == "okta|scim"
+
+      # Admin approves → the identity is linked to the existing member.
+      assert {:ok, %{user: user}} = SSO.approve_link_request(request, subject)
+      assert user.id == member.id
+
+      # The next SCIM push self-heals: the identity now resolves to the member.
+      assert {:ok, %{user: healed}} = SSO.scim_provision_user(provider, attrs)
+      assert healed.id == member.id
+    end
+  end
+
   # -- Domain gate (H1) ------------------------------------------------
 
   describe "complete_auth/3 — allowed_email_domain gate" do

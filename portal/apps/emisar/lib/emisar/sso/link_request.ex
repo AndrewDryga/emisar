@@ -1,10 +1,12 @@
 defmodule Emisar.SSO.LinkRequest do
   @moduledoc """
-  A pending manual-link request: an unknown identity that signed in through a
-  `:manual`-provisioner connection and is waiting for an admin to approve their
-  access. Captures the real OIDC `provider_identifier` (the `sub`) + the claims
-  so the admin recognizes the person; approving binds THAT sub — never the email
-  (H1). Hard-deleted on approve/dismiss (transient by design).
+  A pending link request: an identity that signed in / was pushed through a
+  connection and is waiting for an admin to approve their access. Captures the
+  real `provider_identifier` (the OIDC `sub` / SCIM `externalId`) + the claims so
+  the admin recognizes the person; approving binds THAT id — never the email
+  (H1). When the captured email matches an EXISTING account member, `matched_user`
+  records them so approval links the identity to that user instead of creating a
+  duplicate. Hard-deleted on approve/dismiss (transient by design).
   """
   use Emisar, :schema
 
@@ -16,6 +18,7 @@ defmodule Emisar.SSO.LinkRequest do
 
     belongs_to :account, Emisar.Accounts.Account, where: [deleted_at: nil]
     belongs_to :provider, Emisar.SSO.IdentityProvider, where: [deleted_at: nil]
+    belongs_to :matched_user, Emisar.Users.User, where: [deleted_at: nil]
 
     timestamps()
   end

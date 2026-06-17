@@ -384,6 +384,33 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       assert html =~ "okta|dana"
     end
 
+    test "a request matched to an existing member shows the link badge + warning", %{
+      conn: conn,
+      account: account,
+      provider: provider
+    } do
+      member = Emisar.Fixtures.user_fixture(%{email: "member@acme.test"})
+
+      _ =
+        Emisar.Fixtures.membership_fixture(
+          account_id: account.id,
+          user_id: member.id,
+          role: :admin
+        )
+
+      _ =
+        insert_link_request(provider, %{
+          provider_identifier: "okta|member",
+          email: "member@acme.test",
+          matched_user_id: member.id
+        })
+
+      {:ok, _lv, html} = live(conn, ~p"/app/settings/sso")
+
+      assert html =~ "Existing account"
+      assert html =~ "sign in as the existing member@acme.test account"
+    end
+
     test "approve provisions the captured identity + clears the request", %{
       conn: conn,
       provider: provider,

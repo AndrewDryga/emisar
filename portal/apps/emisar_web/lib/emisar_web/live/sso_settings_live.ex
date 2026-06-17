@@ -130,11 +130,11 @@ defmodule EmisarWeb.SSOSettingsLive do
     end
   end
 
-  # Pending manual-link requests only exist for `:manual` providers; load each
-  # one's list keyed by provider id (mirrors load_group_mappings).
+  # Pending link requests can arise on ANY provider now — `:manual` parks every
+  # first sign-in, and `:jit`/SCIM park an email that collides with an existing
+  # user for admin approval — so load them for every provider, keyed by id.
   defp load_link_requests(socket, providers) do
-    manual_providers = Enum.filter(providers, &(&1.provisioner == :manual))
-    requests = Map.new(manual_providers, &{&1.id, list_requests(socket, &1)})
+    requests = Map.new(providers, &{&1.id, list_requests(socket, &1)})
     assign(socket, :link_requests, requests)
   end
 
@@ -762,11 +762,12 @@ defmodule EmisarWeb.SSOSettingsLive do
                   </.simple_form>
                 </div>
 
-                <%!-- Pending manual-link requests — only for `:manual`
-                     connections. First-time sign-ins land here for an admin to
-                     approve (binds the captured sub) or dismiss. --%>
+                <%!-- Pending access requests: `:manual` parks every first
+                     sign-in; `:jit`/SCIM park an email that collides with an
+                     existing member. Admins approve (binds the captured id, or
+                     links the existing user) or dismiss. --%>
                 <.link_requests_panel
-                  :if={provider.provisioner == :manual}
+                  provisioner={provider.provisioner}
                   requests={Map.get(@link_requests, provider.id, [])}
                 />
 
@@ -1394,22 +1395,27 @@ defmodule EmisarWeb.SSOSettingsLive do
     """
   end
 
-  attr :requests, :list, default: []
+  # Pending access requests for one connection. `:manual` parks every first
+  # sign-in; `:jit`/SCIM park an email that collides with an existing member (so
+  # an admin can LINK the IdP identity to that account — never an auto-merge).
+  # Approve provisions a new user, or links the existing one when `matched_user_id`
+  # is set; Dismiss drops it. Both handlers re-check authz server-side.
+  attr :provisioner, :atom, required: true
+  attr :requests, :list, required: true
 
-  # Pending manual-link requests for one `:manual` connection. Each row shows the
-  # captured identity (name/email + the raw sub) with Approve — provisions a user
-  # at the default role, binding the captured sub (never email, H1) — and Dismiss.
-  # Both handlers re-check authz server-side.
   defp link_requests_panel(assigns) do
     ~H"""
-    <div class="mt-4 rounded-lg border border-zinc-800 bg-zinc-900/40 p-4">
+    <div
+      :if={@provisioner == :manual or @requests != []}
+      class="mt-4 rounded-lg border border-zinc-800 bg-zinc-900/40 p-4"
+    >
       <div class="flex items-center gap-2">
         <span class="text-sm font-medium text-zinc-200">Pending access requests</span>
         <.chip>{length(@requests)}</.chip>
       </div>
       <p class="mt-1 max-w-prose text-xs text-zinc-500">
-        This connection approves new users manually. When someone signs in for the first time
-        they land here — approve to grant access at the connection's default role, or dismiss.
+        People waiting for an admin to approve their access — manual first-time sign-ins, and
+        anyone whose IdP email matches an existing member (approve to link, never an auto-merge).
       </p>
 
       <p :if={@requests == []} class="mt-3 text-xs text-zinc-600">
@@ -1423,13 +1429,22 @@ defmodule EmisarWeb.SSOSettingsLive do
         >
           <div class="flex flex-wrap items-center justify-between gap-2">
             <div class="min-w-0">
-              <div class="truncate text-sm text-zinc-200">
-                {request.full_name || request.email || "Unknown user"}
+              <div class="flex items-center gap-2">
+                <span class="truncate text-sm text-zinc-200">
+                  {request.full_name || request.email || "Unknown user"}
+                </span>
+                <.chip :if={request.matched_user_id} tone={:amber}>Existing account</.chip>
               </div>
               <div class="truncate text-xs text-zinc-500">
                 <span class="font-mono">{request.provider_identifier}</span>
                 <span :if={request.email}>· {request.email}</span>
               </div>
+              <p
+                :if={request.matched_user_id}
+                class="mt-1 max-w-prose text-xs text-amber-300/80"
+              >
+                Approving lets this connection sign in as the existing {request.email} account.
+              </p>
             </div>
             <div class="flex shrink-0 items-center gap-2">
               <.button
@@ -1437,7 +1452,7 @@ defmodule EmisarWeb.SSOSettingsLive do
                 size="sm"
                 phx-click="approve_request"
                 phx-value-id={request.id}
-                data-confirm="Approve access for this user? They'll be able to sign in at the connection's default role."
+                data-confirm={approve_confirm(request)}
               >
                 Approve
               </.button>
@@ -1458,6 +1473,14 @@ defmodule EmisarWeb.SSOSettingsLive do
     </div>
     """
   end
+
+  defp approve_confirm(%{matched_user_id: nil}),
+    do:
+      "Approve access for this user? They'll be able to sign in at the connection's default role."
+
+  defp approve_confirm(%{email: email}),
+    do:
+      "Link this connection to the existing #{email} account? That IdP identity will then sign in as this existing user."
 
   defp role_label(role), do: role |> Atom.to_string() |> String.capitalize()
 
