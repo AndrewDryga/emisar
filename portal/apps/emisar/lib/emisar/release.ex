@@ -26,6 +26,8 @@ defmodule Emisar.Release do
     # which is enough for migrations but not for seeds that exercise
     # the dispatch path (`Runs.create_run` broadcasts on `Emisar.PubSub`).
     {:ok, _} = Application.ensure_all_started(@app)
+    # Trusted, app-bundled seeds file evaluated at deploy time — not request input.
+    # credo:disable-for-next-line Emisar.Checks.NoUnsafeDeserialization
     Code.eval_file(Application.app_dir(@app, "priv/repo/seeds.exs"))
   end
 
