@@ -178,9 +178,10 @@ defmodule Emisar.Runs do
   end
 
   @doc """
-  Looks up a run by `request_id` AND `runner_id`. Used by the runner
-  socket so a runner can only see/mutate runs that were dispatched to
-  it — never another runner's runs, even within the same account.
+  Internal — runner socket: look up a run by `request_id` AND `runner_id`
+  (the socket's runner-scope is the gate, no web subject), so a runner can
+  only see/mutate runs that were dispatched to it — never another runner's
+  runs, even within the same account.
   """
   def fetch_run_by_request_id_for_runner(request_id, runner_id) do
     ActionRun.Query.all()
@@ -192,7 +193,9 @@ defmodule Emisar.Runs do
   # -- Creation ---------------------------------------------------------
 
   @doc """
-  Create a run row in :pending state. Caller is responsible for
+  Internal — the dispatch pipeline (`dispatch_run/2`'s allow/deny/approval
+  paths) and tests: create a run row in :pending state inside the
+  already-authorized dispatch (no web subject). Caller is responsible for
   triggering the transport to deliver `run_action` once the row is
   persisted (see Emisar.Transport).
 
@@ -203,8 +206,8 @@ defmodule Emisar.Runs do
   `dispatch_run/2` just spares us the work in the common case), or
   `{:error, changeset}` for any other validation failure.
 
-  Internal — called by `dispatch_run/2` and tests. Tests can also call
-  this directly to seed runs without exercising policy + dispatch.
+  Tests can also call this directly to seed runs without exercising
+  policy + dispatch.
   """
   def create_run(attrs, opts \\ []) do
     request_id = attrs[:request_id] || Crypto.run_request_id()
@@ -990,6 +993,7 @@ defmodule Emisar.Runs do
   # Called from the runner socket process — no Subject thread; the
   # socket-level token check is the auth gate.
 
+  @doc "Internal — runner socket: append a progress chunk to a dispatched run (socket token is the gate, no web subject)."
   def append_event(%ActionRun{} = run, attrs) do
     attrs = Map.put(attrs, :run_id, run.id) |> Map.put(:account_id, run.account_id)
 

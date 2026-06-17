@@ -83,6 +83,7 @@
           {Emisar.Checks.IL13ObanStringArgs, []},
           {Emisar.Checks.BroadcastEventAsData, []},
           {Emisar.Checks.ContextCryptoBoundary, []},
+          {Emisar.Checks.ContextPublicFnSubject, []},
           {Emisar.Checks.CrossContextDeepAlias, []},
           {Emisar.Checks.CrossContextDeepCall, []},
           {Emisar.Checks.InlineBroadcast, []},

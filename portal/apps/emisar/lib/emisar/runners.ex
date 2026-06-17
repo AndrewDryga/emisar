@@ -38,13 +38,10 @@ defmodule Emisar.Runners do
   # -- Runners: reads --------------------------------------------------
 
   @doc """
-  Batch resolver returning `%{runner_id => runner_name}` for the
-  supplied ids. Used by list pages that have foreign-key references
-  to runners and want labels without N+1 lookups.
-
-  Label batches are intentionally subjectless — the caller has already
-  authorized a parent listing (with its own Subject) and is rendering
-  labels for ids it already trusts.
+  Internal — label batcher: returns `%{runner_id => runner_name}` for the
+  supplied ids. Composed by sibling contexts / audit / list pages that
+  already authorized a parent listing (with its own Subject) and render
+  labels for ids they already trust; no Subject by design.
   """
   def runner_labels_for_ids(ids) when is_list(ids) do
     ids = ids |> Enum.reject(&is_nil/1) |> Enum.uniq()
@@ -548,14 +545,11 @@ defmodule Emisar.Runners do
   # group matches at least one row.
 
   @doc """
-  All scope rows for a membership, ordered for stable rendering.
-
-  Internal cross-context resolver — called from `Runners` /
-  `Runs.dispatch_run` which have already authorized via Subject, and from
-  the team-page LV which has the operator's own membership in scope.
-  Tests use it to inspect post-mutation state. Does not take a Subject
-  because the row scoping is by `membership_id` (an opaque identifier
-  the caller has already proven access to).
+  Internal — scope resolver: all scope rows for a membership, ordered for
+  stable rendering. Composed by `Runners` / `Runs.dispatch_run` (already
+  authorized via Subject) and the team-page LV (operator's own membership
+  in scope); no Subject because scoping is by the opaque `membership_id`
+  the caller has already proven access to.
   """
   def runner_scopes_for_membership(membership_id) when is_binary(membership_id) do
     UserRunnerScope.Query.by_membership_id(membership_id)
@@ -619,8 +613,9 @@ defmodule Emisar.Runners do
   end
 
   @doc """
-  Batch resolver returning `%{membership_id => [%UserRunnerScope{}]}`
-  so a list view can render scope chips without N+1 queries.
+  Internal — scope batcher: `%{membership_id => [%UserRunnerScope{}]}` so
+  an already-authorized list view renders scope chips without N+1 queries;
+  takes opaque ids, no Subject.
   """
   def runner_scopes_for_membership_ids(ids) when is_list(ids) do
     ids = ids |> Enum.reject(&is_nil/1) |> Enum.uniq()
@@ -874,9 +869,9 @@ defmodule Emisar.Runners do
   # -- Per-runner tokens -----------------------------------------------
 
   @doc """
-  Mints a long-lived per-runner token, persists the hash, returns
-  `{raw_token, token_record}`. Internal — only called from the
-  registration flow.
+  Internal — registration flow only: mints a long-lived per-runner token,
+  persists the hash, returns `{raw_token, token_record}`. Establishes the
+  runner identity before any Subject exists.
   """
   def mint_runner_token(%Runner{} = runner, issued_via_key_id \\ nil) do
     {raw, prefix, hash} = Crypto.mint("rnrtok-", @token_prefix_size)
@@ -889,9 +884,9 @@ defmodule Emisar.Runners do
   end
 
   @doc """
-  Verifies a presented runner token. Returns `{:ok, token, runner}` or
-  `{:error, :token_invalid}`. Internal — called from the runner socket
-  upgrade controller before any Subject exists.
+  Internal — runner socket upgrade controller, before any Subject exists:
+  verifies a presented runner token. Returns `{:ok, token, runner}` or
+  `{:error, :token_invalid}`.
   """
   def verify_runner_token(raw) when is_binary(raw) do
     if String.length(raw) < @token_prefix_size do
@@ -927,16 +922,14 @@ defmodule Emisar.Runners do
   # -- Registration (auth_key -> runner + token exchange) --------------
 
   @doc """
-  Called when a runner presents a valid auth key on first connect.
-  Creates the runner record (or returns the existing one for a reusable
-  key registration) and mints a fresh per-runner token. Also enforces
-  the account's runner-count plan limit.
+  Internal — runner-register controller, raw secret in hand (the secret IS
+  the auth, no Subject yet exists): a runner presents a valid auth key on
+  first connect. Creates the runner record (or returns the existing one
+  for a reusable key) and mints a fresh per-runner token; enforces the
+  account's runner-count plan limit.
 
   Returns `{:ok, runner, token, raw_token}` on success or
   `{:error, reason}` / `{:error, :over_limit, plan, limit}`.
-
-  Internal — called from the runner-register controller with only the
-  raw secret in hand; the secret IS the auth, no Subject yet exists.
   """
   def register_via_auth_key(raw_or_key, attrs, context \\ %RequestContext{})
 

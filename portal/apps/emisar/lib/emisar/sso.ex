@@ -1150,11 +1150,12 @@ defmodule Emisar.SSO do
   def provider_satisfies_mfa?(%IdentityProvider{satisfies_mfa: satisfies}), do: satisfies
 
   @doc """
-  True when an SSO session (identified by its `user_identity_id`) satisfies the
-  account's MFA requirement — its provider's `satisfies_mfa` is set. The
-  `require_mfa` exemption gates on THIS, not merely on the session being SSO, so
-  a provider marked `satisfies_mfa: false` still forces emisar TOTP. Returns
-  false for a nil/unknown identity (fail closed).
+  Internal — SSO sign-in flow: true when an SSO session (identified by its
+  `user_identity_id`) satisfies the account's MFA requirement — its provider's
+  `satisfies_mfa` is set. Evaluated on the freshly-resolved identity before the
+  session subject exists. The `require_mfa` exemption gates on THIS, not merely
+  on the session being SSO, so a provider marked `satisfies_mfa: false` still
+  forces emisar TOTP. Returns false for a nil/unknown identity (fail closed).
   """
   def identity_satisfies_mfa?(user_identity_id) when is_binary(user_identity_id) do
     queryable =

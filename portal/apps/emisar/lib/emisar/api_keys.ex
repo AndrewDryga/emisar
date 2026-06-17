@@ -287,14 +287,12 @@ defmodule Emisar.ApiKeys do
   end
 
   @doc """
-  Peeks at the presented bearer token, resolving it to an `%ApiKey{}`.
-  Bumps `last_used_at` and — if the key is auto-generated — clears the
-  auto flag and audit-logs `api_key.bound`. Returns the updated struct
-  or nil (`peek_*` per AGENTS.md §1.1 — nil-or-struct credential
-  lookup).
-
-  Internal — called from the MCP controller's `:authenticate` plug
-  before any Subject exists. The presented bearer IS the auth.
+  Internal — the API-key auth boundary: resolves a presented bearer
+  token to an `%ApiKey{}` so the MCP controller's `:authenticate` plug
+  can build a `%Subject{}`, so it runs BEFORE any subject exists. Bumps
+  `last_used_at` and — if the key is auto-generated — clears the auto
+  flag and audit-logs `api_key.bound`. Returns the updated struct or nil
+  (`peek_*` per AGENTS.md §1.1 — nil-or-struct credential lookup).
   """
   def peek_api_key_by_secret(raw) when is_binary(raw) do
     if String.length(raw) < @prefix_size do
@@ -336,14 +334,13 @@ defmodule Emisar.ApiKeys do
   end
 
   @doc """
-  Mint a backing MCP key for an OAuth grant. Scoped to actions:read +
-  actions:execute and owned by the consenting member's membership, so
-  the existing MCP scope/attribution logic applies unchanged. The raw
-  secret is generated then DISCARDED — the OAuth client never sees it;
-  it authenticates with OAuth access tokens that resolve to this key.
-
-  Internal: called from `Emisar.OAuth` during the authorize step, where
-  the operator's consent is the authorization. Returns `{:ok, key}`.
+  Internal — called from `Emisar.OAuth` during the authorize step (the
+  operator's consent is the authorization), to mint a backing MCP key
+  for an OAuth grant. Scoped to actions:read + actions:execute and owned
+  by the consenting member's membership, so the existing MCP
+  scope/attribution logic applies unchanged. The raw secret is generated
+  then DISCARDED — the OAuth client never sees it; it authenticates with
+  OAuth access tokens that resolve to this key. Returns `{:ok, key}`.
   """
   def create_backing_key(account_id, user_id, membership_id, name) do
     {_raw, prefix, hash} = Crypto.mint("emk-", @prefix_size)
@@ -356,10 +353,10 @@ defmodule Emisar.ApiKeys do
   end
 
   @doc """
-  Load a usable (non-revoked / non-expired / non-deleted) key by id.
-
-  Internal — the MCP auth path uses this to resolve an OAuth access
-  token to its backing key. Returns the key or `nil`.
+  Internal — the API-key auth boundary: the MCP auth path uses this to
+  resolve an OAuth access token to its backing key (so it runs BEFORE a
+  subject exists). Loads a usable (non-revoked / non-expired /
+  non-deleted) key by id. Returns the key or `nil`.
   """
   def peek_api_key_by_id(id) when is_binary(id) do
     # Deliberately all(): `usable?/1` is the single liveness gate.
@@ -372,13 +369,11 @@ defmodule Emisar.ApiKeys do
   end
 
   @doc """
-  Records the MCP clientInfo a key reported at `initialize` so later runs
-  can name the client (e.g. "Claude Code").
-
   Internal — called from the MCP controller after the auth plug resolved
-  the key; `info` must already be sanitized to a small string map. The
-  caller treats it as best-effort (a failure must not break the
-  handshake).
+  the key (already-authorized caller), to record the MCP clientInfo a key
+  reported at `initialize` so later runs can name the client (e.g. "Claude
+  Code"). `info` must already be sanitized to a small string map. The
+  caller treats it as best-effort (a failure must not break the handshake).
   """
   def record_client_info(%ApiKey{} = key, info) when is_map(info) do
     key
@@ -389,12 +384,12 @@ defmodule Emisar.ApiKeys do
   def record_client_info(_key, _info), do: {:error, :invalid}
 
   @doc """
-  The user id that created `api_key_id`, or `nil` when the key (or its
-  creator) is gone. No Subject — the approval gate resolves an MCP run's
-  accountable human from the api-key owner.
-
-  Internal — called by `Approvals.create_request` to stamp the effective
-  requester on a key-triggered run's approval request.
+  Internal — called by `Approvals.create_request` (already-authorized run
+  context) to stamp the effective requester on a key-triggered run's
+  approval request: the approval gate resolves an MCP run's accountable
+  human from the api-key owner, so it takes no subject. Returns the user
+  id that created `api_key_id`, or `nil` when the key (or its creator) is
+  gone.
   """
   def fetch_owner_user_id(api_key_id) when is_binary(api_key_id) do
     queryable =

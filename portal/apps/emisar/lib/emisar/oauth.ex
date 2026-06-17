@@ -37,7 +37,8 @@ defmodule Emisar.OAuth do
   # -- Dynamic Client Registration (RFC 7591) -------------------------
 
   @doc """
-  Register a client from a DCR request body. Validates redirect URIs
+  Internal — the DCR controller's registration endpoint (pre-auth; the
+  request mints a new client, no Subject yet). Validates redirect URIs
   (https or localhost only), and stores the registration. Returns the
   client (its id is the OAuth client_id).
   """
@@ -56,6 +57,7 @@ defmodule Emisar.OAuth do
     |> Repo.insert()
   end
 
+  @doc "Internal — OAuth authorize/token controllers: load a client by its client_id (the client_id is the credential, resolved pre-Subject)."
   @spec fetch_client(String.t()) :: {:ok, Client.t()} | {:error, :not_found}
   def fetch_client(client_id) when is_binary(client_id) do
     # A connector can send any string here; guard the binary_id cast so a
@@ -131,10 +133,12 @@ defmodule Emisar.OAuth do
   # -- Token endpoint -------------------------------------------------
 
   @doc """
-  Exchange an authorization code for tokens. Validates: code exists +
-  unused + unexpired, client matches, redirect_uri matches exactly, and
-  the PKCE verifier hashes to the stored challenge (S256). Mints an
-  access token (+ refresh token when offline_access was requested).
+  Internal — the token controller's `authorization_code` grant (pre-auth;
+  the code + PKCE verifier are the credential, resolved before a Subject
+  exists). Validates: code exists + unused + unexpired, client matches,
+  redirect_uri matches exactly, and the PKCE verifier hashes to the stored
+  challenge (S256). Mints an access token (+ refresh token when
+  offline_access was requested).
   """
   @spec exchange_code(map()) :: {:ok, map()} | {:error, atom()}
   def exchange_code(%{
@@ -181,9 +185,11 @@ defmodule Emisar.OAuth do
   def exchange_code(_), do: {:error, :invalid_request}
 
   @doc """
-  Refresh-token grant. Validates the refresh token (live, matching
-  client), rotates it (public-client requirement), and issues a fresh
-  access + refresh pair from the same backing key.
+  Internal — the token controller's `refresh_token` grant (pre-auth; the
+  refresh token is the credential, resolved before a Subject exists).
+  Validates the refresh token (live, matching client), rotates it
+  (public-client requirement), and issues a fresh access + refresh pair
+  from the same backing key.
   """
   @spec refresh(map()) :: {:ok, map()} | {:error, atom()}
   def refresh(%{"refresh_token" => raw, "client_id" => client_id})
@@ -239,10 +245,11 @@ defmodule Emisar.OAuth do
   # -- Token resolution (MCP auth path) -------------------------------
 
   @doc """
-  Resolve a presented access token to its backing API key + account.
-  Used by the MCP `:authenticate` plug. Validates the token is live and
-  not revoked, then loads the backing key (which carries scope +
-  attribution). Returns `{:error, :invalid}` for anything off.
+  Internal — the MCP `:authenticate` plug (pre-auth; the bearer access
+  token is the credential, resolved into the Subject downstream). Resolve a
+  presented access token to its backing API key + account. Validates the
+  token is live and not revoked, then loads the backing key (which carries
+  scope + attribution). Returns `{:error, :invalid}` for anything off.
   """
   @spec resolve_access_token(String.t()) ::
           {:ok, %{api_key: term(), account: term(), token: Token.t()}} | {:error, :invalid}

@@ -20,6 +20,7 @@ defmodule Emisar.Users do
 
   # -- Reads -------------------------------------------------------------
 
+  @doc "Internal — identity lookup composed by Auth/Accounts internals and the auth boundary; cross-account, no subject."
   def fetch_user_by_id(id) do
     if Repo.valid_uuid?(id) do
       User.Query.not_deleted()
@@ -30,6 +31,7 @@ defmodule Emisar.Users do
     end
   end
 
+  @doc "Internal — email identity lookup composed by Auth/Accounts internals and the auth boundary; cross-account, no subject."
   def fetch_user_by_email(email) when is_binary(email) do
     User.Query.not_deleted()
     |> User.Query.by_email(email)
@@ -37,12 +39,11 @@ defmodule Emisar.Users do
   end
 
   @doc """
-  Batch resolver returning `%{user_id => display_name}` for the
-  supplied ids. Falls back to email when full_name is blank.
-
-  Intentionally subjectless — the caller (Audit's reference resolver)
-  already authorized an account-scoped listing and only projects labels
-  for ids it trusts.
+  Internal — label resolver for Audit/dispatch: batch resolver returning
+  `%{user_id => display_name}` for the supplied ids (falls back to email
+  when full_name is blank). Takes ids, not a subject — the caller (Audit's
+  reference resolver) already authorized an account-scoped listing and only
+  projects labels for ids it trusts.
   """
   def user_labels_for_ids(ids) when is_list(ids) do
     ids = ids |> Enum.reject(&is_nil/1) |> Enum.uniq()
@@ -61,6 +62,7 @@ defmodule Emisar.Users do
 
   # -- Registration + sign-in (pre-Subject boundary) ----------------------
 
+  @doc "Internal — registration: the auth boundary creates the user before any subject/tenant exists (pre-auth)."
   def register_user(attrs) do
     %User{}
     |> User.Changeset.registration(attrs)

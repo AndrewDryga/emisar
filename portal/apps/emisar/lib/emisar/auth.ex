@@ -42,14 +42,14 @@ defmodule Emisar.Auth do
   # -- Session tokens ---------------------------------------------------
 
   @doc """
-  Mint a session token and persist it. Returns the raw token for the cookie.
-  `auth_method` (how the session was authenticated) and `mfa` (was a second
-  factor verified) are required provenance — stamped onto the token so every
-  later request resolves how it signed in; `opts` carry the SSO-only
-  `:user_identity_id`. `metadata` (optional) carries `ip_address` +
-  `user_agent` for the Profile sessions list; missing keys are tolerated.
-  Pre-Subject boundary — the session controller calls this right after
-  verifying credentials.
+  Internal — `EmisarWeb.UserAuth` mints the session row right after verifying
+  credentials; the session token IS the credential, so there's no Subject yet.
+  Returns the raw token for the cookie. `auth_method` (how the session was
+  authenticated) and `mfa` (was a second factor verified) are required
+  provenance — stamped onto the token so every later request resolves how it
+  signed in; `opts` carry the SSO-only `:user_identity_id`. `metadata`
+  (optional) carries `ip_address` + `user_agent` for the Profile sessions
+  list; missing keys are tolerated.
   """
   def create_session_token!(%Users.User{} = user, auth_method, mfa, metadata \\ %{}, opts \\ []) do
     {token, digest} = Crypto.session_token()
@@ -58,12 +58,13 @@ defmodule Emisar.Auth do
   end
 
   @doc """
-  Looks up the user behind a session token, returning `{:ok, user, token}` —
-  the `%UserToken{}` rides alongside so the boundary reads its provenance
-  (`auth_method` / `mfa` / `user_identity_id`) off it and stamps the
-  `%Subject{}`. The user is preloaded scoped to live users, so a soft-deleted
-  user's token resolves to `{:error, :not_found}` — as do expired / unknown /
-  non-binary tokens. Pre-auth boundary — no Subject.
+  Internal — `EmisarWeb.UserAuth` resolves a request's session cookie to its
+  user; the session token IS the credential, so there's no Subject yet.
+  Returns `{:ok, user, token}` — the `%UserToken{}` rides alongside so the
+  boundary reads its provenance (`auth_method` / `mfa` / `user_identity_id`)
+  off it and stamps the `%Subject{}`. The user is preloaded scoped to live
+  users, so a soft-deleted user's token resolves to `{:error, :not_found}` —
+  as do expired / unknown / non-binary tokens.
   """
   def fetch_user_and_token_by_session_token(token) when is_binary(token) do
     UserToken.Query.by_token_digest(Crypto.hash(token))
@@ -78,8 +79,8 @@ defmodule Emisar.Auth do
   end
 
   @doc """
-  Drop the session row backing a cookie (sign-out). Pre-auth boundary —
-  possession of the cookie value is the authorization.
+  Internal — `EmisarWeb.UserAuth` drops the session row backing a cookie on
+  sign-out; possession of the cookie value IS the authorization, so no Subject.
   """
   def delete_session_token(token) when is_binary(token) do
     UserToken.Query.by_token_digest(Crypto.hash(token))
@@ -127,10 +128,11 @@ defmodule Emisar.Auth do
   def record_failed_sign_in(_, _, _), do: :ok
 
   @doc """
-  Delete every session token for the user. Returns `{:ok, count}` so a
-  caller can compose it into its own transaction via `Multi.run` (the
-  team-admin "sign out everywhere" does) — token internals stay private
-  to Auth.
+  Internal — `EmisarWeb.UserAuth` (and sibling revoke-all paths) calls this
+  for the user already resolved from their session, so no Subject. Deletes
+  every session token for the user. Returns `{:ok, count}` so a caller can
+  compose it into its own transaction via `Multi.run` (the team-admin "sign
+  out everywhere" does) — token internals stay private to Auth.
   """
   def delete_all_session_tokens(%Users.User{} = user) do
     {count, _} =
@@ -179,6 +181,8 @@ defmodule Emisar.Auth do
   end
 
   @doc """
+  Internal — fan-out helper for Auth's own session-revocation paths (no
+  user-facing caller), so the already-resolved user is passed, not a Subject.
   Broadcasts a per-session "disconnect" message to every active
   session for `user`, optionally skipping the session whose token
   digest matches `except:` (used by "sign out everywhere else" to
@@ -462,6 +466,7 @@ defmodule Emisar.Auth do
 
   # -- Email confirmation ----------------------------------------------
 
+  @doc "Internal — the email-confirmation flow (registration / pre-auth) mints the confirm token; no Subject yet."
   def issue_confirmation_token!(%Users.User{} = user) do
     {raw, digest} = Crypto.email_token()
     Repo.insert!(UserToken.Changeset.hashed(user, digest, "confirm", user.email))

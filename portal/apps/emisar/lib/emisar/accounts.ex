@@ -21,6 +21,7 @@ defmodule Emisar.Accounts do
   # authenticated context should prefer `socket.assigns.current_account`
   # over re-fetching.
 
+  @doc "Internal — pre-auth account lookup for `UserAuth.assign_current_account`; no subject exists yet."
   def fetch_account_by_id(id) do
     if Repo.valid_uuid?(id) do
       Account.Query.not_deleted()
@@ -32,11 +33,11 @@ defmodule Emisar.Accounts do
   end
 
   @doc """
-  Resolve an account from a `/app/:account_id_or_slug` path segment — a UUID
-  (API / SSO / redirects) or the slug (the canonical UI form). Pre-Subject:
-  the per-account sign-in page resolves it before anyone is authenticated, so
-  it scopes nothing — knowing a slug grants no access (the slug gate on the
-  authenticated routes is the authz boundary).
+  Internal — pre-auth: the web session boundary (`UserAuth`) resolves an
+  `/app/:account_id_or_slug` segment before anyone is authenticated, so no
+  subject exists yet. The segment is a UUID (API / SSO / redirects) or the slug
+  (the canonical UI form). Scopes nothing — knowing a slug grants no access (the
+  slug gate on the authenticated routes is the authz boundary).
   """
   def fetch_account_by_id_or_slug(id_or_slug) when is_binary(id_or_slug) do
     queryable = Account.Query.not_deleted()
@@ -68,15 +69,13 @@ defmodule Emisar.Accounts do
   end
 
   @doc """
-  Creates an account with the given user as `:owner`. Wrapped in a
-  transaction so a half-created account is impossible. Audit-logs both
-  `user.signed_up` (the new user) and `account.created` (the new
-  tenant) — together they form the "this person stood up a new team"
-  trace operators need for billing/abuse review.
-
-  Pre-Subject boundary: called from onboarding/signup where the user has
-  no membership yet, so no `%Subject{}` can exist — owning the brand-new
-  account is what creates one.
+  Internal — onboarding/registration: called from signup where the user has no
+  membership yet, so no `%Subject{}` can exist — owning the brand-new account is
+  what creates one. Creates an account with the given user as `:owner`, wrapped
+  in a transaction so a half-created account is impossible. Audit-logs both
+  `user.signed_up` (the new user) and `account.created` (the new tenant) —
+  together they form the "this person stood up a new team" trace operators need
+  for billing/abuse review.
   """
   def create_account_with_owner(account_attrs, %Users.User{} = user) do
     Multi.new()
@@ -354,14 +353,14 @@ defmodule Emisar.Accounts do
   end
 
   @doc """
-  Resolve the membership to mount as the user's active tenant for this
-  request. If `account_id` is given and the user has a non-suspended
-  membership on that (non-deleted) account, return it. Otherwise fall
-  back to the most recently-joined non-suspended membership — the
-  default for first sign-in or after a stale session value is cleared.
-
-  Returns `{:ok, membership} | {:error, :not_found}`. Pre-Subject —
-  called from `UserAuth` before there's a Subject to authorize with.
+  Internal — pre-auth: called by the web session boundary (`UserAuth`) to build
+  `current_account`/`current_user` before there's a Subject to authorize with.
+  Resolves the membership to mount as the user's active tenant for this request:
+  if `account_id` is given and the user has a non-suspended membership on that
+  (non-deleted) account, return it; otherwise fall back to the most
+  recently-joined non-suspended membership — the default for first sign-in or
+  after a stale session value is cleared. Returns
+  `{:ok, membership} | {:error, :not_found}`.
   """
   def fetch_membership_for_session(%Users.User{id: user_id}, account_id) do
     case maybe_fetch_session_membership(user_id, account_id) do
@@ -393,16 +392,16 @@ defmodule Emisar.Accounts do
   end
 
   @doc """
-  Resolve the membership for an `/app/:account_id_or_slug` path segment,
-  scoped to the user's OWN memberships. The segment is a UUID (API / SSO /
-  temporary redirects) or the slug (the canonical UI form). A non-member or
-  unknown ref both return `{:error, :not_found}` — indistinguishable, so a
-  slugged URL never confirms a tenant exists (404, never 403). Suspended
-  (`disabled_at`) members and soft-deleted accounts/users are excluded.
-
-  Pre-Subject: the slug IS the cross-account authz input, re-resolved on
-  every authenticated mount (`UserAuth.on_mount(:ensure_account_slug)`), not
-  trusted from the session.
+  Internal — pre-auth: called by the web session boundary
+  (`UserAuth.on_mount(:ensure_account_slug)`) on every authenticated mount; the
+  slug IS the cross-account authz input, re-resolved here (not trusted from the
+  session), so no `%Subject{}` exists yet. Resolves the membership for an
+  `/app/:account_id_or_slug` segment, scoped to the user's OWN memberships. The
+  segment is a UUID (API / SSO / temporary redirects) or the slug (the canonical
+  UI form). A non-member or unknown ref both return `{:error, :not_found}` —
+  indistinguishable, so a slugged URL never confirms a tenant exists (404, never
+  403). Suspended (`disabled_at`) members and soft-deleted accounts/users are
+  excluded.
   """
   def fetch_membership_by_account_id_or_slug(%Users.User{id: user_id}, account_id_or_slug) do
     Membership.Query.not_deleted()
@@ -423,8 +422,9 @@ defmodule Emisar.Accounts do
   end
 
   @doc """
-  Audit a session account switch. The switch itself is web session state
-  (no rows change), but the audit trail of it is the domain's record —
+  Internal — called by the web session boundary (`UserAuth`) when an operator
+  switches active tenant; the switch is web session state (no rows change), so
+  no `%Subject{}` is threaded, but the audit trail of it is the domain's record —
   controllers never write audit rows. Takes the membership resolved by
   `fetch_membership_for_session/2` (`:user` preloaded).
   """
@@ -433,10 +433,11 @@ defmodule Emisar.Accounts do
   end
 
   @doc """
-  True if every membership the user holds is suspended (and they have
-  at least one). Distinct from "user has no memberships" — the UI
-  needs to show "your access was suspended" rather than send them to
-  onboarding.
+  Internal — predicate composed by the web session checks (`UserAuth`) /
+  sibling contexts, off a `%Users.User{}` with no subject yet. True if every
+  membership the user holds is suspended (and they have at least one). Distinct
+  from "user has no memberships" — the UI needs to show "your access was
+  suspended" rather than send them to onboarding.
   """
   def all_memberships_suspended?(%Users.User{id: user_id}) do
     base = Membership.Query.not_deleted() |> Membership.Query.by_user_id(user_id)
@@ -1146,12 +1147,13 @@ defmodule Emisar.Accounts do
   end
 
   @doc """
-  Looks up a pending membership by invitation token. The presented raw
-  token is re-hashed for the lookup — only its digest is at rest — and
-  invitations lapse after `Membership.Query.invitation_not_expired/1`'s
-  window. Returns the membership with `:account` and `:user` preloaded,
-  or `{:error, :not_found}`. Pre-Subject helper — used by the
-  invitation-accept LV before the user has signed in.
+  Internal — invitation-accept flow: the opaque invite token IS the
+  capability/authz, so there's no subject; used by the invitation-accept LV
+  before the user has signed in. Looks up a pending membership by invitation
+  token — the presented raw token is re-hashed for the lookup (only its digest
+  is at rest) and invitations lapse after
+  `Membership.Query.invitation_not_expired/1`'s window. Returns the membership
+  with the requested preloads, or `{:error, :not_found}`.
 
   Options: `preload:` — associations the caller renders (`:account`,
   `:user`); omit when only the row itself is needed.
@@ -1172,16 +1174,15 @@ defmodule Emisar.Accounts do
   def fetch_invitation_by_token(_, _opts), do: {:error, :not_found}
 
   @doc """
-  Marks an invitation accepted without touching the user record. Used when
-  an already-signed-in user clicks an invite link for one of their own
-  accounts — the user already has a password + confirmed_at, so we just clear
-  the token + stamp `invitation_accepted_at`.
-
-  The accepting user must BE the invited user (the membership's `user_id`):
-  a signed-in *different* user holding the token (e.g. a forwarded link) must
-  not be able to burn the invitation. Returns `{:error, :unauthorized}`
-  otherwise. Takes the `%Users.User{}` (not a `%Subject{}`) — the accept-invite page
-  is a public route with only `current_user` assigned, no subject.
+  Internal — invitation-accept flow: takes the `%Users.User{}` (not a
+  `%Subject{}`) because the accept-invite page is a public route with only
+  `current_user` assigned. Marks an invitation accepted without touching the
+  user record — used when an already-signed-in user clicks an invite link for
+  one of their own accounts (they already have a password + confirmed_at, so we
+  just clear the token + stamp `invitation_accepted_at`). The accepting user
+  must BE the invited user (the membership's `user_id`): a signed-in *different*
+  user holding the token (e.g. a forwarded link) must not be able to burn the
+  invitation. Returns `{:error, :unauthorized}` otherwise.
   """
   def mark_invitation_accepted(%Membership{user_id: user_id} = membership, %Users.User{
         id: user_id
@@ -1202,14 +1203,13 @@ defmodule Emisar.Accounts do
   def mark_invitation_accepted(%Membership{}, %Users.User{}), do: {:error, :unauthorized}
 
   @doc """
-  Accepts a membership invitation: sets the user's full_name + password,
-  clears the invitation token, marks invitation_accepted_at. Confirms
-  the user since the invitation acceptance proves they own the email.
-
-  Wrapped in a transaction so a half-accepted state is impossible.
-  Pre-Subject boundary — the accept-invite page is a public route and
-  the invitee has no session yet; possession of the invitation token
-  (resolved by `fetch_invitation_by_token/1`) is the authorization.
+  Internal — invitation-accept flow: the accept-invite page is a public route
+  and the invitee has no session yet, so no `%Subject{}` exists; possession of
+  the invitation token (resolved by `fetch_invitation_by_token/1`) is the
+  authorization. Accepts a membership invitation: sets the user's full_name +
+  password, clears the invitation token, marks invitation_accepted_at, and
+  confirms the user since acceptance proves they own the email. Wrapped in a
+  transaction so a half-accepted state is impossible.
   """
   def accept_invitation(%Membership{} = membership, %{} = user_attrs) do
     Multi.new()

@@ -33,9 +33,10 @@ defmodule Emisar.Audit do
   # -- Recording (internal helper called by sibling contexts) ----------
 
   @doc """
-  Append an audit event. Called by sibling contexts inside their
-  already-authorized mutation paths — `actor_kind` / `actor_id` are
-  derived from the caller's `%Subject{}`.
+  Internal — sibling contexts call this inside their already-authorized
+  mutation paths to append an audit event; subject-less because the acting
+  subject is already captured in the event payload (`actor_kind` / `actor_id`
+  are derived from the caller's `%Subject{}`).
 
   Use `changeset/3` instead when the audit row needs to commit
   atomically with a parent mutation (an `Ecto.Multi.insert/3` step).
@@ -47,15 +48,16 @@ defmodule Emisar.Audit do
   end
 
   @doc """
-  Insert a prebuilt `Audit.Events` changeset fire-and-forget — the
-  counterpart to `log/3` for events whose actor/subject/payload fields
-  come from a per-event builder rather than raw attrs (so the caller
-  never hand-assembles them). Use an `Audit.Events.<event>` builder
-  inside a `Multi.insert(:audit, …)` when the row must commit with a
-  parent mutation; use this only for standalone socket/presence events
-  that have no transaction to join (runner connect/disconnect/error).
-  Like `log/3`, it does not broadcast — presence already drives the live
-  runner UI.
+  Internal — sibling contexts call this from their already-authorized paths to
+  insert a prebuilt `Audit.Events` changeset fire-and-forget; subject-less
+  because the acting subject is already captured in the changeset. The
+  counterpart to `log/3` for events whose actor/subject/payload fields come
+  from a per-event builder rather than raw attrs (so the caller never
+  hand-assembles them). Use an `Audit.Events.<event>` builder inside a
+  `Multi.insert(:audit, …)` when the row must commit with a parent mutation;
+  use this only for standalone socket/presence events that have no transaction
+  to join (runner connect/disconnect/error). Like `log/3`, it does not
+  broadcast — presence already drives the live runner UI.
   """
   def record(%Ecto.Changeset{} = event_changeset), do: Repo.insert(event_changeset)
 
@@ -99,9 +101,11 @@ defmodule Emisar.Audit do
   end
 
   @doc """
-  Audit-log a user-scoped security event (sign-in, MFA, password
-  change, profile edit). The user might not have a direct `account_id`
-  in hand — most auth flows operate pre-Subject — so we look up the
+  Internal — sibling contexts (mostly Auth's pre-Subject flows) call this from
+  their already-authorized paths to audit-log a user-scoped security event
+  (sign-in, MFA, password change, profile edit); subject-less because the
+  acting user is captured in the event itself. The user might not have a direct
+  `account_id` in hand — most auth flows operate pre-Subject — so we look up the
   user's primary membership and stamp the event onto that account.
 
   Multi-account users only get the event on their primary membership

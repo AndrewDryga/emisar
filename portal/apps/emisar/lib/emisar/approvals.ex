@@ -178,8 +178,8 @@ defmodule Emisar.Approvals do
   @ninety_days_seconds 90 * @one_day_seconds
 
   @doc """
-  Files an approval request for a gated run. Internal — called from
-  `Runs.dispatch_run` which has already authorized via its own Subject.
+  Internal — called from `Runs.dispatch_run` (already authorized via its
+  own Subject) to file an approval request for a gated run.
   `requested_by_id` is whoever asked for the run (UI/runbook); for an
   MCP-triggered run it's `nil` and the effective requester is resolved to
   the api-key owner. `opts` carries the gate snapshot: `:min_approvals`
@@ -634,9 +634,11 @@ defmodule Emisar.Approvals do
   # -- Grants ---------------------------------------------------------
 
   @doc """
-  Peek a usable grant for the given dispatch. Returns the grant, or
-  `nil` if none matches — `peek_*` per AGENTS.md §1.1 convention for
-  nil-or-struct internal lookups.
+  Internal — called by `Runs.dispatch_run` on the require-approval branch
+  (already-authorized run context) to fast-path past the gate. Peeks a
+  usable grant for the given dispatch; returns the grant, or `nil` if none
+  matches — `peek_*` per AGENTS.md §1.1 convention for nil-or-struct
+  internal lookups.
 
   Matching is api_key-scoped (a grant given to one key never silently
   covers another). `runner_id` and `args_sha256` may each be either
@@ -644,9 +646,6 @@ defmodule Emisar.Approvals do
   fully-consumed grants are filtered out by `Grant.usable?/1` after
   the SQL pass — the SQL pre-filter narrows the candidate set, and
   `usable?/1` makes the final call.
-
-  Internal — called by `Runs.dispatch_run` on the require-approval branch
-  to fast-path past the gate.
   """
   def peek_matching_grant(api_key_id, action_id, runner_id, args_sha256)
       when is_binary(api_key_id) and is_binary(action_id) do
@@ -660,12 +659,12 @@ defmodule Emisar.Approvals do
   end
 
   @doc """
-  Atomically increment uses_count + stamp last_used_at. Refuses to
-  exceed `max_uses` — returns `{:error, :exhausted}` so the caller
-  treats the grant as no-longer-matching (and the dispatch falls
-  through to the normal approval-request path).
-
-  Internal — used by `Runs.dispatch_run` on the grant fast-path.
+  Internal — used by `Runs.dispatch_run` on the grant fast-path
+  (already-authorized run context). Atomically increments uses_count +
+  stamps last_used_at. Refuses to exceed `max_uses` — returns
+  `{:error, :exhausted}` so the caller treats the grant as
+  no-longer-matching (and the dispatch falls through to the normal
+  approval-request path).
   """
   def use_grant(%Grant{} = grant) do
     now = DateTime.utc_now()
@@ -681,8 +680,9 @@ defmodule Emisar.Approvals do
   end
 
   @doc """
-  Mint a grant from an approval decision. `attrs` are the operator's
-  choices:
+  Internal — called from `approve_request/4` (already-authorized) inside
+  the same transaction that marks the request decided, to mint a grant
+  from an approval decision. `attrs` are the operator's choices:
 
     * `:duration` — `:once`, `:one_hour`, `:one_day`, `:thirty_days`,
       or `:ninety_days`. Every grant has an explicit re-confirm
@@ -694,9 +694,6 @@ defmodule Emisar.Approvals do
 
   The originating request, runner, and api_key are pulled off the
   approval `request` so the grant carries the same shape.
-
-  Internal — called from `approve_request/4` inside the same transaction that
-  marks the request decided.
   """
   def create_grant(%Request{} = request, %{} = run, granted_by_id, attrs) do
     now = DateTime.utc_now()
@@ -839,12 +836,11 @@ defmodule Emisar.Approvals do
   # -- Expiry sweep ---------------------------------------------------
 
   @doc """
-  Atomically transition every pending request whose `expires_at` has
-  passed into `"expired"`, cancel the underlying run, and write an
-  audit row per expiry. Returns the count expired. Idempotent — runs
-  via the `Emisar.Workers.ApprovalExpiry` cron every 5 minutes.
-
-  Internal sweep — runs from an Oban worker with no Subject.
+  Internal — the Oban sweeper (`Emisar.Workers.ApprovalExpiry` cron,
+  system, no subject). Atomically transitions every pending request whose
+  `expires_at` has passed into `"expired"`, cancels the underlying run,
+  and writes an audit row per expiry. Returns the count expired.
+  Idempotent — runs every 5 minutes.
   """
   def expire_overdue_requests(now \\ DateTime.utc_now()) do
     expiring =
