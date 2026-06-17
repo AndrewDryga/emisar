@@ -660,6 +660,7 @@ defmodule EmisarWeb.AgentsLive do
       switchable_accounts={@switchable_accounts}
       flash={@flash}
       section={:agents}
+      width={:table}
     >
       <:title>LLM agents</:title>
 

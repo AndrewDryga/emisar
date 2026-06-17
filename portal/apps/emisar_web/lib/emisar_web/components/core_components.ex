@@ -1073,6 +1073,13 @@ defmodule EmisarWeb.CoreComponents do
   attr :current_subject, :map, required: true
   attr :switchable_accounts, :list, default: nil
   attr :section, :atom, default: :dashboard
+
+  attr :width, :atom,
+    default: :detail,
+    values: [:table, :detail, :form, :settings],
+    doc:
+      "content column width: :table (7xl — lists/dashboard), :detail (6xl), :form (3xl), :settings (4xl)"
+
   attr :pending_approvals_count, :integer, default: 0
   attr :pending_packs_count, :integer, default: 0
   attr :fleet_all_offline?, :boolean, default: false
@@ -1192,12 +1199,22 @@ defmodule EmisarWeb.CoreComponents do
         </header>
 
         <main class="flex-1 overflow-x-hidden p-4 sm:p-6">
-          {render_slot(@inner_block)}
+          <div class={["mx-auto w-full space-y-6", shell_width(@width)]}>
+            {render_slot(@inner_block)}
+          </div>
         </main>
       </div>
     </div>
     """
   end
+
+  # Content width tiers (§3.2 of the UX redesign): one column width per page kind
+  # so every screen lines up. The shell owns it — pages pass `width=` and never
+  # hand-roll `mx-auto max-w-*`. Literal classes so Tailwind's purge keeps them.
+  defp shell_width(:table), do: "max-w-7xl"
+  defp shell_width(:detail), do: "max-w-6xl"
+  defp shell_width(:form), do: "max-w-3xl"
+  defp shell_width(:settings), do: "max-w-4xl"
 
   # -- shell sub-components (shared between desktop + mobile) ----------
 
@@ -2056,43 +2073,6 @@ defmodule EmisarWeb.CoreComponents do
   defp chip_class(_default), do: "bg-zinc-800/80 text-zinc-300"
 
   @doc """
-  Page-level content container — `mx-auto max-w-Nxl space-y-6`. Use
-  on every authenticated page so widths and vertical rhythm stay
-  consistent.
-
-      <.page_container>
-        ... sections ...
-      </.page_container>
-  """
-  attr :max, :string,
-    default: "5xl",
-    values: ~w(2xl 3xl 4xl 5xl 6xl 7xl)
-
-  attr :class, :string, default: nil
-  slot :inner_block, required: true
-
-  def page_container(assigns) do
-    # Use a static map so Tailwind's purge picks up every class.
-    width =
-      %{
-        "2xl" => "max-w-2xl",
-        "3xl" => "max-w-3xl",
-        "4xl" => "max-w-4xl",
-        "5xl" => "max-w-5xl",
-        "6xl" => "max-w-6xl",
-        "7xl" => "max-w-7xl"
-      }[assigns.max]
-
-    assigns = assign(assigns, :width, width)
-
-    ~H"""
-    <div class={["mx-auto space-y-6", @width, @class]}>
-      {render_slot(@inner_block)}
-    </div>
-    """
-  end
-
-  @doc """
   Inline "back" breadcrumb for detail pages. Renders as a small label
   above the page title slot, so the operator always sees where they
   came from without a separate breadcrumb trail.
@@ -2444,155 +2424,152 @@ defmodule EmisarWeb.CoreComponents do
 
   def install_wizard(assigns) do
     ~H"""
-    <div class="mx-auto max-w-3xl">
-      <div class="rounded-2xl border border-zinc-900 bg-gradient-to-b from-indigo-950/40 to-zinc-950/60 p-8 sm:p-10">
-        <header class="flex items-center gap-3">
-          <span class="grid h-10 w-10 place-items-center rounded-xl bg-indigo-500/20 text-indigo-300 ring-1 ring-indigo-500/40">
-            <.icon name="hero-rocket-launch" class="h-5 w-5" />
-          </span>
-          <div>
-            <h2 class="text-xl font-semibold text-zinc-50">Connect a runner</h2>
-            <p class="text-sm text-zinc-400">
-              Two minutes. Pick a Linux or macOS host, paste the one-liner.
-            </p>
-          </div>
-        </header>
+    <div class="rounded-2xl border border-zinc-900 bg-gradient-to-b from-indigo-950/40 to-zinc-950/60 p-8 sm:p-10">
+      <header class="flex items-center gap-3">
+        <span class="grid h-10 w-10 place-items-center rounded-xl bg-indigo-500/20 text-indigo-300 ring-1 ring-indigo-500/40">
+          <.icon name="hero-rocket-launch" class="h-5 w-5" />
+        </span>
+        <div>
+          <h2 class="text-xl font-semibold text-zinc-50">Connect a runner</h2>
+          <p class="text-sm text-zinc-400">
+            Two minutes. Pick a Linux or macOS host, paste the one-liner.
+          </p>
+        </div>
+      </header>
 
-        <%= cond do %>
-          <% is_binary(@install_command) -> %>
-            <div class="mt-8 space-y-6">
-              <div>
-                <div class="text-xs uppercase tracking-wider text-zinc-500">
-                  Run on any Linux or macOS host
-                </div>
-                <div class="mt-2 flex items-center gap-2 rounded-lg border border-zinc-800 bg-black/60 p-4 font-mono text-xs">
-                  <pre class="flex-1 whitespace-pre-wrap break-all text-zinc-300">{@install_command}</pre>
-                  <%!-- Copy the literal string, not the rendered element's
+      <%= cond do %>
+        <% is_binary(@install_command) -> %>
+          <div class="mt-8 space-y-6">
+            <div>
+              <div class="text-xs uppercase tracking-wider text-zinc-500">
+                Run on any Linux or macOS host
+              </div>
+              <div class="mt-2 flex items-center gap-2 rounded-lg border border-zinc-800 bg-black/60 p-4 font-mono text-xs">
+                <pre class="flex-1 whitespace-pre-wrap break-all text-zinc-300">{@install_command}</pre>
+                <%!-- Copy the literal string, not the rendered element's
                        innerText: the leading space (HISTCONTROL=ignorespace)
                        is significant and the selector path would strip it. --%>
-                  <.copy_button
-                    text={@install_command}
-                    class="self-start bg-indigo-500/20 px-2 text-indigo-200 hover:bg-indigo-500/30 font-semibold"
-                  >
-                    Copy
-                  </.copy_button>
-                </div>
-                <%!-- The one-liner embeds a single-use enrollment key shown
+                <.copy_button
+                  text={@install_command}
+                  class="self-start bg-indigo-500/20 px-2 text-indigo-200 hover:bg-indigo-500/30 font-semibold"
+                >
+                  Copy
+                </.copy_button>
+              </div>
+              <%!-- The one-liner embeds a single-use enrollment key shown
                      only here — a root-capable credential. The marketing
                      quickstart tells the trust story, but the operator has left
                      that page; carry it onto the page they actually install
                      from so they don't paste it into a chat/ticket or run an
                      unknown root script blind. --%>
-                <div class="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-xs leading-5 text-amber-200/90">
-                  <div class="flex items-center gap-2 font-semibold text-amber-200">
-                    <.icon name="hero-key" class="h-4 w-4" /> Live credential — won't be shown again
-                  </div>
-                  <p class="mt-1.5">
-                    The command runs with <code class="font-mono">sudo</code>
-                    and carries a single-use key that enrolls this host to run infrastructure
-                    actions on your fleet. Treat it like a password — paste it straight onto the
-                    host, never into a chat or ticket.
-                  </p>
+              <div class="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-xs leading-5 text-amber-200/90">
+                <div class="flex items-center gap-2 font-semibold text-amber-200">
+                  <.icon name="hero-key" class="h-4 w-4" /> Live credential — won't be shown again
                 </div>
-                <p class="mt-2 text-xs leading-5 text-zinc-500">
-                  The leading space keeps the key out of your shell history. It's a plain shell
-                  script — <.link
-                    href="/install.sh"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    class="font-semibold text-indigo-400 hover:text-indigo-300"
-                  >read it first →</.link>: it verifies the download's SHA-256, runs the runner as a
-                  dedicated <code class="font-mono text-zinc-400">emisar</code>
-                  user (not root) under a systemd unit, and only dials out — nothing listens on the host.
+                <p class="mt-1.5">
+                  The command runs with <code class="font-mono">sudo</code>
+                  and carries a single-use key that enrolls this host to run infrastructure
+                  actions on your fleet. Treat it like a password — paste it straight onto the
+                  host, never into a chat or ticket.
                 </p>
               </div>
+              <p class="mt-2 text-xs leading-5 text-zinc-500">
+                The leading space keeps the key out of your shell history. It's a plain shell
+                script — <.link
+                  href="/install.sh"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="font-semibold text-indigo-400 hover:text-indigo-300"
+                >read it first →</.link>: it verifies the download's SHA-256, runs the runner as a
+                dedicated <code class="font-mono text-zinc-400">emisar</code>
+                user (not root) under a systemd unit, and only dials out — nothing listens on the host.
+              </p>
+            </div>
 
-              <div class="rounded-lg border border-zinc-800 bg-zinc-950/60 p-4">
-                <div class="flex items-center gap-3">
-                  <span class="relative flex h-3 w-3">
-                    <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-indigo-500/50">
-                    </span>
-                    <span class="relative inline-flex h-3 w-3 rounded-full bg-indigo-400"></span>
+            <div class="rounded-lg border border-zinc-800 bg-zinc-950/60 p-4">
+              <div class="flex items-center gap-3">
+                <span class="relative flex h-3 w-3">
+                  <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-indigo-500/50">
                   </span>
-                  <div class="text-sm text-zinc-300">
-                    Waiting for a runner to connect. This page will refresh automatically.
-                  </div>
+                  <span class="relative inline-flex h-3 w-3 rounded-full bg-indigo-400"></span>
+                </span>
+                <div class="text-sm text-zinc-300">
+                  Waiting for a runner to connect. This page will refresh automatically.
                 </div>
+              </div>
 
-                <%!-- After the grace period with no join (the install page's
+              <%!-- After the grace period with no join (the install page's
                      watchdog flips show_troubleshooting) the likely funnel
                      failure is a wrong/truncated key, :443 firewalled, or a
                      non-systemd host — none of which the pulse alone reveals.
                      Surface the same checks the quickstart doc carries. --%>
-                <div
-                  :if={@show_troubleshooting}
-                  class="mt-3 border-t border-zinc-800 pt-3 text-xs leading-5 text-zinc-400"
-                >
-                  <div class="font-semibold text-zinc-300">Not seeing it yet? Check the host:</div>
-                  <ul class="mt-1.5 space-y-1.5">
-                    <li>
-                      · it can reach <code class="font-mono text-zinc-300">{@base_url}</code>
-                      over outbound HTTPS (nothing needs to listen on it);
-                    </li>
-                    <li>
-                      · you ran the whole line with <code class="font-mono text-zinc-300">sudo</code>
-                      and the key wasn't truncated on paste;
-                    </li>
-                    <li>
-                      · it runs systemd — watch the runner's own logs with <code class="font-mono text-zinc-300">journalctl -u emisar -f</code>.
-                    </li>
-                  </ul>
-                </div>
+              <div
+                :if={@show_troubleshooting}
+                class="mt-3 border-t border-zinc-800 pt-3 text-xs leading-5 text-zinc-400"
+              >
+                <div class="font-semibold text-zinc-300">Not seeing it yet? Check the host:</div>
+                <ul class="mt-1.5 space-y-1.5">
+                  <li>
+                    · it can reach <code class="font-mono text-zinc-300">{@base_url}</code>
+                    over outbound HTTPS (nothing needs to listen on it);
+                  </li>
+                  <li>
+                    · you ran the whole line with <code class="font-mono text-zinc-300">sudo</code>
+                    and the key wasn't truncated on paste;
+                  </li>
+                  <li>
+                    · it runs systemd — watch the runner's own logs with <code class="font-mono text-zinc-300">journalctl -u emisar -f</code>.
+                  </li>
+                </ul>
               </div>
+            </div>
 
-              <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <.link
-                  href="/docs/quickstart"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  class="rounded-xl border border-zinc-800 bg-zinc-950/60 p-4 transition hover:bg-zinc-900/60"
-                >
-                  <div class="flex items-center gap-2 text-sm font-semibold text-zinc-200">
-                    <.icon name="hero-book-open" class="h-4 w-4 text-indigo-400" /> Installation guide
-                    <.icon
-                      name="hero-arrow-top-right-on-square"
-                      class="ml-auto h-3.5 w-3.5 text-zinc-600"
-                    />
-                  </div>
-                  <p class="mt-1 text-xs text-zinc-500">
-                    Image-bake, cloud-init, manual install.
-                  </p>
-                </.link>
-                <.link
-                  navigate="/packs"
-                  class="rounded-xl border border-zinc-800 bg-zinc-950/60 p-4 transition hover:bg-zinc-900/60"
-                >
-                  <div class="flex items-center gap-2 text-sm font-semibold text-zinc-200">
-                    <.icon name="hero-cube-transparent" class="h-4 w-4 text-indigo-400" />
-                    Pack registry
-                    <.icon name="hero-arrow-right" class="ml-auto h-3.5 w-3.5 text-zinc-600" />
-                  </div>
-                  <p class="mt-1 text-xs text-zinc-500">
-                    Browse linux-core, cassandra, showcase. Install snippets included.
-                  </p>
-                </.link>
-              </div>
-            </div>
-          <% @install_command == :mint_failed -> %>
-            <div class="mt-8 rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-200/90">
-              We couldn't mint a bootstrap auth key just now. Open
-              <.link navigate={@on_failure_path} class="font-semibold underline">
-                settings → auth keys
+            <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <.link
+                href="/docs/quickstart"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="rounded-xl border border-zinc-800 bg-zinc-950/60 p-4 transition hover:bg-zinc-900/60"
+              >
+                <div class="flex items-center gap-2 text-sm font-semibold text-zinc-200">
+                  <.icon name="hero-book-open" class="h-4 w-4 text-indigo-400" /> Installation guide
+                  <.icon
+                    name="hero-arrow-top-right-on-square"
+                    class="ml-auto h-3.5 w-3.5 text-zinc-600"
+                  />
+                </div>
+                <p class="mt-1 text-xs text-zinc-500">
+                  Image-bake, cloud-init, manual install.
+                </p>
               </.link>
-              and create one manually, or refresh this page to try again.
+              <.link
+                navigate="/packs"
+                class="rounded-xl border border-zinc-800 bg-zinc-950/60 p-4 transition hover:bg-zinc-900/60"
+              >
+                <div class="flex items-center gap-2 text-sm font-semibold text-zinc-200">
+                  <.icon name="hero-cube-transparent" class="h-4 w-4 text-indigo-400" /> Pack registry
+                  <.icon name="hero-arrow-right" class="ml-auto h-3.5 w-3.5 text-zinc-600" />
+                </div>
+                <p class="mt-1 text-xs text-zinc-500">
+                  Browse linux-core, cassandra, showcase. Install snippets included.
+                </p>
+              </.link>
             </div>
-          <% true -> %>
-            <div class="mt-8 flex items-center gap-3 rounded-lg border border-zinc-800 bg-zinc-950/60 p-4 text-sm text-zinc-400">
-              <span class="hero-arrow-path h-4 w-4 animate-spin"></span>
-              Generating your install command…
-            </div>
-        <% end %>
-      </div>
+          </div>
+        <% @install_command == :mint_failed -> %>
+          <div class="mt-8 rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-200/90">
+            We couldn't mint a bootstrap auth key just now. Open
+            <.link navigate={@on_failure_path} class="font-semibold underline">
+              settings → auth keys
+            </.link>
+            and create one manually, or refresh this page to try again.
+          </div>
+        <% true -> %>
+          <div class="mt-8 flex items-center gap-3 rounded-lg border border-zinc-800 bg-zinc-950/60 p-4 text-sm text-zinc-400">
+            <span class="hero-arrow-path h-4 w-4 animate-spin"></span>
+            Generating your install command…
+          </div>
+      <% end %>
     </div>
     """
   end

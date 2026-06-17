@@ -344,6 +344,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
       switchable_accounts={@switchable_accounts}
       flash={@flash}
       section={:approvals}
+      width={:detail}
     >
       <:title>
         <.detail_header back="Approvals" navigate={~p"/app/#{@current_account}/approvals"}>

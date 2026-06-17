@@ -62,6 +62,7 @@ defmodule EmisarWeb.AuditDetailLive do
       switchable_accounts={@switchable_accounts}
       flash={@flash}
       section={:audit}
+      width={:detail}
     >
       <:title>
         <.detail_header back="Audit log" navigate={~p"/app/#{@current_account}/audit"}>

@@ -100,6 +100,7 @@ defmodule EmisarWeb.RunbooksLive do
       switchable_accounts={@switchable_accounts}
       flash={@flash}
       section={:runbooks}
+      width={:table}
     >
       <:title>Runbooks</:title>
       <:actions :if={Runbooks.subject_can_manage_runbooks?(@current_subject)}>
@@ -129,54 +130,52 @@ defmodule EmisarWeb.RunbooksLive do
              runners. The dashboard_shell already titles the page + holds the
              "New runbook" action, so no list_section wrapper here (it would
              double the heading and box the filter against a second border). --%>
-        <div class="mx-auto max-w-5xl">
-          <LiveTable.live_table
-            layout={:cards}
-            id="runbooks"
-            path={~p"/app/#{@current_account}/runbooks"}
-            rows={@runbooks}
-            metadata={@metadata}
-            filter_params={@filter_params}
-            filters={@filters}
-          >
-            <:item :let={runbook}>
-              <.list_row icon="hero-book-open">
-                <%!-- Row 1: title (link to editor) + status pill + version --%>
-                <:title>
-                  <.link
-                    navigate={~p"/app/#{@current_account}/runbooks/#{runbook.id}/edit"}
-                    class="truncate font-medium text-zinc-100 hover:text-indigo-300"
-                  >
-                    {runbook.title}
-                  </.link>
-                  <.status_badge status={runbook.status} />
-                  <span class="font-mono text-[11px] text-zinc-500">v{runbook.version}</span>
-                  <%!-- Headline risk — the most-severe step's risk, so the
+        <LiveTable.live_table
+          layout={:cards}
+          id="runbooks"
+          path={~p"/app/#{@current_account}/runbooks"}
+          rows={@runbooks}
+          metadata={@metadata}
+          filter_params={@filter_params}
+          filters={@filters}
+        >
+          <:item :let={runbook}>
+            <.list_row icon="hero-book-open">
+              <%!-- Row 1: title (link to editor) + status pill + version --%>
+              <:title>
+                <.link
+                  navigate={~p"/app/#{@current_account}/runbooks/#{runbook.id}/edit"}
+                  class="truncate font-medium text-zinc-100 hover:text-indigo-300"
+                >
+                  {runbook.title}
+                </.link>
+                <.status_badge status={runbook.status} />
+                <span class="font-mono text-[11px] text-zinc-500">v{runbook.version}</span>
+                <%!-- Headline risk — the most-severe step's risk, so the
                        operator sees how dangerous a runbook is before opening
                        it. Hidden when no step's action is in the catalog. --%>
-                  <.risk_pill :if={@runbook_risk[runbook.id]} risk={@runbook_risk[runbook.id]} />
-                </:title>
-                <:meta>
-                  <%!-- Row 2: description preview + slug --%>
-                  <span :if={runbook.description && runbook.description != ""}>
-                    {preview(runbook.description)} ·
-                  </span>
-                  <span class="font-mono">{runbook.slug}</span>
-                </:meta>
-                <:actions>
-                  <.link
-                    :if={runbook.status == :published}
-                    navigate={~p"/app/#{@current_account}/runbooks/#{runbook.id}/run"}
-                    class="rounded-lg bg-indigo-500/10 px-2.5 py-1 text-xs font-semibold text-indigo-300 ring-1 ring-indigo-500/30 hover:bg-indigo-500/20"
-                  >
-                    Run →
-                  </.link>
-                </:actions>
-              </.list_row>
-            </:item>
-            <:empty>No runbooks match these filters.</:empty>
-          </LiveTable.live_table>
-        </div>
+                <.risk_pill :if={@runbook_risk[runbook.id]} risk={@runbook_risk[runbook.id]} />
+              </:title>
+              <:meta>
+                <%!-- Row 2: description preview + slug --%>
+                <span :if={runbook.description && runbook.description != ""}>
+                  {preview(runbook.description)} ·
+                </span>
+                <span class="font-mono">{runbook.slug}</span>
+              </:meta>
+              <:actions>
+                <.link
+                  :if={runbook.status == :published}
+                  navigate={~p"/app/#{@current_account}/runbooks/#{runbook.id}/run"}
+                  class="rounded-lg bg-indigo-500/10 px-2.5 py-1 text-xs font-semibold text-indigo-300 ring-1 ring-indigo-500/30 hover:bg-indigo-500/20"
+                >
+                  Run →
+                </.link>
+              </:actions>
+            </.list_row>
+          </:item>
+          <:empty>No runbooks match these filters.</:empty>
+        </LiveTable.live_table>
       <% end %>
     </.dashboard_shell>
     """

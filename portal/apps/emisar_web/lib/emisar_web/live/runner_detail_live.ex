@@ -147,6 +147,7 @@ defmodule EmisarWeb.RunnerDetailLive do
       switchable_accounts={@switchable_accounts}
       flash={@flash}
       section={:runners}
+      width={:detail}
     >
       <:title>
         <.detail_header back="Runners" navigate={~p"/app/#{@current_account}/runners"}>

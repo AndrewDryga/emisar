@@ -630,6 +630,7 @@ defmodule EmisarWeb.SSOSettingsLive do
       switchable_accounts={@switchable_accounts}
       flash={@flash}
       section={:sso}
+      width={:settings}
     >
       <:title>Single sign-on</:title>
       <:actions :if={@can_configure? and @live_action != :new}>
@@ -638,11 +639,11 @@ defmodule EmisarWeb.SSOSettingsLive do
         </.button>
       </:actions>
 
-      <.page_container :if={not @can_configure?} max="2xl">
+      <div :if={not @can_configure?}>
         <.locked current_account={@current_account} />
-      </.page_container>
+      </div>
 
-      <.page_container :if={@can_configure?} max="4xl">
+      <div :if={@can_configure?} class="space-y-6">
         <.page_intro :if={@live_action != :new}>
           Connect your organization's identity provider so members sign in through it. New
           users are provisioned on first sign-in, and you choose the role they land with.
@@ -821,7 +822,7 @@ defmodule EmisarWeb.SSOSettingsLive do
             <:cta navigate={~p"/app/#{@current_account}/settings/sso/new"}>Add connection</:cta>
           </.empty_state>
         </section>
-      </.page_container>
+      </div>
     </.dashboard_shell>
     """
   end

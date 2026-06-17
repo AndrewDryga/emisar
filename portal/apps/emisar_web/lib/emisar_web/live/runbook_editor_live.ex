@@ -415,6 +415,7 @@ defmodule EmisarWeb.RunbookEditorLive do
       switchable_accounts={@switchable_accounts}
       flash={@flash}
       section={:runbooks}
+      width={:detail}
     >
       <:title>
         <.detail_header back="Runbooks" navigate={~p"/app/#{@current_account}/runbooks"}>

@@ -540,6 +540,7 @@ defmodule EmisarWeb.TeamLive do
       switchable_accounts={@switchable_accounts}
       flash={@flash}
       section={:team}
+      width={:settings}
     >
       <:title>Team</:title>
       <:actions :if={can_manage?(assigns)}>
@@ -552,7 +553,7 @@ defmodule EmisarWeb.TeamLive do
            email, role pill, joined, "..." menu. Inline edit form
            opens directly under the row instead of in a bolted-on
            extra table column. --%>
-      <.page_container max="4xl">
+      <div class="space-y-6">
         <%!-- Security card — account-wide MFA toggle (owner-only) +
              at-a-glance per-member MFA status. Lives at the top because
              this is the highest-leverage account setting on the page;
@@ -984,7 +985,7 @@ defmodule EmisarWeb.TeamLive do
         <p :if={not can_manage?(assigns)} class="text-xs text-zinc-500">
           Only owners and admins can invite or manage members. Your role: {@current_role || "—"}.
         </p>
-      </.page_container>
+      </div>
     </.dashboard_shell>
     """
   end

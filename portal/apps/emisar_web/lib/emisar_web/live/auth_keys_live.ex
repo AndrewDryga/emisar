@@ -233,6 +233,7 @@ defmodule EmisarWeb.AuthKeysLive do
       switchable_accounts={@switchable_accounts}
       flash={@flash}
       section={:auth_keys}
+      width={:table}
     >
       <:title>Auth keys</:title>
       <:actions :if={Runners.subject_can_manage_auth_keys?(@current_subject)}>
@@ -241,7 +242,7 @@ defmodule EmisarWeb.AuthKeysLive do
         </.button>
       </:actions>
 
-      <.page_container max="5xl">
+      <div class="space-y-6">
         <%!-- Runner-cap warning: a key minted here is useless if the
              runner that tries to use it bounces off a 402. --%>
         <div
@@ -464,7 +465,7 @@ defmodule EmisarWeb.AuthKeysLive do
         >
           Only owners and admins can issue or revoke auth keys.
         </p>
-      </.page_container>
+      </div>
     </.dashboard_shell>
     """
   end

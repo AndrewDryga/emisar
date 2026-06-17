@@ -368,13 +368,14 @@ defmodule EmisarWeb.ProfileLive do
       switchable_accounts={@switchable_accounts}
       flash={@flash}
       section={:profile}
+      width={:settings}
     >
       <:title>Profile</:title>
 
       <%!-- Settings page pattern: max-width content, section per
            concern, label/description on the left, form on the right.
            No boxed cards — quieter visual rhythm than a 2-up grid. --%>
-      <div class="mx-auto max-w-4xl divide-y divide-zinc-900">
+      <div class="divide-y divide-zinc-900">
         <.settings_section title="Display name" hint="How you appear to your teammates.">
           <.simple_form
             for={@profile_form}

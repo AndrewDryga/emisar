@@ -212,6 +212,7 @@ defmodule EmisarWeb.RunNewLive do
       switchable_accounts={@switchable_accounts}
       flash={@flash}
       section={:runs}
+      width={:form}
     >
       <:title>
         <.back_link navigate={~p"/app/#{@current_account}/runners"}>Runners</.back_link>
@@ -224,7 +225,7 @@ defmodule EmisarWeb.RunNewLive do
         <.risk_pill risk={@action.risk} />
       </:actions>
 
-      <div class="mx-auto max-w-3xl space-y-6">
+      <div class="space-y-6">
         <%!-- Action context — what you're about to do. Description
              prose + meta strip (risk/kind/pack). Replaces the
              stranded right-side info card. --%>

@@ -215,10 +215,11 @@ defmodule EmisarWeb.ApprovalsLive do
       switchable_accounts={@switchable_accounts}
       flash={@flash}
       section={:approvals}
+      width={:table}
     >
       <:title>Approvals</:title>
 
-      <.page_container max="5xl">
+      <div class="space-y-6">
         <%!-- 1. PENDING --%>
         <section>
           <.section_header title="Pending" count={@pending_metadata.count} />
@@ -451,7 +452,7 @@ defmodule EmisarWeb.ApprovalsLive do
             </:empty>
           </LiveTable.live_table>
         </section>
-      </.page_container>
+      </div>
     </.dashboard_shell>
     """
   end

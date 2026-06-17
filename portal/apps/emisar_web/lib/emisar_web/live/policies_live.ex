@@ -570,12 +570,13 @@ defmodule EmisarWeb.PoliciesLive do
       switchable_accounts={@switchable_accounts}
       flash={@flash}
       section={:policies}
+      width={:settings}
     >
       <:title>Policy</:title>
 
       <.loading_state :if={@loading?} />
 
-      <div :if={not @loading?} class="mx-auto max-w-4xl space-y-6">
+      <div :if={not @loading?} class="space-y-6">
         <.page_intro>
           <:help>
             Every action has a <strong class="text-zinc-100">risk tier</strong>

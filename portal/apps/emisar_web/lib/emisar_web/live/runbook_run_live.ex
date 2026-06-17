@@ -568,10 +568,11 @@ defmodule EmisarWeb.RunbookRunLive do
       switchable_accounts={@switchable_accounts}
       flash={@flash}
       section={:runbooks}
+      width={:form}
     >
       <:title>Run <span class="font-mono text-base">{@runbook.title}</span></:title>
 
-      <div class="mx-auto max-w-3xl space-y-6">
+      <div class="space-y-6">
         <%!-- How-it-works strip — short paragraph, replaces the
              stranded `-mt-4` lead-in that fought the page padding. --%>
         <p class="text-sm leading-relaxed text-zinc-400">

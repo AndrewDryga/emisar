@@ -200,6 +200,7 @@ defmodule EmisarWeb.BillingLive do
       switchable_accounts={@switchable_accounts}
       flash={@flash}
       section={:billing}
+      width={:settings}
     >
       <:title>Billing</:title>
 
@@ -219,7 +220,7 @@ defmodule EmisarWeb.BillingLive do
         <:cta navigate={~p"/app/#{@current_account}/settings/billing"}>Reload</:cta>
       </.empty_state>
 
-      <.page_container :if={not @loading? and not is_nil(@summary)} max="6xl">
+      <div :if={not @loading? and not is_nil(@summary)} class="space-y-6">
         <.subscription_banner status={@summary.subscription_status}>
           <:cta :if={Billing.subject_can_manage_billing?(@current_subject)}>
             <button
@@ -396,7 +397,7 @@ defmodule EmisarWeb.BillingLive do
             </article>
           </div>
         </section>
-      </.page_container>
+      </div>
     </.dashboard_shell>
     """
   end
