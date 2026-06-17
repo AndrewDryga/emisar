@@ -828,6 +828,43 @@ defmodule EmisarWeb.CoreComponents do
   end
 
   @doc """
+  Informational banner — the non-error sibling of `<.error_banner>`, same box
+  shape (leading icon + message) in three severities: `:info` (indigo),
+  `:success` (emerald), `:warning` (amber). For a section-level heads-up that
+  isn't a hard error and has no single form field to attach to (a freshly-minted
+  credential reminder, a "provisioned on first sign-in" note, a published
+  confirmation). The message is the default slot; `class` appends positioning.
+  Renders escaped through HEEx (IL-16).
+
+      <.notice variant={:warning}>Copy the token now — we won't show it again.</.notice>
+      <.notice variant={:success}>Runbook published.</.notice>
+  """
+  attr :variant, :atom, default: :info, values: [:info, :success, :warning]
+  attr :class, :string, default: nil
+  slot :inner_block, required: true
+
+  def notice(assigns) do
+    ~H"""
+    <div class={[
+      "flex items-start gap-2 rounded-lg border px-4 py-3 text-sm",
+      notice_class(@variant),
+      @class
+    ]}>
+      <.icon name={notice_icon(@variant)} class="mt-0.5 h-4 w-4 flex-none" />
+      <div>{render_slot(@inner_block)}</div>
+    </div>
+    """
+  end
+
+  defp notice_class(:info), do: "border-indigo-500/30 bg-indigo-500/10 text-indigo-200"
+  defp notice_class(:success), do: "border-emerald-500/30 bg-emerald-500/10 text-emerald-200"
+  defp notice_class(:warning), do: "border-amber-500/40 bg-amber-500/10 text-amber-100"
+
+  defp notice_icon(:info), do: "hero-information-circle-mini"
+  defp notice_icon(:success), do: "hero-check-circle-mini"
+  defp notice_icon(:warning), do: "hero-exclamation-triangle-mini"
+
+  @doc """
   Banner shown above a billing surface when the account's Paddle subscription
   needs attention (past_due / paused / canceled). Healthy/nil/unknown status →
   renders nothing. Shared by the billing page and the dashboard so the copy +
