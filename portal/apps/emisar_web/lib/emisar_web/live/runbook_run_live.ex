@@ -481,6 +481,26 @@ defmodule EmisarWeb.RunbookRunLive do
 
   defp offline_mid_run?(_), do: false
 
+  # Pre-Start offline preflight: the distinct planned target runners that are
+  # currently offline. Dispatch to an offline runner QUEUES (waits for reconnect)
+  # rather than failing, so this is a heads-up before Start, not a hard blocker.
+  defp offline_planned_runners(plan, runners, account_id) do
+    names = Map.new(runners, &{&1.id, &1.name})
+
+    plan
+    |> Enum.map(& &1.runner_id)
+    |> Enum.uniq()
+    |> Enum.reject(&Runners.online?(account_id, &1))
+    |> Enum.map(&Map.get(names, &1, "a runner"))
+  end
+
+  defp offline_preflight_message([name]),
+    do: "Target runner #{name} is offline — its steps will queue until it reconnects."
+
+  defp offline_preflight_message(names),
+    do:
+      "#{length(names)} target runners are offline (#{Enum.join(names, ", ")}) — those steps will queue until they reconnect."
+
   # The execution table streams unified row structs (not raw runs): a
   # `:planned` placeholder per planned (step, runner), each flipped to its
   # live run by a shared dom_id. `run` is nil until the run arrives.
@@ -718,6 +738,19 @@ defmodule EmisarWeb.RunbookRunLive do
               Step {@blast_radius.no_runners_step}'s target has no active runners — dispatch
               will refuse it until one connects.
             </span>
+          </div>
+
+          <%!-- Offline preflight: a planned target that's offline queues (doesn't
+               fail) until it reconnects — surface it before Start so a half-dark
+               fleet isn't a surprise mid-run. --%>
+          <% offline_targets =
+            offline_planned_runners(@blast_radius.plan, @runners, @current_account.id) %>
+          <div
+            :if={!@execution && offline_targets != []}
+            class="flex items-start gap-2 border-b border-amber-500/20 bg-amber-500/[0.04] px-5 py-2.5 text-xs text-amber-300"
+          >
+            <.icon name="hero-signal-slash" class="mt-0.5 h-3.5 w-3.5 flex-none" />
+            <span>{offline_preflight_message(offline_targets)}</span>
           </div>
 
           <%!-- Plan steps, shown until the first dispatch. --%>

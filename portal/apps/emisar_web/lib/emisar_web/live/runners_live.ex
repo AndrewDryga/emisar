@@ -140,6 +140,18 @@ defmodule EmisarWeb.RunnersLive do
                live socket confirms there really are no runners. --%>
           <.loading_state />
         <% true -> %>
+          <%!-- Fleet-dark escalation: runners exist but none are reachable, so
+               nothing can be dispatched right now. Escalate the quiet band into a
+               loud banner (the dashboard's all-offline notice, on the fleet page). --%>
+          <.offline_notice
+            :if={@fleet.online == 0 and @fleet.offline > 0}
+            severity={:critical}
+            title="All runners offline"
+            class="mb-4"
+          >
+            Every runner in this fleet is disconnected — dispatched actions will queue (or fail)
+            until one reconnects. Check the hosts, or the runner service on them.
+          </.offline_notice>
           <%!-- Fleet health at a glance, so "is anything down?" doesn't mean
              scanning every dot. Whole-account (like the group sidebar +
              list below), counted from presence — there's no `:stale` state
