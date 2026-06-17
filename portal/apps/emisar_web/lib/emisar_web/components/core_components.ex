@@ -1216,7 +1216,7 @@ defmodule EmisarWeb.CoreComponents do
           </button>
         </div>
 
-        <header class="flex h-16 items-center gap-3 border-b border-zinc-900 bg-zinc-950 px-4 sm:px-6">
+        <header class="sticky top-0 z-20 flex h-16 items-center gap-3 border-b border-zinc-800/80 bg-zinc-950/85 px-4 backdrop-blur sm:px-6">
           <%!-- Mobile hamburger (hidden on lg) --%>
           <button
             type="button"
@@ -1229,13 +1229,13 @@ defmodule EmisarWeb.CoreComponents do
           >
             <.icon name="hero-bars-3" class="h-5 w-5" />
           </button>
-          <h1 class="min-w-0 flex-1 truncate text-base font-semibold tracking-tight sm:text-lg">
+          <h1 class="min-w-0 flex-1 truncate text-lg font-bold tracking-tight sm:text-xl">
             {render_slot(@title)}
           </h1>
           <div class="flex items-center gap-2 sm:gap-3">{render_slot(@actions)}</div>
         </header>
 
-        <main class="flex-1 overflow-x-hidden p-4 sm:p-6">
+        <main class="flex-1 overflow-x-hidden bg-gradient-to-b from-indigo-950/20 to-transparent bg-[length:100%_24rem] bg-no-repeat p-4 sm:p-6">
           <div class={["mx-auto w-full space-y-6", shell_width(@width)]}>
             {render_slot(@inner_block)}
           </div>
@@ -1544,7 +1544,7 @@ defmodule EmisarWeb.CoreComponents do
       phx-click={JS.hide(to: "#mobile-nav") |> JS.remove_class("overflow-hidden", to: "body")}
       class={[
         "flex items-center gap-3 rounded-lg px-3 py-1.5 transition",
-        @active && "bg-indigo-500/10 text-indigo-200",
+        @active && "bg-indigo-500/15 font-medium text-white ring-1 ring-inset ring-indigo-500/25",
         !@active && "text-zinc-400 hover:bg-zinc-900 hover:text-zinc-100"
       ]}
     >
@@ -1781,7 +1781,7 @@ defmodule EmisarWeb.CoreComponents do
     ~H"""
     <div
       class={[
-        "rounded-xl border border-zinc-900 bg-zinc-950/40",
+        "rounded-xl border border-zinc-800/70 bg-gradient-to-b from-zinc-900/50 to-zinc-950/30 shadow-lg shadow-black/30",
         @padding,
         @class
       ]}

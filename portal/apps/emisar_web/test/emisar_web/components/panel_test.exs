@@ -1,7 +1,7 @@
 defmodule EmisarWeb.Components.PanelTest do
   @moduledoc """
   Renders `EmisarWeb.CoreComponents.card/1` and `panel/1` and asserts the
-  canonical surface (`bg-zinc-950/40`, `p-5` default) and the panel header
+  canonical elevated surface (gradient + shadow, `p-5` default) and the panel header
   contract — one heading size, optional subtitle + right-aligned actions, and
   no header chrome when none are given. The class hooks are the public contract.
   """
@@ -23,7 +23,8 @@ defmodule EmisarWeb.Components.PanelTest do
   describe "card/1" do
     test "renders the canonical surface with the default p-5 density" do
       html = render_card(%{})
-      assert html =~ "rounded-xl border border-zinc-900 bg-zinc-950/40"
+      assert html =~ "rounded-xl border border-zinc-800/70 bg-gradient-to-b from-zinc-900/50"
+      assert html =~ "shadow-lg"
       assert html =~ "p-5"
       assert html =~ "body"
     end
@@ -45,7 +46,7 @@ defmodule EmisarWeb.Components.PanelTest do
         <CoreComponents.panel title="Default policy">rules</CoreComponents.panel>
         """)
 
-      assert html =~ "bg-zinc-950/40"
+      assert html =~ "from-zinc-900/50"
       assert html =~ "rules"
     end
 

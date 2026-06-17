@@ -55,7 +55,7 @@ defmodule EmisarWeb.Components.PageIntroTest do
       assert html =~ "How this works"
       assert html =~ "Every action has a risk tier from the catalog."
       # The help body rides on the canonical panel/card surface.
-      assert html =~ "bg-zinc-950/40"
+      assert html =~ "from-zinc-900/50"
     end
 
     test "renders nothing when no slot is given" do
