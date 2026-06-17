@@ -84,6 +84,7 @@
           {Emisar.Checks.BroadcastEventAsData, []},
           {Emisar.Checks.ContextCryptoBoundary, []},
           {Emisar.Checks.CrossContextDeepAlias, []},
+          {Emisar.Checks.CrossContextDeepCall, []},
           {Emisar.Checks.InlineBroadcast, []},
           {Emisar.Checks.MultilineAliasGroup, []},
           {Emisar.Checks.NoDateTimeTruncate, []},
@@ -95,6 +96,8 @@
           {Emisar.Checks.RepoExistsOverCount, []},
           {Emisar.Checks.ShortBindings, []},
           {Emisar.Checks.TestNoProcessSleep, []},
+          {Emisar.Checks.WebNoAuditLog, []},
+          {Emisar.Checks.WebNoContextChangeset, []},
           {Emisar.Checks.WebNoRepoCalls, []},
 
           #
