@@ -856,7 +856,7 @@ defmodule EmisarWeb.SSOSettingsLive do
   defp provider_fields(assigns) do
     ~H"""
     <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-      <.input field={@form[:kind]} type="select" label="Provider" options={@kind_options} />
+      <.input field={@form[:kind]} type="select" label="Provider type" options={@kind_options} />
       <.input field={@form[:name]} type="text" label="Display name" placeholder="Acme Okta" />
       <%!-- Setup steps for the SELECTED provider, right under the dropdown that
            drives them — pick a provider, then read what to create + paste. --%>
@@ -1080,8 +1080,8 @@ defmodule EmisarWeb.SSOSettingsLive do
         <div class="min-w-0">
           <div class="flex items-center gap-2">
             <span class="text-sm font-medium text-zinc-200">Directory sync (SCIM)</span>
-            <.chip :if={@provider.scim_enabled} tone={:emerald}>On</.chip>
-            <.chip :if={not @provider.scim_enabled}>Off</.chip>
+            <.chip :if={@provider.scim_enabled} tone={:emerald}>Enabled</.chip>
+            <.chip :if={not @provider.scim_enabled}>Disabled</.chip>
           </div>
           <p class="mt-1 max-w-prose text-xs text-zinc-500">
             Let your IdP push joins and (critically) offboards — a member removed in
@@ -1289,12 +1289,17 @@ defmodule EmisarWeb.SSOSettingsLive do
               >
                 Edit
               </.button>
+              <%!-- Reversible config (re-addable; members keep their role until
+                   the next sync) — a native confirm fits the tier, not a
+                   typed-confirm. `delete_mapping` stays server-authz-gated. --%>
               <.button
                 variant="ghost"
                 tone="danger"
                 size="sm"
                 type="button"
-                phx-click={show_confirm_dialog("delete-mapping-#{mapping.id}")}
+                phx-click="delete_mapping"
+                phx-value-id={mapping.id}
+                data-confirm="Delete this group mapping? Members keep their current role until the next sync recomputes it from their remaining mapped groups."
               >
                 Delete
               </.button>
@@ -1335,29 +1340,6 @@ defmodule EmisarWeb.SSOSettingsLive do
               </:actions>
             </.simple_form>
           </div>
-
-          <%!-- Reversible config, but a confirm guards an accidental click;
-               `delete_mapping` stays server-authz-gated. --%>
-          <.confirm_dialog
-            id={"delete-mapping-#{mapping.id}"}
-            title="Delete group mapping"
-            confirm_label="Delete mapping"
-            confirm_token={mapping.external_group_display || mapping.external_group_id}
-            typed={@typed}
-            on_confirm={
-              JS.push("delete_mapping", value: %{id: mapping.id})
-              |> hide_confirm_dialog("delete-mapping-#{mapping.id}")
-            }
-          >
-            <:body>
-              Stops mapping
-              <span class="font-medium text-rose-100">
-                {mapping.external_group_display || mapping.external_group_id}
-              </span>
-              to a role. Members' roles are recomputed from their remaining mapped groups on the
-              next sync; this leaves current roles untouched until then.
-            </:body>
-          </.confirm_dialog>
         </li>
       </ul>
 

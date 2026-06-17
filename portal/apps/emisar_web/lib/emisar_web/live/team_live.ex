@@ -654,8 +654,10 @@ defmodule EmisarWeb.TeamLive do
                   aria-label="Require single sign-on account-wide"
                   data-confirm={
                     if @current_account.require_sso,
-                      do: "Stop requiring single sign-on?",
-                      else: "Require single sign-on for everyone on this account?"
+                      do:
+                        "Stop requiring single sign-on? Members will be able to sign in with a password or magic link again.",
+                      else:
+                        "Require single sign-on for everyone? Members without a linked SSO identity are signed out and must sign in through your provider — if it's misconfigured, they're locked out. Confirm SSO works first."
                   }
                   class={[
                     "shrink-0 rounded-lg px-3 py-1.5 text-xs font-semibold",
@@ -866,7 +868,9 @@ defmodule EmisarWeb.TeamLive do
                       phx-click="change_role"
                       phx-value-membership_id={membership.id}
                       phx-value-role={role}
-                      data-confirm={"Change #{member_name(membership) || "this member"}'s role to #{String.capitalize(role)}?"}
+                      data-confirm={
+                        role_change_confirm(member_name(membership) || "this member", role)
+                      }
                     >
                       {String.capitalize(role)}
                     </.menu_item>
@@ -1220,6 +1224,20 @@ defmodule EmisarWeb.TeamLive do
   # (the user is always preloaded here). Callers supply the "this member" fallback.
   defp member_name(%Accounts.Membership{} = membership),
     do: membership.user && (membership.user.full_name || membership.user.email)
+
+  # Escalation/lock-out wording on a role change — promoting to a privileged role
+  # grants real power (and a new owner can act against you), so the confirm spells
+  # out the consequence; a lateral move or demotion keeps the plain prompt.
+  defp role_change_confirm(name, "owner"),
+    do:
+      "Make #{name} an owner? Owners have full control — billing, deleting the account, and managing other owners — and can remove or demote you."
+
+  defp role_change_confirm(name, "admin"),
+    do:
+      "Make #{name} an admin? Admins manage runners, policy, members, and approvals across the whole account."
+
+  defp role_change_confirm(name, role),
+    do: "Change #{name}'s role to #{String.capitalize(role)}?"
 
   # Two cases worth surfacing to admins: "active in the last 90 days"
   # is a no-op (don't clutter the row), "never signed in" hints at a
