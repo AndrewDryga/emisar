@@ -117,7 +117,7 @@ defmodule EmisarWeb.RunsLive do
                   class="text-indigo-400 hover:text-indigo-300"
                 >runbook</.link>.
                 Runs from an LLM (via the <.link
-                  navigate={~p"/app/#{@current_account}/agents"}
+                  navigate={~p"/app/#{@current_account}/settings/agents"}
                   class="text-indigo-400 hover:text-indigo-300"
                 >MCP API</.link>) land here too.
               </.empty_state>

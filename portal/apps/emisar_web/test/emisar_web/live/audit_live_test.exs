@@ -339,7 +339,7 @@ defmodule EmisarWeb.AuditLiveTest do
       assert html =~ "actions:execute"
       assert html =~ "owner@example.com"
       # Subject of kind api_key links to the agents page (where keys live).
-      assert html =~ ~p"/app/#{account}/agents"
+      assert html =~ ~p"/app/#{account}/settings/agents"
     end
 
     test "parses bridge user agent into client + host + os posture fields", %{conn: conn} do

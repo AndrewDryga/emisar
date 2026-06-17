@@ -77,7 +77,11 @@ defmodule EmisarWeb.AgentsLive do
 
   def handle_event("filter", params, socket) do
     {:noreply,
-     LiveTable.apply_filter(socket, ~p"/app/#{socket.assigns.current_account}/agents", params)}
+     LiveTable.apply_filter(
+       socket,
+       ~p"/app/#{socket.assigns.current_account}/settings/agents",
+       params
+     )}
   end
 
   # -- Events ----------------------------------------------------------
@@ -695,7 +699,7 @@ defmodule EmisarWeb.AgentsLive do
         <LiveTable.live_table
           layout={:cards}
           id="agents"
-          path={~p"/app/#{@current_account}/agents"}
+          path={~p"/app/#{@current_account}/settings/agents"}
           rows={@api_keys}
           metadata={@metadata}
           filter_params={@filter_params}

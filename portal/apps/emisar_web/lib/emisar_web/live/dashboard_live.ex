@@ -173,7 +173,7 @@ defmodule EmisarWeb.DashboardLive do
       />
       <.onboarding_card
         :if={not @has_llm_connected?}
-        href={~p"/app/#{@current_account}/agents"}
+        href={~p"/app/#{@current_account}/settings/agents"}
         icon="hero-bolt"
         title="Connect an LLM"
         body="Pick a client (Claude Code, Cursor, Gemini, Codex) and we'll mint the API key and drop a prefilled snippet you can paste straight in. Optional: each client's setup has a step to stop its per-tool prompts — safe, since emisar still gates every action server-side."
@@ -337,7 +337,7 @@ defmodule EmisarWeb.DashboardLive do
             class="text-indigo-400 hover:text-indigo-300"
           >runbook</.link>.
           LLM-driven runs (via the <.link
-            navigate={~p"/app/#{@current_account}/agents"}
+            navigate={~p"/app/#{@current_account}/settings/agents"}
             class="text-indigo-400 hover:text-indigo-300"
           >MCP API</.link>) land here too.
         </.empty_state>

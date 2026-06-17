@@ -1288,35 +1288,7 @@ defmodule EmisarWeb.CoreComponents do
         Dashboard
       </.nav_link>
 
-      <.nav_group label="Runners" />
-      <.nav_link
-        to={~p"/app/#{@current_account}/runners"}
-        active={@section == :runners}
-        icon="hero-cpu-chip"
-        alert={@fleet_all_offline?}
-        alert_label="All runners offline"
-      >
-        Runners
-      </.nav_link>
-      <.nav_link
-        :if={Emisar.Runners.subject_can_manage_auth_keys?(@current_subject)}
-        to={~p"/app/#{@current_account}/settings/runners/auth-keys"}
-        active={@section == :auth_keys}
-        icon="hero-key"
-      >
-        Auth keys
-      </.nav_link>
-
-      <.nav_group label="Connections" />
-      <.nav_link
-        to={~p"/app/#{@current_account}/agents"}
-        active={@section == :agents}
-        icon="hero-sparkles"
-      >
-        LLM agents
-      </.nav_link>
-
-      <.nav_group label="Operations" />
+      <.nav_group label="Operate" />
       <.nav_link to={~p"/app/#{@current_account}/runs"} active={@section == :runs} icon="hero-bolt">
         Runs
       </.nav_link>
@@ -1329,18 +1301,22 @@ defmodule EmisarWeb.CoreComponents do
         Approvals
       </.nav_link>
       <.nav_link
-        to={~p"/app/#{@current_account}/runbooks"}
-        active={@section == :runbooks}
-        icon="hero-book-open"
+        to={~p"/app/#{@current_account}/audit"}
+        active={@section == :audit}
+        icon="hero-list-bullet"
       >
-        Runbooks
+        Audit
       </.nav_link>
+
+      <.nav_group label="Fleet" />
       <.nav_link
-        to={~p"/app/#{@current_account}/policies"}
-        active={@section == :policies}
-        icon="hero-document-text"
+        to={~p"/app/#{@current_account}/runners"}
+        active={@section == :runners}
+        icon="hero-cpu-chip"
+        alert={@fleet_all_offline?}
+        alert_label="All runners offline"
       >
-        Policy
+        Runners
       </.nav_link>
       <.nav_link
         to={~p"/app/#{@current_account}/packs"}
@@ -1351,21 +1327,21 @@ defmodule EmisarWeb.CoreComponents do
         Packs
       </.nav_link>
       <.nav_link
-        to={~p"/app/#{@current_account}/audit"}
-        active={@section == :audit}
-        icon="hero-list-bullet"
+        to={~p"/app/#{@current_account}/policies"}
+        active={@section == :policies}
+        icon="hero-document-text"
       >
-        Audit
+        Policy
+      </.nav_link>
+      <.nav_link
+        to={~p"/app/#{@current_account}/runbooks"}
+        active={@section == :runbooks}
+        icon="hero-book-open"
+      >
+        Runbooks
       </.nav_link>
 
-      <.nav_group label="Account" />
-      <.nav_link
-        to={~p"/app/#{@current_account}/settings/profile"}
-        active={@section == :profile}
-        icon="hero-user-circle"
-      >
-        Profile
-      </.nav_link>
+      <.nav_group label="Settings" />
       <.nav_link
         to={~p"/app/#{@current_account}/settings/team"}
         active={@section == :team}
@@ -1374,10 +1350,25 @@ defmodule EmisarWeb.CoreComponents do
         Team
       </.nav_link>
       <.nav_link
+        to={~p"/app/#{@current_account}/settings/agents"}
+        active={@section == :agents}
+        icon="hero-sparkles"
+      >
+        LLM agents
+      </.nav_link>
+      <.nav_link
+        :if={Emisar.Runners.subject_can_manage_auth_keys?(@current_subject)}
+        to={~p"/app/#{@current_account}/settings/runners/auth-keys"}
+        active={@section == :auth_keys}
+        icon="hero-key"
+      >
+        Runner keys
+      </.nav_link>
+      <.nav_link
         :if={Emisar.SSO.subject_can_configure_sso?(@current_subject)}
         to={~p"/app/#{@current_account}/settings/sso"}
         active={@section == :sso}
-        icon="hero-key"
+        icon="hero-lock-closed"
       >
         Single sign-on
       </.nav_link>

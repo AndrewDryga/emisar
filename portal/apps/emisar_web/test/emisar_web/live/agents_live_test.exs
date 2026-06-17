@@ -7,12 +7,12 @@ defmodule EmisarWeb.AgentsLiveTest do
 
   describe "GET /app/agents" do
     test "redirects anonymous users to /sign_in", %{conn: conn} do
-      assert {:error, {:redirect, %{to: "/sign_in"}}} = live(conn, ~p"/app/anon/agents")
+      assert {:error, {:redirect, %{to: "/sign_in"}}} = live(conn, ~p"/app/anon/settings/agents")
     end
 
     test "mount renders the client picker but does NOT auto-mint a key", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
-      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/agents")
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/agents")
 
       assert html =~ "LLM agents"
       assert html =~ "Pick a client above to get started"
@@ -34,7 +34,7 @@ defmodule EmisarWeb.AgentsLiveTest do
     test "the list has status/name filters + the custom panel states the capability",
          %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
-      {:ok, lv, html} = live(conn, ~p"/app/#{account}/agents")
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/agents")
 
       # Part b — the list filter bar (always rendered).
       assert html =~ "Name contains"
@@ -49,7 +49,7 @@ defmodule EmisarWeb.AgentsLiveTest do
     test "selecting Claude.ai (remote MCP) shows URL + bearer header instead of bridge snippet",
          %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
-      {:ok, lv, _} = live(conn, ~p"/app/#{account}/agents")
+      {:ok, lv, _} = live(conn, ~p"/app/#{account}/settings/agents")
 
       html = lv |> render_click("select_client", %{"client" => "claude_web"})
 
@@ -78,7 +78,7 @@ defmodule EmisarWeb.AgentsLiveTest do
 
     test "selecting ChatGPT shows the remote MCP panel too", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
-      {:ok, lv, _} = live(conn, ~p"/app/#{account}/agents")
+      {:ok, lv, _} = live(conn, ~p"/app/#{account}/settings/agents")
 
       html = lv |> render_click("select_client", %{"client" => "chatgpt"})
 
@@ -90,7 +90,7 @@ defmodule EmisarWeb.AgentsLiveTest do
 
     test "selecting a client mints a key named after the client + inlines snippet", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
-      {:ok, lv, _} = live(conn, ~p"/app/#{account}/agents")
+      {:ok, lv, _} = live(conn, ~p"/app/#{account}/settings/agents")
 
       html = lv |> render_click("select_client", %{"client" => "claude_desktop"})
 
@@ -115,7 +115,7 @@ defmodule EmisarWeb.AgentsLiveTest do
 
     test "an MCP call promotes the picked-key to a visible Connected LLM", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
-      {:ok, lv, _} = live(conn, ~p"/app/#{account}/agents")
+      {:ok, lv, _} = live(conn, ~p"/app/#{account}/settings/agents")
 
       html = lv |> render_click("select_client", %{"client" => "claude_code"})
 
@@ -148,7 +148,7 @@ defmodule EmisarWeb.AgentsLiveTest do
           subject
         )
 
-      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/agents")
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/agents")
 
       assert html =~ "manual-bot"
       assert html =~ user.email
@@ -167,7 +167,7 @@ defmodule EmisarWeb.AgentsLiveTest do
       {:ok, _} = ApiKeys.revoke_api_key(key, subject)
 
       # Revoked keys are excluded by default now — filter them in to see one.
-      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/agents?status=revoked")
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/agents?status=revoked")
 
       # "What did this agent do" is exactly what you want after killing a key —
       # the (revoked) row still deep-links the audit log filtered to its actor.
@@ -195,7 +195,7 @@ defmodule EmisarWeb.AgentsLiveTest do
       {:ok, _} = ApiKeys.revoke_api_key(dead, subject)
 
       # Default view: live only — no clutter from dead credentials.
-      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/agents")
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/agents")
       assert html =~ "live-bot"
       refute html =~ "dead-bot"
       # The Owner filter is offered, with the creator as an option.
@@ -203,7 +203,7 @@ defmodule EmisarWeb.AgentsLiveTest do
       assert html =~ user.email
 
       # Revoked are reachable via the Status filter.
-      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/agents?status=revoked")
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/agents?status=revoked")
       assert html =~ "dead-bot"
       refute html =~ "live-bot"
     end
@@ -225,7 +225,7 @@ defmodule EmisarWeb.AgentsLiveTest do
           "version" => "1.2.3"
         })
 
-      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/agents")
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/agents")
 
       # The reported client shows even though the key is named generically —
       # it's the actual client. The human "title" is preferred over the
@@ -279,7 +279,7 @@ defmodule EmisarWeb.AgentsLiveTest do
           subject
         )
 
-      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/agents")
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/agents")
 
       assert html =~ "Active</span>" or html =~ "Active\n"
       assert html =~ "Idle"
@@ -293,7 +293,7 @@ defmodule EmisarWeb.AgentsLiveTest do
     test "custom-key form shows validation errors inline on the field, not in a flash",
          %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
-      {:ok, lv, _} = live(conn, ~p"/app/#{account}/agents")
+      {:ok, lv, _} = live(conn, ~p"/app/#{account}/settings/agents")
 
       # The custom-key builder form only renders after the Custom tab is
       # picked (no quick-mint on that tab).
@@ -316,7 +316,7 @@ defmodule EmisarWeb.AgentsLiveTest do
     test "Claude Code setup offers the optional auto-permit step with the verified rule",
          %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
-      {:ok, lv, _} = live(conn, ~p"/app/#{account}/agents")
+      {:ok, lv, _} = live(conn, ~p"/app/#{account}/settings/agents")
 
       html = lv |> render_click("select_client", %{"client" => "claude_code"})
 
@@ -332,7 +332,7 @@ defmodule EmisarWeb.AgentsLiveTest do
     test "Codex setup gives an honest pointer, not an invented per-server key",
          %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
-      {:ok, lv, _} = live(conn, ~p"/app/#{account}/agents")
+      {:ok, lv, _} = live(conn, ~p"/app/#{account}/settings/agents")
 
       html = lv |> render_click("select_client", %{"client" => "codex"})
 
@@ -345,7 +345,7 @@ defmodule EmisarWeb.AgentsLiveTest do
 
     test "survives an account-topic broadcast it doesn't render", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
-      {:ok, lv, _} = live(conn, ~p"/app/#{account}/agents")
+      {:ok, lv, _} = live(conn, ~p"/app/#{account}/settings/agents")
 
       # The pending-badge hooks subscribe every authenticated LV to the
       # account's approvals/packs topics and forward those broadcasts.
