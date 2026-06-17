@@ -376,7 +376,7 @@ defmodule EmisarWeb.ProfileLive do
            concern, label/description on the left, form on the right.
            No boxed cards — quieter visual rhythm than a 2-up grid. --%>
       <div class="divide-y divide-zinc-900">
-        <.settings_section title="Display name" hint="How you appear to your teammates.">
+        <.settings_section title="Display name" hint="How you appear to other members.">
           <.simple_form
             for={@profile_form}
             id="profile_form"

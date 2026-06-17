@@ -25,7 +25,7 @@ defmodule EmisarWeb.OnboardingLive do
     ~H"""
     <.auth_layout title="Set up your workspace">
       <p class="mb-6 text-sm text-zinc-400">
-        One quick step. You'll invite teammates and connect runners next.
+        One quick step. You'll invite members and connect runners next.
       </p>
 
       <.simple_form

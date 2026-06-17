@@ -349,6 +349,9 @@ defmodule EmisarWeb.PacksLive do
       </.empty_state>
 
       <ul id="packs" phx-update="stream" class="mt-6 space-y-4">
+        <%!-- Sanctioned hand-rolled card (see .agent/rules/ui-shared-components.md):
+             a stream <li> wrapping a nested version list, so it can't be a <div>
+             <.card> and isn't a flat <.list_row>. Keep the card chrome inline. --%>
         <li
           :for={{dom_id, pack} <- @streams.packs}
           id={dom_id}

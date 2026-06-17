@@ -775,10 +775,10 @@ defmodule EmisarWeb.AgentsLive do
               variant={:bare}
               tone={:danger}
               icon="hero-exclamation-triangle"
-              title="Couldn't load your access keys"
+              title="Couldn't load your agents"
             >
-              This is a load error, not an empty list — keys may well exist. Refresh the page;
-              if it persists, your access to this account may have changed.
+              This is a load error, not an empty list — your connected agents may well be here.
+              Refresh the page; if it persists, your access to this account may have changed.
             </.empty_state>
             <.empty_state
               :if={not @load_error?}

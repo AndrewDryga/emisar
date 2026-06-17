@@ -50,15 +50,18 @@ defmodule EmisarWeb.RunsLive do
         |> assign(:metadata, meta)
         |> assign(:filter_params, params)
         |> assign(:filters, filters)
+        |> assign(:load_error?, false)
 
-      # A clean reload can fail too (e.g. a tightened list permission) —
-      # degrade to an empty page rather than recursing forever.
+      # A clean reload can fail too (e.g. a tightened list permission) — flag it
+      # so the feed says "couldn't load" instead of a silent empty list (which
+      # would read "no runs yet" on the busiest page when the read actually failed).
       {:error, _} when map_size(params) == 0 ->
         socket
         |> assign(:runs, [])
         |> assign(:metadata, %Emisar.Repo.Paginator.Metadata{count: 0, limit: 0})
         |> assign(:filter_params, params)
         |> assign(:filters, filters)
+        |> assign(:load_error?, true)
 
       # Bad filter/page params from a hand-edited URL — retry once, clean.
       {:error, _} ->
@@ -102,6 +105,16 @@ defmodule EmisarWeb.RunsLive do
                the two surfaces that produce runs). The richer state
                only shows on a brand-new account so it's not noisy. --%>
           <%= cond do %>
+            <% @load_error? -> %>
+              <.empty_state
+                variant={:bare}
+                tone={:danger}
+                icon="hero-exclamation-triangle"
+                title="Couldn't load your runs"
+              >
+                This is a load error, not an empty feed — runs may well exist. Refresh the page;
+                if it persists, your access to this account may have changed.
+              </.empty_state>
             <% any_filter_active?(@filter_params, @filters) -> %>
               <span class="text-zinc-500">No runs match these filters.</span>
             <% not connected?(@socket) -> %>

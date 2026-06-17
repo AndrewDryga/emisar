@@ -573,7 +573,7 @@ defmodule EmisarWeb.DashboardLive do
       "#{m.missing} #{if m.missing == 1, do: "member hasn't", else: "members haven't"} enrolled →"
 
   defp stat_hint(:zinc, _),
-    do: "No teammates yet."
+    do: "No members yet."
 
   defp stat_ring(:rose), do: "ring-1 ring-rose-500/40"
   defp stat_ring(:amber), do: "ring-1 ring-amber-500/30"
