@@ -426,7 +426,14 @@ Two layers — mechanical rules run by machines, judgment rules by review:
    `Emisar.Crypto` boundary, `DateTime.truncate` no-ops, no
    `Process.sleep` in tests, the audit request-metadata
    `%RequestContext{}` rule (no `Process.put` ambient state in `lib/`),
-   and the module-header directive order.
+   and the module-header directive order. Plus the **layer boundaries**:
+   the web layer never calls `Repo`, builds a context `<Schema>.Changeset`,
+   or writes audit (`Audit.log*` / `Audit.Events.*`); one context never
+   reaches another's `.Query`/`.Changeset` (the call-site companion to the
+   deep-alias check); and IL-3's subject rule — a `Repo`-touching public
+   context fn takes a `%Subject{}` unless it's `@doc "Internal …"` (an
+   already-authorized helper) or threads a `%RequestContext{}` (a pre-auth
+   path).
 
    A documented exception gets `# credo:disable-for-next-line
    Emisar.Checks.<Name>` (or `-for-lines:<n>`) directly under its
