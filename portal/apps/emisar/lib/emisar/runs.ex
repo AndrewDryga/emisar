@@ -832,13 +832,54 @@ defmodule Emisar.Runs do
     transition(run, :running, %{started_at: DateTime.utc_now()})
   end
 
-  def mark_cancelled(%ActionRun{} = run, reason \\ nil) do
-    transition(run, :cancelled, %{
-      cancelled_at: DateTime.utc_now(),
-      finished_at: DateTime.utc_now(),
-      reason_text: reason
-    })
+  def mark_cancelled(%ActionRun{} = run, reason \\ nil),
+    do: transition(run, :cancelled, cancelled_attrs(reason))
+
+  @doc """
+  Internal — append the run-cancel steps (locked re-read, terminal-guard,
+  update to `:cancelled`, and the `run.cancelled` audit insert) to `multi`, for
+  a caller composing the cancel into its OWN transaction (Approvals deny +
+  expiry). The result lands in changes as `:run_cancel`: `{:cancelled, run}`
+  when this call transitioned it, `{:noop, run}` when it was already terminal,
+  or `:no_run` if the row is gone. Fires NO broadcast — a run broadcast or audit
+  fan-out here would escape the enclosing transaction before it commits; the
+  caller hoists `broadcast_cancelled_run/1` to its `commit_multi(after_commit:)`
+  and the outer commit's fan_out delivers the audit event.
+  """
+  def cancel_run_in_multi(multi, run_id, reason \\ nil) when is_binary(run_id) do
+    multi
+    |> Multi.run(:run_cancel, fn repo, _changes -> cancel_run_locked(repo, run_id, reason) end)
+    |> Multi.run(:run_cancel_audit, fn
+      repo, %{run_cancel: {:cancelled, run}} -> repo.insert(Audit.run_event_changeset(run))
+      _repo, %{run_cancel: _} -> {:ok, nil}
+    end)
   end
+
+  defp cancel_run_locked(repo, run_id, reason) do
+    loaded_run =
+      ActionRun.Query.all()
+      |> ActionRun.Query.by_id(run_id)
+      |> ActionRun.Query.lock_for_update()
+      |> repo.one()
+
+    cond do
+      is_nil(loaded_run) -> {:ok, :no_run}
+      ActionRun.terminal?(loaded_run.status) -> {:ok, {:noop, loaded_run}}
+      true -> cancel_loaded_run(repo, loaded_run, reason)
+    end
+  end
+
+  defp cancel_loaded_run(repo, %ActionRun{} = loaded_run, reason) do
+    with {:ok, cancelled} <-
+           repo.update(
+             ActionRun.Changeset.transition(loaded_run, :cancelled, cancelled_attrs(reason))
+           ) do
+      {:ok, {:cancelled, cancelled}}
+    end
+  end
+
+  defp cancelled_attrs(reason),
+    do: %{cancelled_at: DateTime.utc_now(), finished_at: DateTime.utc_now(), reason_text: reason}
 
   @doc """
   Internal — `Emisar.Workers.RunDispatchTimeout` terminally fails a
@@ -1123,6 +1164,14 @@ defmodule Emisar.Runs do
   # `runner.name` to render — make `runner` preloaded part of the payload
   # contract so a `:run_updated` arriving after mount can cleanly replace
   # `@run` without re-introducing `%NotLoaded{}`.
+  @doc """
+  Internal — broadcast a run cancelled via `cancel_run_in_multi/3`, from the
+  caller's `commit_multi(after_commit:)`. No-op for the already-terminal /
+  no-run shapes (nothing changed, so there's nothing to announce).
+  """
+  def broadcast_cancelled_run({:cancelled, %ActionRun{} = run}), do: broadcast_run(run)
+  def broadcast_cancelled_run(_), do: :ok
+
   defp broadcast_run(%ActionRun{} = run) do
     run =
       case run.runner do

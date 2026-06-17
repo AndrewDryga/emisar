@@ -244,6 +244,19 @@ defmodule Emisar.Repo do
   def commit_multi(multi, opts \\ []) do
     {after_commit, repo_opts} = Keyword.pop(opts, :after_commit, [])
 
+    # Inside an already-open transaction this multi JOINS it, so its
+    # "after commit" fires when the INNER transaction returns — before the
+    # OUTER commit — letting side effects (broadcasts, email) escape a later
+    # outer rollback. Compose the steps into the outer Multi and hoist the
+    # side effects to the outer commit_multi(after_commit: …) instead
+    # (mirrors the fetch_and_update/3 guard above).
+    if after_commit != [] and in_transaction?() do
+      raise ArgumentError,
+            "commit_multi :after_commit inside an open transaction fires before " <>
+              "the outer commit — compose the steps into the outer Multi and pass " <>
+              "the side effects to its Repo.commit_multi(after_commit: …) instead"
+    end
+
     case transaction(multi, repo_opts) do
       {:ok, changes} ->
         :ok = fan_out_audit_events(changes)

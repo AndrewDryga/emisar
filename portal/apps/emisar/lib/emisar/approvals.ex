@@ -388,6 +388,11 @@ defmodule Emisar.Approvals do
         |> Multi.run(:outcome, fn repo, %{locked: locked} ->
           finalize(repo, locked, decision, by_user_id, reason, grant_attrs)
         end)
+        # A finalizing deny cancels the run as steps in THIS transaction (no
+        # premature broadcast) — they run only when :outcome succeeded, so the
+        # run + its `run.cancelled` audit commit atomically with the denial and
+        # the broadcasts are hoisted to after_decision + fan_out.
+        |> maybe_cancel_run(decision, request, reason)
         |> Multi.insert(:audit, fn %{outcome: outcome} ->
           Audit.Events.approval_decision_recorded(
             subject,
@@ -405,8 +410,8 @@ defmodule Emisar.Approvals do
         end)
         |> Repo.commit_multi(after_commit: &after_decision/1)
 
-      with {:ok, %{outcome: outcome}} <- result do
-        decision_result(outcome)
+      with {:ok, changes} <- result do
+        decision_result(changes)
       end
     end
   end
@@ -469,13 +474,13 @@ defmodule Emisar.Approvals do
     do: {:error, :not_found}
 
   defp finalize(_repo, %Request{status: :pending} = locked, :deny, by_user_id, reason, _attrs) do
-    # One deny finalizes DENIED; the run is cancelled. No approve can override
-    # a denied request (its later decision insert may succeed, but the request
-    # is no longer pending, so finalize returns :already_decided for them).
-    # Cancel through Runs (cross-context write — never building its changeset).
-    with {:ok, denied} <- guarded_transition(locked, :denied, by_user_id, reason),
-         {:ok, run} <- Runs.mark_cancelled(Runs.fetch_run!(locked.run_id), denial_reason(reason)) do
-      {:ok, %{action: :cancelled, request: denied, run: run, approved_count: nil}}
+    # One deny finalizes DENIED; no approve can override it (a later decision
+    # insert may succeed, but the request is no longer pending, so finalize
+    # returns :already_decided for them). The run cancel is composed as steps in
+    # the outer transaction by maybe_cancel_run/4 — not here — so it can't
+    # broadcast before the denial commits.
+    with {:ok, denied} <- guarded_transition(locked, :denied, by_user_id, reason) do
+      {:ok, %{action: :cancelled, request: denied, approved_count: nil}}
     end
   end
 
@@ -494,6 +499,17 @@ defmodule Emisar.Approvals do
 
   defp finalize(_repo, %Request{}, _decision, _by_user_id, _reason, _attrs),
     do: {:error, :already_decided}
+
+  # Compose the run cancel into the decision transaction — only for a deny.
+  # The steps sit after :outcome, so they execute only when the deny actually
+  # finalized (a non-pending locked row makes :outcome error → the Multi aborts
+  # → no cancel). Approve dispatches its run post-commit instead; a sub-threshold
+  # vote touches no run. `request.run_id` is immutable, so the original struct's
+  # id is correct.
+  defp maybe_cancel_run(multi, :deny, %Request{run_id: run_id}, reason),
+    do: Runs.cancel_run_in_multi(multi, run_id, denial_reason(reason))
+
+  defp maybe_cancel_run(multi, :approve, _request, _reason), do: multi
 
   # Threshold met: flip to :approved on the locked row and mint the grant HERE
   # (only on the finalizing approve, so sub-threshold votes never mint). The
@@ -574,6 +590,11 @@ defmodule Emisar.Approvals do
     Runs.dispatch_to_runner(run)
   end
 
+  defp after_decision(%{outcome: %{action: :cancelled, request: request}, run_cancel: run_cancel}) do
+    broadcast_approval(request)
+    Runs.broadcast_cancelled_run(run_cancel)
+  end
+
   defp after_decision(%{outcome: %{request: request}}) do
     broadcast_approval(request)
     :ok
@@ -582,14 +603,20 @@ defmodule Emisar.Approvals do
   # Return shapes: a finalizing approve reloads the now-:sent run;
   # recorded-but-sub-threshold returns {request, :pending}; a deny returns the
   # cancelled run.
-  defp decision_result(%{action: :dispatch, request: request, run: run}),
+  defp decision_result(%{outcome: %{action: :dispatch, request: request, run: run}}),
     do: {:ok, {request, Repo.reload!(run)}}
 
-  defp decision_result(%{action: :recorded_pending, request: request}),
+  defp decision_result(%{outcome: %{action: :recorded_pending, request: request}}),
     do: {:ok, {request, :pending}}
 
-  defp decision_result(%{action: :cancelled, request: request, run: run}),
-    do: {:ok, {request, run}}
+  defp decision_result(%{
+         outcome: %{action: :cancelled, request: request},
+         run_cancel: run_cancel
+       }),
+       do: {:ok, {request, run_from_cancel(run_cancel)}}
+
+  defp run_from_cancel({:cancelled, %Runs.ActionRun{} = run}), do: run
+  defp run_from_cancel({:noop, %Runs.ActionRun{} = run}), do: run
 
   defp denial_reason(nil), do: "approval denied"
   defp denial_reason(reason), do: "approval denied: " <> reason
@@ -865,20 +892,21 @@ defmodule Emisar.Approvals do
         0 -> {:error, :not_pending}
       end
     end)
-    # Cancel the underlying run. A failed cancel aborts the whole expiry
-    # so the request stays pending and the next sweep retries it —
-    # otherwise it would flip to `expired` with its run still live, and
-    # the pending-only sweep would never revisit it.
-    |> Multi.run(:cancel, fn _repo, _changes ->
-      case Runs.peek_run_by_id(request.run_id) do
-        nil -> {:ok, :no_run}
-        %Runs.ActionRun{} = run -> Runs.mark_cancelled(run, "approval expired without decision")
-      end
-    end)
+    # Cancel the underlying run as steps in THIS transaction (no premature
+    # broadcast) so the run + its `run.cancelled` audit commit atomically with
+    # the expiry — otherwise the request could flip to `expired` with its run
+    # still live. A real cancel failure aborts the expiry so the next sweep
+    # retries it. The run broadcast is hoisted below; the audit rides fan_out.
+    |> Runs.cancel_run_in_multi(request.run_id, "approval expired without decision")
     |> Multi.insert(:audit, Audit.Events.approval_expired(request))
     |> Multi.run(:reloaded, fn _repo, _changes ->
       {:ok, Request.Query.all() |> Request.Query.by_id(request.id) |> Repo.fetch!(Request.Query)}
     end)
-    |> Repo.commit_multi(after_commit: &broadcast_approval(&1.reloaded))
+    |> Repo.commit_multi(
+      after_commit: fn changes ->
+        broadcast_approval(changes.reloaded)
+        Runs.broadcast_cancelled_run(changes.run_cancel)
+      end
+    )
   end
 end
