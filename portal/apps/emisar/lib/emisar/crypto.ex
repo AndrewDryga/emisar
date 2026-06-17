@@ -152,16 +152,20 @@ defmodule Emisar.Crypto do
   # Per-provider SCIM bearer credential (`ems-` = emisar-scim), an
   # admin-grade token that can provision/deprovision a whole account — same
   # 12-char prefix lookup as the MCP API keys (`emk-`).
+  @scim_token_namespace "ems-"
   @scim_token_prefix_size 12
 
   @doc """
   Mint a per-provider SCIM bearer token as `{raw, lookup_prefix, hash}`.
   Hand `raw` to the operator once; store `lookup_prefix` + `hash`.
   """
-  def scim_token, do: mint("ems-", @scim_token_prefix_size)
+  def scim_token, do: mint(@scim_token_namespace, @scim_token_prefix_size)
 
   @doc "Length of the stored SCIM-token lookup prefix — the slice taken from a presented bearer."
   def scim_token_prefix_size, do: @scim_token_prefix_size
+
+  @doc "The SCIM-token namespace tag (`ems-`) — lets a presented bearer be recognized without a scheme."
+  def scim_token_namespace, do: @scim_token_namespace
 
   # 80-bit base32 recovery codes match the GitHub / Google Workspace
   # shape: unguessable, yet short enough to copy by hand.

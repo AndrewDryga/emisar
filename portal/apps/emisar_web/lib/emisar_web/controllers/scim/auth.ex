@@ -14,7 +14,7 @@ defmodule EmisarWeb.SCIM.Auth do
   """
   import Plug.Conn
   import Phoenix.Controller, only: [json: 2]
-  alias Emisar.SSO
+  alias Emisar.{Crypto, SSO}
   alias EmisarWeb.SCIM.Resource
 
   def init(opts), do: opts
@@ -28,19 +28,31 @@ defmodule EmisarWeb.SCIM.Auth do
     end
   end
 
-  # Tolerant bearer parse. The scheme keyword is case-insensitive (RFC 7235
-  # §2.1 — `bearer` == `Bearer`), and IdP connectors + copy-paste routinely add
+  # Tolerant credential parse. The scheme keyword is case-insensitive (RFC 7235
+  # §2.1 — `bearer` == `Bearer`) and IdP connectors / copy-paste routinely add
   # surrounding whitespace, so we accept either case, collapse the scheme/token
-  # separator, and trim the token. This only normalizes the envelope — the
-  # constant-time hash compare in `SSO.authenticate_scim_token/1` is still the
-  # sole authenticator, and a token never carries significant whitespace. A
-  # missing scheme (a bare token) is still rejected.
+  # separator, and trim the token. We ALSO accept a schemeless raw token (see
+  # the one-element clause). Throughout, the constant-time hash compare in
+  # `SSO.authenticate_scim_token/1` stays the sole authenticator — this only
+  # normalizes the envelope.
   defp bearer_token([value]) when is_binary(value) do
-    parts = value |> String.trim() |> String.split(~r/\s+/, parts: 2)
+    trimmed = String.trim(value)
 
-    case parts do
+    case String.split(trimmed, ~r/\s+/, parts: 2) do
       [scheme, token] when token != "" ->
         if String.downcase(scheme) == "bearer", do: {:ok, token}, else: :error
+
+      # Some IdP SCIM connectors (e.g. Okta's "SCIM 2.0 Test App (Header Auth)")
+      # send the token as the raw Authorization value with NO `Bearer` scheme.
+      # Accept it only when it carries our unambiguous `ems-` namespace — the
+      # hash compare still authenticates, so this can't be confused with another
+      # auth scheme.
+      [token] ->
+        if String.starts_with?(token, Crypto.scim_token_namespace()) do
+          {:ok, token}
+        else
+          :error
+        end
 
       _ ->
         :error

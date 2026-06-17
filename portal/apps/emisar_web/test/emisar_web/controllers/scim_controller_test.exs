@@ -141,10 +141,28 @@ defmodule EmisarWeb.SCIMControllerTest do
       assert json_response(conn, 200)
     end
 
-    test "a bare token with no scheme → 401 (a scheme is still required)", %{conn: conn} do
+    test "a bare `ems-` token with no scheme is accepted (Okta Header Auth sends it raw)",
+         %{conn: conn} do
       %{token: token} = scim_provider()
 
       conn = conn |> put_req_header("authorization", token) |> get(~p"/scim/v2/Users")
+      assert json_response(conn, 200)
+    end
+
+    test "a schemeless `ems-` value with the wrong secret → 401 (the hash still gates)",
+         %{conn: conn} do
+      conn =
+        conn
+        |> put_req_header("authorization", "ems-totally-bogus-token")
+        |> get(~p"/scim/v2/Users")
+
+      assert json_response(conn, 401)
+    end
+
+    test "a schemeless value without our `ems-` namespace → 401", %{conn: conn} do
+      conn =
+        conn |> put_req_header("authorization", "not-a-real-token") |> get(~p"/scim/v2/Users")
+
       assert json_response(conn, 401)
     end
 
