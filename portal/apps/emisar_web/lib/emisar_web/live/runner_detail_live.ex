@@ -37,29 +37,59 @@ defmodule EmisarWeb.RunnerDetailLive do
   end
 
   def handle_params(params, _uri, socket) do
-    # mount may have redirected; on the post-redirect (which is the next
-    # mount/handle_params cycle) the runner won't be in scope so this is
-    # never reached. When we have a runner, load the paginated actions
-    # list + the recent runs sidebar.
+    # mount may have redirected; on the post-redirect cycle the runner won't be
+    # in scope so this branch is never reached.
     case socket.assigns[:runner] do
-      nil ->
-        {:noreply, socket}
+      nil -> {:noreply, socket}
+      runner -> {:noreply, load_lists(socket, runner, params)}
+    end
+  end
 
-      runner ->
-        subject = socket.assigns.current_subject
-        opts = LiveTable.params_to_opts(params)
+  # The paginated actions table + the recent-runs sidebar. Gated on connected?
+  # so the two reads run once on the live mount, not also on the dead render
+  # (IL-18) — the dead render shows <.loading_state>. Both reads tolerate an
+  # {:error, …} (a hand-edited page/filter URL, a permission tightened
+  # mid-session) and degrade to empty rather than raising a MatchError that
+  # would crash the whole LiveView.
+  defp load_lists(socket, runner, params) do
+    if connected?(socket) do
+      subject = socket.assigns.current_subject
 
-        {:ok, actions, meta} = Catalog.list_actions_for_runner(runner.id, subject, opts)
+      socket
+      |> assign(:loading?, false)
+      |> assign(:recent_runs, recent_runs(runner, subject))
+      |> load_actions(runner, subject, params)
+    else
+      assign(socket, :loading?, true)
+    end
+  end
 
-        {:ok, recent_runs, _} =
-          Runs.list_recent_runs_for_runner(runner.id, subject, page: [limit: 20])
+  defp load_actions(socket, runner, subject, params) do
+    opts = LiveTable.params_to_opts(params)
 
-        {:noreply,
-         socket
-         |> assign(:actions, actions)
-         |> assign(:actions_metadata, meta)
-         |> assign(:recent_runs, recent_runs)
-         |> assign(:filter_params, params)}
+    case Catalog.list_actions_for_runner(runner.id, subject, opts) do
+      {:ok, actions, meta} ->
+        socket
+        |> assign(:actions, actions)
+        |> assign(:actions_metadata, meta)
+        |> assign(:filter_params, params)
+
+      # Bad filter/page params from a hand-edited URL — retry once, clean.
+      {:error, _} when map_size(params) > 0 ->
+        load_actions(socket, runner, subject, %{})
+
+      {:error, _} ->
+        socket
+        |> assign(:actions, [])
+        |> assign(:actions_metadata, %Emisar.Repo.Paginator.Metadata{count: 0, limit: 0})
+        |> assign(:filter_params, params)
+    end
+  end
+
+  defp recent_runs(runner, subject) do
+    case Runs.list_recent_runs_for_runner(runner.id, subject, page: [limit: 20]) do
+      {:ok, recent_runs, _} -> recent_runs
+      {:error, _} -> []
     end
   end
 
@@ -217,7 +247,9 @@ defmodule EmisarWeb.RunnerDetailLive do
         </div>
       </.card>
 
-      <div class="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
+      <.loading_state :if={@loading?} />
+
+      <div :if={not @loading?} class="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
         <%!-- Recent runs in a sidebar — operator scanning a runner is
              usually trying to figure out "is this thing healthy?" so
              the catalog gets the wide column, recent runs sit

@@ -26,6 +26,18 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
     assert html =~ runner.hostname
   end
 
+  test "a bad cursor in the URL falls back to the first page, not a crash", %{
+    conn: conn,
+    account: account,
+    runner: runner
+  } do
+    # A hand-edited page/filter cursor makes the actions read return {:error, …};
+    # the LV must retry clean (first page), never raise the MatchError H2 fixed.
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runners/#{runner.id}?page=garbage-cursor")
+
+    assert html =~ runner.name
+  end
+
   test "an offline runner's Run affordance is aria-disabled with a non-color cue",
        %{conn: conn, account: account, runner: runner} do
     # setup's runner is offline, so the action row renders the disabled span.
