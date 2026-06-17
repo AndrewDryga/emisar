@@ -58,7 +58,7 @@ defmodule EmisarWeb.RunnerInstallLive do
     {:noreply,
      socket
      |> put_flash(:info, "Runner connected — taking you to the list.")
-     |> push_navigate(to: ~p"/app/runners")}
+     |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/runners")}
   end
 
   # The grace period elapsed with no runner — surface the troubleshooting
@@ -95,14 +95,16 @@ defmodule EmisarWeb.RunnerInstallLive do
     >
       <:title>Install a runner</:title>
       <:actions>
-        <.button variant="secondary" size="md" navigate={~p"/app/runners"}>← Back to runners</.button>
+        <.button variant="secondary" size="md" navigate={~p"/app/#{@current_account}/runners"}>
+          ← Back to runners
+        </.button>
       </:actions>
 
       <.install_wizard
         install_command={@install_command}
         base_url={@base_url}
         show_troubleshooting={@show_troubleshooting?}
-        on_failure_path={~p"/app/settings/runners/auth-keys"}
+        on_failure_path={~p"/app/#{@current_account}/settings/runners/auth-keys"}
       />
     </.dashboard_shell>
     """

@@ -35,7 +35,7 @@ defmodule EmisarWeb.RunNewLiveTest do
     {runner, action} = action_with_required_arg(account)
 
     {:ok, lv, _html} =
-      live(conn, ~p"/app/runs/new/#{runner.id}/#{action.action_id}")
+      live(conn, ~p"/app/#{account}/runs/new/#{runner.id}/#{action.action_id}")
 
     # Required `path` left blank; reason is filled so we exercise the arg
     # validation, not the reason guard.
@@ -58,7 +58,7 @@ defmodule EmisarWeb.RunNewLiveTest do
     {runner, action} = action_with_required_arg(account)
 
     {:ok, lv, _html} =
-      live(conn, ~p"/app/runs/new/#{runner.id}/#{action.action_id}")
+      live(conn, ~p"/app/#{account}/runs/new/#{runner.id}/#{action.action_id}")
 
     html =
       lv
@@ -74,9 +74,9 @@ defmodule EmisarWeb.RunNewLiveTest do
     runner = runner_fixture(account_id: account.id)
 
     assert {:error, {:live_redirect, %{to: to, flash: flash}}} =
-             live(conn, ~p"/app/runs/new/#{runner.id}/no.such_action")
+             live(conn, ~p"/app/#{account}/runs/new/#{runner.id}/no.such_action")
 
-    assert to == "/app/runners/#{runner.id}"
+    assert to == ~p"/app/#{account}/runners/#{runner.id}"
     assert flash["error"] == "Action not found."
   end
 
@@ -85,7 +85,7 @@ defmodule EmisarWeb.RunNewLiveTest do
     _ = policy_fixture(account_id: account.id, created_by_id: user.id)
     {runner, action} = action_with_required_arg(account)
 
-    {:ok, lv, _html} = live(conn, ~p"/app/runs/new/#{runner.id}/#{action.action_id}")
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runs/new/#{runner.id}/#{action.action_id}")
 
     html =
       lv
@@ -100,7 +100,7 @@ defmodule EmisarWeb.RunNewLiveTest do
     _ = policy_fixture(account_id: account.id, created_by_id: user.id)
     {runner, action} = action_with_required_arg(account)
 
-    {:ok, lv, _html} = live(conn, ~p"/app/runs/new/#{runner.id}/#{action.action_id}")
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runs/new/#{runner.id}/#{action.action_id}")
 
     lv
     |> form("#dispatch_form", %{
@@ -110,7 +110,7 @@ defmodule EmisarWeb.RunNewLiveTest do
     |> render_submit()
 
     {path, _flash} = assert_redirect(lv)
-    assert path =~ ~r{^/app/runs/[0-9a-f-]+$}
+    assert path =~ ~r{^/app/#{account.slug}/runs/[0-9a-f-]+$}
   end
 
   test "a policy denial is a flash, and no run is dispatched", %{conn: conn} do
@@ -133,7 +133,7 @@ defmodule EmisarWeb.RunNewLiveTest do
 
     {runner, action} = action_with_required_arg(account)
 
-    {:ok, lv, _html} = live(conn, ~p"/app/runs/new/#{runner.id}/#{action.action_id}")
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runs/new/#{runner.id}/#{action.action_id}")
 
     html =
       lv
@@ -156,7 +156,7 @@ defmodule EmisarWeb.RunNewLiveTest do
     {:ok, lv, _html} =
       build_conn()
       |> log_in_user(viewer)
-      |> live(~p"/app/runs/new/#{runner.id}/#{action.action_id}")
+      |> live(~p"/app/#{account}/runs/new/#{runner.id}/#{action.action_id}")
 
     html =
       lv
@@ -174,7 +174,7 @@ defmodule EmisarWeb.RunNewLiveTest do
     runner = runner_fixture(account_id: account.id)
     action = action_fixture(runner: runner, action_id: "linux.reboot", risk: "critical")
 
-    {:ok, lv, _html} = live(conn, ~p"/app/runs/new/#{runner.id}/#{action.action_id}")
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runs/new/#{runner.id}/#{action.action_id}")
 
     assert has_element?(lv, "button[data-confirm]")
     assert render(lv) =~ "runs on the host immediately"
@@ -201,7 +201,7 @@ defmodule EmisarWeb.RunNewLiveTest do
         }
       )
 
-    {:ok, lv, _html} = live(conn, ~p"/app/runs/new/#{runner.id}/#{action.action_id}")
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runs/new/#{runner.id}/#{action.action_id}")
 
     # Type a path → the confirm must echo it so the operator confirms WHAT
     # runs (which file), not just the action name.
@@ -218,7 +218,7 @@ defmodule EmisarWeb.RunNewLiveTest do
     runner = runner_fixture(account_id: account.id)
     action = action_fixture(runner: runner, action_id: "linux.uptime", risk: "low")
 
-    {:ok, lv, _html} = live(conn, ~p"/app/runs/new/#{runner.id}/#{action.action_id}")
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runs/new/#{runner.id}/#{action.action_id}")
 
     assert has_element?(lv, "button", "Dispatch to runner")
     refute has_element?(lv, "button[data-confirm]")
@@ -231,7 +231,7 @@ defmodule EmisarWeb.RunNewLiveTest do
 
     # The runner is only looked up on the connected render, so assert
     # against render/1.
-    {:ok, lv, _html} = live(conn, ~p"/app/runs/new/#{runner.id}/#{action.action_id}")
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runs/new/#{runner.id}/#{action.action_id}")
     html = render(lv)
 
     assert html =~ "Runner offline"
@@ -249,7 +249,7 @@ defmodule EmisarWeb.RunNewLiveTest do
     {:ok, lv, html} =
       build_conn()
       |> log_in_user(viewer)
-      |> live(~p"/app/runs/new/#{runner.id}/#{action.action_id}")
+      |> live(~p"/app/#{account}/runs/new/#{runner.id}/#{action.action_id}")
 
     refute has_element?(lv, "button", "Dispatch to runner")
     assert html =~ "Your role can&#39;t dispatch runs"

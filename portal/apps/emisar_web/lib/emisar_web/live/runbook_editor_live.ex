@@ -52,7 +52,7 @@ defmodule EmisarWeb.RunbookEditorLive do
       {:error, _} ->
         socket
         |> put_flash(:error, "Runbook not found.")
-        |> push_navigate(to: ~p"/app/runbooks")
+        |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/runbooks")
     end
   end
 
@@ -282,7 +282,7 @@ defmodule EmisarWeb.RunbookEditorLive do
       {:noreply,
        socket
        |> put_flash(:info, success_message(runbook, publish?))
-       |> push_navigate(to: ~p"/app/runbooks")}
+       |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/runbooks")}
     else
       # Field errors (blank title, bad slug) render inline under their inputs;
       # a structural `definition` error has no input to bind to, so it surfaces
@@ -417,7 +417,7 @@ defmodule EmisarWeb.RunbookEditorLive do
       section={:runbooks}
     >
       <:title>
-        <.detail_header back="Runbooks" navigate={~p"/app/runbooks"}>
+        <.detail_header back="Runbooks" navigate={~p"/app/#{@current_account}/runbooks"}>
           <%= if @runbook do %>
             Edit runbook <span class="font-mono text-base text-zinc-400">{@runbook.slug}</span>
             <span class="ml-2 text-sm font-normal text-zinc-500">v{@runbook.version}</span>
@@ -427,7 +427,9 @@ defmodule EmisarWeb.RunbookEditorLive do
         </.detail_header>
       </:title>
       <:actions>
-        <.button variant="secondary" size="md" navigate={~p"/app/runbooks"}>Cancel</.button>
+        <.button variant="secondary" size="md" navigate={~p"/app/#{@current_account}/runbooks"}>
+          Cancel
+        </.button>
       </:actions>
 
       <div class="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_320px]">

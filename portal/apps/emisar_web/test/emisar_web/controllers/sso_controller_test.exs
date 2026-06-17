@@ -171,10 +171,14 @@ defmodule EmisarWeb.SSOControllerTest do
         |> get(~p"/sign_in/sso/callback", %{"_claims" => claims})
 
       # The provider does NOT satisfy MFA, so require_mfa still funnels this
-      # SSO user into TOTP setup (the satisfies_mfa flag is enforced).
+      # SSO user into TOTP setup (the satisfies_mfa flag is enforced). Bare
+      # /app forwards to the account slug; the slugged dashboard's
+      # :ensure_mfa_compliant on_mount is what redirects to /app/mfa_setup.
       authed = logged_in |> recycle() |> get(~p"/app")
       assert authed.status == 302
-      assert redirected_to(authed) =~ "/mfa_setup"
+      slugged = authed |> recycle() |> get(redirected_to(authed))
+      assert slugged.status == 302
+      assert redirected_to(slugged) =~ "/mfa_setup"
     end
 
     test "no stash flashes 'expired' and redirects to /sign_in", %{conn: conn} do

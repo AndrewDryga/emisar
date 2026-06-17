@@ -12,7 +12,7 @@ defmodule EmisarWeb.RunDetailLive do
         {:ok,
          socket
          |> put_flash(:error, "Run not found.")
-         |> push_navigate(to: ~p"/app/runs")}
+         |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/runs")}
 
       {:ok, run} ->
         if connected?(socket) do
@@ -110,7 +110,7 @@ defmodule EmisarWeb.RunDetailLive do
       section={:runs}
     >
       <:title>
-        <.detail_header back="Runs" navigate={~p"/app/runs"}>
+        <.detail_header back="Runs" navigate={~p"/app/#{@current_account}/runs"}>
           <span class="font-mono text-base">{@run.action_id}</span>
           <span :if={@run.runner} class="ml-2 text-sm font-normal text-zinc-400">
             on {runner_label(@run.runner)}
@@ -143,7 +143,7 @@ defmodule EmisarWeb.RunDetailLive do
         </.meta_field>
         <.meta_field label="Runner">
           <.link
-            navigate={~p"/app/runners/#{@run.runner_id}"}
+            navigate={~p"/app/#{@current_account}/runners/#{@run.runner_id}"}
             class="truncate text-zinc-200 hover:text-indigo-300"
           >
             {runner_label(@run.runner)}
@@ -199,7 +199,7 @@ defmodule EmisarWeb.RunDetailLive do
         <.button
           variant="caution"
           size="md"
-          navigate={~p"/app/approvals/#{@approval_request.id}"}
+          navigate={~p"/app/#{@current_account}/approvals/#{@approval_request.id}"}
           class="shrink-0"
         >
           Review approval →
@@ -226,7 +226,7 @@ defmodule EmisarWeb.RunDetailLive do
           :if={@approval_request}
           variant="danger"
           size="md"
-          navigate={~p"/app/approvals/#{@approval_request.id}"}
+          navigate={~p"/app/#{@current_account}/approvals/#{@approval_request.id}"}
           class="shrink-0"
         >
           Review approval →

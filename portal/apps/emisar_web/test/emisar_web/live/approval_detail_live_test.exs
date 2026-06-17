@@ -53,7 +53,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
 
     {:ok, request} = Approvals.create_request(run, user.id, "please approve")
 
-    {:ok, _lv, html} = live(conn, ~p"/app/approvals/#{request.id}")
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
     # The risk is looked up from the catalog and rendered as a pill.
     assert html =~ "high"
   end
@@ -62,7 +62,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     {conn, user, account} = register_and_log_in(conn)
     request = pending_request(account, user)
 
-    {:ok, lv, html} = live(conn, ~p"/app/approvals/#{request.id}")
+    {:ok, lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
 
     # The panel renders the approve form (owner can decide) — this is the
     # exact path that raised KeyError on `@grant_duration` in production.
@@ -87,7 +87,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     {conn, user, account} = register_and_log_in(conn)
     request = pending_request(account, user)
 
-    {:ok, lv, html} = live(conn, ~p"/app/approvals/#{request.id}")
+    {:ok, lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
 
     # Defaults to "once" (no grant) → Match / Limit-to fields hidden.
     refute html =~ "Same arguments only"
@@ -109,7 +109,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     {conn, user, account} = register_and_log_in(conn)
     request = pending_request(account, user)
 
-    {:ok, lv, html} = live(conn, ~p"/app/approvals/#{request.id}")
+    {:ok, lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
 
     # The approve note + deny reason are placeholder-only by design, so they
     # carry an aria-label (a placeholder is not an accessible name for AT).
@@ -132,7 +132,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     {conn, user, account} = register_and_log_in(conn)
     request = pending_request(account, user)
 
-    {:ok, lv, _html} = live(conn, ~p"/app/approvals/#{request.id}")
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
 
     # The reason textarea is optional — an empty submit still denies (this
     # path once raised FunctionClauseError on the missing `reason`).
@@ -148,7 +148,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     {conn, user, account} = register_and_log_in(conn)
     request = pending_request(account, user)
 
-    {:ok, lv, _html} = live(conn, ~p"/app/approvals/#{request.id}")
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
 
     html =
       lv
@@ -164,7 +164,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     {conn, user, account} = register_and_log_in(conn)
     request = pending_request(account, user)
 
-    {:ok, lv, html} = live(conn, ~p"/app/approvals/#{request.id}")
+    {:ok, lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
     assert html =~ "Approve and send"
 
     # The request expires out from under the open page — its live broadcast

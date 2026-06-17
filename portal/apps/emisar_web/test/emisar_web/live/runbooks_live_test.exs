@@ -40,21 +40,21 @@ defmodule EmisarWeb.RunbooksLiveTest do
   end
 
   test "renders the empty state with the New action for an owner", %{conn: conn} do
-    {conn, _user, _account} = register_and_log_in(conn)
+    {conn, _user, account} = register_and_log_in(conn)
 
-    {:ok, _lv, html} = live(conn, ~p"/app/runbooks")
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runbooks")
 
     assert html =~ "Runbooks"
-    assert html =~ ~p"/app/runbooks/new"
+    assert html =~ ~p"/app/#{account}/runbooks/new"
   end
 
   test "an empty *filtered* result keeps the filter bar, not the create-CTA", %{conn: conn} do
-    {conn, _user, _account} = register_and_log_in(conn)
+    {conn, _user, account} = register_and_log_in(conn)
 
     # No drafts exist, but a status filter is active. The operator must still
     # see the filter bar to clear it — not the "No runbooks yet" create-CTA,
     # which would trap them on a dead empty state with no way back.
-    {:ok, _lv, html} = live(conn, ~p"/app/runbooks?status=draft")
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runbooks?status=draft")
 
     assert html =~ "No runbooks match these filters"
     refute html =~ "No runbooks yet"
@@ -67,12 +67,12 @@ defmodule EmisarWeb.RunbooksLiveTest do
     published = create_runbook!(user, account, "Deploy check", published?: true)
     draft = create_runbook!(user, account, "Half baked")
 
-    {:ok, _lv, html} = live(conn, ~p"/app/runbooks")
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runbooks")
 
     assert html =~ "Deploy check"
     assert html =~ "Half baked"
-    assert html =~ ~p"/app/runbooks/#{published.id}/run"
-    refute html =~ ~p"/app/runbooks/#{draft.id}/run"
+    assert html =~ ~p"/app/#{account}/runbooks/#{published.id}/run"
+    refute html =~ ~p"/app/#{account}/runbooks/#{draft.id}/run"
   end
 
   test "a viewer gets the list but no New action", %{conn: conn} do
@@ -91,10 +91,10 @@ defmodule EmisarWeb.RunbooksLiveTest do
     {:ok, _lv, html} =
       build_conn()
       |> log_in_user(viewer)
-      |> live(~p"/app/runbooks")
+      |> live(~p"/app/#{account}/runbooks")
 
     assert html =~ "Visible to all"
-    refute html =~ ~p"/app/runbooks/new"
+    refute html =~ ~p"/app/#{account}/runbooks/new"
   end
 
   test "a runbook row shows its most-severe step risk so it's visible before opening", %{
@@ -108,7 +108,7 @@ defmodule EmisarWeb.RunbooksLiveTest do
     Emisar.Fixtures.action_fixture(runner: runner, action_id: "linux.uptime", risk: "high")
     _ = create_runbook!(user, account, "Risky deploy", published?: true)
 
-    {:ok, _lv, html} = live(conn, ~p"/app/runbooks")
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runbooks")
 
     assert html =~ "Risky deploy"
     assert html =~ "high"
@@ -124,7 +124,7 @@ defmodule EmisarWeb.RunbooksLiveTest do
     # shares the low-risk pill's ring color — can't be mistaken for a pill.
     _ = create_runbook!(user, account, "Unobserved")
 
-    {:ok, _lv, html} = live(conn, ~p"/app/runbooks")
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runbooks")
 
     assert html =~ "Unobserved"
     refute html =~ "ring-rose-500/30"
@@ -134,7 +134,7 @@ defmodule EmisarWeb.RunbooksLiveTest do
   test "refreshes when the account's runbook feed broadcasts", %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
 
-    {:ok, lv, html} = live(conn, ~p"/app/runbooks")
+    {:ok, lv, html} = live(conn, ~p"/app/#{account}/runbooks")
     refute html =~ "Late arrival"
 
     late = create_runbook!(user, account, "Late arrival")

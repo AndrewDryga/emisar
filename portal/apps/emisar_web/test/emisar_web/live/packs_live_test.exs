@@ -3,12 +3,12 @@ defmodule EmisarWeb.PacksLiveTest do
 
   describe "GET /app/packs" do
     test "redirects anonymous users", %{conn: conn} do
-      assert {:error, {:redirect, %{to: "/sign_in"}}} = live(conn, ~p"/app/packs")
+      assert {:error, {:redirect, %{to: "/sign_in"}}} = live(conn, ~p"/app/anon/packs")
     end
 
     test "renders the empty state when the account has no pack observations", %{conn: conn} do
-      {conn, _user, _account} = register_and_log_in(conn)
-      {:ok, _lv, html} = live(conn, ~p"/app/packs")
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/packs")
 
       assert html =~ "Packs"
       assert html =~ "No packs reported yet"
@@ -42,7 +42,7 @@ defmodule EmisarWeb.PacksLiveTest do
       {conn, _user, account} = register_and_log_in(conn)
       _ = observe_pending_pack!(account)
 
-      {:ok, lv, _dead_html} = live(conn, ~p"/app/packs")
+      {:ok, lv, _dead_html} = live(conn, ~p"/app/#{account}/packs")
       html = render(lv)
 
       assert html =~ "acme-tools"
@@ -82,7 +82,7 @@ defmodule EmisarWeb.PacksLiveTest do
           "packs" => %{"acme-tools" => %{"version" => "9.9", "hash" => "abc123"}}
         })
 
-      {:ok, lv, _dead} = live(conn, ~p"/app/packs")
+      {:ok, lv, _dead} = live(conn, ~p"/app/#{account}/packs")
       html = render(lv)
 
       assert html =~ "runner(s) advertise this"
@@ -120,7 +120,7 @@ defmodule EmisarWeb.PacksLiveTest do
           "packs" => %{"acme-tools" => %{"version" => "9.9", "hash" => "abc123"}}
         })
 
-      {:ok, lv, _dead} = live(conn, ~p"/app/packs")
+      {:ok, lv, _dead} = live(conn, ~p"/app/#{account}/packs")
       html = render(lv)
 
       # The trust decision now shows WHAT it authorizes, not just the hash.
@@ -157,7 +157,7 @@ defmodule EmisarWeb.PacksLiveTest do
       {:ok, [pack_version], _} = Emisar.Catalog.list_pack_versions(subject)
       {:ok, _} = Emisar.Catalog.trust_pack_version(pack_version.id, subject)
 
-      {:ok, lv, _dead} = live(conn, ~p"/app/packs")
+      {:ok, lv, _dead} = live(conn, ~p"/app/#{account}/packs")
 
       # Collapsed by default — the action list isn't rendered until opened.
       assert render(lv) =~ "View contents"
@@ -179,7 +179,7 @@ defmodule EmisarWeb.PacksLiveTest do
       {conn, _user, account} = register_and_log_in(conn)
       pack_version = observe_pending_pack!(account)
 
-      {:ok, lv, _html} = live(conn, ~p"/app/packs")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/packs")
       html = render_click(lv, "trust", %{"id" => pack_version.id})
 
       assert html =~ "Trusted acme-tools"
@@ -192,7 +192,7 @@ defmodule EmisarWeb.PacksLiveTest do
       {conn, _user, account} = register_and_log_in(conn)
       pack_version = observe_pending_pack!(account)
 
-      {:ok, lv, _html} = live(conn, ~p"/app/packs")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/packs")
 
       # Open the page-level reject dialog (stashes this version as the target),
       # type the pack token, then Confirm.
@@ -214,7 +214,7 @@ defmodule EmisarWeb.PacksLiveTest do
       {conn, _user, account} = register_and_log_in(conn)
       pack_version = observe_pending_pack!(account)
 
-      {:ok, lv, _html} = live(conn, ~p"/app/packs")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/packs")
 
       render_click(lv, "open_reject", %{
         "id" => pack_version.id,
@@ -244,7 +244,7 @@ defmodule EmisarWeb.PacksLiveTest do
       {conn, _user, account} = register_and_log_in(conn)
       pack_version = observe_pending_pack!(account)
 
-      {:ok, lv, _html} = live(conn, ~p"/app/packs")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/packs")
       html = render_click(lv, "reject", %{"id" => pack_version.id})
 
       assert html =~ "Rejected drift on acme-tools"
@@ -295,7 +295,7 @@ defmodule EmisarWeb.PacksLiveTest do
           "packs" => %{"acme-tools" => %{"version" => "9.9", "hash" => "v2"}}
         })
 
-      {:ok, lv, _dead} = live(conn, ~p"/app/packs")
+      {:ok, lv, _dead} = live(conn, ~p"/app/#{account}/packs")
       html = render(lv)
 
       assert html =~ "Changes since you last trusted"
@@ -317,7 +317,7 @@ defmodule EmisarWeb.PacksLiveTest do
           role: "viewer"
         )
 
-      {:ok, lv, _html} = build_conn() |> log_in_user(viewer) |> live(~p"/app/packs")
+      {:ok, lv, _html} = build_conn() |> log_in_user(viewer) |> live(~p"/app/#{account}/packs")
       html = render(lv)
 
       assert html =~ "acme-tools"

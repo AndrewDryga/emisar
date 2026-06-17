@@ -626,7 +626,7 @@ defmodule EmisarWeb.TeamLive do
         <LiveTable.live_table
           layout={:cards}
           id="members"
-          path={~p"/app/settings/team"}
+          path={~p"/app/#{@current_account}/settings/team"}
           rows={@memberships}
           metadata={@metadata}
           filter_params={@filter_params}

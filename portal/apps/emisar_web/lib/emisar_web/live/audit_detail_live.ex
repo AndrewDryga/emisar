@@ -28,7 +28,7 @@ defmodule EmisarWeb.AuditDetailLive do
         {:ok,
          socket
          |> put_flash(:error, "Audit event not found.")
-         |> push_navigate(to: ~p"/app/audit")}
+         |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/audit")}
     end
   end
 
@@ -64,7 +64,7 @@ defmodule EmisarWeb.AuditDetailLive do
       section={:audit}
     >
       <:title>
-        <.detail_header back="Audit log" navigate={~p"/app/audit"}>
+        <.detail_header back="Audit log" navigate={~p"/app/#{@current_account}/audit"}>
           <span
             class={[
               "mr-2 inline-block h-2 w-2 rounded-full align-middle",
@@ -106,6 +106,7 @@ defmodule EmisarWeb.AuditDetailLive do
           id={@event.actor_id}
           label={@event.actor_label}
           refs={@refs}
+          current_account={@current_account}
           user_agent={@event.user_agent}
           auth_method={@event.auth_method}
           mfa={@event.mfa}
@@ -123,6 +124,7 @@ defmodule EmisarWeb.AuditDetailLive do
           id={@event.subject_id}
           label={@event.subject_label}
           refs={@refs}
+          current_account={@current_account}
           runner={@subject_runner}
         />
       </div>
@@ -315,6 +317,7 @@ defmodule EmisarWeb.AuditDetailLive do
   # The Actor card optionally renders the User-Agent (the actor's
   # device); the Subject card doesn't take one.
   attr :role, :string, required: true
+  attr :current_account, :map, required: true
   attr :kind, :string, default: nil
   attr :id, :any, default: nil
   attr :label, :string, default: nil
@@ -342,7 +345,13 @@ defmodule EmisarWeb.AuditDetailLive do
     <div class="min-w-0 flex-1 rounded-xl border border-zinc-900 bg-zinc-950/40 p-4">
       <div class="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">{@role}</div>
       <div class="mt-1 text-sm">
-        <EmisarWeb.AuditLive.ref kind={@kind} id={@id} label={@label} refs={@refs} />
+        <EmisarWeb.AuditLive.ref
+          kind={@kind}
+          id={@id}
+          label={@label}
+          refs={@refs}
+          current_account={@current_account}
+        />
       </div>
       <p :if={@id} class="mt-1 text-[10px] text-zinc-500">
         <span class="font-semibold uppercase tracking-wider">id</span>
@@ -354,7 +363,7 @@ defmodule EmisarWeb.AuditDetailLive do
       <p :if={@runner} class="mt-1 text-[11px] text-zinc-400">
         <span class="text-zinc-500">runner:</span>
         <.link
-          navigate={~p"/app/runners/#{@runner.id}"}
+          navigate={~p"/app/#{@current_account}/runners/#{@runner.id}"}
           class="text-indigo-300 hover:text-indigo-200"
         >
           {runner_label(@runner)}

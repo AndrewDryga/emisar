@@ -13,7 +13,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
         {:ok,
          socket
          |> put_flash(:error, "Approval not found.")
-         |> push_navigate(to: ~p"/app/approvals")}
+         |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/approvals")}
 
       {:ok, request} ->
         if connected?(socket) do
@@ -346,7 +346,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
       section={:approvals}
     >
       <:title>
-        <.detail_header back="Approvals" navigate={~p"/app/approvals"}>
+        <.detail_header back="Approvals" navigate={~p"/app/#{@current_account}/approvals"}>
           Approval · <span class="font-mono text-base">{@request.context["action_id"] || "—"}</span>
         </.detail_header>
       </:title>
@@ -376,7 +376,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
                 title={if(@runner_connection == :online, do: "Online", else: "Offline")}
               />
               <.link
-                navigate={~p"/app/runners/#{@run.runner.id}"}
+                navigate={~p"/app/#{@current_account}/runners/#{@run.runner.id}"}
                 class="truncate text-zinc-200 hover:text-indigo-300"
               >
                 {@run.runner.name}
@@ -488,7 +488,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
 
           <div :if={@run}>
             <.link
-              navigate={~p"/app/runs/#{@run.id}"}
+              navigate={~p"/app/#{@current_account}/runs/#{@run.id}"}
               class="inline-flex items-center gap-1 text-sm text-indigo-400 hover:text-indigo-300"
             >
               View run details <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
@@ -508,6 +508,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
               already_decided?={@already_decided?}
               approved_count={@approved_count}
               min_approvals={@request.min_approvals}
+              current_account={@current_account}
             />
           <% else %>
             <.panel title="Decision history">
@@ -542,6 +543,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
   attr :already_decided?, :boolean, default: false
   attr :approved_count, :integer, default: 0
   attr :min_approvals, :integer, default: 1
+  attr :current_account, :map, required: true
 
   defp decision_panel(assigns) do
     ~H"""
@@ -679,7 +681,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
                   <p class="mt-1 text-[11px] leading-relaxed text-zinc-500">
                     Cap how many times this grant can be used within the window. Leave blank for unlimited.
                     Grants are reviewable + revocable on the <.link
-                      navigate={~p"/app/approvals"}
+                      navigate={~p"/app/#{@current_account}/approvals"}
                       class="text-indigo-400 hover:text-indigo-300"
                     >
                     approvals page

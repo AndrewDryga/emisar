@@ -57,7 +57,7 @@ defmodule EmisarWeb.RunbookRunLive do
         {:ok,
          socket
          |> put_flash(:error, "Runbook not found.")
-         |> push_navigate(to: ~p"/app/runbooks")}
+         |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/runbooks")}
     end
   end
 
@@ -688,7 +688,7 @@ defmodule EmisarWeb.RunbookRunLive do
                 </span>
                 <.link
                   :if={row.run}
-                  navigate={~p"/app/runs/#{row.run.id}"}
+                  navigate={~p"/app/#{@current_account}/runs/#{row.run.id}"}
                   class="text-xs text-indigo-400 hover:text-indigo-300"
                 >
                   View
@@ -776,7 +776,7 @@ defmodule EmisarWeb.RunbookRunLive do
           >
             No steps defined.
             <.link
-              navigate={~p"/app/runbooks/#{@runbook.id}/edit"}
+              navigate={~p"/app/#{@current_account}/runbooks/#{@runbook.id}/edit"}
               class="text-indigo-400 hover:text-indigo-300"
             >
               Edit the runbook

@@ -10,7 +10,7 @@ defmodule EmisarWeb.RunNewLive do
         {:ok,
          socket
          |> put_flash(:error, "Action not found.")
-         |> push_navigate(to: ~p"/app/runners/#{runner_id}")}
+         |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/runners/#{runner_id}")}
 
       {:ok, action} ->
         args_schema = action.args_schema["args"] || []
@@ -142,7 +142,8 @@ defmodule EmisarWeb.RunNewLive do
 
         case Runs.dispatch_run(attrs, socket.assigns.current_subject) do
           {:ok, _status, run} ->
-            {:noreply, push_navigate(socket, to: ~p"/app/runs/#{run.id}")}
+            {:noreply,
+             push_navigate(socket, to: ~p"/app/#{socket.assigns.current_account}/runs/#{run.id}")}
 
           {:error, :denied_by_policy, reason} ->
             {:noreply, put_flash(socket, :error, "Denied by policy: #{reason}")}
@@ -213,8 +214,8 @@ defmodule EmisarWeb.RunNewLive do
       section={:runs}
     >
       <:title>
-        <.back_link navigate={~p"/app/runners"}>Runners</.back_link>
-        <.back_link navigate={~p"/app/runners/#{@runner_id}"}>
+        <.back_link navigate={~p"/app/#{@current_account}/runners"}>Runners</.back_link>
+        <.back_link navigate={~p"/app/#{@current_account}/runners/#{@runner_id}"}>
           {(@runner && @runner.name) || "Runner"}
         </.back_link>
         Run <span class="font-mono text-base">{@action.action_id}</span>

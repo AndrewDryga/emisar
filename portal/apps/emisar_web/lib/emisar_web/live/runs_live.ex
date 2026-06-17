@@ -23,7 +23,8 @@ defmodule EmisarWeb.RunsLive do
   end
 
   def handle_event("filter", params, socket) do
-    {:noreply, LiveTable.apply_filter(socket, ~p"/app/runs", params)}
+    {:noreply,
+     LiveTable.apply_filter(socket, ~p"/app/#{socket.assigns.current_account}/runs", params)}
   end
 
   def handle_info({_event, _}, socket) do
@@ -82,7 +83,7 @@ defmodule EmisarWeb.RunsLive do
 
       <LiveTable.live_table
         id="runs"
-        path={~p"/app/runs"}
+        path={~p"/app/#{@current_account}/runs"}
         rows={@runs}
         metadata={@metadata}
         filter_params={@filter_params}
@@ -105,15 +106,18 @@ defmodule EmisarWeb.RunsLive do
             <% true -> %>
               <.empty_state variant={:bare} icon="hero-bolt" title="No runs yet.">
                 Dispatch one from a
-                <.link navigate={~p"/app/runners"} class="text-indigo-400 hover:text-indigo-300">
+                <.link
+                  navigate={~p"/app/#{@current_account}/runners"}
+                  class="text-indigo-400 hover:text-indigo-300"
+                >
                   runner detail page
                 </.link>
                 or kick off a <.link
-                  navigate={~p"/app/runbooks"}
+                  navigate={~p"/app/#{@current_account}/runbooks"}
                   class="text-indigo-400 hover:text-indigo-300"
                 >runbook</.link>.
                 Runs from an LLM (via the <.link
-                  navigate={~p"/app/agents"}
+                  navigate={~p"/app/#{@current_account}/agents"}
                   class="text-indigo-400 hover:text-indigo-300"
                 >MCP API</.link>) land here too.
               </.empty_state>
@@ -123,7 +127,10 @@ defmodule EmisarWeb.RunsLive do
           <.local_time value={run.inserted_at} mode={:relative} class="text-xs text-zinc-400" />
         </:col>
         <:col :let={run} label="Action">
-          <.link navigate={~p"/app/runs/#{run.id}"} class="font-mono text-sm hover:text-indigo-300">
+          <.link
+            navigate={~p"/app/#{@current_account}/runs/#{run.id}"}
+            class="font-mono text-sm hover:text-indigo-300"
+          >
             {run.action_id}
           </.link>
         </:col>

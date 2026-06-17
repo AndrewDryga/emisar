@@ -76,7 +76,8 @@ defmodule EmisarWeb.AgentsLive do
   end
 
   def handle_event("filter", params, socket) do
-    {:noreply, LiveTable.apply_filter(socket, ~p"/app/agents", params)}
+    {:noreply,
+     LiveTable.apply_filter(socket, ~p"/app/#{socket.assigns.current_account}/agents", params)}
   end
 
   # -- Events ----------------------------------------------------------
@@ -694,7 +695,7 @@ defmodule EmisarWeb.AgentsLive do
         <LiveTable.live_table
           layout={:cards}
           id="agents"
-          path={~p"/app/agents"}
+          path={~p"/app/#{@current_account}/agents"}
           rows={@api_keys}
           metadata={@metadata}
           filter_params={@filter_params}
@@ -735,7 +736,9 @@ defmodule EmisarWeb.AgentsLive do
                      that's exactly when "what did it do" matters. Every role
                      that can see this page also holds view_audit. --%>
                 <.link
-                  navigate={~p"/app/audit?#{[actor_kind: "api_key", actor_id: key.id]}"}
+                  navigate={
+                    ~p"/app/#{@current_account}/audit?#{[actor_kind: "api_key", actor_id: key.id]}"
+                  }
                   class="text-xs text-indigo-400 hover:text-indigo-300"
                 >
                   View activity →

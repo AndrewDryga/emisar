@@ -226,7 +226,7 @@ defmodule EmisarWeb.ApprovalsLive do
           <LiveTable.live_table
             layout={:cards}
             id="pending"
-            path={~p"/app/approvals"}
+            path={~p"/app/#{@current_account}/approvals"}
             prefix="pending_"
             rows={@pending}
             metadata={@pending_metadata}
@@ -236,7 +236,7 @@ defmodule EmisarWeb.ApprovalsLive do
             <:item :let={request}>
               <li>
                 <.link
-                  navigate={~p"/app/approvals/#{request.id}"}
+                  navigate={~p"/app/#{@current_account}/approvals/#{request.id}"}
                   class="block rounded-xl border border-amber-500/30 bg-amber-500/[0.04] p-4 transition hover:border-amber-500/50 hover:bg-amber-500/[0.07]"
                 >
                   <div class="flex items-start justify-between gap-3">
@@ -287,7 +287,10 @@ defmodule EmisarWeb.ApprovalsLive do
                 title="Nothing waiting."
               >
                 Approvals show up here when
-                <.link navigate={~p"/app/policies"} class="text-indigo-400 hover:text-indigo-300">
+                <.link
+                  navigate={~p"/app/#{@current_account}/policies"}
+                  class="text-indigo-400 hover:text-indigo-300"
+                >
                   policy
                 </.link>
                 gates a run as <code class="text-zinc-300">require_approval</code>
@@ -318,7 +321,7 @@ defmodule EmisarWeb.ApprovalsLive do
           <LiveTable.live_table
             layout={:cards}
             id="grants"
-            path={~p"/app/approvals"}
+            path={~p"/app/#{@current_account}/approvals"}
             prefix="grants_"
             rows={@grants}
             metadata={@grants_metadata}
@@ -393,7 +396,7 @@ defmodule EmisarWeb.ApprovalsLive do
           <LiveTable.live_table
             layout={:cards}
             id="decided"
-            path={~p"/app/approvals"}
+            path={~p"/app/#{@current_account}/approvals"}
             prefix="decided_"
             rows={@decided}
             metadata={@decided_metadata}
@@ -402,7 +405,7 @@ defmodule EmisarWeb.ApprovalsLive do
             <:item :let={request}>
               <li>
                 <.link
-                  navigate={~p"/app/approvals/#{request.id}"}
+                  navigate={~p"/app/#{@current_account}/approvals/#{request.id}"}
                   class="flex items-center justify-between gap-3 px-4 py-3 text-sm transition hover:bg-zinc-900/40"
                 >
                   <div class="min-w-0 flex-1">

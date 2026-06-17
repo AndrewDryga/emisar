@@ -12,7 +12,7 @@ defmodule EmisarWeb.AuditLiveTest do
 
   describe "GET /app/audit" do
     test "redirects anonymous users", %{conn: conn} do
-      assert {:error, {:redirect, %{to: "/sign_in"}}} = live(conn, ~p"/app/audit")
+      assert {:error, {:redirect, %{to: "/sign_in"}}} = live(conn, ~p"/app/anon/audit")
     end
 
     test "renders rows with IP + a link into the subject's detail page", %{conn: conn} do
@@ -42,12 +42,12 @@ defmodule EmisarWeb.AuditLiveTest do
           user_agent: "emisar-runner/0.1.0"
         )
 
-      {:ok, _lv, html} = live(conn, ~p"/app/audit")
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit")
 
       assert html =~ "runner.connected"
       assert html =~ "10.0.5.12"
       assert html =~ "db-prod-01"
-      assert html =~ ~p"/app/runners/#{runner.id}"
+      assert html =~ ~p"/app/#{account}/runners/#{runner.id}"
       # Subject/IP columns collapse below lg so the table fits a phone.
       assert html =~ "hidden lg:table-cell"
     end
@@ -64,7 +64,7 @@ defmodule EmisarWeb.AuditLiveTest do
         {:ok, _} = Audit.log(account.id, type, subject_kind: subject_kind, subject_label: "x")
       end
 
-      {:ok, _lv, html} = live(conn, ~p"/app/audit")
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit")
 
       assert html =~ "bg-rose-400"
       assert html =~ "bg-amber-400"
@@ -96,7 +96,7 @@ defmodule EmisarWeb.AuditLiveTest do
       |> Ecto.Changeset.change(name: "renamed-prod")
       |> Repo.update!()
 
-      {:ok, _lv, html} = live(conn, ~p"/app/audit")
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit")
 
       # The live label takes precedence over the snapshot.
       assert html =~ "renamed-prod"
@@ -114,11 +114,11 @@ defmodule EmisarWeb.AuditLiveTest do
           actor_label: "alice@example.com"
         )
 
-      {:ok, _lv, html} = live(conn, ~p"/app/audit")
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit")
 
       # The actor value links to "what did this identity do", not its
       # resource page.
-      assert html =~ "/app/audit?actor_id=#{actor_id}"
+      assert html =~ ~p"/app/#{account}/audit?actor_id=#{actor_id}"
       # From/To are real %Filter{} inputs in the unified LiveTable bar now —
       # not a separate hand-rolled date form.
       assert html =~ "From (UTC)"
@@ -156,7 +156,7 @@ defmodule EmisarWeb.AuditLiveTest do
         )
 
       # Unfiltered, the 3-day-old event shows.
-      {:ok, _lv, html} = live(conn, ~p"/app/audit")
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit")
       assert html =~ "ancient-actor"
 
       # A From bound 24h ago (datetime-local "YYYY-MM-DDTHH:MM", read as UTC)
@@ -167,7 +167,7 @@ defmodule EmisarWeb.AuditLiveTest do
         |> DateTime.add(-86_400, :second)
         |> Calendar.strftime("%Y-%m-%dT%H:%M")
 
-      {:ok, _lv2, html} = live(conn, ~p"/app/audit?from=#{from}")
+      {:ok, _lv2, html} = live(conn, ~p"/app/#{account}/audit?from=#{from}")
       assert html =~ "fresh-actor"
       refute html =~ "ancient-actor"
     end
@@ -194,7 +194,7 @@ defmodule EmisarWeb.AuditLiveTest do
           actor_label: "fresh-actor"
         )
 
-      {:ok, lv, html} = live(conn, ~p"/app/audit")
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/audit")
       assert html =~ "ancient-actor"
 
       # Click "Last 24h": sets the unified bar's From to now − 24h, dropping the
@@ -215,7 +215,7 @@ defmodule EmisarWeb.AuditLiveTest do
           actor_label: "still-here"
         )
 
-      {:ok, lv, _html} = live(conn, ~p"/app/audit")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/audit")
 
       # A forged window (not 1h/24h/7d) falls through to nil → no filter applied,
       # no crash. The list is unchanged.
@@ -242,7 +242,7 @@ defmodule EmisarWeb.AuditLiveTest do
           actor_label: "bob"
         )
 
-      {:ok, _lv, html} = live(conn, ~p"/app/audit?actor_id=#{actor_a}")
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit?actor_id=#{actor_a}")
 
       assert html =~ "Actor:"
       assert html =~ "alice"
@@ -267,7 +267,7 @@ defmodule EmisarWeb.AuditLiveTest do
           auth_method: "password"
         )
 
-      {:ok, _lv, html} = live(conn, ~p"/app/audit?auth_method=sso")
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit?auth_method=sso")
 
       assert html =~ "via-sso"
       # the password-session event is filtered out.
@@ -280,11 +280,11 @@ defmodule EmisarWeb.AuditLiveTest do
       {:ok, _} = Audit.log(account.id, "user.invited", actor_kind: "user", actor_id: user.id)
 
       # No kind selected → no actor picker rendered.
-      {:ok, _lv, html} = live(conn, ~p"/app/audit")
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit")
       refute html =~ ~s(name="actor_id")
 
       # One kind selected → the picker appears, listing the resolved actor.
-      {:ok, _lv, html} = live(conn, ~p"/app/audit?actor_kind=user")
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit?actor_kind=user")
       assert html =~ ~s(name="actor_id")
       assert html =~ ~s(value="#{user.id}")
       # …and right after its Actor-type trigger — before the next (Subject)
@@ -301,12 +301,12 @@ defmodule EmisarWeb.AuditLiveTest do
       {:ok, _} = Audit.log(account.id, "user.invited", subject_kind: "user", subject_id: user.id)
 
       # No subject kind selected → no subject picker rendered.
-      {:ok, _lv, html} = live(conn, ~p"/app/audit")
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit")
       refute html =~ ~s(name="subject_id")
 
       # Pick "user" → the picker appears with the resolved subject (the user's
       # email), right after its Subject trigger — same shape as the actor picker.
-      {:ok, _lv, html} = live(conn, ~p"/app/audit?subject_kind=user")
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit?subject_kind=user")
       assert html =~ ~s(name="subject_id")
       assert html =~ ~s(value="#{user.id}")
       assert html =~ user.email
@@ -331,7 +331,7 @@ defmodule EmisarWeb.AuditLiveTest do
           payload: %{prefix: "emk-abcdef", scopes: ["actions:read", "actions:execute"]}
         )
 
-      {:ok, _lv, html} = live(conn, ~p"/app/audit/#{event.id}")
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit/#{event.id}")
 
       assert html =~ "api_key.created"
       assert html =~ "203.0.113.7"
@@ -339,7 +339,7 @@ defmodule EmisarWeb.AuditLiveTest do
       assert html =~ "actions:execute"
       assert html =~ "owner@example.com"
       # Subject of kind api_key links to the agents page (where keys live).
-      assert html =~ ~p"/app/agents"
+      assert html =~ ~p"/app/#{account}/agents"
     end
 
     test "parses bridge user agent into client + host + os posture fields", %{conn: conn} do
@@ -355,7 +355,7 @@ defmodule EmisarWeb.AuditLiveTest do
           user_agent: "emisar-mcp/dev (client=claude-desktop; host=andrews-mbp.local; os=darwin)"
         )
 
-      {:ok, _lv, html} = live(conn, ~p"/app/audit/#{event.id}")
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit/#{event.id}")
 
       assert html =~ "claude-desktop"
       assert html =~ "andrews-mbp.local"
@@ -380,30 +380,34 @@ defmodule EmisarWeb.AuditLiveTest do
           mcp_session_id: "5985d95cf73715ff"
         )
 
-      {:ok, _lv, html} = live(conn, ~p"/app/audit/#{event.id}")
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit/#{event.id}")
 
       assert html =~ "MCP session"
       assert html =~ "5985d95cf73715ff"
     end
 
     test "redirects to list with flash when event id is unknown", %{conn: conn} do
-      {conn, _user, _account} = register_and_log_in(conn)
+      {conn, _user, account} = register_and_log_in(conn)
       missing = Ecto.UUID.generate()
 
-      assert {:error, {:live_redirect, %{to: "/app/audit"}}} =
-               live(conn, ~p"/app/audit/#{missing}")
+      dest = ~p"/app/#{account}/audit"
+
+      assert {:error, {:live_redirect, %{to: ^dest}}} =
+               live(conn, ~p"/app/#{account}/audit/#{missing}")
     end
 
     test "events from other accounts 404 (account scoping)", %{conn: conn} do
-      {conn, _user, _account} = register_and_log_in(conn)
+      {conn, _user, account} = register_and_log_in(conn)
 
       # Brand-new account the logged-in user has no membership in.
       other = Emisar.Fixtures.account_fixture()
 
       {:ok, event} = Audit.log(other.id, "secret.event", actor_kind: "system")
 
-      assert {:error, {:live_redirect, %{to: "/app/audit"}}} =
-               live(conn, ~p"/app/audit/#{event.id}")
+      dest = ~p"/app/#{account}/audit"
+
+      assert {:error, {:live_redirect, %{to: ^dest}}} =
+               live(conn, ~p"/app/#{account}/audit/#{event.id}")
     end
   end
 
@@ -411,7 +415,7 @@ defmodule EmisarWeb.AuditLiveTest do
     test "mint shows the secret once, list updates, revoke retires it", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
       subject = Emisar.Fixtures.subject_for(user, account)
-      {:ok, lv, _html} = live(conn, ~p"/app/audit")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/audit")
 
       # Mint: the raw emk- secret is rendered exactly once.
       html = render_click(lv, "create_export_key", %{})
@@ -447,7 +451,7 @@ defmodule EmisarWeb.AuditLiveTest do
           role: "viewer"
         )
 
-      {:ok, lv, _html} = build_conn() |> log_in_user(viewer) |> live(~p"/app/audit")
+      {:ok, lv, _html} = build_conn() |> log_in_user(viewer) |> live(~p"/app/#{account}/audit")
 
       html = render_click(lv, "create_export_key", %{})
       assert html =~ "You don&#39;t have permission to do that."
@@ -456,7 +460,7 @@ defmodule EmisarWeb.AuditLiveTest do
 
     test "an api_key list_changed broadcast refreshes the key list", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
-      {:ok, lv, _html} = live(conn, ~p"/app/audit")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/audit")
 
       # A key minted elsewhere (another tab/admin) appears via the broadcast.
       subject = Emisar.Fixtures.subject_for(user, account)

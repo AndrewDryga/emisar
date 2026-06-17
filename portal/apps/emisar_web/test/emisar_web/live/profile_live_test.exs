@@ -8,8 +8,8 @@ defmodule EmisarWeb.ProfileLiveTest do
 
   describe "email form validation" do
     test "a malformed email surfaces inline via phx-change, not a flash", %{conn: conn} do
-      {conn, _user, _account} = register_and_log_in(conn)
-      {:ok, lv, html} = live(conn, ~p"/app/settings/profile")
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/profile")
 
       # The email form warns the change is immediate (the sign-in identity
       # flips right away).
@@ -31,8 +31,8 @@ defmodule EmisarWeb.ProfileLiveTest do
 
   describe "password form validation" do
     test "a too-short new password renders inline, not in a flash", %{conn: conn} do
-      {conn, _user, _account} = register_and_log_in(conn)
-      {:ok, lv, _html} = live(conn, ~p"/app/settings/profile")
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
 
       html =
         lv
@@ -53,8 +53,8 @@ defmodule EmisarWeb.ProfileLiveTest do
     test "a confirmation mismatch renders inline on the confirmation field, not in a flash", %{
       conn: conn
     } do
-      {conn, _user, _account} = register_and_log_in(conn)
-      {:ok, lv, _html} = live(conn, ~p"/app/settings/profile")
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
 
       html =
         lv
@@ -72,12 +72,12 @@ defmodule EmisarWeb.ProfileLiveTest do
     end
 
     test "a valid change updates the password and signs other devices out", %{conn: conn} do
-      {conn, user, _account} = register_and_log_in(conn)
+      {conn, user, account} = register_and_log_in(conn)
 
       # A second signed-in device — the change must revoke it.
       {other_conn, _user, _account} = register_and_log_in(build_conn())
       _ = other_conn
-      {:ok, lv, _html} = live(conn, ~p"/app/settings/profile")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
 
       html =
         lv
@@ -97,8 +97,8 @@ defmodule EmisarWeb.ProfileLiveTest do
     end
 
     test "a wrong current password is a flash, not a field error", %{conn: conn} do
-      {conn, _user, _account} = register_and_log_in(conn)
-      {:ok, lv, _html} = live(conn, ~p"/app/settings/profile")
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
 
       html =
         lv
@@ -117,8 +117,8 @@ defmodule EmisarWeb.ProfileLiveTest do
 
   describe "profile form" do
     test "saving a new full name updates and confirms", %{conn: conn} do
-      {conn, user, _account} = register_and_log_in(conn)
-      {:ok, lv, _html} = live(conn, ~p"/app/settings/profile")
+      {conn, user, account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
 
       html =
         lv
@@ -133,8 +133,8 @@ defmodule EmisarWeb.ProfileLiveTest do
 
   describe "email form" do
     test "the current-password challenge gates the change", %{conn: conn} do
-      {conn, user, _account} = register_and_log_in(conn)
-      {:ok, lv, _html} = live(conn, ~p"/app/settings/profile")
+      {conn, user, account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
 
       html =
         lv
@@ -148,8 +148,8 @@ defmodule EmisarWeb.ProfileLiveTest do
     end
 
     test "with the right password the email changes", %{conn: conn} do
-      {conn, user, _account} = register_and_log_in(conn)
-      {:ok, lv, _html} = live(conn, ~p"/app/settings/profile")
+      {conn, user, account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
 
       html =
         lv
@@ -171,7 +171,7 @@ defmodule EmisarWeb.ProfileLiveTest do
       other_conn = build_conn() |> log_in_user(user)
       _ = other_conn
 
-      {:ok, lv, _html} = live(conn, ~p"/app/settings/profile")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
       html = render(lv)
       assert html =~ "This device"
 
@@ -187,15 +187,15 @@ defmodule EmisarWeb.ProfileLiveTest do
     end
 
     test "revoke_other_sessions with nothing to revoke says so", %{conn: conn} do
-      {conn, _user, _account} = register_and_log_in(conn)
-      {:ok, lv, _html} = live(conn, ~p"/app/settings/profile")
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
 
       assert render_click(lv, "revoke_other_sessions", %{}) =~ "No other sessions to revoke."
     end
 
     test "revoking a vanished session id flashes instead of crashing", %{conn: conn} do
-      {conn, _user, _account} = register_and_log_in(conn)
-      {:ok, lv, _html} = live(conn, ~p"/app/settings/profile")
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
 
       assert render_click(lv, "revoke_session", %{"id" => Ecto.UUID.generate()}) =~
                "Session no longer exists."
@@ -206,8 +206,8 @@ defmodule EmisarWeb.ProfileLiveTest do
     test "start → confirm with a valid OTP enables MFA and shows recovery codes once", %{
       conn: conn
     } do
-      {conn, user, _account} = register_and_log_in(conn)
-      {:ok, lv, _html} = live(conn, ~p"/app/settings/profile")
+      {conn, user, account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
 
       html = render_click(lv, "start_mfa", %{})
       assert html =~ "<svg"
@@ -242,7 +242,7 @@ defmodule EmisarWeb.ProfileLiveTest do
     end
 
     test "a low recovery-code count nudges to regenerate (amber)", %{conn: conn} do
-      {conn, user, _account} = register_and_log_in(conn)
+      {conn, user, account} = register_and_log_in(conn)
 
       # MFA on with only 2 codes left (8 burned down on lost-device sign-ins) —
       # tracked all along but never shown until now.
@@ -253,15 +253,15 @@ defmodule EmisarWeb.ProfileLiveTest do
       )
       |> Emisar.Repo.update!()
 
-      {:ok, _lv, html} = live(conn, ~p"/app/settings/profile")
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/profile")
 
       assert html =~ "2 recovery codes remaining"
       assert html =~ "Regenerate for a fresh set"
     end
 
     test "a wrong OTP leaves MFA off", %{conn: conn} do
-      {conn, user, _account} = register_and_log_in(conn)
-      {:ok, lv, _html} = live(conn, ~p"/app/settings/profile")
+      {conn, user, account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
 
       render_click(lv, "start_mfa", %{})
 
@@ -275,8 +275,8 @@ defmodule EmisarWeb.ProfileLiveTest do
     end
 
     test "cancel_mfa drops the pending secret so confirm refuses", %{conn: conn} do
-      {conn, _user, _account} = register_and_log_in(conn)
-      {:ok, lv, _html} = live(conn, ~p"/app/settings/profile")
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
 
       render_click(lv, "start_mfa", %{})
       render_click(lv, "cancel_mfa", %{})
@@ -300,7 +300,7 @@ defmodule EmisarWeb.ProfileLiveTest do
           Emisar.Fixtures.subject_for(user, account)
         )
 
-      {:ok, lv, _html} = live(conn, ~p"/app/settings/profile")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
 
       assert render_click(lv, "regenerate_recovery_codes", %{}) =~
                "New recovery codes generated."

@@ -144,7 +144,12 @@ defmodule EmisarWeb.Router do
 
     post "/accounts/switch", AccountSwitchController, :switch
 
-    # Outside :authenticated on purpose: this is where ensure_mfa_compliant
+    # Bare /app → the user's current (session-hinted, else default) account, slugged.
+    # require_authenticated_user has already resolved current_account (or bounced a
+    # no-membership/suspended user), so this just forwards to the canonical URL.
+    get "/", AccountRedirectController, :show
+
+    # Outside the slug scope on purpose: this is where ensure_mfa_compliant
     # SENDS a non-compliant member, so it must mount without that gate.
     live_session :mfa_setup,
       on_mount: [
@@ -153,45 +158,51 @@ defmodule EmisarWeb.Router do
       live "/mfa_setup", MfaSetupLive, :new
     end
 
-    live_session :authenticated,
-      on_mount: [
-        {EmisarWeb.UserAuth, :ensure_authenticated},
-        {EmisarWeb.UserAuth, :ensure_mfa_compliant},
-        {EmisarWeb.UserAuth, :track_pending_approvals},
-        {EmisarWeb.UserAuth, :email_confirmation}
-      ] do
-      live "/", DashboardLive, :index
+    # Every tenant page nests under the account slug (resolved id-or-slug; the slug
+    # is the canonical UI form). :ensure_account_slug resolves + authorizes it from
+    # the URL on every mount — a non-member/unknown ref 404s, never leaks (IL-15).
+    scope "/:account_id_or_slug" do
+      live_session :authenticated,
+        on_mount: [
+          {EmisarWeb.UserAuth, :ensure_authenticated},
+          {EmisarWeb.UserAuth, :ensure_account_slug},
+          {EmisarWeb.UserAuth, :ensure_mfa_compliant},
+          {EmisarWeb.UserAuth, :track_pending_approvals},
+          {EmisarWeb.UserAuth, :email_confirmation}
+        ] do
+        live "/", DashboardLive, :index
 
-      live "/runners", RunnersLive, :index
-      live "/runners/install", RunnerInstallLive, :new
-      live "/runners/:id", RunnerDetailLive, :show
+        live "/runners", RunnersLive, :index
+        live "/runners/install", RunnerInstallLive, :new
+        live "/runners/:id", RunnerDetailLive, :show
 
-      live "/runs", RunsLive, :index
-      live "/runs/:id", RunDetailLive, :show
-      live "/runs/new/:runner_id/:action_id", RunNewLive, :new
+        live "/runs", RunsLive, :index
+        live "/runs/:id", RunDetailLive, :show
+        live "/runs/new/:runner_id/:action_id", RunNewLive, :new
 
-      live "/approvals", ApprovalsLive, :index
-      live "/approvals/:id", ApprovalDetailLive, :show
+        live "/approvals", ApprovalsLive, :index
+        live "/approvals/:id", ApprovalDetailLive, :show
 
-      live "/runbooks", RunbooksLive, :index
-      live "/runbooks/new", RunbookEditorLive, :new
-      live "/runbooks/:id/edit", RunbookEditorLive, :edit
-      live "/runbooks/:id/run", RunbookRunLive, :new
+        live "/runbooks", RunbooksLive, :index
+        live "/runbooks/new", RunbookEditorLive, :new
+        live "/runbooks/:id/edit", RunbookEditorLive, :edit
+        live "/runbooks/:id/run", RunbookRunLive, :new
 
-      live "/policies", PoliciesLive, :index
+        live "/policies", PoliciesLive, :index
 
-      live "/packs", PacksLive, :index
+        live "/packs", PacksLive, :index
 
-      live "/audit", AuditLive, :index
-      live "/audit/:id", AuditDetailLive, :show
+        live "/audit", AuditLive, :index
+        live "/audit/:id", AuditDetailLive, :show
 
-      live "/settings/runners/auth-keys", AuthKeysLive, :index
-      live "/agents", AgentsLive, :index
-      live "/settings/team", TeamLive, :index
-      live "/settings/sso", SSOSettingsLive, :index
-      live "/settings/sso/new", SSOSettingsLive, :new
-      live "/settings/billing", BillingLive, :index
-      live "/settings/profile", ProfileLive, :index
+        live "/settings/runners/auth-keys", AuthKeysLive, :index
+        live "/agents", AgentsLive, :index
+        live "/settings/team", TeamLive, :index
+        live "/settings/sso", SSOSettingsLive, :index
+        live "/settings/sso/new", SSOSettingsLive, :new
+        live "/settings/billing", BillingLive, :index
+        live "/settings/profile", ProfileLive, :index
+      end
     end
   end
 

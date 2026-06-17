@@ -33,7 +33,7 @@ defmodule EmisarWeb.AccountSwitchControllerTest do
 
       conn = post(conn, ~p"/app/accounts/switch", account_id: second.id)
 
-      assert redirected_to(conn) == ~p"/app"
+      assert redirected_to(conn) == ~p"/app/#{second}"
       assert get_session(conn, :current_account_id) == second.id
 
       # And the audit row landed on the new tenant.
@@ -85,9 +85,11 @@ defmodule EmisarWeb.AccountSwitchControllerTest do
       assert get_session(conn, :current_account_id) == second.id
 
       # A follow-up request to the dashboard reads the pinned id and
-      # mounts the second account, NOT the most-recent default.
+      # mounts the second account, NOT the most-recent default: bare /app
+      # forwards to the pinned account's slug.
       conn = recycle(conn) |> get(~p"/app")
-      assert html_response(conn, 200) =~ second.name
+      assert redirected_to(conn) == ~p"/app/#{second}"
+      assert html_response(recycle(conn) |> get(redirected_to(conn)), 200) =~ second.name
     end
   end
 end

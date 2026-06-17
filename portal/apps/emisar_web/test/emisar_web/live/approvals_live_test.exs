@@ -52,7 +52,7 @@ defmodule EmisarWeb.ApprovalsLiveTest do
     {conn, user, account} = register_and_log_in(conn)
     _ = pending_request!(account, user.id, "reboot for kernel patch")
 
-    {:ok, _lv, html} = live(conn, ~p"/app/approvals")
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/approvals")
 
     assert html =~ "linux.reboot"
     assert html =~ "reboot for kernel patch"
@@ -63,7 +63,7 @@ defmodule EmisarWeb.ApprovalsLiveTest do
     request = pending_request!(account, user.id, "kernel patch")
 
     # Default 24h TTL → expiry shown but muted (not urgent yet).
-    {:ok, _lv, html} = live(conn, ~p"/app/approvals")
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/approvals")
     assert html =~ "expires"
     refute html =~ "text-amber-400"
 
@@ -73,14 +73,14 @@ defmodule EmisarWeb.ApprovalsLiveTest do
     |> Ecto.Changeset.change(expires_at: DateTime.add(DateTime.utc_now(), 1800, :second))
     |> Emisar.Repo.update!()
 
-    {:ok, _lv, html} = live(conn, ~p"/app/approvals")
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/approvals")
     assert html =~ "text-amber-400"
   end
 
   test "an approval_updated broadcast reloads the queue", %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
 
-    {:ok, lv, html} = live(conn, ~p"/app/approvals")
+    {:ok, lv, html} = live(conn, ~p"/app/#{account}/approvals")
     refute html =~ "late-arriving request"
 
     _ = pending_request!(account, user.id, "late-arriving request")
@@ -101,7 +101,7 @@ defmodule EmisarWeb.ApprovalsLiveTest do
 
     assert Approvals.expire_overdue_requests() == 1
 
-    {:ok, _lv, html} = live(conn, ~p"/app/approvals")
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/approvals")
 
     assert html =~ "· Expired"
   end
@@ -115,7 +115,7 @@ defmodule EmisarWeb.ApprovalsLiveTest do
 
     {:ok, [grant], _meta} = Approvals.list_grants_for_account(subject)
 
-    {:ok, lv, html} = live(conn, ~p"/app/approvals")
+    {:ok, lv, html} = live(conn, ~p"/app/#{account}/approvals")
     assert html =~ "linux.reboot"
 
     html = render_click(lv, "revoke_grant", %{"id" => grant.id})
@@ -134,7 +134,7 @@ defmodule EmisarWeb.ApprovalsLiveTest do
     # a <time> too.
     {:ok, _} = Approvals.approve_request(request, subject, "ok", duration: :one_day)
 
-    {:ok, _lv, html} = live(conn, ~p"/app/approvals")
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/approvals")
 
     # Viewer-local <time> for both (same model as the rest of the app).
     assert html =~ ~s(phx-hook="LocalTime")
@@ -148,8 +148,8 @@ defmodule EmisarWeb.ApprovalsLiveTest do
   end
 
   test "revoking an unknown grant flashes not-found", %{conn: conn} do
-    {conn, _user, _account} = register_and_log_in(conn)
-    {:ok, lv, _html} = live(conn, ~p"/app/approvals")
+    {conn, _user, account} = register_and_log_in(conn)
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/approvals")
 
     assert render_click(lv, "revoke_grant", %{"id" => Ecto.UUID.generate()}) =~
              "Grant not found."
@@ -166,7 +166,7 @@ defmodule EmisarWeb.ApprovalsLiveTest do
     viewer = user_fixture()
     _ = membership_fixture(account_id: account.id, user_id: viewer.id, role: "viewer")
 
-    {:ok, lv, _html} = build_conn() |> log_in_user(viewer) |> live(~p"/app/approvals")
+    {:ok, lv, _html} = build_conn() |> log_in_user(viewer) |> live(~p"/app/#{account}/approvals")
 
     html = render_click(lv, "revoke_grant", %{"id" => grant.id})
 

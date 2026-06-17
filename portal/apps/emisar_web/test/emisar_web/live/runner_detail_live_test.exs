@@ -15,37 +15,45 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
     %{conn: conn, user: user, account: account, runner: runner}
   end
 
-  test "renders the runner with its actions and recent runs", %{conn: conn, runner: runner} do
-    {:ok, _lv, html} = live(conn, ~p"/app/runners/#{runner.id}")
+  test "renders the runner with its actions and recent runs", %{
+    conn: conn,
+    account: account,
+    runner: runner
+  } do
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runners/#{runner.id}")
 
     assert html =~ runner.name
     assert html =~ runner.hostname
   end
 
   test "an offline runner's Run affordance is aria-disabled with a non-color cue",
-       %{conn: conn, runner: runner} do
+       %{conn: conn, account: account, runner: runner} do
     # setup's runner is offline, so the action row renders the disabled span.
     Fixtures.action_fixture(runner: runner, action_id: "linux.uptime")
 
-    {:ok, _lv, html} = live(conn, ~p"/app/runners/#{runner.id}")
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runners/#{runner.id}")
 
     assert html =~ ~s(aria-disabled="true")
     # The signal-slash icon is the non-color cue (not the dimmed text alone).
     assert html =~ "hero-signal-slash"
   end
 
-  test "an unknown id bounces to the index as not-found", %{conn: conn} do
-    assert {:error, {:live_redirect, %{to: "/app/runners", flash: flash}}} =
-             live(conn, ~p"/app/runners/#{Ecto.UUID.generate()}")
+  test "an unknown id bounces to the index as not-found", %{conn: conn, account: account} do
+    dest = ~p"/app/#{account}/runners"
+
+    assert {:error, {:live_redirect, %{to: ^dest, flash: flash}}} =
+             live(conn, ~p"/app/#{account}/runners/#{Ecto.UUID.generate()}")
 
     assert flash["error"] == "Runner not found."
   end
 
-  test "a cross-account runner reads as not-found", %{conn: conn} do
+  test "a cross-account runner reads as not-found", %{conn: conn, account: account} do
     foreign_runner = Fixtures.runner_fixture()
 
-    assert {:error, {:live_redirect, %{to: "/app/runners"}}} =
-             live(conn, ~p"/app/runners/#{foreign_runner.id}")
+    dest = ~p"/app/#{account}/runners"
+
+    assert {:error, {:live_redirect, %{to: ^dest}}} =
+             live(conn, ~p"/app/#{account}/runners/#{foreign_runner.id}")
   end
 
   test "an out-of-scope runner reads as not-found, not 403", %{
@@ -71,16 +79,19 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
     operator_conn = build_conn() |> log_in_user(operator)
 
     # The scoped runner works; the unscoped one doesn't exist for them.
-    assert {:ok, _lv, _html} = live(operator_conn, ~p"/app/runners/#{in_scope_runner.id}")
+    assert {:ok, _lv, _html} =
+             live(operator_conn, ~p"/app/#{account}/runners/#{in_scope_runner.id}")
 
-    assert {:error, {:live_redirect, %{to: "/app/runners", flash: flash}}} =
-             live(build_conn() |> log_in_user(operator), ~p"/app/runners/#{runner.id}")
+    dest = ~p"/app/#{account}/runners"
+
+    assert {:error, {:live_redirect, %{to: ^dest, flash: flash}}} =
+             live(build_conn() |> log_in_user(operator), ~p"/app/#{account}/runners/#{runner.id}")
 
     assert flash["error"] == "Runner not found."
   end
 
-  test "disable / enable round-trip", %{conn: conn, runner: runner} do
-    {:ok, lv, _html} = live(conn, ~p"/app/runners/#{runner.id}")
+  test "disable / enable round-trip", %{conn: conn, account: account, runner: runner} do
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runners/#{runner.id}")
 
     assert render_click(lv, "disable", %{}) =~ "Runner disabled."
     assert Emisar.Repo.reload!(runner).disabled_at
@@ -101,7 +112,7 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
     {:ok, _disabled} = Runners.disable_runner(runner, subject)
     for _ <- 1..3, do: Fixtures.runner_fixture(account_id: account.id)
 
-    {:ok, lv, _html} = live(conn, ~p"/app/runners/#{runner.id}")
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runners/#{runner.id}")
 
     assert render_click(lv, "enable", %{}) =~ "you&#39;re at your runner limit (3)"
     assert Emisar.Repo.reload!(runner).disabled_at
@@ -114,7 +125,8 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
     viewer = Fixtures.user_fixture()
     _ = Fixtures.membership_fixture(account_id: account.id, user_id: viewer.id, role: "viewer")
 
-    {:ok, lv, _html} = build_conn() |> log_in_user(viewer) |> live(~p"/app/runners/#{runner.id}")
+    {:ok, lv, _html} =
+      build_conn() |> log_in_user(viewer) |> live(~p"/app/#{account}/runners/#{runner.id}")
 
     assert render_click(lv, "disable", %{}) =~ "You don&#39;t have permission to do that."
     refute Emisar.Repo.reload!(runner).disabled_at
@@ -122,22 +134,24 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
 
   test "delete soft-deletes and navigates back to the index via the typed-confirm dialog", %{
     conn: conn,
+    account: account,
     runner: runner
   } do
-    {:ok, lv, _html} = live(conn, ~p"/app/runners/#{runner.id}")
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runners/#{runner.id}")
 
     # Drive the dialog: type the runner's name, then Confirm.
     type_confirm_token(lv, "delete-runner", runner.name)
     confirm_dialog(lv, "delete-runner", "Delete runner")
-    assert_redirect(lv, "/app/runners")
+    assert_redirect(lv, ~p"/app/#{account}/runners")
     assert Emisar.Repo.reload!(runner).deleted_at
   end
 
   test "delete's typed-confirm: Confirm won't fire until the runner name matches", %{
     conn: conn,
+    account: account,
     runner: runner
   } do
-    {:ok, lv, _html} = live(conn, ~p"/app/runners/#{runner.id}")
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runners/#{runner.id}")
 
     # Empty + wrong token → Confirm disabled, `delete` never dispatched.
     assert_raise ArgumentError, ~r/disabled/, fn ->
@@ -154,12 +168,16 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
     refute Emisar.Repo.reload!(runner).deleted_at
   end
 
-  test "a presence_diff broadcast refreshes the status badge", %{conn: conn, runner: runner} do
+  test "a presence_diff broadcast refreshes the status badge", %{
+    conn: conn,
+    account: account,
+    runner: runner
+  } do
     # Word-anchored: the offline badge text is "disconnected", which
     # contains "connected" as a bare substring.
     connected_badge = ~r/>\s*connected\s*</
 
-    {:ok, lv, _html} = live(conn, ~p"/app/runners/#{runner.id}")
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runners/#{runner.id}")
     refute render(lv) =~ connected_badge
 
     # The runner connects elsewhere; the page hears the diff and re-reads.

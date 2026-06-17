@@ -96,7 +96,7 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       Emisar.Fixtures.policy_fixture(account_id: account.id)
       runbook = published_runbook_with_steps!(user, account, runner, 6)
 
-      {:ok, lv, _} = live(conn, ~p"/app/runbooks/#{runbook.id}/run")
+      {:ok, lv, _} = live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/run")
       html = render_submit(lv, "dispatch", %{"reason" => "go"})
 
       assert html =~ "6 runs planned"
@@ -117,7 +117,7 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       # the whole first wave succeeds.
       runbook = published_runbook_with_steps!(user, account, runner, 6)
 
-      {:ok, lv, _} = live(conn, ~p"/app/runbooks/#{runbook.id}/run")
+      {:ok, lv, _} = live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/run")
       assert render_submit(lv, "dispatch", %{"reason" => "go"}) =~ "6 runs planned"
 
       # Settle the whole first wave with one failure → the engine refuses to
@@ -186,7 +186,7 @@ defmodule EmisarWeb.RunbookRunLiveTest do
 
       {:ok, runbook} = Emisar.Runbooks.publish(runbook, subject)
 
-      {:ok, lv, _} = live(conn, ~p"/app/runbooks/#{runbook.id}/run")
+      {:ok, lv, _} = live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/run")
       html = render_submit(lv, "dispatch", %{"reason" => "go"})
 
       # The failed (step, runner) row is marked instead of staying grey, and the
@@ -202,7 +202,7 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       Emisar.Fixtures.policy_fixture(account_id: account.id)
       runbook = published_runbook_targeting!(user, account, runner)
 
-      {:ok, lv, _html} = live(conn, ~p"/app/runbooks/#{runbook.id}/run")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/run")
 
       html = render_submit(lv, "dispatch", %{"reason" => "go"})
       assert html =~ "Runbook dispatched"
@@ -219,7 +219,7 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       Emisar.Fixtures.policy_fixture(account_id: account.id)
       runbook = published_runbook!(user, account)
 
-      {:ok, lv, idle_html} = live(conn, ~p"/app/runbooks/#{runbook.id}/run")
+      {:ok, lv, idle_html} = live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/run")
 
       # Before dispatch the single table is the plan: heading + step count.
       assert idle_html =~ "Plan"
@@ -237,7 +237,7 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       assert html =~ "Execution"
       assert html =~ "linux.uptime"
       assert html =~ "on #{runner.name}"
-      assert html =~ ~p"/app/runs/"
+      assert html =~ ~p"/app/#{account}/runs/"
     end
 
     test "the dispatch form is hidden while a run is in progress (no double-dispatch mid-run)",
@@ -248,7 +248,7 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       Emisar.Fixtures.policy_fixture(account_id: account.id)
       runbook = published_runbook!(user, account)
 
-      {:ok, lv, idle} = live(conn, ~p"/app/runbooks/#{runbook.id}/run")
+      {:ok, lv, idle} = live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/run")
       # Idle: the dispatch form is shown, and a first Start doesn't nag with a confirm.
       assert idle =~ "Start runbook"
       refute idle =~ "start a new one and replace it"
@@ -270,7 +270,7 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       Emisar.Fixtures.action_fixture(runner: runner, action_id: "linux.uptime", risk: "high")
       runbook = published_runbook!(user, account)
 
-      {:ok, _lv, html} = live(conn, ~p"/app/runbooks/#{runbook.id}/run")
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/run")
 
       assert html =~ "Plan"
       assert html =~ "linux.uptime"
@@ -315,7 +315,7 @@ defmodule EmisarWeb.RunbookRunLiveTest do
 
       {:ok, runbook} = Emisar.Runbooks.publish(runbook, subject)
 
-      {:ok, _lv, html} = live(conn, ~p"/app/runbooks/#{runbook.id}/run")
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/run")
 
       # The "Plan" heading carries a critical pill — the worst across the steps.
       assert html =~ "Plan"
@@ -363,7 +363,7 @@ defmodule EmisarWeb.RunbookRunLiveTest do
 
       {:ok, runbook} = Emisar.Runbooks.publish(runbook, subject)
 
-      {:ok, _lv, html} = live(conn, ~p"/app/runbooks/#{runbook.id}/run")
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/run")
 
       # The high-risk reboot step is marked; exactly one step carries the marker
       # (the low-risk uptime step runs straight through, so it stays unmarked).
@@ -378,7 +378,7 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       # so the plan step renders without a risk pill (no rose/amber/emerald).
       runbook = published_runbook!(user, account)
 
-      {:ok, _lv, html} = live(conn, ~p"/app/runbooks/#{runbook.id}/run")
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/run")
 
       assert html =~ "linux.uptime"
       refute html =~ "ring-rose-500/30"
@@ -390,7 +390,7 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       _runner = Emisar.Fixtures.runner_fixture(account_id: account.id)
       runbook = published_runbook!(user, account)
 
-      {:ok, _lv, html} = live(conn, ~p"/app/runbooks/#{runbook.id}/run")
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/run")
 
       # Targets come from the steps (set in the editor), not a run-time picker —
       # the plan surfaces each step's target. This runbook's lone step targets
@@ -409,7 +409,7 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       Emisar.Fixtures.action_fixture(runner: r2, action_id: "linux.uptime")
       runbook = published_runbook!(user, account)
 
-      {:ok, _lv, html} = live(conn, ~p"/app/runbooks/#{runbook.id}/run")
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/run")
 
       # 1 step × 2 runners = 2 runs in 1 wave; the step shows its own count.
       assert html =~ "2 runs"
@@ -425,7 +425,7 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       Emisar.Fixtures.runner_fixture(account_id: account.id, group: "elsewhere")
       runbook = published_runbook!(user, account)
 
-      {:ok, _lv, html} = live(conn, ~p"/app/runbooks/#{runbook.id}/run")
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/run")
 
       assert html =~ "no active runners"
     end
@@ -437,7 +437,7 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       Emisar.Fixtures.policy_fixture(account_id: account.id)
       runbook = published_runbook_targeting!(user, account, runner)
 
-      {:ok, lv, _html} = live(conn, ~p"/app/runbooks/#{runbook.id}/run")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/run")
       assert render_submit(lv, "dispatch", %{"reason" => "go"}) =~ "Runbook dispatched"
 
       # The engine created the run on dispatch — append an output chunk, then
@@ -474,12 +474,12 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       runbook = published_runbook_targeting!(user, account, runner)
 
       # Dispatch — the execution is now in flight (its run is non-terminal).
-      {:ok, lv, _html} = live(conn, ~p"/app/runbooks/#{runbook.id}/run")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/run")
       assert render_submit(lv, "dispatch", %{"reason" => "go"}) =~ "Runbook dispatched"
 
       # A fresh mount (the refresh) re-queries the live execution and rebuilds
       # it — heading "Execution" + the run — instead of resetting to "Plan".
-      {:ok, _lv2, html} = live(conn, ~p"/app/runbooks/#{runbook.id}/run")
+      {:ok, _lv2, html} = live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/run")
       assert html =~ "Execution"
       assert html =~ "linux.uptime"
       assert html =~ "on #{runner.name}"
@@ -495,14 +495,14 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       # 7 steps, 1 runner → wave 1 dispatches steps 1-5; steps 6-7 stay planned.
       runbook = published_runbook_with_steps!(user, account, runner, 7)
 
-      {:ok, lv, _html} = live(conn, ~p"/app/runbooks/#{runbook.id}/run")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/run")
       assert render_submit(lv, "dispatch", %{"reason" => "go"}) =~ "Runbook dispatched"
 
       # The refresh rehydrates from the DB. A dispatched run (step 1) must render
       # ABOVE a still-planned placeholder (step 6) — the old rehydrate streamed
       # the placeholders then re-inserted the runs, shoving every dispatched run
       # to the end of the list and scrambling the step order.
-      {:ok, _lv2, html} = live(conn, ~p"/app/runbooks/#{runbook.id}/run")
+      {:ok, _lv2, html} = live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/run")
 
       {step1_at, _} = :binary.match(html, "run-step1-")
       {step6_at, _} = :binary.match(html, "run-step6-")
@@ -516,7 +516,7 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       Emisar.Fixtures.runner_fixture(account_id: account.id)
       runbook = published_runbook!(user, account)
 
-      {:ok, lv, _html} = live(conn, ~p"/app/runbooks/#{runbook.id}/run")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/run")
 
       # Targets come from the steps now, so the only run-time parameter is the
       # required reason. Dispatching with it blank renders the message inline
@@ -534,7 +534,7 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       Emisar.Fixtures.runner_fixture(account_id: account.id)
       runbook = published_runbook!(user, account)
 
-      {:ok, lv, _html} = live(conn, ~p"/app/runbooks/#{runbook.id}/run")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/run")
 
       # Trip the inline error first.
       html = render_submit(lv, "dispatch", %{"reason" => ""})

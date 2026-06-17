@@ -291,7 +291,7 @@ defmodule EmisarWeb.SSOSettingsLive do
         {:noreply,
          socket
          |> put_flash(:info, "Single sign-on connection \"#{provider.name}\" added.")
-         |> push_navigate(to: ~p"/app/settings/sso")}
+         |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/settings/sso")}
 
       {:error, %Ecto.Changeset{} = changeset} ->
         {:noreply, assign_form(socket, changeset)}
@@ -629,13 +629,13 @@ defmodule EmisarWeb.SSOSettingsLive do
     >
       <:title>Single sign-on</:title>
       <:actions :if={@can_configure? and @live_action != :new}>
-        <.button navigate={~p"/app/settings/sso/new"} size="md" icon="hero-plus">
+        <.button navigate={~p"/app/#{@current_account}/settings/sso/new"} size="md" icon="hero-plus">
           Add connection
         </.button>
       </:actions>
 
       <.page_container :if={not @can_configure?} max="2xl">
-        <.locked />
+        <.locked current_account={@current_account} />
       </.page_container>
 
       <.page_container :if={@can_configure?} max="4xl">
@@ -653,7 +653,7 @@ defmodule EmisarWeb.SSOSettingsLive do
             OAuth/OIDC app at your provider, then paste its client ID and secret.
           </:subtitle>
           <:actions>
-            <.button navigate={~p"/app/settings/sso"} variant="ghost" size="sm">
+            <.button navigate={~p"/app/#{@current_account}/settings/sso"} variant="ghost" size="sm">
               Back to connections
             </.button>
           </:actions>
@@ -814,7 +814,7 @@ defmodule EmisarWeb.SSOSettingsLive do
           <.empty_state :if={@loaded? and @providers == []} icon="hero-key" title="No connections yet">
             Add your identity provider to let your team sign in through it. You'll need an
             OAuth/OIDC app at your provider with its client ID and secret.
-            <:cta navigate={~p"/app/settings/sso/new"}>Add connection</:cta>
+            <:cta navigate={~p"/app/#{@current_account}/settings/sso/new"}>Add connection</:cta>
           </.empty_state>
         </section>
       </.page_container>
@@ -825,13 +825,15 @@ defmodule EmisarWeb.SSOSettingsLive do
   # The Enterprise upsell shown to anyone who can't configure SSO — a member
   # without manage_sso, or any account below the Enterprise plan. Never crashes;
   # the gate is also re-checked in every handler.
+  attr :current_account, :map, required: true
+
   defp locked(assigns) do
     ~H"""
     <.empty_state icon="hero-lock-closed" title="Single sign-on is an Enterprise feature">
       Connect Okta, Google Workspace, Keycloak, or any OIDC provider so your team signs in
       through it — with just-in-time provisioning and per-provider MFA. Available on the
       Enterprise plan.
-      <:cta navigate={~p"/app/settings/billing"}>See plans</:cta>
+      <:cta navigate={~p"/app/#{@current_account}/settings/billing"}>See plans</:cta>
     </.empty_state>
     """
   end

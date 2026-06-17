@@ -3,9 +3,9 @@ defmodule EmisarWeb.RunnerInstallLiveTest do
 
   describe "GET /app/runners/install" do
     test "renders the install one-liner and copies it with its leading space", %{conn: conn} do
-      {conn, _user, _account} = register_and_log_in(conn)
+      {conn, _user, account} = register_and_log_in(conn)
 
-      {:ok, _lv, html} = live(conn, ~p"/app/runners/install")
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runners/install")
 
       assert html =~ "curl -sSL"
 

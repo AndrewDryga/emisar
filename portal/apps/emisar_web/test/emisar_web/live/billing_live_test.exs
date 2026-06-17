@@ -18,9 +18,9 @@ defmodule EmisarWeb.BillingLiveTest do
 
   describe "as an owner" do
     test "renders the current plan and usage meters", %{conn: conn} do
-      {conn, _user, _account} = register_and_log_in(conn)
+      {conn, _user, account} = register_and_log_in(conn)
 
-      {:ok, _lv, html} = live(conn, ~p"/app/settings/billing")
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
 
       # Free plan strip + the two usage meters.
       assert html =~ "Current plan"
@@ -32,9 +32,9 @@ defmodule EmisarWeb.BillingLiveTest do
     end
 
     test "the upgrade event starts checkout and redirects externally", %{conn: conn} do
-      {conn, _user, _account} = register_and_log_in(conn)
+      {conn, _user, account} = register_and_log_in(conn)
 
-      {:ok, lv, _html} = live(conn, ~p"/app/settings/billing")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/billing")
 
       # The owner is offered the upgrade control (the strip CTA + the
       # team plan card both carry it).
@@ -58,9 +58,9 @@ defmodule EmisarWeb.BillingLiveTest do
     end
 
     test "the enterprise card surfaces contact-sales, not checkout", %{conn: conn} do
-      {conn, _user, _account} = register_and_log_in(conn)
+      {conn, _user, account} = register_and_log_in(conn)
 
-      {:ok, lv, _html} = live(conn, ~p"/app/settings/billing")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/billing")
 
       html =
         lv
@@ -75,10 +75,10 @@ defmodule EmisarWeb.BillingLiveTest do
 
   describe "as a viewer" do
     test "no upgrade controls render", %{conn: conn} do
-      {conn, user, _account} = register_and_log_in(conn)
+      {conn, user, account} = register_and_log_in(conn)
       downgrade_to_viewer(user)
 
-      {:ok, _lv, html} = live(conn, ~p"/app/settings/billing")
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
 
       # The plan/usage is visible to everyone who can view billing…
       assert html =~ "Current plan"
@@ -89,10 +89,10 @@ defmodule EmisarWeb.BillingLiveTest do
     end
 
     test "a crafted upgrade event is refused — flash, no redirect", %{conn: conn} do
-      {conn, user, _account} = register_and_log_in(conn)
+      {conn, user, account} = register_and_log_in(conn)
       downgrade_to_viewer(user)
 
-      {:ok, lv, _html} = live(conn, ~p"/app/settings/billing")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/billing")
 
       # The button isn't rendered for a viewer, so push the event
       # directly (IL-15: the handler must gate, not just the UI). A
@@ -109,7 +109,7 @@ defmodule EmisarWeb.BillingLiveTest do
       {conn, _user, account} = register_and_log_in(conn)
       insert_subscription(account, "past_due")
 
-      {:ok, lv, html} = live(conn, ~p"/app/settings/billing")
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
 
       assert html =~ "Payment past due"
       assert html =~ "update your card"
@@ -121,7 +121,7 @@ defmodule EmisarWeb.BillingLiveTest do
       {conn, _user, account} = register_and_log_in(conn)
       insert_subscription(account, "canceled")
 
-      {:ok, _lv, html} = live(conn, ~p"/app/settings/billing")
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
 
       assert html =~ "Subscription canceled"
       # Honest copy: nothing gates on subscription status, so the banner must
@@ -130,9 +130,9 @@ defmodule EmisarWeb.BillingLiveTest do
     end
 
     test "a healthy account shows no failure banner", %{conn: conn} do
-      {conn, _user, _account} = register_and_log_in(conn)
+      {conn, _user, account} = register_and_log_in(conn)
 
-      {:ok, _lv, html} = live(conn, ~p"/app/settings/billing")
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
 
       refute html =~ "Payment past due"
       refute html =~ "Subscription canceled"

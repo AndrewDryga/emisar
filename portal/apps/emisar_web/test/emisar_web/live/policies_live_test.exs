@@ -12,14 +12,14 @@ defmodule EmisarWeb.PoliciesLiveTest do
 
   describe "GET /app/policies" do
     test "redirects anonymous users", %{conn: conn} do
-      assert {:error, {:redirect, %{to: "/sign_in"}}} = live(conn, ~p"/app/policies")
+      assert {:error, {:redirect, %{to: "/sign_in"}}} = live(conn, ~p"/app/anon/policies")
     end
 
     test "renders the default policy + ruleset sections with the empty placeholders", %{
       conn: conn
     } do
-      {conn, _user, _account} = register_and_log_in(conn)
-      {:ok, _lv, html} = live(conn, ~p"/app/policies")
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/policies")
 
       assert html =~ "Default policy"
       assert html =~ "Risk-tier defaults"
@@ -45,8 +45,8 @@ defmodule EmisarWeb.PoliciesLiveTest do
       # would be more permissive than high and is rendered disabled-but-visible;
       # the stored "deny" is pre-selected. This is the per-option state the
       # shared <.select> must carry through (options_for_select can't).
-      {conn, _user, _account} = register_and_log_in(conn)
-      {:ok, _lv, html} = live(conn, ~p"/app/policies")
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/policies")
 
       [critical] =
         Regex.run(~r/name="policy\[defaults\]\[critical\]".*?<\/select>/s, html)
@@ -58,7 +58,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
 
     test "tweak defaults + add an override → save → persisted as v2 JSON", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
-      {:ok, lv, _html} = live(conn, ~p"/app/policies")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/policies")
 
       # Add an empty override row to the account editor.
       lv |> render_click("add_override", %{"editor" => "account"})
@@ -112,7 +112,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
 
     test "blank-action override rows are dropped on save", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
-      {:ok, lv, _html} = live(conn, ~p"/app/policies")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/policies")
 
       lv |> render_click("add_override", %{"editor" => "account"})
 
@@ -139,8 +139,8 @@ defmodule EmisarWeb.PoliciesLiveTest do
     end
 
     test "remove_override drops the row from the account form", %{conn: conn} do
-      {conn, _user, _account} = register_and_log_in(conn)
-      {:ok, lv, _html} = live(conn, ~p"/app/policies")
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/policies")
 
       lv |> render_click("add_override", %{"editor" => "account"})
       lv |> render_click("add_override", %{"editor" => "account"})
@@ -169,8 +169,8 @@ defmodule EmisarWeb.PoliciesLiveTest do
     test "warns when an override is shadowed by an earlier broader glob (deny copy)", %{
       conn: conn
     } do
-      {conn, _user, _account} = register_and_log_in(conn)
-      {:ok, lv, _html} = live(conn, ~p"/app/policies")
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/policies")
 
       lv |> render_click("add_override", %{"editor" => "account"})
       lv |> render_click("add_override", %{"editor" => "account"})
@@ -194,8 +194,8 @@ defmodule EmisarWeb.PoliciesLiveTest do
     end
 
     test "no shadow warning when the specific deny comes first", %{conn: conn} do
-      {conn, _user, _account} = register_and_log_in(conn)
-      {:ok, lv, _html} = live(conn, ~p"/app/policies")
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/policies")
 
       lv |> render_click("add_override", %{"editor" => "account"})
       lv |> render_click("add_override", %{"editor" => "account"})
@@ -217,8 +217,8 @@ defmodule EmisarWeb.PoliciesLiveTest do
 
     test "a valid edit saves cleanly — the rules error is a defensive inline net, never a flash",
          %{conn: conn} do
-      {conn, _user, _account} = register_and_log_in(conn)
-      {:ok, lv, _html} = live(conn, ~p"/app/policies")
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/policies")
 
       # The tier defaults are constrained <select>s and form_change auto-enforces
       # monotonicity, so the UI can't produce an invalid policy — a valid edit
@@ -256,7 +256,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
           subject
         )
 
-      {:ok, _lv, html} = live(conn, ~p"/app/policies")
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/policies")
 
       assert html =~ "linux-status-only"
       assert html =~ "linux.*"
@@ -268,7 +268,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
     test "approval requirements round-trip through the editor (2 approvers, no self-approval)",
          %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
-      {:ok, lv, _html} = live(conn, ~p"/app/policies")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/policies")
 
       # An unchecked self-approval checkbox sends only the hidden "false"; the
       # number input sends "2". Push the change as the browser would.
@@ -304,7 +304,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
           subject
         )
 
-      {:ok, _lv, html} = live(conn, ~p"/app/policies")
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/policies")
 
       assert html =~ ~r/name="policy\[approval\]\[min_approvals\]"[^>]*value="3"/
 
@@ -335,7 +335,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
 
       {:ok, _} = Policies.save_scoped_rules(deny_all(), :runner, runner.id, subject)
 
-      {:ok, _lv, html} = live(conn, ~p"/app/policies")
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/policies")
 
       assert html =~ "Default policy"
       assert html =~ "Targeted rulesets"
@@ -353,7 +353,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
       runner =
         Emisar.Fixtures.runner_fixture(account_id: account.id, name: "web-1", group: "web")
 
-      {:ok, lv, _html} = live(conn, ~p"/app/policies")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/policies")
 
       lv |> render_click("add_ruleset", %{})
 
@@ -382,7 +382,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
       _runner =
         Emisar.Fixtures.runner_fixture(account_id: account.id, name: "n1", group: "prod")
 
-      {:ok, lv, _html} = live(conn, ~p"/app/policies")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/policies")
 
       lv |> render_click("add_ruleset", %{})
 
@@ -404,7 +404,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
       runner =
         Emisar.Fixtures.runner_fixture(account_id: account.id, name: "web-1", group: "web")
 
-      {:ok, lv, _html} = live(conn, ~p"/app/policies")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/policies")
       html = lv |> render_click("add_ruleset", %{})
 
       # One combined tree: the group is a selectable <option> (not an <optgroup>
@@ -430,7 +430,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
 
       {:ok, _} = Policies.save_scoped_rules(deny_all(), :runner, runner.id, subject)
 
-      {:ok, lv, _html} = live(conn, ~p"/app/policies")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/policies")
       html = lv |> render_click("add_ruleset", %{})
 
       # In the new (unsaved) card's picker, the taken runner is disabled and
@@ -449,7 +449,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
 
       {:ok, saved} = Policies.save_scoped_rules(deny_all(), :runner, runner.id, subject)
 
-      {:ok, lv, _html} = live(conn, ~p"/app/policies")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/policies")
       html = lv |> render_click("remove_ruleset", %{"uid" => saved.id})
 
       assert html =~ "Ruleset removed"
@@ -469,7 +469,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
           role: "viewer"
         )
 
-      {:ok, lv, html} = build_conn() |> log_in_user(viewer) |> live(~p"/app/policies")
+      {:ok, lv, html} = build_conn() |> log_in_user(viewer) |> live(~p"/app/#{account}/policies")
 
       # No management affordances: no "Add ruleset", no Save buttons.
       refute html =~ "Add ruleset"

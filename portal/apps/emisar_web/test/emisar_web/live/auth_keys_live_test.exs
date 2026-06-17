@@ -20,7 +20,7 @@ defmodule EmisarWeb.AuthKeysLiveTest do
     {:ok, _} = Runners.revoke_auth_key(revoked, subject)
 
     # Default Status=active → the revoked key is hidden.
-    {:ok, lv, html} = live(conn, ~p"/app/settings/runners/auth-keys")
+    {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/runners/auth-keys")
     assert html =~ "live-key-aaa"
     refute html =~ "dead-key-zzz"
 
@@ -31,7 +31,7 @@ defmodule EmisarWeb.AuthKeysLiveTest do
     # earlier version of this test hand-built `?status=`, a URL the dropdown
     # can never actually produce, and so missed the bug.)
     lv |> form("#auth-keys-filter", %{"status" => ""}) |> render_change()
-    assert_patched(lv, ~p"/app/settings/runners/auth-keys")
+    assert_patched(lv, ~p"/app/#{account}/settings/runners/auth-keys")
 
     html = render(lv)
     assert html =~ "live-key-aaa"
@@ -39,8 +39,8 @@ defmodule EmisarWeb.AuthKeysLiveTest do
   end
 
   test "create form shows validation errors inline on the field, not in a flash", %{conn: conn} do
-    {conn, _user, _account} = register_and_log_in(conn)
-    {:ok, lv, _html} = live(conn, ~p"/app/settings/runners/auth-keys")
+    {conn, _user, account} = register_and_log_in(conn)
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/runners/auth-keys")
 
     too_long = String.duplicate("x", 201)
 
@@ -56,8 +56,8 @@ defmodule EmisarWeb.AuthKeysLiveTest do
   end
 
   test "create shows the secret once; dismiss hides it; revoke retires the key", %{conn: conn} do
-    {conn, _user, _account} = register_and_log_in(conn)
-    {:ok, lv, _html} = live(conn, ~p"/app/settings/runners/auth-keys")
+    {conn, _user, account} = register_and_log_in(conn)
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/runners/auth-keys")
 
     html =
       lv
@@ -97,7 +97,7 @@ defmodule EmisarWeb.AuthKeysLiveTest do
     subject = Emisar.Fixtures.subject_for(user, account, role: :owner)
     {:ok, _raw, key} = Runners.create_auth_key(%{description: "guarded-key"}, subject)
 
-    {:ok, lv, _html} = live(conn, ~p"/app/settings/runners/auth-keys")
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/runners/auth-keys")
     dialog = "revoke-key-#{key.id}"
 
     # Empty token → Confirm disabled; the dialog won't dispatch `revoke`.
@@ -125,8 +125,12 @@ defmodule EmisarWeb.AuthKeysLiveTest do
 
     # Manage-only page: a viewer is bounced at LOAD time (reads as
     # not-found), never reaching the form to fail on submit.
-    assert {:error, {:live_redirect, %{to: "/app", flash: flash}}} =
-             build_conn() |> log_in_user(viewer) |> live(~p"/app/settings/runners/auth-keys")
+    dest = ~p"/app/#{account}"
+
+    assert {:error, {:live_redirect, %{to: ^dest, flash: flash}}} =
+             build_conn()
+             |> log_in_user(viewer)
+             |> live(~p"/app/#{account}/settings/runners/auth-keys")
 
     assert flash["error"] == "Page not found."
   end
@@ -135,7 +139,7 @@ defmodule EmisarWeb.AuthKeysLiveTest do
     {conn, user, account} = register_and_log_in(conn)
     subject = Emisar.Fixtures.subject_for(user, account)
 
-    {:ok, lv, html} = live(conn, ~p"/app/settings/runners/auth-keys")
+    {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/runners/auth-keys")
     refute html =~ "minted-elsewhere"
 
     {:ok, _raw, key} = Runners.create_auth_key(%{description: "minted-elsewhere"}, subject)
@@ -152,13 +156,13 @@ defmodule EmisarWeb.AuthKeysLiveTest do
     # placeholder as a <span> (so "last used" is followed by the placeholder
     # span, with the {" "} space preserved), not a hook-driven <time>.
     {:ok, _raw, key} = Runners.create_auth_key(%{description: "freshly-minted"}, subject)
-    {:ok, _lv, html} = live(conn, ~p"/app/settings/runners/auth-keys")
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/runners/auth-keys")
     assert html =~ ~r/last used\s<span[^>]*>never<\/span>/
 
     # Once stamped, it renders the time through the hook-driven <time>, and the
     # mid-sentence space survives the formatter's line-break (the {" "} guard).
     key |> Ecto.Changeset.change(last_used_at: DateTime.utc_now()) |> Emisar.Repo.update!()
-    {:ok, _lv, html} = live(conn, ~p"/app/settings/runners/auth-keys")
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/runners/auth-keys")
     assert html =~ ~s(phx-hook="LocalTime")
     assert html =~ ~s(data-format="relative")
     assert html =~ ~r/last used\s<time/

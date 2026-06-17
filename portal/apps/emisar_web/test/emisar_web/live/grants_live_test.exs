@@ -55,12 +55,12 @@ defmodule EmisarWeb.GrantsLiveTest do
   end
 
   test "redirects anonymous users", %{conn: conn} do
-    assert {:error, {:redirect, %{to: "/sign_in"}}} = live(conn, ~p"/app/approvals")
+    assert {:error, {:redirect, %{to: "/sign_in"}}} = live(conn, ~p"/app/anon/approvals")
   end
 
   test "empty state when there are no grants", %{conn: conn} do
-    {conn, _user, _account} = register_and_log_in(conn)
-    {:ok, _lv, html} = live(conn, ~p"/app/approvals")
+    {conn, _user, account} = register_and_log_in(conn)
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/approvals")
     assert html =~ "No active grants"
   end
 
@@ -79,7 +79,7 @@ defmodule EmisarWeb.GrantsLiveTest do
         max_uses: 5
       )
 
-    {:ok, _lv, html} = live(conn, ~p"/app/approvals")
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/approvals")
 
     assert html =~ "cassandra.repair"
     assert html =~ api_key.name
@@ -96,7 +96,7 @@ defmodule EmisarWeb.GrantsLiveTest do
     g = insert_grant!(account, api_key, action_id: "x", granted_by_id: user.id)
     {:ok, _} = Approvals.revoke_grant(g, subject)
 
-    {:ok, _lv, html} = live(conn, ~p"/app/approvals")
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/approvals")
     refute html =~ "x</span>"
     assert html =~ "No active grants"
   end
@@ -112,7 +112,7 @@ defmodule EmisarWeb.GrantsLiveTest do
         expires_at: past
       )
 
-    {:ok, _lv, html} = live(conn, ~p"/app/approvals")
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/approvals")
     refute html =~ "stale.grant"
   end
 
@@ -125,7 +125,7 @@ defmodule EmisarWeb.GrantsLiveTest do
         granted_by_id: user.id
       )
 
-    {:ok, lv, _html} = live(conn, ~p"/app/approvals")
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/approvals")
 
     html = lv |> element("button", "Revoke") |> render_click()
     assert html =~ "Grant revoked"

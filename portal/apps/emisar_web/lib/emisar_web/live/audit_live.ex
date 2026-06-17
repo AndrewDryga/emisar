@@ -114,7 +114,8 @@ defmodule EmisarWeb.AuditLive do
          do: Map.delete(merged, "subject_id"),
          else: merged
 
-    {:noreply, LiveTable.apply_filter(socket, ~p"/app/audit", merged)}
+    {:noreply,
+     LiveTable.apply_filter(socket, ~p"/app/#{socket.assigns.current_account}/audit", merged)}
   end
 
   def handle_event("preset", %{"window" => window}, socket) do
@@ -128,7 +129,9 @@ defmodule EmisarWeb.AuditLive do
 
       from ->
         merged = socket.assigns.filter_params |> Map.put("from", from) |> Map.delete("to")
-        {:noreply, LiveTable.apply_filter(socket, ~p"/app/audit", merged)}
+
+        {:noreply,
+         LiveTable.apply_filter(socket, ~p"/app/#{socket.assigns.current_account}/audit", merged)}
     end
   end
 
@@ -282,7 +285,7 @@ defmodule EmisarWeb.AuditLive do
       >
         <span>Actor: <span class="font-medium">{@actor_label}</span></span>
         <.link
-          patch={~p"/app/audit?#{Map.drop(@filter_params, ["actor_id"])}"}
+          patch={~p"/app/#{@current_account}/audit?#{Map.drop(@filter_params, ["actor_id"])}"}
           class="font-semibold text-indigo-300 hover:text-indigo-100"
           aria-label="Clear actor filter"
         >
@@ -308,13 +311,13 @@ defmodule EmisarWeb.AuditLive do
 
       <LiveTable.live_table
         id="audit-events"
-        path={~p"/app/audit"}
+        path={~p"/app/#{@current_account}/audit"}
         rows={@events}
         metadata={@metadata}
         filter_params={@filter_params}
         filters={@filters}
         row_id={fn event -> "event-#{event.id}" end}
-        row_click={&JS.navigate(~p"/app/audit/#{&1.id}")}
+        row_click={&JS.navigate(~p"/app/#{@current_account}/audit/#{&1.id}")}
       >
         <:col :let={event} label="When" class="w-40">
           <.local_time value={event.occurred_at} class="text-xs text-zinc-400" />
@@ -342,6 +345,7 @@ defmodule EmisarWeb.AuditLive do
             id={event.actor_id}
             label={event.actor_label}
             refs={@refs}
+            current_account={@current_account}
             audit_link?={true}
           />
         </:col>
@@ -351,6 +355,7 @@ defmodule EmisarWeb.AuditLive do
             id={event.subject_id}
             label={event.subject_label}
             refs={@refs}
+            current_account={@current_account}
           />
         </:col>
         <:col :let={event} label="IP" class="w-32 hidden lg:table-cell">
@@ -366,15 +371,18 @@ defmodule EmisarWeb.AuditLive do
           <% else %>
             <.empty_state variant={:bare} icon="hero-document-text" title="No audit events yet.">
               They appear as soon as something happens — a
-              <.link navigate={~p"/app/runners"} class="text-indigo-400 hover:text-indigo-300">
+              <.link
+                navigate={~p"/app/#{@current_account}/runners"}
+                class="text-indigo-400 hover:text-indigo-300"
+              >
                 runner
               </.link>
               connects, an operator dispatches a <.link
-                navigate={~p"/app/runs"}
+                navigate={~p"/app/#{@current_account}/runs"}
                 class="text-indigo-400 hover:text-indigo-300"
               >run</.link>,
               an approval is decided, or a pack is observed on the <.link
-                navigate={~p"/app/packs"}
+                navigate={~p"/app/#{@current_account}/packs"}
                 class="text-indigo-400 hover:text-indigo-300"
               >Packs page</.link>.
             </.empty_state>
@@ -515,6 +523,7 @@ defmodule EmisarWeb.AuditLive do
   # (`?actor_id=…`) — "what did this identity do" — instead of the
   # actor's own resource page. Used for the actor column.
   attr :audit_link?, :boolean, default: false
+  attr :current_account, :map, required: true
 
   def ref(%{kind: nil} = assigns), do: ~H[<span class="text-xs text-zinc-500">—</span>]
 
@@ -585,23 +594,28 @@ defmodule EmisarWeb.AuditLive do
   defp any_filter_active?(params, filters),
     do: blank_to_nil(params["actor_id"]) != nil or LiveTable.has_active_filters?(params, filters)
 
-  defp ref_href(%{audit_link?: true, id: id}) when not is_nil(id),
-    do: ~p"/app/audit?actor_id=#{id}"
+  defp ref_href(%{audit_link?: true, id: id, current_account: account}) when not is_nil(id),
+    do: ~p"/app/#{account}/audit?actor_id=#{id}"
 
-  defp ref_href(%{kind: kind, id: id}), do: ref_path(kind, id)
+  defp ref_href(%{kind: kind, id: id, current_account: account}), do: ref_path(account, kind, id)
 
-  defp ref_path("runner", id) when is_binary(id), do: ~p"/app/runners/#{id}"
-  defp ref_path("action_run", id) when is_binary(id), do: ~p"/app/runs/#{id}"
-  defp ref_path("approval_request", id) when is_binary(id), do: ~p"/app/approvals/#{id}"
+  defp ref_path(account, "runner", id) when is_binary(id), do: ~p"/app/#{account}/runners/#{id}"
+  defp ref_path(account, "action_run", id) when is_binary(id), do: ~p"/app/#{account}/runs/#{id}"
+
+  defp ref_path(account, "approval_request", id) when is_binary(id),
+    do: ~p"/app/#{account}/approvals/#{id}"
+
   # Runbooks have an edit route but no detail page; route to the edit
   # page so the operator can see the current state of the runbook the
   # event references.
-  defp ref_path("runbook", id) when is_binary(id), do: ~p"/app/runbooks/#{id}/edit"
-  defp ref_path("policy", _id), do: ~p"/app/policies"
-  defp ref_path("account", _id), do: ~p"/app/settings/team"
-  defp ref_path("auth_key", _id), do: ~p"/app/settings/runners/auth-keys"
-  defp ref_path("api_key", _id), do: ~p"/app/agents"
-  defp ref_path("approval_grant", _id), do: ~p"/app/approvals"
-  defp ref_path("user", _id), do: ~p"/app/settings/team"
-  defp ref_path(_, _), do: nil
+  defp ref_path(account, "runbook", id) when is_binary(id),
+    do: ~p"/app/#{account}/runbooks/#{id}/edit"
+
+  defp ref_path(account, "policy", _id), do: ~p"/app/#{account}/policies"
+  defp ref_path(account, "account", _id), do: ~p"/app/#{account}/settings/team"
+  defp ref_path(account, "auth_key", _id), do: ~p"/app/#{account}/settings/runners/auth-keys"
+  defp ref_path(account, "api_key", _id), do: ~p"/app/#{account}/agents"
+  defp ref_path(account, "approval_grant", _id), do: ~p"/app/#{account}/approvals"
+  defp ref_path(account, "user", _id), do: ~p"/app/#{account}/settings/team"
+  defp ref_path(_account, _, _), do: nil
 end

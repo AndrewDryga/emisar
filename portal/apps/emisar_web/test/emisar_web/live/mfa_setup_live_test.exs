@@ -18,8 +18,11 @@ defmodule EmisarWeb.MfaSetupLiveTest do
     %{conn: conn, user: user, account: account}
   end
 
-  test "a non-compliant member is forwarded from /app to the setup step", %{conn: conn} do
-    assert {:error, {:redirect, %{to: "/app/mfa_setup"}}} = live(conn, ~p"/app")
+  test "a non-compliant member is forwarded from /app to the setup step", %{
+    conn: conn,
+    account: account
+  } do
+    assert {:error, {:redirect, %{to: "/app/mfa_setup"}}} = live(conn, ~p"/app/#{account}")
   end
 
   test "enrolls in place: scan, confirm, save recovery codes, continue", %{

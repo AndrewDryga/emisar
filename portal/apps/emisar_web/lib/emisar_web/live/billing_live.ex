@@ -216,7 +216,7 @@ defmodule EmisarWeb.BillingLive do
       >
         Something went wrong loading your plan and usage — this is on our side,
         not a problem with your payment. Try again in a moment.
-        <:cta navigate={~p"/app/settings/billing"}>Reload</:cta>
+        <:cta navigate={~p"/app/#{@current_account}/settings/billing"}>Reload</:cta>
       </.empty_state>
 
       <.page_container :if={not @loading? and not is_nil(@summary)} max="6xl">

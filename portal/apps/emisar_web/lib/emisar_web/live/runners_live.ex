@@ -105,7 +105,7 @@ defmodule EmisarWeb.RunnersLive do
     >
       <:title>Runners</:title>
       <:actions>
-        <.button navigate={~p"/app/runners/install"} size="md" icon="hero-plus">
+        <.button navigate={~p"/app/#{@current_account}/runners/install"} size="md" icon="hero-plus">
           Add a runner
         </.button>
       </:actions>
@@ -115,7 +115,7 @@ defmodule EmisarWeb.RunnersLive do
           <.empty_state icon="hero-cpu-chip" title="No runners yet">
             A runner is the emisar binary on one of your hosts. The install wizard mints a fresh
             auth key and gives you a one-liner to paste on a Linux or macOS box.
-            <:cta navigate={~p"/app/runners/install"}>Open install wizard</:cta>
+            <:cta navigate={~p"/app/#{@current_account}/runners/install"}>Open install wizard</:cta>
           </.empty_state>
         <% else %>
           <%!-- Dead/pre-connect render — defer the onboarding pitch until the
@@ -155,7 +155,7 @@ defmodule EmisarWeb.RunnersLive do
         <LiveTable.live_table
           layout={:cards}
           id="runners"
-          path={~p"/app/runners"}
+          path={~p"/app/#{@current_account}/runners"}
           rows={sort_by_group(@runners)}
           metadata={@metadata}
           filter_params={@filter_params}
@@ -178,7 +178,7 @@ defmodule EmisarWeb.RunnersLive do
             <% state = connection_status(Runners.connection_state(runner)) %>
             <li class="px-5 py-3">
               <.link
-                navigate={~p"/app/runners/#{runner.id}"}
+                navigate={~p"/app/#{@current_account}/runners/#{runner.id}"}
                 class="flex items-center gap-4 transition hover:opacity-90"
               >
                 <%!-- Connection dot: green/pulsing when live, amber

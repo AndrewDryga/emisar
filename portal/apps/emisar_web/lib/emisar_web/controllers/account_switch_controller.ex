@@ -16,7 +16,7 @@ defmodule EmisarWeb.AccountSwitchController do
     case UserAuth.switch_account(conn, account_id) do
       {:ok, conn, membership} ->
         {:ok, _} = Accounts.record_account_switched(membership)
-        redirect(conn, to: ~p"/app")
+        redirect(conn, to: ~p"/app/#{membership.account}")
 
       {:error, :not_found} ->
         conn

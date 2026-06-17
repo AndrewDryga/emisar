@@ -130,6 +130,7 @@ defmodule EmisarWeb.DashboardLive do
         can_manage_billing={Billing.subject_can_manage_billing?(@current_subject)}
         team_mfa={@team_mfa}
         pending_packs_count={@pending_packs_count}
+        current_account={@current_account}
       />
     </.dashboard_shell>
     """
@@ -148,6 +149,7 @@ defmodule EmisarWeb.DashboardLive do
   attr :has_llm_connected?, :boolean, required: true
   attr :has_runs?, :boolean, required: true
   attr :first_runner_id, :string, default: nil
+  attr :current_account, :map, required: true
 
   defp onboarding_checklist(assigns) do
     ~H"""
@@ -157,21 +159,21 @@ defmodule EmisarWeb.DashboardLive do
     >
       <.onboarding_card
         :if={@runners_total == 0}
-        href={~p"/app/runners/install"}
+        href={~p"/app/#{@current_account}/runners/install"}
         icon="hero-cpu-chip"
         title="Connect a runner"
         body="Install the agent on a server you want to operate — one curl one-liner. The dashboard tracks the rest from heartbeat onwards."
       />
       <.onboarding_card
         :if={@runners_total > 0 and not @has_runs?}
-        href={~p"/app/runners/#{@first_runner_id}"}
+        href={~p"/app/#{@current_account}/runners/#{@first_runner_id}"}
         icon="hero-rocket-launch"
         title="Dispatch your first action"
         body="Open your runner, pick an action from its catalog, and run it. Policy decides allow, approve, or deny — and every run lands in the audit trail."
       />
       <.onboarding_card
         :if={not @has_llm_connected?}
-        href={~p"/app/agents"}
+        href={~p"/app/#{@current_account}/agents"}
         icon="hero-bolt"
         title="Connect an LLM"
         body="Pick a client (Claude Code, Cursor, Gemini, Codex) and we'll mint the API key and drop a prefilled snippet you can paste straight in. Optional: each client's setup has a step to stop its per-tool prompts — safe, since emisar still gates every action server-side."
@@ -220,6 +222,7 @@ defmodule EmisarWeb.DashboardLive do
   attr :can_manage_billing, :boolean, default: false
   attr :team_mfa, :any, required: true
   attr :pending_packs_count, :integer, default: 0
+  attr :current_account, :map, required: true
 
   defp live_dashboard(assigns) do
     ~H"""
@@ -228,21 +231,33 @@ defmodule EmisarWeb.DashboardLive do
       has_llm_connected?={@has_llm_connected?}
       has_runs?={@recent_runs != []}
       first_runner_id={@first_runner_id}
+      current_account={@current_account}
     />
 
     <.subscription_banner status={@billing.subscription_status}>
       <:cta :if={@can_manage_billing}>
         <.link
-          navigate={~p"/app/settings/billing"}
+          navigate={~p"/app/#{@current_account}/settings/billing"}
           class="shrink-0 rounded-lg bg-zinc-100 px-3 py-1.5 text-xs font-semibold text-zinc-950 hover:bg-white"
         >
           Manage billing
         </.link>
       </:cta>
     </.subscription_banner>
-    <.plan_limit_banner :if={runner_headroom_warn?(@billing)} billing={@billing} />
-    <.runners_offline_banner :if={@runners_total > 0 and @runners_connected == 0} />
-    <.packs_pending_banner :if={@pending_packs_count > 0} count={@pending_packs_count} />
+    <.plan_limit_banner
+      :if={runner_headroom_warn?(@billing)}
+      billing={@billing}
+      current_account={@current_account}
+    />
+    <.runners_offline_banner
+      :if={@runners_total > 0 and @runners_connected == 0}
+      current_account={@current_account}
+    />
+    <.packs_pending_banner
+      :if={@pending_packs_count > 0}
+      count={@pending_packs_count}
+      current_account={@current_account}
+    />
 
     <%!-- Three tiles, never four. Plan info used to live in the third
          slot but billing is rarely operational. Team-MFA posture is —
@@ -250,9 +265,13 @@ defmodule EmisarWeb.DashboardLive do
          surface tight?" and links straight to the team page where
          they'd fix it. --%>
     <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
-      <.runners_stat connected={@runners_connected} total={@runners_total} />
-      <.runs_stat stats={@run_stats} />
-      <.team_security_stat team_mfa={@team_mfa} />
+      <.runners_stat
+        connected={@runners_connected}
+        total={@runners_total}
+        current_account={@current_account}
+      />
+      <.runs_stat stats={@run_stats} current_account={@current_account} />
+      <.team_security_stat team_mfa={@team_mfa} current_account={@current_account} />
     </div>
 
     <%!-- Pending approvals — runs held on a human decision, the one
@@ -263,13 +282,13 @@ defmodule EmisarWeb.DashboardLive do
         icon="hero-hand-raised"
         title="Awaiting your approval"
         count={@pending_approvals_count}
-        href={~p"/app/approvals"}
+        href={~p"/app/#{@current_account}/approvals"}
         cta="Review all"
       >
         <ul class="divide-y divide-amber-500/10">
           <li :for={request <- Enum.take(@pending_approvals, 5)}>
             <.link
-              navigate={~p"/app/approvals/#{request.id}"}
+              navigate={~p"/app/#{@current_account}/approvals/#{request.id}"}
               class="flex items-center justify-between gap-3 py-2.5 text-sm hover:opacity-90"
             >
               <div class="min-w-0">
@@ -294,7 +313,7 @@ defmodule EmisarWeb.DashboardLive do
       <header class="flex items-center justify-between border-b border-zinc-900 px-5 py-3">
         <h2 class="text-sm font-semibold text-zinc-100">Recent runs</h2>
         <.link
-          navigate={~p"/app/runs"}
+          navigate={~p"/app/#{@current_account}/runs"}
           class="text-xs font-medium text-indigo-400 hover:text-indigo-300"
         >
           See all <.icon name="hero-arrow-right" class="ml-0.5 h-3 w-3" />
@@ -307,22 +326,25 @@ defmodule EmisarWeb.DashboardLive do
              no-runs-yet (point to a runner detail or runbook). --%>
         <.empty_state variant={:bare} icon="hero-bolt" title="No runs yet." class="px-5 py-10">
           Register a
-          <.link navigate={~p"/app/runners"} class="text-indigo-400 hover:text-indigo-300">
+          <.link
+            navigate={~p"/app/#{@current_account}/runners"}
+            class="text-indigo-400 hover:text-indigo-300"
+          >
             runner
           </.link>
           and dispatch an action from its detail page, or kick off a <.link
-            navigate={~p"/app/runbooks"}
+            navigate={~p"/app/#{@current_account}/runbooks"}
             class="text-indigo-400 hover:text-indigo-300"
           >runbook</.link>.
           LLM-driven runs (via the <.link
-            navigate={~p"/app/agents"}
+            navigate={~p"/app/#{@current_account}/agents"}
             class="text-indigo-400 hover:text-indigo-300"
           >MCP API</.link>) land here too.
         </.empty_state>
       <% else %>
         <ul class="divide-y divide-zinc-900">
           <li :for={run <- @recent_runs}>
-            <.run_row run={run} show_runner />
+            <.run_row run={run} show_runner current_account={@current_account} />
           </li>
         </ul>
       <% end %>
@@ -340,10 +362,11 @@ defmodule EmisarWeb.DashboardLive do
 
   attr :connected, :integer, required: true
   attr :total, :integer, required: true
+  attr :current_account, :map, required: true
 
   defp runners_stat(assigns) do
     ~H"""
-    <.link navigate={~p"/app/runners"} class="block">
+    <.link navigate={~p"/app/#{@current_account}/runners"} class="block">
       <.stat
         label="Runners online"
         value={"#{@connected} / #{@total}"}
@@ -371,10 +394,11 @@ defmodule EmisarWeb.DashboardLive do
   defp runners_ring(_connected, _total), do: ""
 
   attr :stats, :map, required: true
+  attr :current_account, :map, required: true
 
   defp runs_stat(assigns) do
     ~H"""
-    <.link navigate={~p"/app/runs"} class="block">
+    <.link navigate={~p"/app/#{@current_account}/runs"} class="block">
       <.stat
         label={"Runs (last #{@stats.window_hours}h)"}
         value={@stats.total}
@@ -443,6 +467,8 @@ defmodule EmisarWeb.DashboardLive do
     """
   end
 
+  attr :current_account, :map, required: true
+
   defp runners_offline_banner(assigns) do
     ~H"""
     <.offline_notice severity={:critical} title="All runners offline" class="mb-4">
@@ -450,7 +476,7 @@ defmodule EmisarWeb.DashboardLive do
       host's logs or the systemd/launchd unit.
       <:action>
         <.link
-          navigate={~p"/app/runners"}
+          navigate={~p"/app/#{@current_account}/runners"}
           class="rounded-lg bg-rose-500/20 px-3 py-1.5 text-xs font-semibold text-rose-100 hover:bg-rose-500/30"
         >
           View runners →
@@ -461,11 +487,12 @@ defmodule EmisarWeb.DashboardLive do
   end
 
   attr :count, :integer, required: true
+  attr :current_account, :map, required: true
 
   defp packs_pending_banner(assigns) do
     ~H"""
     <.link
-      navigate={~p"/app/packs"}
+      navigate={~p"/app/#{@current_account}/packs"}
       class="mb-4 flex items-start gap-3 rounded-xl border border-amber-500/40 bg-amber-500/10 p-4 transition hover:bg-amber-500/[0.16]"
     >
       <.icon name="hero-shield-exclamation" class="mt-0.5 h-5 w-5 flex-none text-amber-300" />
@@ -499,10 +526,11 @@ defmodule EmisarWeb.DashboardLive do
   # missing enrollments.
 
   attr :team_mfa, :any, required: true
+  attr :current_account, :map, required: true
 
   defp team_security_stat(%{team_mfa: :unavailable} = assigns) do
     ~H"""
-    <.link navigate={~p"/app/settings/team"} class="block">
+    <.link navigate={~p"/app/#{@current_account}/settings/team"} class="block">
       <.stat label="Team 2FA" value={:unavailable} hint="Couldn't load team data" />
     </.link>
     """
@@ -520,7 +548,7 @@ defmodule EmisarWeb.DashboardLive do
     assigns = assign(assigns, :tone, tone)
 
     ~H"""
-    <.link navigate={~p"/app/settings/team"} class="block">
+    <.link navigate={~p"/app/#{@current_account}/settings/team"} class="block">
       <.stat
         label={stat_label(@tone, @team_mfa)}
         value={"#{@team_mfa.enrolled} / #{@team_mfa.total}"}
@@ -551,6 +579,7 @@ defmodule EmisarWeb.DashboardLive do
   defp stat_ring(_), do: nil
 
   attr :billing, :map, required: true
+  attr :current_account, :map, required: true
 
   defp plan_limit_banner(assigns) do
     headroom = Emisar.Billing.headroom(assigns.billing, :runners)
@@ -588,7 +617,7 @@ defmodule EmisarWeb.DashboardLive do
         <% end %>
       </div>
       <.link
-        navigate={~p"/app/settings/billing"}
+        navigate={~p"/app/#{@current_account}/settings/billing"}
         class={[
           "shrink-0 self-start rounded-lg px-3 py-1.5 text-xs font-semibold",
           if(@headroom == :at_limit,

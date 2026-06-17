@@ -10,8 +10,8 @@ defmodule EmisarWeb.TeamLiveTest do
 
   describe "GET /app/settings/team as an owner" do
     test "renders the invite form (not the read-only banner)", %{conn: conn} do
-      {conn, _user, _account} = register_and_log_in(conn)
-      {:ok, _lv, html} = live(conn, ~p"/app/settings/team")
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/team")
 
       assert html =~ "Invite a teammate"
       assert html =~ "Send invite"
@@ -25,8 +25,8 @@ defmodule EmisarWeb.TeamLiveTest do
 
   describe "invite form validation" do
     test "an invalid email renders inline on the field, not in a flash", %{conn: conn} do
-      {conn, _user, _account} = register_and_log_in(conn)
-      {:ok, lv, _html} = live(conn, ~p"/app/settings/team")
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
 
       html =
         lv
@@ -43,12 +43,12 @@ defmodule EmisarWeb.TeamLiveTest do
 
   describe "resend confirmation (self)" do
     test "an unconfirmed user can resend their own confirmation email", %{conn: conn} do
-      {conn, user, _account} = register_and_log_in(conn)
+      {conn, user, account} = register_and_log_in(conn)
       # Simulate the signed-up-but-unconfirmed state (register_and_log_in
       # confirms by default).
       {:ok, _} = user |> Ecto.Changeset.change(confirmed_at: nil) |> Emisar.Repo.update()
 
-      {:ok, lv, html} = live(conn, ~p"/app/settings/team")
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/team")
       assert html =~ "Resend confirmation"
 
       html = lv |> element("button", "Resend confirmation") |> render_click()
@@ -56,20 +56,20 @@ defmodule EmisarWeb.TeamLiveTest do
     end
 
     test "a confirmed user sees no resend button", %{conn: conn} do
-      {conn, _user, _account} = register_and_log_in(conn)
-      {:ok, _lv, html} = live(conn, ~p"/app/settings/team")
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/team")
       refute html =~ "Resend confirmation"
     end
   end
 
   describe "GET /app/settings/team as a viewer" do
     test "renders the read-only banner instead of the form", %{conn: conn} do
-      {conn, user, _account} = register_and_log_in(conn, %{account: %{name: "ViewerOrg"}})
+      {conn, user, account} = register_and_log_in(conn, %{account: %{name: "ViewerOrg"}})
 
       {:ok, m} = Emisar.Accounts.fetch_membership_for_session(user, nil)
       _ = Emisar.Fixtures.force_membership_role(m, "viewer")
 
-      {:ok, _lv, html} = live(conn, ~p"/app/settings/team")
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/team")
 
       assert html =~ "Only owners and admins can invite"
       refute html =~ "Send invite"
@@ -92,7 +92,7 @@ defmodule EmisarWeb.TeamLiveTest do
       {:ok, runner} =
         Emisar.Runners.create_runner(%{"name" => "r1", "group" => "dba"}, subject)
 
-      {:ok, lv, html} = live(conn, ~p"/app/settings/team")
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/team")
 
       # Default state — no scopes = "all runners" label rendered.
       assert html =~ "access: all runners"
@@ -132,7 +132,7 @@ defmodule EmisarWeb.TeamLiveTest do
           subject
         )
 
-      {:ok, lv, _html} = live(conn, ~p"/app/settings/team")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
       html = render_click(lv, "start_scope_edit", %{"membership_id" => m.id})
 
       # Both multi-selects mark the stored scope's option selected, so the
@@ -157,7 +157,7 @@ defmodule EmisarWeb.TeamLiveTest do
           role: "viewer"
         )
 
-      {:ok, lv, _html} = live(conn, ~p"/app/settings/team")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
       %{owner: owner, account: account, member: member, membership: membership, lv: lv}
     end
 
@@ -323,14 +323,15 @@ defmodule EmisarWeb.TeamLiveTest do
 
     test "the Reset 2FA action is offered only when the member is enrolled", %{
       conn: conn,
+      account: account,
       member: member,
       membership: membership
     } do
-      {:ok, lv, _html} = live(conn, ~p"/app/settings/team")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
       refute has_element?(lv, "button[phx-click='reset_mfa']")
 
       enroll_mfa(member)
-      {:ok, lv, _html} = live(conn, ~p"/app/settings/team")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
 
       assert has_element?(
                lv,
@@ -340,11 +341,12 @@ defmodule EmisarWeb.TeamLiveTest do
 
     test "an owner resets the member's 2FA and they must re-enroll", %{
       conn: conn,
+      account: account,
       member: member,
       membership: membership
     } do
       enroll_mfa(member)
-      {:ok, lv, _html} = live(conn, ~p"/app/settings/team")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
 
       html = render_click(lv, "reset_mfa", %{"membership_id" => membership.id})
 
@@ -357,8 +359,8 @@ defmodule EmisarWeb.TeamLiveTest do
 
   describe "account-wide MFA toggle" do
     test "an owner without MFA hits the lockout guard", %{conn: conn} do
-      {conn, _owner, _account} = register_and_log_in(conn)
-      {:ok, lv, _html} = live(conn, ~p"/app/settings/team")
+      {conn, _owner, account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
 
       html = render_click(lv, "toggle_require_mfa", %{})
 
@@ -377,7 +379,7 @@ defmodule EmisarWeb.TeamLiveTest do
           Emisar.Fixtures.subject_for(owner, account)
         )
 
-      {:ok, lv, _html} = live(conn, ~p"/app/settings/team")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
 
       assert render_click(lv, "toggle_require_mfa", %{}) =~ "Account-wide MFA enforced."
       assert Emisar.Repo.reload!(account).require_mfa
@@ -395,7 +397,8 @@ defmodule EmisarWeb.TeamLiveTest do
           role: "admin"
         )
 
-      {:ok, lv, _html} = build_conn() |> log_in_user(admin) |> live(~p"/app/settings/team")
+      {:ok, lv, _html} =
+        build_conn() |> log_in_user(admin) |> live(~p"/app/#{account}/settings/team")
 
       html = render_click(lv, "toggle_require_mfa", %{})
 
@@ -409,7 +412,7 @@ defmodule EmisarWeb.TeamLiveTest do
       enroll_mfa(owner)
 
       # Off: a screen reader announces it as an unchecked switch.
-      {:ok, lv, html} = live(conn, ~p"/app/settings/team")
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/team")
       switch = element(lv, ~s(button[phx-click="toggle_require_mfa"]))
       assert html =~ ~s(role="switch")
       assert render(switch) =~ ~s(aria-checked="false")
@@ -422,7 +425,7 @@ defmodule EmisarWeb.TeamLiveTest do
       assert Emisar.Repo.reload!(account).require_mfa
 
       # On: the switch now reports aria-checked="true".
-      {:ok, _lv, html} = live(conn, ~p"/app/settings/team")
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/team")
       assert html =~ ~s(aria-checked="true")
     end
   end
@@ -440,7 +443,7 @@ defmodule EmisarWeb.TeamLiveTest do
         role: "admin"
       )
 
-      {:ok, _lv, html} = live(conn, ~p"/app/settings/team")
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/team")
 
       # Owner (unenrolled) + the enrolled member → 1 of 2, 1 without. The
       # counts come from Accounts.team_mfa_stats (account-wide), not @memberships.
@@ -451,19 +454,19 @@ defmodule EmisarWeb.TeamLiveTest do
 
   describe "deliverability (email suppression) badge" do
     test "flags a member whose email is on the suppression list", %{conn: conn} do
-      {conn, user, _account} = register_and_log_in(conn)
+      {conn, user, account} = register_and_log_in(conn)
       {:ok, _} = Emisar.Mail.suppress(user.email, :hard_bounce, "bounce")
 
-      {:ok, _lv, html} = live(conn, ~p"/app/settings/team")
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/team")
 
       assert html =~ "Email bouncing"
       assert html =~ "Contact support to clear it"
     end
 
     test "shows no badge when no member email is suppressed", %{conn: conn} do
-      {conn, _user, _account} = register_and_log_in(conn)
+      {conn, _user, account} = register_and_log_in(conn)
 
-      {:ok, _lv, html} = live(conn, ~p"/app/settings/team")
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/team")
 
       refute html =~ "Email bouncing"
     end
@@ -486,7 +489,7 @@ defmodule EmisarWeb.TeamLiveTest do
         role: "operator"
       )
 
-      {:ok, _lv, html} = live(conn, ~p"/app/settings/team")
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/team")
 
       # Both relative times render as the viewer-local <time> (consistent with
       # the rest of the app), not a static server string.
@@ -511,7 +514,7 @@ defmodule EmisarWeb.TeamLiveTest do
         role: "operator"
       )
 
-      {:ok, _lv, html} = live(conn, ~p"/app/settings/team")
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/team")
 
       assert html =~ "never signed in"
     end

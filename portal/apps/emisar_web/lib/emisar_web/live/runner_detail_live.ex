@@ -13,7 +13,7 @@ defmodule EmisarWeb.RunnerDetailLive do
         {:ok,
          socket
          |> put_flash(:error, "Runner not found.")
-         |> push_navigate(to: ~p"/app/runners")}
+         |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/runners")}
 
       {:ok, runner} ->
         # Per-user runner ACLs (#238): treat out-of-scope as not-found
@@ -31,7 +31,7 @@ defmodule EmisarWeb.RunnerDetailLive do
           {:ok,
            socket
            |> put_flash(:error, "Runner not found.")
-           |> push_navigate(to: ~p"/app/runners")}
+           |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/runners")}
         end
     end
   end
@@ -122,7 +122,7 @@ defmodule EmisarWeb.RunnerDetailLive do
         {:noreply,
          socket
          |> put_flash(:info, "Runner deleted. The host can re-register on next connect.")
-         |> push_navigate(to: ~p"/app/runners")}
+         |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/runners")}
       end
     )
   end
@@ -149,7 +149,7 @@ defmodule EmisarWeb.RunnerDetailLive do
       section={:runners}
     >
       <:title>
-        <.detail_header back="Runners" navigate={~p"/app/runners"}>
+        <.detail_header back="Runners" navigate={~p"/app/#{@current_account}/runners"}>
           {@runner.name}
         </.detail_header>
       </:title>
@@ -243,7 +243,9 @@ defmodule EmisarWeb.RunnerDetailLive do
                        work against a disconnected/disabled runner. --%>
                   <%= if @runner.online? do %>
                     <.link
-                      navigate={~p"/app/runs/new/#{@runner.id}/#{action.action_id}"}
+                      navigate={
+                        ~p"/app/#{@current_account}/runs/new/#{@runner.id}/#{action.action_id}"
+                      }
                       class="shrink-0 rounded-lg bg-indigo-500/10 px-2.5 py-1 text-xs font-semibold text-indigo-300 ring-1 ring-indigo-500/30 hover:bg-indigo-500/20"
                     >
                       Run
@@ -270,7 +272,7 @@ defmodule EmisarWeb.RunnerDetailLive do
             >
               <LiveTable.paginator
                 id="actions"
-                path={~p"/app/runners/#{@runner.id}"}
+                path={~p"/app/#{@current_account}/runners/#{@runner.id}"}
                 metadata={@actions_metadata}
                 filter_params={@filter_params}
               />
@@ -290,7 +292,7 @@ defmodule EmisarWeb.RunnerDetailLive do
           <% else %>
             <ul class="divide-y divide-zinc-900">
               <li :for={run <- @recent_runs}>
-                <.run_row run={run} />
+                <.run_row run={run} current_account={@current_account} />
               </li>
             </ul>
           <% end %>

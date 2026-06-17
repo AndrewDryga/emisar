@@ -186,9 +186,16 @@ defmodule EmisarWeb.UserAuth do
 
   defp assign_current_account(conn) do
     user = conn.assigns.current_user
-    requested_account_id = get_session(conn, :current_account_id)
+    account_ref = conn.path_params["account_id_or_slug"]
+    session_account_id = get_session(conn, :current_account_id)
 
-    case Accounts.fetch_membership_for_session(user, requested_account_id) do
+    case resolve_membership_for_request(user, account_ref, session_account_id) do
+      {:error, :not_found} when not is_nil(account_ref) ->
+        # A slugged route whose ref isn't a (non-suspended) membership the user
+        # holds: 404, never a redirect — indistinguishable from a nonexistent
+        # tenant, so the URL never confirms one exists (IL-15, no leak).
+        raise EmisarWeb.NotFoundError
+
       {:error, :not_found} ->
         if Accounts.all_memberships_suspended?(user) do
           conn
@@ -205,7 +212,7 @@ defmodule EmisarWeb.UserAuth do
         context = RequestContext.from_conn(conn)
 
         conn
-        |> maybe_refresh_account_session(membership.account_id, requested_account_id)
+        |> maybe_refresh_account_session(membership.account_id, session_account_id)
         |> assign(:current_account, membership.account)
         |> assign(:current_membership, membership)
         |> assign(
@@ -214,6 +221,14 @@ defmodule EmisarWeb.UserAuth do
         )
     end
   end
+
+  # Slugged tenant route → resolve+authorize from the URL ref (id-or-slug);
+  # bare /app + the unslugged /app routes (switch, mfa_setup) → the session hint.
+  defp resolve_membership_for_request(user, nil, session_account_id),
+    do: Accounts.fetch_membership_for_session(user, session_account_id)
+
+  defp resolve_membership_for_request(user, account_ref, _session_account_id),
+    do: Accounts.fetch_membership_by_account_id_or_slug(user, account_ref)
 
   # Session provenance (auth_method / mfa / user_identity_id) for the Subject,
   # pulled off the `:current_auth` assign the boundary stashed (a `%UserToken{}`
@@ -298,6 +313,37 @@ defmodule EmisarWeb.UserAuth do
         |> Phoenix.LiveView.redirect(to: ~p"/sign_in")
 
       {:halt, socket}
+    end
+  end
+
+  # The slug gate (IL-15): composed AFTER :ensure_authenticated on every tenant
+  # route. Re-resolves current_account from the URL ref (id-or-slug) on EVERY
+  # mount — the session value is NOT trusted as the tenant key here — and
+  # overwrites the session-based account/subject :ensure_authenticated mounted.
+  # A ref the user has no (non-suspended) membership for raises NotFoundError →
+  # 404, never a redirect/leak (indistinguishable from a nonexistent tenant).
+  def on_mount(:ensure_account_slug, %{"account_id_or_slug" => account_ref}, _session, socket) do
+    user = socket.assigns.current_user
+
+    case Accounts.fetch_membership_by_account_id_or_slug(user, account_ref) do
+      {:ok, membership} ->
+        subject =
+          Subject.for_user(
+            user,
+            membership.account,
+            membership,
+            RequestContext.from_socket(socket),
+            auth_opts(socket.assigns)
+          )
+
+        {:cont,
+         socket
+         |> Phoenix.Component.assign(:current_account, membership.account)
+         |> Phoenix.Component.assign(:current_membership, membership)
+         |> Phoenix.Component.assign(:current_subject, subject)}
+
+      {:error, :not_found} ->
+        raise EmisarWeb.NotFoundError
     end
   end
 

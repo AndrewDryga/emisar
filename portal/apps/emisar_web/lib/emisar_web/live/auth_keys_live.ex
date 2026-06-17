@@ -30,7 +30,7 @@ defmodule EmisarWeb.AuthKeysLive do
       {:ok,
        socket
        |> put_flash(:error, "Page not found.")
-       |> push_navigate(to: ~p"/app")}
+       |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}")}
     end
   end
 
@@ -90,7 +90,12 @@ defmodule EmisarWeb.AuthKeysLive do
     do: {:noreply, ConfirmDialog.reset(socket)}
 
   def handle_event("filter", params, socket) do
-    {:noreply, LiveTable.apply_filter(socket, ~p"/app/settings/runners/auth-keys", params)}
+    {:noreply,
+     LiveTable.apply_filter(
+       socket,
+       ~p"/app/#{socket.assigns.current_account}/settings/runners/auth-keys",
+       params
+     )}
   end
 
   defp do_create(socket, params) do
@@ -263,7 +268,11 @@ defmodule EmisarWeb.AuthKeysLive do
               Issuing a key doesn't reserve a slot — the runner only counts after it registers.
             </p>
           </div>
-          <.button variant="secondary" size="md" navigate={~p"/app/settings/billing"}>
+          <.button
+            variant="secondary"
+            size="md"
+            navigate={~p"/app/#{@current_account}/settings/billing"}
+          >
             See plans →
           </.button>
         </div>
@@ -370,7 +379,7 @@ defmodule EmisarWeb.AuthKeysLive do
         <LiveTable.live_table
           layout={:cards}
           id="auth-keys"
-          path={~p"/app/settings/runners/auth-keys"}
+          path={~p"/app/#{@current_account}/settings/runners/auth-keys"}
           rows={@auth_keys}
           metadata={@metadata}
           filters={@filters}

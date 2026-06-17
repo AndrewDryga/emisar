@@ -32,11 +32,11 @@ defmodule EmisarWeb.DashboardLiveTest do
     end
 
     test "unconfirmed users see the verify-email banner and can resend", %{conn: conn} do
-      {conn, user, _account} = register_and_log_in(conn)
+      {conn, user, account} = register_and_log_in(conn)
       # register_and_log_in confirms by default — simulate the unverified state.
       {:ok, _} = user |> Ecto.Changeset.change(confirmed_at: nil) |> Emisar.Repo.update()
 
-      {:ok, lv, html} = live(conn, ~p"/app")
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}")
       assert html =~ "Verify your email"
       assert html =~ "Resend email"
 
@@ -47,15 +47,15 @@ defmodule EmisarWeb.DashboardLiveTest do
     end
 
     test "confirmed users see no verify-email banner", %{conn: conn} do
-      {conn, _user, _account} = register_and_log_in(conn)
-      {:ok, _lv, html} = live(conn, ~p"/app")
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}")
       refute html =~ "Verify your email"
     end
 
     test "fresh accounts see the onboarding wizard with both checklist cards",
          %{conn: conn} do
-      {conn, _user, _account} = register_and_log_in(conn)
-      {:ok, _lv, html} = live(conn, ~p"/app")
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}")
 
       # Two onboarding cards — runner + LLM — sit at the top of the
       # dashboard as a wizard checklist. The runner card links to
@@ -82,7 +82,7 @@ defmodule EmisarWeb.DashboardLiveTest do
           subject
         )
 
-      {:ok, _lv, html} = live(conn, ~p"/app")
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}")
       assert html =~ "Runners online"
       assert html =~ "Recent runs"
       # The runner-onboarding card disappears once a runner exists.
@@ -99,10 +99,10 @@ defmodule EmisarWeb.DashboardLiveTest do
       {conn, _user, account} = register_and_log_in(conn)
       runner = Emisar.Fixtures.runner_fixture(account_id: account.id)
 
-      {:ok, _lv, html} = live(conn, ~p"/app")
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}")
       assert html =~ "Dispatch your first action"
       # Deep-linked to the runner's own catalog, not the runners list.
-      assert html =~ ~p"/app/runners/#{runner.id}"
+      assert html =~ ~p"/app/#{account}/runners/#{runner.id}"
 
       {:ok, _run} =
         Emisar.Runs.create_run(%{
@@ -114,14 +114,14 @@ defmodule EmisarWeb.DashboardLiveTest do
           source: "operator"
         })
 
-      {:ok, _lv2, html2} = live(conn, ~p"/app")
+      {:ok, _lv2, html2} = live(conn, ~p"/app/#{account}")
       refute html2 =~ "Dispatch your first action"
     end
 
     test "account broadcasts schedule a debounced stats reload", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
 
-      {:ok, lv, html} = live(conn, ~p"/app")
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}")
       assert html =~ "Connect a runner"
 
       # A runner registers elsewhere; the dashboard hears the account
@@ -149,17 +149,21 @@ defmodule EmisarWeb.DashboardLiveTest do
       {conn, _user, account} = register_and_log_in(conn)
       Emisar.Fixtures.subscription_fixture(account, "team", status: "past_due")
 
-      {:ok, lv, html} = live(conn, ~p"/app")
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}")
 
       assert html =~ "Payment past due"
       # The owner can act — the banner links to the billing page (manage there).
-      assert has_element?(lv, "a[href='/app/settings/billing']", "Manage billing")
+      assert has_element?(
+               lv,
+               "a[href='#{~p"/app/#{account}/settings/billing"}']",
+               "Manage billing"
+             )
     end
 
     test "a healthy account shows no billing banner", %{conn: conn} do
-      {conn, _user, _account} = register_and_log_in(conn)
+      {conn, _user, account} = register_and_log_in(conn)
 
-      {:ok, _lv, html} = live(conn, ~p"/app")
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}")
 
       refute html =~ "Payment past due"
       refute html =~ "Subscription canceled"
@@ -171,7 +175,7 @@ defmodule EmisarWeb.DashboardLiveTest do
       {:ok, membership} = Emisar.Accounts.fetch_membership_for_session(user, nil)
       Emisar.Fixtures.force_membership_role(membership, "viewer")
 
-      {:ok, lv, html} = live(conn, ~p"/app")
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}")
 
       # Every member should KNOW there's a payment problem…
       assert html =~ "Payment past due"

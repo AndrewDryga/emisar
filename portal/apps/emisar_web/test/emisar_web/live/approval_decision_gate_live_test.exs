@@ -70,7 +70,7 @@ defmodule EmisarWeb.ApprovalDecisionGateLiveTest do
       {conn, user, account} = register_and_log_in(conn)
       request = pending_request(account, user)
 
-      {:ok, lv, _html} = live(conn, ~p"/app/approvals/#{request.id}")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
 
       # Duration defaults to "once" (the form's first option) → no grant,
       # one-shot approval.
@@ -87,7 +87,7 @@ defmodule EmisarWeb.ApprovalDecisionGateLiveTest do
       {conn, user, account} = register_and_log_in(conn)
       request = pending_request(account, user)
 
-      {:ok, lv, _html} = live(conn, ~p"/app/approvals/#{request.id}")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
 
       html =
         lv
@@ -105,7 +105,7 @@ defmodule EmisarWeb.ApprovalDecisionGateLiveTest do
       request = pending_request(account, user)
       downgrade_to_viewer(user)
 
-      {:ok, _lv, html} = live(conn, ~p"/app/approvals/#{request.id}")
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
 
       assert html =~ "Viewers can&#39;t decide approvals." or
                html =~ "Viewers can't decide approvals."
@@ -119,7 +119,7 @@ defmodule EmisarWeb.ApprovalDecisionGateLiveTest do
       request = pending_request(account, user)
       downgrade_to_viewer(user)
 
-      {:ok, lv, _html} = live(conn, ~p"/app/approvals/#{request.id}")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
 
       # Push the event directly, as a hand-rolled client would — the
       # rendered UI never offers it to a viewer, so the handler itself
@@ -135,7 +135,7 @@ defmodule EmisarWeb.ApprovalDecisionGateLiveTest do
       request = pending_request(account, user)
       downgrade_to_viewer(user)
 
-      {:ok, lv, _html} = live(conn, ~p"/app/approvals/#{request.id}")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
 
       html = render_hook(lv, "deny", %{"reason" => "nope"})
 
@@ -152,7 +152,7 @@ defmodule EmisarWeb.ApprovalDecisionGateLiveTest do
       {conn, owner, account} = register_and_log_in(conn)
       request = pending_request(account, owner, allow_self_approval: false)
 
-      {:ok, lv, html} = live(conn, ~p"/app/approvals/#{request.id}")
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
 
       refute html =~ "Approve and send"
       assert html =~ "You can&#39;t approve your own request"
@@ -179,7 +179,7 @@ defmodule EmisarWeb.ApprovalDecisionGateLiveTest do
         )
 
       {:ok, lv, html} =
-        build_conn() |> log_in_user(other) |> live(~p"/app/approvals/#{request.id}")
+        build_conn() |> log_in_user(other) |> live(~p"/app/#{account}/approvals/#{request.id}")
 
       assert html =~ "Approve and send"
 

@@ -66,14 +66,14 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       %{conn: conn, user: user, account: account}
     end
 
-    test "renders the config surface, not the upsell", %{conn: conn} do
-      {:ok, _lv, html} = live(conn, ~p"/app/settings/sso")
+    test "renders the config surface, not the upsell", %{conn: conn, account: account} do
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/sso")
 
       assert html =~ "Add connection"
       refute html =~ "Enterprise feature"
 
       # Adding a connection is its own view (with the per-provider setup guide).
-      {:ok, _lv, new_html} = live(conn, ~p"/app/settings/sso/new")
+      {:ok, _lv, new_html} = live(conn, ~p"/app/#{account}/settings/sso/new")
       assert new_html =~ "Add an identity provider"
       assert new_html =~ "/sign_in/sso/callback"
     end
@@ -81,14 +81,17 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
     test "lists existing connections", %{conn: conn, account: account} do
       _provider = insert_provider(account, %{name: "Acme Okta"})
 
-      {:ok, _lv, html} = live(conn, ~p"/app/settings/sso")
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/sso")
 
       assert html =~ "Acme Okta"
       assert html =~ "Enabled"
     end
 
-    test "creates a connection through the form, then returns to the list", %{conn: conn} do
-      {:ok, lv, _html} = live(conn, ~p"/app/settings/sso/new")
+    test "creates a connection through the form, then returns to the list", %{
+      conn: conn,
+      account: account
+    } do
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/new")
 
       lv
       |> form("#provider_form", %{
@@ -104,14 +107,14 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       |> render_submit()
 
       # Adding is its own view; a successful create navigates back to the list.
-      assert_redirect(lv, ~p"/app/settings/sso")
+      assert_redirect(lv, ~p"/app/#{account}/settings/sso")
 
       assert IdentityProvider.Query.not_deleted()
              |> IdentityProvider.Query.ordered_by_name()
              |> Repo.all()
              |> Enum.any?(&(&1.name == "Work Okta"))
 
-      {:ok, _lv, html} = live(conn, ~p"/app/settings/sso")
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/sso")
       assert html =~ "Work Okta"
     end
 
@@ -120,7 +123,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       account: account
     } do
       provider = insert_provider(account, %{client_secret: "super-secret-value-xyz"})
-      {:ok, lv, _html} = live(conn, ~p"/app/settings/sso")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso")
 
       # The create form and this edit form coexist in the DOM; opening the
       # edit form must not collide their input IDs (a duplicate-id crash) and
@@ -137,7 +140,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       account: account
     } do
       provider = insert_provider(account, %{name: "Old Name"})
-      {:ok, lv, _html} = live(conn, ~p"/app/settings/sso")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso")
       _ = render_hook(lv, "start_edit", %{"id" => provider.id})
 
       html =
@@ -158,8 +161,11 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       refute html =~ "Old Name"
     end
 
-    test "an invalid issuer renders inline on the field, not in a flash", %{conn: conn} do
-      {:ok, lv, _html} = live(conn, ~p"/app/settings/sso/new")
+    test "an invalid issuer renders inline on the field, not in a flash", %{
+      conn: conn,
+      account: account
+    } do
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/new")
 
       html =
         lv
@@ -184,8 +190,12 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       %{conn: conn, user: user, account: account, provider: provider}
     end
 
-    test "enable mints a token shown once + the SCIM base URL", %{conn: conn, provider: provider} do
-      {:ok, lv, _html} = live(conn, ~p"/app/settings/sso")
+    test "enable mints a token shown once + the SCIM base URL", %{
+      conn: conn,
+      account: account,
+      provider: provider
+    } do
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso")
 
       html = render_click(lv, "enable_scim", %{"id" => provider.id})
 
@@ -205,9 +215,10 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
 
     test "the token is never rendered back after dismissal / reload", %{
       conn: conn,
+      account: account,
       provider: provider
     } do
-      {:ok, lv, _html} = live(conn, ~p"/app/settings/sso")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso")
 
       shown = render_click(lv, "enable_scim", %{"id" => provider.id})
       [_, token | _] = Regex.run(~r/(ems-[A-Za-z0-9_-]{20,})/, shown) || [nil, nil]
@@ -218,14 +229,18 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       refute dismissed =~ token
 
       # And a fresh mount never re-renders it (write-only, like client_secret).
-      {:ok, _lv2, remounted} = live(conn, ~p"/app/settings/sso")
+      {:ok, _lv2, remounted} = live(conn, ~p"/app/#{account}/settings/sso")
       refute remounted =~ token
       # Directory sync still shows as on, just without the secret.
       assert remounted =~ "Directory sync (SCIM)"
     end
 
-    test "rotate issues a new token; disable turns sync off", %{conn: conn, provider: provider} do
-      {:ok, lv, _html} = live(conn, ~p"/app/settings/sso")
+    test "rotate issues a new token; disable turns sync off", %{
+      conn: conn,
+      account: account,
+      provider: provider
+    } do
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso")
 
       first = render_click(lv, "enable_scim", %{"id" => provider.id})
       [_, token1 | _] = Regex.run(~r/(ems-[A-Za-z0-9_-]{20,})/, first)
@@ -243,11 +258,12 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
 
     test "a non-admin viewer cannot enable directory sync", %{
       conn: conn,
+      account: account,
       user: user,
       provider: provider
     } do
       _ = make_viewer(user)
-      {:ok, lv, _html} = live(conn, ~p"/app/settings/sso")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso")
 
       # The viewer sees the upsell, not the panel; the gated event is a no-op
       # server-side even if pushed directly.
@@ -267,10 +283,11 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
 
     test "creates, lists, and deletes a group mapping", %{
       conn: conn,
+      account: account,
       provider: provider,
       owner: owner
     } do
-      {:ok, lv, _html} = live(conn, ~p"/app/settings/sso")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso")
 
       html =
         lv
@@ -300,10 +317,11 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
 
     test "the role select never offers Owner; a forced owner mapping is rejected inline", %{
       conn: conn,
+      account: account,
       provider: provider,
       owner: owner
     } do
-      {:ok, lv, _html} = live(conn, ~p"/app/settings/sso")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso")
 
       # The mapping role <select> has Admin/Operator/Viewer but no Owner — scope
       # to the mapping create form so the provider form's own Owner option (its
@@ -327,12 +345,13 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
 
     test "a non-admin viewer cannot create a group mapping", %{
       conn: conn,
+      account: account,
       user: user,
       provider: provider,
       owner: owner
     } do
       _ = make_viewer(user)
-      {:ok, lv, _html} = live(conn, ~p"/app/settings/sso")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso")
 
       # The viewer sees the upsell, not the panel; the gated event is a no-op
       # server-side even if pushed directly.
@@ -362,14 +381,21 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       %{conn: conn, user: user, account: account, provider: provider, owner: owner}
     end
 
-    test "the connection form offers the manual provisioning mode", %{conn: conn} do
-      {:ok, _lv, html} = live(conn, ~p"/app/settings/sso/new")
+    test "the connection form offers the manual provisioning mode", %{
+      conn: conn,
+      account: account
+    } do
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/sso/new")
 
       assert html =~ "New-user provisioning"
       assert html =~ "an admin approves each new user"
     end
 
-    test "lists pending requests with the captured identity", %{conn: conn, provider: provider} do
+    test "lists pending requests with the captured identity", %{
+      conn: conn,
+      account: account,
+      provider: provider
+    } do
       _ =
         insert_link_request(provider, %{
           provider_identifier: "okta|dana",
@@ -377,7 +403,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
           email: "dana@acme.test"
         })
 
-      {:ok, _lv, html} = live(conn, ~p"/app/settings/sso")
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/sso")
 
       assert html =~ "Pending access requests"
       assert html =~ "Dana Operator"
@@ -405,7 +431,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
           matched_user_id: member.id
         })
 
-      {:ok, _lv, html} = live(conn, ~p"/app/settings/sso")
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/sso")
 
       assert html =~ "Existing account"
       assert html =~ "sign in as the existing member@acme.test account"
@@ -413,11 +439,12 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
 
     test "approve provisions the captured identity + clears the request", %{
       conn: conn,
+      account: account,
       provider: provider,
       owner: owner
     } do
       request = insert_link_request(provider, %{provider_identifier: "okta|appr"})
-      {:ok, lv, _html} = live(conn, ~p"/app/settings/sso")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso")
 
       html = render_click(lv, "approve_request", %{"id" => request.id})
 
@@ -428,11 +455,12 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
 
     test "dismiss removes the request without provisioning", %{
       conn: conn,
+      account: account,
       provider: provider,
       owner: owner
     } do
       request = insert_link_request(provider, %{provider_identifier: "okta|dis"})
-      {:ok, lv, _html} = live(conn, ~p"/app/settings/sso")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso")
 
       html = render_click(lv, "dismiss_request", %{"id" => request.id})
 
@@ -443,13 +471,14 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
 
     test "a non-admin viewer cannot approve a request", %{
       conn: conn,
+      account: account,
       user: user,
       provider: provider,
       owner: owner
     } do
       request = insert_link_request(provider, %{provider_identifier: "okta|vw"})
       _ = make_viewer(user)
-      {:ok, lv, _html} = live(conn, ~p"/app/settings/sso")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso")
 
       # The viewer sees the upsell, not the panel; the gated event is a no-op
       # server-side even if pushed directly — the request stays pending.
@@ -462,9 +491,9 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
 
   describe "as a non-enterprise account" do
     test "shows the Enterprise upsell instead of the config", %{conn: conn} do
-      {conn, _user, _account} = register_and_log_in(conn, %{account: %{plan: "team"}})
+      {conn, _user, account} = register_and_log_in(conn, %{account: %{plan: "team"}})
 
-      {:ok, _lv, html} = live(conn, ~p"/app/settings/sso")
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/sso")
 
       assert html =~ "Single sign-on is an Enterprise feature"
       assert html =~ "See plans"
@@ -474,10 +503,10 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
 
   describe "as a non-admin member" do
     test "an enterprise viewer is denied the config and sees the upsell", %{conn: conn} do
-      {conn, user, _account} = register_and_log_in(conn, %{account: %{plan: "enterprise"}})
+      {conn, user, account} = register_and_log_in(conn, %{account: %{plan: "enterprise"}})
       _ = make_viewer(user)
 
-      {:ok, _lv, html} = live(conn, ~p"/app/settings/sso")
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/sso")
 
       assert html =~ "Single sign-on is an Enterprise feature"
       refute html =~ "Add an identity provider"

@@ -49,7 +49,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
         policy_version: 4
       })
 
-    {:ok, _lv, html} = live(conn, ~p"/app/runs/#{run.id}")
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
 
     assert html =~ "Policy"
     assert html =~ "Requires approval"
@@ -70,7 +70,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
         "not during the change freeze"
       )
 
-    {:ok, _lv, html} = live(conn, ~p"/app/runs/#{run.id}")
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
 
     # The run lands :cancelled, but the requester must see WHY — the denial
     # reason the approver typed (stored on the run as "approval denied: …") —
@@ -83,7 +83,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
     {conn, _user, account} = register_and_log_in(conn)
     run = run_with(account, %{})
 
-    {:ok, _lv, html} = live(conn, ~p"/app/runs/#{run.id}")
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
 
     refute html =~ "Requires approval"
   end
@@ -93,7 +93,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
     {_raw, key} = api_key_fixture(account_id: account.id, name: "Claude Code")
     run = run_with(account, %{source: "mcp", api_key_id: key.id})
 
-    {:ok, _lv, html} = live(conn, ~p"/app/runs/#{run.id}")
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
 
     # The operator-named key is the headline initiator; the source type
     # ("MCP / LLM") trails as context.
@@ -112,7 +112,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
         client_info: %{"name" => "Claude Code", "version" => "1.2.3"}
       })
 
-    {:ok, _lv, html} = live(conn, ~p"/app/runs/#{run.id}")
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
 
     assert html =~ "Claude Code"
     assert html =~ "1.2.3"
@@ -130,7 +130,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
         mcp_session_id: "5985d95cab127f30"
       })
 
-    {:ok, _lv, html} = live(conn, ~p"/app/runs/#{run.id}")
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
 
     # The truncated id rides under the Source cell (full id on hover); the
     # standalone "MCP session" meta cell is gone.
@@ -164,7 +164,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
         payload: %{"chunk" => "boom-error\n"}
       })
 
-    {:ok, _lv, html} = live(conn, ~p"/app/runs/#{run.id}")
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
 
     # Terminal is one <pre>; each chunk is an inline <span> so chunks
     # concatenate and only their own newlines break lines. Stderr is
@@ -178,29 +178,33 @@ defmodule EmisarWeb.RunDetailLiveTest do
   end
 
   test "an unknown run id bounces to the runs index", %{conn: conn} do
-    {conn, _user, _account} = register_and_log_in(conn)
+    {conn, _user, account} = register_and_log_in(conn)
 
-    assert {:error, {:live_redirect, %{to: "/app/runs", flash: flash}}} =
-             live(conn, ~p"/app/runs/#{Ecto.UUID.generate()}")
+    dest = ~p"/app/#{account}/runs"
+
+    assert {:error, {:live_redirect, %{to: ^dest, flash: flash}}} =
+             live(conn, ~p"/app/#{account}/runs/#{Ecto.UUID.generate()}")
 
     assert flash["error"] == "Run not found."
   end
 
   test "a cross-account run reads as not-found", %{conn: conn} do
-    {conn, _user, _account} = register_and_log_in(conn)
+    {conn, _user, account} = register_and_log_in(conn)
 
     foreign_account = account_fixture()
     foreign_run = run_with(foreign_account, %{})
 
-    assert {:error, {:live_redirect, %{to: "/app/runs"}}} =
-             live(conn, ~p"/app/runs/#{foreign_run.id}")
+    dest = ~p"/app/#{account}/runs"
+
+    assert {:error, {:live_redirect, %{to: ^dest}}} =
+             live(conn, ~p"/app/#{account}/runs/#{foreign_run.id}")
   end
 
   test "cancel sends the cancellation and confirms", %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)
     run = run_with(account, %{status: "sent"})
 
-    {:ok, lv, _html} = live(conn, ~p"/app/runs/#{run.id}")
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
 
     html = render_click(lv, "cancel", %{})
     assert html =~ "Cancel sent to runner."
@@ -213,7 +217,8 @@ defmodule EmisarWeb.RunDetailLiveTest do
     viewer = user_fixture()
     _ = membership_fixture(account_id: account.id, user_id: viewer.id, role: "viewer")
 
-    {:ok, lv, _html} = build_conn() |> log_in_user(viewer) |> live(~p"/app/runs/#{run.id}")
+    {:ok, lv, _html} =
+      build_conn() |> log_in_user(viewer) |> live(~p"/app/#{account}/runs/#{run.id}")
 
     html = render_click(lv, "cancel", %{})
     assert html =~ "You don&#39;t have permission to do that."
@@ -224,7 +229,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
     {conn, _user, account} = register_and_log_in(conn)
     run = run_with(account, %{status: "running"})
 
-    {:ok, lv, html} = live(conn, ~p"/app/runs/#{run.id}")
+    {:ok, lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
     refute html =~ "late-chunk"
 
     {:ok, event} =
@@ -243,7 +248,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
     {conn, _user, account} = register_and_log_in(conn)
     run = run_with(account, %{status: "sent"})
 
-    {:ok, lv, _html} = live(conn, ~p"/app/runs/#{run.id}")
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
 
     {:ok, updated} =
       Runs.finalize_from_result(run.runner_id, %{
@@ -263,7 +268,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
     {conn, _user, account} = register_and_log_in(conn)
     run = run_with(account, %{status: "sent"})
 
-    {:ok, _lv, html} = live(conn, ~p"/app/runs/#{run.id}")
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
 
     # Regression: the button's `status in [...]` guard compared the Ecto.Enum
     # atom against strings, so it never rendered.
@@ -275,7 +280,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
     # run_with's runner is registered but never tracked in presence → offline.
     run = run_with(account, %{status: "running"})
 
-    {:ok, _lv, html} = live(conn, ~p"/app/runs/#{run.id}")
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
 
     assert html =~ "Runner disconnected"
   end
@@ -285,7 +290,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
     # Offline runner (registered, never in presence) + a not-yet-dispatched run.
     run = run_with(account, %{status: "pending"})
 
-    {:ok, _lv, html} = live(conn, ~p"/app/runs/#{run.id}")
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
 
     assert html =~ "Queued — runner offline"
     # The in-flight banner's copy would be wrong for a run that hasn't dispatched.
@@ -297,7 +302,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
     runner = runner_fixture(account_id: account.id, connected?: true)
     run = run_with(account, %{status: "running", runner_id: runner.id})
 
-    {:ok, _lv, html} = live(conn, ~p"/app/runs/#{run.id}")
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
 
     refute html =~ "Runner disconnected"
   end
@@ -306,7 +311,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
     {conn, _user, account} = register_and_log_in(conn)
     run = run_with(account, %{status: "running"})
 
-    {:ok, lv, html} = live(conn, ~p"/app/runs/#{run.id}")
+    {:ok, lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
     assert html =~ "streaming"
 
     {:ok, finished} =

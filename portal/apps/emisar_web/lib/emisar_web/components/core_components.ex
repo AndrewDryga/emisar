@@ -173,7 +173,7 @@ defmodule EmisarWeb.CoreComponents do
       <.button variant="success" icon="hero-check">Approve</.button>
       <.button variant="caution" phx-click="trust">Trust new contents</.button>
       <.button variant="ghost" tone="danger" phx-click="remove">Remove</.button>
-      <.button navigate={~p"/app/runbooks/new"} icon="hero-plus">New runbook</.button>
+      <.button navigate={~p"/app/\#{@current_account}/runbooks/new"} icon="hero-plus">New runbook</.button>
   """
   attr :type, :string, default: nil
 
@@ -1095,13 +1095,14 @@ defmodule EmisarWeb.CoreComponents do
           switchable_accounts={@switchable_accounts || [@current_account]}
         />
         <.shell_nav
+          current_account={@current_account}
           current_subject={@current_subject}
           section={@section}
           pending_approvals_count={@pending_approvals_count}
           pending_packs_count={@pending_packs_count}
           fleet_all_offline?={@fleet_all_offline?}
         />
-        <.shell_user current_user={@current_user} />
+        <.shell_user current_user={@current_user} current_account={@current_account} />
       </aside>
 
       <%!-- Mobile drawer (hidden by default; JS toggles `open`) --%>
@@ -1136,13 +1137,14 @@ defmodule EmisarWeb.CoreComponents do
             </button>
           </div>
           <.shell_nav
+            current_account={@current_account}
             current_subject={@current_subject}
             section={@section}
             pending_approvals_count={@pending_approvals_count}
             pending_packs_count={@pending_packs_count}
             fleet_all_offline?={@fleet_all_offline?}
           />
-          <.shell_user current_user={@current_user} />
+          <.shell_user current_user={@current_user} current_account={@current_account} />
         </aside>
       </div>
 
@@ -1277,15 +1279,18 @@ defmodule EmisarWeb.CoreComponents do
   attr :pending_approvals_count, :integer, default: 0
   attr :pending_packs_count, :integer, default: 0
   attr :fleet_all_offline?, :boolean, default: false
+  attr :current_account, :map, required: true
 
   defp shell_nav(assigns) do
     ~H"""
     <nav class="flex-1 space-y-0.5 overflow-y-auto px-3 py-3 text-sm">
-      <.nav_link to={~p"/app"} active={@section == :dashboard} icon="hero-home">Dashboard</.nav_link>
+      <.nav_link to={~p"/app/#{@current_account}"} active={@section == :dashboard} icon="hero-home">
+        Dashboard
+      </.nav_link>
 
       <.nav_group label="Runners" />
       <.nav_link
-        to={~p"/app/runners"}
+        to={~p"/app/#{@current_account}/runners"}
         active={@section == :runners}
         icon="hero-cpu-chip"
         alert={@fleet_all_offline?}
@@ -1295,7 +1300,7 @@ defmodule EmisarWeb.CoreComponents do
       </.nav_link>
       <.nav_link
         :if={Emisar.Runners.subject_can_manage_auth_keys?(@current_subject)}
-        to={~p"/app/settings/runners/auth-keys"}
+        to={~p"/app/#{@current_account}/settings/runners/auth-keys"}
         active={@section == :auth_keys}
         icon="hero-key"
       >
@@ -1304,7 +1309,7 @@ defmodule EmisarWeb.CoreComponents do
 
       <.nav_group label="Connections" />
       <.nav_link
-        to={~p"/app/agents"}
+        to={~p"/app/#{@current_account}/agents"}
         active={@section == :agents}
         icon="hero-sparkles"
       >
@@ -1312,49 +1317,75 @@ defmodule EmisarWeb.CoreComponents do
       </.nav_link>
 
       <.nav_group label="Operations" />
-      <.nav_link to={~p"/app/runs"} active={@section == :runs} icon="hero-bolt">Runs</.nav_link>
+      <.nav_link to={~p"/app/#{@current_account}/runs"} active={@section == :runs} icon="hero-bolt">
+        Runs
+      </.nav_link>
       <.nav_link
-        to={~p"/app/approvals"}
+        to={~p"/app/#{@current_account}/approvals"}
         active={@section == :approvals}
         icon="hero-shield-check"
         badge={@pending_approvals_count}
       >
         Approvals
       </.nav_link>
-      <.nav_link to={~p"/app/runbooks"} active={@section == :runbooks} icon="hero-book-open">
+      <.nav_link
+        to={~p"/app/#{@current_account}/runbooks"}
+        active={@section == :runbooks}
+        icon="hero-book-open"
+      >
         Runbooks
       </.nav_link>
-      <.nav_link to={~p"/app/policies"} active={@section == :policies} icon="hero-document-text">
+      <.nav_link
+        to={~p"/app/#{@current_account}/policies"}
+        active={@section == :policies}
+        icon="hero-document-text"
+      >
         Policy
       </.nav_link>
       <.nav_link
-        to={~p"/app/packs"}
+        to={~p"/app/#{@current_account}/packs"}
         active={@section == :packs}
         icon="hero-cube"
         badge={@pending_packs_count}
       >
         Packs
       </.nav_link>
-      <.nav_link to={~p"/app/audit"} active={@section == :audit} icon="hero-list-bullet">
+      <.nav_link
+        to={~p"/app/#{@current_account}/audit"}
+        active={@section == :audit}
+        icon="hero-list-bullet"
+      >
         Audit
       </.nav_link>
 
       <.nav_group label="Account" />
-      <.nav_link to={~p"/app/settings/profile"} active={@section == :profile} icon="hero-user-circle">
+      <.nav_link
+        to={~p"/app/#{@current_account}/settings/profile"}
+        active={@section == :profile}
+        icon="hero-user-circle"
+      >
         Profile
       </.nav_link>
-      <.nav_link to={~p"/app/settings/team"} active={@section == :team} icon="hero-user-group">
+      <.nav_link
+        to={~p"/app/#{@current_account}/settings/team"}
+        active={@section == :team}
+        icon="hero-user-group"
+      >
         Team
       </.nav_link>
       <.nav_link
         :if={Emisar.SSO.subject_can_configure_sso?(@current_subject)}
-        to={~p"/app/settings/sso"}
+        to={~p"/app/#{@current_account}/settings/sso"}
         active={@section == :sso}
         icon="hero-key"
       >
         Single sign-on
       </.nav_link>
-      <.nav_link to={~p"/app/settings/billing"} active={@section == :billing} icon="hero-credit-card">
+      <.nav_link
+        to={~p"/app/#{@current_account}/settings/billing"}
+        active={@section == :billing}
+        icon="hero-credit-card"
+      >
         Billing
       </.nav_link>
 
@@ -1406,13 +1437,14 @@ defmodule EmisarWeb.CoreComponents do
   end
 
   attr :current_user, :map, required: true
+  attr :current_account, :map, required: true
 
   defp shell_user(assigns) do
     ~H"""
     <div class="border-t border-zinc-900 p-4 text-sm">
       <div class="flex items-center gap-3">
         <.link
-          navigate={~p"/app/settings/profile"}
+          navigate={~p"/app/#{@current_account}/settings/profile"}
           phx-click={JS.hide(to: "#mobile-nav") |> JS.remove_class("overflow-hidden", to: "body")}
           class="flex min-w-0 flex-1 items-center gap-3 rounded-lg p-1 -m-1 transition hover:bg-zinc-900"
           aria-label="Open profile settings"
@@ -1514,11 +1546,12 @@ defmodule EmisarWeb.CoreComponents do
   """
   attr :run, :map, required: true
   attr :show_runner, :boolean, default: false
+  attr :current_account, :map, required: true
 
   def run_row(assigns) do
     ~H"""
     <.link
-      navigate={~p"/app/runs/#{@run.id}"}
+      navigate={~p"/app/#{@current_account}/runs/#{@run.id}"}
       class="flex items-center justify-between gap-3 px-5 py-3 transition hover:bg-zinc-900/40"
     >
       <div class="min-w-0">
@@ -2074,7 +2107,7 @@ defmodule EmisarWeb.CoreComponents do
   came from without a separate breadcrumb trail.
 
       <:title>
-        <.back_link navigate={~p"/app/runs"}>Runs</.back_link>
+        <.back_link navigate={~p"/app/\#{@current_account}/runs"}>Runs</.back_link>
         Run output
       </:title>
   """
@@ -2108,7 +2141,7 @@ defmodule EmisarWeb.CoreComponents do
   can't share this DOM node.
 
       <:title>
-        <.detail_header back="Runners" navigate={~p"/app/runners"}>
+        <.detail_header back="Runners" navigate={~p"/app/\#{@current_account}/runners"}>
           {@runner.name}
         </.detail_header>
       </:title>
@@ -2578,7 +2611,7 @@ defmodule EmisarWeb.CoreComponents do
 
       <.empty_state icon="hero-cpu-chip" title="No runners yet">
         Issue an auth key and run the installer on a host.
-        <:cta navigate={~p"/app/settings/runners/auth-keys"}>Issue auth key</:cta>
+        <:cta navigate={~p"/app/\#{@current_account}/settings/runners/auth-keys"}>Issue auth key</:cta>
       </.empty_state>
   """
   attr :icon, :string, required: true
@@ -2655,7 +2688,7 @@ defmodule EmisarWeb.CoreComponents do
 
       <.offline_notice severity={:caution} title="Queued — runner offline">
         Waiting for {name} to reconnect before this run can dispatch.
-        <:action><.link navigate={~p"/app/runners"}>View runners</.link></:action>
+        <:action><.link navigate={~p"/app/\#{@current_account}/runners"}>View runners</.link></:action>
       </.offline_notice>
   """
   attr :severity, :atom, default: :caution, values: [:info, :caution, :critical]

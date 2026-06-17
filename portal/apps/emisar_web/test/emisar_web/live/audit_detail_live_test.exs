@@ -38,13 +38,13 @@ defmodule EmisarWeb.AuditDetailLiveTest do
         context: %RequestContext{user_agent: "Go-http-client/1.1"}
       )
 
-    {:ok, _lv, html} = live(conn, ~p"/app/audit/#{event.id}")
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit/#{event.id}")
 
     # Runner is a subject property: name (group) version. The "runner:" label is
     # plain; only the name links to the runner. The subject's id renders too.
     assert html =~ "runner:"
     assert html =~ "web-01 (frontend) 0.7.4"
-    assert html =~ ~p"/app/runners/#{runner.id}"
+    assert html =~ ~p"/app/#{account}/runners/#{runner.id}"
     assert html =~ run.id
 
     # The bare Go HTTP client UA is no longer rendered as a device.
@@ -65,7 +65,7 @@ defmodule EmisarWeb.AuditDetailLiveTest do
 
     {:ok, event} = Audit.record(Audit.Events.account_updated(subject, account))
 
-    {:ok, _lv, html} = live(conn, ~p"/app/audit/#{event.id}")
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit/#{event.id}")
 
     # "via SSO" with a 2FA badge — answerable at a glance, not buried in JSON.
     assert html =~ "via"
@@ -101,7 +101,7 @@ defmodule EmisarWeb.AuditDetailLiveTest do
         subject_label: run.action_id
       )
 
-    {:ok, _lv, html} = live(conn, ~p"/app/audit/#{event.id}")
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit/#{event.id}")
 
     assert html =~ "ci-bot-runner (ci)"
     refute html =~ "ci-bot-runner (ci) -"

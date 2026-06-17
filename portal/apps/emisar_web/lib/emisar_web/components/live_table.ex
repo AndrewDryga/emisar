@@ -23,7 +23,7 @@ defmodule EmisarWeb.LiveTable do
 
       <.live_table
         id="events"
-        path={~p"/app/audit"}
+        path={~p"/app/\#{@current_account}/audit"}
         rows={@rows}
         metadata={@metadata}
         filter_params={@filter_params}
@@ -515,7 +515,7 @@ defmodule EmisarWeb.LiveTable do
   route. Wire it with a one-liner:
 
       def handle_event("filter", params, socket) do
-        {:noreply, LiveTable.apply_filter(socket, ~p"/app/things", params)}
+        {:noreply, LiveTable.apply_filter(socket, ~p"/app/\#{@current_account}/things", params)}
       end
 
   Empty values are dropped (so clearing a filter leaves the URL), the

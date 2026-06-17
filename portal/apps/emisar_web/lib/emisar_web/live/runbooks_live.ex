@@ -21,7 +21,8 @@ defmodule EmisarWeb.RunbooksLive do
   end
 
   def handle_event("filter", params, socket) do
-    {:noreply, LiveTable.apply_filter(socket, ~p"/app/runbooks", params)}
+    {:noreply,
+     LiveTable.apply_filter(socket, ~p"/app/#{socket.assigns.current_account}/runbooks", params)}
   end
 
   def handle_info({:list_changed, :runbook, _event_type, _id}, socket),
@@ -102,7 +103,7 @@ defmodule EmisarWeb.RunbooksLive do
     >
       <:title>Runbooks</:title>
       <:actions :if={Runbooks.subject_can_manage_runbooks?(@current_subject)}>
-        <.button navigate={~p"/app/runbooks/new"} size="md" icon="hero-plus">
+        <.button navigate={~p"/app/#{@current_account}/runbooks/new"} size="md" icon="hero-plus">
           New runbook
         </.button>
       </:actions>
@@ -118,7 +119,7 @@ defmodule EmisarWeb.RunbooksLive do
           Compose multi-step procedures, publish them, and operators or LLMs can run them safely.
           <:cta
             :if={Runbooks.subject_can_manage_runbooks?(@current_subject)}
-            navigate={~p"/app/runbooks/new"}
+            navigate={~p"/app/#{@current_account}/runbooks/new"}
           >
             Create runbook
           </:cta>
@@ -132,7 +133,7 @@ defmodule EmisarWeb.RunbooksLive do
           <LiveTable.live_table
             layout={:cards}
             id="runbooks"
-            path={~p"/app/runbooks"}
+            path={~p"/app/#{@current_account}/runbooks"}
             rows={@runbooks}
             metadata={@metadata}
             filter_params={@filter_params}
@@ -143,7 +144,7 @@ defmodule EmisarWeb.RunbooksLive do
                 <%!-- Row 1: title (link to editor) + status pill + version --%>
                 <:title>
                   <.link
-                    navigate={~p"/app/runbooks/#{runbook.id}/edit"}
+                    navigate={~p"/app/#{@current_account}/runbooks/#{runbook.id}/edit"}
                     class="truncate font-medium text-zinc-100 hover:text-indigo-300"
                   >
                     {runbook.title}
@@ -165,7 +166,7 @@ defmodule EmisarWeb.RunbooksLive do
                 <:actions>
                   <.link
                     :if={runbook.status == :published}
-                    navigate={~p"/app/runbooks/#{runbook.id}/run"}
+                    navigate={~p"/app/#{@current_account}/runbooks/#{runbook.id}/run"}
                     class="rounded-lg bg-indigo-500/10 px-2.5 py-1 text-xs font-semibold text-indigo-300 ring-1 ring-indigo-500/30 hover:bg-indigo-500/20"
                   >
                     Run →
