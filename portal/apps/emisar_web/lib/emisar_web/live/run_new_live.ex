@@ -266,20 +266,18 @@ defmodule EmisarWeb.RunNewLive do
 
         <%!-- Side-effects warning — loud when this action will mutate
              real state. Empty list (read-only action) hides it. --%>
-        <section
+        <.notice
           :if={@action.side_effects && @action.side_effects != []}
-          class="rounded-xl border border-amber-500/30 bg-amber-500/[0.04] p-4"
+          variant={:warning}
+          title="Side effects"
         >
-          <h3 class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-amber-200/80">
-            <.icon name="hero-exclamation-triangle" class="h-4 w-4 text-amber-300" /> Side effects
-          </h3>
-          <ul class="mt-2 space-y-1 text-sm text-amber-100/90">
+          <ul class="space-y-1">
             <li :for={effect <- @action.side_effects} class="flex items-start gap-2">
               <span class="mt-2 h-1 w-1 flex-none rounded-full bg-amber-300"></span>
               <span>{effect}</span>
             </li>
           </ul>
-        </section>
+        </.notice>
 
         <%!-- Offline-runner notice. The runner is only looked up on the
              connected render, so this stays quiet on the dead pass. We

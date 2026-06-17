@@ -828,30 +828,47 @@ defmodule EmisarWeb.CoreComponents do
   end
 
   @doc """
-  Informational banner — the non-error sibling of `<.error_banner>`, same box
-  shape (leading icon + message) in three severities: `:info` (indigo),
-  `:success` (emerald), `:warning` (amber). For a section-level heads-up that
-  isn't a hard error and has no single form field to attach to (a freshly-minted
-  credential reminder, a "provisioned on first sign-in" note, a published
-  confirmation). The message is the default slot; `class` appends positioning.
-  Renders escaped through HEEx (IL-16).
+  The canonical section banner — the non-form sibling of `<.error_banner>`: a
+  leading icon, an optional bold `title`, the message (default slot), and an
+  optional right-aligned `:action` (a button/link). Four severities: `:info`
+  (indigo), `:success` (emerald), `:warning` (amber), `:danger` (rose). For any
+  section-level heads-up — a held-approval banner, an offline warning, a
+  "needs trust review" notice, a freshly-minted credential reminder. The message
+  renders escaped through HEEx (IL-16).
 
       <.notice variant={:warning}>Copy the token now — we won't show it again.</.notice>
-      <.notice variant={:success}>Runbook published.</.notice>
+      <.notice variant={:danger} title="Run failed">
+        The runner exited non-zero. Check the output below.
+      </.notice>
+      <.notice variant={:warning} title="1 pack needs trust review">
+        Dispatch is blocked until you decide.
+        <:action><.button navigate={~p"/app/.../packs"}>Review</.button></:action>
+      </.notice>
   """
-  attr :variant, :atom, default: :info, values: [:info, :success, :warning]
+  attr :variant, :atom, default: :info, values: [:info, :success, :warning, :danger]
+  attr :title, :string, default: nil
+
+  attr :icon, :string,
+    default: nil,
+    doc: "override the per-severity icon (e.g. a held-approval hand)"
+
   attr :class, :string, default: nil
   slot :inner_block, required: true
+  slot :action, doc: "right-aligned action (button/link)"
 
   def notice(assigns) do
     ~H"""
     <div class={[
-      "flex items-start gap-2 rounded-lg border px-4 py-3 text-sm",
+      "flex items-start gap-3 rounded-lg border px-4 py-3 text-sm",
       notice_class(@variant),
       @class
     ]}>
-      <.icon name={notice_icon(@variant)} class="mt-0.5 h-4 w-4 flex-none" />
-      <div>{render_slot(@inner_block)}</div>
+      <.icon name={@icon || notice_icon(@variant)} class="mt-0.5 h-4 w-4 flex-none" />
+      <div class="min-w-0 flex-1">
+        <p :if={@title} class="font-semibold">{@title}</p>
+        <div class={@title && "mt-0.5 opacity-90"}>{render_slot(@inner_block)}</div>
+      </div>
+      <div :if={@action != []} class="shrink-0 self-center">{render_slot(@action)}</div>
     </div>
     """
   end
@@ -859,10 +876,12 @@ defmodule EmisarWeb.CoreComponents do
   defp notice_class(:info), do: "border-indigo-500/30 bg-indigo-500/10 text-indigo-200"
   defp notice_class(:success), do: "border-emerald-500/30 bg-emerald-500/10 text-emerald-200"
   defp notice_class(:warning), do: "border-amber-500/40 bg-amber-500/10 text-amber-100"
+  defp notice_class(:danger), do: "border-rose-500/30 bg-rose-500/10 text-rose-200"
 
   defp notice_icon(:info), do: "hero-information-circle-mini"
   defp notice_icon(:success), do: "hero-check-circle-mini"
   defp notice_icon(:warning), do: "hero-exclamation-triangle-mini"
+  defp notice_icon(:danger), do: "hero-exclamation-triangle-mini"
 
   @doc """
   Banner shown above a billing surface when the account's Paddle subscription

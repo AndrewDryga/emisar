@@ -439,22 +439,17 @@ defmodule EmisarWeb.ApprovalDetailLive do
             </p>
           </.card>
 
-          <section
+          <.notice
             :if={@run && @run.policy_reason}
-            class="rounded-xl border border-amber-500/30 bg-amber-500/[0.04] p-4"
+            variant={:warning}
+            icon="hero-shield-exclamation"
+            title="Why approval is required"
           >
-            <h3 class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-amber-200/70">
-              <.icon name="hero-shield-exclamation" class="h-4 w-4 text-amber-300" />
-              Why approval is required
-            </h3>
-            <p class="mt-2 text-sm leading-relaxed text-amber-100">{@run.policy_reason}</p>
-            <div
-              :if={@run.matched_rules && @run.matched_rules != []}
-              class="mt-2 text-xs text-amber-200/70"
-            >
+            <p class="leading-relaxed">{@run.policy_reason}</p>
+            <div :if={@run.matched_rules && @run.matched_rules != []} class="mt-2 text-xs opacity-80">
               Matched rules: <span class="font-mono">{Enum.join(@run.matched_rules, ", ")}</span>
             </div>
-          </section>
+          </.notice>
 
           <.card :if={@run && @run.args && @run.args != %{}} class="overflow-hidden" padding="">
             <header class="flex items-center justify-between border-b border-zinc-900 px-4 py-2">

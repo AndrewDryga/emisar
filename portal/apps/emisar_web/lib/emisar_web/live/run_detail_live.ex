@@ -193,70 +193,53 @@ defmodule EmisarWeb.RunDetailLive do
 
       <%!-- Approval banner — the run is held on a human decision. Loud amber
            + a one-click jump to the approval page. --%>
-      <div
+      <.notice
         :if={@run.status == :pending_approval and @approval_request}
-        class="mt-4 flex items-center justify-between gap-4 rounded-xl border border-amber-500/30 bg-amber-500/[0.06] p-4"
+        variant={:warning}
+        icon="hero-hand-raised"
+        title="Waiting on approval"
+        class="mt-4"
       >
-        <div class="flex items-start gap-3">
-          <.icon name="hero-hand-raised" class="mt-0.5 h-5 w-5 flex-none text-amber-300" />
-          <div>
-            <div class="text-sm font-semibold text-amber-100">Waiting on approval</div>
-            <p class="mt-1 text-xs text-amber-200/80">
-              This run is held until an approver decides.
-            </p>
-          </div>
-        </div>
-        <.button
-          variant="caution"
-          size="md"
-          navigate={~p"/app/#{@current_account}/approvals/#{@approval_request.id}"}
-          class="shrink-0"
-        >
-          Review approval →
-        </.button>
-      </div>
+        This run is held until an approver decides.
+        <:action>
+          <.button
+            variant="caution"
+            size="md"
+            navigate={~p"/app/#{@current_account}/approvals/#{@approval_request.id}"}
+          >
+            Review approval →
+          </.button>
+        </:action>
+      </.notice>
 
       <%!-- Cancelled-with-reason banner — an approver's denial cancels the run
            and writes "approval denied: …" into reason_text; a bare grey badge
            would drop that reason, leaving the requester with no "why didn't it
            run". Driven by the run (not the approval row, which a prune may have
            removed), with a best-effort jump to the decision. --%>
-      <div
+      <.notice
         :if={@run.status == :cancelled and @run.reason_text not in [nil, ""]}
-        class="mt-4 flex items-center justify-between gap-4 rounded-xl border border-rose-500/30 bg-rose-500/[0.06] p-4"
+        variant={:danger}
+        icon="hero-no-symbol"
+        title="Cancelled"
+        class="mt-4"
       >
-        <div class="flex items-start gap-3">
-          <.icon name="hero-no-symbol" class="mt-0.5 h-5 w-5 flex-none text-rose-300" />
-          <div class="min-w-0">
-            <div class="text-sm font-semibold text-rose-100">Cancelled</div>
-            <p class="mt-1 whitespace-pre-wrap text-sm text-rose-200/90">{@run.reason_text}</p>
-          </div>
-        </div>
-        <.button
-          :if={@approval_request}
-          variant="danger"
-          size="md"
-          navigate={~p"/app/#{@current_account}/approvals/#{@approval_request.id}"}
-          class="shrink-0"
-        >
-          Review approval →
-        </.button>
-      </div>
+        <span class="whitespace-pre-wrap">{@run.reason_text}</span>
+        <:action :if={@approval_request}>
+          <.button
+            variant="danger"
+            size="md"
+            navigate={~p"/app/#{@current_account}/approvals/#{@approval_request.id}"}
+          >
+            Review approval →
+          </.button>
+        </:action>
+      </.notice>
 
-      <%!-- Error banner — only when terminal-failed and we got a
-           message back. Loud rose. --%>
-      <div
-        :if={@run.error_message}
-        class="mt-4 rounded-xl border border-rose-500/30 bg-rose-500/[0.06] p-4"
-      >
-        <div class="flex items-start gap-3">
-          <.icon name="hero-exclamation-triangle" class="mt-0.5 h-5 w-5 flex-none text-rose-300" />
-          <div class="min-w-0">
-            <div class="text-sm font-semibold text-rose-100">Error</div>
-            <p class="mt-1 whitespace-pre-wrap text-sm text-rose-200/90">{@run.error_message}</p>
-          </div>
-        </div>
-      </div>
+      <%!-- Error banner — only when terminal-failed and we got a message back. --%>
+      <.notice :if={@run.error_message} variant={:danger} title="Error" class="mt-4">
+        <span class="whitespace-pre-wrap">{@run.error_message}</span>
+      </.notice>
 
       <%!-- Runner-dropped warning — the run is in flight but its runner's
            socket is gone. Don't fake a terminal status; just flag that the
