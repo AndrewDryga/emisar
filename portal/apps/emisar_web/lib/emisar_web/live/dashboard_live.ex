@@ -1,7 +1,7 @@
 defmodule EmisarWeb.DashboardLive do
   use EmisarWeb, :live_view
 
-  alias Emisar.{ApiKeys, Approvals, Billing, Catalog, Runners, Runs}
+  alias Emisar.{Accounts, ApiKeys, Approvals, Billing, Catalog, Runners, Runs}
 
   @reload_debounce_ms 500
 
@@ -66,31 +66,24 @@ defmodule EmisarWeb.DashboardLive do
     |> assign(:pending_packs_count, Catalog.count_pending_pack_versions(subject))
   end
 
-  # Team-MFA tile data, or :unavailable when the membership read fails — so the
-  # tile shows "—" rather than a misleading "0 / 0" that reads as an empty team.
+  # Team-MFA tile data, or :unavailable when the read fails — so the tile shows
+  # "—" rather than a misleading "0 / 0" that reads as an empty team. Uses the
+  # account-wide aggregate, NOT a per-page membership tally: a team past the
+  # first page read falsely reassuring before. `missing`/`required?` (the tile's
+  # tone inputs) are derived from the account-wide totals.
   defp team_mfa(account, subject) do
-    case Emisar.Accounts.list_memberships_for_account(account, subject, preload: [:user]) do
-      {:ok, memberships, _} -> team_mfa_stats(memberships, account)
-      _ -> :unavailable
+    case Accounts.team_mfa_stats(account, subject) do
+      {:ok, %{total: total, enrolled: enrolled}} ->
+        %{
+          total: total,
+          enrolled: enrolled,
+          missing: total - enrolled,
+          required?: account.require_mfa
+        }
+
+      _ ->
+        :unavailable
     end
-  end
-
-  # Tile data for the team-security stat. Team size + how many have
-  # enrolled MFA + whether the account *requires* MFA. The combination
-  # decides the tile's tone (rose when required-but-missing, amber
-  # when optional-but-missing, emerald when fully enrolled).
-  defp team_mfa_stats(memberships, account) do
-    enrolled =
-      Enum.count(memberships, fn m ->
-        m.user && m.user.mfa_enabled_at
-      end)
-
-    %{
-      total: length(memberships),
-      enrolled: enrolled,
-      missing: length(memberships) - enrolled,
-      required?: account.require_mfa
-    }
   end
 
   defp unwrap_ok({:ok, value}), do: value
