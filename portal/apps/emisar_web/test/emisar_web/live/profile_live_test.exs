@@ -293,12 +293,8 @@ defmodule EmisarWeb.ProfileLiveTest do
 
       secret = Auth.generate_mfa_secret()
 
-      {:ok, _user, _codes} =
-        Auth.enable_mfa(
-          secret,
-          NimbleTOTP.verification_code(secret),
-          Emisar.Fixtures.subject_for(user, account)
-        )
+      {_user, _codes} =
+        Emisar.Fixtures.enable_mfa!(secret, Emisar.Fixtures.subject_for(user, account))
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
 

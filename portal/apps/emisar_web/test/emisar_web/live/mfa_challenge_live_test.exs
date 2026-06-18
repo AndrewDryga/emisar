@@ -28,12 +28,8 @@ defmodule EmisarWeb.MfaChallengeLiveTest do
 
     secret = Auth.generate_mfa_secret()
 
-    {:ok, user, _codes} =
-      Auth.enable_mfa(
-        secret,
-        NimbleTOTP.verification_code(secret),
-        Emisar.Fixtures.subject_for(user, account)
-      )
+    {user, _codes} =
+      Emisar.Fixtures.enable_mfa!(secret, Emisar.Fixtures.subject_for(user, account))
 
     user
   end

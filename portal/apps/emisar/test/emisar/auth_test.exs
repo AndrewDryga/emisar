@@ -163,7 +163,7 @@ defmodule Emisar.AuthTest do
     test "verify_mfa accepts a valid OTP once and rejects an immediate replay" do
       {_user, _account, subject} = owner_subject_fixture()
       secret = Auth.generate_mfa_secret()
-      {:ok, user, _codes} = Auth.enable_mfa(secret, NimbleTOTP.verification_code(secret), subject)
+      {user, _codes} = enable_mfa!(secret, subject)
 
       otp = NimbleTOTP.verification_code(secret)
       assert :ok = Auth.verify_mfa(user, otp)
@@ -175,7 +175,7 @@ defmodule Emisar.AuthTest do
     test "verify_mfa rejects an invalid OTP" do
       {_user, _account, subject} = owner_subject_fixture()
       secret = Auth.generate_mfa_secret()
-      {:ok, user, _codes} = Auth.enable_mfa(secret, NimbleTOTP.verification_code(secret), subject)
+      {user, _codes} = enable_mfa!(secret, subject)
 
       assert {:error, :invalid} = Auth.verify_mfa(user, "000000")
     end
@@ -184,8 +184,7 @@ defmodule Emisar.AuthTest do
       {_user, _account, subject} = owner_subject_fixture()
       secret = Auth.generate_mfa_secret()
 
-      {:ok, user, [code | _]} =
-        Auth.enable_mfa(secret, NimbleTOTP.verification_code(secret), subject)
+      {user, [code | _]} = enable_mfa!(secret, subject)
 
       assert :ok = Auth.consume_mfa_recovery_code(user, code)
 
@@ -197,8 +196,7 @@ defmodule Emisar.AuthTest do
       {_user, _account, subject} = owner_subject_fixture()
       secret = Auth.generate_mfa_secret()
 
-      {:ok, _user, _codes} =
-        Auth.enable_mfa(secret, NimbleTOTP.verification_code(secret), subject)
+      {_user, _codes} = enable_mfa!(secret, subject)
 
       assert {:ok, %User{mfa_secret: nil, mfa_enabled_at: nil, mfa_recovery_codes: []}} =
                Auth.disable_mfa(subject)

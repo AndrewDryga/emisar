@@ -109,6 +109,27 @@ defmodule Emisar.Fixtures do
     user
   end
 
+  @doc """
+  Enrolls TOTP MFA for `subject` and returns `{user, recovery_codes}`. Generating a
+  code with `NimbleTOTP.verification_code/1` and validating it inside `enable_mfa`
+  reads the clock twice; if a 30s window boundary falls between the two reads the
+  code is already stale and `enable_mfa` returns `{:error, :invalid_otp}` — a rare
+  flake. Retry once across the boundary: a second straddle can't happen microseconds
+  later. Use this in any test that needs an MFA-enabled user as setup.
+  """
+  def enable_mfa!(secret, %Subject{} = subject) when is_binary(secret) do
+    case Emisar.Auth.enable_mfa(secret, NimbleTOTP.verification_code(secret), subject) do
+      {:ok, user, codes} ->
+        {user, codes}
+
+      {:error, :invalid_otp} ->
+        {:ok, user, codes} =
+          Emisar.Auth.enable_mfa(secret, NimbleTOTP.verification_code(secret), subject)
+
+        {user, codes}
+    end
+  end
+
   # -- Account ----------------------------------------------------------
 
   @doc ~S|Persists an account. A non-"free" `:plan` mints a matching subscription (plan lives on the subscription, not the account).|
