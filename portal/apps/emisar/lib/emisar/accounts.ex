@@ -353,6 +353,18 @@ defmodule Emisar.Accounts do
   end
 
   @doc """
+  Internal — the sync memberships for a SET of users in an account, in one query
+  (the SSO group reconcile's batched membership lookup; no `%Subject{}` — the
+  caller is the provider-scoped SCIM path).
+  """
+  def list_sync_memberships(account_id, user_ids) do
+    Membership.Query.not_deleted()
+    |> Membership.Query.by_account_id(account_id)
+    |> Membership.Query.by_user_ids(user_ids)
+    |> Repo.all()
+  end
+
+  @doc """
   Internal — pre-auth: called by the web session boundary (`UserAuth`) to build
   `current_account`/`current_user` before there's a Subject to authorize with.
   Resolves the membership to mount as the user's active tenant for this request:

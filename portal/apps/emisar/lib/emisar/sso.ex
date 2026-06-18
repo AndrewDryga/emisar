@@ -724,26 +724,37 @@ defmodule Emisar.SSO do
     # (least-privilege — removing a user from their last privileged group in the
     # directory demotes them here), rather than keeping a stale elevated role.
     role = highest_mapped_role(identity, mappings) || provider.default_role
-
-    case Accounts.peek_sync_membership(provider.account_id, identity.user_id) do
-      # Sync never re-roles a human owner — owners are out of sync's scope
-      # (#3, defense against clobbering a deliberate owner grant).
-      %Accounts.Membership{role: :owner} = membership ->
-        {:ok, membership}
-
-      %Accounts.Membership{} = membership ->
-        Accounts.sync_set_membership_role(membership, role, provider)
-
-      nil ->
-        {:error, :not_found}
-    end
+    membership = Accounts.peek_sync_membership(provider.account_id, identity.user_id)
+    apply_recomputed_role(provider, role, membership)
   end
+
+  # Apply a recomputed role to a (possibly nil) membership — the only per-row DB
+  # write on the bulk path. Sync never re-roles a human owner (#3, defense against
+  # clobbering a deliberate owner grant); a missing membership is :not_found.
+  defp apply_recomputed_role(_provider, _role, %Accounts.Membership{role: :owner} = membership),
+    do: {:ok, membership}
+
+  defp apply_recomputed_role(provider, role, %Accounts.Membership{} = membership),
+    do: Accounts.sync_set_membership_role(membership, role, provider)
+
+  defp apply_recomputed_role(_provider, _role, nil), do: {:error, :not_found}
+
+  defp recompute_role_for_affected(%IdentityProvider{}, []), do: :ok
 
   defp recompute_role_for_affected(%IdentityProvider{} = provider, identities) do
     mappings = provider_role_mappings(provider)
+    group_ids_by_identity = group_ids_by_identity(identities)
+    user_ids = Enum.map(identities, & &1.user_id)
+
+    membership_by_user =
+      Map.new(Accounts.list_sync_memberships(provider.account_id, user_ids), &{&1.user_id, &1})
 
     Enum.each(identities, fn identity ->
-      case recompute_role_for_identity(provider, identity, mappings) do
+      group_ids = Map.get(group_ids_by_identity, identity.id, [])
+      role = highest_role_for_groups(group_ids, mappings) || provider.default_role
+      membership = Map.get(membership_by_user, identity.user_id)
+
+      case apply_recomputed_role(provider, role, membership) do
         {:ok, _membership} ->
           :ok
 
@@ -758,6 +769,16 @@ defmodule Emisar.SSO do
     end)
   end
 
+  # All the affected identities' synced group ids in ONE query, grouped by
+  # identity — replaces the per-identity `identity_group_ids/1` (the N+1 on a
+  # SCIM Groups reconcile, where the affected set can be hundreds).
+  defp group_ids_by_identity(identities) do
+    DirectoryGroupMember.Query.not_deleted()
+    |> DirectoryGroupMember.Query.by_user_identity_ids(Enum.map(identities, & &1.id))
+    |> Repo.all()
+    |> Enum.group_by(& &1.user_identity_id, & &1.external_group_id)
+  end
+
   defp provider_role_mappings(%IdentityProvider{} = provider) do
     GroupRoleMapping.Query.not_deleted()
     |> GroupRoleMapping.Query.by_provider_id(provider.id)
@@ -766,9 +787,13 @@ defmodule Emisar.SSO do
 
   # The most-privileged mapped role over the identity's groups (`@sync_role_precedence`);
   # nil when the identity is in no mapped group.
-  defp highest_mapped_role(%UserIdentity{} = identity, mappings) do
-    group_ids = identity_group_ids(identity)
+  defp highest_mapped_role(%UserIdentity{} = identity, mappings),
+    do: highest_role_for_groups(identity_group_ids(identity), mappings)
 
+  # The most-privileged mapped role over a set of group ids — shared by the
+  # single-identity path (which queries the ids) and the batched bulk path
+  # (which pre-fetches them in one query).
+  defp highest_role_for_groups(group_ids, mappings) do
     roles =
       mappings
       |> Enum.filter(&(&1.external_group_id in group_ids))

@@ -190,6 +190,32 @@ defmodule Emisar.SSOGroupsTest do
       assert role_of(account.id, identity.user_id) == :operator
     end
 
+    test "a group push recomputes the role for ALL its members (batched bulk path)" do
+      %{provider: provider, subject: subject, account: account} = scim_provider()
+      %{identity: id1} = provision(provider, "okta|u1")
+      %{identity: id2} = provision(provider, "okta|u2")
+      assert role_of(account.id, id1.user_id) == :viewer
+      assert role_of(account.id, id2.user_id) == :viewer
+
+      {:ok, _} =
+        SSO.create_group_mapping(
+          provider,
+          %{external_group_id: "grp-ops", role: :operator},
+          subject
+        )
+
+      assert {:ok, %{member_count: 2}} =
+               SSO.scim_upsert_group(provider, %{
+                 external_id: "grp-ops",
+                 display: "Operators",
+                 member_external_ids: ["okta|u1", "okta|u2"]
+               })
+
+      # Both members recomputed to :operator in one batched pass (the N+1 fix).
+      assert role_of(account.id, id1.user_id) == :operator
+      assert role_of(account.id, id2.user_id) == :operator
+    end
+
     test "a member in two mapped groups gets the HIGHEST (admin > operator > viewer)" do
       %{provider: provider, subject: subject, account: account} = scim_provider()
       %{identity: identity} = provision(provider, "okta|multi")
