@@ -1,0 +1,23 @@
+#!/bin/bash
+
+# This file allow to extend your shell environment by adding commands from a specific project
+# To use it you need to add something like this to your .bashrc or .zshrc:
+#
+#    GIT_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
+#    [ -f "${GIT_ROOT}/.shell" ] && source "${GIT_ROOT}/.shell"
+#
+if [ -z "${GIT_ROOT}" ]; then
+  GIT_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
+fi
+
+# Make scripts/*.sh executable from any folder within the project
+# PATH="${GIT_ROOT}/scripts:${PATH}"
+
+# Set the gcloud project ID for the Google Cloud SDK
+export CLOUDSDK_CORE_PROJECT="emisar-dev"
+
+# Make coop see all the tasks of the monorepo
+export COOP_TASKS="portal/.agent/TASKS.md runner/.agent/TASKS.md"
+
+# Add the terraform command alias that works from any folder within the project
+alias prod="terraform -chdir=${GIT_ROOT}/terraform/gcp/production"
