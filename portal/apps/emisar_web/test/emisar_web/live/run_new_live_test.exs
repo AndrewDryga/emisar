@@ -53,6 +53,19 @@ defmodule EmisarWeb.RunNewLiveTest do
     refute html =~ "Invalid:"
   end
 
+  test "an enforcing runner replaces the Dispatch button with a signed-only notice", %{conn: conn} do
+    {conn, _user, account} = register_and_log_in(conn)
+    runner = runner_fixture(account_id: account.id, enforce_signatures: true, connected?: true)
+    action = action_fixture(runner: runner, action_id: "linux.uptime")
+
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs/new/#{runner.id}/#{action.action_id}")
+
+    assert html =~ "Signed dispatch only"
+    assert html =~ "run it from your MCP client"
+    # No Dispatch submit — the run would be refused at the runner.
+    refute html =~ "Dispatch to runner"
+  end
+
   test "live validation surfaces an inline error once the field is touched", %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)
     {runner, action} = action_with_required_arg(account)

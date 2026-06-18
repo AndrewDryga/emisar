@@ -238,7 +238,9 @@ defmodule EmisarWeb.RunnerDetailLive do
       >
         This runner verifies a client signature on every run and refuses unsigned ones, so
         the portal can't dispatch to it. Runs and runbooks must come from an MCP client
-        configured with its signing key.
+        configured with its signing key — mint one with
+        <code class="rounded bg-black/30 px-1 font-mono text-xs text-zinc-200">emisar keygen</code>
+        on the host.
       </.notice>
 
       <%!-- Labels + last-disconnect reason. Both are written to the DB

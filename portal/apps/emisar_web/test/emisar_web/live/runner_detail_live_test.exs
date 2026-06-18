@@ -50,6 +50,39 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
     assert html =~ "hero-signal-slash"
   end
 
+  test "an enforcing runner shows the signed-only notice and disables Run", %{
+    conn: conn,
+    account: account
+  } do
+    runner =
+      Fixtures.runner_fixture(account_id: account.id, enforce_signatures: true, connected?: true)
+
+    Fixtures.action_fixture(runner: runner, action_id: "linux.uptime")
+
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runners/#{runner.id}")
+
+    assert html =~ "Signed dispatch only"
+    # Points operators at the concrete provisioning tool.
+    assert html =~ "emisar keygen"
+    # The Run affordance is the disabled lock variant (not color alone), and is
+    # NOT a dispatch link — the portal can't run on this host.
+    assert html =~ "hero-lock-closed"
+    refute html =~ "/runs/new/#{runner.id}/linux.uptime"
+  end
+
+  test "an online non-enforcing runner offers the Run link (no signed-only gating)", %{
+    conn: conn,
+    account: account
+  } do
+    runner = Fixtures.runner_fixture(account_id: account.id, connected?: true)
+    Fixtures.action_fixture(runner: runner, action_id: "linux.uptime")
+
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runners/#{runner.id}")
+
+    assert html =~ "/runs/new/#{runner.id}/linux.uptime"
+    refute html =~ "Signed dispatch only"
+  end
+
   test "an unknown id bounces to the index as not-found", %{conn: conn, account: account} do
     dest = ~p"/app/#{account}/runners"
 
