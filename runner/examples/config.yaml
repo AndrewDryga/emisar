@@ -61,8 +61,12 @@ execution: {}
 # environment — staging vs prod) so a dispatch signed for one can't be
 # redirected to another; a fleet-wide shared key trades that for simpler ops.
 #
-# Generate a keypair on the portal (Runners → signing keys), install the
-# PUBLIC key here, and give the PRIVATE key to the MCP client (EMISAR_SIGNING_KEY).
+# Generate a keypair on this host with `emisar keygen` (offline — the private
+# key is never sent anywhere). Install the PUBLIC key here; give the PRIVATE key
+# to the MCP client as EMISAR_SIGNING_KEY + EMISAR_SIGNING_KEY_ID.
+#
+# Changing anything under `signing` (enabling enforcement, rotating or revoking
+# a key) takes effect on RUNNER RESTART — SIGHUP reloads packs only, not this.
 #
 # signing:
 #   enforce_signatures: true

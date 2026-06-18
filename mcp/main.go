@@ -97,9 +97,10 @@ Environment:
   EMISAR_SIGNING_KEY     Optional Ed25519 private key (64-hex seed). When set
                          (with EMISAR_SIGNING_KEY_ID), the bridge signs each
                          tools/call so runners that enforce signatures will run
-                         it. Generate the keypair on the portal; install the
-                         public key on the runner. Keep this secret — never
-                         put it on the control plane.
+                         it. Generate the keypair with 'emisar keygen' on the
+                         runner host; install the public key in the runner
+                         config. Keep this secret — never put it on the control
+                         plane.
   EMISAR_SIGNING_KEY_ID  Key id naming which trusted key signed the dispatch;
                          the runner echoes it to pick the public key to verify.
 
