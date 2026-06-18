@@ -14,6 +14,7 @@ defmodule Emisar.Auth do
   alias Emisar.Repo
   alias Emisar.RequestContext
   alias Emisar.Users
+  require Logger
 
   # -- Password sign in -------------------------------------------------
 
@@ -617,7 +618,14 @@ defmodule Emisar.Auth do
 
           {:error, :replay}
 
-        {:error, _} ->
+        # The OTP was CORRECT but recording its consumption failed (a DB blip),
+        # so we reject a valid code. Fail closed, but log it — otherwise a user
+        # locked out by a transient write error is undiagnosable.
+        {:error, reason} ->
+          Logger.warning(
+            "verify_mfa for user #{user.id} failed on the consume write: #{inspect(reason)}"
+          )
+
           {:error, :invalid}
       end
     else

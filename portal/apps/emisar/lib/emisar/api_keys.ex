@@ -18,6 +18,7 @@ defmodule Emisar.ApiKeys do
   alias Emisar.ApiKeys.{ApiKey, Authorizer}
   alias Emisar.{Audit, Auth, Crypto, Repo}
   alias Emisar.Auth.Subject
+  require Logger
 
   # 4 chars for "emk-" + 8 random chars => 12-char prefix.
   @prefix_size 12
@@ -324,8 +325,18 @@ defmodule Emisar.ApiKeys do
           end
 
         case Repo.commit_multi(multi) do
-          {:ok, %{key: updated}} -> updated
-          {:error, _} -> nil
+          {:ok, %{key: updated}} ->
+            updated
+
+          # A VALID key, denied only because the usage-tracking write blipped.
+          # Fail closed, but log it — a silently-rejected good key is otherwise
+          # undiagnosable. The prefix correlates without exposing the secret.
+          {:error, reason} ->
+            Logger.warning(
+              "api key #{key.id} (prefix #{prefix}) rejected on a usage-write failure: #{inspect(reason)}"
+            )
+
+            nil
         end
       else
         _ -> nil
