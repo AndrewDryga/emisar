@@ -116,6 +116,37 @@ func TestStateBuilder_AdvertisesEnforceSignatures(t *testing.T) {
 	}
 }
 
+func TestStateBuilder_AdvertisesSigningKeyIDsAndMaxAge(t *testing.T) {
+	reg := setupRegistry(t)
+
+	// Omitted from the wire when not advertised (omitempty).
+	off := (&StateBuilder{AgentID: "a", Version: "v", GetRegistry: func() *packs.Registry { return reg }}).Build()
+	if raw, _ := json.Marshal(off); strings.Contains(string(raw), "signing_key_ids") ||
+		strings.Contains(string(raw), "max_attestation_age_seconds") {
+		t.Fatalf("key ids / max age must be omitted when unset: %s", raw)
+	}
+
+	on := (&StateBuilder{
+		AgentID:                  "a",
+		Version:                  "v",
+		GetRegistry:              func() *packs.Registry { return reg },
+		EnforceSignatures:        true,
+		SigningKeyIDs:            []string{"mcp-prod", "mcp-staging"},
+		MaxAttestationAgeSeconds: 86400,
+	}).Build()
+
+	if got := on.SigningKeyIDs; len(got) != 2 || got[0] != "mcp-prod" {
+		t.Fatalf("SigningKeyIDs not advertised: %v", got)
+	}
+	if on.MaxAttestationAgeSeconds != 86400 {
+		t.Fatalf("MaxAttestationAgeSeconds not advertised: %d", on.MaxAttestationAgeSeconds)
+	}
+	if raw, _ := json.Marshal(on); !strings.Contains(string(raw), `"signing_key_ids":["mcp-prod","mcp-staging"]`) ||
+		!strings.Contains(string(raw), `"max_attestation_age_seconds":86400`) {
+		t.Fatalf("key ids + max age should be on the wire: %s", raw)
+	}
+}
+
 func TestStateBuilder_AdmissionDenylistHidesAction(t *testing.T) {
 	reg := setupRegistry(t)
 	pol, err := admission.New(nil, []string{"t.echo"})

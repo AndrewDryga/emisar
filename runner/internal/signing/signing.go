@@ -15,6 +15,7 @@ import (
 	"crypto/ed25519"
 	"encoding/hex"
 	"fmt"
+	"sort"
 	"sync"
 	"time"
 
@@ -99,6 +100,22 @@ func NewVerifier(enforce bool, keys []KeyConfig, maxAge time.Duration) (*Verifie
 // Enforces reports whether this runner enforces signatures — advertised to the
 // cloud so it disables its own (operator/runbook) dispatch to this runner.
 func (v *Verifier) Enforces() bool { return v.enforce }
+
+// KeyIDs returns the trusted key ids in sorted order — advertised to the cloud so
+// an operator can confirm which key(s) this runner accepts. Safe metadata: the
+// public-key bytes never leave the host, only their ids.
+func (v *Verifier) KeyIDs() []string {
+	ids := make([]string, 0, len(v.keys))
+	for id := range v.keys {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	return ids
+}
+
+// MaxAge is the attestation freshness window — advertised so the cloud can warn
+// before dispatching a run that would be refused as stale (e.g. a slow approval).
+func (v *Verifier) MaxAge() time.Duration { return v.maxAge }
 
 // Check decides whether a dispatch may run. Enforcement off → always allow
 // (legacy trust). Enforcement on → require a present, in-window, non-replayed,

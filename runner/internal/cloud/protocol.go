@@ -126,6 +126,13 @@ type RunnerStateMsg struct {
 	// on every dispatch and refuses unsigned ones. The cloud responds by
 	// disabling its own (operator/runbook) dispatch to this runner.
 	EnforceSignatures bool `json:"enforce_signatures,omitempty"`
+	// SigningKeyIDs + MaxAttestationAgeSeconds ride along only when enforcing:
+	// the key ids this runner trusts (so an operator can confirm setup — the
+	// public-key bytes never leave the host) and the freshness window in seconds
+	// (so the cloud can warn before dispatching a run that would be refused as
+	// stale, e.g. a slow approval).
+	SigningKeyIDs            []string `json:"signing_key_ids,omitempty"`
+	MaxAttestationAgeSeconds int      `json:"max_attestation_age_seconds,omitempty"`
 }
 
 // PackInfo is the side-index entry for a pack.

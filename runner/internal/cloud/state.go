@@ -28,6 +28,10 @@ type StateBuilder struct {
 	// EnforceSignatures advertises that this runner verifies a client
 	// signature on every dispatch — the cloud disables its own dispatch to it.
 	EnforceSignatures bool
+	// SigningKeyIDs + MaxAttestationAgeSeconds advertise the trusted key ids and
+	// the freshness window (seconds); set only when EnforceSignatures.
+	SigningKeyIDs            []string
+	MaxAttestationAgeSeconds int
 }
 
 // Build snapshots the current registry into a wire-shaped state
@@ -40,14 +44,16 @@ func (b *StateBuilder) Build() RunnerStateMsg {
 		}
 	}
 	msg := RunnerStateMsg{
-		Envelope:          Envelope{Type: MsgRunnerState, ProtocolVersion: ProtocolVersion},
-		AgentID:           b.AgentID,
-		Version:           b.Version,
-		Hostname:          hostname,
-		Group:             b.Group,
-		Labels:            b.Labels,
-		Packs:             map[string]PackInfo{},
-		EnforceSignatures: b.EnforceSignatures,
+		Envelope:                 Envelope{Type: MsgRunnerState, ProtocolVersion: ProtocolVersion},
+		AgentID:                  b.AgentID,
+		Version:                  b.Version,
+		Hostname:                 hostname,
+		Group:                    b.Group,
+		Labels:                   b.Labels,
+		Packs:                    map[string]PackInfo{},
+		EnforceSignatures:        b.EnforceSignatures,
+		SigningKeyIDs:            b.SigningKeyIDs,
+		MaxAttestationAgeSeconds: b.MaxAttestationAgeSeconds,
 	}
 	if b.GetRegistry == nil {
 		return msg

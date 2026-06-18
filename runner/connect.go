@@ -105,6 +105,12 @@ env var can be unset after the first successful connect.`,
 				Admission:         rt.admission,
 				EnforceSignatures: verifier.Enforces(),
 			}
+			// Advertise which keys we trust + our freshness window, but only when
+			// enforcing — they're meaningless metadata otherwise.
+			if verifier.Enforces() {
+				builder.SigningKeyIDs = verifier.KeyIDs()
+				builder.MaxAttestationAgeSeconds = int(verifier.MaxAge().Seconds())
+			}
 			client := cloud.NewClient(dialer, cloud.Options{
 				StateBuilder:   builder,
 				Engine:         rt.engine,

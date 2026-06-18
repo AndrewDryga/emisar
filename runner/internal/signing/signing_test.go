@@ -61,6 +61,29 @@ func TestNewVerifierRejectsBadKeys(t *testing.T) {
 	}
 }
 
+func TestVerifierKeyIDsSortedAndMaxAge(t *testing.T) {
+	seed1, _ := hex.DecodeString("0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20")
+	seed2, _ := hex.DecodeString("2102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20")
+	pub1 := ed25519.NewKeyFromSeed(seed1).Public().(ed25519.PublicKey)
+	pub2 := ed25519.NewKeyFromSeed(seed2).Public().(ed25519.PublicKey)
+
+	// Config order is k2, k1; KeyIDs() must come back sorted for a stable advertisement.
+	v, err := NewVerifier(true, []KeyConfig{
+		{KeyID: "k2", PublicKeyHex: hex.EncodeToString(pub2)},
+		{KeyID: "k1", PublicKeyHex: hex.EncodeToString(pub1)},
+	}, 2*time.Hour)
+	if err != nil {
+		t.Fatalf("NewVerifier: %v", err)
+	}
+
+	if ids := v.KeyIDs(); len(ids) != 2 || ids[0] != "k1" || ids[1] != "k2" {
+		t.Fatalf("KeyIDs not sorted: %v", ids)
+	}
+	if v.MaxAge() != 2*time.Hour {
+		t.Fatalf("MaxAge = %v, want 2h", v.MaxAge())
+	}
+}
+
 func TestCheckEnforcementOffAlwaysAllows(t *testing.T) {
 	v, err := NewVerifier(false, nil, time.Hour)
 	if err != nil {
