@@ -331,7 +331,9 @@ defmodule EmisarWeb.MCPRpcController do
   defp handle_recent_runs(conn, args) do
     with {:ok, limit} <- parse_limit(Map.get(args, "limit")),
          {:ok, scope} <- parse_scope(Map.get(args, "scope")),
-         {:ok, runs} <- Service.recent_runs(conn, limit, scope) do
+         {:ok, runner} <- parse_string_arg("runner", Map.get(args, "runner")),
+         {:ok, action} <- parse_string_arg("action", Map.get(args, "action")),
+         {:ok, runs} <- Service.recent_runs(conn, limit, scope, runner, action) do
       {content, is_err} = ContentBlocks.from_recent_runs(runs)
       {:ok, %{content: content, isError: is_err}}
     else
@@ -341,11 +343,26 @@ defmodule EmisarWeb.MCPRpcController do
 
         {:ok, %{content: content, isError: true}}
 
+      {:error, {:runner_not_found, name}} ->
+        {content, _} =
+          ContentBlocks.error_content(
+            "No such runner",
+            "No runner named `#{name}` in this account. Re-fetch /runners for current names."
+          )
+
+        {:ok, %{content: content, isError: true}}
+
       {:error, message} when is_binary(message) ->
         {content, _} = ContentBlocks.error_content("Invalid argument", message)
         {:ok, %{content: content, isError: true}}
     end
   end
+
+  # `runner` / `action` filters — a non-empty string narrows; nil or "" = no
+  # filter; any other type is a client bug.
+  defp parse_string_arg(_label, value) when value in [nil, ""], do: {:ok, nil}
+  defp parse_string_arg(_label, value) when is_binary(value), do: {:ok, value}
+  defp parse_string_arg(label, _value), do: {:error, "`#{label}` must be a string."}
 
   # Accept a JSON number OR a numeric string (some MCP clients stringify args);
   # a non-numeric / non-positive value is rejected, not silently coerced to 20.

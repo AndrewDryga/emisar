@@ -551,6 +551,37 @@ defmodule Emisar.RunsTest do
     end
   end
 
+  describe "list_recent_runs/2 runner + action filters" do
+    test "narrows by runner_id and action_id (composable)" do
+      account = account_fixture()
+      runner_a = runner_fixture(account_id: account.id)
+      runner_b = runner_fixture(account_id: account.id)
+      subject = subject_for(user_fixture(), account, role: :owner)
+
+      {:ok, _} =
+        Runs.create_run(base_attrs(account.id, runner_a.id, %{action_id: "linux.uptime"}))
+
+      {:ok, _} =
+        Runs.create_run(base_attrs(account.id, runner_a.id, %{action_id: "linux.disk_usage"}))
+
+      {:ok, _} =
+        Runs.create_run(base_attrs(account.id, runner_b.id, %{action_id: "linux.uptime"}))
+
+      {:ok, by_runner, _} = Runs.list_recent_runs(subject, runner_id: runner_a.id)
+      assert length(by_runner) == 2
+      assert Enum.all?(by_runner, &(&1.runner_id == runner_a.id))
+
+      {:ok, by_action, _} = Runs.list_recent_runs(subject, action_id: "linux.uptime")
+      assert length(by_action) == 2
+      assert Enum.all?(by_action, &(&1.action_id == "linux.uptime"))
+
+      {:ok, both, _} =
+        Runs.list_recent_runs(subject, runner_id: runner_a.id, action_id: "linux.uptime")
+
+      assert length(both) == 1
+    end
+  end
+
   describe "mark_finished/2 runbook continuation" do
     test "a next-wave step that fails to dispatch writes a runbook.step_dispatch_failed audit row" do
       # Regression: a continuation that can't dispatch (denied / out-of-scope /

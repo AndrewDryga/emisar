@@ -53,15 +53,25 @@ defmodule Emisar.Runs do
            ) do
       {preloads, opts} = Keyword.pop(opts, :preload, [])
       {scope, opts} = Keyword.pop(opts, :scope, :account)
+      {runner_id, opts} = Keyword.pop(opts, :runner_id)
+      {action_id, opts} = Keyword.pop(opts, :action_id)
       limit = Keyword.get(opts, :limit, 8)
 
       ActionRun.Query.all()
       |> apply_run_scope(scope, subject)
+      |> maybe_by_runner_id(runner_id)
+      |> maybe_by_action_id(action_id)
       |> apply_run_preloads(preloads)
       |> Authorizer.for_subject(subject)
       |> Repo.list(ActionRun.Query, page: [limit: limit])
     end
   end
+
+  defp maybe_by_runner_id(query, nil), do: query
+  defp maybe_by_runner_id(query, runner_id), do: ActionRun.Query.by_runner_id(query, runner_id)
+
+  defp maybe_by_action_id(query, nil), do: query
+  defp maybe_by_action_id(query, action_id), do: ActionRun.Query.by_action_id(query, action_id)
 
   @failed_statuses [:failed, :error, :timed_out]
 

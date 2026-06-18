@@ -190,6 +190,25 @@ defmodule Emisar.Runners do
   end
 
   @doc """
+  Fetch a single non-deleted runner by its account-unique name. Requires
+  `view_runners`; account-scoped. `{:ok, runner} | {:error, :not_found |
+  :unauthorized}`. Used to resolve a runner the agent named (MCP `recent_runs`).
+  """
+  def fetch_runner_by_name(name, %Subject{} = subject, opts \\ []) when is_binary(name) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.view_runners_permission()
+           ) do
+      Runner.Query.not_deleted()
+      |> Runner.Query.by_name(name)
+      |> Authorizer.for_subject(subject)
+      |> Repo.fetch(Runner.Query, opts)
+      |> decorate_result()
+    end
+  end
+
+  @doc """
   Internal — the Runs dispatch gate: true when the runner exists in
   `account_id` and is neither soft-deleted nor disabled (a disabled
   runner must refuse new dispatches).

@@ -230,13 +230,37 @@ defmodule EmisarWeb.MCP.Service do
   The `recent_runs` synthetic tool: the calling agent's (or the whole
   account's) most recent runs, newest first, as compact summaries.
   """
-  @spec recent_runs(Plug.Conn.t(), pos_integer(), :own | :account) ::
-          {:ok, [map()]} | {:error, :unauthorized}
-  def recent_runs(conn, limit, scope) do
+  @spec recent_runs(
+          Plug.Conn.t(),
+          pos_integer(),
+          :own | :account,
+          String.t() | nil,
+          String.t() | nil
+        ) :: {:ok, [map()]} | {:error, :unauthorized | {:runner_not_found, String.t()}}
+  def recent_runs(conn, limit, scope, runner, action) do
     subject = conn.assigns.current_subject
 
-    case Runs.list_recent_runs(subject, scope: scope, limit: limit, preload: [:runner]) do
-      {:ok, runs, _meta} -> {:ok, Enum.map(runs, &run_summary/1)}
+    with {:ok, runner_id} <- resolve_runner_filter(runner, subject),
+         {:ok, runs, _meta} <-
+           Runs.list_recent_runs(subject,
+             scope: scope,
+             limit: limit,
+             runner_id: runner_id,
+             action_id: action,
+             preload: [:runner]
+           ) do
+      {:ok, Enum.map(runs, &run_summary/1)}
+    end
+  end
+
+  # nil → no runner filter; a name resolves to its id (account-scoped) so the
+  # agent can narrow to one host, or {:runner_not_found, name} for a clear miss.
+  defp resolve_runner_filter(nil, _subject), do: {:ok, nil}
+
+  defp resolve_runner_filter(name, subject) when is_binary(name) do
+    case Runners.fetch_runner_by_name(name, subject) do
+      {:ok, runner} -> {:ok, runner.id}
+      {:error, :not_found} -> {:error, {:runner_not_found, name}}
       {:error, :unauthorized} -> {:error, :unauthorized}
     end
   end

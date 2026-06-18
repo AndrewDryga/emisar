@@ -625,6 +625,37 @@ defmodule Emisar.RunnersTest do
     end
   end
 
+  describe "fetch_runner_by_name/3" do
+    test "fetches a non-deleted runner by its account-unique name" do
+      {_user, account, subject} = owner_subject_fixture()
+      runner = runner_fixture(account_id: account.id, name: "host-1")
+
+      assert {:ok, fetched} = Runners.fetch_runner_by_name("host-1", subject)
+      assert fetched.id == runner.id
+    end
+
+    test "not_found for an unknown name" do
+      {_user, _account, subject} = owner_subject_fixture()
+      assert {:error, :not_found} = Runners.fetch_runner_by_name("nope", subject)
+    end
+
+    test "cross-account: a name in another account doesn't resolve" do
+      {_user_a, _account_a, subject_a} = owner_subject_fixture()
+      account_b = account_fixture()
+      _runner = runner_fixture(account_id: account_b.id, name: "host-b")
+
+      assert {:error, :not_found} = Runners.fetch_runner_by_name("host-b", subject_a)
+    end
+
+    test "denial: a subject without view_runners is unauthorized" do
+      {_owner, account, _owner_subject} = owner_subject_fixture()
+      _runner = runner_fixture(account_id: account.id, name: "host-1")
+      no_view = %Emisar.Auth.Subject{account: account, role: :runner, permissions: MapSet.new()}
+
+      assert {:error, :unauthorized} = Runners.fetch_runner_by_name("host-1", no_view)
+    end
+  end
+
   describe "list_runners_for_account/2" do
     test "filters by account, group, and status" do
       {account, _user, subject} = account_with_owner_subject()

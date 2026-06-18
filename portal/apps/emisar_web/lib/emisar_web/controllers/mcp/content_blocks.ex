@@ -102,7 +102,8 @@ defmodule EmisarWeb.MCP.ContentBlocks do
         "List the most recent action runs this agent (API key) dispatched, newest first — so you " <>
           "can recall what you already ran on a host and how it turned out (status, exit code) before " <>
           "re-running it. `scope: \"own\"` (default) returns only your own runs; " <>
-          "`scope: \"account\"` widens to every agent in the account. Read-only.",
+          "`scope: \"account\"` widens to every agent in the account. Narrow with `runner` " <>
+          "(a host name) and/or `action` (an action_id). Read-only.",
       inputSchema: %{
         "$schema" => "https://json-schema.org/draft/2020-12/schema",
         "type" => "object",
@@ -120,6 +121,17 @@ defmodule EmisarWeb.MCP.ContentBlocks do
             "description" =>
               "\"own\" (default) = only this key's runs; " <>
                 "\"account\" = all agents in the account."
+          },
+          "runner" => %{
+            "type" => "string",
+            "description" =>
+              "Only runs dispatched to this runner, by name (as shown in each summary's " <>
+                "`runner`). Omit for all runners."
+          },
+          "action" => %{
+            "type" => "string",
+            "description" =>
+              "Only runs of this action_id (e.g. \"linux.uptime\"). Omit for all actions."
           }
         }
       }
