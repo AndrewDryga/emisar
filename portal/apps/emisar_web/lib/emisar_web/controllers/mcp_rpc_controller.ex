@@ -328,27 +328,44 @@ defmodule EmisarWeb.MCPRpcController do
   # -- recent_runs ----------------------------------------------------
 
   defp handle_recent_runs(conn, args) do
-    limit = parse_limit(Map.get(args, "limit"))
-    scope = parse_scope(Map.get(args, "scope"))
-
-    case Service.recent_runs(conn, limit, scope) do
-      {:ok, runs} ->
-        {content, is_err} = ContentBlocks.from_recent_runs(runs)
-        {:ok, %{content: content, isError: is_err}}
-
+    with {:ok, limit} <- parse_limit(Map.get(args, "limit")),
+         {:ok, scope} <- parse_scope(Map.get(args, "scope")),
+         {:ok, runs} <- Service.recent_runs(conn, limit, scope) do
+      {content, is_err} = ContentBlocks.from_recent_runs(runs)
+      {:ok, %{content: content, isError: is_err}}
+    else
       {:error, :unauthorized} ->
         {content, _} =
           ContentBlocks.error_content("Not allowed", "This API key can't read runs.")
 
         {:ok, %{content: content, isError: true}}
+
+      {:error, message} when is_binary(message) ->
+        {content, _} = ContentBlocks.error_content("Invalid argument", message)
+        {:ok, %{content: content, isError: true}}
     end
   end
 
-  defp parse_limit(n) when is_integer(n) and n > 0, do: min(n, 100)
-  defp parse_limit(_), do: 20
+  # Accept a JSON number OR a numeric string (some MCP clients stringify args);
+  # a non-numeric / non-positive value is rejected, not silently coerced to 20.
+  defp parse_limit(n) when is_integer(n) and n > 0, do: {:ok, min(n, 100)}
+  defp parse_limit(nil), do: {:ok, 20}
 
-  defp parse_scope("account"), do: :account
-  defp parse_scope(_), do: :own
+  defp parse_limit(s) when is_binary(s) do
+    case Integer.parse(s) do
+      {n, ""} when n > 0 -> {:ok, min(n, 100)}
+      _ -> {:error, ~s(`limit` must be a positive integer, 1 to 100.)}
+    end
+  end
+
+  defp parse_limit(_), do: {:error, ~s(`limit` must be a positive integer, 1 to 100.)}
+
+  # Absent → the documented default "own"; a present but unrecognized value is
+  # an error, never silently narrowed to "own".
+  defp parse_scope(nil), do: {:ok, :own}
+  defp parse_scope("own"), do: {:ok, :own}
+  defp parse_scope("account"), do: {:ok, :account}
+  defp parse_scope(_), do: {:error, ~s(`scope` must be "own" or "account".)}
 
   # -- Arg parsing ----------------------------------------------------
 

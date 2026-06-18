@@ -552,6 +552,34 @@ defmodule EmisarWeb.MCPRpcControllerTest do
       assert content_text(body) =~ "linux.uptime"
     end
 
+    test "a numeric-string limit is accepted, not silently dropped to the default",
+         %{conn: conn, account: account, user: user} do
+      raw = make_api_key!(account, user, scopes: ["actions:read"])
+
+      # Some MCP clients stringify args; "5" must parse, not coerce to an error.
+      body =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> rpc("tools/call", %{"name" => "recent_runs", "arguments" => %{"limit" => "5"}})
+        |> json_response(200)
+
+      assert body["result"]["isError"] == false
+    end
+
+    test "an unrecognized scope errors instead of silently narrowing to own",
+         %{conn: conn, account: account, user: user} do
+      raw = make_api_key!(account, user, scopes: ["actions:read"])
+
+      body =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> rpc("tools/call", %{"name" => "recent_runs", "arguments" => %{"scope" => "bogus"}})
+        |> json_response(200)
+
+      assert body["result"]["isError"] == true
+      assert content_text(body) =~ "scope"
+    end
+
     test "an execute-only key calling recent_runs is refused with actions:read",
          %{conn: conn, account: account, user: user} do
       raw = make_api_key!(account, user, scopes: ["actions:execute"])
