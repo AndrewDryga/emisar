@@ -104,7 +104,17 @@ defmodule Emisar.Audit.Event.Query do
     {"action_run.cancelled", "Run cancelled"},
     {"action_run.timed_out", "Run timed out"},
     {"action_run.denied", "Run denied by policy"},
-    {"action_run.pending_approval", "Run awaiting approval"}
+    {"action_run.pending_approval", "Run awaiting approval"},
+    {"user.provisioned_via_sso", "User provisioned (SSO JIT)"},
+    {"user.provisioned_via_scim", "User provisioned (SCIM)"},
+    {"membership.deprovisioned_via_scim", "Member deprovisioned (SCIM)"},
+    {"membership.reprovisioned_via_scim", "Member reprovisioned (SCIM)"},
+    {"membership.role_synced_via_scim", "Member role synced (SCIM)"},
+    {"sso.group_mapping_created", "SSO group mapping created"},
+    {"sso.group_mapping_updated", "SSO group mapping updated"},
+    {"sso.group_mapping_deleted", "SSO group mapping deleted"},
+    {"sso.link_request_approved", "SSO link request approved"},
+    {"sso.link_request_dismissed", "SSO link request dismissed"}
   ]
 
   def known_event_type_values, do: @known_event_types
@@ -246,6 +256,19 @@ defmodule Emisar.Audit.Event.Query do
        {"action_run.timed_out", "Timed out"},
        {"action_run.denied", "Denied by policy"},
        {"action_run.pending_approval", "Awaiting approval"}
+     ]},
+    {"SSO / Directory",
+     [
+       {"user.provisioned_via_sso", "User provisioned (SSO)"},
+       {"user.provisioned_via_scim", "User provisioned (SCIM)"},
+       {"membership.deprovisioned_via_scim", "Member deprovisioned"},
+       {"membership.reprovisioned_via_scim", "Member reprovisioned"},
+       {"membership.role_synced_via_scim", "Role synced"},
+       {"sso.group_mapping_created", "Group mapping created"},
+       {"sso.group_mapping_updated", "Group mapping updated"},
+       {"sso.group_mapping_deleted", "Group mapping deleted"},
+       {"sso.link_request_approved", "Link request approved"},
+       {"sso.link_request_dismissed", "Link request dismissed"}
      ]}
   ]
 

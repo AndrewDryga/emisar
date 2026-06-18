@@ -379,6 +379,29 @@ defmodule Emisar.AuditTest do
       assert Enum.all?(rows, &(&1.event_type == "user.invited"))
     end
 
+    test "the SSO / Directory event types are selectable in both filter lists" do
+      flat =
+        Audit.Event.Query.known_event_type_values() |> Enum.map(&elem(&1, 0)) |> MapSet.new()
+
+      grouped =
+        Audit.Event.Query.grouped_event_type_values()
+        |> Enum.flat_map(fn {_group, items} -> Enum.map(items, &elem(&1, 0)) end)
+        |> MapSet.new()
+
+      sso = ~w[
+        user.provisioned_via_sso user.provisioned_via_scim
+        membership.deprovisioned_via_scim membership.reprovisioned_via_scim
+        membership.role_synced_via_scim
+        sso.group_mapping_created sso.group_mapping_updated sso.group_mapping_deleted
+        sso.link_request_approved sso.link_request_dismissed
+      ]
+
+      for type <- sso do
+        assert type in flat, "#{type} missing from known_event_type_values/0"
+        assert type in grouped, "#{type} missing from grouped_event_type_values/0"
+      end
+    end
+
     test "the request_id filter matches request_id, with wildcards escaped" do
       account = account_fixture()
       subject = subject_for(user_fixture(), account, role: :owner)
