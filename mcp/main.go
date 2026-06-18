@@ -94,6 +94,14 @@ Environment:
   EMISAR_CLIENT     Optional label that shows up in the audit log
                     (claude-desktop, cursor, codex, …). Defaults to
                     "unknown".
+  EMISAR_SIGNING_KEY     Optional Ed25519 private key (64-hex seed). When set
+                         (with EMISAR_SIGNING_KEY_ID), the bridge signs each
+                         tools/call so runners that enforce signatures will run
+                         it. Generate the keypair on the portal; install the
+                         public key on the runner. Keep this secret — never
+                         put it on the control plane.
+  EMISAR_SIGNING_KEY_ID  Key id naming which trusted key signed the dispatch;
+                         the runner echoes it to pick the public key to verify.
 
 Flags:
   -h, --help        Print this help and exit
@@ -133,12 +141,21 @@ func main() {
 		fatalln(err)
 	}
 
+	// Optional client-attested dispatch: when a signing key is configured, the
+	// bridge signs each tools/call so an enforcing runner will run it. The
+	// private key never leaves this process.
+	sign, err := newSigner(os.Getenv("EMISAR_SIGNING_KEY"), os.Getenv("EMISAR_SIGNING_KEY_ID"))
+	if err != nil {
+		fatalln(err)
+	}
+
 	b := &bridge{
 		endpoint:  base + "/api/mcp/rpc",
 		apiKey:    apiKey,
 		userAgent: buildUserAgent(),
 		client:    newHTTPClient(),
 		sessionID: newSessionID(),
+		signer:    sign,
 	}
 
 	if err := b.serve(os.Stdin, os.Stdout); err != nil && !errors.Is(err, io.EOF) {
@@ -156,6 +173,9 @@ type bridge struct {
 	// idempotency keys, so a session's runs correlate and resent frames
 	// collapse to one run.
 	sessionID string
+	// signer, when set, attaches a client attestation to each tools/call so an
+	// enforcing runner will run it. Nil = signing disabled.
+	signer *signer
 }
 
 // serve reads JSON-RPC frames one per line from r, forwards them
@@ -216,6 +236,12 @@ func (b *bridge) serve(r io.Reader, w io.Writer) error {
 // response body. A 202 status is treated as "notification accepted,
 // no response" — we return an empty body in that case.
 func (b *bridge) forward(frame []byte) ([]byte, error) {
+	// Sign a dispatch before it leaves the process (a no-op for non-tools/call
+	// frames, and when no key is configured).
+	if b.signer != nil {
+		frame = b.signer.signFrame(frame)
+	}
+
 	req, err := http.NewRequest(http.MethodPost, b.endpoint, bytes.NewReader(frame))
 	if err != nil {
 		return nil, err
