@@ -107,6 +107,7 @@ EMISAR_AUTH_KEY=emkey-auth-... \
 | [docs/architecture.md](docs/architecture.md)        | Package layout, runtime pipeline, boot sequence.     |
 | [docs/install.md](docs/install.md)                  | Production install, supervised operation, upgrade.   |
 | [docs/security-model.md](docs/security-model.md)    | Threats considered and explicitly not considered.    |
+| [docs/signed-dispatch.md](docs/signed-dispatch.md)  | Run only human-signed actions (client-attested dispatch). |
 | [docs/action-packs.md](docs/action-packs.md)        | How to write a pack.                                 |
 | [docs/cloud-boundary.md](docs/cloud-boundary.md)    | What the control plane and runner each enforce.        |
 | [docs/wire-protocol.md](docs/wire-protocol.md)      | JSON message types, connection lifecycle, opts.      |
@@ -138,7 +139,7 @@ runner/                          Go module — on-host runner binary
   examples/config.yaml             example runner config
 mcp/                             Go module — stdio MCP bridge for Claude Code / Cursor / etc.
 packs/                           action pack catalog (YAML) — linux-core, cassandra, docker, + 70 more; consumed by the runner + portal
-docs/                            architecture, security, action-packs, cloud-boundary, wire-protocol
+docs/                            architecture, security, signed-dispatch, action-packs, cloud-boundary, wire-protocol
 docker-compose.yml               Full local stack: Postgres, portal, seeder, and runners
 install.sh                       supervised install (systemd / launchd) — run against tarball
 ```
