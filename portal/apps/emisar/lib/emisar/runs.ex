@@ -773,11 +773,12 @@ defmodule Emisar.Runs do
       "reason" => run.reason
     }
 
-    Emisar.Runners.deliver_to_runner(
-      run.account_id,
-      run.runner_id,
-      maybe_stamp_pack_hash(payload, run)
-    )
+    envelope =
+      payload
+      |> maybe_put_attestation(run)
+      |> maybe_stamp_pack_hash(run)
+
+    Emisar.Runners.deliver_to_runner(run.account_id, run.runner_id, envelope)
 
     # The envelope is already on the runner's topic, so we can't un-send it
     # if the DB write fails — but a dropped `mark_sent` leaves the runner
@@ -796,6 +797,14 @@ defmodule Emisar.Runs do
         :ok
     end
   end
+
+  # Relay the client attestation (signed by the MCP, never the cloud) so an
+  # enforcing runner can verify a real user authorized this run. The portal
+  # only carries it through — it neither produces nor checks the signature.
+  defp maybe_put_attestation(payload, %ActionRun{attestation: att}) when is_map(att),
+    do: Map.put(payload, "attestation", att)
+
+  defp maybe_put_attestation(payload, %ActionRun{}), do: payload
 
   # Stamp the trusted pack hash into the wire envelope so the runner
   # can re-hash its on-disk pack and refuse a dispatch whose bytes

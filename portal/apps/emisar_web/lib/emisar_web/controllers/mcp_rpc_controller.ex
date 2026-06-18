@@ -143,7 +143,7 @@ defmodule EmisarWeb.MCPRpcController do
   # -- Tool call ------------------------------------------------------
 
   defp handle_tool_call(conn, name, args) do
-    {runner_names, reason, wait, action_args} = split_call_args(args)
+    {runner_names, reason, wait, attestation, action_args} = split_call_args(args)
     idempotency_key = Idempotency.resolve(conn, args)
 
     # Omitting `wait` means "block for the result" — the default has to
@@ -169,7 +169,8 @@ defmodule EmisarWeb.MCPRpcController do
       reason: reason,
       wait_ms: wait_ms,
       idempotency_key: idempotency_key,
-      mcp_session_id: req_session_id(conn)
+      mcp_session_id: req_session_id(conn),
+      attestation: attestation
     }
 
     case Service.dispatch_tool(conn, name, action_args, opts) do
@@ -384,11 +385,30 @@ defmodule EmisarWeb.MCPRpcController do
 
     reason = args["reason"]
     wait = args["wait"]
+    attestation = normalize_attestation(args["attestation"])
 
-    action_args = Map.drop(args, ["runner", "runners", "reason", "wait", "idempotency_key"])
+    action_args =
+      Map.drop(args, ["runner", "runners", "reason", "wait", "idempotency_key", "attestation"])
 
-    {runner_names, reason, wait, action_args}
+    {runner_names, reason, wait, attestation, action_args}
   end
+
+  # An MCP client attaches `attestation` beside the call's runner/reason; the
+  # portal RELAYS it to the runner, which verifies the Ed25519 signature. Accept
+  # only a well-formed envelope (the four string fields the runner expects) so a
+  # malformed one degrades to "no attestation" — an enforcing runner then refuses
+  # cleanly rather than the portal forwarding junk onto the wire.
+  defp normalize_attestation(%{} = att) do
+    fields = Map.take(att, ["key_id", "sig", "nonce", "issued_at"])
+
+    if map_size(fields) == 4 and Enum.all?(fields, fn {_k, v} -> is_binary(v) end) do
+      fields
+    else
+      nil
+    end
+  end
+
+  defp normalize_attestation(_), do: nil
 
   # -- Auth -----------------------------------------------------------
   #

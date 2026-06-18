@@ -34,6 +34,10 @@ defmodule Emisar.Runs.ActionRun do
     field :args, :map, default: %{}
     field :args_sha256, :string
     field :opts, :map, default: %{}
+    # The client signature relayed from an MCP dispatch (%{"key_id", "sig",
+    # "nonce", "issued_at"}); carried in the runner envelope so the runner can
+    # verify it. Nil for portal-originated runs, which an enforcing runner refuses.
+    field :attestation, :map
     # MCP clientInfo snapshot at dispatch time (e.g. %{"name" => "Claude
     # Code", "version" => "1.2.3"}); empty for non-MCP runs.
     field :client_info, :map, default: %{}

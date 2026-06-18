@@ -302,6 +302,66 @@ defmodule EmisarWeb.MCPRpcControllerTest do
       assert run.mcp_session_id == "sess-abc-123"
     end
 
+    test "extracts a well-formed attestation and stores it on the run, not in the args",
+         %{conn: conn, account: account, user: user} do
+      runner = make_runner!(account, name: "host-1")
+      advertise_action!(runner, action_id: "linux.uptime", risk: "low")
+      raw = make_api_key!(account, user)
+      subject = Emisar.Fixtures.subject_for(user, account, role: :owner)
+
+      attestation = %{
+        "key_id" => "k1",
+        "sig" => "deadbeef",
+        "nonce" => "n1",
+        "issued_at" => "2026-06-17T12:00:00Z"
+      }
+
+      conn
+      |> put_req_header("authorization", "Bearer " <> raw)
+      |> rpc("tools/call", %{
+        "name" => "linux.uptime",
+        "arguments" => %{
+          "runner" => "host-1",
+          "reason" => "smoke",
+          "wait" => "0",
+          "attestation" => attestation
+        }
+      })
+      |> json_response(200)
+
+      {:ok, [run], _meta} = Runs.list_runs(subject)
+      assert run.attestation == attestation
+      # The attestation is a control key, not an action argument — it must not
+      # leak into the args the runner validates and signs over.
+      refute Map.has_key?(run.args, "attestation")
+    end
+
+    test "a malformed attestation is dropped to nil (enforcing runner then refuses)",
+         %{conn: conn, account: account, user: user} do
+      runner = make_runner!(account, name: "host-1")
+      advertise_action!(runner, action_id: "linux.uptime", risk: "low")
+      raw = make_api_key!(account, user)
+      subject = Emisar.Fixtures.subject_for(user, account, role: :owner)
+
+      conn
+      |> put_req_header("authorization", "Bearer " <> raw)
+      |> rpc("tools/call", %{
+        "name" => "linux.uptime",
+        # Missing nonce + issued_at — not the 4-field envelope the runner needs.
+        "arguments" => %{
+          "runner" => "host-1",
+          "reason" => "smoke",
+          "wait" => "0",
+          "attestation" => %{"key_id" => "k1", "sig" => "x"}
+        }
+      })
+      |> json_response(200)
+
+      {:ok, [run], _meta} = Runs.list_runs(subject)
+      assert run.attestation == nil
+      refute Map.has_key?(run.args, "attestation")
+    end
+
     test "unknown action returns isError content block",
          %{conn: conn, account: account, user: user} do
       raw = make_api_key!(account, user)

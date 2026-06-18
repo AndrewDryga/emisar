@@ -450,6 +450,45 @@ defmodule Emisar.RunsTest do
       assert {:ok, :running, %ActionRun{}} = Runs.dispatch_run(attrs, subject)
     end
 
+    test "a signed dispatch persists the attestation and relays it on the wire" do
+      account = account_fixture()
+      runner = runner_fixture(account_id: account.id, enforce_signatures: true)
+      _ = action_fixture(runner: runner, action_id: "linux.uptime", risk: "low")
+      _ = policy_fixture(account_id: account.id)
+      subject = subject_for(user_fixture(), account, role: :owner)
+
+      attestation = %{
+        "key_id" => "k1",
+        "sig" => "deadbeef",
+        "nonce" => "n1",
+        "issued_at" => "2026-06-17T12:00:00Z"
+      }
+
+      Emisar.Runners.subscribe_runner_transport(runner)
+
+      attrs = base_attrs(account.id, runner.id, %{attestation: attestation})
+      assert {:ok, :running, run} = Runs.dispatch_run(attrs, subject)
+
+      # Stored on the run row, and relayed verbatim — the portal only carries it.
+      assert run.attestation == attestation
+      assert_receive {:cloud_to_runner, payload}, 500
+      assert payload["attestation"] == attestation
+    end
+
+    test "a portal-originated run carries no attestation on the wire" do
+      account = account_fixture()
+      runner = runner_fixture(account_id: account.id)
+      _ = action_fixture(runner: runner, action_id: "linux.uptime", risk: "low")
+      _ = policy_fixture(account_id: account.id)
+      subject = subject_for(user_fixture(), account, role: :owner)
+
+      Emisar.Runners.subscribe_runner_transport(runner)
+
+      assert {:ok, :running, _run} = Runs.dispatch_run(base_attrs(account.id, runner.id), subject)
+      assert_receive {:cloud_to_runner, payload}, 500
+      refute Map.has_key?(payload, "attestation")
+    end
+
     test "a non-enforcing runner dispatches normally (no regression)" do
       account = account_fixture()
       runner = runner_fixture(account_id: account.id)
