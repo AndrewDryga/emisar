@@ -44,6 +44,24 @@ defmodule EmisarWeb.RunnersLiveTest do
       assert html =~ "b1"
     end
 
+    test "an enforcing runner shows a Signed-only chip on the index", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+
+      Emisar.Fixtures.runner_fixture(
+        account_id: account.id,
+        name: "hardened",
+        enforce_signatures: true
+      )
+
+      Emisar.Fixtures.runner_fixture(account_id: account.id, name: "plain")
+
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runners")
+
+      assert html =~ "Signed-only"
+      assert html =~ "hardened"
+      assert html =~ "plain"
+    end
+
     test "an offline runner's 'last seen' heartbeat renders through <.local_time>", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
 

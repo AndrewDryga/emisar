@@ -221,6 +221,16 @@ defmodule EmisarWeb.RunnersLive do
                       <span :if={runner.runner_version} class="font-mono text-[11px] text-zinc-500">
                         v{runner.runner_version}
                       </span>
+                      <%!-- Hardened runners are scannable at a glance — the portal
+                           can't dispatch to them; only signed MCP calls run. --%>
+                      <.chip
+                        :if={runner.enforce_signatures}
+                        tone={:indigo}
+                        icon="hero-shield-check"
+                        title="Runs only signed dispatches — the portal can't dispatch to this runner"
+                      >
+                        Signed-only
+                      </.chip>
                     </div>
                     <div class="mt-0.5 truncate text-xs text-zinc-500">
                       <%!-- {" "} guards the space before the component — HEEx trims
