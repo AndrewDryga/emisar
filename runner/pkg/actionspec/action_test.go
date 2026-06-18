@@ -481,3 +481,22 @@ func TestRiskOrdering(t *testing.T) {
 		t.Error("invalid risk should not be <= anything")
 	}
 }
+
+func TestSecretArgWarnings(t *testing.T) {
+	a := &Action{
+		ID: "x.y",
+		Args: []Arg{
+			{Name: "api_key", Type: "string"},                     // secret-ish, unmarked → warn
+			{Name: "auth_token", Type: "string", Sensitive: true}, // secret-ish but marked → no warn
+			{Name: "lines", Type: "integer"},                      // not secret-ish → no warn
+		},
+	}
+
+	w := a.SecretArgWarnings()
+	if len(w) != 1 {
+		t.Fatalf("want 1 warning, got %d: %v", len(w), w)
+	}
+	if !strings.Contains(w[0], "api_key") {
+		t.Fatalf("warning should name the offending arg: %v", w)
+	}
+}

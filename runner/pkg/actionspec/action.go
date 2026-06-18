@@ -133,6 +133,25 @@ var reservedArgNames = map[string]struct{}{
 	"idempotency_key": {},
 }
 
+// secretArgNameRe matches arg names that look secret-bearing (for SecretArgWarnings).
+var secretArgNameRe = regexp.MustCompile(`(?i)(token|password|passwd|secret|api_?key)`)
+
+// SecretArgWarnings flags args whose NAME looks secret-bearing but aren't marked
+// `sensitive: true` — routing a real secret through such an arg would leak it into
+// execution.argv and the recorded executed_command. A lint (warning), not a hard
+// error: an arg that merely contains "token" in its name may be a non-secret id,
+// so the author decides — `emisar pack validate` surfaces it, doesn't reject it.
+func (a *Action) SecretArgWarnings() []string {
+	var warnings []string
+	for _, arg := range a.Args {
+		if !arg.Sensitive && secretArgNameRe.MatchString(arg.Name) {
+			warnings = append(warnings,
+				fmt.Sprintf("action %q: arg %q looks secret-bearing but is not marked `sensitive: true`", a.ID, arg.Name))
+		}
+	}
+	return warnings
+}
+
 // Validate checks that the action is internally consistent and ready to load.
 func (a *Action) Validate() error {
 	if a.SchemaVersion != SchemaVersion {

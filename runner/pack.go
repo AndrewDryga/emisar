@@ -147,6 +147,16 @@ func packValidateCmd() *cobra.Command {
 			}
 			pack := reg.Packs()[0]
 			hash, _ := reg.PackHash(pack.ID)
+
+			// Lint: non-fatal advisories (e.g. a secret-looking arg not marked
+			// sensitive). Printed to stderr so the "OK" line + hash on stdout
+			// stay machine-parseable.
+			for _, action := range reg.Actions() {
+				for _, w := range action.SecretArgWarnings() {
+					fmt.Fprintf(os.Stderr, "warning: %s\n", w)
+				}
+			}
+
 			fmt.Printf("pack %s OK: %d actions\nhash: %s\n",
 				pack.ID, len(reg.Actions()), hash)
 			return nil
