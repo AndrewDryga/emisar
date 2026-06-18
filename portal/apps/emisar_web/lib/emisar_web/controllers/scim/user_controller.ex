@@ -46,18 +46,29 @@ defmodule EmisarWeb.SCIM.UserController do
   # GET /scim/v2/Users — list, optionally filtered by `userName eq "x"` /
   # `externalId eq "x"`. The filter is applied in the query (not in memory over
   # the fetched page), so an IdP's existence probe finds the user wherever they
-  # are in the directory. An unsupported/absent filter lists all rather than
-  # crash (RFC 7644 §3.4.2.2 lets a server decline a filter).
+  # are in the directory. ABSENT filter → list all. A PRESENT filter we can't
+  # honor → 400 invalidFilter, NOT list-all: returning the whole directory would
+  # let an IdP's existence probe misread "got results" as "this user exists"
+  # (RFC 7644 §3.4.2.2 / §3.12 permit declining a filter with invalidFilter).
   def index(conn, params) do
     provider = conn.assigns.scim_provider
-    opts = [scim_filter: parse_filter(Map.get(params, "filter")), page: [limit: 100]]
 
-    case SSO.scim_list_users(provider, opts) do
-      {:ok, identities, _meta} ->
-        json(conn, Resource.list_response(Enum.map(identities, &Resource.to_user/1)))
+    case parse_filter(Map.get(params, "filter")) do
+      :unsupported ->
+        bad_request(
+          conn,
+          "invalidFilter",
+          ~s(Only `userName eq "..."` or `externalId eq "..."` filters are supported.)
+        )
 
-      {:error, _reason} ->
-        json(conn, Resource.list_response([]))
+      scim_filter ->
+        case SSO.scim_list_users(provider, scim_filter: scim_filter, page: [limit: 100]) do
+          {:ok, identities, _meta} ->
+            json(conn, Resource.list_response(Enum.map(identities, &Resource.to_user/1)))
+
+          {:error, _reason} ->
+            json(conn, Resource.list_response([]))
+        end
     end
   end
 
@@ -172,12 +183,16 @@ defmodule EmisarWeb.SCIM.UserController do
   # Parse the SCIM filter string into the domain filter `SSO.scim_list_users/2`
   # applies in the query. `userName`/`externalId eq` are the existence-probe
   # filters IdPs send before a create; matching `attr eq "value"` (and the
-  # unquoted form), case-insensitive on the attribute. Anything richer (and/or,
-  # co, sw, …) or absent → nil → list all.
+  # unquoted form), case-insensitive on the attribute. ABSENT → nil (list all);
+  # anything richer (and/or, co, sw, …) or an attribute we don't index →
+  # :unsupported, so index/2 declines with 400 invalidFilter rather than
+  # silently listing the whole directory.
+  defp parse_filter(nil), do: nil
+
   defp parse_filter(filter) when is_binary(filter) do
     case Regex.run(~r/^\s*(\w+)\s+eq\s+"?([^"]*)"?\s*$/i, filter) do
       [_, attr, value] -> filter_for(String.downcase(attr), value)
-      _ -> nil
+      _ -> :unsupported
     end
   end
 
@@ -185,7 +200,7 @@ defmodule EmisarWeb.SCIM.UserController do
 
   defp filter_for("username", value), do: {:user_name, value}
   defp filter_for("externalid", value), do: {:external_id, value}
-  defp filter_for(_attr, _value), do: nil
+  defp filter_for(_attr, _value), do: :unsupported
 
   # -- rendering ------------------------------------------------------
 

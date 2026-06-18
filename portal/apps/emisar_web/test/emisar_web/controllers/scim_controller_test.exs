@@ -453,18 +453,23 @@ defmodule EmisarWeb.SCIMControllerTest do
       assert [%{"externalId" => "okta|y"}] = body["Resources"]
     end
 
-    test "GET /Users with an unsupported filter returns all (no crash)", %{conn: conn} do
+    test "GET /Users with an unsupported filter is declined with 400 invalidFilter",
+         %{conn: conn} do
       %{token: token, provider: provider} = scim_provider()
       {:ok, _} = SSO.scim_provision_user(provider, %{external_id: "okta|1", email: "1@acme.test"})
       {:ok, _} = SSO.scim_provision_user(provider, %{external_id: "okta|2", email: "2@acme.test"})
 
+      # A present filter we can't honor must NOT dump the whole directory — an
+      # existence probe would misread "got results" as "the user exists". Decline
+      # it (the `eq` probes IdPs actually send still work). Two users exist, so
+      # this proves we decline rather than just happening to return empty.
       body =
         conn
         |> auth(token)
         |> get(~p"/scim/v2/Users?filter=userName sw \"foo\"")
-        |> json_response(200)
+        |> json_response(400)
 
-      assert body["totalResults"] == 2
+      assert body["scimType"] == "invalidFilter"
     end
 
     test "GET /Users filter finds a user beyond the first page (the match runs in the query)",
