@@ -49,6 +49,7 @@ authoring, approval workflow, and audit storage live in the cloud.`,
 	root.AddCommand(doctorCmd())
 	root.AddCommand(eventsCmd())
 	root.AddCommand(auditCmd())
+	root.AddCommand(keygenCmd())
 	root.AddCommand(versionCmd())
 
 	if err := root.Execute(); err != nil {
