@@ -203,6 +203,19 @@ defmodule Emisar.Runners do
   end
 
   @doc """
+  Internal — the Runs dispatch gate: true when the runner advertises that it
+  enforces client signatures, so the portal must refuse its own
+  (operator/runbook) unsigned dispatch to it. Only a signed MCP call gets through.
+  """
+  def runner_enforces_signatures?(runner_id, account_id) do
+    Runner.Query.not_deleted()
+    |> Runner.Query.by_id(runner_id)
+    |> Runner.Query.by_account_id(account_id)
+    |> Runner.Query.enforcing()
+    |> Repo.exists?()
+  end
+
+  @doc """
   Internal — the runbook engine's group-target resolution: active (not
   deleted, not disabled) runners in `group`, ordered by name so the
   engine's work list is stable across continuation recomputes.
@@ -361,7 +374,12 @@ defmodule Emisar.Runners do
       # group — but it already owns the box the runner executes on, so it gains
       # nothing it couldn't do locally. The host is the trust anchor. Pin to the
       # auth key if you need it operator-authoritative. See docs/security-model.md.
-      group: nonblank(payload["group"]) || runner.group
+      group: nonblank(payload["group"]) || runner.group,
+      # Runner-declared too, but trusting it is unconditionally safe: it only
+      # makes the runner STRICTER (refuse unsigned dispatch), never looser. A
+      # missing/false value clears it, so flipping enforcement off in config
+      # propagates on the next reconnect.
+      enforce_signatures: payload["enforce_signatures"] == true
     })
     |> Repo.update()
   end

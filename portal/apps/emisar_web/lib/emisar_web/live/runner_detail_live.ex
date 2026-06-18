@@ -225,6 +225,22 @@ defmodule EmisarWeb.RunnerDetailLive do
         </.meta_field>
       </.meta_strip>
 
+      <%!-- A signature-enforcing runner has locked the portal out: it verifies
+           a client signature on every run, so operator/runbook/API dispatch
+           from here is refused. Surfacing it up top keeps the disabled Run
+           buttons below from reading as a bug. --%>
+      <.notice
+        :if={@runner.enforce_signatures}
+        variant={:info}
+        icon="hero-shield-check"
+        title="Signed dispatch only"
+        class="mt-4"
+      >
+        This runner verifies a client signature on every run and refuses unsigned ones, so
+        the portal can't dispatch to it. Runs and runbooks must come from an MCP client
+        configured with its signing key.
+      </.notice>
+
       <%!-- Labels + last-disconnect reason. Both are written to the DB
            and previously invisible. Labels show only when set;
            disconnect reason shows only when the runner is actually
@@ -279,30 +295,42 @@ defmodule EmisarWeb.RunnerDetailLive do
                 </:meta>
                 <:actions>
                   <.risk_pill risk={action.risk} />
-                  <%!-- Dispatch only makes sense when the runner is online —
-                       otherwise the run sits in `pending` until reconnect.
-                       Gate the button visually so operators don't queue up
-                       work against a disconnected/disabled runner. --%>
-                  <%= if @runner.online? do %>
-                    <.link
-                      navigate={
-                        ~p"/app/#{@current_account}/runs/new/#{@runner.id}/#{action.action_id}"
-                      }
-                      class="shrink-0 rounded-lg bg-indigo-500/10 px-2.5 py-1 text-xs font-semibold text-indigo-300 ring-1 ring-indigo-500/30 hover:bg-indigo-500/20"
-                    >
-                      Run
-                    </.link>
-                  <% else %>
-                    <%!-- Offline: not a link. aria-disabled + a signal-slash
-                         icon carry "can't run" without relying on the dimmed
-                         color alone (a11y) or the hover-only title. --%>
-                    <span
-                      aria-disabled="true"
-                      title={"Runner is #{connection_status(Runners.connection_state(@runner))} — runs can't be dispatched from here until it reconnects"}
-                      class="inline-flex shrink-0 cursor-not-allowed items-center gap-1 rounded-lg bg-zinc-900 px-2.5 py-1 text-xs font-semibold text-zinc-600 ring-1 ring-zinc-800"
-                    >
-                      <.icon name="hero-signal-slash" class="h-3.5 w-3.5" /> Run
-                    </span>
+                  <%!-- Dispatch only makes sense when the runner is online AND
+                       accepts portal dispatch — otherwise the run sits in
+                       `pending` until reconnect, or (for a signature-enforcing
+                       runner) the portal can't dispatch at all. Gate the button
+                       visually so operators don't queue work that won't run. --%>
+                  <%= cond do %>
+                    <% @runner.enforce_signatures -> %>
+                      <%!-- Signed-only: the portal can't dispatch here. Lock icon +
+                           aria-disabled carry it without relying on color alone (a11y). --%>
+                      <span
+                        aria-disabled="true"
+                        title="Signed dispatch only — run this from your MCP client; the portal can't dispatch to this runner"
+                        class="inline-flex shrink-0 cursor-not-allowed items-center gap-1 rounded-lg bg-zinc-900 px-2.5 py-1 text-xs font-semibold text-zinc-600 ring-1 ring-zinc-800"
+                      >
+                        <.icon name="hero-lock-closed" class="h-3.5 w-3.5" /> Run
+                      </span>
+                    <% @runner.online? -> %>
+                      <.link
+                        navigate={
+                          ~p"/app/#{@current_account}/runs/new/#{@runner.id}/#{action.action_id}"
+                        }
+                        class="shrink-0 rounded-lg bg-indigo-500/10 px-2.5 py-1 text-xs font-semibold text-indigo-300 ring-1 ring-indigo-500/30 hover:bg-indigo-500/20"
+                      >
+                        Run
+                      </.link>
+                    <% true -> %>
+                      <%!-- Offline: not a link. aria-disabled + a signal-slash
+                           icon carry "can't run" without relying on the dimmed
+                           color alone (a11y) or the hover-only title. --%>
+                      <span
+                        aria-disabled="true"
+                        title={"Runner is #{connection_status(Runners.connection_state(@runner))} — runs can't be dispatched from here until it reconnects"}
+                        class="inline-flex shrink-0 cursor-not-allowed items-center gap-1 rounded-lg bg-zinc-900 px-2.5 py-1 text-xs font-semibold text-zinc-600 ring-1 ring-zinc-800"
+                      >
+                        <.icon name="hero-signal-slash" class="h-3.5 w-3.5" /> Run
+                      </span>
                   <% end %>
                 </:actions>
               </.list_row>

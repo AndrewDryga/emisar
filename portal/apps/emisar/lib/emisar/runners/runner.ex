@@ -19,6 +19,11 @@ defmodule Emisar.Runners.Runner do
     field :last_disconnect_reason, :string
     field :packs, :map, default: %{}
 
+    # Runner-advertised: the runner verifies a client signature on every
+    # dispatch and refuses unsigned ones, so the portal disables its own
+    # (operator/runbook) dispatch to it — only signed MCP calls get through.
+    field :enforce_signatures, :boolean, default: false
+
     # Connection state lives in `Emisar.Runners.Presence`, not the DB.
     # These virtuals are filled from presence metadata by the context
     # read functions; see `Emisar.Runners.connection_state/1`.

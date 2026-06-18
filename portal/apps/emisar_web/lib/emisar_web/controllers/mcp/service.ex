@@ -908,6 +908,17 @@ defmodule EmisarWeb.MCP.Service do
           "reloading tools will NOT clear this. Tell the user, and offer to retry once it's trusted."
     }
 
+  defp error_payload(name, :runner_requires_attestation),
+    do: %{
+      runner: name,
+      status: "error",
+      error: "runner_requires_attestation",
+      message:
+        "Runner `#{name}` only runs signed dispatches, and this call carried no signature. " <>
+          "The MCP client must be configured with the runner's signing key so it can sign " <>
+          "the call. Tell the operator — this is a client-side setup, not a retry."
+    }
+
   defp error_payload(name, code),
     do: %{
       runner: name,

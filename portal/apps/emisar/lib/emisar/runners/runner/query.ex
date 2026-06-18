@@ -26,6 +26,9 @@ defmodule Emisar.Runners.Runner.Query do
   def by_group(queryable, group),
     do: where(queryable, [runners: r], r.group == ^group)
 
+  def enforcing(queryable \\ all()),
+    do: where(queryable, [runners: r], r.enforce_signatures == true)
+
   @doc """
   Restrict to the runners a per-membership scope set grants — matched by
   runner id (`runner_ids`) or by group (`groups`). Drives query-level runner

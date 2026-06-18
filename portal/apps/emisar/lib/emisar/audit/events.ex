@@ -717,6 +717,19 @@ defmodule Emisar.Audit.Events do
     )
   end
 
+  # Dispatch refused because the target runner advertises that it enforces
+  # client signatures, so the portal won't send its own (operator/runbook)
+  # unsigned run to it — only a signed MCP call gets through. System actor (the
+  # gate runs inside an already-authorized dispatch, with no acting subject).
+  def dispatch_blocked_requires_attestation(account_id, runner_id, action_id) do
+    Audit.changeset(account_id, "dispatch_blocked_requires_attestation",
+      actor_kind: "system",
+      subject_kind: "runner",
+      subject_id: runner_id,
+      payload: %{action_id: action_id}
+    )
+  end
+
   def run_cancel_requested(%Subject{} = subject, %Runs.ActionRun{} = run, reason) do
     Audit.changeset(
       run.account_id,

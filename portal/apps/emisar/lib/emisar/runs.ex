@@ -287,6 +287,7 @@ defmodule Emisar.Runs do
          :ok <- require_action(action_id),
          :ok <- require_reason(reason),
          :ok <- runner_in_account(runner_id, account_id),
+         :ok <- check_attestation(attrs, runner_id, account_id),
          :ok <- runner_in_membership_scope(runner_id, account_id, membership_id),
          {:ok, action} <- fetch_advertised_action(runner_id, action_id, account_id),
          :ok <- check_pack_trust(action, account_id) do
@@ -429,6 +430,34 @@ defmodule Emisar.Runs do
     case Emisar.Catalog.fetch_action_for_account(action_id, runner_id, account_id) do
       {:error, :not_found} -> {:error, :action_not_found}
       {:ok, action} -> {:ok, action}
+    end
+  end
+
+  # Refuse a portal-originated (operator / runbook / API-key) dispatch to a
+  # runner that advertises it enforces client signatures. The runner would
+  # reject an unsigned run anyway; blocking here means no run row is created and
+  # the caller gets a clear reason. A signed MCP dispatch carries an
+  # `:attestation` and passes — the portal only RELAYS it (it can't forge one),
+  # and the runner verifies the Ed25519 signature. This portal flag is the
+  # UX/backstop gate; the runner's signature check is the real one.
+  defp check_attestation(attrs, runner_id, account_id) do
+    cond do
+      attrs[:attestation] ->
+        :ok
+
+      Emisar.Runners.runner_enforces_signatures?(runner_id, account_id) ->
+        Audit.record(
+          Audit.Events.dispatch_blocked_requires_attestation(
+            account_id,
+            runner_id,
+            attrs[:action_id]
+          )
+        )
+
+        {:error, :runner_requires_attestation}
+
+      true ->
+        :ok
     end
   end
 

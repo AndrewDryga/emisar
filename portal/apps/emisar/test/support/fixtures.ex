@@ -220,6 +220,18 @@ defmodule Emisar.Fixtures do
       |> Runner.Changeset.register()
       |> Repo.insert()
 
+    # `enforce_signatures` is advertised via runner_state, not registration —
+    # apply it through the same changeset a real advertisement would.
+    runner =
+      if Map.get(attrs, :enforce_signatures) do
+        {:ok, runner} =
+          runner |> Runner.Changeset.apply_state(%{enforce_signatures: true}) |> Repo.update()
+
+        runner
+      else
+        runner
+      end
+
     if Map.get(attrs, :connected?, true) do
       # Tracks presence from the calling (test) process and stamps
       # last_connected_at — the runner reads "online" for the test's

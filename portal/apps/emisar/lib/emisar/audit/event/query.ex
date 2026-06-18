@@ -48,6 +48,7 @@ defmodule Emisar.Audit.Event.Query do
     {"pack_trust_adopted", "Pack hash trusted"},
     {"pack_trust_rejected", "Pack hash rejected"},
     {"dispatch_blocked_pack_untrusted", "Dispatch blocked (pack untrusted)"},
+    {"dispatch_blocked_requires_attestation", "Dispatch blocked (runner requires signature)"},
     {"user.signed_up", "User signed up"},
     {"user.signed_in", "User signed in"},
     {"user.signed_out", "User signed out"},
@@ -142,7 +143,8 @@ defmodule Emisar.Audit.Event.Query do
        {"runner.disabled", "Disabled"},
        {"runner.enabled", "Enabled"},
        {"runner.deleted", "Deleted"},
-       {"runner.error", "Error"}
+       {"runner.error", "Error"},
+       {"dispatch_blocked_requires_attestation", "Dispatch blocked (unsigned)"}
      ]},
     {"Pack trust",
      [

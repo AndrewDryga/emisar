@@ -44,6 +44,17 @@ defmodule EmisarWeb.RunNewLive do
     end
   end
 
+  # Strict boolean (never nil) so `not signed_only?(@runner)` in the template is
+  # safe on the dead render, where @runner is still nil.
+  defp signed_only?(%{enforce_signatures: true}), do: true
+  defp signed_only?(_), do: false
+
+  # Show the "it'll queue" offline notice only for an offline runner the portal
+  # can still reach — a signed-only runner is blocked, not queued, so its own
+  # notice (below) carries the state instead. Strict boolean, nil-safe.
+  defp offline_notice?(%{online?: false} = runner), do: not signed_only?(runner)
+  defp offline_notice?(_), do: false
+
   # High/critical dispatches confirm and echo the action + target + the args
   # the operator entered, so a mis-aimed click on a destructive action is
   # caught AND they see the blast radius (which container/signal/path), not
@@ -171,6 +182,15 @@ defmodule EmisarWeb.RunNewLive do
                  "Review and trust it on the Packs page before dispatching."
              )}
 
+          {:error, :runner_requires_attestation} ->
+            {:noreply,
+             put_flash(
+               socket,
+               :error,
+               "This runner only accepts signed runs from an MCP client — the portal can't " <>
+                 "dispatch to it. Run the action from your MCP client instead."
+             )}
+
           {:error, :action_not_found} ->
             {:noreply,
              put_flash(
@@ -284,11 +304,29 @@ defmodule EmisarWeb.RunNewLive do
              let the operator dispatch anyway (a direct/bookmarked link is
              a fine reason to queue) — runner_detail disables Run instead,
              but here we warn it'll queue rather than block. --%>
-        <.offline_notice :if={@runner && not @runner.online?} severity={:info} title="Runner offline">
+        <.offline_notice
+          :if={offline_notice?(@runner)}
+          severity={:info}
+          title="Runner offline"
+        >
           {@runner.name} isn't connected right now. You can still dispatch — the run queues as
           <span class="font-mono text-zinc-300">pending</span>
           and executes when the runner reconnects.
         </.offline_notice>
+
+        <%!-- Signed-only runner — the portal is locked out. Takes precedence over
+             the offline notice above (whose "you can still dispatch" copy would
+             contradict this), and replaces the Dispatch button below. --%>
+        <.notice
+          :if={signed_only?(@runner)}
+          variant={:info}
+          icon="hero-shield-check"
+          title="Signed dispatch only"
+        >
+          {@runner.name} verifies a client signature on every run and refuses unsigned ones, so
+          the portal can't dispatch to it. Run this action from an MCP client configured with the
+          runner's signing key.
+        </.notice>
 
         <%!-- The form — primary surface. Reason is always required;
              args render only when the action declares any, so the
@@ -318,13 +356,21 @@ defmodule EmisarWeb.RunNewLive do
 
             <:actions>
               <.button
-                :if={@can_dispatch?}
+                :if={@can_dispatch? and not signed_only?(@runner)}
                 class="w-full"
                 phx-disable-with="Dispatching..."
                 data-confirm={dispatch_confirm(@action, @runner, @runner_id, @args_schema, @form)}
               >
                 Dispatch to runner <span aria-hidden="true">→</span>
               </.button>
+              <%!-- Signed-only runner — the run would be refused, so there's no
+                   Dispatch button; point the operator at their MCP client. --%>
+              <p
+                :if={@can_dispatch? and signed_only?(@runner)}
+                class="rounded-lg border border-zinc-800 bg-zinc-900/40 px-4 py-3 text-center text-sm text-zinc-400"
+              >
+                This runner only runs signed dispatches — run it from your MCP client.
+              </p>
               <%!-- Viewers can reach this page but can't dispatch; the
                    handler also gates (IL-15) — this hides the dead button. --%>
               <p

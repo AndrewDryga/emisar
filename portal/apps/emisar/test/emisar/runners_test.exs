@@ -536,6 +536,40 @@ defmodule Emisar.RunnersTest do
     end
   end
 
+  describe "signature enforcement" do
+    test "apply_state sets enforce_signatures when the runner advertises it" do
+      runner = runner_fixture()
+      refute runner.enforce_signatures
+
+      {:ok, updated} = Runners.apply_state(runner, %{"enforce_signatures" => true})
+      assert updated.enforce_signatures
+    end
+
+    test "apply_state clears enforce_signatures when a later advertisement omits it" do
+      runner = runner_fixture(enforce_signatures: true)
+      assert runner.enforce_signatures
+
+      # The latest advertisement is authoritative: a reconnect that doesn't
+      # advertise enforcement (the toggle flipped off in config) clears it.
+      {:ok, updated} = Runners.apply_state(runner, %{"hostname" => "h"})
+      refute updated.enforce_signatures
+    end
+
+    test "runner_enforces_signatures?/2 is account-scoped" do
+      account_a = account_fixture()
+      account_b = account_fixture()
+      runner = runner_fixture(account_id: account_a.id, enforce_signatures: true)
+
+      assert Runners.runner_enforces_signatures?(runner.id, account_a.id)
+      refute Runners.runner_enforces_signatures?(runner.id, account_b.id)
+    end
+
+    test "runner_enforces_signatures?/2 is false for a non-enforcing runner" do
+      runner = runner_fixture()
+      refute Runners.runner_enforces_signatures?(runner.id, runner.account_id)
+    end
+  end
+
   describe "list_runners_for_account/2" do
     test "filters by account, group, and status" do
       {account, _user, subject} = account_with_owner_subject()

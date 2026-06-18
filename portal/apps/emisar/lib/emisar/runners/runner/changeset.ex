@@ -95,8 +95,10 @@ defmodule Emisar.Runners.Runner.Changeset do
     # `group` is included so a config `runner.group` rename propagates on the
     # next reconnect; the caller only passes a non-blank value (otherwise the
     # existing group is kept), so this never wipes a group to "".
+    # `enforce_signatures` is runner-advertised too — a runner can only make
+    # itself stricter, so it's trusted like `group` (the host is the anchor).
     runner
-    |> cast(attrs, [:hostname, :labels, :runner_version, :packs, :group])
+    |> cast(attrs, [:hostname, :labels, :runner_version, :packs, :group, :enforce_signatures])
     |> validate_advertised_fields()
   end
 

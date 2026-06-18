@@ -423,6 +423,64 @@ defmodule Emisar.RunsTest do
     end
   end
 
+  describe "dispatch_run/2 signature enforcement" do
+    test "an enforcing runner refuses an unsigned (portal-originated) dispatch" do
+      account = account_fixture()
+      runner = runner_fixture(account_id: account.id, enforce_signatures: true)
+      _ = action_fixture(runner: runner, action_id: "linux.uptime", risk: "low")
+      _ = policy_fixture(account_id: account.id)
+      subject = subject_for(user_fixture(), account, role: :owner)
+
+      assert {:error, :runner_requires_attestation} =
+               Runs.dispatch_run(base_attrs(account.id, runner.id), subject)
+    end
+
+    test "a signed dispatch (carrying :attestation) passes the gate and runs" do
+      account = account_fixture()
+      runner = runner_fixture(account_id: account.id, enforce_signatures: true)
+      _ = action_fixture(runner: runner, action_id: "linux.uptime", risk: "low")
+      _ = policy_fixture(account_id: account.id)
+      subject = subject_for(user_fixture(), account, role: :owner)
+
+      # The portal only checks that an attestation is PRESENT and relays it; the
+      # runner verifies the signature (Phase 3). So any non-nil attestation gets
+      # past the portal gate.
+      attrs = base_attrs(account.id, runner.id, %{attestation: %{"sig" => "x", "key_id" => "k"}})
+
+      assert {:ok, :running, %ActionRun{}} = Runs.dispatch_run(attrs, subject)
+    end
+
+    test "a non-enforcing runner dispatches normally (no regression)" do
+      account = account_fixture()
+      runner = runner_fixture(account_id: account.id)
+      _ = action_fixture(runner: runner, action_id: "linux.uptime", risk: "low")
+      _ = policy_fixture(account_id: account.id)
+      subject = subject_for(user_fixture(), account, role: :owner)
+
+      assert {:ok, :running, %ActionRun{}} =
+               Runs.dispatch_run(base_attrs(account.id, runner.id), subject)
+    end
+
+    test "the refusal records a dispatch_blocked_requires_attestation audit row" do
+      account = account_fixture()
+      runner = runner_fixture(account_id: account.id, enforce_signatures: true)
+      _ = action_fixture(runner: runner, action_id: "linux.uptime", risk: "low")
+      _ = policy_fixture(account_id: account.id)
+      subject = subject_for(user_fixture(), account, role: :owner)
+
+      {:error, :runner_requires_attestation} =
+        Runs.dispatch_run(base_attrs(account.id, runner.id), subject)
+
+      {:ok, events, _} = Emisar.Audit.list_events(subject, page: [limit: 50])
+      blocked = Enum.find(events, &(&1.event_type == "dispatch_blocked_requires_attestation"))
+
+      assert blocked
+      assert blocked.subject_kind == "runner"
+      assert blocked.subject_id == runner.id
+      assert blocked.payload["action_id"] == "linux.uptime"
+    end
+  end
+
   describe "mark_finished/2 runbook continuation" do
     test "a next-wave step that fails to dispatch writes a runbook.step_dispatch_failed audit row" do
       # Regression: a continuation that can't dispatch (denied / out-of-scope /
