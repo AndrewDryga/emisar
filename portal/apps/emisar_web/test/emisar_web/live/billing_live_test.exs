@@ -31,6 +31,21 @@ defmodule EmisarWeb.BillingLiveTest do
       assert html =~ "Upgrade to Team"
     end
 
+    test "from a paid plan a lower plan reads as a Downgrade, never 'Upgrade to Free'", %{
+      conn: conn
+    } do
+      {conn, _user, account} = register_and_log_in(conn)
+      insert_subscription(account, "active")
+
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
+
+      # On Team, Free is below — a downgrade, routed to the Paddle portal
+      # (manage_billing), never a mislabeled "Upgrade to Free" checkout.
+      assert html =~ "Downgrade to Free"
+      refute html =~ "Upgrade to Free"
+      refute html =~ ~s(phx-value-plan="free")
+    end
+
     test "the upgrade event starts checkout and redirects externally", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
 

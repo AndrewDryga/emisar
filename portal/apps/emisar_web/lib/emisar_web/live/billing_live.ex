@@ -136,6 +136,10 @@ defmodule EmisarWeb.BillingLive do
 
   defp current_plan?(%{key: key}, %{plan: current}), do: key == current
 
+  # Tier position in @plan_order so a card can tell an upgrade from a downgrade
+  # (an unknown/legacy plan ranks last so a card never mislabels it an "upgrade").
+  defp plan_rank(key) when is_binary(key), do: Enum.find_index(@plan_order, &(&1 == key)) || -1
+
   defp plan_limit(plans, plan_name, key) do
     case Enum.find(plans, &(&1.key == plan_name)) do
       nil -> nil
@@ -378,7 +382,11 @@ defmodule EmisarWeb.BillingLive do
                     <.button variant="secondary" size="md" class="w-full" phx-click="contact_sales">
                       Contact sales
                     </.button>
-                  <% Billing.subject_can_manage_billing?(@current_subject) -> %>
+                  <% not Billing.subject_can_manage_billing?(@current_subject) -> %>
+                    <span class="block w-full rounded-lg bg-zinc-900 px-3 py-2 text-center text-xs font-medium text-zinc-500">
+                      Owners only
+                    </span>
+                  <% plan_rank(plan.key) > plan_rank(@summary.plan) -> %>
                     <.button
                       size="md"
                       class="w-full"
@@ -389,9 +397,19 @@ defmodule EmisarWeb.BillingLive do
                       Upgrade to {plan.name}
                     </.button>
                   <% true -> %>
-                    <span class="block w-full rounded-lg bg-zinc-900 px-3 py-2 text-center text-xs font-medium text-zinc-500">
-                      Owners only
-                    </span>
+                    <%!-- Lower tier than the current plan — a downgrade. A downgrade
+                         isn't a checkout (that would open a second subscription); plan
+                         changes + cancellations live in the Paddle customer portal, so
+                         route there instead of mislabeling it "Upgrade to Free". --%>
+                    <.button
+                      variant="secondary"
+                      size="md"
+                      class="w-full"
+                      phx-click="manage_billing"
+                      phx-disable-with="Opening portal…"
+                    >
+                      Downgrade to {plan.name}
+                    </.button>
                 <% end %>
               </div>
             </article>
