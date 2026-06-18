@@ -244,6 +244,48 @@ defmodule EmisarWeb.RunDetailLiveTest do
     assert render(lv) =~ "late-chunk"
   end
 
+  test "an errored run that produced no output hides the empty terminal", %{conn: conn} do
+    {conn, _user, account} = register_and_log_in(conn)
+    run = run_with(account, %{status: "sent"})
+
+    {:ok, _} =
+      Runs.finalize_from_result(run.runner_id, %{
+        "request_id" => run.request_id,
+        "status" => "error",
+        "error" => "runner disconnected, result never arrived"
+      })
+
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
+
+    assert html =~ "runner disconnected, result never arrived"
+    refute html =~ "Output"
+  end
+
+  test "an errored run that DID produce output keeps the panel", %{conn: conn} do
+    {conn, _user, account} = register_and_log_in(conn)
+    run = run_with(account, %{status: "running"})
+
+    {:ok, _} =
+      Runs.append_event(run, %{
+        seq: 1,
+        kind: "progress",
+        stream: "stdout",
+        payload: %{"chunk" => "partial-line\n"}
+      })
+
+    {:ok, _} =
+      Runs.finalize_from_result(run.runner_id, %{
+        "request_id" => run.request_id,
+        "status" => "error",
+        "error" => "boom"
+      })
+
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
+
+    assert html =~ "Output"
+    assert html =~ "partial-line"
+  end
+
   test "a run_updated broadcast refreshes the status chip", %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)
     run = run_with(account, %{status: "sent"})

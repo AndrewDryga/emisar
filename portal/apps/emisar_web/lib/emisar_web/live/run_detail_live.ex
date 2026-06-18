@@ -42,6 +42,9 @@ defmodule EmisarWeb.RunDetailLive do
          |> assign(:run, run)
          |> assign(:approval_request, approval_request)
          |> assign(:runner_connection, runner_connection(run))
+         # Whether any output was persisted — gates the output panel for an
+         # errored run so "result never arrived" doesn't render an empty terminal.
+         |> assign(:output_present?, events != [])
          |> stream(:events, events)}
     end
   end
@@ -67,7 +70,7 @@ defmodule EmisarWeb.RunDetailLive do
   end
 
   def handle_info({:run_event, event}, socket),
-    do: {:noreply, stream_insert(socket, :events, event)}
+    do: {:noreply, socket |> stream_insert(:events, event) |> assign(:output_present?, true)}
 
   # The runner's live connection changed — re-derive its state so an
   # in-flight run reflects a runner that just dropped (or reconnected).
@@ -352,7 +355,7 @@ defmodule EmisarWeb.RunDetailLive do
            still awaiting approval) — saves the operator from staring
            at an empty terminal. --%>
       <.card
-        :if={show_output?(@run)}
+        :if={show_output?(@run, @output_present?)}
         class="mt-6 overflow-hidden"
         padding=""
       >
@@ -427,16 +430,22 @@ defmodule EmisarWeb.RunDetailLive do
   defp show_policy?(%{policy_decision: "allow"}), do: false
   defp show_policy?(%{policy_decision: _}), do: true
 
-  # No point staring at a black terminal for a run that never made it
-  # to the runner. Cancelled / denied / still-awaiting-approval runs
-  # don't produce output; surfacing the panel just signals "broken".
-  # Everything else (sent / running / success / failed / errored) gets
-  # the panel — empty is fine because chunks stream in via PubSub.
-  defp show_output?(%{status: status})
+  # No point staring at a black terminal for a run that never made it to the
+  # runner. Cancelled / denied / awaiting-approval / refused runs never produce
+  # output; surfacing the panel just signals "broken".
+  #
+  # An errored run is the special case: it may have produced output before
+  # failing (show it) or none at all — "runner disconnected, result never
+  # arrived" — so gate it on whether any output was actually persisted.
+  # Everything else (sent / running while streaming, success, failed) gets the
+  # panel — an empty one is fine because chunks stream in via PubSub.
+  defp show_output?(%{status: :error}, output_present?), do: output_present?
+
+  defp show_output?(%{status: status}, _output_present?)
        when status in [:cancelled, :denied, :pending_approval, :pending, :refused],
        do: false
 
-  defp show_output?(_), do: true
+  defp show_output?(_run, _output_present?), do: true
 
   defp policy_decision_tone("allow"), do: :emerald
   defp policy_decision_tone("require_approval"), do: :amber
