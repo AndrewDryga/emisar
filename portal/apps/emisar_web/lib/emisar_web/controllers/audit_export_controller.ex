@@ -50,16 +50,23 @@ defmodule EmisarWeb.AuditExportController do
 
   # GET /api/audit
   def index(conn, params) do
-    case parse_params(params) do
-      {:ok, opts} ->
-        {:ok, events} = Audit.list_for_export(conn.assigns.current_subject, opts)
+    with {:ok, opts} <- parse_params(params),
+         {:ok, events} <- Audit.list_for_export(conn.assigns.current_subject, opts) do
+      body = Enum.map_join(events, "\n", &serialize/1)
 
-        body = Enum.map_join(events, "\n", &serialize/1)
-
+      conn
+      |> maybe_put_next_cursor(events, opts[:limit])
+      |> put_resp_content_type("application/x-ndjson")
+      |> send_resp(200, body)
+    else
+      # The api-key scope (audit:read) is gated by the plug, but the subject's
+      # ROLE permission is the second gate inside list_for_export — a token
+      # whose role lacks audit access gets a clean 403, not a 500 from an
+      # assertive `{:ok, _} =` match.
+      {:error, :unauthorized} ->
         conn
-        |> maybe_put_next_cursor(events, opts[:limit])
-        |> put_resp_content_type("application/x-ndjson")
-        |> send_resp(200, body)
+        |> put_status(:forbidden)
+        |> json(%{error: "forbidden", message: "This token's role lacks audit access."})
 
       {:error, reason} ->
         conn
