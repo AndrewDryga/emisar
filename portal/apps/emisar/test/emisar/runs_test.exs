@@ -475,6 +475,37 @@ defmodule Emisar.RunsTest do
       assert payload["attestation"] == attestation
     end
 
+    test "rich args survive the DB + wire round-trip unchanged (so the signature still verifies)" do
+      # The MCP signs over the canonical args; the runner re-canonicalizes the
+      # args the portal relayed. If the portal's jsonb/Jason round-trip mangled
+      # a value (int↔float, key order, nesting), the signature would fail. Prove
+      # the relay is lossless for mixed scalar / array / nested types.
+      account = account_fixture()
+      runner = runner_fixture(account_id: account.id)
+      _ = action_fixture(runner: runner, action_id: "linux.uptime", risk: "low")
+      _ = policy_fixture(account_id: account.id)
+      subject = subject_for(user_fixture(), account, role: :owner)
+
+      rich_args = %{
+        "container" => "web",
+        "force" => true,
+        "signal" => 15,
+        "names" => ["a", "b"],
+        "opts" => %{"z" => 1, "a" => 2}
+      }
+
+      Emisar.Runners.subscribe_runner_transport(runner)
+
+      attrs = base_attrs(account.id, runner.id, %{args: rich_args})
+      assert {:ok, :running, run} = Runs.dispatch_run(attrs, subject)
+
+      # Persisted args come back byte-equal after the jsonb round-trip…
+      assert Repo.reload!(run).args == rich_args
+      # …and the wire envelope carries them verbatim.
+      assert_receive {:cloud_to_runner, payload}, 500
+      assert payload["args"] == rich_args
+    end
+
     test "a portal-originated run carries no attestation on the wire" do
       account = account_fixture()
       runner = runner_fixture(account_id: account.id)
