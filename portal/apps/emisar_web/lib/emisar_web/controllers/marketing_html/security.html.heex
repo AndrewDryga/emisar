@@ -240,6 +240,18 @@
           against a compromised control plane. The host always has the last word.
         </p>
       </div>
+      <div class="mt-4 rounded-2xl border border-zinc-900 bg-zinc-950/60 p-6">
+        <h3 class="text-sm font-semibold text-indigo-300">
+          Signed dispatch — the cloud can't act for you
+        </h3>
+        <p class="mt-2 text-sm leading-6 text-zinc-400">
+          A runner can be set to refuse the control plane's authority entirely: it runs only an
+          action a real person signed in their own MCP client, with an Ed25519 key that never
+          leaves their machine. A fully compromised emisar control plane can relay that signed
+          request — it can never forge, alter, replay, or originate one. The signature, not the
+          cloud, is the authority. Opt-in per runner; a runner can only make itself stricter.
+        </p>
+      </div>
       <div class="mt-8 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
         <.link
           navigate={~p"/zero-trust"}

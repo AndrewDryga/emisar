@@ -119,7 +119,9 @@
                 {"Just-in-time / just-enough access", "Advanced",
                  "One-use approvals and scoped standing grants. The agent gets the capability for the task, not standing access that outlives it."},
                 {"Real-time streaming to SIEM", "Advanced",
-                 "NDJSON audit export over a dedicated audit:read key with keyset cursor pagination — your SIEM correlates emisar activity without ever holding a token that can execute an action."}
+                 "NDJSON audit export over a dedicated audit:read key with keyset cursor pagination — your SIEM correlates emisar activity without ever holding a token that can execute an action."},
+                {"Cryptographic non-origination — the platform can't act for you", "Advanced",
+                 "A runner can be set to run only an action a real person signed in their own MCP client (Ed25519, key never on the platform). A compromised control plane can relay that signed request — it can't forge, alter, replay, or originate one. The capability to act on your behalf is removed from the platform, not throttled. Opt-in per runner."}
               ] do %>
                 <tr class="hover:bg-zinc-900/30">
                   <td class="px-6 py-4 font-medium text-zinc-100">{control}</td>
