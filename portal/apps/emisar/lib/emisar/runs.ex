@@ -81,7 +81,8 @@ defmodule Emisar.Runs do
     :unknown_action,
     :timed_out,
     :cancelled,
-    :denied
+    :denied,
+    :refused
   ]
 
   @doc """
@@ -940,7 +941,12 @@ defmodule Emisar.Runs do
     "error" => :error,
     "validation_failed" => :validation_failed,
     "unknown_action" => :unknown_action,
-    "cancelled" => :cancelled
+    "cancelled" => :cancelled,
+    # The runner refused the dispatch on a trust check (bad/missing/stale
+    # signature, or pack-hash mismatch) — a first-class terminal state distinct
+    # from `:failed`; the human cause is carried in error_message.
+    "signature_invalid" => :refused,
+    "pack_hash_mismatch" => :refused
   }
 
   def mark_finished(%ActionRun{} = run, result_payload) do

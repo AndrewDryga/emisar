@@ -157,6 +157,7 @@ defmodule Emisar.Runs.ActionRun.Query do
           {"success", "Success"},
           {"failed", "Failed"},
           {"error", "Error"},
+          {"refused", "Refused"},
           {"cancelled", "Cancelled"},
           {"timed_out", "Timed out"}
         ],

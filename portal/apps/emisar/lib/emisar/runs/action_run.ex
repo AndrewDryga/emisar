@@ -69,7 +69,12 @@ defmodule Emisar.Runs.ActionRun do
         :validation_failed,
         :unknown_action,
         :cancelled,
-        :timed_out
+        :timed_out,
+        # The runner refused the dispatch on a pre-exec trust check (a bad/
+        # missing/stale client signature, or a pack-hash mismatch) — distinct
+        # from `:failed` (it ran and exited non-zero); the specific cause is in
+        # `error_message`. See `Runs.@result_statuses`.
+        :refused
       ],
       default: :pending
 
@@ -120,7 +125,8 @@ defmodule Emisar.Runs.ActionRun do
         :validation_failed,
         :unknown_action,
         :cancelled,
-        :timed_out
+        :timed_out,
+        :refused
       ]
 
   def terminal?(_), do: false

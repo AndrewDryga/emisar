@@ -100,6 +100,7 @@ defmodule Emisar.Audit.Event.Query do
     {"action_run.success", "Run succeeded"},
     {"action_run.failed", "Run failed"},
     {"action_run.error", "Run errored"},
+    {"action_run.refused", "Run refused (signature / pack)"},
     {"action_run.cancelled", "Run cancelled"},
     {"action_run.timed_out", "Run timed out"},
     {"action_run.denied", "Run denied by policy"},
@@ -113,7 +114,7 @@ defmodule Emisar.Audit.Event.Query do
   # dots color by this AND the "Outcome" filter narrows by it, so the two can
   # never disagree — one source, read by both (the web reads it, never copies it).
   @danger_suffixes ~w[_failed .failed .error .timed_out]
-  @warn_suffixes ~w[.denied .revoked _revoked .disabled .deleted .removed .suspended .expired .cancelled]
+  @warn_suffixes ~w[.denied .refused .revoked _revoked .disabled .deleted .removed .suspended .expired .cancelled]
 
   def outcome(event_type) when is_binary(event_type) do
     cond do
@@ -240,6 +241,7 @@ defmodule Emisar.Audit.Event.Query do
        {"action_run.success", "Succeeded"},
        {"action_run.failed", "Failed"},
        {"action_run.error", "Errored"},
+       {"action_run.refused", "Refused (signature / pack)"},
        {"action_run.cancelled", "Cancelled"},
        {"action_run.timed_out", "Timed out"},
        {"action_run.denied", "Denied by policy"},

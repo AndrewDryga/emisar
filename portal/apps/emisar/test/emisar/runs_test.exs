@@ -755,6 +755,28 @@ defmodule Emisar.RunsTest do
         })
 
       assert finished.error_message == "refused: issued_at is outside the freshness window"
+      # …and the run lands in the distinct `:refused` terminal state, not `:failed`.
+      assert finished.status == :refused
+    end
+
+    test "signature_invalid + pack_hash_mismatch both map to :refused, audited as action_run.refused" do
+      account = account_fixture()
+      runner = runner_fixture(account_id: account.id)
+      subject = subject_for(user_fixture(), account, role: :owner)
+
+      for wire <- ["signature_invalid", "pack_hash_mismatch"] do
+        {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
+
+        {:ok, finished} =
+          Runs.finalize_from_result(runner.id, %{"request_id" => run.request_id, "status" => wire})
+
+        assert finished.status == :refused
+        assert Emisar.Runs.ActionRun.terminal?(:refused)
+      end
+
+      {:ok, events, _} = Emisar.Audit.list_events(subject, page: [limit: 50])
+      refused = Enum.filter(events, &(&1.event_type == "action_run.refused"))
+      assert length(refused) == 2
     end
 
     test "an ordinary failure with no `error` falls back to the reason code" do

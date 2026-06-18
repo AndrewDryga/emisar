@@ -1739,6 +1739,9 @@ defmodule EmisarWeb.CoreComponents do
   defp status_classes("pending"), do: "bg-zinc-500/10 text-zinc-300 ring-zinc-500/30"
   defp status_classes("disconnected"), do: "bg-zinc-500/10 text-zinc-400 ring-zinc-500/30"
   defp status_classes("pending_approval"), do: "bg-amber-500/10 text-amber-300 ring-amber-500/30"
+  # A runner refusal (bad signature / pack-hash mismatch) — amber, so it reads as
+  # a security block to look at, not lost in the rose "it ran and failed" pile.
+  defp status_classes("refused"), do: "bg-amber-500/10 text-amber-300 ring-amber-500/30"
   defp status_classes("cancelled"), do: "bg-zinc-500/10 text-zinc-400 ring-zinc-500/30"
   defp status_classes("denied"), do: "bg-rose-500/10 text-rose-300 ring-rose-500/30"
   defp status_classes("expired"), do: "bg-zinc-500/10 text-zinc-500 ring-zinc-500/30"
@@ -1769,6 +1772,7 @@ defmodule EmisarWeb.CoreComponents do
   defp status_dot("pending"), do: "bg-zinc-500"
   defp status_dot("disconnected"), do: "bg-zinc-600"
   defp status_dot("pending_approval"), do: "bg-amber-400 animate-pulse"
+  defp status_dot("refused"), do: "bg-amber-400"
   defp status_dot("denied"), do: "bg-rose-400"
   defp status_dot("expired"), do: "bg-zinc-600"
   defp status_dot("planned"), do: "bg-zinc-600"

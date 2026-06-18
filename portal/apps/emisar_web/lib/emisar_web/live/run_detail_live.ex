@@ -433,7 +433,7 @@ defmodule EmisarWeb.RunDetailLive do
   # Everything else (sent / running / success / failed / errored) gets
   # the panel — empty is fine because chunks stream in via PubSub.
   defp show_output?(%{status: status})
-       when status in [:cancelled, :denied, :pending_approval, :pending],
+       when status in [:cancelled, :denied, :pending_approval, :pending, :refused],
        do: false
 
   defp show_output?(_), do: true

@@ -262,6 +262,29 @@ defmodule EmisarWeb.RunDetailLiveTest do
     assert render(lv) =~ "success"
   end
 
+  test "a refused run surfaces the reason and hides the (never-produced) output panel", %{
+    conn: conn
+  } do
+    {conn, _user, account} = register_and_log_in(conn)
+    run = run_with(account, %{status: "sent"})
+
+    {:ok, _} =
+      Runs.finalize_from_result(run.runner_id, %{
+        "request_id" => run.request_id,
+        "status" => "signature_invalid",
+        "reason" => "bad_signature",
+        "error" => "refused: signature does not match the dispatched action"
+      })
+
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
+
+    # The distinct terminal state + the human refusal reason both show…
+    assert html =~ "refused"
+    assert html =~ "refused: signature does not match the dispatched action"
+    # …and there's no empty terminal panel (a refused run produced no output).
+    refute html =~ "Output"
+  end
+
   test "the cancel button renders for an in-flight run (status compared as an atom)", %{
     conn: conn
   } do
