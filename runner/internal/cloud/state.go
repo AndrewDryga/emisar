@@ -25,6 +25,9 @@ type StateBuilder struct {
 	// a hidden id still gets a hard refusal; this filter just keeps
 	// the UI honest.
 	Admission *admission.Policy
+	// EnforceSignatures advertises that this runner verifies a client
+	// signature on every dispatch — the cloud disables its own dispatch to it.
+	EnforceSignatures bool
 }
 
 // Build snapshots the current registry into a wire-shaped state
@@ -37,13 +40,14 @@ func (b *StateBuilder) Build() RunnerStateMsg {
 		}
 	}
 	msg := RunnerStateMsg{
-		Envelope: Envelope{Type: MsgRunnerState, ProtocolVersion: ProtocolVersion},
-		AgentID:  b.AgentID,
-		Version:  b.Version,
-		Hostname: hostname,
-		Group:    b.Group,
-		Labels:   b.Labels,
-		Packs:    map[string]PackInfo{},
+		Envelope:          Envelope{Type: MsgRunnerState, ProtocolVersion: ProtocolVersion},
+		AgentID:           b.AgentID,
+		Version:           b.Version,
+		Hostname:          hostname,
+		Group:             b.Group,
+		Labels:            b.Labels,
+		Packs:             map[string]PackInfo{},
+		EnforceSignatures: b.EnforceSignatures,
 	}
 	if b.GetRegistry == nil {
 		return msg

@@ -15,6 +15,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/andrewdryga/emisar/runner/internal/cloud"
+	"github.com/andrewdryga/emisar/runner/internal/signing"
 )
 
 func connectCmd() *cobra.Command {
@@ -66,6 +67,22 @@ env var can be unset after the first successful connect.`,
 				return fmt.Errorf("resolve runner id: %w", err)
 			}
 
+			// Client-attested dispatch: build the verifier from config. When
+			// enforcing, the runner advertises it (cloud disables its own
+			// dispatch) and verifies a signature on every run.
+			signingKeys := make([]signing.KeyConfig, len(rt.cfg.Signing.TrustedKeys))
+			for i, k := range rt.cfg.Signing.TrustedKeys {
+				signingKeys[i] = signing.KeyConfig{KeyID: k.KeyID, PublicKeyHex: k.PublicKey}
+			}
+			verifier, err := signing.NewVerifier(
+				rt.cfg.Signing.EnforceSignatures,
+				signingKeys,
+				rt.cfg.Signing.MaxAttestationAge.Std(),
+			)
+			if err != nil {
+				return fmt.Errorf("signing: %w", err)
+			}
+
 			logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 			dialer := &cloud.WebsocketDialer{
 				URL:        rt.cfg.Cloud.URL,
@@ -79,13 +96,14 @@ env var can be unset after the first successful connect.`,
 			}
 
 			builder := &cloud.StateBuilder{
-				AgentID:     rt.cfg.Runner.ID,
-				Version:     Version,
-				Hostname:    hostname,
-				Group:       rt.cfg.Runner.Group,
-				Labels:      rt.cfg.Runner.Labels,
-				GetRegistry: rt.engine.Registry,
-				Admission:   rt.admission,
+				AgentID:           rt.cfg.Runner.ID,
+				Version:           Version,
+				Hostname:          hostname,
+				Group:             rt.cfg.Runner.Group,
+				Labels:            rt.cfg.Runner.Labels,
+				GetRegistry:       rt.engine.Registry,
+				Admission:         rt.admission,
+				EnforceSignatures: verifier.Enforces(),
 			}
 			client := cloud.NewClient(dialer, cloud.Options{
 				StateBuilder:   builder,
@@ -95,6 +113,7 @@ env var can be unset after the first successful connect.`,
 				HeartbeatEvery: rt.cfg.Cloud.HeartbeatEvery.Std(),
 				ReconnectMin:   rt.cfg.Cloud.ReconnectMin.Std(),
 				ReconnectMax:   rt.cfg.Cloud.ReconnectMax.Std(),
+				Verifier:       verifier,
 			})
 
 			ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

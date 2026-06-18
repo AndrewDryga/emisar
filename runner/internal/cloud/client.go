@@ -12,6 +12,7 @@ import (
 	"github.com/andrewdryga/emisar/runner/internal/engine"
 	"github.com/andrewdryga/emisar/runner/internal/executor"
 	"github.com/andrewdryga/emisar/runner/internal/redact"
+	"github.com/andrewdryga/emisar/runner/internal/signing"
 )
 
 // Conn is the transport-level interface the Client uses. A real
@@ -53,6 +54,10 @@ type Options struct {
 	// DedupRingSize bounds the count of completed results we keep cached
 	// for idempotent replay. Defaults to 1024.
 	DedupRingSize int
+
+	// Verifier gates dispatches against client attestations. Nil (or a
+	// non-enforcing verifier) means legacy trust — run whatever the cloud sends.
+	Verifier *signing.Verifier
 }
 
 // Client runs the outbound websocket loop. It owns the in-flight runs
@@ -370,6 +375,15 @@ func (c *Client) handleRun(ctx context.Context, s *runState, m RunActionMsg) {
 		"action_id", m.ActionID,
 	)
 
+	// Authenticity first (did a real user sign this dispatch?), then pack
+	// integrity (do the on-disk bytes still match what was trusted?).
+	if !c.passesSignatureGate(s, m) {
+		s.mu.Lock()
+		s.finished = true
+		s.mu.Unlock()
+		return
+	}
+
 	if !c.passesTrustGate(s, m) {
 		s.mu.Lock()
 		s.finished = true
@@ -460,6 +474,50 @@ func (c *Client) handleRun(ctx context.Context, s *runState, m RunActionMsg) {
 	s.mu.Lock()
 	s.finished = true
 	s.mu.Unlock()
+}
+
+// passesSignatureGate verifies the client attestation when the operator turned
+// on enforcement. A nil (or non-enforcing) verifier always passes — legacy
+// trust, run whatever the cloud sends. On refusal it logs the reason and
+// enqueues a terminal `signature_invalid` result the cloud records as a refused
+// run; it deliberately does NOT re-advertise (unlike a pack mismatch, a bad
+// signature says nothing about this runner's catalog).
+func (c *Client) passesSignatureGate(s *runState, m RunActionMsg) bool {
+	if c.opts.Verifier == nil {
+		return true
+	}
+
+	var att *signing.Attestation
+	if m.Attestation != nil {
+		att = &signing.Attestation{
+			KeyID:     m.Attestation.KeyID,
+			Signature: m.Attestation.Signature,
+			Nonce:     m.Attestation.Nonce,
+			IssuedAt:  m.Attestation.IssuedAt,
+		}
+	}
+
+	dec := c.opts.Verifier.Check(m.ActionID, m.Args, att)
+	if dec.Allowed {
+		return true
+	}
+
+	c.opts.Logger.Warn("cloud.signature_refused",
+		"request_id", m.RequestID,
+		"action_id", m.ActionID,
+		"code", dec.Code,
+	)
+	result := ActionResultMsg{
+		Envelope:   Envelope{Type: MsgActionResult, ProtocolVersion: ProtocolVersion, RequestID: m.RequestID},
+		Status:     "signature_invalid",
+		ExitCode:   -1,
+		DurationMS: 0,
+		Error:      "refused: " + dec.Detail,
+		Reason:     dec.Code,
+	}
+	c.enqueue(s, result, never)
+	c.dedup.remember(m.RequestID, result)
+	return false
 }
 
 // passesTrustGate re-hashes the action's pack from disk and compares it

@@ -48,6 +48,29 @@ execution: {}
 #     - "*.repair"           # no matter the pack, never repair
 #     - "linux.systemctl_restart"
 
+# Signing is the client-attested-dispatch gate — the strongest defense
+# against a compromised control plane. With enforce_signatures on, the
+# runner runs a dispatch ONLY if it carries a valid Ed25519 signature from
+# one of the trusted keys below, is inside the freshness window, and uses a
+# nonce it hasn't seen. The cloud can RELAY a real user's MCP-signed action
+# but can never originate one itself. The runner advertises enforcement to
+# the cloud, which then disables its own (operator/runbook) dispatch here.
+#
+# The key is the trust boundary: the runner accepts only the key_id(s) listed,
+# established out of band. Use a distinct keypair per runner (or per
+# environment — staging vs prod) so a dispatch signed for one can't be
+# redirected to another; a fleet-wide shared key trades that for simpler ops.
+#
+# Generate a keypair on the portal (Runners → signing keys), install the
+# PUBLIC key here, and give the PRIVATE key to the MCP client (EMISAR_SIGNING_KEY).
+#
+# signing:
+#   enforce_signatures: true
+#   max_attestation_age: 24h   # also caps replay exposure + the nonce cache
+#   trusted_keys:
+#     - key_id: mcp-prod-2026
+#       public_key: 79b5562e8fe654f94078b112e8a98ba7901f853ae695bed7e0e3910bad049664
+
 events:
   jsonl_path: ./var/log/emisar/events.jsonl
   max_preview_bytes: 4096

@@ -164,7 +164,7 @@ output:
   max_stderr_bytes: 1024
 `
 
-func buildClient(t *testing.T, dialer Dialer) *Client {
+func buildClient(t *testing.T, dialer Dialer, mod ...func(*Options)) *Client {
 	t.Helper()
 	root := t.TempDir()
 	must := func(err error) {
@@ -194,7 +194,7 @@ actions:
 		Registry: reg, Executor: executor.New(), Journal: j, Redactor: redact.Empty(),
 		PreviewBytes: 256,
 	})
-	return NewClient(dialer, Options{
+	opts := Options{
 		StateBuilder: &StateBuilder{
 			AgentID:     "agt",
 			Version:     "0.2.0",
@@ -206,7 +206,11 @@ actions:
 		ReconnectMax:      20 * time.Millisecond,
 		MaxConcurrentRuns: 4,
 		MaxPendingPerRun:  2048,
-	})
+	}
+	for _, m := range mod {
+		m(&opts)
+	}
+	return NewClient(dialer, opts)
 }
 
 func sendRunAction(t *testing.T, c *fakeConn, requestID, actionID string, args map[string]any) {

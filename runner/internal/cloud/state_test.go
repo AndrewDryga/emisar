@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/andrewdryga/emisar/runner/internal/admission"
@@ -90,6 +91,28 @@ func TestStateBuilder_AdvertisesActionsAndPacks(t *testing.T) {
 	}
 	if pi, ok := msg.Packs["t"]; !ok || pi.Hash == "" {
 		t.Fatalf("pack info missing or no hash: %+v", msg.Packs)
+	}
+}
+
+func TestStateBuilder_AdvertisesEnforceSignatures(t *testing.T) {
+	reg := setupRegistry(t)
+
+	off := (&StateBuilder{AgentID: "a", Version: "v", GetRegistry: func() *packs.Registry { return reg }}).Build()
+	if off.EnforceSignatures {
+		t.Fatal("default state must not advertise enforcement")
+	}
+	// And it's omitted from the wire when off (omitempty), so older clouds see
+	// nothing new.
+	if raw, _ := json.Marshal(off); strings.Contains(string(raw), "enforce_signatures") {
+		t.Fatalf("enforce_signatures should be omitted when off: %s", raw)
+	}
+
+	on := (&StateBuilder{AgentID: "a", Version: "v", GetRegistry: func() *packs.Registry { return reg }, EnforceSignatures: true}).Build()
+	if !on.EnforceSignatures {
+		t.Fatal("enforcing builder must advertise enforcement")
+	}
+	if raw, _ := json.Marshal(on); !strings.Contains(string(raw), `"enforce_signatures":true`) {
+		t.Fatalf("enforce_signatures should be on the wire when enabled: %s", raw)
 	}
 }
 

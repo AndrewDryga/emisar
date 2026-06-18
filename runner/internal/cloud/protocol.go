@@ -65,6 +65,23 @@ type RunActionMsg struct {
 	Opts             *RunOpts       `json:"opts,omitempty"`
 	Reason           string         `json:"reason,omitempty"`
 	ExpectedPackHash string         `json:"expected_pack_hash,omitempty"`
+	// Attestation is the client signature an enforcing runner requires. The
+	// cloud RELAYS it from the originating MCP call; it cannot forge or alter
+	// it. Nil on portal-originated dispatch (operator/runbook), which an
+	// enforcing runner refuses. See internal/signing.
+	Attestation *Attestation `json:"attestation,omitempty"`
+}
+
+// Attestation is the signed envelope binding a dispatch to a real user's MCP
+// call. The runner reconstructs the signed claim from the run_action's
+// action_id + args plus these nonce/issued_at fields and verifies Signature
+// against the trusted key named by KeyID. See internal/attest for the canonical
+// encoding shared with the mcp signer.
+type Attestation struct {
+	KeyID     string `json:"key_id"`
+	Signature string `json:"sig"`
+	Nonce     string `json:"nonce"`
+	IssuedAt  string `json:"issued_at"`
 }
 
 // RunOpts is the per-call override envelope. Each field is clamped to the
@@ -105,6 +122,10 @@ type RunnerStateMsg struct {
 	Labels   map[string]string   `json:"labels,omitempty"`
 	Packs    map[string]PackInfo `json:"packs,omitempty"`
 	Actions  []ActionDescriptor  `json:"actions"`
+	// EnforceSignatures advertises that this runner verifies a client signature
+	// on every dispatch and refuses unsigned ones. The cloud responds by
+	// disabling its own (operator/runbook) dispatch to this runner.
+	EnforceSignatures bool `json:"enforce_signatures,omitempty"`
 }
 
 // PackInfo is the side-index entry for a pack.
