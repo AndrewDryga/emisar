@@ -60,6 +60,17 @@ defmodule EmisarWeb.RunnersLiveTest do
       assert html =~ "Signed-only"
       assert html =~ "hardened"
       assert html =~ "plain"
+      # A mixed fleet (one unsigned) must NOT show the all-fleet notice.
+      refute html =~ "Fleet is signed-only"
+    end
+
+    test "shows the fleet signed-only notice when every active runner enforces", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      Emisar.Fixtures.runner_fixture(account_id: account.id, name: "a", enforce_signatures: true)
+      Emisar.Fixtures.runner_fixture(account_id: account.id, name: "b", enforce_signatures: true)
+
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runners")
+      assert html =~ "Fleet is signed-only"
     end
 
     test "an offline runner's 'last seen' heartbeat renders through <.local_time>", %{conn: conn} do

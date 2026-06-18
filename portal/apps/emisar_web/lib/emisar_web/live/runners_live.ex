@@ -39,6 +39,11 @@ defmodule EmisarWeb.RunnersLive do
     # the group sidebar so the strip reflects the whole fleet, not just a page.
     fleet = load_fleet_health(socket.assigns.current_subject)
 
+    # Whole-account dispatch posture: when every active runner enforces signatures
+    # the portal can't dispatch to ANY of them, so surface it once for the fleet
+    # rather than leaving the operator to read it off each runner's chip.
+    fleet_signed? = Runners.fleet_all_signed?(socket.assigns.current_subject)
+
     case Runners.list_runners_for_account(socket.assigns.current_subject, list_opts) do
       {:ok, runners, meta} ->
         groups =
@@ -54,6 +59,7 @@ defmodule EmisarWeb.RunnersLive do
         |> assign(:filters, filters)
         |> assign(:groups, groups)
         |> assign(:fleet, fleet)
+        |> assign(:fleet_signed?, fleet_signed?)
         |> assign(:load_error?, false)
 
       # A clean reload can fail too (e.g. a tightened list permission) — show a
@@ -67,6 +73,7 @@ defmodule EmisarWeb.RunnersLive do
         |> assign(:filters, filters)
         |> assign(:groups, [])
         |> assign(:fleet, fleet)
+        |> assign(:fleet_signed?, fleet_signed?)
         |> assign(:load_error?, true)
 
       # Bad filter/page params from a hand-edited URL — retry once, clean.
@@ -152,6 +159,20 @@ defmodule EmisarWeb.RunnersLive do
             Every runner in this fleet is disconnected — dispatched actions will queue (or fail)
             until one reconnects. Check the hosts, or the runner service on them.
           </.offline_notice>
+          <%!-- Whole-fleet dispatch posture: every active runner is signed-only, so the
+               portal is locked out account-wide. Surface it once here instead of leaving
+               the operator to infer it from N per-runner chips + failed dispatches. --%>
+          <.notice
+            :if={@fleet_signed?}
+            variant={:info}
+            icon="hero-shield-check"
+            title="Fleet is signed-only"
+            class="mb-4"
+          >
+            Every runner in this account verifies a client signature and refuses unsigned runs, so
+            the portal can't dispatch to any of them. Runs and runbooks must come from an MCP client
+            configured with each runner's signing key.
+          </.notice>
           <%!-- Fleet health at a glance, so "is anything down?" doesn't mean
              scanning every dot. Whole-account (like the group sidebar +
              list below), counted from presence — there's no `:stale` state

@@ -474,6 +474,61 @@ defmodule Emisar.RunnersTest do
     end
   end
 
+  describe "fleet_all_signed?/1" do
+    test "true when there's at least one active runner and every one enforces signatures" do
+      {_user, account, subject} = owner_subject_fixture()
+      _r1 = runner_fixture(account_id: account.id, enforce_signatures: true, connected?: false)
+      _r2 = runner_fixture(account_id: account.id, enforce_signatures: true, connected?: false)
+
+      assert Runners.fleet_all_signed?(subject)
+    end
+
+    test "false when any active runner does not enforce" do
+      {_user, account, subject} = owner_subject_fixture()
+
+      _signed =
+        runner_fixture(account_id: account.id, enforce_signatures: true, connected?: false)
+
+      _plain = runner_fixture(account_id: account.id, connected?: false)
+
+      refute Runners.fleet_all_signed?(subject)
+    end
+
+    test "false when the account has no runners (nothing to signal)" do
+      {_user, _account, subject} = owner_subject_fixture()
+
+      refute Runners.fleet_all_signed?(subject)
+    end
+
+    test "a disabled non-enforcing runner doesn't keep the fleet from reading signed-only" do
+      {_user, account, subject} = owner_subject_fixture()
+
+      _signed =
+        runner_fixture(account_id: account.id, enforce_signatures: true, connected?: false)
+
+      plain = runner_fixture(account_id: account.id, connected?: false)
+      {:ok, _} = Runners.disable_runner(plain, subject)
+
+      assert Runners.fleet_all_signed?(subject)
+    end
+
+    test "is account-scoped — account B's enforcing fleet doesn't make account A signed" do
+      {_user_a, _account_a, subject_a} = owner_subject_fixture()
+      account_b = account_fixture()
+      _r = runner_fixture(account_id: account_b.id, enforce_signatures: true, connected?: false)
+
+      refute Runners.fleet_all_signed?(subject_a)
+    end
+
+    test "false (no badge) for a subject without view_runners" do
+      {_owner, account, _owner_subject} = owner_subject_fixture()
+      _r = runner_fixture(account_id: account.id, enforce_signatures: true, connected?: false)
+      no_view = %Emisar.Auth.Subject{account: account, role: :runner, permissions: MapSet.new()}
+
+      refute Runners.fleet_all_signed?(no_view)
+    end
+  end
+
   describe "connection state & presence" do
     test "connection_state/1 maps online / disabled / pending / offline" do
       now = DateTime.utc_now()

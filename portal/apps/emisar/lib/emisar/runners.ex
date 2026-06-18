@@ -498,6 +498,31 @@ defmodule Emisar.Runners do
   def fleet_all_offline?(%Subject{}), do: false
 
   @doc """
+  Whether the account's whole active fleet is signed-only — there's at least one
+  billable (active, non-disabled) runner and every one of them advertises
+  `enforce_signatures`, so the portal can't dispatch to any of them. Drives the
+  runners-index "fleet is signed-only" notice. Requires `view_runners`; returns
+  `false` for a subject with no account or without the permission. A bare boolean.
+  """
+  def fleet_all_signed?(%Subject{account: %{id: account_id}} = subject) do
+    case Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_runners_permission()) do
+      :ok ->
+        active =
+          Runner.Query.not_deleted()
+          |> Runner.Query.not_disabled()
+          |> Runner.Query.by_account_id(account_id)
+
+        total = Repo.aggregate(active, :count, :id)
+        total > 0 and Repo.aggregate(Runner.Query.enforcing(active), :count, :id) == total
+
+      _ ->
+        false
+    end
+  end
+
+  def fleet_all_signed?(%Subject{}), do: false
+
+  @doc """
   Derived connection state for a runner struct carrying the virtual
   `online?` field (set by `list_runners_for_account/2` and
   `fetch_runner_by_id/3` from presence). `:disabled` and `:pending`
