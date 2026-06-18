@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/andrewdryga/emisar/runner/internal/config"
 )
 
 // Fetch limits — packs are tiny (tens of KB), so these are generous
@@ -31,6 +33,13 @@ const (
 // The HTTP client is the caller's (so timeouts/transport are theirs to
 // set); a nil client defaults to a 30s-timeout client.
 func Fetch(ctx context.Context, srcURL string, client *http.Client) (dir string, cleanup func(), err error) {
+	// Defense-in-depth: never pull pack bytes over cleartext http from a remote
+	// host (a MITM could serve poisoned bytes — the pack hash is re-verified, but
+	// don't even fetch them). Loopback is allowed for a local dev registry.
+	if err := config.CheckEndpointScheme(srcURL, false); err != nil {
+		return "", nil, fmt.Errorf("packs: %w", err)
+	}
+
 	if client == nil {
 		client = &http.Client{Timeout: 30 * time.Second}
 	}

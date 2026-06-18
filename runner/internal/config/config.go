@@ -250,19 +250,32 @@ func (c *Config) validateSigning() error {
 // local development; any other insecure endpoint requires an explicit
 // cloud.allow_insecure opt-in so it can never happen by accident in prod.
 func (c *Config) validateCloudTransportSecurity() error {
-	u, err := url.Parse(c.Cloud.URL)
+	if err := CheckEndpointScheme(c.Cloud.URL, c.Cloud.AllowInsecure); err != nil {
+		// Cleartext to the cloud sends the runner auth key in plaintext.
+		return fmt.Errorf("config: cloud.url %w (set cloud.allow_insecure: true to override)", err)
+	}
+	return nil
+}
+
+// CheckEndpointScheme rejects a cleartext (http/ws) URL to a non-loopback host —
+// it exposes whatever the runner sends and invites MITM. https/wss pass; an
+// unknown scheme is left for the dialer to reject; loopback passes (local dev);
+// any other insecure host needs an explicit allowInsecure opt-in. Shared by
+// cloud.url validation and the pack fetch — a MITM must not be able to serve
+// poisoned pack bytes over plain http (the pack hash is re-verified, so this is
+// defense-in-depth).
+func CheckEndpointScheme(rawURL string, allowInsecure bool) error {
+	u, err := url.Parse(rawURL)
 	if err != nil {
-		return fmt.Errorf("config: cloud.url %q is not a valid URL: %w", c.Cloud.URL, err)
+		return fmt.Errorf("%q is not a valid URL: %w", rawURL, err)
 	}
 	if u.Scheme != "http" && u.Scheme != "ws" {
-		return nil // https/wss are fine; an unknown scheme is rejected at dial.
-	}
-	if c.Cloud.AllowInsecure || isLoopbackHost(u.Hostname()) {
 		return nil
 	}
-	return fmt.Errorf(
-		"config: cloud.url %q uses cleartext %s to a non-loopback host, which sends the runner auth key in plaintext; use https/wss, or set cloud.allow_insecure: true to override",
-		c.Cloud.URL, u.Scheme)
+	if allowInsecure || isLoopbackHost(u.Hostname()) {
+		return nil
+	}
+	return fmt.Errorf("%q uses cleartext %s to a non-loopback host; use https", rawURL, u.Scheme)
 }
 
 // isLoopbackHost reports whether host is localhost or a loopback IP, the

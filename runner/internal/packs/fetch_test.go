@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -120,5 +121,17 @@ func TestFetch_404IsClearError(t *testing.T) {
 	_, _, err := Fetch(context.Background(), srv.URL+"/packs/nope/pack.tar.gz", srv.Client())
 	if err == nil {
 		t.Fatal("expected 404 error")
+	}
+}
+
+func TestFetch_RefusesCleartextRemoteSource(t *testing.T) {
+	// A cleartext http pack source on a non-loopback host is refused before any
+	// request is made — a MITM mustn't get the chance to serve poisoned bytes.
+	_, _, err := Fetch(context.Background(), "http://example.com/packs/redis/pack.tar.gz", nil)
+	if err == nil {
+		t.Fatal("expected Fetch to refuse a cleartext remote pack source")
+	}
+	if !strings.Contains(err.Error(), "cleartext") {
+		t.Fatalf("expected a cleartext-scheme error, got: %v", err)
 	}
 }
