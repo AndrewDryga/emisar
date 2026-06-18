@@ -977,10 +977,13 @@ defmodule Emisar.Runs do
       event_id: payload["event_id"],
       # Exact shell command the runner ran, already redacted runner-side.
       executed_command: payload["executed_command"],
-      # The runner's `reason` on non-success results is the failure cause
-      # (e.g. validation message). It belongs in error_message, not in
-      # reason_text — which holds the operator's freeform reason.
-      error_message: payload["reason"]
+      # The failure cause belongs in error_message (not reason_text, which holds
+      # the operator's freeform reason). The runner sends a terse `reason` code
+      # (e.g. "bad_signature", "stale") AND a human `error` sentence ("refused:
+      # signature does not match…") on a refusal; prefer the sentence so the
+      # operator can act, falling back to the code when there's no `error`
+      # (omitempty drops it on an ordinary failure, so this stays the reason).
+      error_message: payload["error"] || payload["reason"]
     }
   end
 

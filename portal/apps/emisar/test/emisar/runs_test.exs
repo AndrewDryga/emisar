@@ -739,6 +739,39 @@ defmodule Emisar.RunsTest do
       assert event.payload["executed_command"] == "uptime -p"
     end
 
+    test "a refusal's human `error` sentence is surfaced as error_message, not the terse code" do
+      account = account_fixture()
+      runner = runner_fixture(account_id: account.id)
+      {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
+
+      # A signature/pack refusal carries both: a terse `reason` code and a human
+      # `error` sentence. The operator must see the sentence.
+      {:ok, finished} =
+        Runs.finalize_from_result(runner.id, %{
+          "request_id" => run.request_id,
+          "status" => "signature_invalid",
+          "reason" => "stale",
+          "error" => "refused: issued_at is outside the freshness window"
+        })
+
+      assert finished.error_message == "refused: issued_at is outside the freshness window"
+    end
+
+    test "an ordinary failure with no `error` falls back to the reason code" do
+      account = account_fixture()
+      runner = runner_fixture(account_id: account.id)
+      {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
+
+      {:ok, finished} =
+        Runs.finalize_from_result(runner.id, %{
+          "request_id" => run.request_id,
+          "status" => "failed",
+          "reason" => "exit status 1"
+        })
+
+      assert finished.error_message == "exit status 1"
+    end
+
     test "unknown request_id returns {:error, :unknown_request_id}" do
       account = account_fixture()
       runner = runner_fixture(account_id: account.id)

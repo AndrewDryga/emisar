@@ -287,6 +287,16 @@ defmodule EmisarWeb.RunbookRunLive do
   defp format_reason(%Ecto.Changeset{}), do: "the run could not be created"
   defp format_reason(reason) when is_binary(reason), do: reason
 
+  # Operator-reachable atoms get a real sentence in the operator's vocabulary —
+  # the generic underscore-replace below would leak schema jargon ("runner
+  # requires attestation").
+  defp format_reason(:runner_requires_attestation),
+    do:
+      "a target runner only accepts signed runs from an MCP client — the portal can't dispatch to it"
+
+  defp format_reason(:pack_untrusted),
+    do: "a target runner is advertising an untrusted version of the action's pack"
+
   defp format_reason(reason) when is_atom(reason),
     do: reason |> Atom.to_string() |> String.replace("_", " ")
 

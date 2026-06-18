@@ -401,7 +401,14 @@ defmodule EmisarWeb.MCPRpcController do
   defp normalize_attestation(%{} = att) do
     fields = Map.take(att, ["key_id", "sig", "nonce", "issued_at"])
 
-    if map_size(fields) == 4 and Enum.all?(fields, fn {_k, v} -> is_binary(v) end) do
+    # Bound each field: a real attestation is small (an Ed25519 sig is 128 hex
+    # chars, the nonce 32, issued_at ~25, key_id operator-chosen). 512 bytes is
+    # far above any honest value but stops a leaked/abused key from fanning a
+    # multi-MB blob onto every enforcing runner's PubSub topic before the runner
+    # rejects the signature. An oversized/malformed envelope degrades to nil —
+    # an enforcing runner then refuses cleanly.
+    if map_size(fields) == 4 and
+         Enum.all?(fields, fn {_k, v} -> is_binary(v) and byte_size(v) <= 512 end) do
       fields
     else
       nil

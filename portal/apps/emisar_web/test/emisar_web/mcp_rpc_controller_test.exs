@@ -362,6 +362,36 @@ defmodule EmisarWeb.MCPRpcControllerTest do
       refute Map.has_key?(run.args, "attestation")
     end
 
+    test "an oversized attestation field is rejected (dropped to nil)",
+         %{conn: conn, account: account, user: user} do
+      runner = make_runner!(account, name: "host-1")
+      advertise_action!(runner, action_id: "linux.uptime", risk: "low")
+      raw = make_api_key!(account, user)
+      subject = Emisar.Fixtures.subject_for(user, account, role: :owner)
+
+      conn
+      |> put_req_header("authorization", "Bearer " <> raw)
+      |> rpc("tools/call", %{
+        "name" => "linux.uptime",
+        # A 9 KB sig — far over the 512-byte field cap, the multi-MB-blob abuse.
+        "arguments" => %{
+          "runner" => "host-1",
+          "reason" => "smoke",
+          "wait" => "0",
+          "attestation" => %{
+            "key_id" => "k1",
+            "sig" => String.duplicate("a", 9_000),
+            "nonce" => "n1",
+            "issued_at" => "2026-06-17T12:00:00Z"
+          }
+        }
+      })
+      |> json_response(200)
+
+      {:ok, [run], _meta} = Runs.list_runs(subject)
+      assert run.attestation == nil
+    end
+
     test "unknown action returns isError content block",
          %{conn: conn, account: account, user: user} do
       raw = make_api_key!(account, user)

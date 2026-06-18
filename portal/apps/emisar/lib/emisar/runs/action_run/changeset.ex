@@ -24,6 +24,11 @@ defmodule Emisar.Runs.ActionRun.Changeset do
   # execution, but the cloud-side cost is paid before that rejection.
   @max_args_bytes 262_144
   @max_reason_length 4_096
+  # An honest attestation is ~300 bytes serialized (key_id + 128-hex sig + nonce
+  # + timestamp); 8 KB is generous headroom while bounding the jsonb row + the
+  # relayed wire envelope. The MCP boundary (normalize_attestation) already caps
+  # each field; this backstops any other writer.
+  @max_attestation_bytes 8_192
 
   def create(attrs) do
     %ActionRun{}
@@ -31,6 +36,7 @@ defmodule Emisar.Runs.ActionRun.Changeset do
     |> validate_required([:account_id, :runner_id, :request_id, :action_id, :source])
     |> validate_length(:reason, max: @max_reason_length)
     |> validate_args_size()
+    |> validate_attestation_size()
     |> unique_constraint([:account_id, :request_id])
     |> unique_constraint([:api_key_id, :idempotency_key],
       name: :action_runs_api_key_idempotency_key_index
@@ -52,6 +58,26 @@ defmodule Emisar.Runs.ActionRun.Changeset do
         case Jason.encode(args) do
           {:ok, json} when byte_size(json) > @max_args_bytes ->
             add_error(changeset, :args, "is too large (max #{@max_args_bytes} bytes serialized)")
+
+          _ ->
+            changeset
+        end
+
+      _ ->
+        changeset
+    end
+  end
+
+  defp validate_attestation_size(changeset) do
+    case get_change(changeset, :attestation) do
+      att when is_map(att) ->
+        case Jason.encode(att) do
+          {:ok, json} when byte_size(json) > @max_attestation_bytes ->
+            add_error(
+              changeset,
+              :attestation,
+              "is too large (max #{@max_attestation_bytes} bytes serialized)"
+            )
 
           _ ->
             changeset
