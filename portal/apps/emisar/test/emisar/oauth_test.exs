@@ -149,6 +149,31 @@ defmodule Emisar.OAuthTest do
       assert event.payload["scopes"] == ["actions:read", "actions:execute"]
     end
 
+    test "fails closed (without burning the code) when the backing key was revoked before exchange",
+         %{subject: subject, client: client} do
+      {verifier, challenge} = pkce()
+      code = issue!(subject, client, challenge)
+
+      # Revoke the consent-created backing key before exchange — the operator's
+      # OAuth off-switch must stop a pre-revocation code from minting tokens.
+      code_row =
+        Repo.get_by!(Emisar.OAuth.AuthorizationCode, code_hash: Emisar.Crypto.hash(code))
+
+      key = Repo.get!(Emisar.ApiKeys.ApiKey, code_row.api_key_id)
+      Repo.update!(Ecto.Changeset.change(key, revoked_at: DateTime.utc_now()))
+
+      assert {:error, :invalid_grant} =
+               OAuth.exchange_code(%{
+                 "code" => code,
+                 "client_id" => client.id,
+                 "redirect_uri" => @redirect,
+                 "code_verifier" => verifier
+               })
+
+      # The failed check rolled back the burn — the one-time code stays unused.
+      assert Repo.get!(Emisar.OAuth.AuthorizationCode, code_row.id).used_at == nil
+    end
+
     test "rejects a tampered PKCE verifier", %{subject: subject, client: client} do
       {_verifier, challenge} = pkce()
       code = issue!(subject, client, challenge)

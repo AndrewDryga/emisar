@@ -163,7 +163,12 @@ defmodule Emisar.OAuth do
            :ok <- check(code.client_id == client_id, :invalid_grant),
            :ok <- check(constant_eq(code.redirect_uri, redirect_uri), :invalid_grant),
            :ok <- check(valid_code_verifier?(verifier), :invalid_grant),
-           :ok <- check(pkce_ok?(code, verifier), :invalid_grant) do
+           :ok <- check(pkce_ok?(code, verifier), :invalid_grant),
+           # Fail closed when the backing api_key was revoked / deleted / expired
+           # between consent and exchange — revoking the key is the operator's
+           # off-switch, so a code issued earlier must not still exchange (+ burn)
+           # off a dead key. Mirrors the refresh path's check.
+           :ok <- check(backing_key_usable?(code.api_key_id), :invalid_grant) do
         {:ok, code}
       else
         {:error, reason} -> {:error, reason}
