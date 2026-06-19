@@ -1,0 +1,28 @@
+schema_version: 1
+id: pfsense.gateway_groups
+title: GET /api/v2/routing/gateway/groups
+kind: script
+risk: low
+description: >
+  List the configured gateway groups — the multi-WAN failover / load-balance
+  tiers that decide which gateway carries traffic when one is down. Use to
+  understand failover policy; pair with gateway_status for live up/down state.
+side_effects:
+  - One read-only HTTP GET to the pfSense REST API.
+  - Read-only.
+args: []
+execution:
+  script:
+    path: scripts/pfreq.sh
+    interpreter: /bin/sh
+  argv:
+    - "GET"
+    - "/api/v2/routing/gateway/groups"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: Gateway groups
+    args: {}

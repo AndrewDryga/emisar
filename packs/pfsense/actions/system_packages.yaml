@@ -1,0 +1,28 @@
+schema_version: 1
+id: pfsense.system_packages
+title: GET /api/v2/system/packages
+kind: script
+risk: low
+description: >
+  List the installed pfSense add-on packages with their installed version and
+  whether an update is available. Use to confirm what is loaded on the box
+  (e.g. the FRR or REST API package) and what is out of date.
+side_effects:
+  - One read-only HTTP GET to the pfSense REST API.
+  - Read-only.
+args: []
+execution:
+  script:
+    path: scripts/pfreq.sh
+    interpreter: /bin/sh
+  argv:
+    - "GET"
+    - "/api/v2/system/packages"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: Installed packages
+    args: {}

@@ -1,0 +1,29 @@
+schema_version: 1
+id: pfsense.config_history
+title: GET /api/v2/diagnostics/config_history/revisions
+kind: script
+risk: low
+description: >
+  List the saved configuration revisions — the change history with each
+  revision's time, description (what changed), and the user who made it. Use
+  to answer "what changed on the firewall and when". Returns revision
+  metadata only, not the full configuration.
+side_effects:
+  - One read-only HTTP GET to the pfSense REST API.
+  - Read-only.
+args: []
+execution:
+  script:
+    path: scripts/pfreq.sh
+    interpreter: /bin/sh
+  argv:
+    - "GET"
+    - "/api/v2/diagnostics/config_history/revisions"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 2097152
+  max_stderr_bytes: 8192
+examples:
+  - title: Configuration change history
+    args: {}

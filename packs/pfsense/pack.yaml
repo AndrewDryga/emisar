@@ -2,13 +2,15 @@ schema_version: 1
 
 id: pfsense
 name: pfSense firewall
-version: 0.1.0
+version: 0.2.0
 description: >
   Operate a pfSense firewall over its REST API: read firewall rules, NAT,
-  aliases, interface / gateway / service / VPN status, DHCP leases, routes,
-  ARP, CARP, and logs, plus a few gated mutators (apply filter, flush
-  states, restart a service, reboot). Uses the community pfSense-pkg-RESTAPI
-  package (/api/v2), which runs on the firewall and works across CE and Plus.
+  aliases, virtual IPs, interface / gateway / service / VPN status, DHCP
+  leases, routes, ARP, CARP, installed packages, the config-change history,
+  and firewall / system / auth logs, plus a few gated mutators (apply filter,
+  flush states, restart a service, reboot). Uses the community
+  pfSense-pkg-RESTAPI package (/api/v2), which runs on the firewall and works
+  across CE and Plus.
 vendor: emisar
 homepage: https://github.com/andrewdryga/emisar
 
@@ -49,28 +51,36 @@ setup:
   notes:
     - "Requires the community REST API package (pfSense-pkg-RESTAPI, /api/v2) installed on the firewall — not Netgate's Nexus controller API. The package's read_only switch (System → REST API) forces the whole API GET-only; pair it with a read-only key for a diagnostics deployment."
     - "TLS is verified by default. pfSense ships a self-signed GUI cert, so set PFSENSE_INSECURE=true, or set CURL_CA_BUNDLE to a CA file (curl reads it natively) to verify properly."
-    - "Reads that could expose secrets (users, certificate private keys, IPsec phase configs) are intentionally omitted. The mutators are risk-gated; reboot is critical."
+    - "Reads that could expose secrets (users, certificate private keys, IPsec phase configs) are intentionally omitted, and the API's arbitrary-command endpoint (/diagnostics/command_prompt — a remote shell) is deliberately not wired: that belongs in the default-denied `shell` break-glass pack, not here. The mutators are risk-gated; reboot is critical."
+    - "Dynamic routing (FRR — BGP / OSPF / BFD) is NOT exposed by this REST API, so this pack cannot read it. FRR state lives behind vtysh on the firewall; reach it out-of-band (the `frr` pack runs vtysh locally on an FRR host, or use SNMP)."
   verify: pfsense.version
 
 actions:
   - actions/system_status.yaml
   - actions/version.yaml
+  - actions/system_packages.yaml
   - actions/firewall_rules.yaml
   - actions/nat_port_forwards.yaml
   - actions/nat_outbound.yaml
   - actions/aliases.yaml
+  - actions/virtual_ips.yaml
   - actions/states_size.yaml
   - actions/interface_status.yaml
+  - actions/interface_config.yaml
   - actions/gateway_status.yaml
+  - actions/gateway_groups.yaml
   - actions/static_routes.yaml
   - actions/arp_table.yaml
   - actions/service_status.yaml
   - actions/dhcp_leases.yaml
   - actions/openvpn_status.yaml
   - actions/ipsec_status.yaml
+  - actions/ipsec_child_sas.yaml
   - actions/carp_status.yaml
   - actions/firewall_log.yaml
   - actions/system_log.yaml
+  - actions/auth_log.yaml
+  - actions/config_history.yaml
   - actions/apply_filter.yaml
   - actions/flush_states.yaml
   - actions/restart_service.yaml

@@ -1,0 +1,33 @@
+schema_version: 1
+id: pfsense.interface_config
+title: GET /api/v2/interfaces
+kind: script
+risk: low
+description: >
+  List the configured network interfaces — assignment, description, IPv4/IPv6
+  addressing mode, and MTU. This is the configuration; use interface_status
+  for live link state and counters.
+side_effects:
+  - One read-only HTTP GET to the pfSense REST API.
+  - Read-only.
+args: []
+execution:
+  script:
+    path: scripts/pfreq.sh
+    interpreter: /bin/sh
+  argv:
+    - "GET"
+    - "/api/v2/interfaces"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+  redact:
+    - name: interface-password
+      type: regex
+      pattern: '("password"\s*:\s*)"[^"]*"'
+      replacement: '${1}"[REDACTED]"'
+examples:
+  - title: All interface configuration
+    args: {}

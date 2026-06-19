@@ -1,0 +1,33 @@
+schema_version: 1
+id: pfsense.virtual_ips
+title: GET /api/v2/firewall/virtual_ips
+kind: script
+risk: low
+description: >
+  List the configured virtual IPs (VIPs) — CARP, IP-alias, and proxy-ARP —
+  with interface, subnet, type, and CARP vhid. Use to audit the shared HA
+  addresses; pair with carp_status for which node currently owns each.
+side_effects:
+  - One read-only HTTP GET to the pfSense REST API.
+  - Read-only.
+args: []
+execution:
+  script:
+    path: scripts/pfreq.sh
+    interpreter: /bin/sh
+  argv:
+    - "GET"
+    - "/api/v2/firewall/virtual_ips"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+  redact:
+    - name: carp-vip-password
+      type: regex
+      pattern: '("password"\s*:\s*)"[^"]*"'
+      replacement: '${1}"[REDACTED]"'
+examples:
+  - title: All virtual IPs
+    args: {}

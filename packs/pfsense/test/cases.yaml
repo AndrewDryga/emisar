@@ -60,6 +60,28 @@ cases:
   args:
     limit: 50
   expect_exit: 0
+- action: pfsense.system_packages
+  args: {}
+  expect_exit: 0
+- action: pfsense.virtual_ips
+  args: {}
+  expect_exit: 0
+- action: pfsense.interface_config
+  args: {}
+  expect_exit: 0
+- action: pfsense.gateway_groups
+  args: {}
+  expect_exit: 0
+- action: pfsense.ipsec_child_sas
+  args: {}
+  expect_exit: 0
+- action: pfsense.auth_log
+  args:
+    limit: 50
+  expect_exit: 0
+- action: pfsense.config_history
+  args: {}
+  expect_exit: 0
 - action: pfsense.apply_filter
   args: {}
   expect_exit: 0
