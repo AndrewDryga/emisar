@@ -1,37 +1,73 @@
 defmodule Emisar.Workers.AuditRetention do
   @moduledoc """
-  Nightly job that prunes audit events older than the account's plan
-  retention window. Each account is processed independently so a slow
-  one can't starve the others.
+  Nightly job that prunes audit events older than each account's plan
+  retention window. Accounts are processed in pages (ordered by id); when a
+  full page comes back a follow-up job is enqueued carrying the last account
+  id as a cursor, so a growing tenant base never piles into one unbounded run.
+  Each account's expired rows are deleted in bounded batches rather than one
+  long-locking DELETE, mirroring `Workers.ActionRunEventRetention`.
   """
   use Oban.Worker, queue: :audit, max_attempts: 2
   alias Emisar.{Accounts, Audit, Billing, Repo}
   require Logger
 
-  @impl true
-  def perform(%Oban.Job{}) do
-    # Deliberately `all()`, not `not_deleted()`: a tombstoned account's
-    # audit rows still occupy space and age past retention all the same.
-    Accounts.Account.Query.all()
-    |> Repo.all()
-    |> Enum.each(&prune_account/1)
+  # Accounts handled per job before handing the rest to a follow-up; an account
+  # carries its own bounded per-statement delete batch.
+  @accounts_per_run 100
+  @batch_size 5_000
 
+  @impl true
+  def perform(%Oban.Job{args: args}) do
+    limit = args["limit"] || @accounts_per_run
+
+    # Deliberately `all()`, not `not_deleted()`: a tombstoned account's audit
+    # rows still occupy space and age past retention all the same.
+    accounts =
+      Accounts.Account.Query.all()
+      |> after_account(args["after_account_id"])
+      |> Accounts.Account.Query.ordered_by_id()
+      |> Accounts.Account.Query.limit_to(limit)
+      |> Repo.all()
+
+    Enum.each(accounts, &prune_account/1)
+    maybe_continue(accounts, limit)
+  end
+
+  defp after_account(queryable, nil), do: queryable
+  defp after_account(queryable, id), do: Accounts.Account.Query.after_id(queryable, id)
+
+  # A full page may have more behind it → hand off from the last id; a short
+  # page means the account set is drained.
+  defp maybe_continue(accounts, limit) when length(accounts) < limit, do: :ok
+
+  defp maybe_continue(accounts, limit) do
+    args = %{"after_account_id" => List.last(accounts).id, "limit" => limit}
+    {:ok, _job} = args |> new() |> Oban.insert()
     :ok
   end
 
   defp prune_account(%Accounts.Account{} = account) do
     plan = Billing.plan(Billing.account_plan(account)) || Billing.plan("free")
-    days = plan.audit_retention_days
-    cutoff = DateTime.utc_now() |> DateTime.add(-days * 86_400, :second)
+    cutoff = DateTime.utc_now() |> DateTime.add(-plan.audit_retention_days * 86_400, :second)
 
-    {n, _} =
-      Audit.Event.Query.all()
-      |> Audit.Event.Query.by_account_id(account.id)
-      |> Audit.Event.Query.occurred_before(cutoff)
-      |> Repo.delete_all()
+    pruned = delete_in_batches(account.id, cutoff, 0)
 
-    if n > 0 do
-      Logger.info("audit retention: pruned #{n} events from account #{account.id}")
+    if pruned > 0 do
+      Logger.info("audit retention: pruned #{pruned} events from account #{account.id}")
+    end
+  end
+
+  # Delete ≤ @batch_size prunable events by id, looping until a batch comes back
+  # short (the prunable set is drained). Stable across iterations: audit rows
+  # are never back-dated, so the cutoff set only ever shrinks.
+  defp delete_in_batches(account_id, cutoff, total) do
+    ids = Audit.Event.Query.prunable_ids(account_id, cutoff, @batch_size) |> Repo.all()
+    {n, _} = Audit.Event.Query.by_ids(ids) |> Repo.delete_all()
+
+    if length(ids) < @batch_size do
+      total + n
+    else
+      delete_in_batches(account_id, cutoff, total + n)
     end
   end
 end

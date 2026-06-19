@@ -353,6 +353,19 @@ defmodule Emisar.Audit.Event.Query do
   def occurred_before(queryable, ts),
     do: where(queryable, [events: e], e.occurred_at < ^ts)
 
+  # The retention sweep deletes by id in bounded batches (not one long-locking
+  # DELETE): grab ≤ `limit` prunable ids, then delete that set.
+  def prunable_ids(account_id, %DateTime{} = cutoff, limit) when is_integer(limit) do
+    all()
+    |> by_account_id(account_id)
+    |> occurred_before(cutoff)
+    |> limit(^limit)
+    |> select([events: e], e.id)
+  end
+
+  def by_ids(queryable \\ all(), ids) when is_list(ids),
+    do: where(queryable, [events: e], e.id in ^ids)
+
   def ordered_by_recent(queryable \\ all()),
     do: order_by(queryable, [events: e], desc: e.occurred_at)
 

@@ -10,6 +10,11 @@ defmodule Emisar.Accounts.Account.Query do
   def by_id(queryable, id),
     do: where(queryable, [accounts: a], a.id == ^id)
 
+  # Keyset paging by id (UUIDv7, time-ordered) — the retention sweep's account
+  # cursor: order by id, take a page, continue past the last id.
+  def after_id(queryable, id),
+    do: where(queryable, [accounts: a], a.id > ^id)
+
   def by_slug(queryable, slug),
     do: where(queryable, [accounts: a], a.slug == ^slug)
 
@@ -18,6 +23,12 @@ defmodule Emisar.Accounts.Account.Query do
 
   def ordered_by_name(queryable),
     do: order_by(queryable, [accounts: a], asc: a.name)
+
+  def ordered_by_id(queryable),
+    do: order_by(queryable, [accounts: a], asc: a.id)
+
+  def limit_to(queryable, n) when is_integer(n) and n > 0,
+    do: limit(queryable, ^n)
 
   @doc """
   Restrict to accounts the given user is a member of — joins through
