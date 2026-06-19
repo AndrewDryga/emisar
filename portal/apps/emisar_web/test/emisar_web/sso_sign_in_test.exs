@@ -118,6 +118,46 @@ defmodule EmisarWeb.SSOSignInTest do
       assert redirected_to(conn) == ~p"/app/#{account}"
     end
 
+    test "a member's branded sign-in is remembered (recent-accounts cookie written)", %{
+      conn: conn
+    } do
+      {_conn, user, account} = register_and_log_in(conn)
+
+      conn =
+        post(build_conn(), ~p"/sign_in",
+          user: %{
+            "email" => user.email,
+            "password" => "very-long-password-here",
+            "return_to" => ~p"/app/#{account}"
+          }
+        )
+
+      assert redirected_to(conn) == ~p"/app/#{account}"
+      # So the next sign-in offers this team as a one-click button.
+      assert Map.has_key?(conn.resp_cookies, "emisar_recent_accounts")
+    end
+
+    test "a non-member's branded sign-in lands on their default account, not a 404", %{conn: conn} do
+      {_conn, user, _account} = register_and_log_in(conn)
+      # A team the user has no membership in (so the branded return_to would 404).
+      other = Fixtures.account_fixture()
+
+      conn =
+        post(build_conn(), ~p"/sign_in",
+          user: %{
+            "email" => user.email,
+            "password" => "very-long-password-here",
+            "return_to" => ~p"/app/#{other}"
+          }
+        )
+
+      # The branded target is dropped → default landing, never a post-login 404.
+      assert redirected_to(conn) == ~p"/app"
+      assert Phoenix.Flash.get(conn.assigns.flash, :info) =~ "don't have access"
+      # And the team they can't reach is NOT remembered.
+      refute Map.has_key?(conn.resp_cookies, "emisar_recent_accounts")
+    end
+
     test "a forged non-local return_to is ignored — no open redirect", %{conn: conn} do
       {_conn, user, _account} = register_and_log_in(conn)
 

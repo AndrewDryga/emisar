@@ -8,8 +8,8 @@ defmodule EmisarWeb.UserSessionController do
 
   use EmisarWeb, :controller
 
-  alias Emisar.{Auth, Users}
-  alias EmisarWeb.{RequestContext, UserAuth}
+  alias Emisar.{Accounts, Auth, Users}
+  alias EmisarWeb.{RecentAccounts, RequestContext, UserAuth}
 
   # Brute-force / credential-stuffing throttle. `create` is the password
   # verify AND the MFA-code step (the pending-MFA POST lands here too), so
@@ -149,7 +149,56 @@ defmodule EmisarWeb.UserSessionController do
   defp finalize_sign_in(conn, user, user_params, method, context) do
     Users.record_sign_in(user, method, context)
     # `:password` is the method; `mfa` is whether the TOTP step ran this session.
-    UserAuth.log_in_user(conn, user, :password, method == "password+mfa", user_params)
+    complete_branded_sign_in(
+      conn,
+      user,
+      &UserAuth.log_in_user(&1, user, :password, method == "password+mfa", user_params)
+    )
+  end
+
+  # A sign-in begun on a team's branded page carries a `/app/<slug>` return_to.
+  # Resolve the operator's membership of THAT team and either remember it for the
+  # next sign-in's one-click return, or — if they aren't a member — drop the
+  # branded target so they don't land on a bare 404 after a successful sign-in.
+  #
+  # The membership read returns `:not_found` for a non-member AND an unknown team
+  # alike (the deliberate no-leak property), so the denial flash never names the
+  # team — naming it would confirm a tenant exists on the slug-probing path.
+  @branded_denied_message "Signed you in. You don't have access to that team's workspace yet — ask an admin for an invite."
+
+  defp complete_branded_sign_in(conn, user, log_in) do
+    case branded_return_membership(conn, user) do
+      {:member, account} ->
+        # Cookie write is a resp_cookie — separate from the session, so
+        # `log_in_user`'s session renewal keeps it (same as the SSO callback).
+        conn
+        |> RecentAccounts.put(%{slug: account.slug, name: account.name})
+        |> log_in.()
+
+      :not_member ->
+        # The flash is set AFTER `log_in_user` — its `renew_session` clears the
+        # session (flash included); the flash plug's before_send re-persists this.
+        conn
+        |> delete_session(:user_return_to)
+        |> log_in.()
+        |> put_flash(:info, @branded_denied_message)
+
+      :no_branded_target ->
+        log_in.(conn)
+    end
+  end
+
+  defp branded_return_membership(conn, %Users.User{} = user) do
+    case get_session(conn, :user_return_to) do
+      "/app/" <> ref ->
+        case Accounts.fetch_membership_by_account_id_or_slug(user, ref) do
+          {:ok, membership} -> {:member, membership.account}
+          {:error, :not_found} -> :not_member
+        end
+
+      _ ->
+        :no_branded_target
+    end
   end
 
   # -- Pending-MFA session helpers --------------------------------------
@@ -211,7 +260,12 @@ defmodule EmisarWeb.UserSessionController do
     case Auth.consume_magic_link_token(token, context) do
       {:ok, user} ->
         Users.record_sign_in(user, "magic_link", context)
-        UserAuth.log_in_user(conn, user, :magic_link, false, %{})
+
+        complete_branded_sign_in(
+          conn,
+          user,
+          &UserAuth.log_in_user(&1, user, :magic_link, false, %{})
+        )
 
       {:error, :invalid_or_expired} ->
         conn
