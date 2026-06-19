@@ -549,7 +549,31 @@ defmodule Emisar.CatalogTest do
       assert trusted.pending_hash == nil
     end
 
-    test "reject on a never-trusted custom pack deletes the row" do
+    test "reject on a never-trusted custom pack persists a :rejected row (fail-closed)" do
+      {_user, account, subject} = owner_subject_fixture()
+      runner = runner_fixture(account_id: account.id)
+
+      _ =
+        Catalog.observe_state(
+          runner,
+          state_payload(packs: %{"custom" => %{"version" => "1.0", "hash" => "sha256:NOPE"}})
+        )
+
+      {:ok, [pack_version], _} = Catalog.list_pack_versions(subject)
+      assert {:ok, rejected} = Catalog.reject_pack_version(pack_version.id, subject)
+
+      # The row is NOT deleted — it stays as an explicit :rejected pin so the
+      # action that references this version resolves to "untrusted", not the
+      # fail-open "missing row = trusted" the old delete left behind.
+      assert rejected.trust_state == :rejected
+      assert rejected.hash == nil
+      assert rejected.pending_hash == nil
+      assert {:ok, [persisted], _} = Catalog.list_pack_versions(subject)
+      assert persisted.id == pack_version.id
+      assert persisted.trust_state == :rejected
+    end
+
+    test "a re-advertised hash flips a :rejected row back to :pending for re-review" do
       {_user, account, subject} = owner_subject_fixture()
       runner = runner_fixture(account_id: account.id)
 
@@ -561,7 +585,18 @@ defmodule Emisar.CatalogTest do
 
       {:ok, [pack_version], _} = Catalog.list_pack_versions(subject)
       assert {:ok, _} = Catalog.reject_pack_version(pack_version.id, subject)
-      assert {:ok, [], _} = Catalog.list_pack_versions(subject)
+
+      # The runner advertises a fresh hash later — the operator gets another
+      # decision instead of the rejected row silently re-trusting.
+      _ =
+        Catalog.observe_state(
+          runner,
+          state_payload(packs: %{"custom" => %{"version" => "1.0", "hash" => "sha256:FRESH"}})
+        )
+
+      {:ok, [reopened], _} = Catalog.list_pack_versions(subject)
+      assert reopened.trust_state == :pending
+      assert reopened.pending_hash == "sha256:FRESH"
     end
 
     test "viewer subject is denied trust/reject" do

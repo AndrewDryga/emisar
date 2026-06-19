@@ -186,9 +186,10 @@ defmodule EmisarWeb.PacksLiveTest do
       refute render(lv) =~ "phx-click=\"trust\""
     end
 
-    test "Reject through the typed-confirm dialog drops a never-trusted custom pack", %{
-      conn: conn
-    } do
+    test "Reject through the typed-confirm dialog hides a never-trusted custom pack from the list",
+         %{
+           conn: conn
+         } do
       {conn, _user, account} = register_and_log_in(conn)
       pack_version = observe_pending_pack!(account)
 

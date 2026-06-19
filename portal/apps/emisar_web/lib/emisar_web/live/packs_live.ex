@@ -137,7 +137,12 @@ defmodule EmisarWeb.PacksLive do
            order_by: [{:packs, :asc, :pack_id}, {:packs, :asc, :version}],
            page: [limit: 500]
          ) do
-      {:ok, rows, _meta} -> rows
+      # A `:rejected` row persists in the DB so dispatch fails closed (a missing
+      # row would read as trusted), but the list shows only actionable versions
+      # — pending (needs a decision) and trusted. When the runner re-advertises
+      # a rejected pack, `judge_drift` flips it back to `:pending` and it
+      # reappears here for another review.
+      {:ok, rows, _meta} -> Enum.reject(rows, &(&1.trust_state == :rejected))
       {:error, _} -> []
     end
   end
@@ -249,10 +254,11 @@ defmodule EmisarWeb.PacksLive do
   end
 
   # After a Trust/Reject, recompute just the affected pack group and update
-  # the stream in place: `stream_delete` if every version of the pack is
-  # gone (a never-trusted custom pack's only version was Rejected → its row
-  # is deleted), otherwise `stream_insert` the regrouped versions. The
-  # `pending_count` (and sidebar badge) are recomputed from the full set.
+  # the stream in place: `stream_delete` if no displayable version of the pack
+  # remains (a never-trusted custom pack's only version was Rejected → hidden
+  # from the list by `fetch_rows`, though the row persists for the dispatch
+  # gate), otherwise `stream_insert` the regrouped versions. The `pending_count`
+  # (and sidebar badge) are recomputed from the full set.
   defp restream_pack(socket, pack_id) do
     rows = fetch_rows(socket)
     pending = Enum.count(rows, &(&1.trust_state == :pending))

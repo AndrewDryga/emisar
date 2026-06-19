@@ -477,18 +477,13 @@ defmodule Emisar.Audit.Events do
   `row_deleted: true` marks the never-trusted custom pack whose row is
   dropped entirely (nothing to fall back to).
   """
-  def pack_trust_rejected(%Subject{} = subject, %Catalog.PackVersion{} = pack_version, opts \\ []) do
+  def pack_trust_rejected(%Subject{} = subject, %Catalog.PackVersion{} = pack_version) do
     payload = %{
       pack_id: pack_version.pack_id,
       version: pack_version.version,
       trusted_hash: pack_version.hash,
       rejected_hash: pack_version.pending_hash
     }
-
-    payload =
-      if Keyword.get(opts, :row_deleted, false),
-        do: Map.put(payload, :row_deleted, true),
-        else: payload
 
     pack_trust_event(subject, pack_version, "pack_trust_rejected", payload)
   end
@@ -711,6 +706,22 @@ defmodule Emisar.Audit.Events do
       payload: %{
         pack_id: pack_id,
         version: version,
+        action_id: action.action_id,
+        runner_id: action.runner_id
+      }
+    )
+  end
+
+  # No pin row exists for a versioned pack — dispatch failed CLOSED. Derived
+  # from the action (no PackVersion struct to key the subject on).
+  def dispatch_blocked_pack_untrusted(account_id, :no_pin, action) do
+    Audit.changeset(account_id, "dispatch_blocked_pack_untrusted",
+      actor_kind: "system",
+      subject_kind: "pack_version",
+      subject_label: "#{action.pack_id}@#{action.pack_version}",
+      payload: %{
+        pack_id: action.pack_id,
+        version: action.pack_version,
         action_id: action.action_id,
         runner_id: action.runner_id
       }

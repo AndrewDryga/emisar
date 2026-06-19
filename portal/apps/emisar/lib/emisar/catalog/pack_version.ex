@@ -13,6 +13,13 @@ defmodule Emisar.Catalog.PackVersion do
       baseline). Dispatch refuses runs for this pack/version until
       a user clicks Trust (adopt `pending_hash`) or Reject (clear).
 
+    * `"rejected"` — an operator rejected a never-trusted pack (no prior
+      `hash` to fall back to). The row PERSISTS in this state rather than
+      being deleted, so the `runner_actions` referencing this
+      `(pack_id, version)` resolve to an explicit untrusted decision and
+      dispatch fails CLOSED. A later runner advertisement of a fresh hash
+      flips it back to `:pending` for another review.
+
   `pinned_at` / `pinned_by_id` record the most recent trust decision.
   System pins (auto-trust on library match, TOFU on unknown pack) leave
   `pinned_by_id` null.
@@ -30,7 +37,7 @@ defmodule Emisar.Catalog.PackVersion do
     field :version, :string
     field :hash, :string
     field :pending_hash, :string
-    field :trust_state, Ecto.Enum, values: [:trusted, :pending], default: :trusted
+    field :trust_state, Ecto.Enum, values: [:trusted, :pending, :rejected], default: :trusted
     field :trusted_manifest, :map
     field :pinned_at, :utc_datetime_usec
     field :first_seen_at, :utc_datetime_usec

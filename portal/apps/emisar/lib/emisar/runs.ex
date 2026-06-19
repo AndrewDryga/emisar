@@ -484,7 +484,7 @@ defmodule Emisar.Runs do
       :ok ->
         :ok
 
-      {:error, :pack_untrusted, %{} = pack_info} ->
+      {:error, :pack_untrusted, pack_info} ->
         Audit.record(Audit.Events.dispatch_blocked_pack_untrusted(account_id, pack_info, action))
         {:error, :pack_untrusted}
     end
@@ -787,28 +787,41 @@ defmodule Emisar.Runs do
       "reason" => run.reason
     }
 
-    envelope =
-      payload
-      |> maybe_put_attestation(run)
-      |> maybe_stamp_pack_hash(run)
+    payload = maybe_put_attestation(payload, run)
 
-    Emisar.Runners.deliver_to_runner(run.account_id, run.runner_id, envelope)
+    case stamp_pack_hash(payload, run) do
+      {:ok, envelope} ->
+        Emisar.Runners.deliver_to_runner(run.account_id, run.runner_id, envelope)
 
-    # The envelope is already on the runner's topic, so we can't un-send it
-    # if the DB write fails — but a dropped `mark_sent` leaves the runner
-    # executing while the row stays un-`sent`. Surface that mismatch instead
-    # of swallowing it (the run still shows un-sent until the runner reports
-    # progress, which flips it to :running).
-    case mark_sent(run) do
-      {:ok, _} ->
-        :ok
+        # The envelope is already on the runner's topic, so we can't un-send it
+        # if the DB write fails — but a dropped `mark_sent` leaves the runner
+        # executing while the row stays un-`sent`. Surface that mismatch instead
+        # of swallowing it (the run still shows un-sent until the runner reports
+        # progress, which flips it to :running).
+        case mark_sent(run) do
+          {:ok, _} ->
+            :ok
 
-      {:error, reason} ->
-        Logger.warning(
-          "mark_sent failed for run #{run.id} after envelope delivered: #{inspect(reason)}"
+          {:error, reason} ->
+            Logger.warning(
+              "mark_sent failed for run #{run.id} after envelope delivered: #{inspect(reason)}"
+            )
+
+            :ok
+        end
+
+      :unavailable ->
+        # A versioned pack with no trusted hash to pin — refuse to deliver a
+        # hash-less envelope (the runner would skip its hash gate, fail-open).
+        # The upstream `check_pack_trust` passed at creation, so this is a pack
+        # that DRIFTED to pending/rejected before this (re)delivery: mark the
+        # run refused so the operator sees a terminal row with the cause.
+        mark_refused(
+          run,
+          "pack trust changed after this run was authorized — re-trust the pack in /app/packs and re-dispatch"
         )
 
-        :ok
+        {:error, :pack_untrusted}
     end
   end
 
@@ -820,29 +833,50 @@ defmodule Emisar.Runs do
 
   defp maybe_put_attestation(payload, %ActionRun{}), do: payload
 
-  # Stamp the trusted pack hash into the wire envelope so the runner
-  # can re-hash its on-disk pack and refuse a dispatch whose bytes
-  # don't match what cloud trusts. We fetch the catalog action scoped to
-  # the run's own account (no Subject) because this runs inside an
-  # already-authorized dispatch path — the caller's auth already passed;
-  # we're just enriching the wire payload with a side-channel fact
-  # (trusted hash on file).
+  # Stamp the trusted pack hash into the wire envelope so the runner can re-hash
+  # its on-disk pack and refuse a dispatch whose bytes don't match what cloud
+  # trusts. Fail CLOSED for a versioned pack: returns `:unavailable` (the caller
+  # refuses delivery) rather than ship a hash-less envelope the runner would
+  # wave through. We fetch the catalog action scoped to the run's own account
+  # (no Subject) — this runs inside an already-authorized dispatch path.
   #
-  # If anything's missing — catalog row gone, pack_version not yet
-  # populated, no trusted hash yet — we omit the key, and the runner
-  # skips its trust gate (same as a fresh runner pre-Phase 2). The
-  # operator-facing trust gate already ran upstream (`check_pack_trust`
-  # in the with-chain), so omitting here only widens the window during
-  # the brief moment when a hash is in flux; the upstream gate stays
-  # closed.
-  defp maybe_stamp_pack_hash(payload, %ActionRun{} = run) do
-    with {:ok, action} <-
-           Emisar.Catalog.fetch_action_for_account(run.action_id, run.runner_id, run.account_id),
-         hash when is_binary(hash) <- Emisar.Catalog.trusted_hash_for_action(action) do
-      Map.put(payload, "expected_pack_hash", hash)
-    else
-      _ -> payload
+  # `{:ok, envelope}` when:
+  #   * the action is pack-less (no `pack_id`) or its version isn't pinned yet —
+  #     nothing to stamp (matches what `check_pack_trust` lets through);
+  #   * it's a versioned pack with a trusted hash, stamped in; or
+  #   * the catalog row has vanished — the run was already trust-gated at
+  #     creation against the then-advertised action, so we don't block a
+  #     redelivery on a missing mirror row.
+  # `:unavailable` ONLY when the action is a FOUND, fully-versioned pack with no
+  # trusted hash on file — the pack drifted to pending/rejected after this run
+  # was authorized. Never widen the window by shipping that hash-less.
+  defp stamp_pack_hash(payload, %ActionRun{} = run) do
+    case Emisar.Catalog.fetch_action_for_account(run.action_id, run.runner_id, run.account_id) do
+      {:ok, %{pack_id: nil}} ->
+        {:ok, payload}
+
+      {:ok, %{pack_version: nil}} ->
+        {:ok, payload}
+
+      {:ok, action} ->
+        case Emisar.Catalog.trusted_hash_for_action(action) do
+          hash when is_binary(hash) -> {:ok, Map.put(payload, "expected_pack_hash", hash)}
+          nil -> :unavailable
+        end
+
+      {:error, _} ->
+        {:ok, payload}
     end
+  end
+
+  @doc """
+  Internal — terminally refuse a run the cloud will not deliver (a versioned
+  pack whose trusted hash is unavailable at send time). `:refused` + the
+  human-readable cause in `error_message`, the same terminal state the runner's
+  own pre-exec refusals map to.
+  """
+  def mark_refused(%ActionRun{} = run, reason) when is_binary(reason) do
+    transition(run, :refused, %{finished_at: DateTime.utc_now(), error_message: reason})
   end
 
   @doc """

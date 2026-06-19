@@ -10,7 +10,7 @@ defmodule Emisar.Repo.Migrations.PackVersionTrust do
     * `hash` — the trusted hash (what dispatch authorizes against)
     * `pending_hash` — a different hash a runner reported later;
       surfaced in the UI for Trust/Reject
-    * `trust_state` — `"trusted"` (default) or `"pending"`
+    * `trust_state` — `"trusted"` (default), `"pending"`, or `"rejected"`
     * `pinned_at` / `pinned_by_id` — audit trail for who pinned
 
   Also adds `pack_version` to `runner_actions` so dispatch can look

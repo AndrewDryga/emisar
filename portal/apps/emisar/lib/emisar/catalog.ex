@@ -268,13 +268,13 @@ defmodule Emisar.Catalog do
       trusted bytes remain authoritative; dispatch resumes.
 
     * The row has NO trusted hash yet (a custom / self-written pack
-      that was just observed for the first time). Reject deletes the
-      row entirely. There's nothing to fall back to and we don't
-      want a stale `trusted-but-null-hash` row to leak through. If
-      the runner keeps advertising the pack on later heartbeats it
-      will come back as pending — that gives the operator another
-      chance to approve, OR a signal to remove the pack at the
-      runner end.
+      that was just observed for the first time). Reject marks the row
+      `:rejected` — it is NOT deleted, because `runner_actions` reference
+      this `(pack_id, version)` by string with no FK, so a deleted row
+      reads as "missing" which the dispatch gate USED to treat as trusted
+      (fail-open). The persisted `:rejected` state fails dispatch CLOSED.
+      A later runner advertisement of a fresh hash flips it back to
+      `:pending` for another review (`judge_drift`).
   """
   def reject_pack_version(pack_version_id, %Subject{} = subject) do
     with :ok <-
@@ -287,17 +287,10 @@ defmodule Emisar.Catalog do
         lock_pending_pack_version(repo, pack_version_id, subject)
       end)
       |> Multi.run(:pack_version, fn repo, %{before: pending} ->
-        if is_nil(pending.hash) do
-          # Never trusted. Drop the row — Trust is a no-op when nothing
-          # exists, and a future advertisement will recreate it as
-          # pending.
-          repo.delete(pending)
-        else
-          repo.update(PackVersion.Changeset.reject(pending, subject))
-        end
+        repo.update(reject_changeset(pending, subject))
       end)
       |> Multi.insert(:audit, fn %{before: pending} ->
-        Audit.Events.pack_trust_rejected(subject, pending, row_deleted: is_nil(pending.hash))
+        Audit.Events.pack_trust_rejected(subject, pending)
       end)
       |> Repo.commit_multi(
         after_commit: fn %{pack_version: pack_version} ->
@@ -311,6 +304,14 @@ defmodule Emisar.Catalog do
       end
     end
   end
+
+  # Reject reverts to a previously-trusted hash when one exists, else marks
+  # the never-trusted row `:rejected` (kept, not deleted — see the docstring).
+  defp reject_changeset(%PackVersion{hash: nil} = pack_version, subject),
+    do: PackVersion.Changeset.reject_untrusted(pack_version, subject)
+
+  defp reject_changeset(%PackVersion{} = pack_version, subject),
+    do: PackVersion.Changeset.reject(pack_version, subject)
 
   # Locked re-read for the Trust/Reject decision: the row is fetched
   # FOR NO KEY UPDATE inside the transaction (account-scoped via
@@ -381,23 +382,31 @@ defmodule Emisar.Catalog do
 
   The action carries `pack_version` populated by `observe_action`
   based on the runner's last-reported `runner_state.packs` payload.
-  Actions advertised before this migration ran (pack_version is nil)
-  pass through — they'll get a version on the next runner heartbeat.
+
+  A pack-less action (no `pack_id`), or one whose `pack_version` the runner
+  hasn't reported yet, has no version to pin and passes. For a fully versioned
+  pack (both `pack_id` and `pack_version`), trust is fail-CLOSED: only an
+  explicit `:trusted` pin allows dispatch. A MISSING pin row (the old design
+  DELETED it on reject), `:pending`, or `:rejected` all refuse — `runner_actions`
+  reference the version by string with no FK, so a missing row must never read
+  as trusted.
   """
+  def check_pack_trusted(%RunnerAction{pack_id: nil}), do: :ok
+  def check_pack_trusted(%RunnerAction{pack_version: nil}), do: :ok
+
   def check_pack_trusted(%RunnerAction{} = action) do
-    if is_nil(action.pack_id) or is_nil(action.pack_version) do
-      :ok
-    else
-      case peek_pack_version_for_action(action) do
-        nil ->
-          :ok
+    case peek_pack_version_for_action(action) do
+      %PackVersion{trust_state: :trusted} ->
+        :ok
 
-        %PackVersion{trust_state: :trusted} ->
-          :ok
+      %PackVersion{} = pack_version ->
+        {:error, :pack_untrusted, pack_version}
 
-        %PackVersion{trust_state: :pending} = pack_version ->
-          {:error, :pack_untrusted, pack_version}
-      end
+      nil ->
+        # Fail closed: a versioned pack with no pin row is untrusted, not
+        # trusted. `:no_pin` carries no PackVersion struct — the caller audits
+        # off the action instead.
+        {:error, :pack_untrusted, :no_pin}
     end
   end
 

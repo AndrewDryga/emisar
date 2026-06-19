@@ -45,12 +45,29 @@ defmodule Emisar.Catalog.PackVersion.Changeset do
     |> validate_required([:hash])
   end
 
-  @doc "Discard pending_hash; keep the trusted hash unchanged."
+  @doc "Discard pending_hash; revert to the previously-trusted hash."
   def reject(%PackVersion{} = pack_version, %{} = subject) do
     pack_version
     |> change(%{
       pending_hash: nil,
       trust_state: :trusted,
+      pinned_at: DateTime.utc_now(),
+      pinned_by_id: subject_user_id(subject)
+    })
+  end
+
+  @doc """
+  Reject a never-trusted pack (no prior `hash` to fall back to). Marks the row
+  `:rejected` and clears the pending hash — the row PERSISTS so the
+  `runner_actions` referencing this version resolve to an explicit untrusted
+  decision and dispatch fails closed (it is NOT deleted, which would leave a
+  missing row the gate read as trusted).
+  """
+  def reject_untrusted(%PackVersion{} = pack_version, %{} = subject) do
+    pack_version
+    |> change(%{
+      pending_hash: nil,
+      trust_state: :rejected,
       pinned_at: DateTime.utc_now(),
       pinned_by_id: subject_user_id(subject)
     })

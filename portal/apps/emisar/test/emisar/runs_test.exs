@@ -1167,6 +1167,106 @@ defmodule Emisar.RunsTest do
     end
   end
 
+  describe "pack-trust dispatch gate (BLOCKER-2)" do
+    # Observe a custom (no-baseline) pack + its action; the version lands
+    # :pending and the action is advertised. Returns {runner, pack_version}.
+    defp observe_pending_pack(account, subject) do
+      runner = runner_fixture(account_id: account.id)
+
+      {:ok, _} =
+        Emisar.Catalog.observe_state(runner, %{
+          "hostname" => "h",
+          "version" => "0.1",
+          "labels" => %{},
+          "packs" => %{"custom" => %{"version" => "1.0", "hash" => "sha256:NOPE"}},
+          "actions" => [
+            %{
+              "id" => "custom.do",
+              "pack_id" => "custom",
+              "title" => "Do",
+              "kind" => "exec",
+              "risk" => "low",
+              "args" => []
+            }
+          ]
+        })
+
+      {:ok, [pack_version], _} = Emisar.Catalog.list_pack_versions(subject)
+      {runner, pack_version}
+    end
+
+    test "a rejected pack refuses dispatch (fail closed)" do
+      {_user, account, subject} = owner_subject_fixture()
+      _ = policy_fixture(account_id: account.id)
+      {runner, pack_version} = observe_pending_pack(account, subject)
+
+      assert {:ok, rejected} = Emisar.Catalog.reject_pack_version(pack_version.id, subject)
+      assert rejected.trust_state == :rejected
+
+      assert {:error, :pack_untrusted} =
+               Runs.dispatch_run(
+                 base_attrs(account.id, runner.id, %{action_id: "custom.do"}),
+                 subject
+               )
+    end
+
+    test "a deleted pin row refuses dispatch — the old reject-then-delete fail-open is closed" do
+      {_user, account, subject} = owner_subject_fixture()
+      _ = policy_fixture(account_id: account.id)
+      {runner, pack_version} = observe_pending_pack(account, subject)
+
+      # The OLD behavior: the pin row is gone, but the action still references
+      # (pack_id, version). A missing row must fail CLOSED, not open.
+      {:ok, _} = Repo.delete(pack_version)
+
+      assert {:error, :pack_untrusted} =
+               Runs.dispatch_run(
+                 base_attrs(account.id, runner.id, %{action_id: "custom.do"}),
+                 subject
+               )
+    end
+
+    test "a pack drifting to pending after authorization is refused at send, not shipped hash-less" do
+      {_user, account, subject} = owner_subject_fixture()
+      _ = policy_fixture(account_id: account.id)
+      {runner, pack_version} = observe_pending_pack(account, subject)
+
+      # Operator trusts the pack → a run dispatches normally and goes :sent.
+      {:ok, _} = Emisar.Catalog.trust_pack_version(pack_version.id, subject)
+
+      assert {:ok, :running, run} =
+               Runs.dispatch_run(
+                 base_attrs(account.id, runner.id, %{action_id: "custom.do"}),
+                 subject
+               )
+
+      assert Runs.peek_run_by_id(run.id).status == :sent
+
+      # The pack drifts to a new hash (a tampered re-advertisement) → :pending.
+      {:ok, _} =
+        Emisar.Catalog.observe_state(runner, %{
+          "hostname" => "h",
+          "version" => "0.1",
+          "labels" => %{},
+          "packs" => %{"custom" => %{"version" => "1.0", "hash" => "sha256:TAMPERED"}},
+          "actions" => [
+            %{
+              "id" => "custom.do",
+              "pack_id" => "custom",
+              "title" => "Do",
+              "kind" => "exec",
+              "risk" => "low",
+              "args" => []
+            }
+          ]
+        })
+
+      # Redelivery must NOT ship a hash-less envelope — it refuses the run.
+      assert {:error, :pack_untrusted} = Runs.dispatch_to_runner(run)
+      assert Runs.peek_run_by_id(run.id).status == :refused
+    end
+  end
+
   describe "recheck_run_pack_trust/1 (approval-time pack-trust re-gate)" do
     test "refuses a run whose action pack drifted to :pending" do
       account = account_fixture()
