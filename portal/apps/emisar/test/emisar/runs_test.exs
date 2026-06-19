@@ -875,6 +875,29 @@ defmodule Emisar.RunsTest do
       assert stats.success_rate == 67
     end
 
+    test "fetch_run_stats classifies every outcome, not just failed/error/timed_out", %{
+      account: account,
+      runner: runner,
+      subject: subject
+    } do
+      # refused + validation_failed are genuine failures (were excluded before);
+      # denied + cancelled are their own buckets; running is in-flight.
+      for status <- ~w[success refused validation_failed denied cancelled running] do
+        {:ok, _} = Runs.create_run(base_attrs(account.id, runner.id, %{status: status}))
+      end
+
+      assert {:ok, stats} = Runs.fetch_run_stats(subject)
+      assert stats.total == 6
+      assert stats.success == 1
+      assert stats.failed == 2
+      assert stats.denied == 1
+      assert stats.cancelled == 1
+      assert stats.in_progress == 1
+      # 1 success out of 3 results (success + failed); denied/cancelled/running
+      # are excluded from the denominator.
+      assert stats.success_rate == 33
+    end
+
     test "list_recent_runs_for_runner scopes to the runner and the subject's account", %{
       account: account,
       runner: runner,

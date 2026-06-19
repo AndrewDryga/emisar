@@ -58,15 +58,19 @@ defmodule Emisar.Runs.ActionRun.Query do
     do: where(queryable, [runs: r], r.action_id == ^action_id)
 
   @doc """
-  One-row aggregate for the dashboard stats: total runs plus the
-  success / failed splits, counted with SQL FILTER so the context does
-  no app-side summing. The caller owns which statuses count as failed.
+  One-row aggregate for the dashboard stats: total runs plus the per-outcome
+  splits, counted with SQL FILTER so the context does no app-side summing. The
+  caller owns which statuses count as a failure; `:denied`/`:cancelled` are
+  counted separately (policy/operator outcomes, not run results), and in-flight
+  runs are the remainder (`total - success - failed - denied - cancelled`).
   """
   def outcome_totals(queryable, failed_statuses) do
     select(queryable, [runs: r], %{
       total: count(r.id),
       success: filter(count(r.id), r.status == ^:success),
-      failed: filter(count(r.id), r.status in ^failed_statuses)
+      failed: filter(count(r.id), r.status in ^failed_statuses),
+      denied: filter(count(r.id), r.status == ^:denied),
+      cancelled: filter(count(r.id), r.status == ^:cancelled)
     })
   end
 

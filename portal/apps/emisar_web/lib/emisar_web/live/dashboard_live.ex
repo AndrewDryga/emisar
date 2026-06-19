@@ -396,21 +396,7 @@ defmodule EmisarWeb.DashboardLive do
       <.stat
         label={"Runs (last #{@stats.window_hours}h)"}
         value={@stats.total}
-        hint={
-          cond do
-            @stats.total == 0 ->
-              "Nothing dispatched yet"
-
-            @stats.success_rate == 100 ->
-              "All succeeded"
-
-            @stats.success_rate != nil ->
-              "#{@stats.success_rate}% success · #{@stats.failed} failed"
-
-            true ->
-              "#{@stats.total} in progress"
-          end
-        }
+        hint={runs_hint(@stats)}
         class={
           cond do
             @stats.failed > 0 and @stats.success_rate != nil and @stats.success_rate < 75 ->
@@ -426,6 +412,25 @@ defmodule EmisarWeb.DashboardLive do
       />
     </.link>
     """
+  end
+
+  # Honest one-line outcome summary. "All succeeded" means EVERY run in the
+  # window is `:success` (not just a 100% success rate while runs are still
+  # pending or ended denied/cancelled); otherwise spell out each non-success
+  # bucket so nothing hides.
+  defp runs_hint(%{total: 0}), do: "Nothing dispatched yet"
+  defp runs_hint(%{success: n, total: n}), do: "All succeeded"
+
+  defp runs_hint(stats) do
+    [
+      if(stats.success_rate, do: "#{stats.success_rate}% success"),
+      if(stats.failed > 0, do: "#{stats.failed} failed"),
+      if(stats.in_progress > 0, do: "#{stats.in_progress} running"),
+      if(stats.denied > 0, do: "#{stats.denied} denied"),
+      if(stats.cancelled > 0, do: "#{stats.cancelled} cancelled")
+    ]
+    |> Enum.reject(&is_nil/1)
+    |> Enum.join(" · ")
   end
 
   # -- Attention panel ------------------------------------------------

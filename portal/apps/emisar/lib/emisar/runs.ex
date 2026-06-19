@@ -73,7 +73,21 @@ defmodule Emisar.Runs do
   defp maybe_by_action_id(query, nil), do: query
   defp maybe_by_action_id(query, action_id), do: ActionRun.Query.by_action_id(query, action_id)
 
-  @failed_statuses [:failed, :error, :timed_out]
+  # Canonical run-outcome classification for the dashboard headline. A terminal
+  # run is a SUCCESS, a FAILURE (attempted/refused and didn't succeed), or
+  # neither — `:denied` (policy) and `:cancelled` (operator) are their own
+  # outcomes, not run results. The success rate is successes over attempted
+  # RESULTS (success + failure); denied / cancelled / in-flight are excluded.
+  # `:denied`/`:cancelled` + this list together cover every terminal status
+  # (see `ActionRun.terminal?/1`), so in-flight is the counted remainder.
+  @failure_statuses [
+    :failed,
+    :error,
+    :timed_out,
+    :validation_failed,
+    :unknown_action,
+    :refused
+  ]
 
   # Run statuses that earn an audit row. The intermediate lifecycle
   # states — pending, sent, running, pending_approval — are already
@@ -96,9 +110,11 @@ defmodule Emisar.Runs do
   ]
 
   @doc """
-  Rolled-up totals for the dashboard headline: total runs in window,
-  successes, failures (failed/error/timed_out). Pending/running rows
-  are excluded — only terminal outcomes count toward the success rate.
+  Rolled-up totals for the dashboard headline: total runs in window, plus the
+  canonical outcome split — successes, failures (the `@failure_statuses` set),
+  denied, cancelled, and in-flight (the remainder). `success_rate` is successes
+  over attempted RESULTS (success + failure), or nil when none have a result
+  yet — denied / cancelled / in-flight never count toward it.
   """
   def fetch_run_stats(%Subject{} = subject, opts \\ []) do
     with :ok <-
@@ -110,14 +126,15 @@ defmodule Emisar.Runs do
       cutoff = DateTime.utc_now() |> DateTime.add(-hours * 3600, :second)
 
       # One aggregate row, summed in SQL (FILTER) — no app-side counting.
-      %{total: total, success: success, failed: failed} =
+      %{total: total, success: success, failed: failed, denied: denied, cancelled: cancelled} =
         ActionRun.Query.all()
         |> ActionRun.Query.inserted_after(cutoff)
-        |> ActionRun.Query.outcome_totals(@failed_statuses)
+        |> ActionRun.Query.outcome_totals(@failure_statuses)
         |> Authorizer.for_subject(subject)
         |> Repo.one()
 
-      terminal = success + failed
+      results = success + failed
+      in_progress = total - success - failed - denied - cancelled
 
       {:ok,
        %{
@@ -125,10 +142,10 @@ defmodule Emisar.Runs do
          total: total,
          success: success,
          failed: failed,
-         success_rate:
-           if terminal > 0 do
-             round(success * 100 / terminal)
-           end
+         denied: denied,
+         cancelled: cancelled,
+         in_progress: in_progress,
+         success_rate: if(results > 0, do: round(success * 100 / results))
        }}
     end
   end
