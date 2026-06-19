@@ -1,0 +1,27 @@
+schema_version: 1
+id: rke2.etcd_snapshot_list
+title: List etcd snapshots (rke2 etcd-snapshot ls)
+kind: exec
+risk: low
+description: >
+  List the embedded-etcd snapshots RKE2 has taken — name, location (local /
+  S3), size, and creation time. Confirms backups are current; an empty or
+  stale list is an etcd-recovery risk. Read-only.
+side_effects:
+  - One `rke2 etcd-snapshot list` call.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: rke2
+    argv:
+      - "etcd-snapshot"
+      - "ls"
+  timeout: 60s
+output:
+  parser: text
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 16384
+examples:
+  - title: List snapshots
+    args: {}

@@ -1,0 +1,29 @@
+schema_version: 1
+id: rke2.crictl_images
+title: List images on this node (crictl images)
+kind: exec
+risk: low
+description: >
+  Container images present in this node's RKE2 containerd — repository, tag,
+  image id, and size. Use to confirm an image is actually pulled on a node
+  (ImagePullBackOff triage) or to see disk pressure from images. Read-only.
+side_effects:
+  - One crictl images call against the node container runtime.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "/var/lib/rancher/rke2/bin/crictl images"
+  env:
+    CRI_CONFIG_FILE: /var/lib/rancher/rke2/agent/etc/crictl.yaml
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 16384
+examples:
+  - title: Node images
+    args: {}

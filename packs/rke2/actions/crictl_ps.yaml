@@ -1,0 +1,30 @@
+schema_version: 1
+id: rke2.crictl_ps
+title: List containers on this node (crictl ps -a)
+kind: exec
+risk: low
+description: >
+  All containers (running and stopped) on this node's RKE2 containerd —
+  container id, image, state, name, attempt count, and pod. The CRI-level
+  truth when kubelet/kubectl disagree about what's running on a node, and
+  where you see crash/restart loops. Read-only.
+side_effects:
+  - One crictl ps call against the node container runtime.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "/var/lib/rancher/rke2/bin/crictl ps -a"
+  env:
+    CRI_CONFIG_FILE: /var/lib/rancher/rke2/agent/etc/crictl.yaml
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 16384
+examples:
+  - title: All containers
+    args: {}

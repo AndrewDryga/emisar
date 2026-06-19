@@ -1,0 +1,29 @@
+schema_version: 1
+id: rke2.certificate_check
+title: Check RKE2 certificate expiry (rke2 certificate check)
+kind: exec
+risk: low
+description: >
+  Per-certificate subject, status, and expiry date for this node's RKE2 certs.
+  RKE2 leaf certs default to 365 days and auto-renew on restart within 90 days
+  of expiry; this surfaces a node whose certs are about to lapse. Read-only.
+side_effects:
+  - One `rke2 certificate check` call.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: rke2
+    argv:
+      - "certificate"
+      - "check"
+      - "--output"
+      - "table"
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 16384
+examples:
+  - title: Certificate expiry
+    args: {}
