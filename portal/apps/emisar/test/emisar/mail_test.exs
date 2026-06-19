@@ -113,4 +113,22 @@ defmodule Emisar.MailTest do
       assert_email_sent(&(&1.text_body =~ "/reset_password/tok?return_to=%2Fapp%2Facme"))
     end
   end
+
+  describe "welcome email" do
+    test "carries the team name + branded sign-in link" do
+      user = user_fixture()
+
+      {:ok, account} =
+        Emisar.Accounts.create_account_with_owner(%{name: "Acme Co", slug: "acme-co"}, user)
+
+      UserNotifier.deliver_welcome(user, account)
+
+      assert_email_sent(fn email ->
+        assert email.subject == "Your emisar workspace is ready"
+        assert email.text_body =~ "Acme Co"
+        assert email.text_body =~ "/app/#{account.slug}/sign_in"
+        true
+      end)
+    end
+  end
 end

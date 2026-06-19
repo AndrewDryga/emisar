@@ -1,7 +1,7 @@
 defmodule EmisarWeb.UserSignUpLive do
   use EmisarWeb, :live_view
 
-  alias Emisar.{Accounts, Auth, Users}
+  alias Emisar.{Accounts, Auth, Mailers, Users}
 
   def mount(_params, _session, socket) do
     changeset = Users.change_user(%Emisar.Users.User{})
@@ -113,8 +113,12 @@ defmodule EmisarWeb.UserSignUpLive do
                },
                user
              ) do
-          {:ok, _account} ->
+          {:ok, account} ->
             :ok = Auth.deliver_confirmation_instructions(user)
+            # Hand the owner their team's branded sign-in link to share — a
+            # second, informational email (the confirmation above is the
+            # action-required one).
+            Mailers.UserNotifier.deliver_welcome(user, account)
 
             {:noreply,
              socket

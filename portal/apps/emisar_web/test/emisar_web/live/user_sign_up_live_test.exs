@@ -70,7 +70,12 @@ defmodule EmisarWeb.UserSignUpLiveTest do
       |> Emisar.Repo.all()
       |> Emisar.Repo.preload(:account)
 
-    assert [%{role: :owner, account: %{name: "Founder Co"}}] = memberships
+    assert [%{role: :owner, account: %{name: "Founder Co"} = account}] = memberships
+
+    # The new owner gets a welcome email with their team's branded sign-in link
+    # to share — selectively matched (the separate confirmation email also fires).
+    assert_receive {:email, %{subject: "Your emisar workspace is ready"} = welcome}
+    assert welcome.text_body =~ "/app/#{account.slug}/sign_in"
   end
 
   test "when workspace setup fails, the user gets a confirmation + a recovery path", %{conn: conn} do
