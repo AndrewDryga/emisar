@@ -121,6 +121,24 @@ defmodule Emisar.SSOTest do
       assert provider.satisfies_mfa
     end
 
+    test "JumpCloud is an accepted provider kind" do
+      {_user, _account, subject} = enterprise_owner()
+
+      assert :jumpcloud in IdentityProvider.kinds()
+
+      assert {:ok, %IdentityProvider{kind: :jumpcloud}} =
+               SSO.configure_provider(
+                 %{
+                   kind: :jumpcloud,
+                   name: "JumpCloud",
+                   issuer: "https://oauth.id.jumpcloud.com/",
+                   client_id: "cid",
+                   client_secret: "secret"
+                 },
+                 subject
+               )
+    end
+
     test "the issuer must be an https URL" do
       {_user, _account, subject} = enterprise_owner()
 

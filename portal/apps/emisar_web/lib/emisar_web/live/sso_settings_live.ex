@@ -9,6 +9,7 @@ defmodule EmisarWeb.SSOSettingsLive do
   @kind_labels %{
     google_workspace: "Google Workspace",
     okta: "Okta",
+    jumpcloud: "JumpCloud",
     keycloak: "Keycloak",
     openid_connect: "OpenID Connect"
   }
@@ -987,12 +988,18 @@ defmodule EmisarWeb.SSOSettingsLive do
           into the fields below.
         </li>
       </ol>
+      <p class="mt-3 text-xs leading-relaxed text-zinc-500">
+        Leave <span class="text-zinc-400">DPoP</span> (sender-constrained tokens) OFF. emisar
+        reads the ID token only and never presents the access token to an API, so DPoP adds no
+        security here and turning it on would break the token request.
+      </p>
     </div>
     """
   end
 
   defp setup_kind_label("google_workspace"), do: "Google Workspace"
   defp setup_kind_label("okta"), do: "Okta"
+  defp setup_kind_label("jumpcloud"), do: "JumpCloud"
   defp setup_kind_label("keycloak"), do: "Keycloak"
   defp setup_kind_label(_), do: "a generic OIDC provider"
 
@@ -1004,6 +1011,10 @@ defmodule EmisarWeb.SSOSettingsLive do
     do:
       "in the Okta admin console → Applications → Create App Integration → OIDC, Web Application"
 
+  defp oidc_app_hint("jumpcloud"),
+    do:
+      "in the JumpCloud admin console → SSO Applications → Add New Application → Custom Application, with the OIDC connector enabled"
+
   defp oidc_app_hint("keycloak"),
     do:
       "in the Keycloak admin console → Clients → Create client → OpenID Connect (enable Client authentication)"
@@ -1012,6 +1023,7 @@ defmodule EmisarWeb.SSOSettingsLive do
 
   defp issuer_hint("google_workspace"), do: "https://accounts.google.com"
   defp issuer_hint("okta"), do: "https://YOUR-ORG.okta.com"
+  defp issuer_hint("jumpcloud"), do: "https://oauth.id.jumpcloud.com/"
   defp issuer_hint("keycloak"), do: "https://YOUR-HOST/realms/YOUR-REALM"
   defp issuer_hint(_), do: "your provider's OIDC issuer URL (the discovery base)"
 
@@ -1019,7 +1031,11 @@ defmodule EmisarWeb.SSOSettingsLive do
   # page, which is the usual point of confusion.
   defp issuer_where_hint("okta"),
     do:
-      "It's your Okta org URL — the domain you use for the admin console, not a per-app field. Find it top-right in the console, or under Security → API → Authorization Servers (the org row's Issuer URI)."
+      "It's your Okta org URL — the domain you use for the admin console, not a per-app field. Use the ORG authorization server (Security → API → Authorization Servers, the org row's Issuer URI), not a custom one: that keeps the OIDC `sub` equal to the Okta user id, which is exactly what SCIM provisions on, so sign-in and directory sync converge on one identity."
+
+  defp issuer_where_hint("jumpcloud"),
+    do:
+      "Always this exact value for JumpCloud — including the trailing slash. JumpCloud echoes back the `externalId` SCIM sent, so the OIDC `sub` and the SCIM identity converge automatically; nothing to look up."
 
   defp issuer_where_hint("google_workspace"),
     do: "Always this exact value for Google — nothing to look up."
@@ -1034,7 +1050,11 @@ defmodule EmisarWeb.SSOSettingsLive do
 
   defp scim_location_hint(:okta),
     do:
-      "in a SEPARATE Okta app — Okta's OIDC apps can't do SCIM, so add the \"SCIM 2.0 Test App (OAuth Bearer Token)\" from the OIN catalog, then open its Provisioning tab → Configure API Integration → Enable API integration"
+      "in a SEPARATE Okta app — Okta's OIDC login app can't do SCIM. Add the \"SCIM 2.0 Test App (Header Auth)\" from the OIN catalog (its Sign-On tab is unused — SCIM lives entirely on the Provisioning tab): Configure API Integration → Enable, set the Base URL to the value above and paste the `ems-` token as the API token, then enable Create / Update / Deactivate. Okta sends the token as a raw header with no `Bearer` scheme, which emisar accepts"
+
+  defp scim_location_hint(:jumpcloud),
+    do:
+      "on the same JumpCloud app — add a \"Custom SCIM\" identity-management config, set the Base URL to the value above and paste the `ems-` token as the Token Key (Bearer)"
 
   defp scim_location_hint(:google_workspace),
     do:

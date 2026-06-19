@@ -8,7 +8,7 @@ defmodule Emisar.SSO.IdentityProvider do
   use Emisar, :schema
   alias Emisar.Auth
 
-  @kinds [:google_workspace, :okta, :keycloak, :openid_connect]
+  @kinds [:google_workspace, :okta, :jumpcloud, :keycloak, :openid_connect]
   @provisioners [:jit, :manual]
 
   schema "identity_providers" do
