@@ -324,5 +324,36 @@ defmodule EmisarWeb.PacksLiveTest do
       assert html =~ "acme-tools"
       refute html =~ "phx-click=\"trust\""
     end
+
+    test "the trust-review banner is singular for one pending version", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      _ = observe_pending_pack!(account)
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/packs")
+
+      assert render(lv) =~ "1 pack version needs trust review."
+    end
+
+    test "the trust-review banner pluralizes for several pending versions", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      runner = Emisar.Fixtures.runner_fixture(account_id: account.id)
+
+      {:ok, _runner} =
+        Emisar.Catalog.observe_state(runner, %{
+          "hostname" => "host-1",
+          "version" => "0.1.0",
+          "labels" => %{},
+          "actions" => [],
+          # Two custom packs with no library baseline — both land pending.
+          "packs" => %{
+            "acme-tools" => %{"version" => "9.9", "hash" => "abc123"},
+            "acme-extras" => %{"version" => "1.0", "hash" => "def456"}
+          }
+        })
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/packs")
+
+      assert render(lv) =~ "2 pack versions need trust review."
+    end
   end
 end

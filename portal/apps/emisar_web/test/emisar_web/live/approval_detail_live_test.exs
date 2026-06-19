@@ -186,4 +186,16 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     # The form flipped to decision-history — no interactive decision left.
     refute html =~ "Approve and send"
   end
+
+  test "warns when the target runner is offline (queues on approve)", %{conn: conn} do
+    {conn, user, account} = register_and_log_in(conn)
+    # pending_request/2 targets a freshly-registered runner that never connects,
+    # so the decision panel surfaces the shared offline notice.
+    request = pending_request(account, user)
+
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
+
+    assert html =~ "Runner offline"
+    assert html =~ "queues and runs once the runner reconnects"
+  end
 end

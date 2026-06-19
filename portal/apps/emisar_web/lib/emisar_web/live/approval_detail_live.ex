@@ -570,16 +570,10 @@ defmodule EmisarWeb.ApprovalDetailLive do
         — {@approved_count} so far.
       </p>
 
-      <div
-        :if={@runner_state == :offline}
-        class="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/[0.06] p-3 text-xs text-amber-200"
-      >
-        <.icon name="hero-signal-slash" class="mt-0.5 h-4 w-4 flex-none text-amber-300" />
-        <span>
-          This runner is offline. You can still approve — the action queues and runs once the
-          runner reconnects, or expires if it doesn't.
-        </span>
-      </div>
+      <.offline_notice :if={@runner_state == :offline} severity={:info} title="Runner offline">
+        You can still approve — the action queues and runs once the runner reconnects, or
+        expires if it doesn't.
+      </.offline_notice>
 
       <%= cond do %>
         <% not @can_decide? -> %>

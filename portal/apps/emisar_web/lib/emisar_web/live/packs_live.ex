@@ -49,6 +49,7 @@ defmodule EmisarWeb.PacksLive do
       {:ok,
        socket
        |> assign(:loading?, true)
+       |> assign(:load_error?, false)
        |> assign(:pack_count, 0)
        |> assign(:pending_count, 0)
        |> assign(:advertising, %{})
@@ -64,18 +65,33 @@ defmodule EmisarWeb.PacksLive do
   # after a mutation reload; targeted Trust/Reject updates a single group
   # via `stream_insert`/`stream_delete` (see `restream_pack/2`).
   defp load_packs(socket) do
-    rows = fetch_rows(socket)
-    pending = Enum.count(rows, &(&1.trust_state == :pending))
-    groups = group_by_pack(rows)
+    case fetch_rows(socket) do
+      {:ok, rows} ->
+        pending = Enum.count(rows, &(&1.trust_state == :pending))
+        groups = group_by_pack(rows)
 
-    socket
-    |> assign(:pack_count, length(groups))
-    |> assign(:pending_count, pending)
-    # Keep the sidebar badge in step after Trust/Reject on this page.
-    |> assign(:pending_packs_count, pending)
-    |> assign(:advertising, advertising_runners(rows, socket.assigns.current_subject))
-    |> assign_pending_pack_actions(rows)
-    |> stream(:packs, groups, reset: true)
+        socket
+        |> assign(:load_error?, false)
+        |> assign(:pack_count, length(groups))
+        |> assign(:pending_count, pending)
+        # Keep the sidebar badge in step after Trust/Reject on this page.
+        |> assign(:pending_packs_count, pending)
+        |> assign(:advertising, advertising_runners(rows, socket.assigns.current_subject))
+        |> assign_pending_pack_actions(rows)
+        |> stream(:packs, groups, reset: true)
+
+      # A failed read must read as an error, not an empty inventory — "No packs
+      # reported yet" would wrongly imply the fleet advertises nothing.
+      :error ->
+        socket
+        |> assign(:load_error?, true)
+        |> assign(:pack_count, 0)
+        |> assign(:pending_count, 0)
+        |> assign(:advertising, %{})
+        |> assign(:pack_actions, %{})
+        |> assign(:pack_diffs, %{})
+        |> stream(:packs, [], reset: true)
+    end
   end
 
   # What trusting each pending version authorizes, keyed by pack_version id
@@ -142,10 +158,13 @@ defmodule EmisarWeb.PacksLive do
       # — pending (needs a decision) and trusted. When the runner re-advertises
       # a rejected pack, `judge_drift` flips it back to `:pending` and it
       # reappears here for another review.
-      {:ok, rows, _meta} -> Enum.reject(rows, &(&1.trust_state == :rejected))
-      {:error, _} -> []
+      {:ok, rows, _meta} -> {:ok, Enum.reject(rows, &(&1.trust_state == :rejected))}
+      {:error, _} -> :error
     end
   end
+
+  defp pending_review_title(1), do: "1 pack version needs trust review."
+  defp pending_review_title(count), do: "#{count} pack versions need trust review."
 
   def handle_event("trust", %{"id" => id}, socket) do
     case Catalog.trust_pack_version(id, socket.assigns.current_subject) do
@@ -240,16 +259,18 @@ defmodule EmisarWeb.PacksLive do
   # `restream_pack` this doesn't recompute the pending panels — inspecting a
   # trusted version changes nothing about what's pending.
   defp reinsert_pack_group(socket, pack_id) do
-    versions =
-      socket
-      |> fetch_rows()
-      |> Enum.filter(&(&1.pack_id == pack_id))
-      |> sort_versions()
+    case fetch_rows(socket) do
+      {:ok, rows} ->
+        versions = rows |> Enum.filter(&(&1.pack_id == pack_id)) |> sort_versions()
 
-    if versions == [] do
-      socket
-    else
-      stream_insert(socket, :packs, %{id: pack_id, versions: versions})
+        if versions == [] do
+          socket
+        else
+          stream_insert(socket, :packs, %{id: pack_id, versions: versions})
+        end
+
+      :error ->
+        socket
     end
   end
 
@@ -260,23 +281,30 @@ defmodule EmisarWeb.PacksLive do
   # gate), otherwise `stream_insert` the regrouped versions. The `pending_count`
   # (and sidebar badge) are recomputed from the full set.
   defp restream_pack(socket, pack_id) do
-    rows = fetch_rows(socket)
-    pending = Enum.count(rows, &(&1.trust_state == :pending))
-    pack_count = rows |> Enum.map(& &1.pack_id) |> Enum.uniq() |> length()
-    versions = rows |> Enum.filter(&(&1.pack_id == pack_id)) |> sort_versions()
+    case fetch_rows(socket) do
+      {:ok, rows} ->
+        pending = Enum.count(rows, &(&1.trust_state == :pending))
+        pack_count = rows |> Enum.map(& &1.pack_id) |> Enum.uniq() |> length()
+        versions = rows |> Enum.filter(&(&1.pack_id == pack_id)) |> sort_versions()
 
-    socket =
-      socket
-      |> assign(:pack_count, pack_count)
-      |> assign(:pending_count, pending)
-      |> assign(:pending_packs_count, pending)
-      |> assign(:advertising, advertising_runners(rows, socket.assigns.current_subject))
-      |> assign_pending_pack_actions(rows)
+        socket =
+          socket
+          |> assign(:pack_count, pack_count)
+          |> assign(:pending_count, pending)
+          |> assign(:pending_packs_count, pending)
+          |> assign(:advertising, advertising_runners(rows, socket.assigns.current_subject))
+          |> assign_pending_pack_actions(rows)
 
-    if versions == [] do
-      stream_delete(socket, :packs, %{id: pack_id})
-    else
-      stream_insert(socket, :packs, %{id: pack_id, versions: versions})
+        if versions == [] do
+          stream_delete(socket, :packs, %{id: pack_id})
+        else
+          stream_insert(socket, :packs, %{id: pack_id, versions: versions})
+        end
+
+      # The mutation committed but the re-read failed — surface the error rather
+      # than leaving a stale count; the existing stream rows stay until reload.
+      :error ->
+        assign(socket, :load_error?, true)
     end
   end
 
@@ -327,28 +355,31 @@ defmodule EmisarWeb.PacksLive do
         you Trust (adopt the new contents) or Reject (keep the pinned hash).
       </.page_intro>
 
-      <div
+      <.notice
         :if={@pending_count > 0}
-        class="mt-4 rounded-lg border border-amber-700/60 bg-amber-950/40 p-4 ring-1 ring-amber-700/30"
+        variant={:warning}
+        icon="hero-shield-exclamation"
+        title={pending_review_title(@pending_count)}
+        class="mt-4"
       >
-        <div class="flex items-center gap-2 text-sm text-amber-200">
-          <.icon name="hero-shield-exclamation" class="h-4 w-4" />
-          <strong>
-            {@pending_count} pack version{if @pending_count == 1, do: "", else: "s"} need{if @pending_count ==
-                                                                                               1,
-                                                                                             do: "s",
-                                                                                             else: ""} trust review.
-          </strong>
-        </div>
-        <p class="mt-1 text-xs text-amber-100/70">
-          Dispatch against these versions is blocked until an admin reviews the new hash.
-        </p>
-      </div>
+        Dispatch against these versions is blocked until an admin reviews the new hash.
+      </.notice>
 
       <.loading_state :if={@loading?} />
 
       <.empty_state
-        :if={@pack_count == 0 and not @loading?}
+        :if={@load_error? and not @loading?}
+        tone={:danger}
+        icon="hero-exclamation-triangle"
+        title="Couldn't load packs"
+        class="mt-8"
+      >
+        This is a load error, not an empty inventory — your runners may well be advertising
+        packs. Refresh the page; if it persists, your access to this account may have changed.
+      </.empty_state>
+
+      <.empty_state
+        :if={@pack_count == 0 and not @load_error? and not @loading?}
         icon="hero-cube"
         title="No packs reported yet"
         class="mt-8"

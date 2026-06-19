@@ -30,7 +30,9 @@ defmodule EmisarWeb.PoliciesLive do
   @runner_indent "    "
 
   def mount(_params, _session, socket) do
-    socket = assign(socket, page_title: "Policy", loading?: not connected?(socket))
+    socket =
+      assign(socket, page_title: "Policy", loading?: not connected?(socket), load_error?: false)
+
     {:ok, if(connected?(socket), do: load_all(socket), else: socket)}
   end
 
@@ -45,11 +47,20 @@ defmodule EmisarWeb.PoliciesLive do
         {:error, _} -> nil
       end
 
+    # A failed scoped-policy read must read as an error, not an empty ruleset
+    # list — "No targeted rulesets yet" would wrongly imply none are configured.
+    {rulesets, load_error?} =
+      case Policies.list_scoped_policies(subject) do
+        {:ok, policies} -> {Enum.map(policies, &build_ruleset_editor/1), false}
+        {:error, _} -> {[], true}
+      end
+
     socket
     |> assign(:loading?, false)
+    |> assign(:load_error?, load_error?)
     |> assign(:can_manage?, Policies.subject_can_manage_policies?(subject))
     |> assign(:account, build_account_editor(account_policy))
-    |> assign(:rulesets, Enum.map(list_scoped(subject), &build_ruleset_editor/1))
+    |> assign(:rulesets, rulesets)
     |> assign(:runners, list_runners(subject))
     |> assign(:groups, list_groups(subject))
   end
@@ -111,13 +122,6 @@ defmodule EmisarWeb.PoliciesLive do
   defp list_groups(subject) do
     case Runners.list_group_summaries(subject) do
       {:ok, rows} -> rows |> Enum.map(&elem(&1, 0)) |> Enum.reject(&blank?/1) |> Enum.sort()
-      {:error, _} -> []
-    end
-  end
-
-  defp list_scoped(subject) do
-    case Policies.list_scoped_policies(subject) do
-      {:ok, policies} -> policies
       {:error, _} -> []
     end
   end
@@ -633,8 +637,18 @@ defmodule EmisarWeb.PoliciesLive do
             </.button>
           </header>
 
+          <.empty_state
+            :if={@load_error? and @rulesets == []}
+            tone={:danger}
+            icon="hero-exclamation-triangle"
+            title="Couldn't load targeted rulesets"
+          >
+            This is a load error, not an empty configuration — rulesets may well be set.
+            Refresh the page; if it persists, your access to this account may have changed.
+          </.empty_state>
+
           <p
-            :if={@rulesets == []}
+            :if={not @load_error? and @rulesets == []}
             class="rounded-xl border border-dashed border-zinc-800 p-6 text-center text-xs text-zinc-500"
           >
             No targeted rulesets yet. Every runner uses the default policy above.
