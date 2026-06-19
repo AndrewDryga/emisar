@@ -12,7 +12,11 @@ defmodule EmisarWeb.SSOSignInHTML do
           variant="secondary"
           class="w-full justify-between"
         >
-          {team["name"]} <span aria-hidden="true">→</span>
+          <span class="flex min-w-0 flex-col text-left">
+            <span class="truncate">{team["name"]}</span>
+            <span class="font-mono text-xs text-zinc-500">app/{team["slug"]}</span>
+          </span>
+          <span aria-hidden="true">→</span>
         </.button>
       </div>
       <.or_separator :if={@recent != []} label="or enter your team" />
@@ -29,8 +33,9 @@ defmodule EmisarWeb.SSOSignInHTML do
           required
         />
         <p class="text-xs leading-relaxed text-zinc-500">
-          The name in your emisar URL — e.g. <code class="text-zinc-400">acme</code>
-          for <span class="text-zinc-400">app/acme</span>. Ask your admin if you're not sure.
+          The short name in your emisar URL — e.g. <code class="text-zinc-400">acme</code>
+          for <span class="text-zinc-400">app/acme</span>, not your team's full name. It's in your
+          invite email or any emisar link your team shared; ask your admin if you're not sure.
         </p>
         <:actions>
           <.button class="w-full">

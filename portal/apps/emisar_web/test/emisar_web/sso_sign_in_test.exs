@@ -35,6 +35,27 @@ defmodule EmisarWeb.SSOSignInTest do
       assert html =~ "Which team are you signing in to"
       refute html =~ "Work email"
     end
+
+    test "a returning browser's recent-team button shows the slug, not just the name", %{
+      conn: conn
+    } do
+      account = Fixtures.account_fixture()
+
+      # secret_key_base is needed to sign the recent-accounts cookie; a bare test
+      # conn doesn't carry it until it's been through the endpoint.
+      html =
+        conn
+        |> Map.put(:secret_key_base, EmisarWeb.Endpoint.config(:secret_key_base))
+        |> EmisarWeb.RecentAccounts.put(%{slug: account.slug, name: account.name})
+        # Carry the just-written response cookie back as a request cookie.
+        |> recycle()
+        |> get(~p"/sign_in/sso")
+        |> html_response(200)
+
+      assert html =~ account.name
+      # The slug sub-label disambiguates teams with similar names + teaches the URL form.
+      assert html =~ "app/#{account.slug}"
+    end
   end
 
   describe "POST /sign_in/sso (team picker)" do
