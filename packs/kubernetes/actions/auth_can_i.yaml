@@ -1,0 +1,47 @@
+schema_version: 1
+id: kubernetes.auth_can_i
+title: List my RBAC permissions (auth can-i --list)
+kind: exec
+risk: low
+description: >
+  `kubectl auth can-i --list` — every action the kubeconfig identity is
+  allowed, optionally scoped to one namespace. Confirms whether the runner's
+  identity can perform the pack's mutators (drain, scale, delete). Read-only.
+side_effects:
+  - One kubectl auth can-i invocation.
+  - Read-only.
+args:
+  - name: namespace
+    type: string
+    required: false
+    default: ""
+    description: Namespace to scope to. Empty = current/default.
+    validation:
+      pattern: "^[a-z0-9][a-z0-9\\-]{0,62}$|^$"
+  - name: context
+    type: string
+    required: false
+    default: ""
+    description: kubeconfig context. Empty = current-context.
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{0,128}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "kubectl ${KCTX:+--context=$KCTX} ${NS:+-n $NS} auth can-i --list"
+  timeout: 15s
+  env:
+    KCTX: "{{ args.context }}"
+    NS: "{{ args.namespace }}"
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: All my permissions
+    args: {}
+  - title: In one namespace
+    args:
+      namespace: kube-system

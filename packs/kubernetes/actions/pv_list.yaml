@@ -1,0 +1,36 @@
+schema_version: 1
+id: kubernetes.pv_list
+title: List PersistentVolumes
+kind: exec
+risk: low
+description: >
+  `kubectl get pv` — capacity, access modes, reclaim policy, status
+  (Bound/Released/Available), bound claim, and storage class. Cluster-scoped;
+  complements the namespaced pvcs_list. Read-only.
+side_effects:
+  - One kubectl get invocation.
+  - Read-only.
+args:
+  - name: context
+    type: string
+    required: false
+    default: ""
+    description: kubeconfig context. Empty = current-context.
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{0,128}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "kubectl ${KCTX:+--context=$KCTX} get pv"
+  timeout: 30s
+  env:
+    KCTX: "{{ args.context }}"
+output:
+  parser: text
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+examples:
+  - title: All persistent volumes
+    args: {}

@@ -1,0 +1,35 @@
+schema_version: 1
+id: kubernetes.jobs_list
+title: List Jobs across all namespaces
+kind: exec
+risk: low
+description: >
+  `kubectl get jobs -A` — completions, duration, age. Spot failed or stuck
+  batch jobs. Read-only.
+side_effects:
+  - One kubectl get invocation.
+  - Read-only.
+args:
+  - name: context
+    type: string
+    required: false
+    default: ""
+    description: kubeconfig context. Empty = current-context.
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{0,128}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "kubectl ${KCTX:+--context=$KCTX} get jobs -A"
+  timeout: 30s
+  env:
+    KCTX: "{{ args.context }}"
+output:
+  parser: text
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+examples:
+  - title: All jobs
+    args: {}

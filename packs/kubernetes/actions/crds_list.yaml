@@ -1,0 +1,35 @@
+schema_version: 1
+id: kubernetes.crds_list
+title: List CustomResourceDefinitions
+kind: exec
+risk: low
+description: >
+  `kubectl get crd` — installed CustomResourceDefinitions (an inventory of the
+  operators/controllers extending the cluster). Read-only.
+side_effects:
+  - One kubectl get invocation.
+  - Read-only.
+args:
+  - name: context
+    type: string
+    required: false
+    default: ""
+    description: kubeconfig context. Empty = current-context.
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{0,128}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "kubectl ${KCTX:+--context=$KCTX} get crd"
+  timeout: 30s
+  env:
+    KCTX: "{{ args.context }}"
+output:
+  parser: text
+  max_stdout_bytes: 131072
+  max_stderr_bytes: 8192
+examples:
+  - title: All CRDs
+    args: {}

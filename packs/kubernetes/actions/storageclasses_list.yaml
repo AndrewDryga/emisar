@@ -1,0 +1,35 @@
+schema_version: 1
+id: kubernetes.storageclasses_list
+title: List StorageClasses
+kind: exec
+risk: low
+description: >
+  `kubectl get storageclass` — provisioner, reclaim policy, volume binding
+  mode, and which is the default class. Read-only.
+side_effects:
+  - One kubectl get invocation.
+  - Read-only.
+args:
+  - name: context
+    type: string
+    required: false
+    default: ""
+    description: kubeconfig context. Empty = current-context.
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{0,128}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "kubectl ${KCTX:+--context=$KCTX} get storageclass"
+  timeout: 15s
+  env:
+    KCTX: "{{ args.context }}"
+output:
+  parser: text
+  max_stdout_bytes: 32768
+  max_stderr_bytes: 8192
+examples:
+  - title: All storage classes
+    args: {}

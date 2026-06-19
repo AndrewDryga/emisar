@@ -1,0 +1,44 @@
+schema_version: 1
+id: kubernetes.quotas_list
+title: ResourceQuota + LimitRange for a namespace
+kind: exec
+risk: low
+description: >
+  `kubectl -n <ns> get resourcequota,limitrange` — the quota usage and default
+  request/limit ranges for one namespace. Why a pod can't be created
+  ("exceeded quota") or gets unexpected defaults. Read-only.
+side_effects:
+  - One kubectl get invocation.
+  - Read-only.
+args:
+  - name: namespace
+    type: string
+    required: true
+    description: Namespace to inspect.
+    validation:
+      pattern: "^[a-z0-9][a-z0-9\\-]{0,62}$"
+  - name: context
+    type: string
+    required: false
+    default: ""
+    description: kubeconfig context. Empty = current-context.
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{0,128}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "kubectl ${KCTX:+--context=$KCTX} -n $NS get resourcequota,limitrange"
+  timeout: 30s
+  env:
+    KCTX: "{{ args.context }}"
+    NS: "{{ args.namespace }}"
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Quotas in a namespace
+    args:
+      namespace: production

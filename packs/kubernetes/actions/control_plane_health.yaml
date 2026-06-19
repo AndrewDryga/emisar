@@ -1,0 +1,36 @@
+schema_version: 1
+id: kubernetes.control_plane_health
+title: Control-plane readiness (/readyz?verbose)
+kind: exec
+risk: low
+description: >
+  `kubectl get --raw '/readyz?verbose'` — the API server's per-check readiness
+  (etcd, scheduling, informers, …). The modern replacement for the deprecated
+  componentstatuses API. Read-only.
+side_effects:
+  - One kubectl get --raw invocation.
+  - Read-only.
+args:
+  - name: context
+    type: string
+    required: false
+    default: ""
+    description: kubeconfig context. Empty = current-context.
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{0,128}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "kubectl ${KCTX:+--context=$KCTX} get --raw '/readyz?verbose'"
+  timeout: 15s
+  env:
+    KCTX: "{{ args.context }}"
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Control-plane readiness
+    args: {}

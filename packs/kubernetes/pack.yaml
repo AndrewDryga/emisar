@@ -2,7 +2,7 @@ schema_version: 1
 
 id: kubernetes
 name: Kubernetes operations pack
-version: 0.1.2
+version: 0.2.0
 description: >
   Operator pack for Kubernetes clusters: discovery (pods, nodes,
   services, deployments), deep introspection (describe, logs, events),
@@ -31,7 +31,8 @@ setup:
       example: /etc/emisar/kubeconfig
   notes:
     - "If KUBECONFIG is unset, kubectl reads ~/.kube/config on the runner host — a file, so it needs no inherit_env entry."
-    - The kubeconfig must embed working credentials (client cert, token, or an exec auth plugin); whatever identity it carries gates which actions succeed, and mutators (cordon, drain, delete_pod) need RBAC for those verbs.
+    - The kubeconfig must embed working credentials (client cert, token, or an exec auth plugin); whatever identity it carries gates which actions succeed, and mutators (cordon, drain, delete_pod) need RBAC for those verbs. Use auth_can_i to confirm what the identity may do.
+    - "RKE2: point KUBECONFIG at /etc/rancher/rke2/rke2.yaml on a server node (root-readable, mode 0600); for a remote runner rewrite its 127.0.0.1:6443 server URL to a reachable address. RKE2 does not bundle metrics-server, so nodes_top / pods_top error until one is installed. RKE2 host/etcd/containerd specifics live in the separate rke2 pack."
   verify: kubernetes.cluster_info
 
 actions:
@@ -48,12 +49,25 @@ actions:
   - actions/daemonsets_list.yaml
   - actions/pvcs_list.yaml
   - actions/namespaces.yaml
+  # Workloads / storage / networking / RBAC
+  - actions/jobs_list.yaml
+  - actions/cronjobs_list.yaml
+  - actions/hpa_list.yaml
+  - actions/pv_list.yaml
+  - actions/storageclasses_list.yaml
+  - actions/endpoints_list.yaml
+  - actions/networkpolicies_list.yaml
+  - actions/quotas_list.yaml
+  - actions/crds_list.yaml
+  - actions/auth_can_i.yaml
+  - actions/control_plane_health.yaml
   # Deep introspection
   - actions/pod_describe.yaml
   - actions/pod_logs.yaml
   - actions/pod_previous_logs.yaml
   - actions/events_recent.yaml
   - actions/events_for_pod.yaml
+  - actions/events_warnings.yaml
   - actions/node_describe.yaml
   - actions/get_yaml.yaml
   # Rollouts

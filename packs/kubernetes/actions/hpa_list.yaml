@@ -1,0 +1,36 @@
+schema_version: 1
+id: kubernetes.hpa_list
+title: List HorizontalPodAutoscalers
+kind: exec
+risk: low
+description: >
+  `kubectl get hpa -A` — targets (current/desired utilization), min/max
+  replicas, and current replicas. Why a deployment is (or isn't) scaling.
+  Read-only.
+side_effects:
+  - One kubectl get invocation.
+  - Read-only.
+args:
+  - name: context
+    type: string
+    required: false
+    default: ""
+    description: kubeconfig context. Empty = current-context.
+    validation:
+      pattern: "^[a-zA-Z0-9_.\\-]{0,128}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "kubectl ${KCTX:+--context=$KCTX} get hpa -A"
+  timeout: 30s
+  env:
+    KCTX: "{{ args.context }}"
+output:
+  parser: text
+  max_stdout_bytes: 131072
+  max_stderr_bytes: 8192
+examples:
+  - title: All HPAs
+    args: {}
