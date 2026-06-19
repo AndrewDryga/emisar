@@ -78,6 +78,17 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       assert new_html =~ "/sign_in/sso/callback"
     end
 
+    test "surfaces the branded sign-in link to share with the team", %{
+      conn: conn,
+      account: account
+    } do
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/sso")
+
+      assert html =~ "sign-in link"
+      # Absolute, slug-based — copy-pasteable straight into onboarding docs.
+      assert html =~ "/app/#{account.slug}/sign_in"
+    end
+
     test "lists existing connections", %{conn: conn, account: account} do
       _provider = insert_provider(account, %{name: "Acme Okta"})
 

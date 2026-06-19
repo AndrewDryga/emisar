@@ -64,6 +64,12 @@ defmodule EmisarWeb.SSOSettingsLive do
       # The fixed OIDC redirect URI the operator registers in their IdP — shown
       # in the per-provider setup guide so they paste the exact value.
       |> assign(:callback_url, "#{Emisar.PublicUrl.base()}/sign_in/sso/callback")
+      # The branded sign-in URL to hand to members — absolute, slug-based (the
+      # canonical UI form), so the admin can copy it straight into onboarding docs.
+      |> assign(
+        :sign_in_url,
+        Emisar.PublicUrl.base() <> ~p"/app/#{socket.assigns.current_account}/sign_in"
+      )
       # The freshly-minted SCIM token, shown ONCE: `%{provider_id, token}` or
       # nil. Never re-rendered from a stored value — write-only, like every
       # emisar secret.
@@ -651,6 +657,22 @@ defmodule EmisarWeb.SSOSettingsLive do
           Connect your organization's identity provider so members sign in through it. New
           users are provisioned on first sign-in, and you choose the role they land with.
         </.page_intro>
+
+        <%!-- The branded sign-in link to hand to the team. Always useful (the page
+             offers email sign-in even with no SSO), so it's not gated on providers. --%>
+        <.card :if={@live_action != :new} padding="p-5">
+          <p class="text-sm font-medium text-zinc-200">Your team's sign-in link</p>
+          <p class="mt-1 text-xs leading-relaxed text-zinc-500">
+            Share this with your members — it opens this team's sign-in page with your SSO
+            connections (and email sign-in as a fallback).
+          </p>
+          <div class="mt-3 flex items-center gap-2 rounded-lg bg-zinc-950/80 p-2 ring-1 ring-zinc-800">
+            <code id="sso-sign-in-link" class="flex-1 break-all font-mono text-xs text-zinc-300">
+              {@sign_in_url}
+            </code>
+            <.copy_button target="#sso-sign-in-link">Copy</.copy_button>
+          </div>
+        </.card>
 
         <%!-- Adding a connection is its own view (/settings/sso/new) so the form
              + per-provider setup guide get the full width and don't compete with
