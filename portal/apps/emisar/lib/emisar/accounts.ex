@@ -514,7 +514,7 @@ defmodule Emisar.Accounts do
         audit: fn _updated, changeset ->
           Audit.Events.membership_role_changed(subject, changeset.data, new_role)
         end,
-        after_commit: &broadcast_membership_role_changed/1
+        after_commit: &on_membership_role_changed/2
       )
     end
   end
@@ -532,6 +532,44 @@ defmodule Emisar.Accounts do
       account_team_topic(membership.account_id),
       {:list_changed, :team, "membership.role_changed", membership.user_id}
     )
+  end
+
+  # after_commit for both role-change paths (operator UI + SCIM sync): refresh
+  # the team list AND, on a privilege REDUCTION, force the member's open sockets
+  # to remount with the new permissions. `changeset.data.role` is the locked
+  # pre-update role.
+  defp on_membership_role_changed(%Membership{} = membership, %Ecto.Changeset{} = changeset) do
+    broadcast_membership_role_changed(membership)
+    maybe_refresh_reduced_member_sessions(changeset.data.role, membership)
+  end
+
+  # A role change rewrites the user's permission set, but a mounted LiveView
+  # snapshotted the OLD %Subject{} at mount — so a demoted operator/admin keeps
+  # stale powers on every open socket until they happen to navigate. On a
+  # REDUCTION, disconnect the member's live sockets (sockets only — they stay
+  # signed in) so each remounts and rebuilds its subject from the new role.
+  #
+  # Authz here is permission-based, not rank-based (`Auth.Role` deliberately has
+  # no rank), so "reduction" is a permission-subset test — the new role losing a
+  # permission the old one held. An elevation or a no-op (a SCIM reconcile
+  # re-applying the same role) keeps the sockets, avoiding needless reconnects.
+  defp maybe_refresh_reduced_member_sessions(old_role, %Membership{role: new_role} = membership) do
+    if reduced_permissions?(old_role, new_role) do
+      refresh_member_sessions(membership)
+    else
+      :ok
+    end
+  end
+
+  defp reduced_permissions?(old_role, new_role),
+    do:
+      not MapSet.subset?(Auth.Permissions.for_role(old_role), Auth.Permissions.for_role(new_role))
+
+  defp refresh_member_sessions(%Membership{} = membership) do
+    case Users.fetch_user_by_id(membership.user_id) do
+      {:ok, user} -> Auth.broadcast_disconnect_for_user(user)
+      {:error, _reason} -> :ok
+    end
   end
 
   defp broadcast_membership_suspended(%Membership{} = membership) do
@@ -839,7 +877,7 @@ defmodule Emisar.Accounts do
           do: nil,
           else: Audit.Events.membership_role_synced_via_scim(changeset.data, provider, role)
       end,
-      after_commit: &broadcast_membership_role_changed/1
+      after_commit: &on_membership_role_changed/2
     )
   end
 
