@@ -32,17 +32,6 @@ defmodule EmisarWeb.MCP.Service do
   # staying robust.
   @recheck_interval_ms 2_000
 
-  @terminal_statuses [
-    :success,
-    :failed,
-    :error,
-    :validation_failed,
-    :unknown_action,
-    :cancelled,
-    :timed_out,
-    :denied
-  ]
-
   @stdout_cap 65_536
   @stderr_cap 65_536
 
@@ -411,7 +400,6 @@ defmodule EmisarWeb.MCP.Service do
   def max_wait_ms, do: @max_wait_ms
   def max_get_run_wait_ms, do: @max_get_run_wait_ms
   def max_runners_per_call, do: @max_runners_per_call
-  def terminal_statuses, do: @terminal_statuses
 
   # -- Runner resolution ----------------------------------------------
 
@@ -703,13 +691,14 @@ defmodule EmisarWeb.MCP.Service do
 
   defp run_terminal?(run_id, subject) do
     case Runs.fetch_run_by_id(run_id, subject) do
-      {:ok, %{status: s}} when s in @terminal_statuses -> true
+      {:ok, %{status: status}} -> Runs.ActionRun.terminal?(status)
       _ -> false
     end
   end
 
-  defp run_status_kind(%{status: s}) when s in @terminal_statuses, do: :terminal
-  defp run_status_kind(_), do: :waiting
+  defp run_status_kind(%{status: status}) do
+    if Runs.ActionRun.terminal?(status), do: :terminal, else: :waiting
+  end
 
   # Single-run variant of the above, returning the terminal run for the caller
   # to render. Same event-driven wait; one subscription instead of N.
@@ -729,20 +718,21 @@ defmodule EmisarWeb.MCP.Service do
       {:error, :not_found} ->
         :timeout
 
-      {:ok, %{status: status} = run} when status in @terminal_statuses ->
-        {:terminal, run}
+      {:ok, %{status: status} = run} ->
+        if Runs.ActionRun.terminal?(status) do
+          {:terminal, run}
+        else
+          case wait_for_signal(deadline) do
+            :recheck ->
+              schedule_recheck(deadline)
+              await_terminal(subject, run_id, deadline)
 
-      {:ok, _} ->
-        case wait_for_signal(deadline) do
-          :recheck ->
-            schedule_recheck(deadline)
-            await_terminal(subject, run_id, deadline)
+            {:run_updated, _run} ->
+              await_terminal(subject, run_id, deadline)
 
-          {:run_updated, _run} ->
-            await_terminal(subject, run_id, deadline)
-
-          :timeout ->
-            :timeout
+            :timeout ->
+              :timeout
+          end
         end
     end
   end

@@ -997,6 +997,43 @@ defmodule Emisar.RunsTest do
                      500
     end
 
+    test "cancelling a :denied run is a no-op — it never reached a runner" do
+      account = account_fixture()
+      runner = runner_fixture(account_id: account.id)
+      _ = action_fixture(runner: runner, action_id: "linux.uptime", risk: "low")
+      user = user_fixture()
+      _ = membership_fixture(account_id: account.id, user_id: user.id, role: "owner")
+      subject = subject_for(user, account, role: :owner)
+
+      _ =
+        policy_fixture(
+          account_id: account.id,
+          rules: %{
+            "schema_version" => 2,
+            "defaults" => %{
+              "low" => "deny",
+              "medium" => "deny",
+              "high" => "deny",
+              "critical" => "deny"
+            },
+            "overrides" => []
+          }
+        )
+
+      assert {:error, :denied_by_policy, _reason} =
+               Runs.dispatch_run(base_attrs(account.id, runner.id), subject)
+
+      assert {:ok, [%ActionRun{status: :denied} = denied], _} =
+               Runs.list_recent_runs(subject, limit: 50)
+
+      Emisar.Runs.subscribe_account_runs(account.id)
+
+      # :denied is terminal → cancel returns it unchanged, tells no runner, and
+      # broadcasts nothing (before the fix it transitioned denied→cancelled).
+      assert {:ok, %ActionRun{status: :denied}} = Runs.cancel_run(denied, subject, "stop")
+      refute_receive {:run_updated, _}, 200
+    end
+
     test "a viewer (no cancel permission) is refused with :unauthorized" do
       account = account_fixture()
       runner = runner_fixture(account_id: account.id)

@@ -803,9 +803,9 @@ defmodule Emisar.Runs do
     end
   end
 
-  # A run still doing work — not yet settled (terminal or policy-denied). An
-  # execution with at least one is in flight and worth rehydrating.
-  defp active_run_status?(status), do: not (ActionRun.terminal?(status) or status == :denied)
+  # A run still doing work — not yet settled. An execution with at least one is
+  # in flight and worth rehydrating. (`:denied` is terminal, so it's excluded.)
+  defp active_run_status?(status), do: not ActionRun.terminal?(status)
 
   @doc """
   Re-emits the run_action envelope onto the runner's PubSub topic. Used for

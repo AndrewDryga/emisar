@@ -465,12 +465,10 @@ defmodule Emisar.Runbooks do
     if ids == Enum.uniq(ids), do: :ok, else: {:error, :duplicate_step_ids}
   end
 
-  defp failed_run?(%Emisar.Runs.ActionRun{status: :denied}), do: true
-
+  # `:denied` is terminal (a policy refusal), so it's a non-success terminal —
+  # it halts the waves behind it without a special case here.
   defp failed_run?(%Emisar.Runs.ActionRun{status: status}),
     do: Emisar.Runs.ActionRun.terminal?(status) and status != :success
-
-  defp in_flight_run?(%Emisar.Runs.ActionRun{status: :denied}), do: false
 
   defp in_flight_run?(%Emisar.Runs.ActionRun{status: status}),
     do: not Emisar.Runs.ActionRun.terminal?(status)

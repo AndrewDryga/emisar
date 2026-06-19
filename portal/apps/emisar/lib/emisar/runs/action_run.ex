@@ -4,9 +4,12 @@ defmodule Emisar.Runs.ActionRun do
 
       pending -> sent -> running -> {success, failed, error,
                                      validation_failed, unknown_action,
-                                     cancelled, timed_out}
+                                     cancelled, timed_out, refused}
 
   Or:    pending -> pending_approval -> sent -> ...
+
+  The policy gate can settle a run at creation: `pending -> denied` is a
+  terminal outcome — the run is never sent to a runner.
   """
   use Emisar, :schema
 
@@ -117,7 +120,13 @@ defmodule Emisar.Runs.ActionRun do
     timestamps()
   end
 
-  @doc "Is `status` a terminal state?"
+  @doc """
+  Is `status` a terminal state? The single source of truth for "this run has
+  settled" across the run engine, the runbook wave logic, the web, and MCP —
+  never re-list these states elsewhere. `:denied` (policy refused at creation)
+  and `:refused` (runner refused at dispatch) are terminal: the run won't
+  progress, so it can't be cancelled or re-dispatched.
+  """
   def terminal?(status) when is_atom(status),
     do:
       status in [
@@ -128,7 +137,8 @@ defmodule Emisar.Runs.ActionRun do
         :unknown_action,
         :cancelled,
         :timed_out,
-        :refused
+        :refused,
+        :denied
       ]
 
   def terminal?(_), do: false

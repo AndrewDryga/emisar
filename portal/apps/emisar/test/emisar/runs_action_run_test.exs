@@ -3,25 +3,35 @@ defmodule Emisar.Runs.ActionRunTest do
 
   alias Emisar.Runs.ActionRun
 
-  describe "terminal?/1" do
-    test "terminal statuses are terminal" do
-      for s <- [
-            :success,
-            :failed,
-            :error,
-            :validation_failed,
-            :unknown_action,
-            :cancelled,
-            :timed_out
-          ] do
+  describe "terminal?/1 (status transition matrix)" do
+    @terminal [
+      :success,
+      :failed,
+      :error,
+      :validation_failed,
+      :unknown_action,
+      :cancelled,
+      :timed_out,
+      :refused,
+      :denied
+    ]
+    @non_terminal [:pending, :pending_approval, :sent, :running]
+
+    test "settled statuses are terminal (incl. :denied + :refused)" do
+      for s <- @terminal do
         assert ActionRun.terminal?(s), "expected #{s} to be terminal"
       end
     end
 
     test "in-flight statuses are not terminal" do
-      for s <- [:pending, :pending_approval, :sent, :running] do
+      for s <- @non_terminal do
         refute ActionRun.terminal?(s), "expected #{s} to be non-terminal"
       end
+    end
+
+    test "the matrix classifies every status the schema defines" do
+      defined = Ecto.Enum.values(ActionRun, :status)
+      assert Enum.sort(@terminal ++ @non_terminal) == Enum.sort(defined)
     end
 
     test "garbage input returns false" do
