@@ -314,10 +314,13 @@ defmodule Emisar.Runs do
          :ok <- check_attestation(attrs, runner_id, account_id),
          :ok <- runner_in_membership_scope(runner_id, account_id, membership_id),
          {:ok, action} <- fetch_advertised_action(runner_id, action_id, account_id),
-         :ok <- check_pack_trust(action, account_id) do
+         {:ok, pack_hash} <- check_pack_trust(action, account_id) do
       attrs
       |> Map.delete(:requested_by_membership_id)
       |> Map.put(:args_sha256, args_sha256(attrs[:args]))
+      # Snapshot the trusted hash as part of the authorization decision (MAJOR-5)
+      # so the run ships the exact bytes authorized here, not a send-time re-read.
+      |> Map.put(:expected_pack_hash, pack_hash)
       |> Map.put(:requires_approval, false)
       |> evaluate_and_dispatch(account_id, action)
     else
@@ -341,7 +344,11 @@ defmodule Emisar.Runs do
 
     case fetch_advertised_action(run.runner_id, run.action_id, run.account_id) do
       {:ok, action} ->
-        check_pack_trust(action, run.account_id)
+        # A gate, not a hash provider — normalize the {:ok, hash} to :ok.
+        case check_pack_trust(action, run.account_id) do
+          {:ok, _hash} -> :ok
+          {:error, reason} -> {:error, reason}
+        end
 
       {:error, :action_not_found} ->
         # The runner no longer advertises this action (offline / pack
@@ -490,10 +497,12 @@ defmodule Emisar.Runs do
   # runner is advertising a hash that diverges from what an operator
   # has previously trusted (or from the baseline we ship) — execution
   # waits for a human decision in the /app/packs UI.
+  # Returns `{:ok, trusted_hash | nil}` — the hash to SNAPSHOT onto the run (nil
+  # for a pack-less / not-yet-versioned action) — or `{:error, :pack_untrusted}`.
   defp check_pack_trust(action, account_id) do
     case Emisar.Catalog.check_pack_trusted(action) do
-      :ok ->
-        :ok
+      {:ok, hash} ->
+        {:ok, hash}
 
       {:error, :pack_untrusted, pack_info} ->
         Audit.record(Audit.Events.dispatch_blocked_pack_untrusted(account_id, pack_info, action))
@@ -893,32 +902,28 @@ defmodule Emisar.Runs do
   # wave through. We fetch the catalog action scoped to the run's own account
   # (no Subject) — this runs inside an already-authorized dispatch path.
   #
-  # `{:ok, envelope}` when:
-  #   * the action is pack-less (no `pack_id`) or its version isn't pinned yet —
-  #     nothing to stamp (matches what `check_pack_trust` lets through);
-  #   * it's a versioned pack with a trusted hash, stamped in; or
-  #   * the catalog row has vanished — the run was already trust-gated at
-  #     creation against the then-advertised action, so we don't block a
-  #     redelivery on a missing mirror row.
-  # `:unavailable` ONLY when the action is a FOUND, fully-versioned pack with no
-  # trusted hash on file — the pack drifted to pending/rejected after this run
-  # was authorized. Never widen the window by shipping that hash-less.
-  defp stamp_pack_hash(payload, %ActionRun{} = run) do
+  # Stamp the SNAPSHOTTED pack hash (captured at authorization) into the wire
+  # envelope. A pack-less run (nil snapshot) ships no hash. A versioned run ships
+  # the hash the operator/policy authorized for THIS run — never a send-time
+  # re-read, so a pack that drifted then re-trusted to different bytes can't swap
+  # the hash underneath it (MAJOR-5). Still fail CLOSED at send: re-confirm the
+  # pack is STILL trusted (an operator may have rejected it since authorization);
+  # if not, `:unavailable` so the caller refuses delivery.
+  defp stamp_pack_hash(payload, %ActionRun{expected_pack_hash: nil}), do: {:ok, payload}
+
+  defp stamp_pack_hash(payload, %ActionRun{expected_pack_hash: hash} = run) do
+    if pack_still_trusted?(run),
+      do: {:ok, Map.put(payload, "expected_pack_hash", hash)},
+      else: :unavailable
+  end
+
+  defp pack_still_trusted?(%ActionRun{} = run) do
     case Emisar.Catalog.fetch_action_for_account(run.action_id, run.runner_id, run.account_id) do
-      {:ok, %{pack_id: nil}} ->
-        {:ok, payload}
-
-      {:ok, %{pack_version: nil}} ->
-        {:ok, payload}
-
-      {:ok, action} ->
-        case Emisar.Catalog.trusted_hash_for_action(action) do
-          hash when is_binary(hash) -> {:ok, Map.put(payload, "expected_pack_hash", hash)}
-          nil -> :unavailable
-        end
-
-      {:error, _} ->
-        {:ok, payload}
+      # The catalog mirror row vanished (runner offline / pack unloaded) — the
+      # run was already trust-gated at creation, so don't block a redelivery on a
+      # missing row; the runner re-hashes its on-disk pack and refuses a mismatch.
+      {:error, _} -> true
+      {:ok, action} -> match?({:ok, _hash}, Emisar.Catalog.check_pack_trusted(action))
     end
   end
 

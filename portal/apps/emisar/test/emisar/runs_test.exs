@@ -1295,6 +1295,51 @@ defmodule Emisar.RunsTest do
       assert {:error, :pack_untrusted} = Runs.dispatch_to_runner(run)
       assert Runs.peek_run_by_id(run.id).status == :refused
     end
+
+    test "a run ships the hash snapshotted at authorization, not a re-read after re-trust (MAJOR-5)" do
+      {_user, account, subject} = owner_subject_fixture()
+      _ = policy_fixture(account_id: account.id)
+      {runner, pack_version} = observe_pending_pack(account, subject)
+      Emisar.Runners.subscribe_runner_transport(runner)
+
+      {:ok, _} = Emisar.Catalog.trust_pack_version(pack_version.id, subject)
+
+      assert {:ok, :running, run} =
+               Runs.dispatch_run(
+                 base_attrs(account.id, runner.id, %{action_id: "custom.do"}),
+                 subject
+               )
+
+      # The trusted hash is snapshotted onto the run + shipped in the envelope.
+      assert Runs.peek_run_by_id(run.id).expected_pack_hash == "sha256:NOPE"
+      assert_receive {:cloud_to_runner, %{"expected_pack_hash" => "sha256:NOPE"}}, 500
+
+      # The pack drifts to a NEW hash AND is re-trusted (trusted hash now TAMPERED).
+      {:ok, _} =
+        Emisar.Catalog.observe_state(runner, %{
+          "hostname" => "h",
+          "version" => "0.1",
+          "labels" => %{},
+          "packs" => %{"custom" => %{"version" => "1.0", "hash" => "sha256:TAMPERED"}},
+          "actions" => [
+            %{
+              "id" => "custom.do",
+              "pack_id" => "custom",
+              "title" => "Do",
+              "kind" => "exec",
+              "risk" => "low",
+              "args" => []
+            }
+          ]
+        })
+
+      {:ok, [drifted], _} = Emisar.Catalog.list_pack_versions(subject)
+      {:ok, _} = Emisar.Catalog.trust_pack_version(drifted.id, subject)
+
+      # Redelivery ships the ORIGINAL snapshot (NOPE), never the new trusted hash.
+      assert :ok = Runs.dispatch_to_runner(run)
+      assert_receive {:cloud_to_runner, %{"expected_pack_hash" => "sha256:NOPE"}}, 500
+    end
   end
 
   describe "recheck_run_pack_trust/1 (approval-time pack-trust re-gate)" do

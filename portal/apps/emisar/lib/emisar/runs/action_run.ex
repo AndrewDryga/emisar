@@ -31,6 +31,10 @@ defmodule Emisar.Runs.ActionRun do
 
     field :args, :map, default: %{}
     field :args_sha256, :string
+    # The trusted pack hash snapshotted at authorization (MAJOR-5): the dispatch
+    # ships THIS hash, so the runner verifies the exact bytes that were authorized
+    # for this run. Nil for a pack-less action.
+    field :expected_pack_hash, :string
     field :opts, :map, default: %{}
     # The client signature relayed from an MCP dispatch (%{"key_id", "sig",
     # "nonce", "issued_at"}); carried in the runner envelope so the runner can

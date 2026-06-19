@@ -436,7 +436,7 @@ defmodule Emisar.CatalogTest do
       assert {:error, :not_found} = Catalog.fetch_pack_version_by_id(pack_version.id, subject_b)
     end
 
-    test "trusted_hash_for_action returns the trusted hash, never the pending one" do
+    test "check_pack_trusted returns the trusted hash to snapshot, never the pending one" do
       {_user, account, subject} = owner_subject_fixture()
       runner = runner_fixture(account_id: account.id)
 
@@ -451,13 +451,13 @@ defmodule Emisar.CatalogTest do
 
       {:ok, action} = Catalog.fetch_action_for_account("p.do", runner.id, account.id)
 
-      # Custom pack, never trusted → no hash to stamp.
-      assert Catalog.trusted_hash_for_action(action) == nil
+      # Custom pack, never trusted → no hash to snapshot (untrusted).
+      assert {:error, :pack_untrusted, _} = Catalog.check_pack_trusted(action)
 
       {:ok, [pack_version], _} = Catalog.list_pack_versions(subject)
       {:ok, _} = Catalog.trust_pack_version(pack_version.id, subject)
 
-      assert Catalog.trusted_hash_for_action(action) == "sha256:NEW"
+      assert {:ok, "sha256:NEW"} = Catalog.check_pack_trusted(action)
     end
 
     test "fetch_action_by_id scopes to the subject's account and rejects junk ids" do
@@ -807,7 +807,8 @@ defmodule Emisar.CatalogTest do
       assert {:ok, _} = Catalog.trust_pack_version(pack_version.id, subject)
 
       {:ok, [act], _} = Catalog.list_actions_for_runner(runner.id, subject)
-      assert :ok = Catalog.check_pack_trusted(act)
+      assert {:ok, hash} = Catalog.check_pack_trusted(act)
+      assert is_binary(hash)
     end
 
     test "pending state → {:error, :pack_untrusted, _}" do
@@ -837,10 +838,10 @@ defmodule Emisar.CatalogTest do
       assert {:error, :pack_untrusted, _pv} = Catalog.check_pack_trusted(act)
     end
 
-    test "action without pack_version (legacy row) → :ok (no-op)" do
+    test "action without pack_version (not yet pinnable) → {:ok, nil} (no hash to snapshot)" do
       runner = runner_fixture()
       act = %RunnerAction{pack_id: "p", pack_version: nil, account_id: runner.account_id}
-      assert :ok = Catalog.check_pack_trusted(act)
+      assert {:ok, nil} = Catalog.check_pack_trusted(act)
     end
   end
 

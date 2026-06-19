@@ -391,13 +391,16 @@ defmodule Emisar.Catalog do
   reference the version by string with no FK, so a missing row must never read
   as trusted.
   """
-  def check_pack_trusted(%RunnerAction{pack_id: nil}), do: :ok
-  def check_pack_trusted(%RunnerAction{pack_version: nil}), do: :ok
+  def check_pack_trusted(%RunnerAction{pack_id: nil}), do: {:ok, nil}
+  def check_pack_trusted(%RunnerAction{pack_version: nil}), do: {:ok, nil}
 
   def check_pack_trusted(%RunnerAction{} = action) do
     case peek_pack_version_for_action(action) do
-      %PackVersion{trust_state: :trusted} ->
-        :ok
+      # Trusted → hand back the trusted hash so the caller can SNAPSHOT it onto
+      # the run; never the pending one, so the runner verifies the bytes the
+      # operator actually said yes to.
+      %PackVersion{trust_state: :trusted, hash: hash} ->
+        {:ok, hash}
 
       %PackVersion{} = pack_version ->
         {:error, :pack_untrusted, pack_version}
@@ -418,32 +421,6 @@ defmodule Emisar.Catalog do
     |> PackVersion.Query.by_account_id(action.account_id)
     |> PackVersion.Query.by_pack_id_and_version(action.pack_id, action.pack_version)
     |> Repo.peek()
-  end
-
-  @doc """
-  Internal — returns the **trusted** hash the cloud has on file for the
-  action's `(pack_id, pack_version)`, or `nil` if we don't have one yet
-  (e.g. action observed before pack_version was populated, or no pack
-  row exists). `Runs.dispatch_to_runner` stamps this into the wire
-  envelope as `expected_pack_hash`; the runner re-hashes its on-disk
-  pack on receive and refuses the dispatch on mismatch.
-
-  This is the *trusted* hash, never the pending one — that's what makes
-  the runner-side check meaningful. If the operator hasn't approved
-  drift yet, dispatch already refuses upstream in `check_pack_trusted`;
-  if they have approved drift, the new hash *is* the trusted hash by
-  then. Either way, the field we ship matches the bytes the operator
-  said yes to.
-  """
-  def trusted_hash_for_action(%RunnerAction{} = action) do
-    if is_nil(action.pack_id) or is_nil(action.pack_version) do
-      nil
-    else
-      case peek_pack_version_for_action(action) do
-        %PackVersion{trust_state: :trusted, hash: hash} -> hash
-        _ -> nil
-      end
-    end
   end
 
   # -- Action upsert ---------------------------------------------------
