@@ -1,0 +1,34 @@
+schema_version: 1
+id: redis.sentinel_master
+title: SENTINEL MASTER
+kind: exec
+risk: low
+description: >
+  Full state of one monitored master by its configured name (e.g.
+  "mymaster") — ip:port, flags, quorum, num-slaves,
+  num-other-sentinels, down-after-milliseconds, last-ping. Use to
+  confirm a specific master's view and whether the configured quorum
+  is met. Connects to the Sentinel on port 26379. Read-only.
+side_effects:
+  - One SENTINEL MASTER command on the local Sentinel (port 26379).
+  - No Sentinel state changed.
+args:
+  - name: master_name
+    type: string
+    required: true
+    description: Configured master name Sentinel monitors (e.g. "mymaster").
+    validation:
+      pattern: "^[A-Za-z0-9._-]{1,128}$"
+execution:
+  command:
+    binary: redis-cli
+    argv: ["-p", "26379", "SENTINEL", "MASTER", "{{ args.master_name }}"]
+  timeout: 10s
+output:
+  parser: text
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: State of master mymaster
+    args:
+      master_name: mymaster

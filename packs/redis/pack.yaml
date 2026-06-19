@@ -2,18 +2,22 @@ schema_version: 1
 
 id: redis
 name: Redis operations pack
-version: 0.2.4
+version: 0.3.0
 description: >
   Deep Redis ops — INFO + memory accounting, slowlog + per-event
   latency, command stats, client list/kill/pause, keyspace introspection
   (SCAN, TYPE, TTL, OBJECT encoding/refcount/idle/freq, MEMORY USAGE),
   config get/set/rewrite/resetstat, ACL list/whoami/getuser, cluster
   topology (info, nodes, slots, slot-count, check), cluster operators
-  (failover, forget, replicaof), persistence (lastsave, bgsave,
-  bgrewriteaof, memory purge/doctor), streams + pub/sub introspection,
-  script cache flush, and tier-critical actions (flush_db, flushall,
-  swapdb, shutdown_nosave). Authenticates via REDISCLI_AUTH / REDIS_*
-  env vars on the runner host — never via per-call credentials.
+  (failover, forget, replicaof), Sentinel HA topology (masters, master,
+  replicas, sentinels, get-master-addr, ckquorum, is-master-down,
+  Sentinel INFO) and operators (failover, reset), persistence (lastsave,
+  bgsave, bgrewriteaof, memory purge/doctor), streams + pub/sub
+  introspection, script cache flush, and tier-critical actions
+  (flush_db, flushall, swapdb, shutdown_nosave). Sentinel actions target
+  the Sentinel on port 26379; all others default to 127.0.0.1:6379.
+  Authenticates via REDISCLI_AUTH / REDIS_* env vars on the runner host
+  — never via per-call credentials.
 vendor: emisar
 homepage: https://github.com/andrewdryga/emisar
 
@@ -95,6 +99,18 @@ actions:
   - actions/cluster_failover.yaml
   - actions/cluster_forget.yaml
   - actions/replicaof.yaml
+  # Sentinel (HA) — reads (port 26379)
+  - actions/sentinel_masters.yaml
+  - actions/sentinel_master.yaml
+  - actions/sentinel_replicas.yaml
+  - actions/sentinel_sentinels.yaml
+  - actions/sentinel_get_master_addr.yaml
+  - actions/sentinel_ckquorum.yaml
+  - actions/sentinel_is_master_down.yaml
+  - actions/sentinel_info.yaml
+  # Sentinel (HA) — operators (gated)
+  - actions/sentinel_failover.yaml
+  - actions/sentinel_reset.yaml
   # Persistence / memory operators
   - actions/bgsave.yaml
   - actions/bgrewriteaof.yaml

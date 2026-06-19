@@ -1,0 +1,35 @@
+schema_version: 1
+id: redis.sentinel_ckquorum
+title: SENTINEL CKQUORUM
+kind: exec
+risk: low
+description: >
+  Checks whether enough Sentinels are reachable to BOTH reach the
+  failover quorum AND form the majority needed to authorize a failover
+  for the named master. The canonical pre-failover health check —
+  returns OK with the counts, or an error if a failover could not
+  currently proceed. Connects to the Sentinel on port 26379.
+  Read-only.
+side_effects:
+  - One SENTINEL CKQUORUM command on the local Sentinel (port 26379).
+  - No Sentinel state changed, no failover triggered.
+args:
+  - name: master_name
+    type: string
+    required: true
+    description: Configured master name to check quorum for (e.g. "mymaster").
+    validation:
+      pattern: "^[A-Za-z0-9._-]{1,128}$"
+execution:
+  command:
+    binary: redis-cli
+    argv: ["-p", "26379", "SENTINEL", "CKQUORUM", "{{ args.master_name }}"]
+  timeout: 10s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Can mymaster be failed over right now?
+    args:
+      master_name: mymaster

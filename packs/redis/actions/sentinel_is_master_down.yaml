@@ -1,0 +1,65 @@
+schema_version: 1
+id: redis.sentinel_is_master_down
+title: SENTINEL IS-MASTER-DOWN-BY-ADDR
+kind: exec
+risk: low
+description: >
+  Asks this Sentinel whether the master at ip:port is subjectively
+  down from its point of view, and returns the Sentinel's current
+  leader vote. Primarily an internal failover-consensus command, but
+  useful read-only forensics when investigating WHY an objective-down
+  (ODOWN) or failover did or did not fire. Pass runid "*" to only
+  query the down-state without requesting a vote. Connects to the
+  Sentinel on port 26379. Read-only.
+side_effects:
+  - One SENTINEL IS-MASTER-DOWN-BY-ADDR command on the local Sentinel (port 26379).
+  - With runid "*" it queries state only; it does not change the monitored topology.
+args:
+  - name: ip
+    type: string
+    required: true
+    description: Master IPv4/IPv6 address as Sentinel knows it.
+    validation:
+      pattern: "^[0-9a-fA-F.:]{2,45}$"
+  - name: port
+    type: string
+    required: true
+    description: Master port (1-65535).
+    validation:
+      pattern: "^[1-9][0-9]{0,4}$"
+  - name: current_epoch
+    type: string
+    required: false
+    default: "0"
+    description: Current epoch to vote in; 0 to query state without a vote.
+    validation:
+      pattern: "^[0-9]{1,19}$"
+  - name: runid
+    type: string
+    required: false
+    default: "*"
+    description: Candidate Sentinel run id to vote for, or "*" to query down-state only.
+    validation:
+      pattern: "^(\\*|[0-9a-fA-F]{40})$"
+execution:
+  command:
+    binary: redis-cli
+    argv:
+      - "-p"
+      - "26379"
+      - "SENTINEL"
+      - "IS-MASTER-DOWN-BY-ADDR"
+      - "{{ args.ip }}"
+      - "{{ args.port }}"
+      - "{{ args.current_epoch }}"
+      - "{{ args.runid }}"
+  timeout: 10s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Is the master at 10.0.0.5:6379 down from this Sentinel's view?
+    args:
+      ip: "10.0.0.5"
+      port: "6379"

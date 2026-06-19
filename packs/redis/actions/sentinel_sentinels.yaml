@@ -1,0 +1,34 @@
+schema_version: 1
+id: redis.sentinel_sentinels
+title: SENTINEL SENTINELS
+kind: exec
+risk: low
+description: >
+  Lists the OTHER Sentinel instances this Sentinel knows about for a
+  given master — each with ip:port, runid, flags, and last-ok-ping.
+  Use to confirm the Sentinel set is fully meshed and agrees on
+  membership when diagnosing why a failover quorum is not reached.
+  Connects to the Sentinel on port 26379. Read-only.
+side_effects:
+  - One SENTINEL SENTINELS command on the local Sentinel (port 26379).
+  - No Sentinel state changed.
+args:
+  - name: master_name
+    type: string
+    required: true
+    description: Configured master name whose peer Sentinels to list (e.g. "mymaster").
+    validation:
+      pattern: "^[A-Za-z0-9._-]{1,128}$"
+execution:
+  command:
+    binary: redis-cli
+    argv: ["-p", "26379", "SENTINEL", "SENTINELS", "{{ args.master_name }}"]
+  timeout: 10s
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Peer Sentinels for master mymaster
+    args:
+      master_name: mymaster

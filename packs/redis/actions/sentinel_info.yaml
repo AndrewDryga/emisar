@@ -1,0 +1,45 @@
+schema_version: 1
+id: redis.sentinel_info
+title: Sentinel INFO
+kind: exec
+risk: low
+description: >
+  Runs INFO against the Sentinel process itself (port 26379) and
+  returns the raw text, including the `sentinel` section:
+  sentinel_masters, sentinel_running_scripts, sentinel_tilt, and a
+  master0..N line per monitored master (name, status, address,
+  slaves, sentinels). Use to read the Sentinel's own health — e.g.
+  whether it is in TILT mode. Read-only.
+side_effects:
+  - One INFO command on the local Sentinel (port 26379).
+  - No keys read or written; no Sentinel state changed.
+args:
+  - name: section
+    type: string
+    required: false
+    default: default
+    description: INFO section.
+    validation:
+      enum:
+        - default
+        - all
+        - server
+        - clients
+        - cpu
+        - stats
+        - sentinel
+execution:
+  command:
+    binary: redis-cli
+    argv: ["-p", "26379", "INFO", "{{ args.section }}"]
+  timeout: 10s
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Sentinel INFO (default)
+    args: {}
+  - title: Sentinel section only
+    args:
+      section: sentinel

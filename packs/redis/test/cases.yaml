@@ -170,6 +170,62 @@ cases:
 - action: redis.script_flush
   args: {}
   expect_exit: 0
+- action: redis.sentinel_masters
+  args: {}
+  expect_exit:
+  - 0
+  - 1
+- action: redis.sentinel_master
+  args:
+    master_name: mymaster
+  expect_exit:
+  - 0
+  - 1
+- action: redis.sentinel_replicas
+  args:
+    master_name: mymaster
+  expect_exit:
+  - 0
+  - 1
+- action: redis.sentinel_sentinels
+  args:
+    master_name: mymaster
+  expect_exit:
+  - 0
+  - 1
+- action: redis.sentinel_get_master_addr
+  args:
+    master_name: mymaster
+  expect_exit:
+  - 0
+  - 1
+- action: redis.sentinel_ckquorum
+  args:
+    master_name: mymaster
+  expect_exit:
+  - 0
+  - 1
+- action: redis.sentinel_is_master_down
+  args:
+    ip: 10.0.0.5
+    port: '6379'
+  expect_exit:
+  - 0
+  - 1
+- action: redis.sentinel_info
+  args:
+    section: sentinel
+  expect_exit:
+  - 0
+  - 1
+- action: redis.sentinel_failover
+  args:
+    master_name: mymaster
+  skip: mutator skipped by default (high); set --include=redis.sentinel_failover to run
+- action: redis.sentinel_reset
+  args:
+    pattern: mymaster
+  skip: mutator skipped by default (high); set --include=redis.sentinel_reset to run
 - action: redis.shutdown_nosave
   args: {}
   skip: mutator skipped by default (critical); set --include=redis.shutdown_nosave to run

@@ -1,0 +1,36 @@
+schema_version: 1
+id: redis.sentinel_replicas
+title: SENTINEL REPLICAS
+kind: exec
+risk: low
+description: >
+  Lists the replicas Sentinel has discovered for one master, each
+  with ip:port, flags (slave/s_down/disconnected), master-link-status,
+  slave-repl-offset, and slave-priority. Use to see which replicas are
+  up, their replication offset (lag vs the master), and which are
+  failover-eligible. Connects to the Sentinel on port 26379.
+  Read-only. (SENTINEL REPLICAS, the modern name for the deprecated
+  SLAVES, requires Redis >= 5.0.)
+side_effects:
+  - One SENTINEL REPLICAS command on the local Sentinel (port 26379).
+  - No Sentinel state changed.
+args:
+  - name: master_name
+    type: string
+    required: true
+    description: Configured master name whose replicas to list (e.g. "mymaster").
+    validation:
+      pattern: "^[A-Za-z0-9._-]{1,128}$"
+execution:
+  command:
+    binary: redis-cli
+    argv: ["-p", "26379", "SENTINEL", "REPLICAS", "{{ args.master_name }}"]
+  timeout: 10s
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Replicas of master mymaster
+    args:
+      master_name: mymaster

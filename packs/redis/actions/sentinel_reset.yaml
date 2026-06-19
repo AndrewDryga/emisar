@@ -1,0 +1,37 @@
+schema_version: 1
+id: redis.sentinel_reset
+title: SENTINEL RESET
+kind: exec
+risk: high
+description: >
+  Resets every monitored master whose name matches the glob pattern.
+  The reset CLEARS any state for the master — including a failover in
+  progress — and DROPS every discovered replica and peer Sentinel, so
+  they are re-learned over the next ~10s from the current master's
+  INFO. Use to clean up stale/removed replicas after a topology
+  change (run on every Sentinel). A too-broad pattern (e.g. "*")
+  resets all masters at once. Connects to the Sentinel on port 26379.
+side_effects:
+  - All matching masters' discovered replicas and peer Sentinels are dropped and re-learned.
+  - Any in-progress failover state for matching masters is cleared.
+  - Must be run on every Sentinel to fully evict a removed replica.
+args:
+  - name: pattern
+    type: string
+    required: true
+    description: Glob over master names; use an exact name to scope to one master.
+    validation:
+      pattern: "^[A-Za-z0-9._*?-]{1,128}$"
+execution:
+  command:
+    binary: redis-cli
+    argv: ["-p", "26379", "SENTINEL", "RESET", "{{ args.pattern }}"]
+  timeout: 10s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Reset one master to drop stale replicas
+    args:
+      pattern: mymaster

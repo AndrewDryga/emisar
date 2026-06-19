@@ -1,0 +1,39 @@
+schema_version: 1
+id: redis.sentinel_failover
+title: SENTINEL FAILOVER
+kind: exec
+risk: high
+description: >
+  Forces a failover for the named master as if it were unreachable,
+  WITHOUT asking the other Sentinels for agreement (a new
+  configuration is still published so the peers update). Promotes a
+  replica to master and reconfigures the rest to follow it. This is a
+  manual, operator-initiated failover — use for a planned switchover
+  or to recover when automatic failover is stuck. Connects to the
+  Sentinel on port 26379.
+side_effects:
+  - The named master is failed over; a replica is promoted to master.
+  - Remaining replicas are reconfigured to replicate from the new master.
+  - The new topology is published to all Sentinels; clients are redirected.
+  - Brief write unavailability during the promotion.
+args:
+  - name: master_name
+    type: string
+    required: true
+    description: Configured master name to fail over (e.g. "mymaster").
+    validation:
+      pattern: "^[A-Za-z0-9._-]{1,128}$"
+execution:
+  command:
+    binary: redis-cli
+    argv: ["-p", "26379", "SENTINEL", "FAILOVER", "{{ args.master_name }}"]
+  timeout: 30s
+cancel_grace: 15s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Force failover of mymaster
+    args:
+      master_name: mymaster

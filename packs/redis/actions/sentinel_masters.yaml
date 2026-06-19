@@ -1,0 +1,26 @@
+schema_version: 1
+id: redis.sentinel_masters
+title: SENTINEL MASTERS
+kind: exec
+risk: low
+description: >
+  Lists every master this Sentinel monitors with full state — name,
+  ip:port, quorum, flags (master/o_down/s_down), num-slaves,
+  num-other-sentinels. Connects to the Sentinel on port 26379. The
+  first stop when mapping a replicas+Sentinel topology. Read-only.
+side_effects:
+  - One SENTINEL MASTERS command on the local Sentinel (port 26379).
+  - No Sentinel state changed, no failover triggered.
+args: []
+execution:
+  command:
+    binary: redis-cli
+    argv: ["-p", "26379", "SENTINEL", "MASTERS"]
+  timeout: 10s
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: All monitored masters
+    args: {}

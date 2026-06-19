@@ -1,0 +1,35 @@
+schema_version: 1
+id: redis.sentinel_get_master_addr
+title: SENTINEL GET-MASTER-ADDR-BY-NAME
+kind: exec
+risk: low
+description: >
+  Returns the ip and port Sentinel currently believes is the master
+  for the named set. During or just after a failover this returns the
+  PROMOTED replica's address — so it is the authoritative answer to
+  "who is the master right now?" Compare against ROLE on each node to
+  detect split-brain. Connects to the Sentinel on port 26379.
+  Read-only.
+side_effects:
+  - One SENTINEL GET-MASTER-ADDR-BY-NAME command on the local Sentinel (port 26379).
+  - No Sentinel state changed.
+args:
+  - name: master_name
+    type: string
+    required: true
+    description: Configured master name to resolve (e.g. "mymaster").
+    validation:
+      pattern: "^[A-Za-z0-9._-]{1,128}$"
+execution:
+  command:
+    binary: redis-cli
+    argv: ["-p", "26379", "SENTINEL", "GET-MASTER-ADDR-BY-NAME", "{{ args.master_name }}"]
+  timeout: 10s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Current master address for mymaster
+    args:
+      master_name: mymaster
