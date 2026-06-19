@@ -1,6 +1,6 @@
 # Emisar example packs
 
-74 packs / 1,110 actions covering Linux ops, web/proxy, databases,
+76 packs / 1,186 actions covering Linux ops, web/proxy, databases,
 container orchestration, cloud, message buses, runtimes, observability,
 networking, storage, and infrastructure tools.
 
@@ -64,7 +64,7 @@ default — a config file or localhost).
 
 ## Pack inventory
 
-74 packs, 1,110 actions, sorted by id. **Risk** is the pack's ceiling —
+76 packs, 1,186 actions, sorted by id. **Risk** is the pack's ceiling —
 its highest-risk action (see tiers below). **Auth** legend is in the Auth
 model section above. Run `emisar pack info <id>` for a pack's full setup.
 
@@ -81,9 +81,10 @@ model section above. Run `emisar pack info <id>` for a pack's full setup.
 | `bonding` | 3 | low | local-host |
 | `caddy` | 11 | high | CADDY_ADMIN (opt) |
 | `cassandra` | 45 | critical | CQLSH_* (opt) |
-| `clickhouse` | 19 | critical | CH_* (opt) |
+| `clickhouse` | 31 | critical | CH_* (opt) |
 | `cloud-init` | 23 | critical | local-host |
 | `cloudflare` | 11 | critical | CF_API_TOKEN |
+| `cockroach` | 25 | high | COCKROACH_URL |
 | `consul` | 44 | critical | CONSUL_HTTP_* (opt) |
 | `debian` | 9 | high | local-host |
 | `debugging` | 31 | high | local-host |
@@ -102,11 +103,11 @@ model section above. Run `emisar pack info <id>` for a pack's full setup.
 | `iscsi` | 4 | low | local-host |
 | `java-jvm` | 16 | critical | local-host |
 | `kafka` | 20 | critical | KAFKA_BOOTSTRAP |
-| `kubernetes` | 31 | critical | KUBECONFIG (opt) |
+| `kubernetes` | 43 | critical | KUBECONFIG (opt) |
 | `linux-core` | 34 | critical | local-host |
 | `memcached` | 7 | critical | MEMCACHED_* (opt) |
 | `minio` | 12 | high | MC_HOST_minio |
-| `mongodb` | 23 | critical | MONGO_URI |
+| `mongodb` | 35 | critical | MONGO_URI |
 | `multipath` | 4 | low | local-host |
 | `mysql` | 25 | high | MYSQL_* (opt) |
 | `network-tls` | 13 | low | local-host |
@@ -125,7 +126,8 @@ model section above. Run `emisar pack info <id>` for a pack's full setup.
 | `pure-flasharray` | 14 | low | PURE_* (opt) |
 | `python-app` | 10 | low | PY_VENV (opt) |
 | `rabbitmq` | 18 | critical | local-host |
-| `redis` | 49 | critical | REDISCLI_AUTH (opt) |
+| `redis` | 59 | critical | REDISCLI_AUTH (opt) |
+| `rke2` | 5 | low | local-host |
 | `shell` ⚠️ | 1 | critical | local-host |
 | `showcase` | 5 | low | local-host |
 | `snmp` | 7 | low | SNMP_* |
