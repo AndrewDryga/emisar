@@ -9,7 +9,8 @@ defmodule Emisar.RunbooksTest do
 
   import Emisar.Fixtures
 
-  alias Emisar.{Runbooks, Runners, Runs}
+  alias Emisar.{Accounts, Repo, Runbooks, Runners, Runs}
+  alias Emisar.Runbooks.RunbookExecution
 
   defp account_with_runner do
     {_user, account, subject} = owner_subject_fixture()
@@ -102,12 +103,10 @@ defmodule Emisar.RunbooksTest do
         assert run.runbook_id == runbook.id
         assert run.runbook_execution_id == execution_id
         assert run.runner_id == runner.id
-
-        assert run.runbook_dispatch == %{"reason" => "release 42"}
       end
 
-      # The visible reason is prefixed per step; the raw operator reason
-      # rides in the dispatch descriptor for continuation re-prefixing.
+      # The visible reason is prefixed per step; the raw operator reason lives on
+      # the durable execution row for continuation re-prefixing.
       step1 = Enum.find(runs, &(&1.runbook_step_id == "step1"))
       assert step1.reason == "runbook: deploy-check • step 1/3 — release 42"
     end
@@ -383,6 +382,122 @@ defmodule Emisar.RunbooksTest do
 
       assert {_msg, opts} = changeset.errors[:runbook_execution_id]
       assert opts[:constraint_name] == "action_runs_execution_step_runner_index"
+    end
+  end
+
+  describe "continuation authorization (BLOCKER-1)" do
+    # An operator in the same account as the runbook's owner. The owner
+    # authors + publishes (needs manage_runbooks); the operator dispatches
+    # (needs only dispatch_run) — so the owner can revoke the operator's
+    # scope / suspend them mid-execution.
+    defp operator_in(account) do
+      user = user_fixture()
+      _ = membership_fixture(account_id: account.id, user_id: user.id, role: "operator")
+      {fetch_membership(account.id, user.id), subject_for(user, account)}
+    end
+
+    test "a runner scope revoked between waves stops the later wave reaching it" do
+      {account, owner, runner} = account_with_runner()
+      {membership, operator} = operator_in(account)
+      other = runner_fixture(account_id: account.id)
+
+      runbook = published_runbook!(owner, "scoped-book", uptime_steps(7, runner_target(runner)))
+
+      assert {:ok, %{execution_id: execution_id, runs: wave1}} =
+               Runbooks.dispatch_runbook(runbook, "go", operator)
+
+      assert length(wave1) == 5
+
+      # Narrow the initiating membership to a DIFFERENT runner — `runner` is now
+      # out of scope for every later wave.
+      assert {:ok, :ok} = Runners.replace_runner_scopes(membership, [{"runner", other.id}], owner)
+
+      Enum.each(wave1, &finish!/1)
+
+      # Steps 6-7 never dispatch: the continuation threads the initiating
+      # membership and re-runs the scope check, refusing the now-out-of-scope
+      # runner instead of bypassing it with a nil membership.
+      assert length(execution_runs(account, execution_id)) == 5
+    end
+
+    test "a runner added to a selected group between waves is not picked up" do
+      {account, owner, runner} = account_with_runner()
+      {_membership, operator} = operator_in(account)
+
+      # 7 steps × 1 group runner = 7 items → 2 waves.
+      runbook =
+        published_runbook!(owner, "frozen-book", uptime_steps(7, group_target(runner.group)))
+
+      assert {:ok, %{execution_id: execution_id, runs: wave1}} =
+               Runbooks.dispatch_runbook(runbook, "go", operator)
+
+      assert length(wave1) == 5
+
+      # A new active runner joins the targeted group mid-execution.
+      latecomer = runner_fixture(account_id: account.id, group: runner.group)
+      _ = action_fixture(runner: latecomer, action_id: "linux.uptime", risk: "low")
+
+      Enum.each(wave1, &finish!/1)
+
+      runs = execution_runs(account, execution_id)
+      # All 7 frozen items dispatch — but only on the original runner. The
+      # latecomer is absent from the frozen work-list, so it runs nothing.
+      assert length(runs) == 7
+      refute Enum.any?(runs, &(&1.runner_id == latecomer.id))
+    end
+
+    test "the initiating membership suspended between waves halts the execution" do
+      {account, owner, runner} = account_with_runner()
+      {membership, operator} = operator_in(account)
+
+      runbook = published_runbook!(owner, "suspend-book", uptime_steps(7, runner_target(runner)))
+
+      assert {:ok, %{execution_id: execution_id, runs: wave1}} =
+               Runbooks.dispatch_runbook(runbook, "go", operator)
+
+      assert length(wave1) == 5
+
+      # The member who started the run is suspended.
+      assert {:ok, _} = Accounts.suspend_membership(membership, owner)
+
+      Enum.each(wave1, &finish!/1)
+
+      # No later wave: the continuation revalidates the anchor membership, finds
+      # it inactive, and halts rather than dispatching unauthorized.
+      assert length(execution_runs(account, execution_id)) == 5
+    end
+
+    test "a cross-account runner forged into the frozen work-list is refused" do
+      {account, owner, runner} = account_with_runner()
+      {_membership, operator} = operator_in(account)
+      foreign = runner_fixture()
+
+      # 6 steps × 1 runner = 6 items → 2 waves (5 + 1).
+      runbook = published_runbook!(owner, "forged-book", uptime_steps(6, runner_target(runner)))
+
+      assert {:ok, %{execution_id: execution_id, runs: wave1}} =
+               Runbooks.dispatch_runbook(runbook, "go", operator)
+
+      assert length(wave1) == 5
+
+      # Tamper with the persisted work-list so step 6 points at another
+      # account's runner — the defense the continuation must not trust.
+      execution = Repo.get!(RunbookExecution, execution_id)
+
+      forged =
+        Enum.map(execution.work_list, fn item ->
+          if item["step_index"] == 5, do: %{item | "runner_id" => foreign.id}, else: item
+        end)
+
+      {:ok, _} = execution |> Ecto.Changeset.change(work_list: forged) |> Repo.update()
+
+      Enum.each(wave1, &finish!/1)
+
+      # The continuation's `runner_in_account` gate refuses the foreign runner;
+      # no sixth run is created.
+      runs = execution_runs(account, execution_id)
+      assert length(runs) == 5
+      refute Enum.any?(runs, &(&1.runner_id == foreign.id))
     end
   end
 

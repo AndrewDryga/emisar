@@ -281,10 +281,12 @@ defmodule Emisar.Runs do
   @doc """
   Internal: dispatch a run for an explicit account with no `%Subject{}`.
   Used by the runbook engine to continue a chain from the post-`mark_finished`
-  callback, where no user is in scope — the originating dispatch already
-  authorized the operator and validated runner scope (the continuation passes
-  `requested_by_membership_id: nil`, which bypasses the per-membership scope
-  check that first dispatch already enforced).
+  callback, where no user is in scope. The originating dispatch already
+  authorized the operator; the continuation re-validates by threading the
+  initiating membership through `requested_by_membership_id`, so this path runs
+  the same per-membership runner-scope check as the first wave (a scope revoked
+  mid-execution stops it). `nil` membership means a genuinely user-less dispatch
+  with no per-user scope to enforce — never the runbook continuation.
   """
   def dispatch_run_for_account(attrs, account_id) when is_binary(account_id) do
     attrs = Map.put(attrs, :account_id, account_id)
@@ -385,8 +387,9 @@ defmodule Emisar.Runs do
   # `emk-`/OAuth key carries its creator's membership
   # (`created_by_membership_id`, set at mint), so revoking a user's scope
   # shrinks every key they minted. Do NOT "simplify" MCP to pass nil here:
-  # nil means "no per-user scope" (the system / runbook-continuation
-  # dispatch, which has no user), and routing a scoped key through it would
+  # nil means "no per-user scope" (a genuinely user-less system dispatch) — the
+  # runbook continuation does NOT pass nil, it threads the initiating membership
+  # so later waves re-run this check. Routing a scoped key through nil would
   # unscope the key. `runner_in_account/2` runs first in the with chain, so
   # the runner is guaranteed to belong to `account_id` by the time we get
   # here.

@@ -3,16 +3,11 @@ defmodule Emisar.Repo.Migrations.AddRunbookExecutionToActionRuns do
 
   def change do
     alter table(:action_runs) do
-      # Groups every run minted by one runbook invocation. The runbook
-      # engine derives its wave state (dispatched / in-flight / failed)
-      # entirely from the execution's run rows, so this is the only
-      # execution identity that exists.
+      # Groups every run minted by one runbook invocation. Points at the
+      # `runbook_executions` row holding the invocation's authorization anchor
+      # (initiating membership) + frozen work-list; the engine derives its wave
+      # state (dispatched / in-flight / failed) from these run rows.
       add :runbook_execution_id, :binary_id
-      # The invocation's dispatch descriptor — target (%{"runner_id" => …}
-      # or %{"group" => …}) + the operator's raw reason — duplicated on
-      # every run so a continuation can rebuild the work list from any
-      # finished run without an execution table.
-      add :runbook_dispatch, :map
     end
 
     create index(:action_runs, [:account_id, :runbook_execution_id],

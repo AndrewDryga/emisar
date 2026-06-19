@@ -10,7 +10,7 @@ defmodule Emisar.Runbooks do
   alias Ecto.Multi
   alias Emisar.{Audit, Auth, Repo}
   alias Emisar.Auth.Subject
-  alias Emisar.Runbooks.{Authorizer, Runbook, StepSelector}
+  alias Emisar.Runbooks.{Authorizer, Runbook, RunbookExecution, StepSelector}
 
   # -- Reads -----------------------------------------------------------
 
@@ -185,16 +185,11 @@ defmodule Emisar.Runbooks do
              Emisar.Runs.Authorizer.dispatch_run_permission()
            ),
          :ok <- Subject.ensure_in_account(subject, runbook.account_id),
+         :ok <- ensure_membership(subject),
          steps = expand(runbook),
          :ok <- ensure_steps(steps),
-         {:ok, work_list} <- resolve_work_list(runbook.account_id, steps) do
-      execution = %{
-        id: Repo.generate_id(),
-        dispatch: %{"reason" => reason},
-        user_id: Subject.actor_id(subject),
-        membership_id: subject.membership_id
-      }
-
+         {:ok, work_list} <- resolve_work_list(runbook.account_id, steps),
+         {:ok, execution} <- create_execution(runbook, reason, subject, work_list) do
       outcomes =
         work_list
         |> Enum.take(@batch_size)
@@ -280,38 +275,52 @@ defmodule Emisar.Runbooks do
 
   def dispatch_next_batch(_run), do: :noop
 
-  # The engine continues from the post-`mark_finished` callback, where no
-  # user is in scope; the original dispatch was already authorized, so we
-  # re-enter via the account-scoped internal dispatch (no Subject to
-  # forge; `requested_by_membership_id: nil` bypasses the per-membership
-  # scope check first dispatch already enforced).
+  # The engine continues from the post-`mark_finished` callback, where no user
+  # is in scope. Rather than trust a nil membership (which would unscope every
+  # later wave), it loads the durable execution record and REVALIDATES the
+  # authorization anchor before dispatching: the initiating membership must
+  # still be active (suspended/deleted → halt), and each runner is re-checked
+  # against that membership's CURRENT scope by `dispatch_run_for_account`
+  # (scope revoked mid-execution → that runner is refused). Work is taken from
+  # the FROZEN work-list resolved at the first wave, so runners added to a
+  # selected group after dispatch are never picked up.
   defp continue_execution(%Runbook{} = runbook, %Emisar.Runs.ActionRun{} = finished, existing) do
-    execution = %{
-      id: finished.runbook_execution_id,
-      dispatch: finished.runbook_dispatch,
-      user_id: finished.requested_by_id,
-      membership_id: nil
-    }
+    with %RunbookExecution{} = execution <-
+           peek_execution(finished.account_id, finished.runbook_execution_id),
+         %Emisar.Accounts.Membership{} <-
+           Emisar.Accounts.peek_active_membership(
+             execution.account_id,
+             execution.initiating_membership_id
+           ) do
+      descriptor = %{
+        id: execution.id,
+        reason: execution.reason,
+        user_id: execution.requested_by_id,
+        membership_id: execution.initiating_membership_id
+      }
 
-    dispatched = MapSet.new(existing, &{&1.runbook_step_id, &1.runner_id})
+      dispatched = MapSet.new(existing, &{&1.runbook_step_id, &1.runner_id})
+      steps = expand(runbook)
 
-    runbook
-    |> expand()
-    |> continuation_work_list(runbook.account_id)
-    |> Enum.reject(fn {step, idx, runner_id} ->
-      MapSet.member?(dispatched, {step_id_for(step, idx), runner_id})
-    end)
-    |> Enum.take(@batch_size)
-    |> Enum.each(fn item ->
-      dispatch_item(
-        runbook,
-        execution,
-        item,
-        &Emisar.Runs.dispatch_run_for_account(&1, runbook.account_id)
-      )
-    end)
+      execution.work_list
+      |> frozen_items(steps)
+      |> Enum.reject(fn {step, idx, runner_id} ->
+        MapSet.member?(dispatched, {step_id_for(step, idx), runner_id})
+      end)
+      |> Enum.take(@batch_size)
+      |> Enum.each(fn item ->
+        dispatch_item(
+          runbook,
+          descriptor,
+          item,
+          &Emisar.Runs.dispatch_run_for_account(&1, runbook.account_id)
+        )
+      end)
 
-    :noop
+      :noop
+    else
+      _ -> :noop
+    end
   end
 
   # Steps × each step's own runners, step-major: step 1 fans out across
@@ -330,13 +339,16 @@ defmodule Emisar.Runbooks do
     end)
   end
 
-  # The continuation path has no operator to halt for, so it's tolerant: a
-  # step that resolves to no runners this wave contributes nothing. Group
-  # membership is re-resolved every wave, so runners added/removed
-  # mid-execution are picked up / dropped.
-  defp continuation_work_list(steps, account_id) do
-    for {step, idx} <- Enum.with_index(steps),
-        runner_id <- step_runner_ids(account_id, step),
+  # Rehydrate the frozen work-list (persisted at the first wave) into dispatch
+  # items, re-reading each step's action/args from the immutable runbook version
+  # by index. A persisted index with no matching step (the runbook version went
+  # away) contributes nothing. Continuation dispatches ONLY from this frozen set
+  # — never re-resolving groups — so runners added to a group mid-execution are
+  # not picked up.
+  defp frozen_items(work_list, steps) do
+    for %{"step_index" => idx, "runner_id" => runner_id} <- work_list,
+        step = Enum.at(steps, idx),
+        not is_nil(step),
         do: {step, idx, runner_id}
   end
 
@@ -441,6 +453,57 @@ defmodule Emisar.Runbooks do
     |> Repo.peek()
   end
 
+  # Persist the durable execution record — the authorization anchor (initiating
+  # membership) + the frozen authorized work-list — once, at the first wave.
+  # Returns the in-memory dispatch descriptor the wave loop + every continuation
+  # share. Already inside `dispatch_runbook`'s authorized + account-scoped flow.
+  defp create_execution(%Runbook{} = runbook, reason, %Subject{} = subject, work_list) do
+    attrs = %{
+      id: Repo.generate_id(),
+      account_id: runbook.account_id,
+      runbook_id: runbook.id,
+      initiating_membership_id: subject.membership_id,
+      requested_by_id: Subject.actor_id(subject),
+      reason: reason,
+      work_list: freeze_work_list(work_list)
+    }
+
+    case Repo.insert(RunbookExecution.Changeset.create(attrs)) do
+      {:ok, %RunbookExecution{} = execution} ->
+        {:ok,
+         %{
+           id: execution.id,
+           reason: execution.reason,
+           user_id: execution.requested_by_id,
+           membership_id: execution.initiating_membership_id
+         }}
+
+      {:error, changeset} ->
+        {:error, changeset}
+    end
+  end
+
+  # Internal lookup (no Subject) for the continuation callback — account-scoped
+  # nil-or-struct (the execution row can be gone if the account/runbook was
+  # deleted mid-flight, a meaningful no-op state).
+  defp peek_execution(account_id, execution_id) do
+    RunbookExecution.Query.by_account_id(account_id)
+    |> RunbookExecution.Query.by_id(execution_id)
+    |> Repo.peek()
+  end
+
+  # Reduce the resolved work-list (`{step, idx, runner_id}`) to the persisted
+  # frozen form — only the index + runner, since the step content is re-read
+  # from the immutable runbook version on continuation.
+  defp freeze_work_list(work_list) do
+    Enum.map(work_list, fn {_step, idx, runner_id} ->
+      %{"step_index" => idx, "runner_id" => runner_id}
+    end)
+  end
+
+  defp ensure_membership(%Subject{membership_id: id}) when is_binary(id), do: :ok
+  defp ensure_membership(_), do: {:error, :membership_required}
+
   defp step_attrs(%Runbook{} = runbook, execution, {step, idx, runner_id}) do
     %{
       runner_id: runner_id,
@@ -451,18 +514,17 @@ defmodule Emisar.Runbooks do
       # a prior run's already-prefixed `reason` — re-prefixing that would
       # nest "runbook: …" wrappers wave after wave.
       reason:
-        "runbook: #{runbook.title} • step #{idx + 1}/#{length(expand(runbook))} — #{execution.dispatch["reason"]}",
+        "runbook: #{runbook.title} • step #{idx + 1}/#{length(expand(runbook))} — #{execution.reason}",
       source: "runbook",
       requested_by_id: execution.user_id,
-      # The operator's membership at first dispatch — `Runs.dispatch_run`
-      # rejects if the runner falls outside this membership's runner
-      # scope. nil on continuation re-dispatch bypasses the check because
-      # the originating dispatch already validated scope.
+      # The initiating membership, threaded on EVERY wave (continuation
+      # included) — `Runs.dispatch_run_for_account` rejects a runner outside
+      # this membership's current runner scope, so a scope revoked
+      # mid-execution stops later waves. Never nil on the runbook path.
       requested_by_membership_id: execution.membership_id,
       runbook_id: runbook.id,
       runbook_step_id: step_id_for(step, idx),
-      runbook_execution_id: execution.id,
-      runbook_dispatch: execution.dispatch
+      runbook_execution_id: execution.id
     }
   end
 

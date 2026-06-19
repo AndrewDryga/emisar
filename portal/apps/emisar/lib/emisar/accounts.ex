@@ -341,6 +341,25 @@ defmodule Emisar.Accounts do
   end
 
   @doc """
+  Internal — the runbook engine's per-wave authorization re-check: the
+  membership `membership_id` in `account_id`, nil-or-struct, ONLY if it is still
+  active (not deleted, not disabled). No `%Subject{}` — the caller is the
+  user-less runbook continuation, which already authorized at first dispatch and
+  re-validates the anchor here before each wave. A `nil` result means the
+  initiating member was suspended/deleted mid-execution → the engine halts.
+  """
+  def peek_active_membership(account_id, membership_id)
+      when is_binary(account_id) and is_binary(membership_id) do
+    Membership.Query.not_deleted()
+    |> Membership.Query.not_disabled()
+    |> Membership.Query.by_account_id(account_id)
+    |> Membership.Query.by_id(membership_id)
+    |> Repo.peek()
+  end
+
+  def peek_active_membership(_account_id, _membership_id), do: nil
+
+  @doc """
   Internal — directory sync: the membership joining `account_id` + `user_id`,
   nil-or-struct (a SCIM reconcile reads it back for the response resource).
   No `%Subject{}` — the caller is the provider-scoped SCIM path. Returns the

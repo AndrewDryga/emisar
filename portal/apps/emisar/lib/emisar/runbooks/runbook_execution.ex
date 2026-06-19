@@ -1,0 +1,26 @@
+defmodule Emisar.Runbooks.RunbookExecution do
+  @moduledoc """
+  One runbook invocation: the durable authorization anchor for every wave it
+  dispatches. Records the initiating membership and a FROZEN authorized
+  work-list (`%{"step_index", "runner_id"}` per item, resolved once at the first
+  wave) so a later wave — fired from a user-less continuation callback — can
+  revalidate the membership + each runner instead of re-resolving group
+  membership (which would silently pick up runners added mid-execution).
+  """
+  use Emisar, :schema
+
+  schema "runbook_executions" do
+    field :reason, :string
+    # Frozen authorized work-list: the full step×runner set resolved at the
+    # first wave. Each item is `%{"step_index" => i, "runner_id" => id}`; the
+    # step's action/args are re-read from the immutable runbook version by index.
+    field :work_list, {:array, :map}, default: []
+
+    belongs_to :account, Emisar.Accounts.Account, where: [deleted_at: nil]
+    belongs_to :runbook, Emisar.Runbooks.Runbook, where: [deleted_at: nil]
+    belongs_to :initiating_membership, Emisar.Accounts.Membership, where: [deleted_at: nil]
+    belongs_to :requested_by, Emisar.Users.User, where: [deleted_at: nil]
+
+    timestamps()
+  end
+end
