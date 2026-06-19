@@ -14,7 +14,6 @@ defmodule Emisar.Auth do
   alias Emisar.Repo
   alias Emisar.RequestContext
   alias Emisar.Users
-  require Logger
 
   # -- Password sign in -------------------------------------------------
 
@@ -603,38 +602,32 @@ defmodule Emisar.Auth do
   """
   def verify_mfa(user, otp, context \\ %RequestContext{})
 
-  def verify_mfa(%Users.User{mfa_secret: secret} = user, otp, context)
-      when is_binary(secret) and is_binary(otp) do
-    if Crypto.valid_totp?(secret, otp) do
-      case Users.record_user_mfa_consumed(user.id, DateTime.utc_now()) do
-        {:ok, _} ->
-          :ok
+  def verify_mfa(%Users.User{} = user, otp, context) when is_binary(otp) do
+    # The OTP is NOT validated against this (possibly stale) struct's secret —
+    # `verify_and_consume_mfa` re-reads the row under a lock and validates +
+    # consumes there, so a secret rotated/disabled mid-verify can't slip an old
+    # code through. We only AUDIT here from the caller's user.
+    case Users.verify_and_consume_mfa(user.id, otp, DateTime.utc_now()) do
+      :ok ->
+        :ok
 
-        {:error, :replay} ->
-          Audit.log_for_user(user, "user.mfa_failed",
-            context: context,
-            payload: %{reason: "replay"}
-          )
+      {:error, :replay} ->
+        Audit.log_for_user(user, "user.mfa_failed",
+          context: context,
+          payload: %{reason: "replay"}
+        )
 
-          {:error, :replay}
+        {:error, :replay}
 
-        # The OTP was CORRECT but recording its consumption failed (a DB blip),
-        # so we reject a valid code. Fail closed, but log it — otherwise a user
-        # locked out by a transient write error is undiagnosable.
-        {:error, reason} ->
-          Logger.warning(
-            "verify_mfa for user #{user.id} failed on the consume write: #{inspect(reason)}"
-          )
+      # Wrong code, MFA disabled, or the row vanished — all "this credential
+      # can't complete sign-in" → a single invalid result, audited.
+      {:error, _reason} ->
+        Audit.log_for_user(user, "user.mfa_failed",
+          context: context,
+          payload: %{reason: "invalid_otp"}
+        )
 
-          {:error, :invalid}
-      end
-    else
-      Audit.log_for_user(user, "user.mfa_failed",
-        context: context,
-        payload: %{reason: "invalid_otp"}
-      )
-
-      {:error, :invalid}
+        {:error, :invalid}
     end
   end
 

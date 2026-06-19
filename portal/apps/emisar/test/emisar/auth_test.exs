@@ -180,6 +180,37 @@ defmodule Emisar.AuthTest do
       assert {:error, :invalid} = Auth.verify_mfa(user, "000000")
     end
 
+    test "an OTP can't complete sign-in after MFA was disabled mid-verify (MAJOR-4)" do
+      {_user, _account, subject} = owner_subject_fixture()
+      secret = Auth.generate_mfa_secret()
+      # `user` is the pre-disable snapshot — it still carries the live secret +
+      # mfa_enabled_at, exactly the stale struct a sign-in attempt would hold.
+      {user, _codes} = enable_mfa!(secret, subject)
+      otp = NimbleTOTP.verification_code(secret)
+
+      {:ok, _} = Auth.disable_mfa(subject)
+
+      # The old code validated against the stale struct's secret and would pass;
+      # the locked verify reads the CURRENT row (MFA now disabled) and refuses.
+      assert {:error, :invalid} = Auth.verify_mfa(user, otp)
+    end
+
+    test "an OTP for a rotated secret can't complete sign-in (MAJOR-4)" do
+      {_user, _account, subject} = owner_subject_fixture()
+      secret1 = Auth.generate_mfa_secret()
+      {user, _codes} = enable_mfa!(secret1, subject)
+      otp1 = NimbleTOTP.verification_code(secret1)
+
+      # Rotate the secret out from under the in-flight verify (disable + re-enable).
+      {:ok, _} = Auth.disable_mfa(subject)
+      secret2 = Auth.generate_mfa_secret()
+      {_user2, _codes} = enable_mfa!(secret2, subject)
+
+      # `user` + `otp1` are for the OLD secret; the locked verify validates
+      # against the current secret2 and refuses.
+      assert {:error, :invalid} = Auth.verify_mfa(user, otp1)
+    end
+
     test "consume_mfa_recovery_code accepts a fresh code once, rejects reuse" do
       {_user, _account, subject} = owner_subject_fixture()
       secret = Auth.generate_mfa_secret()

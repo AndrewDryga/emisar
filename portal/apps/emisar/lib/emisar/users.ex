@@ -326,22 +326,39 @@ defmodule Emisar.Users do
   end
 
   @doc """
-  Internal — Auth: stamp the most recent successful TOTP under the row
-  lock — the replay guard. A second claim of the same 30-second TOTP
-  bucket aborts with `:replay`, judged on the locked row so two
-  concurrent submissions of one code can't both pass.
+  Internal — Auth: the sign-in second factor's authoritative verify+consume in
+  ONE locked user-row op. Under the lock, confirm MFA is still enabled, validate
+  the OTP against the row's CURRENT `mfa_secret`, reject a replay of the code's
+  30-second bucket, and stamp `mfa_last_used_at`. Validating here (not against a
+  possibly-stale caller struct) closes the rotate/disable-mid-verify race — an
+  OTP from a just-disabled or just-rotated secret can't complete sign-in, and
+  two concurrent submissions of one code can't both pass. Returns
+  `:ok | {:error, :replay | :invalid | :not_found}`.
   """
-  def record_user_mfa_consumed(user_id, %DateTime{} = at) do
+  def verify_and_consume_mfa(user_id, otp, %DateTime{} = at) when is_binary(otp) do
     User.Query.not_deleted()
     |> User.Query.by_id(user_id)
-    |> Repo.fetch_and_update(User.Query,
-      with: fn loaded_user ->
-        if totp_bucket(loaded_user.mfa_last_used_at) == totp_bucket(at),
-          do: :replay,
-          else: User.Changeset.mfa_consumed(loaded_user, at)
-      end
-    )
+    |> Repo.fetch_and_update(User.Query, with: &mfa_verify_and_consume(&1, otp, at))
+    |> case do
+      {:ok, _user} -> :ok
+      {:error, reason} -> {:error, reason}
+    end
   end
+
+  # Runs on the LOCKED row — any non-changeset return aborts `fetch_and_update`
+  # as `{:error, that_value}`.
+  defp mfa_verify_and_consume(%User{mfa_enabled_at: nil}, _otp, _at), do: :invalid
+
+  defp mfa_verify_and_consume(%User{mfa_secret: secret} = loaded_user, otp, at)
+       when is_binary(secret) do
+    cond do
+      not Crypto.valid_totp?(secret, otp) -> :invalid
+      totp_bucket(loaded_user.mfa_last_used_at) == totp_bucket(at) -> :replay
+      true -> User.Changeset.mfa_consumed(loaded_user, at)
+    end
+  end
+
+  defp mfa_verify_and_consume(%User{}, _otp, _at), do: :invalid
 
   # TOTP buckets are 30 seconds wide — NimbleTOTP's verification window.
   defp totp_bucket(nil), do: nil

@@ -195,7 +195,7 @@ defmodule Emisar.Crypto do
   @doc """
   Whether `otp` is a currently-valid TOTP for `secret`. No replay guard
   — that's the caller's stamped-bucket check
-  (`Users.record_user_mfa_consumed/2`, judged under the row lock).
+  (`Users.verify_and_consume_mfa/3`, judged under the row lock).
   """
   def valid_totp?(secret, otp) when is_binary(secret) and is_binary(otp),
     do: NimbleTOTP.valid?(secret, otp)
