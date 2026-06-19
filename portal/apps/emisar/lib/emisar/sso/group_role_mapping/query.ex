@@ -20,10 +20,6 @@ defmodule Emisar.SSO.GroupRoleMapping.Query do
   def by_external_group_id(queryable, external_group_id),
     do: where(queryable, [mappings: m], m.external_group_id == ^external_group_id)
 
-  def ordered_by_group(queryable),
-    do:
-      order_by(queryable, [mappings: m], asc: m.external_group_display, asc: m.external_group_id)
-
   @impl Emisar.Repo.Query
   def cursor_fields,
     do: [{:mappings, :asc, :external_group_id}, {:mappings, :asc, :id}]

@@ -165,6 +165,30 @@ defmodule Emisar.SSOGroupsTest do
     end
   end
 
+  describe "list_group_mappings/3 keyset pagination" do
+    test "a multi-page walk returns every mapping once, ordered by external_group_id" do
+      %{provider: provider, subject: subject} = scim_provider()
+
+      for n <- 1..6 do
+        {:ok, _} =
+          SSO.create_group_mapping(
+            provider,
+            %{external_group_id: "grp-#{n}", role: :admin},
+            subject
+          )
+      end
+
+      {:ok, all, _} = SSO.list_group_mappings(provider, subject)
+      assert Enum.map(all, & &1.external_group_id) == ~w[grp-1 grp-2 grp-3 grp-4 grp-5 grp-6]
+      reference_order = Enum.map(all, & &1.id)
+
+      # A cursor that disagreed with the ORDER BY (display vs external_group_id)
+      # would skip or duplicate rows across pages.
+      walked = walk_pages(&SSO.list_group_mappings(provider, subject, &1), 2)
+      assert Enum.map(walked, & &1.id) == reference_order
+    end
+  end
+
   # -- Sync: role from groups ------------------------------------------
 
   describe "scim_upsert_group / role recompute" do

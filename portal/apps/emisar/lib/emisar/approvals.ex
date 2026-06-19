@@ -32,8 +32,13 @@ defmodule Emisar.Approvals do
              subject,
              Authorizer.view_approvals_permission()
            ) do
+      # Oldest-pending-first (a FIFO queue). The order_by opt overrides the
+      # query module's default (recent-first) cursor so the effective ORDER BY
+      # equals the keyset tuple — otherwise pre-ordering and cursor disagree and
+      # rows are skipped/duplicated across pages.
+      opts = Keyword.put_new(opts, :order_by, [{:requests, :asc, :requested_at}])
+
       Request.Query.pending()
-      |> Request.Query.ordered_by_requested()
       |> Authorizer.for_subject(subject)
       |> Repo.list(Request.Query, opts)
     end
@@ -70,8 +75,9 @@ defmodule Emisar.Approvals do
       {limit, opts} = Keyword.pop(opts, :limit, 100)
       opts = Keyword.put_new(opts, :page, limit: limit)
 
+      # No pre-ordering: the query module's cursor (recent-first) drives the
+      # ORDER BY so it matches the keyset WHERE.
       Request.Query.all()
-      |> Request.Query.ordered_by_recent()
       |> apply_request_status_filter(status)
       |> Authorizer.for_subject(subject)
       |> Repo.list(Request.Query, opts)

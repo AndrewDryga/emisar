@@ -155,6 +155,27 @@ defmodule Emisar.CatalogTest do
     end
   end
 
+  describe "list_actions_for_account/2 keyset pagination" do
+    test "a multi-page walk returns every row once, in order, when action_id ties" do
+      {account, subject} = account_with_owner()
+
+      # 6 runners each advertise the SAME action_id → 6 rows tied on the primary
+      # sort key, so paging leans on the last_seen_at + id cursor tail. A cursor
+      # that disagreed with the ORDER BY would skip or duplicate tied rows.
+      for _ <- 1..6 do
+        runner = runner_fixture(account_id: account.id)
+        {:ok, _} = Catalog.observe_state(runner, state_payload(actions: [action("shared.act")]))
+      end
+
+      {:ok, all, _} = Catalog.list_actions_for_account(subject)
+      assert length(all) == 6
+      reference_order = Enum.map(all, & &1.id)
+
+      walked = walk_pages(&Catalog.list_actions_for_account(subject, &1), 2)
+      assert Enum.map(walked, & &1.id) == reference_order
+    end
+  end
+
   describe "list_pack_actions/3" do
     test "returns the distinct actions a pack version advertises, scoped to the account" do
       {account, subject} = account_with_owner()

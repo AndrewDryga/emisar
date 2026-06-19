@@ -518,9 +518,10 @@ defmodule Emisar.Catalog do
              subject,
              Authorizer.view_catalog_permission()
            ) do
+      # No pre-ordering: the query module's cursor drives the ORDER BY so it
+      # matches the keyset WHERE.
       RunnerAction.Query.all()
       |> RunnerAction.Query.by_runner_id(runner_id)
-      |> RunnerAction.Query.ordered_by_action()
       |> Authorizer.for_subject(subject)
       |> Repo.list(RunnerAction.Query, opts)
     end
@@ -534,8 +535,9 @@ defmodule Emisar.Catalog do
            ) do
       {risk, opts} = Keyword.pop(opts, :risk)
 
+      # No pre-ordering: the query module's cursor (action_id, last_seen_at, id)
+      # drives the ORDER BY so it matches the keyset WHERE.
       RunnerAction.Query.all()
-      |> RunnerAction.Query.ordered_by_action_seen()
       |> apply_risk_filter(risk)
       |> Authorizer.for_subject(subject)
       |> Repo.list(RunnerAction.Query, opts)

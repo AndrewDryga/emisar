@@ -55,4 +55,28 @@ defmodule Emisar.DataCase do
       end)
     end)
   end
+
+  @doc """
+  Walk every page of a keyset-paginated read, following `next_page_cursor`
+  with a small `limit` to force multiple pages, and return the concatenated
+  rows. `list_fun` takes a `page:` keyword and returns `{:ok, rows, metadata}`.
+
+  Used to prove the cursor agrees with the query's ORDER BY: walking all pages
+  must equal a single unpaginated read of the same query, with no skipped or
+  duplicated rows.
+  """
+  def walk_pages(list_fun, limit) when is_function(list_fun, 1) do
+    walk_pages(list_fun, limit, nil, [])
+  end
+
+  defp walk_pages(list_fun, limit, cursor, acc) do
+    page = if cursor, do: [limit: limit, cursor: cursor], else: [limit: limit]
+    {:ok, rows, metadata} = list_fun.(page: page)
+    acc = acc ++ rows
+
+    case metadata.next_page_cursor do
+      nil -> acc
+      next -> walk_pages(list_fun, limit, next, acc)
+    end
+  end
 end

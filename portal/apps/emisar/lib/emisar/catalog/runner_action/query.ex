@@ -56,7 +56,16 @@ defmodule Emisar.Catalog.RunnerAction.Query do
 
   # -- Pagination ------------------------------------------------------
 
+  # Ordered (action_id, last_seen_at, id) so the account catalog's grouped view
+  # is keyset-stable. `(runner_id, action_id)` is unique, so for the by-runner
+  # list `last_seen_at` never tie-breaks — the order is identical to action_id
+  # alone there. The trailing `id` makes the tuple unique account-wide (an
+  # action_id is advertised by many runners).
   @impl Emisar.Repo.Query
   def cursor_fields,
-    do: [{:runner_actions, :asc, :action_id}, {:runner_actions, :asc, :id}]
+    do: [
+      {:runner_actions, :asc, :action_id},
+      {:runner_actions, :asc, :last_seen_at},
+      {:runner_actions, :asc, :id}
+    ]
 end

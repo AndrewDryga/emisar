@@ -368,6 +368,27 @@ defmodule Emisar.ApprovalsTest do
       ids = pending |> Enum.map(& &1.id)
       assert ids == [req_pending.id]
     end
+
+    test "a multi-page walk returns pending requests oldest-first, once each" do
+      {account, _} = run_fixture()
+      subject = operator_subject(account)
+
+      # Created oldest-first; the queue lists oldest-first. A cursor that
+      # disagreed with the ORDER BY (the bug: ASC pipeline vs DESC cursor)
+      # would skip/duplicate or reverse rows across pages.
+      requests =
+        for _ <- 1..6 do
+          {_, run} = run_fixture(account: account)
+          {:ok, request} = Approvals.create_request(run, user_fixture().id, nil)
+          request
+        end
+
+      {:ok, all, _} = Approvals.list_pending_approval_requests(subject)
+      assert Enum.map(all, & &1.id) == Enum.map(requests, & &1.id)
+
+      walked = walk_pages(&Approvals.list_pending_approval_requests(subject, &1), 2)
+      assert Enum.map(walked, & &1.id) == Enum.map(requests, & &1.id)
+    end
   end
 
   describe "count_pending_approval_requests/1" do

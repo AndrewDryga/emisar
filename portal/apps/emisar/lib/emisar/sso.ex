@@ -980,9 +980,12 @@ defmodule Emisar.SSO do
   @doc "List a provider's group→role mappings. `manage_sso` + enterprise; account-scoped."
   def list_group_mappings(%IdentityProvider{id: provider_id}, %Subject{} = subject, opts \\ []) do
     with :ok <- ensure_can_configure_sso(subject) do
+      # No pre-ordering: the query module's cursor (external_group_id, id) drives
+      # the ORDER BY so it matches the keyset WHERE. `external_group_display` is
+      # nullable, so it can't be a keyset field (this paginator can't compare
+      # NULLs) — order on the required external_group_id instead.
       GroupRoleMapping.Query.not_deleted()
       |> GroupRoleMapping.Query.by_provider_id(provider_id)
-      |> GroupRoleMapping.Query.ordered_by_group()
       |> Authorizer.for_subject(subject)
       |> Repo.list(GroupRoleMapping.Query, opts)
     end

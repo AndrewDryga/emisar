@@ -22,9 +22,6 @@ defmodule Emisar.Approvals.Request.Query do
   def ordered_by_recent(queryable \\ all()),
     do: order_by(queryable, [requests: r], desc: r.requested_at)
 
-  def ordered_by_requested(queryable),
-    do: order_by(queryable, [requests: r], asc: r.requested_at)
-
   def limit_to(queryable, n), do: limit(queryable, ^n)
 
   def expired_at_before(queryable, now),
