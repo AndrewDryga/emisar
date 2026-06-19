@@ -17,6 +17,10 @@ defmodule Emisar.OAuth.Client.Changeset do
     |> validate_redirect_uris()
   end
 
+  @doc "Stamp the client as authorized (an operator completed consent)."
+  def mark_authorized(%Client{} = client, %DateTime{} = at),
+    do: change(client, last_authorized_at: at)
+
   defp validate_redirect_uris(changeset) do
     uris = get_field(changeset, :redirect_uris) || []
 

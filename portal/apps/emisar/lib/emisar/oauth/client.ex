@@ -16,6 +16,7 @@ defmodule Emisar.OAuth.Client do
     field :client_secret_hash, :binary, redact: true
     field :scope, :string
     field :metadata, :map, default: %{}
+    field :last_authorized_at, :utc_datetime_usec
     timestamps(type: :utc_datetime_usec)
   end
 end

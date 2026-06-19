@@ -1,13 +1,14 @@
 defmodule Emisar.Workers.OAuthCleanup do
   @moduledoc """
-  Daily sweep that deletes expired OAuth authorization codes. Codes are
-  single-use, 60-second exchange artifacts (`emoc-`) — once expired they
-  carry no audit or forensic value, so they're pruned rather than left to
-  accumulate one row per authorize flow.
+  Daily OAuth hygiene sweep: deletes expired authorization codes and prunes
+  dynamically-registered clients that never completed consent (abandoned
+  drive-by registrations). Codes are single-use, 60-second exchange artifacts
+  (`emoc-`) with no value once expired; an unused client is one no operator
+  ever authorized.
 
-  Access/refresh tokens are deliberately NOT touched here: a revoked or
-  expired token is a record of who held access and when, which belongs
-  under an audit-retention policy, not this hygiene job.
+  Access/refresh tokens and once-authorized clients are deliberately NOT touched
+  here: a revoked/expired token (or a consented client) is a record of access
+  that belongs under a retention policy, not this hygiene job.
 
   Idempotent: deleting already-gone rows is a no-op.
   """
@@ -16,11 +17,11 @@ defmodule Emisar.Workers.OAuthCleanup do
 
   @impl Oban.Worker
   def perform(%Oban.Job{}) do
-    deleted = Emisar.OAuth.delete_expired_authorization_codes()
+    codes = Emisar.OAuth.delete_expired_authorization_codes()
+    clients = Emisar.OAuth.delete_unused_clients()
 
-    if deleted > 0 do
-      Logger.info("oauth_cleanup.codes_swept", count: deleted)
-    end
+    if codes > 0, do: Logger.info("oauth_cleanup.codes_swept", count: codes)
+    if clients > 0, do: Logger.info("oauth_cleanup.unused_clients_swept", count: clients)
 
     :ok
   end

@@ -31,6 +31,10 @@ defmodule Emisar.OAuth do
   @code_ttl_s 60
   @access_ttl_s 3_600
   @refresh_ttl_s 30 * 24 * 3_600
+  # A dynamically-registered client that never completed consent is abandoned
+  # after this long — the daily sweep prunes it so `oauth_clients` doesn't grow
+  # one orphan row per drive-by registration.
+  @unused_client_ttl_s 30 * 24 * 3_600
 
   @supported_scopes ~w(mcp offline_access)
 
@@ -122,6 +126,8 @@ defmodule Emisar.OAuth do
       |> Multi.insert(:audit, fn %{key: key} ->
         Audit.Events.oauth_consent_granted(subject, client, key)
       end)
+      # Stamp the client so it's never swept as an abandoned registration.
+      |> Multi.update(:client, Client.Changeset.mark_authorized(client, DateTime.utc_now()))
       |> Repo.commit_multi()
       |> case do
         {:ok, _changes} -> {:ok, raw}
@@ -287,6 +293,23 @@ defmodule Emisar.OAuth do
     {count, _} =
       AuthorizationCode.Query.all()
       |> AuthorizationCode.Query.expired_before(now)
+      |> Repo.delete_all()
+
+    count
+  end
+
+  @doc """
+  Internal (Oban sweep) — delete dynamically-registered clients that never
+  completed consent and were registered over 30 days ago. A client is stamped
+  `last_authorized_at` the moment an operator consents (`issue_code/3`), so this
+  only ever removes abandoned drive-by registrations — never a live connection.
+  Returns the count deleted.
+  """
+  def delete_unused_clients(now \\ DateTime.utc_now()) do
+    cutoff = DateTime.add(now, -@unused_client_ttl_s, :second)
+
+    {count, _} =
+      Client.Query.never_authorized_before(cutoff)
       |> Repo.delete_all()
 
     count

@@ -9,7 +9,7 @@ defmodule Emisar.Workers.OAuthCleanupTest do
   import Emisar.Fixtures
 
   alias Emisar.OAuth
-  alias Emisar.OAuth.AuthorizationCode
+  alias Emisar.OAuth.{AuthorizationCode, Client}
   alias Emisar.Workers.OAuthCleanup
 
   @redirect "https://claude.ai/api/mcp/auth_callback"
@@ -49,5 +49,21 @@ defmodule Emisar.Workers.OAuthCleanupTest do
 
     assert :ok = OAuthCleanup.perform(%Oban.Job{args: %{}})
     refute Repo.exists?(AuthorizationCode.Query.all())
+  end
+
+  test "perform/1 prunes abandoned never-authorized client registrations" do
+    {:ok, client} =
+      OAuth.register_client(%{"client_name" => "Drive-by", "redirect_uris" => [@redirect]})
+
+    # A fresh registration is within the window — the sweep keeps it.
+    assert :ok = OAuthCleanup.perform(%Oban.Job{args: %{}})
+    assert Repo.reload(client)
+
+    # Backdate the registration past the 30-day abandonment window → pruned.
+    past = DateTime.add(DateTime.utc_now(), -40 * 86_400, :second)
+    {1, _} = Client.Query.by_id(client.id) |> Repo.update_all(set: [inserted_at: past])
+
+    assert :ok = OAuthCleanup.perform(%Oban.Job{args: %{}})
+    refute Repo.reload(client)
   end
 end

@@ -29,6 +29,10 @@ defmodule Emisar.Repo.Migrations.OauthMcp do
       add :client_secret_hash, :binary
       add :scope, :string
       add :metadata, :map, null: false, default: %{}
+      # Last time a logged-in operator completed consent on this client; nil for
+      # a registration that never authorized. The daily sweep prunes long-stale
+      # never-authorized registrations.
+      add :last_authorized_at, :utc_datetime_usec
       timestamps(type: :utc_datetime_usec)
     end
 

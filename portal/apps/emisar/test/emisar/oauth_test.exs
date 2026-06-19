@@ -27,6 +27,11 @@ defmodule Emisar.OAuthTest do
     client
   end
 
+  defp backdate_registration(%Client{id: id}, days) do
+    ts = DateTime.add(DateTime.utc_now(), days * 86_400, :second)
+    {1, _} = Client.Query.by_id(id) |> Repo.update_all(set: [inserted_at: ts])
+  end
+
   defp issue!(subject, client, challenge, opts \\ []) do
     {:ok, code} =
       OAuth.issue_code(
@@ -376,6 +381,42 @@ defmodule Emisar.OAuthTest do
 
       # Idempotent — it's gone, a second sweep finds nothing.
       assert 0 = OAuth.delete_expired_authorization_codes(future)
+    end
+  end
+
+  describe "delete_unused_clients/1" do
+    test "issue_code stamps last_authorized_at so a consented client is never swept" do
+      {_user, _account, subject} = owner_subject_fixture()
+      client = register!()
+      assert client.last_authorized_at == nil
+
+      {_verifier, challenge} = pkce()
+      _code = issue!(subject, client, challenge)
+
+      assert %Client{last_authorized_at: %DateTime{}} = Repo.reload(client)
+    end
+
+    test "prunes only old never-authorized registrations" do
+      {_user, _account, subject} = owner_subject_fixture()
+
+      # Never authorized + registered 40 days ago → pruned.
+      stale = register!("Stale")
+      backdate_registration(stale, -40)
+
+      # Never authorized but recent → kept (still within the abandonment window).
+      recent = register!("Recent")
+
+      # Authorized (consent completed) + old → kept; last_authorized_at is set.
+      consented = register!("Consented")
+      {_verifier, challenge} = pkce()
+      _code = issue!(subject, consented, challenge)
+      backdate_registration(consented, -40)
+
+      assert 1 = OAuth.delete_unused_clients()
+
+      refute Repo.reload(stale)
+      assert Repo.reload(recent)
+      assert Repo.reload(consented)
     end
   end
 
