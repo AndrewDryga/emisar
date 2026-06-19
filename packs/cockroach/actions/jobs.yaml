@@ -1,0 +1,46 @@
+schema_version: 1
+id: cockroach.jobs
+title: Show recent / running jobs
+kind: exec
+risk: low
+description: >
+  Show cluster jobs (schema changes, backups, restores, imports, row-TTL) from
+  crdb_internal.jobs — id, type, status, running status, timing, fraction
+  complete, description, and any error. Optionally filter by status. Use to
+  find a stuck or failed job.
+side_effects:
+  - One read-only SELECT on crdb_internal.jobs.
+  - Read-only.
+args:
+  - name: status
+    type: string
+    required: false
+    default: ""
+    description: 'Optional status filter (e.g. running, paused, failed); empty = all.'
+    validation:
+      pattern: "^[a-z-]{0,32}$"
+  - name: limit
+    type: integer
+    required: false
+    default: 50
+    description: Max rows to return.
+    validation:
+      min: 1
+      max: 500
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "cockroach sql --url \"$COCKROACH_URL\" --format=tsv -e \"SELECT job_id, job_type, status, running_status, created, finished, fraction_completed, left(coalesce(description,''),120) AS description, left(coalesce(error,''),200) AS error FROM crdb_internal.jobs WHERE ('{{ args.status }}' = '' OR status = '{{ args.status }}') ORDER BY created DESC LIMIT {{ args.limit }}\""
+  timeout: 20s
+output:
+  parser: text
+  max_stdout_bytes: 131072
+  max_stderr_bytes: 8192
+examples:
+  - title: Recent jobs
+    args: {}
+  - title: Running jobs only
+    args:
+      status: running

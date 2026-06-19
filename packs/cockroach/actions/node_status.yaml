@@ -1,0 +1,28 @@
+schema_version: 1
+id: cockroach.node_status
+title: Show node status (liveness, ranges, decommission, disk)
+kind: exec
+risk: low
+description: >
+  Show every node's status — address, build, liveness, replica/leaseholder
+  counts, range counts (incl. unavailable / under-replicated), liveness bytes,
+  and decommission / draining / membership state. The first stop for cluster
+  health.
+side_effects:
+  - One `cockroach node status` call.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "cockroach node status --all --url \"$COCKROACH_URL\" --format=tsv"
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 131072
+  max_stderr_bytes: 8192
+examples:
+  - title: All nodes
+    args: {}

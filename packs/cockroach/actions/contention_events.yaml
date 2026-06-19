@@ -1,0 +1,36 @@
+schema_version: 1
+id: cockroach.contention_events
+title: Show who is blocking whom (contention events)
+kind: exec
+risk: low
+description: >
+  Show recent transaction-contention events — blocking vs waiting txn, how
+  long the wait was, and the object (database / table / index) and key
+  contended, from crdb_internal.transaction_contention_events. The core
+  "what's blocking my writes" view.
+side_effects:
+  - One read-only SELECT on crdb_internal.transaction_contention_events.
+  - Read-only.
+args:
+  - name: limit
+    type: integer
+    required: false
+    default: 50
+    description: Max rows to return.
+    validation:
+      min: 1
+      max: 500
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "cockroach sql --url \"$COCKROACH_URL\" --format=tsv -e \"SELECT collection_ts, blocking_txn_id, waiting_txn_id, contention_duration, database_name, table_name, index_name, contending_pretty_key FROM crdb_internal.transaction_contention_events ORDER BY collection_ts DESC LIMIT {{ args.limit }}\""
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 131072
+  max_stderr_bytes: 8192
+examples:
+  - title: Recent contention
+    args: {}

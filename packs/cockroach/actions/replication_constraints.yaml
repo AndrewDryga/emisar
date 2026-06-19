@@ -1,0 +1,27 @@
+schema_version: 1
+id: cockroach.replication_constraints
+title: Show replication constraint violations
+kind: exec
+risk: low
+description: >
+  Show zones whose ranges violate their replication constraints (e.g. a
+  region/locality requirement that can't be met), from
+  system.replication_constraint_stats. Empty means all constraints satisfied.
+side_effects:
+  - One read-only SELECT on system.replication_constraint_stats.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "cockroach sql --url \"$COCKROACH_URL\" --format=tsv -e \"SELECT zone_id, subzone_id, type, config, violating_ranges, violation_start FROM system.replication_constraint_stats WHERE violating_ranges > 0 ORDER BY violating_ranges DESC\""
+  timeout: 20s
+output:
+  parser: text
+  max_stdout_bytes: 32768
+  max_stderr_bytes: 8192
+examples:
+  - title: Constraint violations
+    args: {}

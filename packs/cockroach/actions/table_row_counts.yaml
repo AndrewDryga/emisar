@@ -1,0 +1,27 @@
+schema_version: 1
+id: cockroach.table_row_counts
+title: Show estimated row counts per table
+kind: exec
+risk: low
+description: >
+  Show estimated row counts for every table from
+  crdb_internal.table_row_statistics, largest first. Cheap (uses table
+  statistics, not a COUNT). Use to find the biggest tables.
+side_effects:
+  - One read-only SELECT on crdb_internal.table_row_statistics.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "cockroach sql --url \"$COCKROACH_URL\" --format=tsv -e \"SELECT table_id, table_name, estimated_row_count FROM crdb_internal.table_row_statistics ORDER BY estimated_row_count DESC LIMIT 200\""
+  timeout: 20s
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Biggest tables
+    args: {}

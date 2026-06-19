@@ -1,0 +1,76 @@
+schema_version: 1
+
+id: cockroach
+name: CockroachDB
+version: 0.1.0
+description: >
+  Investigate a CockroachDB cluster over the `cockroach` CLI — node liveness /
+  store capacity, under-replicated & unavailable ranges, running queries /
+  sessions / transactions, contention & locks, jobs, statement statistics,
+  table sizes, and cluster settings — plus a few gated operators (cancel a
+  query / session / job, pause / resume a job, decommission / recommission a
+  node). Reads are SQL against crdb_internal / SHOW statements; mutators use
+  SQL or `cockroach node`.
+vendor: emisar
+homepage: https://github.com/andrewdryga/emisar
+
+requires:
+  os:
+    - linux
+  binaries:
+    - cockroach
+
+# `emisar pack suggest` detection — the cockroach process / SQL port.
+detect:
+  processes:
+    - cockroach
+  ports:
+    - 26257
+
+setup:
+  summary: >
+    Every action expands COCKROACH_URL on the runner host and passes it to
+    `cockroach` as --url, so host, port, database, TLS mode and the client
+    cert/key paths all live in that single postgres-style URL.
+  env:
+    - name: COCKROACH_URL
+      required: true
+      description: >
+        Postgres-style CockroachDB connection URL. Use CLIENT-CERT auth
+        (sslmode=verify-full + sslrootcert/sslcert/sslkey paths) — do NOT embed
+        a password, since the URL is passed on the command line. The referenced
+        key file is the secret; the URL itself carries only paths.
+      example: "postgresql://opsuser@db.internal:26257/defaultdb?sslmode=verify-full&sslrootcert=/certs/ca.crt&sslcert=/certs/client.opsuser.crt&sslkey=/certs/client.opsuser.key"
+  notes:
+    - "COCKROACH_URL must be allowlisted in the runner's execution.inherit_env — the action env is scrubbed to PATH/LANG/LC_ALL/TERM by default, so without it cockroach can't find the cluster."
+    - "Use client-cert auth in the URL (no embedded password): the URL appears in the action's command line / audit record, so a password there would leak. The client key file (referenced by path) stays on the host and is the actual credential."
+    - "The SQL user needs VIEWACTIVITY + VIEWCLUSTERMETADATA for the reads, and CANCELQUERY / CANCELSESSION / CONTROLJOB (or admin) for the matching mutators. node decommission/recommission need admin."
+    - "Reads use --format=tsv (parsed as text). There is no SQL surface for hot ranges, per-range QPS, replication lag, or clock offset — those live in the DB Console / Prometheus, so this pack deliberately omits them."
+  verify: cockroach.databases
+
+actions:
+  - actions/databases.yaml
+  - actions/node_status.yaml
+  - actions/node_status_one.yaml
+  - actions/node_liveness.yaml
+  - actions/store_status.yaml
+  - actions/replication_stats.yaml
+  - actions/replication_constraints.yaml
+  - actions/cluster_queries.yaml
+  - actions/cluster_sessions.yaml
+  - actions/cluster_transactions.yaml
+  - actions/contention_events.yaml
+  - actions/contention_leaderboard.yaml
+  - actions/locks.yaml
+  - actions/jobs.yaml
+  - actions/statement_stats.yaml
+  - actions/table_ranges.yaml
+  - actions/table_row_counts.yaml
+  - actions/cluster_settings.yaml
+  - actions/cancel_query.yaml
+  - actions/cancel_session.yaml
+  - actions/cancel_job.yaml
+  - actions/pause_job.yaml
+  - actions/resume_job.yaml
+  - actions/node_decommission.yaml
+  - actions/node_recommission.yaml

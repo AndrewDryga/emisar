@@ -1,0 +1,34 @@
+schema_version: 1
+id: cockroach.node_status_one
+title: Show status for one node
+kind: exec
+risk: low
+description: >
+  Show full status for a single node by id — same columns as node_status,
+  scoped to one node. Use to inspect a node flagged elsewhere.
+side_effects:
+  - One `cockroach node status` call.
+  - Read-only.
+args:
+  - name: node_id
+    type: integer
+    required: true
+    description: Node id (from node_status).
+    validation:
+      min: 1
+      max: 65535
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "cockroach node status {{ args.node_id }} --all --url \"$COCKROACH_URL\" --format=tsv"
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Status for node 3
+    args:
+      node_id: 3

@@ -1,0 +1,36 @@
+schema_version: 1
+id: cockroach.node_decommission
+title: Decommission a node (cockroach node decommission)
+kind: exec
+risk: high
+description: >
+  Mark one node decommissioning and start moving its replicas off. Effectively
+  irreversible once it completes — a fully decommissioned node cannot rejoin
+  under the same id. Uses --wait=none, so the call returns after initiating;
+  track progress with node_status.
+side_effects:
+  - The target node stops accepting new replicas and sheds its existing ones.
+  - A fully decommissioned node cannot rejoin the cluster under the same id.
+args:
+  - name: node_id
+    type: integer
+    required: true
+    description: Node id to decommission (from node_status).
+    validation:
+      min: 1
+      max: 65535
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "cockroach node decommission {{ args.node_id }} --wait=none --url \"$COCKROACH_URL\""
+  timeout: 60s
+output:
+  parser: text
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Begin decommissioning node 4
+    args:
+      node_id: 4

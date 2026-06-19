@@ -1,0 +1,34 @@
+schema_version: 1
+id: cockroach.pause_job
+title: Pause a job (PAUSE JOB)
+kind: exec
+risk: medium
+description: >
+  Pause one running job by id (from jobs). It can be resumed later with
+  resume_job. Use to relieve load from a heavy backup / schema change without
+  losing its progress.
+side_effects:
+  - The target job is paused (resumable).
+args:
+  - name: job_id
+    type: integer
+    required: true
+    description: job_id from cockroach.jobs.
+    validation:
+      min: 1
+      max: 9223372036854775807
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "cockroach sql --url \"$COCKROACH_URL\" --format=tsv -e \"PAUSE JOB {{ args.job_id }}\""
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Pause a job
+    args:
+      job_id: 891234567890123456

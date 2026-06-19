@@ -1,0 +1,27 @@
+schema_version: 1
+id: cockroach.store_status
+title: Show per-store disk capacity / range counts
+kind: exec
+risk: low
+description: >
+  Show each store's capacity, available and used bytes, range and lease
+  counts, and writes/sec from crdb_internal.kv_store_status. Use to spot a
+  node running low on disk or carrying too many ranges.
+side_effects:
+  - One read-only SELECT on crdb_internal.kv_store_status.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "cockroach sql --url \"$COCKROACH_URL\" --format=tsv -e \"SELECT node_id, store_id, capacity, available, used, logical_bytes, range_count, lease_count, writes_per_second FROM crdb_internal.kv_store_status ORDER BY node_id, store_id\""
+  timeout: 20s
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Store capacity
+    args: {}

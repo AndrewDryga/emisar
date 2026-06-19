@@ -1,0 +1,36 @@
+schema_version: 1
+id: cockroach.cluster_transactions
+title: Show open transactions cluster-wide
+kind: exec
+risk: low
+description: >
+  Show open transactions across all nodes — id, node, session, start time,
+  application, statement count, and retry count, from
+  crdb_internal.cluster_transactions. Use to spot long-open or heavily-retried
+  transactions.
+side_effects:
+  - One read-only SELECT on crdb_internal.cluster_transactions.
+  - Read-only.
+args:
+  - name: limit
+    type: integer
+    required: false
+    default: 100
+    description: Max rows to return.
+    validation:
+      min: 1
+      max: 1000
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "cockroach sql --url \"$COCKROACH_URL\" --format=tsv -e \"SELECT id, node_id, session_id, start, application_name, num_stmts, num_retries FROM crdb_internal.cluster_transactions ORDER BY start ASC LIMIT {{ args.limit }}\""
+  timeout: 20s
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Open transactions
+    args: {}

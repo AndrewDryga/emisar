@@ -1,0 +1,34 @@
+schema_version: 1
+id: cockroach.cancel_query
+title: Cancel a running query (CANCEL QUERY)
+kind: exec
+risk: medium
+description: >
+  Stop one in-flight query by its query_id (from cluster_queries). The query
+  ends with an error; the session/connection stays open. Use to kill a runaway
+  query without dropping the client.
+side_effects:
+  - The target query is cancelled with an error.
+  - The session/connection stays open.
+args:
+  - name: query_id
+    type: string
+    required: true
+    description: query_id from cockroach.cluster_queries.
+    validation:
+      pattern: "^[0-9a-f]{16,40}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "cockroach sql --url \"$COCKROACH_URL\" --format=tsv -e \"CANCEL QUERY '{{ args.query_id }}'\""
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Cancel a query
+    args:
+      query_id: "16f8c5a0b2c3d4e50000000000000001"

@@ -1,0 +1,35 @@
+schema_version: 1
+id: cockroach.cluster_sessions
+title: Show open sessions cluster-wide
+kind: exec
+risk: low
+description: >
+  Show open SQL sessions across all nodes (the SHOW CLUSTER SESSIONS surface)
+  — session id, node, user, client address, application, active queries, and
+  session start. Use to see who is connected and from where.
+side_effects:
+  - One read-only SELECT on crdb_internal.cluster_sessions.
+  - Read-only.
+args:
+  - name: limit
+    type: integer
+    required: false
+    default: 100
+    description: Max rows to return.
+    validation:
+      min: 1
+      max: 1000
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "cockroach sql --url \"$COCKROACH_URL\" --format=tsv -e \"SELECT session_id, node_id, user_name, client_address, application_name, active_queries, session_start FROM crdb_internal.cluster_sessions ORDER BY session_start ASC LIMIT {{ args.limit }}\""
+  timeout: 20s
+output:
+  parser: text
+  max_stdout_bytes: 131072
+  max_stderr_bytes: 8192
+examples:
+  - title: Open sessions
+    args: {}

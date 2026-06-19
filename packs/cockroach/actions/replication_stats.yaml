@@ -1,0 +1,28 @@
+schema_version: 1
+id: cockroach.replication_stats
+title: Show under-replicated / unavailable range counts
+kind: exec
+risk: low
+description: >
+  Show cluster-wide range health — total, under-replicated, unavailable, and
+  over-replicated range counts, summed from system.replication_stats. Any
+  non-zero unavailable count means data is offline; under-replicated means
+  recovery is in progress.
+side_effects:
+  - One read-only SELECT on system.replication_stats.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "cockroach sql --url \"$COCKROACH_URL\" --format=tsv -e \"SELECT coalesce(sum(total_ranges),0) AS total, coalesce(sum(under_replicated_ranges),0) AS under_replicated, coalesce(sum(unavailable_ranges),0) AS unavailable, coalesce(sum(over_replicated_ranges),0) AS over_replicated FROM system.replication_stats\""
+  timeout: 20s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Range health summary
+    args: {}

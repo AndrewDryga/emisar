@@ -1,0 +1,27 @@
+schema_version: 1
+id: cockroach.locks
+title: Show contended locks (lock table)
+kind: exec
+risk: low
+description: >
+  Show contended entries in the lock table — range, object, the pretty key,
+  holding txn, lock strength, and how long it's been held, from
+  crdb_internal.cluster_locks. Use to find the lock behind a stall.
+side_effects:
+  - One read-only SELECT on crdb_internal.cluster_locks.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "cockroach sql --url \"$COCKROACH_URL\" --format=tsv -e \"SELECT range_id, database_name, table_name, index_name, lock_key_pretty, txn_id, lock_strength, granted, contended, duration FROM crdb_internal.cluster_locks WHERE contended ORDER BY duration DESC LIMIT 100\""
+  timeout: 20s
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Contended locks
+    args: {}

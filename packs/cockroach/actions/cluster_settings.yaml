@@ -1,0 +1,27 @@
+schema_version: 1
+id: cockroach.cluster_settings
+title: Show cluster settings
+kind: exec
+risk: low
+description: >
+  Show all cluster settings with their current value, type, and description
+  (SHOW CLUSTER SETTINGS). Use to confirm a setting's value during an
+  investigation. Read-only — this pack does not change settings.
+side_effects:
+  - One read-only SHOW CLUSTER SETTINGS query.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "cockroach sql --url \"$COCKROACH_URL\" --format=tsv -e \"SHOW CLUSTER SETTINGS\""
+  timeout: 20s
+output:
+  parser: text
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+examples:
+  - title: All cluster settings
+    args: {}

@@ -1,0 +1,27 @@
+schema_version: 1
+id: cockroach.node_liveness
+title: Show node liveness / draining / decommissioning
+kind: exec
+risk: low
+description: >
+  Show per-node liveness from crdb_internal.gossip_liveness — epoch, draining,
+  decommissioning, membership, and last update. Use to see which nodes are
+  live and which are leaving the cluster.
+side_effects:
+  - One read-only SELECT on crdb_internal.gossip_liveness.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "cockroach sql --url \"$COCKROACH_URL\" --format=tsv -e \"SELECT node_id, epoch, draining, decommissioning, membership, updated_at FROM crdb_internal.gossip_liveness ORDER BY node_id\""
+  timeout: 20s
+output:
+  parser: text
+  max_stdout_bytes: 32768
+  max_stderr_bytes: 8192
+examples:
+  - title: Liveness of all nodes
+    args: {}
