@@ -4,7 +4,7 @@ title: TLS protocol support check
 kind: exec
 risk: low
 description: >
-  Probes TLS 1.0/1.1/1.2/1.3 support on host:port one at a time, reporting which versions the server accepts. Use for compliance audits ("is TLS 1.0 still on?").
+  Probes TLS 1.0/1.1/1.2/1.3 support on host:port one at a time, reporting which versions the server accepts. Use for compliance audits ("is TLS 1.0 still on?"). Runs with OPENSSL_CONF=/dev/null so the host's system MinProtocol floor (TLSv1.2 on Debian) doesn't pre-fail the 1.0/1.1 probes — each result reflects the server, not the client.
 side_effects:
   - Up to 4 outbound TLS handshakes.
   - Read-only.
@@ -29,6 +29,8 @@ execution:
     argv:
       - "-c"
       - "for v in tls1 tls1_1 tls1_2 tls1_3; do printf '%s: ' \"$v\"; openssl s_client -connect {{ args.host }}:{{ args.port }} -servername {{ args.host }} -$v </dev/null 2>/dev/null | grep -q 'BEGIN CERT' && echo OK || echo FAIL; done"
+  env:
+    OPENSSL_CONF: /dev/null
   timeout: 60s
 output:
   parser: text

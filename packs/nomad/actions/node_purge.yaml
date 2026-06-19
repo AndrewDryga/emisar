@@ -1,11 +1,14 @@
 schema_version: 1
 id: nomad.node_purge
-title: nomad node purge
+title: Purge a dead node (PUT /v1/node/<id>/purge)
 kind: exec
 risk: critical
-description: Removes a dead (down) node from the catalog. Allocations on it are GC'd.
+description: >
+  Removes a dead (down) node from the catalog; allocations on it are GC'd. There
+  is no `nomad node purge` CLI subcommand — this is the HTTP API
+  (PUT /v1/node/<id>/purge). Only valid for nodes that are down.
 side_effects:
-  - Node entry removed permanently.
+  - Node entry removed permanently (one API PUT).
   - Allocations on it are GC'd.
   - Only valid for nodes that are down — running nodes refuse purge.
 args:
@@ -16,11 +19,15 @@ args:
     validation:
       pattern: "^[a-fA-F0-9\\-]{4,36}$"
 execution:
-  command: {binary: nomad, argv: ["node", "purge", "{{ args.node_id }}"]}
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "{ [ -n \"$NOMAD_TOKEN\" ] && printf 'X-Nomad-Token: %s\\n' \"$NOMAD_TOKEN\"; } | curl -sS -H @- -X PUT \"${NOMAD_ADDR:-http://127.0.0.1:4646}/v1/node/{{ args.node_id }}/purge\""
   timeout: 30s
 output:
-  parser: text
-  max_stdout_bytes: 4096
+  parser: json
+  max_stdout_bytes: 8192
   max_stderr_bytes: 8192
 examples:
   - title: Purge a dead node

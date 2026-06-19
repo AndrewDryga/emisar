@@ -1,6 +1,6 @@
 # Emisar example packs
 
-76 packs / 1,186 actions covering Linux ops, web/proxy, databases,
+76 packs / 1,185 actions covering Linux ops, web/proxy, databases,
 container orchestration, cloud, message buses, runtimes, observability,
 networking, storage, and infrastructure tools.
 
@@ -64,7 +64,7 @@ default — a config file or localhost).
 
 ## Pack inventory
 
-76 packs, 1,186 actions, sorted by id. **Risk** is the pack's ceiling —
+76 packs, 1,185 actions, sorted by id. **Risk** is the pack's ceiling —
 its highest-risk action (see tiers below). **Auth** legend is in the Auth
 model section above. Run `emisar pack info <id>` for a pack's full setup.
 
@@ -79,7 +79,7 @@ model section above. Run `emisar pack info <id>` for a pack's full setup.
 | `aws-s3` | 8 | low | AWS_* (opt) |
 | `bind` | 11 | high | local-host |
 | `bonding` | 3 | low | local-host |
-| `caddy` | 11 | high | CADDY_ADMIN (opt) |
+| `caddy` | 10 | high | CADDY_ADMIN (opt) |
 | `cassandra` | 45 | critical | CQLSH_* (opt) |
 | `clickhouse` | 31 | critical | CH_* (opt) |
 | `cloud-init` | 23 | critical | local-host |

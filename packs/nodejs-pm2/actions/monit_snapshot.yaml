@@ -1,9 +1,9 @@
 schema_version: 1
 id: pm2.monit_snapshot
-title: pm2 monit (one snapshot)
+title: pm2 prettylist (process snapshot)
 kind: exec
 risk: low
-description: One-shot CPU + memory snapshot for every process.
+description: One-shot CPU + memory snapshot for every process, as pretty-printed JSON (pm2 prettylist).
 side_effects:
   - One PM2 IPC call.
   - Read-only.
@@ -15,7 +15,7 @@ execution:
       - "prettylist"
   timeout: 30s
 output:
-  parser: text
+  parser: json
   max_stdout_bytes: 524288
   max_stderr_bytes: 8192
 examples:

@@ -1,6 +1,6 @@
 schema_version: 1
 id: minio.list_policies
-title: mc admin policy list
+title: mc admin policy ls
 kind: exec
 risk: low
 description: All IAM policy names.
@@ -15,7 +15,7 @@ args:
 execution:
   command:
     binary: mc
-    argv: ["admin", "policy", "list", "{{ args.alias }}", "--json"]
+    argv: ["admin", "policy", "ls", "{{ args.alias }}", "--json"]
   timeout: 30s
 output:
   parser: text

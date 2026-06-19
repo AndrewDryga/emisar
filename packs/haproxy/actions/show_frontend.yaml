@@ -1,9 +1,12 @@
 schema_version: 1
 id: haproxy.show_frontend
-title: show frontend
+title: Frontend stats (show stat, type=frontend)
 kind: exec
 risk: low
-description: List frontend names.
+description: >
+  Per-frontend stats (status, sessions, bytes, denied, errors) as CSV. There is
+  no `show frontend` Runtime-API command, so this uses `show stat -1 1 -1` —
+  the stat dump filtered to type=frontend (the bitmask 1 = frontend).
 side_effects:
   - One admin socket command.
   - Read-only.
@@ -13,7 +16,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "echo 'show frontend' | socat - \"$HAPROXY_SOCK\""
+      - "echo 'show stat -1 1 -1' | socat - \"$HAPROXY_SOCK\""
   timeout: 15s
 output:
   parser: text
