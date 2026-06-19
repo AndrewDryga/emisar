@@ -66,7 +66,8 @@ execution: {}
 # to the MCP client as EMISAR_SIGNING_KEY + EMISAR_SIGNING_KEY_ID.
 #
 # Changing anything under `signing` (enabling enforcement, rotating or revoking
-# a key) takes effect on RUNNER RESTART — SIGHUP reloads packs only, not this.
+# a key) takes effect on the next SIGHUP — the runner rebuilds the verifier and
+# re-advertises — or on a full restart. A rebuild resets the in-memory nonce cache.
 #
 # signing:
 #   enforce_signatures: true

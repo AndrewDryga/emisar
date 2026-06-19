@@ -25,7 +25,7 @@ func enforcingClient(t *testing.T, dialer Dialer) (*Client, ed25519.PrivateKey) 
 	}
 	cli := buildClient(t, dialer, func(o *Options) {
 		o.Verifier = v
-		o.StateBuilder.EnforceSignatures = true
+		o.StateBuilder.GetVerifier = func() *signing.Verifier { return v }
 	})
 	return cli, priv
 }
@@ -111,5 +111,43 @@ func TestClient_SignatureGate_RefusesTamperedArgs(t *testing.T) {
 	}
 	if res["reason"] != "bad_signature" {
 		t.Fatalf("reason=%v, want bad_signature", res["reason"])
+	}
+}
+
+// SetVerifier swaps the gate live: a key dropped from the rebuilt verifier — an
+// operator revoking it in config + SIGHUP — stops verifying immediately, with no
+// reconnect. This is the security point of live key rotation/revocation.
+func TestClient_SetVerifier_RevokesKeyLive(t *testing.T) {
+	conn := newFakeConn()
+	d := &queuedDialer{conns: []*fakeConn{conn}}
+	cli, priv := enforcingClient(t, d) // trusts k1
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- cli.Run(ctx) }()
+	t.Cleanup(func() { cancel(); <-done })
+
+	// A k1-signed dispatch runs while k1 is trusted.
+	args := map[string]any{"msg": "ok"}
+	sendRunActionWithAttestation(t, conn, "req_before", "t.echo", args, attestationFor(t, priv, "t.echo", args))
+	if res := waitForResult(t, conn, "req_before", 3*time.Second); res["status"] != "success" {
+		t.Fatalf("pre-revoke status=%v, want success", res["status"])
+	}
+
+	// Operator rotates config to a different key and SIGHUPs; the rebuilt
+	// verifier no longer trusts k1.
+	seed2, _ := hex.DecodeString("2122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f40")
+	pub2 := ed25519.NewKeyFromSeed(seed2).Public().(ed25519.PublicKey)
+	v2, err := signing.NewVerifier(true, []signing.KeyConfig{{KeyID: "k2", PublicKeyHex: hex.EncodeToString(pub2)}}, time.Hour)
+	if err != nil {
+		t.Fatalf("NewVerifier: %v", err)
+	}
+	cli.SetVerifier(v2)
+
+	// The same validly-k1-signed dispatch shape is now refused — k1 is unknown
+	// to the swapped-in verifier.
+	sendRunActionWithAttestation(t, conn, "req_after", "t.echo", args, attestationFor(t, priv, "t.echo", args))
+	if res := waitForResult(t, conn, "req_after", 3*time.Second); res["status"] != "signature_invalid" {
+		t.Fatalf("post-revoke status=%v, want signature_invalid", res["status"])
 	}
 }

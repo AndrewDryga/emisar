@@ -15,6 +15,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/andrewdryga/emisar/runner/internal/cloud"
+	"github.com/andrewdryga/emisar/runner/internal/config"
 	"github.com/andrewdryga/emisar/runner/internal/signing"
 )
 
@@ -69,16 +70,9 @@ env var can be unset after the first successful connect.`,
 
 			// Client-attested dispatch: build the verifier from config. When
 			// enforcing, the runner advertises it (cloud disables its own
-			// dispatch) and verifies a signature on every run.
-			signingKeys := make([]signing.KeyConfig, len(rt.cfg.Signing.TrustedKeys))
-			for i, k := range rt.cfg.Signing.TrustedKeys {
-				signingKeys[i] = signing.KeyConfig{KeyID: k.KeyID, PublicKeyHex: k.PublicKey}
-			}
-			verifier, err := signing.NewVerifier(
-				rt.cfg.Signing.EnforceSignatures,
-				signingKeys,
-				rt.cfg.Signing.MaxAttestationAge.Std(),
-			)
+			// dispatch) and verifies a signature on every run. SIGHUP rebuilds
+			// it so a rotated/revoked key takes effect without a restart.
+			verifier, err := buildVerifier(rt.cfg)
 			if err != nil {
 				return fmt.Errorf("signing: %w", err)
 			}
@@ -100,20 +94,13 @@ env var can be unset after the first successful connect.`,
 				// same one we register with above — not the config-only
 				// rt.cfg.Runner.ID, which is empty when the operator didn't pin
 				// one, making the runner advertise runner_id: "".
-				AgentID:           externalID,
-				Version:           Version,
-				Hostname:          hostname,
-				Group:             rt.cfg.Runner.Group,
-				Labels:            rt.cfg.Runner.Labels,
-				GetRegistry:       rt.engine.Registry,
-				Admission:         rt.admission,
-				EnforceSignatures: verifier.Enforces(),
-			}
-			// Advertise which keys we trust + our freshness window, but only when
-			// enforcing — they're meaningless metadata otherwise.
-			if verifier.Enforces() {
-				builder.SigningKeyIDs = verifier.KeyIDs()
-				builder.MaxAttestationAgeSeconds = int(verifier.MaxAge().Seconds())
+				AgentID:     externalID,
+				Version:     Version,
+				Hostname:    hostname,
+				Group:       rt.cfg.Runner.Group,
+				Labels:      rt.cfg.Runner.Labels,
+				GetRegistry: rt.engine.Registry,
+				Admission:   rt.admission,
 			}
 			client := cloud.NewClient(dialer, cloud.Options{
 				StateBuilder:   builder,
@@ -125,15 +112,20 @@ env var can be unset after the first successful connect.`,
 				ReconnectMax:   rt.cfg.Cloud.ReconnectMax.Std(),
 				Verifier:       verifier,
 			})
+			// Advertise the trusted key set live: the builder reads the client's
+			// verifier (like it reads the engine registry), so a SIGHUP key swap
+			// re-advertises on the next Readvertise — one source of truth.
+			builder.GetVerifier = client.Verifier
 
 			ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 			defer cancel()
 
-			// SIGHUP: reload packs, then ask the client to re-send
-			// runner_state on the active connection. Reloading mid-action
-			// is safe because the engine holds the registry behind an
-			// atomic pointer and in-flight runs captured their pointer
-			// at start.
+			// SIGHUP: reload packs and rebuild the signature verifier from the
+			// (possibly edited) config, then re-send runner_state on the active
+			// connection. Safe mid-action: the engine holds the registry and the
+			// client holds the verifier behind atomic pointers, so in-flight runs
+			// keep the pointers they captured at start. A verifier rebuild resets
+			// the in-memory nonce cache, same as a restart.
 			hup := make(chan os.Signal, 1)
 			signal.Notify(hup, syscall.SIGHUP)
 			defer signal.Stop(hup)
@@ -146,6 +138,14 @@ env var can be unset after the first successful connect.`,
 						if err := rt.engine.Reload(); err != nil {
 							logger.Error("reload_failed", "error", err)
 							continue
+						}
+						// Pack reload succeeded; refresh signing keys independently
+						// so a key-only edit (rotation/revocation) takes effect, and
+						// still re-advertise the packs even if the signing reload fails.
+						if verifier, err := reloadVerifier(); err != nil {
+							logger.Error("signing_reload_failed", "error", err)
+						} else {
+							client.SetVerifier(verifier)
 						}
 						client.Readvertise()
 					}
@@ -166,6 +166,31 @@ env var can be unset after the first successful connect.`,
 			return err
 		},
 	}
+}
+
+// buildVerifier constructs the dispatch signature verifier from config: the
+// trusted keys, whether enforcement is on, and the attestation freshness
+// window. Used at connect start and on every SIGHUP rebuild.
+func buildVerifier(cfg *config.Config) (*signing.Verifier, error) {
+	keys := make([]signing.KeyConfig, len(cfg.Signing.TrustedKeys))
+	for i, k := range cfg.Signing.TrustedKeys {
+		keys[i] = signing.KeyConfig{KeyID: k.KeyID, PublicKeyHex: k.PublicKey}
+	}
+	return signing.NewVerifier(cfg.Signing.EnforceSignatures, keys, cfg.Signing.MaxAttestationAge.Std())
+}
+
+// reloadVerifier re-reads the config file and rebuilds the verifier so a SIGHUP
+// picks up a rotated or revoked trusted key without a runner restart.
+func reloadVerifier() (*signing.Verifier, error) {
+	cfgPath, err := resolveConfigPath()
+	if err != nil {
+		return nil, fmt.Errorf("config path: %w", err)
+	}
+	cfg, err := config.Load(cfgPath)
+	if err != nil {
+		return nil, fmt.Errorf("load config: %w", err)
+	}
+	return buildVerifier(cfg)
 }
 
 // resolveExternalID returns the runner's durable identity. Precedence:

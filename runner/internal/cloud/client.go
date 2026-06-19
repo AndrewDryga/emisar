@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/andrewdryga/emisar/runner/internal/audit"
@@ -55,8 +56,9 @@ type Options struct {
 	// for idempotent replay. Defaults to 1024.
 	DedupRingSize int
 
-	// Verifier gates dispatches against client attestations. Nil (or a
-	// non-enforcing verifier) means legacy trust — run whatever the cloud sends.
+	// Verifier is the INITIAL signature verifier gating dispatches; SIGHUP
+	// swaps it live via Client.SetVerifier. Nil (or a non-enforcing verifier)
+	// means legacy trust — run whatever the cloud sends.
 	Verifier *signing.Verifier
 }
 
@@ -67,6 +69,12 @@ type Options struct {
 type Client struct {
 	dialer Dialer
 	opts   Options
+
+	// verifier gates dispatches; held behind an atomic pointer so a SIGHUP
+	// (SetVerifier) can rotate or revoke a trusted key live, while in-flight
+	// runs keep the verifier they read at the gate. Mirrors the engine's
+	// atomic registry. A nil load means legacy trust — run whatever arrives.
+	verifier atomic.Pointer[signing.Verifier]
 
 	mu    sync.Mutex
 	runs  map[string]*runState // request_id -> in-flight state
@@ -121,7 +129,7 @@ func NewClient(d Dialer, opts Options) *Client {
 	if opts.DedupRingSize <= 0 {
 		opts.DedupRingSize = 1024
 	}
-	return &Client{
+	c := &Client{
 		dialer:      d,
 		opts:        opts,
 		runs:        map[string]*runState{},
@@ -129,7 +137,19 @@ func NewClient(d Dialer, opts Options) *Client {
 		readvertise: make(chan struct{}, 1),
 		wake:        make(chan struct{}, 1),
 	}
+	c.verifier.Store(opts.Verifier)
+	return c
 }
+
+// Verifier returns the signature verifier currently gating dispatches (nil =
+// legacy trust). The StateBuilder reads it through this getter so the advertised
+// key set tracks live swaps, the same way it reads the engine's registry.
+func (c *Client) Verifier() *signing.Verifier { return c.verifier.Load() }
+
+// SetVerifier swaps the gate's verifier — call it on SIGHUP after rebuilding
+// from the reloaded config so a rotated or revoked key takes effect without a
+// restart. Atomic: in-flight runs keep the verifier they read at the gate.
+func (c *Client) SetVerifier(v *signing.Verifier) { c.verifier.Store(v) }
 
 // signalSend pokes the sender loop after a message is enqueued. Non-blocking
 // and coalesced: if a wake is already pending, this is a no-op (the sender
@@ -483,7 +503,8 @@ func (c *Client) handleRun(ctx context.Context, s *runState, m RunActionMsg) {
 // run; it deliberately does NOT re-advertise (unlike a pack mismatch, a bad
 // signature says nothing about this runner's catalog).
 func (c *Client) passesSignatureGate(s *runState, m RunActionMsg) bool {
-	if c.opts.Verifier == nil {
+	verifier := c.verifier.Load()
+	if verifier == nil {
 		return true
 	}
 
@@ -497,7 +518,7 @@ func (c *Client) passesSignatureGate(s *runState, m RunActionMsg) bool {
 		}
 	}
 
-	dec := c.opts.Verifier.Check(m.ActionID, m.Args, att)
+	dec := verifier.Check(m.ActionID, m.Args, att)
 	if dec.Allowed {
 		return true
 	}

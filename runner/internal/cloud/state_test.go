@@ -1,14 +1,19 @@
 package cloud
 
 import (
+	"crypto/ed25519"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/andrewdryga/emisar/runner/internal/admission"
 	"github.com/andrewdryga/emisar/runner/internal/packs"
+	"github.com/andrewdryga/emisar/runner/internal/signing"
 )
 
 const echoAction = `
@@ -94,20 +99,53 @@ func TestStateBuilder_AdvertisesActionsAndPacks(t *testing.T) {
 	}
 }
 
+// enforcingVerifier builds a signature verifier that enforces and trusts the
+// given key ids (24h freshness window). The keys are random — these tests
+// assert the advertised metadata, never verify a signature.
+func enforcingVerifier(t *testing.T, keyIDs ...string) *signing.Verifier {
+	t.Helper()
+	keys := make([]signing.KeyConfig, len(keyIDs))
+	for i, id := range keyIDs {
+		pub, _, err := ed25519.GenerateKey(rand.Reader)
+		if err != nil {
+			t.Fatalf("GenerateKey: %v", err)
+		}
+		keys[i] = signing.KeyConfig{KeyID: id, PublicKeyHex: hex.EncodeToString(pub)}
+	}
+	v, err := signing.NewVerifier(true, keys, 24*time.Hour)
+	if err != nil {
+		t.Fatalf("NewVerifier: %v", err)
+	}
+	return v
+}
+
 func TestStateBuilder_AdvertisesEnforceSignatures(t *testing.T) {
 	reg := setupRegistry(t)
 
+	// No verifier: enforcement off, omitted from the wire (omitempty) so older
+	// clouds see nothing new.
 	off := (&StateBuilder{AgentID: "a", Version: "v", GetRegistry: func() *packs.Registry { return reg }}).Build()
 	if off.EnforceSignatures {
 		t.Fatal("default state must not advertise enforcement")
 	}
-	// And it's omitted from the wire when off (omitempty), so older clouds see
-	// nothing new.
 	if raw, _ := json.Marshal(off); strings.Contains(string(raw), "enforce_signatures") {
 		t.Fatalf("enforce_signatures should be omitted when off: %s", raw)
 	}
 
-	on := (&StateBuilder{AgentID: "a", Version: "v", GetRegistry: func() *packs.Registry { return reg }, EnforceSignatures: true}).Build()
+	// A present-but-non-enforcing verifier — the real "enforcement off" config
+	// state, since the client always holds a verifier — also advertises nothing.
+	nonEnforcing, err := signing.NewVerifier(false, nil, time.Hour)
+	if err != nil {
+		t.Fatalf("NewVerifier: %v", err)
+	}
+	offWithVerifier := (&StateBuilder{AgentID: "a", Version: "v", GetRegistry: func() *packs.Registry { return reg }, GetVerifier: func() *signing.Verifier { return nonEnforcing }}).Build()
+	if offWithVerifier.EnforceSignatures {
+		t.Fatal("a non-enforcing verifier must not advertise enforcement")
+	}
+
+	// An enforcing verifier advertises enforcement on the wire.
+	v := enforcingVerifier(t, "mcp-prod")
+	on := (&StateBuilder{AgentID: "a", Version: "v", GetRegistry: func() *packs.Registry { return reg }, GetVerifier: func() *signing.Verifier { return v }}).Build()
 	if !on.EnforceSignatures {
 		t.Fatal("enforcing builder must advertise enforcement")
 	}
@@ -119,22 +157,17 @@ func TestStateBuilder_AdvertisesEnforceSignatures(t *testing.T) {
 func TestStateBuilder_AdvertisesSigningKeyIDsAndMaxAge(t *testing.T) {
 	reg := setupRegistry(t)
 
-	// Omitted from the wire when not advertised (omitempty).
+	// Omitted from the wire when not enforcing (omitempty).
 	off := (&StateBuilder{AgentID: "a", Version: "v", GetRegistry: func() *packs.Registry { return reg }}).Build()
 	if raw, _ := json.Marshal(off); strings.Contains(string(raw), "signing_key_ids") ||
 		strings.Contains(string(raw), "max_attestation_age_seconds") {
 		t.Fatalf("key ids / max age must be omitted when unset: %s", raw)
 	}
 
-	on := (&StateBuilder{
-		AgentID:                  "a",
-		Version:                  "v",
-		GetRegistry:              func() *packs.Registry { return reg },
-		EnforceSignatures:        true,
-		SigningKeyIDs:            []string{"mcp-prod", "mcp-staging"},
-		MaxAttestationAgeSeconds: 86400,
-	}).Build()
+	v := enforcingVerifier(t, "mcp-prod", "mcp-staging")
+	on := (&StateBuilder{AgentID: "a", Version: "v", GetRegistry: func() *packs.Registry { return reg }, GetVerifier: func() *signing.Verifier { return v }}).Build()
 
+	// KeyIDs() returns sorted ids; the 24h window is advertised as seconds.
 	if got := on.SigningKeyIDs; len(got) != 2 || got[0] != "mcp-prod" {
 		t.Fatalf("SigningKeyIDs not advertised: %v", got)
 	}
@@ -144,6 +177,27 @@ func TestStateBuilder_AdvertisesSigningKeyIDsAndMaxAge(t *testing.T) {
 	if raw, _ := json.Marshal(on); !strings.Contains(string(raw), `"signing_key_ids":["mcp-prod","mcp-staging"]`) ||
 		!strings.Contains(string(raw), `"max_attestation_age_seconds":86400`) {
 		t.Fatalf("key ids + max age should be on the wire: %s", raw)
+	}
+}
+
+// Build reads the verifier live (via GetVerifier), so a SIGHUP that swaps the
+// verifier re-advertises the new key set on the next Build — no reconnect.
+func TestStateBuilder_Build_ReflectsSwappedVerifier(t *testing.T) {
+	reg := setupRegistry(t)
+	current := enforcingVerifier(t, "old-key")
+	b := &StateBuilder{
+		AgentID:     "a",
+		Version:     "v",
+		GetRegistry: func() *packs.Registry { return reg },
+		GetVerifier: func() *signing.Verifier { return current },
+	}
+
+	if got := b.Build().SigningKeyIDs; len(got) != 1 || got[0] != "old-key" {
+		t.Fatalf("before swap: %v", got)
+	}
+	current = enforcingVerifier(t, "new-key")
+	if got := b.Build().SigningKeyIDs; len(got) != 1 || got[0] != "new-key" {
+		t.Fatalf("after swap: %v", got)
 	}
 }
 

@@ -73,8 +73,8 @@ and off the control plane.`,
 			fmt.Print("2. MCP client — set these env vars (the PRIVATE key, keep it SECRET):\n\n")
 			fmt.Printf("   EMISAR_SIGNING_KEY=%s\n", seedHex)
 			fmt.Printf("   EMISAR_SIGNING_KEY_ID=%s\n\n", id)
-			fmt.Print("Restart the runner to apply the signing config and advertise enforcement\n")
-			fmt.Print("(SIGHUP reloads packs only, not signing keys).\n")
+			fmt.Print("Apply it by sending the runner SIGHUP (or restarting): it rebuilds the\n")
+			fmt.Print("verifier from config and advertises enforcement — no restart required.\n")
 			fmt.Print("Never put the private key on the control plane or in version control.\n")
 			return nil
 		},
