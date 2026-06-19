@@ -345,6 +345,48 @@ defmodule EmisarWeb.PoliciesLiveTest do
       assert html =~ "Remove"
     end
 
+    test "a scoped ruleset weaker than the strict default warns the operator", %{
+      conn: conn,
+      account: account,
+      subject: subject
+    } do
+      # A strict account default: two approvers, no self-approval.
+      {:ok, _} =
+        Policies.save_rules(
+          %{
+            "schema_version" => 2,
+            "approval" => %{"min_approvals" => 2, "allow_self_approval" => false}
+          },
+          subject
+        )
+
+      runner = Emisar.Fixtures.runner_fixture(account_id: account.id, name: "web-1", group: "web")
+      # deny_all/0 carries no approval section → the scoped gate reads as the lax
+      # default (1 approver, self-approval allowed), i.e. weaker than the default.
+      {:ok, _} = Policies.save_scoped_rules(deny_all(), :runner, runner.id, subject)
+
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/policies")
+
+      assert html =~ "Weaker approval gate than the default policy"
+      assert html =~ "requires fewer approvals (1 vs 2)"
+      assert html =~ "lets the requester approve their own action"
+    end
+
+    test "a scoped ruleset at least as strict as the default shows no warning", %{
+      conn: conn,
+      account: account,
+      subject: subject
+    } do
+      runner = Emisar.Fixtures.runner_fixture(account_id: account.id, name: "web-1", group: "web")
+      # The account default is the lax baseline (1 approver, self-approval on), so
+      # a deny_all ruleset matches it — nothing weaker to warn about.
+      {:ok, _} = Policies.save_scoped_rules(deny_all(), :runner, runner.id, subject)
+
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/policies")
+
+      refute html =~ "Weaker approval gate than the default policy"
+    end
+
     test "add a ruleset → pick a runner → save → persists a runner-scoped policy", %{
       conn: conn,
       account: account,

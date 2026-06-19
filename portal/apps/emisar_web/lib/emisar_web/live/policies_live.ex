@@ -381,6 +381,24 @@ defmodule EmisarWeb.PoliciesLive do
 
   defp parse_min_approvals(_value, fallback), do: fallback
 
+  # The ways a scoped ruleset's approval gate is laxer than the account default
+  # (fewer required approvals, or self-approval the default forbids). Empty when
+  # it's at least as strict. The account default itself is never compared.
+  defp approval_weakenings(scoped, default) do
+    Enum.reject(
+      [
+        scoped["min_approvals"] < default["min_approvals"] &&
+          "requires fewer approvals (#{scoped["min_approvals"]} vs #{default["min_approvals"]})",
+        (scoped["allow_self_approval"] and not default["allow_self_approval"]) &&
+          "lets the requester approve their own action"
+      ],
+      &(&1 == false)
+    )
+  end
+
+  defp weakening_sentence([one]), do: one
+  defp weakening_sentence(many), do: Enum.join(many, " and ")
+
   defp merge_defaults(state, form) when is_map(form) do
     Enum.into(@tiers, state, fn tier ->
       value = form[tier] || state[tier]
@@ -660,6 +678,7 @@ defmodule EmisarWeb.PoliciesLive do
           <.ruleset_card
             :for={ruleset <- @rulesets}
             ruleset={ruleset}
+            account_approval={@account.approval}
             runners={@runners}
             groups={@groups}
             rulesets={@rulesets}
@@ -672,6 +691,7 @@ defmodule EmisarWeb.PoliciesLive do
   end
 
   attr :ruleset, :map, required: true
+  attr :account_approval, :map, required: true
   attr :runners, :list, required: true
   attr :groups, :list, required: true
   attr :rulesets, :list, required: true
@@ -737,6 +757,7 @@ defmodule EmisarWeb.PoliciesLive do
         defaults={@ruleset.defaults}
         overrides={@ruleset.overrides}
         approval={@ruleset.approval}
+        approval_weakenings={approval_weakenings(@ruleset.approval, @account_approval)}
         rules_errors={@ruleset.rules_errors}
         can_manage={@can_manage}
         save_label="Save ruleset"
@@ -752,6 +773,11 @@ defmodule EmisarWeb.PoliciesLive do
   attr :defaults, :map, required: true
   attr :overrides, :list, required: true
   attr :approval, :map, required: true
+
+  attr :approval_weakenings, :list,
+    default: [],
+    doc: "ways this scoped gate is laxer than the account default (empty for the default itself)"
+
   attr :rules_errors, :list, required: true
   attr :can_manage, :boolean, required: true
   attr :save_label, :string, required: true
@@ -881,6 +907,20 @@ defmodule EmisarWeb.PoliciesLive do
             </p>
           </div>
         </div>
+
+        <%!-- A scoped ruleset REPLACES the default wholesale, so an override
+             seeded from a pre-gate template can silently weaken the approval
+             gate for its target. Nudge the operator when that's the case. --%>
+        <.notice
+          :if={@approval_weakenings != []}
+          variant={:warning}
+          title="Weaker approval gate than the default policy"
+          class="mt-3"
+        >
+          This ruleset replaces the default for its target, and its gate is laxer — it {weakening_sentence(
+            @approval_weakenings
+          )}. Tighten it here if that isn't intended.
+        </.notice>
       </div>
 
       <div :if={@can_manage} class="flex justify-end border-t border-zinc-900 pt-4">
