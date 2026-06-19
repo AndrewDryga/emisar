@@ -1,0 +1,82 @@
+schema_version: 1
+
+id: snmp
+name: SNMP (net-snmp)
+version: 0.1.0
+description: >
+  Read a network device over SNMP with the net-snmp CLI — system group,
+  interface table, BGP peers (BGP4-MIB) and OSPF neighbors / general group
+  (OSPF-MIB), plus a generic single-OID get and a bounded subtree walk. The
+  routing reads exist to give operators visibility into BGP / OSPF state on
+  devices this control plane can't reach by a native API — e.g. a pfSense +
+  FRR edge firewall, where the REST API exposes no routing-protocol state.
+  All read-only.
+vendor: emisar
+homepage: https://github.com/andrewdryga/emisar
+
+requires:
+  os:
+    - linux
+  binaries:
+    - snmpget
+    - snmpbulkwalk
+
+# No detect block: the net-snmp CLI is a *client*, so its presence on the
+# runner says nothing about which devices to poll — the target is remote.
+
+setup:
+  summary: >
+    Every action runs a net-snmp client (snmpget / snmpbulkwalk) against the
+    {{ args.host }} you pass. Install net-snmp on the runner host (Debian:
+    apt-get install snmp), enable SNMP on each target device, and set the
+    credentials below. Point actions at a device by its hostname or IP.
+  env:
+    - name: SNMP_VERSION
+      required: false
+      default: "2c"
+      description: >
+        SNMP version — "1", "2c" (default), or "3". The table reads use
+        GETBULK, so they need 2c or 3. Prefer 3 (authPriv) on any untrusted
+        path: v1/v2c send the community in cleartext on the wire.
+    - name: SNMP_COMMUNITY
+      required: false
+      description: >
+        The read-only community string (SNMP v1/v2c). Written to a transient
+        snmp.conf the tool reads via SNMPCONFPATH, so it never appears in the
+        process arguments or the audit log. Use a least-privilege RO community.
+    - name: SNMP_USER
+      required: false
+      description: SNMPv3 security (user) name.
+    - name: SNMP_LEVEL
+      required: false
+      default: authPriv
+      description: 'SNMPv3 security level: noAuthNoPriv, authNoPriv, or authPriv (default).'
+    - name: SNMP_AUTH_PROTO
+      required: false
+      default: SHA
+      description: 'SNMPv3 authentication protocol (e.g. SHA, SHA-256, MD5).'
+    - name: SNMP_AUTH_PASS
+      required: false
+      description: SNMPv3 authentication passphrase. Streamed via snmp.conf, never in argv.
+    - name: SNMP_PRIV_PROTO
+      required: false
+      default: AES
+      description: 'SNMPv3 privacy (encryption) protocol (e.g. AES, AES-256, DES).'
+    - name: SNMP_PRIV_PASS
+      required: false
+      description: SNMPv3 privacy passphrase. Streamed via snmp.conf, never in argv.
+  notes:
+    - "Actions query by NUMERIC OID so they work without MIB files (Debian's `snmp` package ships none by default — `mibs :` is commented out). Output is therefore numeric too; each routing action's description maps the columns and decodes the state enums. Install `snmp-mibs-downloader` on the runner for symbolic names if you prefer."
+    - "Enable SNMP on the device first. pfSense: Services → SNMP (set an RO community, bind it to the management interface, not WAN). The host arg is the device address; an unreachable device or wrong community fails the action (non-zero exit), it is not reported as empty."
+    - "BGP4-MIB / OSPF-MIB are not served by the base snmpd — FRR exports them over AgentX. On the firewall/router, enable AgentX in FRR (`agentx` in the daemon config) and run bgpd/ospfd with the SNMP module, and set `master agentx` in snmpd.conf. Without that, bgp_peers / ospf_* return nothing even though SNMP itself works (snmp.system will still answer)."
+    - "This pack only reads. SNMP SET (writes) is intentionally not implemented — community-based SET is a notorious abuse surface, and emisar mutators belong in device-native, auditable packs."
+  verify: snmp.system
+
+actions:
+  - actions/system.yaml
+  - actions/interfaces.yaml
+  - actions/bgp_peers.yaml
+  - actions/ospf_neighbors.yaml
+  - actions/ospf_general.yaml
+  - actions/get.yaml
+  - actions/walk.yaml

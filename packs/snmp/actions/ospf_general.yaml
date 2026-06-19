@@ -1,0 +1,37 @@
+schema_version: 1
+id: snmp.ospf_general
+title: snmpwalk OSPF-MIB ospfGeneralGroup (1.3.6.1.2.1.14.1)
+kind: script
+risk: low
+description: >
+  Show the OSPF general group from OSPF-MIB — ospfRouterId (.1), ospfAdminStat
+  (.2: 1=enabled 2=disabled), ospfVersionNumber (.3), and the area-border /
+  AS-border router flags (.4/.5). Use to confirm OSPF is enabled and read the
+  router id. Walks 1.3.6.1.2.1.14.1.
+side_effects:
+  - One read-only SNMP walk of the OSPF general group.
+  - Read-only.
+args:
+  - name: host
+    type: string
+    required: true
+    description: Target device hostname or IP (optionally host:port).
+    validation:
+      pattern: "^[a-zA-Z0-9.\\-:]{1,253}$"
+execution:
+  script:
+    path: scripts/snmpreq.sh
+    interpreter: /bin/sh
+  argv:
+    - "snmpbulkwalk"
+    - "{{ args.host }}"
+    - "1.3.6.1.2.1.14.1"
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: OSPF status / router id
+    args:
+      host: "10.11.13.1"

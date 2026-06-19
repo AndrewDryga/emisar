@@ -1,0 +1,38 @@
+schema_version: 1
+id: snmp.ospf_neighbors
+title: snmpwalk OSPF-MIB ospfNbrTable (1.3.6.1.2.1.14.10)
+kind: script
+risk: low
+description: >
+  List OSPF neighbors from OSPF-MIB ospfNbrTable — per-neighbor ospfNbrIpAddr
+  (.1), ospfNbrRtrId (.3), and ospfNbrState (.6: 1=down 2=attempt 3=init
+  4=twoWay 5=exchangeStart 6=exchange 7=loading 8=full). A healthy adjacency
+  is 8=full (or 4=twoWay on a DR-other). Use to confirm OSPFv2 adjacencies.
+  Walks 1.3.6.1.2.1.14.10. (OSPFv3 lives in OSPFV3-MIB — use snmp.walk.)
+side_effects:
+  - One read-only SNMP walk of the OSPF neighbor table.
+  - Read-only.
+args:
+  - name: host
+    type: string
+    required: true
+    description: Target device hostname or IP (optionally host:port).
+    validation:
+      pattern: "^[a-zA-Z0-9.\\-:]{1,253}$"
+execution:
+  script:
+    path: scripts/snmpreq.sh
+    interpreter: /bin/sh
+  argv:
+    - "snmpbulkwalk"
+    - "{{ args.host }}"
+    - "1.3.6.1.2.1.14.10"
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: OSPF neighbors on a router
+    args:
+      host: "10.11.13.1"

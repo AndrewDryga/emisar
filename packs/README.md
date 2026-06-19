@@ -1,6 +1,6 @@
 # Emisar example packs
 
-73 packs / 1,103 actions covering Linux ops, web/proxy, databases,
+74 packs / 1,110 actions covering Linux ops, web/proxy, databases,
 container orchestration, cloud, message buses, runtimes, observability,
 networking, storage, and infrastructure tools.
 
@@ -64,7 +64,7 @@ default — a config file or localhost).
 
 ## Pack inventory
 
-73 packs, 1,103 actions, sorted by id. **Risk** is the pack's ceiling —
+74 packs, 1,110 actions, sorted by id. **Risk** is the pack's ceiling —
 its highest-risk action (see tiers below). **Auth** legend is in the Auth
 model section above. Run `emisar pack info <id>` for a pack's full setup.
 
@@ -128,6 +128,7 @@ model section above. Run `emisar pack info <id>` for a pack's full setup.
 | `redis` | 49 | critical | REDISCLI_AUTH (opt) |
 | `shell` ⚠️ | 1 | critical | local-host |
 | `showcase` | 5 | low | local-host |
+| `snmp` | 7 | low | SNMP_* |
 | `ssl-local` | 7 | low | local-host |
 | `systemd-deep` | 24 | high | local-host |
 | `tailscale` | 9 | low | local-host |

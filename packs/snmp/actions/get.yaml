@@ -1,0 +1,44 @@
+schema_version: 1
+id: snmp.get
+title: snmpget a single OID
+kind: script
+risk: low
+description: >
+  Get a single SNMP object by OID — one snmpget. Use for a specific scalar
+  the curated reads don't cover (e.g. a vendor MIB value). Give a numeric OID
+  like 1.3.6.1.2.1.1.5.0, or a symbolic one (SNMPv2-MIB::sysName.0) if the
+  device's MIBs are installed on the runner.
+side_effects:
+  - One read-only SNMP GET of a single object.
+  - Read-only.
+args:
+  - name: host
+    type: string
+    required: true
+    description: Target device hostname or IP (optionally host:port).
+    validation:
+      pattern: "^[a-zA-Z0-9.\\-:]{1,253}$"
+  - name: oid
+    type: string
+    required: true
+    description: The object OID — numeric (1.3.6.1.2.1.1.5.0) or symbolic (sysName.0).
+    validation:
+      pattern: "^[A-Za-z0-9.:_\\-]{1,128}$"
+execution:
+  script:
+    path: scripts/snmpreq.sh
+    interpreter: /bin/sh
+  argv:
+    - "snmpget"
+    - "{{ args.host }}"
+    - "{{ args.oid }}"
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Get sysName
+    args:
+      host: "10.11.13.1"
+      oid: "1.3.6.1.2.1.1.5.0"

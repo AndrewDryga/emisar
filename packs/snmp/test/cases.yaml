@@ -1,0 +1,48 @@
+# Cases are written ready-to-run against an snmpd SUT (host: snmpd, community
+# below), but skipped until that service is wired into dev/test-packs/compose.
+# Verified locally against net-snmp snmpd via `emisar action run`: system /
+# interfaces / get / walk return exit 0; bgp_peers / ospf_* return exit 0 with
+# "No Such Object" on a non-FRR agent (graceful, not a failure).
+defaults:
+  env:
+    SNMP_VERSION: "2c"
+    SNMP_COMMUNITY: public
+cases:
+- action: snmp.system
+  args:
+    host: snmpd
+  expect_exit: 0
+  expect_stdout_contains: ["sysDescr"]
+  skip: needs an snmpd SUT in dev/test-packs/compose (verified locally)
+- action: snmp.interfaces
+  args:
+    host: snmpd
+  expect_exit: 0
+  skip: needs an snmpd SUT in dev/test-packs/compose (verified locally)
+- action: snmp.bgp_peers
+  args:
+    host: snmpd
+  expect_exit: 0
+  skip: needs an FRR+AgentX SUT for real peers; plain snmpd returns exit 0 (no such object)
+- action: snmp.ospf_neighbors
+  args:
+    host: snmpd
+  expect_exit: 0
+  skip: needs an FRR+AgentX SUT for real neighbors; plain snmpd returns exit 0 (no such object)
+- action: snmp.ospf_general
+  args:
+    host: snmpd
+  expect_exit: 0
+  skip: needs an FRR+AgentX SUT for real OSPF; plain snmpd returns exit 0 (no such object)
+- action: snmp.get
+  args:
+    host: snmpd
+    oid: 1.3.6.1.2.1.1.5.0
+  expect_exit: 0
+  skip: needs an snmpd SUT in dev/test-packs/compose (verified locally)
+- action: snmp.walk
+  args:
+    host: snmpd
+    oid: 1.3.6.1.2.1.1
+  expect_exit: 0
+  skip: needs an snmpd SUT in dev/test-packs/compose (verified locally)

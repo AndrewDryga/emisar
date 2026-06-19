@@ -1,0 +1,45 @@
+schema_version: 1
+id: snmp.walk
+title: snmpwalk an OID subtree
+kind: script
+risk: low
+description: >
+  Walk an SNMP subtree by root OID — one snmpbulkwalk (requires SNMP v2c or
+  v3). Use to read a table or MIB the curated reads don't cover (e.g.
+  OSPFV3-MIB 1.3.6.1.2.1.191, or a vendor table). Output is capped, so a very
+  large subtree is truncated; narrow the root OID. Give a numeric OID, or a
+  symbolic one if the device's MIBs are installed on the runner.
+side_effects:
+  - One read-only SNMP walk of the given subtree.
+  - Read-only.
+args:
+  - name: host
+    type: string
+    required: true
+    description: Target device hostname or IP (optionally host:port).
+    validation:
+      pattern: "^[a-zA-Z0-9.\\-:]{1,253}$"
+  - name: oid
+    type: string
+    required: true
+    description: Root OID of the subtree — numeric (1.3.6.1.2.1.4) or symbolic (ipAddrTable).
+    validation:
+      pattern: "^[A-Za-z0-9.:_\\-]{1,128}$"
+execution:
+  script:
+    path: scripts/snmpreq.sh
+    interpreter: /bin/sh
+  argv:
+    - "snmpbulkwalk"
+    - "{{ args.host }}"
+    - "{{ args.oid }}"
+  timeout: 60s
+output:
+  parser: text
+  max_stdout_bytes: 4194304
+  max_stderr_bytes: 8192
+examples:
+  - title: Walk the IP address table
+    args:
+      host: "10.11.13.1"
+      oid: "1.3.6.1.2.1.4.20"
