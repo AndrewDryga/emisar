@@ -63,20 +63,22 @@ defmodule Emisar.RunbooksTest do
   defp runner_target(runner), do: %{"runner_id" => [runner.id]}
   defp group_target(group), do: %{"group" => [group]}
 
-  defp draft_with_steps(subject, steps) do
+  defp save_runbook(subject, steps) do
     title = "rb-#{System.unique_integer([:positive])}"
 
-    {:ok, runbook} =
-      Runbooks.create_runbook(
-        %{
-          "title" => title,
-          "name" => title,
-          "slug" => title,
-          "definition" => %{"steps" => steps}
-        },
-        subject
-      )
+    Runbooks.create_runbook(
+      %{
+        "title" => title,
+        "name" => title,
+        "slug" => title,
+        "definition" => %{"steps" => steps}
+      },
+      subject
+    )
+  end
 
+  defp draft_with_steps(subject, steps) do
+    {:ok, runbook} = save_runbook(subject, steps)
     runbook
   end
 
@@ -219,6 +221,68 @@ defmodule Emisar.RunbooksTest do
       assert {:error, :duplicate_step_ids} = Runbooks.resolve_plan(runbook, subject)
       # No run row was created — the collision is caught before any dispatch.
       assert {:ok, [], _meta} = Runs.list_runs(subject)
+    end
+
+    test "refuses a runbook whose resolved fan-out exceeds the cap" do
+      {_account, subject, _runner} = account_with_runner()
+
+      # 21 steps × 50 runner targets = 1050 resolved runs, over the 1000 cap. The
+      # ids needn't exist — the cap is checked while resolving, before any dispatch.
+      steps =
+        for n <- 1..21 do
+          %{
+            "id" => "step#{n}",
+            "action_id" => "linux.uptime",
+            "args" => %{},
+            "runner_selector" => %{"runner_id" => Enum.map(1..50, &"r#{n}_#{&1}")}
+          }
+        end
+
+      runbook = draft_with_steps(subject, steps)
+
+      assert {:error, {:fan_out_too_large, 1000}} =
+               Runbooks.dispatch_runbook(runbook, "go", subject)
+
+      assert {:error, {:fan_out_too_large, 1000}} = Runbooks.resolve_plan(runbook, subject)
+      assert {:ok, [], _meta} = Runs.list_runs(subject)
+    end
+  end
+
+  describe "definition bounds (save-time DoS caps)" do
+    test "saving a runbook with too many steps is rejected" do
+      {_user, _account, subject} = owner_subject_fixture()
+
+      steps =
+        for n <- 1..101, do: %{"id" => "step#{n}", "action_id" => "linux.uptime", "args" => %{}}
+
+      assert {:error, %Ecto.Changeset{} = changeset} = save_runbook(subject, steps)
+      assert "has too many steps (max 100)" in errors_on(changeset).definition
+    end
+
+    test "saving an oversized definition is rejected" do
+      {_user, _account, subject} = owner_subject_fixture()
+      blob = String.duplicate("x", 70_000)
+      steps = [%{"id" => "s1", "action_id" => "linux.uptime", "args" => %{"blob" => blob}}]
+
+      assert {:error, %Ecto.Changeset{} = changeset} = save_runbook(subject, steps)
+      assert "is too large (max 65536 bytes)" in errors_on(changeset).definition
+    end
+
+    test "saving a step that targets too many runners is rejected" do
+      {_user, _account, subject} = owner_subject_fixture()
+
+      steps = [
+        %{
+          "id" => "s1",
+          "action_id" => "linux.uptime",
+          "args" => %{},
+          "runner_selector" => %{"runner_id" => Enum.map(1..51, &"r#{&1}")}
+        }
+      ]
+
+      assert {:error, %Ecto.Changeset{} = changeset} = save_runbook(subject, steps)
+
+      assert "a step targets too many runners or groups (max 50)" in errors_on(changeset).definition
     end
   end
 

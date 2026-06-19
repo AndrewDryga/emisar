@@ -300,6 +300,11 @@ defmodule EmisarWeb.RunbookRunLive do
   defp format_reason(:duplicate_step_ids),
     do: "two steps share the same ID — give each step a unique ID in the editor before running"
 
+  defp format_reason({:fan_out_too_large, max}),
+    do:
+      "this runbook would fan out to more than #{max} runs — narrow the steps' targets " <>
+        "or split it across several runbooks"
+
   defp format_reason(reason) when is_atom(reason),
     do: reason |> Atom.to_string() |> String.replace("_", " ")
 

@@ -11,6 +11,16 @@ defmodule Emisar.Runbooks.Runbook.Changeset do
   # every step a bounded, non-empty, definition-unique id.
   @max_step_id_length 80
 
+  # Bound the definition before it's stored or expanded: an unbounded one lets a
+  # hostile/mistaken operator force huge DB rows, list materialization, plan
+  # assigns, and dispatch fan-out. Steps × selectors caps the upper bound on
+  # resolved work here; `Runbooks.resolve_work_list` enforces the post-resolution
+  # total (groups can expand). These run on every save (draft included), not just
+  # publish — a giant draft is the same DoS.
+  @max_definition_bytes 65_536
+  @max_steps 100
+  @max_selector_values 50
+
   @doc """
   Validation-only changeset for the runbook editor's metadata form. Casts the
   operator-facing text fields (title required + length, slug format when typed)
@@ -79,9 +89,60 @@ defmodule Emisar.Runbooks.Runbook.Changeset do
     |> validate_required([:account_id, :name, :slug, :title, :definition])
     |> validate_length(:name, min: 1, max: 80)
     |> validate_format(:slug, ~r/^[a-z][a-z0-9_-]{0,79}$/)
+    |> validate_definition_bounds()
     |> validate_publishable_steps()
     |> unique_constraint([:account_id, :slug, :version])
   end
+
+  # Step count is checked first (cheap, and bounds the encode that follows),
+  # then serialized size, then per-step target count.
+  defp validate_definition_bounds(changeset) do
+    case get_field(changeset, :definition) do
+      definition when is_map(definition) ->
+        cond do
+          too_many_steps?(definition) ->
+            add_error(changeset, :definition, "has too many steps (max #{@max_steps})")
+
+          definition_too_large?(definition) ->
+            add_error(changeset, :definition, "is too large (max #{@max_definition_bytes} bytes)")
+
+          any_step_too_many_targets?(definition) ->
+            add_error(
+              changeset,
+              :definition,
+              "a step targets too many runners or groups (max #{@max_selector_values})"
+            )
+
+          true ->
+            changeset
+        end
+
+      _ ->
+        changeset
+    end
+  end
+
+  defp too_many_steps?(%{"steps" => steps}) when is_list(steps), do: length(steps) > @max_steps
+  defp too_many_steps?(_), do: false
+
+  defp definition_too_large?(definition) do
+    case Jason.encode(definition) do
+      {:ok, json} -> byte_size(json) > @max_definition_bytes
+      {:error, _} -> true
+    end
+  end
+
+  defp any_step_too_many_targets?(%{"steps" => steps}) when is_list(steps),
+    do: Enum.any?(steps, &too_many_targets?/1)
+
+  defp any_step_too_many_targets?(_), do: false
+
+  defp too_many_targets?(step) when is_map(step) do
+    {_kind, values} = StepSelector.parse(step["runner_selector"])
+    length(values) > @max_selector_values
+  end
+
+  defp too_many_targets?(_), do: false
 
   # A draft can be an unfinished work-in-progress, but a *published* runbook
   # must actually run: a step with a blank action otherwise publishes fine and

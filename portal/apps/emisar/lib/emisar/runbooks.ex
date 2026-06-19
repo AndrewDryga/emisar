@@ -174,8 +174,9 @@ defmodule Emisar.Runbooks do
   keyed (`step_id`) to match each run's `runbook_step_id`; `errors` carries
   this wave's dispatch failures as `%{step_id, runner_id, reason}` (same
   `step_id` keying, so the UI can mark the matching placeholder row) — or
-  `{:error, reason}` when nothing could be dispatched: `:empty_runbook`, or
-  `{:step_no_runners, n}` when step `n`'s group resolves to no active runners.
+  `{:error, reason}` when nothing could be dispatched: `:empty_runbook`,
+  `{:step_no_runners, n}` when step `n`'s group resolves to no active runners,
+  or `{:fan_out_too_large, max}` when the resolved work exceeds the cap.
   """
   def dispatch_runbook(%Runbook{} = runbook, reason, %Subject{} = subject)
       when is_binary(reason) do
@@ -226,7 +227,8 @@ defmodule Emisar.Runbooks do
   `dispatch_run` (the run page's gate); the runbook must be in the subject's
   account. `{:ok, %{plan: [...], total: n, waves: w}}` — `plan` matches
   `dispatch_runbook`'s, `waves` = ⌈total/#{@batch_size}⌉ — or the same
-  `{:error, :empty_runbook | {:step_no_runners, n}}` a dispatch would hit.
+  `{:error, :empty_runbook | {:step_no_runners, n} | {:fan_out_too_large, max}}`
+  a dispatch would hit.
   """
   def resolve_plan(%Runbook{} = runbook, %Subject{} = subject) do
     with :ok <-
@@ -325,20 +327,41 @@ defmodule Emisar.Runbooks do
     end
   end
 
+  # The changeset caps step + per-step selector count, but groups resolve to an
+  # unknown number of active runners — so the materialized fan-out is bounded
+  # here, before the full work-list (and the plan + LV assigns built from it)
+  # exists. A fleet large enough to blow the cap should target groups across
+  # several runbooks rather than one giant execution.
+  @max_fan_out 1_000
+
   # Steps × each step's own runners, step-major: step 1 fans out across
   # its runners before step 2 starts claiming wave slots. Fail-fast — a
   # step whose group resolves to no active runners aborts the whole
   # dispatch (`{:step_no_runners, n}`) so the operator fixes it rather
-  # than getting a silently-skipped step.
+  # than getting a silently-skipped step. Accumulates per-step lists and
+  # concats once (not `acc ++ rows` per step — that's quadratic).
   defp resolve_work_list(account_id, steps) do
     steps
     |> Enum.with_index()
-    |> Enum.reduce_while({:ok, []}, fn {step, idx}, {:ok, acc} ->
+    |> Enum.reduce_while({:ok, [], 0}, fn {step, idx}, {:ok, acc, count} ->
       case step_runner_ids(account_id, step) do
-        [] -> {:halt, {:error, {:step_no_runners, idx + 1}}}
-        runner_ids -> {:cont, {:ok, acc ++ Enum.map(runner_ids, &{step, idx, &1})}}
+        [] ->
+          {:halt, {:error, {:step_no_runners, idx + 1}}}
+
+        runner_ids ->
+          count = count + length(runner_ids)
+
+          if count > @max_fan_out do
+            {:halt, {:error, {:fan_out_too_large, @max_fan_out}}}
+          else
+            {:cont, {:ok, [Enum.map(runner_ids, &{step, idx, &1}) | acc], count}}
+          end
       end
     end)
+    |> case do
+      {:ok, acc, _count} -> {:ok, acc |> Enum.reverse() |> Enum.concat()}
+      {:error, reason} -> {:error, reason}
+    end
   end
 
   # Rehydrate the frozen work-list (persisted at the first wave) into dispatch
