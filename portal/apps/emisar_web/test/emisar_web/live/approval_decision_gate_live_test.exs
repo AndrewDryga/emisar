@@ -39,7 +39,10 @@ defmodule EmisarWeb.ApprovalDecisionGateLiveTest do
         action_id: "cassandra.repair",
         source: "operator",
         reason: "needs review",
-        args: %{}
+        args: %{},
+        # A real require-approval run is parked :pending_approval; the finalizer
+        # only dispatches a run still in that state.
+        status: :pending_approval
       })
 
     {:ok, request} =

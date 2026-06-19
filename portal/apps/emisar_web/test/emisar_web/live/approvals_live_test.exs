@@ -20,7 +20,9 @@ defmodule EmisarWeb.ApprovalsLiveTest do
         runner_id: runner.id,
         action_id: "linux.reboot",
         source: "operator",
-        args: %{}
+        args: %{},
+        # A real require-approval run is parked :pending_approval.
+        status: :pending_approval
       })
 
     {:ok, request} = Approvals.create_request(run, requester_id, reason)
@@ -41,7 +43,8 @@ defmodule EmisarWeb.ApprovalsLiveTest do
         source: "mcp",
         api_key_id: key.id,
         args: %{},
-        args_sha256: "abc123"
+        args_sha256: "abc123",
+        status: :pending_approval
       })
 
     {:ok, request} = Approvals.create_request(run, user.id, reason)

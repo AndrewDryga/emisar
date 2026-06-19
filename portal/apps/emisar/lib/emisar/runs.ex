@@ -772,6 +772,24 @@ defmodule Emisar.Runs do
   and `Emisar.Workers.RunDispatchTimeout`.
   """
   def dispatch_to_runner(%ActionRun{} = run) do
+    # Independent send-time guard: re-read the CURRENT status and refuse to
+    # publish a run that's no longer dispatchable (cancelled / denied / terminal).
+    # The envelope goes onto the runner's topic BEFORE `mark_sent`, and
+    # `mark_sent`'s terminal guard only blocks the DB transition — not the
+    # already-delivered message — so a run cancelled between authorization and
+    # delivery (a stale approval racing a cancel) MUST be stopped here, before
+    # anything reaches the runner.
+    if dispatchable?(peek_run_by_id(run.id)) do
+      deliver_run_action(run)
+    else
+      {:error, :not_dispatchable}
+    end
+  end
+
+  defp dispatchable?(%ActionRun{status: status}), do: active_run_status?(status)
+  defp dispatchable?(_), do: false
+
+  defp deliver_run_action(%ActionRun{} = run) do
     payload = %{
       "type" => "run_action",
       "request_id" => run.request_id,
@@ -883,25 +901,58 @@ defmodule Emisar.Runs do
   Cloud-initiated cancellation. Marks the run as cancelling and tells
   the runner to terminate. Idempotent if the run is already terminal.
   """
-  def cancel_run(%ActionRun{status: status} = run, %Subject{} = subject, reason \\ nil) do
+  def cancel_run(%ActionRun{} = run, %Subject{} = subject, reason \\ nil) do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(
              subject,
              Authorizer.cancel_run_permission()
            ),
          :ok <- Subject.ensure_in_account(subject, run.account_id) do
-      if ActionRun.terminal?(status) do
-        {:ok, run}
-      else
-        Emisar.Runners.deliver_to_runner(run.account_id, run.runner_id, %{
-          "type" => "cancel",
-          "request_id" => run.request_id,
-          "reason" => reason
-        })
+      cancel_run_for_status(run, subject, reason)
+    end
+  end
 
-        Audit.record(Audit.Events.run_cancel_requested(subject, run, reason))
-        mark_cancelled(run, reason || "operator cancelled")
+  # A run still awaiting approval was never sent to a runner, so there's no
+  # runner to tell — but its approval request is still `:pending`. Cancel the
+  # run AND its request in ONE transaction, so a stale approve can't later
+  # resurrect + dispatch the run (it now finds a `:cancelled` request).
+  defp cancel_run_for_status(%ActionRun{status: :pending_approval} = run, subject, reason) do
+    reason = reason || "operator cancelled"
+
+    Multi.new()
+    |> cancel_run_in_multi(run.id, reason)
+    |> Multi.insert(
+      :cancel_requested_audit,
+      Audit.Events.run_cancel_requested(subject, run, reason)
+    )
+    |> Emisar.Approvals.cancel_request_for_run_in_multi(run.id)
+    |> Repo.commit_multi(
+      after_commit: fn changes ->
+        broadcast_cancelled_run(changes.run_cancel)
+        Emisar.Approvals.broadcast_request_cancelled(changes.request_cancel)
       end
+    )
+    |> case do
+      {:ok, %{run_cancel: {:cancelled, cancelled}}} -> {:ok, cancelled}
+      {:ok, %{run_cancel: {:noop, unchanged}}} -> {:ok, unchanged}
+      {:ok, %{run_cancel: :no_run}} -> {:error, :not_found}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp cancel_run_for_status(%ActionRun{status: status} = run, subject, reason) do
+    if ActionRun.terminal?(status) do
+      {:ok, run}
+    else
+      # In-flight (sent / running): the runner is executing, so tell it to stop.
+      Emisar.Runners.deliver_to_runner(run.account_id, run.runner_id, %{
+        "type" => "cancel",
+        "request_id" => run.request_id,
+        "reason" => reason
+      })
+
+      Audit.record(Audit.Events.run_cancel_requested(subject, run, reason))
+      mark_cancelled(run, reason || "operator cancelled")
     end
   end
 
@@ -1180,6 +1231,28 @@ defmodule Emisar.Runs do
     ActionRun.Query.all()
     |> ActionRun.Query.by_id(run_id)
     |> Repo.fetch!(ActionRun.Query)
+  end
+
+  @doc """
+  Internal — `Approvals.finalize_approved`: lock the gated run inside the
+  approval transaction and confirm it's STILL `:pending_approval`. A cancel or
+  expiry between parking and the approval makes it non-dispatchable, so the
+  approve must abort rather than resurrect it. `{:ok, run}` only when still
+  awaiting approval; `{:error, :run_not_pending_approval | :not_found}` else.
+  Takes the transaction `repo` so the lock joins the caller's transaction.
+  """
+  def lock_pending_approval_run(repo, run_id) when is_binary(run_id) do
+    loaded_run =
+      ActionRun.Query.all()
+      |> ActionRun.Query.by_id(run_id)
+      |> ActionRun.Query.lock_for_update()
+      |> repo.one()
+
+    case loaded_run do
+      %ActionRun{status: :pending_approval} = run -> {:ok, run}
+      nil -> {:error, :not_found}
+      %ActionRun{} -> {:error, :run_not_pending_approval}
+    end
   end
 
   @doc """

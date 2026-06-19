@@ -84,6 +84,25 @@ defmodule Emisar.Approvals.Request.Query do
     )
   end
 
+  @doc """
+  Conditional UPDATE for `Approvals.cancel_request_for_run_in_multi/2`: flips a
+  still-pending request whose gated RUN was cancelled to `"cancelled"`. Scoped
+  by `run_id` (immutable) + `status == :pending` so it composes atomically into
+  the run-cancel transaction and can't override an already-decided request.
+  """
+  def cancel_pending_by_run_id(run_id, now) do
+    all()
+    |> where([requests: r], r.run_id == ^run_id and r.status == :pending)
+    |> update(
+      set: [
+        status: :cancelled,
+        decided_at: ^now,
+        decision_reason: "run cancelled before approval",
+        updated_at: ^now
+      ]
+    )
+  end
+
   @doc "Audit label-lookup helper. See Users.User.Query.select_labels/3."
   def select_labels(queryable, ids, field) do
     queryable

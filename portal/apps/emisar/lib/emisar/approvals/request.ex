@@ -3,6 +3,10 @@ defmodule Emisar.Approvals.Request do
   An approval gate created when a run hit a require_approval rule.
   An operator with sufficient role clicks approve or deny in the UI;
   on approve the run transitions to `:sent` and cloud dispatches it.
+
+  Statuses: `:pending` (awaiting a decision), `:approved`, `:denied`,
+  `:expired` (timed out via the sweep), and `:cancelled` — set when the gated
+  run itself was cancelled, so a stale approve can't resurrect + dispatch it.
   """
   use Emisar, :schema
 
@@ -10,7 +14,11 @@ defmodule Emisar.Approvals.Request do
     field :requested_at, :utc_datetime_usec
     field :reason, :string
     field :context, :map, default: %{}
-    field :status, Ecto.Enum, values: [:pending, :approved, :denied, :expired], default: :pending
+
+    field :status, Ecto.Enum,
+      values: [:pending, :approved, :denied, :expired, :cancelled],
+      default: :pending
+
     field :decided_at, :utc_datetime_usec
     field :decision_reason, :string
     field :expires_at, :utc_datetime_usec

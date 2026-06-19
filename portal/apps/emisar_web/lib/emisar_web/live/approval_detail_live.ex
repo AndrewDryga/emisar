@@ -255,6 +255,9 @@ defmodule EmisarWeb.ApprovalDetailLive do
   defp decision_error_message(:expired), do: "This request expired before your decision landed."
   defp decision_error_message(:already_decided), do: "Someone else already decided this request."
 
+  defp decision_error_message(reason) when reason in [:run_cancelled, :run_not_pending_approval],
+    do: "The run was cancelled before approval, so there's nothing left to approve."
+
   defp decision_error_message(_),
     do: "Your decision didn't record. Refresh to see the request's current state, then try again."
 

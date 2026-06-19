@@ -19,7 +19,11 @@ defmodule Emisar.ApprovalsTest do
         runner_id: runner.id,
         action_id: "linux.uptime",
         source: "operator",
-        args: %{}
+        args: %{},
+        # A real require-approval run is parked :pending_approval — the approval
+        # finalizer only dispatches a run still in that state, so the fixture
+        # must reflect the invariant (not the :pending default).
+        status: :pending_approval
       })
 
     {account, run}
@@ -128,7 +132,8 @@ defmodule Emisar.ApprovalsTest do
           action_id: "linux.uptime",
           source: "mcp",
           args: %{},
-          api_key_id: key.id
+          api_key_id: key.id,
+          status: :pending_approval
         })
 
       {:ok, request} = Approvals.create_request(run, operator.id, "x")
@@ -180,7 +185,8 @@ defmodule Emisar.ApprovalsTest do
           runner_id: runner.id,
           action_id: "linux.uptime",
           source: "operator",
-          args: %{}
+          args: %{},
+          status: :pending_approval
         })
 
       %{account: account, run: run, members: members}
@@ -614,7 +620,8 @@ defmodule Emisar.ApprovalsTest do
           source: "mcp",
           api_key_id: key.id,
           args: %{},
-          args_sha256: "abc"
+          args_sha256: "abc",
+          status: :pending_approval
         })
 
       {:ok, request} = Approvals.create_request(run, user.id, "x")
@@ -639,7 +646,8 @@ defmodule Emisar.ApprovalsTest do
           source: "mcp",
           api_key_id: key.id,
           args: %{},
-          args_sha256: "abc123"
+          args_sha256: "abc123",
+          status: :pending_approval
         })
 
       {:ok, request} = Approvals.create_request(run, user.id, "x")
@@ -675,7 +683,8 @@ defmodule Emisar.ApprovalsTest do
           source: "mcp",
           api_key_id: key.id,
           args: %{},
-          args_sha256: "abc123"
+          args_sha256: "abc123",
+          status: :pending_approval
         })
 
       {:ok, request} = Approvals.create_request(run, user.id, "x")
@@ -704,7 +713,8 @@ defmodule Emisar.ApprovalsTest do
           source: "mcp",
           api_key_id: key.id,
           args: %{"table" => "users", "full" => true},
-          args_sha256: "deadbeef"
+          args_sha256: "deadbeef",
+          status: :pending_approval
         })
 
       {:ok, request} = Approvals.create_request(run, user.id, "x")
@@ -743,7 +753,8 @@ defmodule Emisar.ApprovalsTest do
           source: "mcp",
           api_key_id: key.id,
           args: %{},
-          args_sha256: "abc123"
+          args_sha256: "abc123",
+          status: :pending_approval
         })
 
       {:ok, request} = Approvals.create_request(run, user.id, "x")
@@ -792,7 +803,8 @@ defmodule Emisar.ApprovalsTest do
           source: "mcp",
           api_key_id: key.id,
           args: %{},
-          args_sha256: "abc123"
+          args_sha256: "abc123",
+          status: :pending_approval
         })
 
       {:ok, request} = Approvals.create_request(run, user.id, "x")
@@ -1008,7 +1020,8 @@ defmodule Emisar.ApprovalsTest do
         source: "mcp",
         api_key_id: key.id,
         args: %{},
-        args_sha256: "abc123"
+        args_sha256: "abc123",
+        status: :pending_approval
       })
 
     {:ok, request} = Approvals.create_request(run, user.id, "x")
@@ -1116,7 +1129,10 @@ defmodule Emisar.ApprovalsTest do
         runner_id: runner.id,
         action_id: "linux.uptime",
         source: "operator",
-        args: %{}
+        args: %{},
+        # A real require-approval run is parked :pending_approval; the finalizer
+        # only dispatches a run still in that state.
+        status: :pending_approval
       })
 
     requester = Keyword.get(opts, :requested_by_id, user_fixture().id)
@@ -1180,7 +1196,8 @@ defmodule Emisar.ApprovalsTest do
           runner_id: runner.id,
           action_id: "linux.uptime",
           source: "operator",
-          args: %{}
+          args: %{},
+          status: :pending_approval
         })
 
       {:ok, request} =
@@ -1291,7 +1308,8 @@ defmodule Emisar.ApprovalsTest do
           runner_id: runner.id,
           action_id: "linux.uptime",
           source: "operator",
-          args: %{}
+          args: %{},
+          status: :pending_approval
         })
 
       # Created under min 2 (the policy's posture at dispatch time).
@@ -1331,7 +1349,8 @@ defmodule Emisar.ApprovalsTest do
           source: "mcp",
           api_key_id: key.id,
           args: %{},
-          args_sha256: "abc123"
+          args_sha256: "abc123",
+          status: :pending_approval
         })
 
       # MCP-triggered: requested_by_id is nil. The request must record the
@@ -1401,6 +1420,50 @@ defmodule Emisar.ApprovalsTest do
       # Two votes → two decision_recorded rows; one release → one approved row.
       assert length(recorded) == 2
       assert length(approved) == 1
+    end
+  end
+
+  describe "cancelled run can't be approved + delivered (BLOCKER-3)" do
+    test "cancelling a pending-approval run atomically cancels its request" do
+      %{account: account, run: run, request: request} = gated_request()
+      owner = operator_subject(account)
+
+      assert {:ok, %ActionRun{status: :cancelled}} =
+               Runs.cancel_run(run, owner, "changed my mind")
+
+      assert %Request{status: :cancelled} = Repo.reload!(request)
+    end
+
+    test "approving after the run was cancelled is refused — nothing dispatches" do
+      # gated_request already subscribes this process to the runner transport.
+      %{account: account, run: run, request: request} = gated_request()
+      owner = operator_subject(account)
+      approver = distinct_operator(account)
+
+      {:ok, _} = Runs.cancel_run(run, owner, "cancel")
+
+      # The request was cancelled with the run, so the stale approve is refused.
+      assert {:error, :run_cancelled} = Approvals.approve_request(request, approver, "too late")
+
+      # The run stays cancelled and no envelope ever reached the runner.
+      assert %ActionRun{status: :cancelled} = Repo.reload!(run)
+      refute_receive {:cloud_to_runner, _}, 100
+    end
+
+    test "approve aborts when the run left :pending_approval but the request is still pending (race backstop)" do
+      %{account: account, run: run, request: request} = gated_request()
+      approver = distinct_operator(account)
+
+      # Simulate a race: the run reached a terminal state WITHOUT the request
+      # being cancelled (e.g. an out-of-band transition). The finalizer's locked
+      # run guard must abort rather than dispatch a non-pending-approval run.
+      {:ok, _} = run |> Ecto.Changeset.change(status: :cancelled) |> Repo.update()
+
+      assert {:error, :run_not_pending_approval} =
+               Approvals.approve_request(request, approver, "go")
+
+      # The request was NOT flipped to approved — the whole decision rolled back.
+      assert %Request{status: :pending} = Repo.reload!(request)
     end
   end
 end

@@ -497,6 +497,11 @@ defmodule Emisar.Approvals do
   defp finalize(_repo, %Request{status: :expired}, _decision, _by, _reason, _attrs),
     do: {:error, :expired}
 
+  # The gated run was cancelled (its request was cancelled atomically), so there
+  # is nothing left to approve — a stale approve must NOT resurrect it.
+  defp finalize(_repo, %Request{status: :cancelled}, _decision, _by, _reason, _attrs),
+    do: {:error, :run_cancelled}
+
   defp finalize(_repo, %Request{}, _decision, _by_user_id, _reason, _attrs),
     do: {:error, :already_decided}
 
@@ -514,9 +519,13 @@ defmodule Emisar.Approvals do
   # Threshold met: flip to :approved on the locked row and mint the grant HERE
   # (only on the finalizing approve, so sub-threshold votes never mint). The
   # run dispatches after-commit.
-  defp finalize_approved(_repo, %Request{} = locked, by_user_id, reason, attrs, count) do
+  defp finalize_approved(repo, %Request{} = locked, by_user_id, reason, attrs, count) do
+    # Lock the gated run IN THIS transaction and confirm it's still
+    # `:pending_approval` — a cancel/expiry between parking and this approval
+    # makes it non-dispatchable, so the approve must abort rather than resurrect
+    # it. With the request + run both locked, the decision is atomic.
     with {:ok, approved} <- guarded_transition(locked, :approved, by_user_id, reason),
-         run = Runs.fetch_run!(locked.run_id),
+         {:ok, run} <- Runs.lock_pending_approval_run(repo, locked.run_id),
          {:ok, grant} <- mint_grant(locked, run, by_user_id, attrs) do
       {:ok,
        %{
@@ -642,6 +651,39 @@ defmodule Emisar.Approvals do
   end
 
   defp tap_broadcast(other), do: other
+
+  @doc """
+  Internal — compose into `Runs.cancel_run`'s transaction: when a
+  `:pending_approval` run is cancelled, its still-pending approval request is
+  flipped to `:cancelled` atomically, so a stale approve can never resurrect +
+  dispatch the run. No broadcast here (the caller hoists it post-commit). Result
+  lands in `changes.request_cancel` as `{:cancelled, request}` or `:none`.
+  """
+  def cancel_request_for_run_in_multi(multi, run_id) when is_binary(run_id) do
+    Multi.run(multi, :request_cancel, fn repo, _changes ->
+      now = DateTime.utc_now()
+      {count, _} = repo.update_all(Request.Query.cancel_pending_by_run_id(run_id, now), [])
+
+      if count >= 1 do
+        request =
+          Request.Query.all()
+          |> Request.Query.by_run_id(run_id)
+          |> Request.Query.ordered_by_recent()
+          |> Request.Query.limit_to(1)
+          |> repo.one()
+
+        {:ok, {:cancelled, request}}
+      else
+        {:ok, :none}
+      end
+    end)
+  end
+
+  @doc "Internal — `Runs.cancel_run` after-commit broadcast for a run-cancel-driven request cancel."
+  def broadcast_request_cancelled({:cancelled, %Request{} = request}),
+    do: broadcast_approval(request)
+
+  def broadcast_request_cancelled(_), do: :ok
 
   # -- PubSub ----------------------------------------------------------
 

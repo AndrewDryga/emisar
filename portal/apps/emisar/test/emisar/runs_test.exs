@@ -1167,6 +1167,36 @@ defmodule Emisar.RunsTest do
     end
   end
 
+  describe "dispatch_to_runner non-dispatchable guard (BLOCKER-3)" do
+    test "refuses to publish a run that's no longer dispatchable (closes the publish-before-mark_sent hole)" do
+      account = account_fixture()
+      runner = runner_fixture(account_id: account.id)
+      Emisar.Runners.subscribe_runner_transport(runner)
+
+      {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
+      # The run reaches a terminal state (e.g. cancelled) before delivery.
+      {:ok, _} = run |> Ecto.Changeset.change(status: :cancelled) |> Repo.update()
+
+      # The envelope is published BEFORE mark_sent, so the status guard must
+      # block it HERE — nothing should reach the runner.
+      assert {:error, :not_dispatchable} = Runs.dispatch_to_runner(run)
+      refute_receive {:cloud_to_runner, _}, 100
+    end
+
+    test "still delivers a dispatchable (:pending) run" do
+      account = account_fixture()
+      runner = runner_fixture(account_id: account.id)
+      _ = action_fixture(runner: runner, action_id: "linux.uptime", risk: "low")
+      Emisar.Runners.subscribe_runner_transport(runner)
+
+      {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
+
+      assert :ok = Runs.dispatch_to_runner(run)
+      assert_receive {:cloud_to_runner, %{"type" => "run_action"}}, 500
+      assert Runs.peek_run_by_id(run.id).status == :sent
+    end
+  end
+
   describe "pack-trust dispatch gate (BLOCKER-2)" do
     # Observe a custom (no-baseline) pack + its action; the version lands
     # :pending and the action is advertised. Returns {runner, pack_version}.
