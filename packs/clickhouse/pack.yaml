@@ -2,12 +2,14 @@ schema_version: 1
 
 id: clickhouse
 name: ClickHouse analytics DB
-version: 0.1.4
+version: 0.2.0
 description: >
-  ClickHouse server + table introspection plus narrow mutators
-  (OPTIMIZE, KILL QUERY, SYSTEM RELOAD CONFIG). Auth via CH_HOST +
-  CH_USER + CH_PASSWORD env vars on the runner host. Uses clickhouse-client
-  with --query to keep arg surface minimal.
+  ClickHouse server + table introspection — metrics, errors, slow & failed
+  queries, parts/partitions, merges, mutations, replication queue, Keeper/ZK
+  health, detached parts, distributed-send backlog, backups — plus narrow
+  mutators (OPTIMIZE, KILL QUERY, SYSTEM RELOAD CONFIG, replica ops). Auth via
+  CH_HOST + CH_USER + CH_PASSWORD env vars on the runner host. Uses
+  clickhouse-client with --query to keep arg surface minimal.
 vendor: emisar
 homepage: https://github.com/andrewdryga/emisar
 
@@ -42,6 +44,7 @@ setup:
   notes:
     - Connection always uses clickhouse-client's default native port (9000); there is no port env var in this pack.
     - The user needs SELECT on the system tables for the reads, plus rights for the mutators (KILL QUERY, OPTIMIZE, SYSTEM ... for replica/config actions) you enable.
+    - The replication/Keeper reads (replication_queue, zookeeper_connection, keeper_status, detached_parts) only return data on a ReplicatedMergeTree + Keeper/ZooKeeper deployment; on a single non-replicated server they come back empty, which is correct, not an error.
   verify: ch.uptime
 
 actions:
@@ -61,6 +64,21 @@ actions:
   # Tables / parts
   - actions/parts_summary.yaml
   - actions/table_sizes.yaml
+  # Errors / health
+  - actions/errors.yaml
+  - actions/query_errors.yaml
+  - actions/asynchronous_metrics.yaml
+  - actions/backups.yaml
+  # Replication queue / Keeper
+  - actions/replication_queue.yaml
+  - actions/stuck_mutations.yaml
+  - actions/zookeeper_connection.yaml
+  - actions/keeper_status.yaml
+  # Parts / tables / distributed
+  - actions/detached_parts.yaml
+  - actions/parts_by_partition.yaml
+  - actions/distribution_queue.yaml
+  - actions/tables_overview.yaml
   # Mutators
   - actions/kill_query.yaml
   - actions/optimize_table.yaml

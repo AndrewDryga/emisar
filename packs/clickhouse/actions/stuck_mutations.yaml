@@ -1,0 +1,22 @@
+schema_version: 1
+id: ch.stuck_mutations
+title: Failing mutations (system.mutations)
+kind: exec
+risk: low
+description: Mutations stuck on a failure (latest_fail_reason set), with the failed part and reason. Narrower than the full mutation queue — surfaces only what is actively failing.
+side_effects: ["One SELECT.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "clickhouse-client --host \"${CH_HOST:-localhost}\" --user \"${CH_USER:-default}\" --password \"$CH_PASSWORD\" --query \"SELECT database, table, mutation_id, command, create_time, parts_to_do, latest_failed_part, latest_fail_time, substring(latest_fail_reason, 1, 300) AS fail_reason FROM system.mutations WHERE NOT is_done AND latest_fail_reason != '' ORDER BY create_time ASC LIMIT 100 FORMAT JSONEachRow\""
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: Stuck mutations
+    args: {}

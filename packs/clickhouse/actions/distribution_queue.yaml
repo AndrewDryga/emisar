@@ -1,0 +1,22 @@
+schema_version: 1
+id: ch.distribution_queue
+title: SELECT * FROM system.distribution_queue
+kind: exec
+risk: low
+description: Distributed-table async send backlog — pending files, errors, blocked sends. Spot a Distributed table not flushing to shards.
+side_effects: ["One SELECT.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "clickhouse-client --host \"${CH_HOST:-localhost}\" --user \"${CH_USER:-default}\" --password \"$CH_PASSWORD\" --query \"SELECT database, table, is_blocked, error_count, data_files, data_compressed_bytes, broken_data_files, last_exception_time, substring(last_exception, 1, 300) AS last_exception FROM system.distribution_queue ORDER BY data_files DESC LIMIT 200 FORMAT JSONEachRow\""
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: Distributed send backlog
+    args: {}

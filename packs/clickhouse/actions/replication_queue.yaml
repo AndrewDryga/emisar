@@ -1,0 +1,22 @@
+schema_version: 1
+id: ch.replication_queue
+title: SELECT * FROM system.replication_queue
+kind: exec
+risk: low
+description: Per-task replication queue — retries, postpones, last exception. Spot stuck fetches/merges (distinct from per-replica state).
+side_effects: ["One SELECT.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "clickhouse-client --host \"${CH_HOST:-localhost}\" --user \"${CH_USER:-default}\" --password \"$CH_PASSWORD\" --query \"SELECT database, table, type, create_time, new_part_name, num_tries, is_currently_executing, num_postponed, postpone_reason, last_attempt_time, substring(last_exception, 1, 300) AS last_exception FROM system.replication_queue ORDER BY num_tries DESC LIMIT 200 FORMAT JSONEachRow\""
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: Replication queue
+    args: {}

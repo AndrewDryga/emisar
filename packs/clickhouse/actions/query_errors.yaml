@@ -1,0 +1,22 @@
+schema_version: 1
+id: ch.query_errors
+title: Failed queries from system.query_log (last hour)
+kind: exec
+risk: low
+description: Queries that failed in the last hour (exception types 3 and 4) with code, message, and query. The error counterpart to slow_queries.
+side_effects: ["One SELECT.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "clickhouse-client --host \"${CH_HOST:-localhost}\" --user \"${CH_USER:-default}\" --password \"$CH_PASSWORD\" --query \"SELECT event_time, type, user, query_id, exception_code, substring(exception, 1, 300) AS exception, substring(query, 1, 200) AS q FROM system.query_log WHERE event_time > now() - INTERVAL 1 HOUR AND type IN (3, 4) ORDER BY event_time DESC LIMIT 100 FORMAT JSONEachRow\""
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: Failed queries (1h)
+    args: {}

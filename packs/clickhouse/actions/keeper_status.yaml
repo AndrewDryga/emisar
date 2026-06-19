@@ -1,0 +1,31 @@
+schema_version: 1
+id: ch.keeper_status
+title: List a Keeper/ZooKeeper path (system.zookeeper)
+kind: exec
+risk: low
+description: List child nodes and metadata under a Keeper/ZooKeeper path. system.zookeeper requires a path filter, so the path arg is mandatory.
+side_effects: ["One SELECT.", "Read-only."]
+args:
+  - name: path
+    type: string
+    required: true
+    description: ZooKeeper/Keeper path to list (e.g. /clickhouse/tables).
+    validation:
+      pattern: "^/[A-Za-z0-9_./-]{0,255}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "clickhouse-client --host \"${CH_HOST:-localhost}\" --user \"${CH_USER:-default}\" --password \"$CH_PASSWORD\" --query \"SELECT name, value, numChildren, ctime, mtime, version, czxid, mzxid FROM system.zookeeper WHERE path = '$ZKPATH' ORDER BY name LIMIT 500 FORMAT JSONEachRow\""
+  env:
+    ZKPATH: "{{ args.path }}"
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: List the clickhouse Keeper root
+    args:
+      path: "/clickhouse"

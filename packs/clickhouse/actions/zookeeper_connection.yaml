@@ -1,0 +1,22 @@
+schema_version: 1
+id: ch.zookeeper_connection
+title: SELECT * FROM system.zookeeper_connection
+kind: exec
+risk: low
+description: Active Keeper/ZooKeeper connections — host, session age, expiry, API version. Empty on a non-replicated single node.
+side_effects: ["One SELECT.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "clickhouse-client --host \"${CH_HOST:-localhost}\" --user \"${CH_USER:-default}\" --password \"$CH_PASSWORD\" --query \"SELECT name, host, port, index, connected_time, session_uptime_elapsed_seconds, is_expired, keeper_api_version, client_id FROM system.zookeeper_connection FORMAT JSONEachRow\""
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Keeper/ZK connections
+    args: {}

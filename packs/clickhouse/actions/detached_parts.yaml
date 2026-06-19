@@ -1,0 +1,22 @@
+schema_version: 1
+id: ch.detached_parts
+title: SELECT * FROM system.detached_parts
+kind: exec
+risk: low
+description: Parts ClickHouse detached and will not auto-attach (corruption, manual detach, broken), each with a reason. Empty is healthy.
+side_effects: ["One SELECT.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "clickhouse-client --host \"${CH_HOST:-localhost}\" --user \"${CH_USER:-default}\" --password \"$CH_PASSWORD\" --query \"SELECT database, table, partition_id, name, reason, disk, bytes_on_disk FROM system.detached_parts ORDER BY bytes_on_disk DESC LIMIT 500 FORMAT JSONEachRow\""
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: Detached parts
+    args: {}

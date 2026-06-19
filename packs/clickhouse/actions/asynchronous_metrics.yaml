@@ -1,0 +1,22 @@
+schema_version: 1
+id: ch.asynchronous_metrics
+title: SELECT * FROM system.asynchronous_metrics
+kind: exec
+risk: low
+description: Periodically-computed metrics — replica lag (ReplicasMaxAbsoluteDelay), max parts per partition, filesystem and memory. The async counterpart to system.metrics.
+side_effects: ["One SELECT.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "clickhouse-client --host \"${CH_HOST:-localhost}\" --user \"${CH_USER:-default}\" --password \"$CH_PASSWORD\" --query \"SELECT metric, value, description FROM system.asynchronous_metrics ORDER BY metric FORMAT JSONEachRow\""
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+examples:
+  - title: Async metrics
+    args: {}
