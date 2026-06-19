@@ -465,6 +465,11 @@ defmodule EmisarWeb.CoreComponents do
   attr :options, :list, doc: "the options to pass to Phoenix.HTML.Form.options_for_select/2"
   attr :multiple, :boolean, default: false, doc: "the multiple flag for select inputs"
 
+  attr :size, :atom,
+    default: :default,
+    values: [:default, :compact],
+    doc: "tightens padding/margin for a dense grid — e.g. the runbook editor's arg rows"
+
   attr :class, :string,
     default: nil,
     doc: "extra (non-conflicting) classes on the input — e.g. font-mono for a slug/id field"
@@ -518,7 +523,8 @@ defmodule EmisarWeb.CoreComponents do
         id={@id}
         name={@name}
         class={[
-          "mt-2 block w-full rounded-lg border-0 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-100",
+          "block w-full rounded-lg border-0 bg-zinc-900 text-zinc-100",
+          input_size(@size),
           "ring-1 ring-inset placeholder:text-zinc-600",
           "focus:ring-2 focus:ring-inset",
           input_ring(@errors, @tone)
@@ -542,7 +548,8 @@ defmodule EmisarWeb.CoreComponents do
         id={@id}
         name={@name}
         class={[
-          "mt-2 block w-full rounded-lg border-0 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-100",
+          "block w-full rounded-lg border-0 bg-zinc-900 text-zinc-100",
+          input_size(@size),
           "min-h-[6rem] ring-1 ring-inset placeholder:text-zinc-600",
           "focus:ring-2 focus:ring-inset",
           input_ring(@errors, @tone),
@@ -566,7 +573,8 @@ defmodule EmisarWeb.CoreComponents do
         id={@id}
         value={Phoenix.HTML.Form.normalize_value(@type, @value)}
         class={[
-          "mt-2 block w-full rounded-lg border-0 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-100",
+          "block w-full rounded-lg border-0 bg-zinc-900 text-zinc-100",
+          input_size(@size),
           "ring-1 ring-inset placeholder:text-zinc-600",
           "focus:ring-2 focus:ring-inset",
           input_ring(@errors, @tone),
@@ -586,6 +594,12 @@ defmodule EmisarWeb.CoreComponents do
   defp input_ring([], "danger"), do: "ring-zinc-800 focus:ring-rose-500"
   defp input_ring([], _neutral), do: "ring-zinc-800 focus:ring-indigo-500"
   defp input_ring(_errors, _tone), do: "ring-rose-500/50 focus:ring-rose-500"
+
+  # Box metrics for an input/select/textarea. `:compact` tightens the padding
+  # and label gap for a dense grid (the runbook editor's arg rows); `:default`
+  # is the standard comfortable field every other caller renders.
+  defp input_size(:compact), do: "mt-1 px-2 py-1.5 text-sm"
+  defp input_size(_default), do: "mt-2 px-3 py-2.5 text-sm"
 
   @doc """
   Renders a `<select>` whose options carry their own `disabled`/`selected` —

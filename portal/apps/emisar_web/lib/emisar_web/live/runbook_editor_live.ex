@@ -516,6 +516,7 @@ defmodule EmisarWeb.RunbookEditorLive do
                 id="runbook_title"
                 label="Title"
                 label_variant={:eyebrow}
+                size={:compact}
                 required
                 placeholder="e.g. Cassandra: rolling repair"
               />
@@ -525,6 +526,7 @@ defmodule EmisarWeb.RunbookEditorLive do
                 id="runbook_slug"
                 label="Slug"
                 label_variant={:eyebrow}
+                size={:compact}
                 class="font-mono text-xs"
                 placeholder="auto from title"
               />
@@ -535,6 +537,7 @@ defmodule EmisarWeb.RunbookEditorLive do
                 id="runbook_description"
                 label="Description"
                 label_variant={:eyebrow}
+                size={:compact}
                 rows="4"
                 placeholder="Optional human-readable summary."
               />
@@ -618,6 +621,7 @@ defmodule EmisarWeb.RunbookEditorLive do
             value={@step["action_id"]}
             list="catalog-actions"
             placeholder="linux.uptime"
+            size={:compact}
             class="font-mono text-xs"
           />
         </div>
@@ -634,6 +638,7 @@ defmodule EmisarWeb.RunbookEditorLive do
             name="step_id"
             value={@step["id"]}
             placeholder="step1"
+            size={:compact}
             class="font-mono text-xs"
           />
         </div>
@@ -646,6 +651,7 @@ defmodule EmisarWeb.RunbookEditorLive do
               type="select"
               label="Runner by"
               label_variant={:eyebrow}
+              size={:compact}
               value={@step["selector_kind"]}
               options={[{"group", "group"}, {"runner", "runner_id"}]}
             />
@@ -745,11 +751,18 @@ defmodule EmisarWeb.RunbookEditorLive do
                 value={arg["key"]}
                 placeholder="key"
                 list={"args-#{datalist_id(@action_id)}"}
+                size={:compact}
                 class="font-mono text-xs"
               />
             </div>
             <div class="min-w-0">
-              <.input name="value" value={arg["value"]} placeholder="value" class="text-xs" />
+              <.input
+                name="value"
+                value={arg["value"]}
+                placeholder="value"
+                size={:compact}
+                class="text-xs"
+              />
             </div>
             <button
               type="button"
