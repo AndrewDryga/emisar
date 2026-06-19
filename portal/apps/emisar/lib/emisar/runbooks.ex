@@ -188,6 +188,7 @@ defmodule Emisar.Runbooks do
          :ok <- ensure_membership(subject),
          steps = expand(runbook),
          :ok <- ensure_steps(steps),
+         :ok <- ensure_unique_step_ids(steps),
          {:ok, work_list} <- resolve_work_list(runbook.account_id, steps),
          {:ok, execution} <- create_execution(runbook, reason, subject, work_list) do
       outcomes =
@@ -236,6 +237,7 @@ defmodule Emisar.Runbooks do
          :ok <- Subject.ensure_in_account(subject, runbook.account_id),
          steps = expand(runbook),
          :ok <- ensure_steps(steps),
+         :ok <- ensure_unique_step_ids(steps),
          {:ok, work_list} <- resolve_work_list(runbook.account_id, steps) do
       total = length(work_list)
       {:ok, %{plan: build_plan(work_list), total: total, waves: ceil(total / @batch_size)}}
@@ -425,6 +427,20 @@ defmodule Emisar.Runbooks do
 
   defp ensure_steps([]), do: {:error, :empty_runbook}
   defp ensure_steps(_steps), do: :ok
+
+  # The publish gate (Runbook.Changeset) rejects colliding step ids, but a draft
+  # can be test-run without publishing — so dispatch refuses LOUDLY rather than
+  # let the `{step_id, runner}` unique index silently collapse two distinct steps
+  # into one (the second reads as already-dispatched and is skipped). `step_id_for`
+  # is the dispatch identity, so dedup on exactly that.
+  defp ensure_unique_step_ids(steps) do
+    ids =
+      steps
+      |> Enum.with_index()
+      |> Enum.map(fn {step, idx} -> step_id_for(step, idx) end)
+
+    if ids == Enum.uniq(ids), do: :ok, else: {:error, :duplicate_step_ids}
+  end
 
   defp failed_run?(%Emisar.Runs.ActionRun{status: :denied}), do: true
 

@@ -194,6 +194,32 @@ defmodule Emisar.RunbooksTest do
       assert denied.status == :denied
       assert denied.runbook_step_id == "step1"
     end
+
+    test "a draft with colliding step ids refuses dispatch instead of silently skipping work" do
+      {_account, subject, runner} = account_with_runner()
+      target = runner_target(runner)
+
+      runbook =
+        draft_with_steps(subject, [
+          %{
+            "id" => "dup",
+            "action_id" => "linux.uptime",
+            "args" => %{},
+            "runner_selector" => target
+          },
+          %{
+            "id" => "dup",
+            "action_id" => "linux.uptime",
+            "args" => %{},
+            "runner_selector" => target
+          }
+        ])
+
+      assert {:error, :duplicate_step_ids} = Runbooks.dispatch_runbook(runbook, "go", subject)
+      assert {:error, :duplicate_step_ids} = Runbooks.resolve_plan(runbook, subject)
+      # No run row was created — the collision is caught before any dispatch.
+      assert {:ok, [], _meta} = Runs.list_runs(subject)
+    end
   end
 
   describe "resolve_plan/2 (blast radius, no dispatch)" do
@@ -661,6 +687,48 @@ defmodule Emisar.RunbooksTest do
 
       assert {:ok, runbook} = Runbooks.publish(draft, subject)
       assert runbook.status == :published
+    end
+
+    test "publishing a step with a blank id is rejected" do
+      {_user, _account, subject} = owner_subject_fixture()
+
+      draft =
+        draft_with_steps(subject, [
+          %{
+            "id" => "  ",
+            "action_id" => "linux.uptime",
+            "args" => %{},
+            "runner_selector" => %{"group" => ["prod"]}
+          }
+        ])
+
+      assert {:error, %Ecto.Changeset{} = changeset} = Runbooks.publish(draft, subject)
+
+      assert "every step needs an ID of 1–80 characters before publishing" in errors_on(changeset).definition
+    end
+
+    test "publishing duplicate step ids is rejected" do
+      {_user, _account, subject} = owner_subject_fixture()
+      target = %{"group" => ["prod"]}
+
+      draft =
+        draft_with_steps(subject, [
+          %{
+            "id" => "dup",
+            "action_id" => "linux.uptime",
+            "args" => %{},
+            "runner_selector" => target
+          },
+          %{
+            "id" => "dup",
+            "action_id" => "linux.uptime",
+            "args" => %{},
+            "runner_selector" => target
+          }
+        ])
+
+      assert {:error, %Ecto.Changeset{} = changeset} = Runbooks.publish(draft, subject)
+      assert "every step needs a unique ID before publishing" in errors_on(changeset).definition
     end
   end
 end

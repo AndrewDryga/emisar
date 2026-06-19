@@ -4,6 +4,13 @@ defmodule Emisar.Runbooks.Runbook.Changeset do
 
   @fields ~w[name slug title description status definition]a
 
+  # Each step's `id` is the dispatch identity: runs are matched to plan rows
+  # by `{step_id, runner_id}` and that pair is the `action_runs` unique index.
+  # A duplicate id makes two distinct steps collide — one is treated as
+  # already-dispatched and silently skipped — so a published runbook must give
+  # every step a bounded, non-empty, definition-unique id.
+  @max_step_id_length 80
+
   @doc """
   Validation-only changeset for the runbook editor's metadata form. Casts the
   operator-facing text fields (title required + length, slug format when typed)
@@ -107,6 +114,12 @@ defmodule Emisar.Runbooks.Runbook.Changeset do
       Enum.any?(steps, &StepSelector.empty?(&1["runner_selector"])) ->
         "every step needs a runner or group target before publishing"
 
+      Enum.any?(steps, &invalid_step_id?/1) ->
+        "every step needs an ID of 1–#{@max_step_id_length} characters before publishing"
+
+      duplicate_step_ids?(steps) ->
+        "every step needs a unique ID before publishing"
+
       true ->
         nil
     end
@@ -117,5 +130,15 @@ defmodule Emisar.Runbooks.Runbook.Changeset do
   defp blank_step_action?(step) do
     action = step["action_id"] || step["action"]
     not (is_binary(action) and String.trim(action) != "")
+  end
+
+  defp invalid_step_id?(step) do
+    id = step["id"]
+    not (is_binary(id) and String.trim(id) != "" and String.length(id) <= @max_step_id_length)
+  end
+
+  defp duplicate_step_ids?(steps) do
+    ids = Enum.map(steps, & &1["id"])
+    ids != Enum.uniq(ids)
   end
 end
