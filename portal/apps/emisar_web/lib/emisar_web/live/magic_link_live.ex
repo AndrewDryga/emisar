@@ -2,9 +2,9 @@ defmodule EmisarWeb.MagicLinkLive do
   use EmisarWeb, :live_view
 
   alias Emisar.{Auth, Mailers, Users}
-  alias EmisarWeb.{RequestContext, Throttle}
+  alias EmisarWeb.{RequestContext, ReturnTo, Throttle}
 
-  def mount(_params, _session, socket) do
+  def mount(params, _session, socket) do
     {:ok,
      socket
      |> assign(:page_title, "Magic link")
@@ -12,6 +12,8 @@ defmodule EmisarWeb.MagicLinkLive do
      # Captured at mount — `get_connect_info/2` is mount-only, so the
      # `handle_event` that issues the token reads it from this assign.
      |> assign(:request_context, RequestContext.from_socket(socket))
+     # A branded page passes ?return_to=/app/<slug> so the emailed link lands there.
+     |> assign(:return_to, ReturnTo.app_path(params["return_to"]))
      |> assign(:form, to_form(%{"email" => ""}, as: "user"))}
   end
 
@@ -76,7 +78,7 @@ defmodule EmisarWeb.MagicLinkLive do
     with :ok <- Throttle.check("magic_link", key, 5, 900_000),
          {:ok, user} <- Users.fetch_user_by_email(email) do
       token = Auth.issue_magic_link_token!(user, socket.assigns.request_context)
-      Mailers.UserNotifier.deliver_magic_link(user, token)
+      Mailers.UserNotifier.deliver_magic_link(user, token, socket.assigns.return_to)
     end
 
     {:noreply, assign(socket, :sent_to, email)}

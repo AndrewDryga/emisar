@@ -2,7 +2,7 @@ defmodule EmisarWeb.ResetPasswordLive do
   use EmisarWeb, :live_view
 
   alias Emisar.{Auth, Mailers, Users}
-  alias EmisarWeb.{RequestContext, Throttle}
+  alias EmisarWeb.{RequestContext, ReturnTo, Throttle}
 
   def mount(params, _session, socket) do
     socket =
@@ -10,6 +10,9 @@ defmodule EmisarWeb.ResetPasswordLive do
       |> assign(:page_title, "Reset your password")
       |> assign(:sent_to, nil)
       |> assign(:reset_token, params["token"])
+      # A branded page threads ?return_to=/app/<slug> through the request → email →
+      # reset so the operator lands back on that team's sign-in, not the generic one.
+      |> assign(:return_to, ReturnTo.app_path(params["return_to"]))
       # Captured at mount — `get_connect_info/2` is mount-only, so the
       # request/reset handlers read it from this assign.
       |> assign(:request_context, RequestContext.from_socket(socket))
@@ -137,7 +140,7 @@ defmodule EmisarWeb.ResetPasswordLive do
     with :ok <- Throttle.check("password_reset", key, 5, 900_000),
          {:ok, user} <- Users.fetch_user_by_email(email) do
       token = Auth.issue_password_reset_token!(user, [], socket.assigns.request_context)
-      Mailers.UserNotifier.deliver_password_reset(user, token)
+      Mailers.UserNotifier.deliver_password_reset(user, token, socket.assigns.return_to)
     end
 
     {:noreply, assign(socket, :sent_to, email)}
@@ -158,7 +161,7 @@ defmodule EmisarWeb.ResetPasswordLive do
           {:noreply,
            socket
            |> put_flash(:info, "Password updated. Sign in below.")
-           |> push_navigate(to: ~p"/sign_in")}
+           |> push_navigate(to: post_reset_path(socket.assigns.return_to))}
 
         {:error, _} ->
           {:noreply,
@@ -171,4 +174,9 @@ defmodule EmisarWeb.ResetPasswordLive do
        assign(socket, :reset_form, to_form(Map.put(changeset, :action, :insert), as: "user"))}
     end
   end
+
+  # Land back on the branded sign-in for the team the reset began on, else the
+  # generic page. `return_to` is already whitelisted to `/app/<ref>` by ReturnTo.
+  defp post_reset_path("/app/" <> ref), do: ~p"/app/#{ref}/sign_in"
+  defp post_reset_path(_), do: ~p"/sign_in"
 end

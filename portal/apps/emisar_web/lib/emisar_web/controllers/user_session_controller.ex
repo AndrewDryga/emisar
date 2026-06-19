@@ -9,7 +9,7 @@ defmodule EmisarWeb.UserSessionController do
   use EmisarWeb, :controller
 
   alias Emisar.{Accounts, Auth, Users}
-  alias EmisarWeb.{RecentAccounts, RequestContext, UserAuth}
+  alias EmisarWeb.{RecentAccounts, RequestContext, ReturnTo, UserAuth}
 
   # Brute-force / credential-stuffing throttle. `create` is the password
   # verify AND the MFA-code step (the pending-MFA POST lands here too), so
@@ -55,11 +55,15 @@ defmodule EmisarWeb.UserSessionController do
   end
 
   # A sign-in begun on a team's branded page (/app/:slug/sign_in) carries a
-  # return_to so userpass + the MFA step land on THAT team, not the user's stale
-  # default. Whitelisted to a local /app/<slug> path — never an open redirect; the
-  # slug gate still re-authorizes membership on arrival, so a forged ref just 404s.
-  defp put_return_to(conn, %{"return_to" => rt}) when is_binary(rt) do
-    if rt =~ ~r{^/app/[a-z0-9-]+$}, do: put_session(conn, :user_return_to, rt), else: conn
+  # return_to so userpass + the MFA step (and the magic link, whose email URL
+  # threads it through) land on THAT team, not the user's stale default.
+  # `ReturnTo` whitelists it to a local /app/<slug> path — never an open redirect;
+  # the slug gate still re-authorizes membership on arrival, so a forged ref 404s.
+  defp put_return_to(conn, %{"return_to" => rt}) do
+    case ReturnTo.app_path(rt) do
+      nil -> conn
+      path -> put_session(conn, :user_return_to, path)
+    end
   end
 
   defp put_return_to(conn, _params), do: conn
@@ -254,15 +258,18 @@ defmodule EmisarWeb.UserSessionController do
 
   defp verify_second_factor(_, _, _, _), do: {:error, :invalid}
 
-  def magic_link_confirm(conn, %{"token" => token}) do
+  def magic_link_confirm(conn, %{"token" => token} = params) do
     context = RequestContext.from_conn(conn)
 
     case Auth.consume_magic_link_token(token, context) do
       {:ok, user} ->
         Users.record_sign_in(user, "magic_link", context)
 
-        complete_branded_sign_in(
-          conn,
+        # A magic link requested from a branded page carries `?return_to=/app/<slug>`
+        # so it lands on that team — same membership handling as userpass.
+        conn
+        |> put_return_to(params)
+        |> complete_branded_sign_in(
           user,
           &UserAuth.log_in_user(&1, user, :magic_link, false, %{})
         )

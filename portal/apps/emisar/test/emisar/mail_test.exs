@@ -7,6 +7,7 @@ defmodule Emisar.MailTest do
   use Emisar.DataCase, async: true
 
   import Emisar.Fixtures
+  import Swoosh.TestAssertions
 
   alias Emisar.Mail
   alias Emisar.Mailers.UserNotifier
@@ -87,6 +88,29 @@ defmodule Emisar.MailTest do
       user = user_fixture()
       assert {:ok, sent} = UserNotifier.deliver_magic_link(user, "tok")
       refute match?(%{suppressed: true}, sent)
+    end
+  end
+
+  describe "branded return_to threading" do
+    test "deliver_magic_link appends an encoded return_to when given one" do
+      user = user_fixture()
+      UserNotifier.deliver_magic_link(user, "tok", "/app/acme")
+      assert_email_sent(&(&1.text_body =~ "/sign_in/magic/tok?return_to=%2Fapp%2Facme"))
+    end
+
+    test "deliver_magic_link without a return_to is unchanged" do
+      user = user_fixture()
+      UserNotifier.deliver_magic_link(user, "tok")
+
+      assert_email_sent(
+        &(&1.text_body =~ "/sign_in/magic/tok" and not (&1.text_body =~ "return_to"))
+      )
+    end
+
+    test "deliver_password_reset appends an encoded return_to when given one" do
+      user = user_fixture()
+      UserNotifier.deliver_password_reset(user, "tok", "/app/acme")
+      assert_email_sent(&(&1.text_body =~ "/reset_password/tok?return_to=%2Fapp%2Facme"))
     end
   end
 end

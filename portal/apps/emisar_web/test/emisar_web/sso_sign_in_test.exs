@@ -88,6 +88,10 @@ defmodule EmisarWeb.SSOSignInTest do
       # …and the page still offers email/password + the magic link.
       assert html =~ "Password"
       assert html =~ ~p"/sign_in/magic"
+
+      # The magic-link + reset links thread this team's return_to so those flows
+      # land back here, not on the user's stale default (follow-up d).
+      assert html =~ "return_to=%2Fapp%2F#{account.slug}"
     end
 
     test "resolves by the account id too (the UUID form)", %{conn: conn} do
@@ -135,6 +139,16 @@ defmodule EmisarWeb.SSOSignInTest do
       assert redirected_to(conn) == ~p"/app/#{account}"
       # So the next sign-in offers this team as a one-click button.
       assert Map.has_key?(conn.resp_cookies, "emisar_recent_accounts")
+    end
+
+    test "a magic link requested from a branded page lands on that team", %{conn: conn} do
+      {_conn, user, account} = register_and_log_in(conn)
+      token = Emisar.Auth.issue_magic_link_token!(user, %Emisar.RequestContext{})
+
+      conn =
+        get(build_conn(), ~p"/sign_in/magic/#{token}?#{[return_to: "/app/#{account.slug}"]}")
+
+      assert redirected_to(conn) == ~p"/app/#{account}"
     end
 
     test "a non-member's branded sign-in lands on their default account, not a 404", %{conn: conn} do

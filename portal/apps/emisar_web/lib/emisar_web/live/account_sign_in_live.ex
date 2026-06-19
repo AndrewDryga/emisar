@@ -55,7 +55,7 @@ defmodule EmisarWeb.AccountSignInLive do
         <:actions>
           <.input field={@form[:remember_me]} type="checkbox" label="Keep me signed in for 60 days" />
           <.link
-            href={~p"/reset_password"}
+            href={~p"/reset_password?#{[return_to: ~p"/app/#{@account}"]}"}
             class="text-sm font-medium text-indigo-400 hover:text-indigo-300"
           >
             Forgot password?
@@ -70,7 +70,11 @@ defmodule EmisarWeb.AccountSignInLive do
       </.simple_form>
 
       <.or_separator />
-      <.button variant="secondary" href={~p"/sign_in/magic"} class="w-full">
+      <.button
+        variant="secondary"
+        href={~p"/sign_in/magic?#{[return_to: ~p"/app/#{@account}"]}"}
+        class="w-full"
+      >
         Email me a sign-in link
       </.button>
 

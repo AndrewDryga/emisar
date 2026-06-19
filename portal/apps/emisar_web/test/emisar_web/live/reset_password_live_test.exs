@@ -64,4 +64,49 @@ defmodule EmisarWeb.ResetPasswordLiveTest do
       refute html =~ "Passwords don&#39;t match."
     end
   end
+
+  describe "successful reset" do
+    test "lands on the branded sign-in when a return_to was threaded through (follow-up d)", %{
+      conn: conn
+    } do
+      account = Emisar.Fixtures.account_fixture()
+      user = Emisar.Fixtures.user_fixture()
+      token = Emisar.Auth.issue_password_reset_token!(user, [], %Emisar.RequestContext{})
+
+      {:ok, lv, _html} =
+        live(conn, ~p"/reset_password/#{token}?#{[return_to: "/app/#{account.slug}"]}")
+
+      result =
+        lv
+        |> form("#reset_form", %{
+          "user" => %{
+            "password" => "a-perfectly-long-password",
+            "password_confirmation" => "a-perfectly-long-password"
+          }
+        })
+        |> render_submit()
+
+      assert {:error, {:live_redirect, %{to: to}}} = result
+      assert to == ~p"/app/#{account}/sign_in"
+    end
+
+    test "lands on the generic sign-in with no return_to", %{conn: conn} do
+      user = Emisar.Fixtures.user_fixture()
+      token = Emisar.Auth.issue_password_reset_token!(user, [], %Emisar.RequestContext{})
+
+      {:ok, lv, _html} = live(conn, ~p"/reset_password/#{token}")
+
+      result =
+        lv
+        |> form("#reset_form", %{
+          "user" => %{
+            "password" => "a-perfectly-long-password",
+            "password_confirmation" => "a-perfectly-long-password"
+          }
+        })
+        |> render_submit()
+
+      assert {:error, {:live_redirect, %{to: "/sign_in"}}} = result
+    end
+  end
 end

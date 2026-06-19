@@ -35,8 +35,8 @@ defmodule Emisar.Mailers.UserNotifier do
     """)
   end
 
-  def deliver_magic_link(%Users.User{} = user, token) do
-    url = PublicUrl.url("/sign_in/magic/#{token}")
+  def deliver_magic_link(%Users.User{} = user, token, return_to \\ nil) do
+    url = PublicUrl.url("/sign_in/magic/#{token}#{return_to_query(return_to)}")
 
     deliver(user.email, "Your emisar magic link", """
     Click the link below to sign in to emisar. It expires in 15 minutes.
@@ -48,8 +48,8 @@ defmodule Emisar.Mailers.UserNotifier do
     """)
   end
 
-  def deliver_password_reset(%Users.User{} = user, token) do
-    url = PublicUrl.url("/reset_password/#{token}")
+  def deliver_password_reset(%Users.User{} = user, token, return_to \\ nil) do
+    url = PublicUrl.url("/reset_password/#{token}#{return_to_query(return_to)}")
 
     deliver(user.email, "Reset your emisar password", """
     Reset your password using this link (valid for 1 hour):
@@ -145,6 +145,14 @@ defmodule Emisar.Mailers.UserNotifier do
     workflows. https://emisar.dev
     """)
   end
+
+  # The branded sign-in pages thread a `/app/<slug>` return_to through these
+  # links so the magic link / reset lands back on the right team. Already
+  # whitelisted by `EmisarWeb.ReturnTo` at the call site; encoded for the URL here.
+  defp return_to_query(nil), do: ""
+
+  defp return_to_query(return_to) when is_binary(return_to),
+    do: "?" <> URI.encode_query(return_to: return_to)
 
   defp deliver(to, subject, body) do
     if Mail.suppressed?(to) do
