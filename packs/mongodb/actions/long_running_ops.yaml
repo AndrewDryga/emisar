@@ -1,0 +1,35 @@
+schema_version: 1
+id: mongo.long_running_ops
+title: Long-running active ops (currentOp, secs_running >= N)
+kind: exec
+risk: low
+description: >
+  Active operations that have been running at least N seconds — the canonical
+  hunt for a hung or blocked op. Filters currentOp by secs_running.
+side_effects:
+  - One currentOp command.
+  - Read-only.
+args:
+  - name: min_secs
+    type: integer
+    required: false
+    default: 5
+    description: Minimum seconds an op must have been running.
+    validation:
+      min: 0
+      max: 86400
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "mongosh \"$MONGO_URI\" '--quiet' '--eval' 'JSON.stringify(db.currentOp({active:true,secs_running:{$gte:{{ args.min_secs }}}}))'"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: Ops running >= 5s
+    args:
+      min_secs: 5

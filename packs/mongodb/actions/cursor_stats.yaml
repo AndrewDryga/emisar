@@ -1,0 +1,27 @@
+schema_version: 1
+id: mongo.cursor_stats
+title: Cursor saturation / timed-out cursors (metrics.cursor)
+kind: exec
+risk: low
+description: >
+  Cursor counts — open.total, open.noTimeout, open.pinned, timedOut,
+  totalOpened. A growing timedOut count usually means an application is
+  leaking cursors.
+side_effects:
+  - One serverStatus command.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "mongosh \"$MONGO_URI\" '--quiet' '--eval' 'JSON.stringify(db.serverStatus().metrics.cursor)'"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Cursor counts
+    args: {}

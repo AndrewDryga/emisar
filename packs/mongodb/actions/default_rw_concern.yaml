@@ -1,0 +1,27 @@
+schema_version: 1
+id: mongo.default_rw_concern
+title: Default read/write concern (getDefaultRWConcern)
+kind: exec
+risk: low
+description: >
+  Cluster default read and write concern (e.g. w:majority) and its source.
+  The durability/consistency config for the replica set — a weakened default
+  write concern is a common cause of surprising data loss on failover.
+side_effects:
+  - One getDefaultRWConcern command.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "mongosh \"$MONGO_URI\" '--quiet' '--eval' 'JSON.stringify(db.adminCommand({getDefaultRWConcern:1}))'"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 8192
+examples:
+  - title: Default R/W concern
+    args: {}

@@ -1,0 +1,28 @@
+schema_version: 1
+id: mongo.concurrent_transactions
+title: Read/write tickets (concurrency saturation)
+kind: exec
+risk: low
+description: >
+  Read/write ticket pools — out vs available. Queued/exhausted tickets are the
+  classic sign of storage-engine overload. Version-tolerant: reads
+  queues.execution on MongoDB 8.0+, else wiredTiger.concurrentTransactions
+  (<= 7.0).
+side_effects:
+  - One serverStatus command.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "mongosh \"$MONGO_URI\" '--quiet' '--eval' 'JSON.stringify((function(){var s=db.serverStatus();return (s.queues&&s.queues.execution)?s.queues.execution:(s.wiredTiger&&s.wiredTiger.concurrentTransactions)})())'"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Ticket pools
+    args: {}

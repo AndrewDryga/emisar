@@ -1,0 +1,52 @@
+schema_version: 1
+id: mongo.profile_slow_queries
+title: Read slow ops from the profiler (system.profile)
+kind: exec
+risk: low
+description: >
+  Read the database profiler collection (system.profile) for the slowest
+  recent ops over a millis threshold, newest first. Requires profiling to be
+  enabled on the database already (see profiler_status); does not change it.
+side_effects:
+  - Reads system.profile (a capped collection).
+  - Read-only.
+args:
+  - name: database
+    type: string
+    required: true
+    description: Database whose profiler to read.
+    validation:
+      pattern: "^[a-zA-Z0-9_\\-]{1,63}$"
+  - name: min_millis
+    type: integer
+    required: false
+    default: 100
+    description: Only ops slower than this many milliseconds.
+    validation:
+      min: 0
+      max: 3600000
+  - name: limit
+    type: integer
+    required: false
+    default: 20
+    description: Max documents to return.
+    validation:
+      min: 1
+      max: 200
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "mongosh \"$MONGO_URI\" '--quiet' '--eval' 'JSON.stringify(db.getSiblingDB(\"{{ args.database }}\").system.profile.find({millis:{$gte:{{ args.min_millis }}}}).sort({ts:-1}).limit({{ args.limit }}).toArray())'"
+  timeout: 60s
+output:
+  parser: json
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: Slowest 20 ops over 100ms
+    args:
+      database: production
+      min_millis: 100
+      limit: 20

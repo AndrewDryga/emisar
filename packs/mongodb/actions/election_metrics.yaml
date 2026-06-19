@@ -1,0 +1,27 @@
+schema_version: 1
+id: mongo.election_metrics
+title: Election / stepdown history (electionMetrics)
+kind: exec
+risk: low
+description: >
+  Cumulative election and stepdown counters for this member — stepUpCmd,
+  priorityTakeover, electionTimeout, catchUpTakeover, numStepDownsCausedBy
+  HigherTerm, numCatchUps. Use to see how often the set has been re-electing.
+side_effects:
+  - One serverStatus command.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "mongosh \"$MONGO_URI\" '--quiet' '--eval' 'JSON.stringify(db.serverStatus().electionMetrics)'"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Election history
+    args: {}

@@ -1,0 +1,27 @@
+schema_version: 1
+id: mongo.global_lock
+title: Global lock queue / active clients (globalLock)
+kind: exec
+risk: low
+description: >
+  Global lock contention — currentQueue (total/readers/writers) waiting on the
+  lock, and activeClients (total/readers/writers). A growing queue points to
+  lock contention or an overloaded server.
+side_effects:
+  - One serverStatus command.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "mongosh \"$MONGO_URI\" '--quiet' '--eval' 'JSON.stringify(db.serverStatus().globalLock)'"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Lock queue
+    args: {}

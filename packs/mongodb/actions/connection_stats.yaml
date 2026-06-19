@@ -1,0 +1,27 @@
+schema_version: 1
+id: mongo.connection_stats
+title: Incoming connection saturation (serverStatus.connections)
+kind: exec
+risk: low
+description: >
+  Incoming connection counts — current, available, active, totalCreated.
+  Approaching the available limit means new clients will be refused. Distinct
+  from connections (connPoolStats), which is the outgoing pool.
+side_effects:
+  - One serverStatus command.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "mongosh \"$MONGO_URI\" '--quiet' '--eval' 'JSON.stringify(db.serverStatus().connections)'"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 8192
+examples:
+  - title: Connection counts
+    args: {}

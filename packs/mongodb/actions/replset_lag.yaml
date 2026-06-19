@@ -1,0 +1,26 @@
+schema_version: 1
+id: mongo.replset_lag
+title: Replication lag (secs behind primary)
+kind: exec
+risk: low
+description: >
+  Per-member seconds behind the primary, computed from rs.status() optimeDate
+  (with state, health, sync source, ping). The canonical replica-set lag check.
+side_effects:
+  - One replSetGetStatus.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "mongosh \"$MONGO_URI\" '--quiet' '--eval' 'JSON.stringify((function(){var s=rs.status();var p=s.members.filter(function(m){return m.stateStr==\"PRIMARY\"})[0];var pt=p?p.optimeDate:null;return{set:s.set,date:s.date,primary:p?p.name:null,members:s.members.map(function(m){return{name:m.name,stateStr:m.stateStr,health:m.health,optimeDate:m.optimeDate,secsBehindPrimary:(pt&&m.optimeDate)?(pt-m.optimeDate)/1000:null,syncSourceHost:m.syncSourceHost,pingMs:m.pingMs}})}})())'"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 131072
+  max_stderr_bytes: 8192
+examples:
+  - title: Lag for all members
+    args: {}

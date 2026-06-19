@@ -2,7 +2,7 @@ schema_version: 1
 
 id: mongodb
 name: MongoDB operations
-version: 0.1.4
+version: 0.2.0
 description: >
   Replica-set + shard-cluster introspection, slow-query identification,
   collection stats, plus remediation surface (killOp, replSet stepDown,
@@ -64,6 +64,21 @@ actions:
   - actions/current_op.yaml
   - actions/profiler_status.yaml
   - actions/top.yaml
+  # Replication: lag, oplog window, elections, durability
+  - actions/replset_lag.yaml
+  - actions/replication_info.yaml
+  - actions/election_metrics.yaml
+  - actions/default_rw_concern.yaml
+  # Saturation: cache, tickets, locks, connections, cursors
+  - actions/wiredtiger_cache.yaml
+  - actions/concurrent_transactions.yaml
+  - actions/global_lock.yaml
+  - actions/connection_stats.yaml
+  - actions/cursor_stats.yaml
+  # Live ops: long-running ops, profiler reads, index builds
+  - actions/long_running_ops.yaml
+  - actions/profile_slow_queries.yaml
+  - actions/index_builds.yaml
   # Mutators
   - actions/kill_op.yaml
   - actions/replset_stepdown.yaml
