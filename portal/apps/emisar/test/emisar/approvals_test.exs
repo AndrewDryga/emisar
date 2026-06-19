@@ -575,32 +575,91 @@ defmodule Emisar.ApprovalsTest do
     end
   end
 
-  describe "use_grant/1" do
-    test "single-use grant is exhausted after one use" do
+  describe "grant consumption is atomic with the run (MAJOR-3)" do
+    # A dispatch that matches a grant: an MCP api-key call + a require_approval
+    # policy + a wildcard grant for the action. Returns subject/attrs/grant.
+    defp grant_dispatch_setup(grant_opts) do
       account = account_fixture()
       user = user_fixture()
+      _ = membership_fixture(account_id: account.id, user_id: user.id, role: "owner")
+      subject = subject_for(user, account, role: :owner)
       {_, key} = api_key_fixture(account_id: account.id, created_by_id: user.id)
-      grant = insert_grant(account, key, action_id: "x", max_uses: 1, granted_by_id: user.id)
+      runner = runner_fixture(account_id: account.id)
+      _ = action_fixture(runner: runner, action_id: "linux.uptime", risk: "high")
+      Emisar.Runners.subscribe_runner_transport(runner)
 
-      assert :ok = Approvals.use_grant(grant)
-      reloaded = Repo.reload!(grant)
-      assert reloaded.uses_count == 1
-      assert reloaded.last_used_at != nil
+      _ =
+        policy_fixture(
+          account_id: account.id,
+          rules: %{
+            "schema_version" => 2,
+            "defaults" => %{
+              "low" => "allow",
+              "medium" => "allow",
+              "high" => "require_approval",
+              "critical" => "deny"
+            },
+            "overrides" => []
+          }
+        )
 
-      assert {:error, :exhausted} = Approvals.use_grant(reloaded)
+      grant =
+        insert_grant(
+          account,
+          key,
+          Keyword.merge([action_id: "linux.uptime", granted_by_id: user.id], grant_opts)
+        )
+
+      attrs = %{
+        runner_id: runner.id,
+        action_id: "linux.uptime",
+        args: %{},
+        reason: "go",
+        source: "mcp",
+        api_key_id: key.id
+      }
+
+      %{subject: subject, attrs: attrs, grant: grant}
     end
 
-    test "unlimited grant keeps incrementing" do
-      account = account_fixture()
-      user = user_fixture()
-      {_, key} = api_key_fixture(account_id: account.id, created_by_id: user.id)
-      grant = insert_grant(account, key, action_id: "x", granted_by_id: user.id)
+    test "a grant-matched dispatch consumes exactly one use and runs" do
+      %{subject: subject, attrs: attrs, grant: grant} = grant_dispatch_setup(max_uses: 2)
 
-      assert :ok = Approvals.use_grant(grant)
-      assert :ok = Approvals.use_grant(Repo.reload!(grant))
-      assert :ok = Approvals.use_grant(Repo.reload!(grant))
+      assert {:ok, :running, _run} = Runs.dispatch_run(attrs, subject)
+      assert Repo.reload!(grant).uses_count == 1
+    end
 
-      assert Repo.reload!(grant).uses_count == 3
+    test "a run that fails validation does NOT burn a grant use" do
+      %{subject: subject, attrs: attrs, grant: grant} = grant_dispatch_setup(max_uses: 1)
+      huge = %{"blob" => String.duplicate("x", 300_000)}
+
+      # The run insert fails inside the Multi, so the composed grant consume
+      # rolls back with it — no use is burned without a durable run.
+      assert {:error, %Ecto.Changeset{}} = Runs.dispatch_run(Map.put(attrs, :args, huge), subject)
+      assert Repo.reload!(grant).uses_count == 0
+    end
+
+    test "an idempotency-replayed grant dispatch consumes the grant only ONCE" do
+      %{subject: subject, attrs: attrs, grant: grant} = grant_dispatch_setup(max_uses: 5)
+      attrs = Map.put(attrs, :idempotency_key, "idem-#{System.unique_integer([:positive])}")
+
+      assert {:ok, :running, run1} = Runs.dispatch_run(attrs, subject)
+      assert {:ok, _status, run2} = Runs.dispatch_run(attrs, subject)
+      assert run1.id == run2.id
+      assert Repo.reload!(grant).uses_count == 1
+    end
+
+    test "an exhausted grant falls back to the approval path without over-consuming" do
+      %{subject: subject, attrs: attrs, grant: grant} = grant_dispatch_setup(max_uses: 1)
+
+      assert {:ok, :running, _} = Runs.dispatch_run(attrs, subject)
+      assert Repo.reload!(grant).uses_count == 1
+
+      # Exhausted now → the next dispatch can't match the grant, so it files an
+      # approval request instead of erroring or over-consuming.
+      assert {:ok, :pending_approval, run2} = Runs.dispatch_run(attrs, subject)
+      assert run2.status == :pending_approval
+      assert Repo.reload!(grant).uses_count == 1
     end
   end
 

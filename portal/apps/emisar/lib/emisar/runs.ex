@@ -587,74 +587,93 @@ defmodule Emisar.Runs do
   defp dispatch_require_approval(attrs, policy, policy_reason, matched) do
     case lookup_grant(attrs) do
       {:matched, grant} ->
-        attrs = Map.merge(attrs, policy_attrs(policy, "allow", "matched approval grant", matched))
-        audit = &Audit.Events.grant_used(&1, grant, policy)
+        case dispatch_with_grant(attrs, policy, matched, grant) do
+          # The grant lapsed (expired / exhausted / revoked) between the peek and
+          # the atomic consume — fall back to the normal approval flow as if no
+          # grant matched, rather than burning a use or erroring the caller.
+          {:error, :grant_unusable} ->
+            file_approval_request(attrs, policy, policy_reason, matched)
 
-        # Same atomicity as the allow path: the grant_used decision commits
-        # with the run row, before the run reaches the runner.
-        case create_run(attrs, audit: audit) do
-          {:ok, run} ->
-            with :ok <- dispatch_to_runner(run) do
-              {:ok, :running, run}
-            end
-
-          {:replay, run} ->
-            replay_outcome(run)
-
-          {:error, changeset} ->
-            {:error, changeset}
+          other ->
+            other
         end
 
       :none ->
-        attrs =
-          attrs
-          |> Map.merge(policy_attrs(policy, "require_approval", policy_reason, matched))
-          |> Map.merge(%{status: :pending_approval, requires_approval: true})
-
-        audit =
-          &Audit.Events.policy_evaluated(&1, policy, "require_approval", policy_reason, matched)
-
-        # Operator's reason ("why I'm running this") goes to the approval
-        # request; the policy reason ("why approval is required") stays
-        # on run.policy_reason for the reviewer to see separately. The
-        # require_approval decision commits atomically with the run.
-        # Snapshot the approval-gate posture onto the request so a later
-        # policy edit can't move this in-flight request's bar (mirrors the
-        # run-level policy_version snapshot).
-        request_opts = [
-          min_approvals: Emisar.Policies.min_approvals_for(policy.rules),
-          allow_self_approval: Emisar.Policies.self_approval_allowed?(policy.rules)
-        ]
-
-        # Run + approval request commit in ONE transaction (MAJOR-2): the request
-        # insert is composed into create_run's Multi, and the approver
-        # notification fires post-commit on the fresh-insert path only.
-        compose =
-          &Emisar.Approvals.create_request_in_multi(
-            &1,
-            :run,
-            attrs[:requested_by_id],
-            attrs[:reason],
-            request_opts
-          )
-
-        case create_run(attrs,
-               audit: audit,
-               compose: compose,
-               on_create: &Emisar.Approvals.notify_request_created/1
-             ) do
-          {:ok, run} ->
-            {:ok, :pending_approval, run}
-
-          {:replay, run} ->
-            replay_outcome(run)
-
-          {:error, changeset} ->
-            {:error, changeset}
-        end
+        file_approval_request(attrs, policy, policy_reason, matched)
     end
   end
 
+  # Dispatch as `:allow` against a matched grant. The grant is consumed INSIDE
+  # create_run's Multi (MAJOR-3) — one use is burned only when a fresh run row
+  # durably commits, never on a validation failure or an idempotency replay.
+  defp dispatch_with_grant(attrs, policy, matched, grant) do
+    attrs = Map.merge(attrs, policy_attrs(policy, "allow", "matched approval grant", matched))
+    request_id = attrs[:request_id] || Crypto.run_request_id()
+    attrs = Map.put(attrs, :request_id, request_id)
+    audit = &Audit.Events.grant_used(&1, grant, policy)
+    compose = &Emisar.Approvals.consume_grant_in_multi(&1, :run, grant, request_id)
+
+    case create_run(attrs, audit: audit, compose: compose) do
+      {:ok, run} ->
+        with :ok <- dispatch_to_runner(run) do
+          {:ok, :running, run}
+        end
+
+      {:replay, run} ->
+        replay_outcome(run)
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  # File an approval request (no usable grant). Run + request + policy audit
+  # commit in ONE transaction (MAJOR-2); the approver notification fires
+  # post-commit on the fresh-insert path only.
+  defp file_approval_request(attrs, policy, policy_reason, matched) do
+    attrs =
+      attrs
+      |> Map.merge(policy_attrs(policy, "require_approval", policy_reason, matched))
+      |> Map.merge(%{status: :pending_approval, requires_approval: true})
+
+    audit = &Audit.Events.policy_evaluated(&1, policy, "require_approval", policy_reason, matched)
+
+    # Snapshot the approval-gate posture onto the request so a later policy edit
+    # can't move this in-flight request's bar (mirrors the run-level
+    # policy_version snapshot). The operator's reason ("why I'm running this")
+    # goes to the request; the policy reason stays on run.policy_reason.
+    request_opts = [
+      min_approvals: Emisar.Policies.min_approvals_for(policy.rules),
+      allow_self_approval: Emisar.Policies.self_approval_allowed?(policy.rules)
+    ]
+
+    compose =
+      &Emisar.Approvals.create_request_in_multi(
+        &1,
+        :run,
+        attrs[:requested_by_id],
+        attrs[:reason],
+        request_opts
+      )
+
+    case create_run(attrs,
+           audit: audit,
+           compose: compose,
+           on_create: &Emisar.Approvals.notify_request_created/1
+         ) do
+      {:ok, run} ->
+        {:ok, :pending_approval, run}
+
+      {:replay, run} ->
+        replay_outcome(run)
+
+      {:error, changeset} ->
+        {:error, changeset}
+    end
+  end
+
+  # PEEK only — the grant is CONSUMED later, atomically with the run insert (see
+  # dispatch_with_grant), so a use is never burned without a durable run.
   defp lookup_grant(%{api_key_id: api_key_id} = attrs) when is_binary(api_key_id) do
     case Emisar.Approvals.peek_matching_grant(
            api_key_id,
@@ -662,11 +681,8 @@ defmodule Emisar.Runs do
            attrs[:runner_id],
            attrs[:args_sha256]
          ) do
-      %{} = grant ->
-        if Emisar.Approvals.use_grant(grant) == :ok, do: {:matched, grant}, else: :none
-
-      _ ->
-        :none
+      %{} = grant -> {:matched, grant}
+      _ -> :none
     end
   end
 

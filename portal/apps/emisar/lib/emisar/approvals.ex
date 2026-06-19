@@ -753,25 +753,38 @@ defmodule Emisar.Approvals do
   end
 
   @doc """
-  Internal — used by `Runs.dispatch_run` on the grant fast-path
-  (already-authorized run context). Atomically increments uses_count +
-  stamps last_used_at. Refuses to exceed `max_uses` — returns
-  `{:error, :exhausted}` so the caller treats the grant as
-  no-longer-matching (and the dispatch falls through to the normal
-  approval-request path).
+  Internal — compose a grant consumption into `Runs.create_run`'s Multi (the
+  grant fast-path), so a grant use is burned ONLY when the run is durably
+  created in the same transaction — never on a validation failure or an
+  idempotency replay (MAJOR-3). Reads the run from `changes[run_key]` and
+  consumes exactly when its `request_id` matches `fresh_request_id` (a fresh
+  insert); a replay's returned earlier row doesn't match → no second consume.
+  Returns `{:error, :grant_unusable}` if the grant lapsed between the peek and
+  the commit, so the caller can fall back to the normal approval flow.
   """
-  def use_grant(%Grant{} = grant) do
+  def consume_grant_in_multi(multi, run_key, %Grant{} = grant, fresh_request_id) do
+    Multi.run(multi, :grant_use, fn repo, changes ->
+      consume_grant_if_fresh(repo, Map.fetch!(changes, run_key), grant, fresh_request_id)
+    end)
+  end
+
+  # Fresh insert (the run carries the request_id we minted) → consume one use
+  # atomically; 0 rows means the grant expired/exhausted/was revoked since the
+  # peek, so fail the transaction and let the caller re-evaluate.
+  defp consume_grant_if_fresh(repo, %Runs.ActionRun{request_id: id}, %Grant{} = grant, id) do
     now = DateTime.utc_now()
+    query = Grant.Query.consumable_by_id(grant.id, now) |> Grant.Query.consume_one(now)
 
-    query =
-      Grant.Query.consumable_by_id(grant.id, now)
-      |> Grant.Query.consume_one(now)
-
-    case Repo.update_all(query, []) do
-      {1, _} -> :ok
-      {0, _} -> {:error, :exhausted}
+    case repo.update_all(query, []) do
+      {1, _} -> {:ok, :consumed}
+      {0, _} -> {:error, :grant_unusable}
     end
   end
+
+  # Idempotency replay (the returned row is an earlier caller's) → the original
+  # dispatch already consumed the grant; never double-burn.
+  defp consume_grant_if_fresh(_repo, %Runs.ActionRun{}, %Grant{}, _fresh_request_id),
+    do: {:ok, :replayed}
 
   @doc """
   Internal — called from `approve_request/4` (already-authorized) inside
