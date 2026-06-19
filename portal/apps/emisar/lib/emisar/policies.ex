@@ -71,12 +71,15 @@ defmodule Emisar.Policies do
 
   @doc """
   Whether the requester may approve their own run, from the (already-stored)
-  `rules`. Defaults to `true` (today's behavior) when the `"approval"` section
-  or its key is absent.
+  `rules`. A MISSING `"approval"` section or key defaults to `true` (legacy
+  behavior, before this section existed); a PRESENT key that isn't the boolean
+  `true` fails CLOSED (no self-approval) — a corrupt/manually-written value
+  must never silently widen the gate. (Matching one level then the key also
+  avoids a raise on a non-map `"approval"` section.)
   """
   def self_approval_allowed?(rules) when is_map(rules) do
-    case get_in(rules, ["approval", "allow_self_approval"]) do
-      false -> false
+    case rules do
+      %{"approval" => %{"allow_self_approval" => allowed}} -> allowed === true
       _ -> true
     end
   end

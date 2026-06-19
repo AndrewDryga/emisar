@@ -354,6 +354,18 @@ defmodule Emisar.PoliciesTest do
       assert Policies.self_approval_allowed?(nil)
     end
 
+    test "self_approval_allowed? fails CLOSED on a present non-boolean value" do
+      # A corrupt / manually-written value must not silently widen the gate —
+      # only a MISSING key keeps the legacy allow-default.
+      for bad <- ["yes", "false", 0, 1, nil, %{}] do
+        refute Policies.self_approval_allowed?(%{"approval" => %{"allow_self_approval" => bad}}),
+               "expected #{inspect(bad)} to forbid self-approval"
+      end
+
+      # A non-map approval section doesn't raise and keeps the legacy default.
+      assert Policies.self_approval_allowed?(%{"approval" => "garbage"})
+    end
+
     test "the default rules reproduce single-approver, self-approval-allowed behavior" do
       assert Policies.min_approvals_for(Policies.default_rules()) == 1
       assert Policies.self_approval_allowed?(Policies.default_rules())
