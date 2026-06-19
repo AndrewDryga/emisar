@@ -1423,6 +1423,64 @@ defmodule Emisar.ApprovalsTest do
     end
   end
 
+  describe "atomic run + request creation (MAJOR-2)" do
+    test "a duplicate request for the same run is rejected by the unique constraint" do
+      {_account, run} = run_fixture()
+      {:ok, _} = Approvals.create_request(run, user_fixture().id, "first")
+
+      assert {:error, %Ecto.Changeset{} = changeset} =
+               Approvals.create_request(run, user_fixture().id, "second")
+
+      assert "has already been taken" in errors_on(changeset).run_id
+    end
+
+    test "an idempotency-replayed require-approval dispatch files only ONE request" do
+      account = account_fixture()
+      user = user_fixture()
+      _ = membership_fixture(account_id: account.id, user_id: user.id, role: "owner")
+      subject = subject_for(user, account, role: :owner)
+      {_, key} = api_key_fixture(account_id: account.id, created_by_id: user.id)
+      runner = runner_fixture(account_id: account.id)
+      _ = action_fixture(runner: runner, action_id: "linux.uptime", risk: "high")
+
+      _ =
+        policy_fixture(
+          account_id: account.id,
+          rules: %{
+            "schema_version" => 2,
+            "defaults" => %{
+              "low" => "allow",
+              "medium" => "allow",
+              "high" => "require_approval",
+              "critical" => "deny"
+            },
+            "overrides" => []
+          }
+        )
+
+      attrs = %{
+        runner_id: runner.id,
+        action_id: "linux.uptime",
+        args: %{},
+        reason: "deploy",
+        source: "mcp",
+        api_key_id: key.id,
+        idempotency_key: "idem-#{System.unique_integer([:positive])}"
+      }
+
+      # Two calls with the same Idempotency-Key resolve to the SAME run; the
+      # request insert (composed into create_run's Multi, on_conflict :nothing)
+      # must not file a second request for it.
+      assert {:ok, :pending_approval, run1} = Runs.dispatch_run(attrs, subject)
+      assert {:ok, :pending_approval, run2} = Runs.dispatch_run(attrs, subject)
+      assert run1.id == run2.id
+
+      requests = Request.Query.all() |> Request.Query.by_run_id(run1.id) |> Repo.all()
+      assert length(requests) == 1
+      assert run1.status == :pending_approval
+    end
+  end
+
   describe "cancelled run can't be approved + delivered (BLOCKER-3)" do
     test "cancelling a pending-approval run atomically cancels its request" do
       %{account: account, run: run, request: request} = gated_request()

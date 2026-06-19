@@ -187,6 +187,42 @@ defmodule Emisar.Approvals do
   request so a later policy edit can't move this request's bar.
   """
   def create_request(%Runs.ActionRun{} = run, requested_by_id, reason \\ nil, opts \\ []) do
+    changeset = request_changeset(run, requested_by_id, reason, opts)
+
+    with {:ok, request} <- Repo.insert(changeset) do
+      notify_approval_created(request, run)
+      {:ok, request}
+    end
+  end
+
+  @doc """
+  Internal — compose the approval-request insert into the dispatch transaction
+  (`Runs.create_run`'s `:compose` hook), so a gated run and its request commit
+  ATOMICALLY: a failed request insert rolls the run back rather than leaving a
+  permanent `:pending_approval` run with no request. Reads the run from
+  `changes[run_key]`; `on_conflict: :nothing` on the unique `run_id` makes an
+  idempotency-replay's duplicate a no-op. Broadcast + email are post-commit, via
+  `notify_request_created/1` on the fresh-insert path only.
+  """
+  def create_request_in_multi(multi, run_key, requested_by_id, reason, opts) do
+    Multi.insert(
+      multi,
+      :approval_request,
+      &request_changeset(Map.fetch!(&1, run_key), requested_by_id, reason, opts),
+      on_conflict: :nothing,
+      conflict_target: :run_id,
+      returning: true
+    )
+  end
+
+  @doc "Internal — `Runs.create_run` post-commit hook for the atomic approval-dispatch path."
+  def notify_request_created(%{
+        approval_request: %Request{} = request,
+        run: %Runs.ActionRun{} = run
+      }),
+      do: notify_approval_created(request, run)
+
+  defp request_changeset(%Runs.ActionRun{} = run, requested_by_id, reason, opts) do
     now = DateTime.utc_now()
     expires_at = DateTime.add(now, @default_pending_ttl_hours * @one_hour_seconds, :second)
 
@@ -194,36 +230,32 @@ defmodule Emisar.Approvals do
     # api_key), so "self" must record the HUMAN behind the trigger — the
     # api-key's owner. Stamping the owner here means `allow_self_approval=false`
     # can't be laundered through one's own key by routing the run via MCP.
-    effective_requested_by = effective_requester(run, requested_by_id)
+    Request.Changeset.create(%{
+      account_id: run.account_id,
+      run_id: run.id,
+      requested_by_id: effective_requester(run, requested_by_id),
+      requested_at: now,
+      expires_at: expires_at,
+      reason: reason,
+      min_approvals: Keyword.get(opts, :min_approvals, 1),
+      allow_self_approval: Keyword.get(opts, :allow_self_approval, true),
+      context: %{
+        runner_id: run.runner_id,
+        action_id: run.action_id,
+        args_sha256: run.args_sha256
+      }
+    })
+  end
 
-    result =
-      Request.Changeset.create(%{
-        account_id: run.account_id,
-        run_id: run.id,
-        requested_by_id: effective_requested_by,
-        requested_at: now,
-        expires_at: expires_at,
-        reason: reason,
-        min_approvals: Keyword.get(opts, :min_approvals, 1),
-        allow_self_approval: Keyword.get(opts, :allow_self_approval, true),
-        context: %{
-          runner_id: run.runner_id,
-          action_id: run.action_id,
-          args_sha256: run.args_sha256
-        }
-      })
-      |> Repo.insert()
-      |> tap_broadcast()
-
-    # Fan out emails to every member who can decide. In prod the email
-    # dispatch is detached so a slow SMTP/Mailgun call never blocks
-    # the caller's `Runs.dispatch_run` path. In tests it's synchronous so
-    # the sandbox connection isn't released while a background task
-    # is still querying the DB — `:notify_approvers_async?` flips this.
-    with {:ok, request} <- result do
-      run_notify(fn -> notify_approvers(request, run, effective_requested_by) end)
-      {:ok, request}
-    end
+  # Post-commit side effects for a newly filed request: light up the approvals
+  # feed + email every eligible decider. Email dispatch is detached in prod so a
+  # slow SMTP call never blocks the caller's dispatch path; synchronous in tests
+  # so the sandbox connection isn't released while a task still queries the DB
+  # (`:notify_approvers_async?` flips this).
+  defp notify_approval_created(%Request{} = request, %Runs.ActionRun{} = run) do
+    broadcast_approval(request)
+    run_notify(fn -> notify_approvers(request, run, request.requested_by_id) end)
+    :ok
   end
 
   # The passed requester wins when present (UI/runbook); otherwise an
@@ -644,13 +676,6 @@ defmodule Emisar.Approvals do
         :already_decided
     end
   end
-
-  defp tap_broadcast({:ok, %Request{} = request} = result) do
-    broadcast_approval(request)
-    result
-  end
-
-  defp tap_broadcast(other), do: other
 
   @doc """
   Internal — compose into `Runs.cancel_run`'s transaction: when a

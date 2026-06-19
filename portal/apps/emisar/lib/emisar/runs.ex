@@ -240,16 +240,21 @@ defmodule Emisar.Runs do
       )
       |> put_run_audit_event(request_id)
       |> put_decision_audit(request_id, opts[:audit])
+      # `:compose` lets a caller append steps that read `:run` from changes and
+      # commit ATOMICALLY with it — the approval path files its request here, so
+      # a run + its request can never half-commit (MAJOR-2).
+      |> compose_run_steps(opts[:compose])
       |> Repo.commit_multi()
 
     case result do
       # Fresh insert: RETURNING carries the request_id this call minted.
-      {:ok, %{run: %ActionRun{request_id: ^request_id} = run}} ->
+      {:ok, %{run: %ActionRun{request_id: ^request_id} = run} = changes} ->
         broadcast_run(run)
+        run_on_create(opts[:on_create], changes)
         {:ok, run}
 
       # Conflict path: the returned row is the earlier winner's — replay.
-      # No audit row, no broadcast; the original insert already did both.
+      # No audit row, no broadcast, no on_create; the original insert did them.
       {:ok, %{run: %ActionRun{} = run}} ->
         {:replay, run}
 
@@ -257,6 +262,12 @@ defmodule Emisar.Runs do
         {:error, reason}
     end
   end
+
+  defp compose_run_steps(multi, nil), do: multi
+  defp compose_run_steps(multi, fun) when is_function(fun, 1), do: fun.(multi)
+
+  defp run_on_create(nil, _changes), do: :ok
+  defp run_on_create(fun, changes) when is_function(fun, 1), do: fun.(changes)
 
   @doc """
   End-to-end dispatch: create the run row, evaluate policy, either
@@ -615,17 +626,25 @@ defmodule Emisar.Runs do
           allow_self_approval: Emisar.Policies.self_approval_allowed?(policy.rules)
         ]
 
-        case create_run(attrs, audit: audit) do
+        # Run + approval request commit in ONE transaction (MAJOR-2): the request
+        # insert is composed into create_run's Multi, and the approver
+        # notification fires post-commit on the fresh-insert path only.
+        compose =
+          &Emisar.Approvals.create_request_in_multi(
+            &1,
+            :run,
+            attrs[:requested_by_id],
+            attrs[:reason],
+            request_opts
+          )
+
+        case create_run(attrs,
+               audit: audit,
+               compose: compose,
+               on_create: &Emisar.Approvals.notify_request_created/1
+             ) do
           {:ok, run} ->
-            with {:ok, _req} <-
-                   Emisar.Approvals.create_request(
-                     run,
-                     attrs[:requested_by_id],
-                     attrs[:reason],
-                     request_opts
-                   ) do
-              {:ok, :pending_approval, run}
-            end
+            {:ok, :pending_approval, run}
 
           {:replay, run} ->
             replay_outcome(run)

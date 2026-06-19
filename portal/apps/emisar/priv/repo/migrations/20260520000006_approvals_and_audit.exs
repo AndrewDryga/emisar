@@ -28,7 +28,10 @@ defmodule Emisar.Repo.Migrations.ApprovalsAndAudit do
     end
 
     create index(:approval_requests, [:account_id, :status])
-    create index(:approval_requests, [:run_id])
+    # One run produces at most one approval request (policy is evaluated once at
+    # dispatch). UNIQUE so the run+request insert is a single atomic upsert
+    # (on_conflict :nothing) and concurrent callers can't file duplicates.
+    create unique_index(:approval_requests, [:run_id])
 
     # Audit events are the system-of-record log. Cloud-side stream of
     # everything significant: user logins, agent registrations, policy

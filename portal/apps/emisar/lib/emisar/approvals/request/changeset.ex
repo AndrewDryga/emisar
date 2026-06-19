@@ -16,5 +16,8 @@ defmodule Emisar.Approvals.Request.Changeset do
       :allow_self_approval
     ])
     |> validate_required([:account_id, :run_id, :requested_at])
+    # One request per run — the standalone insert maps a duplicate to a clean
+    # changeset error; the atomic dispatch path upserts on this index instead.
+    |> unique_constraint(:run_id)
   end
 end
