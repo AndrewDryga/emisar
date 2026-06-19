@@ -345,7 +345,12 @@ defmodule EmisarWeb.UserAuth do
          socket
          |> Phoenix.Component.assign(:current_account, membership.account)
          |> Phoenix.Component.assign(:current_membership, membership)
-         |> Phoenix.Component.assign(:current_subject, subject)}
+         |> Phoenix.Component.assign(:current_subject, subject)
+         |> Phoenix.LiveView.attach_hook(
+           :ensure_slug_unchanged,
+           :handle_params,
+           &ensure_slug_unchanged/3
+         )}
 
       {:error, :not_found} ->
         raise EmisarWeb.NotFoundError
@@ -493,6 +498,25 @@ defmodule EmisarWeb.UserAuth do
        &resend_confirmation_email/3
      )}
   end
+
+  # Defense-in-depth for cross-slug `live_patch` (attached by :ensure_account_slug):
+  # on_mount runs once, so a patch that changes the URL's account ref WITHOUT a
+  # remount keeps the mount-time subject — the URL would say account B while the
+  # socket is still scoped to A. No data crosses today (every context call uses
+  # the mounted subject, not the ref), but assert the ref still resolves to the
+  # mounted account on every handle_params and 404 on a mismatch rather than lean
+  # on that invariant alone.
+  defp ensure_slug_unchanged(%{"account_id_or_slug" => ref}, _uri, socket) do
+    account = socket.assigns.current_account
+
+    if ref == account.id or ref == account.slug do
+      {:cont, socket}
+    else
+      raise EmisarWeb.NotFoundError
+    end
+  end
+
+  defp ensure_slug_unchanged(_params, _uri, socket), do: {:cont, socket}
 
   defp refresh_pending_approvals({:approval_updated, _}, socket) do
     {:cont,

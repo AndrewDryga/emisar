@@ -44,5 +44,24 @@ defmodule EmisarWeb.AccountSlugAuthzTest do
 
       assert redirected_to(get(conn, ~p"/app")) == ~p"/app/#{account}"
     end
+
+    test "a cross-slug live_patch 404s — the mounted subject can't drift tenants", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      # B belongs to someone else; A's member is not in it.
+      {_conn_b, _user_b, account_b} = register_and_log_in(build_conn())
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runners")
+
+      # A same-account patch (e.g. a filter change) is unaffected by the guard.
+      assert render_patch(lv, ~p"/app/#{account}/runners") =~ "Runners"
+
+      # A patch swapping the URL's account ref without a remount keeps the
+      # account-A subject — the handle_params guard raises NotFoundError (a 404),
+      # crashing the view, rather than serve B's path under A's authorization.
+      Process.flag(:trap_exit, true)
+
+      assert {{%EmisarWeb.NotFoundError{}, _stacktrace}, _call} =
+               catch_exit(render_patch(lv, ~p"/app/#{account_b}/runners"))
+    end
   end
 end
