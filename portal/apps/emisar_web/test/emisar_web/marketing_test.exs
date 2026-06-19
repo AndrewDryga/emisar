@@ -181,17 +181,18 @@ defmodule EmisarWeb.MarketingTest do
     assert html =~ "data-demo-replay"
 
     # The whole incident is server-rendered for no-JS + crawlers — install,
-    # the Claude tool call, and the approval beat.
+    # the Claude tool call, the source-verification beat, and the approval beat.
     assert html =~ ">curl -sSL https://emisar.dev/install.sh | sudo bash</div>"
     assert html =~ "emisar · nomad.alloc_stop(alloc:"
+    assert html =~ "read NodeStageVolume in src/driver/index.js"
     assert html =~ "⏸ pending approval — nomad.alloc_stop is high-risk"
     assert html =~ "✓ approved by you · one use · audit event recorded"
 
-    # The PR diff block is server-rendered too — its why-comment plus the
-    # HCL config, with intentional indentation preserved verbatim (no
+    # The PR diff block is server-rendered too — the driver-config why-comment
+    # plus the diff context, with intentional indentation preserved verbatim (no
     # template-indent leak, no whitespace collapse).
-    assert html =~ "blkid-empty → the driver auto-mkfs"
-    assert html =~ ">  node {</div>"
+    assert html =~ "kept for when upstream honors it"
+    assert html =~ ">  node:</div>"
 
     # phx-no-format is a mix-format directive only — it must not survive into
     # the served markup.

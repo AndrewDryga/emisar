@@ -50,7 +50,7 @@ defmodule EmisarWeb.MarketingController do
      "A real-shape Postgres incident: a crashed migration leaves an idle-in-transaction backend holding a lock and the whole app queues behind it. An AI agent investigates through read-only psql actions, then terminates the backend behind one approval — no raw SQL, no DDL, every step audited."},
     {"/use-cases/csi-data-loss", :usecase_csi_data_loss, :usecase_csi_data_loss,
      "Case study: a CSI driver wiped 33h of metrics — contained via emisar",
-     "A real incident: democratic-csi reformatted a live Pure LUN on a multipath race, wiping 33 hours of VictoriaMetrics data. How an agent on emisar investigated through declared actions, stopped the bleed behind one approval, and wrote the durable fix to Terraform."},
+     "A real incident: democratic-csi ran mkfs over a live Pure LUN on a multipath race, wiping 33 hours of VictoriaMetrics data. An agent on emisar investigated through declared actions, stopped the bleed behind one approval, and landed the durable fix as reviewable infra — a guard that refuses to trust the driver, after the obvious one-line setting turned out to be a no-op."},
     {"/compare/raw-ssh-for-ai", :compare_raw_ssh, :compare_raw_ssh,
      "Why not just give the LLM SSH? — honest comparison",
      "Comparison: raw SSH-for-AI agents vs an emisar action pack. Both run real commands; the difference is whose recovery you're betting on."},
