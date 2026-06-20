@@ -3,7 +3,7 @@ id: postgres.seq_scan_offenders
 title: Tables with high seq-scan ratio
 kind: exec
 risk: low
-description: 'Tables where seq_scan / (seq_scan + idx_scan) > 50% AND seq_tup_read > 100k. Candidates for missing indexes.'
+description: 'List tables where seq_scan / (seq_scan + idx_scan) > 50% AND seq_tup_read > 100k. Candidates for missing indexes.'
 side_effects: ["One SELECT.", "Read-only."]
 args: []
 execution:

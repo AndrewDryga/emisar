@@ -3,7 +3,7 @@ id: kafka.reassign_status
 title: Partition reassignment status
 kind: exec
 risk: low
-description: Status of any in-flight partition reassignments.
+description: Show the status of any in-flight partition reassignments.
 side_effects:
   - One admin request.
   - Read-only.

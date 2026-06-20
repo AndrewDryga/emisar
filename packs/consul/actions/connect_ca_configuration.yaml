@@ -3,7 +3,7 @@ id: consul.connect_ca_configuration
 title: GET /v1/connect/ca/configuration
 kind: exec
 risk: low
-description: CA provider configuration (which CA, intermediate cert TTL, etc).
+description: Show CA provider configuration (which CA, intermediate cert TTL, etc).
 side_effects: ["One API call.", "Read-only."]
 args: []
 execution:

@@ -3,7 +3,7 @@ id: bind.rndc_status
 title: rndc status
 kind: exec
 risk: low
-description: Named version, uptime, zone count, configured vs current settings.
+description: Show named version, uptime, zone count, configured vs current settings.
 side_effects: ["One rndc call.", "Read-only."]
 args: []
 execution:

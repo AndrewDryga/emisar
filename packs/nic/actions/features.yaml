@@ -4,7 +4,7 @@ title: ethtool -k <iface>
 kind: exec
 risk: low
 description: >
-  Offload feature state for one NIC — checksum offload, GRO/GSO/TSO,
+  Show offload feature state for one NIC — checksum offload, GRO/GSO/TSO,
   scatter-gather, RX/TX hashing, and which are fixed vs tunable. Useful
   when chasing throughput or checksum-related issues.
 side_effects: ["One ethtool -k call.", "Read-only."]

@@ -3,7 +3,7 @@ id: fs.head_file
 title: head -n <N> <file>
 kind: exec
 risk: low
-description: First N lines of one file.
+description: Show the first N lines of one file.
 side_effects:
   - One read of the file.
   - Read-only.

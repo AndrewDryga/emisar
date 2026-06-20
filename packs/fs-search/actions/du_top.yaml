@@ -3,7 +3,7 @@ id: fs.du_top
 title: du -sh — top N subdirs
 kind: exec
 risk: low
-description: Top 20 immediate subdirs of one path by size.
+description: Show the top 20 immediate subdirs of one path by size.
 side_effects:
   - One file-system traversal.
   - Read-only.

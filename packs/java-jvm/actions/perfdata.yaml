@@ -3,7 +3,7 @@ id: jvm.perfdata
 title: jcmd PerfCounter.print
 kind: exec
 risk: low
-description: 'JVM performance counters — class loading, JIT, GC. Cheaper than jstat for one-shot.'
+description: 'Show JVM performance counters — class loading, JIT, GC. Cheaper than jstat for one-shot.'
 side_effects:
   - One jcmd call.
   - Read-only.

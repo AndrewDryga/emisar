@@ -3,7 +3,7 @@ id: grafana.datasources
 title: GET /api/datasources
 kind: exec
 risk: low
-description: All datasources with type + URL + access mode.
+description: List all datasources with type + URL + access mode.
 side_effects: ["One API call.", "Read-only."]
 args: []
 execution:

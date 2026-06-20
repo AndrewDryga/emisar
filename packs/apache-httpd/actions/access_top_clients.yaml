@@ -3,7 +3,7 @@ id: httpd.access_top_clients
 title: Top client IPs from access log
 kind: exec
 risk: low
-description: Tally of source IPs from the last N access log lines.
+description: Show a tally of source IPs from the last N access log lines.
 side_effects:
   - One file read.
   - Read-only.

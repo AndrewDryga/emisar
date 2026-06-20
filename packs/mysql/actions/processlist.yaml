@@ -3,7 +3,7 @@ id: mysql.processlist
 title: SHOW FULL PROCESSLIST
 kind: exec
 risk: low
-description: Every active connection with its current command, state, and full query. The first stop for "what is the DB doing?"
+description: List every active connection with its current command, state, and full query. The first stop for "what is the DB doing?"
 side_effects:
   - One SHOW PROCESSLIST.
   - Read-only.

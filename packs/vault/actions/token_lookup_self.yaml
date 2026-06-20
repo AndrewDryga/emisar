@@ -3,7 +3,7 @@ id: vault.token_lookup_self
 title: vault token lookup
 kind: exec
 risk: low
-description: Metadata on the current token (the runner's). Useful to debug policy denials.
+description: Show metadata on the current token (the runner's). Useful to debug policy denials.
 side_effects:
   - One auth/token/lookup-self request.
   - Read-only.

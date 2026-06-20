@@ -3,7 +3,7 @@ id: pm2.node_version
 title: node --version
 kind: exec
 risk: low
-description: Node.js runtime version (system default).
+description: Show Node.js runtime version (system default).
 side_effects:
   - Forks node.
   - Read-only.

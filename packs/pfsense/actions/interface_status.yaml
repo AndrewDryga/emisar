@@ -4,7 +4,7 @@ title: GET /api/v2/status/interfaces
 kind: script
 risk: low
 description: >
-  Per-interface live status — link state, IPv4/IPv6 addresses, media, and
+  Show per-interface live status — link state, IPv4/IPv6 addresses, media, and
   in/out packet + byte + error counters. Use to spot a down WAN or errors.
 side_effects:
   - One read-only HTTP GET to the pfSense REST API.

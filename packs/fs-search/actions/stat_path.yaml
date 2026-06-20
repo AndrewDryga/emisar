@@ -3,7 +3,7 @@ id: fs.stat_path
 title: stat <path>
 kind: exec
 risk: low
-description: Inode + timestamps + permissions for one path.
+description: Show inode + timestamps + permissions for one path.
 side_effects:
   - One stat() call.
   - Read-only.

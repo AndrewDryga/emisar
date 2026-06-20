@@ -3,7 +3,7 @@ id: rpm.rpm_ql
 title: rpm -ql <pkg>
 kind: exec
 risk: low
-description: All files installed by one package.
+description: List all files installed by one package.
 side_effects: ["One rpmdb read.", "Read-only."]
 args:
   - name: package

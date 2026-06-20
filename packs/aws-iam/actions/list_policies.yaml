@@ -3,7 +3,7 @@ id: iam.list_policies
 title: aws iam list-policies --scope Local
 kind: exec
 risk: low
-description: All customer-managed IAM policies.
+description: List all customer-managed IAM policies.
 side_effects: ["One API call.", "Read-only."]
 args: []
 execution:

@@ -3,7 +3,7 @@ id: rmq.list_vhosts
 title: rabbitmqctl list_vhosts
 kind: exec
 risk: low
-description: All virtual hosts.
+description: List all virtual hosts.
 side_effects:
   - One CLI call.
   - Read-only.

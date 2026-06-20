@@ -3,7 +3,7 @@ id: consul.connect_ca_roots
 title: GET /v1/connect/ca/roots
 kind: exec
 risk: low
-description: Currently-trusted root CAs for Connect mesh TLS.
+description: List currently-trusted root CAs for Connect mesh TLS.
 side_effects: ["One API call.", "Read-only."]
 args: []
 execution:

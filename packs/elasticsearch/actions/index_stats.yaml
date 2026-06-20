@@ -3,7 +3,7 @@ id: es.index_stats
 title: GET /<index>/_stats
 kind: exec
 risk: low
-description: Index-level stats — docs, store, indexing/search rates, fielddata.
+description: Show index-level stats — docs, store, indexing/search rates, fielddata.
 side_effects:
   - One GET request.
   - Read-only.

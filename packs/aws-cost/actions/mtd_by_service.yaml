@@ -3,7 +3,7 @@ id: ce.mtd_by_service
 title: Month-to-date cost by service
 kind: exec
 risk: low
-description: 'Unblended cost from the 1st of this month until today, grouped by service.'
+description: 'Show unblended cost from the 1st of this month until today, grouped by service.'
 side_effects: ["One Cost Explorer call.", "Read-only."]
 args: []
 execution:

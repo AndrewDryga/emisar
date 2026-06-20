@@ -4,7 +4,7 @@ title: Election / stepdown history (electionMetrics)
 kind: exec
 risk: low
 description: >
-  Cumulative election and stepdown counters for this member — stepUpCmd,
+  Show cumulative election and stepdown counters for this member — stepUpCmd,
   priorityTakeover, electionTimeout, catchUpTakeover, numStepDownsCausedBy
   HigherTerm, numCatchUps. Use to see how often the set has been re-electing.
 side_effects:

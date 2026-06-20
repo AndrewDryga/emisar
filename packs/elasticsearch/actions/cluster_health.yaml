@@ -3,7 +3,7 @@ id: es.cluster_health
 title: GET /_cluster/health
 kind: exec
 risk: low
-description: Cluster status (green/yellow/red), node count, shard counts. Read-only.
+description: Show cluster status (green/yellow/red), node count, shard counts. Read-only.
 side_effects:
   - One GET request.
   - Read-only.

@@ -3,7 +3,7 @@ id: phpfpm.ini
 title: php --ini
 kind: exec
 risk: low
-description: All loaded php.ini paths + their contents path.
+description: List all loaded php.ini paths + their contents path.
 side_effects: ["One forked process.", "Read-only."]
 args: []
 execution:

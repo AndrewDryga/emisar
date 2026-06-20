@@ -4,7 +4,7 @@ title: GET /api/v1/status/top_queries
 kind: script
 risk: low
 description: >
-  The most frequent and most expensive queries VictoriaMetrics has seen —
+  List the most frequent and most expensive queries VictoriaMetrics has seen —
   topByCount, topByAvgDuration, and topBySumDuration. Use to find what to
   optimize or rate-limit.
 side_effects:

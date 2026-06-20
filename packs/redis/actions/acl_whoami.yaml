@@ -4,7 +4,7 @@ title: ACL WHOAMI
 kind: exec
 risk: low
 description: >
-  ACL username of the current connection. Use to verify the runner
+  Show the ACL username of the current connection. Use to verify the runner
   credential is the expected service principal.
 side_effects:
   - One ACL WHOAMI command.

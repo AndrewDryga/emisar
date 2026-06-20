@@ -3,7 +3,7 @@ id: consul.list_checks_warning
 title: GET /v1/health/state/warning
 kind: exec
 risk: low
-description: Every check currently in WARNING state.
+description: List every check currently in WARNING state.
 side_effects: ["One API call.", "Read-only."]
 args: []
 execution:

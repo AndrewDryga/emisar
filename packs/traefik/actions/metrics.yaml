@@ -4,7 +4,7 @@ title: GET /metrics
 kind: script
 risk: low
 description: >
-  Prometheus metrics in text exposition format (requires
+  Show Prometheus metrics in text exposition format (requires
   --metrics.prometheus=true): per-entrypoint/router/service request counts,
   durations, open connections, and TLS cert expiry gauges. Served on the
   traefik entrypoint (:8080) by default unless metrics.prometheus.entryPoint

@@ -3,7 +3,7 @@ id: mc.stats_sizes
 title: stats sizes
 kind: exec
 risk: low
-description: 'Histogram of item sizes. WARNING: scans all items — can be slow on busy servers.'
+description: 'Show a histogram of item sizes. WARNING: scans all items — can be slow on busy servers.'
 side_effects: ["Scans every item — high latency hit on busy servers.", "Read-only."]
 args: []
 execution:

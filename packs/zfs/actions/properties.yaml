@@ -3,7 +3,7 @@ id: zfs.properties
 title: zfs get all <dataset>
 kind: exec
 risk: low
-description: All properties of one dataset (compression, dedup, atime, quota, etc).
+description: List all properties of one dataset (compression, dedup, atime, quota, etc).
 side_effects: ["Reads dataset metadata.", "Read-only."]
 args:
   - name: dataset

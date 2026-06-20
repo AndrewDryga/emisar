@@ -3,7 +3,7 @@ id: envoy.certs
 title: GET /certs
 kind: exec
 risk: low
-description: Active TLS certs known to Envoy — subjects, expiry, days remaining.
+description: List active TLS certs known to Envoy — subjects, expiry, days remaining.
 side_effects: ["One admin GET.", "Read-only."]
 args: []
 execution:

@@ -3,7 +3,7 @@ id: cassandra.nodetool_getendpoints
 title: nodetool getendpoints <ks> <table> <key>
 kind: exec
 risk: low
-description: Which replicas own a specific partition key. Use to confirm read/write routing.
+description: Show which replicas own a specific partition key. Use to confirm read/write routing.
 side_effects: ["One JMX call.", "Read-only."]
 args:
   - name: keyspace

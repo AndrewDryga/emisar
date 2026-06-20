@@ -4,7 +4,7 @@ title: GET /api/orgs
 kind: exec
 risk: low
 description: >
-  All orgs (multi-tenant view). Requires a Grafana server-admin token;
+  List all orgs (multi-tenant view). Requires a Grafana server-admin token;
   an org-admin token gets 403 here (use grafana.users for the current org).
 side_effects: ["One API call.", "Read-only."]
 args: []

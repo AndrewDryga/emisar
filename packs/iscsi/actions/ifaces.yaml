@@ -3,7 +3,7 @@ id: iscsi.ifaces
 title: iscsiadm -m iface
 kind: exec
 risk: low
-description: Initiator interfaces (the iface bindings sessions run over).
+description: List initiator interfaces (the iface bindings sessions run over).
 side_effects: ["One iscsiadm read.", "Read-only."]
 args: []
 execution:

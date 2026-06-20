@@ -10,7 +10,7 @@ kind: exec
 risk: low
 
 description: >
-  Reference action: one argument of every supported type with a
+  Show a reference action: one argument of every supported type with a
   representative validation. Look here when you need to remember the YAML
   shape for `string_array`, `integer_array`, `duration`, etc.
 

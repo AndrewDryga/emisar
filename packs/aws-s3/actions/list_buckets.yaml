@@ -3,7 +3,7 @@ id: s3.list_buckets
 title: aws s3 ls
 kind: exec
 risk: low
-description: All buckets the AWS_PROFILE has access to.
+description: List all buckets the AWS_PROFILE has access to.
 side_effects:
   - One API call.
   - Read-only.

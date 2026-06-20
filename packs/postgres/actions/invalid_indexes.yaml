@@ -3,7 +3,7 @@ id: postgres.invalid_indexes
 title: Invalid indexes (indisvalid = false)
 kind: exec
 risk: low
-description: Indexes from failed CREATE INDEX CONCURRENTLY — present but not used by the planner.
+description: List indexes from failed CREATE INDEX CONCURRENTLY — present but not used by the planner.
 side_effects: ["One SELECT.", "Read-only."]
 args: []
 execution:

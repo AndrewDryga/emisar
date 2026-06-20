@@ -3,7 +3,7 @@ id: f2b.log_tail
 title: tail /var/log/fail2ban.log
 kind: exec
 risk: low
-description: Last N lines of fail2ban.log.
+description: Tail the last N lines of fail2ban.log.
 side_effects: ["One file read.", "Read-only."]
 args:
   - name: lines

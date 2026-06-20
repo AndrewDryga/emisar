@@ -4,7 +4,7 @@ title: GET /arrays/space
 kind: script
 risk: low
 description: >
-  Array-wide space accounting — total and used capacity, plus the data
+  Show array-wide space accounting — total and used capacity, plus the data
   reduction and thin-provisioning ratios behind it. Use to answer "how full
   is the array and what is the effective reduction?". Returns
   {items:[...], more_items_remaining, ...} with a space breakdown per array.

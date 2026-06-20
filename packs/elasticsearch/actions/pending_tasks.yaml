@@ -3,7 +3,7 @@ id: es.pending_tasks
 title: GET /_cluster/pending_tasks
 kind: exec
 risk: low
-description: Pending master tasks. A growing queue here means the master can't keep up.
+description: List pending master tasks. A growing queue here means the master can't keep up.
 side_effects:
   - One GET request.
   - Read-only.

@@ -3,7 +3,7 @@ id: time.chrony_tracking
 title: chronyc tracking
 kind: exec
 risk: low
-description: Chrony's view of clock drift, frequency, last update.
+description: Show Chrony's view of clock drift, frequency, last update.
 side_effects:
   - One chrony query.
   - Read-only.

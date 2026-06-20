@@ -3,7 +3,7 @@ id: minio.ls_buckets
 title: mc ls (root)
 kind: exec
 risk: low
-description: All buckets in one alias.
+description: List all buckets in one alias.
 side_effects: ["One admin call.", "Read-only."]
 args:
   - name: alias

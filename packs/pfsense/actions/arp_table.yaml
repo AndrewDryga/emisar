@@ -4,7 +4,7 @@ title: GET /api/v2/diagnostics/arp_table
 kind: script
 risk: low
 description: >
-  The ARP table — IP ↔ MAC ↔ interface, with hostname and expiry. Use to
+  Show the ARP table — IP ↔ MAC ↔ interface, with hostname and expiry. Use to
   confirm a host is on the network and which interface it is on.
 side_effects:
   - One read-only HTTP GET to the pfSense REST API.

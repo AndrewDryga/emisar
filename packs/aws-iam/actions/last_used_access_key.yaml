@@ -3,7 +3,7 @@ id: iam.last_used_access_key
 title: aws iam get-access-key-last-used
 kind: exec
 risk: low
-description: When one access key was last used (use to spot dormant keys).
+description: Show when one access key was last used (use to spot dormant keys).
 side_effects: ["One API call.", "Read-only."]
 args:
   - name: access_key_id

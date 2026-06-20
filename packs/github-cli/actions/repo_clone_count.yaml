@@ -3,7 +3,7 @@ id: gh.repo_clone_count
 title: gh api repos/<repo>/traffic/clones
 kind: exec
 risk: low
-description: Last-14-day clone counts (requires push access on the repo).
+description: Show last-14-day clone counts (requires push access on the repo).
 side_effects:
   - One API call.
   - Read-only.

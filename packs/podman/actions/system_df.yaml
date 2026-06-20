@@ -3,7 +3,7 @@ id: podman.system_df
 title: podman system df
 kind: exec
 risk: low
-description: Disk usage by images / containers / volumes.
+description: Show disk usage by images / containers / volumes.
 side_effects: ["One CLI call.", "Read-only."]
 args: []
 execution:

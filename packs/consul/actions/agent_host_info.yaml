@@ -3,7 +3,7 @@ id: consul.agent_host_info
 title: GET /v1/agent/host
 kind: exec
 risk: low
-description: 'Host info: OS, CPU, memory, filesystem, network from the agent''s view.'
+description: 'Show host info: OS, CPU, memory, filesystem, network from the agent''s view.'
 side_effects: ["One API call.", "Read-only."]
 args: []
 execution:

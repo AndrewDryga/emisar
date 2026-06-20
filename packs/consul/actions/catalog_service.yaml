@@ -3,7 +3,7 @@ id: consul.catalog_service
 title: GET /v1/catalog/service/<name>
 kind: exec
 risk: low
-description: All instances of one service across the cluster.
+description: List all instances of one service across the cluster.
 side_effects: ["One API call.", "Read-only."]
 args:
   - name: service

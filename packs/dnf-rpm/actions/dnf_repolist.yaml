@@ -3,7 +3,7 @@ id: rpm.dnf_repolist
 title: dnf repolist
 kind: exec
 risk: low
-description: Enabled repositories with package counts.
+description: List enabled repositories with package counts.
 side_effects: ["One repo metadata read.", "Read-only."]
 args: []
 execution:

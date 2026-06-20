@@ -3,7 +3,7 @@ id: postgres.wal_status
 title: Current WAL LSN + recovery state
 kind: exec
 risk: low
-description: Snapshot of current WAL LSN, last receive/replay LSNs, recovery state.
+description: Show a snapshot of current WAL LSN, last receive/replay LSNs, recovery state.
 side_effects: ["One SELECT.", "Read-only."]
 args: []
 execution:

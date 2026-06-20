@@ -4,7 +4,7 @@ title: GET /arrays
 kind: script
 risk: low
 description: >
-  Array identity and top-line health — array name, id, Purity//FA OS version,
+  Show array identity and top-line health — array name, id, Purity//FA OS version,
   and the headline capacity fields. The starting point for "which array is
   this and is it healthy?". Returns {items:[...], more_items_remaining, ...};
   one item per array.

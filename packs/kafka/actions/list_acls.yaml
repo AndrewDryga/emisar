@@ -3,7 +3,7 @@ id: kafka.list_acls
 title: List ACLs
 kind: exec
 risk: low
-description: Every ACL binding on the cluster.
+description: List every ACL binding on the cluster.
 side_effects:
   - One admin request.
   - Read-only.

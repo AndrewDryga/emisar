@@ -3,7 +3,7 @@ id: kafka.list_consumer_offsets
 title: Committed offsets per partition
 kind: exec
 risk: low
-description: Same view as consumer_lag but emphasizes committed-offset reading. Useful before reset_offsets.
+description: Show the same view as consumer_lag but emphasizes committed-offset reading. Useful before reset_offsets.
 side_effects:
   - One coordinator request.
   - Read-only.

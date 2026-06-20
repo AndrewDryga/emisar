@@ -3,7 +3,7 @@ id: kubernetes.node_describe
 title: kubectl describe node
 kind: exec
 risk: low
-description: Full describe output for one node — capacity, allocatable, conditions, addresses, taints, pods, events.
+description: Show the full describe output for one node — capacity, allocatable, conditions, addresses, taints, pods, events.
 side_effects:
   - One kubectl describe invocation.
   - Read-only.

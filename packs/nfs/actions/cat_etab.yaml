@@ -3,7 +3,7 @@ id: nfs.cat_etab
 title: cat /var/lib/nfs/etab
 kind: exec
 risk: low
-description: Effective export table (what kernel actually serves).
+description: Show the effective export table (what kernel actually serves).
 side_effects: ["One file read.", "Read-only."]
 args: []
 execution:

@@ -3,7 +3,7 @@ id: jvm.jstack
 title: jstack -l (thread dump)
 kind: exec
 risk: low
-description: Full thread dump with lock info. The canonical "what are all my threads doing?" diagnostic.
+description: Dump full thread state with lock info. The canonical "what are all my threads doing?" diagnostic.
 side_effects:
   - One jstack invocation.
   - Read-only; introduces a STW pause on the JVM (~ms).

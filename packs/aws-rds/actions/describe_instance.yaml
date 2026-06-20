@@ -3,7 +3,7 @@ id: rds.describe_instance
 title: aws rds describe-db-instances --db-instance-identifier
 kind: exec
 risk: low
-description: Full details for one instance.
+description: Show full details for one RDS instance.
 side_effects: ["One API call.", "Read-only."]
 args:
   - name: instance

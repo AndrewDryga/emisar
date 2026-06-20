@@ -1,7 +1,7 @@
 schema_version: 1
 id: aws-s3
 name: AWS S3 operations
-version: 0.1.2
+version: 0.1.3
 description: >
   Read-only S3 introspection — bucket inventory, per-bucket
   versioning/policy/encryption/lifecycle, object listing + metadata.

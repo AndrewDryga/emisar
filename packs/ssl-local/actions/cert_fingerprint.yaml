@@ -3,7 +3,7 @@ id: ssl.cert_fingerprint
 title: openssl x509 -fingerprint -sha256
 kind: exec
 risk: low
-description: SHA-256 fingerprint of the cert. Use for pinning checks.
+description: Show the SHA-256 fingerprint of the cert. Use for pinning checks.
 side_effects:
   - One file read.
   - Read-only.

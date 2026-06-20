@@ -3,7 +3,7 @@ id: kafka.leader_partitions
 title: Partition leaders by broker
 kind: exec
 risk: low
-description: Counts partitions where each broker is leader. Uneven distribution → preferred-leader election.
+description: Count partitions where each broker is leader. Uneven distribution → preferred-leader election.
 side_effects:
   - One metadata request.
   - Read-only.

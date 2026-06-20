@@ -3,7 +3,7 @@ id: httpd.status
 title: mod_status snapshot
 kind: exec
 risk: low
-description: Snapshot of mod_status (requires mod_status enabled). Set HTTPD_STATUS_URL env var.
+description: Show a snapshot of mod_status (requires mod_status enabled). Set HTTPD_STATUS_URL env var.
 side_effects:
   - One HTTP GET to mod_status.
   - Read-only.

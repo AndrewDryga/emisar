@@ -4,7 +4,7 @@ title: GET /hardware
 kind: script
 risk: low
 description: >
-  Physical component health — chassis, power supplies, fans, temperature
+  Show physical component health — chassis, power supplies, fans, temperature
   sensors, and other hardware items, each with its status and (where
   applicable) reading. Use to find a failed PSU/fan or a hot sensor. Returns
   {items:[...], more_items_remaining, ...}, one item per component.

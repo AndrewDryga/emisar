@@ -3,7 +3,7 @@ id: nomad.job_deployments
 title: nomad job deployments <id>
 kind: exec
 risk: low
-description: Deployment history for one job (rolling updates, canary, blue-green).
+description: List deployment history for one job (rolling updates, canary, blue-green).
 side_effects: ["One API call.", "Read-only."]
 args:
   - name: job

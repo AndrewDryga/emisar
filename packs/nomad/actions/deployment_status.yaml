@@ -3,7 +3,7 @@ id: nomad.deployment_status
 title: nomad deployment status <id>
 kind: exec
 risk: low
-description: 'One deployment''s state — per-task-group desired/placed/healthy/unhealthy.'
+description: 'Show one deployment''s state — per-task-group desired/placed/healthy/unhealthy.'
 side_effects: ["One API call.", "Read-only."]
 args:
   - name: deployment_id

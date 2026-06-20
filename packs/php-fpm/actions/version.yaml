@@ -3,7 +3,7 @@ id: phpfpm.version
 title: php -v
 kind: exec
 risk: low
-description: PHP version + SAPI + Zend Engine version.
+description: Show PHP version + SAPI + Zend Engine version.
 side_effects: ["One forked process.", "Read-only."]
 args: []
 execution:

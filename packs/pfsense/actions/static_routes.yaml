@@ -4,7 +4,7 @@ title: GET /api/v2/routing/static_routes
 kind: script
 risk: low
 description: >
-  Configured static routes — destination network, gateway, and description.
+  List configured static routes — destination network, gateway, and description.
   Use to check routing for a reachability problem.
 side_effects:
   - One read-only HTTP GET to the pfSense REST API.

@@ -3,7 +3,7 @@ id: ce.last_7d_daily
 title: Last-7-day daily totals
 kind: exec
 risk: low
-description: Daily unblended cost for the last 7 days. Use to spot spend spikes.
+description: Show daily unblended cost for the last 7 days. Use to spot spend spikes.
 side_effects: ["One Cost Explorer call.", "Read-only."]
 args: []
 execution:

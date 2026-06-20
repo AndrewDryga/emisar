@@ -3,7 +3,7 @@ id: zk.srvr
 title: srvr (server stats)
 kind: exec
 risk: low
-description: Server version, latency, packets, mode (leader/follower/standalone).
+description: Show server version, latency, packets, mode (leader/follower/standalone).
 side_effects: ["One 4lw command.", "Read-only."]
 args:
   - name: server

@@ -3,7 +3,7 @@ id: podman.ps
 title: podman ps -a
 kind: exec
 risk: low
-description: All containers (running + stopped).
+description: List all containers (running + stopped).
 side_effects: ["One CLI call.", "Read-only."]
 args: []
 execution:

@@ -3,7 +3,7 @@ id: py.pip_freeze
 title: $PY_VENV/bin/pip freeze
 kind: exec
 risk: low
-description: Requirements-format dump.
+description: Dump installed packages in requirements format.
 side_effects: ["One pip freeze call.", "Read-only."]
 args: []
 execution:

@@ -4,7 +4,7 @@ title: GET /api/admin/settings
 kind: exec
 risk: low
 description: >
-  Server settings (auth, smtp, database paths). Requires a Grafana
+  Show server settings (auth, smtp, database paths). Requires a Grafana
   server-admin token; an org-admin token gets 403 here.
 side_effects: ["One API call.", "Read-only — credentials in output may be partially masked but rely on audit redaction."]
 args: []

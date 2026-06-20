@@ -3,7 +3,7 @@ id: rmq.list_bindings
 title: rabbitmqctl list_bindings
 kind: exec
 risk: low
-description: All bindings between exchanges and queues.
+description: List all bindings between exchanges and queues.
 side_effects:
   - One CLI call.
   - Read-only.

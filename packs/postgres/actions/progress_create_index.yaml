@@ -3,7 +3,7 @@ id: postgres.progress_create_index
 title: pg_stat_progress_create_index
 kind: exec
 risk: low
-description: In-flight CREATE INDEX with phase + blocks scanned.
+description: Show in-flight CREATE INDEX operations with phase + blocks scanned.
 side_effects: ["One SELECT.", "Read-only."]
 args: []
 execution:

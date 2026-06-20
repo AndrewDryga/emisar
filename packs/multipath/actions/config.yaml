@@ -3,7 +3,7 @@ id: multipath.config
 title: multipath -t
 kind: exec
 risk: low
-description: Effective multipathd configuration (merged built-in defaults + multipath.conf).
+description: Show effective multipathd configuration (merged built-in defaults + multipath.conf).
 side_effects: ["One config dump.", "Read-only."]
 args: []
 execution:

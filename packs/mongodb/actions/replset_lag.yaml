@@ -4,7 +4,7 @@ title: Replication lag (secs behind primary)
 kind: exec
 risk: low
 description: >
-  Per-member seconds behind the primary, computed from rs.status() optimeDate
+  Show per-member seconds behind the primary, computed from rs.status() optimeDate
   (with state, health, sync source, ping). The canonical replica-set lag check.
 side_effects:
   - One replSetGetStatus.

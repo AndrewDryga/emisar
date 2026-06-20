@@ -3,7 +3,7 @@ id: rmq.list_channels
 title: rabbitmqctl list_channels
 kind: exec
 risk: low
-description: All open channels with consumer + prefetch + ack stats.
+description: List all open channels with consumer + prefetch + ack stats.
 side_effects:
   - One CLI call.
   - Read-only.

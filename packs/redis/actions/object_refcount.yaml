@@ -4,7 +4,7 @@ title: OBJECT REFCOUNT key
 kind: exec
 risk: low
 description: >
-  Reference count for a value. Shared integers report INT_MAX;
+  Show the reference count for a value. Shared integers report INT_MAX;
   every other value reports 1. Use to confirm the shared-integer
   optimization is hitting (or not).
 side_effects:

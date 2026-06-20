@@ -3,7 +3,7 @@ id: f2b.jail_status
 title: fail2ban-client status <jail>
 kind: exec
 risk: low
-description: One jail's filter + actions + currently banned counts.
+description: Show one jail's filter + actions + currently banned counts.
 side_effects: ["One fail2ban call.", "Read-only."]
 args:
   - name: jail

@@ -3,7 +3,7 @@ id: envoy.ready
 title: GET /ready
 kind: exec
 risk: low
-description: 200 if Envoy is fully initialized; 503 otherwise.
+description: Check readiness — 200 if Envoy is fully initialized; 503 otherwise.
 side_effects: ["One admin GET.", "Read-only."]
 args: []
 execution:

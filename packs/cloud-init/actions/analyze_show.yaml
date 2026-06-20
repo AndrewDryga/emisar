@@ -4,7 +4,7 @@ title: cloud-init analyze show
 kind: exec
 risk: low
 description: >
-  Per-stage timing for the most recent boot — when each stage started,
+  Show per-stage timing for the most recent boot — when each stage started,
   duration, and which records contributed. Read-only.
 side_effects:
   - One CLI call.

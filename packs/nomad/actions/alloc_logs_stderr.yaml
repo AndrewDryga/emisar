@@ -3,7 +3,7 @@ id: nomad.alloc_logs_stderr
 title: nomad alloc logs -stderr <alloc> <task>
 kind: exec
 risk: low
-description: Last N lines of stderr from one task in one allocation.
+description: Tail the last N lines of stderr from one task in one allocation.
 side_effects: ["One API call.", "Read-only."]
 args:
   - name: alloc_id

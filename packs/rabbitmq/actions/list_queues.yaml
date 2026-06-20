@@ -3,7 +3,7 @@ id: rmq.list_queues
 title: rabbitmqctl list_queues
 kind: exec
 risk: low
-description: 'All queues with name, messages_ready, messages_unacknowledged, consumers, memory. The canonical "is anything backing up?" check.'
+description: 'List all queues with name, messages_ready, messages_unacknowledged, consumers, memory. The canonical "is anything backing up?" check.'
 side_effects:
   - One CLI call.
   - Read-only.

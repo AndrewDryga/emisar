@@ -3,7 +3,7 @@ id: cf.list_zones
 title: GET /zones
 kind: exec
 risk: low
-description: All zones accessible by the API token.
+description: List all zones accessible by the API token.
 side_effects:
   - One API request.
   - Read-only.

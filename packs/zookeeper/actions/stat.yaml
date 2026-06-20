@@ -3,7 +3,7 @@ id: zk.stat
 title: stat (server + per-conn stats)
 kind: exec
 risk: low
-description: Server + per-connection latency, packet counts.
+description: Show server + per-connection latency, packet counts.
 side_effects: ["One 4lw command.", "Read-only."]
 args:
   - name: server

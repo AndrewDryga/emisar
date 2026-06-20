@@ -3,7 +3,7 @@ id: nomad.node_eligibility_show
 title: Nodes with eligibility != eligible
 kind: exec
 risk: low
-description: Nodes that are ineligible for new allocations (drained or manually disabled).
+description: List nodes that are ineligible for new allocations (drained or manually disabled).
 side_effects: ["One API call.", "Read-only."]
 args: []
 execution:

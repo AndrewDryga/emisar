@@ -3,7 +3,7 @@ id: gh.pr_checks
 title: gh pr checks
 kind: exec
 risk: low
-description: All CI checks for one PR + pass/fail status.
+description: List all CI checks for one PR + pass/fail status.
 side_effects:
   - One API call.
   - Read-only.

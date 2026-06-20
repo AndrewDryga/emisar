@@ -3,7 +3,7 @@ id: rds.list_clusters
 title: aws rds describe-db-clusters
 kind: exec
 risk: low
-description: All Aurora clusters.
+description: List all Aurora clusters.
 side_effects: ["One API call.", "Read-only."]
 args: []
 execution:

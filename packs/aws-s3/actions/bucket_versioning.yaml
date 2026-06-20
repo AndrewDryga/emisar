@@ -3,7 +3,7 @@ id: s3.bucket_versioning
 title: aws s3api get-bucket-versioning
 kind: exec
 risk: low
-description: Versioning state of one bucket.
+description: Show versioning state of one bucket.
 side_effects:
   - One API call.
   - Read-only.

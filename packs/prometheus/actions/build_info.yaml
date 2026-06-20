@@ -3,7 +3,7 @@ id: prom.build_info
 title: GET /api/v1/status/buildinfo
 kind: exec
 risk: low
-description: Prometheus version + build details.
+description: Show Prometheus version + build details.
 side_effects:
   - One GET request.
   - Read-only.

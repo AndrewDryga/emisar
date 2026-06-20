@@ -3,7 +3,7 @@ id: mongo.get_parameter
 title: getParameter '*'
 kind: exec
 risk: low
-description: All server parameters (read-only view of the current config).
+description: List all server parameters (read-only view of the current config).
 side_effects:
   - One getParameter command.
   - Read-only.

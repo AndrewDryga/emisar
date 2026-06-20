@@ -3,7 +3,7 @@ id: kafka.list_topics
 title: List topics
 kind: exec
 risk: low
-description: All topics in the cluster.
+description: List all topics in the cluster.
 side_effects:
   - One metadata request.
   - Read-only.

@@ -4,7 +4,7 @@ title: OBJECT IDLETIME key
 kind: exec
 risk: low
 description: >
-  Seconds since the key was last accessed. Requires an LRU
+  Show seconds since the key was last accessed. Requires an LRU
   maxmemory-policy. Use to identify cold keys for manual eviction.
 side_effects:
   - One OBJECT IDLETIME command.

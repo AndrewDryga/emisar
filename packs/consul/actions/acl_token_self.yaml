@@ -3,7 +3,7 @@ id: consul.acl_token_self
 title: GET /v1/acl/token/self
 kind: exec
 risk: low
-description: Metadata on the runner's own token — accessor, policies, roles, expiration. The SecretID the API returns is redacted from the output.
+description: Show metadata on the runner's own token — accessor, policies, roles, expiration. The SecretID the API returns is redacted from the output.
 side_effects:
   - One ACL read request.
   - Read-only; the SecretID field returned by the API is redacted before output.

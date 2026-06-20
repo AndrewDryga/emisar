@@ -3,7 +3,7 @@ id: py.site_packages_du
 title: du -sh site-packages/*
 kind: exec
 risk: low
-description: Disk usage per installed package — find bloated installs.
+description: Show disk usage per installed package — find bloated installs.
 side_effects: ["One file-system traversal of the venv's site-packages.", "Read-only."]
 args: []
 execution:

@@ -4,7 +4,7 @@ title: GET /api/rawdata
 kind: script
 risk: low
 description: >
-  The complete dynamic configuration as Traefik currently sees it — all
+  Show the complete dynamic configuration as Traefik currently sees it — all
   routers, services, and middlewares across HTTP/TCP/UDP, each with its
   errors, plus the "usedBy" dependency graph tying routers to services and
   middlewares. The single most complete read for "what is the actual live

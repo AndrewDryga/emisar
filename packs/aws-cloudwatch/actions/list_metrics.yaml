@@ -3,7 +3,7 @@ id: cw.list_metrics
 title: aws cloudwatch list-metrics --namespace
 kind: exec
 risk: low
-description: All metrics in one namespace.
+description: List all metrics in one namespace.
 side_effects: ["One API call.", "Read-only."]
 args:
   - name: namespace

@@ -3,7 +3,7 @@ id: caddy.config_dump
 title: GET /config (current config)
 kind: exec
 risk: low
-description: Currently-loaded Caddy configuration as JSON.
+description: Dump the currently-loaded Caddy configuration as JSON.
 side_effects: ["One admin GET.", "Read-only."]
 args: []
 execution:

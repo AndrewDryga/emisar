@@ -3,7 +3,7 @@ id: mongo.shard_status
 title: sh.status()
 kind: exec
 risk: low
-description: Sharded cluster summary — shards, databases, chunk distribution.
+description: Show sharded cluster summary — shards, databases, chunk distribution.
 side_effects:
   - Reads sharding metadata.
   - Read-only.

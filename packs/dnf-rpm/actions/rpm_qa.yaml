@@ -3,7 +3,7 @@ id: rpm.rpm_qa
 title: rpm -qa
 kind: exec
 risk: low
-description: All installed RPMs.
+description: List all installed RPMs.
 side_effects: ["One rpmdb read.", "Read-only."]
 args: []
 execution:

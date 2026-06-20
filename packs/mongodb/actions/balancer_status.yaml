@@ -3,7 +3,7 @@ id: mongo.balancer_status
 title: sh.getBalancerState()
 kind: exec
 risk: low
-description: Whether the balancer is enabled + currently running.
+description: Show whether the balancer is enabled + currently running.
 side_effects:
   - Reads sharding metadata.
   - Read-only.

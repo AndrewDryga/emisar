@@ -3,7 +3,7 @@ id: phpfpm.slow_log_tail
 title: tail FPM slow_log
 kind: exec
 risk: low
-description: Last N lines of the FPM slow log (PHP backtraces for slow requests).
+description: Tail the FPM slow log (last N lines of PHP backtraces for slow requests).
 side_effects: ["One file read.", "Read-only."]
 args:
   - name: lines

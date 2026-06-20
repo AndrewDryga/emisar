@@ -3,7 +3,7 @@ id: s3.bucket_encryption
 title: aws s3api get-bucket-encryption
 kind: exec
 risk: low
-description: Default-encryption settings for one bucket.
+description: Show default-encryption settings for one bucket.
 side_effects:
   - One API call.
   - Read-only.

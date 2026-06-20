@@ -4,7 +4,7 @@ title: GET /health
 kind: exec
 risk: low
 description: >
-  Liveness probe for the local Vector API. Returns {"ok":true} (HTTP 200)
+  Check liveness of the local Vector API. Returns {"ok":true} (HTTP 200)
   when serving, or {"ok":false} (HTTP 503) while draining/shutting down.
   Works on ANY Vector version — this endpoint survived the v0.55 gRPC
   migration. Requires api.enabled=true in the Vector config; binds

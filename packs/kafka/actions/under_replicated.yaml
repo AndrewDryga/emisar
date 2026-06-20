@@ -3,7 +3,7 @@ id: kafka.under_replicated
 title: Under-replicated partitions
 kind: exec
 risk: low
-description: 'Topics + partitions with ISR < replication factor. The canonical "is replication healthy?" check.'
+description: 'List topics + partitions with ISR < replication factor. The canonical "is replication healthy?" check.'
 side_effects:
   - One metadata request.
   - Read-only.

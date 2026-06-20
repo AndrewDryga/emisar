@@ -3,7 +3,7 @@ id: kafka.list_groups
 title: List consumer groups
 kind: exec
 risk: low
-description: All consumer groups in the cluster.
+description: List all consumer groups in the cluster.
 side_effects:
   - One coordinator request per broker.
   - Read-only.

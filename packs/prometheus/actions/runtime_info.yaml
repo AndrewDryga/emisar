@@ -3,7 +3,7 @@ id: prom.runtime_info
 title: GET /api/v1/status/runtimeinfo
 kind: exec
 risk: low
-description: Uptime, last config reload, chunk count, WAL corrected/unprocessed.
+description: Show uptime, last config reload, chunk count, WAL corrected/unprocessed.
 side_effects:
   - One GET request.
   - Read-only.

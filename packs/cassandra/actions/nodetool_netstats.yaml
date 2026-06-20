@@ -3,7 +3,7 @@ id: cassandra.nodetool_netstats
 title: nodetool netstats
 kind: exec
 risk: low
-description: 'Streaming + read repair stats: completed/pending bytes, files transferred, pool stats.'
+description: 'Show streaming + read repair stats: completed/pending bytes, files transferred, pool stats.'
 side_effects: ["One JMX call.", "Read-only."]
 args: []
 execution:

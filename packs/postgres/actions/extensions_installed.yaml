@@ -3,7 +3,7 @@ id: postgres.extensions_installed
 title: Installed extensions
 kind: exec
 risk: low
-description: Currently-loaded extensions with versions + schema.
+description: List currently-loaded extensions with versions + schema.
 side_effects: ["One SELECT.", "Read-only."]
 args: []
 execution:

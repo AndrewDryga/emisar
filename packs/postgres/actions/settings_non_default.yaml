@@ -3,7 +3,7 @@ id: postgres.settings_non_default
 title: pg_settings (non-default)
 kind: exec
 risk: low
-description: Settings the operator has changed from the compiled defaults.
+description: List settings the operator has changed from the compiled defaults.
 side_effects: ["One SELECT.", "Read-only."]
 args: []
 execution:

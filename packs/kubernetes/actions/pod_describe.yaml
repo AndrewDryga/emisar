@@ -4,7 +4,7 @@ title: kubectl describe pod
 kind: exec
 risk: low
 description: >
-  Full describe output — events, container states, conditions, volume mounts, scheduled node. The canonical "why isn't this pod running?" answer.
+  Show the full describe output — events, container states, conditions, volume mounts, scheduled node. The canonical "why isn't this pod running?" answer.
 side_effects:
   - One kubectl describe invocation.
   - Read-only.

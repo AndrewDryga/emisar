@@ -3,7 +3,7 @@ id: jvm.jstat_class
 title: jstat -class
 kind: exec
 risk: low
-description: Class-loader stats — loaded class count and bytes. Use to spot a class-loading leak.
+description: Show class-loader stats — loaded class count and bytes. Use to spot a class-loading leak.
 side_effects:
   - One jstat invocation.
   - Read-only.

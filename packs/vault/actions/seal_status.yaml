@@ -3,7 +3,7 @@ id: vault.seal_status
 title: vault operator seal-status
 kind: exec
 risk: low
-description: Sealed/unsealed state + threshold + progress.
+description: Show sealed/unsealed state + threshold + progress.
 side_effects:
   - One sys/seal-status request.
   - Read-only.

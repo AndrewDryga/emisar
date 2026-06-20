@@ -3,7 +3,7 @@ id: postgres.table_io
 title: pg_statio_user_tables
 kind: exec
 risk: low
-description: 'Per-table heap + index buffer reads vs hits. Bad cache hit rate? Find the table.'
+description: 'Show per-table heap + index buffer reads vs hits. Bad cache hit rate? Find the table.'
 side_effects: ["One SELECT.", "Read-only."]
 args: []
 execution:

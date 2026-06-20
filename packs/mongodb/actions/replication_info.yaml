@@ -4,7 +4,7 @@ title: Oplog time window (db.getReplicationInfo)
 kind: exec
 risk: low
 description: >
-  Oplog time window — logSizeMB, usedMB, timeDiff / timeDiffHours, tFirst,
+  Show oplog time window — logSizeMB, usedMB, timeDiff / timeDiffHours, tFirst,
   tLast. How much history the oplog retains, which bounds how long a secondary
   can be down before it needs a full resync. Distinct from oplog size.
 side_effects:

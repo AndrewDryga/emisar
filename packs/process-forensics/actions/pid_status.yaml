@@ -3,7 +3,7 @@ id: forensics.pid_status
 title: /proc/PID/status
 kind: exec
 risk: low
-description: Full /proc/PID/status — uid/gid, capability set, signal state, oom score.
+description: Show full /proc/PID/status — uid/gid, capability set, signal state, oom score.
 side_effects:
   - One /proc read.
   - Read-only.

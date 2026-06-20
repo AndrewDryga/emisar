@@ -4,7 +4,7 @@ title: Check RKE2 certificate expiry (rke2 certificate check)
 kind: exec
 risk: low
 description: >
-  Per-certificate subject, status, and expiry date for this node's RKE2 certs.
+  Show per-certificate subject, status, and expiry date for this node's RKE2 certs.
   RKE2 leaf certs default to 365 days and auto-renew on restart within 90 days
   of expiry; this surfaces a node whose certs are about to lapse. Read-only.
 side_effects:

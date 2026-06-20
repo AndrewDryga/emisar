@@ -3,7 +3,7 @@ id: wg.show_latest_handshakes
 title: wg show all latest-handshakes
 kind: exec
 risk: low
-description: Per-peer epoch of last handshake. 0 means never seen.
+description: Show per-peer epoch of last handshake. 0 means never seen.
 side_effects: ["One netlink query.", "Read-only."]
 args: []
 execution:

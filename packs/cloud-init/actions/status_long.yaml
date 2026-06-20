@@ -4,7 +4,7 @@ title: cloud-init status --long [--wait]
 kind: exec
 risk: low
 description: >
-  Detailed status — per-stage state, last update, recoverable + last
+  Show detailed status — per-stage state, last update, recoverable + last
   errors, datasource detected. With `block: true`, blocks until cloud-init
   finishes (useful right after boot).
 side_effects:

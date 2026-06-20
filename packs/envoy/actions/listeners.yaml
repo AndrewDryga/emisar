@@ -3,7 +3,7 @@ id: envoy.listeners
 title: GET /listeners
 kind: exec
 risk: low
-description: All active listeners with bind address.
+description: List all active listeners with bind address.
 side_effects: ["One admin GET.", "Read-only."]
 args: []
 execution:

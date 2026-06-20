@@ -4,7 +4,7 @@ title: XINFO STREAM
 kind: exec
 risk: low
 description: >
-  One stream's length, last-generated-id, groups, first/last entry.
+  Show one stream's length, last-generated-id, groups, first/last entry.
   Use to confirm producers are still appending.
 side_effects:
   - One XINFO STREAM command.

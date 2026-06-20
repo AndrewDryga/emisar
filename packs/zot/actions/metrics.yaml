@@ -4,7 +4,7 @@ title: GET /metrics
 kind: script
 risk: low
 description: >
-  Prometheus-format metrics for the registry via the zot metrics extension —
+  Show Prometheus-format metrics for the registry via the zot metrics extension —
   request counts, storage, and runtime gauges. Requires the full (extended)
   build with the metrics extension enabled in config, and typically auth
   (set ZOT_BASICAUTH). Read-only.

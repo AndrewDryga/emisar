@@ -3,7 +3,7 @@ id: postgres.largest_tables_full
 title: Largest tables with vacuum/dead-tuple info
 kind: exec
 risk: low
-description: Top 50 tables by size with live + dead tuple counts and last vacuum timestamps.
+description: List top 50 tables by size with live + dead tuple counts and last vacuum timestamps.
 side_effects: ["One SELECT joining pg_stat_user_tables.", "Read-only."]
 args: []
 execution:

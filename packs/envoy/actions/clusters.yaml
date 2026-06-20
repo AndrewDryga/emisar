@@ -3,7 +3,7 @@ id: envoy.clusters
 title: GET /clusters
 kind: exec
 risk: low
-description: All clusters with endpoint health + stats. Use for "which upstream is unhealthy?".
+description: List all clusters with endpoint health + stats. Use for "which upstream is unhealthy?".
 side_effects: ["One admin GET.", "Read-only."]
 args: []
 execution:

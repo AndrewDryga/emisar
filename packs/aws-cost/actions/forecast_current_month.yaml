@@ -3,7 +3,7 @@ id: ce.forecast_current_month
 title: Forecast current-month spend
 kind: exec
 risk: low
-description: AWS-projected total spend for the current month based on usage so far.
+description: Show AWS-projected total spend for the current month based on usage so far.
 side_effects: ["One Cost Explorer call.", "Read-only."]
 args: []
 execution:

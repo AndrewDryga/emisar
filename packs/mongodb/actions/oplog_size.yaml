@@ -3,7 +3,7 @@ id: mongo.oplog_size
 title: Oplog size + window
 kind: exec
 risk: low
-description: 'Oplog size + first/last timestamps + estimated time window. The canonical "how far can a secondary fall behind?" check.'
+description: 'Show oplog size + first/last timestamps + estimated time window. The canonical "how far can a secondary fall behind?" check.'
 side_effects:
   - Reads oplog metadata.
   - Read-only.

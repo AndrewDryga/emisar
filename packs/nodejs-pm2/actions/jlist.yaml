@@ -3,7 +3,7 @@ id: pm2.jlist
 title: pm2 jlist
 kind: exec
 risk: low
-description: PM2 process list as JSON (richer than `list`). Read-only.
+description: List PM2 processes as JSON (richer than `list`). Read-only.
 side_effects:
   - One PM2 IPC call.
   - Read-only.

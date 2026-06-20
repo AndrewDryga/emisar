@@ -2,7 +2,7 @@ schema_version: 1
 
 id: showcase
 name: Showcase pack
-version: 0.2.3
+version: 0.2.4
 description: >
   Synthetic pack that demonstrates every action-schema feature in one
   place: all arg types, every validation, both parsers, both kinds, opts

@@ -3,7 +3,7 @@ id: postgres.wal_archive_status
 title: pg_stat_archiver
 kind: exec
 risk: low
-description: 'WAL archiver stats: archived/failed counts, last archived WAL, last failure.'
+description: 'Show WAL archiver stats: archived/failed counts, last archived WAL, last failure.'
 side_effects: ["One SELECT.", "Read-only."]
 args: []
 execution:

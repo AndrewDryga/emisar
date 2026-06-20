@@ -3,7 +3,7 @@ id: iam.get_user
 title: aws iam get-user
 kind: exec
 risk: low
-description: One IAM user's details.
+description: Get one IAM user's details.
 side_effects: ["One API call.", "Read-only."]
 args:
   - name: user

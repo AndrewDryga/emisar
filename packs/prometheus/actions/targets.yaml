@@ -3,7 +3,7 @@ id: prom.targets
 title: GET /api/v1/targets
 kind: exec
 risk: low
-description: All scrape targets with state (up/down) and last error.
+description: List all scrape targets with state (up/down) and last error.
 side_effects:
   - One GET request.
   - Read-only.

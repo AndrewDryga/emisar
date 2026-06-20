@@ -4,7 +4,7 @@ title: Incoming connection saturation (serverStatus.connections)
 kind: exec
 risk: low
 description: >
-  Incoming connection counts — current, available, active, totalCreated.
+  Show incoming connection counts — current, available, active, totalCreated.
   Approaching the available limit means new clients will be refused. Distinct
   from connections (connPoolStats), which is the outgoing pool.
 side_effects:

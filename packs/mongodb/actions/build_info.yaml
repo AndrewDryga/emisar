@@ -3,7 +3,7 @@ id: mongo.build_info
 title: buildInfo
 kind: exec
 risk: low
-description: Server version + build flags.
+description: Show server version + build flags.
 side_effects:
   - One buildInfo command.
   - Read-only.

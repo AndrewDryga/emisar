@@ -3,7 +3,7 @@ id: py.pip_check
 title: $PY_VENV/bin/pip check
 kind: exec
 risk: low
-description: Dependency conflicts. Empty output means clean.
+description: Check for dependency conflicts. Empty output means clean.
 side_effects: ["One pip check call.", "Read-only."]
 args: []
 execution:

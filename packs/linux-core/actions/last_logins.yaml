@@ -6,7 +6,7 @@ kind: exec
 risk: low
 
 description: >
-  Last N successful logins from /var/log/wtmp via `last`. Shows user,
+  Show last N successful logins from /var/log/wtmp via `last`. Shows user,
   terminal, source IP, duration. Read-only.
 
 side_effects:

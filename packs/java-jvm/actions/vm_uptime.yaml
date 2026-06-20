@@ -3,7 +3,7 @@ id: jvm.vm_uptime
 title: jcmd VM.uptime
 kind: exec
 risk: low
-description: How long this JVM has been running.
+description: Show how long this JVM has been running.
 side_effects:
   - One jcmd call.
   - Read-only.

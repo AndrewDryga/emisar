@@ -3,7 +3,7 @@ id: pm2.monit_snapshot
 title: pm2 prettylist (process snapshot)
 kind: exec
 risk: low
-description: One-shot CPU + memory snapshot for every process, as pretty-printed JSON (pm2 prettylist).
+description: Show one-shot CPU + memory snapshot for every process, as pretty-printed JSON (pm2 prettylist).
 side_effects:
   - One PM2 IPC call.
   - Read-only.

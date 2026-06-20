@@ -3,7 +3,7 @@ id: kubernetes.cluster_info
 title: kubectl cluster-info
 kind: exec
 risk: low
-description: API server, DNS, and CoreDNS endpoints for the configured cluster.
+description: Show API server, DNS, and CoreDNS endpoints for the configured cluster.
 side_effects:
   - One kubectl cluster-info invocation.
   - Read-only.

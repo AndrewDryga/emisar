@@ -3,7 +3,7 @@ id: prom.rules
 title: GET /api/v1/rules
 kind: exec
 risk: low
-description: All loaded recording + alerting rules with last evaluation result.
+description: List all loaded recording + alerting rules with last evaluation result.
 side_effects:
   - One GET request.
   - Read-only.

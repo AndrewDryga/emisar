@@ -3,7 +3,7 @@ id: nomad.job_inspect
 title: nomad job inspect <id>
 kind: exec
 risk: low
-description: One job's full spec as JSON.
+description: Dump one job's full spec as JSON.
 side_effects: ["One API call.", "Read-only."]
 args:
   - name: job

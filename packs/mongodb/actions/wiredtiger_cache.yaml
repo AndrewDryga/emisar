@@ -4,7 +4,7 @@ title: WiredTiger cache pressure (serverStatus.wiredTiger.cache)
 kind: exec
 risk: low
 description: >
-  WiredTiger cache pressure — bytes currently in cache vs maximum configured,
+  Show WiredTiger cache pressure — bytes currently in cache vs maximum configured,
   tracked dirty bytes, pages evicted by application threads, and pages read
   into cache. Application-thread eviction and a full dirty cache indicate
   memory pressure.

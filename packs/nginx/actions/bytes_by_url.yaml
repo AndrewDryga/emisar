@@ -3,7 +3,7 @@ id: nginx.bytes_by_url
 title: Top URLs by total bytes sent
 kind: exec
 risk: low
-description: Top N URLs ordered by `$body_bytes_sent` summed per URL (column 10). Read-only.
+description: List top N URLs ordered by `$body_bytes_sent` summed per URL (column 10). Read-only.
 side_effects:
   - Reads /var/log/nginx/access.log.
   - Read-only.

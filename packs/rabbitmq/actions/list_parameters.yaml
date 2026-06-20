@@ -3,7 +3,7 @@ id: rmq.list_parameters
 title: rabbitmqctl list_parameters
 kind: exec
 risk: low
-description: Runtime parameters (federation upstreams, shovel definitions, etc).
+description: List runtime parameters (federation upstreams, shovel definitions, etc).
 side_effects:
   - One CLI call.
   - Read-only.

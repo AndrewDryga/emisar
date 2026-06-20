@@ -2,7 +2,7 @@ schema_version: 1
 
 id: prometheus
 name: Prometheus operations
-version: 0.1.8
+version: 0.1.9
 description: >
   Server status, target health, alertmanager linkage, instant + range
   queries, rule listing, TSDB stats, plus admin-API actions for

@@ -3,7 +3,7 @@ id: bonding.link
 title: ip -d link show <bond>
 kind: exec
 risk: low
-description: Link-layer + bond detail for one interface (state, MTU, mode, xmit hash, LACP rate).
+description: Show link-layer + bond detail for one interface (state, MTU, mode, xmit hash, LACP rate).
 side_effects: ["One link query.", "Read-only."]
 args:
   - name: bond

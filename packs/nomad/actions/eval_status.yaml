@@ -3,7 +3,7 @@ id: nomad.eval_status
 title: nomad eval status <id>
 kind: exec
 risk: low
-description: 'One evaluation''s status — placement failures, queued allocations, blocked count.'
+description: 'Show one evaluation''s status — placement failures, queued allocations, blocked count.'
 side_effects: ["One API call.", "Read-only."]
 args:
   - name: eval_id

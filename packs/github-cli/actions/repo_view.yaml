@@ -3,7 +3,7 @@ id: gh.repo_view
 title: gh repo view
 kind: exec
 risk: low
-description: Repo summary — description, stars, default branch, latest release.
+description: Show repo summary — description, stars, default branch, latest release.
 side_effects:
   - One API call.
   - Read-only.

@@ -4,7 +4,7 @@ title: GET /api/v1/status/tsdb
 kind: script
 risk: low
 description: >
-  TSDB cardinality stats — the metric names, label pairs, and label values
+  Show TSDB cardinality stats — the metric names, label pairs, and label values
   with the highest series counts. The first stop when cardinality or memory
   is climbing.
 side_effects:

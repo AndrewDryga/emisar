@@ -3,7 +3,7 @@ id: time.timedatectl
 title: timedatectl status
 kind: exec
 risk: low
-description: 'Current time, timezone, NTP-active state, RTC sync state.'
+description: 'Show current time, timezone, NTP-active state, RTC sync state.'
 side_effects:
   - One systemd-timesyncd query.
   - Read-only.

@@ -3,7 +3,7 @@ id: cassandra.nodetool_gossipinfo
 title: nodetool gossipinfo
 kind: exec
 risk: low
-description: Per-peer gossip state — schema version, status, load, dc, rack, generation.
+description: Show per-peer gossip state — schema version, status, load, dc, rack, generation.
 side_effects: ["One JMX call.", "Read-only."]
 args: []
 execution:

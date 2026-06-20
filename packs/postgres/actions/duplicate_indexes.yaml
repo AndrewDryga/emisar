@@ -3,7 +3,7 @@ id: postgres.duplicate_indexes
 title: Duplicate indexes (same column set)
 kind: exec
 risk: low
-description: Indexes covering identical columns. One per group is redundant; drop after verifying.
+description: List indexes covering identical columns. One per group is redundant; drop after verifying.
 side_effects: ["One SELECT.", "Read-only."]
 args: []
 execution:

@@ -4,7 +4,7 @@ title: GET /connections
 kind: script
 risk: low
 description: >
-  THE host -> volume -> LUN map: every connection between a host (or host
+  Show the host -> volume -> LUN map: every connection between a host (or host
   group) and a volume, with the LUN the volume is presented at. This is the
   authoritative answer to "which host sees which volume, at which LUN?" — the
   first stop for any "my server can't see its LUN" or "is this volume even

@@ -4,7 +4,7 @@ title: TTL key
 kind: exec
 risk: low
 description: >
-  Seconds until the key expires. -2 means missing, -1 means no
+  Show seconds until the key expires. -2 means missing, -1 means no
   expiry set. Use before any expiry-related troubleshooting.
 side_effects:
   - One TTL command.

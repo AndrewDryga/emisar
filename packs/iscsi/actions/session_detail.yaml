@@ -4,7 +4,7 @@ title: iscsiadm -m session -P 3
 kind: exec
 risk: low
 description: >
-  Full per-session detail at print level 3 — target IQN, portal, session
+  Show full per-session detail at print level 3 — target IQN, portal, session
   and connection state, negotiated parameters, and the attached SCSI disks.
 side_effects: ["One iscsiadm read.", "Read-only."]
 args: []

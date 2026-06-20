@@ -3,7 +3,7 @@ id: frr.interfaces
 title: vtysh -c "show interface brief"
 kind: exec
 risk: low
-description: Interface brief — admin/protocol status, addresses, and VRF per interface as FRR sees them.
+description: Show interface brief — admin/protocol status, addresses, and VRF per interface as FRR sees them.
 side_effects: ["One vtysh show command.", "Read-only."]
 args: []
 execution:

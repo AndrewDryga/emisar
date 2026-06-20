@@ -3,7 +3,7 @@ id: ec2.describe_security_groups
 title: aws ec2 describe-security-groups
 kind: exec
 risk: low
-description: All SGs with ingress/egress rules.
+description: List all SGs with ingress/egress rules.
 side_effects:
   - One API call.
   - Read-only.

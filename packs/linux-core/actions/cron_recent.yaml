@@ -6,7 +6,7 @@ kind: exec
 risk: low
 
 description: >
-  Last N journalctl entries matching CRON. Lets operators see "did
+  Show last N journalctl entries matching CRON. Lets operators see "did
   the backup job fire last night?" without grepping syslog. Read-only.
 
 side_effects:

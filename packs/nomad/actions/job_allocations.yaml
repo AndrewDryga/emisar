@@ -3,7 +3,7 @@ id: nomad.job_allocations
 title: nomad job allocs <id>
 kind: exec
 risk: low
-description: All allocations for one job.
+description: List all allocations for one job.
 side_effects: ["One API call.", "Read-only."]
 args:
   - name: job

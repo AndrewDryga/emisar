@@ -3,7 +3,7 @@ id: fs.tail_file
 title: tail -n <N> <file>
 kind: exec
 risk: low
-description: Last N lines of one file.
+description: Show the last N lines of one file.
 side_effects:
   - One read of the file.
   - Read-only.

@@ -3,7 +3,7 @@ id: envoy.stats
 title: GET /stats (filter)
 kind: exec
 risk: low
-description: Envoy stats matching a regex filter. Use 'cluster|listener|server' as a sane default.
+description: Show Envoy stats matching a regex filter. Use 'cluster|listener|server' as a sane default.
 side_effects: ["One admin GET.", "Read-only."]
 args:
   - name: filter

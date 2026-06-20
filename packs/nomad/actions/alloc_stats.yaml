@@ -3,7 +3,7 @@ id: nomad.alloc_stats
 title: GET /v1/client/allocation/<id>/stats
 kind: exec
 risk: low
-description: CPU + memory + network stats for one allocation.
+description: Show CPU + memory + network stats for one allocation.
 side_effects: ["One API call.", "Read-only."]
 args:
   - name: alloc_id

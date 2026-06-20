@@ -4,7 +4,7 @@ title: LASTSAVE
 kind: exec
 risk: low
 description: >
-  Unix timestamp of the last successful background save (RDB). Use
+  Show the Unix timestamp of the last successful background save (RDB). Use
   to confirm the persistence schedule is firing.
 side_effects:
   - One LASTSAVE command.

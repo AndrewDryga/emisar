@@ -3,7 +3,7 @@ id: haproxy.show_info
 title: show info
 kind: exec
 risk: low
-description: HAProxy version, uptime, process stats, conn rate, mem usage.
+description: Show HAProxy version, uptime, process stats, conn rate, mem usage.
 side_effects:
   - One admin socket command.
   - Read-only.

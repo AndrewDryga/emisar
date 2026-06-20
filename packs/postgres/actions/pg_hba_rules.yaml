@@ -3,7 +3,7 @@ id: postgres.pg_hba_rules
 title: pg_hba_file_rules
 kind: exec
 risk: low
-description: Effective pg_hba rules as the server loaded them. Catches syntax errors that didn't make it in.
+description: List effective pg_hba rules as the server loaded them. Catches syntax errors that didn't make it in.
 side_effects: ["One SELECT.", "Read-only — passwords are not exposed."]
 args: []
 execution:

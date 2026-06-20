@@ -4,7 +4,7 @@ title: GET /volumes/space
 kind: script
 risk: low
 description: >
-  Per-volume space accounting — for each volume, the physical space used by
+  Show per-volume space accounting — for each volume, the physical space used by
   its unique data and by snapshots, plus its data-reduction and total-reduction
   ratios. Use to find which volumes consume the most capacity. Returns
   {items:[...], more_items_remaining, ...}, one item per volume.

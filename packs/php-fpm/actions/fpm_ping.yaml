@@ -3,7 +3,7 @@ id: phpfpm.fpm_ping
 title: GET /ping (FPM)
 kind: exec
 risk: low
-description: FPM ping endpoint (returns 'pong' if responsive).
+description: Check FPM ping endpoint (returns 'pong' if responsive).
 side_effects: ["One HTTP GET.", "Read-only."]
 args: []
 execution:

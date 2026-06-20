@@ -3,7 +3,7 @@ id: nfs.rpcinfo_p
 title: rpcinfo -p
 kind: exec
 risk: low
-description: RPC services registered with rpcbind.
+description: List RPC services registered with rpcbind.
 side_effects: ["One rpcbind query.", "Read-only."]
 args: []
 execution:

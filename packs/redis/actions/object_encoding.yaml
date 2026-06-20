@@ -4,7 +4,7 @@ title: OBJECT ENCODING key
 kind: exec
 risk: low
 description: >
-  Internal encoding of one value (ziplist, hashtable, intset,
+  Show the internal encoding of one value (ziplist, hashtable, intset,
   listpack, quicklist, embstr, raw, skiplist). Use to confirm a
   structure is in its compact form before tuning size limits.
 side_effects:

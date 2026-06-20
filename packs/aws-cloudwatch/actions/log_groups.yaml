@@ -3,7 +3,7 @@ id: cw.log_groups
 title: aws logs describe-log-groups
 kind: exec
 risk: low
-description: All CloudWatch log groups.
+description: List all CloudWatch log groups.
 side_effects: ["One API call.", "Read-only."]
 args: []
 execution:

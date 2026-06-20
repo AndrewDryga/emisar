@@ -4,7 +4,7 @@ title: GET /v1/status/leader
 kind: exec
 risk: low
 description: >
-  Current Raft leader address for this datacenter. Reads the status
+  Show the current Raft leader address for this datacenter. Reads the status
   endpoint, which is not ACL-gated, so it answers "is there a leader?"
   even when no CONSUL_HTTP_TOKEN is set.
 side_effects:

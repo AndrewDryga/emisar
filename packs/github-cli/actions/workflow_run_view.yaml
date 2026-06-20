@@ -3,7 +3,7 @@ id: gh.workflow_run_view
 title: gh run view
 kind: exec
 risk: low
-description: Job-by-job result for one workflow run.
+description: Show job-by-job result for one workflow run.
 side_effects:
   - One API call.
   - Read-only.

@@ -3,7 +3,7 @@ id: cassandra.nodetool_tablehistograms
 title: nodetool tablehistograms <ks> <table>
 kind: exec
 risk: low
-description: Local-node read/write/sstable/partition-size histograms for one table.
+description: Show local-node read/write/sstable/partition-size histograms for one table.
 side_effects: ["One JMX call.", "Read-only."]
 args:
   - name: keyspace

@@ -3,7 +3,7 @@ id: consul.service_health
 title: Health of a service's instances
 kind: exec
 risk: low
-description: Per-node health for one service.
+description: Show per-node health for one service.
 side_effects:
   - One health request.
   - Read-only.

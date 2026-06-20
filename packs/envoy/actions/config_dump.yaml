@@ -3,7 +3,7 @@ id: envoy.config_dump
 title: GET /config_dump
 kind: exec
 risk: low
-description: Full xDS config — bootstrap, clusters, routes, listeners.
+description: Dump full xDS config — bootstrap, clusters, routes, listeners.
 side_effects: ["One admin GET.", "Read-only."]
 args: []
 execution:

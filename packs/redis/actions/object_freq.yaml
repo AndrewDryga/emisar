@@ -4,7 +4,7 @@ title: OBJECT FREQ key
 kind: exec
 risk: low
 description: >
-  LFU access-frequency counter for the key. Requires an LFU
+  Show the LFU access-frequency counter for the key. Requires an LFU
   maxmemory-policy. Use to compare access patterns across a
   candidate eviction set.
 side_effects:

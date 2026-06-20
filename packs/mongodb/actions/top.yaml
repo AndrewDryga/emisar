@@ -3,7 +3,7 @@ id: mongo.top
 title: db.adminCommand({top:1})
 kind: exec
 risk: low
-description: 'Per-collection time spent in reads/writes/commands. Mongo "top" for query traffic.'
+description: 'Show per-collection time spent in reads/writes/commands. Mongo "top" for query traffic.'
 side_effects:
   - One top command.
   - Read-only.

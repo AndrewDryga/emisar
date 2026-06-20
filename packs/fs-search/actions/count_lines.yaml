@@ -3,7 +3,7 @@ id: fs.count_lines
 title: wc -l <file>
 kind: exec
 risk: low
-description: Line count of one file.
+description: Count lines in one file.
 side_effects:
   - One read of the file.
   - Read-only.

@@ -3,7 +3,7 @@ id: haproxy.show_stat
 title: show stat
 kind: exec
 risk: low
-description: Per-proxy + per-server stats (sessions, queues, bytes, errors, response times).
+description: Show per-proxy + per-server stats (sessions, queues, bytes, errors, response times).
 side_effects:
   - One admin socket command.
   - Read-only.

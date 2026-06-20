@@ -3,7 +3,7 @@ id: fs.find_recent_modified
 title: Files modified in last N minutes
 kind: exec
 risk: low
-description: Files under one path modified within the last N minutes. Useful for "what just changed?".
+description: Find files under one path modified within the last N minutes. Useful for "what just changed?".
 side_effects:
   - One file-system traversal.
   - Read-only.

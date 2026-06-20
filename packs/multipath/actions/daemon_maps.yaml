@@ -3,7 +3,7 @@ id: multipath.daemon_maps
 title: multipathd show maps
 kind: exec
 risk: low
-description: Multipath maps from the running multipathd (name, wwid, path count, queueing state).
+description: List multipath maps from the running multipathd (name, wwid, path count, queueing state).
 side_effects: ["One multipathd query.", "Read-only."]
 args: []
 execution:

@@ -3,7 +3,7 @@ id: minio.bucket_stat
 title: mc du (bucket)
 kind: exec
 risk: low
-description: Object count + size for one bucket.
+description: Show object count + size for one bucket.
 side_effects: ["One scan; can be heavy on huge buckets.", "Read-only."]
 args:
   - name: alias

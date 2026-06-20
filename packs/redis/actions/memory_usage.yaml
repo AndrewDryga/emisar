@@ -4,7 +4,7 @@ title: MEMORY USAGE key
 kind: exec
 risk: low
 description: >
-  Bytes used by a single key (estimate, including value and internal
+  Show bytes used by a single key (estimate, including value and internal
   overhead). Use to find a known big-value culprit before a deletion
   conversation.
 side_effects:

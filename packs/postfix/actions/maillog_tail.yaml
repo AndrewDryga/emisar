@@ -3,7 +3,7 @@ id: postfix.maillog_tail
 title: tail mail.log
 kind: exec
 risk: low
-description: Last N lines of the mail log.
+description: Tail the last N lines of the mail log.
 side_effects: ["One file read.", "Read-only."]
 args:
   - name: lines

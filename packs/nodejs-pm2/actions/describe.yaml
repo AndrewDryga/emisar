@@ -3,7 +3,7 @@ id: pm2.describe
 title: pm2 describe <name>
 kind: exec
 risk: low
-description: Full config + runtime details for one process.
+description: Show full config + runtime details for one process.
 side_effects:
   - One PM2 IPC call.
   - Read-only.

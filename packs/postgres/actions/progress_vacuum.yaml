@@ -3,7 +3,7 @@ id: postgres.progress_vacuum
 title: pg_stat_progress_vacuum
 kind: exec
 risk: low
-description: In-flight VACUUMs with phase + heap_blks_scanned.
+description: Show in-flight VACUUMs with phase + heap_blks_scanned.
 side_effects: ["One SELECT.", "Read-only."]
 args: []
 execution:

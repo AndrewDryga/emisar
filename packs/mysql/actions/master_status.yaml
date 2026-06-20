@@ -3,7 +3,7 @@ id: mysql.master_status
 title: SHOW MASTER STATUS
 kind: exec
 risk: low
-description: Current binary log file, position, and GTID set on the primary. Read-only.
+description: Show current binary log file, position, and GTID set on the primary. Read-only.
 side_effects:
   - One SHOW MASTER STATUS.
   - Read-only.

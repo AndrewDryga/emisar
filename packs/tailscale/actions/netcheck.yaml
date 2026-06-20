@@ -4,7 +4,7 @@ title: tailscale netcheck --format=json
 kind: exec
 risk: low
 description: >
-  Network connectivity report as JSON — DERP latency, UDP reachability,
+  Show network connectivity report as JSON — DERP latency, UDP reachability,
   IPv4/IPv6 support, port-mapping (UPnP/PMP/PCP), and PreferredDERP.
 side_effects: ["One tailscale read.", "Read-only — probes connectivity, changes nothing."]
 args: []

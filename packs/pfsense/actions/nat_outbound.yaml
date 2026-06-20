@@ -4,7 +4,7 @@ title: GET /api/v2/firewall/nat/outbound/mappings
 kind: script
 risk: low
 description: >
-  Outbound NAT mappings — how internal traffic is translated leaving the
+  List outbound NAT mappings — how internal traffic is translated leaving the
   firewall. Use to debug source-NAT and masquerade behaviour.
 side_effects:
   - One read-only HTTP GET to the pfSense REST API.

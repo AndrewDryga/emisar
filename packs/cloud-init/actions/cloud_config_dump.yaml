@@ -4,7 +4,7 @@ title: cat /var/lib/cloud/instance/cloud-config.txt
 kind: exec
 risk: low
 description: >
-  Final merged cloud-config (user-data + vendor-data + system defaults)
+  Dump the final merged cloud-config (user-data + vendor-data + system defaults)
   as cloud-init evaluated it. The source of truth for "what did
   cloud-init actually try to do?".
 side_effects:

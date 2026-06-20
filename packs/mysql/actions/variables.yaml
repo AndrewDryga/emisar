@@ -3,7 +3,7 @@ id: mysql.variables
 title: SHOW GLOBAL VARIABLES (filtered)
 kind: exec
 risk: low
-description: Global variables filtered by glob pattern. Default returns InnoDB + buffer settings.
+description: Show global variables filtered by glob pattern. Default returns InnoDB + buffer settings.
 side_effects:
   - One SHOW GLOBAL VARIABLES.
   - Read-only.

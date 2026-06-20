@@ -2,7 +2,7 @@ schema_version: 1
 
 id: kafka
 name: Kafka cluster operations
-version: 0.1.2
+version: 0.1.3
 description: >
   Topic introspection, consumer-group lag, broker config, ACLs, and narrow
   mutators (reset_offsets, alter_topic_retention, delete_consumer_group,

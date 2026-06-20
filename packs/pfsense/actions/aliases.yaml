@@ -4,7 +4,7 @@ title: GET /api/v2/firewall/aliases
 kind: script
 risk: low
 description: >
-  Firewall aliases (named host / network / port groups) and their members.
+  List firewall aliases (named host / network / port groups) and their members.
   Use to see which IPs a block/allow list currently contains.
 side_effects:
   - One read-only HTTP GET to the pfSense REST API.

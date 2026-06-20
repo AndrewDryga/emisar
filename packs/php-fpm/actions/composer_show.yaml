@@ -3,7 +3,7 @@ id: phpfpm.composer_show
 title: composer show (in $COMPOSER_DIR)
 kind: exec
 risk: low
-description: Installed Composer packages with versions.
+description: List installed Composer packages with versions.
 side_effects: ["Reads composer.lock + vendor/.", "Read-only."]
 args: []
 execution:

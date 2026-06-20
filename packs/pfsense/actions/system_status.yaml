@@ -4,7 +4,7 @@ title: GET /api/v2/status/system
 kind: script
 risk: low
 description: >
-  Firewall system health — version, uptime, CPU model/usage/load, memory,
+  Show firewall system health — version, uptime, CPU model/usage/load, memory,
   swap, mbuf and disk usage, and temperature. The first stop for "how is the
   box doing?".
 side_effects:

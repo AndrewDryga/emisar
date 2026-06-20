@@ -3,7 +3,7 @@ id: py.sys_path
 title: python -c 'import sys; print(sys.path)'
 kind: exec
 risk: low
-description: Effective sys.path for the venv interpreter.
+description: Show the effective sys.path for the venv interpreter.
 side_effects: ["One forked python process.", "Read-only."]
 args: []
 execution:

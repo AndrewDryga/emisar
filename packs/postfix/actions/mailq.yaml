@@ -3,7 +3,7 @@ id: postfix.mailq
 title: mailq (current queue)
 kind: exec
 risk: low
-description: Postfix mail queue — pending, deferred, hold counts.
+description: Show the Postfix mail queue — pending, deferred, hold counts.
 side_effects: ["One mailq call.", "Read-only."]
 args: []
 execution:

@@ -3,7 +3,7 @@ id: postgres.activity_states
 title: Backend counts by state
 kind: exec
 risk: low
-description: 'Quick "how many idle / active / idle-in-transaction" health snapshot.'
+description: 'Show a quick "how many idle / active / idle-in-transaction" health snapshot.'
 side_effects: ["One SELECT.", "Read-only."]
 args: []
 execution:

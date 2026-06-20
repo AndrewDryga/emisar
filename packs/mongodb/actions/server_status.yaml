@@ -3,7 +3,7 @@ id: mongo.server_status
 title: db.serverStatus()
 kind: exec
 risk: low
-description: 'Top-level server metrics: connections, ops counters, memory, cluster role.'
+description: 'Show top-level server metrics: connections, ops counters, memory, cluster role.'
 side_effects:
   - One serverStatus command.
   - Read-only.

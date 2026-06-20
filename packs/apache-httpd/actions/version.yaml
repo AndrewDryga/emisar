@@ -3,7 +3,7 @@ id: httpd.version
 title: apachectl -V
 kind: exec
 risk: low
-description: Apache version + compiled-in directives + MPM.
+description: Show Apache version + compiled-in directives + MPM.
 side_effects:
   - Forks apachectl.
   - Read-only.

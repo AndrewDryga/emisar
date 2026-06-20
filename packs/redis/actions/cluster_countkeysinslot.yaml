@@ -4,7 +4,7 @@ title: CLUSTER COUNTKEYSINSLOT
 kind: exec
 risk: low
 description: >
-  Number of keys mapped to a single hash slot. Use when a slot
+  Count keys mapped to a single hash slot. Use when a slot
   appears hot in monitoring to size the blast radius of a migration
   or to verify a tagged keyspace is collocated.
 side_effects:

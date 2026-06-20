@@ -3,7 +3,7 @@ id: envoy.logging_get
 title: GET /logging
 kind: exec
 risk: low
-description: Current per-component log levels.
+description: Show current per-component log levels.
 side_effects: ["One admin GET.", "Read-only."]
 args: []
 execution:

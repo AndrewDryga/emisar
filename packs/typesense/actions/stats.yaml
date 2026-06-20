@@ -4,7 +4,7 @@ title: GET /stats.json
 kind: script
 risk: low
 description: >
-  Per-endpoint request statistics over the last 10 seconds —
+  Show per-endpoint request statistics over the last 10 seconds —
   requests-per-second counters and latency_ms breakdowns per API path. Use to
   see which endpoints are hot and how slow they are right now. Requires the
   admin API key.

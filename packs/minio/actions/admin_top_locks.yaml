@@ -3,7 +3,7 @@ id: minio.admin_top_locks
 title: mc admin top locks
 kind: exec
 risk: low
-description: Top object locks held across the cluster — spots stuck operations.
+description: List the top object locks held across the cluster — spots stuck operations.
 side_effects: ["One admin call.", "Read-only."]
 args:
   - name: alias

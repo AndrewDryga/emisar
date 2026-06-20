@@ -3,7 +3,7 @@ id: rds.describe_cluster
 title: aws rds describe-db-clusters --db-cluster-identifier
 kind: exec
 risk: low
-description: One Aurora cluster's full details + members.
+description: Show one Aurora cluster's full details + members.
 side_effects: ["One API call.", "Read-only."]
 args:
   - name: cluster

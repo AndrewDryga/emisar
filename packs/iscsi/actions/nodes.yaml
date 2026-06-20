@@ -3,7 +3,7 @@ id: iscsi.nodes
 title: iscsiadm -m node
 kind: exec
 risk: low
-description: Configured / discovered target nodes in the initiator database.
+description: List configured / discovered target nodes in the initiator database.
 side_effects: ["One iscsiadm read.", "Read-only."]
 args: []
 execution:

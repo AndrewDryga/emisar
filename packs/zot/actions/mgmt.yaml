@@ -4,7 +4,7 @@ title: GET /v2/_zot/ext/mgmt
 kind: script
 risk: low
 description: >
-  Registry configuration and health via the zot mgmt extension — the active
+  Show registry configuration and health via the zot mgmt extension — the active
   config (extensions enabled, storage settings) and a health summary. The
   mgmt extension is on by default in the full build but requires auth and is
   denied to anonymous clients, so set ZOT_BASICAUTH. Read-only.

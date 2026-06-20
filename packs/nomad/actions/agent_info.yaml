@@ -3,7 +3,7 @@ id: nomad.agent_info
 title: nomad agent-info
 kind: exec
 risk: low
-description: Per-agent stats — runtime, raft, serf, vault, consul subsystems.
+description: Show per-agent stats — runtime, raft, serf, vault, consul subsystems.
 side_effects: ["One API call.", "Read-only."]
 args: []
 execution:

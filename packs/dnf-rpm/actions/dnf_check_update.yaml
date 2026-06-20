@@ -3,7 +3,7 @@ id: rpm.dnf_check_update
 title: dnf check-update
 kind: exec
 risk: low
-description: Available updates. Exits 100 if updates available — non-zero IS the success signal.
+description: List available updates. Exits 100 if updates available — non-zero IS the success signal.
 side_effects: ["Refreshes metadata cache from configured repos.", "Read-only — no install."]
 args: []
 execution:

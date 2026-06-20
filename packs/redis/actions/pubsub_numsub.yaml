@@ -3,7 +3,7 @@ id: redis.pubsub_numsub
 title: PUBSUB NUMSUB
 kind: exec
 risk: low
-description: Subscriber count for a channel. Useful before tearing down a producer.
+description: Count subscribers on a channel. Useful before tearing down a producer.
 side_effects:
   - One PUBSUB NUMSUB command.
   - Read-only.

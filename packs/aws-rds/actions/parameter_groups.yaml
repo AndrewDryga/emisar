@@ -3,7 +3,7 @@ id: rds.parameter_groups
 title: aws rds describe-db-parameter-groups
 kind: exec
 risk: low
-description: All DB parameter groups.
+description: List all DB parameter groups.
 side_effects: ["One API call.", "Read-only."]
 args: []
 execution:

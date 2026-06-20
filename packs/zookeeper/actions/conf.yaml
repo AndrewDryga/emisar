@@ -3,7 +3,7 @@ id: zk.conf
 title: conf (server config)
 kind: exec
 risk: low
-description: Server's effective configuration.
+description: Show the server's effective configuration.
 side_effects: ["One 4lw command.", "Read-only."]
 args:
   - name: server

@@ -3,7 +3,7 @@ id: postgres.index_sizes
 title: Top 50 indexes by size
 kind: exec
 risk: low
-description: Largest indexes — candidates for bloat investigation.
+description: List the largest indexes — candidates for bloat investigation.
 side_effects: ["One SELECT.", "Read-only."]
 args: []
 execution:

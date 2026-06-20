@@ -4,7 +4,7 @@ title: cat /var/lib/cloud/data/instance-id
 kind: exec
 risk: low
 description: >
-  Instance ID cloud-init currently tracks. If this differs from the
+  Show the instance ID cloud-init currently tracks. If this differs from the
   cloud's idea, cloud-init thinks the machine is "new" and may re-run
   all modules at next boot.
 side_effects:

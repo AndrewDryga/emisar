@@ -3,7 +3,7 @@ id: nomad.operator_autopilot_state
 title: GET /v1/operator/autopilot/state
 kind: exec
 risk: low
-description: 'Autopilot health view — leader health, follower lag, server stabilization.'
+description: 'Show the autopilot health view — leader health, follower lag, server stabilization.'
 side_effects: ["One API call.", "Read-only."]
 args: []
 execution:

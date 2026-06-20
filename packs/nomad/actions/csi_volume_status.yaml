@@ -3,7 +3,7 @@ id: nomad.csi_volume_status
 title: nomad volume status <id>
 kind: exec
 risk: low
-description: One CSI volume's full state — claims, allocations using it, plugin status.
+description: Show one CSI volume's full state — claims, allocations using it, plugin status.
 side_effects: ["One API call.", "Read-only."]
 args:
   - name: volume_id

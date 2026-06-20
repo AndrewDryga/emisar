@@ -3,7 +3,7 @@ id: wg.showconf
 title: wg showconf <iface>
 kind: exec
 risk: low
-description: Effective config for one interface (peer pubkeys + allowed-ips).
+description: Show effective config for one interface (peer pubkeys + allowed-ips).
 side_effects: ["One netlink query.", "Read-only — private keys may be in the output; rely on audit redaction."]
 args:
   - name: interface

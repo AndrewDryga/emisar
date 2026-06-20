@@ -3,7 +3,7 @@ id: s3.bucket_policy
 title: aws s3api get-bucket-policy
 kind: exec
 risk: low
-description: Bucket policy JSON.
+description: Show bucket policy JSON.
 side_effects:
   - One API call.
   - Read-only.

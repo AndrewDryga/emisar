@@ -2,7 +2,7 @@ schema_version: 1
 
 id: multipath
 name: Device-mapper multipath
-version: 0.1.0
+version: 0.1.1
 description: >
   Inspect device-mapper multipath: the multipath topology (multipath -ll),
   the effective config (multipath -t), and live path + map state queried

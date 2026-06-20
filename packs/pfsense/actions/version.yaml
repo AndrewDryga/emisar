@@ -4,7 +4,7 @@ title: GET /api/v2/system/version
 kind: script
 risk: low
 description: >
-  pfSense version, build, and kernel. Cheap connectivity + auth check, and
+  Show pfSense version, build, and kernel. Cheap connectivity + auth check, and
   the pack's verify action.
 side_effects:
   - One read-only HTTP GET to the pfSense REST API.

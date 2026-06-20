@@ -3,7 +3,7 @@ id: py.pip_cache_info
 title: $PY_VENV/bin/pip cache info
 kind: exec
 risk: low
-description: Cache size + location.
+description: Show pip cache size + location.
 side_effects: ["One pip cache call.", "Read-only."]
 args: []
 execution:

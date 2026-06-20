@@ -3,7 +3,7 @@ id: phpfpm.error_log_tail
 title: tail FPM error_log
 kind: exec
 risk: low
-description: Last N lines of the FPM error log.
+description: Tail the FPM error log (last N lines).
 side_effects: ["One file read.", "Read-only."]
 args:
   - name: lines

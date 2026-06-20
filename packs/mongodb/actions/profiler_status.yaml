@@ -3,7 +3,7 @@ id: mongo.profiler_status
 title: db.getProfilingStatus()
 kind: exec
 risk: low
-description: Profiler level + slow-op threshold for one database.
+description: Show profiler level + slow-op threshold for one database.
 side_effects:
   - One profile command.
   - Read-only.

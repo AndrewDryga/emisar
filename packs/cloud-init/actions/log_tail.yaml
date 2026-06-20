@@ -4,7 +4,7 @@ title: tail /var/log/cloud-init.log
 kind: exec
 risk: low
 description: >
-  Last N lines of the main cloud-init log. Contains module
+  Tail the main cloud-init log (last N lines). Contains module
   execution, errors, and per-stage timing.
 side_effects:
   - Reads one log file.

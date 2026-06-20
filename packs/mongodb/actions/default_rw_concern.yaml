@@ -4,7 +4,7 @@ title: Default read/write concern (getDefaultRWConcern)
 kind: exec
 risk: low
 description: >
-  Cluster default read and write concern (e.g. w:majority) and its source.
+  Show cluster default read and write concern (e.g. w:majority) and its source.
   The durability/consistency config for the replica set — a weakened default
   write concern is a common cause of surprising data loss on failover.
 side_effects:

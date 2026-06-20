@@ -3,7 +3,7 @@ id: postgres.backend_holding_xmin
 title: Backend holding the oldest xmin
 kind: exec
 risk: low
-description: Backend whose snapshot is preventing vacuum from cleaning dead tuples cluster-wide.
+description: Show the backend whose snapshot is preventing vacuum from cleaning dead tuples cluster-wide.
 side_effects: ["One SELECT.", "Read-only."]
 args: []
 execution:

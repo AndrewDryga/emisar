@@ -3,7 +3,7 @@ id: ssl.cert_expiry
 title: openssl x509 -enddate -subject
 kind: exec
 risk: low
-description: Cert expiry date + subject. Quick way to answer "is this about to expire?".
+description: Show cert expiry date + subject. Quick way to answer "is this about to expire?".
 side_effects:
   - One file read.
   - Read-only.

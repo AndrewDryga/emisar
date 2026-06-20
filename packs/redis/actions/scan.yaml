@@ -4,7 +4,7 @@ title: SCAN cursor MATCH COUNT
 kind: exec
 risk: low
 description: >
-  One SCAN page. Returns next-cursor + up to COUNT keys matching
+  Show one SCAN page. Returns next-cursor + up to COUNT keys matching
   MATCH. Safe for prod — never blocks. Use to enumerate a hot
   namespace without KEYS.
 side_effects:

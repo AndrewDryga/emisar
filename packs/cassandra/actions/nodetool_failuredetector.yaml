@@ -3,7 +3,7 @@ id: cassandra.nodetool_failuredetector
 title: nodetool failuredetector
 kind: exec
 risk: low
-description: Phi accrual failure detector scores per peer. Phi > 8 ≈ marked down.
+description: Show phi accrual failure detector scores per peer. Phi > 8 ≈ marked down.
 side_effects: ["One JMX call.", "Read-only."]
 args: []
 execution:

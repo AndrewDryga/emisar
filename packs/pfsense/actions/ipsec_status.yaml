@@ -4,7 +4,7 @@ title: GET /api/v2/status/ipsec/sas
 kind: script
 risk: low
 description: >
-  IPsec security associations — phase-1 IKE SAs and their state (established
+  Show IPsec security associations — phase-1 IKE SAs and their state (established
   or not), peers, and algorithms. Use to check whether a site-to-site tunnel
   is up.
 side_effects:

@@ -3,7 +3,7 @@ id: mc.stats_slabs
 title: stats slabs
 kind: exec
 risk: low
-description: Per-slab allocation + utilization.
+description: Show per-slab allocation + utilization.
 side_effects: ["One ASCII protocol call.", "Read-only."]
 args: []
 execution:

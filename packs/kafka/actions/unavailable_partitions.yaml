@@ -3,7 +3,7 @@ id: kafka.unavailable_partitions
 title: Unavailable partitions
 kind: exec
 risk: low
-description: Partitions with no leader. These mean writes are failing.
+description: List partitions with no leader. These mean writes are failing.
 side_effects:
   - One metadata request.
   - Read-only.

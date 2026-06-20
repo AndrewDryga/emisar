@@ -3,7 +3,7 @@ id: haproxy.show_pools
 title: show pools
 kind: exec
 risk: low
-description: Internal memory pool usage. Use to spot leaks.
+description: Show internal memory pool usage. Use to spot leaks.
 side_effects:
   - One admin socket command.
   - Read-only.

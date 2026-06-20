@@ -4,7 +4,7 @@ title: GET /hosts
 kind: script
 risk: low
 description: >
-  Host inventory — each host object and the initiator identities registered
+  List the host inventory — each host object and the initiator identities registered
   to it: iSCSI IQNs, Fibre Channel WWNs, and NVMe NQNs. Use to confirm an
   initiator is registered to the expected host. Returns
   {items:[...], more_items_remaining, ...}, one item per host.

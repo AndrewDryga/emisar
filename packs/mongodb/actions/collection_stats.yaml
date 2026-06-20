@@ -3,7 +3,7 @@ id: mongo.collection_stats
 title: db.<coll>.stats()
 kind: exec
 risk: low
-description: Per-collection totals — count, size, storage, indexes.
+description: Show per-collection totals — count, size, storage, indexes.
 side_effects:
   - One collStats command.
   - Read-only.

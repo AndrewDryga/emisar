@@ -3,7 +3,7 @@ id: redis.xlen
 title: XLEN
 kind: exec
 risk: low
-description: Number of entries in a stream.
+description: Count entries in a stream.
 side_effects:
   - One XLEN command.
   - Read-only.

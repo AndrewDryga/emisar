@@ -4,7 +4,7 @@ title: GET /api/v2/firewall/states/size
 kind: script
 risk: low
 description: >
-  Current firewall state-table count and the configured maximum. Use to
+  Show current firewall state-table count and the configured maximum. Use to
   watch for state exhaustion. Cheap — does not dump the whole table.
 side_effects:
   - One read-only HTTP GET to the pfSense REST API.

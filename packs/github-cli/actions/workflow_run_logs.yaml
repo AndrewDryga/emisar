@@ -3,7 +3,7 @@ id: gh.workflow_run_logs
 title: gh run view --log-failed
 kind: exec
 risk: low
-description: Logs from failed jobs in one run. Use for "why did CI break?".
+description: Show logs from failed jobs in one run. Use for "why did CI break?".
 side_effects:
   - Downloads logs.
   - Read-only.

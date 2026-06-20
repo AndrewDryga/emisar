@@ -3,7 +3,7 @@ id: s3.bucket_location
 title: aws s3api get-bucket-location
 kind: exec
 risk: low
-description: Region for one bucket.
+description: Show the region for one bucket.
 side_effects:
   - One API call.
   - Read-only.

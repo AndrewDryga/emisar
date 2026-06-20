@@ -3,7 +3,7 @@ id: grafana.alerting_rules
 title: GET /api/prometheus/grafana/api/v1/rules
 kind: exec
 risk: low
-description: All Grafana-managed alert rules with last evaluation state.
+description: List all Grafana-managed alert rules with last evaluation state.
 side_effects: ["One API call.", "Read-only."]
 args: []
 execution:

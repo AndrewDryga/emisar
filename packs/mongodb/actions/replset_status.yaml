@@ -3,7 +3,7 @@ id: mongo.replset_status
 title: rs.status()
 kind: exec
 risk: low
-description: Replica set member health, lag, last applied optime.
+description: Show replica set member health, lag, last applied optime.
 side_effects:
   - One replSetGetStatus.
   - Read-only.

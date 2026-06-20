@@ -3,7 +3,7 @@ id: mysql.db_sizes
 title: Database sizes
 kind: exec
 risk: low
-description: Per-database data + index size summary. Read-only.
+description: Show per-database data + index size summary. Read-only.
 side_effects:
   - One SELECT against information_schema.tables.
   - Read-only.

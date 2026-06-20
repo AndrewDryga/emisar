@@ -3,7 +3,7 @@ id: tf.providers
 title: terraform providers
 kind: exec
 risk: low
-description: All providers declared in the workspace + their constraints.
+description: List all providers declared in the workspace + their constraints.
 side_effects:
   - Forks terraform.
   - Read-only.

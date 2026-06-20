@@ -3,7 +3,7 @@ id: cassandra.nodetool_getcompactionthroughput
 title: nodetool getcompactionthroughput
 kind: exec
 risk: low
-description: Current compaction throughput cap (MB/s; 0 = unlimited).
+description: Show the current compaction throughput cap (MB/s; 0 = unlimited).
 side_effects: ["One JMX call.", "Read-only."]
 args: []
 execution:

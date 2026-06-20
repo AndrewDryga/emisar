@@ -3,7 +3,7 @@ id: postgres.unused_indexes
 title: Unused indexes (idx_scan = 0)
 kind: exec
 risk: low
-description: 'Indexes never used since last stats reset. Drop candidates — but verify they''re not for an unrelated path (e.g., uniqueness constraint).'
+description: 'List indexes never used since last stats reset. Drop candidates — but verify they''re not for an unrelated path (e.g., uniqueness constraint).'
 side_effects: ["One SELECT.", "Read-only."]
 args: []
 execution:

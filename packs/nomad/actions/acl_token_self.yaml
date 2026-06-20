@@ -3,7 +3,7 @@ id: nomad.acl_token_self
 title: nomad acl token self
 kind: exec
 risk: low
-description: The runner's own token — name, type, policies, expiration.
+description: Show the runner's own token — name, type, policies, expiration.
 side_effects: ["One API call.", "Read-only."]
 args: []
 execution:

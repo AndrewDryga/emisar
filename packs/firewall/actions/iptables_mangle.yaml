@@ -3,7 +3,7 @@ id: fw.iptables_mangle
 title: iptables -L -nv (mangle table)
 kind: exec
 risk: low
-description: All mangle-table rules — QoS marks, TTL tweaks.
+description: List all mangle-table rules — QoS marks, TTL tweaks.
 side_effects:
   - One netfilter query.
   - Read-only.

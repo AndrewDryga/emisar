@@ -3,7 +3,7 @@ id: git.status
 title: git status (porcelain)
 kind: exec
 risk: low
-description: Working-tree status — uncommitted changes, branch, ahead/behind.
+description: Show working-tree status — uncommitted changes, branch, ahead/behind.
 side_effects:
   - One git status.
   - Read-only.

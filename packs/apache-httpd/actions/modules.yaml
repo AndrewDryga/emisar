@@ -3,7 +3,7 @@ id: httpd.modules
 title: apachectl -M
 kind: exec
 risk: low
-description: All loaded modules (static + shared).
+description: List all loaded modules (static + shared).
 side_effects:
   - Forks apachectl.
   - Read-only.

@@ -4,7 +4,7 @@ title: GET /api/v2/firewall/nat/port_forwards
 kind: script
 risk: low
 description: >
-  Inbound NAT port-forward rules — external port/interface to internal
+  List inbound NAT port-forward rules — external port/interface to internal
   target. Use to audit what is exposed.
 side_effects:
   - One read-only HTTP GET to the pfSense REST API.

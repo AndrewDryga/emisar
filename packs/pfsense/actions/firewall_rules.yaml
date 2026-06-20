@@ -4,7 +4,7 @@ title: GET /api/v2/firewall/rules
 kind: script
 risk: low
 description: >
-  All configured firewall filter rules, in order, with interface, action,
+  List all configured firewall filter rules, in order, with interface, action,
   source, destination, and description. Use to see what is allowed or blocked.
 side_effects:
   - One read-only HTTP GET to the pfSense REST API.

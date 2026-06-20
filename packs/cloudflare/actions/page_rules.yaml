@@ -3,7 +3,7 @@ id: cf.page_rules
 title: GET /zones/<id>/pagerules
 kind: exec
 risk: low
-description: All page rules for one zone.
+description: List all page rules for one zone.
 side_effects:
   - One API request.
   - Read-only.

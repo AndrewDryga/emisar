@@ -3,7 +3,7 @@ id: iam.list_users
 title: aws iam list-users
 kind: exec
 risk: low
-description: All IAM users in the account.
+description: List all IAM users in the account.
 side_effects: ["One API call.", "Read-only."]
 args: []
 execution:

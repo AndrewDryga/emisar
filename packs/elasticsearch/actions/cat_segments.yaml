@@ -3,7 +3,7 @@ id: es.cat_segments
 title: GET /_cat/segments
 kind: exec
 risk: low
-description: Per-segment doc + bytes counts. Use to plan a force_merge.
+description: Show per-segment doc + bytes counts. Use to plan a force_merge.
 side_effects:
   - One GET request.
   - Read-only.

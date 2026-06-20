@@ -3,7 +3,7 @@ id: envoy.runtime
 title: GET /runtime
 kind: exec
 risk: low
-description: Runtime overrides (feature flags + numeric overrides).
+description: Show runtime overrides (feature flags + numeric overrides).
 side_effects: ["One admin GET.", "Read-only."]
 args: []
 execution:

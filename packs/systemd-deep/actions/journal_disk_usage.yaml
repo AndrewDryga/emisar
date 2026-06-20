@@ -3,7 +3,7 @@ id: systemd.journal_disk_usage
 title: journalctl --disk-usage
 kind: exec
 risk: low
-description: How much disk the systemd journal is using.
+description: Show how much disk the systemd journal is using.
 side_effects:
   - One journalctl invocation.
   - Read-only.

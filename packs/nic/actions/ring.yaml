@@ -4,7 +4,7 @@ title: ethtool -g <iface>
 kind: exec
 risk: low
 description: >
-  RX/TX ring-buffer sizes for one NIC — the hardware preset maximums and
+  Show RX/TX ring-buffer sizes for one NIC — the hardware preset maximums and
   the current settings. Small rings under bursty load show up as rx_dropped
   in nic.stats.
 side_effects: ["One ethtool -g call.", "Read-only."]

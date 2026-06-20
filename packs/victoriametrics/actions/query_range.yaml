@@ -4,7 +4,7 @@ title: GET /api/v1/query_range
 kind: script
 risk: low
 description: >
-  Range PromQL/MetricsQL query against VictoriaMetrics — evaluates one
+  Run a range PromQL/MetricsQL query against VictoriaMetrics — evaluates one
   expression across a trailing window ending now. Use for trends and rates
   over time. Can be heavy on high-cardinality series.
 side_effects:

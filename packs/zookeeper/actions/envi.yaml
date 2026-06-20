@@ -3,7 +3,7 @@ id: zk.envi
 title: envi (server env)
 kind: exec
 risk: low
-description: Server JVM + OS environment.
+description: Show the server JVM + OS environment.
 side_effects: ["One 4lw command.", "Read-only."]
 args:
   - name: server

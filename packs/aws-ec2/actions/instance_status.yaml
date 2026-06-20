@@ -3,7 +3,7 @@ id: ec2.instance_status
 title: aws ec2 describe-instance-status
 kind: exec
 risk: low
-description: Per-instance system + instance status checks.
+description: Show per-instance system + instance status checks.
 side_effects:
   - One API call.
   - Read-only.

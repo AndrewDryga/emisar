@@ -4,7 +4,7 @@ title: ethtool -S <iface>
 kind: exec
 risk: low
 description: >
-  Hardware + driver counters for one NIC — per-queue and total rx/tx
+  Show hardware + driver counters for one NIC — per-queue and total rx/tx
   packets, bytes, errors, drops, and discards. The place to look for
   packet loss that ip/ifconfig counters don't break out.
 side_effects:

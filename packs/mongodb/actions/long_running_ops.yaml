@@ -4,7 +4,7 @@ title: Long-running active ops (currentOp, secs_running >= N)
 kind: exec
 risk: low
 description: >
-  Active operations that have been running at least N seconds — the canonical
+  List active operations that have been running at least N seconds — the canonical
   hunt for a hung or blocked op. Filters currentOp by secs_running.
 side_effects:
   - One currentOp command.

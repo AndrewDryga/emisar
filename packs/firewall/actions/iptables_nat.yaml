@@ -3,7 +3,7 @@ id: fw.iptables_nat
 title: iptables -L -nv (nat table)
 kind: exec
 risk: low
-description: All nat-table rules — DNAT/SNAT/MASQUERADE.
+description: List all nat-table rules — DNAT/SNAT/MASQUERADE.
 side_effects:
   - One netfilter query.
   - Read-only.

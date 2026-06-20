@@ -3,7 +3,7 @@ id: postgres.lock_blocking_chains
 title: Blocker → blocked chains
 kind: exec
 risk: low
-description: Each blocked backend with its blocker. Use to find the head of a stuck lock chain.
+description: List each blocked backend with its blocker. Use to find the head of a stuck lock chain.
 side_effects: ["One SELECT joining pg_locks.", "Read-only."]
 args: []
 execution:

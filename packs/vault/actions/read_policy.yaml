@@ -3,7 +3,7 @@ id: vault.read_policy
 title: vault policy read <name>
 kind: exec
 risk: low
-description: HCL document for one policy.
+description: Read the HCL document for one policy.
 side_effects:
   - One sys/policy/<name> request.
   - Read-only.

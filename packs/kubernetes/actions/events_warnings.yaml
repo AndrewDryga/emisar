@@ -4,7 +4,7 @@ title: Recent Warning events (all namespaces)
 kind: exec
 risk: low
 description: >
-  The most recent Warning-type events cluster-wide, oldest-to-newest
+  List the most recent Warning-type events cluster-wide, oldest-to-newest
   (FailedScheduling, BackOff, FailedMount, Unhealthy, …). The fastest
   cluster-wide "what is wrong right now". Read-only.
 side_effects:

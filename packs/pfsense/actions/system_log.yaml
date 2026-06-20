@@ -4,7 +4,7 @@ title: GET /api/v2/status/logs/system
 kind: script
 risk: low
 description: >
-  Recent system-log entries — the general pfSense log (boot, services,
+  Show recent system-log entries — the general pfSense log (boot, services,
   errors). Use for "what happened on the box recently?".
 side_effects:
   - One read-only HTTP GET to the pfSense REST API.

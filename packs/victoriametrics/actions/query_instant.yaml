@@ -4,7 +4,7 @@ title: GET /api/v1/query
 kind: script
 risk: low
 description: >
-  Instant PromQL/MetricsQL query against VictoriaMetrics — evaluates one
+  Run an instant PromQL/MetricsQL query against VictoriaMetrics — evaluates one
   expression at the current time. Use to answer "what is X right now?".
 side_effects:
   - One read-only HTTP GET to the VictoriaMetrics query API.

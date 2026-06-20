@@ -3,7 +3,7 @@ id: kubernetes.events_recent
 title: Recent cluster events
 kind: exec
 risk: low
-description: Last 50 events across all namespaces, sorted by last timestamp.
+description: List the last 50 events across all namespaces, sorted by last timestamp.
 side_effects:
   - One kubectl get events invocation.
   - Read-only.

@@ -3,7 +3,7 @@ id: forensics.pid_io
 title: /proc/PID/io
 kind: exec
 risk: low
-description: Cumulative read/write byte counts for one PID. Use to identify IO hogs.
+description: Show cumulative read/write byte counts for one PID. Use to identify IO hogs.
 side_effects:
   - One /proc read.
   - Read-only.

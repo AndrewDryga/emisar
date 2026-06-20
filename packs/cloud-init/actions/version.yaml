@@ -3,7 +3,7 @@ id: cloud-init.version
 title: cloud-init --version
 kind: exec
 risk: low
-description: Build + version string for the cloud-init on this host.
+description: Show the build + version string for the cloud-init on this host.
 side_effects:
   - One CLI call.
   - Read-only.

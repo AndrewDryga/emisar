@@ -3,7 +3,7 @@ id: mongo.current_op
 title: db.currentOp()
 kind: exec
 risk: low
-description: 'In-flight operations. The canonical "what is the server doing right now?" check.'
+description: 'List in-flight operations. The canonical "what is the server doing right now?" check.'
 side_effects:
   - One currentOp command.
   - Read-only.

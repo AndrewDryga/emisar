@@ -4,7 +4,7 @@ title: cloud-init analyze blame
 kind: exec
 risk: low
 description: >
-  Modules ranked by duration. The single fastest answer to "why did
+  List modules ranked by duration. The single fastest answer to "why did
   cloud-init take 90 seconds?" — the slow module is at the top.
 side_effects:
   - One CLI call.

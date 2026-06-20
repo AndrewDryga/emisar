@@ -4,7 +4,7 @@ title: SHOW ENGINE INNODB STATUS
 kind: exec
 risk: low
 description: >
-  Full InnoDB engine status — buffer pool, latest deadlock detected, longest waiting transaction, undo space, log sequence number. The canonical "InnoDB is sick" diagnostic.
+  Show full InnoDB engine status — buffer pool, latest deadlock detected, longest waiting transaction, undo space, log sequence number. The canonical "InnoDB is sick" diagnostic.
 side_effects:
   - One SHOW ENGINE INNODB STATUS.
   - Read-only.

@@ -3,7 +3,7 @@ id: nfs.exportfs_v
 title: exportfs -v
 kind: exec
 risk: low
-description: Currently-exported NFS shares + options.
+description: List currently-exported NFS shares + options.
 side_effects: ["One exportfs call.", "Read-only."]
 args: []
 execution:

@@ -3,7 +3,7 @@ id: nomad.node_status_one
 title: nomad node status <id>
 kind: exec
 risk: low
-description: One node's full detail — resources, allocations, events, drivers.
+description: Show one node's full detail — resources, allocations, events, drivers.
 side_effects: ["One API call.", "Read-only."]
 args:
   - name: node_id

@@ -3,7 +3,7 @@ id: nomad.operator_autopilot_get_config
 title: nomad operator autopilot get-config
 kind: exec
 risk: low
-description: Autopilot configuration (dead-server cleanup, redundancy zones, server stabilization).
+description: Show the autopilot configuration (dead-server cleanup, redundancy zones, server stabilization).
 side_effects: ["One API call.", "Read-only."]
 args: []
 execution:

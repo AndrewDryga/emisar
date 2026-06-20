@@ -3,7 +3,7 @@ id: prom.flags
 title: GET /api/v1/status/flags
 kind: exec
 risk: low
-description: Server command-line flags.
+description: Show server command-line flags.
 side_effects:
   - One GET request.
   - Read-only.

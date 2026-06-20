@@ -4,7 +4,7 @@ title: GET /debug
 kind: script
 risk: low
 description: >
-  Node version and raft state. The "state" field reports this node's role in
+  Show node version and raft state. The "state" field reports this node's role in
   the cluster: 1 = LEADER, 4 = FOLLOWER. This is how you read which node is
   leader vs follower per node. Requires the admin API key.
 side_effects:

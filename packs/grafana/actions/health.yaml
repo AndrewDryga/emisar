@@ -3,7 +3,7 @@ id: grafana.health
 title: GET /api/health
 kind: exec
 risk: low
-description: Liveness + DB-ok state.
+description: Show liveness + DB-ok state.
 side_effects: ["One API call.", "Read-only."]
 args: []
 execution:

@@ -3,7 +3,7 @@ id: iam.get_role
 title: aws iam get-role
 kind: exec
 risk: low
-description: One IAM role's details + trust policy.
+description: Get one IAM role's details + trust policy.
 side_effects: ["One API call.", "Read-only."]
 args:
   - name: role

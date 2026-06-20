@@ -3,7 +3,7 @@ id: grafana.users
 title: GET /api/org/users (org admin)
 kind: exec
 risk: low
-description: All users in the current org. Requires an Admin-scoped token.
+description: List all users in the current org. Requires an Admin-scoped token.
 side_effects: ["One API call.", "Read-only."]
 args: []
 execution:

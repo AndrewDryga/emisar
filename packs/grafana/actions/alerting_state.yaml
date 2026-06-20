@@ -3,7 +3,7 @@ id: grafana.alerting_state
 title: GET /api/alertmanager/grafana/api/v2/alerts
 kind: exec
 risk: low
-description: Currently-firing alerts known to Grafana's alertmanager.
+description: List currently-firing alerts known to Grafana's alertmanager.
 side_effects: ["One API call.", "Read-only."]
 args: []
 execution:

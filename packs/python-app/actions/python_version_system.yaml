@@ -3,7 +3,7 @@ id: py.python_version_system
 title: python3 --version (system)
 kind: exec
 risk: low
-description: System python interpreter version.
+description: Show the system python interpreter version.
 side_effects: ["One forked process.", "Read-only."]
 args: []
 execution:

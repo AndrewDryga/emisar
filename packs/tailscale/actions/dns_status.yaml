@@ -4,7 +4,7 @@ title: tailscale dns status
 kind: exec
 risk: low
 description: >
-  MagicDNS and DNS configuration for this node — nameservers, search
+  Show MagicDNS and DNS configuration for this node — nameservers, search
   domains, split-DNS routes, and whether MagicDNS is enabled.
 side_effects: ["One tailscale read.", "Read-only."]
 args: []

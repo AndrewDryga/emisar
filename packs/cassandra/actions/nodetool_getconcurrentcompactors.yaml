@@ -3,7 +3,7 @@ id: cassandra.nodetool_getconcurrentcompactors
 title: nodetool getconcurrentcompactors
 kind: exec
 risk: low
-description: Current concurrent_compactors setting.
+description: Show the current concurrent_compactors setting.
 side_effects: ["One JMX call.", "Read-only."]
 args: []
 execution:

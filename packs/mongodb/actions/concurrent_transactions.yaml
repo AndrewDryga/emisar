@@ -4,7 +4,7 @@ title: Read/write tickets (concurrency saturation)
 kind: exec
 risk: low
 description: >
-  Read/write ticket pools — out vs available. Queued/exhausted tickets are the
+  Show read/write ticket pools — out vs available. Queued/exhausted tickets are the
   classic sign of storage-engine overload. Version-tolerant: reads
   queues.execution on MongoDB 8.0+, else wiredTiger.concurrentTransactions
   (<= 7.0).

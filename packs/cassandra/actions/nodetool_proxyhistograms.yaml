@@ -3,7 +3,7 @@ id: cassandra.nodetool_proxyhistograms
 title: nodetool proxyhistograms
 kind: exec
 risk: low
-description: Coordinator-side read/write latency histograms — what clients actually see.
+description: Show coordinator-side read/write latency histograms — what clients actually see.
 side_effects: ["One JMX call.", "Read-only."]
 args: []
 execution:

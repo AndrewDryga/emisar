@@ -3,7 +3,7 @@ id: cw.log_streams
 title: aws logs describe-log-streams
 kind: exec
 risk: low
-description: Streams for one log group, sorted by last event time.
+description: List streams for one log group, sorted by last event time.
 side_effects: ["One API call.", "Read-only."]
 args:
   - name: log_group

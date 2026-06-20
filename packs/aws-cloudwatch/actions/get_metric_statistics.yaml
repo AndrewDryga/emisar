@@ -3,7 +3,7 @@ id: cw.get_metric_statistics
 title: aws cloudwatch get-metric-statistics (last 1h)
 kind: exec
 risk: low
-description: 1-hour Average + Max for one metric. Use for quick health snapshots.
+description: Get 1-hour Average + Max for one metric. Use for quick health snapshots.
 side_effects: ["One API call.", "Read-only."]
 args:
   - name: namespace

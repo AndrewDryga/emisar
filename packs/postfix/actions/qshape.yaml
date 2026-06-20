@@ -3,7 +3,7 @@ id: postfix.qshape
 title: qshape (queue by domain x age)
 kind: exec
 risk: low
-description: Bucketed queue counts by destination + age.
+description: Show bucketed queue counts by destination + age.
 side_effects: ["One qshape call.", "Read-only."]
 args:
   - name: queue

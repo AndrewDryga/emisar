@@ -4,7 +4,7 @@ title: cat /var/lib/cloud/instance/vendor-data.txt
 kind: exec
 risk: low
 description: >
-  Vendor-data the cloud provider injected (AWS / GCE / Azure provider
+  Dump vendor-data the cloud provider injected (AWS / GCE / Azure provider
   defaults that ran before user-data). Useful when "why is X installed
   that I didn't ask for?" leads back to a vendor module.
 side_effects:

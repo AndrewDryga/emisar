@@ -4,7 +4,7 @@ title: Frontend stats (show stat, type=frontend)
 kind: exec
 risk: low
 description: >
-  Per-frontend stats (status, sessions, bytes, denied, errors) as CSV. There is
+  Show per-frontend stats (status, sessions, bytes, denied, errors) as CSV. There is
   no `show frontend` Runtime-API command, so this uses `show stat -1 1 -1` —
   the stat dump filtered to type=frontend (the bitmask 1 = frontend).
 side_effects:

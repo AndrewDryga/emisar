@@ -4,7 +4,7 @@ title: GET /select/logsql/stats_query
 kind: script
 risk: low
 description: >
-  Instant stats over logs — a LogsQL query containing a "| stats" pipe,
+  Show instant stats over logs — a LogsQL query containing a "| stats" pipe,
   evaluated at one point in time and returned in Prometheus instant-query
   format. Use for totals like counts or sums grouped by a field.
 side_effects:

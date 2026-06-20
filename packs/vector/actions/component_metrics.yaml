@@ -4,7 +4,7 @@ title: POST /graphql (component metrics)
 kind: exec
 risk: low
 description: >
-  Per-component throughput from the Vector GraphQL API: received and sent
+  Show per-component throughput from the Vector GraphQL API: received and sent
   event totals for every source, transform, and sink, plus sent-bytes for
   sinks. GraphQL API — Vector <= 0.54 ONLY. On Vector >= 0.55 (gRPC
   migration, April 2026) the /graphql endpoint was REMOVED and this returns

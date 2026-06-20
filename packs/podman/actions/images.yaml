@@ -3,7 +3,7 @@ id: podman.images
 title: podman images
 kind: exec
 risk: low
-description: All local images.
+description: List all local images.
 side_effects: ["One CLI call.", "Read-only."]
 args: []
 execution:

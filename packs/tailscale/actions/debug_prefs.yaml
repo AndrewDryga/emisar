@@ -4,7 +4,7 @@ title: tailscale debug prefs
 kind: exec
 risk: low
 description: >
-  Current node prefs as JSON, including AdvertiseRoutes (this node's
+  Show current node prefs as JSON, including AdvertiseRoutes (this node's
   advertised subnet routes) and ExitNodeIP/ExitNodeID (the configured
   exit node, if any). Read-only print of the in-memory prefs.
 side_effects: ["One tailscale read.", "Read-only — prints prefs, changes nothing."]

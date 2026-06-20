@@ -3,7 +3,7 @@ id: consul.agent_self
 title: GET /v1/agent/self
 kind: exec
 risk: low
-description: This agent's effective config, runtime, member, and ACL state.
+description: Show this agent's effective config, runtime, member, and ACL state.
 side_effects: ["One API call.", "Read-only."]
 args: []
 execution:

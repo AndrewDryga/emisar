@@ -3,7 +3,7 @@ id: tf.state_show
 title: terraform state show <address>
 kind: exec
 risk: low
-description: Attributes of one resource in state. May contain secrets — relies on audit redaction.
+description: Show attributes of one resource in state. May contain secrets — relies on audit redaction.
 side_effects:
   - Reads state file.
   - Read-only — output may contain sensitive attributes; rely on redaction.

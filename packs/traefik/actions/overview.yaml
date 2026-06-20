@@ -4,7 +4,7 @@ title: GET /api/overview
 kind: script
 risk: low
 description: >
-  Dashboard summary — counts of HTTP/TCP/UDP routers, services, and
+  Show dashboard summary — counts of HTTP/TCP/UDP routers, services, and
   middlewares by state (enabled/warning/errored), enabled providers, and
   which features (metrics, tracing) are on. The fastest "is anything broken?"
   read before drilling into the per-router inventory.

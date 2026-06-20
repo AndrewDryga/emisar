@@ -3,7 +3,7 @@ id: postgres.longest_running_queries
 title: Top 20 by query age
 kind: exec
 risk: low
-description: Backends in 'active' state, oldest first. Use to spot stuck/runaway work.
+description: List backends in 'active' state, oldest first. Use to spot stuck/runaway work.
 side_effects: ["One SELECT.", "Read-only."]
 args: []
 execution:

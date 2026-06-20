@@ -3,7 +3,7 @@ id: consul.catalog_datacenters
 title: GET /v1/catalog/datacenters
 kind: exec
 risk: low
-description: All WAN-federated datacenters known to this server.
+description: List all WAN-federated datacenters known to this server.
 side_effects: ["One API call.", "Read-only."]
 args: []
 execution:

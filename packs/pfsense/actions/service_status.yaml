@@ -4,7 +4,7 @@ title: GET /api/v2/status/services
 kind: script
 risk: low
 description: >
-  All pfSense services with their enabled flag and running state (unbound,
+  List all pfSense services with their enabled flag and running state (unbound,
   dhcpd/kea, openvpn, ipsec, dpinger, …). Use to find a stopped service.
 side_effects:
   - One read-only HTTP GET to the pfSense REST API.

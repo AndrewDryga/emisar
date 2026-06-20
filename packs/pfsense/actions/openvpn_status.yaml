@@ -4,7 +4,7 @@ title: GET /api/v2/status/openvpn/servers
 kind: script
 risk: low
 description: >
-  OpenVPN server status — each server and its connected clients (common
+  Show OpenVPN server status — each server and its connected clients (common
   name, real address, bytes in/out, connected-since). Use to see who is on
   the VPN.
 side_effects:

@@ -3,7 +3,7 @@ id: cassandra.nodetool_getlogginglevels
 title: nodetool getlogginglevels
 kind: exec
 risk: low
-description: Current per-logger levels.
+description: Show the current per-logger levels.
 side_effects: ["One JMX call.", "Read-only."]
 args: []
 execution:

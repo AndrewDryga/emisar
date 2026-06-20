@@ -3,7 +3,7 @@ id: mc.stats_settings
 title: stats settings
 kind: exec
 risk: low
-description: Daemon configuration at boot.
+description: Show daemon configuration at boot.
 side_effects: ["One ASCII protocol call.", "Read-only."]
 args: []
 execution:

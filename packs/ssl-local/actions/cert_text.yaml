@@ -3,7 +3,7 @@ id: ssl.cert_text
 title: openssl x509 -text -noout
 kind: exec
 risk: low
-description: Human-readable dump of one x509 certificate.
+description: Dump a human-readable x509 certificate.
 side_effects:
   - One file read.
   - Read-only.

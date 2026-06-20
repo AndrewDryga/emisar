@@ -3,7 +3,7 @@ id: prom.tsdb_stats
 title: GET /api/v1/status/tsdb
 kind: exec
 risk: low
-description: Top-10 cardinal label/value pairs in the TSDB. Use to spot cardinality explosion.
+description: Show the top-10 cardinal label/value pairs in the TSDB. Use to spot cardinality explosion.
 side_effects:
   - One GET request.
   - Read-only.

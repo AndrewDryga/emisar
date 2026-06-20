@@ -2,7 +2,7 @@ schema_version: 1
 
 id: memcached
 name: Memcached cache server
-version: 0.1.3
+version: 0.1.4
 description: >
   Read-only memcached introspection via the `stats` ASCII protocol —
   general stats, slab usage, item counts, sizes. Plus FLUSH_ALL as a

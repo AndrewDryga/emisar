@@ -3,7 +3,7 @@ id: f2b.version
 title: fail2ban-client version
 kind: exec
 risk: low
-description: Daemon version.
+description: Show the fail2ban daemon version.
 side_effects: ["One fail2ban call.", "Read-only."]
 args: []
 execution:

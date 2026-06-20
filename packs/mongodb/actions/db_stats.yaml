@@ -3,7 +3,7 @@ id: mongo.db_stats
 title: db.stats()
 kind: exec
 risk: low
-description: Database-level totals — collections, indexes, data size, storage size.
+description: Show database-level totals — collections, indexes, data size, storage size.
 side_effects:
   - One dbStats command.
   - Read-only.

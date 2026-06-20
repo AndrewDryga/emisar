@@ -4,7 +4,7 @@ title: GET /api/v2/status/gateways
 kind: script
 risk: low
 description: >
-  Gateway monitoring (dpinger) — per-gateway up/down state, RTT, std-dev,
+  Show gateway monitoring (dpinger) — per-gateway up/down state, RTT, std-dev,
   and packet loss. Use to diagnose WAN / multi-WAN failover.
 side_effects:
   - One read-only HTTP GET to the pfSense REST API.

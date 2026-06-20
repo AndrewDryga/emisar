@@ -3,7 +3,7 @@ id: consul.list_checks_critical
 title: GET /v1/health/state/critical
 kind: exec
 risk: low
-description: Every check currently in CRITICAL state across the catalog.
+description: List every check currently in CRITICAL state across the catalog.
 side_effects: ["One API call.", "Read-only."]
 args: []
 execution:

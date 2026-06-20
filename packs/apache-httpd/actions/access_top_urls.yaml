@@ -3,7 +3,7 @@ id: httpd.access_top_urls
 title: Top URLs from access log
 kind: exec
 risk: low
-description: Tally of request URLs from the last N access log lines.
+description: Show a tally of request URLs from the last N access log lines.
 side_effects:
   - One file read.
   - Read-only.

@@ -4,7 +4,7 @@ title: CLUSTER INFO
 kind: exec
 risk: low
 description: >
-  Cluster status — state ok/fail, slots assigned/ok/pfail/fail,
+  Show cluster status — state ok/fail, slots assigned/ok/pfail/fail,
   known nodes, size, epoch, my epoch, messages sent/received.
 side_effects:
   - One CLUSTER INFO command.

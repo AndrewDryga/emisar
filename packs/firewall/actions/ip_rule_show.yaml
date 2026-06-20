@@ -3,7 +3,7 @@ id: fw.ip_rule_show
 title: ip rule show
 kind: exec
 risk: low
-description: Policy routing rules — which routing table is used for which traffic.
+description: Show policy routing rules — which routing table is used for which traffic.
 side_effects:
   - One netlink query.
   - Read-only.

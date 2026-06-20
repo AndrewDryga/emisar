@@ -3,7 +3,7 @@ id: tf.version
 title: terraform version
 kind: exec
 risk: low
-description: Terraform binary version + provider versions.
+description: Show the Terraform binary version + provider versions.
 side_effects:
   - Forks terraform.
   - Read-only.

@@ -3,7 +3,7 @@ id: grafana.datasource_health
 title: GET /api/datasources/uid/<uid>/health
 kind: exec
 risk: low
-description: Health probe for one datasource (tests connectivity).
+description: Check health of one datasource (tests connectivity).
 side_effects: ["One API call that probes the downstream datasource.", "Read-only."]
 args:
   - name: uid

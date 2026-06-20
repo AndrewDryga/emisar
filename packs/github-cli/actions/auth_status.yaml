@@ -3,7 +3,7 @@ id: gh.auth_status
 title: gh auth status
 kind: exec
 risk: low
-description: Which GitHub account the runner's `gh` is signed in as + token scopes.
+description: Show which GitHub account the runner's `gh` is signed in as + token scopes.
 side_effects:
   - One API call to /user.
   - Read-only.

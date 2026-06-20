@@ -4,7 +4,7 @@ title: LATENCY HISTORY
 kind: exec
 risk: low
 description: >
-  Per-event latency time series (e.g. fork, aof-write, expire).
+  Show per-event latency time series (e.g. fork, aof-write, expire).
   Use after LATENCY LATEST to drill into one event class.
 side_effects:
   - One LATENCY HISTORY command.

@@ -3,7 +3,7 @@ id: cassandra.nodetool_version
 title: nodetool version
 kind: exec
 risk: low
-description: Cassandra version string for the node.
+description: Show the Cassandra version string for the node.
 side_effects: ["One JMX call.", "Read-only."]
 args: []
 execution:

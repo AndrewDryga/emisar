@@ -1,7 +1,7 @@
 schema_version: 1
 id: aws-ec2
 name: AWS EC2 operations
-version: 0.1.2
+version: 0.1.3
 description: >
   EC2 instance inventory + state introspection plus narrow mutators
   (stop, start, reboot, terminate). Auth via AWS_PROFILE + AWS_REGION

@@ -3,7 +3,7 @@ id: wg.show_endpoints
 title: wg show all endpoints
 kind: exec
 risk: low
-description: Per-peer remote endpoint (last known).
+description: Show per-peer remote endpoint (last known).
 side_effects: ["One netlink query.", "Read-only."]
 args: []
 execution:

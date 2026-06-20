@@ -4,7 +4,7 @@ title: GET /alerts
 kind: script
 risk: low
 description: >
-  Open (unresolved) array alerts, filtered to state='open' — each with its
+  List open (unresolved) array alerts, filtered to state='open' — each with its
   severity (info / warning / critical), component, and summary. Use to answer
   "what is the array complaining about right now?". Returns
   {items:[...], more_items_remaining, ...}, one item per open alert.

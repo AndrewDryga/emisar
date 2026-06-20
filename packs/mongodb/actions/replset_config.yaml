@@ -3,7 +3,7 @@ id: mongo.replset_config
 title: rs.conf()
 kind: exec
 risk: low
-description: Replica set configuration — members, votes, priorities, settings.
+description: Show replica set configuration — members, votes, priorities, settings.
 side_effects:
   - One replSetGetConfig.
   - Read-only.

@@ -3,7 +3,7 @@ id: git.diff_head
 title: git diff HEAD
 kind: exec
 risk: low
-description: Uncommitted changes against HEAD. Capped at 1MB of output.
+description: Show uncommitted changes against HEAD. Capped at 1MB of output.
 side_effects:
   - One git diff.
   - Read-only.

@@ -4,7 +4,7 @@ title: GET /api/entrypoints
 kind: script
 risk: low
 description: >
-  All configured entrypoints — name, listen address/port, and transport
+  List all configured entrypoints — name, listen address/port, and transport
   settings (timeouts, HTTP/2, TLS defaults). Use to confirm the front door
   is listening where you expect (web :80, websecure :443, etc.).
 side_effects:

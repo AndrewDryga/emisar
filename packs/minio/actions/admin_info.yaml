@@ -3,7 +3,7 @@ id: minio.admin_info
 title: mc admin info
 kind: exec
 risk: low
-description: 'Cluster info: nodes, storage, network, uptime.'
+description: 'Show cluster info: nodes, storage, network, uptime.'
 side_effects: ["One admin call.", "Read-only."]
 args:
   - name: alias

@@ -4,7 +4,7 @@ title: cloud-init status
 kind: exec
 risk: low
 description: >
-  Current overall cloud-init state — `running`, `done`, `error`,
+  Show the current overall cloud-init state — `running`, `done`, `error`,
   `disabled`, or `not run`. Use as the first answer to "did boot
   finish?".
 side_effects:

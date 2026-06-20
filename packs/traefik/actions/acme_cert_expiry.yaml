@@ -4,8 +4,8 @@ title: ACME certificate expiry (from acme.json)
 kind: exec
 risk: low
 description: >
-  For each ACME/Let's Encrypt certificate in acme.json, prints the domain and
-  its notAfter expiry date. Decodes only the public certificate (base64 PEM)
+  Show each ACME/Let's Encrypt certificate in acme.json with its domain and
+  notAfter expiry date. Decodes only the public certificate (base64 PEM)
   through openssl — never touches the private key. Traefik auto-renews 30 days
   out, so anything closer than that which is NOT renewing is the thing to
   investigate. Read-only.

@@ -3,7 +3,7 @@ id: haproxy.show_map
 title: show map
 kind: exec
 risk: low
-description: All loaded `map` files (the lookup tables HAProxy uses for routing).
+description: List all loaded `map` files (the lookup tables HAProxy uses for routing).
 side_effects:
   - One admin socket command.
   - Read-only.

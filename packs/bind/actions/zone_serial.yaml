@@ -3,7 +3,7 @@ id: bind.zone_serial
 title: SOA serial of <zone>
 kind: exec
 risk: low
-description: SOA serial from localhost — use to confirm a zone reloaded.
+description: Show SOA serial from localhost — use to confirm a zone reloaded.
 side_effects: ["One DNS query.", "Read-only."]
 args:
   - name: zone

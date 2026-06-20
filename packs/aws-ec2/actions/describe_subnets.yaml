@@ -3,7 +3,7 @@ id: ec2.describe_subnets
 title: aws ec2 describe-subnets
 kind: exec
 risk: low
-description: All subnets in this region.
+description: List all subnets in this region.
 side_effects:
   - One API call.
   - Read-only.

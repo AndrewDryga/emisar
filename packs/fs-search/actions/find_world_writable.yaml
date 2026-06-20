@@ -3,7 +3,7 @@ id: fs.find_world_writable
 title: World-writable files
 kind: exec
 risk: low
-description: 'Files with the "world-writable" bit set under one path. Security audit.'
+description: 'Find files with the "world-writable" bit set under one path. Security audit.'
 side_effects:
   - One file-system traversal.
   - Read-only.

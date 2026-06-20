@@ -3,7 +3,7 @@ id: phpfpm.modules
 title: php -m
 kind: exec
 risk: low
-description: All loaded extensions.
+description: List all loaded extensions.
 side_effects: ["One forked process.", "Read-only."]
 args: []
 execution:

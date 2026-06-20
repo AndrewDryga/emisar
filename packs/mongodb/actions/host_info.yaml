@@ -3,7 +3,7 @@ id: mongo.host_info
 title: hostInfo
 kind: exec
 risk: low
-description: Host CPU, memory, NUMA layout, OS.
+description: Show host CPU, memory, NUMA layout, OS.
 side_effects:
   - One hostInfo command.
   - Read-only.

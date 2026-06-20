@@ -3,7 +3,7 @@ id: zk.wchs
 title: wchs (watch summary)
 kind: exec
 risk: low
-description: Active watch counts.
+description: Show active watch counts.
 side_effects: ["One 4lw command.", "Read-only."]
 args:
   - name: server

@@ -3,7 +3,7 @@ id: vault.list_policies
 title: vault policy list
 kind: exec
 risk: low
-description: All policy names.
+description: List all policy names.
 side_effects:
   - One sys/policy request.
   - Read-only.

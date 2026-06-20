@@ -4,7 +4,7 @@ title: GET /v2/
 kind: script
 risk: low
 description: >
-  OCI distribution base endpoint. A 200 confirms the registry is up and
+  Check the OCI distribution base endpoint. A 200 confirms the registry is up and
   speaking the v2 API, and the response advertises the supported
   distribution-spec version. Use as a reachability/version check.
 side_effects:

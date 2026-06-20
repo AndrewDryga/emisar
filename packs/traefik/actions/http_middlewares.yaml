@@ -4,7 +4,7 @@ title: GET /api/http/middlewares
 kind: script
 risk: low
 description: >
-  Every HTTP middleware (auth, rate-limit, headers, redirects, retries,
+  List every HTTP middleware (auth, rate-limit, headers, redirects, retries,
   circuit-breaker, etc.) with its config, status, and error[]. Use to confirm
   a middleware is configured as expected and not in error.
 side_effects:

@@ -3,7 +3,7 @@ id: mongo.connections
 title: connPoolStats
 kind: exec
 risk: low
-description: Connection pool stats — totals, active, available, by host.
+description: Show connection pool stats — totals, active, available, by host.
 side_effects:
   - One connPoolStats command.
   - Read-only.

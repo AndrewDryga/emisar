@@ -3,7 +3,7 @@ id: caddy.pki_certs
 title: GET /pki/ca/<id>/certificates
 kind: exec
 risk: low
-description: Certificates managed by Caddy's internal PKI.
+description: List certificates managed by Caddy's internal PKI.
 side_effects: ["One admin GET.", "Read-only."]
 args:
   - name: ca

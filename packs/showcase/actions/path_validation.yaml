@@ -11,7 +11,7 @@ kind: exec
 risk: low
 
 description: >
-  Reference action for path-typed arguments. Demonstrates allowed
+  Show a reference action for path-typed arguments. Demonstrates allowed
   prefixes plus an explicit deny list. The combined effect: the caller
   may inspect anything under /var/log or /tmp, except /var/log/secure
   and anything under /tmp/private.

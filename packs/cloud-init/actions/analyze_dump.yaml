@@ -4,7 +4,7 @@ title: cloud-init analyze dump
 kind: exec
 risk: low
 description: >
-  Raw event records from cloud-init.log as JSON. Useful for downstream
+  Dump raw event records from cloud-init.log as JSON. Useful for downstream
   tooling that wants structured timing data.
 side_effects:
   - One CLI call.

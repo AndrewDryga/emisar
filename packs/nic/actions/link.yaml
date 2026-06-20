@@ -4,7 +4,7 @@ title: ethtool <iface>
 kind: exec
 risk: low
 description: >
-  Link settings for one NIC — negotiated speed and duplex, autoneg,
+  Show link settings for one NIC — negotiated speed and duplex, autoneg,
   port/medium, and the link-detected flag. The "is this NIC up and at the
   speed I expect?" check.
 side_effects: ["One ethtool call.", "Read-only."]

@@ -3,7 +3,7 @@ id: forensics.pid_open_files
 title: lsof -p <pid>
 kind: exec
 risk: low
-description: All open files (regular, sockets, pipes) for one PID. Richer than /proc/PID/fd alone.
+description: List all open files (regular, sockets, pipes) for one PID. Richer than /proc/PID/fd alone.
 side_effects:
   - lsof walks /proc + kernel tables.
   - Read-only.

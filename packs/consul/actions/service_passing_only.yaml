@@ -3,7 +3,7 @@ id: consul.service_passing_only
 title: GET /v1/health/service/<name>?passing
 kind: exec
 risk: low
-description: Only healthy (all-passing) instances of one service. What service discovery would return.
+description: List only healthy (all-passing) instances of one service. What service discovery would return.
 side_effects: ["One API call.", "Read-only."]
 args:
   - name: service

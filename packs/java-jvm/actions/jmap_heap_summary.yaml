@@ -3,7 +3,7 @@ id: jvm.jmap_heap_summary
 title: jmap -heap
 kind: exec
 risk: low
-description: Heap geometry — used/free/committed per generation (Eden, Survivor, Old, Metaspace).
+description: Show heap geometry — used/free/committed per generation (Eden, Survivor, Old, Metaspace).
 side_effects:
   - One jmap invocation.
   - Read-only.

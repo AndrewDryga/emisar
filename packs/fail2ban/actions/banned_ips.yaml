@@ -3,7 +3,7 @@ id: f2b.banned_ips
 title: get <jail> banip
 kind: exec
 risk: low
-description: Currently banned IPs in one jail.
+description: List currently banned IPs in one jail.
 side_effects: ["One fail2ban call.", "Read-only."]
 args:
   - name: jail

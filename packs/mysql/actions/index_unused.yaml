@@ -3,7 +3,7 @@ id: mysql.index_unused
 title: Unused indexes
 kind: exec
 risk: low
-description: Indexes with zero reads since uptime — candidates for dropping (frees disk + speeds writes). Read-only.
+description: List indexes with zero reads since uptime — candidates for dropping (frees disk + speeds writes). Read-only.
 side_effects:
   - One SELECT against performance_schema.
   - Read-only.

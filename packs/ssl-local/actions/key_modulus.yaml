@@ -4,7 +4,7 @@ title: openssl rsa -modulus | sha256
 kind: exec
 risk: low
 description: >
-  Hash of the RSA private key's modulus. Compare to the modulus hash of a cert (via `openssl x509 -modulus`) to confirm key + cert match. NEVER prints the key itself.
+  Show the hash of the RSA private key's modulus. Compare to the modulus hash of a cert (via `openssl x509 -modulus`) to confirm key + cert match. NEVER prints the key itself.
 side_effects:
   - One file read.
   - Read-only — only the modulus hash is emitted; the key material is not returned.

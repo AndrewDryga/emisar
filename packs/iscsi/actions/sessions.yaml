@@ -4,7 +4,7 @@ title: iscsiadm -m session
 kind: exec
 risk: low
 description: >
-  Active iSCSI sessions — one line per session (transport, target IQN, sid).
+  List active iSCSI sessions — one line per session (transport, target IQN, sid).
   Returns nothing and succeeds when there are no active sessions (iscsiadm
   exits 21 in that case, which is treated as success, not failure).
 side_effects: ["One iscsiadm read.", "Read-only."]

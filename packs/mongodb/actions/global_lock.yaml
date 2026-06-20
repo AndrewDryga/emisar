@@ -4,7 +4,7 @@ title: Global lock queue / active clients (globalLock)
 kind: exec
 risk: low
 description: >
-  Global lock contention — currentQueue (total/readers/writers) waiting on the
+  Show global lock contention — currentQueue (total/readers/writers) waiting on the
   lock, and activeClients (total/readers/writers). A growing queue points to
   lock contention or an overloaded server.
 side_effects:

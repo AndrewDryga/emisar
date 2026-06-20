@@ -3,7 +3,7 @@ id: postgres.hot_update_ratio
 title: HOT update ratio per table
 kind: exec
 risk: low
-description: 'HOT updates avoid index work and bloat. Low ratio on a hot table = missing fillfactor tuning or wrong index.'
+description: 'Show HOT update ratio per table. HOT updates avoid index work and bloat. Low ratio on a hot table = missing fillfactor tuning or wrong index.'
 side_effects: ["One SELECT.", "Read-only."]
 args: []
 execution:

@@ -3,7 +3,7 @@ id: envoy.server_info
 title: GET /server_info
 kind: exec
 risk: low
-description: Envoy version, uptime, hot-restart state, command-line.
+description: Show Envoy version, uptime, hot-restart state, command-line.
 side_effects: ["One admin GET.", "Read-only."]
 args: []
 execution:

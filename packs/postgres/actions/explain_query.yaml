@@ -3,7 +3,7 @@ id: postgres.explain_query
 title: EXPLAIN (FORMAT JSON) <query>
 kind: exec
 risk: low
-description: Plan-only EXPLAIN. The query is NOT executed.
+description: Show the plan-only EXPLAIN. The query is NOT executed.
 side_effects: ["Parses + plans the query.", "Read-only — query body is not executed."]
 args:
   - name: query

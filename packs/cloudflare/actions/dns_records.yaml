@@ -3,7 +3,7 @@ id: cf.dns_records
 title: GET /zones/<id>/dns_records
 kind: exec
 risk: low
-description: All DNS records in one zone.
+description: List all DNS records in one zone.
 side_effects:
   - One API request.
   - Read-only.

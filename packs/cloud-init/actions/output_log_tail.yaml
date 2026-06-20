@@ -4,7 +4,7 @@ title: tail /var/log/cloud-init-output.log
 kind: exec
 risk: low
 description: >
-  Captured stdout/stderr from every command cloud-init ran during boot
+  Tail captured stdout/stderr from every command cloud-init ran during boot
   (`runcmd`, `bootcmd`, package install, etc.). Where to look when a
   shell command in cloud-config silently failed.
 side_effects:

@@ -3,7 +3,7 @@ id: zfs.arc_stats
 title: /proc/spl/kstat/zfs/arcstats
 kind: exec
 risk: low
-description: ARC cache statistics — size, hit ratio, eviction counts.
+description: Show ARC cache statistics — size, hit ratio, eviction counts.
 side_effects: ["One file read.", "Read-only."]
 args: []
 execution:

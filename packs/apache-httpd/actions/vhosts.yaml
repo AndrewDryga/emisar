@@ -3,7 +3,7 @@ id: httpd.vhosts
 title: apachectl -S
 kind: exec
 risk: low
-description: All configured vhosts with their effective listen + ServerName.
+description: List all configured vhosts with their effective listen + ServerName.
 side_effects:
   - Forks apachectl.
   - Read-only.

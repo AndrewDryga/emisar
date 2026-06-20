@@ -3,7 +3,7 @@ id: consul.snapshot_inspect
 title: consul snapshot inspect <path>
 kind: exec
 risk: low
-description: Summary of one snapshot file — size, index, KV count, ACL count.
+description: Show a summary of one snapshot file — size, index, KV count, ACL count.
 side_effects: ["Reads one snapshot file.", "Read-only."]
 args:
   - name: path

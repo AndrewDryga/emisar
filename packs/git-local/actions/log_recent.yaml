@@ -3,7 +3,7 @@ id: git.log_recent
 title: git log -n <N>
 kind: exec
 risk: low
-description: Last N commits with author + date + subject.
+description: List the last N commits with author + date + subject.
 side_effects:
   - One git log.
   - Read-only.

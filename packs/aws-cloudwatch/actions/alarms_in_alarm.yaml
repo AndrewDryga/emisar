@@ -3,7 +3,7 @@ id: cw.alarms_in_alarm
 title: aws cloudwatch describe-alarms --state-value ALARM
 kind: exec
 risk: low
-description: Only currently-firing alarms.
+description: List only currently-firing alarms.
 side_effects: ["One API call.", "Read-only."]
 args: []
 execution:

@@ -3,7 +3,7 @@ id: ec2.console_output
 title: aws ec2 get-console-output
 kind: exec
 risk: low
-description: Serial console output for one instance. Useful for boot diagnostics.
+description: Get serial console output for one instance. Useful for boot diagnostics.
 side_effects:
   - One API call.
   - Read-only.

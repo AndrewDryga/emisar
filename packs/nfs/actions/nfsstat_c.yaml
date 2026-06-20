@@ -3,7 +3,7 @@ id: nfs.nfsstat_c
 title: nfsstat -c (client)
 kind: exec
 risk: low
-description: Client-side RPC + NFS op counts.
+description: Show client-side RPC + NFS op counts.
 side_effects: ["One nfsstat call.", "Read-only."]
 args: []
 execution:

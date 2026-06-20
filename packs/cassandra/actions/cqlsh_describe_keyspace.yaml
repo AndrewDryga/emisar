@@ -3,7 +3,7 @@ id: cassandra.cqlsh_describe_keyspace
 title: cqlsh -e "DESCRIBE KEYSPACE <ks>"
 kind: exec
 risk: low
-description: Full DDL for one keyspace (tables, types, indexes, materialized views).
+description: Show the full DDL for one keyspace (tables, types, indexes, materialized views).
 side_effects: ["One CQL query.", "Read-only."]
 args:
   - name: keyspace

@@ -3,7 +3,7 @@ id: nomad.leader
 title: GET /v1/status/leader
 kind: exec
 risk: low
-description: Current Raft leader address (host:port).
+description: Show the current Raft leader address (host:port).
 side_effects: ["One API call.", "Read-only."]
 args: []
 execution:

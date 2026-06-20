@@ -3,7 +3,7 @@ id: systemd.unit_show
 title: systemctl show <unit>
 kind: exec
 risk: low
-description: 'Full property dump for one unit — every directive (CPUShares, MemoryMax, Restart, ExecStart, etc).'
+description: 'Show the full property dump for one unit — every directive (CPUShares, MemoryMax, Restart, ExecStart, etc).'
 side_effects:
   - One systemctl invocation.
   - Read-only.

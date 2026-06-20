@@ -3,7 +3,7 @@ id: pm2.pm2_version
 title: pm2 -v
 kind: exec
 risk: low
-description: PM2 daemon version.
+description: Show PM2 daemon version.
 side_effects:
   - One PM2 IPC call.
   - Read-only.

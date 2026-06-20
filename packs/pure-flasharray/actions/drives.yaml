@@ -4,7 +4,7 @@ title: GET /drives
 kind: script
 risk: low
 description: >
-  Flash and NVRAM modules — for each drive, its type, capacity, and status
+  List flash and NVRAM modules — for each drive, its type, capacity, and status
   (healthy / unhealthy / evacuating / unused). Use to find a failed or
   evacuating module. Returns {items:[...], more_items_remaining, ...}, one
   item per drive.

@@ -4,7 +4,7 @@ title: ACL GETUSER
 kind: exec
 risk: low
 description: >
-  Full rule listing for one ACL user — categories, commands, key
+  Get the full rule listing for one ACL user — categories, commands, key
   patterns, channel patterns, flags. Read-only.
 side_effects:
   - One ACL GETUSER command.

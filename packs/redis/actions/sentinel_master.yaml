@@ -4,7 +4,7 @@ title: SENTINEL MASTER
 kind: exec
 risk: low
 description: >
-  Full state of one monitored master by its configured name (e.g.
+  Show the full state of one monitored master by its configured name (e.g.
   "mymaster") — ip:port, flags, quorum, num-slaves,
   num-other-sentinels, down-after-milliseconds, last-ping. Use to
   confirm a specific master's view and whether the configured quorum

@@ -3,7 +3,7 @@ id: rmq.list_users
 title: rabbitmqctl list_users
 kind: exec
 risk: low
-description: All users + tags.
+description: List all users + tags.
 side_effects:
   - One CLI call.
   - Read-only.

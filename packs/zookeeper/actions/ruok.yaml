@@ -3,7 +3,7 @@ id: zk.ruok
 title: ruok (health probe)
 kind: exec
 risk: low
-description: One-byte 'imok' if server is serving.
+description: Check server health — returns 'imok' if server is serving.
 side_effects: ["One 4lw command.", "Read-only."]
 args:
   - name: server

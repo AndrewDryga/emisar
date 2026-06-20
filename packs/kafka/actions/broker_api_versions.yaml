@@ -3,7 +3,7 @@ id: kafka.broker_api_versions
 title: Broker API versions
 kind: exec
 risk: low
-description: API protocol versions supported by each broker. Useful to confirm rolling upgrade.
+description: Show the API protocol versions supported by each broker. Useful to confirm rolling upgrade.
 side_effects:
   - One metadata request.
   - Read-only.

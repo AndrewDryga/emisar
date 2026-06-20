@@ -4,7 +4,7 @@ title: GET /network-interfaces
 kind: script
 risk: low
 description: >
-  Per-controller network interfaces — each interface's enabled / up-or-down
+  List per-controller network interfaces — each interface's enabled / up-or-down
   state, speed, address, and the services it carries (management, iSCSI,
   replication, NVMe-oF). Use this to answer "is the target port up?" before
   chasing a host-side path problem. Returns

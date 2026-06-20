@@ -3,7 +3,7 @@ id: rpm.dnf_history
 title: dnf history
 kind: exec
 risk: low
-description: Recent dnf transactions (installs / removes / updates).
+description: List recent DNF transactions (installs / removes / updates).
 side_effects: ["One dnf history read.", "Read-only."]
 args: []
 execution:

@@ -3,7 +3,7 @@ id: minio.admin_trace
 title: mc admin trace (5s window)
 kind: exec
 risk: low
-description: 5-second trace of S3 API calls hitting the cluster.
+description: Trace S3 API calls hitting the cluster for 5 seconds.
 side_effects: ["One admin call.", "Read-only."]
 args:
   - name: alias

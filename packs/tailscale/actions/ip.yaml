@@ -3,7 +3,7 @@ id: tailscale.ip
 title: tailscale ip
 kind: exec
 risk: low
-description: This node's tailnet IPs (IPv4 and IPv6).
+description: Show this node's tailnet IPs (IPv4 and IPv6).
 side_effects: ["One tailscale read.", "Read-only."]
 args: []
 execution:

@@ -3,7 +3,7 @@ id: tf.show_json
 title: terraform show -json
 kind: exec
 risk: low
-description: Current state as JSON. Useful to programmatically query state.
+description: Show the current state as JSON. Useful to programmatically query state.
 side_effects:
   - Reads state file.
   - Read-only.

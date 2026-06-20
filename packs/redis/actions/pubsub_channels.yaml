@@ -4,7 +4,7 @@ title: PUBSUB CHANNELS
 kind: exec
 risk: low
 description: >
-  Active pub/sub channels matching the optional pattern. Useful to
+  List active pub/sub channels matching the optional pattern. Useful to
   see which event streams a service is producing.
 side_effects:
   - One PUBSUB CHANNELS command.

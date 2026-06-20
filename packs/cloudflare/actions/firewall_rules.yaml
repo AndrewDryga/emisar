@@ -4,7 +4,7 @@ title: GET /zones/<id>/rulesets/phases/http_request_firewall_custom/entrypoint
 kind: exec
 risk: low
 description: >
-  Zone WAF custom rules — the entrypoint ruleset for the
+  List zone WAF custom rules — the entrypoint ruleset for the
   http_request_firewall_custom phase. Replaces the legacy /firewall/rules
   API, which Cloudflare sunset on 2025-06-15.
 side_effects:

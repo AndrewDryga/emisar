@@ -3,7 +3,7 @@ id: kubernetes.pod_logs
 title: Tail pod logs
 kind: exec
 risk: low
-description: Last N lines from one container in a pod.
+description: Tail the last N lines from one container in a pod.
 side_effects:
   - One kubectl logs invocation.
   - Read-only.

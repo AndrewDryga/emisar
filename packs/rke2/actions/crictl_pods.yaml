@@ -4,7 +4,7 @@ title: List pod sandboxes on this node (crictl pods)
 kind: exec
 risk: low
 description: >
-  Pod sandboxes on this node's RKE2 containerd — pod id, name, namespace,
+  List pod sandboxes on this node's RKE2 containerd — pod id, name, namespace,
   state, age. The CRI view of which pods the node actually has, independent of
   the API server. Read-only.
 side_effects:

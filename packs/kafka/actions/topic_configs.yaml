@@ -3,7 +3,7 @@ id: kafka.topic_configs
 title: Topic configs
 kind: exec
 risk: low
-description: Topic-level overrides (retention, compaction, segment size).
+description: List topic-level overrides (retention, compaction, segment size).
 side_effects:
   - One admin request.
   - Read-only.

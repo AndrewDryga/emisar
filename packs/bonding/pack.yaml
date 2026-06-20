@@ -2,7 +2,7 @@ schema_version: 1
 
 id: bonding
 name: Linux network bonding
-version: 0.1.0
+version: 0.1.1
 description: >
   Inspect Linux network bonding / LACP: list bond interfaces, read a
   bond's full status from /proc/net/bonding (mode, LACP actor/partner

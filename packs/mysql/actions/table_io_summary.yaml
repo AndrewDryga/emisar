@@ -3,7 +3,7 @@ id: mysql.table_io_summary
 title: Top tables by IO wait
 kind: exec
 risk: low
-description: Top 30 tables ordered by total I/O wait time. Identifies tables driving disk pressure.
+description: List top 30 tables ordered by total I/O wait time. Identifies tables driving disk pressure.
 side_effects:
   - One SELECT against performance_schema.
   - Read-only.

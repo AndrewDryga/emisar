@@ -3,7 +3,7 @@ id: gh.issue_view
 title: gh issue view
 kind: exec
 risk: low
-description: Details + comments for one issue.
+description: Show details + comments for one issue.
 side_effects:
   - One API call.
   - Read-only.

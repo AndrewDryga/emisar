@@ -3,7 +3,7 @@ id: mysql.table_sizes
 title: Top tables by total size
 kind: exec
 risk: low
-description: Top N tables ordered by (data + index) size in bytes. Read-only.
+description: List top N tables ordered by (data + index) size in bytes. Read-only.
 side_effects:
   - One SELECT against information_schema.tables.
   - Read-only.

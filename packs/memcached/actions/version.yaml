@@ -3,7 +3,7 @@ id: mc.version
 title: version
 kind: exec
 risk: low
-description: Daemon version.
+description: Show the daemon version.
 side_effects: ["One ASCII protocol call.", "Read-only."]
 args: []
 execution:

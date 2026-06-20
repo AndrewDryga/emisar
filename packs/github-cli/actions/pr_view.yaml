@@ -3,7 +3,7 @@ id: gh.pr_view
 title: gh pr view
 kind: exec
 risk: low
-description: Details for one PR — title, body, status, reviews, checks.
+description: Show details for one PR — title, body, status, reviews, checks.
 side_effects:
   - One API call.
   - Read-only.

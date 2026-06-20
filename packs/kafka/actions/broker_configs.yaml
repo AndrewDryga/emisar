@@ -3,7 +3,7 @@ id: kafka.broker_configs
 title: Broker configs
 kind: exec
 risk: low
-description: All broker-level configs (dynamic + static + defaults).
+description: List all broker-level configs (dynamic + static + defaults).
 side_effects:
   - One admin request.
   - Read-only.

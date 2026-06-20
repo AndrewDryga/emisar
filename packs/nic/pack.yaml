@@ -2,7 +2,7 @@ schema_version: 1
 
 id: nic
 name: NIC / ethtool diagnostics
-version: 0.1.0
+version: 0.1.1
 description: >
   Inspect physical network interface cards via ethtool: driver and
   firmware versions across every NIC (the "what firmware is my i40e fleet

@@ -3,7 +3,7 @@ id: es.cat_indices
 title: GET /_cat/indices
 kind: exec
 risk: low
-description: Every index with its primary count, doc count, store size. Sorted by size descending.
+description: List every index with its primary count, doc count, store size. Sorted by size descending.
 side_effects:
   - One GET request.
   - Read-only.

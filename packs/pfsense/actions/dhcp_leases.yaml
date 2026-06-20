@@ -4,7 +4,7 @@ title: GET /api/v2/status/dhcp_server/leases
 kind: script
 risk: low
 description: >
-  DHCP leases — IP, MAC, hostname, and state (active / expired / static).
+  List DHCP leases — IP, MAC, hostname, and state (active / expired / static).
   Works for both the ISC and Kea backends. Use to find what a device was
   assigned.
 side_effects:

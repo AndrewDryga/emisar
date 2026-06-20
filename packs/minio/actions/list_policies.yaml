@@ -3,7 +3,7 @@ id: minio.list_policies
 title: mc admin policy ls
 kind: exec
 risk: low
-description: All IAM policy names.
+description: List all IAM policy names.
 side_effects: ["One admin call.", "Read-only."]
 args:
   - name: alias

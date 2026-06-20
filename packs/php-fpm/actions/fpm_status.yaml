@@ -3,7 +3,7 @@ id: phpfpm.fpm_status
 title: GET /status (FPM)
 kind: exec
 risk: low
-description: FPM pool summary — active processes, idle, max children, listen queue.
+description: Show FPM pool summary — active processes, idle, max children, listen queue.
 side_effects: ["One HTTP GET.", "Read-only."]
 args: []
 execution:

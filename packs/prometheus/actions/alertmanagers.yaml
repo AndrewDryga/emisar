@@ -3,7 +3,7 @@ id: prom.alertmanagers
 title: GET /api/v1/alertmanagers
 kind: exec
 risk: low
-description: Configured Alertmanager endpoints + their reachability.
+description: List configured Alertmanager endpoints + their reachability.
 side_effects:
   - One GET request.
   - Read-only.

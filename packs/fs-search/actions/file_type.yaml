@@ -3,7 +3,7 @@ id: fs.file_type
 title: file <path>
 kind: exec
 risk: low
-description: 'libmagic-detected type of one file (e.g. "ELF 64-bit executable", "ASCII text").'
+description: 'Show the libmagic-detected type of one file (e.g. "ELF 64-bit executable", "ASCII text").'
 side_effects:
   - One read of the first few KB of the file.
   - Read-only.

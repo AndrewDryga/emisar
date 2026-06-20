@@ -3,7 +3,7 @@ id: consul.intentions_match
 title: GET /v1/connect/intentions/match (by destination)
 kind: exec
 risk: low
-description: All intentions whose destination is the named service. Use to answer "what can talk to X?".
+description: List all intentions whose destination is the named service. Use to answer "what can talk to X?".
 side_effects: ["One API call.", "Read-only."]
 args:
   - name: destination

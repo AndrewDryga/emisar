@@ -3,7 +3,7 @@ id: fs.ls_long
 title: ls -la <path>
 kind: exec
 risk: low
-description: Long-format directory listing.
+description: List directory contents in long format.
 side_effects:
   - One directory read.
   - Read-only.

@@ -3,7 +3,7 @@ id: kafka.cluster_info
 title: Cluster metadata
 kind: exec
 risk: low
-description: Broker IDs, controller, cluster ID. Read-only.
+description: Show broker IDs, controller, cluster ID. Read-only.
 side_effects:
   - One metadata request.
   - Read-only.

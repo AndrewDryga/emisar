@@ -3,7 +3,7 @@ id: postgres.activity_detail
 title: pg_stat_activity (per-backend)
 kind: exec
 risk: low
-description: 'Per-backend detail: pid, user, app, state, wait_event, query age, query text.'
+description: 'Show per-backend detail: pid, user, app, state, wait_event, query age, query text.'
 side_effects: ["One SELECT against pg_stat_activity.", "No locks."]
 args: []
 execution:

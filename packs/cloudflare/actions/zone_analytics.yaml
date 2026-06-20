@@ -3,7 +3,7 @@ id: cf.zone_analytics
 title: GET /zones/<id>/analytics/dashboard
 kind: exec
 risk: low
-description: Last-24h analytics for one zone (requests, bandwidth, threats).
+description: Show last-24h analytics for one zone (requests, bandwidth, threats).
 side_effects:
   - One API request.
   - Read-only.

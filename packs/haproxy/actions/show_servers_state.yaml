@@ -3,7 +3,7 @@ id: haproxy.show_servers_state
 title: show servers state
 kind: exec
 risk: low
-description: Persisted server state — health, weight, admin overrides. Read this before reloading config to know what state should be preserved.
+description: Show persisted server state — health, weight, admin overrides. Read this before reloading config to know what state should be preserved.
 side_effects:
   - One admin socket command.
   - Read-only.

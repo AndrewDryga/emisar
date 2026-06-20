@@ -3,7 +3,7 @@ id: git.blame_file
 title: git blame -- <path>
 kind: exec
 risk: low
-description: 'Per-line authorship for one file. Path is relative to repo root.'
+description: 'Show per-line authorship for one file. Path is relative to repo root.'
 side_effects:
   - One git blame.
   - Read-only.

@@ -3,7 +3,7 @@ id: rmq.cluster_status
 title: rabbitmqctl cluster_status
 kind: exec
 risk: low
-description: 'Cluster summary: nodes, alarms, partitions.'
+description: 'Show cluster summary: nodes, alarms, partitions.'
 side_effects:
   - One CLI call.
   - Read-only.

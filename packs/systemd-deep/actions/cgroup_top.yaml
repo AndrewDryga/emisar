@@ -3,7 +3,7 @@ id: systemd.cgroup_top
 title: systemd-cgtop (3 samples)
 kind: exec
 risk: low
-description: 'Three batched cgtop samples — CPU + memory + IO + tasks per cgroup. The systemd-aware top equivalent.'
+description: 'Show three batched cgtop samples — CPU + memory + IO + tasks per cgroup. The systemd-aware top equivalent.'
 side_effects:
   - One systemd-cgtop invocation lasting ~3s.
   - Read-only.

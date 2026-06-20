@@ -3,7 +3,7 @@ id: tf.output
 title: terraform output -json
 kind: exec
 risk: low
-description: Output values from the workspace's state.
+description: Show output values from the workspace's state.
 side_effects:
   - Reads state file.
   - Read-only.

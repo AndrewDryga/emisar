@@ -3,7 +3,7 @@ id: iam.list_access_keys
 title: aws iam list-access-keys
 kind: exec
 risk: low
-description: Access key IDs for one user (NOT the secret).
+description: List access key IDs for one user (NOT the secret).
 side_effects: ["One API call.", "Read-only — secret keys not returned."]
 args:
   - name: user

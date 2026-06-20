@@ -3,7 +3,7 @@ id: es.cat_thread_pool
 title: GET /_cat/thread_pool
 kind: exec
 risk: low
-description: Per-node thread pool queue + rejection counts. Use to spot search/write thread saturation.
+description: Show per-node thread pool queue + rejection counts. Use to spot search/write thread saturation.
 side_effects:
   - One GET request.
   - Read-only.

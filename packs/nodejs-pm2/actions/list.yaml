@@ -3,7 +3,7 @@ id: pm2.list
 title: pm2 list
 kind: exec
 risk: low
-description: All processes managed by PM2 with status, uptime, restarts, CPU/mem.
+description: List all processes managed by PM2 with status, uptime, restarts, CPU/mem.
 side_effects:
   - One PM2 IPC call.
   - Read-only.

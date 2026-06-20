@@ -3,7 +3,7 @@ id: zk.mntr
 title: mntr (monitoring metrics)
 kind: exec
 risk: low
-description: Per-server metrics in a metrics-friendly format.
+description: Show per-server metrics in a metrics-friendly format.
 side_effects: ["One 4lw command.", "Read-only."]
 args:
   - name: server

@@ -3,7 +3,7 @@ id: phpfpm.opcache_status
 title: GET /opcache-status
 kind: exec
 risk: low
-description: OPcache stats endpoint (requires the standard opcache_status.php script reachable at PHP_OPCACHE_URL).
+description: Show OPcache stats (requires the standard opcache_status.php script reachable at PHP_OPCACHE_URL).
 side_effects: ["One HTTP GET.", "Read-only."]
 args: []
 execution:

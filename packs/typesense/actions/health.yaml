@@ -4,7 +4,7 @@ title: GET /health
 kind: script
 risk: low
 description: >
-  Liveness check for the Typesense node. Returns {"ok": true} when healthy,
+  Check liveness for the Typesense node. Returns {"ok": true} when healthy,
   and surfaces resource-exhaustion states (out of memory, out of disk) when
   the node has stopped accepting writes. No API key required.
 side_effects:

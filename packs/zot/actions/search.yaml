@@ -4,7 +4,7 @@ title: POST /v2/_zot/ext/search (repo inventory + vuln summary)
 kind: script
 risk: low
 description: >
-  Repository inventory with per-repo storage size and a newest-image
+  List repository inventory with per-repo storage size and a newest-image
   vulnerability summary, via the zot search GraphQL extension. This is how you
   get per-repo storage size + CVE summary — zot has no plain storage-usage
   endpoint, and garbage collection is not inspectable over HTTP. The GraphQL

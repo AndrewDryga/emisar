@@ -3,7 +3,7 @@ id: tailscale.version
 title: tailscale version --json
 kind: exec
 risk: low
-description: Tailscale client version and build info as JSON.
+description: Show Tailscale client version and build info as JSON.
 side_effects: ["One tailscale read.", "Read-only."]
 args: []
 execution:

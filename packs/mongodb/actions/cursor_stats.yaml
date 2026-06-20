@@ -4,7 +4,7 @@ title: Cursor saturation / timed-out cursors (metrics.cursor)
 kind: exec
 risk: low
 description: >
-  Cursor counts — open.total, open.noTimeout, open.pinned, timedOut,
+  Show cursor counts — open.total, open.noTimeout, open.pinned, timedOut,
   totalOpened. A growing timedOut count usually means an application is
   leaking cursors.
 side_effects:

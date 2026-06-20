@@ -3,7 +3,7 @@ id: fw.iptables_filter
 title: iptables -L -nv (filter table)
 kind: exec
 risk: low
-description: All filter-table rules with packet + byte counters.
+description: List all filter-table rules with packet + byte counters.
 side_effects:
   - One netfilter query.
   - Read-only.

@@ -3,7 +3,7 @@ id: cf.zone_details
 title: GET /zones/<id>
 kind: exec
 risk: low
-description: One zone's full settings + state + nameservers.
+description: Show one zone's full settings + state + nameservers.
 side_effects:
   - One API request.
   - Read-only.

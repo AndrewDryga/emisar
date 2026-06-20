@@ -3,7 +3,7 @@ id: zfs.pool_status
 title: zpool status -v
 kind: exec
 risk: low
-description: Per-pool vdev tree, scrub state, errors. Use to debug DEGRADED pools.
+description: Show per-pool vdev tree, scrub state, errors. Use to debug DEGRADED pools.
 side_effects: ["Reads pool metadata.", "Read-only."]
 args:
   - name: pool

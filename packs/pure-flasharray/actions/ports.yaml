@@ -4,7 +4,7 @@ title: GET /ports
 kind: script
 risk: low
 description: >
-  Target-port identities — the array-side iSCSI IQNs, Fibre Channel WWNs, and
+  List target-port identities — the array-side iSCSI IQNs, Fibre Channel WWNs, and
   NVMe NQNs, with iSCSI portal IPs where applicable. Use to learn what
   addresses a host should be connecting to. Returns
   {items:[...], more_items_remaining, ...}, one item per target port.

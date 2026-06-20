@@ -3,7 +3,7 @@ id: fw.tc_qdisc_show
 title: tc -s qdisc show
 kind: exec
 risk: low
-description: Active traffic-control disciplines per interface + their counters. Use to see traffic shaping in effect.
+description: List active traffic-control disciplines per interface + their counters. Use to see traffic shaping in effect.
 side_effects:
   - One netlink query.
   - Read-only.

@@ -2,7 +2,7 @@ schema_version: 1
 
 id: postgres
 name: Postgres operations
-version: 0.2.6
+version: 0.2.7
 description: >
   Deep Postgres operations — activity introspection, session/lock
   diagnostics, table + index analytics (bloat, dead tuples, unused

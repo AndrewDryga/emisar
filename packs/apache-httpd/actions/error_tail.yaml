@@ -3,7 +3,7 @@ id: httpd.error_tail
 title: tail error_log
 kind: exec
 risk: low
-description: Last N lines from the Apache error log.
+description: Tail the last N lines from the Apache error log.
 side_effects:
   - One file read.
   - Read-only.

@@ -3,7 +3,7 @@ id: es.cat_aliases
 title: GET /_cat/aliases
 kind: exec
 risk: low
-description: All aliases pointing to indices. Use to confirm an alias rotation worked.
+description: List all aliases pointing to indices. Use to confirm an alias rotation worked.
 side_effects:
   - One GET request.
   - Read-only.

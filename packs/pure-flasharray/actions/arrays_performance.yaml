@@ -4,7 +4,7 @@ title: GET /arrays/performance
 kind: script
 risk: low
 description: >
-  Array-wide performance — the latest sample of read/write/mirrored latency,
+  Show array-wide performance — the latest sample of read/write/mirrored latency,
   IOPS, and bandwidth. Use to answer "is the array slow right now?". Returns
   {items:[...], more_items_remaining, ...}; the single item is the most recent
   real-time sample for the array.

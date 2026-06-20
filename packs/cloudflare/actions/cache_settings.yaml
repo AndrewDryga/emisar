@@ -3,7 +3,7 @@ id: cf.cache_settings
 title: GET /zones/<id>/settings
 kind: exec
 risk: low
-description: All zone-level settings (cache TTL, security level, SSL mode, etc).
+description: List all zone-level settings (cache TTL, security level, SSL mode, etc).
 side_effects:
   - One API request.
   - Read-only.

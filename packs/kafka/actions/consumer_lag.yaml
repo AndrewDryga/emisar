@@ -3,7 +3,7 @@ id: kafka.consumer_lag
 title: Consumer lag for a group
 kind: exec
 risk: low
-description: Per-partition lag (log-end-offset minus committed offset) for one consumer group. The canonical "is consumption keeping up?" check.
+description: Show per-partition lag (log-end-offset minus committed offset) for one consumer group. The canonical "is consumption keeping up?" check.
 side_effects:
   - One coordinator request.
   - Read-only.

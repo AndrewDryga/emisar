@@ -3,7 +3,7 @@ id: iam.list_roles
 title: aws iam list-roles
 kind: exec
 risk: low
-description: All IAM roles in the account.
+description: List all IAM roles in the account.
 side_effects: ["One API call.", "Read-only."]
 args: []
 execution:

@@ -3,7 +3,7 @@ id: haproxy.show_errors
 title: show errors
 kind: exec
 risk: low
-description: Recent request/response errors captured by HAProxy. Use to debug 503s.
+description: List recent request/response errors captured by HAProxy. Use to debug 503s.
 side_effects:
   - One admin socket command.
   - Read-only.

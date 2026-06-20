@@ -3,7 +3,7 @@ id: podman.logs
 title: podman logs <id> --tail <N>
 kind: exec
 risk: low
-description: Last N log lines.
+description: Tail container logs (last N lines).
 side_effects: ["One CLI call.", "Read-only."]
 args:
   - name: container

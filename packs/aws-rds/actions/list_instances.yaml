@@ -3,7 +3,7 @@ id: rds.list_instances
 title: aws rds describe-db-instances
 kind: exec
 risk: low
-description: All RDS instances with class, engine, status.
+description: List all RDS instances with class, engine, status.
 side_effects: ["One API call.", "Read-only."]
 args: []
 execution:

@@ -4,7 +4,7 @@ title: GET /metrics.json
 kind: script
 risk: low
 description: >
-  System and process metrics for the node — CPU utilization, memory usage,
+  Show system and process metrics for the node — CPU utilization, memory usage,
   and disk usage. Use to see whether the node is resource-constrained.
   Requires the admin API key.
 side_effects:

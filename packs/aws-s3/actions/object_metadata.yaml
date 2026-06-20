@@ -3,7 +3,7 @@ id: s3.object_metadata
 title: aws s3api head-object
 kind: exec
 risk: low
-description: Metadata for one object (size, content-type, storage class, etag).
+description: Show metadata for one object (size, content-type, storage class, etag).
 side_effects:
   - One HeadObject call.
   - Read-only.

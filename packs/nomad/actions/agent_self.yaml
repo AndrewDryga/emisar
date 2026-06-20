@@ -3,7 +3,7 @@ id: nomad.agent_self
 title: GET /v1/agent/self
 kind: exec
 risk: low
-description: This agent's effective config (member name, region, datacenter, tags).
+description: Show this agent's effective config (member name, region, datacenter, tags).
 side_effects: ["One API call.", "Read-only."]
 args: []
 execution:

@@ -3,7 +3,7 @@ id: nomad.job_history
 title: nomad job history <id>
 kind: exec
 risk: low
-description: All versions of one job with submitter + timestamp.
+description: List all versions of one job with submitter + timestamp.
 side_effects: ["One API call.", "Read-only."]
 args:
   - name: job

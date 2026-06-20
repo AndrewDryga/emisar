@@ -3,7 +3,7 @@ id: jvm.jmap_histo_live
 title: jmap -histo:live (top 50)
 kind: exec
 risk: low
-description: Top classes by retained-heap size after a forced full GC. Use to find the leak candidate.
+description: List top classes by retained-heap size after a forced full GC. Use to find the leak candidate.
 side_effects:
   - Triggers a full GC.
   - JVM pause for the duration of the GC.

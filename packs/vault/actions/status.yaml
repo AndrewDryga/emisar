@@ -3,7 +3,7 @@ id: vault.status
 title: vault status
 kind: exec
 risk: low
-description: 'Top-level Vault status: sealed, version, HA mode, active node.'
+description: 'Show top-level Vault status: sealed, version, HA mode, active node.'
 side_effects:
   - One sys/health request.
   - Read-only.

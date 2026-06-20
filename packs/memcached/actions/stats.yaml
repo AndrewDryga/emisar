@@ -3,7 +3,7 @@ id: mc.stats
 title: stats (general)
 kind: exec
 risk: low
-description: 'Uptime, current connections, get/set rates, hit/miss, bytes, evictions.'
+description: 'Show uptime, current connections, get/set rates, hit/miss, bytes, evictions.'
 side_effects: ["One ASCII protocol call.", "Read-only."]
 args: []
 execution:

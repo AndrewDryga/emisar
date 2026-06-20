@@ -3,7 +3,7 @@ id: grafana.version
 title: GET /api/frontend/settings (build info)
 kind: exec
 risk: low
-description: Build info, edition, license expiry.
+description: Show build info, edition, license expiry.
 side_effects: ["One API call.", "Read-only."]
 args: []
 execution:

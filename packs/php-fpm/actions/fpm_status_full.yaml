@@ -3,7 +3,7 @@ id: phpfpm.fpm_status_full
 title: GET /status?full (FPM per-process)
 kind: exec
 risk: low
-description: 'Per-process detail: pid, state, last request URI, current memory peak.'
+description: 'Show per-process detail: pid, state, last request URI, current memory peak.'
 side_effects: ["One HTTP GET.", "Read-only."]
 args: []
 execution:

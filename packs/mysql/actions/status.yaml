@@ -3,7 +3,7 @@ id: mysql.status
 title: SHOW GLOBAL STATUS (filtered)
 kind: exec
 risk: low
-description: Global counters filtered by glob pattern. Default returns connection + thread counters.
+description: Show global counters filtered by glob pattern. Default returns connection + thread counters.
 side_effects:
   - One SHOW GLOBAL STATUS.
   - Read-only.

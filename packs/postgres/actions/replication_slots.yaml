@@ -3,7 +3,7 @@ id: postgres.replication_slots
 title: pg_replication_slots
 kind: exec
 risk: low
-description: 'Logical + physical replication slots with retained WAL. Inactive slots that retain WAL forever are a disk-full risk.'
+description: 'List logical + physical replication slots with retained WAL. Inactive slots that retain WAL forever are a disk-full risk.'
 side_effects: ["One SELECT.", "Read-only."]
 args: []
 execution:

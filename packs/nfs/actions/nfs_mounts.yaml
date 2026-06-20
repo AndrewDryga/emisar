@@ -3,7 +3,7 @@ id: nfs.nfs_mounts
 title: NFS mounts on this host
 kind: exec
 risk: low
-description: All NFS-typed mounts currently visible.
+description: List all NFS-typed mounts currently visible.
 side_effects: ["One mount table read.", "Read-only."]
 args: []
 execution:

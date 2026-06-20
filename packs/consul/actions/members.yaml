@@ -3,7 +3,7 @@ id: consul.members
 title: consul members
 kind: exec
 risk: low
-description: All agents in the gossip pool with status, role, version.
+description: List all agents in the gossip pool with status, role, version.
 side_effects:
   - One agent call.
   - Read-only.

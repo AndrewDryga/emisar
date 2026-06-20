@@ -3,7 +3,7 @@ id: cassandra.cqlsh_system_size_estimates
 title: SELECT * FROM system.size_estimates
 kind: exec
 risk: low
-description: Per-table partition + size estimates from the gossiped size_estimates table.
+description: Show per-table partition + size estimates from the gossiped size_estimates table.
 side_effects: ["One CQL query.", "Read-only."]
 args: []
 execution:

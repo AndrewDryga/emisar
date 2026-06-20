@@ -3,7 +3,7 @@ id: vault.list_auth
 title: vault auth list
 kind: exec
 risk: low
-description: All auth method mounts.
+description: List all auth method mounts.
 side_effects:
   - One sys/auth request.
   - Read-only.

@@ -3,7 +3,7 @@ id: postgres.pg_stat_statements_top
 title: Top statements by total time
 kind: exec
 risk: low
-description: Top 30 normalized queries by total_exec_time. Requires pg_stat_statements extension to be loaded.
+description: Show the top 30 normalized queries by total_exec_time. Requires pg_stat_statements extension to be loaded.
 side_effects: ["One SELECT against pg_stat_statements.", "Read-only."]
 args: []
 execution:

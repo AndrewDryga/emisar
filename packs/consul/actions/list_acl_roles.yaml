@@ -3,7 +3,7 @@ id: consul.list_acl_roles
 title: consul acl role list
 kind: exec
 risk: low
-description: All ACL roles (groups of policies).
+description: List all ACL roles (groups of policies).
 side_effects: ["One ACL request.", "Read-only."]
 args: []
 execution:

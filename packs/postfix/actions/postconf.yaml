@@ -3,7 +3,7 @@ id: postfix.postconf
 title: postconf -n
 kind: exec
 risk: low
-description: Non-default Postfix config.
+description: Show non-default Postfix config.
 side_effects: ["One postconf call.", "Read-only."]
 args: []
 execution:

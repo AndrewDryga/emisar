@@ -3,7 +3,7 @@ id: redis.type_of
 title: TYPE key
 kind: exec
 risk: low
-description: Datatype of one key (string, list, set, hash, zset, stream, none).
+description: Show the datatype of one key (string, list, set, hash, zset, stream, none).
 side_effects:
   - One TYPE command.
   - Read-only metadata.

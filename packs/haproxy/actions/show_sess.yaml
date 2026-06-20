@@ -3,7 +3,7 @@ id: haproxy.show_sess
 title: show sess
 kind: exec
 risk: low
-description: In-flight sessions (one row per active connection).
+description: List in-flight sessions (one row per active connection).
 side_effects:
   - One admin socket command.
   - Read-only.

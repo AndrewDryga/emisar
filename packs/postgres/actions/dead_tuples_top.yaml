@@ -3,7 +3,7 @@ id: postgres.dead_tuples_top
 title: Top tables by dead-tuple ratio
 kind: exec
 risk: low
-description: 'Tables where n_dead_tup / (n_live_tup + n_dead_tup) is high. Bloat suspects.'
+description: 'List tables where n_dead_tup / (n_live_tup + n_dead_tup) is high. Bloat suspects.'
 side_effects: ["One SELECT.", "Read-only."]
 args: []
 execution:

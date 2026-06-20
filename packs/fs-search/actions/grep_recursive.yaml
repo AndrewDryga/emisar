@@ -3,7 +3,7 @@ id: fs.grep_recursive
 title: grep -rE <pattern> <path>
 kind: exec
 risk: low
-description: Recursive grep under one path. Bounded to 500 matches.
+description: Search recursively under one path. Bounded to 500 matches.
 side_effects:
   - Recursive file-system traversal + read of matched files.
   - Read-only.

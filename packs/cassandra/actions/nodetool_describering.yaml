@@ -3,7 +3,7 @@ id: cassandra.nodetool_describering
 title: nodetool describering <keyspace>
 kind: exec
 risk: low
-description: Token range → replica endpoint mapping for one keyspace.
+description: Show token range → replica endpoint mapping for one keyspace.
 side_effects: ["One JMX call.", "Read-only."]
 args:
   - name: keyspace

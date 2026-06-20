@@ -3,7 +3,7 @@ id: git.reflog
 title: git reflog -n <N>
 kind: exec
 risk: low
-description: Local HEAD-movement history. Use to find recent rebases / resets.
+description: Show local HEAD-movement history. Use to find recent rebases / resets.
 side_effects:
   - One git reflog.
   - Read-only.

@@ -4,7 +4,7 @@ title: In-progress index builds (with progress)
 kind: exec
 risk: low
 description: >
-  Active index-build operations with progress (done/total), via $currentOp.
+  List active index-build operations with progress (done/total), via $currentOp.
   The canonical "is an index build stuck / how far along is it" check across
   the deployment.
 side_effects:

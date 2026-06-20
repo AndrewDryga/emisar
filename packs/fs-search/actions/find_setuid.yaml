@@ -3,7 +3,7 @@ id: fs.find_setuid
 title: setuid + setgid files
 kind: exec
 risk: low
-description: Files with setuid or setgid bits. Audit for privilege escalation surface.
+description: Find files with setuid or setgid bits. Audit for privilege escalation surface.
 side_effects:
   - One file-system traversal.
   - Read-only.

@@ -3,7 +3,7 @@ id: postgres.is_in_recovery
 title: pg_is_in_recovery()
 kind: exec
 risk: low
-description: Boolean — true if this instance is a replica.
+description: Show whether this instance is a replica (boolean — true if in recovery).
 side_effects: ["One SELECT.", "Read-only."]
 args: []
 execution:

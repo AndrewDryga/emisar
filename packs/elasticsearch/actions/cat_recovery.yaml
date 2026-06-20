@@ -3,7 +3,7 @@ id: es.cat_recovery
 title: GET /_cat/recovery
 kind: exec
 risk: low
-description: Active shard recoveries (peer, snapshot). Use to monitor rebalance progress.
+description: List active shard recoveries (peer, snapshot). Use to monitor rebalance progress.
 side_effects:
   - One GET request.
   - Read-only.

@@ -2,7 +2,7 @@ schema_version: 1
 
 id: podman
 name: Podman containers
-version: 0.1.2
+version: 0.1.3
 description: >
   Read-only inventory + per-container introspection plus narrow mutators
   (restart, stop, kill, prune). Drop-in alternative for Docker on RHEL /

@@ -3,7 +3,7 @@ id: mysql.connections_summary
 title: Connection counts + cap
 kind: exec
 risk: low
-description: Connected vs max_connections + breakdown by host. Use to check "are we close to connection exhaustion?"
+description: Show connected vs max_connections + breakdown by host. Use to check "are we close to connection exhaustion?"
 side_effects:
   - One SHOW STATUS + one SHOW PROCESSLIST.
   - Read-only.

@@ -3,7 +3,7 @@ id: podman.info
 title: podman info
 kind: exec
 risk: low
-description: System + storage + network info.
+description: Show system + storage + network info.
 side_effects: ["One CLI call.", "Read-only."]
 args: []
 execution:

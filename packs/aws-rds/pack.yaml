@@ -1,7 +1,7 @@
 schema_version: 1
 id: aws-rds
 name: AWS RDS operations
-version: 0.1.1
+version: 0.1.2
 description: >
   RDS instance + cluster inventory, parameter groups, snapshots, plus
   narrow operator actions (reboot, create-snapshot). Auth via AWS_PROFILE.

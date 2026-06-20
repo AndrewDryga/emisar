@@ -4,7 +4,7 @@ title: GET /api/v2/status/carp
 kind: script
 risk: low
 description: >
-  CARP high-availability status — whether this node is MASTER or BACKUP and
+  Show CARP high-availability status — whether this node is MASTER or BACKUP and
   the state of each virtual IP. Use to confirm HA roles after a failover.
 side_effects:
   - One read-only HTTP GET to the pfSense REST API.

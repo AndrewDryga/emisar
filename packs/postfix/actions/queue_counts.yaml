@@ -3,7 +3,7 @@ id: postfix.queue_counts
 title: Per-queue message counts
 kind: exec
 risk: low
-description: Counts in incoming/active/deferred/hold queues.
+description: Count messages in incoming/active/deferred/hold queues.
 side_effects: ["Counts files in /var/spool/postfix/*.", "Read-only."]
 args: []
 execution:

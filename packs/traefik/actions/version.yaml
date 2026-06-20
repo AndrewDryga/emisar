@@ -4,7 +4,7 @@ title: GET /api/version
 kind: script
 risk: low
 description: >
-  Traefik version, codename, and build/start date. Use to confirm which
+  Show Traefik version, codename, and build/start date. Use to confirm which
   release is running (v2 vs v3 behaviour) and that the API answers.
 side_effects:
   - One read-only HTTP GET to the Traefik API.

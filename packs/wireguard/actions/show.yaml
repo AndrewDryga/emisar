@@ -3,7 +3,7 @@ id: wg.show
 title: wg show
 kind: exec
 risk: low
-description: All interfaces with peers + endpoints + last-handshake.
+description: List all interfaces with peers + endpoints + last-handshake.
 side_effects: ["One netlink query.", "Read-only."]
 args: []
 execution:

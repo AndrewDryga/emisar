@@ -4,7 +4,7 @@ title: ethtool -i <iface>
 kind: exec
 risk: low
 description: >
-  Full driver info for one NIC — driver, driver version,
+  Show full driver info for one NIC — driver, driver version,
   firmware-version, expansion-ROM version, bus-info, and the supports-*
   capability flags.
 side_effects: ["One ethtool -i call.", "Read-only."]

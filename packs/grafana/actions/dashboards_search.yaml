@@ -3,7 +3,7 @@ id: grafana.dashboards_search
 title: GET /api/search
 kind: exec
 risk: low
-description: Dashboard search (default returns all dashboards).
+description: Search dashboards (default returns all dashboards).
 side_effects: ["One API call.", "Read-only."]
 args:
   - name: query

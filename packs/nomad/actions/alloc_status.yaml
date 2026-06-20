@@ -3,7 +3,7 @@ id: nomad.alloc_status
 title: nomad alloc status <id>
 kind: exec
 risk: low
-description: One allocation's full state — task states, restarts, last events.
+description: Show one allocation's full state — task states, restarts, last events.
 side_effects: ["One API call.", "Read-only."]
 args:
   - name: alloc_id

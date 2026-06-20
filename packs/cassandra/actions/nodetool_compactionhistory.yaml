@@ -3,7 +3,7 @@ id: cassandra.nodetool_compactionhistory
 title: nodetool compactionhistory
 kind: exec
 risk: low
-description: Last few compactions with bytes-in/out, duration, and dropped tombstones.
+description: List the last few compactions with bytes-in/out, duration, and dropped tombstones.
 side_effects: ["One JMX call.", "Read-only."]
 args: []
 execution:

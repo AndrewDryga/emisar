@@ -3,7 +3,7 @@ id: s3.bucket_lifecycle
 title: aws s3api get-bucket-lifecycle-configuration
 kind: exec
 risk: low
-description: Lifecycle rules (auto-expiry, glacier transition).
+description: Show lifecycle rules (auto-expiry, glacier transition).
 side_effects:
   - One API call.
   - Read-only.

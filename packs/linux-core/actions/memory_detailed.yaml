@@ -6,7 +6,7 @@ kind: exec
 risk: low
 
 description: >
-  Full /proc/meminfo dump. More detail than the `linux.memory` action
+  Dump full /proc/meminfo. More detail than the `linux.memory` action
   — surfaces hugepages, slab, dirty/writeback, page tables, KSM,
   cgroup memcg. Read-only.
 

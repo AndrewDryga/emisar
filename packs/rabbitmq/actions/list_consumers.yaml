@@ -3,7 +3,7 @@ id: rmq.list_consumers
 title: rabbitmqctl list_consumers
 kind: exec
 risk: low
-description: All active consumers + their queue + ack-mode + prefetch.
+description: List all active consumers + their queue + ack-mode + prefetch.
 side_effects:
   - One CLI call.
   - Read-only.

@@ -3,7 +3,7 @@ id: consul.node_health
 title: GET /v1/health/node/<node>
 kind: exec
 risk: low
-description: All checks for one node + their status.
+description: List all checks for one node + their status.
 side_effects: ["One API call.", "Read-only."]
 args:
   - name: node

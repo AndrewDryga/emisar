@@ -3,7 +3,7 @@ id: fs.find_large_files
 title: Files larger than N MB
 kind: exec
 risk: low
-description: Top files by size under one path. Use to find disk-pressure culprits.
+description: Find the top files by size under one path. Use to find disk-pressure culprits.
 side_effects:
   - One file-system traversal.
   - Read-only.

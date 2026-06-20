@@ -3,7 +3,7 @@ id: consul.agent_metrics
 title: GET /v1/agent/metrics
 kind: exec
 risk: low
-description: Current runtime metrics gauges + counters.
+description: Show current runtime metrics gauges + counters.
 side_effects: ["One API call.", "Read-only."]
 args: []
 execution:

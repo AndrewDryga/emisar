@@ -3,7 +3,7 @@ id: rmq.list_policies
 title: rabbitmqctl list_policies
 kind: exec
 risk: low
-description: All set policies (HA, federation, shovel, etc).
+description: List all set policies (HA, federation, shovel, etc).
 side_effects:
   - One CLI call.
   - Read-only.

@@ -1,7 +1,7 @@
 schema_version: 1
 id: aws-cost
 name: AWS Cost Explorer operations
-version: 0.1.2
+version: 0.1.3
 description: >
   Read-only AWS spend introspection — month-to-date by service, by
   account, forecast. Auth via AWS_PROFILE with ce:* permissions. Cost

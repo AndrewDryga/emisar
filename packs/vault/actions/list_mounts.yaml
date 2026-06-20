@@ -3,7 +3,7 @@ id: vault.list_mounts
 title: vault secrets list
 kind: exec
 risk: low
-description: All secret engine mount points.
+description: List all secret engine mount points.
 side_effects:
   - One sys/mounts request.
   - Read-only.

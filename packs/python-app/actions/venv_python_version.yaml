@@ -3,7 +3,7 @@ id: py.venv_python_version
 title: $PY_VENV/bin/python --version
 kind: exec
 risk: low
-description: Interpreter version inside the configured venv.
+description: Show the interpreter version inside the configured venv.
 side_effects: ["One forked process.", "Read-only."]
 args: []
 execution:

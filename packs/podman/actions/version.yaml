@@ -3,7 +3,7 @@ id: podman.version
 title: podman version
 kind: exec
 risk: low
-description: Podman binary + API + runtime versions.
+description: Show Podman binary + API + runtime versions.
 side_effects: ["One CLI call.", "Read-only."]
 args: []
 execution:

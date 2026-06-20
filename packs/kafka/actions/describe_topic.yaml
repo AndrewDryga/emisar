@@ -3,7 +3,7 @@ id: kafka.describe_topic
 title: Describe topic
 kind: exec
 risk: low
-description: Partition layout, leaders, ISR, replicas for one topic.
+description: Show partition layout, leaders, ISR, replicas for one topic.
 side_effects:
   - One metadata request.
   - Read-only.

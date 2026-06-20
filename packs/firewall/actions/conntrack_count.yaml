@@ -3,7 +3,7 @@ id: fw.conntrack_count
 title: conntrack count
 kind: exec
 risk: low
-description: Active connection-tracking entry count + per-state breakdown.
+description: Show active connection-tracking entry count + per-state breakdown.
 side_effects:
   - One conntrack query.
   - Read-only.

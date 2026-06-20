@@ -3,7 +3,7 @@ id: cw.describe_alarms
 title: aws cloudwatch describe-alarms
 kind: exec
 risk: low
-description: All CloudWatch alarms with state + threshold.
+description: List all CloudWatch alarms with state + threshold.
 side_effects: ["One API call.", "Read-only."]
 args: []
 execution:

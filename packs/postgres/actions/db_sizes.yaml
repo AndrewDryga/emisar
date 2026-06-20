@@ -3,7 +3,7 @@ id: postgres.db_sizes
 title: All databases by size
 kind: exec
 risk: low
-description: Every database with pg_database_size.
+description: List every database with pg_database_size.
 side_effects: ["One SELECT.", "Read-only."]
 args: []
 execution:

@@ -3,7 +3,7 @@ id: postgres.last_vacuum_per_table
 title: Last vacuum/analyze per table
 kind: exec
 risk: low
-description: Tables ordered by oldest last-vacuum — find ones autovacuum hasn't touched.
+description: List tables ordered by oldest last-vacuum — find ones autovacuum hasn't touched.
 side_effects: ["One SELECT.", "Read-only."]
 args: []
 execution:

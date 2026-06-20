@@ -3,7 +3,7 @@ id: cassandra.cqlsh_describe_schema
 title: cqlsh -e "DESCRIBE SCHEMA"
 kind: exec
 risk: low
-description: 'Full schema dump as CQL. Note: large clusters produce big output; rely on the byte cap.'
+description: 'Dump the full schema as CQL. Note: large clusters produce big output; rely on the byte cap.'
 side_effects: ["One CQL query.", "Read-only."]
 args: []
 execution:

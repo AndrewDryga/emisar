@@ -3,7 +3,7 @@ id: py.pip_show
 title: $PY_VENV/bin/pip show <pkg>
 kind: exec
 risk: low
-description: Details for one package (version, deps, location).
+description: Show details for one package (version, deps, location).
 side_effects: ["One pip show call.", "Read-only."]
 args:
   - name: package

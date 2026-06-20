@@ -3,7 +3,7 @@ id: ce.savings_plans_coverage
 title: Savings Plans coverage (last month)
 kind: exec
 risk: low
-description: 'What fraction of eligible compute spend was covered by Savings Plans / RI last month.'
+description: 'Show what fraction of eligible compute spend was covered by Savings Plans / RI last month.'
 side_effects: ["One Cost Explorer call.", "Read-only."]
 args: []
 execution:

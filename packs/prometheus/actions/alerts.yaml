@@ -3,7 +3,7 @@ id: prom.alerts
 title: GET /api/v1/alerts
 kind: exec
 risk: low
-description: Currently active alerts (pending or firing).
+description: List currently active alerts (pending or firing).
 side_effects:
   - One GET request.
   - Read-only.

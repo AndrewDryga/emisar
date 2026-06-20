@@ -3,7 +3,7 @@ id: vault.list_audit
 title: vault audit list
 kind: exec
 risk: low
-description: Enabled audit devices.
+description: List enabled audit devices.
 side_effects:
   - One sys/audit request.
   - Read-only.

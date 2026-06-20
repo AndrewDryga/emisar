@@ -3,7 +3,7 @@ id: consul.kv_get
 title: consul kv get <key>
 kind: exec
 risk: low
-description: Value at one KV key.
+description: Get the value at one KV key.
 side_effects:
   - One KV request.
   - Read-only — value will be returned, may be redacted by audit rules.

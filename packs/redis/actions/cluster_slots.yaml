@@ -4,7 +4,7 @@ title: CLUSTER SLOTS
 kind: exec
 risk: low
 description: >
-  Slot-range → master/replica mapping. Use to confirm a given hash
+  Show the slot-range → master/replica mapping. Use to confirm a given hash
   slot is owned by the expected shard and to see replica addresses
   for read traffic.
 side_effects:

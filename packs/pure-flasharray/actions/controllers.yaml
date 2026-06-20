@@ -4,7 +4,7 @@ title: GET /controllers
 kind: script
 risk: low
 description: >
-  The array's controllers — for each, its mode (primary / secondary), model,
+  List the array's controllers — for each, its mode (primary / secondary), model,
   running Purity//FA version, and status. Use to confirm the HA pair is
   healthy and which controller is primary. Returns
   {items:[...], more_items_remaining, ...}, one item per controller.

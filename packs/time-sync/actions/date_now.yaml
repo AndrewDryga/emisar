@@ -3,7 +3,7 @@ id: time.date_now
 title: date -u
 kind: exec
 risk: low
-description: UTC + local time + day-of-week. Compare against the requester's clock to spot drift.
+description: Show UTC + local time + day-of-week. Compare against the requester's clock to spot drift.
 side_effects:
   - One date call.
   - Read-only.

@@ -3,7 +3,7 @@ id: fs.sha256_file
 title: sha256sum <file>
 kind: exec
 risk: low
-description: SHA-256 of one file. Use to confirm a binary matches a known-good hash.
+description: Show the SHA-256 of one file. Use to confirm a binary matches a known-good hash.
 side_effects:
   - One read of the file.
   - Read-only.

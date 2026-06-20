@@ -3,7 +3,7 @@ id: bind.zone_dump
 title: dig @localhost <zone> AXFR
 kind: exec
 risk: low
-description: Zone transfer from localhost (requires allow-transfer to include 127.0.0.1).
+description: Dump zone transfer from localhost (requires allow-transfer to include 127.0.0.1).
 side_effects: ["One AXFR query.", "Read-only."]
 args:
   - name: zone

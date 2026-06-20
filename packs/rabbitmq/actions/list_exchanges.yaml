@@ -3,7 +3,7 @@ id: rmq.list_exchanges
 title: rabbitmqctl list_exchanges
 kind: exec
 risk: low
-description: All exchanges with type + durability.
+description: List all exchanges with type + durability.
 side_effects:
   - One CLI call.
   - Read-only.

@@ -3,7 +3,7 @@ id: rmq.node_health_check
 title: rabbitmq-diagnostics check_running
 kind: exec
 risk: low
-description: Health check — confirms the local node is running and reachable.
+description: Check health — confirms the local node is running and reachable.
 side_effects:
   - One diagnostics call.
   - Read-only.

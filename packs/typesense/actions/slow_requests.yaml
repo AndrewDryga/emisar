@@ -4,7 +4,7 @@ title: Recent slow requests from the server log
 kind: exec
 risk: low
 description: >
-  Typesense has no slow-query endpoint — slow requests are written to the
+  Tail slow requests from the Typesense server log — slow requests are written to the
   server log prefixed "SLOW REQUEST" (enable with
   --log-slow-requests-time-ms). This greps the log for those lines and tails
   the most recent ones. Read-only.

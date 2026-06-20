@@ -3,7 +3,7 @@ id: es.cat_shards
 title: GET /_cat/shards
 kind: exec
 risk: low
-description: Every shard with state (STARTED/UNASSIGNED/INITIALIZING/RELOCATING) and node. Sorted by store size.
+description: List every shard with state (STARTED/UNASSIGNED/INITIALIZING/RELOCATING) and node. Sorted by store size.
 side_effects:
   - One GET request.
   - Read-only.

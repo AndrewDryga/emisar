@@ -4,7 +4,7 @@ title: Slowest requests (last N lines)
 kind: exec
 risk: low
 description: >
-  Top N requests sorted by `$request_time`. Requires a log_format that includes `$request_time` as a specific column; default assumes column 11. Read-only.
+  List top N requests sorted by `$request_time`. Requires a log_format that includes `$request_time` as a specific column; default assumes column 11. Read-only.
 side_effects:
   - Reads /var/log/nginx/access.log.
   - Read-only.

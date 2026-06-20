@@ -3,7 +3,7 @@ id: zfs.pool_iostat
 title: zpool iostat (5s sample)
 kind: exec
 risk: low
-description: One 5-second iostat sample per pool.
+description: Show one 5-second iostat sample per pool.
 side_effects: ["Reads pool metrics.", "Read-only."]
 args: []
 execution:

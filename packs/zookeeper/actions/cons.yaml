@@ -3,7 +3,7 @@ id: zk.cons
 title: cons (all connections)
 kind: exec
 risk: low
-description: All client connections + their session + per-session stats.
+description: List all client connections + their session + per-session stats.
 side_effects: ["One 4lw command.", "Read-only."]
 args:
   - name: server

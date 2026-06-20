@@ -3,7 +3,7 @@ id: prom.query_instant
 title: GET /api/v1/query
 kind: exec
 risk: low
-description: Instant PromQL query. Use to answer 'what's X right now?'.
+description: Run an instant PromQL query. Use to answer 'what's X right now?'.
 side_effects:
   - One PromQL query.
   - Read-only.

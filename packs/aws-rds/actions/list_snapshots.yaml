@@ -3,7 +3,7 @@ id: rds.list_snapshots
 title: aws rds describe-db-snapshots
 kind: exec
 risk: low
-description: All DB snapshots.
+description: List all DB snapshots.
 side_effects: ["One API call.", "Read-only."]
 args: []
 execution:

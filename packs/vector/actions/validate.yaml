@@ -4,7 +4,7 @@ title: vector validate --no-environment
 kind: exec
 risk: low
 description: >
-  Offline syntax + topology validation of a Vector config file. Runs with
+  Validate a Vector config file offline — checks syntax and topology. Runs with
   --no-environment, so it checks structure only and skips all network sink
   healthchecks and environment probing — it never connects to anything.
   Talks only to the local binary — needs no API.

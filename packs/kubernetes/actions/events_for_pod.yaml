@@ -3,7 +3,7 @@ id: kubernetes.events_for_pod
 title: Events for one pod
 kind: exec
 risk: low
-description: Field-selected events that reference one pod.
+description: List field-selected events that reference one pod.
 side_effects:
   - One kubectl get events invocation.
   - Read-only.

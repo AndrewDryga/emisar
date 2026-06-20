@@ -3,7 +3,7 @@ id: podman.stats
 title: podman stats --no-stream
 kind: exec
 risk: low
-description: One-shot CPU/mem/net/io stats for all containers.
+description: Show one-shot CPU/mem/net/io stats for all containers.
 side_effects: ["One CLI call.", "Read-only."]
 args: []
 execution:

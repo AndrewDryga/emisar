@@ -3,7 +3,7 @@ id: ce.mtd_by_account
 title: Month-to-date cost by linked account
 kind: exec
 risk: low
-description: MTD cost grouped by linked account ID (org master account view).
+description: Show MTD cost grouped by linked account ID (org master account view).
 side_effects: ["One Cost Explorer call.", "Read-only."]
 args: []
 execution:

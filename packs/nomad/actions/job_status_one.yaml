@@ -3,7 +3,7 @@ id: nomad.job_status_one
 title: nomad job status <id>
 kind: exec
 risk: low
-description: One job's full status — task groups, allocations, deployment.
+description: Show one job's full status — task groups, allocations, deployment.
 side_effects: ["One API call.", "Read-only."]
 args:
   - name: job

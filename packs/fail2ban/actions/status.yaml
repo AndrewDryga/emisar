@@ -3,7 +3,7 @@ id: f2b.status
 title: fail2ban-client status
 kind: exec
 risk: low
-description: All configured jails + currently-active count.
+description: List all configured jails + currently-active count.
 side_effects: ["One fail2ban call.", "Read-only."]
 args: []
 execution:

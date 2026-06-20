@@ -3,7 +3,7 @@ id: caddy.version
 title: caddy version
 kind: exec
 risk: low
-description: Caddy binary version + build info.
+description: Show Caddy binary version + build info.
 side_effects: ["One forked process.", "Read-only."]
 args: []
 execution:

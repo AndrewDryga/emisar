@@ -3,7 +3,7 @@ id: postgres.database_stats
 title: pg_stat_database
 kind: exec
 risk: low
-description: 'Per-DB: commits/rollbacks, blks_read/hit, deadlocks, conflicts, temp file usage.'
+description: 'Show per-DB: commits/rollbacks, blks_read/hit, deadlocks, conflicts, temp file usage.'
 side_effects: ["One SELECT.", "Read-only."]
 args: []
 execution:

@@ -4,7 +4,7 @@ title: multipath -ll
 kind: exec
 risk: low
 description: >
-  Full multipath topology — each multipath device (wwid, alias,
+  Show full multipath topology — each multipath device (wwid, alias,
   vendor/product), its path groups, and per-path state (active/enabled,
   dm status, path checker result).
 side_effects: ["One multipath read.", "Read-only."]

@@ -3,7 +3,7 @@ id: consul.kv_get_recursive
 title: consul kv get -recurse <prefix>
 kind: exec
 risk: low
-description: All keys + values under a prefix.
+description: Get all keys + values under a prefix.
 side_effects: ["One KV request.", "Read-only — values may include secrets; rely on audit redaction."]
 args:
   - name: prefix

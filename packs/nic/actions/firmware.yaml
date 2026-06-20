@@ -4,7 +4,7 @@ title: NIC driver + firmware versions (all interfaces)
 kind: exec
 risk: low
 description: >
-  Driver, driver version, firmware-version, and PCI bus address for every
+  List driver, driver version, firmware-version, and PCI bus address for every
   physical NIC on the host — one line each, from `ethtool -i`. Optionally
   filter to a single driver (e.g. i40e). The fleet "what firmware is each
   NIC running?" check.

@@ -3,7 +3,7 @@ id: mongo.index_stats
 title: $indexStats aggregation
 kind: exec
 risk: low
-description: Per-index access counts since server start. Zeros usually mean unused indexes.
+description: Show per-index access counts since server start. Zeros usually mean unused indexes.
 side_effects:
   - One aggregation.
   - Read-only.

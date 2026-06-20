@@ -3,7 +3,7 @@ id: consul.agent_checks
 title: GET /v1/agent/checks
 kind: exec
 risk: low
-description: Checks registered with the local agent + their current status.
+description: List checks registered with the local agent + their current status.
 side_effects: ["One API call.", "Read-only."]
 args: []
 execution:

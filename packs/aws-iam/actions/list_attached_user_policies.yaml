@@ -3,7 +3,7 @@ id: iam.list_attached_user_policies
 title: aws iam list-attached-user-policies
 kind: exec
 risk: low
-description: Policies attached to one IAM user.
+description: List policies attached to one IAM user.
 side_effects: ["One API call.", "Read-only."]
 args:
   - name: user

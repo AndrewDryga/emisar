@@ -3,7 +3,7 @@ id: net.whois_summary
 title: whois (registrar + expiry)
 kind: exec
 risk: low
-description: Filtered whois output — registrar, dates, name servers. Use to check "is this domain about to expire?"
+description: Show filtered whois output — registrar, dates, name servers. Use to check "is this domain about to expire?"
 side_effects:
   - One whois query to the registry.
   - Read-only.

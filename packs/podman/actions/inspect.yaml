@@ -3,7 +3,7 @@ id: podman.inspect
 title: podman inspect <id>
 kind: exec
 risk: low
-description: Full container details for one ID/name.
+description: Show full container details for one ID/name.
 side_effects: ["One CLI call.", "Read-only."]
 args:
   - name: container

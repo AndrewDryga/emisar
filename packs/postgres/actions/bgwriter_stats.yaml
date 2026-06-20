@@ -3,7 +3,7 @@ id: postgres.bgwriter_stats
 title: pg_stat_bgwriter
 kind: exec
 risk: low
-description: Background writer + checkpoint stats since stats reset.
+description: Show background writer + checkpoint stats since stats reset.
 side_effects: ["One SELECT.", "Read-only."]
 args: []
 execution:

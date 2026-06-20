@@ -3,7 +3,7 @@ id: httpd.test_config
 title: apachectl -t
 kind: exec
 risk: low
-description: Config syntax check. Run before graceful_reload.
+description: Check config syntax. Run before graceful_reload.
 side_effects:
   - Forks apachectl.
   - Read-only.

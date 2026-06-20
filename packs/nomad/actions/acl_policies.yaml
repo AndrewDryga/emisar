@@ -3,7 +3,7 @@ id: nomad.acl_policies
 title: nomad acl policy list
 kind: exec
 risk: low
-description: All ACL policy names.
+description: List all ACL policy names.
 side_effects: ["One API call.", "Read-only."]
 args: []
 execution:

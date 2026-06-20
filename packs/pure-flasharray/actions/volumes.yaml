@@ -4,7 +4,7 @@ title: GET /volumes
 kind: script
 risk: low
 description: >
-  Volume inventory — each volume's name, id, provisioned (virtual) size, and
+  List the volume inventory — each volume's name, id, provisioned (virtual) size, and
   whether it is destroyed / pending eradication. Use to confirm a volume
   exists and its size. Returns {items:[...], more_items_remaining, ...}, one
   item per volume; can be large on arrays with many volumes.

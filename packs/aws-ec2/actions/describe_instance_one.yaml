@@ -3,7 +3,7 @@ id: ec2.describe_instance_one
 title: aws ec2 describe-instances --instance-ids
 kind: exec
 risk: low
-description: Details for one EC2 instance.
+description: Get details for one EC2 instance.
 side_effects:
   - One API call.
   - Read-only.

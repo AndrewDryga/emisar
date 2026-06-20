@@ -3,7 +3,7 @@ id: rpm.rpm_qi
 title: rpm -qi <pkg>
 kind: exec
 risk: low
-description: Details for one package — version, release, install date, signer.
+description: Show details for one package — version, release, install date, signer.
 side_effects: ["One rpmdb read.", "Read-only."]
 args:
   - name: package

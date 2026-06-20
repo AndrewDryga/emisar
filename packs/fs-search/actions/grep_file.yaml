@@ -3,7 +3,7 @@ id: fs.grep_file
 title: grep <pattern> <file>
 kind: exec
 risk: low
-description: Matching lines in one file. Pattern is treated as POSIX BRE.
+description: Show matching lines in one file. Pattern is treated as POSIX BRE.
 side_effects:
   - One read of the file.
   - Read-only.
