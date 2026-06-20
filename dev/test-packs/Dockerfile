@@ -67,6 +67,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN apt-get update && apt-get install -y --no-install-recommends default-jdk-headless \
     && rm -rf /var/lib/apt/lists/* || true
 
+# net-snmp client (snmpget/snmpwalk/snmptable) for the snmp pack's actions
+RUN apt-get update && apt-get install -y --no-install-recommends snmp \
+    && rm -rf /var/lib/apt/lists/*
+
 # emisar binary (mounted at runtime via volume)
 VOLUME ["/opt/emisar"]
 ENV PATH="/opt/emisar/bin:${PATH}"

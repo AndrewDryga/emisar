@@ -50,6 +50,8 @@ services:
       KAFKA_BOOTSTRAP: "kafka:9092"
       RABBITMQ_HOST: rabbitmq
       MC_HOST_local: "http://minio_admin:testpass@minio:9000"
+      SNMP_VERSION: "2c"
+      SNMP_COMMUNITY: public
 
   # Databases
   postgres:
@@ -284,6 +286,16 @@ services:
     environment:
       SERVICES: ec2,s3,iam,cloudwatch,logs
       DEFAULT_REGION: us-east-1
+    networks: [packtest]
+
+  # Network device. No official/Canonical net-snmp image exists, so build a
+  # minimal snmpd from the Debian base (see ./snmpd/Dockerfile). Read-only,
+  # v2c community "public" — config mounted from fixtures/snmpd.conf.
+  snmpd:
+    build: ./snmpd
+    command: ["/usr/sbin/snmpd", "-f", "-Lo", "-C", "-c", "/etc/snmp/snmpd.conf"]
+    volumes:
+      - ./fixtures/snmpd.conf:/etc/snmp/snmpd.conf:ro
     networks: [packtest]
 
 networks:
