@@ -799,9 +799,13 @@ defmodule Emisar.Accounts do
     |> Membership.Query.by_id(membership.id)
     |> Repo.fetch_and_update(Membership.Query,
       with: fn loaded_membership ->
-        # The guard judges the row's CURRENT role under the lock.
-        case ensure_not_last_active_owner(loaded_membership) do
-          :ok -> Membership.Changeset.suspend(loaded_membership)
+        # Guards judge the locked row: it must live in the provider's account
+        # (the directory-sync authz boundary), and a deprovision can never lock
+        # out the account's last owner.
+        with :ok <- ensure_membership_in_provider_account(loaded_membership, provider),
+             :ok <- ensure_not_last_active_owner(loaded_membership) do
+          Membership.Changeset.suspend(loaded_membership)
+        else
           {:error, reason} -> reason
         end
       end,
@@ -824,7 +828,13 @@ defmodule Emisar.Accounts do
     Membership.Query.not_deleted()
     |> Membership.Query.by_id(membership.id)
     |> Repo.fetch_and_update(Membership.Query,
-      with: &Membership.Changeset.reinstate/1,
+      with: fn loaded_membership ->
+        # The locked row must live in the provider's account before we write.
+        case ensure_membership_in_provider_account(loaded_membership, provider) do
+          :ok -> Membership.Changeset.reinstate(loaded_membership)
+          {:error, reason} -> reason
+        end
+      end,
       audit: &Audit.Events.membership_reprovisioned_via_scim(&1, provider),
       after_commit: &broadcast_membership_reinstated/1
     )
@@ -860,9 +870,11 @@ defmodule Emisar.Accounts do
     |> Membership.Query.by_id(membership.id)
     |> Repo.fetch_and_update(Membership.Query,
       with: fn loaded_membership ->
-        # The guards judge the row's CURRENT role under the lock — the
-        # caller's struct is a stale socket snapshot.
-        with :ok <- ensure_sync_role_assignable(role),
+        # The guards judge the locked row — the caller's struct is a stale socket
+        # snapshot. It must live in the provider's account, owner stays a human
+        # assignment, and we never demote the account's last owner.
+        with :ok <- ensure_membership_in_provider_account(loaded_membership, provider),
+             :ok <- ensure_sync_role_assignable(role),
              :ok <- ensure_demotion_keeps_an_owner(loaded_membership, role) do
           Membership.Changeset.update(loaded_membership, %{role: role})
         else
@@ -886,6 +898,19 @@ defmodule Emisar.Accounts do
   # it; this is the write-path backstop.
   defp ensure_sync_role_assignable(:owner), do: {:error, :owner_not_assignable}
   defp ensure_sync_role_assignable(_role), do: :ok
+
+  # The provider's account IS the authorization on the directory-sync path (no
+  # %Subject{}), so the locked membership must live in it before we write — the
+  # account scoping the Subject-gated siblings get from `ensure_subject_in_account`
+  # + `for_subject`. Equal `account_id` bindings unify; a membership from any other
+  # account can't have come from this provider.
+  defp ensure_membership_in_provider_account(
+         %Membership{account_id: account_id},
+         %SSO.IdentityProvider{account_id: account_id}
+       ),
+       do: :ok
+
+  defp ensure_membership_in_provider_account(_membership, _provider), do: {:error, :not_found}
 
   @doc """
   Admin-triggered password reset: invalidates every active session for

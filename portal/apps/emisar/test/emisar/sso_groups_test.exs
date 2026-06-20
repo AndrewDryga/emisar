@@ -385,6 +385,35 @@ defmodule Emisar.SSOGroupsTest do
     end
   end
 
+  describe "directory-sync writes are scoped to the provider's account" do
+    # A provider's account IS the authorization on the no-Subject sync path, so a
+    # membership in another account must never be writable through it — even if a
+    # caller resolved it some other way. Today's callers always pass
+    # provider-scoped memberships; this pins the write-path backstop.
+    test "sync_suspend_membership rejects a membership outside the provider's account" do
+      %{provider: provider} = scim_provider()
+      other = membership_fixture()
+
+      assert {:error, :not_found} = Accounts.sync_suspend_membership(other, provider)
+      assert is_nil(Repo.reload!(other).disabled_at)
+    end
+
+    test "sync_reinstate_membership rejects a membership outside the provider's account" do
+      %{provider: provider} = scim_provider()
+      other = membership_fixture()
+
+      assert {:error, :not_found} = Accounts.sync_reinstate_membership(other, provider)
+    end
+
+    test "sync_set_membership_role rejects a membership outside the provider's account" do
+      %{provider: provider} = scim_provider()
+      other = membership_fixture(role: "operator")
+
+      assert {:error, :not_found} = Accounts.sync_set_membership_role(other, :admin, provider)
+      assert Repo.reload!(other).role == :operator
+    end
+  end
+
   # -- Helpers ---------------------------------------------------------
 
   defp demote_other_owners(account_id, except: keep_user_id) do
