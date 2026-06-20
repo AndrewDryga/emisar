@@ -126,4 +126,21 @@ defmodule Emisar.Workers.ActionRunEventRetentionTest do
     assert event_ids(account_a.id) == MapSet.new()
     assert event_ids(account_b.id) == MapSet.new([kept_b.id])
   end
+
+  test "pages accounts via a continuation cursor and prunes them all" do
+    accounts = for _ <- 1..3, do: account_fixture()
+
+    for account <- accounts do
+      runner = runner_fixture(account_id: account.id)
+      old_run = finished_run(account, runner, @beyond_window_days)
+      add_event(old_run, 1)
+    end
+
+    # `limit: 1` forces one account per page, so the run only completes by
+    # following its own continuation cursor account-to-account (inline test mode
+    # runs each enqueued follow-up synchronously). All three must be pruned.
+    assert :ok = ActionRunEventRetention.perform(%Oban.Job{args: %{"limit" => 1}})
+
+    for account <- accounts, do: assert(event_ids(account.id) == MapSet.new())
+  end
 end
