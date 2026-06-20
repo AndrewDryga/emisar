@@ -10,7 +10,10 @@ description: >
   seconds-to-minutes depending on the unit. Treat as a last-resort action:
   prefer diagnosis (logs, status, disk, memory) first. Never restart a
   database under load without confirming there is no in-flight repair,
-  compaction, or similar background operation.
+  compaction, or similar background operation. WHICH units this runner may
+  restart is an operator policy decision (high-risk → require_approval by
+  default), not a fixed list; the unit is bounded to a valid systemd unit
+  name so it can't carry shell metacharacters.
 
 side_effects:
   - Stops the named unit, then starts it.
@@ -22,13 +25,10 @@ args:
   - name: unit
     type: string
     required: true
-    description: Systemd unit to restart.
+    description: Systemd unit to restart (e.g. nginx, nomad, consul.service, foo@bar.service).
     validation:
-      enum:
-        - cassandra
-        - nginx
-        - postgresql
-        - docker
+      pattern: "^[A-Za-z0-9@._:-]{1,128}$"
+      max_length: 128
 
 execution:
   command:
