@@ -2,7 +2,7 @@ schema_version: 1
 
 id: cockroach
 name: CockroachDB
-version: 0.1.0
+version: 0.1.1
 description: >
   Investigate a CockroachDB cluster over the `cockroach` CLI — node liveness /
   store capacity, under-replicated & unavailable ranges, running queries /
@@ -74,3 +74,4 @@ actions:
   - actions/resume_job.yaml
   - actions/node_decommission.yaml
   - actions/node_recommission.yaml
+  - actions/set_cluster_setting.yaml

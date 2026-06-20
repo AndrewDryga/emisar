@@ -1,0 +1,62 @@
+schema_version: 1
+
+id: ch.kill_mutation
+title: Cancel a stuck mutation (KILL MUTATION)
+kind: exec
+risk: critical
+
+description: >
+  Cancel one ClickHouse mutation by its (database, table, mutation_id) — KILL
+  MUTATION WHERE …. Use to stop a mutation wedged on a failure (see
+  ch.stuck_mutations) so the table's merges and inserts can proceed. Destructive
+  — the mutation is abandoned mid-flight — so risk:critical → default-denied. An
+  operator allows it by explicit policy, and WHICH mutations are permitted is a
+  portal policy decision.
+
+side_effects:
+  - The matching mutation is cancelled; its partial work is abandoned.
+  - Targets exactly one mutation — all three identity args are required.
+  - Reversible only by re-issuing the ALTER that created the mutation.
+
+args:
+  - name: database
+    type: string
+    required: true
+    description: Database of the mutation (from ch.stuck_mutations).
+    validation:
+      pattern: "^[A-Za-z_][A-Za-z0-9_]{0,127}$"
+      max_length: 128
+  - name: table
+    type: string
+    required: true
+    description: Table of the mutation (from ch.stuck_mutations).
+    validation:
+      pattern: "^[A-Za-z_][A-Za-z0-9_]{0,127}$"
+      max_length: 128
+  - name: mutation_id
+    type: string
+    required: true
+    description: mutation_id from ch.stuck_mutations (e.g. mutation_3.txt).
+    validation:
+      pattern: "^[A-Za-z0-9._-]{1,128}$"
+      max_length: 128
+
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "clickhouse-client --host \"${CH_HOST:-localhost}\" --user \"${CH_USER:-default}\" --password \"$CH_PASSWORD\" --query \"KILL MUTATION WHERE database = '{{ args.database }}' AND table = '{{ args.table }}' AND mutation_id = '{{ args.mutation_id }}'\""
+  timeout: 30s
+
+output:
+  parser: text
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+
+examples:
+  - title: Kill a stuck mutation
+    args:
+      database: "default"
+      table: "events"
+      mutation_id: "mutation_3.txt"

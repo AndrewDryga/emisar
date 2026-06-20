@@ -1,0 +1,61 @@
+schema_version: 1
+
+id: cockroach.set_cluster_setting
+title: Set a cluster setting (SET CLUSTER SETTING)
+kind: exec
+risk: critical
+
+description: >
+  Change one CockroachDB cluster setting cluster-wide — SET CLUSTER SETTING
+  <name> = <value>. An unrestricted config write (rate limits, GC TTLs, feature
+  flags) that can materially change cluster behavior, so risk:critical →
+  default-denied. An operator allows it by explicit policy, and WHICH
+  settings/values are permitted is a portal policy decision, not a hardcoded
+  list. Read cockroach.cluster_settings first to see the current value.
+
+side_effects:
+  - The named cluster setting is changed for the WHOLE cluster, immediately.
+  - Rate-limit / GC / admission settings can throttle or destabilize the cluster.
+  - Reversible with another set (or "= DEFAULT").
+
+args:
+  - name: name
+    type: string
+    required: true
+    description: Cluster setting name, e.g. kv.snapshot_rebalance.max_rate (see cockroach.cluster_settings).
+    validation:
+      pattern: "^[a-z][a-z0-9._]{0,127}$"
+      max_length: 128
+  - name: value
+    type: string
+    required: true
+    description: >
+      The value in CockroachDB literal form — a bare number/boolean (100, true,
+      DEFAULT) or a quoted string ('64 MiB', '24h'). Passed verbatim into the
+      statement; bounded so it can't break out of its slot.
+    validation:
+      pattern: "^('[^']{1,254}'|[A-Za-z0-9._+-]{1,64})$"
+      max_length: 256
+
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "cockroach sql --url \"$COCKROACH_URL\" --format=tsv -e \"SET CLUSTER SETTING {{ args.name }} = {{ args.value }}\""
+  timeout: 15s
+
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+
+examples:
+  - title: Raise the snapshot rebalance rate
+    args:
+      name: "kv.snapshot_rebalance.max_rate"
+      value: "'64 MiB'"
+  - title: Reset a setting to its default
+    args:
+      name: "kv.range_split.by_load_enabled"
+      value: "DEFAULT"
