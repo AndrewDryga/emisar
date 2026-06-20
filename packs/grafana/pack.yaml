@@ -2,7 +2,7 @@ schema_version: 1
 
 id: grafana
 name: Grafana
-version: 0.1.7
+version: 0.1.8
 description: >
   Grafana admin-API ops — datasource health, dashboard listings, alert
   state, user list, version, settings. Read-only. Auth via GRAFANA_URL
@@ -38,6 +38,7 @@ setup:
       required: true
       description: Service-account token or API key sent as the Bearer credential.
   notes:
+    - "Any of GRAFANA_URL / GRAFANA_TOKEN you set must also be allowlisted in the runner's execution.inherit_env — the action env is scrubbed to PATH/LANG/LC_ALL/TERM by default, so an env present on the host but not allowlisted is silently dropped (the action falls back to its local default or fails auth)."
     - "Create the token as a service account (Administration -> Service accounts) or a legacy API key; this pack is read-only, so a Viewer/Admin-read role is enough."
     - "settings and users actions return data only if the token's role can read them — a Viewer token may see less than an Admin token."
   verify: grafana.health

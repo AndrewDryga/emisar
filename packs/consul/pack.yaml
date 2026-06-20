@@ -2,7 +2,7 @@ schema_version: 1
 
 id: consul
 name: HashiCorp Consul operations
-version: 0.2.11
+version: 0.2.12
 description: >
   Deep Consul ops — agent self/metrics/host introspection, operator
   raft + autopilot + reload, catalog (services + nodes + datacenters),
@@ -46,6 +46,7 @@ setup:
         ACL token. Required when ACLs are enabled; its policy gates which
         actions succeed.
   notes:
+    - "Any of CONSUL_HTTP_ADDR / CONSUL_HTTP_TOKEN you set must also be allowlisted in the runner's execution.inherit_env — the action env is scrubbed to PATH/LANG/LC_ALL/TERM by default, so an env present on the host but not allowlisted is silently dropped (the action falls back to its local default or fails auth)."
     - On a cluster with ACLs enabled the token must grant the rights the action needs — operator/write for raft_remove_peer and reload, service/node write for the maintenance and deregister mutators, and key/read for the KV reads.
     - "For TLS-enabled agents use an https:// CONSUL_HTTP_ADDR; you may also need CONSUL_CACERT (the consul CLI reads it, but the curl actions do not)."
   verify: consul.members

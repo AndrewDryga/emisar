@@ -2,7 +2,7 @@ schema_version: 1
 
 id: clickhouse
 name: ClickHouse analytics DB
-version: 0.2.0
+version: 0.2.1
 description: >
   ClickHouse server + table introspection — metrics, errors, slow & failed
   queries, parts/partitions, merges, mutations, replication queue, Keeper/ZK
@@ -42,6 +42,7 @@ setup:
     - name: CH_PASSWORD
       description: Password passed to --password. Leave unset for a passwordless account.
   notes:
+    - "Any of CH_HOST / CH_USER / CH_PASSWORD you set must also be allowlisted in the runner's execution.inherit_env — the action env is scrubbed to PATH/LANG/LC_ALL/TERM by default, so an env present on the host but not allowlisted is silently dropped (the action falls back to its local default or fails auth)."
     - Connection always uses clickhouse-client's default native port (9000); there is no port env var in this pack.
     - The user needs SELECT on the system tables for the reads, plus rights for the mutators (KILL QUERY, OPTIMIZE, SYSTEM ... for replica/config actions) you enable.
     - The replication/Keeper reads (replication_queue, zookeeper_connection, keeper_status, detached_parts) only return data on a ReplicatedMergeTree + Keeper/ZooKeeper deployment; on a single non-replicated server they come back empty, which is correct, not an error.

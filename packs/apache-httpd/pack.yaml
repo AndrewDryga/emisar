@@ -2,7 +2,7 @@ schema_version: 1
 
 id: apache-httpd
 name: Apache HTTPD operations
-version: 0.1.3
+version: 0.1.4
 description: >
   Apache version, modules, mod_status snapshot, config syntax check,
   vhost dump, error/access log tails, plus narrow mutators (graceful
@@ -40,6 +40,7 @@ setup:
       description: Path to the Apache access log for the access_top_* actions.
       default: /var/log/apache2/access.log
   notes:
+    - "Any of HTTPD_STATUS_URL you set must also be allowlisted in the runner's execution.inherit_env — the action env is scrubbed to PATH/LANG/LC_ALL/TERM by default, so an env present on the host but not allowlisted is silently dropped (the action falls back to its local default or fails auth)."
     - "graceful_reload and graceful_stop control the server and need root (run the runner as root or via sudo)."
     - "On RHEL-family installs the logs live under /var/log/httpd — set HTTPD_ERROR_LOG / HTTPD_ACCESS_LOG accordingly."
   verify: httpd.version

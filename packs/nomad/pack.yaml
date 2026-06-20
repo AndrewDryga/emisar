@@ -2,7 +2,7 @@ schema_version: 1
 
 id: nomad
 name: HashiCorp Nomad
-version: 0.1.9
+version: 0.1.10
 description: >
   Deep Nomad operations — full job lifecycle (inspect, history, scale,
   dispatch, revert, promote, stop), allocation introspection + restart +
@@ -43,6 +43,7 @@ setup:
         ACL token. Required when ACLs are enabled; its policy gates which
         actions succeed.
   notes:
+    - "Any of NOMAD_ADDR / NOMAD_TOKEN you set must also be allowlisted in the runner's execution.inherit_env — the action env is scrubbed to PATH/LANG/LC_ALL/TERM by default, so an env present on the host but not allowlisted is silently dropped (the action falls back to its local default or fails auth)."
     - With ACLs enabled the token needs the matching capabilities — submit-job for the job mutators, node:write for drain/eligibility/purge, and operator:write for the raft remove-peer action.
     - "For TLS-enabled servers use an https:// NOMAD_ADDR; the nomad CLI also reads NOMAD_CACERT / NOMAD_CLIENT_CERT / NOMAD_CLIENT_KEY, but the curl actions do not."
   verify: nomad.agent_info
