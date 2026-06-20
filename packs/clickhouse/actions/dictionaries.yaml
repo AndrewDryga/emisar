@@ -3,7 +3,7 @@ id: ch.dictionaries
 title: SELECT * FROM system.dictionaries
 kind: exec
 risk: low
-description: Loaded dictionaries with status, element count, source.
+description: List loaded dictionaries with status, element count, source.
 side_effects: ["One SELECT.", "Read-only."]
 args: []
 execution:

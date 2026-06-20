@@ -3,7 +3,7 @@ id: ch.mutation_queue
 title: SELECT * FROM system.mutations
 kind: exec
 risk: low
-description: In-progress + pending mutations (ALTER TABLE).
+description: List in-progress + pending mutations (ALTER TABLE).
 side_effects: ["One SELECT.", "Read-only."]
 args: []
 execution:

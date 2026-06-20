@@ -2,7 +2,7 @@ schema_version: 1
 
 id: clickhouse
 name: ClickHouse analytics DB
-version: 0.2.1
+version: 0.2.3
 description: >
   ClickHouse server + table introspection — metrics, errors, slow & failed
   queries, parts/partitions, merges, mutations, replication queue, Keeper/ZK

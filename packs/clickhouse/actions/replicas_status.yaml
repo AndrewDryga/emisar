@@ -3,7 +3,7 @@ id: ch.replicas_status
 title: SELECT * FROM system.replicas
 kind: exec
 risk: low
-description: Per-replica state — leader, queue size, log delays, errors.
+description: Show per-replica state — leader, queue size, log delays, errors.
 side_effects: ["One SELECT.", "Read-only."]
 args: []
 execution:

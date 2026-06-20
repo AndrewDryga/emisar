@@ -3,7 +3,7 @@ id: ch.disks
 title: SELECT * FROM system.disks
 kind: exec
 risk: low
-description: Configured disks with free/used bytes + paths.
+description: List configured disks with free/used bytes + paths.
 side_effects: ["One SELECT.", "Read-only."]
 args: []
 execution:

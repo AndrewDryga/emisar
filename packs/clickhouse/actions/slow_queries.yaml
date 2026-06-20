@@ -3,7 +3,7 @@ id: ch.slow_queries
 title: system.query_log slowest queries
 kind: exec
 risk: low
-description: Top 50 slowest queries from the last hour.
+description: List top 50 slowest queries from the last hour.
 side_effects: ["One SELECT.", "Read-only."]
 args: []
 execution:

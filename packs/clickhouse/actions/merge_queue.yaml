@@ -3,7 +3,7 @@ id: ch.merge_queue
 title: SELECT * FROM system.merges
 kind: exec
 risk: low
-description: In-progress + queued merges.
+description: List in-progress + queued merges.
 side_effects: ["One SELECT.", "Read-only."]
 args: []
 execution:

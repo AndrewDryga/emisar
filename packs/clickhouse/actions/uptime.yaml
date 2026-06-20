@@ -3,7 +3,7 @@ id: ch.uptime
 title: SELECT version, uptime
 kind: exec
 risk: low
-description: Server version + uptime.
+description: Show server version + uptime.
 side_effects: ["One SELECT.", "Read-only."]
 args: []
 execution:

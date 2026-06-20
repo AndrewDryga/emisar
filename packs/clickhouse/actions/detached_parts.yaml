@@ -3,7 +3,7 @@ id: ch.detached_parts
 title: SELECT * FROM system.detached_parts
 kind: exec
 risk: low
-description: Parts ClickHouse detached and will not auto-attach (corruption, manual detach, broken), each with a reason. Empty is healthy.
+description: List parts ClickHouse detached and will not auto-attach (corruption, manual detach, broken), each with a reason. Empty is healthy.
 side_effects: ["One SELECT.", "Read-only."]
 args: []
 execution:

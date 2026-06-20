@@ -3,7 +3,7 @@ id: ch.tables_overview
 title: Engine inventory (system.tables)
 kind: exec
 risk: low
-description: All non-system tables with engine, row/byte totals, and part counts. Engine inventory + fleet shape.
+description: List all non-system tables with engine, row/byte totals, and part counts. Engine inventory + fleet shape.
 side_effects: ["One SELECT.", "Read-only."]
 args: []
 execution:

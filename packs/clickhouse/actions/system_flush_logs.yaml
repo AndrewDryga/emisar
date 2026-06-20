@@ -2,7 +2,9 @@ schema_version: 1
 id: ch.system_flush_logs
 title: SYSTEM FLUSH LOGS
 kind: exec
-risk: low
+# Writes (flushes buffered rows to each system.*log table) — not read-only, so
+# medium, matching the pack's other no-user-data state ops (reload_config).
+risk: medium
 description: >
   Force write buffered system.*log tables to disk. Use before
   querying very recent activity from query_log, part_log, etc.
@@ -12,8 +14,10 @@ side_effects:
 args: []
 execution:
   command:
-    binary: clickhouse-client
-    argv: ["--query", "SYSTEM FLUSH LOGS"]
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "clickhouse-client --host \"${CH_HOST:-localhost}\" --user \"${CH_USER:-default}\" --password \"$CH_PASSWORD\" --query \"SYSTEM FLUSH LOGS\""
   timeout: 30s
 output:
   parser: text

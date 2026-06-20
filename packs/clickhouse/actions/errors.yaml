@@ -3,7 +3,7 @@ id: ch.errors
 title: SELECT * FROM system.errors
 kind: exec
 risk: low
-description: Error codes seen since startup with counts and the last message. Spot error storms.
+description: List error codes seen since startup with counts and the last message. Spot error storms.
 side_effects: ["One SELECT.", "Read-only."]
 args: []
 execution:

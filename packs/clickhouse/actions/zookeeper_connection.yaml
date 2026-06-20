@@ -3,7 +3,7 @@ id: ch.zookeeper_connection
 title: SELECT * FROM system.zookeeper_connection
 kind: exec
 risk: low
-description: Active Keeper/ZooKeeper connections — host, session age, expiry, API version. Empty on a non-replicated single node.
+description: List active Keeper/ZooKeeper connections — host, session age, expiry, API version. Empty on a non-replicated single node.
 side_effects: ["One SELECT.", "Read-only."]
 args: []
 execution:

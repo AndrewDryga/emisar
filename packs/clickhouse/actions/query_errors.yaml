@@ -3,7 +3,7 @@ id: ch.query_errors
 title: Failed queries from system.query_log (last hour)
 kind: exec
 risk: low
-description: Queries that failed in the last hour (exception types 3 and 4) with code, message, and query. The error counterpart to slow_queries.
+description: List queries that failed in the last hour (exception types 3 and 4) with code, message, and query. The error counterpart to slow_queries.
 side_effects: ["One SELECT.", "Read-only."]
 args: []
 execution:

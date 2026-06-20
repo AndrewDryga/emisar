@@ -3,7 +3,7 @@ id: ch.processes
 title: SELECT * FROM system.processes
 kind: exec
 risk: low
-description: Currently-running queries.
+description: List currently-running queries.
 side_effects: ["One SELECT.", "Read-only."]
 args: []
 execution:

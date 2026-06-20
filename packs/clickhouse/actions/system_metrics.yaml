@@ -3,7 +3,7 @@ id: ch.system_metrics
 title: SELECT * FROM system.metrics
 kind: exec
 risk: low
-description: Per-metric current values (gauges + counters).
+description: Show per-metric current values (gauges + counters).
 side_effects: ["One SELECT.", "Read-only."]
 args: []
 execution:

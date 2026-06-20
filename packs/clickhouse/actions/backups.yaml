@@ -3,7 +3,7 @@ id: ch.backups
 title: SELECT * FROM system.backups
 kind: exec
 risk: low
-description: BACKUP/RESTORE operations since the last server start with status and error. Non-persistent across restarts.
+description: List BACKUP/RESTORE operations since the last server start with status and error. Non-persistent across restarts.
 side_effects: ["One SELECT.", "Read-only."]
 args: []
 execution:

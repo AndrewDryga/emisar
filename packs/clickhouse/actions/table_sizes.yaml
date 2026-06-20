@@ -3,7 +3,7 @@ id: ch.table_sizes
 title: system.tables uncompressed sizes
 kind: exec
 risk: low
-description: Top 50 tables by uncompressed size.
+description: List top 50 tables by uncompressed size.
 side_effects: ["One SELECT.", "Read-only."]
 args: []
 execution:

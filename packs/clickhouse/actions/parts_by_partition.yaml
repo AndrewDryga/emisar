@@ -3,7 +3,7 @@ id: ch.parts_by_partition
 title: Active part count per partition (system.parts)
 kind: exec
 risk: low
-description: Active parts grouped by partition, top offenders first. Where you actually diagnose too-many-parts / merge backlog (parts_summary is table-level only).
+description: List active parts grouped by partition, top offenders first. Where you actually diagnose too-many-parts / merge backlog (parts_summary is table-level only).
 side_effects: ["One SELECT.", "Read-only."]
 args: []
 execution:

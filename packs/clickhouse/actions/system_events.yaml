@@ -3,7 +3,7 @@ id: ch.system_events
 title: SELECT * FROM system.events
 kind: exec
 risk: low
-description: Process-lifetime event counters.
+description: List process-lifetime event counters.
 side_effects: ["One SELECT.", "Read-only."]
 args: []
 execution:

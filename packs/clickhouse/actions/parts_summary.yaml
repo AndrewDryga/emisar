@@ -3,7 +3,7 @@ id: ch.parts_summary
 title: SELECT system.parts (by table)
 kind: exec
 risk: low
-description: Active part counts + sizes per table. Use to spot too-many-parts.
+description: List active part counts + sizes per table. Use to spot too-many-parts.
 side_effects: ["One SELECT.", "Read-only."]
 args: []
 execution:

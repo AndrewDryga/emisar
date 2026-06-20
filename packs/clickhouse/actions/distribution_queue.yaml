@@ -3,7 +3,7 @@ id: ch.distribution_queue
 title: SELECT * FROM system.distribution_queue
 kind: exec
 risk: low
-description: Distributed-table async send backlog — pending files, errors, blocked sends. Spot a Distributed table not flushing to shards.
+description: Show distributed-table async send backlog — pending files, errors, blocked sends. Spot a Distributed table not flushing to shards.
 side_effects: ["One SELECT.", "Read-only."]
 args: []
 execution:

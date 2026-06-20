@@ -3,7 +3,7 @@ id: ch.stuck_mutations
 title: Failing mutations (system.mutations)
 kind: exec
 risk: low
-description: Mutations stuck on a failure (latest_fail_reason set), with the failed part and reason. Narrower than the full mutation queue — surfaces only what is actively failing.
+description: List mutations stuck on a failure (latest_fail_reason set), with the failed part and reason. Narrower than the full mutation queue — surfaces only what is actively failing.
 side_effects: ["One SELECT.", "Read-only."]
 args: []
 execution:

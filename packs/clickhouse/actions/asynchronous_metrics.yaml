@@ -3,7 +3,7 @@ id: ch.asynchronous_metrics
 title: SELECT * FROM system.asynchronous_metrics
 kind: exec
 risk: low
-description: Periodically-computed metrics — replica lag (ReplicasMaxAbsoluteDelay), max parts per partition, filesystem and memory. The async counterpart to system.metrics.
+description: Show periodically-computed metrics — replica lag (ReplicasMaxAbsoluteDelay), max parts per partition, filesystem and memory. The async counterpart to system.metrics.
 side_effects: ["One SELECT.", "Read-only."]
 args: []
 execution:

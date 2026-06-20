@@ -27,8 +27,13 @@ args:
       pattern: "^[a-zA-Z0-9_]{1,64}\\.[a-zA-Z0-9_]{1,128}$"
 execution:
   command:
-    binary: clickhouse-client
-    argv: ["--query", "SYSTEM DROP REPLICA '{{ args.replica }}' FROM TABLE {{ args.table }}"]
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "clickhouse-client --host \"${CH_HOST:-localhost}\" --user \"${CH_USER:-default}\" --password \"$CH_PASSWORD\" --query \"SYSTEM DROP REPLICA '$RPL' FROM TABLE $TBL\""
+  env:
+    RPL: "{{ args.replica }}"
+    TBL: "{{ args.table }}"
   timeout: 60s
 output:
   parser: text

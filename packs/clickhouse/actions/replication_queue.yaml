@@ -3,7 +3,7 @@ id: ch.replication_queue
 title: SELECT * FROM system.replication_queue
 kind: exec
 risk: low
-description: Per-task replication queue — retries, postpones, last exception. Spot stuck fetches/merges (distinct from per-replica state).
+description: Show per-task replication queue — retries, postpones, last exception. Spot stuck fetches/merges (distinct from per-replica state).
 side_effects: ["One SELECT.", "Read-only."]
 args: []
 execution:
