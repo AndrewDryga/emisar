@@ -3426,6 +3426,9 @@ defmodule EmisarWeb.CoreComponents do
               <h2 class="text-xs font-semibold uppercase tracking-wider text-zinc-400">Product</h2>
               <ul class="mt-4 space-y-3 text-sm">
                 <li>
+                  <.link href={~p"/ai"} class="text-zinc-400 hover:text-zinc-100">For your AI</.link>
+                </li>
+                <li>
                   <.link href={~p"/packs"} class="text-zinc-400 hover:text-zinc-100">Packs</.link>
                 </li>
                 <li>

@@ -9,6 +9,7 @@ defmodule EmisarWeb.SitemapController do
 
   @paths [
     "/",
+    "/ai",
     "/about",
     "/changelog",
     "/pricing",

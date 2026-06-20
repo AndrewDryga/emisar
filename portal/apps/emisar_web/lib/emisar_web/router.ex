@@ -67,6 +67,7 @@ defmodule EmisarWeb.Router do
     pipe_through :browser
 
     get "/", MarketingController, :home
+    get "/ai", MarketingController, :ai
     get "/pricing", MarketingController, :pricing
     get "/security", MarketingController, :security
     get "/docs", MarketingController, :docs
