@@ -384,6 +384,13 @@ defmodule Emisar.Audit.Events do
   # execute access"). Later token exchange/refresh is mechanical and
   # deliberately unaudited (per-hour noise; the standing capability is
   # what operators review).
+  #
+  # Explicit @spec (this module otherwise relies on struct-matched heads): it
+  # gives the 1.20 set-theoretic checker the contract so it stops inferring the
+  # `client` param shape from field access in the body — that inference is
+  # incremental-compile-order-sensitive and flapped a false "incompatible types".
+  @spec oauth_consent_granted(Subject.t(), OAuth.Client.t(), ApiKeys.ApiKey.t()) ::
+          Ecto.Changeset.t()
   def oauth_consent_granted(
         %Subject{} = subject,
         %OAuth.Client{} = client,
