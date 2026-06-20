@@ -4,7 +4,7 @@ title: GET /api/tcp/routers
 kind: script
 risk: low
 description: >
-  Every TCP router with its rule (HostSNI/...), entrypoints, service, TLS
+  List every TCP router with its rule (HostSNI/...), entrypoints, service, TLS
   passthrough config, status, and error[]. Use for TCP/SNI routing (databases,
   message brokers, raw TLS) the same way http_routers covers HTTP.
 side_effects:

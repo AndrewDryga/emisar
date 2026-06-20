@@ -3,7 +3,7 @@ id: nomad.agent_members
 title: nomad server members
 kind: exec
 risk: low
-description: Serf gossip pool members.
+description: List the Serf gossip pool members.
 side_effects: ["One API call.", "Read-only."]
 args: []
 execution:

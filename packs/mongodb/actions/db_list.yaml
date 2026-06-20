@@ -3,7 +3,7 @@ id: mongo.db_list
 title: listDatabases
 kind: exec
 risk: low
-description: All databases with size + empty flag.
+description: List all databases with size + empty flag.
 side_effects:
   - One listDatabases command.
   - Read-only.

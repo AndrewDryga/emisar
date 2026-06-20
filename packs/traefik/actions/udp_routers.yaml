@@ -4,7 +4,7 @@ title: GET /api/udp/routers
 kind: script
 risk: low
 description: >
-  Every UDP router (and its service binding) with status and error[]. Use for
+  List every UDP router (and its service binding) with status and error[]. Use for
   UDP entrypoints (DNS, QUIC, syslog) routing visibility. Pair with
   /api/udp/services via rawdata if you need the service side.
 side_effects:

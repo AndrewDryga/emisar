@@ -2,7 +2,7 @@ schema_version: 1
 
 id: rke2
 name: RKE2 cluster (host-level)
-version: 0.1.0
+version: 0.1.1
 description: >
   RKE2-specific host introspection that kubectl can't give you — embedded-etcd
   snapshot health, node certificate expiry, and the RKE2-bundled containerd via

@@ -3,7 +3,7 @@ id: git.remote_list
 title: git remote -v
 kind: exec
 risk: low
-description: Remote URLs (fetch + push).
+description: List the remote URLs (fetch + push).
 side_effects:
   - One git remote.
   - Read-only.

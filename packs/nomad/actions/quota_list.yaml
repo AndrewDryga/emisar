@@ -3,7 +3,7 @@ id: nomad.quota_list
 title: nomad quota list
 kind: exec
 risk: low
-description: Resource quotas (Enterprise feature).
+description: List resource quotas (Enterprise feature).
 side_effects: ["One API call.", "Read-only."]
 args: []
 execution:

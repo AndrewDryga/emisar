@@ -4,7 +4,7 @@ title: ACL LIST
 kind: exec
 risk: low
 description: >
-  All ACL users and their rules. Read-only. Use to audit access
+  List all ACL users and their rules. Read-only. Use to audit access
   before changing a key namespace.
 side_effects:
   - One ACL LIST command.

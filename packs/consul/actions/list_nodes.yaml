@@ -3,7 +3,7 @@ id: consul.list_nodes
 title: consul catalog nodes
 kind: exec
 risk: low
-description: All registered nodes.
+description: List all registered nodes.
 side_effects:
   - One catalog request.
   - Read-only.

@@ -3,7 +3,7 @@ id: nomad.eval_list
 title: nomad eval list
 kind: exec
 risk: low
-description: All recent evaluations across the cluster.
+description: List all recent evaluations across the cluster.
 side_effects: ["One API call.", "Read-only."]
 args: []
 execution:

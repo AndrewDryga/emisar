@@ -3,7 +3,7 @@ id: nomad.namespace_list
 title: nomad namespace list
 kind: exec
 risk: low
-description: All namespaces in the cluster.
+description: List all namespaces in the cluster.
 side_effects: ["One API call.", "Read-only."]
 args: []
 execution:

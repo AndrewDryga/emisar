@@ -3,7 +3,7 @@ id: time.chrony_sources
 title: chronyc sources -v
 kind: exec
 risk: low
-description: NTP sources + reach + stratum + offset.
+description: List NTP sources + reach + stratum + offset.
 side_effects:
   - One chrony query.
   - Read-only.

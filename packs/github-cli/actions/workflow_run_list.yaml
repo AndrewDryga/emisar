@@ -3,7 +3,7 @@ id: gh.workflow_run_list
 title: gh run list
 kind: exec
 risk: low
-description: Recent workflow runs across the repo.
+description: List recent workflow runs across the repo.
 side_effects:
   - One API call.
   - Read-only.

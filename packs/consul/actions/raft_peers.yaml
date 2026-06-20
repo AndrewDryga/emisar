@@ -3,7 +3,7 @@ id: consul.raft_peers
 title: consul operator raft list-peers
 kind: exec
 risk: low
-description: Server peers with voter status, suffix, address.
+description: List the server peers with voter status, suffix, address.
 side_effects:
   - One agent call.
   - Read-only.

@@ -3,7 +3,7 @@ id: frr.bfd_peers
 title: vtysh -c "show bfd peers"
 kind: exec
 risk: low
-description: BFD peer sessions — local/remote state (Up/Down), last diagnostic, and timers.
+description: List BFD peer sessions — local/remote state (Up/Down), last diagnostic, and timers.
 side_effects: ["One vtysh show command.", "Read-only."]
 args: []
 execution:

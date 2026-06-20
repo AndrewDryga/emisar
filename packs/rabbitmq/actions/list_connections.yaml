@@ -3,7 +3,7 @@ id: rmq.list_connections
 title: rabbitmqctl list_connections
 kind: exec
 risk: low
-description: All open AMQP connections with client + user + channels.
+description: List all open AMQP connections with client + user + channels.
 side_effects:
   - One CLI call.
   - Read-only.

@@ -3,7 +3,7 @@ id: zfs.snapshot_list
 title: zfs list -t snapshot
 kind: exec
 risk: low
-description: All snapshots with used + refer + creation.
+description: List all snapshots with used + refer + creation.
 side_effects: ["Reads snapshot metadata.", "Read-only."]
 args: []
 execution:

@@ -3,7 +3,7 @@ id: consul.intentions_list
 title: GET /v1/connect/intentions
 kind: exec
 risk: low
-description: All Connect mesh intentions (allow/deny rules between services).
+description: List all Connect mesh intentions (allow/deny rules between services).
 side_effects: ["One API call.", "Read-only."]
 args: []
 execution:

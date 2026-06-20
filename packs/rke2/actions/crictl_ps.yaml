@@ -4,7 +4,7 @@ title: List containers on this node (crictl ps -a)
 kind: exec
 risk: low
 description: >
-  All containers (running and stopped) on this node's RKE2 containerd —
+  List all containers (running and stopped) on this node's RKE2 containerd —
   container id, image, state, name, attempt count, and pod. The CRI-level
   truth when kubelet/kubectl disagree about what's running on a node, and
   where you see crash/restart loops. Read-only.

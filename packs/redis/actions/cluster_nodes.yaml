@@ -4,7 +4,7 @@ title: CLUSTER NODES
 kind: exec
 risk: low
 description: >
-  Per-node view — id, addr, flags (master/replica/myself/fail), master
+  List the cluster nodes — id, addr, flags (master/replica/myself/fail), master
   id, last ping/pong, config epoch, link state, slot ranges. Use to
   see who owns which slot ranges and which replicas serve which masters.
 side_effects:

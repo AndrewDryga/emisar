@@ -3,7 +3,7 @@ id: consul.list_sessions
 title: GET /v1/session/list
 kind: exec
 risk: low
-description: 'Active sessions cluster-wide: ID, node, TTL, behavior.'
+description: 'List active sessions cluster-wide: ID, node, TTL, behavior.'
 side_effects: ["One API call.", "Read-only."]
 args: []
 execution:

@@ -3,7 +3,7 @@ id: zfs.dataset_list
 title: zfs list
 kind: exec
 risk: low
-description: All datasets with used + avail + refer + mountpoint.
+description: List all datasets with used + avail + refer + mountpoint.
 side_effects: ["Reads dataset metadata.", "Read-only."]
 args: []
 execution:

@@ -3,7 +3,7 @@ id: tf.state_list
 title: terraform state list
 kind: exec
 risk: low
-description: All resource addresses currently in state.
+description: List all resource addresses currently in state.
 side_effects:
   - Reads state file.
   - Read-only.

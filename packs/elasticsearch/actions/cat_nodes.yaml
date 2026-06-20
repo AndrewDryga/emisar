@@ -3,7 +3,7 @@ id: es.cat_nodes
 title: GET /_cat/nodes
 kind: exec
 risk: low
-description: Per-node heap, RAM, CPU, load, role. Read-only.
+description: List nodes with heap, RAM, CPU, load, role. Read-only.
 side_effects:
   - One GET request.
   - Read-only.

@@ -4,7 +4,7 @@ title: GET /api/tcp/services
 kind: script
 risk: low
 description: >
-  Every TCP service with its load-balancer/weighted config, status, and
+  List every TCP service with its load-balancer/weighted config, status, and
   error[]. The TCP counterpart to http_services.
 side_effects:
   - One read-only HTTP GET to the Traefik API.

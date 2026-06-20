@@ -3,7 +3,7 @@ id: consul.prepared_queries_list
 title: GET /v1/query
 kind: exec
 risk: low
-description: All defined prepared queries (named service-discovery templates with failover).
+description: List all defined prepared queries (named service-discovery templates with failover).
 side_effects: ["One API call.", "Read-only."]
 args: []
 execution:

@@ -3,7 +3,7 @@ id: fw.conntrack_list
 title: conntrack -L (capped)
 kind: exec
 risk: low
-description: First 1000 connection-tracking entries. Use to see what's NAT'd right now.
+description: List the first 1000 connection-tracking entries. Use to see what's NAT'd right now.
 side_effects:
   - One conntrack query.
   - Read-only.

@@ -4,7 +4,7 @@ title: GET /api/http/routers
 kind: script
 risk: low
 description: >
-  Every HTTP router with its rule, entrypoints, service, middlewares, TLS
+  List every HTTP router with its rule, entrypoints, service, middlewares, TLS
   config, and — critically — its status ("enabled" | "warning" | "disabled")
   and error[] list. To find broken routing, look for any router whose status
   is not "enabled" and read its error[]. Names are "<name>@<provider>"

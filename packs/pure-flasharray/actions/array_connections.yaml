@@ -4,7 +4,7 @@ title: GET /array-connections
 kind: script
 risk: low
 description: >
-  Connected-array / replication status — each peer array this array is
+  List connected-array / replication status — each peer array this array is
   connected to, the connection type (async / sync replication), and its
   status. Use to confirm replication peers are connected and healthy. Returns
   {items:[...], more_items_remaining, ...}, one item per connected array.

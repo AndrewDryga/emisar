@@ -3,7 +3,7 @@ id: py.pip_list
 title: $PY_VENV/bin/pip list
 kind: exec
 risk: low
-description: Installed packages with versions.
+description: List installed packages with versions.
 side_effects: ["One pip list call.", "Read-only."]
 args: []
 execution:

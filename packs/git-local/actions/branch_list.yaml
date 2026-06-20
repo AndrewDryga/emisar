@@ -3,7 +3,7 @@ id: git.branch_list
 title: git branch -av
 kind: exec
 risk: low
-description: All branches (local + remote-tracking) with last commit.
+description: List all branches (local + remote-tracking) with last commit.
 side_effects:
   - One git branch.
   - Read-only.

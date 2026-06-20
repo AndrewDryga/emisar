@@ -3,7 +3,7 @@ id: consul.node_services
 title: GET /v1/catalog/node-services/<node>
 kind: exec
 risk: low
-description: All services registered against one node.
+description: List all services registered against one node.
 side_effects: ["One API call.", "Read-only."]
 args:
   - name: node

@@ -3,7 +3,7 @@ id: consul.list_services
 title: consul catalog services
 kind: exec
 risk: low
-description: All registered service names.
+description: List all registered service names.
 side_effects:
   - One catalog request.
   - Read-only.

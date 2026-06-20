@@ -3,7 +3,7 @@ id: gh.workflow_list
 title: gh workflow list
 kind: exec
 risk: low
-description: All workflows defined in one repo.
+description: List all workflows defined in one repo.
 side_effects:
   - One API call.
   - Read-only.

@@ -2,7 +2,7 @@ schema_version: 1
 
 id: pure-flasharray
 name: Pure Storage FlashArray (Purity//FA REST)
-version: 0.1.0
+version: 0.1.1
 description: >
   Read-only access to a Pure Storage FlashArray over its Purity//FA REST API
   2.x: array identity / capacity / performance, alerts, controller and

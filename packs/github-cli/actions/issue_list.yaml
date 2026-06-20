@@ -3,7 +3,7 @@ id: gh.issue_list
 title: gh issue list
 kind: exec
 risk: low
-description: Open issues for one repo.
+description: List open issues for one repo.
 side_effects:
   - One API call.
   - Read-only.

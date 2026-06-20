@@ -32,6 +32,7 @@ An **action** declares: `id` (`<namespace>.<name>`), `risk` (low|medium|high|cri
 - **Redact at the source.** `output.redact[]` (regex/literal) scrubs stdout/stderr before it leaves the host; mark secret args `sensitive: true`. An uncompilable redaction rule fails validation (fail-closed).
 - **No env hijack vectors** in `execution.env` — `LD_*` / `DYLD_*` / `BASH_ENV` are rejected.
 - **Greenfield:** edit the pack in place; **bump `version` when its contract changes** — the runner re-pins the hash and operators must re-trust (below).
+- **A read/enumerate action's description leads with a searchable verb.** The MCP catalog is what an LLM keyword-matches against, so open a read action's `description` with the verb of the job — **List** (a collection), **Show**/**Get** (state or one thing), **Tail**, **Dump**, **Count**, **Check** — never a bare noun ("All jobs…", "Active sessions…", "Server peers…"), which an LLM searching *"list nomad jobs"* will miss. A CLI-command opener counts when its verb is searchable (`` `kubectl get pods` ``, `` `systemctl list-units` ``, `` `ip neigh show` ``) — keep the command for operators; the leading verb is for discovery. This is description copy only: leading with a verb never changes `risk`, args, or execution, but it **is** a contract change to the catalog text, so it still bumps `version`.
 
 ## Trust model
 

@@ -3,7 +3,7 @@ id: cassandra.cqlsh_list_keyspaces
 title: cqlsh -e "DESCRIBE KEYSPACES"
 kind: exec
 risk: low
-description: All keyspaces.
+description: List all keyspaces.
 side_effects: ["One CQL query.", "Read-only."]
 args: []
 execution:

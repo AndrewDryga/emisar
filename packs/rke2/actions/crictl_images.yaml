@@ -4,7 +4,7 @@ title: List images on this node (crictl images)
 kind: exec
 risk: low
 description: >
-  Container images present in this node's RKE2 containerd — repository, tag,
+  List the container images present in this node's RKE2 containerd — repository, tag,
   image id, and size. Use to confirm an image is actually pulled on a node
   (ImagePullBackOff triage) or to see disk pressure from images. Read-only.
 side_effects:

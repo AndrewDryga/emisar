@@ -3,7 +3,7 @@ id: postgres.ssl_connections
 title: pg_stat_ssl
 kind: exec
 risk: low
-description: 'Per-backend TLS state: version, cipher, client_serial.'
+description: 'List per-backend TLS state: version, cipher, client_serial.'
 side_effects: ["One SELECT.", "Read-only."]
 args: []
 execution:

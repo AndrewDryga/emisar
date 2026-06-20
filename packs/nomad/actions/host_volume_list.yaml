@@ -3,7 +3,7 @@ id: nomad.host_volume_list
 title: Host volumes from /v1/nodes
 kind: exec
 risk: low
-description: Host-volume declarations across all client nodes.
+description: List host-volume declarations across all client nodes.
 side_effects: ["One API call.", "Read-only."]
 args: []
 execution:

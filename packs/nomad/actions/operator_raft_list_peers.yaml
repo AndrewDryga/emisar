@@ -3,7 +3,7 @@ id: nomad.operator_raft_list_peers
 title: nomad operator raft list-peers
 kind: exec
 risk: low
-description: 'Raft peer state — voter status, suffrage, address.'
+description: 'List the Raft peers — voter status, suffrage, address.'
 side_effects: ["One API call.", "Read-only."]
 args: []
 execution:

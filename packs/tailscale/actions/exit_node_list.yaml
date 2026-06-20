@@ -4,7 +4,7 @@ title: tailscale exit-node list
 kind: exec
 risk: low
 description: >
-  Available exit nodes on the tailnet (hostname, country, city, status).
+  List available exit nodes on the tailnet (hostname, country, city, status).
   Succeeds with no rows when the tailnet has no exit nodes (a benign empty
   state); a real failure (tailscaled down / not logged in) still reports failed.
 side_effects: ["One tailscale read.", "Read-only."]

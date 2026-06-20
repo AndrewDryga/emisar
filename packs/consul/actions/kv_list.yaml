@@ -3,7 +3,7 @@ id: consul.kv_list
 title: consul kv get -keys <prefix>
 kind: exec
 risk: low
-description: All KV keys under one prefix.
+description: List all KV keys under one prefix.
 side_effects:
   - One KV request.
   - Read-only — keys only, no values.

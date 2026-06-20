@@ -3,7 +3,7 @@ id: cassandra.cqlsh_system_peers
 title: SELECT * FROM system.peers_v2
 kind: exec
 risk: low
-description: 'Peer-node view as this coordinator sees it: dc, rack, schema version, tokens.'
+description: 'List the peer nodes as this coordinator sees them: dc, rack, schema version, tokens.'
 side_effects: ["One CQL query.", "Read-only."]
 args: []
 execution:

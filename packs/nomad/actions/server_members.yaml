@@ -3,7 +3,7 @@ id: nomad.server_members
 title: nomad server members (json)
 kind: exec
 risk: low
-description: Server members as JSON. Use for programmatic consumption.
+description: List the server members as JSON. Use for programmatic consumption.
 side_effects: ["One API call.", "Read-only."]
 args: []
 execution:

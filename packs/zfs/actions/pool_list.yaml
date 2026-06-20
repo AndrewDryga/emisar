@@ -3,7 +3,7 @@ id: zfs.pool_list
 title: zpool list
 kind: exec
 risk: low
-description: All pools with size + alloc + free + fragmentation.
+description: List all pools with size + alloc + free + fragmentation.
 side_effects: ["Reads pool metadata.", "Read-only."]
 args: []
 execution:

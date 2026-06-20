@@ -3,7 +3,7 @@ id: gh.branch_list
 title: gh api repos/<repo>/branches
 kind: exec
 risk: low
-description: Branches in the repo (paginated, up to 100).
+description: List branches in the repo (paginated, up to 100).
 side_effects:
   - One API call.
   - Read-only.

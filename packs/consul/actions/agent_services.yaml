@@ -3,7 +3,7 @@ id: consul.agent_services
 title: GET /v1/agent/services
 kind: exec
 risk: low
-description: Services registered with the local agent.
+description: List the services registered with the local agent.
 side_effects: ["One API call.", "Read-only."]
 args: []
 execution:

@@ -3,7 +3,7 @@ id: gh.release_list
 title: gh release list
 kind: exec
 risk: low
-description: Recent releases.
+description: List recent releases.
 side_effects:
   - One API call.
   - Read-only.

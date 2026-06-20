@@ -3,7 +3,7 @@ id: gh.pr_list
 title: gh pr list
 kind: exec
 risk: low
-description: Open PRs for one repo.
+description: List open PRs for one repo.
 side_effects:
   - One API call.
   - Read-only.

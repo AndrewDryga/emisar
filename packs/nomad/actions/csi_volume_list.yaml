@@ -3,7 +3,7 @@ id: nomad.csi_volume_list
 title: nomad volume status
 kind: exec
 risk: low
-description: All registered CSI volumes with claim count + state.
+description: List all registered CSI volumes with claim count + state.
 side_effects: ["One API call.", "Read-only."]
 args: []
 execution:

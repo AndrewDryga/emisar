@@ -3,7 +3,7 @@ id: rmq.list_nodes
 title: rabbitmqctl list_nodes
 kind: exec
 risk: low
-description: All known cluster nodes.
+description: List all known cluster nodes.
 side_effects:
   - One CLI call.
   - Read-only.

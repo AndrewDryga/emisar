@@ -2,7 +2,7 @@ schema_version: 1
 
 id: python-app
 name: Python application runtime
-version: 0.1.2
+version: 0.1.3
 description: >
   Inspect a Python deployment — interpreter + venv state, pip
   inventory + freeze, dependency conflicts, outdated packages, sys.path.

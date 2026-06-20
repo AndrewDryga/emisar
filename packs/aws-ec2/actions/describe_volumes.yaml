@@ -3,7 +3,7 @@ id: ec2.describe_volumes
 title: aws ec2 describe-volumes
 kind: exec
 risk: low
-description: All EBS volumes with size + state + attachment.
+description: List all EBS volumes with size + state + attachment.
 side_effects:
   - One API call.
   - Read-only.

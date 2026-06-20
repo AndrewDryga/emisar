@@ -3,7 +3,7 @@ id: nomad.node_status_all
 title: nomad node status
 kind: exec
 risk: low
-description: All clients (nodes) with status, datacenter, drain state, eligibility.
+description: List all clients (nodes) with status, datacenter, drain state, eligibility.
 side_effects: ["One API call.", "Read-only."]
 args: []
 execution:
