@@ -3,7 +3,10 @@ id: nfs.showmount_e
 title: showmount -e
 kind: exec
 risk: low
-description: Exports as seen via rpcbind (what NFS clients discover).
+description: >
+  Exports as seen via rpcbind (what NFS clients discover). On NFSv4-only
+  hosts (no mountd/rpcbind) it returns "RPC: Program not registered" — use
+  nfs.exportfs_v for the authoritative export list there.
 side_effects: ["One rpcbind query.", "Read-only."]
 args: []
 execution:

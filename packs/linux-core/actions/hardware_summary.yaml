@@ -9,7 +9,9 @@ description: >
   `dmidecode` system + bios + chassis sections. Vendor, model,
   serial, BIOS version, manufacturing date. Required root (read-only
   on SMBIOS). Useful when correlating hardware-class to OS-class
-  incidents.
+  incidents. dmidecode reads SMBIOS — absent on containers and many
+  cloud VMs, where this fails command-not-found; expect it on bare metal
+  or VMs with SMBIOS passthrough.
 
 side_effects:
   - One dmidecode invocation.

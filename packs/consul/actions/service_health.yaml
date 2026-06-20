@@ -1,6 +1,6 @@
 schema_version: 1
 id: consul.service_health
-title: consul health service <name>
+title: Health of a service's instances
 kind: exec
 risk: low
 description: Per-node health for one service.
