@@ -110,24 +110,29 @@ defmodule Emisar.Fixtures do
   end
 
   @doc """
-  Enrolls TOTP MFA for `subject` and returns `{user, recovery_codes}`. Generating a
-  code with `NimbleTOTP.verification_code/1` and validating it inside `enable_mfa`
-  reads the clock twice; if a 30s window boundary falls between the two reads the
-  code is already stale and `enable_mfa` returns `{:error, :invalid_otp}` — a rare
-  flake. Retry once across the boundary: a second straddle can't happen microseconds
-  later. Use this in any test that needs an MFA-enabled user as setup.
+  Enrolls TOTP MFA for `subject` via `Auth.enable_mfa` and returns its tagged result
+  (`{:ok, user, recovery_codes}` / `{:error, reason}`). Generating a code with
+  `NimbleTOTP.verification_code/1` and validating it inside `enable_mfa` reads the
+  clock twice; if a 30s window boundary falls between the two reads the code is
+  already stale and `enable_mfa` returns `{:error, :invalid_otp}` — a rare flake.
+  Retry once across the boundary: a second straddle can't happen microseconds later.
+  A test asserting `enable_mfa`'s success contract calls this directly; `enable_mfa!`
+  wraps it for setup sites that just need an MFA-enabled user.
   """
-  def enable_mfa!(secret, %Subject{} = subject) when is_binary(secret) do
+  def enroll_mfa(secret, %Subject{} = subject) when is_binary(secret) do
     case Emisar.Auth.enable_mfa(secret, NimbleTOTP.verification_code(secret), subject) do
-      {:ok, user, codes} ->
-        {user, codes}
-
       {:error, :invalid_otp} ->
-        {:ok, user, codes} =
-          Emisar.Auth.enable_mfa(secret, NimbleTOTP.verification_code(secret), subject)
+        Emisar.Auth.enable_mfa(secret, NimbleTOTP.verification_code(secret), subject)
 
-        {user, codes}
+      enrolled ->
+        enrolled
     end
+  end
+
+  @doc "Enrolls MFA as test setup, unwrapping `enroll_mfa/2` to `{user, recovery_codes}`."
+  def enable_mfa!(secret, %Subject{} = subject) when is_binary(secret) do
+    {:ok, user, codes} = enroll_mfa(secret, subject)
+    {user, codes}
   end
 
   # -- Account ----------------------------------------------------------

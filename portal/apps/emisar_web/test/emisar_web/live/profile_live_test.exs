@@ -216,10 +216,7 @@ defmodule EmisarWeb.ProfileLiveTest do
       # operator would — from the manual-entry fallback in the QR panel.
       secret = mfa_secret_from(html)
 
-      html =
-        lv
-        |> form("#mfa_form", %{"mfa" => %{"otp" => NimbleTOTP.verification_code(secret)}})
-        |> render_submit()
+      html = submit_mfa_enrollment(lv, secret)
 
       assert html =~ "MFA enabled."
       assert html =~ "recovery codes"
@@ -311,5 +308,24 @@ defmodule EmisarWeb.ProfileLiveTest do
     # The setup panel renders the Base32 secret for manual entry.
     [_, encoded] = Regex.run(~r/secret=([A-Z2-7]+)/, html)
     Base.decode32!(encoded, padding: false)
+  end
+
+  # Submits the enrollment form, retrying once across a 30s-window straddle (the
+  # code-gen/validate boundary) — the same flake Fixtures.enroll_mfa guards, but
+  # through the LiveView form. A straddle re-renders the form without the success
+  # flash, so a second submit with a fresh code lands in a stable window.
+  defp submit_mfa_enrollment(lv, secret) do
+    html =
+      lv
+      |> form("#mfa_form", %{"mfa" => %{"otp" => NimbleTOTP.verification_code(secret)}})
+      |> render_submit()
+
+    if html =~ "MFA enabled." do
+      html
+    else
+      lv
+      |> form("#mfa_form", %{"mfa" => %{"otp" => NimbleTOTP.verification_code(secret)}})
+      |> render_submit()
+    end
   end
 end

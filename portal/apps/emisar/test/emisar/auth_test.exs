@@ -141,10 +141,12 @@ defmodule Emisar.AuthTest do
     test "enable_mfa with the correct OTP persists the secret + returns recovery codes" do
       {_user, _account, subject} = owner_subject_fixture()
       secret = Auth.generate_mfa_secret()
-      otp = NimbleTOTP.verification_code(secret)
 
+      # enroll_mfa calls Auth.enable_mfa with a single retry across the 30s-window
+      # straddle (code-gen vs validation), so this success-contract assertion can't
+      # flake on a microsecond boundary.
       assert {:ok, %User{mfa_secret: ^secret, mfa_enabled_at: %DateTime{}} = updated, codes} =
-               Auth.enable_mfa(secret, otp, subject)
+               enroll_mfa(secret, subject)
 
       assert is_list(codes) and length(codes) == 10
       assert Enum.all?(codes, &is_binary/1)
