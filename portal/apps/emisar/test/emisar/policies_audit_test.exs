@@ -55,7 +55,7 @@ defmodule Emisar.PoliciesAuditTest do
       assert updated.vsn == policy.vsn + 1
     end
 
-    test "diff identifies tier flips", %{subject: subject, policy: policy} do
+    test "diff identifies tier flips", %{subject: subject} do
       new_rules =
         Policies.default_rules()
         |> Map.update!("defaults", &Map.put(&1, "critical", "require_approval"))
@@ -71,10 +71,7 @@ defmodule Emisar.PoliciesAuditTest do
       refute Map.has_key?(event.payload["changes"]["defaults"], "low")
     end
 
-    test "diff identifies override add / remove / change", %{
-      subject: subject,
-      policy: policy
-    } do
+    test "diff identifies override add / remove / change", %{subject: subject} do
       starting =
         Policies.default_rules()
         |> Map.put("overrides", [
@@ -83,7 +80,7 @@ defmodule Emisar.PoliciesAuditTest do
           %{"name" => "remove", "action" => "remove.me", "decision" => "deny"}
         ])
 
-      {:ok, policy} = Policies.save_rules(starting, subject)
+      {:ok, _} = Policies.save_rules(starting, subject)
 
       next =
         Policies.default_rules()
