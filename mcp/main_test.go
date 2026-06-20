@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"errors"
 	"io"
@@ -400,6 +401,39 @@ func TestServe_OversizedFrameKeepsServing(t *testing.T) {
 	}
 	if !strings.Contains(body, `"result":"ok"`) {
 		t.Error("the frame after an oversized one was not served — the session died")
+	}
+}
+
+func TestReadFrameLine_OversizedRetainsNothingAndRealigns(t *testing.T) {
+	// The OOM guard: an over-long frame must be drained WITHOUT being retained —
+	// bufio.ReadString would buffer the whole newline-free stream first. So the
+	// helper returns oversize=true with zero retained bytes, and advances the
+	// reader past the terminating newline so the NEXT frame still parses. (A
+	// regression that grows the line unbounded shows up as len(line) != 0 here.)
+	oversized := strings.Repeat("x", maxFrameBytes+1)
+	next := `{"jsonrpc":"2.0","id":1,"method":"ping"}`
+	br := bufio.NewReaderSize(strings.NewReader(oversized+"\n"+next+"\n"), 64*1024)
+
+	line, oversize, err := readFrameLine(br)
+	if err != nil {
+		t.Fatalf("oversized frame: unexpected err %v", err)
+	}
+	if !oversize {
+		t.Fatal("a frame past maxFrameBytes must report oversize=true")
+	}
+	if len(line) != 0 {
+		t.Errorf("an oversized frame must retain no bytes, got %d", len(line))
+	}
+
+	line, oversize, err = readFrameLine(br)
+	if err != nil && !errors.Is(err, io.EOF) {
+		t.Fatalf("next frame: unexpected err %v", err)
+	}
+	if oversize {
+		t.Error("the frame after an oversized one must not be flagged oversize")
+	}
+	if got := string(bytes.TrimSpace(line)); got != next {
+		t.Errorf("next frame = %q, want %q (drain failed to realign on the newline)", got, next)
 	}
 }
 

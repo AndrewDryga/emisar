@@ -186,19 +186,21 @@ func (b *bridge) serve(r io.Reader, w io.Writer) error {
 	br := bufio.NewReaderSize(r, 64*1024)
 
 	for {
-		raw, readErr := br.ReadString('\n')
-		line := bytes.TrimSpace([]byte(raw))
+		raw, oversize, readErr := readFrameLine(br)
+		line := bytes.TrimSpace(raw)
 
 		switch {
-		case len(line) == 0:
-			// blank line (or a bare EOF) — nothing to forward
-
-		case len(line) > maxFrameBytes:
+		case oversize:
 			// An over-long frame rejects THIS line but keeps the session alive —
 			// the bridge is the LLM's only path to the cloud; one bad frame must
-			// not tear it down (the old Scanner ErrTooLong → os.Exit did exactly that).
+			// not tear it down (the old Scanner ErrTooLong → os.Exit did exactly
+			// that). readFrameLine drains the over-long line without retaining it,
+			// so a newline-free flood can't OOM the bridge before we reach here.
 			fmt.Fprintf(os.Stderr, "emisar-mcp: dropping a request frame over %d bytes\n", maxFrameBytes)
 			_, _ = fmt.Fprint(w, `{"jsonrpc":"2.0","id":null,"error":{"code":-32600,"message":"request frame too large"}}`+"\n")
+
+		case len(line) == 0:
+			// blank line (or a bare EOF) — nothing to forward
 
 		default:
 			resp, err := b.forward(line)
@@ -230,6 +232,32 @@ func (b *bridge) serve(r io.Reader, w io.Writer) error {
 			}
 			return readErr
 		}
+	}
+}
+
+// readFrameLine reads one newline-delimited frame from br, bounding the bytes it
+// retains to maxFrameBytes. bufio.Reader.ReadString would accumulate an entire
+// newline-free stream into one slice before any length check — a hostile or
+// malfunctioning client could OOM the bridge that way (the symmetric hole the
+// response cap closes on the HTTP side). Instead we read in buffer-sized chunks;
+// once a line crosses the cap we drop what we've accumulated and keep draining
+// the rest of the (over-long) line to its terminating newline so the next frame
+// still aligns, returning oversize=true. Peak retained bytes stay ≤ maxFrameBytes.
+func readFrameLine(br *bufio.Reader) (line []byte, oversize bool, err error) {
+	for {
+		chunk, e := br.ReadSlice('\n')
+		if !oversize {
+			if len(line)+len(chunk) > maxFrameBytes {
+				oversize = true
+				line = nil // reject the frame; release what we'd buffered
+			} else {
+				line = append(line, chunk...)
+			}
+		}
+		if e == bufio.ErrBufferFull {
+			continue // line longer than br's buffer — keep draining it
+		}
+		return line, oversize, e
 	}
 }
 
