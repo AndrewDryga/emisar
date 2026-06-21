@@ -205,7 +205,7 @@ defmodule EmisarWeb.MarketingTest do
     html = conn |> get(~p"/") |> html_response(200)
 
     assert html =~ ~s(property="og:image")
-    assert html =~ "/images/og/emisar-product.webp"
+    assert html =~ "/images/og/emisar-og.webp"
     assert html =~ ~s(name="twitter:card" content="summary_large_image")
     assert html =~ ~s("FAQPage")
     refute html =~ "Phoenix.HTML.raw"
