@@ -11,7 +11,7 @@
   <%!-- Hero --%>
   <section class="py-24 sm:py-32">
     <div class="mx-auto max-w-4xl px-6 lg:px-8">
-      <p class="text-base font-semibold text-indigo-400">Zero Trust for AI Agents</p>
+      <p class="text-base font-semibold text-brand-400">Zero Trust for AI Agents</p>
       <.marketing_heading tag="h1" scale={:display} class="mt-2">
         Anthropic wrote the framework. emisar enforces it.
       </.marketing_heading>
@@ -21,7 +21,7 @@
           href="https://cdn.prod.website-files.com/6889473510b50328dbb70ae6/6a1611a04085d7cd3dadc924_Claude-eBook-Zero-Trust-for-AI-Agents-05182026.pdf"
           target="_blank"
           rel="noopener noreferrer"
-          class="text-indigo-300 underline decoration-zinc-700 underline-offset-4 hover:text-indigo-200"
+          class="text-brand-300 underline decoration-zinc-700 underline-offset-4 hover:text-brand-200"
         >
           Zero Trust for AI Agents
         </a>
@@ -36,7 +36,7 @@
       <div class="mt-8 flex flex-wrap gap-2">
         <%= for chip <- ["Least agency, by contract", "Human approval for high-risk actions", "Tamper-evident, hash-chained audit", "Built for \"assume breach\""] do %>
           <span class="inline-flex items-center gap-1.5 rounded-full border border-zinc-800 bg-zinc-950/60 px-3 py-1 text-xs font-medium text-zinc-300">
-            <.icon name="hero-check" class="h-3.5 w-3.5 text-indigo-400" />{chip}
+            <.icon name="hero-check" class="h-3.5 w-3.5 text-brand-400" />{chip}
           </span>
         <% end %>
       </div>
@@ -53,11 +53,11 @@
   <%!-- The design test emisar is built to pass --%>
   <section class="border-y border-zinc-900 bg-zinc-950/40 py-24 sm:py-32">
     <div class="mx-auto max-w-4xl px-6 lg:px-8">
-      <h2 class="text-base font-semibold text-indigo-400">The design test</h2>
+      <h2 class="text-base font-semibold text-brand-400">The design test</h2>
       <p class="mt-2 text-4xl font-bold tracking-tight text-zinc-50 sm:text-5xl">
         Impossible, not tedious.
       </p>
-      <figure class="mt-10 border-l-2 border-indigo-500/50 pl-6">
+      <figure class="mt-10 border-l-2 border-brand-500/50 pl-6">
         <blockquote class="text-lg italic leading-8 text-zinc-300">
           “Does this make the attack impossible, or just tedious? … Prefer a control that removes a
           capability over a control that throttles it.”
@@ -80,7 +80,7 @@
   <section class="py-24 sm:py-32">
     <div class="mx-auto max-w-7xl px-6 lg:px-8">
       <div class="mx-auto max-w-3xl text-center">
-        <h2 class="text-base font-semibold text-indigo-400">Control by control</h2>
+        <h2 class="text-base font-semibold text-brand-400">Control by control</h2>
         <p class="mt-2 text-4xl font-bold tracking-tight text-zinc-50 sm:text-5xl">
           The framework, mapped to the product.
         </p>
@@ -97,7 +97,7 @@
               <tr class="border-b border-zinc-900 text-xs uppercase tracking-wider text-zinc-500">
                 <th class="px-6 py-4 font-medium">Control in the framework</th>
                 <th class="px-6 py-4 font-medium">Tier</th>
-                <th class="px-6 py-4 font-semibold text-indigo-300">How emisar enforces it</th>
+                <th class="px-6 py-4 font-semibold text-brand-300">How emisar enforces it</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-zinc-900 align-top text-zinc-300">
@@ -129,7 +129,7 @@
                     <span class={[
                       "inline-flex whitespace-nowrap rounded-full border px-2.5 py-0.5 text-xs font-medium",
                       tier == "Foundation" && "border-zinc-700 text-zinc-400",
-                      tier == "Enterprise" && "border-indigo-500/40 text-indigo-300",
+                      tier == "Enterprise" && "border-brand-500/40 text-brand-300",
                       tier == "Advanced" && "border-amber-500/40 text-amber-300"
                     ]}>
                       {tier}
@@ -153,7 +153,7 @@
   <%!-- What emisar is not — the honest scope boundary --%>
   <section class="border-y border-zinc-900 bg-zinc-950/40 py-24 sm:py-32">
     <div class="mx-auto max-w-4xl px-6 lg:px-8">
-      <h2 class="text-base font-semibold text-indigo-400">Where emisar stops</h2>
+      <h2 class="text-base font-semibold text-brand-400">Where emisar stops</h2>
       <p class="mt-2 text-4xl font-bold tracking-tight text-zinc-50 sm:text-5xl">
         One pillar, not the whole framework.
       </p>
@@ -190,11 +190,11 @@
   <%!-- Operations: automate the bookkeeping, not the decisions --%>
   <section class="py-24 sm:py-32">
     <div class="mx-auto max-w-4xl px-6 lg:px-8">
-      <h2 class="text-base font-semibold text-indigo-400">Operations</h2>
+      <h2 class="text-base font-semibold text-brand-400">Operations</h2>
       <p class="mt-2 text-4xl font-bold tracking-tight text-zinc-50 sm:text-5xl">
         Automate the bookkeeping, not the decisions.
       </p>
-      <figure class="mt-10 border-l-2 border-indigo-500/50 pl-6">
+      <figure class="mt-10 border-l-2 border-brand-500/50 pl-6">
         <blockquote class="text-lg italic leading-8 text-zinc-300">
           “Models should take notes, capture artifacts, pursue parallel investigation tracks, and
           draft the postmortem. Humans should make the containment calls.”
@@ -229,26 +229,26 @@
           href="https://cdn.prod.website-files.com/6889473510b50328dbb70ae6/6a1611a04085d7cd3dadc924_Claude-eBook-Zero-Trust-for-AI-Agents-05182026.pdf"
           target="_blank"
           rel="noopener noreferrer"
-          class="inline-flex items-center gap-1 font-medium text-indigo-400 hover:text-indigo-300"
+          class="inline-flex items-center gap-1 font-medium text-brand-400 hover:text-brand-300"
         >
           Read Anthropic's framework
           <.icon name="hero-arrow-top-right-on-square" class="h-3.5 w-3.5" />
         </a>
         <.link
           navigate={~p"/security"}
-          class="inline-flex items-center gap-1 font-medium text-indigo-400 hover:text-indigo-300"
+          class="inline-flex items-center gap-1 font-medium text-brand-400 hover:text-brand-300"
         >
           emisar's security model <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
         </.link>
         <.link
           navigate={~p"/docs/security-model"}
-          class="inline-flex items-center gap-1 font-medium text-indigo-400 hover:text-indigo-300"
+          class="inline-flex items-center gap-1 font-medium text-brand-400 hover:text-brand-300"
         >
           How the trust boundary works <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
         </.link>
         <.link
           href={~p"/sign_up"}
-          class="inline-flex items-center gap-1 font-medium text-indigo-400 hover:text-indigo-300"
+          class="inline-flex items-center gap-1 font-medium text-brand-400 hover:text-brand-300"
         >
           Start free — connect a runner <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
         </.link>

@@ -83,7 +83,7 @@
   mask-image: radial-gradient(ellipse 75% 60% at 50% 0%, #000 35%, transparent 100%);
 }
 .hero-glow {
-  background: radial-gradient(55% 50% at 50% -8%, rgb(99 102 241 / 0.2), transparent 70%);
+  background: radial-gradient(55% 50% at 50% -8%, rgb(54 230 165 / 0.16), transparent 70%);
 }
 
 /* ---------------------------------------------------------------------------

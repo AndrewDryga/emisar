@@ -3,7 +3,7 @@
   Give your AI assistant safe, gated access to your infrastructure.
 ============================================================ --%>
 
-<div class="bg-zinc-950 text-zinc-100 antialiased selection:bg-indigo-500/30">
+<div class="bg-zinc-950 text-zinc-100 antialiased">
   <.marketing_nav current_user={@current_user} current={:ai} sticky />
 
   <%!-- Hero --%>
@@ -13,41 +13,41 @@
 
     <div class="relative mx-auto w-full max-w-7xl px-6 py-24 lg:px-8">
       <div class="mx-auto max-w-4xl text-center">
-        <p class="mb-8 inline-flex items-center gap-2 rounded-full border border-indigo-500/30 bg-zinc-950/80 px-4 py-1 text-xs font-semibold text-indigo-300">
-          <.icon name="hero-sparkles" class="h-3.5 w-3.5" /> AI&nbsp;+&nbsp;your infrastructure
+        <p class="mb-8 inline-flex items-center gap-2 rounded-full border border-brand-500/30 bg-zinc-950/80 px-4 py-1 text-xs font-semibold text-brand-300">
+          <.icon name="hero-sparkles" class="h-3.5 w-3.5" /> For your AI assistant
         </p>
         <.marketing_heading tag="h1" scale={:display}>
-          Give your AI a safe key to your infrastructure.
+          Your AI is brilliant. And blind.
         </.marketing_heading>
         <p class="mx-auto mt-8 max-w-2xl text-lg leading-relaxed text-zinc-300">
-          Install a runner, connect your LLM over MCP, and Claude, ChatGPT, or Cursor can read
-          your logs, query your metrics, and investigate an incident right alongside you — across
-          your whole fleet. Every action is pre-declared, policy-gated, approved by a human when
-          it's risky, and written to an audit trail. No SSH. No standing access.
+          Claude, Cursor, and ChatGPT reason about your code all day — but they can't see your
+          running systems. emisar gives your assistant safe, gated eyes on production: read logs,
+          query metrics, and investigate an incident, right alongside you. You stay in control of
+          anything that changes — no SSH, no pasting Grafana screenshots into a chat box at 2&nbsp;a.m.
         </p>
         <div class="mt-10 flex flex-wrap items-center justify-center gap-4">
           <.marketing_button href={~p"/sign_up"} icon="hero-arrow-right">
             Start free
           </.marketing_button>
-          <.marketing_button variant={:secondary} href="#watch">
-            Watch it work
+          <.marketing_button variant={:secondary} navigate={~p"/use-cases/csi-data-loss"}>
+            See it run an incident
           </.marketing_button>
         </div>
         <div class="mt-10 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-xs text-zinc-400">
           <span class="inline-flex items-center gap-1.5">
-            <.icon name="hero-shield-check" class="h-4 w-4 text-indigo-400" />
+            <.icon name="hero-shield-check" class="h-4 w-4 text-brand-400" />
             No SSH, no standing access
           </span>
           <span class="inline-flex items-center gap-1.5">
-            <.icon name="hero-hand-raised" class="h-4 w-4 text-indigo-400" />
+            <.icon name="hero-hand-raised" class="h-4 w-4 text-brand-400" />
             Human approval on risky actions
           </span>
           <span class="inline-flex items-center gap-1.5">
-            <.icon name="hero-eye-slash" class="h-4 w-4 text-indigo-400" />
+            <.icon name="hero-eye-slash" class="h-4 w-4 text-brand-400" />
             Secrets redacted on the host
           </span>
           <span class="inline-flex items-center gap-1.5">
-            <.icon name="hero-document-check" class="h-4 w-4 text-indigo-400" />
+            <.icon name="hero-document-check" class="h-4 w-4 text-brand-400" />
             Every action audited
           </span>
         </div>
@@ -55,28 +55,11 @@
     </div>
   </section>
 
-  <%!-- The gap: why this is needed at all --%>
-  <section class="py-24 sm:py-32">
-    <div class="mx-auto max-w-3xl px-6 text-center lg:px-8">
-      <h2 class="text-base font-semibold text-indigo-400">The gap</h2>
-      <p class="mt-2 text-4xl font-bold tracking-tight text-white sm:text-5xl">
-        Your AI is brilliant — and blind.
-      </p>
-      <p class="mt-6 text-lg leading-relaxed text-zinc-400">
-        It can reason about your code all day, but it can't see your running systems. So when
-        something breaks, <span class="text-zinc-200">you</span>
-        become its eyes — pasting <code class="rounded bg-zinc-900 px-1 py-0.5 text-sm text-indigo-300">journalctl</code>, <code class="rounded bg-zinc-900 px-1 py-0.5 text-sm text-indigo-300">kubectl</code>, and
-        Grafana screenshots into a chat box at 2&nbsp;a.m. emisar closes that gap: it gives your
-        assistant its own safe, gated hands on the infrastructure — so it can look, and help.
-      </p>
-    </div>
-  </section>
-
   <%!-- How it works — the three-step mental model --%>
   <section class="border-y border-zinc-900 bg-zinc-950/40 py-24 sm:py-32">
     <div class="mx-auto max-w-7xl px-6 lg:px-8">
       <div class="mx-auto max-w-3xl text-center">
-        <h2 class="text-base font-semibold text-indigo-400">How it works</h2>
+        <h2 class="text-base font-semibold text-brand-400">How it works</h2>
         <p class="mt-2 text-4xl font-bold tracking-tight text-white sm:text-5xl">
           Three steps to an AI that can actually help.
         </p>
@@ -87,7 +70,7 @@
           <span class="absolute right-6 top-6 font-mono text-sm font-semibold text-zinc-700">
             01
           </span>
-          <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-indigo-500/10 text-indigo-400">
+          <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-brand-500/10 text-brand-400">
             <.icon name="hero-server-stack" class="h-5 w-5" />
           </div>
           <h3 class="mt-6 text-xl font-semibold text-white">Install the runner</h3>
@@ -102,14 +85,14 @@
           <span class="absolute right-6 top-6 font-mono text-sm font-semibold text-zinc-700">
             02
           </span>
-          <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-indigo-500/10 text-indigo-400">
+          <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-brand-500/10 text-brand-400">
             <.icon name="hero-puzzle-piece" class="h-5 w-5" />
           </div>
           <h3 class="mt-6 text-xl font-semibold text-white">Connect your LLM</h3>
           <p class="mt-3 text-sm leading-relaxed text-zinc-400">
             Point any MCP client at emisar. Claude.ai and ChatGPT connect over OAuth; Claude Code,
             Claude Desktop, Cursor, Gemini CLI, and Codex use the
-            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs text-indigo-300">
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs text-brand-300">
               emisar-mcp
             </code>
             stdio bridge.
@@ -119,7 +102,7 @@
           <span class="absolute right-6 top-6 font-mono text-sm font-semibold text-zinc-700">
             03
           </span>
-          <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-indigo-500/10 text-indigo-400">
+          <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-brand-500/10 text-brand-400">
             <.icon name="hero-sparkles" class="h-5 w-5" />
           </div>
           <h3 class="mt-6 text-xl font-semibold text-white">Ask in plain English</h3>
@@ -136,7 +119,7 @@
   <section class="py-24 sm:py-32">
     <div class="mx-auto max-w-7xl px-6 lg:px-8">
       <div class="mx-auto max-w-3xl text-center">
-        <h2 class="text-base font-semibold text-indigo-400">What your AI can do</h2>
+        <h2 class="text-base font-semibold text-brand-400">What your AI can do</h2>
         <p class="mt-2 text-4xl font-bold tracking-tight text-white sm:text-5xl">
           Read everything. Touch only what you allow.
         </p>
@@ -148,7 +131,7 @@
 
       <div class="mx-auto mt-16 grid max-w-5xl grid-cols-1 gap-6 sm:grid-cols-2 lg:max-w-none lg:grid-cols-3">
         <div class="rounded-2xl border border-zinc-800 bg-zinc-950/60 p-7 transition hover:-translate-y-0.5 hover:border-zinc-700">
-          <div class="flex h-9 w-9 items-center justify-center rounded-lg bg-zinc-800/80 text-indigo-300">
+          <div class="flex h-9 w-9 items-center justify-center rounded-lg bg-zinc-800/80 text-brand-300">
             <.icon name="hero-document-text" class="h-5 w-5" />
           </div>
           <h3 class="mt-5 text-base font-semibold text-white">Read &amp; tail logs</h3>
@@ -157,7 +140,7 @@
           </p>
         </div>
         <div class="rounded-2xl border border-zinc-800 bg-zinc-950/60 p-7 transition hover:-translate-y-0.5 hover:border-zinc-700">
-          <div class="flex h-9 w-9 items-center justify-center rounded-lg bg-zinc-800/80 text-indigo-300">
+          <div class="flex h-9 w-9 items-center justify-center rounded-lg bg-zinc-800/80 text-brand-300">
             <.icon name="hero-signal" class="h-5 w-5" />
           </div>
           <h3 class="mt-5 text-base font-semibold text-white">Query metrics</h3>
@@ -166,7 +149,7 @@
           </p>
         </div>
         <div class="rounded-2xl border border-zinc-800 bg-zinc-950/60 p-7 transition hover:-translate-y-0.5 hover:border-zinc-700">
-          <div class="flex h-9 w-9 items-center justify-center rounded-lg bg-zinc-800/80 text-indigo-300">
+          <div class="flex h-9 w-9 items-center justify-center rounded-lg bg-zinc-800/80 text-brand-300">
             <.icon name="hero-cpu-chip" class="h-5 w-5" />
           </div>
           <h3 class="mt-5 text-base font-semibold text-white">Inspect the host</h3>
@@ -175,7 +158,7 @@
           </p>
         </div>
         <div class="rounded-2xl border border-zinc-800 bg-zinc-950/60 p-7 transition hover:-translate-y-0.5 hover:border-zinc-700">
-          <div class="flex h-9 w-9 items-center justify-center rounded-lg bg-zinc-800/80 text-indigo-300">
+          <div class="flex h-9 w-9 items-center justify-center rounded-lg bg-zinc-800/80 text-brand-300">
             <.icon name="hero-circle-stack" class="h-5 w-5" />
           </div>
           <h3 class="mt-5 text-base font-semibold text-white">Check your datastores</h3>
@@ -184,7 +167,7 @@
           </p>
         </div>
         <div class="rounded-2xl border border-zinc-800 bg-zinc-950/60 p-7 transition hover:-translate-y-0.5 hover:border-zinc-700">
-          <div class="flex h-9 w-9 items-center justify-center rounded-lg bg-zinc-800/80 text-indigo-300">
+          <div class="flex h-9 w-9 items-center justify-center rounded-lg bg-zinc-800/80 text-brand-300">
             <.icon name="hero-globe-alt" class="h-5 w-5" />
           </div>
           <h3 class="mt-5 text-base font-semibold text-white">Trace the network</h3>
@@ -192,9 +175,12 @@
             DNS, TLS certificates, connectivity, routes, and firewall state — from the host's own view.
           </p>
         </div>
-        <div class="rounded-2xl border border-indigo-500/30 bg-indigo-500/[0.04] p-7 transition hover:-translate-y-0.5 hover:border-indigo-500/50">
-          <div class="flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-500/10 text-indigo-300">
-            <.icon name="hero-wrench-screwdriver" class="h-5 w-5" />
+        <div class="rounded-2xl border border-brand-500/30 bg-brand-500/[0.04] p-7 transition hover:-translate-y-0.5 hover:border-brand-500/50">
+          <div class="flex items-center justify-between">
+            <div class="flex h-9 w-9 items-center justify-center rounded-lg bg-brand-500/10 text-brand-300">
+              <.icon name="hero-wrench-screwdriver" class="h-5 w-5" />
+            </div>
+            <.state_chip state={:pending} label="approval" />
           </div>
           <h3 class="mt-5 text-base font-semibold text-white">Act — behind approval</h3>
           <p class="mt-2 text-sm leading-relaxed text-zinc-400">
@@ -207,178 +193,59 @@
       <p class="mx-auto mt-12 max-w-2xl text-center text-sm text-zinc-500">
         Dozens of packs spanning Linux, databases, Kubernetes, and your cloud — install what you
         run, or author your own.
-        <.link navigate={~p"/packs"} class="font-medium text-indigo-300 hover:text-indigo-200">
+        <.link navigate={~p"/packs"} class="font-medium text-brand-300 hover:text-brand-200">
           Browse the catalog →
         </.link>
       </p>
     </div>
   </section>
 
-  <%!-- Watch it work — the live incident transcript --%>
-  <section id="watch" class="scroll-mt-20 border-y border-zinc-900 bg-zinc-950/40 py-24 sm:py-32">
-    <div class="mx-auto max-w-7xl px-6 lg:px-8">
-      <div class="mx-auto max-w-3xl text-center">
-        <h2 class="text-base font-semibold text-indigo-400">Watch it work</h2>
-        <p class="mt-2 text-4xl font-bold tracking-tight text-white sm:text-5xl">
-          A real incident, start to finish.
-        </p>
-        <p class="mt-6 text-lg leading-relaxed text-zinc-400">
-          One host, one connected LLM. A CSI driver reformatted a live disk and wiped 33 hours of
-          metrics. Watch the agent investigate through declared actions, stop the writes behind one
-          approval, and hand back the durable fix — over MCP, no SSH, every step on the record.
-        </p>
+  <%!-- Is it safe? — the persona's real worry, answered briefly. The full
+       security model + the live incident live on home and /security. --%>
+  <section class="border-y border-zinc-900 bg-zinc-950/40 py-24 sm:py-32">
+    <div class="mx-auto max-w-3xl px-6 text-center lg:px-8">
+      <h2 class="text-base font-semibold text-brand-400">But is it safe?</h2>
+      <p class="mt-2 text-4xl font-bold tracking-tight text-white sm:text-5xl">
+        Access means a gated catalog — not a shell.
+      </p>
+      <p class="mt-6 text-lg leading-relaxed text-zinc-400">
+        Your AI can only call actions you've declared in a content-hashed pack — undeclared commands
+        don't exist to it. Reads run free; anything that changes waits for your one-click approval.
+        Secrets are redacted on the host, every call lands in a tamper-evident audit trail, and
+        there's no SSH and no standing key for an AI — or an attacker — to leak.
+      </p>
+      <div class="mt-8 flex flex-wrap items-center justify-center gap-x-6 gap-y-3">
+        <.link
+          navigate={~p"/security"}
+          class="inline-flex items-center gap-1.5 text-sm font-medium text-brand-400 hover:text-brand-300"
+        >
+          See the full security model <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
+        </.link>
+        <.link
+          navigate={~p"/use-cases/csi-data-loss"}
+          class="inline-flex items-center gap-1.5 text-sm font-medium text-brand-400 hover:text-brand-300"
+        >
+          Watch it handle a real incident <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
+        </.link>
       </div>
-
-      <.emisar_demo />
     </div>
   </section>
 
-  <%!-- Safe by construction — the security spine, the reason you can allow this --%>
+  <%!-- Built for teams — a compact signal; depth in docs --%>
   <section class="py-24 sm:py-32">
     <div class="mx-auto max-w-7xl px-6 lg:px-8">
       <div class="mx-auto max-w-3xl text-center">
-        <h2 class="text-base font-semibold text-indigo-400">Safe by construction</h2>
-        <p class="mt-2 text-4xl font-bold tracking-tight text-white sm:text-5xl">
-          The reason you can actually allow this.
-        </p>
-        <p class="mt-6 text-lg leading-relaxed text-zinc-400">
-          "Give an AI access to prod" sounds reckless — until access means a finite, gated, audited
-          catalog instead of a shell. Six guarantees do the work.
-        </p>
-      </div>
-
-      <div class="mx-auto mt-16 grid max-w-5xl grid-cols-1 gap-px overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-800 sm:grid-cols-2 lg:max-w-none lg:grid-cols-3">
-        <div class="bg-zinc-950 p-8">
-          <.icon name="hero-cube" class="h-6 w-6 text-indigo-400" />
-          <h3 class="mt-5 text-base font-semibold text-white">A finite, declared catalog</h3>
-          <p class="mt-2 text-sm leading-relaxed text-zinc-400">
-            The model can only call actions declared in a content-hashed pack. Undeclared commands
-            don't exist to it — there's nothing to jailbreak into.
-          </p>
-        </div>
-        <div class="bg-zinc-950 p-8">
-          <.icon name="hero-lock-closed" class="h-6 w-6 text-indigo-400" />
-          <h3 class="mt-5 text-base font-semibold text-white">No SSH, no standing access</h3>
-          <p class="mt-2 text-sm leading-relaxed text-zinc-400">
-            The runner dials out and holds no inbound port. There's no shell to hand over and no
-            long-lived key for an AI — or an attacker — to leak.
-          </p>
-        </div>
-        <div class="bg-zinc-950 p-8">
-          <.icon name="hero-scale" class="h-6 w-6 text-indigo-400" />
-          <h3 class="mt-5 text-base font-semibold text-white">Policy on every call</h3>
-          <p class="mt-2 text-sm leading-relaxed text-zinc-400">
-            Reads run free; risky writes stop for a human approval that shows the actor, the
-            arguments, and the target host. The destructive verbs are deny-by-default.
-          </p>
-        </div>
-        <div class="bg-zinc-950 p-8">
-          <.icon name="hero-finger-print" class="h-6 w-6 text-indigo-400" />
-          <h3 class="mt-5 text-base font-semibold text-white">Re-validated on the host</h3>
-          <p class="mt-2 text-sm leading-relaxed text-zinc-400">
-            Every argument is checked against the action's schema on the runner before anything
-            executes — the cloud's word is never taken on faith.
-          </p>
-        </div>
-        <div class="bg-zinc-950 p-8">
-          <.icon name="hero-eye-slash" class="h-6 w-6 text-indigo-400" />
-          <h3 class="mt-5 text-base font-semibold text-white">Secrets never leave</h3>
-          <p class="mt-2 text-sm leading-relaxed text-zinc-400">
-            Output is redacted on the host — AWS keys, JWTs, bearer tokens, and your own patterns —
-            before a byte is forwarded. The control plane never sees a raw secret.
-          </p>
-        </div>
-        <div class="bg-zinc-950 p-8">
-          <.icon name="hero-document-magnifying-glass" class="h-6 w-6 text-indigo-400" />
-          <h3 class="mt-5 text-base font-semibold text-white">Everything on the record</h3>
-          <p class="mt-2 text-sm leading-relaxed text-zinc-400">
-            Who, what, when, and <span class="text-zinc-300">why</span> — a searchable audit trail
-            backed by a hash-chained runner journal. Stream it to your SIEM.
-          </p>
-        </div>
-      </div>
-
-      <p class="mx-auto mt-10 max-w-2xl text-center text-sm text-zinc-500">
-        Enforcing runners can even refuse any dispatch that isn't signed by a key you trust.
-        <.link navigate={~p"/security"} class="font-medium text-indigo-300 hover:text-indigo-200">
-          See the full security model →
-        </.link>
-      </p>
-    </div>
-  </section>
-
-  <%!-- Built for teams / enterprise --%>
-  <section class="border-t border-zinc-900 bg-zinc-950/40 py-24 sm:py-32">
-    <div class="mx-auto max-w-7xl px-6 lg:px-8">
-      <div class="mx-auto max-w-3xl text-center">
-        <h2 class="text-base font-semibold text-indigo-400">For teams</h2>
+        <h2 class="text-base font-semibold text-brand-400">For teams</h2>
         <p class="mt-2 text-4xl font-bold tracking-tight text-white sm:text-5xl">
           Built for teams, ready for enterprise.
         </p>
       </div>
 
-      <div class="mx-auto mt-16 grid max-w-5xl grid-cols-1 gap-x-10 gap-y-8 sm:grid-cols-2 lg:max-w-none lg:grid-cols-3">
-        <div class="flex gap-4">
-          <.icon name="hero-identification" class="h-6 w-6 flex-none text-indigo-400" />
-          <div>
-            <h3 class="text-base font-semibold text-white">SSO &amp; directory sync</h3>
-            <p class="mt-1 text-sm leading-relaxed text-zinc-400">
-              OIDC sign-in with Okta, Google Workspace, or Keycloak, plus SCIM — offboarding in your
-              IdP revokes emisar access automatically.
-            </p>
-          </div>
-        </div>
-        <div class="flex gap-4">
-          <.icon name="hero-user-group" class="h-6 w-6 flex-none text-indigo-400" />
-          <div>
-            <h3 class="text-base font-semibold text-white">Roles &amp; runner scopes</h3>
-            <p class="mt-1 text-sm leading-relaxed text-zinc-400">
-              Owner, admin, operator, and viewer — plus per-member scopes so an operator only sees
-              the hosts they own.
-            </p>
-          </div>
-        </div>
-        <div class="flex gap-4">
-          <.icon name="hero-finger-print" class="h-6 w-6 flex-none text-indigo-400" />
-          <div>
-            <h3 class="text-base font-semibold text-white">Account-wide MFA</h3>
-            <p class="mt-1 text-sm leading-relaxed text-zinc-400">
-              Enforce two-factor across the whole team, with recovery codes and admin reset for the
-              locked-out.
-            </p>
-          </div>
-        </div>
-        <div class="flex gap-4">
-          <.icon name="hero-arrow-up-tray" class="h-6 w-6 flex-none text-indigo-400" />
-          <div>
-            <h3 class="text-base font-semibold text-white">Audit → SIEM</h3>
-            <p class="mt-1 text-sm leading-relaxed text-zinc-400">
-              Stream every event as NDJSON to your SIEM with a read-only key and cursor pagination —
-              the record lives in your stack too.
-            </p>
-          </div>
-        </div>
-        <div class="flex gap-4">
-          <.icon name="hero-key" class="h-6 w-6 flex-none text-indigo-400" />
-          <div>
-            <h3 class="text-base font-semibold text-white">Scoped, revocable keys</h3>
-            <p class="mt-1 text-sm leading-relaxed text-zinc-400">
-              Issue a narrow API key per agent — scoped to the actions and runners it needs — and
-              revoke it the instant you need to.
-            </p>
-          </div>
-        </div>
-        <div class="flex gap-4">
-          <.icon name="hero-queue-list" class="h-6 w-6 flex-none text-indigo-400" />
-          <div>
-            <h3 class="text-base font-semibold text-white">Runbooks</h3>
-            <p class="mt-1 text-sm leading-relaxed text-zinc-400">
-              Save gated, multi-step operational sequences your team approves once — and let the AI
-              read them as playbooks over MCP.
-            </p>
-          </div>
-        </div>
-      </div>
+      <p class="mx-auto mt-6 max-w-2xl text-center text-lg leading-relaxed text-zinc-400">
+        SSO with Okta, Google Workspace, or Keycloak plus SCIM directory sync; owner / admin /
+        operator / viewer roles with per-member runner scopes; account-wide MFA; scoped, revocable
+        keys per agent; gated runbooks; and every event streamed to your SIEM.
+      </p>
 
       <div class="mt-14 flex flex-wrap justify-center gap-4">
         <.marketing_button variant={:secondary} navigate={~p"/docs/sso"} icon="hero-arrow-right">
@@ -395,7 +262,7 @@
   <section class="py-24 sm:py-32">
     <div class="mx-auto max-w-3xl px-6 lg:px-8">
       <div class="text-center">
-        <h2 class="text-base font-semibold text-indigo-400">FAQ</h2>
+        <h2 class="text-base font-semibold text-brand-400">FAQ</h2>
         <p class="mt-2 text-4xl font-bold tracking-tight text-white sm:text-5xl">
           The questions you're already asking.
         </p>
@@ -407,7 +274,7 @@
             <summary class="flex cursor-pointer items-center justify-between px-8 py-6 text-base font-semibold text-white">
               {q}
               <.icon name="hero-plus" class="h-5 w-5 text-zinc-500 transition group-open:hidden" />
-              <.icon name="hero-minus" class="hidden h-5 w-5 text-indigo-400 group-open:block" />
+              <.icon name="hero-minus" class="hidden h-5 w-5 text-brand-400 group-open:block" />
             </summary>
             <p class="px-8 pb-6 text-sm leading-relaxed text-zinc-400">{a}</p>
           </details>

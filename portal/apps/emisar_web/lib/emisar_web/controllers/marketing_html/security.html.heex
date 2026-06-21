@@ -8,7 +8,7 @@
   <%!-- Hero --%>
   <section class="py-24 sm:py-32">
     <div class="mx-auto max-w-4xl px-6 lg:px-8">
-      <p class="text-base font-semibold text-indigo-400">Security &amp; compliance</p>
+      <p class="text-base font-semibold text-brand-400">Security &amp; compliance</p>
       <.marketing_heading tag="h1" scale={:display} class="mt-2">
         Built so your security team says yes.
       </.marketing_heading>
@@ -20,7 +20,7 @@
       <div class="mt-8 flex flex-wrap gap-2">
         <%= for chip <- ["No inbound port on hosts", "Secrets redacted before egress", "Hash-chained audit journal", "MFA + per-user runner scopes", "No raw shell, ever"] do %>
           <span class="inline-flex items-center gap-1.5 rounded-full border border-zinc-800 bg-zinc-950/60 px-3 py-1 text-xs font-medium text-zinc-300">
-            <.icon name="hero-check" class="h-3.5 w-3.5 text-indigo-400" />{chip}
+            <.icon name="hero-check" class="h-3.5 w-3.5 text-brand-400" />{chip}
           </span>
         <% end %>
       </div>
@@ -31,7 +31,7 @@
   <section class="border-y border-zinc-900 bg-zinc-950/40 py-24 sm:py-32">
     <div class="mx-auto max-w-7xl px-6 lg:px-8">
       <div class="mx-auto max-w-2xl text-center">
-        <h2 class="text-base font-semibold text-indigo-400">Trust boundary</h2>
+        <h2 class="text-base font-semibold text-brand-400">Trust boundary</h2>
         <p class="mt-2 text-4xl font-bold tracking-tight text-zinc-50 sm:text-5xl">
           Who can do what, by design.
         </p>
@@ -42,36 +42,36 @@
       </div>
 
       <div class="mx-auto mt-16 max-w-3xl rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8">
-        <pre class="overflow-x-auto font-mono text-xs leading-6 text-zinc-300"><span class="text-indigo-300">LLM</span> <span class="text-zinc-500">(untrusted)</span>
+        <pre class="overflow-x-auto font-mono text-xs leading-6 text-zinc-300"><span class="text-brand-300">LLM</span> <span class="text-zinc-500">(untrusted)</span>
  │  asks for a catalog action over MCP — with a required reason
  ▼
-<span class="text-indigo-300">Control plane</span>
+<span class="text-brand-300">Control plane</span>
  │  evaluates policy · checks scope &amp; pack trust · routes · records audit
  │  <span class="text-zinc-500">on require_approval, waits for a human ──▶ Operator approves / denies</span>
  ▼  run_action <span class="text-zinc-500">(only after the gate passes)</span>
-<span class="text-indigo-300">Runner on host</span> <span class="text-zinc-500">— outbound WSS only; the host dials out, nothing listens</span>
+<span class="text-brand-300">Runner on host</span> <span class="text-zinc-500">— outbound WSS only; the host dials out, nothing listens</span>
  │  validates args against the action schema · re-verifies the pack hash
  │  drops to least privilege · argv arrays, never a shell · redacts before egress
  ▼
-<span class="text-indigo-300">Hash-chained JSONL journal</span> <span class="text-zinc-500">on the host + searchable cloud audit</span></pre>
+<span class="text-brand-300">Hash-chained JSONL journal</span> <span class="text-zinc-500">on the host + searchable cloud audit</span></pre>
       </div>
 
       <div class="mx-auto mt-12 grid max-w-5xl grid-cols-1 gap-6 md:grid-cols-3">
         <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-6">
-          <h3 class="text-sm font-semibold text-indigo-300">LLM</h3>
+          <h3 class="text-sm font-semibold text-brand-300">LLM</h3>
           <p class="mt-2 text-sm text-zinc-400">
             Untrusted. Can only call catalog actions with declared args.
           </p>
         </div>
         <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-6">
-          <h3 class="text-sm font-semibold text-indigo-300">Control plane</h3>
+          <h3 class="text-sm font-semibold text-brand-300">Control plane</h3>
           <p class="mt-2 text-sm text-zinc-400">
             Evaluates policy, checks scope and pack trust, routes, and audits. Never executes
             shell itself.
           </p>
         </div>
         <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-6">
-          <h3 class="text-sm font-semibold text-indigo-300">Runner</h3>
+          <h3 class="text-sm font-semibold text-brand-300">Runner</h3>
           <p class="mt-2 text-sm text-zinc-400">
             Non-root service user, and the authority on arguments: validates every arg against the
             action's declared schema (rejecting anything undeclared), drops to a per-action
@@ -87,7 +87,7 @@
   <section class="py-24 sm:py-32">
     <div class="mx-auto max-w-7xl px-6 lg:px-8">
       <div class="mx-auto max-w-2xl text-center">
-        <h2 class="text-base font-semibold text-indigo-400">Data handling</h2>
+        <h2 class="text-base font-semibold text-brand-400">Data handling</h2>
         <p class="mt-2 text-4xl font-bold tracking-tight text-zinc-50 sm:text-5xl">
           Boring, defensible defaults.
         </p>
@@ -95,7 +95,7 @@
 
       <div class="mx-auto mt-16 grid max-w-5xl grid-cols-1 gap-6 md:grid-cols-2">
         <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8">
-          <div class="flex h-12 w-12 items-center justify-center rounded-lg bg-indigo-500/10 text-indigo-400">
+          <div class="flex h-12 w-12 items-center justify-center rounded-lg bg-brand-500/10 text-brand-400">
             <.icon name="hero-lock-closed" class="h-6 w-6" />
           </div>
           <h3 class="mt-6 text-xl font-semibold text-zinc-50">TLS-only transport</h3>
@@ -105,7 +105,7 @@
           </p>
         </div>
         <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8">
-          <div class="flex h-12 w-12 items-center justify-center rounded-lg bg-indigo-500/10 text-indigo-400">
+          <div class="flex h-12 w-12 items-center justify-center rounded-lg bg-brand-500/10 text-brand-400">
             <.icon name="hero-arrow-up-on-square" class="h-6 w-6" />
           </div>
           <h3 class="mt-6 text-xl font-semibold text-zinc-50">
@@ -117,7 +117,7 @@
           </p>
         </div>
         <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8">
-          <div class="flex h-12 w-12 items-center justify-center rounded-lg bg-indigo-500/10 text-indigo-400">
+          <div class="flex h-12 w-12 items-center justify-center rounded-lg bg-brand-500/10 text-brand-400">
             <.icon name="hero-document-text" class="h-6 w-6" />
           </div>
           <h3 class="mt-6 text-xl font-semibold text-zinc-50">Hash-chained audit journal</h3>
@@ -129,7 +129,7 @@
           </p>
         </div>
         <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8">
-          <div class="flex h-12 w-12 items-center justify-center rounded-lg bg-indigo-500/10 text-indigo-400">
+          <div class="flex h-12 w-12 items-center justify-center rounded-lg bg-brand-500/10 text-brand-400">
             <.icon name="hero-finger-print" class="h-6 w-6" />
           </div>
           <h3 class="mt-6 text-xl font-semibold text-zinc-50">Hash-pinned packs</h3>
@@ -141,7 +141,7 @@
           </p>
         </div>
         <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8">
-          <div class="flex h-12 w-12 items-center justify-center rounded-lg bg-indigo-500/10 text-indigo-400">
+          <div class="flex h-12 w-12 items-center justify-center rounded-lg bg-brand-500/10 text-brand-400">
             <.icon name="hero-eye-slash" class="h-6 w-6" />
           </div>
           <h3 class="mt-6 text-xl font-semibold text-zinc-50">Secrets redacted before egress</h3>
@@ -154,7 +154,7 @@
           </p>
         </div>
         <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8">
-          <div class="flex h-12 w-12 items-center justify-center rounded-lg bg-indigo-500/10 text-indigo-400">
+          <div class="flex h-12 w-12 items-center justify-center rounded-lg bg-brand-500/10 text-brand-400">
             <.icon name="hero-arrow-down-tray" class="h-6 w-6" />
           </div>
           <h3 class="mt-6 text-xl font-semibold text-zinc-50">
@@ -176,7 +176,7 @@
   <section class="border-y border-zinc-900 bg-zinc-950/40 py-24 sm:py-32">
     <div class="mx-auto max-w-7xl px-6 lg:px-8">
       <div class="mx-auto max-w-2xl text-center">
-        <h2 class="text-base font-semibold text-indigo-400">Organizational controls</h2>
+        <h2 class="text-base font-semibold text-brand-400">Organizational controls</h2>
         <p class="mt-2 text-4xl font-bold tracking-tight text-zinc-50 sm:text-5xl">
           The knobs your IAM team expects.
         </p>
@@ -184,7 +184,7 @@
 
       <div class="mx-auto mt-16 grid max-w-5xl grid-cols-1 gap-6 md:grid-cols-3">
         <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8">
-          <.icon name="hero-user-group" class="h-7 w-7 text-indigo-400" />
+          <.icon name="hero-user-group" class="h-7 w-7 text-brand-400" />
           <h3 class="mt-4 text-lg font-semibold text-zinc-50">RBAC</h3>
           <p class="mt-2 text-sm text-zinc-400">
             Roles for owner, admin, operator, and viewer, plus per-user runner and runner-group
@@ -192,7 +192,7 @@
           </p>
         </div>
         <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8">
-          <.icon name="hero-key" class="h-7 w-7 text-indigo-400" />
+          <.icon name="hero-key" class="h-7 w-7 text-brand-400" />
           <h3 class="mt-4 text-lg font-semibold text-zinc-50">Scoped LLM access</h3>
           <p class="mt-2 text-sm text-zinc-400">
             Each MCP key carries its own scopes (<code>actions:read</code>, <code>actions:execute</code>, <code>audit:read</code>), user attribution, and runner
@@ -201,7 +201,7 @@
           </p>
         </div>
         <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8">
-          <.icon name="hero-shield-check" class="h-7 w-7 text-indigo-400" />
+          <.icon name="hero-shield-check" class="h-7 w-7 text-brand-400" />
           <h3 class="mt-4 text-lg font-semibold text-zinc-50">MFA</h3>
           <p class="mt-2 text-sm text-zinc-400">
             TOTP (RFC 6238) on every plan, with one-time recovery codes and replay protection.
@@ -216,7 +216,7 @@
     host-side admission control that backs it. --%>
   <section class="py-24 sm:py-32">
     <div class="mx-auto max-w-4xl px-6 lg:px-8">
-      <p class="text-base font-semibold text-indigo-400">Independent standard</p>
+      <p class="text-base font-semibold text-brand-400">Independent standard</p>
       <.marketing_heading tag="h2" scale={:section} class="mt-2">
         Built for &ldquo;assume breach.&rdquo;
       </.marketing_heading>
@@ -225,7 +225,7 @@
           href="https://cdn.prod.website-files.com/6889473510b50328dbb70ae6/6a1611a04085d7cd3dadc924_Claude-eBook-Zero-Trust-for-AI-Agents-05182026.pdf"
           target="_blank"
           rel="noopener noreferrer"
-          class="text-indigo-300 underline decoration-zinc-700 underline-offset-4 hover:text-indigo-200"
+          class="text-brand-300 underline decoration-zinc-700 underline-offset-4 hover:text-brand-200"
         >Zero Trust for AI Agents</a>, a framework for giving autonomous agents access to real
         systems: least agency, deny-by-default tools, human approval for high-risk actions, and an
         immutable audit trail. emisar enforces that control set — and assumes the agent may already
@@ -233,7 +233,7 @@
         gated, audited catalog.
       </p>
       <div class="mt-8 rounded-2xl border border-zinc-900 bg-zinc-950/60 p-6">
-        <h3 class="text-sm font-semibold text-indigo-300">Local admission control</h3>
+        <h3 class="text-sm font-semibold text-brand-300">Local admission control</h3>
         <p class="mt-2 text-sm leading-6 text-zinc-400">
           Beyond the cloud policy, an operator can set an allow/deny list on the runner itself.
           Denied actions are hidden from the catalog and refused at execution — fail-closed, even
@@ -241,7 +241,7 @@
         </p>
       </div>
       <div class="mt-4 rounded-2xl border border-zinc-900 bg-zinc-950/60 p-6">
-        <h3 class="text-sm font-semibold text-indigo-300">
+        <h3 class="text-sm font-semibold text-brand-300">
           Signed dispatch — the cloud can't act for you
         </h3>
         <p class="mt-2 text-sm leading-6 text-zinc-400">
@@ -255,7 +255,7 @@
       <div class="mt-8 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
         <.link
           navigate={~p"/zero-trust"}
-          class="inline-flex items-center gap-1 font-semibold text-indigo-400 hover:text-indigo-300"
+          class="inline-flex items-center gap-1 font-semibold text-brand-400 hover:text-brand-300"
         >
           See emisar mapped to the framework, control by control
           <.icon name="hero-arrow-right" class="h-4 w-4" />
@@ -272,7 +272,7 @@
         <h2 class="text-4xl font-bold tracking-tight text-zinc-50">Responsible disclosure</h2>
         <p class="mt-6 text-lg leading-8 text-zinc-400">
           Found a security issue? We want to hear about it. Email
-          <a href="mailto:security@emisar.dev" class="text-indigo-300 hover:text-indigo-200">
+          <a href="mailto:security@emisar.dev" class="text-brand-300 hover:text-brand-200">
             security@emisar.dev
           </a>
           with a description and reproduction steps. We acknowledge within one business day
@@ -283,7 +283,7 @@
             href="https://github.com/andrewdryga/emisar/blob/main/.github/SECURITY.md"
             target="_blank"
             rel="noopener noreferrer"
-            class="text-indigo-300 hover:text-indigo-200"
+            class="text-brand-300 hover:text-brand-200"
           >SECURITY.md</a>.
         </p>
         <div class="mt-8 flex items-center gap-6">
@@ -297,7 +297,7 @@
           </.marketing_button>
           <a
             href="mailto:security@emisar.dev"
-            class="text-sm font-semibold text-zinc-100 hover:text-indigo-300"
+            class="text-sm font-semibold text-zinc-100 hover:text-brand-300"
           >
             Email security team <span aria-hidden="true">&rarr;</span>
           </a>

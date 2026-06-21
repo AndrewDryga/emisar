@@ -93,22 +93,25 @@ defmodule EmisarWeb.MarketingTest do
     refute html =~ ~s(href="/app")
   end
 
-  test "the /ai landing page explains the product and converts", %{conn: conn} do
+  test "the /ai landing page leads with the blind-AI pain and converts", %{conn: conn} do
     html = conn |> get(~p"/ai") |> html_response(200)
 
-    # The benefit-first positioning + the three-step mental model.
-    assert html =~ "safe key to your infrastructure"
+    # Differentiated from home: lead with the relatable "your AI is blind" pain,
+    # then the practical three-step setup.
+    assert html =~ "brilliant"
+    assert html =~ "blind"
     assert html =~ "Install the runner"
     assert html =~ "Connect your LLM"
     assert html =~ "Ask in plain English"
 
-    # The security spine (what makes the access allowable) is on the page.
+    # The capabilities (the magic) and a brief safety reassurance. The deep
+    # security model + the live incident demo live on home/security — /ai
+    # points there instead of duplicating them.
+    assert html =~ "Read &amp; tail logs"
+    assert html =~ "gated catalog"
     assert html =~ "No SSH, no standing access"
-    assert html =~ "Secrets never leave"
-    assert html =~ "human approval"
-
-    # It reuses the live incident demo (server-rendered for no-JS + crawlers).
-    assert html =~ "data-emisar-demo"
+    refute html =~ "data-emisar-demo"
+    assert html =~ ~s(href="/security")
 
     # A convinced reader gets the Start-free conversion CTA.
     assert html =~ "Start free"
