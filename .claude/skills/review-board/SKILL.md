@@ -42,7 +42,7 @@ For **intent** on a non-PR scope, read the commit message(s) in range, or — fo
 |---|---|
 | LiveView / HEEx / components (operator-facing) | **UX designer** (`/ux-designer`) + **UI/frontend** (`/frontend`) |
 | a new capability, scope, or user flow | **PM** (`/product-manager` — right thing? smallest slice?) |
-| marketing site / positioning / docs that rank | **marketing/SEO** (`/seo-marketing`) |
+| marketing site / positioning / docs that rank | **marketing/SEO** (`/seo-marketing`) + **design review** (`/design-review`) |
 | pricing, plans, plan-gating, billing, or a sellable/demoable capability | **sales** (no skill — lens: does it answer a buyer objection? is it demoable? is the plan-gating right? does it help close/expand a deal?) |
 
 ## 3. Fan out — one Agent per hat, in a single parallel batch

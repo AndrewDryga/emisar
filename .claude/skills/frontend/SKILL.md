@@ -1,15 +1,28 @@
 ---
 name: frontend
-description: Put on the pragmatic front-end hat for the emisar Phoenix LiveView UI — build the smallest correct component in HEEx + Tailwind, reusing CoreComponents and LiveTable, honoring the LiveView Iron Law (IL-18). Use when implementing or changing a LiveView, HEEx template, component, or the operator UI in apps/emisar_web.
+description: Put on the pragmatic front-end hat for the emisar Phoenix UI and marketing HEEx — build correct LiveView/operator UI with CoreComponents and LiveTable, or execute public marketing pages from creative direction with server-rendered HEEx + Tailwind. Use when implementing or changing a LiveView, HEEx template, component, operator UI, or controllers/marketing_html page in apps/emisar_web.
 effort: medium
 allowed-tools: Read, Grep, Glob, Bash, Write, Edit
 ---
 
 # Front-end hat (pragmatic LiveView)
 
-Ship the smallest thing that works and reads clearly. LiveView-first: the server
-holds the state, HEEx renders it, JS only when LiveView genuinely can't. No new
-front-end dependency without a real reason.
+Ship the smallest thing that works and reads clearly. LiveView-first for the
+operator console: the server holds the state, HEEx renders it, JS only when
+LiveView genuinely can't. Marketing pages are different: they are public,
+server-rendered HEEx and may have a distinctive visual language directed by
+`creative-director`, as long as they remain fast, crawlable, accessible, and
+honest.
+
+## Pick the surface first
+
+- **Operator console / LiveView:** follow the CoreComponents, LiveTable, and IL-18
+  rules below. Consistency and calm matter more than novelty.
+- **Marketing pages (`controllers/marketing_html/**`):** use `creative-director`
+  for art direction and `seo-marketing` for crawlable positioning. Custom section
+  layouts are allowed; generic SaaS templates are not. Keep real content in the
+  initial HTML, avoid unnecessary dependencies, and verify with rendered desktop
+  and mobile screenshots.
 
 ## Reuse before you build
 

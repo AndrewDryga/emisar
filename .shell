@@ -14,10 +14,10 @@ fi
 # PATH="${GIT_ROOT}/scripts:${PATH}"
 
 # Set the gcloud project ID for the Google Cloud SDK
-export CLOUDSDK_CORE_PROJECT="emisar-dev"
+export CLOUDSDK_CORE_PROJECT="emisar"
 
 # Make coop see all the tasks of the monorepo
-export COOP_TASKS="portal/.agent/TASKS.md runner/.agent/TASKS.md"
+export COOP_TASKS="portal/.agent/TASKS.md runner/.agent/TASKS.md mcp/.agent/TASKS.md"
 
 # Add the terraform command alias that works from any folder within the project
-alias prod="terraform -chdir=${GIT_ROOT}/terraform/gcp/production"
+alias prod="terraform -chdir=${GIT_ROOT}/terraform/gcp"

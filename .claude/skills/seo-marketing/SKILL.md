@@ -14,6 +14,11 @@ port, every action declared, approval-gated, and fully journaled.** It competes 
 home, pricing, security, use-cases (cassandra/postgres), `compare_raw_ssh`,
 `connect_llm`, docs, and packs pages, plus a `sitemap_controller`.
 
+For full-page redesigns or launch-level creative work, pair this with
+`creative-director`. This hat owns the search intent, honesty, page argument,
+metadata, structured data, and internal links; `creative-director` owns the
+creative territory and art direction.
+
 ## Hard rule: keep marketing server-rendered
 
 The marketing pages are **unauthenticated `controllers/marketing_html/*.html.heex`,

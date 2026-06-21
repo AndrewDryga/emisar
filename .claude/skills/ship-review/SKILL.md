@@ -1,6 +1,6 @@
 ---
 name: ship-review
-description: Review a portal/ diff before merge through the product hats AND the Iron Laws in parallel — PM, UX, frontend, security, SEO (as relevant) plus iron-review, synthesized into one verdict. Use before opening a PR or when the user asks for a product/multi-hat/pre-ship review. Complements /code-review (bugs) and /iron-review (laws).
+description: Review a portal/ diff before merge through the product hats AND the Iron Laws in parallel — PM, UX, frontend, security, SEO/design (as relevant) plus iron-review, synthesized into one verdict. Use before opening a PR or when the user asks for a product/multi-hat/pre-ship review. Complements /code-review (bugs) and /iron-review (laws).
 effort: high
 argument-hint: "[git ref, default = working tree vs main]"
 allowed-tools: Read, Grep, Glob, Bash, Agent
@@ -24,7 +24,7 @@ a pure context change. Mapping:
 |---|---|
 | any `lib/emisar/**` (context/query/changeset/authorizer) | **iron-review** (always) + **security-engineer** if auth/runner/MCP/policy/untrusted input |
 | `lib/emisar_web/live/**`, `components/**`, `.heex` | **ux-designer** + **frontend** |
-| `controllers/marketing_html/**`, docs, copy, meta | **seo-marketing** |
+| `controllers/marketing_html/**`, docs, copy, meta | **seo-marketing** + **design-review** |
 | new user-facing capability, scope, or flow | **product-manager** |
 | logic / correctness risk | suggest `/code-review` (this skill is product-level, not a line-by-line bug hunt) |
 
@@ -59,7 +59,7 @@ Verdict: SHIP / SHIP AFTER BLOCKERS / RETHINK
 - [IL-4 | security] lib/…:42 — … → fix: …
 
 ### Suggestions
-- [ux] … 
+- [ux] …
 
 ### Hat notes
 - PM: <one line> · UX: <…> · Security: <…>

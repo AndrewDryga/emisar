@@ -1,0 +1,4 @@
+interface:
+  display_name: "Creative Director"
+  short_description: "Agency-grade marketing-site direction"
+  default_prompt: "Redesign this marketing page with a distinctive, evidence-led creative direction before implementation."

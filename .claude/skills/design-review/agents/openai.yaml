@@ -1,0 +1,4 @@
+interface:
+  display_name: "Design Review"
+  short_description: "Adversarial marketing-site design QA"
+  default_prompt: "Review this rendered marketing page for template feel, visual craft, UX, copy, SEO, and performance risks."
