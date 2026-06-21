@@ -1,0 +1,27 @@
+# Sibling services for the agent. `agent up` starts them; the box reaches them
+# by name (db, redis). Dev data is throwaway — it lives in named volumes.
+# Connection string for the box, e.g.: DATABASE_URL=postgres://postgres:postgres@db:5432/app_dev
+services:
+  db:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: app_dev
+    volumes: ["pgdata:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+  redis:
+    image: redis:8
+    volumes: ["redisdata:/data"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+volumes:
+  pgdata:
+  redisdata:
