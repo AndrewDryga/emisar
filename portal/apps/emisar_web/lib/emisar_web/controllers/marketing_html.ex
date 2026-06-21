@@ -134,7 +134,7 @@ defmodule EmisarWeb.MarketingHTML do
     ~H"""
     <div
       data-emisar-demo
-      class="mx-auto mt-16 max-w-4xl overflow-hidden rounded-xl border border-zinc-800 bg-[#0c0c0e] shadow-2xl shadow-indigo-950/40 ring-1 ring-white/5"
+      class="mx-auto mt-16 max-w-4xl overflow-hidden rounded-xl border border-zinc-800 bg-[#0c0c0e] shadow-2xl shadow-brand-950/40 ring-1 ring-white/5"
     >
       <div class="flex items-center gap-4 border-b border-zinc-800/80 bg-zinc-950/60 px-4 py-2.5">
         <div class="flex items-center gap-1.5">
@@ -195,7 +195,7 @@ defmodule EmisarWeb.MarketingHTML do
         <button
           type="button"
           data-demo-replay
-          class="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium text-indigo-300 transition hover:text-indigo-200"
+          class="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium text-brand-300 transition hover:text-brand-200"
         >
           <.icon name="hero-arrow-path" class="h-3.5 w-3.5" /> Replay
         </button>

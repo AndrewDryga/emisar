@@ -3,32 +3,29 @@
   Give your LLM safe access to production. Without the panic.
 ============================================================ --%>
 
-<div class="bg-zinc-950 text-zinc-100 antialiased selection:bg-indigo-500/30">
+<div class="bg-zinc-950 text-zinc-100 antialiased">
   <.marketing_nav current_user={@current_user} current={:home} sticky />
 
   <%!-- Hero --%>
   <section class="relative overflow-hidden border-b border-zinc-900 bg-[#07080a]">
     <div class="contract-grid absolute inset-0" aria-hidden="true"></div>
 
-    <div class="relative mx-auto w-full max-w-7xl px-6 py-14 sm:py-24 lg:px-8">
+    <div class="relative mx-auto w-full max-w-7xl px-6 py-12 sm:py-20 lg:px-8">
       <div class="max-w-5xl">
-        <p class="inline-flex items-center gap-2 border border-zinc-800 bg-zinc-950/80 px-3 py-1 font-mono text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-400">
-          <span class="h-1.5 w-1.5 bg-emerald-400"></span>
-          Public beta · outbound runners · MCP ready
-        </p>
         <.marketing_heading
           tag="h1"
           scale={:display}
-          class="mt-8 max-w-5xl !text-5xl !leading-[0.96] sm:!text-6xl md:!text-7xl"
+          class="max-w-4xl !text-5xl !leading-[0.98] sm:!text-6xl md:!text-7xl"
         >
-          Give AI tools approved infrastructure actions, not SSH.
+          Secure production access for your AI agents.
         </.marketing_heading>
-        <p class="mt-8 max-w-3xl text-lg leading-relaxed text-zinc-300">
-          Connect Claude, ChatGPT, Cursor, or any MCP client to a finite action catalog.
-          emisar turns each model request into a typed contract, a policy decision, an optional
-          human approval, an on-host runner execution, and an audit receipt you can verify later.
+        <p class="mt-6 max-w-2xl text-lg leading-relaxed text-zinc-300">
+          emisar is the MCP server that connects Claude, Cursor, ChatGPT — any agent — to your
+          live infrastructure. Your AI reads real production state to ground its work, debugs what
+          it shipped, and drives incidents. Reads run free on policy; only a risky change stops for
+          one human approval. No SSH, no standing access, every call on the record.
         </p>
-        <div class="mt-10 flex flex-wrap items-center gap-4">
+        <div class="mt-8 flex flex-wrap items-center gap-4">
           <.marketing_button href={~p"/sign_up"} icon="hero-arrow-right">
             Start free
           </.marketing_button>
@@ -49,74 +46,106 @@
         </p>
       </div>
 
-      <div class="mt-14 overflow-hidden rounded-lg border border-zinc-800 bg-zinc-950/85 shadow-2xl shadow-black/40">
-        <div class="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-800 bg-zinc-950 px-4 py-3 font-mono text-[11px] text-zinc-500">
-          <span>run envelope · cassandra.nodetool_repair</span>
-          <span class="text-emerald-300">policy outcome: require_approval → approved</span>
+      <%!-- The agent at work in production: investigate freely, act on approval.
+           Every call passes the gate — reads clear on policy, the one risky
+           change waits for a human. Simpler than a contract dump on purpose;
+           the full incident is the demo further down. --%>
+      <div class="mt-10 overflow-hidden rounded-xl border border-zinc-800 bg-zinc-950/85 shadow-2xl shadow-black/40">
+        <div class="flex items-center justify-between gap-3 border-b border-zinc-800 bg-zinc-950 px-4 py-2.5 font-mono text-[11px] text-zinc-500">
+          <span class="flex items-center gap-2">
+            <.icon name="hero-sparkles" class="h-3.5 w-3.5 text-brand-400" /> claude · emisar MCP
+          </span>
+          <span class="hidden sm:inline">scoped to prod-nomad-cluster</span>
         </div>
 
-        <div class="grid grid-cols-1 divide-y divide-zinc-900 lg:grid-cols-[1fr_0.95fr_1fr] lg:divide-x lg:divide-y-0">
-          <div class="min-w-0 p-5 sm:p-6">
-            <div class="mb-4 flex items-center justify-between gap-4">
-              <p class="font-mono text-xs font-semibold uppercase tracking-[0.18em] text-sky-300">
-                LLM request
-              </p>
-              <span class="text-[11px] text-zinc-500">mcp/tools.call</span>
-            </div>
-            <pre class="overflow-x-auto whitespace-pre-wrap font-mono text-[12px] leading-6 text-zinc-300"><span class="text-zinc-500">actor</span>: claude-prod
-<span class="text-zinc-500">action</span>: cassandra.nodetool_repair
-<span class="text-zinc-500">runner</span>: cass-03
-<span class="text-zinc-500">args</span>: &#123;keyspace: "orders"&#125;
-<span class="text-zinc-500">reason</span>: "repair lagging replicas after read alert"</pre>
-          </div>
-
-          <div class="relative min-w-0 bg-zinc-950/70 p-5 sm:p-6">
-            <div class="contract-scanline absolute inset-0 opacity-30" aria-hidden="true"></div>
-            <div class="relative">
-              <div class="mb-4 flex items-center justify-between gap-4">
-                <p class="font-mono text-xs font-semibold uppercase tracking-[0.18em] text-amber-300">
-                  Contract + gate
-                </p>
-                <span class="text-[11px] text-zinc-500">runner re-validates</span>
+        <div class="p-3 sm:p-5">
+          <.scan_line animate state={:pass} class="mb-4" />
+          <div class="divide-y divide-zinc-900/80 font-mono text-[11.5px] leading-6 tabular-nums sm:text-[12.5px]">
+            <%= for {call, kind} <- [
+                {"nomad.alloc_logs checkout", :read},
+                {"prom.query rate(http_5xx)", :read},
+                {"nomad.job_history checkout", :read},
+                {"nomad.job_revert checkout", :write}
+              ] do %>
+              <div class="grid grid-cols-[1fr_auto] items-center gap-2 py-2.5 first:pt-0 last:pb-0 sm:gap-3">
+                <span class="flex min-w-0 items-center gap-2 text-zinc-300">
+                  <span class="flex-none text-brand-400">⏺</span>
+                  <span class="min-w-0 truncate">{call}</span>
+                </span>
+                <%= if kind == :write do %>
+                  <span class="flex flex-none items-center gap-1.5">
+                    <.state_chip state={:pending} label="approval" />
+                    <%!-- The "→ approved" beat would clip at 390px; reveal it
+                           sm+ and let mobile show just the human-in-loop signal. --%>
+                    <span class="hidden items-center gap-1.5 sm:flex">
+                      <.icon name="hero-arrow-right" class="h-3 w-3 text-zinc-600" />
+                      <.state_chip state={:pass} label="approved" />
+                    </span>
+                  </span>
+                <% else %>
+                  <.state_chip state={:pass} label="allowed" class="flex-none" />
+                <% end %>
               </div>
-              <div class="space-y-3 font-mono text-[12px] leading-6">
-                <div class="border border-zinc-800 bg-black/30 p-3">
-                  <div class="text-zinc-500">pack hash</div>
-                  <div class="mt-1 break-all text-zinc-300">sha256:8f34…b9e2 · trusted</div>
-                </div>
-                <div class="border border-zinc-800 bg-black/30 p-3">
-                  <div class="text-zinc-500">risk rule</div>
-                  <div class="mt-1 text-amber-300">risk: high → require approval</div>
-                </div>
-                <div class="border border-emerald-500/40 bg-emerald-500/10 p-3 text-emerald-200">
-                  ✓ approved by andrew · one use · expires after this run
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div class="min-w-0 p-5 sm:p-6">
-            <div class="mb-4 flex items-center justify-between gap-4">
-              <p class="font-mono text-xs font-semibold uppercase tracking-[0.18em] text-emerald-300">
-                Runner + audit
-              </p>
-              <span class="text-[11px] text-zinc-500">host journal</span>
-            </div>
-            <pre class="overflow-x-auto whitespace-pre-wrap font-mono text-[12px] leading-6 text-zinc-300"><span class="text-zinc-500">exec</span>: /usr/bin/nodetool repair orders
-<span class="text-zinc-500">shell</span>: none · argv array only
-<span class="text-zinc-500">exit</span>: 0
-<span class="text-zinc-500">redaction</span>: 2 stdout rules applied
-<span class="text-zinc-500">journal</span>: prev=50c1… event=9a72…
-<span class="text-emerald-300">receipt</span>: searchable audit + hash-chained JSONL</pre>
+            <% end %>
           </div>
         </div>
 
-        <div class="grid grid-cols-2 border-t border-zinc-800 bg-zinc-950/80 font-mono text-[11px] text-zinc-500 sm:grid-cols-4">
-          <div class="border-r border-zinc-800 px-4 py-3">no raw shell</div>
-          <div class="px-4 py-3 sm:border-r sm:border-zinc-800">pack drift blocks dispatch</div>
-          <div class="border-r border-zinc-800 px-4 py-3">approval before side effect</div>
-          <div class="px-4 py-3">audit survives the incident</div>
+        <%!-- The durable fix — emisar grounds the investigation; the agent then
+             ships the root-cause fix as reviewable code, not a throwaway restart. --%>
+        <div class="flex items-start gap-2 border-t border-zinc-900/80 px-4 py-3 font-mono text-[11px] leading-5 text-zinc-400">
+          <.icon
+            name="hero-code-bracket-square"
+            class="mt-0.5 h-3.5 w-3.5 flex-none text-zinc-500"
+          />
+          <span>
+            then opens a PR with the <span class="text-brand-300">durable fix</span> — the
+            corrected Nomad job spec, reviewed and merged.
+          </span>
         </div>
+
+        <div class="border-t border-zinc-800 bg-zinc-950/80 px-4 py-3 text-center font-mono text-[11px] text-zinc-500">
+          Reads run free on policy · only risky changes wait for one human · every call audited
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <%!-- The magic — why production access makes the agent dramatically better.
+       Reads dominate (context, self-debug, incidents); the gated write is the
+       exception. The value the user feels, stated before the mechanics. --%>
+  <section class="border-y border-zinc-900 bg-zinc-950/40 py-24 sm:py-32">
+    <div class="mx-auto max-w-7xl px-6 lg:px-8">
+      <div class="mx-auto max-w-3xl text-center">
+        <h2 class="text-base font-semibold text-brand-400">Why it's different</h2>
+        <p class="mt-2 text-4xl font-bold tracking-tight text-white sm:text-5xl">
+          Your AI gets dramatically better with eyes on production.
+        </p>
+        <p class="mt-6 text-lg leading-relaxed text-zinc-400">
+          The same model, grounded in the real system instead of guessing. It reads live state
+          before it acts, catches its own mistakes, and works incidents — and only stops for you
+          when a change is actually risky.
+        </p>
+      </div>
+
+      <div class="mx-auto mt-16 grid max-w-5xl grid-cols-1 gap-6 sm:grid-cols-2 lg:max-w-none lg:grid-cols-4">
+        <%= for {icon, title, desc} <- [
+          {"hero-magnifying-glass", "Grounded in real state",
+           "Before it writes a line, the agent reads live logs, metrics, configs, and process state. Its plan is based on what's actually running — not a stale guess from training data."},
+          {"hero-bug-ant", "Debugs what it shipped",
+           "Deployed something that misbehaves? The agent inspects the running result, finds its own mistake, and proposes the fix — no human round-trip just to gather context."},
+          {"hero-bell-alert", "Works the incident",
+           "When the page fires, it triages across the fleet, correlates logs and metrics, and narrows the cause — then hands you a remediation it can run the moment you approve."},
+          {"hero-bolt", "Hot-patches, gated",
+           "When the fix is a mutation, that's the one moment you step in: a single scoped, audited approval. Everything safe runs without you in the loop."}
+        ] do %>
+          <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-6">
+            <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-brand-500/10 text-brand-400">
+              <.icon name={icon} class="h-5 w-5" />
+            </div>
+            <h3 class="mt-6 text-lg font-semibold text-white">{title}</h3>
+            <p class="mt-3 text-sm leading-relaxed text-zinc-400">{desc}</p>
+          </div>
+        <% end %>
       </div>
     </div>
   </section>
@@ -125,7 +154,7 @@
   <section class="py-24 sm:py-32">
     <div class="mx-auto max-w-7xl px-6 lg:px-8">
       <div class="mx-auto max-w-3xl text-center">
-        <h2 class="text-base font-semibold text-indigo-400">The status quo</h2>
+        <h2 class="text-base font-semibold text-brand-400">The status quo</h2>
         <p class="mt-2 text-4xl font-bold tracking-tight text-white sm:text-5xl">
           Today, your AI agent is either:
         </p>
@@ -173,12 +202,61 @@
     </div>
   </section>
 
-  <%!-- Watch it work — the live demo, placed right after the pain so it
-       reads as the payoff: here's the problem, now watch emisar handle it. --%>
+  <%!-- Mechanism pipeline --%>
+  <section id="mechanism" class="border-y border-zinc-900 bg-zinc-950/40 py-24 sm:py-32">
+    <div class="mx-auto max-w-7xl px-6 lg:px-8">
+      <div class="grid gap-10 lg:grid-cols-[0.9fr_1.1fr] lg:items-end">
+        <div>
+          <h2 class="font-mono text-xs font-semibold uppercase tracking-[0.2em] text-brand-400">
+            The mechanism
+          </h2>
+          <p class="mt-4 max-w-3xl text-4xl font-bold tracking-tight text-white sm:text-5xl">
+            From model intent to verified receipt.
+          </p>
+        </div>
+        <p class="max-w-2xl text-lg leading-relaxed text-zinc-400 lg:justify-self-end">
+          No long-lived shells or hidden tools. Every request is narrowed by the action contract,
+          judged by policy, optionally approved by a person, re-validated on the runner, and
+          written to both the cloud audit and host journal.
+        </p>
+      </div>
+
+      <ol
+        class="relative mt-16 grid grid-cols-1 gap-4 lg:grid-cols-5"
+        aria-label="emisar action pipeline"
+      >
+        <%= for {step, label, title, desc, snippet, accent} <- [
+          {"01", "intent", "LLM asks for one declared action", "The model never gets a shell. It calls one MCP tool with typed arguments, target scope, and a required reason.", "nomad.job_revert\nreason: \"bad deploy\"", "text-sky-300"},
+          {"02", "contract", "Pack hash and args are checked", "The control plane checks trusted pack contents. The runner later recomputes the hash and validates every argument again.", "pack nomad@8f34… trusted\nargs re-validated", "text-brand-300"},
+          {"03", "gate", "Policy returns allow, approval, or deny", "Risk-tier defaults and action overrides decide whether the request can run, must wait, or is refused outright.", "risk: high\npolicy: require approval", "text-amber-300"},
+          {"04", "execute", "Runner executes on the host", "The outbound-only runner owns execution. It clamps options, drops privileges where configured, streams output, and redacts before egress.", "nomad job revert …\nexit 0 · 2.1s", "text-emerald-300"},
+          {"05", "receipt", "Audit makes the action recoverable", "The cloud audit is searchable and exportable. The host journal is hash-chained so edited or missing entries are visible.", "action_run.success\nprev 50c1… → 9a72…", "text-zinc-200"}
+        ] do %>
+          <li class="relative flex min-w-0 flex-col rounded-lg border border-zinc-800 bg-zinc-950/70 p-5">
+            <div class="flex items-center justify-between gap-3">
+              <span class={["font-mono text-xs font-semibold", accent]}>{step}</span>
+              <span class="font-mono text-[10px] uppercase tracking-[0.18em] text-zinc-600">
+                {label}
+              </span>
+            </div>
+            <h3 class="mt-5 text-base font-semibold text-zinc-50">{title}</h3>
+            <p class="mt-3 text-sm leading-6 text-zinc-400">{desc}</p>
+            <%!-- spacer pushes the snippet to the card's bottom so the code
+                 boxes align across cards regardless of description length --%>
+            <div class="grow"></div>
+            <pre class="mt-5 overflow-x-auto whitespace-pre-wrap border border-zinc-900 bg-black/35 p-3 font-mono text-[11px] leading-5 text-zinc-400">{snippet}</pre>
+          </li>
+        <% end %>
+      </ol>
+    </div>
+  </section>
+
+  <%!-- Watch it work — the live demo, placed after the mechanism so the
+       abstract pipeline pays off as a real, end-to-end incident. --%>
   <section class="py-24 sm:py-32">
     <div class="mx-auto max-w-7xl px-6 lg:px-8">
       <div class="mx-auto max-w-3xl text-center">
-        <h2 class="text-base font-semibold text-indigo-400">Watch it work</h2>
+        <h2 class="text-base font-semibold text-brand-400">Watch it work</h2>
         <p class="mt-2 text-4xl font-bold tracking-tight text-white sm:text-5xl">
           A real incident, start to finish.
         </p>
@@ -206,7 +284,7 @@
         ] do %>
           <div>
             <dt class="flex items-center gap-2 text-sm font-semibold text-zinc-100">
-              <.icon name={icon} class="h-4 w-4 flex-none text-indigo-400" />{term}
+              <.icon name={icon} class="h-4 w-4 flex-none text-brand-400" />{term}
             </dt>
             <dd class="mt-1.5 text-sm leading-relaxed text-zinc-400">{desc}</dd>
           </div>
@@ -216,7 +294,7 @@
       <p class="mt-10 text-center text-sm">
         <.link
           navigate={~p"/use-cases/csi-data-loss"}
-          class="inline-flex items-center gap-1 font-medium text-indigo-400 hover:text-indigo-300"
+          class="inline-flex items-center gap-1 font-medium text-brand-400 hover:text-brand-300"
         >
           Read the full post-mortem — the multipath race, the dmesg window, and the Terraform fix
           <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
@@ -225,57 +303,11 @@
     </div>
   </section>
 
-  <%!-- Mechanism pipeline --%>
-  <section id="mechanism" class="border-y border-zinc-900 bg-zinc-950/40 py-24 sm:py-32">
-    <div class="mx-auto max-w-7xl px-6 lg:px-8">
-      <div class="grid gap-10 lg:grid-cols-[0.9fr_1.1fr] lg:items-end">
-        <div>
-          <h2 class="font-mono text-xs font-semibold uppercase tracking-[0.2em] text-indigo-400">
-            The mechanism
-          </h2>
-          <p class="mt-4 max-w-3xl text-4xl font-bold tracking-tight text-white sm:text-5xl">
-            From model intent to verified receipt.
-          </p>
-        </div>
-        <p class="max-w-2xl text-lg leading-relaxed text-zinc-400 lg:justify-self-end">
-          No long-lived shells or hidden tools. Every request is narrowed by the action contract,
-          judged by policy, optionally approved by a person, re-validated on the runner, and
-          written to both the cloud audit and host journal.
-        </p>
-      </div>
-
-      <ol
-        class="relative mt-16 grid grid-cols-1 gap-4 lg:grid-cols-5"
-        aria-label="emisar action pipeline"
-      >
-        <%= for {step, label, title, desc, snippet, accent} <- [
-          {"01", "intent", "LLM asks for one declared action", "The model never gets a shell. It calls one MCP tool with typed arguments, target scope, and a required reason.", "tools/call cassandra.nodetool_repair\nrunner: cass-03\nreason: repair lagging replicas", "text-sky-300"},
-          {"02", "contract", "Pack hash and args are checked", "The control plane checks trusted pack contents. The runner later recomputes the hash and validates every argument again.", "pack: cassandra@sha256:8f34…\narg keyspace matches /^[a-z][a-z0-9_]+$/\nargv array, never a shell string", "text-indigo-300"},
-          {"03", "gate", "Policy returns allow, approval, or deny", "Risk-tier defaults and action overrides decide whether the request can run, must wait, or is refused outright.", "risk: high\npolicy: require_approval\napprover sees actor, args, host, reason", "text-amber-300"},
-          {"04", "execute", "Runner executes on the host", "The outbound-only runner owns execution. It clamps options, drops privileges where configured, streams output, and redacts before egress.", "/usr/bin/nodetool repair orders\nstdout redacted on host\nexit=0 duration=18m42s", "text-emerald-300"},
-          {"05", "receipt", "Audit makes the action recoverable", "The cloud audit is searchable and exportable. The host journal is hash-chained so edited or missing entries are visible.", "audit event: action_run.success\nprev_hash: 50c1…\nevent_hash: 9a72…", "text-zinc-200"}
-        ] do %>
-          <li class="relative min-w-0 rounded-lg border border-zinc-800 bg-zinc-950/70 p-5">
-            <div class="flex items-center justify-between gap-3">
-              <span class={["font-mono text-xs font-semibold", accent]}>{step}</span>
-              <span class="font-mono text-[10px] uppercase tracking-[0.18em] text-zinc-600">
-                {label}
-              </span>
-            </div>
-            <h3 class="mt-5 text-base font-semibold text-zinc-50">{title}</h3>
-            <p class="mt-3 text-sm leading-6 text-zinc-400">{desc}</p>
-            <pre class="mt-5 overflow-x-auto whitespace-pre-wrap border border-zinc-900 bg-black/35 p-3 font-mono text-[11px] leading-5 text-zinc-400">{snippet}</pre>
-          </li>
-        <% end %>
-      </ol>
-    </div>
-  </section>
-
   <%!-- Three-pillar deep-dive --%>
   <section class="py-24 sm:py-32">
     <div class="mx-auto max-w-7xl px-6 lg:px-8">
       <div class="mx-auto max-w-3xl text-center">
-        <h2 class="text-base font-semibold text-indigo-400">Three pillars</h2>
+        <h2 class="text-base font-semibold text-brand-400">Three pillars</h2>
         <p class="mt-2 text-4xl font-bold tracking-tight text-white sm:text-5xl">
           A catalog, a gate, and a ledger.
         </p>
@@ -288,39 +320,40 @@
       <div class="mx-auto mt-16 grid max-w-7xl grid-cols-1 gap-8 lg:grid-cols-3">
         <%!-- Pillar 1: Catalog --%>
         <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8">
-          <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-indigo-500/10 text-indigo-400">
+          <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-brand-500/10 text-brand-400">
             <.icon name="hero-cube-transparent" class="h-5 w-5" />
           </div>
           <h3 class="mt-6 text-xl font-semibold text-white">Versioned action catalog</h3>
           <p class="mt-3 text-sm text-zinc-400 leading-relaxed">
-            Packs live in git. Each pack is content-addressed. Anything outside the manifest is
-            refused, and changed contents block dispatch until an admin trusts the new hash.
+            Packs live in git, each one content-addressed. The LLM sees only a schema derived from
+            the YAML — it can't request anything you didn't declare — and changed contents block
+            dispatch until an admin trusts the new hash.
           </p>
           <div class="mt-6 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
             <div class="border-b border-zinc-900 px-3 py-2 font-mono text-[11px] text-zinc-500">
-              packs/linux-core/actions/systemctl_status.yaml
+              linux-core/actions/systemctl_status.yaml
             </div>
-            <pre class="p-3 font-mono text-[11px] leading-5 text-zinc-300"><span class="text-indigo-300">schema_version</span>: <span class="text-amber-300">1</span>
-<span class="text-indigo-300">id</span>: linux.systemctl_status
-<span class="text-indigo-300">title</span>: <span class="text-emerald-300">"Systemd unit status"</span>
-<span class="text-indigo-300">kind</span>: exec
-<span class="text-indigo-300">risk</span>: <span class="text-amber-300">low</span>
-<span class="text-indigo-300">args</span>:
-  - <span class="text-indigo-300">name</span>: unit
-    <span class="text-indigo-300">type</span>: string
-    <span class="text-indigo-300">required</span>: <span class="text-amber-300">true</span>
-    <span class="text-indigo-300">validation</span>:
-      <span class="text-indigo-300">pattern</span>: <span class="text-emerald-300">"^[a-zA-Z0-9@._-]&#123;1,128&#125;$"</span>  <span class="text-zinc-500"># any systemd unit name</span>
-<span class="text-indigo-300">execution</span>:
-  <span class="text-indigo-300">command</span>:
-    <span class="text-indigo-300">binary</span>: /usr/bin/systemctl
-    <span class="text-indigo-300">argv</span>: [<span class="text-emerald-300">"status"</span>, <span class="text-emerald-300">"&#123;&#123; args.unit &#125;&#125;"</span>, <span class="text-emerald-300">"--no-pager"</span>]</pre>
+            <pre class="overflow-x-auto p-3 font-mono text-[11px] leading-5 text-zinc-300"><span class="text-sky-300">schema_version</span>: <span class="text-amber-300">1</span>
+<span class="text-sky-300">id</span>: linux.systemctl_status
+<span class="text-sky-300">title</span>: <span class="text-emerald-300">"Systemd unit status"</span>
+<span class="text-sky-300">kind</span>: exec
+<span class="text-sky-300">risk</span>: <span class="text-amber-300">low</span>
+<span class="text-sky-300">args</span>:
+  - <span class="text-sky-300">name</span>: unit
+    <span class="text-sky-300">type</span>: string
+    <span class="text-sky-300">required</span>: <span class="text-amber-300">true</span>
+    <span class="text-sky-300">validation</span>:
+      <span class="text-sky-300">pattern</span>: <span class="text-emerald-300">"^[a-zA-Z0-9@._-]&#123;1,128&#125;$"</span>
+<span class="text-sky-300">execution</span>:
+  <span class="text-sky-300">command</span>:
+    <span class="text-sky-300">binary</span>: /usr/bin/systemctl
+    <span class="text-sky-300">argv</span>: [<span class="text-emerald-300">"status"</span>, <span class="text-emerald-300">"&#123;&#123; args.unit &#125;&#125;"</span>]</pre>
           </div>
         </div>
 
         <%!-- Pillar 2: Policy --%>
-        <div class="rounded-2xl border border-indigo-500/30 bg-zinc-950/60 p-8 ring-1 ring-indigo-500/10">
-          <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-indigo-500/10 text-indigo-400">
+        <div class="rounded-2xl border border-brand-500/30 bg-zinc-950/60 p-8 ring-1 ring-brand-500/10">
+          <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-brand-500/10 text-brand-400">
             <.icon name="hero-shield-check" class="h-5 w-5" />
           </div>
           <h3 class="mt-6 text-xl font-semibold text-white">Policy &amp; approval</h3>
@@ -345,135 +378,86 @@
               <div class="flex items-center justify-between py-2">
                 <span>critical</span><span class="text-rose-300">deny</span>
               </div>
-              <div class="pt-3 text-zinc-500">Override: production.* → require approval</div>
+              <div class="flex items-center justify-between pt-3 text-[10px] uppercase tracking-wider text-zinc-600">
+                <span>Overrides</span>
+                <span class="normal-case tracking-normal">first match wins</span>
+              </div>
+              <div class="flex items-center justify-between py-2">
+                <span class="truncate text-zinc-400">*.delete_*</span>
+                <span class="ml-3 flex-none text-rose-300">deny</span>
+              </div>
+              <div class="flex items-center justify-between py-2">
+                <span class="truncate text-zinc-400">nomad.job_*</span>
+                <span class="ml-3 flex-none text-amber-300">require approval</span>
+              </div>
+              <div class="pt-3 text-[10px] leading-4 text-zinc-500">
+                Or scope a stricter ruleset to a single runner or a group.
+              </div>
             </div>
           </div>
         </div>
 
         <%!-- Pillar 3: Audit --%>
         <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8">
-          <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-indigo-500/10 text-indigo-400">
+          <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-brand-500/10 text-brand-400">
             <.icon name="hero-document-check" class="h-5 w-5" />
           </div>
           <h3 class="mt-6 text-xl font-semibold text-white">Audit + runner journal</h3>
           <p class="mt-3 text-sm text-zinc-400 leading-relaxed">
             Every input, output, exit code, and redaction. A SHA-256-chained JSONL journal on the
-            host — any edited line or break in the chain is caught by <code class="text-zinc-300">emisar audit verify</code>— mirrored to the
+            host — any edited line or break in the chain is caught by
+            <code class="text-zinc-300">emisar audit verify</code>
+            — mirrored to the
             searchable cloud audit, the system of record, and streamable to your SIEM as NDJSON.
           </p>
           <div class="mt-6 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
             <div class="border-b border-zinc-900 px-3 py-2 font-mono text-[11px] text-zinc-500">
               emisar.dev / audit
             </div>
-            <table class="w-full font-mono text-[11px] text-zinc-300">
-              <thead class="bg-zinc-950/80 text-zinc-500">
-                <tr>
-                  <th class="px-3 py-2 text-left font-normal">When</th>
-                  <th class="px-3 py-2 text-left font-normal">Event</th>
-                  <th class="px-3 py-2 text-left font-normal">Actor</th>
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-zinc-900">
-                <tr :for={
+            <div class="divide-y divide-zinc-900 font-mono text-[11px] tabular-nums">
+              <div
+                :for={
                   {time, title, type, chip, title_class, actor_kind, actor_label} <- [
-                    {"14:02", "Run succeeded", "action_run.success", "docker.ps",
+                    {"14:02", "Run succeeded", "action_run.success", "nomad.alloc_logs",
                      "text-emerald-300", "api_key", "claude-prod"},
                     {"14:01", "Awaiting approval", "action_run.pending_approval",
-                     "cassandra.nodetool_repair", "text-amber-300", "api_key", "claude-prod"},
+                     "nomad.job_revert", "text-amber-300", "api_key", "claude-prod"},
                     {"13:58", "Policy evaluated", "policy.evaluated", "require_approval",
                      "text-zinc-300", "system", nil},
                     {"13:52", "Denied by policy", "action_run.denied", "linux.reboot_host",
                      "text-rose-300", "api_key", "claude-prod"}
                   ]
-                }>
-                  <td class="px-3 py-2 align-top text-zinc-500">{time}</td>
-                  <td class="px-3 py-2">
-                    <div class={title_class}>{title}</div>
-                    <div class="text-[10px] text-zinc-500">{type}</div>
-                    <span class="mt-1 inline-block rounded bg-zinc-800/60 px-1.5 py-0.5 text-[10px] text-zinc-400">
-                      {chip}
+                }
+                class="flex gap-3 px-3 py-2.5"
+              >
+                <span class="flex-none text-zinc-500">{time}</span>
+                <div class="min-w-0 flex-1">
+                  <div class={[title_class, "font-medium"]}>{title}</div>
+                  <div class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] text-zinc-500">
+                    <span>{type}</span>
+                    <span class="rounded bg-zinc-800/60 px-1.5 py-0.5 text-zinc-400">{chip}</span>
+                  </div>
+                  <%!-- Actor on its own line, consistent across rows. System
+                       (engine) actor is highlighted like the api_key actors. --%>
+                  <div class="mt-1 text-[10px] text-zinc-500">
+                    <span :if={actor_label}>
+                      {actor_kind}: <span class="text-brand-300">{actor_label}</span>
                     </span>
-                  </td>
-                  <td class="px-3 py-2 align-top leading-5">
-                    <span :if={actor_label} class="text-zinc-500">{actor_kind}:</span>
-                    <span :if={actor_label} class="text-indigo-300">{actor_label}</span>
-                    <span :if={!actor_label} class="text-zinc-400">{actor_kind}</span>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
+                    <span :if={!actor_label} class="text-zinc-300">{actor_kind}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
-    </div>
-  </section>
 
-  <%!-- Action catalog example --%>
-  <section class="border-y border-zinc-900 bg-zinc-950/40 py-24 sm:py-32">
-    <div class="mx-auto max-w-7xl px-6 lg:px-8">
-      <div class="mx-auto max-w-3xl text-center">
-        <h2 class="text-base font-semibold text-indigo-400">The action contract</h2>
-        <p class="mt-2 text-4xl font-bold tracking-tight text-white sm:text-5xl">
-          One YAML file. One source of truth.
-        </p>
-        <p class="mt-6 text-lg text-zinc-400 leading-relaxed">
-          This abbreviated action YAML is the operator-authored contract behind <code class="font-mono text-indigo-300">cassandra.nodetool_repair</code>.
-          The LLM receives a tool schema derived from it; the runner refuses anything
-          outside it.
-        </p>
-      </div>
-
-      <div class="mx-auto mt-12 max-w-4xl rounded-xl border border-zinc-900 bg-black/60 shadow-2xl shadow-indigo-950/20">
-        <div class="flex min-w-0 items-center gap-2 border-b border-zinc-900 px-4 py-3">
-          <span class="h-3 w-3 rounded-full bg-red-500/70"></span>
-          <span class="h-3 w-3 rounded-full bg-yellow-500/70"></span>
-          <span class="h-3 w-3 rounded-full bg-green-500/70"></span>
-          <span class="ml-3 min-w-0 truncate font-mono text-xs text-zinc-500">
-            packs/cassandra/actions/nodetool_repair.yaml
-          </span>
-        </div>
-        <pre class="overflow-x-auto p-6 font-mono text-xs leading-6 text-zinc-300"><span class="text-zinc-500">## Abbreviated: repair a Cassandra keyspace.</span>
-<span class="text-indigo-300">schema_version</span>: <span class="text-amber-300">1</span>
-<span class="text-indigo-300">id</span>: cassandra.nodetool_repair
-<span class="text-indigo-300">title</span>: <span class="text-emerald-300">"Cassandra repair"</span>
-<span class="text-indigo-300">kind</span>: exec
-<span class="text-indigo-300">risk</span>: <span class="text-amber-300">high</span>            <span class="text-zinc-500"># forces policy to require_approval by default</span>
-
-<span class="text-indigo-300">args</span>:
-  - <span class="text-indigo-300">name</span>: keyspace
-    <span class="text-indigo-300">type</span>: string
-    <span class="text-indigo-300">required</span>: <span class="text-amber-300">true</span>
-    <span class="text-indigo-300">validation</span>:
-      <span class="text-indigo-300">pattern</span>: <span class="text-emerald-300">"^[a-zA-Z][a-zA-Z0-9_]&#123;0,47&#125;$"</span>
-  - <span class="text-indigo-300">name</span>: parallelism
-    <span class="text-indigo-300">type</span>: string
-    <span class="text-indigo-300">default</span>: <span class="text-emerald-300">sequential</span>
-    <span class="text-indigo-300">validation</span>:
-      <span class="text-indigo-300">enum</span>: [<span class="text-emerald-300">sequential</span>, <span class="text-emerald-300">parallel</span>, <span class="text-emerald-300">dc_parallel</span>]
-
-<span class="text-indigo-300">execution</span>:
-  <span class="text-indigo-300">command</span>:
-    <span class="text-indigo-300">binary</span>: /usr/bin/nodetool
-    <span class="text-indigo-300">argv</span>:
-      - <span class="text-emerald-300">"repair"</span>
-      - <span class="text-emerald-300">"&#123;&#123; args.keyspace &#125;&#125;"</span>
-  <span class="text-indigo-300">timeout</span>: 6h
-  <span class="text-indigo-300">cancel_grace</span>: 5m
-
-<span class="text-indigo-300">output</span>:
-  <span class="text-indigo-300">parser</span>: text
-  <span class="text-indigo-300">max_stdout_bytes</span>: <span class="text-amber-300">4194304</span>
-  <span class="text-indigo-300">max_stderr_bytes</span>: <span class="text-amber-300">262144</span></pre>
-      </div>
-      <p class="mx-auto mt-6 max-w-2xl text-center text-sm text-zinc-400">
-        This is the contract. The LLM sees only what you declare; your SRE sees every invocation.
-      </p>
-      <div class="mt-8 flex justify-center">
+      <div class="mt-12 flex justify-center">
         <.link
           navigate={~p"/packs"}
-          class="inline-flex items-center gap-1.5 text-sm font-medium text-indigo-400 hover:text-indigo-300"
+          class="inline-flex items-center gap-1.5 text-sm font-medium text-brand-400 hover:text-brand-300"
         >
-          Browse the pack registry — Postgres, Cassandra, Docker, Kubernetes, the AWS suite, and dozens more
+          Browse the pack registry — Postgres, Docker, Nomad, Kubernetes, the AWS suite, and dozens more
           <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
         </.link>
       </div>
@@ -484,7 +468,7 @@
   <section class="py-24 sm:py-32">
     <div class="mx-auto max-w-7xl px-6 lg:px-8">
       <div class="mx-auto max-w-3xl text-center">
-        <h2 class="text-base font-semibold text-indigo-400">Why not just&hellip;</h2>
+        <h2 class="text-base font-semibold text-brand-400">Why not just&hellip;</h2>
         <p class="mt-2 text-4xl font-bold tracking-tight text-white sm:text-5xl">
           The alternatives, honestly.
         </p>
@@ -496,7 +480,7 @@
             <thead>
               <tr class="border-b border-zinc-900 text-xs uppercase tracking-wider text-zinc-500">
                 <th class="px-6 py-4 font-medium"></th>
-                <th class="px-6 py-4 font-semibold text-indigo-300">emisar</th>
+                <th class="px-6 py-4 font-semibold text-brand-300">emisar</th>
                 <th class="px-6 py-4 font-medium">Raw SSH key</th>
                 <th class="px-6 py-4 font-medium">Custom MCP server</th>
               </tr>
@@ -515,32 +499,25 @@
                 <tr class="hover:bg-zinc-900/30">
                   <td class="px-6 py-4 font-medium text-zinc-100">{row}</td>
                   <td class="px-6 py-4">
-                    <%= cond do %>
-                      <% em == "yes" -> %>
-                        <span class="inline-flex items-center gap-1.5 text-emerald-300">
-                          <.icon name="hero-check-circle" class="h-4 w-4" />{if row ==
-                                                                                  "Setup time",
-                                                                                do: em,
-                                                                                else: "Yes"}
-                        </span>
-                      <% true -> %>
-                        {em}
+                    <%= if em == "yes" do %>
+                      <.state_chip state={:pass} label="Yes" />
+                    <% else %>
+                      <span class="font-medium text-brand-300">{em}</span>
                     <% end %>
                   </td>
                   <%= for v <- [ssh, mcp] do %>
                     <td class="px-6 py-4">
                       <%= cond do %>
                         <% v == "yes" -> %>
-                          <span class="inline-flex items-center gap-1.5 text-emerald-400/80">
-                            <.icon name="hero-check" class="h-4 w-4" />Yes
-                          </span>
+                          <.state_chip state={:pass} label="Yes" />
+                        <% v == "maybe" -> %>
+                          <.state_chip state={:pending} label="Partial" />
                         <% v == "no" -> %>
+                          <%!-- Absence, not a denial: a competitor lacking a
+                               feature stays muted so emisar's column wins by
+                               contrast — a table full of rose reads as fear. --%>
                           <span class="inline-flex items-center gap-1.5 text-zinc-500">
                             <.icon name="hero-x-mark" class="h-4 w-4" />No
-                          </span>
-                        <% v == "maybe" -> %>
-                          <span class="inline-flex items-center gap-1.5 text-amber-400/70">
-                            <.icon name="hero-minus" class="h-4 w-4" />Partial
                           </span>
                         <% true -> %>
                           <span class="text-zinc-400">{v}</span>
@@ -557,14 +534,14 @@
       <div class="mt-8 flex flex-wrap justify-center gap-x-6 gap-y-3 text-center">
         <.link
           navigate={~p"/compare/raw-ssh-for-ai"}
-          class="inline-flex items-center gap-1 text-sm font-medium text-indigo-400 hover:text-indigo-300"
+          class="inline-flex items-center gap-1 text-sm font-medium text-brand-400 hover:text-brand-300"
         >
           Read the full SSH-for-AI comparison
           <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
         </.link>
         <.link
           navigate={~p"/compare/custom-mcp-server"}
-          class="inline-flex items-center gap-1 text-sm font-medium text-indigo-400 hover:text-indigo-300"
+          class="inline-flex items-center gap-1 text-sm font-medium text-brand-400 hover:text-brand-300"
         >
           Compare with a custom MCP server <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
         </.link>
@@ -577,7 +554,7 @@
   <section class="border-y border-zinc-900 bg-zinc-950/40 py-24 sm:py-32">
     <div class="mx-auto max-w-5xl px-6 lg:px-8">
       <div class="mx-auto max-w-3xl text-center">
-        <h2 class="text-base font-semibold text-indigo-400">Zero Trust for AI Agents</h2>
+        <h2 class="text-base font-semibold text-brand-400">Zero Trust for AI Agents</h2>
         <p class="mt-2 text-4xl font-bold tracking-tight text-white sm:text-5xl">
           The framework a frontier lab published — enforced by emisar.
         </p>
@@ -587,7 +564,7 @@
             href="https://cdn.prod.website-files.com/6889473510b50328dbb70ae6/6a1611a04085d7cd3dadc924_Claude-eBook-Zero-Trust-for-AI-Agents-05182026.pdf"
             target="_blank"
             rel="noopener noreferrer"
-            class="text-indigo-300 underline decoration-zinc-700 underline-offset-4 hover:text-indigo-200"
+            class="text-brand-300 underline decoration-zinc-700 underline-offset-4 hover:text-brand-200"
           >
             Zero Trust for AI Agents
           </a>
@@ -606,7 +583,7 @@
           {"Assume breach", "A jailbroken agent still can't exceed the catalog"}
         ] do %>
           <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-6 text-left">
-            <h3 class="text-sm font-semibold text-indigo-300">{principle}</h3>
+            <h3 class="text-sm font-semibold text-brand-300">{principle}</h3>
             <p class="mt-2 text-sm leading-6 text-zinc-400">{detail}</p>
           </div>
         <% end %>
@@ -615,7 +592,7 @@
       <div class="mt-10 text-center">
         <.link
           navigate={~p"/zero-trust"}
-          class="inline-flex items-center gap-1.5 text-sm font-semibold text-indigo-400 hover:text-indigo-300"
+          class="inline-flex items-center gap-1.5 text-sm font-semibold text-brand-400 hover:text-brand-300"
         >
           See emisar mapped to the framework, control by control
           <.icon name="hero-arrow-right" class="h-4 w-4" />
@@ -632,7 +609,7 @@
   <section class="py-24 sm:py-32">
     <div class="mx-auto max-w-7xl px-6 lg:px-8">
       <div class="mx-auto max-w-3xl text-center">
-        <h2 class="text-base font-semibold text-indigo-400">Example workflows</h2>
+        <h2 class="text-base font-semibold text-brand-400">Example workflows</h2>
         <p class="mt-2 text-4xl font-bold tracking-tight text-white sm:text-5xl">
           Operational actions teams can expose without exposing a shell.
         </p>
@@ -644,9 +621,9 @@
           {"postgres", "Postgres ops", "Replication lag spikes overnight. The model checks lag and slow queries, then requests approval before terminating the blocking backend.", "hero-server-stack", ~p"/use-cases/postgres-ops"},
           {"incident", "Incident response", "A CSI driver reformats a live volume and wipes 33 hours of metrics. The agent investigates through declared actions, stops the bleed behind one approval, and writes the durable fix to Terraform.", "hero-bell-alert", ~p"/use-cases/csi-data-loss"}
         ] do %>
-          <div class="group flex flex-col rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8 transition hover:-translate-y-0.5 hover:border-indigo-500/40">
+          <div class="group flex flex-col rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8 transition hover:-translate-y-0.5 hover:border-brand-500/40">
             <div class="flex items-center justify-between">
-              <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-indigo-500/10 text-indigo-400">
+              <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-brand-500/10 text-brand-400">
                 <.icon name={icon} class="h-5 w-5" />
               </div>
               <span class="font-mono text-[10px] uppercase tracking-widest text-zinc-500">
@@ -658,7 +635,7 @@
             <.link
               :if={href}
               navigate={href}
-              class="mt-4 inline-flex items-center gap-1 text-sm font-medium text-indigo-400 hover:text-indigo-300"
+              class="mt-4 inline-flex items-center gap-1 text-sm font-medium text-brand-400 hover:text-brand-300"
             >
               Read the playbook <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
             </.link>
@@ -672,7 +649,7 @@
   <section class="border-y border-zinc-900 bg-zinc-950/40 py-24 sm:py-32">
     <div class="mx-auto max-w-7xl px-6 lg:px-8">
       <div class="mx-auto max-w-3xl text-center">
-        <h2 class="text-base font-semibold text-indigo-400">Pricing</h2>
+        <h2 class="text-base font-semibold text-brand-400">Pricing</h2>
         <p class="mt-2 text-4xl font-bold tracking-tight text-white sm:text-5xl">
           Pay per runner. Not per seat.
         </p>
@@ -691,23 +668,23 @@
           </div>
           <ul class="mt-6 space-y-2 text-sm text-zinc-300">
             <li class="flex gap-2">
-              <.icon name="hero-check" class="h-4 w-4 flex-none text-indigo-400" /> 3 runners
+              <.icon name="hero-check" class="h-4 w-4 flex-none text-brand-400" /> 3 runners
             </li>
             <li class="flex gap-2">
-              <.icon name="hero-check" class="h-4 w-4 flex-none text-indigo-400" /> 1 user
+              <.icon name="hero-check" class="h-4 w-4 flex-none text-brand-400" /> 1 user
             </li>
             <li class="flex gap-2">
-              <.icon name="hero-check" class="h-4 w-4 flex-none text-indigo-400" />
+              <.icon name="hero-check" class="h-4 w-4 flex-none text-brand-400" />
               7-day audit retention
             </li>
             <li class="flex gap-2">
-              <.icon name="hero-check" class="h-4 w-4 flex-none text-indigo-400" />
+              <.icon name="hero-check" class="h-4 w-4 flex-none text-brand-400" />
               Community support
             </li>
           </ul>
         </div>
-        <div class="relative rounded-2xl border-2 border-indigo-500/60 bg-zinc-950/80 p-8 shadow-2xl shadow-indigo-950/40">
-          <span class="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-indigo-500 px-3 py-0.5 text-[10px] font-semibold uppercase tracking-widest text-zinc-950">
+        <div class="relative rounded-2xl border-2 border-brand-500/60 bg-zinc-950/80 p-8 shadow-2xl shadow-brand-950/40">
+          <span class="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-brand-500 px-3 py-0.5 text-[10px] font-semibold uppercase tracking-widest text-zinc-950">
             Most popular
           </span>
           <h3 class="text-lg font-semibold text-white">Team</h3>
@@ -718,19 +695,18 @@
           </div>
           <ul class="mt-6 space-y-2 text-sm text-zinc-300">
             <li class="flex gap-2">
-              <.icon name="hero-check" class="h-4 w-4 flex-none text-indigo-400" />
+              <.icon name="hero-check" class="h-4 w-4 flex-none text-brand-400" />
               Up to 100 runners
             </li>
             <li class="flex gap-2">
-              <.icon name="hero-check" class="h-4 w-4 flex-none text-indigo-400" />
-              Unlimited users
+              <.icon name="hero-check" class="h-4 w-4 flex-none text-brand-400" /> Unlimited users
             </li>
             <li class="flex gap-2">
-              <.icon name="hero-check" class="h-4 w-4 flex-none text-indigo-400" />
+              <.icon name="hero-check" class="h-4 w-4 flex-none text-brand-400" />
               90-day audit retention
             </li>
             <li class="flex gap-2">
-              <.icon name="hero-check" class="h-4 w-4 flex-none text-indigo-400" />
+              <.icon name="hero-check" class="h-4 w-4 flex-none text-brand-400" />
               Monthly invoices, email support
             </li>
           </ul>
@@ -743,19 +719,19 @@
           </div>
           <ul class="mt-6 space-y-2 text-sm text-zinc-300">
             <li class="flex gap-2">
-              <.icon name="hero-check" class="h-4 w-4 flex-none text-indigo-400" />
+              <.icon name="hero-check" class="h-4 w-4 flex-none text-brand-400" />
               Unlimited runners &amp; users
             </li>
             <li class="flex gap-2">
-              <.icon name="hero-check" class="h-4 w-4 flex-none text-indigo-400" />
+              <.icon name="hero-check" class="h-4 w-4 flex-none text-brand-400" />
               365-day audit retention
             </li>
             <li class="flex gap-2">
-              <.icon name="hero-check" class="h-4 w-4 flex-none text-indigo-400" />
+              <.icon name="hero-check" class="h-4 w-4 flex-none text-brand-400" />
               Security and procurement review
             </li>
             <li class="flex gap-2">
-              <.icon name="hero-check" class="h-4 w-4 flex-none text-indigo-400" />
+              <.icon name="hero-check" class="h-4 w-4 flex-none text-brand-400" />
               Design-partner deployment planning
             </li>
           </ul>
@@ -774,7 +750,7 @@
   <section class="py-24 sm:py-32">
     <div class="mx-auto max-w-3xl px-6 lg:px-8">
       <div class="text-center">
-        <h2 class="text-base font-semibold text-indigo-400">FAQ</h2>
+        <h2 class="text-base font-semibold text-brand-400">FAQ</h2>
         <p class="mt-2 text-4xl font-bold tracking-tight text-white sm:text-5xl">
           The skeptical questions, answered.
         </p>
@@ -786,7 +762,7 @@
             <summary class="flex cursor-pointer items-center justify-between px-8 py-6 text-base font-semibold text-white">
               {q}
               <.icon name="hero-plus" class="h-5 w-5 text-zinc-500 transition group-open:hidden" />
-              <.icon name="hero-minus" class="hidden h-5 w-5 text-indigo-400 group-open:block" />
+              <.icon name="hero-minus" class="hidden h-5 w-5 text-brand-400 group-open:block" />
             </summary>
             <p class="px-8 pb-6 text-sm text-zinc-400 leading-relaxed">{a}</p>
           </details>
@@ -798,7 +774,7 @@
   <%!-- Final CTA --%>
   <section class="pb-24 sm:pb-32">
     <div class="mx-auto max-w-5xl px-6 lg:px-8">
-      <div class="overflow-hidden rounded-lg border border-indigo-500/30 bg-zinc-950 p-12 sm:p-16">
+      <div class="overflow-hidden rounded-lg border border-brand-500/30 bg-zinc-950 p-12 sm:p-16">
         <div class="text-center">
           <.marketing_heading tag="h2" scale={:section}>
             Sleep tonight. Sign up free.
@@ -818,7 +794,7 @@
               name="email"
               id="cta-email"
               placeholder="you@company.com"
-              class="w-full rounded-lg border-0 bg-zinc-900/80 px-4 py-2.5 text-sm text-white ring-1 ring-zinc-800 placeholder:text-zinc-500 focus:ring-2 focus:ring-indigo-500"
+              class="w-full rounded-lg border-0 bg-zinc-900/80 px-4 py-2.5 text-sm text-white ring-1 ring-zinc-800 placeholder:text-zinc-500 focus:ring-2 focus:ring-brand-500"
             />
             <.marketing_button type="submit" icon="hero-arrow-right" class="w-full sm:w-auto">
               Start free

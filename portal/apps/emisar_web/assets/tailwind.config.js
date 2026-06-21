@@ -14,7 +14,24 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        brand: "#FD4F00",
+        // emisar brand accent — the emerald gate. `brand-400` is the exact
+        // logo green (#36E6A5, see images/emisar-icon.svg); `brand-500` is the
+        // button resting fill (dark text reads on it) that hovers up to the
+        // logo green. The marketing site uses this as its accent; semantic
+        // pass/pending/deny chips stay on emerald/amber/rose via `<.chip>`.
+        brand: {
+          50: "#e7fdf4",
+          100: "#c8fae5",
+          200: "#95f3cd",
+          300: "#57ecb2",
+          400: "#36e6a5",
+          500: "#14cf8d",
+          600: "#05a974",
+          700: "#07835b",
+          800: "#0a6749",
+          900: "#0a543c",
+          950: "#032f22",
+        },
       }
     },
   },

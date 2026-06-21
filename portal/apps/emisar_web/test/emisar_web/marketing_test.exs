@@ -61,8 +61,10 @@ defmodule EmisarWeb.MarketingTest do
     # Hero: the home title uses the larger :display scale; a docs page uses
     # the standard :hero scale. Both are a single <h1> with the documented
     # size class — the scale standardizes sizing without touching the tag.
+    # (Home appends page-specific responsive overrides after the scale, so
+    # match the class prefix, not a closed attribute — like the docs line.)
     home = conn |> get(~p"/") |> html_response(200)
-    assert home =~ ~s(<h1 class="font-bold tracking-tight text-zinc-50 text-6xl md:text-7xl")
+    assert home =~ ~s(<h1 class="font-bold tracking-tight text-zinc-50 text-6xl md:text-7xl)
 
     docs = conn |> get(~p"/docs/quickstart") |> html_response(200)
     assert docs =~ ~s(<h1 class="font-bold tracking-tight text-zinc-50 text-4xl md:text-5xl)
@@ -70,7 +72,7 @@ defmodule EmisarWeb.MarketingTest do
     # The pricing tier buttons route through the one marketing-CTA component:
     # full-width pills, primary (Team) and secondary (Free/Enterprise).
     pricing = conn |> get(~p"/pricing") |> html_response(200)
-    assert pricing =~ "bg-indigo-500 text-zinc-950 hover:bg-indigo-400"
+    assert pricing =~ "bg-brand-500 text-zinc-950 hover:bg-brand-400"
     assert pricing =~ "ring-1 ring-zinc-800 hover:ring-zinc-700"
 
     # The outbound CTA (Open an issue) keeps its safe-rel pair after routing
@@ -281,9 +283,9 @@ defmodule EmisarWeb.MarketingTest do
 
     test "renders the active-page indicator on the current section", %{conn: conn} do
       # Pricing route should mark its own nav link active. The
-      # indicator is the rounded indigo underline span we added.
+      # indicator is the rounded brand underline span we added.
       html = conn |> get(~p"/pricing") |> html_response(200)
-      assert html =~ "bg-indigo-400"
+      assert html =~ "bg-brand-400"
     end
   end
 

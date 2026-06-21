@@ -3047,20 +3047,20 @@ defmodule EmisarWeb.CoreComponents do
           <%= if @current_user do %>
             <.link
               href={~p"/app"}
-              class="inline-flex items-center gap-2 whitespace-nowrap rounded-lg bg-indigo-500 px-4 py-2 text-sm font-semibold text-zinc-950 hover:bg-indigo-400"
+              class="inline-flex items-center gap-2 whitespace-nowrap rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-zinc-950 hover:bg-brand-400"
             >
               Dashboard <.icon name="hero-arrow-right" class="h-4 w-4" />
             </.link>
           <% else %>
             <.link
               href={~p"/sign_in"}
-              class="whitespace-nowrap text-sm font-semibold text-zinc-100 hover:text-indigo-300"
+              class="whitespace-nowrap text-sm font-semibold text-zinc-100 hover:text-brand-300"
             >
               Sign in
             </.link>
             <.link
               href={~p"/sign_up"}
-              class="whitespace-nowrap rounded-lg bg-indigo-500 px-4 py-2 text-sm font-semibold text-zinc-950 hover:bg-indigo-400"
+              class="whitespace-nowrap rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-zinc-950 hover:bg-brand-400"
             >
               Start free
             </.link>
@@ -3145,14 +3145,14 @@ defmodule EmisarWeb.CoreComponents do
             <%= if @current_user do %>
               <.link
                 href={~p"/app"}
-                class="block w-full whitespace-nowrap rounded-lg bg-indigo-500 px-4 py-2.5 text-center text-sm font-semibold text-zinc-950 hover:bg-indigo-400"
+                class="block w-full whitespace-nowrap rounded-lg bg-brand-500 px-4 py-2.5 text-center text-sm font-semibold text-zinc-950 hover:bg-brand-400"
               >
                 Dashboard
               </.link>
             <% else %>
               <.link
                 href={~p"/sign_up"}
-                class="block w-full whitespace-nowrap rounded-lg bg-indigo-500 px-4 py-2.5 text-center text-sm font-semibold text-zinc-950 hover:bg-indigo-400"
+                class="block w-full whitespace-nowrap rounded-lg bg-brand-500 px-4 py-2.5 text-center text-sm font-semibold text-zinc-950 hover:bg-brand-400"
               >
                 Start free
               </.link>
@@ -3178,12 +3178,12 @@ defmodule EmisarWeb.CoreComponents do
   the site before clicking. Optional `class` to override the default.
 
       <.external_link href="https://github.com/...">GitHub repo</.external_link>
-      <.external_link href={url} class="text-indigo-300 hover:text-indigo-200">
+      <.external_link href={url} class="text-brand-300 hover:text-brand-200">
         SECURITY.md
       </.external_link>
   """
   attr :href, :string, required: true
-  attr :class, :string, default: "text-indigo-300 hover:text-indigo-200"
+  attr :class, :string, default: "text-brand-300 hover:text-brand-200"
   attr :rest, :global
   slot :inner_block, required: true
 
@@ -3212,7 +3212,7 @@ defmodule EmisarWeb.CoreComponents do
       href={@href}
       class={[
         "block rounded-lg px-3 py-2.5 transition",
-        @active && "bg-indigo-500/10 text-indigo-200",
+        @active && "bg-brand-500/10 text-brand-200",
         !@active && "text-zinc-300 hover:bg-zinc-900 hover:text-zinc-100"
       ]}
     >
@@ -3236,11 +3236,11 @@ defmodule EmisarWeb.CoreComponents do
       ]}
     >
       {render_slot(@inner_block)}
-      <%!-- Subtle indigo underline on the active page so the
+      <%!-- Subtle brand underline on the active page so the
            current section is identifiable without reading the URL. --%>
       <span
         :if={@active}
-        class="absolute -bottom-1 left-0 right-0 h-0.5 rounded-full bg-indigo-400"
+        class="absolute -bottom-1 left-0 right-0 h-0.5 rounded-full bg-brand-400"
         aria-hidden="true"
       />
     </.link>
@@ -3318,7 +3318,7 @@ defmodule EmisarWeb.CoreComponents do
   defp marketing_button_size(:md), do: "px-5 py-2.5"
   defp marketing_button_size(:lg), do: "px-6 py-3"
 
-  defp marketing_button_variant(:primary), do: "bg-indigo-500 text-zinc-950 hover:bg-indigo-400"
+  defp marketing_button_variant(:primary), do: "bg-brand-500 text-zinc-950 hover:bg-brand-400"
 
   defp marketing_button_variant(:secondary),
     do: "bg-transparent text-zinc-100 ring-1 ring-zinc-800 hover:ring-zinc-700"
@@ -3370,7 +3370,7 @@ defmodule EmisarWeb.CoreComponents do
     ~H"""
     <section class="pb-24 sm:pb-32">
       <div class="mx-auto max-w-3xl px-6 lg:px-8">
-        <div class="rounded-xl border border-indigo-500/30 bg-zinc-950 p-8 text-center sm:p-10">
+        <div class="rounded-xl border border-brand-500/30 bg-zinc-950 p-8 text-center sm:p-10">
           <h2 class="text-2xl font-bold tracking-tight text-white sm:text-3xl">{@headline}</h2>
           <p class="mx-auto mt-3 max-w-xl text-sm leading-6 text-zinc-400">{@subcopy}</p>
           <div class="mt-7 flex flex-col items-center justify-center gap-3 sm:flex-row">
@@ -3387,6 +3387,187 @@ defmodule EmisarWeb.CoreComponents do
     </section>
     """
   end
+
+  # ============================================================
+  #  Marketing "gate" kit
+  #
+  #  The brand mark is an emerald gate (images/emisar-icon.svg); these four
+  #  primitives carry it across the marketing site (see creative-director):
+  #  `gate_frame` brackets content like the logo, `scan_line` marks the
+  #  decision point, `state_chip` shows what the gate decided, and
+  #  `code_block` is the one framed code/terminal surface. The accent is
+  #  `brand-*` (the exact logo green); pass/pending/deny stay emerald/amber/
+  #  rose so they match `<.chip>`/`<.risk_pill>`. Marketing-only — the
+  #  operator console keeps its own calm system.
+  # ============================================================
+
+  @doc """
+  Brackets content in the emisar gate — two vertical brackets flanking the
+  slot, echoing the logo. `state` tints the brackets to a policy outcome
+  (`:pass` brand-green default, `:pending` amber, `:deny` rose, `:neutral`
+  zinc); the brackets are decorative, so they are `aria-hidden`.
+
+      <.gate_frame>An approved action.</.gate_frame>
+      <.gate_frame state={:deny}>…raw shell, ungated…</.gate_frame>
+  """
+  attr :state, :atom, default: :pass, values: [:pass, :pending, :deny, :neutral]
+  attr :class, :string, default: nil
+  attr :rest, :global
+  slot :inner_block, required: true
+
+  def gate_frame(assigns) do
+    ~H"""
+    <div class={["flex items-stretch gap-3 sm:gap-4", @class]} {@rest}>
+      <span
+        aria-hidden="true"
+        class={[
+          "w-2 shrink-0 self-stretch rounded-l-sm border-y-2 border-l-2 sm:w-3",
+          gate_bracket_class(@state)
+        ]}
+      >
+      </span>
+      <div class="min-w-0 flex-1">{render_slot(@inner_block)}</div>
+      <span
+        aria-hidden="true"
+        class={[
+          "w-2 shrink-0 self-stretch rounded-r-sm border-y-2 border-r-2 sm:w-3",
+          gate_bracket_class(@state)
+        ]}
+      >
+      </span>
+    </div>
+    """
+  end
+
+  defp gate_bracket_class(:pass), do: "border-brand-500/40"
+  defp gate_bracket_class(:pending), do: "border-amber-500/40"
+  defp gate_bracket_class(:deny), do: "border-rose-500/40"
+  defp gate_bracket_class(:neutral), do: "border-zinc-700/60"
+
+  @doc """
+  A hairline at a decision point — the instant a request is checked at the gate.
+  The static track always renders; `animate` adds a single brand sweep that
+  honors `prefers-reduced-motion` (the sweep ends off-screen, so opted-out
+  visitors never see it). `state` colors it to a policy outcome.
+
+      <.scan_line />
+      <.scan_line animate state={:pass} />
+  """
+  attr :state, :atom, default: :pass, values: [:pass, :pending, :deny, :neutral]
+  attr :animate, :boolean, default: false
+  attr :class, :string, default: nil
+
+  def scan_line(assigns) do
+    ~H"""
+    <div class={["relative h-px w-full overflow-hidden", @class]} aria-hidden="true">
+      <div class={[
+        "h-px w-full bg-gradient-to-r from-transparent to-transparent",
+        scan_via_class(@state)
+      ]}>
+      </div>
+      <div
+        :if={@animate}
+        class={[
+          "scan-sweep absolute inset-y-0 left-0 w-1/4 bg-gradient-to-r from-transparent to-transparent blur-[1px]",
+          scan_sweep_via_class(@state)
+        ]}
+      >
+      </div>
+    </div>
+    """
+  end
+
+  defp scan_via_class(:pass), do: "via-brand-500/50"
+  defp scan_via_class(:pending), do: "via-amber-500/50"
+  defp scan_via_class(:deny), do: "via-rose-500/50"
+  defp scan_via_class(:neutral), do: "via-zinc-700/60"
+
+  defp scan_sweep_via_class(:pass), do: "via-brand-400/80"
+  defp scan_sweep_via_class(:pending), do: "via-amber-400/80"
+  defp scan_sweep_via_class(:deny), do: "via-rose-400/80"
+  defp scan_sweep_via_class(:neutral), do: "via-zinc-400/70"
+
+  @doc """
+  A policy-outcome chip — what the gate decided. `:pass` (emerald), `:pending`
+  (amber — an approval is required), `:deny` (rose). A thin semantic wrapper
+  over `<.chip>` so every comparison row, pipeline step, and demo reads the
+  same; `label` overrides the default outcome word.
+
+      <.state_chip state={:pass} />
+      <.state_chip state={:pending} label="Approval" />
+  """
+  attr :state, :atom, required: true, values: [:pass, :pending, :deny]
+  attr :label, :string, default: nil, doc: "overrides the default outcome word"
+  attr :class, :string, default: nil
+  attr :rest, :global
+
+  def state_chip(assigns) do
+    ~H"""
+    <.chip tone={state_tone(@state)} icon={state_icon(@state)} upcase class={@class} {@rest}>
+      {@label || state_label(@state)}
+    </.chip>
+    """
+  end
+
+  defp state_tone(:pass), do: :emerald
+  defp state_tone(:pending), do: :amber
+  defp state_tone(:deny), do: :rose
+
+  defp state_icon(:pass), do: "hero-check-circle"
+  defp state_icon(:pending), do: "hero-clock"
+  defp state_icon(:deny), do: "hero-x-circle"
+
+  defp state_label(:pass), do: "Allowed"
+  defp state_label(:pending), do: "Approval"
+  defp state_label(:deny), do: "Denied"
+
+  @doc """
+  The one framed code / terminal surface for marketing pages — a rounded panel
+  with an optional label bar (filename or title), an optional right-aligned
+  `status` word, and optional macOS `window` dots. The slot is the `<pre>`, so
+  callers keep their own syntax coloring. Replaces the border+label-bar markup
+  hand-rolled across the marketing templates.
+
+      <.code_block label="packs/cassandra/actions/nodetool_repair.yaml" status="trusted">
+        <pre class="p-4 font-mono text-xs leading-6 text-zinc-300">…</pre>
+      </.code_block>
+  """
+  attr :label, :string, default: nil
+  attr :status, :string, default: nil
+  attr :status_tone, :atom, default: :neutral, values: [:pass, :pending, :deny, :neutral]
+  attr :window, :boolean, default: false, doc: "macOS traffic-light dots"
+  attr :class, :string, default: nil
+  attr :rest, :global
+  slot :inner_block, required: true
+
+  def code_block(assigns) do
+    ~H"""
+    <div class={["overflow-hidden rounded-lg border border-zinc-800/80 bg-black/60", @class]} {@rest}>
+      <div
+        :if={@label || @status || @window}
+        class="flex items-center gap-2 border-b border-zinc-800/80 bg-zinc-950/50 px-3 py-2"
+      >
+        <span :if={@window} aria-hidden="true" class="flex items-center gap-1.5">
+          <span class="h-2.5 w-2.5 rounded-full bg-zinc-700"></span>
+          <span class="h-2.5 w-2.5 rounded-full bg-zinc-700"></span>
+          <span class="h-2.5 w-2.5 rounded-full bg-zinc-700"></span>
+        </span>
+        <span :if={@label} class="min-w-0 truncate font-mono text-[11px] text-zinc-500">
+          {@label}
+        </span>
+        <span :if={@status} class={["ml-auto font-mono text-[11px]", code_status_class(@status_tone)]}>
+          {@status}
+        </span>
+      </div>
+      <div class="overflow-x-auto">{render_slot(@inner_block)}</div>
+    </div>
+    """
+  end
+
+  defp code_status_class(:pass), do: "text-brand-300"
+  defp code_status_class(:pending), do: "text-amber-300"
+  defp code_status_class(:deny), do: "text-rose-300"
+  defp code_status_class(:neutral), do: "text-zinc-500"
 
   # Version of the emisar_web app, read at compile time from mix.exs so
   # the footer never drifts from the actual release. `vsn` comes back as
@@ -3575,8 +3756,25 @@ defmodule EmisarWeb.CoreComponents do
         </div>
 
         <div class="mt-12 flex items-center justify-between border-t border-zinc-900 pt-8 text-xs text-zinc-500">
-          <span>© {Date.utc_today().year} Andrii Dryga. All rights reserved.</span>
-          <span>v{@app_version} — built in Elixir</span>
+          <span>
+            © {Date.utc_today().year} <a
+              href="https://dryga.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="text-zinc-400 underline-offset-2 hover:text-zinc-200 hover:underline"
+            >Andrii Dryga</a>. All rights reserved.
+          </span>
+          <span>
+            v{@app_version} — built with
+            <a
+              href="https://coop.dryga.com/"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="text-zinc-400 underline-offset-2 hover:text-zinc-200 hover:underline"
+            >
+              co:op
+            </a>
+          </span>
         </div>
       </div>
     </footer>

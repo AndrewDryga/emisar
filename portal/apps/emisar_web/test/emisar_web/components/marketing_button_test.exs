@@ -27,7 +27,7 @@ defmodule EmisarWeb.Components.MarketingButtonTest do
       html = render_button(%{})
       assert html =~ "<button"
       refute html =~ "<a "
-      assert html =~ "bg-indigo-500"
+      assert html =~ "bg-brand-500"
     end
 
     test "href and navigate render a styled <.link>, not a <button>" do
@@ -42,10 +42,10 @@ defmodule EmisarWeb.Components.MarketingButtonTest do
       assert html =~ ~s(rel="noopener noreferrer")
     end
 
-    test "secondary is the outlined ring variant, not the indigo fill" do
+    test "secondary is the outlined ring variant, not the brand fill" do
       html = render_button(%{variant: :secondary, href: "/x"})
       assert html =~ "ring-1 ring-zinc-800"
-      refute html =~ "bg-indigo-500"
+      refute html =~ "bg-brand-500"
     end
 
     test "size maps to the documented padding ramp" do

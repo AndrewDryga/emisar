@@ -39,10 +39,10 @@
    operator console.
    --------------------------------------------------------------------------- */
 
-/* Keyboard focus only (never on mouse click): one high-contrast indigo ring
+/* Keyboard focus only (never on mouse click): one high-contrast brand ring
    on every interactive element, so the keyboard path is always visible. */
 :focus-visible {
-  outline: 2px solid #818cf8; /* indigo-400 */
+  outline: 2px solid #36e6a5; /* brand-400 — the emerald logo green */
   outline-offset: 2px;
   border-radius: 3px;
 }
@@ -50,9 +50,10 @@
   outline: none;
 }
 
-/* Site-wide selection color (the home hero set this inline; make it global). */
+/* Site-wide selection color — the brand emerald, applied globally so no page
+   needs an inline override. */
 ::selection {
-  background-color: rgb(99 102 241 / 0.3); /* indigo-500 / 30% */
+  background-color: rgb(54 230 165 / 0.3); /* brand-400 / 30% */
 }
 
 /* Honor "reduce motion": neutralize the hover lifts, pings, spins, and long
@@ -257,5 +258,26 @@
 @keyframes demo-blink {
   50% {
     opacity: 0;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Gate scan line (marketing `<.scan_line animate>`).
+
+   A single highlight that sweeps once across the decision point — the moment a
+   request is checked at the gate. The static track underneath always renders;
+   only the sweep moves, and it ends translated off-screen so the reduced-motion
+   override above (animation-duration: 0.01ms) simply lands it out of view with
+   no flash. Marketing-only; the component lives in core_components.ex.
+   --------------------------------------------------------------------------- */
+.scan-sweep {
+  animation: scan-sweep 2.4s ease-in-out 0.3s 1 both;
+}
+@keyframes scan-sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(400%);
   }
 }
