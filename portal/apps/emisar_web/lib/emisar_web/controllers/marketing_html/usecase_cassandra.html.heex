@@ -3,7 +3,7 @@
 
   <section class="py-16 sm:py-24">
     <div class="mx-auto max-w-3xl px-6 lg:px-8">
-      <p class="text-sm font-semibold text-indigo-400">Case study · Cassandra</p>
+      <p class="text-sm font-semibold text-brand-400">Case study · Cassandra</p>
       <.marketing_heading tag="h1" scale={:hero} class="mt-2">
         The major compaction that ate the read path
       </.marketing_heading>
@@ -158,7 +158,7 @@ cassandra.nodetool_compactionhistory &#123;&#125;
           <summary class="flex cursor-pointer items-center justify-between px-6 py-5 text-sm font-semibold text-zinc-100">
             Could the agent have made it worse?
             <.icon name="hero-plus" class="h-5 w-5 text-zinc-500 transition group-open:hidden" />
-            <.icon name="hero-minus" class="hidden h-5 w-5 text-indigo-400 group-open:block" />
+            <.icon name="hero-minus" class="hidden h-5 w-5 text-brand-400 group-open:block" />
           </summary>
           <p class="px-6 pb-5 text-sm leading-6 text-zinc-400">
             Only within a tier you chose. The reads it ran change nothing. The single destructive
@@ -174,7 +174,7 @@ cassandra.nodetool_compactionhistory &#123;&#125;
           <summary class="flex cursor-pointer items-center justify-between px-6 py-5 text-sm font-semibold text-zinc-100">
             How does emisar know an action is "high risk"?
             <.icon name="hero-plus" class="h-5 w-5 text-zinc-500 transition group-open:hidden" />
-            <.icon name="hero-minus" class="hidden h-5 w-5 text-indigo-400 group-open:block" />
+            <.icon name="hero-minus" class="hidden h-5 w-5 text-brand-400 group-open:block" />
           </summary>
           <p class="px-6 pb-5 text-sm leading-6 text-zinc-400">
             The risk tier is declared in the action's YAML and travels with the pack's content
@@ -188,7 +188,7 @@ cassandra.nodetool_compactionhistory &#123;&#125;
           <summary class="flex cursor-pointer items-center justify-between px-6 py-5 text-sm font-semibold text-zinc-100">
             Can I let on-call abort a runaway compaction without paging me every time?
             <.icon name="hero-plus" class="h-5 w-5 text-zinc-500 transition group-open:hidden" />
-            <.icon name="hero-minus" class="hidden h-5 w-5 text-indigo-400 group-open:block" />
+            <.icon name="hero-minus" class="hidden h-5 w-5 text-brand-400 group-open:block" />
           </summary>
           <p class="px-6 pb-5 text-sm leading-6 text-zinc-400">
             Yes — approve once and issue a standing grant bounded by duration, runner, argument
@@ -202,19 +202,19 @@ cassandra.nodetool_compactionhistory &#123;&#125;
       <div class="mt-12 flex flex-wrap gap-x-6 gap-y-3 border-t border-zinc-900 pt-8 text-sm">
         <.link
           navigate={~p"/packs/cassandra"}
-          class="inline-flex items-center gap-1 font-medium text-indigo-400 hover:text-indigo-300"
+          class="inline-flex items-center gap-1 font-medium text-brand-400 hover:text-brand-300"
         >
           Browse all 45 Cassandra actions <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
         </.link>
         <.link
           navigate={~p"/use-cases/postgres-ops"}
-          class="inline-flex items-center gap-1 font-medium text-indigo-400 hover:text-indigo-300"
+          class="inline-flex items-center gap-1 font-medium text-brand-400 hover:text-brand-300"
         >
           The Postgres incident <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
         </.link>
         <.link
           navigate={~p"/docs/security-model"}
-          class="inline-flex items-center gap-1 font-medium text-indigo-400 hover:text-indigo-300"
+          class="inline-flex items-center gap-1 font-medium text-brand-400 hover:text-brand-300"
         >
           How the trust boundary works <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
         </.link>

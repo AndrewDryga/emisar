@@ -3,7 +3,7 @@
 
   <section class="py-16 sm:py-24">
     <div class="mx-auto max-w-3xl px-6 lg:px-8">
-      <p class="text-sm font-semibold text-indigo-400">Compare</p>
+      <p class="text-sm font-semibold text-brand-400">Compare</p>
       <.marketing_heading tag="h1" scale={:hero} class="mt-2">
         Why not just give the LLM SSH?
       </.marketing_heading>
@@ -14,7 +14,7 @@
 
       <h2 class="mt-12 text-2xl font-semibold text-zinc-50">Both approaches run real commands</h2>
       <p class="mt-3 text-sm leading-relaxed text-zinc-400">
-        emisar isn't a sandbox. When the runner executes <code>nodetool repair</code>, it really repairs the keyspace — exactly like
+        emisar isn't a sandbox. When the runner executes <code>nomad job revert</code>, it really rolls back the deploy — exactly like
         SSH would. The difference is what happens <em>before</em> exec, and what's
         left <em>after</em>.
       </p>
@@ -106,13 +106,13 @@
         a forensic budget. emisar makes the answer a query.
       </p>
 
-      <div class="mt-12 rounded-xl border border-indigo-900/40 bg-indigo-950/20 p-5 text-sm text-zinc-300">
+      <div class="mt-12 rounded-xl border border-brand-900/40 bg-brand-950/20 p-5 text-sm text-zinc-300">
         Try it: install the runner from the <.link
           navigate={~p"/docs/quickstart"}
-          class="text-indigo-400 hover:text-indigo-300"
+          class="text-brand-400 hover:text-brand-300"
         >quickstart</.link>, declare one action you'd otherwise SSH for, and point your model at
         it. The
-        <.link navigate={~p"/pricing"} class="text-indigo-400 hover:text-indigo-300">
+        <.link navigate={~p"/pricing"} class="text-brand-400 hover:text-brand-300">
           free tier
         </.link>
         covers 3 runners — no credit card.
@@ -121,19 +121,19 @@
       <div class="mt-8 flex flex-wrap gap-x-6 gap-y-3 border-t border-zinc-900 pt-8 text-sm">
         <.link
           navigate={~p"/docs/security-model"}
-          class="inline-flex items-center gap-1 font-medium text-indigo-400 hover:text-indigo-300"
+          class="inline-flex items-center gap-1 font-medium text-brand-400 hover:text-brand-300"
         >
           How the trust boundary works <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
         </.link>
         <.link
           navigate={~p"/docs/connect-an-llm"}
-          class="inline-flex items-center gap-1 font-medium text-indigo-400 hover:text-indigo-300"
+          class="inline-flex items-center gap-1 font-medium text-brand-400 hover:text-brand-300"
         >
           Connect your model <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
         </.link>
         <.link
           navigate={~p"/use-cases/cassandra-ops"}
-          class="inline-flex items-center gap-1 font-medium text-indigo-400 hover:text-indigo-300"
+          class="inline-flex items-center gap-1 font-medium text-brand-400 hover:text-brand-300"
         >
           See it on a Cassandra incident <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
         </.link>
