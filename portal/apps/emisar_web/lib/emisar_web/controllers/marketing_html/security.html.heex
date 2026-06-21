@@ -41,42 +41,70 @@
         </p>
       </div>
 
-      <div class="mx-auto mt-16 max-w-3xl rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8">
-        <pre class="overflow-x-auto font-mono text-xs leading-6 text-zinc-300"><span class="text-brand-300">LLM</span> <span class="text-zinc-500">(untrusted)</span>
- │  asks for a catalog action over MCP — with a required reason
- ▼
-<span class="text-brand-300">Control plane</span>
- │  evaluates policy · checks scope &amp; pack trust · routes · records audit
- │  <span class="text-zinc-500">on require_approval, waits for a human ──▶ Operator approves / denies</span>
- ▼  run_action <span class="text-zinc-500">(only after the gate passes)</span>
-<span class="text-brand-300">Runner on host</span> <span class="text-zinc-500">— outbound WSS only; the host dials out, nothing listens</span>
- │  validates args against the action schema · re-verifies the pack hash
- │  drops to least privilege · argv arrays, never a shell · redacts before egress
- ▼
-<span class="text-brand-300">Hash-chained JSONL journal</span> <span class="text-zinc-500">on the host + searchable cloud audit</span></pre>
-      </div>
+      <%!-- The trust boundary as a staged flow. The LLM sits OUTSIDE the
+           boundary; everything it asks for crosses the gate. Replaces the ASCII
+           pre + the redundant stage cards with one concrete, branded diagram. --%>
+      <div class="mx-auto mt-16 max-w-2xl">
+        <div class="rounded-xl border border-zinc-800 bg-zinc-950/60 p-5">
+          <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <span class="font-mono text-sm font-semibold text-sky-300">LLM</span>
+            <span class="rounded bg-zinc-800/70 px-1.5 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
+              untrusted
+            </span>
+          </div>
+          <p class="mt-2 text-sm leading-relaxed text-zinc-400">
+            Asks for one catalog action over MCP — with a required reason. It never gets a shell,
+            and undeclared commands don't exist to it.
+          </p>
+        </div>
 
-      <div class="mx-auto mt-12 grid max-w-5xl grid-cols-1 gap-6 md:grid-cols-3">
-        <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-6">
-          <h3 class="text-sm font-semibold text-brand-300">LLM</h3>
-          <p class="mt-2 text-sm text-zinc-400">
-            Untrusted. Can only call catalog actions with declared args.
+        <%!-- the boundary itself — the line everything the LLM asks for must cross --%>
+        <div class="my-3 flex items-center gap-3 px-1">
+          <span class="h-px flex-1 bg-gradient-to-r from-transparent to-brand-500/50"></span>
+          <span class="font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-brand-400">
+            the trust boundary
+          </span>
+          <span class="h-px flex-1 bg-gradient-to-l from-transparent to-brand-500/50"></span>
+        </div>
+
+        <div class="rounded-xl border border-brand-500/30 bg-brand-950/20 p-5 ring-1 ring-inset ring-brand-500/10">
+          <div class="flex flex-wrap items-center gap-2">
+            <span class="font-mono text-sm font-semibold text-brand-400">Control plane</span>
+            <span class="text-zinc-600">·</span>
+            <.state_chip state={:pending} label="require approval" />
+            <.icon name="hero-arrow-right" class="h-3 w-3 text-zinc-600" />
+            <.state_chip state={:pass} label="approved" />
+          </div>
+          <p class="mt-2 text-sm leading-relaxed text-zinc-400">
+            Evaluates policy, checks scope and pack trust, routes, and writes the audit. On a risky
+            action it waits for a human — and it never executes a shell itself.
           </p>
         </div>
-        <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-6">
-          <h3 class="text-sm font-semibold text-brand-300">Control plane</h3>
-          <p class="mt-2 text-sm text-zinc-400">
-            Evaluates policy, checks scope and pack trust, routes, and audits. Never executes
-            shell itself.
+
+        <div class="my-3 flex justify-center">
+          <.icon name="hero-arrow-down" class="h-4 w-4 text-zinc-700" />
+        </div>
+
+        <div class="rounded-xl border border-zinc-800 bg-zinc-950/60 p-5">
+          <span class="font-mono text-sm font-semibold text-brand-400">Runner on host</span>
+          <p class="mt-2 text-sm leading-relaxed text-zinc-400">
+            Outbound WSS only — the host dials out, nothing listens. A non-root service user
+            re-validates every argument against the action schema, re-verifies the pack hash, drops
+            to least privilege, runs argv arrays (never a shell string), and redacts before egress.
           </p>
         </div>
-        <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-6">
-          <h3 class="text-sm font-semibold text-brand-300">Runner</h3>
-          <p class="mt-2 text-sm text-zinc-400">
-            Non-root service user, and the authority on arguments: validates every arg against the
-            action's declared schema (rejecting anything undeclared), drops to a per-action
-            user/group, clamps options to the action's min/max bounds, and runs argv arrays — never
-            shell strings.
+
+        <div class="my-3 flex justify-center">
+          <.icon name="hero-arrow-down" class="h-4 w-4 text-zinc-700" />
+        </div>
+
+        <div class="rounded-xl border border-zinc-800 bg-zinc-950/60 p-5">
+          <span class="font-mono text-sm font-semibold text-brand-400">
+            Hash-chained journal + cloud audit
+          </span>
+          <p class="mt-2 text-sm leading-relaxed text-zinc-400">
+            Every input, output, exit code, and redaction — a SHA-256-chained JSONL journal on the
+            host, mirrored to the searchable cloud audit and streamable to your SIEM.
           </p>
         </div>
       </div>
