@@ -8,7 +8,7 @@
   <%!-- Hero --%>
   <section class="py-24 sm:py-32">
     <div class="mx-auto max-w-4xl px-6 lg:px-8">
-      <p class="text-base font-semibold text-indigo-400">Documentation</p>
+      <p class="text-base font-semibold text-brand-400">Documentation</p>
       <.marketing_heading tag="h1" scale={:display} class="mt-2">
         Docs
       </.marketing_heading>
@@ -68,16 +68,16 @@
             <%= for {href, icon, title, desc} <- cards do %>
               <.link
                 href={href}
-                class="group rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8 transition hover:border-indigo-500/50"
+                class="group rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8 transition hover:border-brand-500/50"
               >
-                <div class="flex h-12 w-12 items-center justify-center rounded-lg bg-indigo-500/10 text-indigo-400">
+                <div class="flex h-12 w-12 items-center justify-center rounded-lg bg-brand-500/10 text-brand-400">
                   <.icon name={icon} class="h-6 w-6" />
                 </div>
-                <h3 class="mt-6 text-xl font-semibold text-zinc-50 group-hover:text-indigo-300">
+                <h3 class="mt-6 text-xl font-semibold text-zinc-50 group-hover:text-brand-300">
                   {title}
                 </h3>
                 <p class="mt-2 text-sm text-zinc-400">{desc}</p>
-                <p class="mt-4 text-sm font-semibold text-indigo-300">
+                <p class="mt-4 text-sm font-semibold text-brand-300">
                   Read it <span aria-hidden="true">&rarr;</span>
                 </p>
               </.link>
@@ -95,7 +95,7 @@
           href="https://github.com/andrewdryga/emisar"
           target="_blank"
           rel="noopener noreferrer"
-          class="inline-flex items-center gap-1.5 font-semibold text-indigo-300 hover:text-indigo-200"
+          class="inline-flex items-center gap-1.5 font-semibold text-brand-300 hover:text-brand-200"
         >
           Open on GitHub <.icon name="hero-arrow-top-right-on-square" class="h-3.5 w-3.5" />
         </a>
@@ -127,13 +127,13 @@
         ] do %>
           <.link
             navigate={href}
-            class="group rounded-2xl border border-zinc-900 bg-zinc-950/60 p-6 transition hover:border-indigo-500/50"
+            class="group rounded-2xl border border-zinc-900 bg-zinc-950/60 p-6 transition hover:border-brand-500/50"
           >
-            <h3 class="text-base font-semibold text-zinc-50 group-hover:text-indigo-300">
+            <h3 class="text-base font-semibold text-zinc-50 group-hover:text-brand-300">
               {title}
             </h3>
             <p class="mt-2 text-sm leading-6 text-zinc-400">{desc}</p>
-            <p class="mt-4 text-sm font-semibold text-indigo-300">
+            <p class="mt-4 text-sm font-semibold text-brand-300">
               Read it <span aria-hidden="true">&rarr;</span>
             </p>
           </.link>
@@ -162,7 +162,7 @@
         </.marketing_button>
         <a
           href="mailto:support@emisar.dev"
-          class="text-sm font-semibold text-zinc-100 hover:text-indigo-300"
+          class="text-sm font-semibold text-zinc-100 hover:text-brand-300"
         >
           Email support <span aria-hidden="true">&rarr;</span>
         </a>

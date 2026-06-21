@@ -3,7 +3,7 @@
 
   <section class="py-16 sm:py-24">
     <div class="mx-auto max-w-3xl px-6 lg:px-8">
-      <p class="text-sm font-semibold text-indigo-400">Docs / Policies &amp; approvals</p>
+      <p class="text-sm font-semibold text-brand-400">Docs / Policies &amp; approvals</p>
       <.marketing_heading tag="h1" scale={:hero} class="mt-2">
         Control what runs
       </.marketing_heading>
@@ -22,7 +22,7 @@
         <li>
           <strong class="text-zinc-100">Per-action overrides.</strong>
           An ordered list of rules, each a glob over action IDs with a decision —
-          <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">cassandra.nodetool_*</code>
+          <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">nomad.job_*</code>
           → <code class="text-amber-300">require_approval</code>,
           <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">*.delete_*</code>
           → <code class="text-red-400">deny</code>. The <em>first</em>
@@ -137,7 +137,7 @@
       <h2 class="mt-10 text-2xl font-semibold text-zinc-50">Standing grants</h2>
       <p class="mt-3 text-sm leading-6 text-zinc-400">
         Approving the same
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">nodetool repair</code>
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">nomad job revert</code>
         every morning is how approval fatigue starts. When you approve a request you choose a
         duration: <strong class="text-zinc-200">once</strong>
         (this run only), or a standing
@@ -170,9 +170,8 @@
       <p class="mt-3 text-sm leading-6 text-zinc-400">
         Every dispatch — UI, REST, or MCP — must carry a one-line <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">reason</code>. It's shown to
         approvers and stored on the run and the audit event. For LLM traffic this is the
-        difference between an audit log that says "the model ran nodetool" and one that says
-        <em>why</em>
-        the model ran nodetool.
+        difference between an audit log that says "the model ran nomad job revert" and one that
+        says <em>why</em> the model ran nomad job revert.
       </p>
 
       <h2 class="mt-10 text-2xl font-semibold text-zinc-50">A sensible first policy</h2>
@@ -200,20 +199,20 @@
       <div class="mt-8 flex flex-wrap gap-x-6 gap-y-3 border-t border-zinc-900 pt-8 text-sm">
         <.link
           navigate={~p"/docs/runbooks"}
-          class="inline-flex items-center gap-1 font-medium text-indigo-400 hover:text-indigo-300"
+          class="inline-flex items-center gap-1 font-medium text-brand-400 hover:text-brand-300"
         >
           Bundle steps into runbooks <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
         </.link>
         <.link
           navigate={~p"/docs/audit-and-siem"}
-          class="inline-flex items-center gap-1 font-medium text-indigo-400 hover:text-indigo-300"
+          class="inline-flex items-center gap-1 font-medium text-brand-400 hover:text-brand-300"
         >
           Where decisions land: the audit trail
           <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
         </.link>
         <.link
           navigate={~p"/docs/security-model"}
-          class="inline-flex items-center gap-1 font-medium text-indigo-400 hover:text-indigo-300"
+          class="inline-flex items-center gap-1 font-medium text-brand-400 hover:text-brand-300"
         >
           The full security model <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
         </.link>

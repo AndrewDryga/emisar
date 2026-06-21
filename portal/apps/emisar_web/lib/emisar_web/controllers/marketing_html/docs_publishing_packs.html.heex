@@ -8,7 +8,7 @@
 
   <section class="py-16 sm:py-24">
     <div class="mx-auto max-w-3xl px-6 lg:px-8">
-      <p class="text-sm font-semibold text-indigo-400">Docs / Authoring packs</p>
+      <p class="text-sm font-semibold text-brand-400">Docs / Authoring packs</p>
       <.marketing_heading tag="h1" scale={:hero} class="mt-2">
         Author your own pack
       </.marketing_heading>
@@ -17,12 +17,12 @@
         signing keys, nothing uploaded to anyone. Drop it on the runners you control, trust it
         once, and your model can call it. Most packs stay private to your fleet, and that's by
         design: the public
-        <.link navigate={~p"/packs"} class="text-indigo-300 hover:text-indigo-200">
+        <.link navigate={~p"/packs"} class="text-brand-300 hover:text-brand-200">
           registry
         </.link>
         is curated, not a free-for-all (more on that <a
           href="#registry"
-          class="text-indigo-300 hover:text-indigo-200"
+          class="text-brand-300 hover:text-brand-200"
         >below</a>).
       </p>
 
@@ -30,7 +30,7 @@
       <ol class="mt-12 space-y-8">
         <li class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-6">
           <header class="flex items-center gap-3">
-            <span class="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-indigo-500/20 font-mono text-sm font-bold text-indigo-300 ring-1 ring-indigo-500/30">
+            <span class="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-brand-500/20 font-mono text-sm font-bold text-brand-300 ring-1 ring-brand-500/30">
               1
             </span>
             <h2 class="text-xl font-semibold text-zinc-50">Lay out the pack directory</h2>
@@ -53,7 +53,7 @@
 
         <li class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-6">
           <header class="flex items-center gap-3">
-            <span class="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-indigo-500/20 font-mono text-sm font-bold text-indigo-300 ring-1 ring-indigo-500/30">
+            <span class="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-brand-500/20 font-mono text-sm font-bold text-brand-300 ring-1 ring-brand-500/30">
               2
             </span>
             <h2 class="text-xl font-semibold text-zinc-50">Write pack.yaml</h2>
@@ -83,7 +83,7 @@ actions:
 
         <li class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-6">
           <header class="flex items-center gap-3">
-            <span class="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-indigo-500/20 font-mono text-sm font-bold text-indigo-300 ring-1 ring-indigo-500/30">
+            <span class="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-brand-500/20 font-mono text-sm font-bold text-brand-300 ring-1 ring-brand-500/30">
               3
             </span>
             <h2 class="text-xl font-semibold text-zinc-50">Declare each action</h2>
@@ -94,7 +94,7 @@ actions:
             argument validation, an honest <code>side_effects</code>
             list, and the right <code>risk</code>
             tier. See the full
-            <.link navigate={~p"/docs/action-packs"} class="text-indigo-300 hover:text-indigo-200">
+            <.link navigate={~p"/docs/action-packs"} class="text-brand-300 hover:text-brand-200">
               YAML schema reference
             </.link>
             for every field.
@@ -140,7 +140,7 @@ examples:
 
         <li class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-6">
           <header class="flex items-center gap-3">
-            <span class="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-indigo-500/20 font-mono text-sm font-bold text-indigo-300 ring-1 ring-indigo-500/30">
+            <span class="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-brand-500/20 font-mono text-sm font-bold text-brand-300 ring-1 ring-brand-500/30">
               4
             </span>
             <h2 class="text-xl font-semibold text-zinc-50">Validate, install, and trust it</h2>
@@ -172,7 +172,7 @@ sudo systemctl reload emisar</pre>
 
         <li class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-6">
           <header class="flex items-center gap-3">
-            <span class="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-indigo-500/20 font-mono text-sm font-bold text-indigo-300 ring-1 ring-indigo-500/30">
+            <span class="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-brand-500/20 font-mono text-sm font-bold text-brand-300 ring-1 ring-brand-500/30">
               5
             </span>
             <h2 class="text-xl font-semibold text-zinc-50">Roll it out and maintain it</h2>
@@ -198,7 +198,7 @@ sudo systemctl reload emisar</pre>
       </h2>
       <p class="mt-4 text-sm leading-relaxed text-zinc-400">
         The public registry behind the
-        <.link navigate={~p"/packs"} class="text-indigo-300 hover:text-indigo-200">
+        <.link navigate={~p"/packs"} class="text-brand-300 hover:text-brand-200">
           Packs page
         </.link>
         is curated by us, deliberately. We only take packs that are
@@ -220,13 +220,13 @@ sudo systemctl reload emisar</pre>
         environment-specific assumptions — we'd love to ship it. Open a PR against the
         <.external_link
           href="https://github.com/andrewdryga/emisar"
-          class="text-indigo-300 hover:text-indigo-200"
+          class="text-brand-300 hover:text-brand-200"
         >
           repo
         </.external_link>
         adding it under <code class="rounded bg-zinc-900 px-1 py-0.5">packs/</code>
         plus an entry in <code class="rounded bg-zinc-900 px-1 py-0.5">apps/emisar_web/lib/emisar_web/packs_registry.ex</code>, or email
-        <a href="mailto:support@emisar.dev" class="text-indigo-300 hover:text-indigo-200">
+        <a href="mailto:support@emisar.dev" class="text-brand-300 hover:text-brand-200">
           support@emisar.dev
         </a>
         first if you're not sure it clears the bar. We review for:
@@ -258,7 +258,7 @@ sudo systemctl reload emisar</pre>
 
       <%!-- Next steps --%>
       <div class="mt-16 flex flex-wrap items-center justify-between gap-3 border-t border-zinc-900 pt-8 text-sm">
-        <.link navigate={~p"/docs/action-packs"} class="text-indigo-300 hover:text-indigo-200">
+        <.link navigate={~p"/docs/action-packs"} class="text-brand-300 hover:text-brand-200">
           Full YAML reference
         </.link>
         <div class="flex items-center gap-4">

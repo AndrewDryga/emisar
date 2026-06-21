@@ -3,12 +3,12 @@
 
   <section class="py-16 sm:py-24">
     <div class="mx-auto max-w-3xl px-6 lg:px-8">
-      <p class="text-sm font-semibold text-indigo-400">Docs / Quickstart</p>
+      <p class="text-sm font-semibold text-brand-400">Docs / Quickstart</p>
       <.marketing_heading tag="h1" scale={:hero} class="mt-2">Quickstart</.marketing_heading>
       <p class="mt-6 text-lg leading-8 text-zinc-400">
         Zero to your first audited action in about five minutes. You'll install the runner on a
         Linux host, watch it connect, run
-        <code class="font-mono text-indigo-300">linux.uptime</code>
+        <code class="font-mono text-brand-300">linux.uptime</code>
         — gated by policy, recorded in the audit trail — and then point your LLM at the same
         catalog.
       </p>
@@ -17,7 +17,7 @@
         <strong class="text-zinc-100">Before you start, you need:</strong>
         <ul class="mt-3 space-y-2">
           <li class="flex items-start gap-2.5">
-            <.icon name="hero-check" class="mt-1 h-4 w-4 flex-none text-indigo-400" />
+            <.icon name="hero-check" class="mt-1 h-4 w-4 flex-none text-brand-400" />
             <span>
               A Linux host with <strong class="text-zinc-300">systemd</strong>
               — a VM, a cloud instance, or bare metal. (Not a bare container; the installer needs
@@ -25,11 +25,11 @@
             </span>
           </li>
           <li class="flex items-start gap-2.5">
-            <.icon name="hero-check" class="mt-1 h-4 w-4 flex-none text-indigo-400" />
+            <.icon name="hero-check" class="mt-1 h-4 w-4 flex-none text-brand-400" />
             <span><code class="text-zinc-300">sudo</code> on that host.</span>
           </li>
           <li class="flex items-start gap-2.5">
-            <.icon name="hero-check" class="mt-1 h-4 w-4 flex-none text-indigo-400" />
+            <.icon name="hero-check" class="mt-1 h-4 w-4 flex-none text-brand-400" />
             <span>
               Outbound HTTPS to <code class="text-zinc-300">emisar.dev:443</code>. The runner
               dials out; nothing listens on the host, so there's no inbound port to open.
@@ -40,7 +40,7 @@
 
       <h2 class="mt-12 text-2xl font-semibold text-zinc-50">1 · Create your account</h2>
       <p class="mt-3 text-sm leading-relaxed text-zinc-400">
-        Sign up at <.link href={~p"/sign_up"} class="text-indigo-400 hover:text-indigo-300">/sign_up</.link>. Free covers
+        Sign up at <.link href={~p"/sign_up"} class="text-brand-400 hover:text-brand-300">/sign_up</.link>. Free covers
         <strong class="text-zinc-300">3 runners and 1 user</strong>
         — no credit card.
       </p>
@@ -49,7 +49,7 @@
       <p class="mt-3 text-sm leading-relaxed text-zinc-400">
         In the dashboard, click <strong>Connect a runner</strong>. emisar shows a one-line command
         carrying a single-use enrollment key
-        (<code class="font-mono text-indigo-300">emkey-auth-…</code>, shown <em>once</em>
+        (<code class="font-mono text-brand-300">emkey-auth-…</code>, shown <em>once</em>
         — copy it now). Run it on your host:
       </p>
       <div class="mt-3 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
@@ -60,7 +60,7 @@
         That leading space keeps the key out of your shell history if you have
         <code class="font-mono">HISTCONTROL=ignorespace</code>
         set. It's a plain, readable shell script —
-        <.link href={~p"/install.sh"} class="text-indigo-400 hover:text-indigo-300">
+        <.link href={~p"/install.sh"} class="text-brand-400 hover:text-brand-300">
           read it first
         </.link>
         if you'd rather. It:
@@ -117,7 +117,7 @@
 
       <h2 class="mt-10 text-2xl font-semibold text-zinc-50">4 · Run your first action</h2>
       <p class="mt-3 text-sm leading-relaxed text-zinc-400">
-        Open the runner, pick <code class="font-mono text-indigo-300">linux.uptime</code>, add the
+        Open the runner, pick <code class="font-mono text-brand-300">linux.uptime</code>, add the
         required <strong>reason</strong>
         (one line — it's logged), and <strong>Dispatch</strong>. The output streams back live:
       </p>
@@ -147,7 +147,7 @@
         that high-risk action stops for your approval. Reads run on policy, mutations are gated,
         every call is audited — and the model never gets a shell. Full walkthrough: <.link
           navigate={~p"/docs/connect-an-llm"}
-          class="text-indigo-400 hover:text-indigo-300"
+          class="text-brand-400 hover:text-brand-300"
         >
           /docs/connect-an-llm
         </.link>.
@@ -165,7 +165,7 @@
           <strong class="text-zinc-200">server-side</strong>
           — per-account policy, and human approval on risky ones — so that client prompt is
           redundant for emisar's tools. You can safely tell your client to stop prompting for the
-          <code class="font-mono text-indigo-300">emisar</code>
+          <code class="font-mono text-brand-300">emisar</code>
           MCP server: it only silences the client's prompt. A risky action still pauses for
           approval at emisar, and an out-of-policy one is still denied — auto-permitting in the
           client never bypasses emisar's gate.
@@ -175,7 +175,7 @@
             <span class="flex-none text-zinc-600">—</span>
             <span>
               <strong class="text-zinc-300">Claude Code</strong>
-              — add <code class="font-mono text-indigo-300">"mcp__emisar__*"</code>
+              — add <code class="font-mono text-brand-300">"mcp__emisar__*"</code>
               to <code class="font-mono">permissions.allow</code>
               in <code class="font-mono">~/.claude/settings.json</code>.
             </span>
@@ -184,7 +184,7 @@
             <span class="flex-none text-zinc-600">—</span>
             <span>
               <strong class="text-zinc-300">Gemini CLI</strong>
-              — set <code class="font-mono text-indigo-300">"trust": true</code>
+              — set <code class="font-mono text-brand-300">"trust": true</code>
               on the <code class="font-mono">emisar</code>
               server in <code class="font-mono">~/.gemini/settings.json</code>.
             </span>
@@ -194,7 +194,7 @@
             <span>
               <strong class="text-zinc-300">Cursor, Codex CLI</strong>
               — these approve globally, not per-server (Cursor's agent auto-run; Codex's <code class="font-mono">approval_policy</code>). The
-              <.link navigate={~p"/app"} class="text-indigo-400 hover:text-indigo-300">
+              <.link navigate={~p"/app"} class="text-brand-400 hover:text-brand-300">
                 LLM agents
               </.link>
               page has the exact per-client steps.
@@ -242,7 +242,7 @@
         incident:
         <.link
           navigate={~p"/use-cases/csi-data-loss"}
-          class="text-indigo-400 hover:text-indigo-300"
+          class="text-brand-400 hover:text-brand-300"
         >
           the 33-hour wipe
         </.link>
@@ -250,7 +250,7 @@
         approval, then fixed in a Terraform PR the agent wrote.
       </p>
 
-      <div class="mt-12 rounded-xl border border-indigo-900/40 bg-indigo-950/20 p-5 text-sm leading-6 text-zinc-300">
+      <div class="mt-12 rounded-xl border border-brand-900/40 bg-brand-950/20 p-5 text-sm leading-6 text-zinc-300">
         <strong class="text-zinc-100">What you just built.</strong>
         A finite, reviewed action catalog sitting between an AI agent and your host — instead of an
         SSH key and a prayer. The model can only call what you declared, risky calls stop for a
@@ -268,19 +268,19 @@
       <div class="mt-8 flex flex-wrap gap-x-6 gap-y-3 border-t border-zinc-900 pt-8 text-sm">
         <.link
           navigate={~p"/docs/connect-an-llm"}
-          class="inline-flex items-center gap-1 font-medium text-indigo-400 hover:text-indigo-300"
+          class="inline-flex items-center gap-1 font-medium text-brand-400 hover:text-brand-300"
         >
           Connect your LLM <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
         </.link>
         <.link
           navigate={~p"/docs/action-packs"}
-          class="inline-flex items-center gap-1 font-medium text-indigo-400 hover:text-indigo-300"
+          class="inline-flex items-center gap-1 font-medium text-brand-400 hover:text-brand-300"
         >
           What else can it run? <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
         </.link>
         <.link
           navigate={~p"/docs/security-model"}
-          class="inline-flex items-center gap-1 font-medium text-indigo-400 hover:text-indigo-300"
+          class="inline-flex items-center gap-1 font-medium text-brand-400 hover:text-brand-300"
         >
           Is this safe? The security model <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
         </.link>
