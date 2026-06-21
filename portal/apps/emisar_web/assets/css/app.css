@@ -86,6 +86,31 @@
 }
 
 /* ---------------------------------------------------------------------------
+   Marketing contract-pipeline scene.
+
+   A product-specific technical backdrop for the redesigned marketing hero:
+   measured blueprint lines and scanlines, not decorative glow. Content stays
+   fully server-rendered; these classes only provide texture around real proof.
+   --------------------------------------------------------------------------- */
+.contract-grid {
+  background-image:
+    linear-gradient(to right, rgb(39 39 42 / 0.52) 1px, transparent 1px),
+    linear-gradient(to bottom, rgb(39 39 42 / 0.42) 1px, transparent 1px);
+  background-size: 72px 72px;
+  -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 72%, transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 0%, #000 72%, transparent 100%);
+}
+.contract-scanline {
+  background-image: repeating-linear-gradient(
+    to bottom,
+    rgb(255 255 255 / 0.07) 0,
+    rgb(255 255 255 / 0.07) 1px,
+    transparent 1px,
+    transparent 8px
+  );
+}
+
+/* ---------------------------------------------------------------------------
    "Watch emisar work" terminal (home page).
 
    Per-line styling for the two-tab transcript: the host tab mirrors real

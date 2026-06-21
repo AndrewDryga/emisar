@@ -63,4 +63,7 @@ honest.
 
 `cd portal && mix compile --warnings-as-errors && mix format`, click-test the happy
 path + one error path, and confirm lists stream. Then `mix test` the LV test if one
-exists. Hand UX judgment calls to `/ux-designer`; keep this hat on the implementation.
+exists. Before a rendered surface is done, run the `make-interfaces-feel-better`
+micro-craft pass (concentric radius, tabular numbers on live counts, hit areas,
+transition specificity) — calm on the console, expressive on marketing. Hand UX
+judgment calls to `/ux-designer`; keep this hat on the implementation.

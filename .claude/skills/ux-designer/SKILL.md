@@ -80,6 +80,9 @@ hosts, a mislabeled control is a misclick.
 
 - **Look at it, don't just read the markup.** Render the screen (`/run`) and screenshot it —
   a picture is worth 1000 tokens; most state, spacing, and alignment bugs are invisible in HEEx.
+- **Sweat the micro-craft, calmly.** For the small details — `tabular-nums` on live counts,
+  concentric radius, ≥40×40px hit areas, transition specificity — apply `make-interfaces-feel-better`,
+  but keep console motion to real state changes only; the press-scale/stagger flourishes are marketing's.
 - **Remove one accessory.** Before you call it done, take one thing off the screen — a divider,
   a second button, a badge, a sentence — and check it reads better. Calm is the goal; spend the
   care on precise spacing, alignment, and type scale, not on more elements.

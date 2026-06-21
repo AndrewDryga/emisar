@@ -43,7 +43,10 @@ lower confidence.
 4. **Visual craft test.**
    Inspect hierarchy, alignment, rhythm, typography, image treatment, spacing,
    responsive behavior, and whether the art direction is carried through every
-   section.
+   section. Then run the `make-interfaces-feel-better` micro-craft pass for the
+   small details that read as unfinished — concentric border radius, optical
+   alignment, tabular numbers, text-wrap, image outlines, press feedback, and
+   transition specificity.
 
 5. **Usability and accessibility test.**
    Check scan path, CTA clarity, keyboard/focus states, contrast, reduced motion,

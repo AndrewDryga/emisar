@@ -18,6 +18,8 @@ system, implement in small rendered passes, and review with `design-review`.
 - Use `security-engineer` for claims about trust, approvals, audit, runner safety,
   MCP, SSH, and infrastructure access.
 - Use `frontend` for HEEx/Tailwind execution in the portal marketing codebase.
+- Use `make-interfaces-feel-better` for the micro-detail polish pass once a page is
+  rendered — the small craft (radius, alignment, motion, numerals) under the art direction.
 - Use `design-review` after the first rendered version and again before finishing.
 - Use `review-board` before merge when the diff is material.
 
