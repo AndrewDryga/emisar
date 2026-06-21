@@ -251,7 +251,7 @@ defmodule EmisarWeb.MarketingHTML do
 
       <header class="border-b border-zinc-900">
         <div class="mx-auto max-w-5xl px-6 py-16 sm:py-20 lg:px-8">
-          <p class="text-sm font-semibold text-indigo-400">Legal</p>
+          <p class="text-sm font-semibold text-brand-400">Legal</p>
           <h1 class="mt-2 text-4xl font-bold tracking-tight text-zinc-50 sm:text-5xl">
             {@title}
           </h1>
@@ -274,7 +274,7 @@ defmodule EmisarWeb.MarketingHTML do
                   <li :for={{id, label} <- @toc}>
                     <a
                       href={"##{id}"}
-                      class="-ml-px block border-l border-transparent py-1 pl-4 text-sm text-zinc-400 transition hover:border-indigo-400 hover:text-zinc-100"
+                      class="-ml-px block border-l border-transparent py-1 pl-4 text-sm text-zinc-400 transition hover:border-brand-400 hover:text-zinc-100"
                     >
                       {label}
                     </a>
@@ -283,7 +283,7 @@ defmodule EmisarWeb.MarketingHTML do
               </nav>
             </aside>
 
-            <article class="prose prose-invert max-w-none prose-headings:scroll-mt-8 prose-headings:font-bold prose-headings:tracking-tight prose-headings:text-zinc-50 prose-h2:mb-4 prose-h2:mt-12 prose-h2:text-2xl prose-p:leading-8 prose-p:text-zinc-400 prose-a:font-medium prose-a:text-indigo-300 prose-a:no-underline hover:prose-a:text-indigo-200 prose-strong:text-zinc-200 prose-li:text-zinc-400 prose-li:marker:text-zinc-600">
+            <article class="prose prose-invert max-w-none prose-headings:scroll-mt-8 prose-headings:font-bold prose-headings:tracking-tight prose-headings:text-zinc-50 prose-h2:mb-4 prose-h2:mt-12 prose-h2:text-2xl prose-p:leading-8 prose-p:text-zinc-400 prose-a:font-medium prose-a:text-brand-300 prose-a:no-underline hover:prose-a:text-brand-200 prose-strong:text-zinc-200 prose-li:text-zinc-400 prose-li:marker:text-zinc-600">
               {render_slot(@inner_block)}
             </article>
           </div>
