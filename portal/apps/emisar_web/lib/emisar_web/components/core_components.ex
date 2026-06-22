@@ -1335,8 +1335,8 @@ defmodule EmisarWeb.CoreComponents do
       <:trigger>
         <img src={~p"/images/brand/emisar-icon.svg"} alt="" class="h-8 w-8 shrink-0" />
         <div class="min-w-0 flex-1">
-          <div class="truncate font-bold tracking-tight">emisar</div>
-          <div class="truncate text-xs text-zinc-500">{@current_account.name}</div>
+          <img src={~p"/images/brand/emisar-wordmark.svg"} alt="emisar" class="h-[18px] w-auto" />
+          <div class="mt-0.5 truncate text-xs text-zinc-500">{@current_account.name}</div>
         </div>
         <.icon
           name="hero-chevron-up-down"
