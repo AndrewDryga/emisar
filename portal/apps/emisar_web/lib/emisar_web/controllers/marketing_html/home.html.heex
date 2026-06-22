@@ -9,7 +9,6 @@
   <%!-- Hero --%>
   <section class="relative overflow-hidden border-b border-zinc-900 bg-[#07080a]">
     <div class="contract-grid pointer-events-none absolute inset-0" aria-hidden="true"></div>
-    <div class="glow-emerald pointer-events-none absolute inset-0" aria-hidden="true"></div>
     <div class="grain pointer-events-none absolute inset-0" aria-hidden="true"></div>
 
     <div class="relative mx-auto w-full max-w-7xl px-6 py-12 sm:py-20 lg:px-8">
@@ -61,27 +60,7 @@
         </div>
 
         <div class="p-3 sm:p-5">
-          <%!-- The Gate — the signature mark in motion, drawn from the logo: a
-               request crosses the bracket gate (the dots brighten in sequence as
-               policy checks) and resolves to one of three outcomes — the full
-               allow/hold/deny space the log below then shows in the concrete. --%>
-          <div class="mb-5 flex items-center gap-2 sm:gap-4">
-            <div class="flex flex-none items-center gap-1.5 rounded-md border border-zinc-800 bg-zinc-900/50 px-2 py-1.5 font-mono text-[10px] text-zinc-400 sm:text-[11px]">
-              <span class="h-1.5 w-1.5 rounded-full bg-zinc-500"></span> request
-            </div>
-            <div class="h-px flex-1 bg-gradient-to-r from-zinc-700/80 to-brand-500/50"></div>
-            <div class="relative flex-none">
-              <div class="glow-emerald pointer-events-none absolute -inset-2" aria-hidden="true">
-              </div>
-              <.gate_mark animate class="relative h-12 w-12 sm:h-14 sm:w-14" />
-            </div>
-            <div class="h-px flex-1 bg-gradient-to-r from-brand-500/50 to-zinc-700/80"></div>
-            <div class="flex flex-none flex-col items-end gap-1">
-              <.state_chip state={:pass} label="allow" />
-              <.state_chip state={:pending} label="hold" />
-              <.state_chip state={:deny} label="deny" />
-            </div>
-          </div>
+          <.scan_line animate state={:pass} class="mb-4" />
           <div class="divide-y divide-zinc-900/80 font-mono text-[11.5px] leading-6 tabular-nums sm:text-[12.5px]">
             <%= for {call, kind} <- [
                 {"nomad.alloc_logs checkout", :read},
@@ -101,11 +80,19 @@
                            sm+ and let mobile show just the human-in-loop signal. --%>
                     <span class="hidden items-center gap-1.5 sm:flex">
                       <.icon name="hero-arrow-right" class="h-3 w-3 text-zinc-600" />
-                      <.state_chip state={:pass} label="approved" />
+                      <.state_chip
+                        state={:pass}
+                        label="approved"
+                        class="w-[5.5rem] justify-center"
+                      />
                     </span>
                   </span>
                 <% else %>
-                  <.state_chip state={:pass} label="allowed" class="flex-none" />
+                  <.state_chip
+                    state={:pass}
+                    label="allowed"
+                    class="w-[5.5rem] flex-none justify-center"
+                  />
                 <% end %>
               </div>
             <% end %>
@@ -688,7 +675,10 @@
             <span class="text-4xl font-bold text-white text-balance">$0</span>
             <span class="text-sm text-zinc-500">/ forever</span>
           </div>
-          <ul class="mt-6 space-y-2 text-sm text-zinc-300">
+          <.marketing_button variant={:secondary} href={~p"/sign_up"} block class="mt-8">
+            Start free
+          </.marketing_button>
+          <ul class="mt-8 space-y-2 text-sm text-zinc-300">
             <li class="flex gap-2">
               <.icon name="hero-check" class="h-4 w-4 flex-none text-brand-400" /> 3 runners
             </li>
@@ -715,7 +705,10 @@
             <span class="text-4xl font-bold text-white text-balance">$20</span>
             <span class="text-sm text-zinc-500">/ runner / month</span>
           </div>
-          <ul class="mt-6 space-y-2 text-sm text-zinc-300">
+          <.marketing_button href={~p"/sign_up"} block class="mt-8">
+            Start free
+          </.marketing_button>
+          <ul class="mt-8 space-y-2 text-sm text-zinc-300">
             <li class="flex gap-2">
               <.icon name="hero-check" class="h-4 w-4 flex-none text-brand-400" />
               Up to 100 runners
@@ -739,7 +732,15 @@
           <div class="mt-6 flex items-baseline gap-1">
             <span class="text-4xl font-bold text-white text-balance">Custom</span>
           </div>
-          <ul class="mt-6 space-y-2 text-sm text-zinc-300">
+          <.marketing_button
+            variant={:secondary}
+            href="mailto:sales@emisar.dev"
+            block
+            class="mt-8"
+          >
+            Talk to sales
+          </.marketing_button>
+          <ul class="mt-8 space-y-2 text-sm text-zinc-300">
             <li class="flex gap-2">
               <.icon name="hero-check" class="h-4 w-4 flex-none text-brand-400" />
               Unlimited runners &amp; users
@@ -758,12 +759,6 @@
             </li>
           </ul>
         </div>
-      </div>
-
-      <div class="mt-12 flex justify-center">
-        <.marketing_button variant={:secondary} href={~p"/pricing"} icon="hero-arrow-right">
-          Compare all plans
-        </.marketing_button>
       </div>
     </div>
   </section>
