@@ -61,7 +61,84 @@
         </div>
 
         <div class="p-3 sm:p-5">
-          <.scan_line animate state={:pass} class="mb-4" />
+          <%!-- The Gate — the signature mark in motion, drawn from the logo: a
+               request crosses the bracket gate (the dots brighten in sequence as
+               policy checks) and resolves to one of three outcomes — the full
+               allow/hold/deny space the log below then shows in the concrete. --%>
+          <div class="mb-5 flex items-center gap-2 sm:gap-4">
+            <div class="flex flex-none items-center gap-1.5 rounded-md border border-zinc-800 bg-zinc-900/50 px-2 py-1.5 font-mono text-[10px] text-zinc-400 sm:text-[11px]">
+              <span class="h-1.5 w-1.5 rounded-full bg-zinc-500"></span> request
+            </div>
+            <div class="h-px flex-1 bg-gradient-to-r from-zinc-700/80 to-brand-500/50"></div>
+            <div class="relative flex-none">
+              <div class="glow-emerald pointer-events-none absolute -inset-2" aria-hidden="true">
+              </div>
+              <svg
+                viewBox="180 190 668 626"
+                class="relative h-12 w-12 sm:h-14 sm:w-14"
+                fill="none"
+                aria-hidden="true"
+              >
+                <path
+                  d="M352 218 L196 344 L196 680 L352 806"
+                  stroke="currentColor"
+                  stroke-width="40"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  class="text-zinc-500"
+                />
+                <path
+                  d="M672 218 L828 344 L828 680 L672 806"
+                  stroke="currentColor"
+                  stroke-width="40"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  class="text-zinc-500"
+                />
+                <rect
+                  x="330"
+                  y="489"
+                  width="48"
+                  height="48"
+                  rx="11"
+                  fill="#36E6A5"
+                  class="gate-dot"
+                />
+                <rect
+                  x="430"
+                  y="489"
+                  width="48"
+                  height="48"
+                  rx="11"
+                  fill="#36E6A5"
+                  class="gate-dot gate-dot-2"
+                />
+                <rect
+                  x="530"
+                  y="489"
+                  width="48"
+                  height="48"
+                  rx="11"
+                  fill="#36E6A5"
+                  class="gate-dot gate-dot-3"
+                />
+                <path d="M632 513 H735" stroke="#36E6A5" stroke-width="40" stroke-linecap="round" />
+                <path
+                  d="M690 430 L782 513 L690 596"
+                  stroke="#36E6A5"
+                  stroke-width="40"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+            </div>
+            <div class="h-px flex-1 bg-gradient-to-r from-brand-500/50 to-zinc-700/80"></div>
+            <div class="flex flex-none flex-col items-end gap-1">
+              <.state_chip state={:pass} label="allow" />
+              <.state_chip state={:pending} label="hold" />
+              <.state_chip state={:deny} label="deny" />
+            </div>
+          </div>
           <div class="divide-y divide-zinc-900/80 font-mono text-[11.5px] leading-6 tabular-nums sm:text-[12.5px]">
             <%= for {call, kind} <- [
                 {"nomad.alloc_logs checkout", :read},

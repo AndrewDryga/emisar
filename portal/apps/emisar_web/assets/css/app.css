@@ -330,3 +330,31 @@
     transform: translateX(400%);
   }
 }
+
+/* ---------------------------------------------------------------------------
+   The Gate device (home hero — `<.gate_scene>`-style markup).
+
+   The signature mark in motion: the three emerald dots (the request) brighten
+   in sequence as they cross the bracket gate — a calm "flow through the gate"
+   pulse, not a busy loop. Base opacity is full, so the global reduced-motion
+   override (animation-duration 0.01ms) leaves all three lit and static.
+   --------------------------------------------------------------------------- */
+.gate-dot {
+  animation: gate-pulse 2.6s ease-in-out infinite;
+}
+.gate-dot-2 {
+  animation-delay: 0.45s;
+}
+.gate-dot-3 {
+  animation-delay: 0.9s;
+}
+@keyframes gate-pulse {
+  0%,
+  55%,
+  100% {
+    opacity: 0.5;
+  }
+  20% {
+    opacity: 1;
+  }
+}
