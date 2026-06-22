@@ -1060,7 +1060,9 @@ defmodule EmisarWeb.CoreComponents do
   def brand(assigns) do
     ~H"""
     <img
-      src={if @wordmark, do: ~p"/images/emisar-logo.svg", else: ~p"/images/emisar-icon.svg"}
+      src={
+        if @wordmark, do: ~p"/images/brand/emisar-logo.svg", else: ~p"/images/brand/emisar-icon.svg"
+      }
       alt="emisar"
       class={[brand_mark_class(@size, @wordmark), @class]}
     />
@@ -1331,7 +1333,7 @@ defmodule EmisarWeb.CoreComponents do
       panel_class="z-30 mt-1 overflow-hidden shadow-2xl"
     >
       <:trigger>
-        <img src={~p"/images/emisar-icon.svg"} alt="" class="h-8 w-8 shrink-0" />
+        <img src={~p"/images/brand/emisar-icon.svg"} alt="" class="h-8 w-8 shrink-0" />
         <div class="min-w-0 flex-1">
           <div class="truncate font-bold tracking-tight">emisar</div>
           <div class="truncate text-xs text-zinc-500">{@current_account.name}</div>
@@ -3387,7 +3389,7 @@ defmodule EmisarWeb.CoreComponents do
   # ============================================================
   #  Marketing "gate" kit
   #
-  #  The brand mark is an emerald gate (images/emisar-icon.svg); these four
+  #  The brand mark is an emerald gate (images/brand/emisar-icon.svg); these four
   #  primitives carry it across the marketing site (see creative-director):
   #  `gate_frame` brackets content like the logo, `scan_line` marks the
   #  decision point, `state_chip` shows what the gate decided, and

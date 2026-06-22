@@ -109,7 +109,7 @@ defmodule EmisarWeb.MarketingController do
               "@type" => "Organization",
               "name" => "emisar",
               "url" => @base,
-              "logo" => @base <> "/images/emisar-logo.png",
+              "logo" => @base <> "/images/brand/emisar-logo.png",
               "description" =>
                 "Give AI tools approved infrastructure actions, not SSH. Pack trust, policy gates, approvals, searchable audit, and a hash-chained runner journal."
             },
