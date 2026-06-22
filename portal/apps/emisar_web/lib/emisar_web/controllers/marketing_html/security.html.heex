@@ -41,71 +41,106 @@
         </p>
       </div>
 
-      <%!-- The trust boundary as a staged flow. The LLM sits OUTSIDE the
-           boundary; everything it asks for crosses the gate. Replaces the ASCII
-           pre + the redundant stage cards with one concrete, branded diagram. --%>
+      <%!-- The canonical architecture — a request's path through emisar. The LLM
+           is untrusted and outside the boundary; everything it asks crosses the
+           gate (the same mark as the home hero), runs least-privilege on your
+           host, and lands in a hash-chained journal. The trusted zone carries an
+           emerald glow; the untrusted client stays sky/cold. --%>
       <div class="mx-auto mt-16 max-w-2xl">
-        <div class="rounded-xl border border-zinc-800 bg-zinc-950/60 p-5">
-          <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
-            <span class="font-mono text-sm font-semibold text-sky-300">LLM</span>
-            <span class="rounded bg-zinc-800/70 px-1.5 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
-              untrusted
+        <%!-- Untrusted zone — the client, outside the boundary --%>
+        <div class="rounded-2xl border border-sky-500/20 bg-sky-950/10 p-5">
+          <div class="flex items-center gap-3">
+            <span class="flex h-9 w-9 flex-none items-center justify-center rounded-lg bg-sky-500/10 text-sky-300 ring-1 ring-inset ring-sky-500/25">
+              <.icon name="hero-cpu-chip" class="h-5 w-5" />
             </span>
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="font-mono text-sm font-semibold text-sky-300">LLM client</span>
+              <span class="rounded bg-sky-500/10 px-1.5 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wider text-sky-300/90">
+                untrusted
+              </span>
+            </div>
           </div>
-          <p class="mt-2 text-sm leading-relaxed text-zinc-400">
-            Asks for one catalog action over MCP — with a required reason. It never gets a shell,
-            and undeclared commands don't exist to it.
+          <p class="mt-2.5 text-sm leading-relaxed text-zinc-400">
+            Claude, Cursor, or ChatGPT asks for one catalog action over MCP — with a required
+            reason. It never gets a shell, and undeclared commands don't exist to it.
           </p>
         </div>
 
-        <%!-- the boundary itself — the line everything the LLM asks for must cross --%>
-        <div class="my-3 flex items-center gap-3 px-1">
-          <span class="h-px flex-1 bg-gradient-to-r from-transparent to-brand-500/50"></span>
-          <span class="font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-brand-400">
-            the trust boundary
+        <%!-- the boundary — the line everything the LLM asks for must cross --%>
+        <div class="flex items-center gap-3 px-1 py-4">
+          <span class="h-px flex-1 bg-gradient-to-r from-transparent via-brand-500/40 to-brand-500/60">
           </span>
-          <span class="h-px flex-1 bg-gradient-to-l from-transparent to-brand-500/50"></span>
+          <span class="flex items-center gap-1.5 font-mono text-[10px] font-semibold uppercase tracking-[0.2em] text-brand-400">
+            <.icon name="hero-lock-closed" class="h-3 w-3" /> trust boundary
+          </span>
+          <span class="h-px flex-1 bg-gradient-to-l from-transparent via-brand-500/40 to-brand-500/60">
+          </span>
         </div>
 
-        <div class="rounded-xl border border-brand-500/30 bg-brand-950/20 p-5 ring-1 ring-inset ring-brand-500/10">
-          <div class="flex flex-wrap items-center gap-2">
-            <span class="font-mono text-sm font-semibold text-brand-400">Control plane</span>
-            <span class="text-zinc-600">·</span>
-            <.state_chip state={:pending} label="require approval" />
-            <.icon name="hero-arrow-right" class="h-3 w-3 text-zinc-600" />
-            <.state_chip state={:pass} label="approved" />
+        <%!-- Trusted zone — gate → runner → audit, lit by the brand glow --%>
+        <div class="relative space-y-3">
+          <div
+            class="glow-emerald pointer-events-none absolute -inset-x-6 -inset-y-3"
+            aria-hidden="true"
+          >
           </div>
-          <p class="mt-2 text-sm leading-relaxed text-zinc-400">
-            Evaluates policy, checks scope and pack trust, routes, and writes the audit. On a risky
-            action it waits for a human — and it never executes a shell itself.
-          </p>
-        </div>
 
-        <div class="my-3 flex justify-center">
-          <.icon name="hero-arrow-down" class="h-4 w-4 text-zinc-700" />
-        </div>
+          <div class="surface-glass relative rounded-2xl border border-brand-500/30 p-5">
+            <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
+              <.gate_mark class="h-8 w-8 flex-none" />
+              <span class="font-mono text-sm font-semibold text-brand-300">
+                The gate · control plane
+              </span>
+              <span class="flex items-center gap-1.5">
+                <.state_chip state={:pending} label="require approval" />
+                <.icon name="hero-arrow-right" class="h-3 w-3 text-zinc-600" />
+                <.state_chip state={:pass} label="approved" />
+              </span>
+            </div>
+            <p class="mt-2.5 text-sm leading-relaxed text-zinc-400">
+              Evaluates policy, checks scope and pack trust, routes, and writes the audit. A risky
+              action waits for a human — and it never executes a shell itself.
+            </p>
+          </div>
 
-        <div class="rounded-xl border border-zinc-800 bg-zinc-950/60 p-5">
-          <span class="font-mono text-sm font-semibold text-brand-400">Runner on host</span>
-          <p class="mt-2 text-sm leading-relaxed text-zinc-400">
-            Outbound WSS only — the host dials out, nothing listens. A non-root service user
-            re-validates every argument against the action schema, re-verifies the pack hash, drops
-            to least privilege, runs argv arrays (never a shell string), and redacts before egress.
-          </p>
-        </div>
+          <div class="flex justify-center" aria-hidden="true">
+            <span class="h-4 w-px bg-gradient-to-b from-brand-500/50 to-brand-500/20"></span>
+          </div>
 
-        <div class="my-3 flex justify-center">
-          <.icon name="hero-arrow-down" class="h-4 w-4 text-zinc-700" />
-        </div>
+          <div class="relative rounded-2xl border border-zinc-800 bg-zinc-950/70 p-5">
+            <div class="flex items-center gap-3">
+              <span class="flex h-9 w-9 flex-none items-center justify-center rounded-lg bg-zinc-900 text-brand-400 ring-1 ring-inset ring-zinc-700">
+                <.icon name="hero-server-stack" class="h-5 w-5" />
+              </span>
+              <span class="font-mono text-sm font-semibold text-zinc-100">
+                Runner · on your host
+              </span>
+            </div>
+            <p class="mt-2.5 text-sm leading-relaxed text-zinc-400">
+              Outbound WSS only — the host dials out, nothing listens. A non-root service user
+              re-validates every argument against the schema, re-verifies the pack hash, drops to
+              least privilege, runs argv arrays (never a shell string), and redacts before egress.
+            </p>
+          </div>
 
-        <div class="rounded-xl border border-zinc-800 bg-zinc-950/60 p-5">
-          <span class="font-mono text-sm font-semibold text-brand-400">
-            Hash-chained journal + cloud audit
-          </span>
-          <p class="mt-2 text-sm leading-relaxed text-zinc-400">
-            Every input, output, exit code, and redaction — a SHA-256-chained JSONL journal on the
-            host, mirrored to the searchable cloud audit and streamable to your SIEM.
-          </p>
+          <div class="flex justify-center" aria-hidden="true">
+            <span class="h-4 w-px bg-gradient-to-b from-brand-500/50 to-brand-500/20"></span>
+          </div>
+
+          <div class="relative rounded-2xl border border-zinc-800 bg-zinc-950/70 p-5">
+            <div class="flex items-center gap-3">
+              <span class="flex h-9 w-9 flex-none items-center justify-center rounded-lg bg-zinc-900 text-brand-400 ring-1 ring-inset ring-zinc-700">
+                <.icon name="hero-document-check" class="h-5 w-5" />
+              </span>
+              <span class="font-mono text-sm font-semibold text-zinc-100">
+                Hash-chained journal + cloud audit
+              </span>
+            </div>
+            <p class="mt-2.5 text-sm leading-relaxed text-zinc-400">
+              Every input, output, exit code, and redaction — a SHA-256-chained JSONL journal on the
+              host, mirrored to the searchable cloud audit and streamable to your SIEM.
+            </p>
+          </div>
         </div>
       </div>
     </div>

@@ -3440,6 +3440,77 @@ defmodule EmisarWeb.CoreComponents do
   defp gate_bracket_class(:neutral), do: "border-zinc-700/60"
 
   @doc """
+  The emisar gate mark — the logo's bracket gate (zinc brackets framing the
+  brand-green dots + arrow) as an inline SVG, so it can sit in flows and the
+  hero at any size. `animate` pulses the three dots in sequence (a request
+  crossing the gate); base opacity is full, so reduced-motion lands them lit
+  and static. The mark is decorative, so it is `aria-hidden`.
+
+      <.gate_mark class="h-9 w-9" />
+      <.gate_mark animate class="h-12 w-12 sm:h-14 sm:w-14" />
+  """
+  attr :animate, :boolean, default: false
+  attr :class, :string, default: "h-12 w-12"
+
+  def gate_mark(assigns) do
+    ~H"""
+    <svg viewBox="180 190 668 626" class={@class} fill="none" aria-hidden="true">
+      <path
+        d="M352 218 L196 344 L196 680 L352 806"
+        stroke="currentColor"
+        stroke-width="40"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        class="text-zinc-500"
+      />
+      <path
+        d="M672 218 L828 344 L828 680 L672 806"
+        stroke="currentColor"
+        stroke-width="40"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        class="text-zinc-500"
+      />
+      <rect
+        x="330"
+        y="489"
+        width="48"
+        height="48"
+        rx="11"
+        fill="#36E6A5"
+        class={@animate && "gate-dot"}
+      />
+      <rect
+        x="430"
+        y="489"
+        width="48"
+        height="48"
+        rx="11"
+        fill="#36E6A5"
+        class={@animate && "gate-dot gate-dot-2"}
+      />
+      <rect
+        x="530"
+        y="489"
+        width="48"
+        height="48"
+        rx="11"
+        fill="#36E6A5"
+        class={@animate && "gate-dot gate-dot-3"}
+      />
+      <path d="M632 513 H735" stroke="#36E6A5" stroke-width="40" stroke-linecap="round" />
+      <path
+        d="M690 430 L782 513 L690 596"
+        stroke="#36E6A5"
+        stroke-width="40"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      />
+    </svg>
+    """
+  end
+
+  @doc """
   A hairline at a decision point — the instant a request is checked at the gate.
   The static track always renders; `animate` adds a single brand sweep that
   honors `prefers-reduced-motion` (the sweep ends off-screen, so opted-out
