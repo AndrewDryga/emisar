@@ -3259,7 +3259,11 @@ defmodule EmisarWeb.CoreComponents do
       class={marketing_button_class(@variant, @size, @block, @class)}
       {@rest}
     >
-      {render_slot(@inner_block)}<.icon :if={@icon} name={@icon} class="h-4 w-4" />
+      {render_slot(@inner_block)}<.icon
+        :if={@icon}
+        name={@icon}
+        class="h-4 w-4 transition-transform group-hover/btn:translate-x-0.5"
+      />
     </.link>
     """
   end
@@ -3268,7 +3272,11 @@ defmodule EmisarWeb.CoreComponents do
       when is_map_key(rest, :href) or is_map_key(rest, :navigate) or is_map_key(rest, :patch) do
     ~H"""
     <.link class={marketing_button_class(@variant, @size, @block, @class)} {@rest}>
-      {render_slot(@inner_block)}<.icon :if={@icon} name={@icon} class="h-4 w-4" />
+      {render_slot(@inner_block)}<.icon
+        :if={@icon}
+        name={@icon}
+        class="h-4 w-4 transition-transform group-hover/btn:translate-x-0.5"
+      />
     </.link>
     """
   end
@@ -3276,7 +3284,11 @@ defmodule EmisarWeb.CoreComponents do
   def marketing_button(assigns) do
     ~H"""
     <button type={@type} class={marketing_button_class(@variant, @size, @block, @class)} {@rest}>
-      {render_slot(@inner_block)}<.icon :if={@icon} name={@icon} class="h-4 w-4" />
+      {render_slot(@inner_block)}<.icon
+        :if={@icon}
+        name={@icon}
+        class="h-4 w-4 transition-transform group-hover/btn:translate-x-0.5"
+      />
     </button>
     """
   end
@@ -3286,7 +3298,7 @@ defmodule EmisarWeb.CoreComponents do
   defp marketing_button_class(variant, size, block, extra) do
     [
       if(block, do: "flex w-full", else: "inline-flex"),
-      "items-center justify-center gap-2 whitespace-nowrap rounded-lg text-sm font-semibold transition active:scale-[0.96]",
+      "group/btn items-center justify-center gap-2 whitespace-nowrap rounded-lg text-sm font-semibold transition active:scale-[0.96]",
       marketing_button_size(size),
       marketing_button_variant(variant),
       extra

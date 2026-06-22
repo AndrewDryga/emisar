@@ -79,7 +79,8 @@
               navigate={~p"/packs/#{pack.id}"}
               class="font-semibold text-brand-300 hover:text-brand-200"
             >
-              Browse pack →
+              Browse pack
+              <span class="inline-block transition-transform group-hover:translate-x-0.5">→</span>
             </.link>
             <.external_link
               href={EmisarWeb.PacksRegistry.source_url(pack)}
