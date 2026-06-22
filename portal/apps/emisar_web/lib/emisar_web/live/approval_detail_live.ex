@@ -324,6 +324,24 @@ defmodule EmisarWeb.ApprovalDetailLive do
   defp user_label(_, id) when is_binary(id), do: String.slice(id, 0, 8) <> "…"
   defp user_label(_, _), do: "—"
 
+  # How the held run was dispatched. `:operator` (a human from the console)
+  # carries no tag — the requester name says it. The rest qualify "who asked":
+  # `:mcp` is the one that matters, an autonomous LLM agent reaching the gate.
+  defp dispatch_source_label(:mcp), do: "MCP"
+  defp dispatch_source_label(:runbook), do: "Runbook"
+  defp dispatch_source_label(:scheduled), do: "Scheduled"
+  defp dispatch_source_label(_), do: nil
+
+  defp dispatch_source_icon(:mcp), do: "hero-bolt"
+  defp dispatch_source_icon(:runbook), do: "hero-book-open"
+  defp dispatch_source_icon(:scheduled), do: "hero-clock"
+  defp dispatch_source_icon(_), do: "hero-cpu-chip"
+
+  defp dispatch_source_title(:mcp), do: "Dispatched by an LLM agent over the MCP API"
+  defp dispatch_source_title(:runbook), do: "Dispatched as a step in a runbook run"
+  defp dispatch_source_title(:scheduled), do: "Dispatched by a schedule"
+  defp dispatch_source_title(_), do: nil
+
   # First 12 chars of a runner UUID + "…" trailer when one exists, or
   # an em-dash if the context didn't carry a runner_id at all. Kept as
   # a helper so the template stays single-expression — mixing a slice
@@ -410,9 +428,23 @@ defmodule EmisarWeb.ApprovalDetailLive do
             </span>
           <% end %>
         </.meta_field>
+        <%!-- Who (the accountable human) AND what asked: a request from an
+             autonomous LLM agent (MCP) is the reason the gate exists and
+             warrants more scrutiny than an operator's own dispatch. --%>
         <.meta_field label="Requested by">
-          <span class="truncate text-zinc-200">
-            {user_label(@requested_by, @request.requested_by_id)}
+          <span class="inline-flex min-w-0 items-center gap-1.5">
+            <span class="truncate text-zinc-200">
+              {user_label(@requested_by, @request.requested_by_id)}
+            </span>
+            <span
+              :if={@run && @run.source != :operator}
+              title={dispatch_source_title(@run.source)}
+              class="inline-flex flex-none items-center gap-1 rounded bg-zinc-800/80 px-1.5 py-0.5 text-[10px] font-semibold text-zinc-300 ring-1 ring-inset ring-zinc-700/60"
+            >
+              <.icon name={dispatch_source_icon(@run.source)} class="h-3 w-3" />{dispatch_source_label(
+                @run.source
+              )}
+            </span>
           </span>
         </.meta_field>
         <.meta_field label="When">
