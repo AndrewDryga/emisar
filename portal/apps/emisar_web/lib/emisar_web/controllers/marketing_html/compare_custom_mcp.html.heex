@@ -30,99 +30,73 @@
         servers lack" — it's the code you write, test, and carry. The column on the right is what
         emisar ships so you don't.
       </p>
-      <div class="mt-4 overflow-x-auto rounded-lg border border-zinc-900">
-        <table class="min-w-[680px] text-sm">
+      <%!-- One data list, two layouts: a table on md+, stacked cards on mobile, so
+        the 3-way comparison reads without a horizontal scroll on phones. --%>
+      <% rows = [
+        {"Argument validation",
+         "Reject undeclared args, coerce types, enforce bounds — and do it on the host, since the model's output is untrusted",
+         "Typed YAML schemas the runner re-validates before exec; argv arrays, never a shell string"},
+        {"Tool integrity", "Your deploy pipeline is the only thing stopping a changed handler",
+         "Content-addressed packs; a changed SHA-256 blocks dispatch until an admin re-trusts"},
+        {"Host transport", "Credentials and routing you design and secure",
+         "Outbound-only runners, single-use enrollment, revocable per-runner tokens — nothing listens on the host"},
+        {"Policy & approval", "Conditional logic in code plus a homemade approval queue",
+         "Risk-tier defaults + per-action overrides, human approval, and standing grants that expire"},
+        {"Per-user access", "Hand-rolled, and easy to get subtly wrong",
+         "Per-member runner scopes in UI, API, and dispatch; keys inherit the creator's scope at call time"},
+        {"Multi-client access",
+         "Auth and transport work per client (Claude, ChatGPT, Cursor, CLIs)",
+         "OAuth 2.1 remote MCP plus a stdio bridge, one catalog behind both"},
+        {"Output safety", "Your redaction regexes, your output caps, your bug if one leaks",
+         "20+ built-in patterns plus your own, masked on the host before egress; output bytes clamped"},
+        {"Audit", "Logs you design, store, and have to prove weren't edited",
+         "Hash-chained host journal (emisar audit verify), searchable cloud audit, NDJSON SIEM export"},
+        {"Failure modes", "Reconnect, orphaned runs, leaked child processes — yours to handle",
+         "Run-state reconciled on reconnect; children reaped on disconnect; orphans marked, not lost"}
+      ] %>
+
+      <%!-- Desktop: the comparison table --%>
+      <div class="mt-4 hidden overflow-hidden rounded-xl border border-zinc-900 md:block">
+        <table class="w-full text-sm">
           <thead class="bg-zinc-950/80 text-xs uppercase tracking-wider text-zinc-500">
             <tr>
-              <th class="px-4 py-3 text-left">Concern</th>
-              <th class="px-4 py-3 text-left">You build &amp; maintain it</th>
-              <th class="px-4 py-3 text-left">emisar ships it</th>
+              <th class="px-4 py-3 text-left font-medium">Concern</th>
+              <th class="px-4 py-3 text-left font-medium">You build &amp; maintain it</th>
+              <th class="px-4 py-3 text-left font-semibold text-brand-300">emisar ships it</th>
             </tr>
           </thead>
           <tbody class="divide-y divide-zinc-900 text-zinc-300">
-            <tr>
-              <td class="px-4 py-3">Argument validation</td>
-              <td class="px-4 py-3">
-                Reject undeclared args, coerce types, enforce bounds — and do it on the host, since
-                the model's output is untrusted
-              </td>
-              <td class="px-4 py-3">
-                Typed YAML schemas the runner re-validates before exec; argv arrays, never a shell
-                string
-              </td>
-            </tr>
-            <tr>
-              <td class="px-4 py-3">Tool integrity</td>
-              <td class="px-4 py-3">
-                Your deploy pipeline is the only thing stopping a changed handler
-              </td>
-              <td class="px-4 py-3">
-                Content-addressed packs; a changed SHA-256 blocks dispatch until an admin re-trusts
-              </td>
-            </tr>
-            <tr>
-              <td class="px-4 py-3">Host transport</td>
-              <td class="px-4 py-3">Credentials and routing you design and secure</td>
-              <td class="px-4 py-3">
-                Outbound-only runners, single-use enrollment, revocable per-runner tokens — nothing
-                listens on the host
-              </td>
-            </tr>
-            <tr>
-              <td class="px-4 py-3">Policy &amp; approval</td>
-              <td class="px-4 py-3">Conditional logic in code plus a homemade approval queue</td>
-              <td class="px-4 py-3">
-                Risk-tier defaults + per-action overrides, human approval, and standing grants that
-                expire
-              </td>
-            </tr>
-            <tr>
-              <td class="px-4 py-3">Per-user access</td>
-              <td class="px-4 py-3">Hand-rolled, and easy to get subtly wrong</td>
-              <td class="px-4 py-3">
-                Per-member runner scopes in UI, API, and dispatch; keys inherit the creator's scope
-                at call time
-              </td>
-            </tr>
-            <tr>
-              <td class="px-4 py-3">Multi-client access</td>
-              <td class="px-4 py-3">
-                Auth and transport work per client (Claude, ChatGPT, Cursor, CLIs)
-              </td>
-              <td class="px-4 py-3">
-                OAuth 2.1 remote MCP plus a stdio bridge, one catalog behind both
-              </td>
-            </tr>
-            <tr>
-              <td class="px-4 py-3">Output safety</td>
-              <td class="px-4 py-3">
-                Your redaction regexes, your output caps, your bug if one leaks
-              </td>
-              <td class="px-4 py-3">
-                20+ built-in patterns plus your own, masked on the host before egress; output bytes
-                clamped
-              </td>
-            </tr>
-            <tr>
-              <td class="px-4 py-3">Audit</td>
-              <td class="px-4 py-3">Logs you design, store, and have to prove weren't edited</td>
-              <td class="px-4 py-3">
-                Hash-chained host journal (<code>emisar audit verify</code>), searchable cloud
-                audit, NDJSON SIEM export
-              </td>
-            </tr>
-            <tr>
-              <td class="px-4 py-3">Failure modes</td>
-              <td class="px-4 py-3">
-                Reconnect, orphaned runs, leaked child processes — yours to handle
-              </td>
-              <td class="px-4 py-3">
-                Run-state reconciled on reconnect; children reaped on disconnect; orphans marked,
-                not lost
-              </td>
+            <tr :for={{concern, diy, emisar} <- rows} class="hover:bg-zinc-900/30">
+              <td class="px-4 py-3 align-top font-medium text-zinc-100">{concern}</td>
+              <td class="px-4 py-3 align-top text-zinc-400">{diy}</td>
+              <td class="px-4 py-3 align-top text-zinc-300">{emisar}</td>
             </tr>
           </tbody>
         </table>
+      </div>
+
+      <%!-- Mobile: one card per concern, the emisar answer accented --%>
+      <div class="mt-4 space-y-3 md:hidden">
+        <div
+          :for={{concern, diy, emisar} <- rows}
+          class="rounded-xl border border-zinc-900 bg-zinc-950/60 p-4"
+        >
+          <p class="text-sm font-semibold text-zinc-100">{concern}</p>
+          <div class="mt-3 space-y-3 text-sm">
+            <div>
+              <p class="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+                You build it
+              </p>
+              <p class="mt-0.5 text-zinc-400">{diy}</p>
+            </div>
+            <div class="border-l-2 border-brand-500/40 pl-3">
+              <p class="text-[11px] font-semibold uppercase tracking-wider text-brand-400">
+                emisar
+              </p>
+              <p class="mt-0.5 text-zinc-300">{emisar}</p>
+            </div>
+          </div>
+        </div>
       </div>
       <p class="mt-3 text-xs leading-relaxed text-zinc-500">
         None of these are hard in isolation. They're a product because they have to hold together,

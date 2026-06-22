@@ -20,74 +20,69 @@
       </p>
 
       <h2 class="mt-10 text-2xl font-semibold text-zinc-50">Side-by-side</h2>
-      <div class="mt-4 overflow-x-auto rounded-xl border border-zinc-900">
-        <table class="min-w-[680px] text-sm">
+      <%!-- One data list, two layouts: a table on md+, stacked cards on mobile, so
+        the 3-way comparison reads without a horizontal scroll on phones. --%>
+      <% rows = [
+        {"What can the LLM run?", "Anything in the user's shell",
+         "Only declared actions; everything else rejected"},
+        {"What are the args?", "Free-text command line",
+         "Typed, validated, redacted at the boundary"},
+        {"What actually ran?", "Whatever was on PATH that day",
+         "Content-addressed pack — the runner recomputes the SHA-256 and blocks changed contents until an admin re-trusts"},
+        {"Approvals?", "Human-in-the-loop in chat — easy to skip",
+         "Policy gates with approver email + audit; skipping means a policy change, itself audited"},
+        {"Audit trail?", "Whatever lands in .bash_history + Slack scrollback",
+         "Hash-chained JSONL on host, mirrored to cloud"},
+        {"Output redaction?", "None — passwords leak into chat logs",
+         "20+ patterns (bearer/JWT, AWS/GitHub/Slack keys, secret assignments) masked on the host before egress"},
+        {"Lateral movement?", "SSH key on the model's box ≈ key everywhere",
+         "Per-runner token + per-user runner scopes every API key inherits — revoke the user, every key they minted shrinks"},
+        {"Recovery story?", "“Read the chat scrollback and the logs and hope”",
+         "emisar audit verify + replay every dispatched envelope"}
+      ] %>
+
+      <%!-- Desktop: the comparison table --%>
+      <div class="mt-4 hidden overflow-hidden rounded-xl border border-zinc-900 md:block">
+        <table class="w-full text-sm">
           <thead class="bg-zinc-950/80 text-xs uppercase tracking-wider text-zinc-500">
             <tr>
-              <th class="px-4 py-3 text-left">Concern</th>
-              <th class="px-4 py-3 text-left">Raw SSH</th>
-              <th class="px-4 py-3 text-left">emisar action pack</th>
+              <th class="px-4 py-3 text-left font-medium">Concern</th>
+              <th class="px-4 py-3 text-left font-medium">Raw SSH</th>
+              <th class="px-4 py-3 text-left font-semibold text-brand-300">emisar action pack</th>
             </tr>
           </thead>
           <tbody class="divide-y divide-zinc-900 text-zinc-300">
-            <tr>
-              <td class="px-4 py-3">What can the LLM run?</td>
-              <td class="px-4 py-3">Anything in the user's shell</td>
-              <td class="px-4 py-3">Only declared actions; everything else rejected</td>
-            </tr>
-            <tr>
-              <td class="px-4 py-3">What are the args?</td>
-              <td class="px-4 py-3">Free-text command line</td>
-              <td class="px-4 py-3">Typed, validated, redacted at the boundary</td>
-            </tr>
-            <tr>
-              <td class="px-4 py-3">What actually ran?</td>
-              <td class="px-4 py-3">Whatever was on <code>PATH</code> that day</td>
-              <td class="px-4 py-3">
-                Content-addressed pack — the runner recomputes the SHA-256 and blocks changed
-                contents until an admin re-trusts
-              </td>
-            </tr>
-            <tr>
-              <td class="px-4 py-3">Approvals?</td>
-              <td class="px-4 py-3">Human-in-the-loop in chat — easy to skip</td>
-              <td class="px-4 py-3">
-                Policy gates with approver email + audit; skipping means a policy change, itself
-                audited
-              </td>
-            </tr>
-            <tr>
-              <td class="px-4 py-3">Audit trail?</td>
-              <td class="px-4 py-3">
-                Whatever lands in <code>.bash_history</code> + Slack scrollback
-              </td>
-              <td class="px-4 py-3">Hash-chained JSONL on host, mirrored to cloud</td>
-            </tr>
-            <tr>
-              <td class="px-4 py-3">Output redaction?</td>
-              <td class="px-4 py-3">None — passwords leak into chat logs</td>
-              <td class="px-4 py-3">
-                20+ patterns (bearer/JWT, AWS/GitHub/Slack keys, secret assignments) masked on the
-                host before egress
-              </td>
-            </tr>
-            <tr>
-              <td class="px-4 py-3">Lateral movement?</td>
-              <td class="px-4 py-3">SSH key on the model's box ≈ key everywhere</td>
-              <td class="px-4 py-3">
-                Per-runner token + per-user runner scopes every API key inherits — revoke the
-                user, every key they minted shrinks
-              </td>
-            </tr>
-            <tr>
-              <td class="px-4 py-3">Recovery story?</td>
-              <td class="px-4 py-3">"Read the chat scrollback and the logs and hope"</td>
-              <td class="px-4 py-3">
-                <code>emisar audit verify</code> + replay every dispatched envelope
-              </td>
+            <tr :for={{concern, raw, emisar} <- rows} class="hover:bg-zinc-900/30">
+              <td class="px-4 py-3 align-top font-medium text-zinc-100">{concern}</td>
+              <td class="px-4 py-3 align-top text-zinc-400">{raw}</td>
+              <td class="px-4 py-3 align-top text-zinc-300">{emisar}</td>
             </tr>
           </tbody>
         </table>
+      </div>
+
+      <%!-- Mobile: one card per concern, the emisar answer accented --%>
+      <div class="mt-4 space-y-3 md:hidden">
+        <div
+          :for={{concern, raw, emisar} <- rows}
+          class="rounded-xl border border-zinc-900 bg-zinc-950/60 p-4"
+        >
+          <p class="text-sm font-semibold text-zinc-100">{concern}</p>
+          <div class="mt-3 space-y-3 text-sm">
+            <div>
+              <p class="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+                Raw SSH
+              </p>
+              <p class="mt-0.5 text-zinc-400">{raw}</p>
+            </div>
+            <div class="border-l-2 border-brand-500/40 pl-3">
+              <p class="text-[11px] font-semibold uppercase tracking-wider text-brand-400">
+                emisar
+              </p>
+              <p class="mt-0.5 text-zinc-300">{emisar}</p>
+            </div>
+          </div>
+        </div>
       </div>
 
       <h2 class="mt-10 text-2xl font-semibold text-zinc-50">When raw SSH is the right answer</h2>
