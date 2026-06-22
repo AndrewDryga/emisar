@@ -1048,9 +1048,10 @@ defmodule EmisarWeb.CoreComponents do
 
   @doc """
   Brand mark used across the marketing site, auth flows, onboarding,
-  and the in-app shell. The icon SVG already encodes the dark-theme
-  white + emerald palette, so it renders correctly on any zinc-950
-  background without tinting.
+  and the in-app shell. With `wordmark` (default) it renders the full
+  horizontal lockup — the gate icon plus the emisar wordmark — otherwise
+  just the icon. Both SVGs bake the dark-theme white + emerald palette,
+  so they render correctly on any zinc-950 background without tinting.
   """
   attr :size, :atom, default: :md, values: [:sm, :md, :lg]
   attr :wordmark, :boolean, default: true
@@ -1058,20 +1059,20 @@ defmodule EmisarWeb.CoreComponents do
 
   def brand(assigns) do
     ~H"""
-    <span class={["inline-flex items-center gap-3", @class]}>
-      <img src={~p"/images/emisar-icon.svg"} alt="emisar" class={brand_icon_class(@size)} />
-      <span :if={@wordmark} class={brand_wordmark_class(@size)}>emisar</span>
-    </span>
+    <img
+      src={if @wordmark, do: ~p"/images/emisar-logo.svg", else: ~p"/images/emisar-icon.svg"}
+      alt="emisar"
+      class={[brand_mark_class(@size, @wordmark), @class]}
+    />
     """
   end
 
-  defp brand_icon_class(:sm), do: "h-7 w-7"
-  defp brand_icon_class(:md), do: "h-9 w-9"
-  defp brand_icon_class(:lg), do: "h-11 w-11"
-
-  defp brand_wordmark_class(:sm), do: "text-base font-bold tracking-tight"
-  defp brand_wordmark_class(:md), do: "text-xl font-bold tracking-tight"
-  defp brand_wordmark_class(:lg), do: "text-2xl font-bold tracking-tight"
+  defp brand_mark_class(:sm, true), do: "h-7 w-auto"
+  defp brand_mark_class(:md, true), do: "h-9 w-auto"
+  defp brand_mark_class(:lg, true), do: "h-11 w-auto"
+  defp brand_mark_class(:sm, false), do: "h-7 w-7"
+  defp brand_mark_class(:md, false), do: "h-9 w-9"
+  defp brand_mark_class(:lg, false), do: "h-11 w-11"
 
   @doc """
   Two-column auth-flow layout: marketing copy on the left, form on the
@@ -3440,13 +3441,14 @@ defmodule EmisarWeb.CoreComponents do
   defp gate_bracket_class(:neutral), do: "border-zinc-700/60"
 
   @doc """
-  The emisar gate mark — the logo's bracket gate (zinc brackets framing the
-  brand-green dots + arrow) as an inline SVG, so it can sit in flows and the
-  hero at any size. `animate` pulses the three dots in sequence (a request
-  crossing the gate); base opacity is full, so reduced-motion lands them lit
-  and static. The mark is decorative, so it is `aria-hidden`.
+  The emisar gate mark — the logo icon as an inline SVG: an ink chevron and an
+  emerald chevron flanking a vertical track of three nodes, the middle one
+  emerald (a request passing the gate). Inline so it inherits `currentColor`
+  for the ink and sits in flows at any size. `animate` pulses the three nodes
+  top-to-bottom (a request crossing); base opacity is full, so reduced-motion
+  lands them lit and static. The mark is decorative, so it is `aria-hidden`.
 
-      <.gate_mark class="h-9 w-9" />
+      <.gate_mark class="h-9 w-9 text-zinc-100" />
       <.gate_mark animate class="h-12 w-12 sm:h-14 sm:w-14" />
   """
   attr :animate, :boolean, default: false
@@ -3454,57 +3456,36 @@ defmodule EmisarWeb.CoreComponents do
 
   def gate_mark(assigns) do
     ~H"""
-    <svg viewBox="180 190 668 626" class={@class} fill="none" aria-hidden="true">
-      <path
-        d="M352 218 L196 344 L196 680 L352 806"
+    <svg viewBox="-18 0 390 390" class={@class} fill="none" aria-hidden="true">
+      <g stroke-linejoin="round" stroke-linecap="butt" stroke-width="37">
+        <path d="M96 50 L19.5 195 L96 340" stroke="currentColor" />
+        <path d="M258 50 L334.5 195 L258 340" stroke="#36E6A5" />
+      </g>
+      <line x1="177" y1="84" x2="177" y2="153" stroke="currentColor" stroke-width="16" />
+      <line x1="177" y1="237" x2="177" y2="306" stroke="currentColor" stroke-width="16" />
+      <circle
+        cx="177"
+        cy="42.5"
+        r="34.5"
         stroke="currentColor"
-        stroke-width="40"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-        class="text-zinc-500"
-      />
-      <path
-        d="M672 218 L828 344 L828 680 L672 806"
-        stroke="currentColor"
-        stroke-width="40"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-        class="text-zinc-500"
-      />
-      <rect
-        x="330"
-        y="489"
-        width="48"
-        height="48"
-        rx="11"
-        fill="#36E6A5"
+        stroke-width="14"
         class={@animate && "gate-dot"}
       />
-      <rect
-        x="430"
-        y="489"
-        width="48"
-        height="48"
-        rx="11"
-        fill="#36E6A5"
+      <circle
+        cx="177"
+        cy="195"
+        r="34.5"
+        stroke="#36E6A5"
+        stroke-width="14"
         class={@animate && "gate-dot gate-dot-2"}
       />
-      <rect
-        x="530"
-        y="489"
-        width="48"
-        height="48"
-        rx="11"
-        fill="#36E6A5"
+      <circle
+        cx="177"
+        cy="347.5"
+        r="34.5"
+        stroke="currentColor"
+        stroke-width="14"
         class={@animate && "gate-dot gate-dot-3"}
-      />
-      <path d="M632 513 H735" stroke="#36E6A5" stroke-width="40" stroke-linecap="round" />
-      <path
-        d="M690 430 L782 513 L690 596"
-        stroke="#36E6A5"
-        stroke-width="40"
-        stroke-linecap="round"
-        stroke-linejoin="round"
       />
     </svg>
     """

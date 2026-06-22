@@ -17,8 +17,9 @@ defmodule EmisarWeb do
   those modules here.
   """
 
-  def static_paths,
-    do: ~w(assets fonts images favicon.ico robots.txt .well-known)
+  def static_paths do
+    ~w(assets fonts images favicon.ico favicon.svg apple-touch-icon.png android-chrome-192x192.png android-chrome-512x512.png site.webmanifest robots.txt .well-known)
+  end
 
   def router do
     quote do

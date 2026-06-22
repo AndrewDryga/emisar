@@ -62,8 +62,11 @@
       </script>
     <% end %>
 
-    <link rel="icon" type="image/svg+xml" href={~p"/images/emisar-icon.svg"} />
+    <link rel="icon" type="image/svg+xml" href={~p"/favicon.svg"} />
     <link rel="alternate icon" type="image/x-icon" href={~p"/favicon.ico"} />
+    <link rel="apple-touch-icon" href={~p"/apple-touch-icon.png"} />
+    <link rel="manifest" href={~p"/site.webmanifest"} />
+    <meta name="theme-color" content="#0a0a0b" />
     <link phx-track-static rel="stylesheet" href={~p"/assets/app.css"} />
     <%!-- LiveView pages need app.js (LiveSocket + hooks); the static,
           server-rendered marketing pages load only the lean marketing.js.

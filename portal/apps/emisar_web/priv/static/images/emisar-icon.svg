@@ -1,12 +1,1 @@
-<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="emisar icon">
-  <title>emisar icon</title>
-  <g id="emisar-gate-path">
-    <path d="M352 218 L196 344 L196 680 L352 806" stroke="#FFFFFF" stroke-width="44" stroke-linecap="round" stroke-linejoin="round"/>
-    <path d="M672 218 L828 344 L828 680 L672 806" stroke="#FFFFFF" stroke-width="44" stroke-linecap="round" stroke-linejoin="round"/>
-    <rect x="330" y="489" width="48" height="48" rx="11" fill="#36E6A5"/>
-    <rect x="430" y="489" width="48" height="48" rx="11" fill="#36E6A5"/>
-    <rect x="530" y="489" width="48" height="48" rx="11" fill="#36E6A5"/>
-    <path d="M632 513 H735" stroke="#36E6A5" stroke-width="44" stroke-linecap="round"/>
-    <path d="M690 430 L782 513 L690 596" stroke="#36E6A5" stroke-width="44" stroke-linecap="round" stroke-linejoin="round"/>
-  </g>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" width="390" height="390" fill="none" viewBox="-18 0 390 390"><g stroke-linejoin="round" stroke-width="37"><path stroke="#fff" d="M96 50 19.5 195 96 340"/><path stroke="#36e6a5" d="m258 50 76.5 145L258 340"/></g><path stroke="#fff" stroke-width="16" d="M177 84v69m0 84v69"/><circle cx="177" cy="42.5" r="34.5" stroke="#fff" stroke-width="14"/><circle cx="177" cy="195" r="34.5" stroke="#36e6a5" stroke-width="14"/><circle cx="177" cy="347.5" r="34.5" stroke="#fff" stroke-width="14"/></svg>
