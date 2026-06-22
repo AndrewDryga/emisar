@@ -30,6 +30,19 @@
 }
 
 /* ---------------------------------------------------------------------------
+   Signature display type.
+
+   Marketing headings route through <.marketing_heading>, which adds `.font-display`.
+   Optical sizing engages Inter's display cut at large sizes; `cv11` switches to the
+   single-story `a` for a more geometric, less-default-Inter character — the typographic
+   signature. Per-scale negative tracking lives on the heading itself (tighter for display).
+   --------------------------------------------------------------------------- */
+.font-display {
+  font-optical-sizing: auto;
+  font-feature-settings: "cv11" 1, "calt" 1, "liga" 1;
+}
+
+/* ---------------------------------------------------------------------------
    Global accessibility + polish.
 
    Tailwind utilities cover per-element styling; this layer adds the few

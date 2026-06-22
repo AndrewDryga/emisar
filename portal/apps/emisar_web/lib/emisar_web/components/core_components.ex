@@ -3334,7 +3334,7 @@ defmodule EmisarWeb.CoreComponents do
     <.dynamic_tag
       tag_name={@tag}
       class={[
-        "text-balance font-bold tracking-tight text-zinc-50",
+        "text-balance font-display font-bold text-zinc-50",
         marketing_heading_scale(@scale),
         @class
       ]}
@@ -3344,10 +3344,10 @@ defmodule EmisarWeb.CoreComponents do
     """
   end
 
-  defp marketing_heading_scale(:display), do: "text-6xl md:text-7xl"
-  defp marketing_heading_scale(:hero), do: "text-4xl md:text-5xl"
+  defp marketing_heading_scale(:display), do: "text-6xl tracking-[-0.035em] md:text-7xl"
+  defp marketing_heading_scale(:hero), do: "text-4xl tracking-[-0.03em] md:text-5xl"
   # Big centered section header (CTA blocks, "How it works" section tops).
-  defp marketing_heading_scale(:section), do: "text-4xl sm:text-5xl"
+  defp marketing_heading_scale(:section), do: "text-4xl tracking-[-0.03em] sm:text-5xl"
 
   @doc """
   Conversion CTA for the foot of a marketing page — a convinced reader gets

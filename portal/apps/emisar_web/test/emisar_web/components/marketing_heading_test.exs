@@ -27,16 +27,24 @@ defmodule EmisarWeb.Components.MarketingHeadingTest do
       assert render_heading(%{tag: "h3", scale: :hero}) =~ "<h3"
     end
 
-    test "each scale maps to one documented size ramp" do
-      assert render_heading(%{tag: "h1", scale: :display}) =~ "text-6xl md:text-7xl"
-      assert render_heading(%{tag: "h1", scale: :hero}) =~ "text-4xl md:text-5xl"
-      assert render_heading(%{tag: "h2", scale: :section}) =~ "text-4xl sm:text-5xl"
+    test "each scale maps to one documented size ramp + the signature display treatment" do
+      assert render_heading(%{tag: "h1", scale: :display}) =~
+               "text-6xl tracking-[-0.035em] md:text-7xl"
+
+      assert render_heading(%{tag: "h1", scale: :hero}) =~
+               "text-4xl tracking-[-0.03em] md:text-5xl"
+
+      assert render_heading(%{tag: "h2", scale: :section}) =~
+               "text-4xl tracking-[-0.03em] sm:text-5xl"
+
+      # Signature: every heading carries font-display (cv11 single-story a + optical sizing).
+      assert render_heading(%{tag: "h1", scale: :hero}) =~ "font-display"
     end
 
     test "extra class composes alongside the scale (e.g. the mt-2 under an eyebrow)" do
       html = render_heading(%{tag: "h1", scale: :hero, class: "mt-2"})
       assert html =~ "mt-2"
-      assert html =~ "text-4xl md:text-5xl"
+      assert html =~ "text-4xl tracking-[-0.03em] md:text-5xl"
     end
   end
 end
