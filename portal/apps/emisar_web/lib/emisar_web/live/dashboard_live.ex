@@ -253,25 +253,12 @@ defmodule EmisarWeb.DashboardLive do
       current_account={@current_account}
     />
 
-    <%!-- Three tiles, never four. Plan info used to live in the third
-         slot but billing is rarely operational. Team-MFA posture is —
-         it tells the operator at a glance "is the people-attack
-         surface tight?" and links straight to the team page where
-         they'd fix it. --%>
-    <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
-      <.runners_stat
-        connected={@runners_connected}
-        total={@runners_total}
-        current_account={@current_account}
-      />
-      <.runs_stat stats={@run_stats} current_account={@current_account} />
-      <.team_security_stat team_mfa={@team_mfa} current_account={@current_account} />
-    </div>
-
-    <%!-- Pending approvals — runs held on a human decision, the one
-         thing on this page that actively blocks an LLM. Full width;
-         shown only when there's something to act on. --%>
-    <div :if={@pending_approvals != []} class="mt-6">
+    <%!-- Pending approvals lead the board — a run held on a human
+         decision is an agent blocked right now, the one thing here that
+         actively gates an LLM. The gate operator sees what needs them
+         before the situational stats. Shown only when there's something
+         to act on; otherwise the stats lead as usual. --%>
+    <div :if={@pending_approvals != []} class="mb-6">
       <.attention_panel
         icon="hero-hand-raised"
         title="Awaiting your approval"
@@ -299,6 +286,21 @@ defmodule EmisarWeb.DashboardLive do
           </li>
         </ul>
       </.attention_panel>
+    </div>
+
+    <%!-- Three tiles, never four. Plan info used to live in the third
+         slot but billing is rarely operational. Team-MFA posture is —
+         it tells the operator at a glance "is the people-attack
+         surface tight?" and links straight to the team page where
+         they'd fix it. --%>
+    <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <.runners_stat
+        connected={@runners_connected}
+        total={@runners_total}
+        current_account={@current_account}
+      />
+      <.runs_stat stats={@run_stats} current_account={@current_account} />
+      <.team_security_stat team_mfa={@team_mfa} current_account={@current_account} />
     </div>
 
     <%!-- Recent runs — full width, no parallel "activity" mirror at
