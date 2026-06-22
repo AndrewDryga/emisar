@@ -7,14 +7,14 @@
       <.marketing_heading tag="h1" scale={:hero} class="mt-2">
         Teams, roles &amp; access
       </.marketing_heading>
-      <p class="mt-6 text-lg leading-8 text-zinc-400">
+      <p class="mt-6 text-lg leading-8 text-zinc-400 text-pretty">
         Who can see what, who can run what, who can approve what — and how to narrow any of it
         down to specific runners. emisar's access model has three dials: the member's <strong class="text-zinc-200">role</strong>, optional <strong class="text-zinc-200">per-member runner scopes</strong>, and the
         <strong class="text-zinc-200">scopes on each API key</strong>
         an LLM connects with.
       </p>
 
-      <h2 class="mt-12 text-2xl font-semibold text-zinc-50">Roles</h2>
+      <h2 class="mt-12 text-2xl font-semibold text-zinc-50 text-balance">Roles</h2>
       <p class="mt-3 text-sm leading-6 text-zinc-400">
         Four roles, strictly ordered. Authorization is permission-based under the hood, so this
         table is the contract:
@@ -62,7 +62,7 @@
         </table>
       </div>
 
-      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">Inviting your team</h2>
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">Inviting your team</h2>
       <p class="mt-3 text-sm leading-6 text-zinc-400">
         <strong>Team → Invite</strong>: enter an email, pick the role, send. The invite link is a
         one-time token (hashed at rest like every credential here); accepting it creates the
@@ -73,7 +73,9 @@
         blocked) and unsuspended without losing their history.
       </p>
 
-      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">Per-member runner scopes</h2>
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">
+        Per-member runner scopes
+      </h2>
       <p class="mt-3 text-sm leading-6 text-zinc-400">
         Roles answer <em>what</em> someone can do; runner scopes answer <em>where</em>. By
         default a member sees every runner in the account. Add scopes on the member's team page
@@ -104,7 +106,7 @@
         setting, not a policy convention. Scope changes are audited.
       </p>
 
-      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">MFA</h2>
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">MFA</h2>
       <p class="mt-3 text-sm leading-6 text-zinc-400">
         TOTP (any standard authenticator app) with one-time recovery codes — codes are shown
         once, stored hashed, and each works exactly once. Replayed TOTP codes are rejected.
@@ -121,7 +123,9 @@
         session can satisfy that requirement when your IdP enforces MFA.
       </p>
 
-      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">Sessions &amp; credentials</h2>
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">
+        Sessions &amp; credentials
+      </h2>
       <ul class="mt-4 space-y-2 text-sm leading-6 text-zinc-400">
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-600">—</span>

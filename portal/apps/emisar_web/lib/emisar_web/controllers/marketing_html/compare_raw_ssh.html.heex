@@ -7,19 +7,21 @@
       <.marketing_heading tag="h1" scale={:hero} class="mt-2">
         Why not just give the LLM SSH?
       </.marketing_heading>
-      <p class="mt-6 text-lg leading-8 text-zinc-400">
+      <p class="mt-6 text-lg leading-8 text-zinc-400 text-pretty">
         The honest answer: you can. Some people do. It works on the days it works.
         Here's what changes when it doesn't.
       </p>
 
-      <h2 class="mt-12 text-2xl font-semibold text-zinc-50">Both approaches run real commands</h2>
+      <h2 class="mt-12 text-2xl font-semibold text-zinc-50 text-balance">
+        Both approaches run real commands
+      </h2>
       <p class="mt-3 text-sm leading-relaxed text-zinc-400">
         emisar isn't a sandbox. When the runner executes <code>nomad job revert</code>, it really rolls back the deploy — exactly like
         SSH would. The difference is what happens <em>before</em> exec, and what's
         left <em>after</em>.
       </p>
 
-      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">Side-by-side</h2>
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">Side-by-side</h2>
       <%!-- One data list, two layouts: a table on md+, stacked cards on mobile, so
         the 3-way comparison reads without a horizontal scroll on phones. --%>
       <% rows = [
@@ -85,7 +87,9 @@
         </div>
       </div>
 
-      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">When raw SSH is the right answer</h2>
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">
+        When raw SSH is the right answer
+      </h2>
       <p class="mt-3 text-sm leading-relaxed text-zinc-400">
         Single-operator side projects, throwaway environments, dev clusters
         you can wipe. The cost of declaring an action pack only pays back
@@ -93,7 +97,7 @@
         recover from the AI's decisions.
       </p>
 
-      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">When it isn't</h2>
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">When it isn't</h2>
       <p class="mt-3 text-sm leading-relaxed text-zinc-400">
         Production. Anything regulated. Anything where post-incident your
         VP of Engineering will ask "what did the model do, exactly, and on

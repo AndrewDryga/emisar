@@ -7,7 +7,7 @@
       <.marketing_heading tag="h1" scale={:hero} class="mt-2">
         The major compaction that ate the read path
       </.marketing_heading>
-      <p class="mt-6 text-lg leading-8 text-zinc-400">
+      <p class="mt-6 text-lg leading-8 text-zinc-400 text-pretty">
         At 23:41 someone ran <code>nodetool compact</code>
         on a 1.8 TB table to "reclaim a little space." By midnight, coordinator p99 reads on
         <code>orders_ks</code>
@@ -17,7 +17,7 @@
         single human approval, every step on the record.
       </p>
 
-      <h2 class="mt-12 text-2xl font-semibold text-zinc-50">The cluster</h2>
+      <h2 class="mt-12 text-2xl font-semibold text-zinc-50 text-balance">The cluster</h2>
       <p class="mt-4 text-sm leading-6 text-zinc-400">
         Six-node Cassandra 4.1 in one datacenter, RF=3, <code>orders_ks</code>
         on SizeTieredCompaction. The agent reaches it over MCP → emisar, scoped to one runner on <code>cass-03</code>, with the stock
@@ -28,14 +28,16 @@
         validated and gated by policy.
       </p>
 
-      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">T+0 — reads start to drag</h2>
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">
+        T+0 — reads start to drag
+      </h2>
       <p class="mt-4 text-sm leading-6 text-zinc-400">
         Grafana on the last hour: coordinator p99 reads on <code>orders_ks</code>
         climbing past 200 ms and still rising. Writes are fine. No node is marked down. The
         on-call agent picks up the page.
       </p>
 
-      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">
         1 · Investigate — through declared actions, not a JMX shell
       </h2>
       <p class="mt-4 text-sm leading-6 text-zinc-400">
@@ -81,7 +83,9 @@ cassandra.nodetool_compactionhistory &#123;&#125;
         I/O budget is simply gone.
       </p>
 
-      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">2 · Stop the bleed — one approval</h2>
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">
+        2 · Stop the bleed — one approval
+      </h2>
       <p class="mt-4 text-sm leading-6 text-zinc-400">
         Aborting a running compaction is destructive — the partial SSTable is thrown away and
         hours of I/O wasted — so policy holds it for a human. <code>nodetool stop</code>
@@ -100,7 +104,9 @@ cassandra.nodetool_compactionhistory &#123;&#125;
         argument, the target runner, and the reason before clicking once.
       </p>
 
-      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">3 · The risk model, in one frame</h2>
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">
+        3 · The risk model, in one frame
+      </h2>
       <p class="mt-4 text-sm leading-6 text-zinc-400">
         To keep normal autocompaction from re-saturating the same disks, the agent caps
         throughput. That action is <code class="text-amber-300">medium</code>, which the default
@@ -119,7 +125,9 @@ cassandra.nodetool_compactionhistory &#123;&#125;
         abort — either change is itself an audited policy edit.
       </p>
 
-      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">What the agent could not do</h2>
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">
+        What the agent could not do
+      </h2>
       <ul class="mt-4 space-y-3 text-sm leading-6 text-zinc-300">
         <li>
           <strong class="text-zinc-100">Tear down a node to "fix" it.</strong>
@@ -150,7 +158,7 @@ cassandra.nodetool_compactionhistory &#123;&#125;
       </ul>
 
       <%!-- FAQ --%>
-      <h2 class="mt-12 text-2xl font-semibold text-zinc-50">
+      <h2 class="mt-12 text-2xl font-semibold text-zinc-50 text-balance">
         Questions a Cassandra operator asks
       </h2>
       <div class="mt-6 divide-y divide-zinc-900 rounded-2xl border border-zinc-900 bg-zinc-950/60">

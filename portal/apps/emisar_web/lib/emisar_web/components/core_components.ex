@@ -3286,7 +3286,7 @@ defmodule EmisarWeb.CoreComponents do
   defp marketing_button_class(variant, size, block, extra) do
     [
       if(block, do: "flex w-full", else: "inline-flex"),
-      "items-center justify-center gap-2 whitespace-nowrap rounded-lg text-sm font-semibold transition active:scale-[0.97]",
+      "items-center justify-center gap-2 whitespace-nowrap rounded-lg text-sm font-semibold transition active:scale-[0.96]",
       marketing_button_size(size),
       marketing_button_variant(variant),
       extra
@@ -3321,7 +3321,11 @@ defmodule EmisarWeb.CoreComponents do
     ~H"""
     <.dynamic_tag
       tag_name={@tag}
-      class={["font-bold tracking-tight text-zinc-50", marketing_heading_scale(@scale), @class]}
+      class={[
+        "text-balance font-bold tracking-tight text-zinc-50",
+        marketing_heading_scale(@scale),
+        @class
+      ]}
     >
       {render_slot(@inner_block)}
     </.dynamic_tag>

@@ -61,13 +61,19 @@ defmodule EmisarWeb.MarketingTest do
     # Hero: the home title uses the larger :display scale; a docs page uses
     # the standard :hero scale. Both are a single <h1> with the documented
     # size class — the scale standardizes sizing without touching the tag.
+    # marketing_heading leads every title with text-balance (the micro-craft
+    # pass), so the class begins "text-balance font-bold …" then the scale.
     # (Home appends page-specific responsive overrides after the scale, so
     # match the class prefix, not a closed attribute — like the docs line.)
     home = conn |> get(~p"/") |> html_response(200)
-    assert home =~ ~s(<h1 class="font-bold tracking-tight text-zinc-50 text-6xl md:text-7xl)
+
+    assert home =~
+             ~s(<h1 class="text-balance font-bold tracking-tight text-zinc-50 text-6xl md:text-7xl)
 
     docs = conn |> get(~p"/docs/quickstart") |> html_response(200)
-    assert docs =~ ~s(<h1 class="font-bold tracking-tight text-zinc-50 text-4xl md:text-5xl)
+
+    assert docs =~
+             ~s(<h1 class="text-balance font-bold tracking-tight text-zinc-50 text-4xl md:text-5xl)
 
     # The pricing tier buttons route through the one marketing-CTA component:
     # full-width pills, primary (Team) and secondary (Free/Enterprise).

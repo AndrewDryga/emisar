@@ -7,7 +7,7 @@
       <.marketing_heading tag="h1" scale={:hero} class="mt-2">
         Operating your runner fleet
       </.marketing_heading>
-      <p class="mt-6 text-lg leading-8 text-zinc-400">
+      <p class="mt-6 text-lg leading-8 text-zinc-400 text-pretty">
         The quickstart gets one runner online. This page is the rest of its life: organizing a
         fleet with groups and labels, handing packs their credentials, updating, troubleshooting,
         and removing a host cleanly. (Installation itself is covered in the <.link
@@ -16,7 +16,7 @@
         >quickstart</.link>.)
       </p>
 
-      <h2 class="mt-12 text-2xl font-semibold text-zinc-50">Groups and labels</h2>
+      <h2 class="mt-12 text-2xl font-semibold text-zinc-50 text-balance">Groups and labels</h2>
       <p class="mt-3 text-sm leading-6 text-zinc-400">
         Every runner declares a <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">group</code>
         (one string — <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">cassandra-prod</code>, <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">web</code>) and free-form
@@ -28,7 +28,7 @@
         fine for one box, worth changing the moment you have a second.
       </p>
 
-      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">Enrollment keys</h2>
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">Enrollment keys</h2>
       <ul class="mt-4 space-y-2 text-sm leading-6 text-zinc-400">
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-600">—</span>
@@ -61,7 +61,9 @@
         </li>
       </ul>
 
-      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">Giving packs their credentials</h2>
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">
+        Giving packs their credentials
+      </h2>
       <p class="mt-3 text-sm leading-6 text-zinc-400">
         Packs that talk to a service — Nomad, Consul, Postgres — read credentials from the
         runner's <em>environment</em>, never from call arguments, so secrets never transit the
@@ -84,7 +86,9 @@ execution:
         editing; what each pack needs is in <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar pack info &lt;id&gt;</code>.
       </p>
 
-      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">Online, offline, and stuck runs</h2>
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">
+        Online, offline, and stuck runs
+      </h2>
       <p class="mt-3 text-sm leading-6 text-zinc-400">
         The runner heartbeats every 30 seconds; the dashboard's online badge reflects it, and
         either side closes a connection that goes quiet. Disconnects are normal — the runner
@@ -94,7 +98,7 @@ execution:
         with an explanation — nothing sits "running" forever.
       </p>
 
-      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">Updating</h2>
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">Updating</h2>
       <div class="mt-3 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
         <pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300"><span class="text-zinc-500"># runner binary — re-run the installer; configs and packs are preserved</span>
 <span class="text-zinc-500">$</span> curl -sSL https://emisar.dev/install.sh | sudo bash
@@ -109,7 +113,9 @@ execution:
         page until someone trusts it — updates are visible, never silent.
       </p>
 
-      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">The host-side toolbox</h2>
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">
+        The host-side toolbox
+      </h2>
       <div class="mt-3 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
         <pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300"><span class="text-zinc-500">$</span> journalctl -u emisar -f          <span class="text-zinc-500"># service logs</span>
 <span class="text-zinc-500">$</span> sudo emisar action list           <span class="text-zinc-500"># what this host advertises</span>
@@ -129,7 +135,7 @@ execution:
         </.link>.
       </p>
 
-      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">Troubleshooting</h2>
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">Troubleshooting</h2>
       <ul class="mt-4 space-y-3 text-sm leading-6 text-zinc-400">
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-600">—</span>
@@ -174,7 +180,7 @@ execution:
         </li>
       </ul>
 
-      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">Removing a runner</h2>
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">Removing a runner</h2>
       <div class="mt-3 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
         <pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300"><span class="text-zinc-500"># on the host — remove binary + service (keep config/data/logs)</span>
 <span class="text-zinc-500">$</span> sudo bash install.sh --uninstall

@@ -7,7 +7,7 @@
       <.marketing_heading tag="h1" scale={:hero} class="mt-2">
         The migration that died holding a lock
       </.marketing_heading>
-      <p class="mt-6 text-lg leading-8 text-zinc-400">
+      <p class="mt-6 text-lg leading-8 text-zinc-400 text-pretty">
         At 02:14 the API started timing out across the board. Not a slow query, not a CPU spike —
         every write was queued behind a single transaction a crashed deploy had left open
         eighteen minutes earlier. Here is the loop that cleared it: an agent investigates through
@@ -17,7 +17,7 @@
         shell anywhere in reach.
       </p>
 
-      <h2 class="mt-12 text-2xl font-semibold text-zinc-50">The database</h2>
+      <h2 class="mt-12 text-2xl font-semibold text-zinc-50 text-balance">The database</h2>
       <p class="mt-4 text-sm leading-6 text-zinc-400">
         A managed Postgres 16 primary with two streaming replicas. The agent reaches it over
         MCP → emisar with the stock <code>postgres</code>
@@ -30,7 +30,7 @@
         that can run DDL.
       </p>
 
-      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">
         T+0 — everything starts timing out
       </h2>
       <p class="mt-4 text-sm leading-6 text-zinc-400">
@@ -38,7 +38,7 @@
         Connection count climbs as the app retries. CPU is flat — the database isn't busy, it's <em>waiting</em>. The on-call agent picks up the page.
       </p>
 
-      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">
         1 · Investigate — through declared reads
       </h2>
       <p class="mt-4 text-sm leading-6 text-zinc-400">
@@ -78,7 +78,9 @@ postgres.activity_detail &#123;&#125;
         queued behind a client that no longer exists.
       </p>
 
-      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">2 · Stop the bleed — one approval</h2>
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">
+        2 · Stop the bleed — one approval
+      </h2>
       <p class="mt-4 text-sm leading-6 text-zinc-400">
         There are two ways to signal a backend, and the difference matters here.
         <code>cancel_query</code>
@@ -102,7 +104,9 @@ postgres.activity_detail &#123;&#125;
         audit trail forever.
       </p>
 
-      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">3 · Sweep the stragglers</h2>
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">
+        3 · Sweep the stragglers
+      </h2>
       <p class="mt-4 text-sm leading-6 text-zinc-400">
         The same failed deploy left a handful of other idle-in-transaction backends. None are
         blocking writers yet, but each pins an old <code>xmin</code>
@@ -122,7 +126,9 @@ postgres.activity_detail &#123;&#125;
         record.
       </p>
 
-      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">What stayed out of bounds</h2>
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">
+        What stayed out of bounds
+      </h2>
       <ul class="mt-4 space-y-3 text-sm leading-6 text-zinc-300">
         <li>
           <strong class="text-zinc-100">No raw SQL.</strong>
@@ -157,7 +163,9 @@ postgres.activity_detail &#123;&#125;
       </ul>
 
       <%!-- FAQ --%>
-      <h2 class="mt-12 text-2xl font-semibold text-zinc-50">Questions a Postgres on-call asks</h2>
+      <h2 class="mt-12 text-2xl font-semibold text-zinc-50 text-balance">
+        Questions a Postgres on-call asks
+      </h2>
       <div class="mt-6 divide-y divide-zinc-900 rounded-2xl border border-zinc-900 bg-zinc-950/60">
         <details class="group">
           <summary class="flex cursor-pointer items-center justify-between px-6 py-5 text-sm font-semibold text-zinc-100">

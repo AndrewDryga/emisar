@@ -7,7 +7,7 @@
       <.marketing_heading tag="h1" scale={:hero} class="mt-2">
         The 33-hour wipe: a CSI driver reformatted a live LUN
       </.marketing_heading>
-      <p class="mt-6 text-lg leading-8 text-zinc-400">
+      <p class="mt-6 text-lg leading-8 text-zinc-400 text-pretty">
         A routine node drain ended with 33 hours of production telemetry gone — a
         <code>democratic-csi</code>
         driver ran <code>mkfs</code>
@@ -20,7 +20,7 @@
         refuses to trust the driver.
       </p>
 
-      <h2 class="mt-12 text-2xl font-semibold text-zinc-50">The stack</h2>
+      <h2 class="mt-12 text-2xl font-semibold text-zinc-50 text-balance">The stack</h2>
       <p class="mt-4 text-sm leading-6 text-zinc-400">
         Five Dell PowerEdge R640s in the VA1 colo · Pure FlashArray over iSCSI multipath · Nomad
         2.0.2 · democratic-csi <code>node-manual</code>
@@ -35,7 +35,7 @@
         declare; for this fleet, the catalog already covered every layer of the fabric.
       </p>
 
-      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">
         The fabric was never quiet
       </h2>
       <p class="mt-4 text-sm leading-6 text-zinc-400">
@@ -51,14 +51,16 @@
         device read empty.
       </p>
 
-      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">T+0 — the drain</h2>
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">T+0 — the drain</h2>
       <p class="mt-4 text-sm leading-6 text-zinc-400">
         Drain <code>nomad-hvn01</code>, reboot, restore — routine. VictoriaMetrics and
         VictoriaLogs rescheduled onto <code>nomad-hvn03</code>
         and came up green in about 30 seconds. Ingest resumed. Dull and normal.
       </p>
 
-      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">T+50m — 33 hours, gone</h2>
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">
+        T+50m — 33 hours, gone
+      </h2>
       <p class="mt-4 text-sm leading-6 text-zinc-400">
         Grafana on the last 7 days: almost everything flat, only the last
         <strong class="text-zinc-200">12 minutes</strong>
@@ -66,7 +68,7 @@
         processes were healthy and ingesting — the data was missing because the data was <em>not there</em>. An agent picks up the page.
       </p>
 
-      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">
         1 · Investigate — through emisar, not SSH
       </h2>
       <p class="mt-4 text-sm leading-6 text-zinc-400">
@@ -132,7 +134,9 @@ pure.volumes_space &#123;"names": "vm-data"&#125;
         Switching CSI drivers would not fix it — the same bug lives in all of them.
       </p>
 
-      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">2 · Stop the bleed — one approval</h2>
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">
+        2 · Stop the bleed — one approval
+      </h2>
       <p class="mt-4 text-sm leading-6 text-zinc-400">
         VictoriaMetrics is already writing fresh parts to the empty filesystem — every
         group-commit overwrites blocks that still hold the old data. The move is to halt it, and
@@ -153,7 +157,7 @@ pure.volumes_space &#123;"names": "vm-data"&#125;
         only destructive action and when.
       </p>
 
-      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">
         3 · Codify the fix — what actually stops it
       </h2>
       <p class="mt-4 text-sm leading-6 text-zinc-400">
@@ -211,7 +215,9 @@ exec "$real" "$@"   # not a Pure device: the real mkfs runs
         blank; the mkfs guard is what stops the reformat.
       </p>
 
-      <h2 class="mt-12 text-2xl font-semibold text-zinc-50">What emisar actually changed</h2>
+      <h2 class="mt-12 text-2xl font-semibold text-zinc-50 text-balance">
+        What emisar actually changed
+      </h2>
       <ul class="mt-4 space-y-3 text-sm leading-6 text-zinc-300">
         <li>
           <strong class="text-zinc-100">The forensics were legible and scoped.</strong>

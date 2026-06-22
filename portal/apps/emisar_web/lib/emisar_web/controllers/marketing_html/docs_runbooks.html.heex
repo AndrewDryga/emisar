@@ -7,14 +7,16 @@
       <.marketing_heading tag="h1" scale={:hero} class="mt-2">
         Runbooks
       </.marketing_heading>
-      <p class="mt-6 text-lg leading-8 text-zinc-400">
+      <p class="mt-6 text-lg leading-8 text-zinc-400 text-pretty">
         A runbook is a saved, versioned sequence of actions — the "how we restart the cache
         tier" knowledge that usually lives in a wiki page going stale. Here it's executable:
         each step is a declared action with its arguments and target, every run of it is
         policy-gated and audited, and your LLM can read it as a playbook.
       </p>
 
-      <h2 class="mt-12 text-2xl font-semibold text-zinc-50">What a runbook is made of</h2>
+      <h2 class="mt-12 text-2xl font-semibold text-zinc-50 text-balance">
+        What a runbook is made of
+      </h2>
       <p class="mt-3 text-sm leading-6 text-zinc-400">
         An ordered list of steps. Each step names an action from your catalog, the arguments to
         pass, and where it runs — a <strong class="text-zinc-200">specific runner</strong>
@@ -24,7 +26,7 @@
         anything your packs don't already declare — it's composition, not new capability.
       </p>
 
-      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">Authoring</h2>
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">Authoring</h2>
       <p class="mt-3 text-sm leading-6 text-zinc-400">
         <strong>Runbooks → New</strong> in the dashboard. The editor is a form, not a YAML
         textarea: pick an action from the catalog, fill its declared arguments, choose the
@@ -50,7 +52,7 @@
         </li>
       </ul>
 
-      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">Running one</h2>
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">Running one</h2>
       <p class="mt-3 text-sm leading-6 text-zinc-400">
         Dispatch from the runbook's page with a required reason — same as any single action.
         Execution is sequential with a small wave of parallelism: up to five runs in flight at a
@@ -76,7 +78,7 @@
         </li>
       </ul>
 
-      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">
         Worked example: a fleet health-check
       </h2>
       <p class="mt-3 text-sm leading-6 text-zinc-400">
@@ -135,7 +137,9 @@
         keep flowing.
       </p>
 
-      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">Runbooks and your LLM</h2>
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">
+        Runbooks and your LLM
+      </h2>
       <p class="mt-3 text-sm leading-6 text-zinc-400">
         Connected agents see two extra tools:
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">list_runbooks</code>

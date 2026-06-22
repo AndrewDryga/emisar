@@ -7,21 +7,21 @@
       <.marketing_heading tag="h1" scale={:hero} class="mt-2">
         Action packs
       </.marketing_heading>
-      <p class="mt-6 text-lg leading-8 text-zinc-400">
+      <p class="mt-6 text-lg leading-8 text-zinc-400 text-pretty">
         An action pack is a versioned, content-addressed directory of YAML
         action declarations. The runner loads the pack at boot, advertises
         every action to the control plane, and refuses anything not in this
         catalog. This is the contract between your ops team and the LLM.
       </p>
 
-      <h2 class="mt-12 text-2xl font-semibold text-zinc-50">Layout</h2>
+      <h2 class="mt-12 text-2xl font-semibold text-zinc-50 text-balance">Layout</h2>
       <pre class="mt-3 overflow-x-auto rounded-lg border border-zinc-900 bg-black/60 p-4 font-mono text-xs leading-6 text-zinc-300">my-pack/
   pack.yaml              # pack-level metadata
   actions/
     disk_usage.yaml      # one declared action per file
     nodetool_repair.yaml</pre>
 
-      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">pack.yaml</h2>
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">pack.yaml</h2>
       <pre class="mt-3 overflow-x-auto rounded-lg border border-zinc-900 bg-black/60 p-4 font-mono text-xs leading-6 text-zinc-300">schema_version: 1
 id: cassandra
 name: Cassandra operations
@@ -40,7 +40,7 @@ actions:
         pack from being silently accepted.
       </p>
 
-      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">An action YAML</h2>
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">An action YAML</h2>
       <pre class="mt-3 overflow-x-auto rounded-lg border border-zinc-900 bg-black/60 p-4 font-mono text-xs leading-6 text-zinc-300">schema_version: 1
 id: linux.grep_log
 title: Grep a log file
@@ -89,7 +89,7 @@ examples:
       file: /var/log/nginx/access.log
       pattern: " 5\\d\\d "</pre>
 
-      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">Field reference</h2>
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">Field reference</h2>
       <ul class="mt-4 space-y-3 text-sm text-zinc-300">
         <li>
           <strong>kind</strong>
@@ -145,7 +145,7 @@ examples:
         </li>
       </ul>
 
-      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">Pack trust</h2>
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">Pack trust</h2>
       <p class="mt-3 text-sm leading-6 text-zinc-300">
         Every pack is content-addressed by a SHA-256 over all its files. The control plane pins
         the hash an admin trusted; the runner recomputes it and refuses to run a pack whose
@@ -154,7 +154,7 @@ examples:
         integrity, not publisher signing: the runner trusts the exact bytes you approved.
       </p>
 
-      <h2 class="mt-10 text-2xl font-semibold text-zinc-50">Drift detection</h2>
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">Drift detection</h2>
       <p class="mt-3 text-sm text-zinc-300">
         Once a pack is installed on at least one runner, the in-app Packs page groups every
         observed <code>(pack_id, version, hash)</code> in your account. Two runners on the same
