@@ -62,8 +62,12 @@ jobs:
 
       - uses: erlef/setup-beam@v1
         with:
-          elixir-version: "1.20.0"
-          otp-version: "29.0.1"
+          # Pinned in /.tool-versions (repo root) — the single source of
+          # truth shared with local asdf, so CI can't drift from dev.
+          # setup-beam resolves version-file against GITHUB_WORKSPACE (not
+          # this job's portal/ working-dir), and requires version-type: strict.
+          version-file: .tool-versions
+          version-type: strict
 
       - name: Restore deps cache
         uses: actions/cache@v5
@@ -118,8 +122,25 @@ jobs:
         # ../install.sh and ../packs); the default
         # working-directory: portal would scope the context too tight.
         # Override here only — other steps stay in portal/.
+        #
+        # Toolchain --build-args come from /.tool-versions so the release
+        # image compiles with the same Erlang/Elixir as the test job and
+        # local dev — one source of truth, no drift. The elixir line
+        # carries an asdf `-otp-NN` suffix the hexpm image tag omits, so
+        # strip it; erlang maps straight to OTP_VERSION.
         working-directory: ${{ github.workspace }}
-        run: docker build -f portal/Dockerfile -t emisar/portal:ci .
+        run: |
+          elixir_version=$(awk '$1=="elixir"{split($2,a,"-otp-"); print a[1]}' .tool-versions)
+          otp_version=$(awk '$1=="erlang"{print $2}' .tool-versions)
+          if [ -z "$elixir_version" ] || [ -z "$otp_version" ]; then
+            echo "::error::could not parse Elixir/OTP from .tool-versions"
+            exit 1
+          fi
+          echo "building portal image with Elixir ${elixir_version} / OTP ${otp_version}"
+          docker build -f portal/Dockerfile \
+            --build-arg ELIXIR_VERSION="${elixir_version}" \
+            --build-arg OTP_VERSION="${otp_version}" \
+            -t emisar/portal:ci .
 
       - name: Docker smoke (release boots + runs migrations + serves /healthz)
         # `docker build` passing only proves the Dockerfile parses and

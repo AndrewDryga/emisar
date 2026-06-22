@@ -8,8 +8,13 @@
 #
 # Invoked by docker-compose as `build: { context: ., dockerfile: portal/Dockerfile }`.
 
-ARG ELIXIR_VERSION=1.20.0
-ARG OTP_VERSION=29.0.1
+# Toolchain defaults track /.tool-versions (the repo-root single source of
+# truth). portal-ci overrides ELIXIR_VERSION/OTP_VERSION via --build-arg derived
+# from that file; docker-compose and local builds use these defaults — keep them
+# in sync when .tool-versions bumps. (ELIXIR_VERSION drops the asdf `-otp-NN`
+# suffix; the hexpm image tag doesn't carry it.)
+ARG ELIXIR_VERSION=1.20.1
+ARG OTP_VERSION=29.0.2
 ARG DEBIAN_VERSION=bookworm-20260518-slim
 
 ARG BUILDER_IMAGE="hexpm/elixir:${ELIXIR_VERSION}-erlang-${OTP_VERSION}-debian-${DEBIAN_VERSION}"

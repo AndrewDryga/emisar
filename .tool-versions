@@ -1,8 +1,12 @@
 # asdf toolchain for emisar — `asdf install` from the repo root provisions the dev
-# environment for all three languages. erlang + elixir match CI exactly
-# (.github/workflows/portal-ci.yml: 29.0.1 / 1.20.0). golang: the go.work + both
-# go.mod floor is 1.26.3 (runner/ + mcp/); 1.26.4 is the latest compatible patch.
+# environment for all three languages, and this file is the single source of truth
+# for the Erlang + Elixir pins: portal-ci.yml reads it via setup-beam (version-file
+# + version-type: strict), and the portal Docker build derives its --build-arg
+# toolchain from it — so CI and the release image always match dev, nothing to
+# hand-sync. golang: the go.work + both go.mod floor is 1.26.3 (runner/ + mcp/),
+# which the Go CI tracks via go-version-file by design (it builds against the
+# minimum we support); 1.26.4 here is the latest compatible patch for local dev.
 # Go has no asdf plugin by default — run `asdf plugin add golang` once, then install.
-erlang 29.0.1
-elixir 1.20.0-otp-29
+erlang 29.0.2
+elixir 1.20.1-otp-29
 golang 1.26.4
