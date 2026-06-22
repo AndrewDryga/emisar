@@ -168,10 +168,13 @@ use `brand-*` for accent, primary action, links, and success/allowed/healthy.
   Negative tracking tightens with size (display tightest). Body copy is plain
   Inter (root), `text-zinc-400`, `leading-8`/`leading-7`/`leading-relaxed`,
   `text-pretty` on paragraphs, `text-balance` on headings.
-- **Console headings** are quieter — `font-semibold`/`font-bold tracking-tight
-  text-zinc-50`, not the full display treatment. (The display cut is a marketing
-  signature; the console can adopt `.font-display` selectively for page titles
-  if it reads well, but stays restrained — see §8.)
+- **Console page titles** carry `.font-display` at the *console* size — the app
+  shell's title is `font-display text-lg sm:text-xl font-bold tracking-tight`. The
+  cv11 single-story `a` ties the console to the marketing type signature without
+  the big marketing scale or any materiality (calm = small + flat, not a
+  different typeface). Section/card headers *within* a page stay plain
+  (`text-sm font-semibold text-zinc-100`) — the display cut is for the page title
+  only, not every label.
 - **Numbers:** live counts / metrics / tables use **tabular figures**
   (`font-variant-numeric: tabular-nums` / `tabular-nums`) so they don't jitter.
 - **Mono:** `font-mono` for action ids, code, terminal, runner names.

@@ -1290,7 +1290,7 @@ defmodule EmisarWeb.CoreComponents do
           >
             <.icon name="hero-bars-3" class="h-5 w-5" />
           </button>
-          <h1 class="min-w-0 flex-1 truncate text-lg font-bold tracking-tight sm:text-xl">
+          <h1 class="min-w-0 flex-1 truncate font-display text-lg font-bold tracking-tight sm:text-xl">
             {render_slot(@title)}
           </h1>
           <div class="flex items-center gap-2 sm:gap-3">{render_slot(@actions)}</div>
