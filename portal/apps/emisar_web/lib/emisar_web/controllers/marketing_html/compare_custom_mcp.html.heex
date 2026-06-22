@@ -26,6 +26,65 @@
         case reopens the list, and it's your pager.
       </p>
 
+      <%!-- The difference, shown: the same psql, two ways. Amber = the handler
+           you hand-roll (ships in an afternoon, never done); emerald = the
+           declared pack action. Same terminal look as /compare/raw-ssh. --%>
+      <div class="mt-8 grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <div class="overflow-hidden rounded-xl border border-amber-500/25 bg-black/40">
+          <div class="flex items-center gap-2 border-b border-amber-500/20 bg-amber-500/5 px-4 py-2.5">
+            <span class="h-2 w-2 rounded-full bg-amber-500/70"></span>
+            <span class="text-xs font-semibold text-amber-200">
+              your-mcp-server.ts · an afternoon
+            </span>
+          </div>
+          <div class="space-y-1.5 px-4 py-4 font-mono text-[11.5px] leading-relaxed">
+            <p class="text-zinc-300">
+              server.tool("pg_kill", async (&#123; pid &#125;) => &#123;
+            </p>
+            <p class="text-zinc-300">&nbsp;&nbsp;return ssh.exec(</p>
+            <p class="text-zinc-300">
+              &nbsp;&nbsp;&nbsp;&nbsp;`psql -c "…terminate_backend($&#123;pid&#125;)"`)
+            </p>
+            <p class="text-zinc-300">&#125;)</p>
+            <p class="mt-1 text-amber-300">// then everything you still own:</p>
+            <p class="text-zinc-500">//&nbsp;&nbsp;validate pid · redact secrets</p>
+            <p class="text-zinc-500">//&nbsp;&nbsp;risk gate → human approval</p>
+            <p class="text-zinc-500">//&nbsp;&nbsp;audit: who · what · why</p>
+            <p class="text-zinc-500">//&nbsp;&nbsp;reconnect · orphans · per-user scope</p>
+            <p class="text-zinc-500">//&nbsp;&nbsp;OAuth + transport per client</p>
+          </div>
+        </div>
+        <div class="overflow-hidden rounded-xl border border-brand-500/25 bg-black/40">
+          <div class="flex items-center gap-2 border-b border-brand-500/20 bg-brand-500/5 px-4 py-2.5">
+            <span class="h-2 w-2 rounded-full bg-brand-500"></span>
+            <span class="text-xs font-semibold text-brand-200">postgres.yml · declared once</span>
+          </div>
+          <div class="space-y-1.5 px-4 py-4 font-mono text-[11.5px] leading-relaxed text-zinc-300">
+            <p>id: postgres.terminate_backend</p>
+            <p>kind: exec</p>
+            <p>
+              risk: high&nbsp;&nbsp;&nbsp;<span class="text-zinc-600"># → policy gates it</span>
+            </p>
+            <p>args:</p>
+            <p>&nbsp;&nbsp;- name: pid</p>
+            <p>&nbsp;&nbsp;&nbsp;&nbsp;type: integer</p>
+            <p>&nbsp;&nbsp;&nbsp;&nbsp;required: true</p>
+            <p>execution:</p>
+            <p>&nbsp;&nbsp;command:</p>
+            <p>&nbsp;&nbsp;&nbsp;&nbsp;binary: psql</p>
+            <p>&nbsp;&nbsp;&nbsp;&nbsp;argv: ["-tAc", "SELECT</p>
+            <p>
+              &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;pg_terminate_backend(&#123;&#123; args.pid &#125;&#125;)"]
+            </p>
+          </div>
+        </div>
+      </div>
+      <p class="mt-3 text-sm leading-relaxed text-zinc-500 text-pretty">
+        Both run the same query. The left took an afternoon — the other 80%
+        (validation, redaction, approval, audit, reconnect) is what emisar ships
+        once, for every host, pack, and client you add.
+      </p>
+
       <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">
         What you'd build and own
       </h2>
