@@ -161,12 +161,14 @@ cassandra.nodetool_compactionhistory &#123;&#125;
       <h2 class="mt-12 text-2xl font-semibold text-zinc-50 text-balance">
         Questions a Cassandra operator asks
       </h2>
-      <div class="mt-6 divide-y divide-zinc-900 rounded-2xl border border-zinc-900 bg-zinc-950/60">
+      <div class="mt-6 divide-y divide-zinc-900 overflow-hidden rounded-2xl border border-zinc-900 bg-zinc-950/60">
         <details class="group">
-          <summary class="flex cursor-pointer items-center justify-between px-6 py-5 text-sm font-semibold text-zinc-100">
+          <summary class="flex cursor-pointer items-center justify-between transition-colors hover:bg-zinc-900/30 px-6 py-5 text-sm font-semibold text-zinc-50">
             Could the agent have made it worse?
-            <.icon name="hero-plus" class="h-5 w-5 text-zinc-500 transition group-open:hidden" />
-            <.icon name="hero-minus" class="hidden h-5 w-5 text-brand-400 group-open:block" />
+            <.icon
+              name="hero-chevron-down"
+              class="h-5 w-5 shrink-0 text-zinc-500 transition duration-200 group-hover:text-zinc-300 group-open:rotate-180 group-open:text-brand-400"
+            />
           </summary>
           <p class="px-6 pb-5 text-sm leading-6 text-zinc-400">
             Only within a tier you chose. The reads it ran change nothing. The single destructive
@@ -179,10 +181,12 @@ cassandra.nodetool_compactionhistory &#123;&#125;
           </p>
         </details>
         <details class="group">
-          <summary class="flex cursor-pointer items-center justify-between px-6 py-5 text-sm font-semibold text-zinc-100">
+          <summary class="flex cursor-pointer items-center justify-between transition-colors hover:bg-zinc-900/30 px-6 py-5 text-sm font-semibold text-zinc-50">
             How does emisar know an action is "high risk"?
-            <.icon name="hero-plus" class="h-5 w-5 text-zinc-500 transition group-open:hidden" />
-            <.icon name="hero-minus" class="hidden h-5 w-5 text-brand-400 group-open:block" />
+            <.icon
+              name="hero-chevron-down"
+              class="h-5 w-5 shrink-0 text-zinc-500 transition duration-200 group-hover:text-zinc-300 group-open:rotate-180 group-open:text-brand-400"
+            />
           </summary>
           <p class="px-6 pb-5 text-sm leading-6 text-zinc-400">
             The risk tier is declared in the action's YAML and travels with the pack's content
@@ -193,10 +197,12 @@ cassandra.nodetool_compactionhistory &#123;&#125;
           </p>
         </details>
         <details class="group">
-          <summary class="flex cursor-pointer items-center justify-between px-6 py-5 text-sm font-semibold text-zinc-100">
+          <summary class="flex cursor-pointer items-center justify-between transition-colors hover:bg-zinc-900/30 px-6 py-5 text-sm font-semibold text-zinc-50">
             Can I let on-call abort a runaway compaction without paging me every time?
-            <.icon name="hero-plus" class="h-5 w-5 text-zinc-500 transition group-open:hidden" />
-            <.icon name="hero-minus" class="hidden h-5 w-5 text-brand-400 group-open:block" />
+            <.icon
+              name="hero-chevron-down"
+              class="h-5 w-5 shrink-0 text-zinc-500 transition duration-200 group-hover:text-zinc-300 group-open:rotate-180 group-open:text-brand-400"
+            />
           </summary>
           <p class="px-6 pb-5 text-sm leading-6 text-zinc-400">
             Yes — approve once and issue a standing grant bounded by duration, runner, argument

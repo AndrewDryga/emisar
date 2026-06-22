@@ -166,12 +166,14 @@ postgres.activity_detail &#123;&#125;
       <h2 class="mt-12 text-2xl font-semibold text-zinc-50 text-balance">
         Questions a Postgres on-call asks
       </h2>
-      <div class="mt-6 divide-y divide-zinc-900 rounded-2xl border border-zinc-900 bg-zinc-950/60">
+      <div class="mt-6 divide-y divide-zinc-900 overflow-hidden rounded-2xl border border-zinc-900 bg-zinc-950/60">
         <details class="group">
-          <summary class="flex cursor-pointer items-center justify-between px-6 py-5 text-sm font-semibold text-zinc-100">
+          <summary class="flex cursor-pointer items-center justify-between transition-colors hover:bg-zinc-900/30 px-6 py-5 text-sm font-semibold text-zinc-50">
             Can the model run an undeclared query?
-            <.icon name="hero-plus" class="h-5 w-5 text-zinc-500 transition group-open:hidden" />
-            <.icon name="hero-minus" class="hidden h-5 w-5 text-brand-400 group-open:block" />
+            <.icon
+              name="hero-chevron-down"
+              class="h-5 w-5 shrink-0 text-zinc-500 transition duration-200 group-hover:text-zinc-300 group-open:rotate-180 group-open:text-brand-400"
+            />
           </summary>
           <p class="px-6 pb-5 text-sm leading-6 text-zinc-400">
             No. The runner only exposes the actions in the trusted pack, each a fixed SQL string. A
@@ -182,10 +184,12 @@ postgres.activity_detail &#123;&#125;
           </p>
         </details>
         <details class="group">
-          <summary class="flex cursor-pointer items-center justify-between px-6 py-5 text-sm font-semibold text-zinc-100">
+          <summary class="flex cursor-pointer items-center justify-between transition-colors hover:bg-zinc-900/30 px-6 py-5 text-sm font-semibold text-zinc-50">
             Why is killing a backend allowed at all?
-            <.icon name="hero-plus" class="h-5 w-5 text-zinc-500 transition group-open:hidden" />
-            <.icon name="hero-minus" class="hidden h-5 w-5 text-brand-400 group-open:block" />
+            <.icon
+              name="hero-chevron-down"
+              class="h-5 w-5 shrink-0 text-zinc-500 transition duration-200 group-hover:text-zinc-300 group-open:rotate-180 group-open:text-brand-400"
+            />
           </summary>
           <p class="px-6 pb-5 text-sm leading-6 text-zinc-400">
             Because clearing a wedged lock at 02:14 is the whole point. It's gated, not removed: <code>cancel_query</code>, <code>terminate_backend</code>, and
@@ -197,10 +201,12 @@ postgres.activity_detail &#123;&#125;
           </p>
         </details>
         <details class="group">
-          <summary class="flex cursor-pointer items-center justify-between px-6 py-5 text-sm font-semibold text-zinc-100">
+          <summary class="flex cursor-pointer items-center justify-between transition-colors hover:bg-zinc-900/30 px-6 py-5 text-sm font-semibold text-zinc-50">
             Does the runner need superuser on the database?
-            <.icon name="hero-plus" class="h-5 w-5 text-zinc-500 transition group-open:hidden" />
-            <.icon name="hero-minus" class="hidden h-5 w-5 text-brand-400 group-open:block" />
+            <.icon
+              name="hero-chevron-down"
+              class="h-5 w-5 shrink-0 text-zinc-500 transition duration-200 group-hover:text-zinc-300 group-open:rotate-180 group-open:text-brand-400"
+            />
           </summary>
           <p class="px-6 pb-5 text-sm leading-6 text-zinc-400">
             No — only the privileges the actions you enable require. For this incident,
