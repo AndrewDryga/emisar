@@ -358,3 +358,69 @@
     opacity: 1;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   Motion: staggered hero assembly + on-scroll reveals (marketing).
+
+   The hero assembly is pure CSS (`.rise-N`), so it runs with or without JS and
+   the global reduced-motion override lands every element at its lit end state.
+   The scroll reveals are progressive enhancement: the reveal-hiding only engages
+   under `.js-reveal` (added by reveal.js), so no-JS visitors and crawlers see
+   every element; reveal.js adds `.is-in` as each enters the viewport. Restraint
+   is the brand — short distances, one gentle ease, nothing loops.
+   --------------------------------------------------------------------------- */
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.rise-1,
+.rise-2,
+.rise-3,
+.rise-4,
+.rise-5 {
+  animation: rise 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.rise-2 {
+  animation-delay: 0.08s;
+}
+.rise-3 {
+  animation-delay: 0.16s;
+}
+.rise-4 {
+  animation-delay: 0.24s;
+}
+.rise-5 {
+  animation-delay: 0.34s;
+}
+
+.js-reveal [data-reveal] {
+  opacity: 0;
+  transform: translateY(16px);
+  transition:
+    opacity 0.7s cubic-bezier(0.16, 1, 0.3, 1),
+    transform 0.7s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.js-reveal [data-reveal].is-in {
+  opacity: 1;
+  transform: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rise-1,
+  .rise-2,
+  .rise-3,
+  .rise-4,
+  .rise-5 {
+    animation: none;
+  }
+  [data-reveal] {
+    opacity: 1 !important;
+    transform: none !important;
+  }
+}

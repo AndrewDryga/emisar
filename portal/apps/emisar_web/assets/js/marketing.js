@@ -9,12 +9,15 @@
 //     with the app console via copy.js
 //   * the animated "watch emisar work" home-page terminal demo (a no-op
 //     on every page that doesn't render it)
+//   * restrained on-scroll reveals (a no-op when no [data-reveal] is present)
 //
 // The authenticated console loads `app.js` (LiveSocket + hooks) instead;
 // `root.html.heex` picks the bundle from the `@app_js?` assign, which the
 // global LiveView `on_mount` hook sets on every live render.
 import {setupCopyToClipboardDelegation} from "./copy.js"
 import {initEmisarDemo} from "./emisar_demo.js"
+import {initReveal} from "./reveal.js"
 
 setupCopyToClipboardDelegation()
 initEmisarDemo()
+initReveal()

@@ -17,17 +17,17 @@
         <.marketing_heading
           tag="h1"
           scale={:display}
-          class="max-w-4xl !text-5xl !leading-[0.98] sm:!text-6xl md:!text-7xl"
+          class="rise-1 max-w-4xl !text-5xl !leading-[0.98] sm:!text-6xl md:!text-7xl"
         >
           Secure production access for your AI agents.
         </.marketing_heading>
-        <p class="mt-6 max-w-2xl text-lg leading-relaxed text-zinc-300">
+        <p class="rise-2 mt-6 max-w-2xl text-lg leading-relaxed text-zinc-300">
           emisar is the MCP server that connects Claude, Cursor, ChatGPT — any agent — to your
           live infrastructure. Your AI reads real production state to ground its work, debugs what
           it shipped, and drives incidents. Reads run free on policy; only a risky change stops for
           one human approval. No SSH, no standing access, every call on the record.
         </p>
-        <div class="mt-8 flex flex-wrap items-center gap-4">
+        <div class="rise-3 mt-8 flex flex-wrap items-center gap-4">
           <.marketing_button href={~p"/sign_up"} icon="hero-arrow-right">
             Start free
           </.marketing_button>
@@ -35,7 +35,7 @@
             Run the quickstart
           </.marketing_button>
         </div>
-        <p class="mt-6 text-xs text-zinc-400">
+        <p class="rise-4 mt-6 text-xs text-zinc-400">
           Free for 3 runners &middot; No credit card &middot;
           <a
             href="https://github.com/andrewdryga/emisar/blob/main/LICENSE.md"
@@ -52,7 +52,7 @@
            Every call passes the gate — reads clear on policy, the one risky
            change waits for a human. Simpler than a contract dump on purpose;
            the full incident is the demo further down. --%>
-      <div class="surface-glass mt-10 overflow-hidden rounded-xl border border-zinc-800">
+      <div class="rise-5 surface-glass mt-10 overflow-hidden rounded-xl border border-zinc-800">
         <div class="flex items-center justify-between gap-3 border-b border-zinc-800 bg-zinc-950 px-4 py-2.5 font-mono text-[11px] text-zinc-500">
           <span class="flex items-center gap-2">
             <.icon name="hero-sparkles" class="h-3.5 w-3.5 text-brand-400" /> claude · emisar MCP
@@ -136,7 +136,7 @@
        Reads dominate (context, self-debug, incidents); the gated write is the
        exception. The value the user feels, stated before the mechanics. --%>
   <section class="border-y border-zinc-900 bg-zinc-950/40 py-24 sm:py-32">
-    <div class="mx-auto max-w-7xl px-6 lg:px-8">
+    <div data-reveal class="mx-auto max-w-7xl px-6 lg:px-8">
       <div class="mx-auto max-w-3xl text-center">
         <h2 class="text-base font-semibold text-brand-400">Why it's different</h2>
         <p class="mt-2 text-4xl font-bold tracking-tight text-white sm:text-5xl text-balance">
@@ -174,7 +174,7 @@
 
   <%!-- Pain section --%>
   <section class="py-24 sm:py-32">
-    <div class="mx-auto max-w-7xl px-6 lg:px-8">
+    <div data-reveal class="mx-auto max-w-7xl px-6 lg:px-8">
       <div class="mx-auto max-w-3xl text-center">
         <h2 class="text-base font-semibold text-brand-400">The status quo</h2>
         <p class="mt-2 text-4xl font-bold tracking-tight text-white sm:text-5xl text-balance">
@@ -226,7 +226,7 @@
 
   <%!-- Mechanism pipeline --%>
   <section id="mechanism" class="border-y border-zinc-900 bg-zinc-950/40 py-24 sm:py-32">
-    <div class="mx-auto max-w-7xl px-6 lg:px-8">
+    <div data-reveal class="mx-auto max-w-7xl px-6 lg:px-8">
       <div class="grid gap-10 lg:grid-cols-[0.9fr_1.1fr] lg:items-end">
         <div>
           <h2 class="font-mono text-xs font-semibold uppercase tracking-[0.2em] text-brand-400">
@@ -276,7 +276,7 @@
   <%!-- Watch it work — the live demo, placed after the mechanism so the
        abstract pipeline pays off as a real, end-to-end incident. --%>
   <section class="py-24 sm:py-32">
-    <div class="mx-auto max-w-7xl px-6 lg:px-8">
+    <div data-reveal class="mx-auto max-w-7xl px-6 lg:px-8">
       <div class="mx-auto max-w-3xl text-center">
         <h2 class="text-base font-semibold text-brand-400">Watch it work</h2>
         <p class="mt-2 text-4xl font-bold tracking-tight text-white sm:text-5xl text-balance">
@@ -327,7 +327,7 @@
 
   <%!-- Three-pillar deep-dive --%>
   <section class="py-24 sm:py-32">
-    <div class="mx-auto max-w-7xl px-6 lg:px-8">
+    <div data-reveal class="mx-auto max-w-7xl px-6 lg:px-8">
       <div class="mx-auto max-w-3xl text-center">
         <h2 class="text-base font-semibold text-brand-400">Three pillars</h2>
         <p class="mt-2 text-4xl font-bold tracking-tight text-white sm:text-5xl text-balance">
@@ -488,7 +488,7 @@
 
   <%!-- Comparison table --%>
   <section class="py-24 sm:py-32">
-    <div class="mx-auto max-w-7xl px-6 lg:px-8">
+    <div data-reveal class="mx-auto max-w-7xl px-6 lg:px-8">
       <div class="mx-auto max-w-3xl text-center">
         <h2 class="text-base font-semibold text-brand-400">Why not just&hellip;</h2>
         <p class="mt-2 text-4xl font-bold tracking-tight text-white sm:text-5xl text-balance">
@@ -629,7 +629,7 @@
 
   <%!-- Use cases --%>
   <section class="py-24 sm:py-32">
-    <div class="mx-auto max-w-7xl px-6 lg:px-8">
+    <div data-reveal class="mx-auto max-w-7xl px-6 lg:px-8">
       <div class="mx-auto max-w-3xl text-center">
         <h2 class="text-base font-semibold text-brand-400">Example workflows</h2>
         <p class="mt-2 text-4xl font-bold tracking-tight text-white sm:text-5xl text-balance">
@@ -669,7 +669,7 @@
 
   <%!-- Pricing teaser --%>
   <section class="border-y border-zinc-900 bg-zinc-950/40 py-24 sm:py-32">
-    <div class="mx-auto max-w-7xl px-6 lg:px-8">
+    <div data-reveal class="mx-auto max-w-7xl px-6 lg:px-8">
       <div class="mx-auto max-w-3xl text-center">
         <h2 class="text-base font-semibold text-brand-400">Pricing</h2>
         <p class="mt-2 text-4xl font-bold tracking-tight text-white sm:text-5xl text-balance">
