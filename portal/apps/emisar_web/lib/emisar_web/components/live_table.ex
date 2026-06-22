@@ -328,7 +328,7 @@ defmodule EmisarWeb.LiveTable do
           value="true"
           checked={@value == "true"}
           disabled={@disabled}
-          class="h-4 w-4 rounded border-zinc-700 bg-zinc-950 text-indigo-500 focus:ring-indigo-500 disabled:cursor-not-allowed"
+          class="h-4 w-4 rounded border-zinc-700 bg-zinc-950 text-brand-500 focus:ring-brand-500 disabled:cursor-not-allowed"
         />
         {@filter.title}
       </span>

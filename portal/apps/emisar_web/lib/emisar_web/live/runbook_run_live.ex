@@ -660,7 +660,7 @@ defmodule EmisarWeb.RunbookRunLive do
             </h2>
             <span class="text-xs text-zinc-500">
               {length(@steps)} {if length(@steps) == 1, do: "step", else: "steps"}
-              <span :if={!@execution && @blast_radius.total} class="text-indigo-300/70">
+              <span :if={!@execution && @blast_radius.total} class="text-brand-300/70">
                 → {@blast_radius.total} {if @blast_radius.total == 1, do: "run", else: "runs"} in {@blast_radius.waves} {if @blast_radius.waves ==
                                                                                                                               1,
                                                                                                                             do:
@@ -734,7 +734,7 @@ defmodule EmisarWeb.RunbookRunLive do
                 <.link
                   :if={row.run}
                   navigate={~p"/app/#{@current_account}/runs/#{row.run.id}"}
-                  class="text-xs text-indigo-400 hover:text-indigo-300"
+                  class="text-xs text-brand-400 hover:text-brand-300"
                 >
                   View
                 </.link>
@@ -815,7 +815,7 @@ defmodule EmisarWeb.RunbookRunLive do
                   {step["description"]}
                 </p>
                 <% count = @blast_radius.counts[idx] %>
-                <p :if={target} class="mt-0.5 truncate text-xs text-indigo-300/70">
+                <p :if={target} class="mt-0.5 truncate text-xs text-brand-300/70">
                   → {target}<span :if={count}>
                     · {count} {if count == 1, do: "runner", else: "runners"}</span>
                 </p>
@@ -835,7 +835,7 @@ defmodule EmisarWeb.RunbookRunLive do
             No steps defined.
             <.link
               navigate={~p"/app/#{@current_account}/runbooks/#{@runbook.id}/edit"}
-              class="text-indigo-400 hover:text-indigo-300"
+              class="text-brand-400 hover:text-brand-300"
             >
               Edit the runbook
             </.link>
@@ -886,7 +886,7 @@ defmodule EmisarWeb.RunbookRunLive do
              form's absence reads as intentional rather than missing. --%>
         <.panel :if={@loaded? and run_in_progress?(@execution, @run_statuses)} title="Dispatch">
           <p class="flex items-center gap-2 text-sm text-zinc-400">
-            <.icon name="hero-arrow-path" class="h-4 w-4 flex-none animate-spin text-indigo-400" />
+            <.icon name="hero-arrow-path" class="h-4 w-4 flex-none animate-spin text-brand-400" />
             Runbook is running — you can start another run once it finishes.
           </p>
         </.panel>

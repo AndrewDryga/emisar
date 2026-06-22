@@ -367,7 +367,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
           navigate={
             ~p"/app/#{@current_account}/audit?#{[subject_kind: "approval_request", subject_id: @request.id]}"
           }
-          class="text-xs font-medium text-indigo-400 hover:text-indigo-300"
+          class="text-xs font-medium text-brand-400 hover:text-brand-300"
         >
           View activity →
         </.link>
@@ -393,13 +393,13 @@ defmodule EmisarWeb.ApprovalDetailLive do
               <span
                 class={[
                   "h-1.5 w-1.5 flex-none rounded-full",
-                  if(@runner_connection == :online, do: "bg-emerald-400", else: "bg-zinc-600")
+                  if(@runner_connection == :online, do: "bg-brand-400", else: "bg-zinc-600")
                 ]}
                 title={if(@runner_connection == :online, do: "Online", else: "Offline")}
               />
               <.link
                 navigate={~p"/app/#{@current_account}/runners/#{@run.runner.id}"}
-                class="truncate text-zinc-200 hover:text-indigo-300"
+                class="truncate text-zinc-200 hover:text-brand-300"
               >
                 {@run.runner.name}
               </.link>
@@ -501,7 +501,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
           <div :if={@run}>
             <.link
               navigate={~p"/app/#{@current_account}/runs/#{@run.id}"}
-              class="inline-flex items-center gap-1 text-sm text-indigo-400 hover:text-indigo-300"
+              class="inline-flex items-center gap-1 text-sm text-brand-400 hover:text-brand-300"
             >
               View run details <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
             </.link>
@@ -688,7 +688,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
                     Cap how many times this grant can be used within the window. Leave blank for unlimited.
                     Grants are reviewable + revocable on the <.link
                       navigate={~p"/app/#{@current_account}/approvals"}
-                      class="text-indigo-400 hover:text-indigo-300"
+                      class="text-brand-400 hover:text-brand-300"
                     >
                     approvals page
                   </.link>.
@@ -736,7 +736,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
   defp decision_icon(:approve), do: "hero-check-circle"
   defp decision_icon(:deny), do: "hero-x-circle"
 
-  defp decision_icon_class(:approve), do: "text-emerald-400"
+  defp decision_icon_class(:approve), do: "text-brand-400"
   defp decision_icon_class(:deny), do: "text-rose-400"
 
   defp decision_verb(:approve), do: "approved"

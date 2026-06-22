@@ -128,7 +128,7 @@ defmodule EmisarWeb.RunbooksLiveTest do
 
     assert html =~ "Unobserved"
     refute html =~ "ring-rose-500/30"
-    refute html =~ "ring-emerald-500/30"
+    refute html =~ "ring-brand-500/30"
   end
 
   test "refreshes when the account's runbook feed broadcasts", %{conn: conn} do

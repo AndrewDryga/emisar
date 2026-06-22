@@ -128,17 +128,17 @@ defmodule EmisarWeb.RunsLive do
                 Dispatch one from a
                 <.link
                   navigate={~p"/app/#{@current_account}/runners"}
-                  class="text-indigo-400 hover:text-indigo-300"
+                  class="text-brand-400 hover:text-brand-300"
                 >
                   runner detail page
                 </.link>
                 or kick off a <.link
                   navigate={~p"/app/#{@current_account}/runbooks"}
-                  class="text-indigo-400 hover:text-indigo-300"
+                  class="text-brand-400 hover:text-brand-300"
                 >runbook</.link>.
                 Runs from an LLM (via the <.link
                   navigate={~p"/app/#{@current_account}/settings/agents"}
-                  class="text-indigo-400 hover:text-indigo-300"
+                  class="text-brand-400 hover:text-brand-300"
                 >MCP API</.link>) land here too.
               </.empty_state>
           <% end %>
@@ -149,7 +149,7 @@ defmodule EmisarWeb.RunsLive do
         <:col :let={run} label="Action">
           <.link
             navigate={~p"/app/#{@current_account}/runs/#{run.id}"}
-            class="font-mono text-sm hover:text-indigo-300"
+            class="font-mono text-sm hover:text-brand-300"
           >
             {run.action_id}
           </.link>

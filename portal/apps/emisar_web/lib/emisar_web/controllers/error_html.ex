@@ -86,7 +86,7 @@ defmodule EmisarWeb.ErrorHTML do
           <div class="mt-8 flex items-center justify-center gap-3">
             <a
               href="/"
-              class="rounded-lg bg-indigo-500 px-4 py-2 text-sm font-semibold text-zinc-950 hover:bg-indigo-400"
+              class="rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-zinc-950 hover:bg-brand-400"
             >
               Back to home
             </a>

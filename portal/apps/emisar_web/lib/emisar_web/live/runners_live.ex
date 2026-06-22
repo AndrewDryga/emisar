@@ -297,9 +297,9 @@ defmodule EmisarWeb.RunnersLive do
   defp connection_dot(%{status: "connected"} = assigns) do
     ~H"""
     <span class="relative grid h-3 w-3 flex-none place-items-center" title="Connected">
-      <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-500/40">
+      <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-brand-500/40">
       </span>
-      <span class="relative h-2 w-2 rounded-full bg-emerald-400"></span>
+      <span class="relative h-2 w-2 rounded-full bg-brand-400"></span>
     </span>
     """
   end

@@ -47,7 +47,7 @@ defmodule EmisarWeb.Components.ChipTest do
       assert html =~ "uppercase"
       assert html =~ "font-semibold"
       assert html =~ "tracking-wider"
-      assert html =~ "bg-emerald-500/15"
+      assert html =~ "bg-brand-500/15"
       refute html =~ "font-medium"
     end
 

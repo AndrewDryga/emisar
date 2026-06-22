@@ -7,7 +7,7 @@
     <div class="overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900/60 shadow-xl">
       <div class="border-b border-zinc-800 px-6 py-5">
         <h1 class="text-lg font-semibold text-zinc-50">
-          Authorize <span class="text-indigo-400">{@client_name}</span>
+          Authorize <span class="text-brand-400">{@client_name}</span>
         </h1>
         <p class="mt-1 text-sm text-zinc-400">
           wants to connect to <strong class="text-zinc-200">{@account_name}</strong>
@@ -20,7 +20,7 @@
         </p>
         <ul class="mt-3 space-y-3">
           <li :for={scope <- @scopes} class="flex items-start gap-3">
-            <.icon name="hero-check-circle" class="mt-0.5 h-5 w-5 flex-none text-emerald-400" />
+            <.icon name="hero-check-circle" class="mt-0.5 h-5 w-5 flex-none text-brand-400" />
             <span class="text-sm leading-snug text-zinc-300">{scope_label(scope)}</span>
           </li>
         </ul>
@@ -47,7 +47,7 @@
               type="submit"
               name="decision"
               value="approve"
-              class="w-full rounded-lg bg-indigo-500 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:ring-offset-2 focus:ring-offset-zinc-900"
+              class="w-full rounded-lg bg-brand-500 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-400 focus:ring-offset-2 focus:ring-offset-zinc-900"
             >
               Authorize
             </button>

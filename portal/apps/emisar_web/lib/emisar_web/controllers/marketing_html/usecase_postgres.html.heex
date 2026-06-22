@@ -42,7 +42,7 @@
         1 · Investigate — through declared reads
       </h2>
       <p class="mt-4 text-sm leading-6 text-zinc-400">
-        Every call below is <code class="text-emerald-300">low</code>
+        Every call below is <code class="text-brand-300">low</code>
         risk and holds no locks of its own — so the default policy runs them unattended while the
         agent narrows in.
       </p>
@@ -94,7 +94,7 @@ postgres.activity_detail &#123;&#125;
       <pre class="mt-3 overflow-x-auto rounded-lg border border-zinc-900 bg-black/60 p-4 font-mono text-xs leading-6 text-zinc-300">postgres.terminate_backend &#123;"pid": 4471,
   "reason": "crashed migrate-svc left an idle FOR UPDATE txn blocking 30 writers"&#125;
 <span class="text-amber-300">⏸ pending approval — terminate_backend is high-risk; a human approves in the portal</span>
-<span class="text-emerald-300">✓ approved by you · one use · audit event recorded</span>
+<span class="text-brand-300">✓ approved by you · one use · audit event recorded</span>
 <span class="text-zinc-500">→ pg_terminate_backend(4471) = t · connection severed · txn rolled back · lock released</span></pre>
       <p class="mt-3 text-sm leading-6 text-zinc-400">
         The thirty blocked <code>UPDATE</code>s commit in the next second and API latency drops
@@ -115,7 +115,7 @@ postgres.activity_detail &#123;&#125;
       <pre class="mt-3 overflow-x-auto rounded-lg border border-zinc-900 bg-black/60 p-4 font-mono text-xs leading-6 text-zinc-300">postgres.kill_idle &#123;"older_than_seconds": 600,
   "reason": "clear the remaining idle-in-transaction backends from the failed migrate-svc deploy"&#125;
 <span class="text-amber-300">⏸ pending approval — kill_idle is high-risk; a human approves in the portal</span>
-<span class="text-emerald-300">✓ approved by you · one use · audit event recorded</span>
+<span class="text-brand-300">✓ approved by you · one use · audit event recorded</span>
 <span class="text-zinc-500">→ terminated 5 idle-in-transaction backends older than 600s</span></pre>
       <p class="mt-3 text-sm leading-6 text-zinc-400">
         <code>older_than_seconds</code>

@@ -129,7 +129,7 @@ defmodule EmisarWeb.RunDetailLive do
           navigate={
             ~p"/app/#{@current_account}/audit?#{[subject_kind: "action_run", subject_id: @run.id]}"
           }
-          class="text-xs font-medium text-indigo-400 hover:text-indigo-300"
+          class="text-xs font-medium text-brand-400 hover:text-brand-300"
         >
           View activity →
         </.link>
@@ -159,7 +159,7 @@ defmodule EmisarWeb.RunDetailLive do
         <.meta_field label="Runner">
           <.link
             navigate={~p"/app/#{@current_account}/runners/#{@run.runner_id}"}
-            class="truncate text-zinc-200 hover:text-indigo-300"
+            class="truncate text-zinc-200 hover:text-brand-300"
           >
             {runner_label(@run.runner)}
           </.link>
@@ -369,9 +369,9 @@ defmodule EmisarWeb.RunDetailLive do
                  not "this is the final output". Gone once terminal. --%>
             <span
               :if={@run.status in [:sent, :running]}
-              class="inline-flex items-center gap-1 rounded-full bg-indigo-500/10 px-2 py-0.5 text-[10px] font-medium text-indigo-300 ring-1 ring-indigo-500/30"
+              class="inline-flex items-center gap-1 rounded-full bg-brand-500/10 px-2 py-0.5 text-[10px] font-medium text-brand-300 ring-1 ring-brand-500/30"
             >
-              <span class="h-1.5 w-1.5 animate-pulse rounded-full bg-indigo-400"></span> streaming…
+              <span class="h-1.5 w-1.5 animate-pulse rounded-full bg-brand-400"></span> streaming…
             </span>
           </div>
           <span class="text-[11px] text-zinc-500">stderr in rose</span>
@@ -396,7 +396,7 @@ defmodule EmisarWeb.RunDetailLive do
     """
   end
 
-  defp exit_code_class(0), do: "text-emerald-300"
+  defp exit_code_class(0), do: "text-brand-300"
   defp exit_code_class(code) when is_integer(code), do: "text-rose-300"
   defp exit_code_class(_), do: "text-zinc-500"
 

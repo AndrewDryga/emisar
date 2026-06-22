@@ -42,7 +42,7 @@
       </h2>
       <p class="mt-4 text-sm leading-6 text-zinc-400">
         The agent works down from the ring to the cause. Every call below is
-        <code class="text-emerald-300">low</code>
+        <code class="text-brand-300">low</code>
         risk, scoped to <code>cass-03</code>, and logged with a reason — so the default policy
         lets them run unattended.
       </p>
@@ -94,7 +94,7 @@ cassandra.nodetool_compactionhistory &#123;&#125;
       <pre class="mt-3 overflow-x-auto rounded-lg border border-zinc-900 bg-black/60 p-4 font-mono text-xs leading-6 text-zinc-300">cassandra.nodetool_stop_compaction &#123;"operation": "COMPACTION",
   "reason": "manual major compaction on orders_2019 starving reads cluster-wide"&#125;
 <span class="text-amber-300">⏸ pending approval — nodetool_stop_compaction is high-risk; a human approves in the portal</span>
-<span class="text-emerald-300">✓ approved by you · one use · audit event recorded</span>
+<span class="text-brand-300">✓ approved by you · one use · audit event recorded</span>
 <span class="text-zinc-500">→ COMPACTION aborted on cass-03 · partial SSTable discarded · disk I/O released</span></pre>
       <p class="mt-3 text-sm leading-6 text-zinc-400">
         Coordinator p99 reads fall back under 12 ms within the minute. The abort leaves no

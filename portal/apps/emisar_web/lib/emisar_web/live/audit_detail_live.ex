@@ -249,7 +249,7 @@ defmodule EmisarWeb.AuditDetailLive do
                   {from || "—"}
                 </code>
                 <span class="text-zinc-600">→</span>
-                <code class="rounded bg-emerald-500/10 px-1.5 py-0.5 text-[11px] text-emerald-300">
+                <code class="rounded bg-brand-500/10 px-1.5 py-0.5 text-[11px] text-brand-300">
                   {to || "—"}
                 </code>
               </li>
@@ -259,14 +259,14 @@ defmodule EmisarWeb.AuditDetailLive do
 
         <%= if @added != [] do %>
           <div>
-            <p class="mb-2 text-[10px] font-semibold uppercase tracking-wider text-emerald-300">
+            <p class="mb-2 text-[10px] font-semibold uppercase tracking-wider text-brand-300">
               Added overrides ({length(@added)})
             </p>
             <ul class="space-y-1 text-xs">
-              <li :for={ov <- @added} class="rounded bg-emerald-500/[0.04] px-2 py-1">
+              <li :for={ov <- @added} class="rounded bg-brand-500/[0.04] px-2 py-1">
                 <code class="font-mono text-zinc-200">{ov["action"]}</code>
                 <span class="text-zinc-500">→</span>
-                <code class="font-mono text-emerald-300">{ov["decision"]}</code>
+                <code class="font-mono text-brand-300">{ov["decision"]}</code>
                 <span :if={ov["name"] && ov["name"] != ""} class="ml-2 text-zinc-500">
                   ({ov["name"]})
                 </span>
@@ -302,7 +302,7 @@ defmodule EmisarWeb.AuditDetailLive do
                   {c["from"]["decision"]}
                 </code>
                 <span class="text-zinc-600">→</span>
-                <code class="rounded bg-emerald-500/10 px-1.5 py-0.5 text-emerald-300">
+                <code class="rounded bg-brand-500/10 px-1.5 py-0.5 text-brand-300">
                   {c["to"]["decision"]}
                 </code>
               </li>
@@ -367,7 +367,7 @@ defmodule EmisarWeb.AuditDetailLive do
         <span class="text-zinc-500">runner:</span>
         <.link
           navigate={~p"/app/#{@current_account}/runners/#{@runner.id}"}
-          class="text-indigo-300 hover:text-indigo-200"
+          class="text-brand-300 hover:text-brand-200"
         >
           {runner_label(@runner)}
         </.link>

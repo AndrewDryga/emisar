@@ -142,7 +142,7 @@ defmodule EmisarWeb.MfaSetupLive do
                 </code>
                 <.copy_button
                   target="#mfa-uri"
-                  class="bg-indigo-500/20 px-2 text-indigo-100 hover:bg-indigo-500/30 font-semibold"
+                  class="bg-brand-500/20 px-2 text-brand-100 hover:bg-brand-500/30 font-semibold"
                 >
                   Copy
                 </.copy_button>

@@ -52,7 +52,7 @@ defmodule EmisarWeb.CoreComponents do
       role="alert"
       class={[
         "fixed top-4 right-4 z-50 w-80 sm:w-96 rounded-xl p-4 pr-10 ring-1 backdrop-blur shadow-lg cursor-pointer",
-        @kind == :info && "bg-emerald-950/80 text-emerald-100 ring-emerald-500/40",
+        @kind == :info && "bg-brand-950/80 text-brand-100 ring-brand-500/40",
         @kind == :error && "bg-rose-950/80 text-rose-100 ring-rose-500/40"
       ]}
       {@rest}
@@ -225,11 +225,11 @@ defmodule EmisarWeb.CoreComponents do
 
   defp button_variant("primary", _tone),
     do:
-      "bg-indigo-500 font-semibold text-zinc-950 shadow-sm hover:bg-indigo-400 active:bg-indigo-600 focus-visible:outline-indigo-400"
+      "bg-brand-500 font-semibold text-zinc-950 shadow-sm hover:bg-brand-400 active:bg-brand-600 focus-visible:outline-brand-400"
 
   defp button_variant("success", _tone),
     do:
-      "bg-emerald-500 font-semibold text-zinc-950 shadow-sm hover:bg-emerald-400 active:bg-emerald-600 focus-visible:outline-emerald-400"
+      "bg-brand-500 font-semibold text-zinc-950 shadow-sm hover:bg-brand-400 active:bg-brand-600 focus-visible:outline-brand-400"
 
   # Caution: filled amber for attention-worthy actions where success-green
   # would wrongly read as "safe" — e.g. trusting a pack's new contents.
@@ -254,7 +254,7 @@ defmodule EmisarWeb.CoreComponents do
     do: "font-medium text-amber-300 hover:bg-amber-500/10 focus-visible:outline-amber-400"
 
   defp button_variant("ghost", "success"),
-    do: "font-medium text-emerald-300 hover:bg-emerald-500/10 focus-visible:outline-emerald-400"
+    do: "font-medium text-brand-300 hover:bg-brand-500/10 focus-visible:outline-brand-400"
 
   defp button_variant("ghost", _neutral),
     do: "font-medium text-zinc-300 hover:bg-zinc-900 focus-visible:outline-zinc-600"
@@ -411,7 +411,7 @@ defmodule EmisarWeb.CoreComponents do
   # and an inline ghost button of the same tone are visually identical.
   defp menu_item_tone("danger"), do: "text-rose-300 hover:bg-rose-500/10"
   defp menu_item_tone("caution"), do: "text-amber-300 hover:bg-amber-500/10"
-  defp menu_item_tone("success"), do: "text-emerald-300 hover:bg-emerald-500/10"
+  defp menu_item_tone("success"), do: "text-brand-300 hover:bg-brand-500/10"
   defp menu_item_tone(_neutral), do: "text-zinc-300 hover:bg-zinc-900"
 
   @doc """
@@ -505,7 +505,7 @@ defmodule EmisarWeb.CoreComponents do
           name={@name}
           value="true"
           checked={@checked}
-          class="h-4 w-4 rounded border-zinc-700 bg-zinc-900 text-indigo-500 focus:ring-2 focus:ring-indigo-500/40 focus:ring-offset-0"
+          class="h-4 w-4 rounded border-zinc-700 bg-zinc-900 text-brand-500 focus:ring-2 focus:ring-brand-500/40 focus:ring-offset-0"
           {@rest}
         />
         {@label}
@@ -592,7 +592,7 @@ defmodule EmisarWeb.CoreComponents do
   # only the FOCUS ring rose (a destructive field, e.g. a deny reason) while
   # neutral keeps the indigo focus.
   defp input_ring([], "danger"), do: "ring-zinc-800 focus:ring-rose-500"
-  defp input_ring([], _neutral), do: "ring-zinc-800 focus:ring-indigo-500"
+  defp input_ring([], _neutral), do: "ring-zinc-800 focus:ring-brand-500"
   defp input_ring(_errors, _tone), do: "ring-rose-500/50 focus:ring-rose-500"
 
   # Box metrics for an input/select/textarea. `:compact` tightens the padding
@@ -640,7 +640,7 @@ defmodule EmisarWeb.CoreComponents do
           "mt-2 block w-full rounded-lg border-0 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-100",
           "ring-1 ring-inset placeholder:text-zinc-600",
           "focus:ring-2 focus:ring-inset",
-          @errors == [] && "ring-zinc-800 focus:ring-indigo-500",
+          @errors == [] && "ring-zinc-800 focus:ring-brand-500",
           @errors != [] && "ring-rose-500/50 focus:ring-rose-500"
         ]}
         multiple={@multiple}
@@ -712,7 +712,7 @@ defmodule EmisarWeb.CoreComponents do
       <input
         type="checkbox"
         checked={@checked}
-        class="h-4 w-4 rounded border-zinc-700 bg-zinc-900 text-indigo-500 focus:ring-2 focus:ring-indigo-500/40 focus:ring-offset-0 disabled:opacity-50"
+        class="h-4 w-4 rounded border-zinc-700 bg-zinc-900 text-brand-500 focus:ring-2 focus:ring-brand-500/40 focus:ring-offset-0 disabled:opacity-50"
         {@rest}
       />
       <%= if @inner_block != [] do %>
@@ -887,8 +887,8 @@ defmodule EmisarWeb.CoreComponents do
     """
   end
 
-  defp notice_class(:info), do: "border-indigo-500/30 bg-indigo-500/10 text-indigo-200"
-  defp notice_class(:success), do: "border-emerald-500/30 bg-emerald-500/10 text-emerald-200"
+  defp notice_class(:info), do: "border-brand-500/30 bg-brand-500/10 text-brand-200"
+  defp notice_class(:success), do: "border-brand-500/30 bg-brand-500/10 text-brand-200"
   defp notice_class(:warning), do: "border-amber-500/40 bg-amber-500/10 text-amber-100"
   defp notice_class(:danger), do: "border-rose-500/30 bg-rose-500/10 text-rose-200"
 
@@ -1086,7 +1086,7 @@ defmodule EmisarWeb.CoreComponents do
   def auth_layout(assigns) do
     ~H"""
     <div class="grid min-h-screen grid-cols-1 lg:grid-cols-2">
-      <div class="hidden bg-gradient-to-br from-indigo-950 via-zinc-950 to-zinc-950 p-12 lg:flex lg:flex-col lg:justify-between">
+      <div class="hidden bg-gradient-to-br from-brand-950 via-zinc-950 to-zinc-950 p-12 lg:flex lg:flex-col lg:justify-between">
         <a href="/" class="text-zinc-100">
           <.brand size={:md} />
         </a>
@@ -1097,15 +1097,15 @@ defmodule EmisarWeb.CoreComponents do
           </p>
           <ul class="mt-6 space-y-3 text-sm text-zinc-400">
             <li class="flex items-start gap-2.5">
-              <.icon name="hero-check" class="mt-0.5 h-4 w-4 flex-none text-emerald-400" />
+              <.icon name="hero-check" class="mt-0.5 h-4 w-4 flex-none text-brand-400" />
               <span>Pre-approved playbooks instead of arbitrary shell</span>
             </li>
             <li class="flex items-start gap-2.5">
-              <.icon name="hero-check" class="mt-0.5 h-4 w-4 flex-none text-emerald-400" />
+              <.icon name="hero-check" class="mt-0.5 h-4 w-4 flex-none text-brand-400" />
               <span>Fine-grained policy with human approvals for risky ops</span>
             </li>
             <li class="flex items-start gap-2.5">
-              <.icon name="hero-check" class="mt-0.5 h-4 w-4 flex-none text-emerald-400" />
+              <.icon name="hero-check" class="mt-0.5 h-4 w-4 flex-none text-brand-400" />
               <span>Hash-chained audit trail of every action and decision</span>
             </li>
           </ul>
@@ -1296,7 +1296,7 @@ defmodule EmisarWeb.CoreComponents do
           <div class="flex items-center gap-2 sm:gap-3">{render_slot(@actions)}</div>
         </header>
 
-        <main class="flex-1 overflow-x-hidden bg-gradient-to-b from-indigo-950/20 to-transparent bg-[length:100%_24rem] bg-no-repeat p-4 sm:p-6">
+        <main class="flex-1 overflow-x-hidden bg-gradient-to-b from-brand-950/20 to-transparent bg-[length:100%_24rem] bg-no-repeat p-4 sm:p-6">
           <div class={["mx-auto w-full space-y-6", shell_width(@width)]}>
             {render_slot(@inner_block)}
           </div>
@@ -1353,7 +1353,7 @@ defmodule EmisarWeb.CoreComponents do
       <ul class="max-h-[60vh] overflow-y-auto py-1">
         <li>
           <div class="flex items-center gap-2 px-3 py-2 text-sm">
-            <.icon name="hero-check" class="h-4 w-4 shrink-0 text-emerald-400" />
+            <.icon name="hero-check" class="h-4 w-4 shrink-0 text-brand-400" />
             <span class="truncate font-medium">{@current_account.name}</span>
           </div>
         </li>
@@ -1605,7 +1605,7 @@ defmodule EmisarWeb.CoreComponents do
       phx-click={JS.hide(to: "#mobile-nav") |> JS.remove_class("overflow-hidden", to: "body")}
       class={[
         "flex items-center gap-3 rounded-lg px-3 py-1.5 transition",
-        @active && "bg-indigo-500/15 font-medium text-white ring-1 ring-inset ring-indigo-500/25",
+        @active && "bg-brand-500/15 font-medium text-white ring-1 ring-inset ring-brand-500/25",
         !@active && "text-zinc-400 hover:bg-zinc-900 hover:text-zinc-100"
       ]}
     >
@@ -1722,7 +1722,7 @@ defmodule EmisarWeb.CoreComponents do
 
   # The status colour lives on the dot, not the number — the count itself reads
   # neutral so the strip stays a quiet at-a-glance band.
-  defp summary_dot_class(:emerald), do: "bg-emerald-400"
+  defp summary_dot_class(:emerald), do: "bg-brand-400"
   defp summary_dot_class(:amber), do: "bg-amber-400"
   defp summary_dot_class(:rose), do: "bg-rose-400"
   defp summary_dot_class(:zinc), do: "bg-zinc-600"
@@ -1746,12 +1746,12 @@ defmodule EmisarWeb.CoreComponents do
     """
   end
 
-  defp status_classes("success"), do: "bg-emerald-500/10 text-emerald-300 ring-emerald-500/30"
-  defp status_classes("connected"), do: "bg-emerald-500/10 text-emerald-300 ring-emerald-500/30"
-  defp status_classes("approved"), do: "bg-emerald-500/10 text-emerald-300 ring-emerald-500/30"
-  defp status_classes("published"), do: "bg-emerald-500/10 text-emerald-300 ring-emerald-500/30"
-  defp status_classes("running"), do: "bg-indigo-500/10 text-indigo-300 ring-indigo-500/30"
-  defp status_classes("sent"), do: "bg-indigo-500/10 text-indigo-300 ring-indigo-500/30"
+  defp status_classes("success"), do: "bg-brand-500/10 text-brand-300 ring-brand-500/30"
+  defp status_classes("connected"), do: "bg-brand-500/10 text-brand-300 ring-brand-500/30"
+  defp status_classes("approved"), do: "bg-brand-500/10 text-brand-300 ring-brand-500/30"
+  defp status_classes("published"), do: "bg-brand-500/10 text-brand-300 ring-brand-500/30"
+  defp status_classes("running"), do: "bg-brand-500/10 text-brand-300 ring-brand-500/30"
+  defp status_classes("sent"), do: "bg-brand-500/10 text-brand-300 ring-brand-500/30"
   defp status_classes("draft"), do: "bg-zinc-500/10 text-zinc-300 ring-zinc-500/30"
   defp status_classes("pending"), do: "bg-zinc-500/10 text-zinc-300 ring-zinc-500/30"
   defp status_classes("disconnected"), do: "bg-zinc-500/10 text-zinc-400 ring-zinc-500/30"
@@ -1779,12 +1779,12 @@ defmodule EmisarWeb.CoreComponents do
 
   defp status_classes(_), do: "bg-zinc-500/10 text-zinc-300 ring-zinc-500/30"
 
-  defp status_dot("success"), do: "bg-emerald-400"
-  defp status_dot("connected"), do: "bg-emerald-400"
-  defp status_dot("approved"), do: "bg-emerald-400"
-  defp status_dot("published"), do: "bg-emerald-400"
-  defp status_dot("running"), do: "bg-indigo-400 animate-pulse"
-  defp status_dot("sent"), do: "bg-indigo-400"
+  defp status_dot("success"), do: "bg-brand-400"
+  defp status_dot("connected"), do: "bg-brand-400"
+  defp status_dot("approved"), do: "bg-brand-400"
+  defp status_dot("published"), do: "bg-brand-400"
+  defp status_dot("running"), do: "bg-brand-400 animate-pulse"
+  defp status_dot("sent"), do: "bg-brand-400"
   defp status_dot("draft"), do: "bg-zinc-500"
   defp status_dot("pending"), do: "bg-zinc-500"
   defp status_dot("disconnected"), do: "bg-zinc-600"
@@ -1984,7 +1984,7 @@ defmodule EmisarWeb.CoreComponents do
 
   defp count_badge_tone(:amber), do: "bg-amber-500/20 text-amber-200"
   defp count_badge_tone(:zinc), do: "bg-zinc-800 text-zinc-300"
-  defp count_badge_tone(:indigo), do: "bg-indigo-500/20 text-indigo-200"
+  defp count_badge_tone(:indigo), do: "bg-brand-500/20 text-brand-200"
 
   @doc """
   Key-value row for detail panes. `:row` (default) is a label-left /
@@ -2134,10 +2134,10 @@ defmodule EmisarWeb.CoreComponents do
     """
   end
 
-  defp row_icon_class(:emerald), do: "bg-emerald-500/15 text-emerald-300"
+  defp row_icon_class(:emerald), do: "bg-brand-500/15 text-brand-300"
   defp row_icon_class(:amber), do: "bg-amber-500/15 text-amber-300"
   defp row_icon_class(:rose), do: "bg-rose-500/15 text-rose-300"
-  defp row_icon_class(:indigo), do: "bg-indigo-500/15 text-indigo-300"
+  defp row_icon_class(:indigo), do: "bg-brand-500/15 text-brand-300"
   defp row_icon_class(_zinc), do: "bg-zinc-900 text-zinc-400"
 
   @doc """
@@ -2184,10 +2184,10 @@ defmodule EmisarWeb.CoreComponents do
     """
   end
 
-  defp chip_class(:indigo), do: "bg-indigo-500/15 text-indigo-200 ring-1 ring-indigo-500/30"
+  defp chip_class(:indigo), do: "bg-brand-500/15 text-brand-200 ring-1 ring-brand-500/30"
   defp chip_class(:amber), do: "bg-amber-500/15 text-amber-200 ring-1 ring-amber-500/30"
   defp chip_class(:rose), do: "bg-rose-500/15 text-rose-200 ring-1 ring-rose-500/30"
-  defp chip_class(:emerald), do: "bg-emerald-500/15 text-emerald-200 ring-1 ring-emerald-500/30"
+  defp chip_class(:emerald), do: "bg-brand-500/15 text-brand-200 ring-1 ring-brand-500/30"
   defp chip_class(_default), do: "bg-zinc-800/80 text-zinc-300"
 
   @doc """
@@ -2335,11 +2335,11 @@ defmodule EmisarWeb.CoreComponents do
   # `:danger` keeps the original rose danger-zone styling; `:success` is the
   # emerald twin for restorative actions, so both read alike structurally.
   defp confirm_zone_section(:danger), do: "border-rose-900/40 bg-rose-950/20"
-  defp confirm_zone_section(:success), do: "border-emerald-500/30 bg-emerald-500/[0.04]"
+  defp confirm_zone_section(:success), do: "border-brand-500/30 bg-brand-500/[0.04]"
   defp confirm_zone_title(:danger), do: "text-rose-200"
-  defp confirm_zone_title(:success), do: "text-emerald-100"
+  defp confirm_zone_title(:success), do: "text-brand-100"
   defp confirm_zone_body(:danger), do: "text-rose-300/70"
-  defp confirm_zone_body(:success), do: "text-emerald-300/70"
+  defp confirm_zone_body(:success), do: "text-brand-300/70"
   defp confirm_zone_variant(:danger), do: "danger"
   defp confirm_zone_variant(:success), do: "success"
 
@@ -2544,9 +2544,9 @@ defmodule EmisarWeb.CoreComponents do
 
   def install_wizard(assigns) do
     ~H"""
-    <div class="rounded-2xl border border-zinc-900 bg-gradient-to-b from-indigo-950/40 to-zinc-950/60 p-8 sm:p-10">
+    <div class="rounded-2xl border border-zinc-900 bg-gradient-to-b from-brand-950/40 to-zinc-950/60 p-8 sm:p-10">
       <header class="flex items-center gap-3">
-        <span class="grid h-10 w-10 place-items-center rounded-xl bg-indigo-500/20 text-indigo-300 ring-1 ring-indigo-500/40">
+        <span class="grid h-10 w-10 place-items-center rounded-xl bg-brand-500/20 text-brand-300 ring-1 ring-brand-500/40">
           <.icon name="hero-rocket-launch" class="h-5 w-5" />
         </span>
         <div>
@@ -2571,7 +2571,7 @@ defmodule EmisarWeb.CoreComponents do
                        is significant and the selector path would strip it. --%>
                 <.copy_button
                   text={@install_command}
-                  class="self-start bg-indigo-500/20 px-2 text-indigo-200 hover:bg-indigo-500/30 font-semibold"
+                  class="self-start bg-brand-500/20 px-2 text-brand-200 hover:bg-brand-500/30 font-semibold"
                 >
                   Copy
                 </.copy_button>
@@ -2599,7 +2599,7 @@ defmodule EmisarWeb.CoreComponents do
                   href="/install.sh"
                   target="_blank"
                   rel="noopener noreferrer"
-                  class="font-semibold text-indigo-400 hover:text-indigo-300"
+                  class="font-semibold text-brand-400 hover:text-brand-300"
                 >read it first →</.link>: it verifies the download's SHA-256, runs the runner as a
                 dedicated <code class="font-mono text-zinc-400">emisar</code>
                 user (not root) under a systemd unit, and only dials out — nothing listens on the host.
@@ -2609,9 +2609,9 @@ defmodule EmisarWeb.CoreComponents do
             <div class="rounded-lg border border-zinc-800 bg-zinc-950/60 p-4">
               <div class="flex items-center gap-3">
                 <span class="relative flex h-3 w-3">
-                  <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-indigo-500/50">
+                  <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-brand-500/50">
                   </span>
-                  <span class="relative inline-flex h-3 w-3 rounded-full bg-indigo-400"></span>
+                  <span class="relative inline-flex h-3 w-3 rounded-full bg-brand-400"></span>
                 </span>
                 <div class="text-sm text-zinc-300">
                   Waiting for a runner to connect. This page will refresh automatically.
@@ -2652,7 +2652,7 @@ defmodule EmisarWeb.CoreComponents do
                 class="rounded-xl border border-zinc-800 bg-zinc-950/60 p-4 transition hover:bg-zinc-900/60"
               >
                 <div class="flex items-center gap-2 text-sm font-semibold text-zinc-200">
-                  <.icon name="hero-book-open" class="h-4 w-4 text-indigo-400" /> Installation guide
+                  <.icon name="hero-book-open" class="h-4 w-4 text-brand-400" /> Installation guide
                   <.icon
                     name="hero-arrow-top-right-on-square"
                     class="ml-auto h-3.5 w-3.5 text-zinc-600"
@@ -2667,7 +2667,7 @@ defmodule EmisarWeb.CoreComponents do
                 class="rounded-xl border border-zinc-800 bg-zinc-950/60 p-4 transition hover:bg-zinc-900/60"
               >
                 <div class="flex items-center gap-2 text-sm font-semibold text-zinc-200">
-                  <.icon name="hero-cube-transparent" class="h-4 w-4 text-indigo-400" /> Pack registry
+                  <.icon name="hero-cube-transparent" class="h-4 w-4 text-brand-400" /> Pack registry
                   <.icon name="hero-arrow-right" class="ml-auto h-3.5 w-3.5 text-zinc-600" />
                 </div>
                 <p class="mt-1 text-xs text-zinc-500">
@@ -2759,11 +2759,11 @@ defmodule EmisarWeb.CoreComponents do
 
   defp empty_state_cta(:boxed),
     do:
-      "mt-6 inline-flex items-center gap-2 rounded-lg bg-indigo-500 px-4 py-2 text-sm font-semibold text-zinc-950 hover:bg-indigo-400"
+      "mt-6 inline-flex items-center gap-2 rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-zinc-950 hover:bg-brand-400"
 
   defp empty_state_cta(:bare),
     do:
-      "mt-4 inline-flex items-center gap-2 text-sm font-medium text-indigo-400 hover:text-indigo-300"
+      "mt-4 inline-flex items-center gap-2 text-sm font-medium text-brand-400 hover:text-brand-300"
 
   @doc """
   "A runner is offline" notice — a `hero-signal-slash` block whose colour
@@ -2836,7 +2836,7 @@ defmodule EmisarWeb.CoreComponents do
     """
   end
 
-  defp risk_classes("low"), do: "bg-emerald-500/10 text-emerald-300 ring-emerald-500/30"
+  defp risk_classes("low"), do: "bg-brand-500/10 text-brand-300 ring-brand-500/30"
   defp risk_classes("medium"), do: "bg-amber-500/10 text-amber-300 ring-amber-500/30"
   defp risk_classes("high"), do: "bg-rose-500/10 text-rose-300 ring-rose-500/30"
   defp risk_classes("critical"), do: "bg-rose-600/15 text-rose-200 ring-rose-500/40"

@@ -289,12 +289,12 @@ defmodule EmisarWeb.AuditLive do
            everything else live in the unified LiveTable filter bar below. --%>
       <div
         :if={@actor_id}
-        class="mb-4 flex w-max items-center gap-2 rounded-lg bg-indigo-500/10 px-3 py-1.5 text-xs text-indigo-200 ring-1 ring-indigo-500/30"
+        class="mb-4 flex w-max items-center gap-2 rounded-lg bg-brand-500/10 px-3 py-1.5 text-xs text-brand-200 ring-1 ring-brand-500/30"
       >
         <span>Actor: <span class="font-medium">{@actor_label}</span></span>
         <.link
           patch={~p"/app/#{@current_account}/audit?#{Map.drop(@filter_params, ["actor_id"])}"}
-          class="font-semibold text-indigo-300 hover:text-indigo-100"
+          class="font-semibold text-brand-300 hover:text-brand-100"
           aria-label="Clear actor filter"
         >
           ✕
@@ -392,17 +392,17 @@ defmodule EmisarWeb.AuditLive do
                 They appear as soon as something happens — a
                 <.link
                   navigate={~p"/app/#{@current_account}/runners"}
-                  class="text-indigo-400 hover:text-indigo-300"
+                  class="text-brand-400 hover:text-brand-300"
                 >
                   runner
                 </.link>
                 connects, an operator dispatches a <.link
                   navigate={~p"/app/#{@current_account}/runs"}
-                  class="text-indigo-400 hover:text-indigo-300"
+                  class="text-brand-400 hover:text-brand-300"
                 >run</.link>,
                 an approval is decided, or a pack is observed on the <.link
                   navigate={~p"/app/#{@current_account}/packs"}
-                  class="text-indigo-400 hover:text-indigo-300"
+                  class="text-brand-400 hover:text-brand-300"
                 >Packs page</.link>.
               </.empty_state>
           <% end %>
@@ -563,7 +563,7 @@ defmodule EmisarWeb.AuditLive do
       <%!-- The "kind:" prefix is a plain label — only the value links. --%>
       <span class="text-zinc-500">{@kind}:</span>
       <%= if @href do %>
-        <.link navigate={@href} class="text-indigo-300 hover:text-indigo-200">{@text}</.link>
+        <.link navigate={@href} class="text-brand-300 hover:text-brand-200">{@text}</.link>
       <% else %>
         {@text}
       <% end %>

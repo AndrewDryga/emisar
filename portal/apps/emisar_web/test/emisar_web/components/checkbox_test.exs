@@ -37,7 +37,7 @@ defmodule EmisarWeb.Components.CheckboxTest do
       assert html =~ ~s(type="checkbox")
       assert html =~ ~s(name="agree")
       assert html =~ "I agree"
-      assert html =~ "text-indigo-500"
+      assert html =~ "text-brand-500"
       assert html =~ "focus:ring-2"
     end
 

@@ -192,7 +192,7 @@ defmodule EmisarWeb.RunnerDetailLive do
           navigate={
             ~p"/app/#{@current_account}/audit?#{[subject_kind: "runner", subject_id: @runner.id]}"
           }
-          class="text-xs font-medium text-indigo-400 hover:text-indigo-300"
+          class="text-xs font-medium text-brand-400 hover:text-brand-300"
         >
           View activity →
         </.link>
@@ -318,7 +318,7 @@ defmodule EmisarWeb.RunnerDetailLive do
                         navigate={
                           ~p"/app/#{@current_account}/runs/new/#{@runner.id}/#{action.action_id}"
                         }
-                        class="shrink-0 rounded-lg bg-indigo-500/10 px-2.5 py-1 text-xs font-semibold text-indigo-300 ring-1 ring-indigo-500/30 hover:bg-indigo-500/20"
+                        class="shrink-0 rounded-lg bg-brand-500/10 px-2.5 py-1 text-xs font-semibold text-brand-300 ring-1 ring-brand-500/30 hover:bg-brand-500/20"
                       >
                         Run
                       </.link>

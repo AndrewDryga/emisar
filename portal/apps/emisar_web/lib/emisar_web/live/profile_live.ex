@@ -474,9 +474,9 @@ defmodule EmisarWeb.ProfileLive do
           <:meta>
             <span
               :if={@mfa_enabled?}
-              class="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs font-medium text-emerald-300 ring-1 ring-emerald-500/30"
+              class="inline-flex items-center gap-1.5 rounded-full bg-brand-500/10 px-2 py-0.5 text-xs font-medium text-brand-300 ring-1 ring-brand-500/30"
             >
-              <span class="h-1.5 w-1.5 rounded-full bg-emerald-400"></span>On
+              <span class="h-1.5 w-1.5 rounded-full bg-brand-400"></span>On
             </span>
             <span
               :if={not @mfa_enabled?}
@@ -624,7 +624,7 @@ defmodule EmisarWeb.ProfileLive do
                       </code>
                       <.copy_button
                         target="#mfa-uri"
-                        class="bg-indigo-500/20 px-2 text-indigo-100 hover:bg-indigo-500/30 font-semibold"
+                        class="bg-brand-500/20 px-2 text-brand-100 hover:bg-brand-500/30 font-semibold"
                       >
                         Copy
                       </.copy_button>

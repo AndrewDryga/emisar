@@ -452,7 +452,7 @@ defmodule EmisarWeb.AgentsLive do
 
   # Maps to the colour palette `core_components.status_badge/1` uses
   # elsewhere — green for active, amber for idle/never, zinc for dormant.
-  defp status_class(:active), do: "bg-emerald-500/10 text-emerald-300 ring-emerald-500/30"
+  defp status_class(:active), do: "bg-brand-500/10 text-brand-300 ring-brand-500/30"
   defp status_class(:idle), do: "bg-amber-500/10 text-amber-300 ring-amber-500/30"
   defp status_class(:dormant), do: "bg-zinc-500/10 text-zinc-300 ring-zinc-500/30"
   defp status_class(:never_used), do: "bg-amber-500/10 text-amber-200 ring-amber-500/30"
@@ -750,7 +750,7 @@ defmodule EmisarWeb.AgentsLive do
                   navigate={
                     ~p"/app/#{@current_account}/audit?#{[actor_kind: "api_key", actor_id: key.id]}"
                   }
-                  class="text-xs text-indigo-400 hover:text-indigo-300"
+                  class="text-xs text-brand-400 hover:text-brand-300"
                 >
                   View activity →
                 </.link>
@@ -808,9 +808,9 @@ defmodule EmisarWeb.AgentsLive do
       status_class(@status)
     ]}>
       <span :if={@status == :active} class="relative inline-flex h-1.5 w-1.5">
-        <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75">
+        <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-brand-400 opacity-75">
         </span>
-        <span class="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-400"></span>
+        <span class="relative inline-flex h-1.5 w-1.5 rounded-full bg-brand-400"></span>
       </span>
       {status_label(@status)}
     </span>
@@ -995,7 +995,7 @@ defmodule EmisarWeb.AgentsLive do
               </div>
               <p class="mt-2 text-xs text-zinc-500">
                 Restart {client_label(@selected_client)} after pasting.
-                <.link href={~p"/docs/connect-an-llm"} class="text-indigo-400 hover:text-indigo-300">
+                <.link href={~p"/docs/connect-an-llm"} class="text-brand-400 hover:text-brand-300">
                   Troubleshooting →
                 </.link>
               </p>
@@ -1072,7 +1072,7 @@ defmodule EmisarWeb.AgentsLive do
       </div>
       <p class="mt-2 text-[11px] text-zinc-500">
         Inspects the bridge first?
-        <.link href={~p"/docs/connect-an-llm"} class="text-indigo-400 hover:text-indigo-300">
+        <.link href={~p"/docs/connect-an-llm"} class="text-brand-400 hover:text-brand-300">
           Manual install →
         </.link>
       </p>
@@ -1142,7 +1142,7 @@ defmodule EmisarWeb.AgentsLive do
             href={@auto_permit.doc_url}
             target="_blank"
             rel="noopener noreferrer"
-            class="text-indigo-400 hover:text-indigo-300"
+            class="text-brand-400 hover:text-brand-300"
           >
             {@client_label} MCP docs →
           </.link>
@@ -1265,7 +1265,7 @@ defmodule EmisarWeb.AgentsLive do
       <p class="text-xs text-zinc-500">
         Cloud LLM connectors need {@client_label} to be on a plan that
         supports custom MCP servers. Connection refused or 401?
-        <.link href={~p"/docs/connect-an-llm"} class="text-indigo-400 hover:text-indigo-300">
+        <.link href={~p"/docs/connect-an-llm"} class="text-brand-400 hover:text-brand-300">
           Troubleshooting →
         </.link>
       </p>
@@ -1388,7 +1388,7 @@ defmodule EmisarWeb.AgentsLive do
           <div class="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
             <.checkbox
               :for={group <- @groups}
-              class="flex items-center gap-2.5 rounded border border-zinc-800 bg-zinc-950/40 px-2 py-1.5 text-sm text-zinc-300 hover:border-indigo-500/40"
+              class="flex items-center gap-2.5 rounded border border-zinc-800 bg-zinc-950/40 px-2 py-1.5 text-sm text-zinc-300 hover:border-brand-500/40"
               name="runner_group_filter[]"
               value={group}
               checked={group in @selected_runner_groups}

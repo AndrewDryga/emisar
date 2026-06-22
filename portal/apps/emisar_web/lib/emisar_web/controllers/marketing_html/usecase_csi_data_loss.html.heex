@@ -147,7 +147,7 @@ pure.volumes_space &#123;"names": "vm-data"&#125;
       <pre class="mt-3 overflow-x-auto rounded-lg border border-zinc-900 bg-black/60 p-4 font-mono text-xs leading-6 text-zinc-300">nomad.alloc_stop &#123;"alloc_id": "a1b2c3d4", "reason":
   "CSI reformatted a live LUN — stop writes to preserve recoverable blocks"&#125;
 <span class="text-amber-300">⏸ pending approval — nomad.alloc_stop is risk:high; a human approves in the portal</span>
-<span class="text-emerald-300">✓ approved by you · one use · audit event recorded</span>
+<span class="text-brand-300">✓ approved by you · one use · audit event recorded</span>
 <span class="text-zinc-500">→ alloc stopped · writes halted · LUN frozen for forensics</span></pre>
       <p class="mt-3 text-sm leading-6 text-zinc-400">
         Caught in the first minute, that freeze preserves the LUN for recovery. Here a human took
@@ -193,12 +193,12 @@ for arg in "$@"; do
   if [ "$tool" = mkfs.ext4 ]; then
     fstype=$(blkid -p -s TYPE -o value "$arg"); rc=$?
     case $rc in
-<span class="text-emerald-300">      0) [ "$fstype" = ext4 ] &amp;&amp; exit 0 ;;   # already ext4: idempotent no-op</span>
+<span class="text-brand-300">      0) [ "$fstype" = ext4 ] &amp;&amp; exit 0 ;;   # already ext4: idempotent no-op</span>
       2) ;;                                  # blank, but still not ours to format
-<span class="text-emerald-300">      *) exit 64 ;;                          # blkid ambiguous: FAIL CLOSED</span>
+<span class="text-brand-300">      *) exit 64 ;;                          # blkid ambiguous: FAIL CLOSED</span>
     esac
   fi
-<span class="text-emerald-300">  exit 64   # any Pure/NVMe LUN we didn't no-op above: refuse, loudly</span>
+<span class="text-brand-300">  exit 64   # any Pure/NVMe LUN we didn't no-op above: refuse, loudly</span>
 done
 exec "$real" "$@"   # not a Pure device: the real mkfs runs
 

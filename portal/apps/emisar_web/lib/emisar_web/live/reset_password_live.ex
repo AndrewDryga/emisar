@@ -64,13 +64,13 @@ defmodule EmisarWeb.ResetPasswordLive do
     ~H"""
     <.auth_layout title="Reset your password">
       <%= if @sent_to do %>
-        <div class="rounded-lg border border-emerald-700/40 bg-emerald-950/40 p-6 text-emerald-200">
+        <div class="rounded-lg border border-brand-700/40 bg-brand-950/40 p-6 text-brand-200">
           <p>
             If <span class="font-mono">{@sent_to}</span> is registered, a reset link is on its way.
           </p>
           <button
             phx-click="reset_form"
-            class="mt-4 text-xs font-medium text-emerald-300 hover:text-emerald-100"
+            class="mt-4 text-xs font-medium text-brand-300 hover:text-brand-100"
           >
             Use a different email →
           </button>
@@ -96,7 +96,7 @@ defmodule EmisarWeb.ResetPasswordLive do
 
       <p class="mt-6 text-center text-sm text-zinc-400">
         Remembered it?
-        <.link href={~p"/sign_in"} class="font-medium text-indigo-400 hover:text-indigo-300">
+        <.link href={~p"/sign_in"} class="font-medium text-brand-400 hover:text-brand-300">
           Sign in
         </.link>
       </p>

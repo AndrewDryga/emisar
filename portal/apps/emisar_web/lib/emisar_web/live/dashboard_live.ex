@@ -185,14 +185,14 @@ defmodule EmisarWeb.DashboardLive do
     ~H"""
     <.link
       navigate={@href}
-      class="flex items-center gap-3 rounded-xl border border-indigo-900/40 bg-indigo-950/20 p-4 transition hover:border-indigo-700/60 hover:bg-indigo-950/40"
+      class="flex items-center gap-3 rounded-xl border border-brand-900/40 bg-brand-950/20 p-4 transition hover:border-brand-700/60 hover:bg-brand-950/40"
     >
-      <.icon name={@icon} class="h-5 w-5 flex-none text-indigo-400" />
+      <.icon name={@icon} class="h-5 w-5 flex-none text-brand-400" />
       <div class="flex-1">
         <div class="text-sm font-semibold text-zinc-100">{@title}</div>
         <p class="mt-0.5 text-xs text-zinc-400">{@body}</p>
       </div>
-      <.icon name="hero-arrow-right" class="h-4 w-4 flex-none text-indigo-400" />
+      <.icon name="hero-arrow-right" class="h-4 w-4 flex-none text-brand-400" />
     </.link>
     """
   end
@@ -308,7 +308,7 @@ defmodule EmisarWeb.DashboardLive do
         <h2 class="text-sm font-semibold text-zinc-100">Recent runs</h2>
         <.link
           navigate={~p"/app/#{@current_account}/runs"}
-          class="text-xs font-medium text-indigo-400 hover:text-indigo-300"
+          class="text-xs font-medium text-brand-400 hover:text-brand-300"
         >
           See all <.icon name="hero-arrow-right" class="ml-0.5 h-3 w-3" />
         </.link>
@@ -322,17 +322,17 @@ defmodule EmisarWeb.DashboardLive do
           Register a
           <.link
             navigate={~p"/app/#{@current_account}/runners"}
-            class="text-indigo-400 hover:text-indigo-300"
+            class="text-brand-400 hover:text-brand-300"
           >
             runner
           </.link>
           and dispatch an action from its detail page, or kick off a <.link
             navigate={~p"/app/#{@current_account}/runbooks"}
-            class="text-indigo-400 hover:text-indigo-300"
+            class="text-brand-400 hover:text-brand-300"
           >runbook</.link>.
           LLM-driven runs (via the <.link
             navigate={~p"/app/#{@current_account}/settings/agents"}
-            class="text-indigo-400 hover:text-indigo-300"
+            class="text-brand-400 hover:text-brand-300"
           >MCP API</.link>) land here too.
         </.empty_state>
       <% else %>

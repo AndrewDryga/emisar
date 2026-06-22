@@ -55,7 +55,7 @@ defmodule EmisarWeb.Components.ConfirmZoneTest do
     assert html =~ "Enable runner"
     # Emerald styling, the success button, the action wired through — and NO
     # confirm dialog (enable is a safe restorative action, not a destructive one).
-    assert html =~ "text-emerald-100"
+    assert html =~ "text-brand-100"
     assert html =~ ~s(phx-click="enable")
     refute html =~ "data-confirm"
   end

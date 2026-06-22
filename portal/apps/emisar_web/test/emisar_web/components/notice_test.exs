@@ -33,7 +33,7 @@ defmodule EmisarWeb.Components.NoticeTest do
           ~H"<CoreComponents.notice variant={:success}>Published.</CoreComponents.notice>"
         )
 
-      assert html =~ "bg-emerald-500/10"
+      assert html =~ "bg-brand-500/10"
       assert html =~ "hero-check-circle-mini"
     end
 
@@ -42,7 +42,7 @@ defmodule EmisarWeb.Components.NoticeTest do
 
       html = rendered_to_string(~H"<CoreComponents.notice>Heads up.</CoreComponents.notice>")
 
-      assert html =~ "bg-indigo-500/10"
+      assert html =~ "bg-brand-500/10"
       assert html =~ "hero-information-circle-mini"
     end
 

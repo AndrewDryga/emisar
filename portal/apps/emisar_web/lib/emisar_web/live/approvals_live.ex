@@ -290,7 +290,7 @@ defmodule EmisarWeb.ApprovalsLive do
                 Approvals show up here when
                 <.link
                   navigate={~p"/app/#{@current_account}/policies"}
-                  class="text-indigo-400 hover:text-indigo-300"
+                  class="text-brand-400 hover:text-brand-300"
                 >
                   policy
                 </.link>

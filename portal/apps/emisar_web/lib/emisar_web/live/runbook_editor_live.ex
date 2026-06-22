@@ -730,7 +730,7 @@ defmodule EmisarWeb.RunbookEditorLive do
           type="button"
           phx-click="add_arg"
           phx-value-index={@index}
-          class="text-[11px] font-medium text-indigo-300 hover:text-indigo-200"
+          class="text-[11px] font-medium text-brand-300 hover:text-brand-200"
         >
           + Add
         </button>

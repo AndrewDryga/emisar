@@ -21,7 +21,7 @@ defmodule EmisarWeb.MagicLinkLive do
     ~H"""
     <.auth_layout title="Sign in via email">
       <%= if @sent_to do %>
-        <div class="rounded-lg border border-emerald-700/40 bg-emerald-950/40 p-6 text-emerald-200">
+        <div class="rounded-lg border border-brand-700/40 bg-brand-950/40 p-6 text-brand-200">
           <h3 class="font-semibold">Check your inbox.</h3>
           <p class="mt-2 text-sm">
             We sent a one-time login link to <span class="font-mono">{@sent_to}</span>.
@@ -29,7 +29,7 @@ defmodule EmisarWeb.MagicLinkLive do
           </p>
           <button
             phx-click="reset_form"
-            class="mt-4 text-xs font-medium text-emerald-300 hover:text-emerald-100"
+            class="mt-4 text-xs font-medium text-brand-300 hover:text-brand-100"
           >
             Use a different email →
           </button>
@@ -52,7 +52,7 @@ defmodule EmisarWeb.MagicLinkLive do
 
       <p class="mt-6 text-center text-sm text-zinc-400">
         Prefer a password?
-        <.link href={~p"/sign_in"} class="font-medium text-indigo-400 hover:text-indigo-300">
+        <.link href={~p"/sign_in"} class="font-medium text-brand-400 hover:text-brand-300">
           Sign in with password
         </.link>
       </p>

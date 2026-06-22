@@ -91,7 +91,7 @@ defmodule EmisarWeb.Components.DropdownTest do
       assert render_menu_item(%{}, "Edit") =~ "text-zinc-300"
       assert render_menu_item(%{tone: "caution"}, "Suspend") =~ "text-amber-300"
       assert render_menu_item(%{tone: "danger"}, "Remove") =~ "text-rose-300"
-      assert render_menu_item(%{tone: "success"}, "Restore") =~ "text-emerald-300"
+      assert render_menu_item(%{tone: "success"}, "Restore") =~ "text-brand-300"
     end
 
     test "a leading icon renders before the label" do

@@ -1062,12 +1062,12 @@ defmodule EmisarWeb.PoliciesLive do
   defp tier_floor_rank(defaults, "high"), do: Policies.decision_rank(defaults["medium"])
   defp tier_floor_rank(defaults, "critical"), do: Policies.decision_rank(defaults["high"])
 
-  defp tier_border("low"), do: "border-emerald-500/20"
+  defp tier_border("low"), do: "border-brand-500/20"
   defp tier_border("medium"), do: "border-sky-500/20"
   defp tier_border("high"), do: "border-amber-500/20"
   defp tier_border("critical"), do: "border-rose-500/20"
 
-  defp tier_dot("low"), do: "bg-emerald-400"
+  defp tier_dot("low"), do: "bg-brand-400"
   defp tier_dot("medium"), do: "bg-sky-400"
   defp tier_dot("high"), do: "bg-amber-400"
   defp tier_dot("critical"), do: "bg-rose-400"

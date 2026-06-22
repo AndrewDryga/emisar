@@ -602,7 +602,7 @@ defmodule EmisarWeb.TeamLive do
                     "shrink-0 rounded-lg px-3 py-1.5 text-xs font-semibold",
                     if(@current_account.require_mfa,
                       do: "border border-rose-500/40 text-rose-200 hover:bg-rose-500/10",
-                      else: "bg-indigo-500 text-zinc-950 hover:bg-indigo-400"
+                      else: "bg-brand-500 text-zinc-950 hover:bg-brand-400"
                     )
                   ]}
                 >
@@ -649,7 +649,7 @@ defmodule EmisarWeb.TeamLive do
               <% not @require_sso_available? and not @current_account.require_sso -> %>
                 <.link
                   navigate={~p"/app/#{@current_account}/settings/sso"}
-                  class="shrink-0 text-xs font-medium text-indigo-400 hover:text-indigo-300"
+                  class="shrink-0 text-xs font-medium text-brand-400 hover:text-brand-300"
                 >
                   Set up SSO first →
                 </.link>
@@ -671,7 +671,7 @@ defmodule EmisarWeb.TeamLive do
                     "shrink-0 rounded-lg px-3 py-1.5 text-xs font-semibold",
                     if(@current_account.require_sso,
                       do: "border border-rose-500/40 text-rose-200 hover:bg-rose-500/10",
-                      else: "bg-indigo-500 text-zinc-950 hover:bg-indigo-400"
+                      else: "bg-brand-500 text-zinc-950 hover:bg-brand-400"
                     )
                   ]}
                 >
@@ -1088,7 +1088,7 @@ defmodule EmisarWeb.TeamLive do
           <button
             :if={@membership.user && is_nil(@membership.user.confirmed_at)}
             phx-click="resend_confirmation"
-            class="rounded px-2 py-1 text-xs font-medium text-indigo-300 ring-1 ring-indigo-500/30 hover:bg-indigo-500/10"
+            class="rounded px-2 py-1 text-xs font-medium text-brand-300 ring-1 ring-brand-500/30 hover:bg-brand-500/10"
           >
             Resend confirmation
           </button>
@@ -1103,7 +1103,7 @@ defmodule EmisarWeb.TeamLive do
           navigate={
             ~p"/app/#{@current_account}/audit?#{[actor_kind: "user", actor_id: @membership.user_id]}"
           }
-          class="shrink-0 text-xs font-medium text-indigo-400 hover:text-indigo-300"
+          class="shrink-0 text-xs font-medium text-brand-400 hover:text-brand-300"
         >
           View activity →
         </.link>

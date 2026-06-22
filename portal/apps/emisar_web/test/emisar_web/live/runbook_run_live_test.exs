@@ -382,7 +382,7 @@ defmodule EmisarWeb.RunbookRunLiveTest do
 
       assert html =~ "linux.uptime"
       refute html =~ "ring-rose-500/30"
-      refute html =~ "ring-emerald-500/30"
+      refute html =~ "ring-brand-500/30"
     end
 
     test "the plan shows each step's own runner target (no run-time picker)", %{conn: conn} do

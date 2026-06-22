@@ -34,14 +34,14 @@
         <li>
           <strong class="text-zinc-100">Risk-tier defaults.</strong>
           If no override matches, the action's declared risk tier
-          (<code class="text-emerald-300">low</code> / <code class="text-zinc-300">medium</code>
+          (<code class="text-brand-300">low</code> / <code class="text-zinc-300">medium</code>
           / <code class="text-amber-300">high</code>
           / <code class="text-red-400">critical</code>) picks the decision. Risk is declared in
           the pack and can't be changed by the caller.
         </li>
       </ol>
       <p class="mt-4 text-sm leading-6 text-zinc-400">
-        Decisions are <code class="text-emerald-300">allow</code>
+        Decisions are <code class="text-brand-300">allow</code>
         (dispatch immediately), <code class="text-amber-300">require_approval</code>
         (hold for a human), and <code class="text-red-400">deny</code>
         (refuse outright). Anything the policy can't
@@ -50,7 +50,7 @@
 
       <div class="mt-6 rounded-xl border border-zinc-800 bg-zinc-950/60 p-5 text-sm leading-6 text-zinc-400">
         <strong class="text-zinc-100">The shipped default.</strong>
-        New accounts start with: low and medium <code class="text-emerald-300">allow</code>,
+        New accounts start with: low and medium <code class="text-brand-300">allow</code>,
         high <code class="text-amber-300">require_approval</code>, critical <code class="text-red-400">deny</code>, no overrides. That's a sane day-one posture —
         reads and routine diagnostics flow, mutations stop for a click, destructive actions
         don't run at all until you explicitly open them up.
@@ -199,7 +199,7 @@
         </li>
         <li>
           Promote the repeat approvals you always say yes to into standing grants with an
-          expiry, not into <code class="text-emerald-300">allow</code> overrides — grants
+          expiry, not into <code class="text-brand-300">allow</code> overrides — grants
           keep the per-key scoping and the paper trail.
         </li>
       </ol>

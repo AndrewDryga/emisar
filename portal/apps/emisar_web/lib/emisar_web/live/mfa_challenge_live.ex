@@ -88,7 +88,7 @@ defmodule EmisarWeb.MfaChallengeLive do
         <button
           type="button"
           phx-click="toggle_recovery"
-          class="font-medium text-indigo-400 hover:text-indigo-300"
+          class="font-medium text-brand-400 hover:text-brand-300"
         >
           {if @recovery?, do: "Use authenticator app", else: "Lost your device? Use a recovery code"}
         </button>
@@ -106,7 +106,7 @@ defmodule EmisarWeb.MfaChallengeLive do
         Team page, or contact
         <.link
           href="mailto:support@emisar.dev"
-          class="font-medium text-indigo-400 hover:text-indigo-300"
+          class="font-medium text-brand-400 hover:text-brand-300"
         >
           support@emisar.dev
         </.link>
@@ -114,7 +114,7 @@ defmodule EmisarWeb.MfaChallengeLive do
       </p>
 
       <p class="mt-2 text-center text-sm text-zinc-400">
-        <.link href={~p"/sign_in"} class="font-medium text-indigo-400 hover:text-indigo-300">
+        <.link href={~p"/sign_in"} class="font-medium text-brand-400 hover:text-brand-300">
           ← Back to sign in
         </.link>
       </p>

@@ -175,11 +175,11 @@ defmodule EmisarWeb.BillingLive do
     cond do
       pct >= 100 -> "bg-rose-400"
       pct >= 80 -> "bg-amber-400"
-      true -> "bg-indigo-400"
+      true -> "bg-brand-400"
     end
   end
 
-  defp usage_class(_), do: "bg-indigo-400"
+  defp usage_class(_), do: "bg-brand-400"
 
   defp humanize_reason(reason) when is_binary(reason), do: reason
 
@@ -272,7 +272,7 @@ defmodule EmisarWeb.BillingLive do
                 </span>
                 <span
                   :if={@summary.trial_end}
-                  class="rounded bg-indigo-500/15 px-2 py-0.5 font-medium text-indigo-200 ring-1 ring-indigo-500/30"
+                  class="rounded bg-brand-500/15 px-2 py-0.5 font-medium text-brand-200 ring-1 ring-brand-500/30"
                 >
                   Trial ends <.local_time value={@summary.trial_end} class="inline" />
                 </span>
@@ -346,7 +346,7 @@ defmodule EmisarWeb.BillingLive do
               class={[
                 "relative flex flex-col rounded-xl border p-5",
                 if(current_plan?(plan, @summary),
-                  do: "border-indigo-500/40 bg-indigo-500/5",
+                  do: "border-brand-500/40 bg-brand-500/5",
                   else: "border-zinc-900 bg-zinc-950/40"
                 )
               ]}
@@ -367,7 +367,7 @@ defmodule EmisarWeb.BillingLive do
 
               <ul class="mt-4 flex-1 space-y-2 text-xs text-zinc-300">
                 <li :for={f <- plan.features} class="flex items-start gap-2">
-                  <.icon name="hero-check" class="mt-0.5 h-4 w-4 flex-none text-indigo-400" />
+                  <.icon name="hero-check" class="mt-0.5 h-4 w-4 flex-none text-brand-400" />
                   <span class="leading-relaxed">{f}</span>
                 </li>
               </ul>
@@ -439,7 +439,7 @@ defmodule EmisarWeb.BillingLive do
       </div>
       <div
         :if={is_nil(@pct)}
-        class="mt-2 h-1.5 rounded-full bg-gradient-to-r from-indigo-900/30 via-indigo-500/40 to-indigo-900/30"
+        class="mt-2 h-1.5 rounded-full bg-gradient-to-r from-brand-900/30 via-brand-500/40 to-brand-900/30"
       >
       </div>
     </div>

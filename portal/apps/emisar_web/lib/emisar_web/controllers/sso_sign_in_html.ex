@@ -45,7 +45,7 @@ defmodule EmisarWeb.SSOSignInHTML do
       </.simple_form>
 
       <div class="mt-8 text-center text-sm">
-        <.link href={~p"/sign_in"} class="font-medium text-indigo-400 hover:text-indigo-300">
+        <.link href={~p"/sign_in"} class="font-medium text-brand-400 hover:text-brand-300">
           Back to sign in
         </.link>
       </div>

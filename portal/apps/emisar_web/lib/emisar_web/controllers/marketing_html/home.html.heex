@@ -238,7 +238,7 @@
           {"01", "intent", "LLM asks for one declared action", "The model never gets a shell. It calls one MCP tool with typed arguments, target scope, and a required reason.", "nomad.job_revert\nreason: \"bad deploy\"", "text-sky-300"},
           {"02", "contract", "Pack hash and args are checked", "The control plane checks trusted pack contents. The runner later recomputes the hash and validates every argument again.", "pack nomad@8f34… trusted\nargs re-validated", "text-brand-300"},
           {"03", "gate", "Policy returns allow, approval, or deny", "Risk-tier defaults and action overrides decide whether the request can run, must wait, or is refused outright.", "risk: high\npolicy: require approval", "text-amber-300"},
-          {"04", "execute", "Runner executes on the host", "The outbound-only runner owns execution. It clamps options, drops privileges where configured, streams output, and redacts before egress.", "nomad job revert …\nexit 0 · 2.1s", "text-emerald-300"},
+          {"04", "execute", "Runner executes on the host", "The outbound-only runner owns execution. It clamps options, drops privileges where configured, streams output, and redacts before egress.", "nomad job revert …\nexit 0 · 2.1s", "text-brand-300"},
           {"05", "receipt", "Audit makes the action recoverable", "The cloud audit is searchable and exportable. The host journal is hash-chained so edited or missing entries are visible.", "action_run.success\nprev 50c1… → 9a72…", "text-zinc-200"}
         ] do %>
           <li class="relative flex min-w-0 flex-col rounded-lg border border-zinc-800 bg-zinc-950/70 p-5">
@@ -344,7 +344,7 @@
             </div>
             <pre class="overflow-x-auto p-3 font-mono text-[11px] leading-5 text-zinc-300"><span class="text-sky-300">schema_version</span>: <span class="text-amber-300">1</span>
 <span class="text-sky-300">id</span>: linux.systemctl_status
-<span class="text-sky-300">title</span>: <span class="text-emerald-300">"Systemd unit status"</span>
+<span class="text-sky-300">title</span>: <span class="text-brand-300">"Systemd unit status"</span>
 <span class="text-sky-300">kind</span>: exec
 <span class="text-sky-300">risk</span>: <span class="text-amber-300">low</span>
 <span class="text-sky-300">args</span>:
@@ -352,11 +352,11 @@
     <span class="text-sky-300">type</span>: string
     <span class="text-sky-300">required</span>: <span class="text-amber-300">true</span>
     <span class="text-sky-300">validation</span>:
-      <span class="text-sky-300">pattern</span>: <span class="text-emerald-300">"^[a-zA-Z0-9@._-]&#123;1,128&#125;$"</span>
+      <span class="text-sky-300">pattern</span>: <span class="text-brand-300">"^[a-zA-Z0-9@._-]&#123;1,128&#125;$"</span>
 <span class="text-sky-300">execution</span>:
   <span class="text-sky-300">command</span>:
     <span class="text-sky-300">binary</span>: /usr/bin/systemctl
-    <span class="text-sky-300">argv</span>: [<span class="text-emerald-300">"status"</span>, <span class="text-emerald-300">"&#123;&#123; args.unit &#125;&#125;"</span>]</pre>
+    <span class="text-sky-300">argv</span>: [<span class="text-brand-300">"status"</span>, <span class="text-brand-300">"&#123;&#123; args.unit &#125;&#125;"</span>]</pre>
           </div>
         </div>
 
@@ -376,10 +376,10 @@
             </div>
             <div class="divide-y divide-zinc-900 p-3 font-mono text-[11px] text-zinc-300">
               <div class="flex items-center justify-between py-2">
-                <span>low</span><span class="text-emerald-300">allow</span>
+                <span>low</span><span class="text-brand-300">allow</span>
               </div>
               <div class="flex items-center justify-between py-2">
-                <span>medium</span><span class="text-emerald-300">allow</span>
+                <span>medium</span><span class="text-brand-300">allow</span>
               </div>
               <div class="flex items-center justify-between py-2">
                 <span>high</span><span class="text-amber-300">require approval</span>
@@ -428,7 +428,7 @@
                 :for={
                   {time, title, type, chip, title_class, actor_kind, actor_label} <- [
                     {"14:02", "Run succeeded", "action_run.success", "nomad.alloc_logs",
-                     "text-emerald-300", "api_key", "claude-prod"},
+                     "text-brand-300", "api_key", "claude-prod"},
                     {"14:01", "Awaiting approval", "action_run.pending_approval",
                      "nomad.job_revert", "text-amber-300", "api_key", "claude-prod"},
                     {"13:58", "Policy evaluated", "policy.evaluated", "require_approval",

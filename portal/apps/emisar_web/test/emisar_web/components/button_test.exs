@@ -26,7 +26,7 @@ defmodule EmisarWeb.Components.ButtonTest do
       html = render_button(%{})
       assert html =~ "<button"
       refute html =~ "<a "
-      assert html =~ "bg-indigo-500"
+      assert html =~ "bg-brand-500"
     end
 
     test "phx-click stays a <button> — an action, not navigation" do
@@ -41,7 +41,7 @@ defmodule EmisarWeb.Components.ButtonTest do
       assert html =~ "<a "
       assert html =~ ~s(href="/app/runbooks/new")
       # The link carries the same button styling as the <button> branch.
-      assert html =~ "bg-indigo-500"
+      assert html =~ "bg-brand-500"
       refute html =~ "<button"
     end
 
@@ -62,7 +62,7 @@ defmodule EmisarWeb.Components.ButtonTest do
       assert render_button(%{variant: "ghost"}) =~ "text-zinc-300"
       assert render_button(%{variant: "ghost", tone: "danger"}) =~ "text-rose-300"
       assert render_button(%{variant: "ghost", tone: "caution"}) =~ "text-amber-300"
-      assert render_button(%{variant: "ghost", tone: "success"}) =~ "text-emerald-300"
+      assert render_button(%{variant: "ghost", tone: "success"}) =~ "text-brand-300"
     end
   end
 end

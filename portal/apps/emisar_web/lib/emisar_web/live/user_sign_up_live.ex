@@ -44,7 +44,7 @@ defmodule EmisarWeb.UserSignUpLive do
         <%!-- Live strength tick — phx-change already streams the value, so
              flip the hint to a ✓ once it clears the 12-char floor. --%>
         <% password_ok? = String.length(@form[:password].value || "") >= 12 %>
-        <p class={["text-xs", if(password_ok?, do: "text-emerald-400", else: "text-zinc-500")]}>
+        <p class={["text-xs", if(password_ok?, do: "text-brand-400", else: "text-zinc-500")]}>
           {if password_ok?,
             do: "✓ At least 12 characters.",
             else: "Use at least 12 characters. Mix in numbers or symbols for extra safety."}
@@ -67,7 +67,7 @@ defmodule EmisarWeb.UserSignUpLive do
 
       <p class="mt-6 text-center text-sm text-zinc-400">
         Already have an account?
-        <.link href={~p"/sign_in"} class="font-medium text-indigo-400 hover:text-indigo-300">
+        <.link href={~p"/sign_in"} class="font-medium text-brand-400 hover:text-brand-300">
           Sign in
         </.link>
       </p>

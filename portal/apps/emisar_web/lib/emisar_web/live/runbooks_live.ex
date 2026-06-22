@@ -162,7 +162,7 @@ defmodule EmisarWeb.RunbooksLive do
                 <:title>
                   <.link
                     navigate={~p"/app/#{@current_account}/runbooks/#{runbook.id}/edit"}
-                    class="truncate font-medium text-zinc-100 hover:text-indigo-300"
+                    class="truncate font-medium text-zinc-100 hover:text-brand-300"
                   >
                     {runbook.title}
                   </.link>
@@ -184,7 +184,7 @@ defmodule EmisarWeb.RunbooksLive do
                   <.link
                     :if={runbook.status == :published}
                     navigate={~p"/app/#{@current_account}/runbooks/#{runbook.id}/run"}
-                    class="rounded-lg bg-indigo-500/10 px-2.5 py-1 text-xs font-semibold text-indigo-300 ring-1 ring-indigo-500/30 hover:bg-indigo-500/20"
+                    class="rounded-lg bg-brand-500/10 px-2.5 py-1 text-xs font-semibold text-brand-300 ring-1 ring-brand-500/30 hover:bg-brand-500/20"
                   >
                     Run →
                   </.link>

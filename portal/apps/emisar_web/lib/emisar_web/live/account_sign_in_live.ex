@@ -56,7 +56,7 @@ defmodule EmisarWeb.AccountSignInLive do
           <.input field={@form[:remember_me]} type="checkbox" label="Keep me signed in for 60 days" />
           <.link
             href={~p"/reset_password?#{[return_to: ~p"/app/#{@account}"]}"}
-            class="text-sm font-medium text-indigo-400 hover:text-indigo-300"
+            class="text-sm font-medium text-brand-400 hover:text-brand-300"
           >
             Forgot password?
           </.link>
@@ -81,7 +81,7 @@ defmodule EmisarWeb.AccountSignInLive do
       <p class="mt-8 text-center text-sm">
         <.link
           navigate={~p"/sign_in/sso"}
-          class="font-medium text-indigo-400 hover:text-indigo-300"
+          class="font-medium text-brand-400 hover:text-brand-300"
         >
           Sign in to a different team
         </.link>
