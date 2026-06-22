@@ -125,6 +125,42 @@
 }
 
 /* ---------------------------------------------------------------------------
+   Depth & materiality (marketing signature moments).
+
+   Three primitives for the "expensive", layered feel — a faint film grain, an
+   emerald ambient glow, and a glass elevation that reads as a lit surface
+   rather than a 1px box. Used sparingly: calm is the brand. Decorative only;
+   they don't animate, so reduced-motion is irrelevant.
+   --------------------------------------------------------------------------- */
+
+/* Faint film grain — an SVG fractal-noise tile at very low opacity, so flat
+   dark panels don't read as digitally flat. Apply to an absolutely positioned,
+   inset-0, aria-hidden layer over a signature surface. */
+.grain {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.82' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  opacity: 0.04;
+  mix-blend-mode: overlay;
+}
+
+/* Emerald ambient glow — a soft brand-green bloom for the signature moments
+   (hero headline, final CTA). Softer + wider than the hero dotted backdrop. */
+.glow-emerald {
+  background: radial-gradient(60% 55% at 50% 38%, rgb(54 230 165 / 0.1), transparent 72%);
+}
+
+/* Glass elevation — a lit surface: a top-down sheen, a hairline inner
+   highlight, and a deep soft drop shadow instead of a flat box. One or two
+   signature cards per page, no more. */
+.surface-glass {
+  background:
+    linear-gradient(to bottom, rgb(255 255 255 / 0.045), rgb(255 255 255 / 0.012) 38%, transparent),
+    rgb(9 9 11 / 0.85);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.06),
+    0 24px 50px -24px rgb(0 0 0 / 0.7);
+}
+
+/* ---------------------------------------------------------------------------
    "Watch emisar work" terminal (home page).
 
    Per-line styling for the two-tab transcript: the host tab mirrors real

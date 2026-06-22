@@ -8,7 +8,9 @@
 
   <%!-- Hero --%>
   <section class="relative overflow-hidden border-b border-zinc-900 bg-[#07080a]">
-    <div class="contract-grid absolute inset-0" aria-hidden="true"></div>
+    <div class="contract-grid pointer-events-none absolute inset-0" aria-hidden="true"></div>
+    <div class="glow-emerald pointer-events-none absolute inset-0" aria-hidden="true"></div>
+    <div class="grain pointer-events-none absolute inset-0" aria-hidden="true"></div>
 
     <div class="relative mx-auto w-full max-w-7xl px-6 py-12 sm:py-20 lg:px-8">
       <div class="max-w-5xl">
@@ -50,7 +52,7 @@
            Every call passes the gate — reads clear on policy, the one risky
            change waits for a human. Simpler than a contract dump on purpose;
            the full incident is the demo further down. --%>
-      <div class="mt-10 overflow-hidden rounded-xl border border-zinc-800 bg-zinc-950/85 shadow-2xl shadow-black/40">
+      <div class="surface-glass mt-10 overflow-hidden rounded-xl border border-zinc-800">
         <div class="flex items-center justify-between gap-3 border-b border-zinc-800 bg-zinc-950 px-4 py-2.5 font-mono text-[11px] text-zinc-500">
           <span class="flex items-center gap-2">
             <.icon name="hero-sparkles" class="h-3.5 w-3.5 text-brand-400" /> claude · emisar MCP
@@ -776,8 +778,10 @@
   <%!-- Final CTA --%>
   <section class="pb-24 sm:pb-32">
     <div class="mx-auto max-w-5xl px-6 lg:px-8">
-      <div class="overflow-hidden rounded-lg border border-brand-500/30 bg-zinc-950 p-12 sm:p-16">
-        <div class="text-center">
+      <div class="relative overflow-hidden rounded-lg border border-brand-500/30 bg-zinc-950 p-12 sm:p-16">
+        <div class="glow-emerald pointer-events-none absolute inset-0" aria-hidden="true"></div>
+        <div class="grain pointer-events-none absolute inset-0" aria-hidden="true"></div>
+        <div class="relative text-center">
           <.marketing_heading tag="h2" scale={:section}>
             Sleep tonight. Sign up free.
           </.marketing_heading>
