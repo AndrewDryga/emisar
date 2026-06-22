@@ -1613,7 +1613,7 @@ defmodule EmisarWeb.CoreComponents do
       <span class="flex-1">{render_slot(@inner_block)}</span>
       <span
         :if={badge_visible?(@badge)}
-        class="rounded-full bg-amber-500/20 px-2 py-0.5 text-[10px] font-semibold leading-none text-amber-200 ring-1 ring-inset ring-amber-500/30"
+        class="rounded-full bg-amber-500/20 px-2 py-0.5 text-[10px] font-semibold leading-none tabular-nums text-amber-200 ring-1 ring-inset ring-amber-500/30"
       >
         {badge_label(@badge)}
       </span>
@@ -2510,7 +2510,7 @@ defmodule EmisarWeb.CoreComponents do
     ~H"""
     <.card padding="p-6" class={@class}>
       <div class="text-xs uppercase tracking-wider text-zinc-500">{@label}</div>
-      <div class={["mt-2 text-3xl font-semibold", stat_value_class(@value)]}>
+      <div class={["mt-2 text-3xl font-semibold tabular-nums", stat_value_class(@value)]}>
         {stat_value(@value)}
       </div>
       <%= if @hint do %>
