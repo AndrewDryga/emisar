@@ -632,19 +632,32 @@ defmodule EmisarWeb.MarketingController do
           Jason.encode!(
             %{
               "@context" => "https://schema.org",
-              "@type" => "TechArticle",
-              "headline" => title,
-              "description" => description,
-              "author" => %{"@type" => "Organization", "name" => "emisar", "url" => @base},
-              "publisher" => %{
-                "@type" => "Organization",
-                "name" => "emisar",
-                "logo" => %{
-                  "@type" => "ImageObject",
-                  "url" => @base <> "/images/brand/emisar-logo.png"
+              "@graph" => [
+                %{
+                  "@type" => "BreadcrumbList",
+                  "itemListElement" =>
+                    breadcrumb_items([
+                      {"Home", @base <> "/"},
+                      {"Guides", @base <> "/guides"},
+                      {title, @base <> path}
+                    ])
+                },
+                %{
+                  "@type" => "TechArticle",
+                  "headline" => title,
+                  "description" => description,
+                  "author" => %{"@type" => "Organization", "name" => "emisar", "url" => @base},
+                  "publisher" => %{
+                    "@type" => "Organization",
+                    "name" => "emisar",
+                    "logo" => %{
+                      "@type" => "ImageObject",
+                      "url" => @base <> "/images/brand/emisar-logo.png"
+                    }
+                  },
+                  "mainEntityOfPage" => @base <> path
                 }
-              },
-              "mainEntityOfPage" => @base <> path
+              ]
             },
             escape: :html_safe
           )

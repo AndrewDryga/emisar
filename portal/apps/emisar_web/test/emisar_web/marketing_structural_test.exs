@@ -55,6 +55,7 @@ defmodule EmisarWeb.MarketingStructuralTest do
     /dpa
     /docs/mcp-reference
     /guides
+    /guides/give-ai-agents-safe-production-access
   )
 
   # The pages that emit a BreadcrumbList block. Home / /ai / /pricing carry

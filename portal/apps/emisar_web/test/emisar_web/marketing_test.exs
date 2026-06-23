@@ -39,6 +39,7 @@ defmodule EmisarWeb.MarketingTest do
     /dpa
     /docs/mcp-reference
     /guides
+    /guides/give-ai-agents-safe-production-access
   )
 
   for route <- @routes do
