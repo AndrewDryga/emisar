@@ -54,6 +54,7 @@ defmodule EmisarWeb.MarketingStructuralTest do
     /trust
     /dpa
     /docs/mcp-reference
+    /guides
   )
 
   # The pages that emit a BreadcrumbList block. Home / /ai / /pricing carry

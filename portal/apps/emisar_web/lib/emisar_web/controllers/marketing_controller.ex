@@ -452,18 +452,27 @@ defmodule EmisarWeb.MarketingController do
       Jason.encode!(
         %{
           "@context" => "https://schema.org",
-          "@type" => "ItemList",
-          "itemListElement" =>
-            @guides
-            |> Enum.with_index(1)
-            |> Enum.map(fn {{slug, _action, title, _dek, _date, _read_time, _desc}, position} ->
-              %{
-                "@type" => "ListItem",
-                "position" => position,
-                "name" => title,
-                "url" => @base <> "/guides/" <> slug
-              }
-            end)
+          "@graph" => [
+            %{
+              "@type" => "BreadcrumbList",
+              "itemListElement" =>
+                breadcrumb_items([{"Home", @base <> "/"}, {"Guides", @base <> "/guides"}])
+            },
+            %{
+              "@type" => "ItemList",
+              "itemListElement" =>
+                @guides
+                |> Enum.with_index(1)
+                |> Enum.map(fn {{slug, _action, title, _dek, _date, _read_time, _desc}, position} ->
+                  %{
+                    "@type" => "ListItem",
+                    "position" => position,
+                    "name" => title,
+                    "url" => @base <> "/guides/" <> slug
+                  }
+                end)
+            }
+          ]
         },
         escape: :html_safe
       )

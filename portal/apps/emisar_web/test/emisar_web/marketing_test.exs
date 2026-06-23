@@ -38,6 +38,7 @@ defmodule EmisarWeb.MarketingTest do
     /trust
     /dpa
     /docs/mcp-reference
+    /guides
   )
 
   for route <- @routes do
