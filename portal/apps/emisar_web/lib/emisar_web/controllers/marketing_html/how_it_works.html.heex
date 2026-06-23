@@ -59,34 +59,51 @@
     </div>
   </section>
 
-  <%!-- The five gates --%>
+  <%!-- The five gates, traced with the REAL payloads from one action
+       (nomad.alloc_stop, from the CSI incident). The shapes match the code:
+       the MCP tools/call request, the policy.evaluated audit event, the
+       runner run_action protocol, and the hash-chained journal line
+       (runner/internal/audit/event.go). Payloads are interpolated strings
+       so their JSON braces are data, not HEEx syntax. --%>
   <section class="border-y border-zinc-900 bg-zinc-950/40 py-20 sm:py-28">
-    <div class="mx-auto max-w-3xl px-6 lg:px-8">
-      <div class="text-center">
+    <div class="mx-auto max-w-4xl px-6 lg:px-8">
+      <div class="mx-auto max-w-2xl text-center">
         <h2 class="text-3xl font-bold tracking-tight text-white text-balance sm:text-4xl">
           Every request passes five gates.
         </h2>
+        <p class="mt-4 text-base leading-relaxed text-zinc-400">
+          One real action — halting writes after a CSI driver reformatted a live volume — traced
+          through all five, with the actual payload at each step.
+        </p>
       </div>
 
       <ol class="mt-14 space-y-4">
-        <%= for {step, title, desc} <- [
+        <%= for {step, title, desc, payload} <- [
           {"01", "The agent asks for one declared action",
-           "No shell, ever. The model calls a single MCP tool with typed arguments, a target scope, and a required reason. It can only request what's in the catalog, because that's all it can see."},
+           "No shell, ever. The model calls one MCP tool with typed arguments, a target runner, and a required reason — it can only request what's in the catalog.",
+           "{\n  \"method\": \"tools/call\",\n  \"params\": {\n    \"name\": \"nomad.alloc_stop\",\n    \"arguments\": {\n      \"alloc\": \"a1b2c3d4\",\n      \"reason\": \"CSI reformatted a live LUN — halt writes\",\n      \"runners\": [\"nomad-hvn03\"]\n    }\n  }\n}"},
           {"02", "The pack hash and arguments are checked",
-           "The control plane confirms the action comes from a trusted, content-addressed pack — a changed hash blocks dispatch until an admin re-trusts it — and every argument is validated against the action's declared schema."},
+           "The action must come from a trusted, content-addressed pack — a changed hash blocks dispatch until an admin re-trusts it — and every argument is validated against the declared schema.",
+           "pack    nomad@8f34c2e9…   trusted ✓\nalloc   \"a1b2c3d4\"         ✓  matches /^[a-z0-9-]+$/\nreason  present            ✓  required\nrunner  nomad-hvn03        ✓  in your scope"},
           {"03", "Policy returns allow, approval, or deny",
-           "Risk-tier defaults plus ordered per-action overrides decide whether the request runs, waits for a human, or is refused. Reads usually run free; mutating actions stop for a one-click approval that shows the actor, arguments, and target."},
+           "Risk-tier defaults plus ordered per-action overrides decide. Reads usually run free; this mutating action stops for a one-click human approval — recorded as its own audit event.",
+           "{\n  \"event_type\": \"policy.evaluated\",\n  \"action_id\": \"nomad.alloc_stop\",\n  \"risk\": \"high\",\n  \"decision\": \"require_approval\",\n  \"matched_rule\": \"nomad.* → require approval\"\n}"},
           {"04", "The runner re-validates and executes",
-           "The outbound-only runner owns execution. It recomputes the pack hash, re-validates the arguments, drops privileges where configured, streams output, and redacts secrets before anything leaves the host."},
+           "The outbound-only runner owns execution. It recomputes the pack hash and re-validates the arguments on the host, then runs the command and redacts secrets before any output leaves the machine.",
+           "runner nomad-hvn03  receives run_action  seq=5\n  pack hash 8f34c2e9…   recomputed on the host  ✓\n  arguments             re-validated            ✓\n  exec  nomad alloc stop a1b2c3d4\n  exit 0  ·  0.38s  ·  stdout redacted before egress"},
           {"05", "The audit makes it recoverable",
-           "Every step lands in a SHA-256 hash-chained journal on the host and the searchable cloud audit. Any edited or missing line is caught by emisar audit verify, and you can stream the whole thing to your SIEM as NDJSON."}
+           "Every step lands in a SHA-256 hash-chained journal on the host (and the searchable cloud audit). Each line carries the previous line's hash, so any edit or gap is caught by emisar audit verify — and the whole thing streams to your SIEM as NDJSON.",
+           "{\n  \"event_id\": \"01JZ8F2K…\",\n  \"event_type\": \"action_run.success\",\n  \"action_id\": \"nomad.alloc_stop\",\n  \"reason\": \"CSI reformatted a live LUN — halt writes\",\n  \"args_sha256\": \"5e8c1f…\",\n  \"exit_code\": 0,\n  \"prev_hash\": \"9a72d4…\",\n  \"hash\": \"c41d0b…\"\n}"}
         ] do %>
-          <li class="flex gap-5 rounded-2xl border border-zinc-900 bg-zinc-950/60 p-6">
-            <span class="font-mono text-sm font-semibold text-brand-400">{step}</span>
-            <div>
-              <h3 class="text-base font-semibold text-zinc-50">{title}</h3>
-              <p class="mt-2 text-sm leading-relaxed text-zinc-400">{desc}</p>
+          <li class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-6">
+            <div class="flex gap-5">
+              <span class="font-mono text-sm font-semibold text-brand-400">{step}</span>
+              <div>
+                <h3 class="text-base font-semibold text-zinc-50">{title}</h3>
+                <p class="mt-2 text-sm leading-relaxed text-zinc-400">{desc}</p>
+              </div>
             </div>
+            <pre class="mt-4 overflow-x-auto rounded-lg border border-zinc-900 bg-black/40 p-4 font-mono text-[11.5px] leading-5 text-zinc-300">{payload}</pre>
           </li>
         <% end %>
       </ol>
