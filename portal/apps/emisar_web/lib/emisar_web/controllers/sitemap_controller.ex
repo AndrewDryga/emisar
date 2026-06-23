@@ -29,6 +29,7 @@ defmodule EmisarWeb.SitemapController do
     "/docs/audit-and-siem",
     "/docs/security-model",
     "/docs/connect-an-llm",
+    "/docs/mcp-reference",
     "/packs",
     "/use-cases",
     "/use-cases/cassandra-ops",

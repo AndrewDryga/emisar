@@ -1,0 +1,172 @@
+<%!-- ============================================================
+  Docs / MCP reference — the builder-facing API reference. Every method,
+  parameter, and error here is verified against the portal MCP code
+  (controllers/mcp/*): tool_schema (reason/runners/idempotency_key/wait),
+  service (the long-poll), and instructions (the error taxonomy).
+============================================================ --%>
+<div class="bg-zinc-950 text-zinc-100">
+  <.marketing_nav current_user={@current_user} current={:docs} />
+
+  <section class="py-16 sm:py-24">
+    <div class="mx-auto max-w-3xl px-6 lg:px-8">
+      <p class="text-sm font-semibold text-brand-400">Docs / MCP reference</p>
+      <.marketing_heading tag="h1" scale={:hero} class="mt-2">
+        MCP reference
+      </.marketing_heading>
+      <p class="mt-6 text-lg leading-8 text-zinc-400 text-pretty">
+        The methods, parameters, and errors of the emisar MCP server. For client setup — OAuth for
+        cloud clients, the stdio bridge for local tools — see <.link
+          navigate={~p"/docs/connect-an-llm"}
+          class="font-medium text-brand-300 hover:text-brand-200"
+        >
+          Connect an LLM
+        </.link>. This page is the contract once you're connected.
+      </p>
+
+      <article class="mt-4 [&_h2]:mb-4 [&_h2]:mt-12 [&_h2]:scroll-mt-24 [&_h2]:text-xl [&_h2]:font-bold [&_h2]:text-zinc-50 [&_p]:my-4 [&_p]:leading-7 [&_p]:text-zinc-400 [&_code]:rounded [&_code]:bg-zinc-900 [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:text-[0.85em] [&_code]:text-brand-300 [&_a]:font-medium [&_a]:text-brand-300 [&_a:hover]:text-brand-200 [&_ul]:my-4 [&_ul]:list-disc [&_ul]:space-y-1.5 [&_ul]:pl-5 [&_li]:text-zinc-400">
+        <h2>Methods</h2>
+        <p>
+          emisar speaks JSON-RPC 2.0 over MCP. Three methods matter to a client:
+        </p>
+        <ul>
+          <li>
+            <code>initialize</code>
+            — the MCP handshake; returns server capabilities and instructions.
+          </li>
+          <li>
+            <code>tools/list</code>
+            — the live action catalog as MCP tools, scoped to your key. Each runnable action is one tool, plus the meta tools below.
+          </li>
+          <li>
+            <code>tools/call</code>
+            — dispatch one action (or call a meta tool) by name with arguments.
+          </li>
+        </ul>
+
+        <h2>The catalog is live, not static</h2>
+        <p>
+          <code>tools/list</code>
+          is a point-in-time snapshot. A tool being listed does
+          <strong class="font-semibold text-zinc-200">not</strong>
+          guarantee a runner is connected or its pack is trusted at call time — both are resolved
+          when you actually dispatch. When a call fails for a runner or catalog reason, re-call
+          <code>tools/list</code>
+          to refresh, then decide from the fresh list. Don't retry the same
+          failing call in a loop.
+        </p>
+
+        <h2>Calling an action</h2>
+        <p>
+          Each action tool takes its own declared, typed arguments, plus these emisar parameters:
+        </p>
+        <div class="my-6 overflow-x-auto rounded-xl border border-zinc-900">
+          <table class="w-full min-w-[640px] text-left text-sm">
+            <thead class="border-b border-zinc-900 text-xs uppercase tracking-wider text-zinc-500">
+              <tr>
+                <th class="px-4 py-3 font-medium">Parameter</th>
+                <th class="px-4 py-3 font-medium">Requirement</th>
+                <th class="px-4 py-3 font-medium">What it does</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-zinc-900 text-zinc-400">
+              <%= for {param, req, desc} <- [
+                {"reason", "Required", "An operator-facing audit string — one short sentence on why. It's recorded on the run for a human to audit later."},
+                {"<action args>", "Per the action", "The action's own typed arguments, re-validated against its declared schema on the runner."},
+                {"runners", "Conditional", "The target runner(s) to fan out to. Required when more than one in-scope runner advertises the action; optional when exactly one does."},
+                {"idempotency_key", "Optional", "Dedups a call you might retry, so the same intent runs once. (The bridge also mints a transport-level key automatically — see Idempotency.)"},
+                {"wait", "Optional", "Block until the run reaches a terminal state, up to a ~60s cap, and return its result. Otherwise the call returns once the run is dispatched; poll with wait_for_run."}
+              ] do %>
+                <tr>
+                  <td class="px-4 py-3 align-top font-mono text-xs text-brand-300">{param}</td>
+                  <td class="px-4 py-3 align-top whitespace-nowrap text-zinc-300">{req}</td>
+                  <td class="px-4 py-3 align-top">{desc}</td>
+                </tr>
+              <% end %>
+            </tbody>
+          </table>
+        </div>
+
+        <h2>Meta tools</h2>
+        <p>
+          Alongside the action tools, <code>tools/list</code> includes a few helpers:
+        </p>
+        <ul>
+          <li>
+            <code>wait_for_run</code>
+            — block until a specific run reaches a terminal state (up to ~90s), then return its result; re-poll if it's still running.
+          </li>
+          <li>
+            <code>recent_runs</code>
+            — the account's recent runs, for picking up where a previous session left off.
+          </li>
+          <li>
+            <code>list_runbooks</code>
+            — the account's published runbooks (saved, ordered playbooks).
+          </li>
+          <li>
+            <code>get_runbook</code>
+            — one runbook's ordered steps. The cloud does
+            <strong class="font-semibold text-zinc-200">not</strong>
+            run a runbook for you: fetch it and dispatch each step yourself, in order, honoring each step's policy.
+          </li>
+        </ul>
+
+        <h2>Idempotency</h2>
+        <p>
+          Idempotency has two layers, so a retried dispatch never double-executes a mutating action:
+        </p>
+        <ul>
+          <li>
+            <strong class="font-semibold text-zinc-200">Transport</strong>
+            — the MCP bridge auto-mints an <code>Idempotency-Key</code>
+            per call, covering transparent retries.
+          </li>
+          <li>
+            <strong class="font-semibold text-zinc-200">Model intent</strong>
+            — the <code>idempotency_key</code>
+            argument lets the model mark a call it might re-issue itself as the same intent.
+          </li>
+        </ul>
+
+        <h2>Errors</h2>
+        <p>
+          When a dispatch is refused, the reason is specific. The three you'll meet most:
+        </p>
+        <div class="my-6 overflow-x-auto rounded-xl border border-zinc-900">
+          <table class="w-full min-w-[640px] text-left text-sm">
+            <thead class="border-b border-zinc-900 text-xs uppercase tracking-wider text-zinc-500">
+              <tr>
+                <th class="px-4 py-3 font-medium">Error</th>
+                <th class="px-4 py-3 font-medium">What it means</th>
+                <th class="px-4 py-3 font-medium">What to do</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-zinc-900 text-zinc-400">
+              <%= for {err, means, todo} <- [
+                {"pack_untrusted", "The runner advertises a pack version no operator has trusted yet, so the cloud refuses to run it.", "A human trusts the pack on the Packs page. Retrying or reloading will not clear it."},
+                {"No runner advertises <action> / Action not found", "No currently-connected runner advertises this action — it's offline, the pack isn't loaded, or the pack isn't installed.", "Re-call tools/list; if it's still missing, check the runner is online on the Runners page."},
+                {"No runner in scope", "The action exists, but no runner you're permitted to reach advertises it.", "An access-grant issue — an admin widens your per-user runner scope."}
+              ] do %>
+                <tr>
+                  <td class="px-4 py-3 align-top font-mono text-xs text-amber-300">{err}</td>
+                  <td class="px-4 py-3 align-top">{means}</td>
+                  <td class="px-4 py-3 align-top">{todo}</td>
+                </tr>
+              <% end %>
+            </tbody>
+          </table>
+        </div>
+
+        <p>
+          Every dispatch — allowed, approved, or denied — is recorded. See
+          <.link navigate={~p"/docs/audit-and-siem"}>the audit trail</.link>
+          for what's captured and how to stream it, and
+          <.link navigate={~p"/docs/policies-and-approvals"}>policies &amp; approvals</.link>
+          for what makes a call wait or deny.
+        </p>
+      </article>
+    </div>
+  </section>
+
+  <.marketing_footer />
+</div>
