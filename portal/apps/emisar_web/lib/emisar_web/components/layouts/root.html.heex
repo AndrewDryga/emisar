@@ -67,6 +67,17 @@
     <link rel="apple-touch-icon" href={~p"/apple-touch-icon.png"} />
     <link rel="manifest" href={~p"/site.webmanifest"} />
     <meta name="theme-color" content="#0a0a0b" />
+    <%!-- Preload the variable font (fonts fetch in CORS mode, so crossorigin
+         is required or it double-fetches) so it loads in parallel with the CSS
+         instead of after the @font-face is parsed — faster LCP on the
+         text-led marketing pages. --%>
+    <link
+      rel="preload"
+      href={~p"/fonts/InterVariable.woff2"}
+      as="font"
+      type="font/woff2"
+      crossorigin="anonymous"
+    />
     <link phx-track-static rel="stylesheet" href={~p"/assets/app.css"} />
     <%!-- LiveView pages need app.js (LiveSocket + hooks); the static,
           server-rendered marketing pages load only the lean marketing.js.
