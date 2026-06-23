@@ -60,7 +60,7 @@
         </div>
 
         <div class="p-3 sm:p-5">
-          <.scan_line animate state={:pass} class="mb-4" />
+          <.scan_line animate loop state={:pass} class="mb-4" />
           <div class="divide-y divide-zinc-900/80 font-mono text-[11.5px] leading-6 tabular-nums sm:text-[12.5px]">
             <%= for {call, kind} <- [
                 {"nomad.alloc_logs checkout", :read},

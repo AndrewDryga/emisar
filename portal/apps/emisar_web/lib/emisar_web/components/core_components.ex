@@ -3551,6 +3551,11 @@ defmodule EmisarWeb.CoreComponents do
   """
   attr :state, :atom, default: :pass, values: [:pass, :pending, :deny, :neutral]
   attr :animate, :boolean, default: false
+
+  attr :loop, :boolean,
+    default: false,
+    doc: "periodic re-scan (long hold between) vs a single sweep"
+
   attr :class, :string, default: nil
 
   def scan_line(assigns) do
@@ -3564,7 +3569,8 @@ defmodule EmisarWeb.CoreComponents do
       <div
         :if={@animate}
         class={[
-          "scan-sweep absolute inset-y-0 left-0 w-1/4 bg-gradient-to-r from-transparent to-transparent blur-[1px]",
+          if(@loop, do: "scan-sweep-loop", else: "scan-sweep"),
+          "absolute inset-y-0 left-0 w-1/4 bg-gradient-to-r from-transparent to-transparent blur-[1px]",
           scan_sweep_via_class(@state)
         ]}
       >

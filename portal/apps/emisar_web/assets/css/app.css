@@ -330,6 +330,23 @@
     transform: translateX(400%);
   }
 }
+/* Looping variant for the home hero demo: one sweep, then a long hold
+   off-screen — the "agent at work" panel reads as live without a busy loop.
+   The global reduced-motion override near-zeros the duration, leaving it still. */
+.scan-sweep-loop {
+  animation: scan-sweep-loop 8s ease-in-out 1s infinite;
+}
+@keyframes scan-sweep-loop {
+  0% {
+    transform: translateX(-100%);
+  }
+  30% {
+    transform: translateX(400%);
+  }
+  100% {
+    transform: translateX(400%);
+  }
+}
 
 /* ---------------------------------------------------------------------------
    The Gate device (home hero — `<.gate_scene>`-style markup).
