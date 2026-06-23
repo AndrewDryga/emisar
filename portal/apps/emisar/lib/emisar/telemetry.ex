@@ -37,4 +37,13 @@ defmodule Emisar.Telemetry do
   def billing_webhook(outcome) when is_atom(outcome) do
     :telemetry.execute([:emisar, :billing, :webhook], %{count: 1}, %{outcome: outcome})
   end
+
+  @doc """
+  An approval request reached a terminal decision. Emits `[:emisar, :approval,
+  :decided]` tagged by the bounded `decision` (`:approved | :denied | :expired`).
+  """
+  @spec approval_decided(atom()) :: :ok
+  def approval_decided(decision) when is_atom(decision) do
+    :telemetry.execute([:emisar, :approval, :decided], %{count: 1}, %{decision: decision})
+  end
 end

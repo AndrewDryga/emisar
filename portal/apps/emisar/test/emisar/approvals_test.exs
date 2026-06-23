@@ -260,6 +260,31 @@ defmodule Emisar.ApprovalsTest do
              )
     end
 
+    test "a decision emits [:emisar, :approval, :decided] tagged by the decision" do
+      {account, run} = run_fixture()
+      subject = operator_subject(account)
+      {:ok, request} = Approvals.create_request(run, subject.actor.id, "needs approve")
+
+      handler = make_ref()
+      test_pid = self()
+
+      :telemetry.attach(
+        handler,
+        [:emisar, :approval, :decided],
+        fn _event, measurements, metadata, _config ->
+          send(test_pid, {:approval_decided, measurements, metadata})
+        end,
+        nil
+      )
+
+      on_exit(fn -> :telemetry.detach(handler) end)
+
+      assert {:ok, {%Request{status: :approved}, _}} =
+               Approvals.approve_request(request, subject, "lgtm")
+
+      assert_receive {:approval_decided, %{count: 1}, %{decision: :approved}}
+    end
+
     test "an expired (not-yet-swept) pending request cannot be approved" do
       {account, run} = run_fixture()
       subject = operator_subject(account)

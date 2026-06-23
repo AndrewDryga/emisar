@@ -634,18 +634,29 @@ defmodule Emisar.Approvals do
   # ONLY on a finalizing approve (:dispatch) — never on a sub-threshold vote.
   defp after_decision(%{outcome: %{action: :dispatch, run: run, request: request}}) do
     broadcast_approval(request)
+    count_approval_decision(request)
     Runs.dispatch_to_runner(run)
   end
 
   defp after_decision(%{outcome: %{action: :cancelled, request: request}, run_cancel: run_cancel}) do
     broadcast_approval(request)
+    count_approval_decision(request)
     Runs.broadcast_cancelled_run(run_cancel)
   end
 
   defp after_decision(%{outcome: %{request: request}}) do
     broadcast_approval(request)
+    count_approval_decision(request)
     :ok
   end
+
+  # Telemetry: count a request only when it reaches a TERMINAL decision. A
+  # partial approval (still :pending below the threshold) is not an outcome.
+  defp count_approval_decision(%Request{status: status})
+       when status in [:approved, :denied, :expired],
+       do: Emisar.Telemetry.approval_decided(status)
+
+  defp count_approval_decision(_request), do: :ok
 
   # Return shapes: a finalizing approve reloads the now-:sent run;
   # recorded-but-sub-threshold returns {request, :pending}; a deny returns the
@@ -991,6 +1002,7 @@ defmodule Emisar.Approvals do
     |> Repo.commit_multi(
       after_commit: fn changes ->
         broadcast_approval(changes.reloaded)
+        count_approval_decision(changes.reloaded)
         Runs.broadcast_cancelled_run(changes.run_cancel)
       end
     )

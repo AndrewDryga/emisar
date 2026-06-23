@@ -141,6 +141,11 @@ defmodule EmisarWeb.Telemetry do
         tags: [:outcome],
         description: "Paddle webhook events processed, by outcome (applied / duplicate / failed)"
       ),
+      counter("emisar.approval.decided.count",
+        tags: [:decision],
+        description:
+          "Approval requests resolved, by terminal decision (approved / denied / expired)"
+      ),
 
       # VM Metrics — last_value, not distribution: these are gauges
       # sampled periodically, not per-event histograms. system_counts
