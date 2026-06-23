@@ -14,7 +14,7 @@ defmodule EmisarWeb.Changelog do
       title: "The marketing site, rebuilt",
       tag: "portal-v0.9.0",
       summary:
-        "A ground-up pass on emisar.dev: a proof-led homepage that leads with the trust model and the \"even if our cloud is compromised, the host has the last word\" story; new Guides; a procurement-ready Trust page; a Book-a-demo path; a searchable action-pack registry; honest comparison pages; and a mobile polish pass."
+        "A ground-up pass on emisar.dev: a proof-led homepage that leads with the trust model and the \"even if our cloud is compromised, the host has the last word\" story; new Guides; a procurement-ready Trust page; a how-it-works walkthrough traced with the real payloads at each gate; a searchable action-pack registry; honest comparison pages; and a mobile polish pass."
     },
     %{
       date: ~D[2026-06-22],
@@ -25,12 +25,20 @@ defmodule EmisarWeb.Changelog do
         "emisar got a face — a new gate logo and wordmark, a single emerald brand token replacing the old indigo/emerald mix, a signature display typeface, and the operator console brought into line with the marketing site."
     },
     %{
-      date: ~D[2026-06-11],
-      slug: "runner-0-7-runner-scopes",
-      title: "Runner 0.7 and per-user runner scopes",
-      tag: nil,
+      date: ~D[2026-06-15],
+      slug: "sso-and-scim",
+      title: "Enterprise SSO and SCIM",
+      tag: "portal-v0.5.0",
       summary:
-        "Runner 0.7 ships the pack-registry CLI — emisar pack install with hash-pinned installs, host-matched pack suggest, and one-command updates. Admins can scope an operator or API key to specific runners or groups. Invitation tokens joined the hashed-at-rest sweep, and MCP's wait_for_run now wakes on the run's own broadcast instead of polling."
+        "OIDC single sign-on with Google Workspace, Okta, and Keycloak, plus SCIM 2.0 directory sync — provision and deprovision from your IdP, map IdP groups to emisar roles, and have offboarding revoke a member's access and sessions automatically."
+    },
+    %{
+      date: ~D[2026-06-08],
+      slug: "runner-0-7",
+      title: "Runner 0.7 and per-user scopes",
+      tag: "runner-v0.7.4",
+      summary:
+        "The pack-registry CLI — emisar pack install with hash-pinned installs, host-matched pack suggest, and one-command updates. Per-user runner scopes limit an operator or API key to specific runners or groups; child processes are reaped with PR_SET_PDEATHSIG; and MCP's wait_for_run wakes on the run's own broadcast instead of polling."
     },
     %{
       date: ~D[2026-06-04],
@@ -38,30 +46,31 @@ defmodule EmisarWeb.Changelog do
       title: "Public beta control plane",
       tag: "portal-v0.1.0",
       summary:
-        "Remote MCP with OAuth, scoped LLM connections, pack-trust review, contextual approvals with standing grants, live run output, team MFA controls, runbooks, OIDC SSO with SCIM directory sync, and read-only SIEM audit export."
+        "The hosted control plane opens: connect any MCP client over OAuth 2.1, scope it to selected runners, and run a declared catalog behind policy. Client-attested Ed25519 signed dispatch means a compromised control plane can relay a request but never forge one; content-addressed pack trust blocks drift until an admin re-trusts; and secrets are redacted on the host before egress."
     },
     %{
-      date: ~D[2026-05-21],
-      slug: "per-host-catalogs",
-      title: "Per-host catalogs and content-addressed packs",
-      tag: "runner-v0.2.0",
-      summary: "Per-host action catalogs, content-addressed packs, and dashboard online-status."
-    },
-    %{
-      date: ~D[2026-04-03],
-      slug: "runner-hardening",
-      title: "Runner hardening",
-      tag: "runner-v0.1.5",
+      date: ~D[2026-06-01],
+      slug: "approvals-audit-control-set",
+      title: "Approvals, audit, and the control set",
+      tag: nil,
       summary:
-        "PR_SET_PDEATHSIG zombie prevention, a graceful SIGTERM shutdown window, and JSONL log rotation."
+        "The pieces that make it safe to act: a policy engine with risk-tier defaults and ordered per-action overrides; human approvals with revocable standing grants; a SHA-256 hash-chained host journal plus a searchable cloud audit and NDJSON SIEM export; account-wide MFA with recovery codes; versioned runbooks; and per-runner billing through Paddle."
     },
     %{
-      date: ~D[2026-02-18],
-      slug: "initial-public-release",
-      title: "Initial public release",
-      tag: "runner-v0.1.0",
+      date: ~D[2026-05-29],
+      slug: "mcp-and-runner",
+      title: "The MCP server and the on-host runner",
+      tag: nil,
       summary:
-        "The runner binary, YAML action packs, argument validation, the policy engine, JSONL audit, and example packs."
+        "The two halves come together: a JSON-RPC MCP server that exposes a declared, typed action catalog to any agent (tools/list, tools/call), and an outbound-only runner that advertises and executes it on the host — plus a docker-compose dev stack and single-use runner enrollment keys."
+    },
+    %{
+      date: ~D[2026-05-18],
+      slug: "the-foundation",
+      title: "The foundation",
+      tag: nil,
+      summary:
+        "Where it began: the on-host runner, YAML action packs with typed argument validation, the risk-tiered policy engine, and an append-only JSONL audit trail — the declared-action model everything else builds on."
     }
   ]
 
