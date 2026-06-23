@@ -1948,4 +1948,37 @@ defmodule Emisar.RunsTest do
       assert DateTime.compare(reloaded_other.sent_at, other_sent.sent_at) == :eq
     end
   end
+
+  describe "run outcome telemetry" do
+    test "a terminal transition emits [:emisar, :run, :finished], tagged by status" do
+      account = account_fixture()
+      runner = runner_fixture(account_id: account.id)
+      _ = action_fixture(runner: runner, action_id: "linux.uptime", risk: "low")
+      _ = policy_fixture(account_id: account.id)
+      subject = subject_for(user_fixture(), account, role: :owner)
+
+      handler = make_ref()
+      test_pid = self()
+
+      :telemetry.attach(
+        handler,
+        [:emisar, :run, :finished],
+        fn _event, measurements, metadata, _config ->
+          send(test_pid, {:run_finished, measurements, metadata})
+        end,
+        nil
+      )
+
+      on_exit(fn -> :telemetry.detach(handler) end)
+
+      {:ok, :running, run} = Runs.dispatch_run(base_attrs(account.id, runner.id), subject)
+
+      # The intermediate :running transition must NOT count an outcome.
+      refute_received {:run_finished, _, _}
+
+      {:ok, _} = Runs.mark_finished(run, %{"status" => "success", "duration_ms" => 6})
+
+      assert_receive {:run_finished, %{count: 1, duration_ms: 6}, %{status: :success}}
+    end
+  end
 end

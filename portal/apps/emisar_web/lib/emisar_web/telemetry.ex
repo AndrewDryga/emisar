@@ -126,6 +126,18 @@ defmodule EmisarWeb.Telemetry do
         reporter_options: [buckets: @latency_buckets]
       ),
 
+      # Domain — run outcomes. A counter by terminal status (bounded enum) so
+      # operators can chart the success / failure / denied / timeout mix, plus
+      # a duration distribution. Fleet-wide; never tagged by account (series
+      # cardinality + tenant enumeration — see Emisar.Telemetry).
+      counter("emisar.run.finished.count", tags: [:status]),
+      distribution("emisar.run.finished.duration_ms",
+        tags: [:status],
+        unit: :millisecond,
+        description: "Wall-clock duration of a finished run, by terminal status",
+        reporter_options: [buckets: @latency_buckets]
+      ),
+
       # VM Metrics — last_value, not distribution: these are gauges
       # sampled periodically, not per-event histograms. system_counts
       # come free with telemetry_poller's default measurements; the

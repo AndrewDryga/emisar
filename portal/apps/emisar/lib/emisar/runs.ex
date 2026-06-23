@@ -1178,7 +1178,7 @@ defmodule Emisar.Runs do
       |> Repo.commit_multi(
         after_commit: fn
           %{run: :already_terminal} -> :ok
-          %{run: run} -> broadcast_run(run)
+          %{run: run} -> after_run_committed(run)
         end
       )
       |> case do
@@ -1189,6 +1189,19 @@ defmodule Emisar.Runs do
         {:error, reason} -> {:error, reason}
       end
     end
+  end
+
+  # Post-commit side effects for a run transition: broadcast the new state,
+  # and emit run-outcome telemetry once the run reaches a terminal status
+  # (intermediate :sent/:running transitions don't count an outcome).
+  defp after_run_committed(%ActionRun{} = run) do
+    broadcast_run(run)
+
+    if ActionRun.terminal?(run.status) do
+      Emisar.Telemetry.run_finished(run.status, run.duration_ms)
+    end
+
+    :ok
   end
 
   # Adds the run-event audit insert to a Multi, but only for statuses
