@@ -377,6 +377,42 @@ defmodule Emisar.Runs do
     end
   end
 
+  @doc """
+  Internal — Approvals' pre-approval gate for signed dispatch: refuse the
+  approval when this run's relayed signature would already be outside the
+  enforcing runner's freshness window, so a slow approval doesn't leave an
+  approved-but-dead run the runner refuses as stale. The runner stays the
+  authority; this is the fail-fast. `:ok | {:error, :attestation_stale}`.
+  """
+  def check_run_attestation_fresh(run_id) when is_binary(run_id) do
+    run =
+      ActionRun.Query.all()
+      |> ActionRun.Query.by_id(run_id)
+      |> ActionRun.Query.with_preloaded_runner()
+      |> Repo.one!()
+
+    attestation_fresh(run.attestation, run.runner)
+  end
+
+  defp attestation_fresh(
+         att,
+         %Emisar.Runners.Runner{enforce_signatures: true, max_attestation_age_seconds: max_age}
+       )
+       when is_map(att) and is_integer(max_age) do
+    # Mirror the runner's verifier (runner/internal/signing): stale when the
+    # signature's issued_at falls outside +/- the freshness window. An
+    # unparseable issued_at falls through to :ok — let the runner reject it.
+    with issued when is_binary(issued) <- att["issued_at"],
+         {:ok, issued_at, _offset} <- DateTime.from_iso8601(issued),
+         true <- abs(DateTime.diff(DateTime.utc_now(), issued_at)) > max_age do
+      {:error, :attestation_stale}
+    else
+      _ -> :ok
+    end
+  end
+
+  defp attestation_fresh(_att, _runner), do: :ok
+
   # If the caller supplied an Idempotency-Key on this api_key, an earlier
   # call that won the unique-index race owns the run. We re-shape the
   # cached row into the same `{:ok, status_atom, run}` tuple the live

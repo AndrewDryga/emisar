@@ -398,7 +398,9 @@ defmodule Emisar.Runners do
       # makes the runner STRICTER (refuse unsigned dispatch), never looser. A
       # missing/false value clears it, so flipping enforcement off in config
       # propagates on the next reconnect.
-      enforce_signatures: payload["enforce_signatures"] == true
+      enforce_signatures: payload["enforce_signatures"] == true,
+      # The freshness window the runner advertises when enforcing; nil clears it.
+      max_attestation_age_seconds: payload["max_attestation_age_seconds"]
     })
     |> Repo.update()
   end

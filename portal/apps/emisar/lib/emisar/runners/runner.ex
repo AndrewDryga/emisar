@@ -24,6 +24,12 @@ defmodule Emisar.Runners.Runner do
     # (operator/runbook) dispatch to it — only signed MCP calls get through.
     field :enforce_signatures, :boolean, default: false
 
+    # Runner-advertised freshness window (seconds) for a signed dispatch's
+    # issued_at; lets the portal refuse an approval up front when the parked
+    # signature would already be stale (the runner stays the authority). Nil
+    # until a signing-enforcing runner advertises it.
+    field :max_attestation_age_seconds, :integer
+
     # Connection state lives in `Emisar.Runners.Presence`, not the DB.
     # These virtuals are filled from presence metadata by the context
     # read functions; see `Emisar.Runners.connection_state/1`.

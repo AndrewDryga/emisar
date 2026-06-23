@@ -1981,4 +1981,53 @@ defmodule Emisar.RunsTest do
       assert_receive {:run_finished, %{count: 1, duration_ms: 6}, %{status: :success}}
     end
   end
+
+  describe "check_run_attestation_fresh/1 — the signed-dispatch approval gate" do
+    setup do
+      account = account_fixture()
+      runner = runner_fixture(account_id: account.id)
+      _ = action_fixture(runner: runner, action_id: "linux.uptime", risk: "low")
+      _ = policy_fixture(account_id: account.id)
+
+      # The runner advertises signing enforcement + a 1h freshness window.
+      {:ok, runner} =
+        Emisar.Runners.apply_state(runner, %{
+          "enforce_signatures" => true,
+          "max_attestation_age_seconds" => 3600
+        })
+
+      %{account: account, runner: runner}
+    end
+
+    defp signed_run(account, runner, issued_at) do
+      {:ok, run} =
+        Runs.create_run(
+          base_attrs(account.id, runner.id, %{attestation: %{"issued_at" => issued_at}})
+        )
+
+      run
+    end
+
+    test "a fresh signature passes", %{account: account, runner: runner} do
+      run = signed_run(account, runner, DateTime.to_iso8601(DateTime.utc_now()))
+      assert :ok = Runs.check_run_attestation_fresh(run.id)
+    end
+
+    test "a signature older than the window is refused as :attestation_stale", %{
+      account: account,
+      runner: runner
+    } do
+      stale = DateTime.utc_now() |> DateTime.add(-7200, :second) |> DateTime.to_iso8601()
+      run = signed_run(account, runner, stale)
+      assert {:error, :attestation_stale} = Runs.check_run_attestation_fresh(run.id)
+    end
+
+    test "an unsigned run passes — the gate only applies to signed dispatch", %{
+      account: account,
+      runner: runner
+    } do
+      {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
+      assert :ok = Runs.check_run_attestation_fresh(run.id)
+    end
+  end
 end

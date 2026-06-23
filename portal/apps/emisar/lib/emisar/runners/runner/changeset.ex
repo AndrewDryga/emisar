@@ -98,7 +98,15 @@ defmodule Emisar.Runners.Runner.Changeset do
     # `enforce_signatures` is runner-advertised too — a runner can only make
     # itself stricter, so it's trusted like `group` (the host is the anchor).
     runner
-    |> cast(attrs, [:hostname, :labels, :runner_version, :packs, :group, :enforce_signatures])
+    |> cast(attrs, [
+      :hostname,
+      :labels,
+      :runner_version,
+      :packs,
+      :group,
+      :enforce_signatures,
+      :max_attestation_age_seconds
+    ])
     |> validate_advertised_fields()
   end
 

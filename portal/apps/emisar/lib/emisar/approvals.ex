@@ -400,7 +400,8 @@ defmodule Emisar.Approvals do
            ),
          :ok <- Subject.ensure_in_account(subject, request.account_id),
          :ok <- check_self_approval(decision, request, subject),
-         :ok <- recheck_trust(decision, request) do
+         :ok <- recheck_trust(decision, request),
+         :ok <- check_attestation_fresh(decision, request) do
       by_user_id = Subject.actor_id(subject)
 
       grant_attrs = %{
@@ -481,6 +482,13 @@ defmodule Emisar.Approvals do
   # check — it cancels.
   defp recheck_trust(:approve, %Request{run_id: run_id}), do: Runs.recheck_run_pack_trust(run_id)
   defp recheck_trust(:deny, _request), do: :ok
+
+  # Fail-fast: refuse an approve when the parked signed dispatch would already
+  # be stale at the enforcing runner (the runner remains authoritative).
+  defp check_attestation_fresh(:approve, %Request{run_id: run_id}),
+    do: Runs.check_run_attestation_fresh(run_id)
+
+  defp check_attestation_fresh(:deny, _request), do: :ok
 
   # Insert this decider's vote; a second vote by the same operator hits the
   # (request_id, decider_id) unique index → :already_decided.
