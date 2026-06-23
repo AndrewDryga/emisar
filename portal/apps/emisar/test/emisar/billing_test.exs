@@ -271,6 +271,36 @@ defmodule Emisar.BillingTest do
       assert subscription.paddle_price_id == "pri_team_01"
     end
 
+    test "emits [:emisar, :billing, :webhook] tagged by outcome (applied, then duplicate)" do
+      account = account_fixture(%{paddle_customer_id: "ctm_tel_01"})
+
+      event =
+        subscription_created_event("evt_tel_1", account.paddle_customer_id, "pri_team_01")
+
+      handler = make_ref()
+      test_pid = self()
+
+      :telemetry.attach(
+        handler,
+        [:emisar, :billing, :webhook],
+        fn _event, measurements, metadata, _config ->
+          send(test_pid, {:billing_webhook, measurements, metadata})
+        end,
+        nil
+      )
+
+      on_exit(fn -> :telemetry.detach(handler) end)
+
+      assert :ok = Billing.record_and_apply_event("evt_tel_1", "subscription.created", event)
+      assert_receive {:billing_webhook, %{count: 1}, %{outcome: :applied}}
+
+      # Paddle re-delivers the same event id → deduped.
+      assert {:duplicate, _} =
+               Billing.record_and_apply_event("evt_tel_1", "subscription.created", event)
+
+      assert_receive {:billing_webhook, %{count: 1}, %{outcome: :duplicate}}
+    end
+
     test "falls back to the account's current plan when the price id is unknown" do
       account = account_fixture(%{plan: "enterprise", paddle_customer_id: "ctm_ent_01"})
 

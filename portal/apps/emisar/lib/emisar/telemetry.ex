@@ -27,4 +27,14 @@ defmodule Emisar.Telemetry do
       %{status: status}
     )
   end
+
+  @doc """
+  A Paddle webhook event finished processing. Emits `[:emisar, :billing,
+  :webhook]` tagged by `outcome` (`:applied | :duplicate | :failed`). NOT tagged
+  by the Paddle event_type — that's a vendor-controlled, unbounded label.
+  """
+  @spec billing_webhook(atom()) :: :ok
+  def billing_webhook(outcome) when is_atom(outcome) do
+    :telemetry.execute([:emisar, :billing, :webhook], %{count: 1}, %{outcome: outcome})
+  end
 end

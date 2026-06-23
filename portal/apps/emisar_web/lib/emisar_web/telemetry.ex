@@ -137,6 +137,10 @@ defmodule EmisarWeb.Telemetry do
         description: "Wall-clock duration of a finished run, by terminal status",
         reporter_options: [buckets: @latency_buckets]
       ),
+      counter("emisar.billing.webhook.count",
+        tags: [:outcome],
+        description: "Paddle webhook events processed, by outcome (applied / duplicate / failed)"
+      ),
 
       # VM Metrics — last_value, not distribution: these are gauges
       # sampled periodically, not per-event histograms. system_counts

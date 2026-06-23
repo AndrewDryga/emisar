@@ -306,9 +306,17 @@ defmodule Emisar.Billing do
     end)
     |> Repo.commit_multi()
     |> case do
-      {:ok, _changes} -> :ok
-      {:error, {:duplicate, _} = dup} -> dup
-      {:error, other} -> {:error, other}
+      {:ok, _changes} ->
+        Emisar.Telemetry.billing_webhook(:applied)
+        :ok
+
+      {:error, {:duplicate, _} = dup} ->
+        Emisar.Telemetry.billing_webhook(:duplicate)
+        dup
+
+      {:error, other} ->
+        Emisar.Telemetry.billing_webhook(:failed)
+        {:error, other}
     end
   end
 
