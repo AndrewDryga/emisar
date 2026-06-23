@@ -118,6 +118,38 @@
           </p>
         </div>
       </div>
+
+      <%!-- Not-ready-yet capture — nurture the buyer who's interested but won't
+           book today. No newsletter backend yet, so these are real follow
+           channels (the changelog RSS, GitHub) plus a notify-me mailto. --%>
+      <div class="mt-6 rounded-2xl border border-zinc-900 bg-zinc-950/40 p-8 text-center">
+        <h2 class="text-lg font-semibold text-zinc-100">Not ready to talk yet?</h2>
+        <p class="mt-2 text-sm leading-relaxed text-zinc-400">
+          Follow the build, and reach out when the timing's right.
+        </p>
+        <div class="mt-6 flex flex-wrap items-center justify-center gap-x-6 gap-y-3 text-sm">
+          <.link
+            navigate={~p"/changelog"}
+            class="inline-flex items-center gap-1.5 font-medium text-brand-400 hover:text-brand-300"
+          >
+            <.icon name="hero-rss" class="h-4 w-4" /> Follow the changelog
+          </.link>
+          <a
+            href="https://github.com/andrewdryga/emisar"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="inline-flex items-center gap-1.5 font-medium text-brand-400 hover:text-brand-300"
+          >
+            <.icon name="hero-star" class="h-4 w-4" /> Star on GitHub
+          </a>
+          <a
+            href="mailto:sales@emisar.dev?subject=Keep%20me%20posted%20on%20emisar"
+            class="inline-flex items-center gap-1.5 font-medium text-brand-400 hover:text-brand-300"
+          >
+            <.icon name="hero-bell" class="h-4 w-4" /> Get notified
+          </a>
+        </div>
+      </div>
     </div>
   </section>
 
