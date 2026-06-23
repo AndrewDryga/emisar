@@ -3349,7 +3349,9 @@ defmodule EmisarWeb.CoreComponents do
     """
   end
 
-  defp marketing_heading_scale(:display), do: "text-6xl tracking-[-0.035em] md:text-7xl"
+  defp marketing_heading_scale(:display),
+    do: "text-4xl tracking-[-0.035em] sm:text-6xl md:text-7xl"
+
   defp marketing_heading_scale(:hero), do: "text-4xl tracking-[-0.03em] md:text-5xl"
   # Big centered section header (CTA blocks, "How it works" section tops).
   defp marketing_heading_scale(:section), do: "text-4xl tracking-[-0.03em] sm:text-5xl"
