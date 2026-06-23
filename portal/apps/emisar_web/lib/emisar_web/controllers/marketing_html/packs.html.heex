@@ -92,7 +92,10 @@
         data-pack-section
         class="scroll-mt-6 pt-14 first:pt-12"
       >
-        <h2 class="flex items-baseline gap-3 text-xl font-semibold text-zinc-100">
+        <h2 class="flex items-center gap-3 text-xl font-semibold text-zinc-100">
+          <span class="flex h-8 w-8 flex-none items-center justify-center rounded-lg bg-brand-500/10 text-brand-400">
+            <.icon name={category_icon(slug)} class="h-4 w-4" />
+          </span>
           {label}
           <span data-pack-count={length(packs)} class="text-sm font-normal text-zinc-500">
             {length(packs)}

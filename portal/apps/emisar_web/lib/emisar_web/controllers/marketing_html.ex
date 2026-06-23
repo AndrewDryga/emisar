@@ -15,6 +15,20 @@ defmodule EmisarWeb.MarketingHTML do
   def action_icon("script"), do: "hero-code-bracket"
   def action_icon(_), do: "hero-cube"
 
+  # Heroicon per pack-registry category (slug from PacksRegistry.@pack_categories).
+  # The icon varies for scannability; the accent stays brand — one accent, by design.
+  def category_icon("databases"), do: "hero-circle-stack"
+  def category_icon("containers"), do: "hero-cube"
+  def category_icon("observability"), do: "hero-chart-bar"
+  def category_icon("web"), do: "hero-globe-alt"
+  def category_icon("cloud"), do: "hero-cloud"
+  def category_icon("networking"), do: "hero-signal"
+  def category_icon("storage"), do: "hero-server-stack"
+  def category_icon("linux"), do: "hero-command-line"
+  def category_icon("runtimes"), do: "hero-code-bracket"
+  def category_icon("security"), do: "hero-lock-closed"
+  def category_icon(_), do: "hero-cube-transparent"
+
   # The home page "watch emisar work" terminal. One incident — a CSI driver
   # reformats a live LUN and wipes 33h of metrics — told as an ordered
   # transcript across two tabs: the host (nomad-hvn03: real shell + Go-runner
