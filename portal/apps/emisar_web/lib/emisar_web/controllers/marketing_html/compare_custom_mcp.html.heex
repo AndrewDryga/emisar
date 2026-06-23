@@ -80,9 +80,13 @@
         </div>
       </div>
       <p class="mt-3 text-sm leading-relaxed text-zinc-500 text-pretty">
-        Both run the same query. The left took an afternoon — the other 80%
-        (validation, redaction, approval, audit, reconnect) is what emisar ships
-        once, for every host, pack, and client you add.
+        Both run the same query — but the left drops an unvalidated
+        <code class="text-zinc-300">$&#123;pid&#125;</code>
+        straight into a SQL string, one slip from injection; the right declares
+        <code class="text-zinc-300">pid</code>
+        an integer the runner re-validates before <code class="text-zinc-300">psql</code>
+        ever sees it. That gap, plus the other 80% — redaction, approval, audit, reconnect — is
+        what emisar ships once, for every host, pack, and client you add.
       </p>
 
       <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">
@@ -195,9 +199,12 @@
           }>we wrote that comparison too</.link>.
         </li>
         <li>
-          <strong class="text-zinc-200">It's another bill, and we're pre-GA.</strong>
-          Team is $20 per runner per month, and you're trusting a young product with part of your
-          ops path. We try to earn it with the on-host guarantees above.
+          <strong class="text-zinc-200">
+            It's another bill, and another vendor in your path.
+          </strong>
+          Team is $20 per runner per month, and you're putting a young product on part of your ops
+          path. We try to earn it with the on-host guarantees above — and the runner stays useful
+          even if our cloud is unreachable.
         </li>
       </ul>
 

@@ -94,7 +94,7 @@ defmodule EmisarWeb.MarketingController do
     {"Can I self-host the control plane?",
      "The current product uses the hosted emisar control plane. The repository includes deployable control-plane code for evaluation, but supported self-hosted and air-gapped deployments are not generally available today. Contact us if that boundary is a requirement."},
     {"What about secrets?",
-     "The runner runs a redaction pipeline on every stdout/stderr stream before forwarding. Patterns are declared per-action; sane defaults catch AWS keys, JWTs, and bearer tokens. The cloud never sees raw secrets."}
+     "The runner runs a redaction pipeline on every stdout/stderr stream before forwarding. Patterns are declared per-action; sane defaults catch AWS keys, JWTs, and bearer tokens. The cloud receives only the redacted output stream — never the raw bytes."}
   ]
 
   # The home page has bespoke JSON-LD; keep it as its own def. Every
@@ -148,6 +148,8 @@ defmodule EmisarWeb.MarketingController do
         "Connect any MCP client to a finite action catalog, enforced on-host with pack trust, policy gates, human approvals, a searchable audit trail, and a hash-chained runner journal.",
       canonical_url: @base <> "/",
       faqs: @home_faqs,
+      pack_count: EmisarWeb.PacksRegistry.pack_count(),
+      action_count: delimit_int(EmisarWeb.PacksRegistry.action_count()),
       json_ld: org_ld
     )
   end
@@ -168,7 +170,7 @@ defmodule EmisarWeb.MarketingController do
     {"Does it need SSH or an inbound port?",
      "No. You install a lightweight runner that dials OUT to the control plane over a websocket — no inbound ports, no bastion, and no SSH key to hand an AI. The runner executes only the declared actions and streams redacted output back."},
     {"What about my secrets?",
-     "The runner redacts every stdout and stderr stream on the host before it is forwarded — 20+ built-in patterns (AWS keys, JWTs, bearer tokens) plus your own per-action rules. The control plane never sees raw secrets."},
+     "The runner redacts every stdout and stderr stream on the host before it is forwarded — 20+ built-in patterns (AWS keys, JWTs, bearer tokens) plus your own per-action rules. The control plane receives only the redacted output stream — never the raw bytes."},
     {"Do I have to approve every action?",
      "No — you decide per action. Reads run automatically; you reserve approvals for the risky, mutating ones. Policy sets allow / require-approval / deny by risk tier, with per-action overrides, and the destructive verbs are deny-by-default."}
   ]
@@ -216,6 +218,8 @@ defmodule EmisarWeb.MarketingController do
         "Install a runner, connect your LLM over MCP, and your AI can read logs, query metrics, and investigate incidents across your fleet — every action policy-gated, approved by a human when risky, and fully audited. No SSH, no standing access.",
       canonical_url: @base <> "/ai",
       faqs: @ai_faqs,
+      pack_count: EmisarWeb.PacksRegistry.pack_count(),
+      action_count: delimit_int(EmisarWeb.PacksRegistry.action_count()),
       json_ld: ai_ld
     )
   end
@@ -226,13 +230,15 @@ defmodule EmisarWeb.MarketingController do
     {"What counts as a \"runner\"?",
      "One installation of the emisar binary on one host — VM, container, or bare metal. Run as many runners as your plan allows. Human users are unlimited on Team and Enterprise."},
     {"Do you store the output of my commands?",
-     "We store metadata (who, when, which action, exit code) and a configurable slice of stdout/stderr for the audit log. Secrets are redacted on the runner before anything is forwarded — 20+ built-in patterns plus your own per-action rules — so the control plane never sees raw secrets."},
+     "We store metadata (who, when, which action, exit code) and a configurable slice of stdout/stderr for the audit log. Output is redacted on the runner before anything is forwarded — 20+ built-in patterns plus your own per-action rules — so the control plane stores only the redacted stream, never the raw bytes."},
     {"How does billing work?",
      "Paid plans are billed per runner through Paddle, our Merchant of Record. You get monthly invoices, and Paddle handles sales tax and VAT. We never see or store full card numbers."},
     {"Can I self-host?",
      "The current product uses the hosted emisar control plane. The source-available repository includes deployable control-plane code for evaluation, but supported self-hosted and air-gapped deployments are not generally available today. Tell us if that boundary is a requirement."},
     {"Can I cancel any time?",
      "Yes. Cancel from billing settings and you drop back to Free at the end of the current billing period. Your audit data is retained per the Free retention window."},
+    {"Do you support SSO and SCIM?",
+     "Yes, on the Enterprise plan: OIDC single sign-on with Google Workspace, Okta, or Keycloak (or any compliant provider), plus SCIM 2.0 directory sync. Offboard someone in your IdP and emisar ends their sessions and revokes their keys automatically — no manual cleanup."},
     {"Do you offer startup discounts?",
      "Yes. Email sales@emisar.dev with your YC or pre-seed letter and we'll take it from there."}
   ]
@@ -285,12 +291,58 @@ defmodule EmisarWeb.MarketingController do
 
   def pricing(conn, _params) do
     render(conn, :pricing,
-      page_title: "Pricing",
+      page_title: "Pricing — per runner, not per seat",
       meta_description:
         "Per runner, not per seat. Free covers 3 runners and 1 user; Team is $20 per runner per month with unlimited users and 90-day audit retention; Enterprise is custom.",
       canonical_url: @base <> "/pricing",
       faqs: @pricing_faqs,
       json_ld: @pricing_ld
+    )
+  end
+
+  # The /use-cases index — a hub linking the real-incident case studies, which
+  # were previously reachable only from the home page and footer. Its own
+  # bespoke JSON-LD (BreadcrumbList + ItemList) so the case studies list in
+  # search results.
+  def use_cases(conn, _params) do
+    cases = [
+      {"The 33-hour wipe: a CSI driver reformatted a live LUN",
+       @base <> "/use-cases/csi-data-loss"},
+      {"The migration that died holding a lock", @base <> "/use-cases/postgres-ops"},
+      {"The major compaction that ate the read path", @base <> "/use-cases/cassandra-ops"}
+    ]
+
+    json_ld =
+      Jason.encode!(
+        %{
+          "@context" => "https://schema.org",
+          "@graph" => [
+            %{
+              "@type" => "BreadcrumbList",
+              "itemListElement" =>
+                breadcrumb_items([{"Home", @base <> "/"}, {"Use cases", @base <> "/use-cases"}])
+            },
+            %{
+              "@type" => "ItemList",
+              "name" => "emisar use cases",
+              "itemListElement" =>
+                cases
+                |> Enum.with_index(1)
+                |> Enum.map(fn {{name, url}, position} ->
+                  %{"@type" => "ListItem", "position" => position, "url" => url, "name" => name}
+                end)
+            }
+          ]
+        },
+        escape: :html_safe
+      )
+
+    render(conn, :use_cases,
+      page_title: "Use cases — real incidents emisar contained",
+      meta_description:
+        "Real-shape production incidents worked end to end through emisar: a CSI driver's 33-hour data wipe, a wedged Postgres lock chain, a runaway Cassandra compaction — each investigated through declared actions, stopped behind one approval, every step audited.",
+      canonical_url: @base <> "/use-cases",
+      json_ld: json_ld
     )
   end
 
@@ -351,12 +403,47 @@ defmodule EmisarWeb.MarketingController do
   # themselves without a code change.
 
   def packs(conn, _params) do
+    packs = EmisarWeb.PacksRegistry.list()
+
+    json_ld =
+      Jason.encode!(
+        %{
+          "@context" => "https://schema.org",
+          "@graph" => [
+            %{
+              "@type" => "BreadcrumbList",
+              "itemListElement" =>
+                breadcrumb_items([{"Home", @base <> "/"}, {"Action packs", @base <> "/packs"}])
+            },
+            %{
+              "@type" => "ItemList",
+              "name" => "emisar action packs",
+              "itemListElement" =>
+                packs
+                |> Enum.with_index(1)
+                |> Enum.map(fn {pack, position} ->
+                  %{
+                    "@type" => "ListItem",
+                    "position" => position,
+                    "url" => @base <> "/packs/" <> pack.id,
+                    "name" => pack.name
+                  }
+                end)
+            }
+          ]
+        },
+        escape: :html_safe
+      )
+
     render(conn, :packs,
-      packs: EmisarWeb.PacksRegistry.list(),
+      grouped: EmisarWeb.PacksRegistry.grouped(),
+      pack_count: EmisarWeb.PacksRegistry.pack_count(),
+      action_count: delimit_int(EmisarWeb.PacksRegistry.action_count()),
       page_title: "Action packs registry",
       meta_description:
         "Browse the registry of action packs you can install on your emisar runner — Postgres, Cassandra, Linux core, Docker, AWS, and more. Each pack ships a typed catalog of actions an LLM can call.",
-      canonical_url: @base <> "/packs"
+      canonical_url: @base <> "/packs",
+      json_ld: json_ld
     )
   end
 
@@ -369,12 +456,65 @@ defmodule EmisarWeb.MarketingController do
         |> render(:"404")
 
       pack ->
+        url = @base <> "/packs/" <> pack.id
+
+        json_ld =
+          Jason.encode!(
+            %{
+              "@context" => "https://schema.org",
+              "@graph" => [
+                %{
+                  "@type" => "BreadcrumbList",
+                  "itemListElement" =>
+                    breadcrumb_items([
+                      {"Home", @base <> "/"},
+                      {"Action packs", @base <> "/packs"},
+                      {pack.name, url}
+                    ])
+                },
+                %{
+                  "@type" => "SoftwareApplication",
+                  "name" => "#{pack.name} action pack",
+                  "description" => pack.description,
+                  "url" => url,
+                  "applicationCategory" => "DeveloperApplication",
+                  "operatingSystem" => pack_operating_system(pack),
+                  "softwareVersion" => pack.version,
+                  "offers" => %{"@type" => "Offer", "price" => "0", "priceCurrency" => "USD"}
+                }
+              ]
+            },
+            escape: :html_safe
+          )
+
         render(conn, :pack_detail,
           pack: pack,
           page_title: "#{pack.name} pack",
           meta_description: pack.description,
-          canonical_url: @base <> "/packs/" <> pack.id
+          canonical_url: url,
+          json_ld: json_ld
         )
     end
+  end
+
+  # Shared BreadcrumbList itemListElement builder — ordered {name, url}
+  # crumbs. The compile-time @pages defs build their own inline (they run
+  # before this is compiled); the runtime pack pages reuse this.
+  defp breadcrumb_items(crumbs) do
+    crumbs
+    |> Enum.with_index(1)
+    |> Enum.map(fn {{name, item}, position} ->
+      %{"@type" => "ListItem", "position" => position, "name" => name, "item" => item}
+    end)
+  end
+
+  defp pack_operating_system(%{requires_os: [_ | _] = os}), do: Enum.join(os, ", ")
+  defp pack_operating_system(_), do: "Linux, macOS"
+
+  # Thousands separator for display counts ("1187" → "1,187").
+  defp delimit_int(n) do
+    n
+    |> Integer.to_string()
+    |> String.replace(~r/(\d)(?=(\d{3})+$)/, "\\1,")
   end
 end

@@ -13,88 +13,172 @@
         Action packs
       </.marketing_heading>
       <p class="mt-6 text-lg leading-8 text-zinc-400 text-pretty">
-        Packs are versioned bundles of YAML-declared actions a runner advertises to the
-        cloud. Drop one into <code class="rounded bg-zinc-900 px-1 py-0.5 text-sm">/etc/emisar/packs</code>,
-        reload, and the LLM can call exactly those actions — nothing more.
+        Packs are the catalog emisar runs from — versioned, content-hashed bundles of declared
+        actions for the software you already run. Install the ones for your stack in one command;
+        your agent can then call exactly those actions, and nothing else.
       </p>
-      <p class="mt-4 text-sm text-zinc-500">
-        {length(@packs)} reference packs ship today — from Linux core and Postgres to Kubernetes,
-        Docker, Redis, Vault, and the AWS suite. Want one of your own?
-        <.link href={~p"/docs/publishing-packs"} class="text-brand-300 hover:text-brand-200">
-          Author your own pack →
-        </.link>
+
+      <%!-- The whole integration story: one command per pack. --%>
+      <div class="mt-6 max-w-xl overflow-hidden rounded-xl border border-zinc-800 bg-black/40 font-mono text-[12.5px] leading-relaxed">
+        <div class="flex items-center gap-2 border-b border-zinc-800 bg-zinc-950 px-4 py-2 text-[11px] text-zinc-500">
+          <.icon name="hero-command-line" class="h-3.5 w-3.5" /> install any pack in one command
+        </div>
+        <div class="space-y-1 px-4 py-4">
+          <p class="text-zinc-300">
+            <span class="select-none text-zinc-600">$ </span>sudo emisar pack install postgres
+          </p>
+          <p class="text-zinc-300">
+            <span class="select-none text-zinc-600">$ </span>sudo systemctl reload emisar
+          </p>
+          <p class="text-zinc-500">
+            # the postgres actions are live — your agent can call them now
+          </p>
+        </div>
+      </div>
+
+      <p class="mt-5 text-sm text-zinc-500">
+        <span class="font-semibold text-zinc-300">
+          {@pack_count} packs &middot; {@action_count} declared actions
+        </span>
+        ship today, across databases, containers, observability, cloud, networking, and more —
+        install what you run, or <.link
+          href={~p"/docs/publishing-packs"}
+          class="text-brand-300 hover:text-brand-200"
+        >
+          author your own →
+        </.link>.
       </p>
     </div>
   </section>
 
-  <%!-- Pack cards --%>
+  <%!-- Search + category jump-nav. Search filters cards client-side (a no-op
+       without JS — the full list stays server-rendered for crawlers); the
+       pills are crawlable anchors into each category section. --%>
+  <section class="border-y border-zinc-900 bg-zinc-950/40">
+    <div class="mx-auto max-w-5xl space-y-4 px-6 py-5 lg:px-8">
+      <div class="relative max-w-md">
+        <.icon
+          name="hero-magnifying-glass"
+          class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500"
+        />
+        <input
+          id="pack-search"
+          type="search"
+          autocomplete="off"
+          placeholder={"Search #{@pack_count} packs — postgres, kubernetes, nginx…"}
+          class="w-full rounded-lg border-0 bg-zinc-900/80 py-2 pl-9 pr-3 text-sm text-zinc-100 ring-1 ring-zinc-800 placeholder:text-zinc-500 focus:ring-2 focus:ring-brand-500"
+        />
+      </div>
+      <nav class="flex flex-wrap gap-2" aria-label="Pack categories">
+        <a
+          :for={{label, slug, packs} <- @grouped}
+          href={"##{slug}"}
+          data-pack-nav={slug}
+          class="inline-flex items-center gap-1.5 rounded-full border border-zinc-800 bg-zinc-950/60 px-3 py-1 text-xs font-medium text-zinc-400 transition hover:border-brand-500/40 hover:text-brand-200"
+        >
+          {label}
+          <span class="text-zinc-600">{length(packs)}</span>
+        </a>
+      </nav>
+    </div>
+  </section>
+
+  <%!-- Packs by category --%>
   <section class="pb-24 sm:pb-32">
     <div class="mx-auto max-w-5xl px-6 lg:px-8">
-      <div class="grid grid-cols-1 gap-5 md:grid-cols-2">
-        <article
-          :for={pack <- @packs}
-          class="group relative flex flex-col rounded-2xl border border-zinc-900 bg-zinc-950/60 p-6 transition hover:border-brand-500/40"
-        >
-          <header class="flex items-start justify-between gap-3">
-            <div class="min-w-0">
-              <h2 class="text-lg font-semibold text-zinc-50">
-                <.link
-                  navigate={~p"/packs/#{pack.id}"}
-                  class="hover:text-brand-300"
-                >
-                  {pack.name}
-                </.link>
-              </h2>
-              <p class="mt-1 truncate font-mono text-xs text-zinc-500">
-                {pack.id} · v{pack.version} · {pack.vendor}
-              </p>
+      <div
+        :for={{label, slug, packs} <- @grouped}
+        id={slug}
+        data-pack-section
+        class="scroll-mt-6 pt-14 first:pt-12"
+      >
+        <h2 class="flex items-baseline gap-3 text-xl font-semibold text-zinc-100">
+          {label}
+          <span data-pack-count={length(packs)} class="text-sm font-normal text-zinc-500">
+            {length(packs)}
+          </span>
+        </h2>
+        <div class="mt-6 grid grid-cols-1 gap-5 md:grid-cols-2">
+          <article
+            :for={pack <- packs}
+            data-pack-name={String.downcase(pack.name <> " " <> pack.id)}
+            class="group relative flex flex-col rounded-2xl border border-zinc-900 bg-zinc-950/60 p-6 transition hover:border-brand-500/40"
+          >
+            <header class="flex items-start justify-between gap-3">
+              <div class="min-w-0">
+                <h3 class="text-lg font-semibold text-zinc-50">
+                  <.link
+                    navigate={~p"/packs/#{pack.id}"}
+                    class="hover:text-brand-300"
+                  >
+                    {pack.name}
+                  </.link>
+                </h3>
+                <p class="mt-1 truncate font-mono text-xs text-zinc-500">
+                  {pack.id} · v{pack.version} · {pack.vendor}
+                </p>
+              </div>
+              <span class="shrink-0 rounded-full bg-brand-500/10 px-2 py-1 text-[10px] font-medium text-brand-300 ring-1 ring-brand-500/30">
+                {length(pack.actions)} {if length(pack.actions) == 1,
+                  do: "action",
+                  else: "actions"}
+              </span>
+            </header>
+
+            <p class="mt-3 flex-1 text-sm leading-relaxed text-zinc-400">
+              {pack.description}
+            </p>
+
+            <%!-- Requirements row — chips for OS / required binaries. --%>
+            <div class="mt-4 flex flex-wrap gap-1.5">
+              <span
+                :for={os <- pack.requires_os}
+                class="rounded bg-zinc-800/80 px-1.5 py-0.5 text-[10px] font-medium text-zinc-300"
+              >
+                os: {os}
+              </span>
+              <span
+                :for={bin <- pack.requires_binaries}
+                class="rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium text-amber-200 ring-1 ring-amber-500/30"
+              >
+                needs: {bin}
+              </span>
             </div>
-            <span class="shrink-0 rounded-full bg-brand-500/10 px-2 py-1 text-[10px] font-medium text-brand-300 ring-1 ring-brand-500/30">
-              {length(pack.actions)} {if length(pack.actions) == 1, do: "action", else: "actions"}
-            </span>
-          </header>
 
-          <p class="mt-3 flex-1 text-sm leading-relaxed text-zinc-400">
-            {pack.description}
-          </p>
-
-          <%!-- Requirements row — chips for OS / required binaries. --%>
-          <div class="mt-4 flex flex-wrap gap-1.5">
-            <span
-              :for={os <- pack.requires_os}
-              class="rounded bg-zinc-800/80 px-1.5 py-0.5 text-[10px] font-medium text-zinc-300"
-            >
-              os: {os}
-            </span>
-            <span
-              :for={bin <- pack.requires_binaries}
-              class="rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium text-amber-200 ring-1 ring-amber-500/30"
-            >
-              needs: {bin}
-            </span>
-          </div>
-
-          <div class="mt-5 flex items-center justify-between gap-3 border-t border-zinc-900 pt-4 text-sm">
-            <.link
-              navigate={~p"/packs/#{pack.id}"}
-              class="font-semibold text-brand-300 hover:text-brand-200"
-            >
-              Browse pack
-              <span class="inline-block transition-transform group-hover:translate-x-0.5">→</span>
-            </.link>
-            <.external_link
-              href={EmisarWeb.PacksRegistry.source_url(pack)}
-              class="text-xs text-zinc-500 hover:text-zinc-300"
-            >
-              Source
-            </.external_link>
-          </div>
-        </article>
+            <div class="mt-5 flex items-center justify-between gap-3 border-t border-zinc-900 pt-4 text-sm">
+              <.link
+                navigate={~p"/packs/#{pack.id}"}
+                class="font-semibold text-brand-300 hover:text-brand-200"
+              >
+                Browse pack
+                <span class="inline-block transition-transform group-hover:translate-x-0.5">
+                  →
+                </span>
+              </.link>
+              <.external_link
+                href={EmisarWeb.PacksRegistry.source_url(pack)}
+                class="text-xs text-zinc-500 hover:text-zinc-300"
+              >
+                Source
+              </.external_link>
+            </div>
+          </article>
+        </div>
       </div>
+
+      <p id="pack-search-empty" hidden class="mt-12 text-center text-sm text-zinc-500">
+        No packs match that search yet —
+        <.link href={~p"/docs/publishing-packs"} class="text-brand-300 hover:text-brand-200">
+          author your own
+        </.link>
+        or <.link href="mailto:sales@emisar.dev" class="text-brand-300 hover:text-brand-200">
+          ask us to add it
+        </.link>.
+      </p>
 
       <%!-- "Publish your own" CTA card — distinct visual treatment so
            it doesn't get mistaken for another pack. --%>
-      <div class="mt-10 rounded-2xl border border-dashed border-zinc-800 bg-zinc-950/40 p-8 text-center">
+      <div class="mt-16 rounded-2xl border border-dashed border-zinc-800 bg-zinc-950/40 p-8 text-center">
         <h2 class="text-lg font-semibold text-zinc-100">Author your own pack</h2>
         <p class="mx-auto mt-2 max-w-xl text-sm text-zinc-400">
           Packs are YAML — no SDK, no compiler. Write, install, and trust a pack you maintain

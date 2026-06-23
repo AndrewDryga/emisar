@@ -30,6 +30,7 @@ defmodule EmisarWeb.SitemapController do
     "/docs/security-model",
     "/docs/connect-an-llm",
     "/packs",
+    "/use-cases",
     "/use-cases/cassandra-ops",
     "/use-cases/postgres-ops",
     "/use-cases/csi-data-loss",

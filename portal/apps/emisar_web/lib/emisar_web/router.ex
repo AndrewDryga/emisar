@@ -80,6 +80,7 @@ defmodule EmisarWeb.Router do
     get "/docs/quickstart", MarketingController, :docs_quickstart
     get "/docs/action-packs", MarketingController, :docs_action_packs
     get "/docs/security-model", MarketingController, :docs_security_model
+    get "/use-cases", MarketingController, :use_cases
     get "/use-cases/cassandra-ops", MarketingController, :usecase_cassandra
     get "/use-cases/postgres-ops", MarketingController, :usecase_postgres
     get "/use-cases/csi-data-loss", MarketingController, :usecase_csi_data_loss

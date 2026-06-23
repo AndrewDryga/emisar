@@ -1,0 +1,161 @@
+<%!-- ============================================================
+  Use cases — the everyday wins, then the war stories
+============================================================ --%>
+
+<div class="bg-zinc-950 text-zinc-100">
+  <.marketing_nav current_user={@current_user} current={:use_cases} />
+
+  <%!-- Hero --%>
+  <section class="py-16 sm:py-24">
+    <div class="mx-auto max-w-4xl px-6 lg:px-8">
+      <p class="text-sm font-semibold text-brand-400">Use cases</p>
+      <.marketing_heading tag="h1" scale={:hero} class="mt-2">
+        Most days it saves an hour. Some days it saves the night.
+      </.marketing_heading>
+      <p class="mt-6 text-lg leading-8 text-zinc-400 text-pretty">
+        Give an agent eyes on production — logs, metrics, health, and config across the whole
+        fleet — and it earns its keep every day: a pre-flight check before a migration, "why is
+        checkout slow," a cert sweep before the pager finds out. And when something does break, the
+        same loop holds — investigate through declared actions, stop the bleed behind one approval,
+        land the durable fix. Every step on the record.
+      </p>
+    </div>
+  </section>
+
+  <%!-- Everyday — the daily-driver wins. The proactive, investigative, and
+       self-debug work that quietly prevents the incidents below. --%>
+  <section class="border-t border-zinc-900 py-20 sm:py-28">
+    <div class="mx-auto max-w-7xl px-6 lg:px-8">
+      <div class="mx-auto max-w-2xl text-center">
+        <h2 class="text-base font-semibold text-brand-400">Every day</h2>
+        <p class="mt-2 text-3xl font-bold tracking-tight text-white sm:text-4xl text-balance">
+          The work that never makes a post-mortem.
+        </p>
+        <p class="mt-4 text-base leading-relaxed text-zinc-400 text-pretty">
+          The boring wins compound: questions answered in a minute, drift caught before it bites,
+          a migration that doesn't roll back at 2 a.m. This is what the same gated catalog does on
+          an ordinary Tuesday.
+        </p>
+      </div>
+
+      <div class="mx-auto mt-14 grid max-w-6xl grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+        <%= for {icon, tag, title, story} <- [
+          {"hero-paper-airplane", "Pre-flight", "Pre-migration go / no-go",
+           "Before you cut prod to the new cluster, you ask: is the target ready? The agent checks disk and memory headroom, confirms the replicas are caught up, validates every TLS cert, and diffs the configs against prod — across every node — and hands back a go/no-go in a minute. The migration that doesn't roll back at 2 a.m. is the one nobody remembers."},
+          {"hero-magnifying-glass", "Investigate", "\"Why is checkout slow?\"",
+           "You ask in plain English. The agent correlates nginx access logs, Prometheus p99, the database's lock and slow-query state, and the upstream's health — across services — and narrows it to a wedged connection pool. Minutes, not an hour of greps and tails across six SSH sessions."},
+          {"hero-bug-ant", "Self-debug", "It debugs what it shipped",
+           "Your coding agent deploys and error rates tick up. Instead of waiting for a human to gather context, it reads its own deploy's logs and metrics, spots the env var it got wrong, and opens the fix as a reviewed PR — no round-trip just to find out what happened."},
+          {"hero-shield-check", "Sweep", "Cert expiry, before the pager",
+           "\"Which certs expire in the next 30 days?\" The agent walks every host and ingress, checks expiry, and hands you the three about to lapse — with days remaining — before an outage finds them for you."},
+          {"hero-bell-alert", "Triage", "First response at 3 a.m.",
+           "The page fires. The agent triages first — the failing service's logs, the last three deploys, the resource pressure, the dependency that's actually down — so you wake to a diagnosis and a remediation waiting on your approval, not a blank alert and a cold terminal."},
+          {"hero-arrow-trending-up", "Capacity", "Ready for the launch?",
+           "Before the campaign goes live, you ask whether the fleet can take it. The agent reports current headroom, connection-pool limits, and the slowest dependency across every service — so you scale the one thing that matters instead of over-provisioning everything."}
+        ] do %>
+          <div class="flex flex-col rounded-2xl border border-zinc-900 bg-zinc-950/60 p-6 transition hover:border-brand-500/40">
+            <div class="flex items-center gap-2">
+              <.icon name={icon} class="h-5 w-5 flex-none text-brand-400" />
+              <span class="font-mono text-[10px] uppercase tracking-widest text-zinc-500">
+                {tag}
+              </span>
+            </div>
+            <h3 class="mt-4 text-base font-semibold text-white text-balance">{title}</h3>
+            <p class="mt-2 text-sm leading-relaxed text-zinc-400 text-pretty">{story}</p>
+          </div>
+        <% end %>
+      </div>
+    </div>
+  </section>
+
+  <%!-- War stories — the deep incident post-mortems, the proof the loop holds
+       when it really matters. Flagship first. --%>
+  <section class="border-t border-zinc-900 bg-zinc-950/40 py-20 sm:py-28">
+    <div class="mx-auto max-w-7xl px-6 lg:px-8">
+      <div class="mx-auto max-w-2xl text-center">
+        <h2 class="text-base font-semibold text-brand-400">When it counts</h2>
+        <p class="mt-2 text-3xl font-bold tracking-tight text-white sm:text-4xl text-balance">
+          And the nights it earns its keep.
+        </p>
+        <p class="mt-4 text-base leading-relaxed text-zinc-400 text-pretty">
+          Real-shape incidents, worked end to end. Each one is the same loop under pressure —
+          investigate through declared actions, stop the bleed behind one approval, land the
+          durable fix. Read them in full, command output and all.
+        </p>
+      </div>
+
+      <div class="mx-auto mt-12 max-w-4xl space-y-6">
+        <%= for {tag, title, summary, metrics, href, featured} <- [
+          {"Incident response", "The 33-hour wipe: a CSI driver reformatted a live LUN",
+           "A democratic-csi driver ran mkfs over a live Pure LUN on a dm-multipath path-group race — 33 hours of VictoriaMetrics data gone. The agent investigated through declared actions, stopped the writes behind one approval, then landed the durable fix as reviewable infra: a guard that refuses to trust the driver. The honest part is that the obvious one-line setting was a no-op.",
+           ["33h metrics lost", "6-second zero-path window", "mkfs.guard fix"],
+           "/use-cases/csi-data-loss", true},
+          {"Database ops", "The migration that died holding a lock",
+           "A crashed deploy left an idle-in-transaction backend holding a lock, and every write queued behind it. The agent traced the lock chain through read-only psql actions and severed the backend behind one approval — no psql -c shell anywhere in reach, scoped to pg_monitor + pg_signal_backend.",
+           ["02:14 page", "30 backends blocked on one pid", "no DDL, no raw SQL"],
+           "/use-cases/postgres-ops", false},
+          {"Database ops", "The major compaction that ate the read path",
+           "A hand-run nodetool compact on a 1.8 TB table saturated disk I/O and melted coordinator reads. The agent investigated through declared nodetool actions — no JMX shell, no SSH — and aborted the runaway compaction behind one approval. Node-lifecycle commands stayed denied by default.",
+           ["p99 8 ms → ~1 s", "1.8 TB table", "one approval to abort"],
+           "/use-cases/cassandra-ops", false}
+        ] do %>
+          <article class={[
+            "group rounded-2xl border p-8 transition sm:p-10",
+            featured && "border-brand-500/30 bg-zinc-950/60 ring-1 ring-brand-500/10",
+            !featured && "border-zinc-900 bg-zinc-950/60 hover:border-brand-500/40"
+          ]}>
+            <div class="flex items-center gap-2">
+              <span :if={featured} class="flex h-1.5 w-1.5 rounded-full bg-brand-400"></span>
+              <span class="font-mono text-[10px] uppercase tracking-widest text-zinc-500">
+                {tag}
+              </span>
+            </div>
+            <h3 class="mt-3 text-2xl font-semibold tracking-tight text-white text-balance">
+              <.link navigate={href} class="hover:text-brand-200">{title}</.link>
+            </h3>
+            <p class="mt-3 max-w-2xl text-sm leading-relaxed text-zinc-400 text-pretty">
+              {summary}
+            </p>
+            <div class="mt-5 flex flex-wrap gap-2">
+              <span
+                :for={metric <- metrics}
+                class="rounded bg-zinc-800/60 px-2 py-1 font-mono text-[11px] text-zinc-300"
+              >
+                {metric}
+              </span>
+            </div>
+            <.link
+              navigate={href}
+              class="mt-6 inline-flex items-center gap-1 text-sm font-medium text-brand-400 hover:text-brand-300"
+            >
+              Read the post-mortem <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
+            </.link>
+          </article>
+        <% end %>
+      </div>
+
+      <%!-- Honesty note --%>
+      <p class="mx-auto mt-12 max-w-3xl text-center text-sm leading-6 text-zinc-500">
+        emisar doesn't claim to prevent the failure — it changes everything a human or an agent
+        does <em class="text-zinc-400">around</em>
+        it: a finite catalog instead of a shell, one
+        approval instead of standing access, and a searchable record instead of a 3 a.m. guess.
+        See exactly how the boundary holds on the <.link
+          navigate={~p"/security"}
+          class="text-brand-300 hover:text-brand-200"
+        >
+          security page
+        </.link>.
+      </p>
+    </div>
+  </section>
+
+  <.marketing_cta
+    headline="Put a gated agent on your next migration — and your next incident."
+    subcopy="Install a runner, connect your LLM, and let it investigate behind policy — acting only when you approve. Free for three runners, no credit card."
+    secondary_label="Read the quickstart"
+    secondary_path={~p"/docs/quickstart"}
+  />
+
+  <.marketing_footer />
+</div>

@@ -274,7 +274,8 @@ defmodule EmisarWeb.MarketingHTML do
                   <li :for={{id, label} <- @toc}>
                     <a
                       href={"##{id}"}
-                      class="-ml-px block border-l border-transparent py-1 pl-4 text-sm text-zinc-400 transition hover:border-brand-400 hover:text-zinc-100"
+                      data-toc-link={id}
+                      class="-ml-px block border-l border-transparent py-1.5 pl-4 text-sm text-zinc-400 transition hover:border-brand-400 hover:text-zinc-100"
                     >
                       {label}
                     </a>
@@ -283,7 +284,11 @@ defmodule EmisarWeb.MarketingHTML do
               </nav>
             </aside>
 
-            <article class="prose prose-invert max-w-none prose-headings:scroll-mt-8 prose-headings:font-bold prose-headings:tracking-tight prose-headings:text-zinc-50 prose-h2:mb-4 prose-h2:mt-12 prose-h2:text-2xl prose-p:leading-8 prose-p:text-zinc-400 prose-a:font-medium prose-a:text-brand-300 prose-a:no-underline hover:prose-a:text-brand-200 prose-strong:text-zinc-200 prose-li:text-zinc-400 prose-li:marker:text-zinc-600">
+            <%!-- Legal body styling via element-targeted arbitrary variants
+                 (NOT @tailwindcss/typography — that plugin isn't installed, so
+                 every `prose-*` class was a silent no-op). Section dividers on
+                 each h2, airy paragraph spacing, brighter lead-in strongs. --%>
+            <article class="text-base text-zinc-400 [&_h2]:mb-5 [&_h2]:mt-14 [&_h2]:scroll-mt-24 [&_h2]:border-t [&_h2]:border-zinc-900 [&_h2]:pt-14 [&_h2]:text-2xl [&_h2]:font-bold [&_h2]:tracking-tight [&_h2]:text-balance [&_h2]:text-zinc-50 [&>h2:first-of-type]:mt-0 [&>h2:first-of-type]:border-t-0 [&>h2:first-of-type]:pt-0 [&_p]:my-7 [&_p]:leading-8 [&_p]:text-zinc-400 [&_strong]:font-semibold [&_strong]:text-zinc-100 [&_ul]:my-7 [&_ul]:list-disc [&_ul]:space-y-2 [&_ul]:pl-5 [&_li]:text-zinc-400 [&_li]:marker:text-zinc-600 [&_a]:font-medium [&_a]:text-brand-300 [&_a:hover]:text-brand-200 [&_code]:rounded [&_code]:bg-zinc-900 [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:text-[0.85em] [&_code]:text-zinc-300">
               {render_slot(@inner_block)}
             </article>
           </div>

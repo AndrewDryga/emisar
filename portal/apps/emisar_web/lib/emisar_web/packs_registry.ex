@@ -90,7 +90,7 @@ defmodule EmisarWeb.PacksRegistry do
            # action file listed in the manifest's `actions:` + every
            # referenced script, hash sort-by-relpath of
            # `relpath <0x00> bytes <0x00>`. Verified byte-for-byte
-           # against `emisar pack validate` for all 58 packs (see
+           # against `emisar pack validate` for every pack (see
            # packs_registry_test.exs).
            content_hash = fn pack_dir, manifest ->
              action_rels = Map.get(manifest, "actions", []) || []
@@ -218,6 +218,64 @@ defmodule EmisarWeb.PacksRegistry do
   @doc "All packs, ordered alphabetically by id."
   @spec list() :: [Pack.t()]
   def list, do: @packs
+
+  @doc "Total number of published packs."
+  @spec pack_count() :: non_neg_integer()
+  def pack_count, do: length(@packs)
+
+  @doc "Total declared actions across every published pack."
+  @spec action_count() :: non_neg_integer()
+  def action_count, do: @packs |> Enum.map(&length(&1.actions)) |> Enum.sum()
+
+  # Curated display grouping for the /packs registry — {label, anchor_slug,
+  # [pack ids]} in display order. Presentation metadata only; the catalog
+  # itself stays YAML-driven. A pack not listed here falls into a trailing
+  # "Other" group (see grouped/0), so a newly-dropped pack still appears —
+  # move it into a category when you add it.
+  @pack_categories [
+    {"Databases & datastores", "databases",
+     ~w(postgres mysql mongodb redis cassandra clickhouse cockroach elasticsearch memcached typesense kafka rabbitmq zookeeper)},
+    {"Containers & orchestration", "containers", ~w(docker podman kubernetes nomad rke2 consul)},
+    {"Observability", "observability",
+     ~w(prometheus grafana victoriametrics victorialogs vector)},
+    {"Web, proxies & ingress", "web", ~w(nginx apache-httpd caddy haproxy traefik envoy php-fpm)},
+    {"Cloud & IaC", "cloud",
+     ~w(aws-ec2 aws-s3 aws-rds aws-iam aws-cloudwatch aws-cost cloudflare terraform-readonly)},
+    {"Networking, DNS & VPN", "networking",
+     ~w(bind frr firewall pfsense wireguard tailscale snmp nic bonding network-tls ssl-local time-sync)},
+    {"Storage & filesystems", "storage",
+     ~w(zfs nfs iscsi multipath pure-flasharray minio zot fs-search)},
+    {"Linux & system", "linux",
+     ~w(linux-core systemd-deep debian dnf-rpm debugging process-forensics cloud-init postfix)},
+    {"Runtimes & dev tools", "runtimes",
+     ~w(java-jvm nodejs-pm2 python-app git-local github-cli showcase)},
+    {"Security & secrets", "security", ~w(vault fail2ban shell)}
+  ]
+
+  @doc """
+  Published packs grouped for the registry page — an ordered list of
+  `{category_label, anchor_slug, [Pack.t()]}`. Packs not in a curated
+  category fall into a trailing "Other" group so a newly-added pack still
+  lists.
+  """
+  @spec grouped() :: [{String.t(), String.t(), [Pack.t()]}]
+  def grouped do
+    by_id = Map.new(@packs, &{&1.id, &1})
+
+    categorized =
+      @pack_categories
+      |> Enum.map(fn {label, slug, ids} ->
+        {label, slug, Enum.flat_map(ids, &List.wrap(Map.get(by_id, &1)))}
+      end)
+      |> Enum.reject(fn {_label, _slug, packs} -> packs == [] end)
+
+    listed =
+      for {_label, _slug, packs} <- categorized, pack <- packs, into: MapSet.new(), do: pack.id
+
+    leftovers = Enum.reject(@packs, &MapSet.member?(listed, &1.id))
+
+    if leftovers == [], do: categorized, else: categorized ++ [{"Other", "other", leftovers}]
+  end
 
   @doc """
   Lean index for `emisar pack suggest` — per pack, only what host-matching

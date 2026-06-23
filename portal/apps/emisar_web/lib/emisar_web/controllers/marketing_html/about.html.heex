@@ -9,7 +9,11 @@
   <section class="py-24 sm:py-32">
     <div class="mx-auto max-w-4xl px-6 lg:px-8">
       <p class="text-base font-semibold text-brand-400">About</p>
-      <.marketing_heading tag="h1" scale={:display} class="mt-2">
+      <.marketing_heading
+        tag="h1"
+        scale={:display}
+        class="mt-2 !text-6xl/[1.1] md:!text-7xl/[1.1]"
+      >
         LLMs are useful.<br />Production isn't a playground.
       </.marketing_heading>
       <p class="mt-8 max-w-2xl text-lg leading-8 text-zinc-400">
@@ -28,22 +32,28 @@
       </p>
       <div class="mt-8 space-y-6 text-lg leading-8 text-zinc-400">
         <p>
-          The first wave of LLM-for-ops tools handed agents a terminal and hoped for the
-          best. That works on a personal laptop. It does not work on the cluster that
-          processes your customers' payments.
+          Give an LLM a terminal and it works beautifully — on a laptop. Point it at the cluster
+          that runs your customers' payments and you've handed root to a creative,
+          occasionally-wrong process, with no gate before the command and no record after. That
+          isn't a model problem. It's an access problem.
         </p>
         <p>
-          Every mature ops team eventually arrives at the same answer: a finite, versioned
-          catalog of operations. Runbooks. Playbooks. The well-trodden paths. Humans use
-          them. CI uses them. Our claim is simple — your LLMs should use them too, and
-          only those.
-        </p>
-        <p>
-          emisar is what we wished existed when our teams started letting AI agents touch
-          production. A versioned catalog. A policy engine. An audit trail your security
-          team accepts. Nothing more, nothing less.
+          Ops teams already solved the access problem for humans and CI — a finite, versioned
+          catalog of operations instead of a blank shell. emisar is that catalog for AI agents.
+          The model can only call the actions you declared; policy decides what runs; a human
+          approves the risky ones; and every call lands in an audit your security team will
+          actually accept.
         </p>
       </div>
+      <p class="mt-8 text-sm">
+        <.link
+          navigate={~p"/security"}
+          class="inline-flex items-center gap-1 font-medium text-brand-400 hover:text-brand-300"
+        >
+          See exactly how the trust boundary holds
+          <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
+        </.link>
+      </p>
     </div>
   </section>
 
@@ -116,7 +126,7 @@
             target="_blank"
             rel="noopener noreferrer"
             class="text-zinc-400 underline-offset-2 hover:text-zinc-200 hover:underline"
-          >Andrew</a>, founder
+          >Andrii Dryga</a>, founder
         </p>
       </div>
     </div>

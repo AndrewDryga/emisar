@@ -190,8 +190,8 @@
       </div>
 
       <p class="mx-auto mt-12 max-w-2xl text-center text-sm text-zinc-500">
-        Dozens of packs spanning Linux, databases, Kubernetes, and your cloud — install what you
-        run, or author your own.
+        {@pack_count} packs and {@action_count} declared actions spanning Linux, databases,
+        Kubernetes, and your cloud — install what you run, or author your own.
         <.link navigate={~p"/packs"} class="font-medium text-brand-300 hover:text-brand-200">
           Browse the catalog →
         </.link>
@@ -199,9 +199,11 @@
     </div>
   </section>
 
-  <%!-- Is it safe? — the persona's real worry, answered briefly. The full
-       security model + the live incident live on home and /security. --%>
-  <section class="border-y border-zinc-900 bg-zinc-950/40 py-24 sm:py-32">
+  <%!-- Is it safe, and does it scale? — the persona's two real worries,
+       answered briefly with links out. Merged into one lean section on purpose:
+       /ai is the capability-led page, so it must NOT re-walk the home/buyer
+       trust story — it points there instead. --%>
+  <section class="border-y border-zinc-900 bg-zinc-950/40 py-20 sm:py-28">
     <div class="mx-auto max-w-3xl px-6 text-center lg:px-8">
       <h2 class="text-base font-semibold text-brand-400">But is it safe?</h2>
       <p class="mt-2 text-4xl font-bold tracking-tight text-white sm:text-5xl text-balance">
@@ -213,46 +215,30 @@
         Secrets are redacted on the host, every call lands in a tamper-evident audit trail, and
         there's no SSH and no standing key for an AI — or an attacker — to leak.
       </p>
-      <div class="mt-8 flex flex-wrap items-center justify-center gap-x-6 gap-y-3">
+      <p class="mx-auto mt-4 max-w-2xl text-base leading-relaxed text-zinc-500 text-pretty">
+        And it scales past you: owner / admin / operator / viewer roles with per-member runner
+        scopes, account-wide MFA, scoped revocable keys per agent, and SIEM export on every plan —
+        plus SSO and SCIM directory sync on Enterprise.
+      </p>
+      <div class="mt-8 flex flex-wrap items-center justify-center gap-x-6 gap-y-3 text-sm font-medium">
         <.link
           navigate={~p"/security"}
-          class="inline-flex items-center gap-1.5 text-sm font-medium text-brand-400 hover:text-brand-300"
+          class="inline-flex items-center gap-1.5 text-brand-400 hover:text-brand-300"
         >
-          See the full security model <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
+          The full security model <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
         </.link>
         <.link
           navigate={~p"/use-cases/csi-data-loss"}
-          class="inline-flex items-center gap-1.5 text-sm font-medium text-brand-400 hover:text-brand-300"
+          class="inline-flex items-center gap-1.5 text-brand-400 hover:text-brand-300"
         >
           Watch it handle a real incident <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
         </.link>
-      </div>
-    </div>
-  </section>
-
-  <%!-- Built for teams — a compact signal; depth in docs --%>
-  <section class="py-24 sm:py-32">
-    <div class="mx-auto max-w-7xl px-6 lg:px-8">
-      <div class="mx-auto max-w-3xl text-center">
-        <h2 class="text-base font-semibold text-brand-400">For teams</h2>
-        <p class="mt-2 text-4xl font-bold tracking-tight text-white sm:text-5xl text-balance">
-          Built for teams, ready for enterprise.
-        </p>
-      </div>
-
-      <p class="mx-auto mt-6 max-w-2xl text-center text-lg leading-relaxed text-zinc-400">
-        SSO with Okta, Google Workspace, or Keycloak plus SCIM directory sync; owner / admin /
-        operator / viewer roles with per-member runner scopes; account-wide MFA; scoped, revocable
-        keys per agent; gated runbooks; and every event streamed to your SIEM.
-      </p>
-
-      <div class="mt-14 flex flex-wrap justify-center gap-4">
-        <.marketing_button variant={:secondary} navigate={~p"/docs/sso"} icon="hero-arrow-right">
-          SSO &amp; directory sync
-        </.marketing_button>
-        <.marketing_button variant={:secondary} navigate={~p"/docs/teams-and-access"}>
-          Teams &amp; access
-        </.marketing_button>
+        <.link
+          navigate={~p"/docs/sso"}
+          class="inline-flex items-center gap-1.5 text-brand-400 hover:text-brand-300"
+        >
+          SSO &amp; directory sync <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
+        </.link>
       </div>
     </div>
   </section>

@@ -16,9 +16,9 @@
         <.marketing_heading
           tag="h1"
           scale={:display}
-          class="rise-1 max-w-4xl !text-5xl !leading-[0.98] sm:!text-6xl md:!text-7xl"
+          class="rise-1 max-w-4xl !text-5xl/[1.1] sm:!text-6xl/[1.1] md:!text-7xl/[1.1]"
         >
-          Secure production access for your AI agents.
+          Your AI agent needs production access&nbsp;— not your SSH key.
         </.marketing_heading>
         <p class="rise-2 mt-6 max-w-2xl text-lg leading-relaxed text-zinc-300">
           emisar is the MCP server that connects Claude, Cursor, ChatGPT — any agent — to your
@@ -76,14 +76,15 @@
                 <%= if kind == :write do %>
                   <span class="flex flex-none items-center gap-1.5">
                     <.state_chip state={:pending} label="approval" />
-                    <%!-- The "→ approved" beat would clip at 390px; reveal it
-                           sm+ and let mobile show just the human-in-loop signal. --%>
+                    <%!-- The approval beat would clip at 390px; reveal it sm+ and let
+                           mobile show just the pending "waiting on a human" signal. The
+                           hand, not an arrow, makes the human the thing that resolves it. --%>
                     <span class="hidden items-center gap-1.5 sm:flex">
-                      <.icon name="hero-arrow-right" class="h-3 w-3 text-zinc-600" />
+                      <.icon name="hero-hand-raised" class="h-3 w-3 text-brand-400" />
                       <.state_chip
                         state={:pass}
                         label="approved"
-                        class="w-[5.5rem] justify-center"
+                        class="w-[6.25rem] justify-center"
                       />
                     </span>
                   </span>
@@ -119,7 +120,7 @@
     </div>
   </section>
 
-  <%!-- The magic — why production access makes the agent dramatically better.
+  <%!-- The magic — why production access makes the agent far more useful.
        Reads dominate (context, self-debug, incidents); the gated write is the
        exception. The value the user feels, stated before the mechanics. --%>
   <section class="border-y border-zinc-900 bg-zinc-950/40 py-24 sm:py-32">
@@ -127,7 +128,7 @@
       <div class="mx-auto max-w-3xl text-center">
         <h2 class="text-base font-semibold text-brand-400">Why it's different</h2>
         <p class="mt-2 text-4xl font-bold tracking-tight text-white sm:text-5xl text-balance">
-          Your AI gets dramatically better with eyes on production.
+          The same model — except now it can see.
         </p>
         <p class="mt-6 text-lg leading-relaxed text-zinc-400 text-pretty">
           The same model, grounded in the real system instead of guessing. It reads live state
@@ -156,6 +157,16 @@
           </div>
         <% end %>
       </div>
+
+      <p class="mt-12 text-center text-sm">
+        <.link
+          navigate={~p"/ai"}
+          class="inline-flex items-center gap-1 font-medium text-brand-400 hover:text-brand-300"
+        >
+          See everything your AI can read and do
+          <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
+        </.link>
+      </p>
     </div>
   </section>
 
@@ -168,7 +179,8 @@
           Today, your AI agent is either:
         </p>
         <p class="mt-6 text-lg text-zinc-400 leading-relaxed">
-          Three patterns. All three are worse than the alternative they replaced.
+          Three common setups for letting an agent act — and each fails the same way: no gate
+          before the action, no trustworthy record after.
         </p>
       </div>
 
@@ -312,8 +324,10 @@
     </div>
   </section>
 
-  <%!-- Three-pillar deep-dive --%>
-  <section class="py-24 sm:py-32">
+  <%!-- Three-pillar deep-dive. Shaded so the page keeps a clean shaded/unshaded
+       alternation (otherwise demo → pillars → comparison runs three light
+       sections in a row). --%>
+  <section class="border-y border-zinc-900 bg-zinc-950/40 py-24 sm:py-32">
     <div data-reveal class="mx-auto max-w-7xl px-6 lg:px-8">
       <div class="mx-auto max-w-3xl text-center">
         <h2 class="text-base font-semibold text-brand-400">Three pillars</h2>
@@ -466,7 +480,7 @@
           navigate={~p"/packs"}
           class="inline-flex items-center gap-1.5 text-sm font-medium text-brand-400 hover:text-brand-300"
         >
-          Browse the pack registry — Postgres, Docker, Nomad, Kubernetes, the AWS suite, and dozens more
+          Browse all {@action_count} actions across {@pack_count} packs — Postgres, Docker, Nomad, Kubernetes, the AWS suite, and more
           <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
         </.link>
       </div>
@@ -578,9 +592,9 @@
             Zero Trust for AI Agents
           </a>
           guide says an agent with access to real systems needs least agency, deny-by-default
-          tools, human approval for high-risk actions, and an immutable audit trail. That's the
-          exact boundary emisar enforces — several of which the framework files under its Enterprise
-          and Advanced tiers, shipped on emisar's Free plan.
+          tools, human approval for high-risk actions, and an immutable audit trail. emisar
+          enforces that exact boundary — and controls the framework reserves for its Enterprise
+          and Advanced tiers ship on emisar's Free plan.
         </p>
       </div>
 

@@ -3030,24 +3030,23 @@ defmodule EmisarWeb.CoreComponents do
           <.brand size={:md} />
         </.link>
 
-        <%!-- Desktop nav: visible md+ --%>
+        <%!-- Desktop nav: visible md+. Five items along the buyer's path —
+             value, proof, trust, price, how. Packs/Changelog/About live in
+             the footer (and Packs is heavily body-linked). --%>
         <nav class="hidden items-center gap-8 md:flex">
-          <.marketing_nav_link href={~p"/packs"} active={@current == :packs}>
-            Packs
+          <.marketing_nav_link href={~p"/ai"} active={@current == :ai}>
+            For your AI
           </.marketing_nav_link>
-          <.marketing_nav_link href={~p"/pricing"} active={@current == :pricing}>
-            Pricing
+          <.marketing_nav_link href={~p"/use-cases"} active={@current == :use_cases}>
+            Use cases
           </.marketing_nav_link>
           <.marketing_nav_link href={~p"/security"} active={@current == :security}>
             Security
           </.marketing_nav_link>
+          <.marketing_nav_link href={~p"/pricing"} active={@current == :pricing}>
+            Pricing
+          </.marketing_nav_link>
           <.marketing_nav_link href={~p"/docs"} active={@current == :docs}>Docs</.marketing_nav_link>
-          <.marketing_nav_link href={~p"/changelog"} active={@current == :changelog}>
-            Changelog
-          </.marketing_nav_link>
-          <.marketing_nav_link href={~p"/about"} active={@current == :about}>
-            About
-          </.marketing_nav_link>
         </nav>
 
         <%!-- Desktop CTAs: visible md+. A signed-in visitor gets a
@@ -3122,23 +3121,20 @@ defmodule EmisarWeb.CoreComponents do
           </div>
 
           <nav class="flex-1 space-y-1 px-3 py-4 text-sm">
-            <.marketing_mobile_link href={~p"/packs"} active={@current == :packs}>
-              Packs
+            <.marketing_mobile_link href={~p"/ai"} active={@current == :ai}>
+              For your AI
             </.marketing_mobile_link>
-            <.marketing_mobile_link href={~p"/pricing"} active={@current == :pricing}>
-              Pricing
+            <.marketing_mobile_link href={~p"/use-cases"} active={@current == :use_cases}>
+              Use cases
             </.marketing_mobile_link>
             <.marketing_mobile_link href={~p"/security"} active={@current == :security}>
               Security
             </.marketing_mobile_link>
+            <.marketing_mobile_link href={~p"/pricing"} active={@current == :pricing}>
+              Pricing
+            </.marketing_mobile_link>
             <.marketing_mobile_link href={~p"/docs"} active={@current == :docs}>
               Docs
-            </.marketing_mobile_link>
-            <.marketing_mobile_link href={~p"/changelog"} active={@current == :changelog}>
-              Changelog
-            </.marketing_mobile_link>
-            <.marketing_mobile_link href={~p"/about"} active={@current == :about}>
-              About
             </.marketing_mobile_link>
           </nav>
 
@@ -3374,18 +3370,30 @@ defmodule EmisarWeb.CoreComponents do
     ~H"""
     <section class="pb-24 sm:pb-32">
       <div class="mx-auto max-w-3xl px-6 lg:px-8">
-        <div class="rounded-xl border border-brand-500/30 bg-zinc-950 p-8 text-center sm:p-10">
-          <h2 class="text-2xl font-bold tracking-tight text-white sm:text-3xl">{@headline}</h2>
-          <p class="mx-auto mt-3 max-w-xl text-sm leading-6 text-zinc-400">{@subcopy}</p>
-          <div class="mt-7 flex flex-col items-center justify-center gap-3 sm:flex-row">
-            <.marketing_button href={~p"/sign_up"} icon="hero-arrow-right" class="w-full sm:w-auto">
-              Start free
-            </.marketing_button>
-            <.marketing_button variant={:secondary} href={@secondary_path} class="w-full sm:w-auto">
-              {@secondary_label}
-            </.marketing_button>
+        <div class="relative overflow-hidden rounded-xl border border-brand-500/30 bg-zinc-950 p-8 text-center sm:p-10">
+          <div class="glow-emerald pointer-events-none absolute inset-0" aria-hidden="true"></div>
+          <div class="grain pointer-events-none absolute inset-0" aria-hidden="true"></div>
+          <div class="relative">
+            <h2 class="text-2xl font-bold tracking-tight text-white sm:text-3xl">{@headline}</h2>
+            <p class="mx-auto mt-3 max-w-xl text-sm leading-6 text-zinc-400">{@subcopy}</p>
+            <div class="mt-7 flex flex-col items-center justify-center gap-3 sm:flex-row">
+              <.marketing_button
+                href={~p"/sign_up"}
+                icon="hero-arrow-right"
+                class="w-full sm:w-auto"
+              >
+                Start free
+              </.marketing_button>
+              <.marketing_button
+                variant={:secondary}
+                href={@secondary_path}
+                class="w-full sm:w-auto"
+              >
+                {@secondary_label}
+              </.marketing_button>
+            </div>
+            <p class="mt-4 text-xs text-zinc-500">{@note}</p>
           </div>
-          <p class="mt-4 text-xs text-zinc-500">{@note}</p>
         </div>
       </div>
     </section>

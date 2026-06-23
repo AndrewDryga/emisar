@@ -209,11 +209,11 @@
           </div>
           <h3 class="mt-6 text-xl font-semibold text-zinc-50">Secrets redacted before egress</h3>
           <p class="mt-3 text-sm leading-6 text-zinc-400">
-            20+ built-in patterns (AWS keys, GitHub/GitLab/Slack/Stripe/OpenAI/Anthropic tokens,
-            JWTs, bearer/basic auth, private-key blocks, secret assignments) plus your own
-            per-action rules scrub stdout and stderr on the runner before anything is forwarded.
-            The control plane receives only the redacted stream; per-rule hit counts are recorded
-            so you can see what was masked.
+            20+ built-in patterns — AWS keys, common provider tokens (GitHub, Slack, Stripe,
+            OpenAI, …), JWTs, bearer and basic auth, private-key blocks, and secret assignments —
+            plus your own per-action rules scrub stdout and stderr on the runner before anything is
+            forwarded. The control plane receives only the redacted stream; per-rule hit counts are
+            recorded so you can see what was masked.
           </p>
         </div>
         <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8">
@@ -225,10 +225,8 @@
           </h3>
           <p class="mt-3 text-sm leading-6 text-zinc-400">
             The cloud audit is the searchable system of record. Stream it to your SIEM as NDJSON
-            with keyset cursor pagination and RFC 5988 <code class="text-zinc-300">Link</code>
-            headers, using a dedicated <code class="text-zinc-300">audit:read</code>
-            key — your
-            SIEM never holds a token that can execute an action.
+            with cursor pagination, using a dedicated read-only audit key — so your SIEM never holds
+            a token that can execute an action.
           </p>
         </div>
       </div>
@@ -245,7 +243,7 @@
         </p>
       </div>
 
-      <div class="mx-auto mt-16 grid max-w-5xl grid-cols-1 gap-6 md:grid-cols-3">
+      <div class="mx-auto mt-16 grid max-w-6xl grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
         <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8">
           <.icon name="hero-user-group" class="h-7 w-7 text-brand-400" />
           <h3 class="mt-4 text-lg font-semibold text-zinc-50">RBAC</h3>
@@ -258,9 +256,9 @@
           <.icon name="hero-key" class="h-7 w-7 text-brand-400" />
           <h3 class="mt-4 text-lg font-semibold text-zinc-50">Scoped LLM access</h3>
           <p class="mt-2 text-sm text-zinc-400">
-            Each MCP key carries its own scopes (<code>actions:read</code>, <code>actions:execute</code>, <code>audit:read</code>), user attribution, and runner
-            filters. Keys are revocable and inherit their creator's runner scope at call time —
-            revoke the user and every key they minted shrinks with them.
+            Each MCP key is scoped — read-only, execute, or audit-only — with its own user
+            attribution and runner filters. Keys are revocable and inherit their creator's runner
+            scope at call time — revoke the user and every key they minted shrinks with them.
           </p>
         </div>
         <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8">
@@ -269,6 +267,23 @@
           <p class="mt-2 text-sm text-zinc-400">
             TOTP (RFC 6238) on every plan, with one-time recovery codes and replay protection.
             Enforce it org-wide with one switch.
+          </p>
+        </div>
+        <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8">
+          <div class="flex items-center justify-between">
+            <.icon name="hero-identification" class="h-7 w-7 text-brand-400" />
+            <span class="rounded-full border border-zinc-700 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-zinc-400">
+              Enterprise
+            </span>
+          </div>
+          <h3 class="mt-4 text-lg font-semibold text-zinc-50">SSO &amp; SCIM</h3>
+          <p class="mt-2 text-sm text-zinc-400">
+            OIDC sign-in with Google Workspace, Okta, or Keycloak, plus SCIM directory sync.
+            Offboard someone in your IdP and their emisar sessions and keys are revoked
+            automatically — <.link
+              navigate={~p"/docs/sso"}
+              class="text-brand-300 hover:text-brand-200"
+            >see the docs</.link>.
           </p>
         </div>
       </div>
@@ -315,7 +330,7 @@
           cloud, is the authority. Opt-in per runner; a runner can only make itself stricter.
         </p>
       </div>
-      <div class="mt-8 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
+      <div class="mt-8 flex flex-wrap items-center justify-between gap-x-6 gap-y-2 text-sm">
         <.link
           navigate={~p"/zero-trust"}
           class="inline-flex items-center gap-1 font-semibold text-brand-400 hover:text-brand-300"
