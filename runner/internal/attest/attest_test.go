@@ -360,9 +360,6 @@ func TestEmptyAndNilArgsStableDigest(t *testing.T) {
 	// (runner reconstructs the claim from m.Args, which is nil when the wire
 	// frame omits `args` — protocol.go `json:"args,omitempty"`) would otherwise
 	// disagree, refusing every legitimately-signed no-argument dispatch.
-	t.Skip("BUG: SigningBytes marshals nil Args as JSON null (sha256 74234e98…), " +
-		"not {} (44136fa3…), so a no-arg action signed by mcp/sign.go over {} fails " +
-		"verification on the runner whenever the wire omits `args` → spurious bad_signature (RSEC-003-T13)")
 	bn, err := SigningBytes(Claim{ActionID: "linux.uptime", Args: nil, Nonce: "nonce-1", IssuedAt: "2026-06-17T12:00:00Z"})
 	if err != nil {
 		t.Fatalf("SigningBytes(nil): %v", err)

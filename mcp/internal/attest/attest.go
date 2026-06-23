@@ -43,7 +43,18 @@ type Claim struct {
 // control plane round-trips them through jsonb (it preserves values, and both
 // ends re-marshal through Go's json, which normalizes number formatting).
 func SigningBytes(c Claim) ([]byte, error) {
-	argsJSON, err := json.Marshal(c.Args)
+	// A signed dispatch with no args carries nil Args (the wire frame omits
+	// `args`), which json.Marshal renders as `null` — a different digest than
+	// `{}`. Normalize nil to an empty map so a no-arg claim signs and verifies
+	// identically to one with explicit `{}` on both sides (the cross-impl
+	// contract); without this, every legitimately-signed no-arg dispatch is
+	// refused as bad_signature.
+	args := c.Args
+	if args == nil {
+		args = map[string]any{}
+	}
+
+	argsJSON, err := json.Marshal(args)
 	if err != nil {
 		return nil, fmt.Errorf("attest: marshal args: %w", err)
 	}
