@@ -1,0 +1,4 @@
+interface:
+  display_name: "UX Designer"
+  short_description: "Premium minimalist SaaS/product UX"
+  default_prompt: "Design or review this product screen for top-tier minimalist SaaS UX: clear hierarchy, complete states, strong usability, calm visual design, and trustworthy operator actions."

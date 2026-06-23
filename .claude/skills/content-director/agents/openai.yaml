@@ -1,0 +1,4 @@
+interface:
+  display_name: "Content Director"
+  short_description: "Agency-grade marketing copy and SEO narrative"
+  default_prompt: "Rewrite this marketing page copy so it is concrete, human, SEO-aware, professionally edited, and specific to the product rather than AI-generated or templated."
