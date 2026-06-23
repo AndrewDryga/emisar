@@ -52,7 +52,10 @@ defmodule EmisarWeb.Endpoint do
   # verify HMAC-SHA256 signatures against the exact bytes Paddle signed.
   # `Plug.Parsers` consumes the body before our controller runs, and
   # `read_body/2` only returns the unparsed bytes once.
-  plug Plug.Parsers,
+  # A thin wrapper over Plug.Parsers: a malformed body on /api/mcp/rpc returns the
+  # JSON-RPC -32700 parse-error envelope instead of the generic 400 (every other
+  # path is unchanged). Same options Plug.Parsers takes.
+  plug EmisarWeb.Plugs.JSONRPCParseError,
     parsers: [:urlencoded, :multipart, :json],
     pass: ["*/*"],
     json_decoder: Phoenix.json_library(),

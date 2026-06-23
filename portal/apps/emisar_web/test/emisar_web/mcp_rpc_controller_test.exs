@@ -2387,8 +2387,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
       assert %{"error" => %{"code" => -32600}, "id" => nil} = json_response(conn, 400)
     end
 
-    @tag skip:
-           "BUG: malformed JSON yields a Plug.Parsers 400, not the documented JSON-RPC -32700 envelope (MCP-007-T06)"
     test "a malformed JSON body is a JSON-RPC parse error (-32700)",
          %{conn: conn, account: account, user: user} do
       # closes MCP-007-T06
