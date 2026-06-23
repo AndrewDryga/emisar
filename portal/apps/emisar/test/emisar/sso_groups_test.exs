@@ -174,10 +174,10 @@ defmodule Emisar.SSOGroupsTest do
 
       assert {:error, :unauthorized} = SSO.list_group_mappings(provider, viewer_subject)
 
-      # Denial: a non-enterprise plan can't configure SSO at all.
+      # Denial: a Team plan can configure OIDC but not SCIM group mappings.
       {_u, _team_account, team_subject} = owner_subject_fixture(%{plan: "team"})
 
-      assert {:error, :sso_not_available} =
+      assert {:error, :directory_sync_not_available} =
                SSO.create_group_mapping(
                  provider,
                  %{external_group_id: "grp-3", role: :admin},

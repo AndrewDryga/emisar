@@ -337,11 +337,11 @@ defmodule Emisar.SSOSCIMTest do
       assert {:ok, _provider} = SSO.authenticate_scim_token(new_token)
     end
 
-    test "a non-enterprise account cannot enable SCIM" do
+    test "a Team account cannot enable SCIM — directory sync is Enterprise-only" do
       {_user, _account, subject} = owner_subject_fixture(%{plan: "team"})
       provider = %IdentityProvider{id: Ecto.UUID.generate()}
 
-      assert {:error, :sso_not_available} = SSO.enable_scim(provider, subject)
+      assert {:error, :directory_sync_not_available} = SSO.enable_scim(provider, subject)
     end
 
     test "a non-admin (no manage_sso) cannot enable SCIM" do
