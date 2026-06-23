@@ -228,6 +228,19 @@ defmodule EmisarWeb.AuditExportControllerTest do
       conn = conn |> bearer(raw) |> get(~p"/api/audit?cursor=garbage")
       assert json_response(conn, 400)["error"] == "invalid_params"
     end
+
+    # closes AUD-003-T20 — a non-ISO8601 `since` is a 400 invalid_params, not a
+    # 500 and never a silent fall-through to the whole-history scan. A SIEM that
+    # sends a bad first-call bound is told to fix it, not handed everything.
+    test "malformed since (non-ISO8601) returns 400, not a silent full scan", %{
+      conn: conn,
+      raw_key: raw
+    } do
+      conn = conn |> bearer(raw) |> get(~p"/api/audit?since=yesterday")
+      body = json_response(conn, 400)
+      assert body["error"] == "invalid_params"
+      assert body["message"] =~ "ISO 8601"
+    end
   end
 
   describe "filtering" do
@@ -308,6 +321,95 @@ defmodule EmisarWeb.AuditExportControllerTest do
 
       assert length(events) == 1
       assert hd(events)["account_id"] == own_account.id
+    end
+
+    # closes AUD-003-T23 — a forged `x-forwarded-for` is advisory request
+    # metadata only: it never feeds authz or scoping. The export stays scoped to
+    # the key's own account (`for_subject/2`), so spoofing the header can't widen
+    # the result set or reach another tenant's events. (Plug.RemoteIp isn't in
+    # the pipeline; the spoofable header is a documented trade-off, used for the
+    # advisory IP column, not an access-control input.)
+    test "a spoofed x-forwarded-for header does not affect scoping", %{
+      conn: conn,
+      account: own_account,
+      raw_key: raw
+    } do
+      {_other_user, other_account, _} = owner_subject_fixture()
+
+      insert_event(own_account, "user.signed_in")
+      insert_event(other_account, "user.signed_in")
+
+      events =
+        conn
+        |> bearer(raw)
+        |> put_req_header("x-forwarded-for", "203.0.113.255, 10.0.0.1")
+        |> get(~p"/api/audit?event_type=user.signed_in")
+        |> ndjson()
+        |> parse_ndjson()
+
+      # Still only the key's own account — the forged header changed nothing.
+      assert length(events) == 1
+      assert hd(events)["account_id"] == own_account.id
+    end
+  end
+
+  describe "serialized row shape" do
+    # closes AUD-003-T05
+    test "omits mcp_session_id / auth_method / mfa / user_identity_id from the feed", %{
+      conn: conn,
+      account: account,
+      raw_key: raw
+    } do
+      # These four columns exist on the audit row (surfaced in the UI detail
+      # view) but are deliberately NOT projected into the SIEM feed.
+      _ =
+        insert_event(account, "user.signed_in",
+          mcp_session_id: "5985d95cf73715ff",
+          auth_method: "sso",
+          mfa: true,
+          user_identity_id: Ecto.UUID.generate()
+        )
+
+      [event] =
+        conn
+        |> bearer(raw)
+        |> get(~p"/api/audit?event_type=user.signed_in")
+        |> ndjson()
+        |> parse_ndjson()
+
+      # The 14 projected columns are present; the 4 UI-only ones are absent.
+      assert event["event_type"] == "user.signed_in"
+      refute Map.has_key?(event, "mcp_session_id")
+      refute Map.has_key?(event, "auth_method")
+      refute Map.has_key?(event, "mfa")
+      refute Map.has_key?(event, "user_identity_id")
+    end
+  end
+
+  describe "scope independence" do
+    # closes AUD-003-T21
+    test "an audit:read-only key can export but cannot dispatch MCP / actions", %{
+      conn: conn,
+      account: account,
+      raw_key: raw
+    } do
+      _ = insert_event(account, "user.signed_in")
+
+      # The log-shipping key exports fine — 200 NDJSON.
+      export = conn |> bearer(raw) |> get(~p"/api/audit?event_type=user.signed_in")
+      assert export.status == 200
+      assert [_ | _] = export |> ndjson() |> parse_ndjson()
+
+      # The SAME key is denied the MCP tool surface: discovery needs
+      # `actions:read`, dispatch needs `actions:execute`. A token scoped only
+      # to `audit:read` carries neither — so a leaked SIEM key cannot read the
+      # catalog or execute an action.
+      tools = build_conn() |> bearer(raw) |> get(~p"/api/mcp/tools")
+      assert json_response(tools, 403)["error"] == "missing_scope"
+      assert json_response(tools, 403)["required"] == "actions:read"
+
+      runners = build_conn() |> bearer(raw) |> get(~p"/api/mcp/runners")
+      assert json_response(runners, 403)["error"] == "missing_scope"
     end
   end
 end
