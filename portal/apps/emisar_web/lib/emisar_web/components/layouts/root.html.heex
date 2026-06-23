@@ -15,6 +15,15 @@
       }
     />
     <link :if={assigns[:canonical_url]} rel="canonical" href={@canonical_url} />
+    <%!-- RSS auto-discovery for the changelog — only on the marketing surface
+         (canonical_url is set there, never on the console). --%>
+    <link
+      :if={assigns[:canonical_url]}
+      rel="alternate"
+      type="application/rss+xml"
+      title="emisar changelog"
+      href="https://emisar.dev/changelog.xml"
+    />
     <.live_title
       default="emisar — give AI tools approved infrastructure actions, not SSH"
       suffix=" · emisar"
