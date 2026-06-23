@@ -5,10 +5,10 @@
   tick-the-boxes reference, plus an HONEST compliance, subprocessor, and
   deployment posture.
 
-  Every claim here is verifiable in the product or those pages. No
-  certification or DPA is asserted that we don't hold — the open
-  compliance-claims decision lives in PENDING_DECISIONS; this is the
-  honest current-state version it explicitly allows to ship.
+  Every claim here is verifiable in the product or those pages. Per the
+  resolved compliance-claims decision: SOC 2 is stated as a roadmap item (not
+  held), a DPA is offered, and the SLA targets + US data residency are
+  published. We assert no certification we don't hold.
 ============================================================ --%>
 <div class="bg-zinc-950 text-zinc-100">
   <.marketing_nav current_user={@current_user} current={:trust} />
@@ -156,11 +156,28 @@
         <h2 class="text-2xl font-bold text-white">Certifications & compliance</h2>
         <p class="mt-4 text-base leading-relaxed text-zinc-400">
           We'd rather tell you exactly where we stand than imply more. emisar does
-          <strong class="text-zinc-200">not yet hold a SOC 2 or ISO 27001 certification.</strong>
-          What is in place today is the control set above — least-privilege access, enforced MFA,
-          tamper-evident audit, encryption in transit and at rest, and a clear data-handling and
-          deletion policy. If your evaluation needs a DPA, a security questionnaire completed, or
-          specific compliance commitments, tell us what you need and we'll work through it with you.
+          <strong class="text-zinc-200">not yet hold a SOC 2 or ISO 27001 certification</strong>
+          — SOC 2 Type II is on our roadmap. What is in place today is the control set above:
+          least-privilege access, enforced MFA, tamper-evident audit, encryption in transit and at
+          rest, and a clear data-handling and deletion policy. We offer a
+          <strong class="text-zinc-200">Data Processing Addendum you can sign</strong>
+          — request it
+          at
+          <a
+            href="mailto:support@emisar.dev"
+            class="font-medium text-brand-300 hover:text-brand-200"
+          >
+            support@emisar.dev
+          </a>
+          — and we'll complete a security questionnaire on request.
+          Production data stays in the United States.
+        </p>
+      </div>
+
+      <div>
+        <h2 class="text-2xl font-bold text-white">Availability & SLA</h2>
+        <p class="mt-4 text-base leading-relaxed text-zinc-400">
+          The hosted control plane targets <strong class="text-zinc-200">99.95% monthly uptime on Team and 99.99% on Enterprise</strong>, backed by a written SLA in the Enterprise order form. Because runners dial out and the host has the last word, a control-plane outage pauses new dispatches — it never leaves an action half-run or bypasses a gate.
         </p>
       </div>
 
