@@ -314,6 +314,395 @@ defmodule EmisarWeb.AuditLiveTest do
       assert :binary.match(html, ~s(name="subject_kind")) <
                :binary.match(html, ~s(name="subject_id"))
     end
+
+    # closes AUD-007-T04 — `approval_grant` and `policy` have no label resolver,
+    # so their distinct-id options all resolve to nil and are rejected → the
+    # dependent picker never renders (intentional; you filter those by Type).
+    test "a subject kind with no label resolver surfaces no picker", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+
+      # Real rows of the resolver-less kinds — the picker still must not appear.
+      {:ok, _} =
+        Audit.log(account.id, "approval.grant_revoked",
+          subject_kind: "approval_grant",
+          subject_id: Ecto.UUID.generate()
+        )
+
+      {:ok, _} =
+        Audit.log(account.id, "policy.updated",
+          subject_kind: "policy",
+          subject_id: Ecto.UUID.generate()
+        )
+
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit?subject_kind=approval_grant")
+      refute html =~ ~s(name="subject_id")
+
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit?subject_kind=policy")
+      refute html =~ ~s(name="subject_id")
+    end
+
+    # closes AUD-006-T05 — picking an actor then switching the Actor *type*
+    # invalidates the pick (its id belongs to the old kind), so actor_id is
+    # dropped from the patched URL; the new kind's picker reads "All".
+    test "switching the actor kind drops the now-invalid actor pick", %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      {:ok, _} = Audit.log(account.id, "user.invited", actor_kind: "user", actor_id: user.id)
+
+      # Land with a user actor picked (kind + id both in the params).
+      {:ok, lv, _html} =
+        live(conn, ~p"/app/#{account}/audit?actor_kind=user&actor_id=#{user.id}")
+
+      # Switch the actor kind to api_key — the stale user actor_id must not ride along.
+      lv
+      |> form("#audit-events-filter", %{actor_kind: "api_key"})
+      |> render_change()
+
+      assert_patch(lv, ~p"/app/#{account}/audit?actor_kind=api_key")
+    end
+
+    # closes AUD-007-T02 — same for the Subject picker: a changed subject kind
+    # invalidates the previously-picked subject_id, dropping it from the URL.
+    test "switching the subject kind drops the stale subject pick", %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      {:ok, _} = Audit.log(account.id, "user.invited", subject_kind: "user", subject_id: user.id)
+
+      {:ok, lv, _html} =
+        live(conn, ~p"/app/#{account}/audit?subject_kind=user&subject_id=#{user.id}")
+
+      lv
+      |> form("#audit-events-filter", %{subject_kind: "runner"})
+      |> render_change()
+
+      assert_patch(lv, ~p"/app/#{account}/audit?subject_kind=runner")
+    end
+
+    # closes AUD-006-T09 — a crafted/blank actor_id is normalized: a junk UUID is
+    # account-scoped to zero rows (no crash, rich empty state), and a blank one
+    # is dropped so no chip renders.
+    test "a crafted or blank actor_id is normalized, never a crash", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, _} = Audit.log(account.id, "user.invited", actor_kind: "user", actor_label: "real")
+
+      # A well-formed but unknown id → account-scoped to nothing, no crash.
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit?actor_id=#{Ecto.UUID.generate()}")
+      assert html =~ "No events match these filters."
+      refute html =~ "real"
+
+      # A blank actor_id → blank_to_nil drops it, so no actor chip renders and
+      # the unfiltered feed comes back.
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit?actor_id=")
+      refute html =~ "Actor:"
+      assert html =~ "real"
+    end
+
+    # closes AUD-007-T06 — same normalization for a crafted/blank subject_id.
+    test "a crafted or blank subject_id is normalized, never a crash", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+
+      {:ok, _} =
+        Audit.log(account.id, "user.invited", subject_kind: "user", subject_label: "real")
+
+      {:ok, _lv, html} =
+        live(conn, ~p"/app/#{account}/audit?subject_kind=user&subject_id=#{Ecto.UUID.generate()}")
+
+      assert html =~ "No events match these filters."
+      refute html =~ "real"
+
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit?subject_id=")
+      assert html =~ "real"
+    end
+
+    # closes AUD-008-T02, AUD-008-T03 — the quick-range preset computes its From
+    # at CLICK time (anchored to now, via preset_from/1) and clears any
+    # previously-set To. Land with a To set, click "Last hour": the patched URL
+    # carries a fresh `from` and no `to`.
+    test "a preset is computed at click-time and clears a previously-set To", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, _} = Audit.log(account.id, "user.invited", actor_kind: "user", actor_label: "x")
+
+      # Arrive with an explicit To upper bound in the params.
+      future =
+        DateTime.utc_now()
+        |> DateTime.add(3600, :second)
+        |> Calendar.strftime("%Y-%m-%dT%H:%M")
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/audit?to=#{future}")
+
+      lv |> element("button", "Last hour") |> render_click()
+
+      to = assert_patch(lv)
+      %{query: query} = URI.parse(to)
+      params = URI.decode_query(query)
+
+      # `from` is freshly computed (present, ~1h ago) and `to` is gone.
+      assert Map.has_key?(params, "from")
+      refute Map.has_key?(params, "to")
+
+      {:ok, from_dt, _} = DateTime.from_iso8601(params["from"] <> ":00Z")
+      # Anchored to "now" — within a minute of (now − 1h), not page-render-stale.
+      assert_in_delta DateTime.diff(DateTime.utc_now(), from_dt, :second), 3600, 90
+    end
+
+    # closes AUD-001-T10 — the timeline is live: on mount it subscribes to the
+    # account audit topic, and a committed `{:audit_event, _}` reloads the
+    # current filter so a new row appears without a refresh. Simulate the
+    # broadcast the way Repo.commit_multi fans it out.
+    test "a new committed event auto-reloads the feed via the audit broadcast", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/audit")
+
+      refute html =~ "freshly-committed-actor"
+
+      # Commit a new row, then deliver the broadcast the LV subscribed to.
+      {:ok, event} =
+        Audit.log(account.id, "user.invited",
+          actor_kind: "user",
+          actor_id: Ecto.UUID.generate(),
+          actor_label: "freshly-committed-actor"
+        )
+
+      send(lv.pid, {:audit_event, event})
+      assert render(lv) =~ "freshly-committed-actor"
+    end
+
+    # closes AUD-001-T13 — an account with zero events shows the RICH empty
+    # state (naming the surfaces that produce events), distinct from the terse
+    # filtered-empty one-liner. A fresh account already has its `account.created`
+    # row, so clear the log to reach the genuinely-empty state.
+    test "an empty log with no filter shows the rich empty state", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      clear_audit_log(account.id)
+
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit")
+
+      assert html =~ "No audit events yet."
+      # Names the event-producing surfaces, not the terse filtered copy.
+      assert html =~ "Packs page"
+      refute html =~ "No events match these filters."
+    end
+
+    # closes AUD-001-T14 — when a (type) filter matches nothing, the feed shows
+    # the terse one-liner, NOT the rich empty-account copy: over-filtering must
+    # read differently from "this account has never done anything".
+    test "a filter that matches nothing shows the terse filtered-empty copy", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, _} = Audit.log(account.id, "user.invited", actor_kind: "user", actor_label: "real")
+
+      # Filter to a Type with no rows in this account (the single-select Type
+      # control submits a scalar value).
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit?event_type=runner.deleted")
+
+      assert html =~ "No events match these filters."
+      refute html =~ "No audit events yet."
+    end
+
+    # closes AUD-006-T03 — the actor chip's clear (✕) link drops `actor_id` from
+    # the params, restoring the full feed (the previously-filtered-out rows
+    # return). The clear link patches to the URL without actor_id.
+    test "clearing the actor chip restores the full feed", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      actor_a = Ecto.UUID.generate()
+
+      {:ok, _} =
+        Audit.log(account.id, "user.invited",
+          actor_kind: "user",
+          actor_id: actor_a,
+          actor_label: "alice"
+        )
+
+      {:ok, _} =
+        Audit.log(account.id, "policy.updated", actor_kind: "user", actor_label: "bob")
+
+      # Land filtered to alice — bob is out, and the clear link is present.
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/audit?actor_id=#{actor_a}")
+      assert html =~ "Actor:"
+      refute html =~ "bob"
+
+      # Click the chip's clear (✕) — actor_id drops, the full feed returns.
+      html = lv |> element(~s(a[aria-label="Clear actor filter"])) |> render_click()
+      refute html =~ "Actor:"
+      assert html =~ "bob"
+    end
+
+    # closes AUD-006-T04 — an active click-to-filter `actor_id` (which rides the
+    # URL, not the form) survives an UNRELATED dropdown change: the filter event
+    # merges it back rather than silently dropping it when the form re-submits
+    # without it.
+    test "an active actor_id survives an unrelated filter change", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      actor_a = Ecto.UUID.generate()
+
+      {:ok, _} =
+        Audit.log(account.id, "user.invited",
+          actor_kind: "user",
+          actor_id: actor_a,
+          actor_label: "alice",
+          auth_method: "sso"
+        )
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/audit?actor_id=#{actor_a}")
+
+      # Change an unrelated filter (sign-in method) — actor_id must ride along.
+      lv
+      |> form("#audit-events-filter", %{auth_method: "sso"})
+      |> render_change()
+
+      to = assert_patch(lv)
+      %{query: query} = URI.parse(to)
+      params = URI.decode_query(query)
+      assert params["actor_id"] == actor_a
+      assert params["auth_method"] == "sso"
+    end
+
+    # closes AUD-006-T08 — a chip for an actor that isn't in the loaded rows (its
+    # id filters to zero events) falls back to showing the RAW id, never a crash
+    # or a blank chip: actor_label_for/2 returns the id when no event matches.
+    test "a stale actor chip falls back to the raw id", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, _} = Audit.log(account.id, "user.invited", actor_kind: "user", actor_label: "real")
+
+      stale = Ecto.UUID.generate()
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit?actor_id=#{stale}")
+
+      # The chip renders with the raw id (no loaded event carries a label for it).
+      assert html =~ "Actor:"
+      assert html =~ stale
+      assert html =~ "No events match these filters."
+    end
+
+    # closes AUD-008-T04 — a quick-range preset only touches from/to; an
+    # unrelated active filter (a Type pick) is preserved across the click.
+    test "a preset preserves an unrelated active filter", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, _} = Audit.log(account.id, "user.invited", actor_kind: "user", actor_label: "x")
+
+      # Land with a Type filter already active (single-select → scalar value).
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/audit?event_type=user.invited")
+
+      lv |> element("button", "Last hour") |> render_click()
+
+      to = assert_patch(lv)
+      %{query: query} = URI.parse(to)
+      params = URI.decode_query(query)
+
+      # from was added by the preset; the Type filter rode along untouched.
+      assert Map.has_key?(params, "from")
+      assert params["event_type"] == "user.invited"
+    end
+
+    # closes AUD-006-T06 — selecting an Actor kind that has NO actors of that
+    # kind in the log surfaces no dependent picker: the `{:ok, [_|_]}` guard
+    # fails on an empty option list, so the actor_id <select> isn't rendered.
+    test "an actor kind with no actors in the log surfaces no picker", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      # A user-actor row exists, but NO runner-actor rows — so picking the
+      # runner kind must not render a picker.
+      {:ok, _} = Audit.log(account.id, "user.invited", actor_kind: "user", actor_label: "x")
+
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit?actor_kind=runner")
+      refute html =~ ~s(name="actor_id")
+    end
+
+    # closes AUD-007-T03 — same for the Subject picker: a subject kind with no
+    # subjects of that kind in the log renders no dependent picker.
+    test "a subject kind with no subjects in the log surfaces no picker", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, _} = Audit.log(account.id, "user.invited", subject_kind: "user", subject_label: "x")
+
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit?subject_kind=runner")
+      refute html =~ ~s(name="subject_id")
+    end
+
+    # closes AUD-001-T16 — a system / scheduler / runbook actor has no
+    # identifying row in another table, so it renders a clean label ("System")
+    # with NO colon-id pair (which would read the meaningless "system: —").
+    test "a system actor renders a clean label, not a kind:id pair", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+
+      {:ok, _} =
+        Audit.log(account.id, "policy.evaluated",
+          actor_kind: "system",
+          subject_kind: "action_run",
+          subject_label: "linux.uptime"
+        )
+
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit")
+
+      # The actor cell reads "System" with no colon-id pair for it. (The literal
+      # "system:" would only appear if the kind:id ref shape were used.)
+      assert html =~ "System"
+      refute html =~ "system:"
+    end
+
+    # closes AUD-001-T18 — crafted filter params from a hand-edited URL are
+    # normalized: blank values are dropped (blank_to_nil) and unknown keys are
+    # ignored by params_to_opts, so the feed loads cleanly instead of crashing.
+    test "crafted / blank / unknown filter params are normalized, never a crash", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, _} = Audit.log(account.id, "user.invited", actor_kind: "user", actor_label: "real")
+
+      # Blank event_type + an unknown filter key the LV never declares.
+      {:ok, _lv, html} =
+        live(conn, ~p"/app/#{account}/audit?event_type=&actor_kind=&totally_made_up_key=zzz")
+
+      # No crash; the real row still loads (nothing was actually filtered).
+      assert html =~ "real"
+    end
+
+    # closes AUD-001-T12, AUD-009-T06 — a bad pagination cursor from a hand-edited
+    # URL (the keyset `?after=<opaque>`) makes list_events return
+    # {:error, :invalid_cursor}; the LV retries once with empty params and loads
+    # the feed cleanly rather than crashing or showing a broken page.
+    test "a hand-edited bad page cursor retries once and loads the feed", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+
+      {:ok, _} =
+        Audit.log(account.id, "user.invited", actor_kind: "user", actor_label: "still-here")
+
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit?after=not-a-real-cursor")
+
+      # The clean retry won — the row is shown and the load-error state is not.
+      assert html =~ "still-here"
+      refute html =~ "Couldn't load the audit log"
+    end
+  end
+
+  describe "keyset pagination is account-scoped across pages" do
+    # closes AUD-009-T07 — walking page → next as account B never pages in any of
+    # account A's events: every page is scoped by for_subject/2. Seed enough A
+    # rows to span multiple pages, then confirm B's walk yields only B's rows.
+    test "account B's cursor walk never pages in account A's events", %{conn: conn} do
+      {conn, _user, account_b} = register_and_log_in(conn)
+
+      # Account A (a separate tenant) has a full page-plus of events.
+      other = Emisar.Fixtures.account_fixture()
+
+      for i <- 1..30 do
+        {:ok, _} =
+          Audit.log(other.id, "user.invited",
+            actor_kind: "user",
+            actor_label: "A-secret-#{i}"
+          )
+      end
+
+      # Account B has a couple of its own, distinctly labelled.
+      for i <- 1..2 do
+        {:ok, _} =
+          Audit.log(account_b.id, "user.invited",
+            actor_kind: "user",
+            actor_label: "B-own-#{i}"
+          )
+      end
+
+      # B's first page: only B's rows, never A's — even though A has far more.
+      {:ok, lv, html} = live(conn, ~p"/app/#{account_b}/audit")
+      assert html =~ "B-own-1"
+      refute html =~ "A-secret"
+
+      # Walk forward through whatever pages B has; A's events must never appear.
+      html = walk_all_pages(lv, html)
+      refute html =~ "A-secret"
+    end
   end
 
   describe "GET /app/audit/:id" do
@@ -439,6 +828,158 @@ defmodule EmisarWeb.AuditLiveTest do
       assert revoked.revoked_at
     end
 
+    # closes AUD-004-T06, AUD-012-T03 — an account with no export tokens shows
+    # the mint affordance but NOT the (empty) list section: the list div is
+    # `:if={@export_keys != []}`, so a manager sees just the "Mint export token"
+    # button until they've created one.
+    test "with no export keys the list is hidden but the mint affordance shows", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/audit")
+
+      # The SIEM card + mint button are present (the owner manages keys)…
+      assert html =~ "SIEM export"
+      assert html =~ "Mint export token"
+      # …but with zero export tokens the list section is hidden — so no list-row
+      # Revoke affordance renders (the header copy mentions audit:read regardless,
+      # so the list's presence is the real signal). Scope to the card to be sure.
+      siem_card = lv |> element("#siem-export") |> render()
+      refute siem_card =~ "revoke_export_key"
+      refute siem_card =~ "Revoked"
+    end
+
+    # closes AUD-010-T02 — while a freshly-minted secret is being revealed, the
+    # "Mint export token" button is hidden (`:if={is_nil(@export_secret)}`) so a
+    # double-mint can't clobber the one-shot reveal; dismissing brings it back.
+    test "the mint button is hidden while a secret is being revealed", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/audit")
+      assert html =~ "Mint export token"
+
+      html = render_click(lv, "create_export_key", %{})
+      # The secret is shown and the mint button is gone during the reveal.
+      assert html =~ "emk-"
+      refute html =~ "Mint export token"
+
+      # Dismissing the reveal restores the mint button.
+      html = render_click(lv, "dismiss_export_secret", %{})
+      assert html =~ "Mint export token"
+    end
+
+    # closes AUD-010-T05 — the curl snippet's base URL is derived from the socket
+    # (`derive_base_url(socket) <> "/api/audit"`), so the reveal hands the
+    # operator a copy-paste command pointed at this deployment's export endpoint.
+    test "the reveal shows a curl snippet pointed at /api/audit", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/audit")
+
+      html = render_click(lv, "create_export_key", %{})
+
+      assert html =~ "/api/audit"
+      assert html =~ "curl -H"
+      assert html =~ "Authorization: Bearer"
+    end
+
+    # closes AUD-004-T08, AUD-010-T06 — the mint surface hardcodes the scope to
+    # ["audit:read"]; crafted extra params on the event can't widen it. An
+    # operator can't escalate a log-shipping token into an action-executing one
+    # from this page.
+    test "crafted scope params on the mint event cannot widen the token's scope", %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      subject = Emisar.Fixtures.subject_for(user, account)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/audit")
+
+      # Fire the mint event with attacker-supplied scope params.
+      _ =
+        render_click(lv, "create_export_key", %{
+          "scopes" => ["audit:read", "actions:execute"],
+          "name" => "smuggled"
+        })
+
+      # The minted key carries audit:read ONLY — the crafted params were ignored.
+      {:ok, [key], _meta} =
+        Emisar.ApiKeys.list_audit_export_keys_for_account(subject, page_size: 50)
+
+      assert key.scopes == ["audit:read"]
+    end
+
+    # closes AUD-004-T07, AUD-010-T04 — the raw secret is one-shot: it lives only
+    # in the socket assigns, so a fresh mount (a reconnect / reload) never
+    # re-shows it. Mint in one session, then open a second LV: no secret.
+    test "the minted secret is one-shot — a fresh mount never re-shows it", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/audit")
+
+      html = render_click(lv, "create_export_key", %{})
+      [raw] = Regex.run(~r/Bearer (emk-[A-Za-z0-9_-]+)/, html, capture: :all_but_first)
+
+      # A brand-new mount of the same page (reconnect) must not carry the secret.
+      {:ok, _lv2, fresh_html} = live(conn, ~p"/app/#{account}/audit")
+      refute fresh_html =~ raw
+      refute fresh_html =~ "won't show it again"
+    end
+
+    # closes AUD-011-T02 — the Revoke button renders only for non-revoked keys
+    # (`:if={is_nil(key.revoked_at)}`); a revoked key shows the "Revoked" chip and
+    # no button — idempotency by affordance.
+    test "revoke is offered only on active keys; revoked keys show a chip", %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      subject = Emisar.Fixtures.subject_for(user, account)
+
+      {:ok, _raw, active} =
+        Emisar.ApiKeys.create_key(%{name: "active-export", scopes: ["audit:read"]}, subject)
+
+      {:ok, _raw, to_revoke} =
+        Emisar.ApiKeys.create_key(%{name: "dead-export", scopes: ["audit:read"]}, subject)
+
+      {:ok, _} = Emisar.ApiKeys.revoke_api_key(to_revoke, subject)
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/audit")
+      siem_card = lv |> element("#siem-export") |> render()
+
+      # The active key offers a Revoke button keyed to its id…
+      assert siem_card =~ ~s(phx-value-id="#{active.id}")
+      # …the revoked key does NOT (no button keyed to it) but shows the chip.
+      refute siem_card =~ ~s(phx-value-id="#{to_revoke.id}")
+      assert siem_card =~ "Revoked"
+    end
+
+    # closes AUD-012-T04 — a key whose creating user has since been deleted still
+    # lists (left-join preload → created_by is nil), and the "by <email>" line is
+    # guarded (`:if={key.created_by}`) so the row renders without crashing.
+    test "a key whose creator was deleted renders without the 'by' line", %{conn: conn} do
+      {conn, _owner, account} = register_and_log_in(conn)
+
+      # A second admin mints the export token, then their user row is soft-deleted
+      # (we stay logged in as the original owner so the page still mounts).
+      other_admin = Emisar.Fixtures.user_fixture(email: "departing-admin@example.com")
+
+      _ =
+        Emisar.Fixtures.membership_fixture(
+          account_id: account.id,
+          user_id: other_admin.id,
+          role: "admin"
+        )
+
+      other_subject = Emisar.Fixtures.subject_for(other_admin, account, role: :admin)
+
+      {:ok, _raw, _key} =
+        Emisar.ApiKeys.create_key(%{name: "orphan-export", scopes: ["audit:read"]}, other_subject)
+
+      # Soft-delete the creator — created_by (a where: deleted_at: nil belongs_to)
+      # now resolves to nil on the preload.
+      other_admin
+      |> Ecto.Changeset.change(deleted_at: DateTime.utc_now())
+      |> Emisar.Repo.update!()
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/audit")
+      siem_card = lv |> element("#siem-export") |> render()
+
+      # The key still lists; the guarded "by <email>" line is simply absent.
+      assert siem_card =~ "orphan-export"
+      refute siem_card =~ "departing-admin@example.com"
+    end
+
     test "a viewer cannot mint an export key", %{conn: conn} do
       {_owner_conn, _owner, account} = register_and_log_in(conn)
 
@@ -473,6 +1014,219 @@ defmodule EmisarWeb.AuditLiveTest do
 
       send(lv.pid, {:list_changed, :api_key, "api_key.created", key.id})
       assert render(lv) =~ "Side-channel export"
+    end
+
+    # closes AUD-011-T04, AUD-004-T10
+    test "an operator cannot revoke an export key (crafted event denied)", %{conn: conn} do
+      {_owner_conn, owner, account} = register_and_log_in(conn)
+
+      # An owner-minted export token; the operator below must not be able to
+      # retire it from a crafted event (managing keys needs admin+).
+      owner_subject = Emisar.Fixtures.subject_for(owner, account)
+
+      {:ok, _raw, key} =
+        Emisar.ApiKeys.create_key(
+          %{name: "Owner export token", scopes: ["audit:read"]},
+          owner_subject
+        )
+
+      operator = Emisar.Fixtures.user_fixture()
+
+      _ =
+        Emisar.Fixtures.membership_fixture(
+          account_id: account.id,
+          user_id: operator.id,
+          role: "operator"
+        )
+
+      {:ok, lv, _html} =
+        build_conn() |> log_in_user(operator) |> live(~p"/app/#{account}/audit")
+
+      html = render_click(lv, "revoke_export_key", %{"id" => key.id})
+      assert html =~ "You don&#39;t have permission to do that."
+
+      # The token is untouched — still active.
+      {:ok, [reread], _meta} =
+        Emisar.ApiKeys.list_audit_export_keys_for_account(owner_subject, page_size: 50)
+
+      assert is_nil(reread.revoked_at)
+    end
+
+    # closes AUD-011-T03, AUD-004-T05
+    test "revoking a bogus key id is a silent no-op, not a crash or a flash", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/audit")
+
+      # A well-formed but nonexistent id: fetch_api_key_by_id returns
+      # {:error, :not_found}, so the handler does nothing — no info flash.
+      html = render_click(lv, "revoke_export_key", %{"id" => Ecto.UUID.generate()})
+      refute html =~ "Export token revoked."
+
+      # A malformed (non-UUID) id is rejected pre-query, same no-op.
+      html = render_click(lv, "revoke_export_key", %{"id" => "not-a-uuid"})
+      refute html =~ "Export token revoked."
+    end
+
+    # closes AUD-011-T05, AUD-004-T11
+    test "an admin cannot revoke another account's export key (cross-account no-op)", %{
+      conn: conn
+    } do
+      {conn, _user, account_b} = register_and_log_in(conn)
+
+      # Account A (a different tenant) has its own export token. The admin of B
+      # fires revoke with A's real key id — the subject-gated fetch scopes to B,
+      # so A's key is never found and never revoked.
+      {a_user, _account_a, a_subject} = Emisar.Fixtures.owner_subject_fixture()
+      _ = a_user
+
+      {:ok, _raw, a_key} =
+        Emisar.ApiKeys.create_key(
+          %{name: "Account A export token", scopes: ["audit:read"]},
+          a_subject
+        )
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account_b}/audit")
+
+      html = render_click(lv, "revoke_export_key", %{"id" => a_key.id})
+      refute html =~ "Export token revoked."
+
+      # A's token is untouched.
+      {:ok, [reread], _meta} =
+        Emisar.ApiKeys.list_audit_export_keys_for_account(a_subject, page_size: 50)
+
+      assert reread.id == a_key.id
+      assert is_nil(reread.revoked_at)
+    end
+
+    # closes AUD-011-T06
+    test "a revoked export token returns 401 from the export endpoint on its next call",
+         %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      subject = Emisar.Fixtures.subject_for(user, account)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/audit")
+
+      # Mint via the page; the raw secret only exists in the reveal once, so
+      # parse it out of the rendered curl snippet.
+      html = render_click(lv, "create_export_key", %{})
+      [raw] = Regex.run(~r/Bearer (emk-[A-Za-z0-9_-]+)/, html, capture: :all_but_first)
+
+      # The fresh token works.
+      ok = build_conn() |> put_req_header("authorization", "Bearer #{raw}") |> get(~p"/api/audit")
+      assert ok.status == 200
+
+      # Revoke it on the page, then the collector's next poll is rejected.
+      {:ok, [key], _meta} =
+        Emisar.ApiKeys.list_audit_export_keys_for_account(subject, page_size: 50)
+
+      _ = render_click(lv, "revoke_export_key", %{"id" => key.id})
+
+      denied =
+        build_conn() |> put_req_header("authorization", "Bearer #{raw}") |> get(~p"/api/audit")
+
+      assert json_response(denied, 401) == %{"error" => "unauthorized"}
+    end
+
+    # closes AUD-012-T06, AUD-004-T02
+    test "the SIEM card is hidden from a non-manager (operator)", %{conn: conn} do
+      {_owner_conn, _owner, account} = register_and_log_in(conn)
+
+      operator = Emisar.Fixtures.user_fixture()
+
+      _ =
+        Emisar.Fixtures.membership_fixture(
+          account_id: account.id,
+          user_id: operator.id,
+          role: "operator"
+        )
+
+      {:ok, _lv, html} =
+        build_conn() |> log_in_user(operator) |> live(~p"/app/#{account}/audit")
+
+      # An operator can read the audit log but not manage keys → no SIEM card.
+      refute html =~ "SIEM export"
+      refute html =~ "Mint export token"
+    end
+
+    # closes AUD-012-T07, AUD-004-T11
+    test "another account's export tokens never appear in this account's SIEM list",
+         %{conn: conn} do
+      {conn, _user, account_b} = register_and_log_in(conn)
+
+      # Account A mints a distinctively-named export token.
+      {a_user, _account_a, a_subject} = Emisar.Fixtures.owner_subject_fixture()
+      _ = a_user
+
+      {:ok, _raw, _a_key} =
+        Emisar.ApiKeys.create_key(
+          %{name: "Account-A-only-export-token", scopes: ["audit:read"]},
+          a_subject
+        )
+
+      # Viewing B's audit page must not surface A's token.
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account_b}/audit")
+      refute html =~ "Account-A-only-export-token"
+    end
+
+    # closes AUD-012-T08, AUD-004-T12
+    test "audit:read tokens are bucketed out of the LLM agents page", %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      subject = Emisar.Fixtures.subject_for(user, account)
+
+      # An export token (audit:read) and an MCP token (actions:*). The audit
+      # page shows the export one; the agents page shows the MCP one — the two
+      # buckets never overlap (without_scope("audit:read") there).
+      {:ok, _raw, _export} =
+        Emisar.ApiKeys.create_key(
+          %{name: "ZZ-siem-export-token", scopes: ["audit:read"]},
+          subject
+        )
+
+      {:ok, _raw, _mcp} =
+        Emisar.ApiKeys.create_key(
+          %{name: "ZZ-mcp-bridge-token", scopes: ["actions:read", "actions:execute"]},
+          subject
+        )
+
+      # The audit page's SIEM card lists the export token, not the MCP one.
+      # (Both names also appear in the audit *timeline* as `api_key.created`
+      # rows — minting logs an audit event — so scope the bucket assertion to
+      # the SIEM card itself, which is the list under test.)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/audit")
+      siem_card = lv |> element("#siem-export") |> render()
+      assert siem_card =~ "ZZ-siem-export-token"
+      refute siem_card =~ "ZZ-mcp-bridge-token"
+
+      # The agents page lists the MCP token, not the export one.
+      {:ok, _lv, agents_html} = live(conn, ~p"/app/#{account}/settings/agents")
+      assert agents_html =~ "ZZ-mcp-bridge-token"
+      refute agents_html =~ "ZZ-siem-export-token"
+    end
+  end
+
+  # Empty an account's audit log so the genuinely-empty state can be tested — a
+  # fresh account already carries its `account.created` / `user.signed_up` rows.
+  # Building the queryable straight from the Query module is the sanctioned
+  # test-fixture shape (§7).
+  defp clear_audit_log(account_id) do
+    Audit.Event.Query.all()
+    |> Audit.Event.Query.by_account_id(account_id)
+    |> Repo.delete_all()
+  end
+
+  # Click "Next →" until the pager runs out, returning every page's HTML
+  # concatenated, so an assertion can confirm something never appears on ANY
+  # page of the keyset walk (not just the first). Bounded by a hard step count
+  # so a pager bug can't loop the test forever.
+  defp walk_all_pages(lv, html, acc \\ "", steps \\ 20)
+  defp walk_all_pages(_lv, html, acc, 0), do: acc <> html
+
+  defp walk_all_pages(lv, html, acc, steps) do
+    next = element(lv, "#audit-events-pager a", "Next")
+
+    if has_element?(next) do
+      walk_all_pages(lv, render_click(next), acc <> html, steps - 1)
+    else
+      acc <> html
     end
   end
 end
