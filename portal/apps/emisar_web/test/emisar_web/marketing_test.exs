@@ -34,6 +34,10 @@ defmodule EmisarWeb.MarketingTest do
     /compare/raw-ssh-for-ai
     /compare/custom-mcp-server
     /zero-trust
+    /how-it-works
+    /trust
+    /dpa
+    /docs/mcp-reference
   )
 
   for route <- @routes do

@@ -50,6 +50,10 @@ defmodule EmisarWeb.MarketingStructuralTest do
     /compare/raw-ssh-for-ai
     /compare/custom-mcp-server
     /zero-trust
+    /how-it-works
+    /trust
+    /dpa
+    /docs/mcp-reference
   )
 
   # The pages that emit a BreadcrumbList block. Home / /ai / /pricing carry
