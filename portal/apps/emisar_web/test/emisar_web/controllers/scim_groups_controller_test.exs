@@ -160,6 +160,36 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
       assert body["schemas"] == ["urn:ietf:params:scim:api:messages:2.0:Error"]
       assert body["status"] == "400"
     end
+
+    test "an empty members set empties the group and renders members:[]", %{conn: conn} do
+      # closes SCIM-014-T05
+      # closes SCIM-020-T06
+      %{token: token, provider: provider, subject: subject, account: account} = scim_provider()
+
+      {:ok, _} =
+        SSO.create_group_mapping(provider, %{external_group_id: "grp-adm", role: :admin}, subject)
+
+      identity = provision(provider, "okta|member")
+
+      # Seed the group with one member at :admin.
+      {:ok, _} =
+        SSO.scim_upsert_group(provider, %{
+          external_id: "grp-adm",
+          member_external_ids: ["okta|member"]
+        })
+
+      assert role_of(account.id, identity.user_id) == :admin
+
+      # POST the same group with an empty members array → membership emptied, the
+      # member resets to default_role, and the resource renders members:[].
+      body =
+        conn
+        |> scim_send(token, :post, ~p"/scim/v2/Groups", group_payload("grp-adm", []))
+        |> json_response(201)
+
+      assert body["members"] == []
+      assert role_of(account.id, identity.user_id) == :viewer
+    end
   end
 
   # -- Cross-account isolation -----------------------------------------
@@ -201,6 +231,8 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
   # -- PATCH /Groups/:id -----------------------------------------------
 
   describe "PATCH /Groups/:id" do
+    # closes SCIM-016-T01 (add+remove delta) — the remove leg below uses the Okta
+    # filtered-path `members[value eq "X"]` shape, so this also covers SCIM-016-T03.
     test "add then remove members recomputes the affected roles", %{conn: conn} do
       %{token: token, provider: provider, subject: subject, account: account} = scim_provider()
 
@@ -249,6 +281,197 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
 
       assert body["schemas"] == ["urn:ietf:params:scim:api:messages:2.0:Error"]
       assert body["scimType"] == "invalidPath"
+    end
+
+    test "a whole-set `replace` of members short-circuits to a full upsert", %{conn: conn} do
+      # closes SCIM-016-T02
+      %{token: token, provider: provider, subject: subject, account: account} = scim_provider()
+
+      {:ok, _} =
+        SSO.create_group_mapping(
+          provider,
+          %{external_group_id: "grp-ops", role: :operator},
+          subject
+        )
+
+      keep = provision(provider, "okta|keep")
+      incoming = provision(provider, "okta|incoming")
+
+      # Seed the group with `keep` only.
+      {:ok, _} =
+        SSO.scim_upsert_group(provider, %{
+          external_id: "grp-ops",
+          member_external_ids: ["okta|keep"]
+        })
+
+      assert role_of(account.id, keep.user_id) == :operator
+      assert role_of(account.id, incoming.user_id) == :viewer
+
+      # A whole-set replace makes membership exactly [incoming] — keep is removed
+      # (resets to default_role), incoming is added (gets the mapped role).
+      replace_body = %{
+        "Operations" => [
+          %{"op" => "replace", "path" => "members", "value" => [%{"value" => "okta|incoming"}]}
+        ]
+      }
+
+      assert conn
+             |> scim_send(token, :patch, ~p"/scim/v2/Groups/grp-ops", replace_body)
+             |> json_response(200)
+
+      assert role_of(account.id, incoming.user_id) == :operator
+      assert role_of(account.id, keep.user_id) == :viewer
+    end
+
+    test "a pathless add op carries the member ids in `value`", %{conn: conn} do
+      # closes SCIM-016-T04
+      %{token: token, provider: provider, subject: subject, account: account} = scim_provider()
+
+      {:ok, _} =
+        SSO.create_group_mapping(provider, %{external_group_id: "grp-adm", role: :admin}, subject)
+
+      identity = provision(provider, "okta|pathless")
+
+      # No `path` — the members array rides in `value` (an accepted op shape).
+      add_body = %{
+        "Operations" => [%{"op" => "add", "value" => [%{"value" => "okta|pathless"}]}]
+      }
+
+      assert conn
+             |> scim_send(token, :patch, ~p"/scim/v2/Groups/grp-adm", add_body)
+             |> json_response(200)
+
+      assert role_of(account.id, identity.user_id) == :admin
+    end
+
+    test "the op keyword is matched case-insensitively (`Add`)", %{conn: conn} do
+      # closes SCIM-016-T05
+      %{token: token, provider: provider, subject: subject, account: account} = scim_provider()
+
+      {:ok, _} =
+        SSO.create_group_mapping(provider, %{external_group_id: "grp-adm", role: :admin}, subject)
+
+      identity = provision(provider, "okta|caseop")
+
+      add_body = %{
+        "Operations" => [
+          %{"op" => "Add", "path" => "members", "value" => [%{"value" => "okta|caseop"}]}
+        ]
+      }
+
+      assert conn
+             |> scim_send(token, :patch, ~p"/scim/v2/Groups/grp-adm", add_body)
+             |> json_response(200)
+
+      assert role_of(account.id, identity.user_id) == :admin
+    end
+
+    test "ops that resolve to an empty net delta → 400 invalidPath", %{conn: conn} do
+      # closes SCIM-016-T06
+      %{token: token} = scim_provider()
+
+      # An add op whose members array is empty resolves to {:delta, [], []} —
+      # nothing to do, so an honest invalidPath, never a silent no-op.
+      empty_body = %{"Operations" => [%{"op" => "add", "path" => "members", "value" => []}]}
+
+      body =
+        conn
+        |> scim_send(token, :patch, ~p"/scim/v2/Groups/grp-x", empty_body)
+        |> json_response(400)
+
+      assert body["scimType"] == "invalidPath"
+    end
+
+    test "a remove of a member not in the group is a no-op (200)", %{conn: conn} do
+      # closes SCIM-016-T07
+      %{token: token, provider: provider, subject: subject, account: account} = scim_provider()
+
+      {:ok, _} =
+        SSO.create_group_mapping(provider, %{external_group_id: "grp-adm", role: :admin}, subject)
+
+      identity = provision(provider, "okta|stay")
+
+      # Seed the group with `stay` at :admin.
+      {:ok, _} =
+        SSO.scim_upsert_group(provider, %{
+          external_id: "grp-adm",
+          member_external_ids: ["okta|stay"]
+        })
+
+      assert role_of(account.id, identity.user_id) == :admin
+
+      # Remove an externalId that was never in this group — the remove resolves to
+      # no link, so it's a no-op: 200, and the seeded member is untouched.
+      remove_body = %{
+        "Operations" => [
+          %{"op" => "remove", "path" => "members", "value" => [%{"value" => "okta|ghost"}]}
+        ]
+      }
+
+      assert conn
+             |> scim_send(token, :patch, ~p"/scim/v2/Groups/grp-adm", remove_body)
+             |> json_response(200)
+
+      assert role_of(account.id, identity.user_id) == :admin
+    end
+
+    test "a non-list `Operations` → 400 invalidValue", %{conn: conn} do
+      # closes SCIM-016-T09
+      %{token: token} = scim_provider()
+
+      body =
+        conn
+        |> scim_send(token, :patch, ~p"/scim/v2/Groups/grp-x", %{"Operations" => "add members"})
+        |> json_response(400)
+
+      assert body["schemas"] == ["urn:ietf:params:scim:api:messages:2.0:Error"]
+      assert body["scimType"] == "invalidValue"
+    end
+
+    test "a PATCH with no `Operations` key → 400 invalidSyntax", %{conn: conn} do
+      # closes SCIM-016-T10
+      %{token: token} = scim_provider()
+
+      body =
+        conn
+        |> scim_send(token, :patch, ~p"/scim/v2/Groups/grp-x", %{"displayName" => "Renamed"})
+        |> json_response(400)
+
+      assert body["scimType"] == "invalidSyntax"
+    end
+
+    test "an account-A token's group PATCH only affects account A", %{conn: conn} do
+      # closes SCIM-016-T11
+      %{token: token_a, provider: provider_a, subject: subject_a, account: account_a} =
+        scim_provider()
+
+      %{provider: provider_b, subject: subject_b, account: account_b} = scim_provider()
+
+      # Same group id + :admin mapping in both accounts; a member with the SAME
+      # external id provisioned in each.
+      {:ok, _} =
+        SSO.create_group_mapping(provider_a, %{external_group_id: "grp", role: :admin}, subject_a)
+
+      {:ok, _} =
+        SSO.create_group_mapping(provider_b, %{external_group_id: "grp", role: :admin}, subject_b)
+
+      id_a = provision(provider_a, "okta|shared")
+      id_b = provision(provider_b, "okta|shared")
+
+      add_body = %{
+        "Operations" => [
+          %{"op" => "add", "path" => "members", "value" => [%{"value" => "okta|shared"}]}
+        ]
+      }
+
+      assert conn
+             |> scim_send(token_a, :patch, ~p"/scim/v2/Groups/grp", add_body)
+             |> json_response(200)
+
+      # A's member promoted; B's identically-named member resolves within
+      # provider B only and is untouched.
+      assert role_of(account_a.id, id_a.user_id) == :admin
+      assert role_of(account_b.id, id_b.user_id) == :viewer
     end
   end
 
@@ -305,6 +528,80 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
       assert role_of(account.id, identity.user_id) == :operator
     end
 
+    test "PUT with no externalId in the body keys on the path :id", %{conn: conn} do
+      # closes SCIM-014-T06
+      %{token: token, provider: provider, subject: subject, account: account} = scim_provider()
+
+      {:ok, _} =
+        SSO.create_group_mapping(
+          provider,
+          %{external_group_id: "grp-ops", role: :operator},
+          subject
+        )
+
+      identity = provision(provider, "okta|pathkey")
+
+      # The body carries members + displayName but NO externalId — parse falls
+      # back to the path id ("grp-ops"), so the mapped role still applies.
+      body =
+        conn
+        |> scim_send(token, :put, ~p"/scim/v2/Groups/grp-ops", %{
+          "displayName" => "Operators",
+          "members" => [%{"value" => "okta|pathkey"}]
+        })
+        |> json_response(200)
+
+      assert body["id"] == "grp-ops"
+      assert role_of(account.id, identity.user_id) == :operator
+    end
+
+    test "DELETE of an unknown/never-pushed group → 204 no-op", %{conn: conn} do
+      # closes SCIM-017-T04
+      %{token: token} = scim_provider()
+
+      # Upsert-to-empty on a group that was never pushed is a harmless no-op; the
+      # upsert always succeeds, so DELETE answers 204 (idempotent).
+      assert conn |> auth(token) |> delete(~p"/scim/v2/Groups/grp-never") |> response(204)
+    end
+
+    test "DELETE; a member also in another mapped group recomputes to the remaining highest",
+         %{conn: conn} do
+      # closes SCIM-017-T03
+      %{token: token, provider: provider, subject: subject, account: account} = scim_provider()
+
+      {:ok, _} =
+        SSO.create_group_mapping(provider, %{external_group_id: "grp-adm", role: :admin}, subject)
+
+      {:ok, _} =
+        SSO.create_group_mapping(
+          provider,
+          %{external_group_id: "grp-op", role: :operator},
+          subject
+        )
+
+      identity = provision(provider, "okta|both")
+
+      # The member is in BOTH groups → highest mapped role is :admin.
+      {:ok, _} =
+        SSO.scim_upsert_group(provider, %{
+          external_id: "grp-adm",
+          member_external_ids: ["okta|both"]
+        })
+
+      {:ok, _} =
+        SSO.scim_upsert_group(provider, %{
+          external_id: "grp-op",
+          member_external_ids: ["okta|both"]
+        })
+
+      assert role_of(account.id, identity.user_id) == :admin
+
+      # DELETE the admin group → the member is still in the operator group, so the
+      # recompute falls back to :operator (not the provider default), not :admin.
+      assert conn |> auth(token) |> delete(~p"/scim/v2/Groups/grp-adm") |> response(204)
+      assert role_of(account.id, identity.user_id) == :operator
+    end
+
     test "GET /Groups returns an empty SCIM ListResponse (no group read)", %{conn: conn} do
       %{token: token} = scim_provider()
 
@@ -314,11 +611,110 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
       assert body["totalResults"] == 0
     end
 
+    test "GET /Groups stays empty even after a group was pushed (no group read)", %{conn: conn} do
+      # closes SCIM-018-T03
+      %{token: token, provider: provider} = scim_provider()
+
+      provision(provider, "okta|x")
+
+      {:ok, _} =
+        SSO.scim_upsert_group(provider, %{
+          external_id: "grp-pushed",
+          member_external_ids: ["okta|x"]
+        })
+
+      # The membership is stored, but there is no SCIM Group read — the list is
+      # still the empty stub (sync is push-only; SCIM-018 domain gap).
+      body = conn |> auth(token) |> get(~p"/scim/v2/Groups") |> json_response(200)
+      assert body["totalResults"] == 0
+      assert body["Resources"] == []
+    end
+
     test "GET /Groups/:id → 404 SCIM error (no group read)", %{conn: conn} do
       %{token: token} = scim_provider()
 
       body = conn |> auth(token) |> get(~p"/scim/v2/Groups/grp-x") |> json_response(404)
       assert body["status"] == "404"
     end
+
+    test "an account-A token's group DELETE only affects account A", %{conn: conn} do
+      # closes SCIM-017-T05
+      %{token: token_a, provider: provider_a, subject: subject_a, account: account_a} =
+        scim_provider()
+
+      %{provider: provider_b, subject: subject_b, account: account_b} = scim_provider()
+
+      # Same group id + :admin mapping in both accounts, with an identically-named
+      # member at :admin in each.
+      id_a = seed_admin_group_member(provider_a, subject_a, "grp", "okta|shared")
+      id_b = seed_admin_group_member(provider_b, subject_b, "grp", "okta|shared")
+      assert role_of(account_a.id, id_a.user_id) == :admin
+      assert role_of(account_b.id, id_b.user_id) == :admin
+
+      # DELETE the group with A's token only — it empties A's group (member resets
+      # to default_role) and never touches B's identically-named group.
+      assert conn |> auth(token_a) |> delete(~p"/scim/v2/Groups/grp") |> response(204)
+
+      assert role_of(account_a.id, id_a.user_id) == :viewer
+      assert role_of(account_b.id, id_b.user_id) == :admin
+    end
+  end
+
+  # -- Best-effort: a refused recompute is held, not fatal -------------
+
+  describe "POST /Groups best-effort recompute" do
+    @tag capture_log: true
+    test "a per-member recompute refusal is held — the push still returns 201", %{conn: conn} do
+      # closes SCIM-014-T08
+      %{token: token, provider: provider, subject: subject, account: account} = scim_provider()
+
+      {:ok, _} =
+        SSO.create_group_mapping(provider, %{external_group_id: "grp-adm", role: :admin}, subject)
+
+      kept = provision(provider, "okta|kept")
+      %{membership: gone_membership} = provision_with_membership(provider, "okta|gone")
+
+      # One member was removed from the team (membership soft-deleted) while the
+      # identity lived on, so its recompute refuses with :not_found. The push must
+      # still succeed (best-effort, the IdP re-drives) — never a 4xx/5xx.
+      {:ok, _} =
+        gone_membership |> Ecto.Changeset.change(deleted_at: DateTime.utc_now()) |> Repo.update()
+
+      assert conn
+             |> scim_send(
+               token,
+               :post,
+               ~p"/scim/v2/Groups",
+               group_payload("grp-adm", ["okta|kept", "okta|gone"])
+             )
+             |> json_response(201)
+
+      # The healthy member was still recomputed — one refusal didn't abort the push.
+      assert role_of(account.id, kept.user_id) == :admin
+    end
+  end
+
+  # Map a group→:admin, provision a member, and push them into it — leaving the
+  # member at :admin. Returns the member's identity (for cross-provider scoping
+  # assertions where the same external id is seeded in two providers).
+  defp seed_admin_group_member(provider, subject, group_id, external_id) do
+    {:ok, _} =
+      SSO.create_group_mapping(provider, %{external_group_id: group_id, role: :admin}, subject)
+
+    identity = provision(provider, external_id)
+
+    {:ok, _} =
+      SSO.scim_upsert_group(provider, %{external_id: group_id, member_external_ids: [external_id]})
+
+    identity
+  end
+
+  # Provision and return the full identity + membership (for the soft-delete
+  # refusal test).
+  defp provision_with_membership(provider, external_id) do
+    {:ok, %{identity: identity, membership: membership}} =
+      SSO.scim_provision_user(provider, %{external_id: external_id, full_name: "Dir User"})
+
+    %{identity: identity, membership: membership}
   end
 end

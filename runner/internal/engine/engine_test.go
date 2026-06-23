@@ -257,6 +257,59 @@ func TestEngine_Reload_SwapsRegistry(t *testing.T) {
 	}
 }
 
+// closes RUN-010-T05
+//
+// An in-flight run keeps the registry pointer it captured at start across a
+// SIGHUP atomic swap. The engine holds the registry behind an atomic.Pointer
+// (engine.go) and a run reads it once at startup; Reload() stores a brand-new
+// registry without mutating the old one, so a dispatch that already captured
+// the old pointer continues against the catalog it began with — the new packs
+// only affect runs that start after the reload. This is what makes SIGHUP
+// non-disruptive to actions already running.
+func TestEngine_Reload_InFlightKeepsCapturedRegistry(t *testing.T) {
+	e, j, root := setupEngine(t)
+	defer j.Close()
+
+	// What an in-flight run does at startup: capture the live registry once.
+	captured := e.Registry()
+	if _, ok := captured.Action("t.echo"); !ok {
+		t.Fatal("captured registry missing t.echo")
+	}
+
+	// Operator installs a new action and SIGHUPs (Reload swaps the pointer).
+	newAction := strings.Replace(echoAction, "id: t.echo", "id: t.shout", 1)
+	if err := os.WriteFile(filepath.Join(root, "p", "actions", "shout.yaml"), []byte(newAction), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	manifestPath := filepath.Join(root, "p", "pack.yaml")
+	manifest, _ := os.ReadFile(manifestPath)
+	updated := strings.Replace(string(manifest), "actions:\n  - actions/echo.yaml\n",
+		"actions:\n  - actions/echo.yaml\n  - actions/shout.yaml\n", 1)
+	if err := os.WriteFile(manifestPath, []byte(updated), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.Reload(); err != nil {
+		t.Fatal(err)
+	}
+
+	// The atomic swap installed a DIFFERENT registry instance for new runs...
+	if e.Registry() == captured {
+		t.Fatal("Reload must swap in a new registry pointer, not mutate the old one")
+	}
+	// ...and that fresh registry sees the new action.
+	if _, ok := e.Registry().Action("t.shout"); !ok {
+		t.Fatal("post-reload registry should resolve the newly added t.shout")
+	}
+	// But the pointer the in-flight run captured is unchanged: it still
+	// resolves its original action and is NOT retroactively given the new one.
+	if _, ok := captured.Action("t.echo"); !ok {
+		t.Fatal("captured registry must still resolve the action the run started with")
+	}
+	if _, ok := captured.Action("t.shout"); ok {
+		t.Fatal("captured registry must not see packs added after the run started — the swap is copy-on-write, not in-place")
+	}
+}
+
 // jsonOkAction emits valid JSON. parserRequiredAction emits non-JSON
 // and asks the engine to fail when parsing fails.
 const jsonOkAction = `

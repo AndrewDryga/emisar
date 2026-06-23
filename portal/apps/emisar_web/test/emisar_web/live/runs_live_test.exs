@@ -115,4 +115,71 @@ defmodule EmisarWeb.RunsLiveTest do
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs?page=garbage-cursor")
     assert html =~ "Runs"
   end
+
+  # closes CON-005-T09 — the `filter` event is pure URL reshaping
+  # (`LiveTable.apply_filter` push_patches the chosen filter into the query
+  # string); it performs no mutation and so needs no authz gate. Selecting a
+  # status patches the URL to `?status=…` and re-renders from the patched
+  # params, with no denial flash.
+  test "the filter event reshapes the URL with no authz (no mutation)", %{conn: conn} do
+    {conn, _user, account} = register_and_log_in(conn)
+    runner = runner_fixture(account_id: account.id, connected?: false)
+
+    {:ok, _run} =
+      Runs.create_run(%{
+        account_id: account.id,
+        runner_id: runner.id,
+        action_id: "linux.uptime",
+        source: "operator",
+        args: %{}
+      })
+
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runs")
+
+    # Picking a status drives the real dropdown path (phx-change "filter").
+    html =
+      lv
+      |> form("#runs-filter", %{"status" => "success"})
+      |> render_change()
+
+    # The URL was reshaped to carry the filter (no mutation, no gate)…
+    assert_patched(lv, ~p"/app/#{account}/runs?status=success")
+    # …and there was no permission denial — it's an ungated read reshape.
+    refute html =~ "You don&#39;t have permission to do that."
+  end
+
+  # closes CON-005-T08 — the feed is scoped to the caller's account via
+  # `for_subject/2`: A's operator sees A's runs and never B's, even though both
+  # accounts have runs. (The foreign-account slug 404 lives in
+  # account_slug_authz_test; this is the in-account data scoping.)
+  test "cross-account — A's operator sees only A's runs, never B's", %{conn: conn} do
+    {conn, _user, account_a} = register_and_log_in(conn)
+    runner_a = runner_fixture(account_id: account_a.id, connected?: false)
+
+    {:ok, _} =
+      Runs.create_run(%{
+        account_id: account_a.id,
+        runner_id: runner_a.id,
+        action_id: "linux.alpha_run",
+        source: "operator",
+        args: %{}
+      })
+
+    account_b = account_fixture()
+    runner_b = runner_fixture(account_id: account_b.id, connected?: false)
+
+    {:ok, _} =
+      Runs.create_run(%{
+        account_id: account_b.id,
+        runner_id: runner_b.id,
+        action_id: "linux.bravo_run",
+        source: "operator",
+        args: %{}
+      })
+
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account_a}/runs")
+
+    assert html =~ "linux.alpha_run"
+    refute html =~ "linux.bravo_run"
+  end
 end

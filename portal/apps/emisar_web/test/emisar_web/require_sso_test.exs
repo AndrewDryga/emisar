@@ -92,6 +92,26 @@ defmodule EmisarWeb.RequireSSOTest do
       assert to == ~p"/app/#{account}/sso_required"
     end
 
+    test "require_sso ON — a magic-link session is bounced (only :sso provenance passes)", %{
+      conn: conn
+    } do
+      # closes AUTH-022-T05 — `ensure_sso_compliant` admits ONLY an `:sso` session
+      # for this account. A magic-link session (auth_method :magic_link) is no more
+      # SSO than a password one, so it's bounced to the step-up shim even though the
+      # operator authenticated — the account demands the IdP specifically.
+      {_conn, user, account} = register_and_log_in(conn)
+      _ = enabled_provider(account)
+      require_sso!(account)
+
+      magic_token = Emisar.Auth.create_session_token!(user, :magic_link, false)
+
+      magic_conn =
+        build_conn() |> init_test_session(%{}) |> put_session(:user_token, magic_token)
+
+      assert {:error, {:redirect, %{to: to}}} = live(magic_conn, ~p"/app/#{account}/runners")
+      assert to == ~p"/app/#{account}/sso_required"
+    end
+
     test "require_sso ON with NO enabled connection — fails OPEN, not a brick", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
       require_sso!(account)
@@ -112,6 +132,19 @@ defmodule EmisarWeb.RequireSSOTest do
 
       assert redirected_to(conn) == ~p"/app/#{account}/sign_in"
       refute get_session(conn, :user_token)
+    end
+
+    test "the shim flashes the SSO-required explanation", %{conn: conn} do
+      # closes AUTH-022-T08 — the step-up shim doesn't bounce silently: it logs out
+      # with a flash naming the cause, so the operator understands why they were
+      # signed out and what to do (sign in with the IdP) rather than seeing a bare
+      # sign-in page.
+      {conn, _user, account} = register_and_log_in(conn)
+      require_sso!(account)
+
+      conn = get(conn, ~p"/app/#{account}/sso_required")
+
+      assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "requires single sign-on"
     end
   end
 

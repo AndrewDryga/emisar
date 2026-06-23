@@ -114,6 +114,11 @@ defmodule Emisar.InvitationTest do
     end
 
     test "returns :not_found for nil / empty token (no leaky scan)" do
+      # closes AUTH-012-T08 — the lookup's head requires a non-empty binary
+      # (`is_binary(token) and byte_size(token) > 0`); a nil or "" token falls to
+      # the catch-all `:not_found` clause rather than scanning. So an empty token
+      # param can never resolve an invite — the accept LV mount turns that
+      # `:not_found` into the cause-neutral bounce to /sign_in.
       assert {:error, :not_found} = Accounts.fetch_invitation_by_token(nil)
       assert {:error, :not_found} = Accounts.fetch_invitation_by_token("")
     end
@@ -123,6 +128,23 @@ defmodule Emisar.InvitationTest do
       # backdate it past the validity window.
       nine_days_ago = DateTime.add(DateTime.utc_now(), -9 * 24 * 3600, :second)
       {:ok, _} = membership |> Ecto.Changeset.change(inserted_at: nine_days_ago) |> Repo.update()
+
+      assert {:error, :not_found} = Accounts.fetch_invitation_by_token(token)
+    end
+
+    # closes AUTH-012-T04 — the 7-day window (Membership.Query.invitation_not_expired).
+    test "an invite just inside 7 days still resolves", %{membership: membership, token: token} do
+      almost_seven = DateTime.add(DateTime.utc_now(), -(7 * 24 * 3600 - 3600), :second)
+      {:ok, _} = membership |> Ecto.Changeset.change(inserted_at: almost_seven) |> Repo.update()
+
+      assert {:ok, _} = Accounts.fetch_invitation_by_token(token)
+    end
+
+    test "an invite just past 7 days no longer resolves", %{membership: membership, token: token} do
+      just_over_seven = DateTime.add(DateTime.utc_now(), -(7 * 24 * 3600 + 3600), :second)
+
+      {:ok, _} =
+        membership |> Ecto.Changeset.change(inserted_at: just_over_seven) |> Repo.update()
 
       assert {:error, :not_found} = Accounts.fetch_invitation_by_token(token)
     end
@@ -163,6 +185,38 @@ defmodule Emisar.InvitationTest do
                  "full_name" => "Carol",
                  "password" => "short"
                })
+    end
+
+    # closes AUTH-012-T05 — the 12..128 bounds are inclusive on the
+    # invite-accept path (register_invited_user -> User.Changeset.password).
+    # Each boundary needs its own pending invite: a successful accept burns
+    # the token, so 12 and 128 are tested against fresh memberships.
+    test "accepts a 12-char and a 128-char password (anon accept)" do
+      for length <- [12, 128] do
+        account = account_fixture()
+        {_inviter, subject} = inviter_subject(account)
+
+        email = "len-#{System.unique_integer([:positive])}@example.test"
+
+        {:ok, %{membership: membership}} =
+          Accounts.invite_user_to_account(email, "viewer", subject)
+
+        assert {:ok, %{user: _}} =
+                 Accounts.accept_invitation(membership, %{
+                   "full_name" => "Lengthy",
+                   "password" => String.duplicate("a", length)
+                 })
+      end
+    end
+
+    test "rejects a 129-char password on accept", %{membership: membership} do
+      assert {:error, %Ecto.Changeset{} = changeset} =
+               Accounts.accept_invitation(membership, %{
+                 "full_name" => "TooLong",
+                 "password" => String.duplicate("a", 129)
+               })
+
+      assert changeset.errors[:password]
     end
 
     test "a second accept with the same (stale) membership loses — first wins", %{

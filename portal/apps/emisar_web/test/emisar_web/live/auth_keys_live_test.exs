@@ -38,6 +38,70 @@ defmodule EmisarWeb.AuthKeysLiveTest do
     assert html =~ "dead-key-zzz"
   end
 
+  # closes CON-009-T04 — a brand-new account with no auth keys renders the
+  # "No auth keys yet." onboarding empty state.
+  test "no auth keys → onboarding empty state", %{conn: conn} do
+    {conn, _user, account} = register_and_log_in(conn)
+
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/runners/auth-keys")
+
+    assert html =~ "No auth keys yet."
+    assert html =~ "bearer secret a fresh runner uses to register"
+  end
+
+  # closes CON-009-T05 — a hand-edited page cursor makes the list read return
+  # {:error, …}; `load/1` retries once with clean params (first page) rather than
+  # recursing forever or raising. The page renders.
+  test "a bad cursor in the URL falls back to the first page, not a crash", %{conn: conn} do
+    {conn, user, account} = register_and_log_in(conn)
+    subject = Emisar.Fixtures.subject_for(user, account)
+    {:ok, _raw, _key} = Runners.create_auth_key(%{description: "still-here"}, subject)
+
+    {:ok, _lv, html} =
+      live(conn, ~p"/app/#{account}/settings/runners/auth-keys?page=garbage-cursor")
+
+    assert html =~ "still-here"
+  end
+
+  # closes CON-021-T03 — `put_max_uses` keeps max_uses only for a reusable key
+  # with a positive value; a single-use key (and a blank value) drops it (the
+  # single-use key self-caps at 1 via the schema's not-reusable rule).
+  test "max_uses is kept for a reusable+positive key, dropped otherwise", %{conn: conn} do
+    {conn, user, account} = register_and_log_in(conn)
+    subject = Emisar.Fixtures.subject_for(user, account)
+
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/runners/auth-keys")
+
+    # Ticking Reusable reveals the max_uses input (progressive disclosure).
+    html =
+      lv
+      |> form("#auth_key_form", %{"auth_key" => %{"reusable" => "true"}})
+      |> render_change()
+
+    assert html =~ ~s(name="auth_key[max_uses]")
+
+    # Reusable + max_uses=5 → persisted with max_uses == 5.
+    lv
+    |> form("#auth_key_form", %{
+      "auth_key" => %{"description" => "pool-key", "reusable" => "true", "max_uses" => "5"}
+    })
+    |> render_submit()
+
+    # Single-use (reusable unchecked, no max_uses field shown) → max_uses nil.
+    lv
+    |> form("#auth_key_form", %{"auth_key" => %{"description" => "one-shot-key"}})
+    |> render_submit()
+
+    {:ok, keys, _} = Runners.list_auth_keys(subject)
+    by_desc = Map.new(keys, &{&1.description, &1})
+
+    assert by_desc["pool-key"].reusable
+    assert by_desc["pool-key"].max_uses == 5
+
+    refute by_desc["one-shot-key"].reusable
+    assert is_nil(by_desc["one-shot-key"].max_uses)
+  end
+
   test "create form shows validation errors inline on the field, not in a flash", %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/runners/auth-keys")
@@ -89,6 +153,32 @@ defmodule EmisarWeb.AuthKeysLiveTest do
     html = confirm_dialog(lv, dialog, "Revoke key")
     assert html =~ "Key revoked."
     refute html =~ "bootstrap for prod image"
+  end
+
+  # closes CON-023-T02 — one-time-secret hygiene: once the operator dismisses the
+  # revealed secret it's gone for good. There's no re-reveal control, and the
+  # only "show secret again" affordance is the dismiss (which clears it) — the
+  # raw secret is never re-rendered after dismiss.
+  test "a dismissed secret cannot be re-revealed", %{conn: conn} do
+    {conn, _user, account} = register_and_log_in(conn)
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/runners/auth-keys")
+
+    html =
+      lv
+      |> form("#auth_key_form", %{"auth_key" => %{"description" => "one-time"}})
+      |> render_submit()
+
+    [raw_secret] = Regex.run(~r/emkey-auth-[A-Za-z0-9_-]{20,}/, html)
+    # The reveal panel offers a dismiss; there is NO re-reveal control.
+    assert has_element?(lv, "[phx-click=\"dismiss_secret\"]")
+
+    html = render_click(lv, "dismiss_secret", %{})
+    refute html =~ raw_secret
+    refute has_element?(lv, "[phx-click=\"dismiss_secret\"]")
+
+    # Re-rendering (a tick / list reload) never brings the secret back.
+    send(lv.pid, {:list_changed, :auth_key, "auth_key.created", Ecto.UUID.generate()})
+    refute render(lv) =~ raw_secret
   end
 
   test "revoke's typed-confirm: Confirm stays disabled (and won't fire) until the prefix matches",
@@ -167,5 +257,200 @@ defmodule EmisarWeb.AuthKeysLiveTest do
     assert html =~ ~s(data-format="relative")
     assert html =~ ~r/last used\s<time/
     refute html =~ ~r/last used<time/
+  end
+
+  # closes CON-009-T03 — at the plan's runner limit the page shows the rose
+  # cap-warning banner: a key minted here is useless once a runner bounces off a
+  # 402. The free plan caps at 3 runners; fill all three.
+  test "at the runner limit, the cap-warning banner renders", %{conn: conn} do
+    {conn, _user, account} = register_and_log_in(conn)
+    for _ <- 1..3, do: Emisar.Fixtures.runner_fixture(account_id: account.id)
+
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/runners/auth-keys")
+
+    assert html =~ "At runner limit"
+    assert html =~ "3 of 3 runners in use"
+  end
+
+  # closes CON-009-T03 (the near-limit half) — one slot short of the cap shows
+  # the softer amber "one slot left" variant, not the at-limit rose one.
+  test "near the runner limit, the amber 'one slot left' banner renders", %{conn: conn} do
+    {conn, _user, account} = register_and_log_in(conn)
+    for _ <- 1..2, do: Emisar.Fixtures.runner_fixture(account_id: account.id)
+
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/runners/auth-keys")
+
+    assert html =~ "One runner slot left"
+    refute html =~ "At runner limit"
+  end
+
+  # closes CON-021-T04 — a `datetime-local` expiry (no seconds, no zone) is
+  # stored as UTC: `put_expires` appends ":00Z" before parsing, so "2030-12-25
+  # at 10:30" persists as 10:30:00 UTC.
+  test "expires_at from a datetime-local field is stored as UTC", %{conn: conn} do
+    {conn, user, account} = register_and_log_in(conn)
+    subject = Emisar.Fixtures.subject_for(user, account)
+
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/runners/auth-keys")
+
+    lv
+    |> form("#auth_key_form", %{
+      "auth_key" => %{"description" => "expiring-key", "expires_at" => "2030-12-25T10:30"}
+    })
+    |> render_submit()
+
+    {:ok, keys, _} = Runners.list_auth_keys(subject)
+    key = Enum.find(keys, &(&1.description == "expiring-key"))
+
+    # The column is :utc_datetime_usec, so the stored value carries
+    # microseconds — compare on the truncated instant.
+    assert DateTime.truncate(key.expires_at, :second) == ~U[2030-12-25 10:30:00Z]
+  end
+
+  # closes CON-021-T06 — a key created from account A's session is bound to A
+  # (no cross-account id), and its one-time secret is the only place the raw
+  # value appears (the persisted row stores only the hash + prefix).
+  test "a created key is bound to the current account", %{conn: conn} do
+    {conn, user, account} = register_and_log_in(conn)
+    subject = Emisar.Fixtures.subject_for(user, account)
+
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/runners/auth-keys")
+
+    html =
+      lv
+      |> form("#auth_key_form", %{"auth_key" => %{"description" => "account-bound-key"}})
+      |> render_submit()
+
+    {:ok, keys, _} = Runners.list_auth_keys(subject)
+    key = Enum.find(keys, &(&1.description == "account-bound-key"))
+
+    assert key.account_id == account.id
+    # The raw secret is revealed once in the DOM; the row persists only a hash.
+    [raw_secret] = Regex.run(~r/emkey-auth-[A-Za-z0-9_-]{20,}/, html)
+    refute key.key_hash == raw_secret
+  end
+
+  # closes CON-009-T08 / CON-022-T03 — the page is manage-only (auth keys have no
+  # view permission). An operator (view-only on runners, no manage_auth_keys) is
+  # bounced at LOAD time with "Page not found." — they never reach the form or a
+  # `revoke` event. (The viewer redirect is covered above; this is the operator,
+  # the highest non-manage role.)
+  test "an operator is redirected at mount — the page is manage-only", %{conn: conn} do
+    {_owner_conn, _owner, account} = register_and_log_in(conn)
+
+    operator = Emisar.Fixtures.user_fixture()
+
+    _ =
+      Emisar.Fixtures.membership_fixture(
+        account_id: account.id,
+        user_id: operator.id,
+        role: "operator"
+      )
+
+    dest = ~p"/app/#{account}"
+
+    assert {:error, {:live_redirect, %{to: ^dest, flash: flash}}} =
+             build_conn()
+             |> log_in_user(operator)
+             |> live(~p"/app/#{account}/settings/runners/auth-keys")
+
+    assert flash["error"] == "Page not found."
+  end
+
+  # closes CON-009-T10 / CON-022-T04 — the list is account-scoped (A's admin sees
+  # A's keys, never B's), and revoke only finds keys in the loaded A list: forcing
+  # a `revoke` with a foreign B-account key id is a quiet no-op (the id isn't in
+  # `socket.assigns.auth_keys`), so only account-A keys are revocable.
+  test "cross-account — only A's keys are listed and revocable", %{conn: conn} do
+    {conn, user_a, account_a} = register_and_log_in(conn)
+    subject_a = Emisar.Fixtures.subject_for(user_a, account_a)
+
+    {:ok, _raw, _key_a} =
+      Runners.create_auth_key(%{description: "alpha-key"}, subject_a)
+
+    {_user_b, account_b, subject_b} = Emisar.Fixtures.owner_subject_fixture()
+    refute account_b.id == account_a.id
+
+    {:ok, _raw, key_b} =
+      Runners.create_auth_key(%{description: "bravo-key"}, subject_b)
+
+    {:ok, lv, html} = live(conn, ~p"/app/#{account_a}/settings/runners/auth-keys")
+
+    # A's admin sees A's key and never B's.
+    assert html =~ "alpha-key"
+    refute html =~ "bravo-key"
+
+    # Forcing a revoke for B's key id is a no-op — it isn't in A's loaded list.
+    render_click(lv, "revoke", %{"id" => key_b.id})
+    assert is_nil(Emisar.Repo.reload!(key_b).revoked_at)
+
+    # B's key is still revocable from B's own (authorized) path — proves the
+    # no-op was the scope boundary, not a broken key.
+    assert {:ok, _} = Runners.revoke_auth_key(key_b, subject_b)
+  end
+
+  # closes CON-022-T05 — once a key is revoked the Revoke button (and its
+  # typed-confirm dialog) are gone (`:if={is_nil(key.revoked_at) …}`); the row
+  # carries the "Revoked" chip instead. The "gone key → no-op" half is the
+  # absent-id case below (the genuine `do_revoke` guard).
+  test "a revoked key shows the Revoked chip and no Revoke control", %{conn: conn} do
+    {conn, user, account} = register_and_log_in(conn)
+    subject = Emisar.Fixtures.subject_for(user, account)
+
+    {:ok, _raw, key} = Runners.create_auth_key(%{description: "spent-key"}, subject)
+    {:ok, _} = Runners.revoke_auth_key(key, subject)
+
+    # View it via the Status=revoked filter (default hides revoked).
+    {:ok, lv, html} =
+      live(conn, ~p"/app/#{account}/settings/runners/auth-keys?status=revoked")
+
+    assert html =~ "spent-key"
+    assert html =~ "Revoked"
+    # No live Revoke affordance on a revoked row (button + dialog both gated on
+    # `is_nil(key.revoked_at)`).
+    refute has_element?(lv, "[phx-click*=\"revoke-key-#{key.id}\"]")
+  end
+
+  # closes CON-022-T05 (the "gone key → no-op" half) — a forced `revoke` with an
+  # id that isn't in the loaded list (a since-deleted / never-present key) is a
+  # quiet no-op: `do_revoke` finds nothing in `socket.assigns.auth_keys` and
+  # returns the socket untouched (no flash, no crash).
+  test "revoking an absent key id is a quiet no-op", %{conn: conn} do
+    {conn, _user, account} = register_and_log_in(conn)
+
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/runners/auth-keys")
+
+    # No such key in the loaded list → the find misses → no-op, page intact.
+    html = render_click(lv, "revoke", %{"id" => Ecto.UUID.generate()})
+    refute html =~ "Key revoked."
+    assert html =~ "Auth keys"
+  end
+
+  # BUG (CON-022-T05): a forced `revoke` of an ALREADY-revoked (but still loaded,
+  # e.g. under ?status=revoked) key is NOT idempotent — `AuthKey.Changeset.revoke/2`
+  # unconditionally re-stamps `revoked_at: DateTime.utc_now()` (and writes a fresh
+  # audit row + broadcast), so re-revoking moves the timestamp instead of being a
+  # no-op. The UI hides the Revoke button on revoked rows, so this is only
+  # reachable via a crafted event, and the key stays revoked + manage-gated —
+  # low severity, but it contradicts the "no-op" claim and pollutes the audit
+  # trail with a duplicate revocation. Fix: guard the changeset on
+  # `is_nil(key.revoked_at)` (skip when already revoked).
+  @tag skip:
+         "BUG: re-revoking a revoked key re-stamps revoked_at instead of a no-op (CON-022-T05)"
+  test "re-revoking an already-revoked key is idempotent (no timestamp change)", %{conn: conn} do
+    {conn, user, account} = register_and_log_in(conn)
+    subject = Emisar.Fixtures.subject_for(user, account)
+
+    {:ok, _raw, key} = Runners.create_auth_key(%{description: "spent-key"}, subject)
+    {:ok, _} = Runners.revoke_auth_key(key, subject)
+
+    {:ok, lv, _html} =
+      live(conn, ~p"/app/#{account}/settings/runners/auth-keys?status=revoked")
+
+    revoked_at = Emisar.Repo.reload!(key).revoked_at
+    render_click(lv, "revoke", %{"id" => key.id})
+
+    # Should stay put — a second revocation of a spent key is meaningless.
+    assert Emisar.Repo.reload!(key).revoked_at == revoked_at
   end
 end

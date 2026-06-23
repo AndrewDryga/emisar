@@ -235,6 +235,37 @@ defmodule EmisarWeb.PaddleWebhookControllerTest do
     end
   end
 
+  describe "unhandled event type" do
+    test "a well-formed unmodeled event_type → 200 no-op, then dedups on redelivery", %{
+      conn: conn
+    } do
+      # closes BILL-012-T01, BILL-012-T02
+      # `apply_webhook_event(_event), do: :ok` accepts any type we don't model.
+      # No subscription is written, the dedup row commits (the no-op IS a
+      # success), so a redelivery of the same event_id returns the duplicate
+      # marker without reprocessing.
+      account = account_with_customer("ctm_unhandled")
+
+      event = %{
+        "event_id" => "evt_unhandled_http",
+        "event_type" => "transaction.completed",
+        "data" => %{"id" => "txn_http", "customer_id" => "ctm_unhandled"}
+      }
+
+      first = post_webhook(conn, event)
+      assert json_response(first, 200) == %{"received" => true}
+
+      # No subscription mirror created by the no-op.
+      assert subscription_for(account.id) == nil
+
+      # Redelivery dedups (the dedup row committed for the successful no-op).
+      second = post_webhook(conn, event)
+      assert json_response(second, 200) == %{"received" => true, "duplicate" => true}
+
+      assert subscription_for(account.id) == nil
+    end
+  end
+
   describe "malformed + failing events" do
     test "a decodable event without event_id/event_type is malformed → 400", %{conn: conn} do
       conn = post_webhook(conn, %{"hello" => "world"})

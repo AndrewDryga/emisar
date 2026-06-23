@@ -39,6 +39,19 @@ defmodule EmisarWeb.MagicLinkLiveTest do
     assert html =~ "nobody@example.com"
   end
 
+  test "the email field is required (a blank email is blocked client-side, no mint)", %{
+    conn: conn
+  } do
+    # closes AUTH-005-T06 — the magic-link send handler has no `else` and never
+    # server-validates the email (a throttled/unknown email falls through to the
+    # same anti-enumeration "sent" panel). So a blank submission is blocked the only
+    # place it can be: the `required` HTML attribute on the email input — there's no
+    # changeset error to assert, the gate is the browser attr.
+    {:ok, _lv, html} = live(conn, ~p"/sign_in/magic")
+
+    assert html =~ ~r/<input[^>]*name="user\[email\]"[^>]*required/
+  end
+
   test "reset_form returns to the email form", %{conn: conn} do
     {:ok, lv, _html} = live(conn, ~p"/sign_in/magic")
 

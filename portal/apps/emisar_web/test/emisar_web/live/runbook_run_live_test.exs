@@ -510,6 +510,271 @@ defmodule EmisarWeb.RunbookRunLiveTest do
     end
   end
 
+  describe "preflight plan (RBK-007)" do
+    test "a runner_id-targeted step resolves its runner ids to names in the plan", %{conn: conn} do
+      # closes RBK-007-T04
+      {conn, user, account} = register_and_log_in(conn)
+      runner = Emisar.Fixtures.runner_fixture(account_id: account.id, name: "edge-eu-1")
+      Emisar.Fixtures.action_fixture(runner: runner, action_id: "linux.uptime")
+      runbook = published_runbook_targeting!(user, account, runner)
+
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/run")
+
+      # The step targets the runner by id; the plan must resolve that id to the
+      # runner's NAME (step_target_label/2), not echo the raw uuid.
+      assert html =~ "edge-eu-1"
+      refute html =~ runner.id
+    end
+
+    test "the idle plan warns that an offline target will queue until it reconnects", %{
+      conn: conn
+    } do
+      # closes RBK-007-T06
+      {conn, user, account} = register_and_log_in(conn)
+      # An offline runner targeted by id stays in the plan (a runner-id selector
+      # passes offline members through; a group selector would skip them). Before
+      # Start, the plan flags that its steps will QUEUE — a heads-up, not a blocker.
+      runner =
+        Emisar.Fixtures.runner_fixture(account_id: account.id, name: "sleepy", connected?: false)
+
+      Emisar.Fixtures.action_fixture(runner: runner, action_id: "linux.uptime")
+      runbook = published_runbook_targeting!(user, account, runner)
+
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/run")
+
+      assert html =~ "sleepy"
+      assert html =~ "will queue until"
+    end
+
+    test "a fan-out beyond the cap is refused with a humanized flash, not a raw atom", %{
+      conn: conn
+    } do
+      # closes RBK-007-T09 (LV half)
+      {conn, user, account} = register_and_log_in(conn)
+      subject = owner_subject(user, account)
+
+      # 21 steps × 50 runner-ids = 1050 resolved runs, over the 1000 cap. Each step
+      # is under the per-step selector cap (50), so the runbook publishes; the cap
+      # trips while resolving the materialized fan-out. Dispatch must surface the
+      # humanized sentence (format_reason/1), not the raw {:fan_out_too_large, …}.
+      steps =
+        for n <- 1..21 do
+          %{
+            "id" => "step#{n}",
+            "action_id" => "linux.uptime",
+            "args" => %{},
+            "runner_selector" => %{"runner_id" => Enum.map(1..50, &"r#{n}_#{&1}")}
+          }
+        end
+
+      {:ok, runbook} =
+        Emisar.Runbooks.create_runbook(
+          %{
+            "title" => "fan out",
+            "name" => "fan out",
+            "slug" => "fan-out",
+            "definition" => %{"steps" => steps}
+          },
+          subject
+        )
+
+      {:ok, runbook} = Emisar.Runbooks.publish(runbook, subject)
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/run")
+      html = render_submit(lv, "dispatch", %{"reason" => "go"})
+
+      assert html =~ "fan out to more than 1000 runs"
+      refute html =~ "fan_out_too_large"
+    end
+
+    test "a stepless runbook shows the empty-state nudge to the editor, not a dispatch", %{
+      conn: conn
+    } do
+      # closes RBK-007-T08
+      {conn, user, account} = register_and_log_in(conn)
+      subject = owner_subject(user, account)
+
+      # Publish enforces ≥1 step, so a stepless runbook is a draft (the run screen
+      # fetches drafts too). Its plan must rest on the "No steps defined" nudge
+      # rather than offering an empty dispatch.
+      {:ok, runbook} =
+        Emisar.Runbooks.create_runbook(
+          %{
+            "title" => "empty",
+            "name" => "empty",
+            "slug" => "empty",
+            "definition" => %{"steps" => []}
+          },
+          subject
+        )
+
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/run")
+
+      assert html =~ "No steps defined"
+      assert html =~ ~p"/app/#{account}/runbooks/#{runbook.id}/edit"
+    end
+  end
+
+  describe "live progress (RBK-010)" do
+    test "the header shows finished/total and the failed count as runs settle", %{conn: conn} do
+      # closes RBK-010-T02
+      {conn, user, account} = register_and_log_in(conn)
+      runner = Emisar.Fixtures.runner_fixture(account_id: account.id)
+      Emisar.Fixtures.action_fixture(runner: runner, action_id: "linux.uptime")
+      Emisar.Fixtures.policy_fixture(account_id: account.id)
+      # 3 steps × 1 runner = 3 runs in one wave — finishing one as failed shows
+      # both the finished/total tally and the failed count in the header.
+      runbook = published_runbook_with_steps!(user, account, runner, 3)
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/run")
+      assert render_submit(lv, "dispatch", %{"reason" => "go"}) =~ "3 runs planned"
+
+      subject = owner_subject(user, account)
+      {:ok, runs, _} = Emisar.Runs.list_recent_runs_for_runner(runner.id, subject)
+      [failed | _] = runs
+
+      {:ok, _} =
+        Emisar.Runs.finalize_from_result(failed.runner_id, %{
+          "request_id" => failed.request_id,
+          "status" => "failed",
+          "exit_code" => 1
+        })
+
+      html = render(lv)
+      # One of three has settled, and it failed — the header carries both counts.
+      assert html =~ "1/3 finished"
+      assert html =~ "1 failed"
+    end
+
+    test "a run_updated for a DIFFERENT execution is ignored", %{conn: conn} do
+      # closes RBK-010-T13
+      {conn, user, account} = register_and_log_in(conn)
+      runner = Emisar.Fixtures.runner_fixture(account_id: account.id)
+      Emisar.Fixtures.action_fixture(runner: runner, action_id: "linux.uptime")
+      Emisar.Fixtures.policy_fixture(account_id: account.id)
+      runbook = published_runbook_targeting!(user, account, runner)
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/run")
+      assert render_submit(lv, "dispatch", %{"reason" => "go"}) =~ "Runbook dispatched"
+
+      subject = owner_subject(user, account)
+      {:ok, [run], _} = Emisar.Runs.list_recent_runs_for_runner(runner.id, subject)
+
+      # A run carrying a foreign execution id (and a DISTINCT step id so a wrongly
+      # streamed row would be a new, detectable dom_id) arrives on the account
+      # topic. The page is keyed to its OWN execution, so it must drop this one —
+      # no `run-other_step-…` row appears.
+      foreign = %{
+        run
+        | runbook_execution_id: Emisar.Repo.generate_id(),
+          runbook_step_id: "other_step"
+      }
+
+      send(lv.pid, {:run_updated, foreign})
+
+      refute render(lv) =~ "run-other_step-"
+      # The original execution row is still the only run row on the page.
+      assert render(lv) =~ "Execution"
+    end
+
+    test "an unrelated forwarded broadcast is swallowed by the catch-all", %{conn: conn} do
+      # closes RBK-010-T14
+      {conn, user, account} = register_and_log_in(conn)
+      Emisar.Fixtures.runner_fixture(account_id: account.id)
+      runbook = published_runbook!(user, account)
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/run")
+
+      # The shared badge/fleet hooks forward account-topic messages to every LV;
+      # this page's handle_info catch-all must swallow ones it doesn't render
+      # (mandatory per the LiveView memory) without crashing the process.
+      send(lv.pid, {:list_changed, :approval, "approval.created", "irrelevant"})
+      send(lv.pid, :some_unrelated_message)
+
+      assert render(lv) =~ "Plan"
+    end
+
+    test "on refresh, a dispatched run whose plan slot no longer resolves is appended, not dropped",
+         %{conn: conn} do
+      # closes RBK-010-T11
+      {conn, user, account} = register_and_log_in(conn)
+      subject = owner_subject(user, account)
+
+      # published_runbook!'s lone step targets group "default". Dispatch fans it to
+      # the one active member (runner_b); the run is created against runner_b.
+      runner_b =
+        Emisar.Fixtures.runner_fixture(account_id: account.id, group: "default", name: "node-b")
+
+      Emisar.Fixtures.action_fixture(runner: runner_b, action_id: "linux.uptime")
+      Emisar.Fixtures.policy_fixture(account_id: account.id)
+      runbook = published_runbook!(user, account)
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/run")
+      assert render_submit(lv, "dispatch", %{"reason" => "go"}) =~ "Runbook dispatched"
+
+      {:ok, [run_b], _} = Emisar.Runs.list_recent_runs_for_runner(runner_b.id, subject)
+
+      # The group's membership changes AFTER dispatch: runner_b is disabled and a
+      # fresh active member joins. On refresh, resolve_plan re-resolves the step to
+      # the NEW runner (node-c), so runner_b's already-dispatched run no longer
+      # matches a plan slot. merged_execution_rows must APPEND it (in dispatch
+      # order) rather than silently drop a run the operator already saw.
+      {:ok, _} = Emisar.Runners.disable_runner(runner_b, subject)
+
+      runner_c =
+        Emisar.Fixtures.runner_fixture(account_id: account.id, group: "default", name: "node-c")
+
+      Emisar.Fixtures.action_fixture(runner: runner_c, action_id: "linux.uptime")
+
+      {:ok, _lv2, html} = live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/run")
+
+      # The execution rehydrates and runner_b's orphaned run still renders…
+      assert html =~ "Execution"
+      assert html =~ "run-uptime-#{run_b.runner_id}"
+      assert html =~ "on node-b"
+      # …alongside the re-resolved placeholder slot for the new group member.
+      assert html =~ "run-uptime-#{runner_c.id}"
+    end
+
+    test "markup in a run's output is escaped, never rendered as raw HTML", %{conn: conn} do
+      # closes RBK-010-T16
+      {conn, user, account} = register_and_log_in(conn)
+      runner = Emisar.Fixtures.runner_fixture(account_id: account.id)
+      Emisar.Fixtures.action_fixture(runner: runner, action_id: "linux.uptime")
+      Emisar.Fixtures.policy_fixture(account_id: account.id)
+      runbook = published_runbook_targeting!(user, account, runner)
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/run")
+      assert render_submit(lv, "dispatch", %{"reason" => "go"}) =~ "Runbook dispatched"
+
+      # The runner output is attacker-influenced — emit a <script> tag, then
+      # finish the run so its tail preview renders. It must go through
+      # output_preview (HEEx-escaped), never raw/1 (IL-16): the page shows the
+      # escaped text, not an executable tag.
+      subject = owner_subject(user, account)
+      {:ok, [run], _} = Emisar.Runs.list_recent_runs_for_runner(runner.id, subject)
+
+      {:ok, _} =
+        Emisar.Runs.append_event(run, %{
+          seq: 1,
+          kind: "progress",
+          stream: "stdout",
+          payload: %{"chunk" => "<script>alert('xss')</script>\n"}
+        })
+
+      {:ok, _} =
+        Emisar.Runs.finalize_from_result(run.runner_id, %{
+          "request_id" => run.request_id,
+          "status" => "success",
+          "exit_code" => 0
+        })
+
+      html = render(lv)
+      assert html =~ "&lt;script&gt;"
+      refute html =~ "<script>alert"
+    end
+  end
+
   describe "dispatch validation" do
     test "a blank reason shows an inline field error, not a flash", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)

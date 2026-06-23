@@ -95,6 +95,48 @@ defmodule Emisar.SSOGroupsTest do
     end
   end
 
+  # -- Config: required + uniqueness -----------------------------------
+
+  describe "group→role mapping config — required fields + uniqueness" do
+    # closes TEAM-030-T08
+    test "a create missing external_group_id or role is rejected" do
+      %{provider: provider, subject: subject} = scim_provider()
+
+      assert {:error, changeset} =
+               SSO.create_group_mapping(provider, %{role: :admin}, subject)
+
+      assert "can't be blank" in errors_on(changeset).external_group_id
+
+      assert {:error, changeset} =
+               SSO.create_group_mapping(provider, %{external_group_id: "grp-x"}, subject)
+
+      assert "can't be blank" in errors_on(changeset).role
+    end
+
+    # closes TEAM-030-T09
+    test "a duplicate (provider, external_group_id) hits the unique index" do
+      %{provider: provider, subject: subject} = scim_provider()
+
+      assert {:ok, _} =
+               SSO.create_group_mapping(
+                 provider,
+                 %{external_group_id: "00g-dupe", role: :admin},
+                 subject
+               )
+
+      assert {:error, changeset} =
+               SSO.create_group_mapping(
+                 provider,
+                 %{external_group_id: "00g-dupe", role: :operator},
+                 subject
+               )
+
+      # The unique index on (provider_id, external_group_id) maps the violation
+      # onto the first constraint field, :provider_id.
+      assert "has already been taken" in errors_on(changeset).provider_id
+    end
+  end
+
   # -- Config: gating + cross-account ----------------------------------
 
   describe "group→role mapping config — enterprise + manage_sso gated" do
@@ -241,6 +283,7 @@ defmodule Emisar.SSOGroupsTest do
     end
 
     test "a member in two mapped groups gets the HIGHEST (admin > operator > viewer)" do
+      # closes SCIM-017-T03
       %{provider: provider, subject: subject, account: account} = scim_provider()
       %{identity: identity} = provision(provider, "okta|multi")
 
@@ -330,6 +373,38 @@ defmodule Emisar.SSOGroupsTest do
 
       assert role_of(account.id, identity.user_id) == :admin
     end
+
+    @tag capture_log: true
+    test "a refused/failed per-member recompute is logged, not fatal — the push still succeeds" do
+      # closes SCIM-015-T07
+      %{provider: provider, subject: subject, account: account} = scim_provider()
+      %{identity: kept_identity} = provision(provider, "okta|kept")
+      %{identity: gone_identity, membership: gone_membership} = provision(provider, "okta|gone")
+
+      {:ok, _} =
+        SSO.create_group_mapping(provider, %{external_group_id: "grp-adm", role: :admin}, subject)
+
+      # An operator removed one member from the team (membership soft-deleted)
+      # while their identity lived on — so the recompute will find no membership
+      # for that identity and refuse with :not_found.
+      {:ok, _} =
+        gone_membership |> Ecto.Changeset.change(deleted_at: DateTime.utc_now()) |> Repo.update()
+
+      refute Accounts.peek_sync_membership(account.id, gone_identity.user_id)
+
+      # The push lands both members into the mapped group. The recompute for the
+      # provisioned member succeeds; the one for the membership-less identity is
+      # refused — that refusal is logged (#5), never surfaced as a failure.
+      assert {:ok, %{member_count: 2}} =
+               SSO.scim_upsert_group(provider, %{
+                 external_id: "grp-adm",
+                 member_external_ids: ["okta|kept", "okta|gone"]
+               })
+
+      # The healthy member's role was still recomputed — the failed one didn't
+      # abort the batch.
+      assert role_of(account.id, kept_identity.user_id) == :admin
+    end
   end
 
   # -- Sync: the escalation + lockout guards ---------------------------
@@ -368,6 +443,35 @@ defmodule Emisar.SSOGroupsTest do
 
       assert {:ok, %Accounts.Membership{role: :owner}} =
                SSO.recompute_role_for_identity(provider, Repo.reload!(identity))
+    end
+
+    test "recompute_role_for_identity resets an elevated member in no mapped group to default_role" do
+      # closes SCIM-015-T03
+      %{provider: provider, subject: subject, account: account} = scim_provider()
+      %{identity: identity} = provision(provider, "okta|demote")
+
+      {:ok, _} =
+        SSO.create_group_mapping(provider, %{external_group_id: "grp-adm", role: :admin}, subject)
+
+      {:ok, _} =
+        SSO.scim_upsert_group(provider, %{
+          external_id: "grp-adm",
+          member_external_ids: ["okta|demote"]
+        })
+
+      assert role_of(account.id, identity.user_id) == :admin
+
+      # Drop the only mapping → the identity belongs to no mapped group. The
+      # direct recompute entry point demotes them to the provider default_role
+      # (:viewer) — least-privilege on directory removal (#3), never a stale
+      # elevated role.
+      {:ok, [mapping], _meta} = SSO.list_group_mappings(provider, subject)
+      {:ok, _} = SSO.delete_group_mapping(mapping, subject)
+
+      assert {:ok, %Accounts.Membership{role: :viewer}} =
+               SSO.recompute_role_for_identity(provider, Repo.reload!(identity))
+
+      assert role_of(account.id, identity.user_id) == :viewer
     end
 
     test "sync_set_membership_role won't demote the last active owner (defense in depth)" do

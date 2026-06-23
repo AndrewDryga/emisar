@@ -562,6 +562,365 @@ defmodule EmisarWeb.RunnerSocketTest do
 
       assert {:ok, ^state} = RunnerSocket.handle_in({raw, text()}, state)
     end
+
+    # closes ENG-029-T05 — a progress chunk with a nil request_id is dropped at
+    # the `fetch_run_id(nil, _)` guard before any DB touch; the socket stays up.
+    test "progress with a nil request_id is dropped quietly", %{state: state} do
+      raw = Jason.encode!(%{"type" => "action_progress", "seq" => 1, "chunk" => "x"})
+      assert {:ok, ^state} = RunnerSocket.handle_in({raw, text()}, state)
+    end
+
+    # closes ENG-029-T06 — the historical fix: `chunk`/`stream` are persisted
+    # NESTED under `payload` (what `action_run_events` stores), never top-level
+    # where Ecto silently dropped them. Guards against that regression.
+    test "the chunk/stream land under payload, not as top-level event fields", %{
+      state: state,
+      run: run
+    } do
+      raw =
+        Jason.encode!(%{
+          "type" => "action_progress",
+          "request_id" => run.request_id,
+          "seq" => 7,
+          "stream" => "stderr",
+          "chunk" => "boom\n"
+        })
+
+      assert {:ok, ^state} = RunnerSocket.handle_in({raw, text()}, state)
+
+      progress =
+        Emisar.Runs.RunEvent.Query.all()
+        |> Emisar.Runs.RunEvent.Query.by_run_id(run.id)
+        |> Repo.all()
+        |> Enum.find(&(&1.kind == :progress))
+
+      assert progress.payload == %{"chunk" => "boom\n", "stream" => "stderr"}
+      # The seq/stream the schema persists at top level are populated; the
+      # chunk is ONLY inside payload.
+      assert progress.seq == 7
+      refute Map.has_key?(progress.payload, "seq")
+    end
+  end
+
+  # The runner socket is the hostile-input boundary: a runner is authenticated
+  # but UNTRUSTED. These prove a runner can only ever touch its OWN account's
+  # runs/state — even another runner in the SAME account is out of reach —
+  # which is the security contract `*_for_runner` scoping exists to keep.
+  describe "handle_in/2 — cross-runner scoping (same-account, untrusted runner)" do
+    setup [:connected_socket, :dispatched_run]
+
+    # closes ENG-029-T02 (same-account branch) — runner B, sharing A's account,
+    # cannot append a progress chunk to A's run: `fetch_run_id` scopes by the
+    # authenticated socket's runner_id, so B's frame finds no run and is dropped.
+    test "runner B can't write progress against runner A's run", %{
+      account: account,
+      state: state,
+      run: run
+    } do
+      runner_b = Fixtures.runner_fixture(account_id: account.id, connected?: false)
+      state_b = %{state | runner_id: runner_b.id}
+
+      raw =
+        Jason.encode!(%{
+          "type" => "action_progress",
+          "request_id" => run.request_id,
+          "seq" => 1,
+          "stream" => "stdout",
+          "chunk" => "stolen\n"
+        })
+
+      assert {:ok, ^state_b} = RunnerSocket.handle_in({raw, text()}, state_b)
+
+      # A's run gained no progress event from B's frame.
+      events =
+        Emisar.Runs.RunEvent.Query.all()
+        |> Emisar.Runs.RunEvent.Query.by_run_id(run.id)
+        |> Repo.all()
+
+      refute Enum.any?(events, &(&1.kind == :progress))
+    end
+
+    # closes ENG-030-T04, ENG-030-T05 (same-account branch) — runner B can't
+    # finalize A's run: `finalize_from_result` is runner-scoped, so to B the
+    # request_id is unknown → acked + remembered (terminal), and A's run stays
+    # un-finalized (still :sent).
+    test "runner B finalizing runner A's run is treated as unknown (acked, A untouched)", %{
+      account: account,
+      state: state,
+      run: run
+    } do
+      runner_b = Fixtures.runner_fixture(account_id: account.id, connected?: false)
+      state_b = %{state | runner_id: runner_b.id}
+
+      frame_in = result_frame(run.request_id, "success", exit_code: 0)
+      assert {:push, ack, state_b2} = RunnerSocket.handle_in({frame_in, text()}, state_b)
+      assert %{"type" => "ack_result", "request_id" => acked} = decode(ack)
+      assert acked == run.request_id
+
+      # A's run was NOT finalized by B — still sent, no exit_code.
+      a_run = Repo.get!(ActionRun, run.id)
+      assert a_run.status == :sent
+      assert is_nil(a_run.exit_code)
+
+      # And B remembered it: a retry of the same (to B, unknown) id is deduped.
+      assert {:push, _ack, ^state_b2} = RunnerSocket.handle_in({frame_in, text()}, state_b2)
+    end
+  end
+
+  describe "handle_in/2 — action_result, unknown/foreign request_id" do
+    setup [:connected_socket]
+
+    # closes ENG-030-T04 — a result for a request_id with no matching run is
+    # genuinely terminal: acked AND remembered so a retry never re-runs the
+    # unknown-request lookup/log. (The same-account scoping variant is above.)
+    test "an unknown request_id is acked and remembered (no reprocess on retry)", %{state: state} do
+      frame_in = result_frame("req_never_dispatched", "success", exit_code: 0)
+
+      assert {:push, ack, state} = RunnerSocket.handle_in({frame_in, text()}, state)
+      assert %{"type" => "ack_result", "request_id" => "req_never_dispatched"} = decode(ack)
+
+      assert {:push, _ack, ^state} = RunnerSocket.handle_in({frame_in, text()}, state)
+    end
+  end
+
+  describe "handle_in/2 — runner_state ingress (catalog observe)" do
+    setup [:connected_socket]
+
+    # closes ENG-028-T01, ENG-028-T03 — a valid runner_state advertising packs +
+    # actions syncs the catalog (the runner's catalog rows appear) and is scoped
+    # to THIS socket's runner by construction (the handler passes
+    # `state.runner_id`, never a runner id from the wire), so a runner can only
+    # ever observe its own catalog.
+    test "a valid runner_state advertises packs/actions into THIS runner's catalog", %{
+      state: state,
+      runner: runner
+    } do
+      raw =
+        Jason.encode!(%{
+          "type" => "runner_state",
+          "packs" => %{"linux" => %{"version" => "1.0.0", "hash" => "sha256:deadbeef"}},
+          "actions" => [
+            %{"id" => "linux.df", "pack_id" => "linux", "risk" => "low", "kind" => "exec"}
+          ]
+        })
+
+      assert {:ok, _state} = RunnerSocket.handle_in({raw, text()}, state)
+
+      # The advertised action was observed against this runner (and only this
+      # runner — the handler never reads a runner id from the payload).
+      observed =
+        Emisar.Catalog.RunnerAction.Query.all()
+        |> Emisar.Catalog.RunnerAction.Query.by_runner_id(runner.id)
+        |> Repo.all()
+
+      assert Enum.any?(observed, &(&1.action_id == "linux.df"))
+    end
+
+    # closes ENG-028-T03 (IL-14) — advertised pack/action names are runner input
+    # and must never be turned into atoms (atom table never GCs → DoS). A
+    # never-before-seen, otherwise-valid name is accepted and persisted as a
+    # STRING; it does not exist as an atom afterward.
+    test "an advertised action name is never coerced to an atom (IL-14)", %{state: state} do
+      novel = "linux.nonexistent_action_#{System.unique_integer([:positive])}"
+
+      raw =
+        Jason.encode!(%{
+          "type" => "runner_state",
+          "packs" => %{"linux" => %{"version" => "1.0.0", "hash" => "sha256:abc"}},
+          "actions" => [
+            %{"id" => novel, "pack_id" => "linux", "risk" => "low", "kind" => "exec"}
+          ]
+        })
+
+      assert {:ok, _state} = RunnerSocket.handle_in({raw, text()}, state)
+
+      # The name round-tripped as data — it must NOT have minted a new atom.
+      assert_raise ArgumentError, fn -> String.to_existing_atom(novel) end
+    end
+
+    # closes ENG-028-T04 — runner_state is a REFRESH path, not the connect path:
+    # `connect_runner` already fired at init, so the runner is online before any
+    # runner_state arrives, and stays online across one.
+    test "runner_state is a refresh — the runner is already online before it arrives", %{
+      account: account,
+      state: state,
+      runner: runner
+    } do
+      assert Runners.online?(account.id, runner.id)
+
+      raw = Jason.encode!(%{"type" => "runner_state", "packs" => %{}, "actions" => []})
+      assert {:ok, _state} = RunnerSocket.handle_in({raw, text()}, state)
+
+      assert Runners.online?(account.id, runner.id)
+    end
+  end
+
+  describe "handle_in/2 — heartbeat resilience + scoping" do
+    setup [:connected_socket]
+
+    # closes ENG-031-T04 — a garbage (here: nil) action_load is carried into
+    # ephemeral presence metadata as-is (ENG-003 trusts the runner-declared
+    # load); the handler never crashes on it. A nil keeps the prior value.
+    test "a heartbeat with a missing action_load is carried as-is, no crash", %{
+      state: state,
+      runner: runner
+    } do
+      # Seed a known load first…
+      first = Jason.encode!(%{"type" => "heartbeat", "action_load" => 5})
+      assert {:ok, state} = RunnerSocket.handle_in({first, text()}, state)
+
+      # …then a heartbeat with NO action_load field — the `|| meta.action_load`
+      # fallback keeps the prior value; nothing raises.
+      bare = Jason.encode!(%{"type" => "heartbeat"})
+      assert {:ok, _state} = RunnerSocket.handle_in({bare, text()}, state)
+
+      assert %{metas: [meta | _]} =
+               Runners.connection_metas(runner.account_id) |> Map.fetch!(runner.id)
+
+      assert meta.action_load == 5
+    end
+
+    # closes ENG-031-T05 — heartbeat is scoped to the authenticated socket's
+    # OWN account/runner: it updates only this runner's presence meta, never
+    # another runner sharing the account. The handler reads
+    # `state.account_id`/`state.runner_id` only.
+    test "a heartbeat updates only THIS runner's presence, not a same-account peer", %{
+      account: account,
+      state: state,
+      runner: runner
+    } do
+      peer = Fixtures.runner_fixture(account_id: account.id, connected?: true)
+
+      raw = Jason.encode!(%{"type" => "heartbeat", "action_load" => 11})
+      assert {:ok, _state} = RunnerSocket.handle_in({raw, text()}, state)
+
+      metas = Runners.connection_metas(account.id)
+      assert %{metas: [mine | _]} = Map.fetch!(metas, runner.id)
+      assert mine.action_load == 11
+
+      # The peer's meta is untouched by this runner's heartbeat.
+      assert %{metas: [peer_meta | _]} = Map.fetch!(metas, peer.id)
+      refute peer_meta.action_load == 11
+    end
+  end
+
+  describe "handle_in/2 — error envelope audit" do
+    setup [:connected_socket]
+
+    # closes ENG-032-T01, ENG-032-T02 — an `error` envelope writes a
+    # runner.error audit row AND that row carries the runner's CONNECT
+    # request_context (the IP/UA captured at socket init), which is the only
+    # place that connect metadata is allowed to surface.
+    test "an error envelope records a runner.error audit row stamped with the connect IP/UA",
+         %{account: account, runner: runner, user: user} do
+      # Rebuild the socket with a known connect IP/UA so we can assert it rides
+      # the audit row (connected_socket's init uses no ip/ua).
+      {_raw, token} = Runners.mint_runner_token(runner)
+
+      {:ok, state} =
+        RunnerSocket.init(%{
+          token: token,
+          runner: runner,
+          ip_address: "203.0.113.7",
+          user_agent: "emisar-runner/9.9.9"
+        })
+
+      raw =
+        Jason.encode!(%{
+          "type" => "error",
+          "code" => "exec_failed",
+          "message" => "binary not found",
+          "request_id" => "req_err_1"
+        })
+
+      assert {:ok, ^state} = RunnerSocket.handle_in({raw, text()}, state)
+
+      subject = Fixtures.subject_for(user, account, role: :owner)
+      {:ok, events, _meta} = Emisar.Audit.list_events(subject, subject_id: runner.id)
+
+      row = Enum.find(events, &(&1.event_type == "runner.error"))
+      assert row, "expected a runner.error audit row"
+      assert row.payload["code"] == "exec_failed"
+      assert row.payload["message"] == "binary not found"
+      assert row.payload["request_id"] == "req_err_1"
+      # The connect IP/UA rides the runner's own lifecycle event.
+      assert row.ip_address == "203.0.113.7"
+      assert row.user_agent == "emisar-runner/9.9.9"
+    end
+
+    # closes ENG-032-T05 — an error envelope missing code/message still records
+    # the row; the absent fields are carried into the payload as nil rather than
+    # dropping the audit.
+    test "an error envelope missing code/message still records a row (nils carried)", %{
+      account: account,
+      runner: runner,
+      user: user,
+      state: state
+    } do
+      raw = Jason.encode!(%{"type" => "error", "request_id" => "req_err_2"})
+      assert {:ok, ^state} = RunnerSocket.handle_in({raw, text()}, state)
+
+      subject = Fixtures.subject_for(user, account, role: :owner)
+      {:ok, events, _meta} = Emisar.Audit.list_events(subject, subject_id: runner.id)
+
+      row =
+        Enum.find(events, fn e ->
+          e.event_type == "runner.error" and e.payload["request_id"] == "req_err_2"
+        end)
+
+      assert row, "expected a runner.error audit row even with missing fields"
+      assert row.payload["code"] == nil
+      assert row.payload["message"] == nil
+    end
+  end
+
+  # Egress: the protocol version is stamped at the SOCKET boundary, not in the
+  # domain layer — the context builds a version-free envelope and the socket
+  # adds `protocol_version: 1` on every frame it pushes. These pin that seam so
+  # a runner always sees a version-tagged frame regardless of type.
+  describe "handle_in/2 + handle_info/2 — protocol_version stamped at egress" do
+    setup [:connected_socket, :dispatched_run]
+
+    # closes ENG-033-T08 — the cloud→runner envelope as the CONTEXT builds it
+    # carries no protocol_version; the socket adds it on push. Same delivery
+    # path a dispatched run_action takes.
+    test "a context-built cloud_to_runner envelope gains protocol_version only at egress", %{
+      state: state
+    } do
+      # As built by the context (Runs.deliver_run_action) — no protocol_version.
+      context_msg = %{"type" => "run_action", "request_id" => "req_egress"}
+      refute Map.has_key?(context_msg, "protocol_version")
+
+      assert {:push, frame, ^state} =
+               RunnerSocket.handle_info({:cloud_to_runner, context_msg}, state)
+
+      pushed = decode(frame)
+      assert pushed["protocol_version"] == 1
+      assert pushed["type"] == "run_action"
+      assert pushed["request_id"] == "req_egress"
+    end
+
+    # closes ENG-034-T06 — all three socket-pushed frame types stamp
+    # protocol_version: 1 at egress: ack_result (on a result), error (on a bad
+    # envelope), and shutdown (on drain).
+    test "ack_result, error, and shutdown frames all carry protocol_version: 1", %{
+      state: state,
+      run: run
+    } do
+      # ack_result — finalize a real run.
+      result = result_frame(run.request_id, "success", exit_code: 0)
+      assert {:push, ack, _state} = RunnerSocket.handle_in({result, text()}, state)
+      assert %{"type" => "ack_result", "protocol_version" => 1} = decode(ack)
+
+      # error — a malformed envelope.
+      assert {:push, err, ^state} = RunnerSocket.handle_in({"{bad", text()}, state)
+      assert %{"type" => "error", "protocol_version" => 1} = decode(err)
+
+      # shutdown — a drain broadcast.
+      assert {:push, shut, ^state} = RunnerSocket.handle_info(:runner_socket_drain, state)
+      assert %{"type" => "shutdown", "protocol_version" => 1} = decode(shut)
+      assert_receive :stop_after_drain
+    end
   end
 
   describe "normalize_ip/1" do

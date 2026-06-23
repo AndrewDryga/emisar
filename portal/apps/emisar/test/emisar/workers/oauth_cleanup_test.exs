@@ -67,3 +67,71 @@ defmodule Emisar.Workers.OAuthCleanupTest do
     refute Repo.reload(client)
   end
 end
+
+defmodule Emisar.Workers.OAuthCleanupLogTest do
+  @moduledoc """
+  The swept-count log lines. `async: false` because it raises the global Logger
+  level to `:info` (the test env defaults to `:warning`) to observe an info log.
+  """
+  use Emisar.DataCase, async: false
+
+  import Emisar.Fixtures
+  import ExUnit.CaptureLog
+
+  alias Emisar.OAuth
+  alias Emisar.OAuth.AuthorizationCode
+  alias Emisar.Workers.OAuthCleanup
+
+  @redirect "https://claude.ai/api/mcp/auth_callback"
+
+  setup do
+    previous = Logger.level()
+    Logger.configure(level: :info)
+    on_exit(fn -> Logger.configure(level: previous) end)
+    :ok
+  end
+
+  defp issue_expired_code! do
+    {_user, _account, subject} = owner_subject_fixture()
+
+    {:ok, client} =
+      OAuth.register_client(%{"client_name" => "C", "redirect_uris" => [@redirect]})
+
+    verifier = Base.url_encode64(:crypto.strong_rand_bytes(32), padding: false)
+    challenge = Base.url_encode64(:crypto.hash(:sha256, verifier), padding: false)
+
+    {:ok, _} =
+      OAuth.issue_code(
+        client,
+        %{
+          "redirect_uri" => @redirect,
+          "code_challenge" => challenge,
+          "code_challenge_method" => "S256",
+          "scope" => "mcp",
+          "resource" => "https://emisar.dev/api/mcp/rpc"
+        },
+        subject
+      )
+
+    past = DateTime.add(DateTime.utc_now(), -120, :second)
+    {1, _} = AuthorizationCode.Query.all() |> Repo.update_all(set: [expires_at: past])
+    :ok
+  end
+
+  # closes ENG-026-T05 — the swept-count lines are logged ONLY when something was
+  # deleted (each guarded by `if n > 0`). A no-op sweep over an empty/fresh table
+  # (every daily tick when nothing aged out) stays silent rather than logging
+  # "codes_swept 0 / unused_clients_swept 0"; a sweep that prunes a code logs it.
+  test "perform/1 logs swept counts only when rows were deleted" do
+    # Nothing to delete (no codes, no abandoned clients) → silent.
+    silent = capture_log(fn -> assert :ok = OAuthCleanup.perform(%Oban.Job{args: %{}}) end)
+    refute silent =~ "oauth_cleanup.codes_swept"
+    refute silent =~ "oauth_cleanup.unused_clients_swept"
+
+    :ok = issue_expired_code!()
+
+    # An expired code → the codes line is logged.
+    noisy = capture_log(fn -> assert :ok = OAuthCleanup.perform(%Oban.Job{args: %{}}) end)
+    assert noisy =~ "oauth_cleanup.codes_swept"
+  end
+end

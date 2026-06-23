@@ -102,6 +102,42 @@ defmodule Emisar.Workers.ActionRunEventRetentionTest do
     assert event_ids(account.id) == MapSet.new([kept.id])
   end
 
+  # closes ENG-025-T05 — an account whose subscription carries an unknown /
+  # renamed plan name resolves to the free window rather than crashing, so the
+  # run-event prune (which keys on the SAME plan lookup as audit retention)
+  # degrades gracefully on a legacy plan string.
+  test "falls back to the free window when the plan is unresolvable" do
+    account = account_fixture()
+    subscription_fixture(account, "legacy-unlisted-plan")
+    runner = runner_fixture(account_id: account.id)
+    old_run = finished_run(account, runner, @beyond_window_days)
+    add_event(old_run, 1)
+
+    assert :ok = ActionRunEventRetention.perform(%Oban.Job{args: %{}})
+
+    # 30 days > the free fallback's 7-day window → pruned.
+    assert event_ids(account.id) == MapSet.new()
+  end
+
+  # closes ENG-025-T04 — the sweep pages accounts via `Account.Query.all()`, not
+  # `not_deleted()`, on purpose: a soft-deleted (closed) account's run events
+  # still occupy space and age past the plan window all the same. A regression to
+  # `not_deleted()` would leave a closed tenant's chunks growing forever.
+  test "prunes a tombstoned account's events for runs finished past the window" do
+    account = account_fixture()
+    runner = runner_fixture(account_id: account.id)
+    old_run = finished_run(account, runner, @beyond_window_days)
+    add_event(old_run, 1)
+
+    # Soft-delete the account (a direct row write — the fixture way to set the
+    # tombstone state; no Subject path deletes an account in this test).
+    account |> Ecto.Changeset.change(deleted_at: DateTime.utc_now()) |> Repo.update!()
+
+    assert :ok = ActionRunEventRetention.perform(%Oban.Job{args: %{}})
+
+    assert event_ids(account.id) == MapSet.new()
+  end
+
   test "does not prune another account's events" do
     account_a = account_fixture()
     runner_a = runner_fixture(account_id: account_a.id)

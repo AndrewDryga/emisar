@@ -10,6 +10,8 @@ defmodule Emisar.RunbooksTest do
   import Emisar.Fixtures
 
   alias Emisar.{Accounts, Repo, Runbooks, Runners, Runs}
+  alias Emisar.ApiKeys.ApiKey
+  alias Emisar.Auth.Subject
   alias Emisar.Runbooks.RunbookExecution
 
   defp account_with_runner do
@@ -224,6 +226,7 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "refuses a runbook whose resolved fan-out exceeds the cap" do
+      # closes RBK-007-T09 (resolve_plan half) RBK-008-T13
       {_account, subject, _runner} = account_with_runner()
 
       # 21 steps × 50 runner targets = 1050 resolved runs, over the 1000 cap. The
@@ -245,6 +248,191 @@ defmodule Emisar.RunbooksTest do
 
       assert {:error, {:fan_out_too_large, 1000}} = Runbooks.resolve_plan(runbook, subject)
       assert {:ok, [], _meta} = Runs.list_runs(subject)
+    end
+
+    test "a step whose policy requires approval queues a pending-approval run, not a hard error" do
+      # closes RBK-008-T07
+      {_user, account, subject} = owner_subject_fixture()
+
+      # The same per-step policy/approval gate a normal run hits: require_approval
+      # on every risk → the dispatched run parks for a human instead of erroring.
+      _ =
+        policy_fixture(
+          account_id: account.id,
+          rules: %{
+            "schema_version" => 2,
+            "defaults" => %{
+              "low" => "require_approval",
+              "medium" => "require_approval",
+              "high" => "require_approval",
+              "critical" => "require_approval"
+            },
+            "overrides" => []
+          }
+        )
+
+      runner = runner_fixture(account_id: account.id)
+      _ = action_fixture(runner: runner, action_id: "linux.uptime", risk: "low")
+      runbook = published_runbook!(subject, "gated-book", uptime_steps(1, runner_target(runner)))
+
+      assert {:ok, %{execution_id: execution_id, total: 1, runs: [run], errors: []}} =
+               Runbooks.dispatch_runbook(runbook, "needs sign-off", subject)
+
+      # The run exists and waits on an operator (per-step approval honored) — it is
+      # a real run row in the execution, not a dispatch failure.
+      assert run.status == :pending_approval
+      assert run.runbook_step_id == "step1"
+      assert [pending] = execution_runs(account, execution_id)
+      assert pending.status == :pending_approval
+    end
+
+    test "an api_client without a membership is refused with :membership_required" do
+      # closes RBK-008-T20
+      {_user, account, owner} = owner_subject_fixture()
+      runner = runner_fixture(account_id: account.id)
+      _ = action_fixture(runner: runner, action_id: "linux.uptime", risk: "low")
+      runbook = published_runbook!(owner, "keyless-book", uptime_steps(1, runner_target(runner)))
+
+      # An API-key subject in the runbook's account holding dispatch_run but minted
+      # without a creator membership (membership_id: nil). The continuation re-runs
+      # this gate every wave, so a user-less dispatch with no membership is refused
+      # up front rather than running unscoped.
+      keyless =
+        Subject.for_api_key(%ApiKey{id: Repo.generate_id(), account_id: account.id}, account)
+
+      assert {:error, :membership_required} =
+               Runbooks.dispatch_runbook(runbook, "go", keyless)
+
+      # Nothing dispatched — the gate trips before any run row (or execution) exists.
+      assert {:ok, [], _meta} = Runs.list_runs(owner)
+    end
+
+    test "dispatching to an offline in-account runner queues the run rather than erroring" do
+      # closes RBK-008-T10
+      {_user, account, subject} = owner_subject_fixture()
+      _ = policy_fixture(account_id: account.id)
+      # An offline runner that still advertises the action. A runner-id selector
+      # passes it through (a group selector would skip offline members), and the
+      # dispatch broadcasts the run_action envelope regardless of presence — so the
+      # run is CREATED (queued in :sent/:pending), not refused. It executes once the
+      # runner reconnects; offline is a heads-up, not a hard dispatch failure.
+      offline = runner_fixture(account_id: account.id, connected?: false)
+      _ = action_fixture(runner: offline, action_id: "linux.uptime", risk: "low")
+
+      runbook =
+        published_runbook!(subject, "queued-book", uptime_steps(1, runner_target(offline)))
+
+      assert {:ok, %{execution_id: execution_id, total: 1, runs: [run], errors: []}} =
+               Runbooks.dispatch_runbook(runbook, "go", subject)
+
+      assert run.runner_id == offline.id
+      assert run.status in [:pending, :sent]
+      assert [queued] = execution_runs(account, execution_id)
+      assert queued.id == run.id
+    end
+
+    test "a single-step runbook that can't dispatch at all returns the bare reason" do
+      # closes RBK-008-T11
+      {_user, account, subject} = owner_subject_fixture()
+      _ = policy_fixture(account_id: account.id)
+      # A runner in the account that NEVER advertised the action → its sole slot
+      # fails to dispatch (:action_not_found). With no run row created and nothing
+      # else in the wave, the whole start failed, so dispatch hands back the bare
+      # reason — not an execution map with a per-row error (that shape is only
+      # useful when SOME rows dispatched and others didn't, the partial-wave case).
+      mute = runner_fixture(account_id: account.id)
+      runbook = published_runbook!(subject, "doomed-book", uptime_steps(1, runner_target(mute)))
+
+      assert {:error, :action_not_found} = Runbooks.dispatch_runbook(runbook, "go", subject)
+
+      # Nothing dispatched — no run row survives the failed start.
+      assert {:ok, [], _meta} = Runs.list_runs(subject)
+    end
+
+    test "dispatch_runbook requires the reason to be a binary (function-head guard)" do
+      # closes RBK-008-T17
+      {_account, subject, runner} = account_with_runner()
+
+      runbook =
+        published_runbook!(subject, "guarded-reason", uptime_steps(1, runner_target(runner)))
+
+      # `reason` is a required positional with a `when is_binary(reason)` head guard
+      # — a non-binary reason has no matching clause, so the call raises rather than
+      # silently dispatching a run whose audit reason is a nil/term. (Bound through
+      # a var so the compiler's type checker doesn't flag the deliberate mismatch.)
+      bad_reason = Enum.random([nil, 42])
+
+      assert_raise FunctionClauseError, fn ->
+        Runbooks.dispatch_runbook(runbook, bad_reason, subject)
+      end
+    end
+
+    test "reordering steps changes which step fans out into the first wave" do
+      # closes RBK-013-T05
+      {account, subject, runner} = account_with_runner()
+
+      # 3 runners in one group + a 2-step runbook = 6 work-list items across 2
+      # waves. resolve_work_list is step-MAJOR: whichever step is first fans across
+      # all its runners before the second claims a wave slot. So the first 3 plan
+      # rows all carry step 1's id — reorder the steps and a different id leads.
+      for _ <- 1..2 do
+        peer = runner_fixture(account_id: account.id, group: runner.group)
+        action_fixture(runner: peer, action_id: "linux.uptime", risk: "low")
+      end
+
+      target = group_target(runner.group)
+
+      step_a = %{
+        "id" => "alpha",
+        "action_id" => "linux.uptime",
+        "args" => %{},
+        "runner_selector" => target
+      }
+
+      step_b = %{
+        "id" => "bravo",
+        "action_id" => "linux.uptime",
+        "args" => %{},
+        "runner_selector" => target
+      }
+
+      ab = published_runbook!(subject, "order-ab", [step_a, step_b])
+      {:ok, %{plan: plan_ab}} = Runbooks.resolve_plan(ab, subject)
+      assert plan_ab |> Enum.take(3) |> Enum.map(& &1.step_id) == ["alpha", "alpha", "alpha"]
+
+      # Same steps, swapped — now bravo leads the first wave.
+      ba = published_runbook!(subject, "order-ba", [step_b, step_a])
+      {:ok, %{plan: plan_ba}} = Runbooks.resolve_plan(ba, subject)
+      assert plan_ba |> Enum.take(3) |> Enum.map(& &1.step_id) == ["bravo", "bravo", "bravo"]
+    end
+
+    test "duplicate auto-derived step ids pass a draft save but are refused at dispatch" do
+      # closes RBK-015-T06
+      {_account, subject, runner} = account_with_runner()
+      target = runner_target(runner)
+
+      # Two steps share an id (as the editor's auto-derive could produce for two
+      # steps on the same action). A DRAFT save allows it — completeness is a
+      # publish concern — but dispatch refuses loudly so the {step_id, runner}
+      # unique index can't silently collapse the two distinct steps into one.
+      runbook =
+        draft_with_steps(subject, [
+          %{
+            "id" => "linux_uptime",
+            "action_id" => "linux.uptime",
+            "args" => %{},
+            "runner_selector" => target
+          },
+          %{
+            "id" => "linux_uptime",
+            "action_id" => "linux.uptime",
+            "args" => %{},
+            "runner_selector" => target
+          }
+        ])
+
+      assert runbook.status == :draft
+      assert {:error, :duplicate_step_ids} = Runbooks.dispatch_runbook(runbook, "go", subject)
     end
   end
 
@@ -283,6 +471,42 @@ defmodule Emisar.RunbooksTest do
       assert {:error, %Ecto.Changeset{} = changeset} = save_runbook(subject, steps)
 
       assert "a step targets too many runners or groups (max 50)" in errors_on(changeset).definition
+    end
+
+    test "args count toward the serialized definition byte cap" do
+      # closes RBK-016-T06
+      {_user, _account, subject} = owner_subject_fixture()
+
+      # No single arg/step is oversized and the step count (10) is well under 100 —
+      # it's the args, in aggregate, that push the serialized definition over 65536
+      # bytes (validate_definition_bounds encodes the WHOLE definition, args included).
+      filler = String.duplicate("x", 800)
+
+      steps =
+        for n <- 1..10 do
+          args = Map.new(1..10, fn k -> {"arg_#{n}_#{k}", filler} end)
+          %{"id" => "step#{n}", "action_id" => "linux.uptime", "args" => args}
+        end
+
+      assert {:error, %Ecto.Changeset{} = changeset} = save_runbook(subject, steps)
+      assert "is too large (max 65536 bytes)" in errors_on(changeset).definition
+    end
+
+    test "a step with exactly 50 targets is accepted (the selector boundary)" do
+      # closes RBK-017-T04
+      {_user, _account, subject} = owner_subject_fixture()
+
+      # @max_selector_values is 50 — exactly 50 saves (the 51-rejected half is the
+      # "too many runners" test above; this proves the accepted boundary).
+      step = %{
+        "id" => "s1",
+        "action_id" => "linux.uptime",
+        "args" => %{},
+        "runner_selector" => %{"runner_id" => Enum.map(1..50, &"r#{&1}")}
+      }
+
+      assert {:ok, runbook} = save_runbook(subject, [step])
+      assert runbook.status == :draft
     end
   end
 
@@ -330,6 +554,20 @@ defmodule Emisar.RunbooksTest do
       # Cross-account is :not_found, not :unauthorized — account B can't tell A's
       # runbook exists (same as dispatch_runbook's `Subject.ensure_in_account`).
       assert {:error, :not_found} = Runbooks.resolve_plan(runbook, subject_b)
+    end
+
+    test "an operator (dispatch_run but not manage_runbooks) can resolve the plan" do
+      # closes RBK-007-T13
+      {account, owner, runner} = account_with_runner()
+      runbook = published_runbook!(owner, "operable", uptime_steps(1, runner_target(runner)))
+
+      # resolve_plan gates on dispatch_run, NOT manage_runbooks — so an operator
+      # who can't EDIT a runbook can still preflight (and run) it. The run screen
+      # depends on this split: it's the same gate the dispatch path uses.
+      operator = subject_for(user_fixture(), account, role: :operator)
+      refute Runbooks.subject_can_manage_runbooks?(operator)
+
+      assert {:ok, %{total: 1, waves: 1, plan: [_]}} = Runbooks.resolve_plan(runbook, operator)
     end
   end
 
@@ -589,6 +827,66 @@ defmodule Emisar.RunbooksTest do
       assert length(runs) == 5
       refute Enum.any?(runs, &(&1.runner_id == foreign.id))
     end
+
+    test "the execution deleted between waves halts the continuation" do
+      # closes RBK-009-T09
+      {account, owner, runner} = account_with_runner()
+      {_membership, operator} = operator_in(account)
+
+      runbook = published_runbook!(owner, "vanish-book", uptime_steps(7, runner_target(runner)))
+
+      assert {:ok, %{execution_id: execution_id, runs: wave1}} =
+               Runbooks.dispatch_runbook(runbook, "go", operator)
+
+      assert length(wave1) == 5
+
+      # The durable execution record (the authorization anchor) is deleted
+      # mid-flight — as it would be if the account/runbook were torn down.
+      execution = Repo.get!(RunbookExecution, execution_id)
+      {:ok, _} = Repo.delete(execution)
+
+      Enum.each(wave1, &finish!/1)
+
+      # peek_execution returns nil → the continuation no-ops rather than
+      # dispatching wave 2 without its anchor; the in-flight wave still settled.
+      assert length(execution_runs(account, execution_id)) == 5
+    end
+
+    test "a frozen work-list index with no matching step is dropped; the rest rehydrate" do
+      # closes RBK-009-T10
+      {account, owner, runner} = account_with_runner()
+      {_membership, operator} = operator_in(account)
+
+      # 7 steps × 1 runner = 7 frozen items → wave 1 (5) + wave 2 (items 6,7).
+      runbook = published_runbook!(owner, "drop-book", uptime_steps(7, runner_target(runner)))
+
+      assert {:ok, %{execution_id: execution_id, runs: wave1}} =
+               Runbooks.dispatch_runbook(runbook, "go", operator)
+
+      assert length(wave1) == 5
+
+      # Tamper the persisted work-list so item 6's step_index points PAST the
+      # runbook's steps (the version it referenced went away). frozen_items must
+      # drop only that index and still rehydrate item 7.
+      execution = Repo.get!(RunbookExecution, execution_id)
+
+      mangled =
+        Enum.map(execution.work_list, fn item ->
+          if item["step_index"] == 5, do: %{item | "step_index" => 99}, else: item
+        end)
+
+      {:ok, _} = execution |> Ecto.Changeset.change(work_list: mangled) |> Repo.update()
+
+      Enum.each(wave1, &finish!/1)
+
+      runs = execution_runs(account, execution_id)
+      step_ids = step_ids(runs)
+      # Item 6 (now index 99) contributes nothing; item 7 (index 6 → "step7")
+      # still dispatches — so the count is 6, with step7 present and step6 gone.
+      assert length(runs) == 6
+      assert "step7" in step_ids
+      refute "step6" in step_ids
+    end
   end
 
   describe "reads (list + fetch)" do
@@ -647,6 +945,36 @@ defmodule Emisar.RunbooksTest do
       {_user, _account, subject} = owner_subject_fixture()
       assert {:error, :not_found} = Runbooks.fetch_runbook_by_id("not-a-uuid", subject)
     end
+
+    test "fetch_runbook_by_id excludes a soft-deleted runbook" do
+      # closes RBK-002-T07
+      {_user, _account, subject} = owner_subject_fixture()
+      runbook = draft_runbook!(subject, "tombstoned-book")
+
+      # Tombstone the row the way the delete changeset does (a fixture-style
+      # direct write — there's no operator delete action). not_deleted/0 then
+      # filters it, so the fetch reads :not_found rather than the dead row.
+      {:ok, _} =
+        runbook |> Runbooks.Runbook.Changeset.delete() |> Repo.update()
+
+      assert {:error, :not_found} = Runbooks.fetch_runbook_by_id(runbook.id, subject)
+    end
+
+    test "fetch_runbook_by_id without view_runbooks is :unauthorized before any DB scope" do
+      # closes RBK-002-T06
+      {_user, account, subject} = owner_subject_fixture()
+      runbook = draft_runbook!(subject, "guarded-book")
+
+      # Every MEMBERSHIP role (owner/admin/operator/viewer/api_client) carries
+      # view_runbooks, so the principal that lacks it is the runner subject — its
+      # role hits the runbooks authorizer's `_ -> []` clause. The permission gate
+      # trips before for_subject/Repo, so a real owned id still comes back denied.
+      runner = runner_fixture(account_id: account.id)
+      runner_subject = Subject.for_runner(runner, account)
+
+      assert {:error, :unauthorized} =
+               Runbooks.fetch_runbook_by_id(runbook.id, runner_subject)
+    end
   end
 
   describe "save_new_version/3" do
@@ -681,6 +1009,60 @@ defmodule Emisar.RunbooksTest do
       assert {:error, :not_found} =
                Runbooks.save_new_version(v1, %{"title" => "hijack"}, subject_b)
     end
+
+    test "a new version re-checks the definition step cap" do
+      # closes RBK-004-T06
+      {_user, _account, subject} = owner_subject_fixture()
+      v1 = draft_runbook!(subject, "bounds-book")
+
+      # new_version runs the SAME changeset/1 as create, so the >100-step cap is
+      # re-enforced on a version that pushes the definition over it (not just at
+      # first create) — a save that grows the runbook can't slip past the bound.
+      steps =
+        for n <- 1..101, do: %{"id" => "step#{n}", "action_id" => "linux.uptime", "args" => %{}}
+
+      assert {:error, %Ecto.Changeset{} = changeset} =
+               Runbooks.save_new_version(v1, %{"definition" => %{"steps" => steps}}, subject)
+
+      assert "has too many steps (max 100)" in errors_on(changeset).definition
+    end
+
+    test "a new version re-runs the same metadata validation as create" do
+      # closes RBK-004-T08
+      {_user, _account, subject} = owner_subject_fixture()
+      v1 = draft_runbook!(subject, "meta-book")
+
+      # A bad slug fails the shared changeset/1 format validation on save_new_version
+      # exactly as it does on create — the editor binds it inline; the context
+      # rejects it rather than persisting a malformed version.
+      assert {:error, %Ecto.Changeset{} = changeset} =
+               Runbooks.save_new_version(v1, %{"slug" => "Not A Slug!"}, subject)
+
+      assert %{slug: ["has invalid format"]} = errors_on(changeset)
+    end
+
+    test "a new version writes a runbook.updated audit row carrying from/to version" do
+      # closes RBK-004-T11
+      {_user, account, subject} = owner_subject_fixture()
+      v1 = draft_runbook!(subject, "audited-version-book")
+
+      # The list LV live-refreshes off this topic; saving a version must broadcast
+      # runbook.updated after commit.
+      Runbooks.subscribe_account_runbooks(account.id)
+
+      assert {:ok, v2} = Runbooks.save_new_version(v1, %{"title" => "v2 title"}, subject)
+      assert_receive {:list_changed, :runbook, "runbook.updated", broadcast_id}
+      assert broadcast_id == v2.id
+
+      # The Multi writes the audit row in the same transaction as the version
+      # insert; its payload carries the version bump (from_version → to_version)
+      # so the audit trail shows which version the save produced.
+      {:ok, events, _} = Emisar.Audit.list_events(subject, page: [limit: 20])
+      updated = Enum.find(events, &(&1.event_type == "runbook.updated"))
+      assert updated.subject_id == v2.id
+      assert updated.payload["from_version"] == v1.version
+      assert updated.payload["to_version"] == v2.version
+    end
   end
 
   describe "create_runbook slug validation" do
@@ -699,6 +1081,68 @@ defmodule Emisar.RunbooksTest do
                )
 
       assert %{slug: ["has invalid format"]} = errors_on(changeset)
+    end
+
+    test "an operator (view-only, no manage_runbooks) cannot create a runbook" do
+      # closes RBK-003-T13
+      {_user, account, _owner} = owner_subject_fixture()
+      operator = subject_for(user_fixture(), account, role: :operator)
+
+      # Operators hold view_runbooks but not manage_runbooks — create_runbook gates
+      # on manage, so they're refused (an operator can RUN a runbook, not edit one).
+      assert {:error, :unauthorized} = save_runbook(operator, uptime_steps(1))
+    end
+
+    test "a duplicate (account, slug, version) is rejected by the unique constraint" do
+      # closes RBK-003-T04
+      {_user, _account, subject} = owner_subject_fixture()
+
+      attrs = %{
+        "title" => "dup-slug-book",
+        "name" => "dup-slug-book",
+        "slug" => "dup-slug-book",
+        "definition" => %{"steps" => uptime_steps(1)}
+      }
+
+      # create_runbook always stamps version 1, so a second create with the same
+      # slug collides on the (account_id, slug, version) unique index — mapped back
+      # to a changeset error, not a read-before-write check (IL: the DB index is
+      # the source of truth).
+      assert {:ok, _} = Runbooks.create_runbook(attrs, subject)
+      assert {:error, %Ecto.Changeset{} = changeset} = Runbooks.create_runbook(attrs, subject)
+      # unique_constraint([:account_id, :slug, :version]) reports against its
+      # first field, so the violation surfaces on :account_id.
+      assert "has already been taken" in errors_on(changeset).account_id
+    end
+  end
+
+  describe "create_runbook audit + broadcast" do
+    test "create writes a runbook.created audit row and broadcasts to the list feed" do
+      # closes RBK-003-T03
+      {_user, account, subject} = owner_subject_fixture()
+
+      # The runbook list LV subscribes to this topic to live-refresh; the create
+      # must publish `{:list_changed, :runbook, "runbook.created", id}` after commit.
+      Runbooks.subscribe_account_runbooks(account.id)
+
+      {:ok, runbook} =
+        Runbooks.create_runbook(
+          %{
+            "title" => "audited-book",
+            "name" => "audited-book",
+            "slug" => "audited-book",
+            "definition" => %{"steps" => uptime_steps(1)}
+          },
+          subject
+        )
+
+      assert_receive {:list_changed, :runbook, "runbook.created", broadcast_id}
+      assert broadcast_id == runbook.id
+
+      # The Multi writes the audit row in the same transaction as the insert.
+      {:ok, events, _} = Emisar.Audit.list_events(subject, page: [limit: 20])
+      created = Enum.find(events, &(&1.event_type == "runbook.created"))
+      assert created.subject_id == runbook.id
     end
   end
 
@@ -793,6 +1237,30 @@ defmodule Emisar.RunbooksTest do
 
       assert {:error, %Ecto.Changeset{} = changeset} = Runbooks.publish(draft, subject)
       assert "every step needs a unique ID before publishing" in errors_on(changeset).definition
+    end
+
+    test "a non-manager (viewer or operator) cannot publish" do
+      # closes RBK-006-T09
+      {_user, account, owner} = owner_subject_fixture()
+
+      draft =
+        draft_with_steps(owner, [
+          %{
+            "id" => "s1",
+            "action_id" => "linux.uptime",
+            "args" => %{},
+            "runner_selector" => %{"group" => ["prod"]}
+          }
+        ])
+
+      # Publish gates on manage_runbooks (owner/admin only). A viewer and an
+      # operator both hold only view_runbooks, so the authz gate refuses both
+      # before the publishable-steps changeset even runs.
+      viewer = subject_for(user_fixture(), account, role: :viewer)
+      operator = subject_for(user_fixture(), account, role: :operator)
+
+      assert {:error, :unauthorized} = Runbooks.publish(draft, viewer)
+      assert {:error, :unauthorized} = Runbooks.publish(draft, operator)
     end
   end
 end

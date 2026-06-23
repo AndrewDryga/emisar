@@ -77,6 +77,16 @@ defmodule EmisarWeb.AccountSwitchControllerTest do
       assert get_session(conn, :current_account_id) == first.id
     end
 
+    test "a signed-out switch is bounced by require_authenticated_user", %{conn: conn} do
+      # closes AUTH-013-T07 — switching tenant is an authenticated-only action;
+      # a signed-out POST never reaches the controller (no current_user to read),
+      # it's halted at the plug and redirected to sign-in.
+      conn = post(conn, ~p"/app/accounts/switch", account_id: Ecto.UUID.generate())
+
+      assert redirected_to(conn) == ~p"/sign_in"
+      assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "must log in"
+    end
+
     test "the switch persists across subsequent requests via the session", %{conn: conn} do
       {conn, user, _first} = register_and_log_in(conn)
       second = second_account_for(user)

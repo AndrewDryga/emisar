@@ -29,7 +29,7 @@ defmodule EmisarWeb.Components.MarketingHeadingTest do
 
     test "each scale maps to one documented size ramp + the signature display treatment" do
       assert render_heading(%{tag: "h1", scale: :display}) =~
-               "text-6xl tracking-[-0.035em] md:text-7xl"
+               "text-4xl tracking-[-0.035em] sm:text-6xl md:text-7xl"
 
       assert render_heading(%{tag: "h1", scale: :hero}) =~
                "text-4xl tracking-[-0.03em] md:text-5xl"

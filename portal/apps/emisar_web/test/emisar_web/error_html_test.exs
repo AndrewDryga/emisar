@@ -26,6 +26,18 @@ defmodule EmisarWeb.ErrorHTMLTest do
       assert html =~ "Error 500"
       assert html =~ "support@emisar.dev"
     end
+
+    test "leaks no stacktrace or struct detail to the visitor" do
+      # closes CFG-013-T02
+      # The renderer takes `_assigns`, so even a caller that passed a reason /
+      # stacktrace can't surface one — the prod 500 (debug_errors off) shows the
+      # bare branded copy only, never internal detail.
+      html = render_to_string(EmisarWeb.ErrorHTML, "500", "html", %{})
+
+      refute html =~ "Elixir."
+      refute html =~ "stacktrace"
+      refute html =~ "%{"
+    end
   end
 
   describe "other status codes" do
@@ -33,6 +45,18 @@ defmodule EmisarWeb.ErrorHTMLTest do
       html = render_to_string(EmisarWeb.ErrorHTML, "403", "html", %{})
       assert html =~ "Forbidden"
       assert html =~ "Error 403"
+    end
+
+    test "an unknown status code still renders a branded page via the catch-all" do
+      # closes CFG-013-T06
+      # A status with no explicit clause (e.g. 418) falls to `render(template, _)`,
+      # which derives the number + the standard message ("I'm a teapot") rather
+      # than emitting a blank/raw 418.
+      html = render_to_string(EmisarWeb.ErrorHTML, "418", "html", %{})
+
+      assert html =~ "Error 418"
+      assert html =~ "teapot"
+      assert html =~ "Back to home"
     end
   end
 end

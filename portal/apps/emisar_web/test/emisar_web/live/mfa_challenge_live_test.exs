@@ -6,6 +6,7 @@ defmodule EmisarWeb.MfaChallengeLiveTest do
   """
   use EmisarWeb.ConnCase, async: true
 
+  alias Emisar.Audit.Event
   alias Emisar.Auth
 
   @password "long-mfa-password-123"
@@ -38,6 +39,43 @@ defmodule EmisarWeb.MfaChallengeLiveTest do
     assert {:error, {:live_redirect, %{to: "/sign_in"}}} = live(conn, ~p"/sign_in/mfa")
   end
 
+  test "an expired pending marker bounces back to /sign_in (refreshed an old tab)", %{conn: conn} do
+    # closes AUTH-004-T05 — `get_pending_mfa/1` treats a marker past its 5-min TTL
+    # as absent (the `expires_at <= now` branch), so mounting the challenge with a
+    # stashed user_id but a past `pending_mfa_expires_at` (the operator left the tab
+    # open and refreshed) gets the same expired bounce as no marker at all — a stale
+    # session can never drift into "no password needed".
+    user = mfa_user!()
+
+    conn =
+      conn
+      |> Plug.Test.init_test_session(%{})
+      |> Plug.Conn.put_session(:pending_mfa_user_id, user.id)
+      |> Plug.Conn.put_session(
+        :pending_mfa_expires_at,
+        System.system_time(:second) - 1
+      )
+
+    assert {:error, {:live_redirect, %{to: "/sign_in"}}} = live(conn, ~p"/sign_in/mfa")
+  end
+
+  test "the OTP input enforces a 6-digit numeric code (boundary)", %{conn: conn} do
+    # closes AUTH-004-T06 — the authenticator field bounds the code to exactly 6
+    # numeric digits client-side (`minlength`/`maxlength` 6 + `pattern="[0-9]*"`),
+    # matching the TOTP shape. (A 6-digit code's actual verification + finalize is
+    # the happy path covered by auth_flow_test's "OTP against a valid marker".)
+    user = mfa_user!()
+
+    conn =
+      post(conn, ~p"/sign_in", %{"user" => %{"email" => user.email, "password" => @password}})
+
+    {:ok, _lv, html} = live(conn, ~p"/sign_in/mfa")
+
+    assert html =~ ~s|minlength="6"|
+    assert html =~ ~s|maxlength="6"|
+    assert html =~ ~s|pattern="[0-9]*"|
+  end
+
   test "renders the OTP form after the password step set the marker", %{conn: conn} do
     user = mfa_user!()
 
@@ -66,5 +104,65 @@ defmodule EmisarWeb.MfaChallengeLiveTest do
     refute html =~ "Lost your recovery codes too?"
     assert recovery_html =~ "Lost your recovery codes too?"
     assert recovery_html =~ "support@emisar.dev"
+  end
+
+  test "the MFA form posts only the second factor — never the password again", %{conn: conn} do
+    # closes AUTH-004-T12 — the password step already verified credentials and
+    # stashed the pending marker, so the challenge form (`#mfa_form`) carries ONLY
+    # the OTP/recovery field. The password is never re-sent: no password input
+    # exists to capture or replay it, on either the authenticator or recovery view.
+    user = mfa_user!()
+
+    conn =
+      post(conn, ~p"/sign_in", %{"user" => %{"email" => user.email, "password" => @password}})
+
+    {:ok, lv, html} = live(conn, ~p"/sign_in/mfa")
+
+    # Authenticator view: the OTP field is present, no password field.
+    assert html =~ ~s|name="user[otp]"|
+    refute html =~ ~s|type="password"|
+    refute html =~ ~s|name="user[password]"|
+
+    # The recovery view swaps in the recovery-code field — still no password.
+    recovery_html = render_click(lv, "toggle_recovery", %{})
+    assert recovery_html =~ ~s|name="user[recovery_code]"|
+    refute recovery_html =~ ~s|type="password"|
+    refute recovery_html =~ ~s|name="user[password]"|
+  end
+
+  test "a wrong recovery code is rejected and audited, the pending step re-stashed", %{
+    conn: conn
+  } do
+    # closes AUTH-004-T10 — the recovery toggle posts `user[recovery_code]` back to
+    # POST /sign_in, which (holding the pending marker) runs
+    # `Auth.consume_mfa_recovery_code`. An unknown code returns `{:error, :invalid}`:
+    # the controller bounces back to /sign_in/mfa with "didn't match", consumes no
+    # code, and writes a `user.mfa_failed` audit row with reason `invalid_recovery_code`.
+    user = mfa_user!()
+
+    # Password step stashes the pending-MFA marker.
+    conn =
+      post(conn, ~p"/sign_in", %{"user" => %{"email" => user.email, "password" => @password}})
+
+    assert redirected_to(conn) == ~p"/sign_in/mfa"
+
+    # The MFA form (recovery view) submits ONLY the recovery code — no password.
+    conn =
+      conn
+      |> recycle()
+      |> post(~p"/sign_in", %{"user" => %{"recovery_code" => "not-a-real-recovery-code"}})
+
+    assert redirected_to(conn) == ~p"/sign_in/mfa"
+    assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "didn't match"
+
+    # Audited as an MFA failure with the recovery-specific reason — distinct from a
+    # wrong TOTP (`invalid_otp`), so the audit stream tells them apart.
+    failures =
+      Event.Query.all()
+      |> Event.Query.by_actor_id(user.id)
+      |> Event.Query.by_event_type("user.mfa_failed")
+      |> Emisar.Repo.all()
+
+    assert Enum.any?(failures, &(&1.payload["reason"] == "invalid_recovery_code"))
   end
 end

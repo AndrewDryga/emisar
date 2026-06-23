@@ -70,6 +70,73 @@ defmodule EmisarWeb.SSOSignInTest do
       conn = post(conn, ~p"/sign_in/sso", team: %{slug: "no-such-team"})
       assert html_response(conn, 200) =~ "couldn&#39;t find a team"
     end
+
+    test "a whitespace-only slug trims to nothing and re-renders the not-found message", %{
+      conn: conn
+    } do
+      # closes AUTH-028-T03 — the controller `String.trim`s the slug before looking
+      # it up, so "   " becomes "" which no account matches: the same friendly
+      # not-found re-render as a real unknown slug, never a redirect or a crash.
+      conn = post(conn, ~p"/sign_in/sso", team: %{slug: "   "})
+      assert html_response(conn, 200) =~ "couldn&#39;t find a team"
+    end
+
+    test "a real slug and a fake slug resolve through the same pre-auth lookup — no leak", %{
+      conn: conn
+    } do
+      # closes AUTH-018-T05 — both a real and a bogus team address go through the
+      # same Subject-less `fetch_account_by_id_or_slug`. A real slug redirects to its
+      # branded sign-in; an unknown one re-renders the friendly "couldn't find a team"
+      # (200, no redirect). The signed-out prober learns only "this slug routes
+      # somewhere" vs "not found" — never anything an account holder's session would
+      # reveal, and knowing a slug grants nothing (the branded page is public).
+      account = Fixtures.account_fixture()
+
+      real = post(conn, ~p"/sign_in/sso", team: %{slug: account.slug})
+      assert redirected_to(real) == ~p"/app/#{account}/sign_in"
+
+      fake = post(conn, ~p"/sign_in/sso", team: %{slug: "definitely-not-a-team"})
+      assert fake.status == 200
+      assert html_response(fake, 200) =~ "couldn&#39;t find a team"
+    end
+
+    test "a tampered recent-accounts cookie is ignored — at worst an empty picker, no crash", %{
+      conn: conn
+    } do
+      # closes AUTH-018-T06 — the recent-accounts cookie is SIGNED, so a forged value
+      # fails verification and is dropped (`list/1` → []): the picker renders its
+      # manual-slug empty state rather than trusting attacker-planted entries or
+      # crashing. (Even a validly-signed cookie only carries slug+name — never
+      # secrets — so the worst case is surfacing a team the browser already chose.)
+      conn =
+        conn
+        |> Map.put(:secret_key_base, EmisarWeb.Endpoint.config(:secret_key_base))
+        |> Plug.Test.put_req_cookie("emisar_recent_accounts", "not-a-validly-signed-cookie")
+
+      html = conn |> get(~p"/sign_in/sso") |> html_response(200)
+
+      # Renders the picker (manual team-address form) without error.
+      assert html =~ "Which team are you signing in to"
+    end
+
+    test "an already-authenticated visitor is bounced off the team picker to /app", %{conn: conn} do
+      # closes AUTH-018-T07, AUTH-027-T04 — a signed-in user has no business on the
+      # signed-out "which team?" picker render; `:redirect_if_user_is_authenticated`
+      # bounces them to the app before the controller runs.
+      {conn, _user, _account} = register_and_log_in(conn)
+
+      assert redirected_to(get(conn, ~p"/sign_in/sso")) == ~p"/app"
+    end
+
+    test "an already-authenticated visitor's team-resolve POST is bounced to /app", %{conn: conn} do
+      # closes AUTH-028-T06 — the resolve-team POST shares the guarded scope, so a
+      # signed-in user can't drive the picker to a branded page; the gate halts
+      # before the controller resolves any slug.
+      {conn, _user, _account} = register_and_log_in(conn)
+
+      conn = post(conn, ~p"/sign_in/sso", team: %{slug: "any-team"})
+      assert redirected_to(conn) == ~p"/app"
+    end
   end
 
   describe "GET /app/:account_id_or_slug/sign_in (branded page)" do
@@ -102,6 +169,16 @@ defmodule EmisarWeb.SSOSignInTest do
 
     test "an unknown team slug 404s", %{conn: conn} do
       assert_error_sent 404, fn -> get(conn, ~p"/app/no-such-team/sign_in") end
+    end
+
+    test "an already-authenticated visitor is bounced off the branded page to /app", %{conn: conn} do
+      # closes AUTH-007-T09 — the branded sign-in lives under
+      # `:redirect_if_user_is_authenticated`, so a signed-in user GETting any
+      # team's branded page is redirected to the app before the LiveView mounts —
+      # no second sign-in surface for someone already signed in.
+      {conn, _user, account} = register_and_log_in(conn)
+
+      assert redirected_to(get(conn, ~p"/app/#{account}/sign_in")) == ~p"/app"
     end
   end
 

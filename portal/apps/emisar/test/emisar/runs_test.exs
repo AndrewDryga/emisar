@@ -848,6 +848,108 @@ defmodule Emisar.RunsTest do
                  "status" => "success"
                })
     end
+
+    # closes ENG-001-T05 — an unrecognized result-status string defaults to
+    # :failed rather than crashing or inventing a status (the mapping table's
+    # fail-safe fallback; a compromised/buggy runner can't mint a new state).
+    test "an unrecognized result status defaults to :failed" do
+      account = account_fixture()
+      runner = runner_fixture(account_id: account.id)
+      {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
+
+      assert {:ok, %ActionRun{status: :failed}} =
+               Runs.finalize_from_result(runner.id, %{
+                 "request_id" => run.request_id,
+                 "status" => "totally-made-up-status"
+               })
+    end
+  end
+
+  describe "dispatch decision-before-outcome atomicity" do
+    # closes ENG-001-T09 — the run row + its policy.evaluated decision audit
+    # commit in ONE Multi. When the :run insert fails (oversized args), the
+    # whole transaction rolls back: no orphan run row, no orphan audit row, and
+    # no broadcast — a dispatched action can never exist without its decision.
+    test "a failed run insert leaves no run row, no audit row, and fires no broadcast" do
+      account = account_fixture()
+      runner = runner_fixture(account_id: account.id)
+      _ = action_fixture(runner: runner, action_id: "linux.uptime", risk: "low")
+      _ = policy_fixture(account_id: account.id)
+      subject = subject_for(user_fixture(), account, role: :owner)
+
+      Emisar.Runs.subscribe_account_runs(account.id)
+
+      huge = %{"blob" => String.duplicate("x", 300_000)}
+
+      assert {:error, %Ecto.Changeset{} = changeset} =
+               Runs.dispatch_run(base_attrs(account.id, runner.id, %{args: huge}), subject)
+
+      assert Keyword.has_key?(changeset.errors, :args)
+
+      # No run persisted for this account…
+      assert {:ok, [], _} = Runs.list_recent_runs(subject, limit: 50)
+
+      # …no policy.evaluated audit row orphaned by the rolled-back decision step…
+      refute Enum.any?(Repo.all(Emisar.Audit.Event), &(&1.event_type == "policy.evaluated"))
+
+      # …and a rolled-back transaction announces nothing (broadcasts are after_commit).
+      refute_receive {:run_updated, _}, 200
+    end
+  end
+
+  describe "reason / reason_text / error_message stay distinct" do
+    # closes ENG-001-T18 — three fields with three jobs that must not bleed:
+    #   reason       — the operator's "why", shipped on the wire envelope
+    #   reason_text  — the CANCEL cause
+    #   error_message — the FAILURE/refusal cause
+    test "the operator reason is preserved and not mirrored into the failure fields" do
+      account = account_fixture()
+      runner = runner_fixture(account_id: account.id)
+
+      {:ok, run} =
+        Runs.create_run(base_attrs(account.id, runner.id, %{reason: "rotate the leaked key"}))
+
+      assert run.reason == "rotate the leaked key"
+      assert is_nil(run.reason_text)
+      assert is_nil(run.error_message)
+    end
+
+    test "a cancel writes reason_text only; the operator reason stays put" do
+      account = account_fixture()
+      runner = runner_fixture(account_id: account.id)
+      user = user_fixture()
+      _ = membership_fixture(account_id: account.id, user_id: user.id, role: "owner")
+      subject = subject_for(user, account, role: :owner)
+
+      {:ok, run} =
+        Runs.create_run(base_attrs(account.id, runner.id, %{reason: "operator why"}))
+
+      {:ok, run} = Runs.mark_sent(run)
+
+      assert {:ok, %ActionRun{} = cancelled} = Runs.cancel_run(run, subject, "user pressed stop")
+      assert cancelled.reason_text == "user pressed stop"
+      assert cancelled.reason == "operator why"
+      assert is_nil(cancelled.error_message)
+    end
+
+    test "a failed result writes error_message only; reason_text stays nil" do
+      account = account_fixture()
+      runner = runner_fixture(account_id: account.id)
+
+      {:ok, run} =
+        Runs.create_run(base_attrs(account.id, runner.id, %{reason: "operator why"}))
+
+      {:ok, finished} =
+        Runs.finalize_from_result(runner.id, %{
+          "request_id" => run.request_id,
+          "status" => "failed",
+          "error" => "exit status 1"
+        })
+
+      assert finished.error_message == "exit status 1"
+      assert finished.reason == "operator why"
+      assert is_nil(finished.reason_text)
+    end
   end
 
   describe "dashboard + per-runner reads" do
@@ -974,6 +1076,221 @@ defmodule Emisar.RunsTest do
       # stale writer flip cancelled → success.
       assert {:ok, _} = Runs.mark_finished(sent, %{"status" => "success"})
       assert Runs.peek_run_by_id(run.id).status == :cancelled
+    end
+  end
+
+  describe "run status state machine" do
+    # closes ENG-001-T01 (state-machine half) — the valid forward path
+    # pending → sent → running → success, each transition stamping its own
+    # timestamp. The terminal flip is the only one that's final.
+    test "walks the valid sequence pending → sent → running → success" do
+      account = account_fixture()
+      runner = runner_fixture(account_id: account.id)
+      {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
+      assert run.status == :pending
+
+      {:ok, sent} = Runs.mark_sent(run)
+      assert sent.status == :sent
+      assert %DateTime{} = sent.sent_at
+
+      {:ok, running} = Runs.mark_running(sent)
+      assert running.status == :running
+      assert %DateTime{} = running.started_at
+
+      {:ok, finished} = Runs.mark_finished(running, %{"status" => "success", "duration_ms" => 4})
+      assert finished.status == :success
+      assert %DateTime{} = finished.finished_at
+      assert ActionRun.terminal?(:success)
+    end
+
+    # closes ENG-001-T15 — once terminal, every further transition is a benign
+    # no-op that keeps the run final (the locked re-read in transition/3 treats
+    # an already-terminal row as `:already_terminal`). A second finalize, a
+    # mark_sent, and a mark_running all leave :success in place.
+    test "a terminal run is final — later transitions no-op and never re-open it" do
+      account = account_fixture()
+      runner = runner_fixture(account_id: account.id)
+      {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
+
+      {:ok, finished} =
+        Runs.finalize_from_result(runner.id, %{
+          "request_id" => run.request_id,
+          "status" => "success"
+        })
+
+      assert finished.status == :success
+
+      # A duplicate result, a stray mark_sent, and a stray mark_running are all
+      # idempotent no-ops — none re-advances a settled run.
+      assert {:ok, _} = Runs.mark_finished(finished, %{"status" => "failed"})
+      assert {:ok, _} = Runs.mark_sent(finished)
+      assert {:ok, _} = Runs.mark_running(finished)
+      assert Runs.peek_run_by_id(run.id).status == :success
+    end
+
+    # closes ENG-001-T01 (cancel-from-each-cancelable-state half) — cancel is
+    # legal from each NON-terminal state the run can sit in: :pending (created,
+    # not yet sent) and :running (mid-flight). Both land :cancelled.
+    test "cancel is accepted from :pending and from :running" do
+      account = account_fixture()
+      runner = runner_fixture(account_id: account.id)
+      user = user_fixture()
+      _ = membership_fixture(account_id: account.id, user_id: user.id, role: "owner")
+      subject = subject_for(user, account, role: :owner)
+
+      # From :pending — never sent to a runner.
+      {:ok, pending} = Runs.create_run(base_attrs(account.id, runner.id))
+      assert pending.status == :pending
+      assert {:ok, %ActionRun{status: :cancelled}} = Runs.cancel_run(pending, subject, "stop")
+
+      # From :running — in-flight.
+      {:ok, run2} = Runs.create_run(base_attrs(account.id, runner.id))
+      {:ok, run2} = Runs.mark_sent(run2)
+      {:ok, running} = Runs.mark_running(run2)
+      assert running.status == :running
+      assert {:ok, %ActionRun{status: :cancelled}} = Runs.cancel_run(running, subject, "stop")
+    end
+
+    # closes ENG-001-T01 (cancel-from-pending_approval half) — cancelling a
+    # :pending_approval run (parked, never sent) flips it to :cancelled and the
+    # cancel is composed atomically with cancelling its still-pending request
+    # (cancel_run_for_status's pending_approval clause). A later stale approve
+    # then finds a :cancelled request (see approvals ENG-007-T09).
+    test "cancel is accepted from :pending_approval and cancels the parked run" do
+      account = account_fixture()
+      runner = runner_fixture(account_id: account.id)
+      user = user_fixture()
+      _ = membership_fixture(account_id: account.id, user_id: user.id, role: "owner")
+      subject = subject_for(user, account, role: :owner)
+
+      {:ok, parked} =
+        Runs.create_run(base_attrs(account.id, runner.id, %{status: :pending_approval}))
+
+      {:ok, _request} = Approvals.create_request(parked, user.id, "needs review")
+
+      assert {:ok, %ActionRun{status: :cancelled}} =
+               Runs.cancel_run(parked, subject, "changed my mind")
+
+      assert Runs.peek_run_by_id(parked.id).status == :cancelled
+    end
+  end
+
+  describe "dispatch_run idempotency replay reshape" do
+    # An MCP-sourced dispatch carrying an api_key + idempotency_key, against an
+    # online runner that advertises the action under `policy`. Returns
+    # subject/attrs so a test can replay the same dispatch.
+    defp replayable_dispatch(policy_rules) do
+      account = account_fixture()
+      user = user_fixture()
+      _ = membership_fixture(account_id: account.id, user_id: user.id, role: "owner")
+      subject = subject_for(user, account, role: :owner)
+      {_raw, key} = api_key_fixture(account_id: account.id, created_by_id: user.id)
+      runner = runner_fixture(account_id: account.id)
+      _ = action_fixture(runner: runner, action_id: "linux.uptime", risk: "high")
+      Emisar.Runners.subscribe_runner_transport(runner)
+      _ = policy_fixture(account_id: account.id, rules: policy_rules)
+
+      attrs =
+        base_attrs(account.id, runner.id, %{
+          source: "mcp",
+          api_key_id: key.id,
+          idempotency_key: "idem-#{System.unique_integer([:positive])}"
+        })
+
+      {subject, attrs}
+    end
+
+    # closes ENG-011-T07 (deny half) — replaying a previously-DENIED dispatch
+    # (same api_key + idempotency_key) re-shapes the cached :denied row back into
+    # the deny tuple via replay_outcome, not a running run. The deny is logged
+    # exactly once (the replay path runs no audit).
+    test "a previously-denied dispatch replays to the same deny tuple, audited once" do
+      deny_high = %{
+        "schema_version" => 2,
+        "defaults" => %{
+          "low" => "deny",
+          "medium" => "deny",
+          "high" => "deny",
+          "critical" => "deny"
+        },
+        "overrides" => []
+      }
+
+      {subject, attrs} = replayable_dispatch(deny_high)
+
+      assert {:error, :denied_by_policy, reason} = Runs.dispatch_run(attrs, subject)
+      assert {:error, :denied_by_policy, ^reason} = Runs.dispatch_run(attrs, subject)
+
+      # Exactly one denied run row and one policy.evaluated audit row — the
+      # replay re-shaped the original, it didn't dispatch or re-audit.
+      assert {:ok, [%ActionRun{status: :denied}], _} = Runs.list_recent_runs(subject, limit: 50)
+
+      evaluated =
+        Repo.all(Emisar.Audit.Event) |> Enum.filter(&(&1.event_type == "policy.evaluated"))
+
+      assert length(evaluated) == 1
+    end
+
+    # closes ENG-011-T07 (pending_approval half) — replaying a previously-PARKED
+    # dispatch re-shapes the cached :pending_approval row to the same
+    # {:ok, :pending_approval, run} (the request to long-poll), and never files a
+    # second request or pushes a second envelope.
+    test "a previously-parked dispatch replays to the same pending_approval tuple" do
+      approval_high = %{
+        "schema_version" => 2,
+        "defaults" => %{
+          "low" => "allow",
+          "medium" => "allow",
+          "high" => "require_approval",
+          "critical" => "deny"
+        },
+        "overrides" => []
+      }
+
+      {subject, attrs} = replayable_dispatch(approval_high)
+
+      assert {:ok, :pending_approval, %ActionRun{id: id}} = Runs.dispatch_run(attrs, subject)
+      assert {:ok, :pending_approval, %ActionRun{id: ^id}} = Runs.dispatch_run(attrs, subject)
+
+      # One parked run, one pending request — the replay didn't re-file.
+      assert {:ok, [%ActionRun{status: :pending_approval}], _} =
+               Runs.list_recent_runs(subject, limit: 50)
+
+      assert {:ok, [_one], _} = Approvals.list_pending_approval_requests(subject)
+
+      # …and no second run_action envelope was ever pushed (it never dispatched).
+      refute_receive {:cloud_to_runner, _}, 100
+    end
+  end
+
+  describe "append_event after terminal" do
+    # closes ENG-010-T07 — a progress chunk that arrives AFTER the run reached a
+    # terminal state is persisted as a benign event but never resurrects the run:
+    # the :sent → :running flip in append_event/2 only fires from :sent, so a
+    # finished run stays finished. No error, no resurrection.
+    test "a chunk for an already-finalized run is dropped without re-opening it" do
+      account = account_fixture()
+      runner = runner_fixture(account_id: account.id)
+      {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
+
+      {:ok, finished} =
+        Runs.finalize_from_result(runner.id, %{
+          "request_id" => run.request_id,
+          "status" => "success"
+        })
+
+      assert finished.status == :success
+
+      # A late chunk lands — it appends (the appender doesn't gate on terminal),
+      # but the status guard means it can't flip a terminal run back to :running.
+      assert {:ok, %RunEvent{seq: 99}} =
+               Runs.append_event(finished, %{
+                 seq: 99,
+                 kind: "progress",
+                 payload: %{"chunk" => "x"}
+               })
+
+      assert Runs.peek_run_by_id(run.id).status == :success
     end
   end
 
@@ -1439,6 +1756,11 @@ defmodule Emisar.RunsTest do
       assert {:error, :pack_untrusted} = Runs.recheck_run_pack_trust(run.id)
     end
 
+    # closes ENG-005-T13 — when the runner no longer advertises the action mid
+    # approval-window (offline / pack unloaded), recheck returns :ok: there is
+    # nothing live to ship the wrong bytes to, so the gate doesn't block. The
+    # drift-to-:pending threat is the OTHER clause above; the dispatch itself
+    # then fails to reach a live action.
     test "passes when the runner no longer advertises the action (nothing to dispatch to)" do
       account = account_fixture()
       runner = runner_fixture(account_id: account.id)

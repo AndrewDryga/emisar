@@ -43,6 +43,12 @@ defmodule EmisarWeb.TeamLiveTest do
 
   describe "resend confirmation (self)" do
     test "an unconfirmed user can resend their own confirmation email", %{conn: conn} do
+      # closes TEAM-015-T03
+      # TeamLive defines no `resend_confirmation` handler — the row's button is
+      # served by the portal-wide `:email_confirmation` on_mount hook (the same
+      # one behind the verify-email banner), which owns the send + rate-limit. A
+      # successful click flashing the hook's copy proves the global handler, not
+      # TeamLive, fielded the event.
       {conn, user, account} = register_and_log_in(conn)
       # Simulate the signed-up-but-unconfirmed state (register_and_log_in
       # confirms by default).
@@ -73,6 +79,197 @@ defmodule EmisarWeb.TeamLiveTest do
 
       assert html =~ "Only owners and admins can invite"
       refute html =~ "Send invite"
+    end
+  end
+
+  describe "a non-manager (operator / viewer) sees the roster read-only" do
+    setup %{conn: conn} do
+      # An owner with the account + a teammate to render in the roster, then a
+      # second member we log in AS to observe the read-only view.
+      {_owner_conn, _owner, account} =
+        register_and_log_in(conn, %{account: %{name: "ReadOnlyOrg"}})
+
+      teammate = Emisar.Fixtures.user_fixture(%{full_name: "Teammate Tess"})
+
+      teammate_membership =
+        Emisar.Fixtures.membership_fixture(
+          account_id: account.id,
+          user_id: teammate.id,
+          role: "admin"
+        )
+
+      %{account: account, teammate: teammate, teammate_membership: teammate_membership}
+    end
+
+    for role <- ~w(operator viewer) do
+      test "an #{role} reads the roster but every management control is hidden", %{
+        account: account,
+        teammate: teammate,
+        teammate_membership: teammate_membership
+      } do
+        # closes TEAM-001-T02
+        member = Emisar.Fixtures.user_fixture()
+
+        _ =
+          Emisar.Fixtures.membership_fixture(
+            account_id: account.id,
+            user_id: member.id,
+            role: unquote(role)
+          )
+
+        {:ok, lv, html} =
+          build_conn() |> log_in_user(member) |> live(~p"/app/#{account}/settings/team")
+
+        # The roster IS visible — they can audit teammates even read-only.
+        assert html =~ "Teammate Tess"
+        assert html =~ teammate.email
+
+        # …but no management surface: no invite, no Actions menu, no role
+        # dropdown, no per-row management events on the teammate's row.
+        refute html =~ "Invite member"
+        refute html =~ "Send invite"
+        refute has_element?(lv, "summary", "Actions")
+
+        refute has_element?(
+                 lv,
+                 "button[phx-click='change_role'][phx-value-membership_id='#{teammate_membership.id}']"
+               )
+
+        # The read-only footer names their role and points them at who can manage.
+        assert html =~ "Only owners and admins can invite or manage members."
+        assert html =~ "Your role: #{unquote(role)}"
+
+        # Auditing a teammate stays available — the "View activity" affordance.
+        assert html =~ "View activity"
+      end
+    end
+  end
+
+  describe "a non-manager's crafted management events are denied (IL-15)" do
+    setup %{conn: conn} do
+      # An owner account; a viewer we log in AS; a teammate to target.
+      {_owner_conn, _owner, account} =
+        register_and_log_in(conn, %{account: %{name: "CraftedOrg"}})
+
+      viewer = Emisar.Fixtures.user_fixture()
+
+      Emisar.Fixtures.membership_fixture(
+        account_id: account.id,
+        user_id: viewer.id,
+        role: "viewer"
+      )
+
+      target = Emisar.Fixtures.user_fixture()
+
+      target_membership =
+        Emisar.Fixtures.membership_fixture(
+          account_id: account.id,
+          user_id: target.id,
+          role: "operator"
+        )
+
+      {:ok, lv, _html} =
+        build_conn() |> log_in_user(viewer) |> live(~p"/app/#{account}/settings/team")
+
+      %{lv: lv, account: account, target: target, target_membership: target_membership}
+    end
+
+    test "change_role is refused and the role is untouched", %{
+      lv: lv,
+      target_membership: target_membership
+    } do
+      # closes TEAM-004-T08
+      html =
+        render_click(lv, "change_role", %{
+          "membership_id" => target_membership.id,
+          "role" => "admin"
+        })
+
+      assert html =~ "Only owners and admins can manage memberships."
+      assert Emisar.Repo.reload!(target_membership).role == :operator
+    end
+
+    test "remove is refused and the membership survives", %{
+      lv: lv,
+      target_membership: target_membership
+    } do
+      # closes TEAM-005-T06
+      html = render_click(lv, "remove", %{"membership_id" => target_membership.id})
+
+      assert html =~ "Only owners and admins can manage memberships."
+      refute Emisar.Repo.reload!(target_membership).deleted_at
+    end
+
+    test "suspend is refused and the member stays active", %{
+      lv: lv,
+      target_membership: target_membership
+    } do
+      # closes TEAM-006-T07
+      html = render_click(lv, "suspend", %{"membership_id" => target_membership.id})
+
+      assert html =~ "Only owners and admins can manage memberships."
+      refute Emisar.Repo.reload!(target_membership).disabled_at
+    end
+
+    test "save_edit (admin name change) is refused and the name is untouched", %{
+      lv: lv,
+      target: target,
+      target_membership: target_membership
+    } do
+      # closes TEAM-007-T05
+      # The edit form is never in a viewer's DOM (no Actions menu), so push the
+      # event directly — the server gate must still refuse it.
+      html =
+        render_submit(lv, "save_edit", %{
+          "membership_id" => target_membership.id,
+          "user" => %{"full_name" => "Hijacked Name"}
+        })
+
+      assert html =~ "Only owners and admins can manage memberships."
+      assert Emisar.Repo.reload!(target).full_name == target.full_name
+    end
+
+    test "end_sessions is refused", %{lv: lv, target_membership: target_membership} do
+      # closes TEAM-010-T04
+      html = render_click(lv, "end_sessions", %{"membership_id" => target_membership.id})
+
+      assert html =~ "Only owners and admins can manage memberships."
+    end
+
+    test "reset_mfa is refused server-side even if the event is forged", %{
+      lv: lv,
+      target: target,
+      target_membership: target_membership
+    } do
+      # closes TEAM-009-T03 TEAM-009-T07
+      # Enroll the target so the context's mutation path is the thing being
+      # blocked, not a "not enrolled" no-op.
+      enroll_mfa(target)
+
+      html = render_click(lv, "reset_mfa", %{"membership_id" => target_membership.id})
+
+      # reset_mfa is wrapped in Permissions.gated, so the denial is the generic
+      # gated flash (apostrophe HTML-escaped); the member's MFA is untouched.
+      assert html =~ "You don&#39;t have permission to do that."
+      assert Emisar.Repo.reload!(target).mfa_enabled_at
+    end
+
+    test "save_scopes is refused via the Runners gate, scopes unchanged", %{
+      lv: lv,
+      target_membership: target_membership
+    } do
+      # closes TEAM-011-T04
+      html =
+        render_submit(lv, "save_scopes", %{
+          "membership_id" => target_membership.id,
+          "groups" => ["dba"],
+          "runners" => []
+        })
+
+      # The Runners context denies with :unauthorized; the LV maps it to the same
+      # membership-management flash, and no scope rows were written.
+      assert html =~ "Only owners and admins can manage memberships."
+      assert Emisar.Runners.runner_scopes_for_membership(target_membership.id) == []
     end
   end
 
@@ -255,6 +452,22 @@ defmodule EmisarWeb.TeamLiveTest do
       refute Emisar.Repo.reload!(membership).disabled_at
     end
 
+    test "the Suspended chip appears on a suspended row and clears on reinstate", %{
+      lv: lv,
+      membership: membership
+    } do
+      # closes TEAM-006-T01
+      # The roster reflects the state change live — the "Suspended" chip is the
+      # visible signal the row is disabled.
+      refute render(lv) =~ "Suspended"
+
+      suspended = render_click(lv, "suspend", %{"membership_id" => membership.id})
+      assert suspended =~ "Suspended"
+
+      restored = render_click(lv, "reinstate", %{"membership_id" => membership.id})
+      refute restored =~ "Suspended"
+    end
+
     test "remove soft-deletes the membership through the typed-confirm dialog", %{
       lv: lv,
       member: member,
@@ -277,6 +490,7 @@ defmodule EmisarWeb.TeamLiveTest do
       lv: lv,
       membership: membership
     } do
+      # closes TEAM-005-T04
       dialog = "remove-member-#{membership.id}"
 
       # Empty + wrong token → Confirm disabled, `remove` never dispatched.
@@ -303,6 +517,55 @@ defmodule EmisarWeb.TeamLiveTest do
 
       assert render_click(lv, "end_sessions", %{"membership_id" => membership.id}) =~
                "All sessions ended for that user."
+    end
+  end
+
+  describe "invite form live validation (phx-change)" do
+    test "a blank email surfaces an inline error via phx-change, not a flash", %{conn: conn} do
+      # closes TEAM-003-T02
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
+
+      # The live-validation path (phx-change="validate") shows the field error as
+      # the operator types/clears — before they ever submit.
+      html =
+        lv
+        |> form("#invite_form", %{"invite" => %{"email" => "", "role" => "operator"}})
+        |> render_change()
+
+      assert html =~ "can&#39;t be blank"
+      refute html =~ "Could not send invitation"
+    end
+
+    test "a malformed email surfaces inline via phx-change", %{conn: conn} do
+      # closes TEAM-003-T03
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
+
+      html =
+        lv
+        |> form("#invite_form", %{"invite" => %{"email" => "b ob@x.com", "role" => "operator"}})
+        |> render_change()
+
+      assert html =~ "must have the @ sign and no spaces"
+    end
+
+    test "a role outside the allowed set is rejected with no membership created", %{conn: conn} do
+      # closes TEAM-003-T04
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
+
+      email = "rolecheck-#{System.unique_integer([:positive])}@example.com"
+
+      # The role <select> only offers valid roles, so push the event directly to
+      # forge an out-of-set role. validate_inclusion fails, the invite never
+      # reaches the context, and the form re-renders with the error instead.
+      html =
+        render_submit(lv, "invite", %{"invite" => %{"email" => email, "role" => "superadmin"}})
+
+      assert html =~ "is invalid"
+      refute html =~ "Invited #{email}."
+      assert {:error, :not_found} = Emisar.Users.fetch_user_by_email(email)
     end
   end
 
@@ -517,6 +780,151 @@ defmodule EmisarWeb.TeamLiveTest do
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/team")
 
       assert html =~ "never signed in"
+    end
+  end
+
+  describe "real-time roster updates (PubSub)" do
+    test "an unrelated handle_info message is ignored, not crashed", %{conn: conn} do
+      # closes TEAM-014-T04
+      # The badge/fleet on_mount hooks forward account-topic broadcasts to every
+      # LV, so TeamLive must carry the mandatory handle_info(_, socket) catch-all
+      # (a missing one crashes the socket on the first stray message).
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
+
+      send(lv.pid, {:some_unrelated_event, :payload})
+
+      # The process survived and still renders — render/1 raises if the socket died.
+      assert render(lv) =~ "Invite a member"
+    end
+
+    test "the disconnected (dead) render shows the loading state, never the roster", %{conn: conn} do
+      # closes TEAM-014-T05 TEAM-001-T11
+      # handle_params gates the roster reads (and mount the subscribe) behind
+      # connected?/1 (IL-18) — so the dead render a plain GET produces must show
+      # <.loading_state>, with no member rows read or rendered. A teammate is
+      # seeded precisely so "no roster on the dead render" is meaningful.
+      {conn, _user, account} = register_and_log_in(conn, %{account: %{name: "DeadRenderOrg"}})
+
+      teammate = Emisar.Fixtures.user_fixture(%{full_name: "Deadrender Teammate"})
+
+      _ =
+        Emisar.Fixtures.membership_fixture(
+          account_id: account.id,
+          user_id: teammate.id,
+          role: "operator"
+        )
+
+      dead = conn |> get(~p"/app/#{account}/settings/team") |> html_response(200)
+
+      assert dead =~ "Loading…"
+      refute dead =~ "Deadrender Teammate"
+    end
+  end
+
+  describe "pagination / filter param recovery" do
+    test "a hand-edited bad cursor param recovers via the single clean retry", %{conn: conn} do
+      # closes TEAM-001-T07 TEAM-001-T08
+      # A garbage `after` cursor makes the keyset read return
+      # {:error, :invalid_cursor}; load/2 retries once with %{} (since the params
+      # were non-empty), so the page recovers and renders the roster instead of
+      # 500-ing or landing on the load-error empty state.
+      {conn, _user, account} = register_and_log_in(conn, %{account: %{name: "RecoverOrg"}})
+
+      teammate = Emisar.Fixtures.user_fixture(%{full_name: "Recover Teammate"})
+
+      _ =
+        Emisar.Fixtures.membership_fixture(
+          account_id: account.id,
+          user_id: teammate.id,
+          role: "operator"
+        )
+
+      {:ok, _lv, html} =
+        live(conn, ~p"/app/#{account}/settings/team?after=not-a-real-cursor%21%21")
+
+      # Recovered: the roster rendered (the retry's clean read), and it's NOT the
+      # load-error state.
+      assert html =~ "Recover Teammate"
+      refute html =~ "Couldn't load your team"
+    end
+  end
+
+  describe "client validation is not the authorization gate (IL-15)" do
+    test "a viewer's well-formed invite is still refused server-side", %{conn: conn} do
+      # closes TEAM-003-T05
+      # The invite changeset is purely UX — a viewer can pass every field-level
+      # check (valid email, valid role) and the `invite` handler must STILL deny
+      # them via can_manage?, never creating a membership.
+      {_owner_conn, _owner, account} = register_and_log_in(conn, %{account: %{name: "ValOrg"}})
+
+      viewer = Emisar.Fixtures.user_fixture()
+
+      _ =
+        Emisar.Fixtures.membership_fixture(
+          account_id: account.id,
+          user_id: viewer.id,
+          role: "viewer"
+        )
+
+      {:ok, lv, _html} =
+        build_conn() |> log_in_user(viewer) |> live(~p"/app/#{account}/settings/team")
+
+      email = "valid-but-denied-#{System.unique_integer([:positive])}@example.com"
+
+      html = render_submit(lv, "invite", %{"invite" => %{"email" => email, "role" => "operator"}})
+
+      # The denial is the membership-management flash, and no user/membership was
+      # created from the forged event.
+      assert html =~ "Only owners and admins can invite members."
+      assert {:error, :not_found} = Emisar.Users.fetch_user_by_email(email)
+    end
+  end
+
+  describe "a member that vanished mid-flight is a graceful no-op" do
+    setup %{conn: conn} do
+      # An owner whose roster does NOT contain `ghost_id` — so find_membership
+      # returns nil for it and each handler short-circuits without touching the DB.
+      {conn, _owner, account} = register_and_log_in(conn, %{account: %{name: "GhostOrg"}})
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
+      %{lv: lv, ghost_id: Ecto.UUID.generate()}
+    end
+
+    test "change_role on an unknown membership id is ignored", %{lv: lv, ghost_id: ghost_id} do
+      # closes TEAM-004-T04
+      # change_role finds no row → the `nil` clause returns the socket unchanged
+      # (no flash, no write).
+      html = render_click(lv, "change_role", %{"membership_id" => ghost_id, "role" => "admin"})
+      refute html =~ "Role updated."
+      refute html =~ "Unknown role."
+    end
+
+    test "remove / save_edit / save_scopes on an unknown id are silent no-ops", %{
+      lv: lv,
+      ghost_id: ghost_id
+    } do
+      # closes TEAM-005-T03 TEAM-007-T02 TEAM-011-T03
+      # All three route through with_membership, whose nil branch returns the
+      # socket untouched — no success flash, no error flash, no crash.
+      remove_html = render_click(lv, "remove", %{"membership_id" => ghost_id})
+      refute remove_html =~ "Member removed."
+
+      edit_html =
+        render_submit(lv, "save_edit", %{
+          "membership_id" => ghost_id,
+          "user" => %{"full_name" => "Nobody"}
+        })
+
+      refute edit_html =~ "Member updated."
+
+      scopes_html =
+        render_submit(lv, "save_scopes", %{
+          "membership_id" => ghost_id,
+          "groups" => [],
+          "runners" => []
+        })
+
+      refute scopes_html =~ "Scope updated."
     end
   end
 

@@ -1062,6 +1062,55 @@ defmodule Emisar.AuditTest do
       assert {:ok, [_], %{next_page_cursor: nil}} =
                Audit.list_events(subject, page: [cursor: cursor, limit: 3])
     end
+
+    # closes AUD-009-T04 — a row committed mid-walk must not shift a page
+    # boundary into a skip or a duplicate. The feed is keyset (cursor on
+    # `(occurred_at desc, id asc)`), not offset: the cursor anchors on page 1's
+    # last row, so resuming continues strictly past it regardless of inserts.
+    # A fresh row sorts at the FRONT (newest `occurred_at`), ahead of page 1, so
+    # it is never paged into the resumed walk, and every original row is still
+    # seen exactly once across the two pages.
+    test "a row inserted between page loads doesn't skip or duplicate the walk" do
+      account = account_fixture()
+      subject = subject_for(user_fixture(), account, role: :owner)
+
+      # Six rows, each strictly older than "now" and strictly ordered among
+      # themselves (descending occurred_at == older `i` last), so the walk order
+      # is deterministic and the mid-walk insert lands ahead of all of them.
+      base = DateTime.add(DateTime.utc_now(), -3600, :second)
+
+      seeded =
+        for i <- 1..6 do
+          {:ok, event} =
+            Audit.log(account.id, "iter.event",
+              actor_kind: "system",
+              payload: %{"i" => i},
+              occurred_at: DateTime.add(base, i, :second)
+            )
+
+          event.id
+        end
+
+      {:ok, page1, %{next_page_cursor: cursor}} = Audit.list_events(subject, page: [limit: 3])
+      assert length(page1) == 3
+      assert is_binary(cursor)
+
+      # Commit a brand-new event AFTER page 1 was read but BEFORE page 2 — it
+      # gets `occurred_at = now`, so it sorts newest (at the front).
+      {:ok, fresh} = Audit.log(account.id, "iter.event", actor_kind: "system")
+
+      {:ok, page2, _meta} = Audit.list_events(subject, page: [cursor: cursor, limit: 3])
+
+      walked = Enum.map(page1 ++ page2, & &1.id)
+
+      # No row appears twice across the two pages (no duplicate at the boundary).
+      assert walked == Enum.uniq(walked)
+      # The fresh front row is never paged into the resumed walk — the cursor
+      # anchored past page 1's last row, so the walk only moves toward older rows.
+      refute fresh.id in walked
+      # Every originally-seeded row is seen exactly once — none skipped.
+      assert MapSet.new(walked) == MapSet.new(seeded)
+    end
   end
 
   describe "list_subject_options/2 (the dynamic subject picker)" do
@@ -1177,9 +1226,9 @@ defmodule Emisar.AuditTest do
   end
 
   describe "the audit log is append-only by construction (AUD-001-T20)" do
-    # closes AUD-001-T20 — "tamper-evident" here means there is NO public API
-    # path that mutates or deletes a recorded event: the Audit context exposes
-    # only inserts/reads (log / record / changeset / *_changeset / list_* /
+    # closes AUD-001-T20 / ENG-009-T10 — "tamper-evident" here means there is NO
+    # public API path that mutates or deletes a recorded event: the Audit context
+    # exposes only inserts/reads (log / record / changeset / *_changeset / list_* /
     # fetch_* / resolve_references), and the Event.Changeset module exposes only
     # `create/1` — no update/delete transition. The single deletion path is the
     # retention sweep (Workers.AuditRetention), by cutoff, never per-event. This
@@ -1212,6 +1261,10 @@ defmodule Emisar.AuditTest do
       refute "delete" in transitions
     end
 
+    # closes ENG-009-T14 — the accepted trade-off (NOT a defect): the cloud audit
+    # log is append-only by construction but carries NO cryptographic hash chain
+    # (the runner-side chain is the RSEC anchor). Asserting the documented design,
+    # not a missing feature.
     test "the schema carries no prev_hash / signature / anchor chain column" do
       # Append-only-by-construction, NOT cryptographic: there is intentionally no
       # hash-chain or signature on the row (so the test asserts the documented

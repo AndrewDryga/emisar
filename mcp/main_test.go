@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -10,6 +11,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 // The bridge is a thin stdio↔HTTP shim. Its only jobs are:
@@ -464,7 +466,561 @@ func TestBuildUserAgent_DefaultsClientWhenEnvUnset(t *testing.T) {
 	}
 }
 
+// -- idempotencyKey: cross-process + odd ids ------------------------
+
+// BRG-003-T09 — the session prefix namespaces idempotency keys across processes:
+// two bridges with different session ids derive different keys for the same
+// JSON-RPC id, so one process's id:1 never aliases another's run at the portal.
+func TestIdempotencyKey_SessionPrefixNamespacesAcrossProcesses(t *testing.T) {
+	a := (&bridge{sessionID: "aaaa"}).idempotencyKey([]byte(`{"jsonrpc":"2.0","id":1}`))
+	b := (&bridge{sessionID: "bbbb"}).idempotencyKey([]byte(`{"jsonrpc":"2.0","id":1}`))
+	if a == b {
+		t.Fatalf("different sessions must not alias the same id: both %q", a)
+	}
+	if a != "aaaa:1" || b != "bbbb:1" {
+		t.Fatalf("keys = %q, %q; want aaaa:1, bbbb:1", a, b)
+	}
+}
+
+// BRG-003-T11 — large / odd-shaped ids decode safely. The envelope id is read as
+// a RawMessage and only surrounding quotes are trimmed: a spaced id, a big int
+// past 2^53, and a hyphen/underscore string id all produce a deterministic key
+// with no panic and no precision loss (a float-parse of the big int would mangle
+// it; RawMessage keeps the literal).
+func TestIdempotencyKey_LargeAndOddIDs(t *testing.T) {
+	b := &bridge{sessionID: "s"}
+	cases := []struct {
+		frame string
+		want  string
+	}{
+		{`{"id": 1,"method":"tools/call"}`, "s:1"},                        // leading space before the value
+		{`{"jsonrpc":"2.0","id":9007199254740993}`, "s:9007199254740993"}, // > 2^53, kept exact
+		{`{"jsonrpc":"2.0","id":"a-b_c"}`, "s:a-b_c"},                     // string id, quotes stripped
+		{`{"jsonrpc":"2.0","id":12.5}`, "s:12.5"},                         // float-ish literal, kept verbatim
+	}
+	for _, c := range cases {
+		if got := b.idempotencyKey([]byte(c.frame)); got != c.want {
+			t.Errorf("idempotencyKey(%s) = %q, want %q", c.frame, got, c.want)
+		}
+	}
+}
+
+// -- checkEndpointScheme: case-insensitive loopback -----------------
+
+// BRG-007-T12 — the loopback allowance for cleartext http is case-insensitive on
+// the host: http://LOCALHOST is accepted exactly like http://localhost
+// (isLoopbackHost uses strings.EqualFold), so casing can't accidentally trip the
+// cleartext refusal for a legit local dev endpoint.
+func TestCheckEndpointScheme_LoopbackCaseInsensitive(t *testing.T) {
+	for _, base := range []string{"http://LOCALHOST:4000", "http://LocalHost:4000", "http://localhost:4000"} {
+		if err := checkEndpointScheme(base, false); err != nil {
+			t.Errorf("%q should be allowed (case-insensitive loopback), got %v", base, err)
+		}
+	}
+}
+
+// -- forward: method / content-type / body handling ----------------
+
+// BRG-002-T02 — every forwarded frame is a POST with Content-Type:
+// application/json (the portal's RPC endpoint only accepts POSTed JSON).
+func TestForward_UsesPostAndJSONContentType(t *testing.T) {
+	var gotMethod, gotCT string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod = r.Method
+		gotCT = r.Header.Get("Content-Type")
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":"ok"}`))
+	}))
+	defer srv.Close()
+
+	b := newTestBridge(srv)
+	if _, err := b.forward([]byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call"}`)); err != nil {
+		t.Fatalf("forward: %v", err)
+	}
+	if gotMethod != http.MethodPost {
+		t.Errorf("method = %q, want POST", gotMethod)
+	}
+	if gotCT != "application/json" {
+		t.Errorf("Content-Type = %q, want application/json", gotCT)
+	}
+}
+
+// BRG-002-T09 — a 202 with a non-empty body still yields a nil body: the body is
+// read (and capped) then dropped, because 202 means "notification accepted, no
+// response" regardless of what the portal wrote.
+func TestForward_202WithBodyStillDiscarded(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":"should be dropped"}`))
+	}))
+	defer srv.Close()
+
+	b := newTestBridge(srv)
+	body, err := b.forward([]byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call"}`))
+	if err != nil {
+		t.Fatalf("forward: %v", err)
+	}
+	if body != nil {
+		t.Errorf("202 must yield a nil body even with content, got %q", body)
+	}
+}
+
+// BRG-002-T12 — a stale/expired token produces a portal 4xx JSON-RPC error frame,
+// which is relayed VERBATIM (not masked as a generic -32603). The bridge does no
+// auth logic; the portal shapes the structured error and the client sees it whole.
+func TestForward_ExpiredToken4xxRelayedVerbatim(t *testing.T) {
+	errFrame := []byte(`{"jsonrpc":"2.0","id":1,"error":{"code":-32001,"message":"api key expired"}}`)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write(errFrame)
+	}))
+	defer srv.Close()
+
+	b := newTestBridge(srv)
+	b.apiKey = "emk-stale-expired"
+	got, err := b.forward([]byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call"}`))
+	if err != nil {
+		t.Fatalf("a portal 4xx error frame must not become a Go error: %v", err)
+	}
+	if !bytes.Equal(got, errFrame) {
+		t.Errorf("4xx error frame not relayed verbatim:\n got %s\nwant %s", got, errFrame)
+	}
+}
+
+// BRG-002-T13 — a request-build failure (http.NewRequest) is surfaced to the
+// caller (serve then maps it to -32603). An endpoint with an embedded control
+// character fails url.Parse inside http.NewRequest. (forward is exercised in
+// isolation here; the startup checkEndpointScheme would normally reject such a
+// URL first.)
+func TestForward_RequestBuildErrorSurfaced(t *testing.T) {
+	b := &bridge{
+		endpoint:  "http://example.com/\x7f", // invalid control char → NewRequest fails
+		apiKey:    "k",
+		userAgent: "ua",
+		client:    newHTTPClient(),
+		sessionID: "sess",
+	}
+	if _, err := b.forward([]byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call"}`)); err == nil {
+		t.Fatal("a malformed endpoint should surface a request-build error")
+	}
+}
+
+// BRG-002-T15 / BRG-002-T16 — on a 5xx, the client-facing JSON-RPC frame written
+// to stdout is the GENERIC `upstream transport error` and never carries the
+// secret-ish 5xx body or the API key. The detailed portal body goes to stderr
+// only (not the LLM transcript). We assert the security-critical half: the
+// stdout frame leaks neither the body nor the key.
+func TestServe_5xxBodyAndKeyNeverReachClientFrame(t *testing.T) {
+	const secretBody = "stacktrace: postgres://user:hunter2@db/internal panic at 0xdead"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = w.Write([]byte(secretBody))
+	}))
+	defer srv.Close()
+
+	b := newTestBridge(srv)
+	b.apiKey = "emk-super-secret-key"
+
+	in := strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/call"}` + "\n")
+	var out bytes.Buffer
+	_ = b.serve(in, &out)
+
+	got := out.String()
+	if !strings.Contains(got, "-32603") || !strings.Contains(got, "upstream transport error") {
+		t.Errorf("client frame should be the generic -32603, got %q", got)
+	}
+	if strings.Contains(got, "hunter2") || strings.Contains(got, "postgres://") || strings.Contains(got, "0xdead") {
+		t.Errorf("the 5xx body leaked into the client frame: %q", got)
+	}
+	if strings.Contains(got, b.apiKey) {
+		t.Errorf("the API key leaked into the client frame: %q", got)
+	}
+}
+
+// BRG-002-T17 — an OAuth `emo-*` bearer is carried identically to any other key:
+// the bridge does no token-type logic, it just attaches `Authorization: Bearer
+// <key>` verbatim.
+func TestForward_OAuthBearerCarriedVerbatim(t *testing.T) {
+	var gotAuth string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":"ok"}`))
+	}))
+	defer srv.Close()
+
+	b := newTestBridge(srv)
+	b.apiKey = "emo-0a1b2c3d4e5f-oauth-access-token"
+	if _, err := b.forward([]byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call"}`)); err != nil {
+		t.Fatalf("forward: %v", err)
+	}
+	if gotAuth != "Bearer emo-0a1b2c3d4e5f-oauth-access-token" {
+		t.Errorf("Authorization = %q, want the emo- token carried verbatim", gotAuth)
+	}
+}
+
+// BRG-002-T18 — a non-JSON 200 body is relayed without validation: the bridge
+// never asserts the response is well-formed JSON (all semantics are portal-side).
+func TestForward_NonJSONResponseRelayedVerbatim(t *testing.T) {
+	raw := []byte("this is not json at all <<>>")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(raw)
+	}))
+	defer srv.Close()
+
+	b := newTestBridge(srv)
+	got, err := b.forward([]byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call"}`))
+	if err != nil {
+		t.Fatalf("forward should not validate the body: %v", err)
+	}
+	if !bytes.Equal(got, raw) {
+		t.Errorf("non-JSON body not relayed verbatim:\n got %q\nwant %q", got, raw)
+	}
+}
+
+// BRG-002-T19 — an empty 200 body is returned as an empty (non-nil-distinct)
+// body; serve then writes nothing spurious for it.
+func TestForward_Empty200BodyReturnedEmpty(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK) // zero-length body
+	}))
+	defer srv.Close()
+
+	b := newTestBridge(srv)
+	got, err := b.forward([]byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call"}`))
+	if err != nil {
+		t.Fatalf("forward: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("empty 200 should yield an empty body, got %q", got)
+	}
+
+	// And serve writes nothing for an empty 200 (len(resp)==0 branch).
+	srv2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv2.Close()
+	b2 := newTestBridge(srv2)
+	var out bytes.Buffer
+	_ = b2.serve(strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/call"}`+"\n"), &out)
+	if out.Len() != 0 {
+		t.Errorf("an empty 200 body should produce no stdout, got %q", out.String())
+	}
+}
+
+// BRG-002-T20 / BRG-001-T14 — the relay is buffered, not streamed: forward reads
+// the COMPLETE (capped) body before returning one slice, even when the portal
+// writes it in chunks with flushes between them. (No partial/streamed frame is
+// emitted.)
+func TestForward_BuffersChunkedBodyBeforeReturning(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			t.Skip("response writer is not a Flusher")
+		}
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":["`))
+		flusher.Flush()
+		_, _ = w.Write([]byte(`chunk-a`))
+		flusher.Flush()
+		_, _ = w.Write([]byte(`","chunk-b"]}`))
+		flusher.Flush()
+	}))
+	defer srv.Close()
+
+	b := newTestBridge(srv)
+	got, err := b.forward([]byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call"}`))
+	if err != nil {
+		t.Fatalf("forward: %v", err)
+	}
+	want := `{"jsonrpc":"2.0","id":1,"result":["chunk-a","chunk-b"]}`
+	if string(got) != want {
+		t.Errorf("chunked body not fully buffered before return:\n got %q\nwant %q", got, want)
+	}
+}
+
+// -- serve: framing, ordering, write errors ------------------------
+
+// BRG-001-T02 — a portal body that already ends in "\n" is not double-terminated:
+// serve appends a newline only when the body lacks one, so the client never sees
+// "\n\n".
+func TestServe_BodyAlreadyNewlineTerminatedNotDoubled(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":"ok"}` + "\n"))
+	}))
+	defer srv.Close()
+
+	b := newTestBridge(srv)
+	var out bytes.Buffer
+	if err := b.serve(strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"ping"}`+"\n"), &out); err != nil && !errors.Is(err, io.EOF) {
+		t.Fatalf("serve: %v", err)
+	}
+	if strings.HasSuffix(out.String(), "\n\n") {
+		t.Errorf("body already ending in \\n was double-terminated: %q", out.String())
+	}
+	if !strings.HasSuffix(out.String(), "}\n") {
+		t.Errorf("expected exactly one trailing newline, got %q", out.String())
+	}
+}
+
+// BRG-001-T03 — multiple frames over one session are relayed in input order, each
+// newline-delimited. The portal echoes each request's id so we can assert order.
+func TestServe_MultipleFramesRelayedInOrder(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		var env struct {
+			ID json.RawMessage `json:"id"`
+		}
+		_ = json.Unmarshal(body, &env)
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":` + string(env.ID) + `,"result":"ok"}`))
+	}))
+	defer srv.Close()
+
+	b := newTestBridge(srv)
+	in := strings.NewReader(
+		`{"jsonrpc":"2.0","id":1,"method":"ping"}` + "\n" +
+			`{"jsonrpc":"2.0","id":2,"method":"ping"}` + "\n" +
+			`{"jsonrpc":"2.0","id":3,"method":"ping"}` + "\n")
+	var out bytes.Buffer
+	if err := b.serve(in, &out); err != nil && !errors.Is(err, io.EOF) {
+		t.Fatalf("serve: %v", err)
+	}
+
+	lines := strings.Split(strings.TrimRight(out.String(), "\n"), "\n")
+	if len(lines) != 3 {
+		t.Fatalf("want 3 newline-delimited responses, got %d: %q", len(lines), out.String())
+	}
+	for i, want := range []string{`"id":1`, `"id":2`, `"id":3`} {
+		if !strings.Contains(lines[i], want) {
+			t.Errorf("response %d out of order: %q (want %s)", i, lines[i], want)
+		}
+	}
+}
+
+// BRG-001-T06 — a write failure to stdout is fatal: serve returns the write
+// error (main then surfaces it and the process exits non-zero). A torn pipe to
+// the client must not be silently swallowed.
+func TestServe_WriteErrorIsFatal(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":"ok"}`))
+	}))
+	defer srv.Close()
+
+	b := newTestBridge(srv)
+	err := b.serve(strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"ping"}`+"\n"), errWriter{})
+	if err == nil {
+		t.Fatal("a stdout write failure must be returned from serve, not swallowed")
+	}
+	if !errors.Is(err, errWrite) {
+		t.Errorf("serve should return the underlying write error, got %v", err)
+	}
+}
+
+// BRG-001-T07 — EOF on stdin is a clean exit: serve returns nil (io.EOF mapped to
+// a graceful return) when input ends without a terminating newline.
+func TestServe_EOFWithoutNewlineExitsClean(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":"ok"}`))
+	}))
+	defer srv.Close()
+
+	b := newTestBridge(srv)
+	var out bytes.Buffer
+	// No trailing newline — the final frame still forwards, then EOF → nil.
+	if err := b.serve(strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"ping"}`), &out); err != nil {
+		t.Fatalf("EOF should be a clean (nil) exit, got %v", err)
+	}
+	if !strings.Contains(out.String(), `"result":"ok"`) {
+		t.Errorf("the last unterminated frame should still be forwarded, got %q", out.String())
+	}
+}
+
+// BRG-001-T08 — bare blank / whitespace-only lines forward nothing; a real frame
+// after them is still relayed. (serve trims each line and skips empties.)
+func TestServe_BlankAndWhitespaceLinesAreNoOps(t *testing.T) {
+	var hits int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits++
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":"ok"}`))
+	}))
+	defer srv.Close()
+
+	b := newTestBridge(srv)
+	in := strings.NewReader("\n" + "   \n" + "\t \n" + `{"jsonrpc":"2.0","id":1,"method":"ping"}` + "\n")
+	var out bytes.Buffer
+	if err := b.serve(in, &out); err != nil && !errors.Is(err, io.EOF) {
+		t.Fatalf("serve: %v", err)
+	}
+	if hits != 1 {
+		t.Errorf("only the real frame should be forwarded, got %d POSTs", hits)
+	}
+	if !strings.Contains(out.String(), `"result":"ok"`) {
+		t.Errorf("the real frame after blank lines was not relayed: %q", out.String())
+	}
+}
+
+// BRG-001-T10 / BRG-001-T13 — a malformed (non-JSON) frame, and a frame naming an
+// unknown/synthetic tool, are both POSTed VERBATIM. The bridge does no JSON-RPC
+// validation and synthesizes no tool descriptors/content — every semantic is
+// portal-side; it relays exactly the bytes it received (within the size cap).
+func TestServe_RelaysFramesVerbatimWithoutProtocolLogic(t *testing.T) {
+	for _, frame := range []string{
+		`{not json but under the cap`,
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"totally_made_up_tool","arguments":{}}}`,
+	} {
+		var gotBody string
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			b, _ := io.ReadAll(r.Body)
+			gotBody = string(b)
+			_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":"portal-decides"}`))
+		}))
+
+		b := newTestBridge(srv)
+		var out bytes.Buffer
+		if err := b.serve(strings.NewReader(frame+"\n"), &out); err != nil && !errors.Is(err, io.EOF) {
+			srv.Close()
+			t.Fatalf("serve: %v", err)
+		}
+		srv.Close()
+
+		if gotBody != frame {
+			t.Errorf("frame not forwarded verbatim:\n sent %q\n  got %q", frame, gotBody)
+		}
+		// The bridge synthesized nothing of its own — the response is purely what
+		// the portal returned.
+		if !strings.Contains(out.String(), "portal-decides") {
+			t.Errorf("bridge should relay the portal response untouched, got %q", out.String())
+		}
+	}
+}
+
+// -- readFrameLine / readCappedBody: bounds at the real constants --
+
+// BRG-008-T08 — a long newline-free chunk that is UNDER the frame cap but spans
+// several of bufio.Reader's internal buffer fills (ErrBufferFull) is accumulated
+// in full and forwarded — the drain loop keeps appending, it does not stop early
+// or spuriously flag oversize.
+func TestReadFrameLine_BufferFullKeepsAccumulating(t *testing.T) {
+	// Reader buffer is 4 KiB here; the line is ~50 KiB → many ErrBufferFull cycles,
+	// still well under maxFrameBytes.
+	const n = 50 * 1024
+	line := strings.Repeat("a", n)
+	br := bufio.NewReaderSize(strings.NewReader(line+"\n"), 4*1024)
+
+	got, oversize, err := readFrameLine(br)
+	if err != nil && !errors.Is(err, io.EOF) {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	if oversize {
+		t.Fatal("a sub-cap line must not be flagged oversize despite spanning buffer fills")
+	}
+	if len(bytes.TrimRight(got, "\n")) != n {
+		t.Errorf("accumulated %d bytes, want %d (drain stopped early)", len(bytes.TrimRight(got, "\n")), n)
+	}
+}
+
+// BRG-008-T09 — readCappedBody at the REAL maxResponseBytes: a body of exactly
+// the limit is returned in full; one byte over is an error. (TestReadCappedBody
+// pins the logic with a small limit; this pins it at the production constant.)
+func TestReadCappedBody_AtMaxResponseBytesBoundary(t *testing.T) {
+	exact := bytes.Repeat([]byte("z"), maxResponseBytes)
+	if got, err := readCappedBody(bytes.NewReader(exact), maxResponseBytes); err != nil {
+		t.Fatalf("a body of exactly maxResponseBytes should be allowed: %v", err)
+	} else if len(got) != maxResponseBytes {
+		t.Errorf("got %d bytes, want %d", len(got), maxResponseBytes)
+	}
+
+	over := bytes.Repeat([]byte("z"), maxResponseBytes+1)
+	if _, err := readCappedBody(bytes.NewReader(over), maxResponseBytes); err == nil {
+		t.Fatal("a body one byte over maxResponseBytes must error")
+	}
+}
+
+// BRG-008-T14 — an unbounded hostile response stream is bounded by readCappedBody
+// (io.LimitReader): forward errors out (→ -32603 in serve) instead of consuming
+// memory without limit. We model the infinite stream with an endless reader and
+// assert forward returns the capped-body error rather than reading forever.
+func TestForward_UnboundedResponseStreamIsBounded(t *testing.T) {
+	// A handler that writes far more than maxResponseBytes. We don't write a true
+	// infinite stream (the httptest server would block on the closed client side
+	// once forward gives up); maxResponseBytes+4 KiB is enough to trip the cap.
+	over := bytes.Repeat([]byte("z"), maxResponseBytes+4096)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(over)
+	}))
+	defer srv.Close()
+
+	b := newTestBridge(srv)
+	_, err := b.forward([]byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call"}`))
+	if err == nil {
+		t.Fatal("an over-cap response stream must error (bounded), not be relayed")
+	}
+	if !strings.Contains(err.Error(), "exceeds") {
+		t.Errorf("expected a capped-body error, got %v", err)
+	}
+}
+
+// BRG-008-T15 — the transport bounds are fixed in code, not operator-tunable:
+// there is intentionally NO env override for the request timeout, the response
+// cap, or the inbound-frame cap (a hostile launcher config can't widen them to
+// hang the bridge or lift the OOM guard). Pin the exact values so a change is a
+// deliberate, reviewed edit to the constants.
+func TestTransportConstantsAreFixed(t *testing.T) {
+	// closes BRG-008-T15
+	if httpTimeout != 120*time.Second {
+		t.Errorf("httpTimeout = %v, want 120s", httpTimeout)
+	}
+	if maxResponseBytes != 32*1024*1024 {
+		t.Errorf("maxResponseBytes = %d, want 32 MiB", maxResponseBytes)
+	}
+	if maxFrameBytes != 16*1024*1024 {
+		t.Errorf("maxFrameBytes = %d, want 16 MiB", maxFrameBytes)
+	}
+}
+
+// BRG-008-T10 — a stalled portal that never responds is bounded by the client
+// timeout: client.Do returns a timeout error, forward surfaces it, and serve
+// maps it to a synthetic -32603 rather than hanging forever. We exercise the
+// MECHANISM with a short-timeout client against a handler that blocks until the
+// client gives up (the production cap is 120s, asserted separately by
+// TestTransportConstantsAreFixed — we don't wait two minutes here).
+func TestForward_ClientTimeoutBecomesError(t *testing.T) {
+	// closes BRG-008-T10
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		// Block until the client disconnects (its timeout fires) or the test
+		// tears the server down — never write a response.
+		select {
+		case <-r.Context().Done():
+		case <-release:
+		}
+	}))
+	defer srv.Close()
+	defer close(release)
+
+	b := newTestBridge(srv)
+	b.client = &http.Client{
+		Timeout:       50 * time.Millisecond,
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}
+
+	if _, err := b.forward([]byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call"}`)); err == nil {
+		t.Fatal("a stalled portal past the client timeout must surface an error")
+	}
+
+	// And serve maps that transport timeout to a -32603 frame (loop survives).
+	var out bytes.Buffer
+	_ = b.serve(strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/call"}`+"\n"), &out)
+	if !strings.Contains(out.String(), "-32603") || !strings.Contains(out.String(), "upstream transport error") {
+		t.Errorf("a timed-out forward should yield a generic -32603 frame, got %q", out.String())
+	}
+}
+
 // -- helpers --------------------------------------------------------
+
+var errWrite = errors.New("write failed")
+
+// errWriter fails every Write — models a torn stdout pipe to the client.
+type errWriter struct{}
+
+func (errWriter) Write([]byte) (int, error) { return 0, errWrite }
 
 func newTestBridge(srv *httptest.Server) *bridge {
 	return &bridge{

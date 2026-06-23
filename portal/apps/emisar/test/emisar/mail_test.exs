@@ -130,5 +130,210 @@ defmodule Emisar.MailTest do
         true
       end)
     end
+
+    # closes ENG-020-T03 — an owner who signed up without a name is greeted
+    # by email rather than rendering a blank salutation.
+    test "falls back to the email when the owner has no full name" do
+      user = user_fixture(full_name: nil)
+
+      {:ok, account} =
+        Emisar.Accounts.create_account_with_owner(%{name: "Nameless", slug: "nameless"}, user)
+
+      UserNotifier.deliver_welcome(user, account)
+
+      assert_email_sent(&(&1.text_body =~ "Welcome to emisar, #{user.email}!"))
+    end
+  end
+
+  describe "confirmation email" do
+    # closes ENG-016-T01 — the sign-up confirmation carries its subject, the
+    # absolute /confirm/<token> link, and the "ignore if you didn't sign up" line.
+    test "carries the subject, confirm link, and reassurance line" do
+      user = user_fixture()
+      UserNotifier.deliver_confirmation_instructions(user, "tok-confirm")
+
+      assert_email_sent(fn email ->
+        assert email.subject == "Confirm your emisar account"
+        assert email.text_body =~ "/confirm/tok-confirm"
+        assert email.text_body =~ "If you didn't sign up"
+        true
+      end)
+    end
+
+    # closes ENG-016-T04 — a suppressed address is skipped with the shared
+    # {:ok, %{suppressed: true}} contract; no email is built.
+    test "skips a suppressed recipient" do
+      user = user_fixture()
+      {:ok, _} = Mail.suppress(user.email, :hard_bounce, "bounce")
+
+      assert {:ok, %{suppressed: true}} =
+               UserNotifier.deliver_confirmation_instructions(user, "tok")
+    end
+  end
+
+  describe "magic-link email content" do
+    # closes ENG-017-T01 + ENG-017-T02 — the magic-link subject, the
+    # /sign_in/magic/<token> link, and the body copy "15 minutes" which
+    # AGREES with the enforced @magic_link_validity_in_minutes (unlike the
+    # reset email, see ENG-018-T02).
+    test "carries the subject, link, and a 15-minute expiry that matches enforcement" do
+      user = user_fixture()
+      UserNotifier.deliver_magic_link(user, "tok-magic")
+
+      assert_email_sent(fn email ->
+        assert email.subject == "Your emisar magic link"
+        assert email.text_body =~ "/sign_in/magic/tok-magic"
+        assert email.text_body =~ "15 minutes"
+        true
+      end)
+    end
+  end
+
+  describe "password-reset email content" do
+    # closes ENG-018-T01 — the reset subject, the /reset_password/<token>
+    # link, and the "won't change unless someone clicks" reassurance.
+    test "carries the subject, reset link, and reassurance line" do
+      user = user_fixture()
+      UserNotifier.deliver_password_reset(user, "tok-reset")
+
+      assert_email_sent(fn email ->
+        assert email.subject == "Reset your emisar password"
+        assert email.text_body =~ "/reset_password/tok-reset"
+        assert email.text_body =~ "won't change unless someone clicks"
+        true
+      end)
+    end
+
+    # closes ENG-018-T02 — DOCUMENTED DEFECT CANDIDATE. The body promises the
+    # link is "valid for 1 hour", but the enforced reset-token TTL is
+    # @reset_validity_in_days = 1 (≈24h) at the Auth layer. This test pins the
+    # current copy so the mismatch is visible; once a product decision picks
+    # the correct value, flip this to assert the body and the enforced TTL
+    # AGREE. Not changed in discovery (no production edit).
+    test "body still says '1 hour' though the link actually works ~1 day (mismatch)" do
+      user = user_fixture()
+      UserNotifier.deliver_password_reset(user, "tok")
+
+      assert_email_sent(fn email ->
+        assert email.text_body =~ "valid for 1 hour"
+        # The enforced window is 1 DAY — the body copy and enforcement disagree.
+        refute email.text_body =~ "1 day"
+        refute email.text_body =~ "24 hours"
+        true
+      end)
+    end
+  end
+
+  describe "invitation email" do
+    # closes ENG-019-T01 — the invite subject names the workspace, the body
+    # names the inviter + workspace, carries the /accept_invitation/<token>
+    # link and the "what is emisar?" pitch.
+    test "names the inviter and workspace and carries the accept link" do
+      inviter = user_fixture(full_name: "Dana Inviter")
+      invitee = user_fixture()
+      account = account_fixture(name: "Globex")
+
+      UserNotifier.deliver_account_invitation(invitee, inviter, account, "tok-invite")
+
+      assert_email_sent(fn email ->
+        assert email.subject == "You're invited to Globex on emisar"
+        assert email.text_body =~ "Dana Inviter"
+        assert email.text_body =~ "Globex"
+        assert email.text_body =~ "/accept_invitation/tok-invite"
+        assert email.text_body =~ "What is emisar?"
+        true
+      end)
+    end
+
+    # closes ENG-019-T03 — an inviter with no full_name is shown by email.
+    test "falls back to the inviter's email when they have no full name" do
+      inviter = user_fixture(full_name: nil)
+      invitee = user_fixture()
+      account = account_fixture(name: "Globex")
+
+      UserNotifier.deliver_account_invitation(invitee, inviter, account, "tok")
+
+      assert_email_sent(&(&1.text_body =~ inviter.email))
+    end
+
+    # closes ENG-019-T04 — a suppressed invitee is skipped (the membership row
+    # is created elsewhere; here only the send is suppressed).
+    test "skips a suppressed invitee" do
+      inviter = user_fixture()
+      invitee = user_fixture()
+      account = account_fixture()
+      {:ok, _} = Mail.suppress(invitee.email, :spam_complaint, "complaint")
+
+      assert {:ok, %{suppressed: true}} =
+               UserNotifier.deliver_account_invitation(invitee, inviter, account, "tok")
+    end
+  end
+
+  describe "approval-needed email content" do
+    # closes ENG-021-T01 (body content) — the approval email surfaces enough
+    # to decide from the inbox: subject with the action_id, the runner NAME
+    # (not the opaque id), the operator's reason, an args preview, and the
+    # /app/approvals/<id> link. (Recipient targeting is covered in approvals_test.)
+    test "surfaces action, runner name, reason, args, and the approval link" do
+      approver = user_fixture()
+      request = %{id: "req-id-123", reason: "rotate the cert", matched_rules: ["high → approve"]}
+
+      run = %{
+        action_id: "caddy.reload_config",
+        runner: %{name: "edge-1"},
+        runner_id: "rnr-abc",
+        policy_reason: "high risk",
+        matched_rules: ["high → approve"],
+        args: %{"path" => "/etc/caddy"}
+      }
+
+      UserNotifier.deliver_approval_request(approver, request, run)
+
+      assert_email_sent(fn email ->
+        assert email.subject == "Approval needed: caddy.reload_config"
+        assert email.text_body =~ "caddy.reload_config"
+        assert email.text_body =~ "edge-1"
+        assert email.text_body =~ "rotate the cert"
+        assert email.text_body =~ "/etc/caddy"
+        assert email.text_body =~ "/app/approvals/req-id-123"
+        true
+      end)
+    end
+
+    # closes ENG-021-T06 — a run on a runner with no name falls back to a
+    # truncated-id label, never a blank or the raw full id.
+    test "labels an unnamed runner by a truncated id" do
+      approver = user_fixture()
+      request = %{id: "req-id-9", reason: "x", matched_rules: []}
+
+      run = %{
+        action_id: "linux.uptime",
+        runner: %{name: ""},
+        runner_id: "abcdef0123456789",
+        policy_reason: nil,
+        matched_rules: [],
+        args: %{}
+      }
+
+      UserNotifier.deliver_approval_request(approver, request, run)
+
+      assert_email_sent(fn email ->
+        assert email.text_body =~ "id abcdef01…"
+        refute email.text_body =~ "abcdef0123456789"
+        true
+      end)
+    end
+
+    # closes ENG-021-T10 — a suppressed decider is skipped via the same
+    # shared deliver/3; other recipients are unaffected (covered elsewhere).
+    test "skips a suppressed decider" do
+      approver = user_fixture()
+      {:ok, _} = Mail.suppress(approver.email, :hard_bounce, "bounce")
+      request = %{id: "r", reason: "x", matched_rules: []}
+      run = %{action_id: "a", runner: %{name: "n"}, runner_id: "i", policy_reason: nil, args: %{}}
+
+      assert {:ok, %{suppressed: true}} =
+               UserNotifier.deliver_approval_request(approver, request, run)
+    end
   end
 end

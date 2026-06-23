@@ -29,6 +29,33 @@ defmodule EmisarWeb.SSOControllerTest do
     end
   end
 
+  # A stub whose callback verification fails with an UNMAPPED reason — to exercise
+  # the controller's generic fallback copy (every concrete error has friendlier copy).
+  defmodule FailingOIDC do
+    @behaviour Emisar.SSO.OIDC
+
+    @impl Emisar.SSO.OIDC
+    def begin_authorization(_provider, _opts),
+      do:
+        {:ok,
+         %{authorize_url: "https://idp.test/auth", state: "s", nonce: "n", pkce_verifier: "v"}}
+
+    @impl Emisar.SSO.OIDC
+    def verify_callback(_provider, _params, _stashed), do: {:error, :token_endpoint_unreachable}
+  end
+
+  # A stub whose BEGIN step fails — a misconfigured provider whose discovery
+  # document can't be fetched. Drives the `begin/2` controller's `with` else.
+  defmodule FailingBeginOIDC do
+    @behaviour Emisar.SSO.OIDC
+
+    @impl Emisar.SSO.OIDC
+    def begin_authorization(_provider, _opts), do: {:error, :discovery_failed}
+
+    @impl Emisar.SSO.OIDC
+    def verify_callback(_provider, _params, _stashed), do: {:error, :unreachable}
+  end
+
   setup do
     Application.put_env(:emisar, :sso_oidc_impl, StubOIDC)
     on_exit(fn -> Application.delete_env(:emisar, :sso_oidc_impl) end)
@@ -90,6 +117,60 @@ defmodule EmisarWeb.SSOControllerTest do
       assert redirected_to(conn) == ~p"/sign_in"
       assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "no longer available"
     end
+
+    test "the stashed redirect_uri is the fixed registered callback, not an attacker-supplied one",
+         %{conn: conn} do
+      # closes AUTH-025-T05 — `begin/2` always computes `redirect_uri` as
+      # `url(~p"/sign_in/sso/callback")`; it is NOT read from the request. A query
+      # param trying to inject a phishing callback is ignored — the stash (which the
+      # callback later trusts) carries the fixed registered URI, so there is no
+      # open-redirect / token-exfiltration surface at begin.
+      provider = provider_fixture(enterprise_account())
+
+      conn =
+        get(conn, ~p"/sign_in/sso/#{provider.id}", %{"redirect_uri" => "https://evil.test/steal"})
+
+      stash = get_session(conn, @stash_key)
+      assert stash.redirect_uri == url(~p"/sign_in/sso/callback")
+      refute stash.redirect_uri =~ "evil.test"
+    end
+
+    test "begin emits no sign-in audit — the user isn't authenticated yet", %{conn: conn} do
+      # closes AUTH-025-T08 — begin only redirects to the IdP and stashes the
+      # transaction secrets; authentication happens at the callback. So no
+      # `user.signed_in` (or other sign-in) audit row is written on the provider's
+      # account at this step — attribution waits until an identity is actually proven.
+      account = enterprise_account()
+      provider = provider_fixture(account)
+
+      _conn = get(conn, ~p"/sign_in/sso/#{provider.id}")
+
+      signed_in =
+        Emisar.Audit.Event.Query.all()
+        |> Emisar.Audit.Event.Query.by_account_id(account.id)
+        |> Emisar.Audit.Event.Query.by_event_type("user.signed_in")
+        |> Repo.all()
+
+      assert signed_in == []
+    end
+
+    test "a provider whose begin_auth fails (misconfig) gets the same generic error, no stash",
+         %{conn: conn} do
+      # closes AUTH-025-T03 — the provider is real and enabled, but `begin_auth`
+      # fails (e.g. its IdP discovery document is unreachable). The `with` else maps
+      # ANY such failure to the one generic "no longer available" copy — never the
+      # raw reason — redirects to /sign_in, and leaves no half-built login stash
+      # behind. Same copy as an unknown provider: a misconfig isn't a different
+      # signal an attacker can read.
+      Application.put_env(:emisar, :sso_oidc_impl, FailingBeginOIDC)
+      provider = provider_fixture(enterprise_account())
+
+      conn = get(conn, ~p"/sign_in/sso/#{provider.id}")
+
+      assert redirected_to(conn) == ~p"/sign_in"
+      assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "no longer available"
+      refute get_session(conn, @stash_key)
+    end
   end
 
   describe "GET /sign_in/sso/callback" do
@@ -128,6 +209,41 @@ defmodule EmisarWeb.SSOControllerTest do
       assert user.email == "cb@acme.test"
       assert auth.auth_method == :sso
       assert auth.user_identity_id
+    end
+
+    test "a successful callback records the user.signed_in audit with method sso", %{conn: conn} do
+      # closes AUTH-026-T02 — the callback calls `record_sign_in(user, "sso", …)`
+      # before `log_in_user` renews the session, so the sign-in is attributable to
+      # the freshly-provisioned user with the SSO method. The observable contract: a
+      # `user.signed_in` audit row on the provider's account naming the user, carrying
+      # `method: "sso"`.
+      account = enterprise_account()
+      provider = provider_fixture(account)
+      claims = %{"sub" => "okta|audit-1", "email" => "audit@acme.test", "hd" => "acme.test"}
+
+      conn =
+        conn
+        |> init_test_session(%{})
+        |> put_session(@stash_key, %{
+          provider_id: provider.id,
+          state: "s",
+          nonce: "n",
+          pkce_verifier: "v",
+          redirect_uri: "https://emisar.test/sign_in/sso/callback"
+        })
+        |> get(~p"/sign_in/sso/callback", %{"_claims" => claims})
+
+      token = get_session(conn, :user_token)
+      {:ok, user, _auth} = Emisar.Auth.fetch_user_and_token_by_session_token(token)
+
+      [event] =
+        Emisar.Audit.Event.Query.all()
+        |> Emisar.Audit.Event.Query.by_account_id(account.id)
+        |> Emisar.Audit.Event.Query.by_event_type("user.signed_in")
+        |> Emisar.Audit.Event.Query.by_subject_id(user.id)
+        |> Repo.all()
+
+      assert event.payload["method"] == "sso"
     end
 
     test "an SSO session is exempt from the account's require_mfa (decision 4)", %{conn: conn} do
@@ -193,6 +309,33 @@ defmodule EmisarWeb.SSOControllerTest do
 
       assert redirected_to(conn) == ~p"/sign_in"
       assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "expired"
+      refute get_session(conn, :user_token)
+    end
+
+    test "an unmapped complete_auth error gets the generic fallback copy", %{conn: conn} do
+      # closes AUTH-026-T07 — every recognised failure (`:email_taken`,
+      # `:identity_pending_approval`, `:email_domain_not_allowed`, missing stash)
+      # has tailored copy; anything else (here an IdP/transport failure surfaced by
+      # `complete_auth`) falls to one generic "try again, or contact your admin"
+      # message rather than leaking the raw reason or 500-ing. No session is created.
+      Application.put_env(:emisar, :sso_oidc_impl, FailingOIDC)
+      account = enterprise_account()
+      provider = provider_fixture(account)
+
+      conn =
+        conn
+        |> init_test_session(%{})
+        |> put_session(@stash_key, %{
+          provider_id: provider.id,
+          state: "s",
+          nonce: "n",
+          pkce_verifier: "v",
+          redirect_uri: "https://emisar.test/sign_in/sso/callback"
+        })
+        |> get(~p"/sign_in/sso/callback", %{"_claims" => %{"sub" => "okta|boom"}})
+
+      assert redirected_to(conn) == ~p"/sign_in"
+      assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "Single sign-on failed"
       refute get_session(conn, :user_token)
     end
   end

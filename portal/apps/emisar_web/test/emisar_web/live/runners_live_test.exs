@@ -98,6 +98,119 @@ defmodule EmisarWeb.RunnersLiveTest do
       assert html =~ ~r/·\slast seen/
     end
 
+    # closes CON-002-T11 — the list is scoped to the caller's account via
+    # `for_subject/2`: account A's operator sees A's runners and never B's, even
+    # though both exist. (The slug gate's foreign-account 404 is covered in
+    # account_slug_authz_test; this asserts the in-account data scoping.)
+    test "cross-account — A's operator sees only A's runners, never B's", %{conn: conn} do
+      {conn, _user, account_a} = register_and_log_in(conn)
+      Emisar.Fixtures.runner_fixture(account_id: account_a.id, name: "alpha-runner")
+
+      account_b = Emisar.Fixtures.account_fixture()
+      Emisar.Fixtures.runner_fixture(account_id: account_b.id, name: "bravo-runner")
+
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account_a}/runners")
+
+      assert html =~ "alpha-runner"
+      refute html =~ "bravo-runner"
+    end
+
+    # closes CON-002-T10 — a viewer holds `view_runners`, so the list page
+    # renders for them (it's not manage-gated). The "Add a runner" affordance is
+    # a plain link to the install wizard, present on the page header.
+    test "a viewer can view the runners list; 'Add a runner' links to install", %{conn: conn} do
+      {_owner_conn, _owner, account} = register_and_log_in(conn)
+      Emisar.Fixtures.runner_fixture(account_id: account.id, name: "viewable-runner")
+
+      viewer = Emisar.Fixtures.user_fixture()
+
+      _ =
+        Emisar.Fixtures.membership_fixture(
+          account_id: account.id,
+          user_id: viewer.id,
+          role: "viewer"
+        )
+
+      {:ok, lv, html} =
+        build_conn() |> log_in_user(viewer) |> live(~p"/app/#{account}/runners")
+
+      assert html =~ "viewable-runner"
+      # "Add a runner" is a link to the install wizard, not a server action.
+      assert has_element?(
+               lv,
+               "a[href='#{~p"/app/#{account}/runners/install"}']",
+               "Add a runner"
+             )
+    end
+
+    # closes CON-002-T08 — a hand-edited page cursor makes the runner list read
+    # return {:error, …} with non-empty params; `load/1` retries once with clean
+    # params (first page) rather than recursing forever or rendering the
+    # load-error/empty state. With a runner present, the retry shows it.
+    test "a bad cursor in the URL falls back to the first page, not a crash", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      Emisar.Fixtures.runner_fixture(account_id: account.id, name: "still-listed")
+
+      {:ok, _lv, html} =
+        live(conn, ~p"/app/#{account}/runners?page=garbage-cursor")
+
+      assert html =~ "still-listed"
+      # The retry rendered the real list, not the danger load-error state.
+      refute html =~ "Couldn't load your fleet"
+    end
+
+    # closes CON-002-T12 / CON-002-T09 — the list ROWS are scope-filtered to a
+    # per-membership runner ACL (operators may have one): an operator scoped to one
+    # runner sees only that row and never the out-of-scope runner (T12). But the
+    # group sidebar + fleet-health strip are deliberately NOT scope-filtered —
+    # they're whole-account source-of-truth, so their counts include both runners
+    # and can exceed the visible rows (T09 — `list_group_summaries` takes only the
+    # subject, no `membership_id`).
+    test "operator scope filters list rows but not the group/fleet counts", %{conn: conn} do
+      {_owner_conn, owner, account} = register_and_log_in(conn)
+
+      in_scope =
+        Emisar.Fixtures.runner_fixture(
+          account_id: account.id,
+          name: "in-scope-runner",
+          group: "shared-group"
+        )
+
+      _out_of_scope =
+        Emisar.Fixtures.runner_fixture(
+          account_id: account.id,
+          name: "out-of-scope-runner",
+          group: "shared-group"
+        )
+
+      operator = Emisar.Fixtures.user_fixture()
+
+      membership =
+        Emisar.Fixtures.membership_fixture(
+          account_id: account.id,
+          user_id: operator.id,
+          role: "operator"
+        )
+
+      # Scope the operator to just the in-scope runner.
+      {:ok, :ok} =
+        Emisar.Runners.replace_runner_scopes(
+          membership,
+          [{"runner", in_scope.id}],
+          Emisar.Fixtures.subject_for(owner, account)
+        )
+
+      {:ok, _lv, html} =
+        build_conn() |> log_in_user(operator) |> live(~p"/app/#{account}/runners")
+
+      # Only the in-scope runner appears as a list row…
+      assert html =~ "in-scope-runner"
+      refute html =~ "out-of-scope-runner"
+      # …but the group header count is whole-account (both runners), so it can
+      # exceed the one visible row — intentional source-of-truth behaviour.
+      assert html =~ "2 runners total"
+    end
+
     test "the fleet health strip summarizes the whole account's runner states", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
       subject = owner_subject(user, account)

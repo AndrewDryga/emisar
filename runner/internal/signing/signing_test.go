@@ -3,6 +3,8 @@ package signing
 import (
 	"crypto/ed25519"
 	"encoding/hex"
+	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -215,5 +217,282 @@ func TestNoncePruning(t *testing.T) {
 	}
 	if size != 1 {
 		t.Fatalf("nonce cache size = %d, want 1 (only the fresh nonce)", size)
+	}
+}
+
+// closes RSEC-001-T17: a non-positive freshness window is a misconfiguration —
+// the constructor refuses it rather than booting a verifier that accepts
+// nothing (age > 0 always fails) or everything.
+func TestNewVerifierRejectsNonPositiveMaxAge(t *testing.T) {
+	seed, _ := hex.DecodeString("0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20")
+	pub := ed25519.NewKeyFromSeed(seed).Public().(ed25519.PublicKey)
+	keys := []KeyConfig{{KeyID: "k1", PublicKeyHex: hex.EncodeToString(pub)}}
+
+	for _, maxAge := range []time.Duration{0, -time.Second, -time.Hour} {
+		t.Run(maxAge.String(), func(t *testing.T) {
+			if _, err := NewVerifier(true, keys, maxAge); err == nil {
+				t.Fatalf("maxAge %v must be rejected", maxAge)
+			}
+		})
+	}
+}
+
+// closes RSEC-001-T18: freshness is inclusive at the edge (`age > maxAge`, not
+// `>=`), so an attestation issued exactly maxAge ago — and exactly maxAge in the
+// future — is still accepted, symmetric about now.
+func TestCheckIssuedAtAtWindowEdgeAccepted(t *testing.T) {
+	args := map[string]any{"x": float64(1)}
+	now := mustParse(t, fixedNow)
+
+	edges := map[string]string{
+		"exactly -maxAge (past edge)":   now.Add(-time.Hour).Format(time.RFC3339),
+		"exactly +maxAge (future edge)": now.Add(time.Hour).Format(time.RFC3339),
+	}
+	for name, issuedAt := range edges {
+		t.Run(name, func(t *testing.T) {
+			v, priv := newTestVerifier(t) // maxAge == time.Hour
+			att := sign(t, priv, "a.b", args, "edge", issuedAt)
+			if d := v.Check("a.b", args, att); !d.Allowed {
+				t.Fatalf("attestation at the exact window edge must be accepted, got %+v", d)
+			}
+		})
+	}
+}
+
+// closes RSEC-001-T21: the signature covers the EXACT issued_at string the
+// signer sent; the parse is only for the freshness comparison. Re-displaying the
+// same instant in a different RFC3339 form (here, an explicit +00:00 offset
+// instead of Z) without re-signing breaks verification — you cannot massage the
+// timestamp's presentation past the signature.
+func TestCheckTimestampReformattedWithoutResigningRefused(t *testing.T) {
+	v, priv := newTestVerifier(t)
+	args := map[string]any{"x": float64(1)}
+
+	// Sign over the canonical "Z" form, then present the same instant as
+	// "+00:00". time.Parse accepts both (so freshness still passes), but the
+	// signed bytes used "Z", so the signature no longer matches.
+	att := sign(t, priv, "a.b", args, "n1", fixedNow)
+	att.IssuedAt = "2026-06-17T12:00:00+00:00"
+
+	// .Equal compares instants regardless of the zone form ("Z" vs "+00:00"),
+	// confirming freshness still passes — so the only thing left to reject the
+	// dispatch is the signature over the differing raw string.
+	if !mustParse(t, att.IssuedAt).Equal(mustParse(t, fixedNow)) {
+		t.Fatal("test setup: the two forms must denote the same instant")
+	}
+	d := v.Check("a.b", args, att)
+	if d.Allowed || d.Code != "bad_signature" {
+		t.Fatalf("reformatted-but-not-resigned timestamp must fail as bad_signature, got %+v", d)
+	}
+}
+
+// closes RSEC-002-T05: the nonce cache is mutex-guarded, so firing the same
+// valid attestation from many goroutines admits it exactly once; every other
+// caller is refused "replayed". Run under -race, this also asserts the cache has
+// no data race.
+func TestCheckConcurrentReplayExactlyOneWins(t *testing.T) {
+	v, priv := newTestVerifier(t)
+	args := map[string]any{"x": float64(1)}
+	att := sign(t, priv, "a.b", args, "race", fixedNow)
+
+	const goroutines = 32
+	var (
+		wg      sync.WaitGroup
+		mu      sync.Mutex
+		allowed int
+		replays int
+	)
+	start := make(chan struct{})
+	for i := 0; i < goroutines; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			d := v.Check("a.b", args, att)
+			mu.Lock()
+			defer mu.Unlock()
+			switch {
+			case d.Allowed:
+				allowed++
+			case d.Code == "replayed":
+				replays++
+			default:
+				t.Errorf("unexpected refusal: %+v", d)
+			}
+		}()
+	}
+	close(start)
+	wg.Wait()
+
+	if allowed != 1 {
+		t.Fatalf("exactly one dispatch must win, got %d allowed", allowed)
+	}
+	if replays != goroutines-1 {
+		t.Fatalf("the other %d must be 'replayed', got %d", goroutines-1, replays)
+	}
+}
+
+// closes RSEC-002-T06: a nonce string becomes reusable only once its recorded
+// issued_at has aged past the window (so the prune pass evicts it) — AND the new
+// presentation must carry an issued_at that itself passes freshness. The
+// practical replay window is therefore bounded by maxAge, never the nonce
+// string's lifetime.
+func TestCheckSameNonceReusableOnlyAfterIssuedAtAgesOut(t *testing.T) {
+	v, priv := newTestVerifier(t)
+	args := map[string]any{}
+	now := mustParse(t, fixedNow)
+
+	// Consume nonce N at T0.
+	first := sign(t, priv, "a.b", args, "reuse", fixedNow)
+	if d := v.Check("a.b", args, first); !d.Allowed {
+		t.Fatalf("first use must pass: %+v", d)
+	}
+
+	// Still inside the window: re-presenting N with the same issued_at is a
+	// replay even though the clock advanced a little.
+	v.now = func() time.Time { return now.Add(30 * time.Minute) }
+	if d := v.Check("a.b", args, first); d.Allowed || d.Code != "replayed" {
+		t.Fatalf("re-presenting the nonce in-window must be 'replayed', got %+v", d)
+	}
+
+	// Move the clock past the window and present N again with a NEW, in-window
+	// issued_at: the old entry is pruned and the new freshness check passes, so
+	// the same nonce string is accepted again.
+	later := now.Add(2 * time.Hour)
+	v.now = func() time.Time { return later }
+	reused := sign(t, priv, "a.b", args, "reuse", later.Format(time.RFC3339))
+	if d := v.Check("a.b", args, reused); !d.Allowed {
+		t.Fatalf("a pruned nonce with a fresh issued_at must be accepted: %+v", d)
+	}
+}
+
+// closes RSEC-002-T07, RSEC-002-T08: the replay cache is process-local (an
+// in-memory map, no external store), so a runner restart clears it. A fresh
+// verifier with the same keys will re-allow a nonce it never saw — but only if
+// that nonce's issued_at is still inside the freshness window. Once it ages out,
+// the freshness gate is the sole post-restart protection and refuses it. This
+// documents the accepted replay-across-restart limitation and its bound.
+func TestCheckReplayAcrossRestartBoundedByFreshness(t *testing.T) {
+	args := map[string]any{"x": float64(1)}
+
+	// First "process": consume nonce N at fixedNow.
+	v1, priv := newTestVerifier(t)
+	att := sign(t, priv, "a.b", args, "survivor", fixedNow)
+	if d := v1.Check("a.b", args, att); !d.Allowed {
+		t.Fatalf("first process must accept: %+v", d)
+	}
+	if d := v1.Check("a.b", args, att); d.Allowed {
+		t.Fatal("same process must refuse the replay")
+	}
+
+	// "Restart": a brand-new verifier with the same key and an empty cache.
+	// Within the freshness window, the nonce is accepted once more (the
+	// limitation).
+	v2, _ := newTestVerifier(t)
+	if d := v2.Check("a.b", args, att); !d.Allowed {
+		t.Fatalf("a fresh verifier (restart) re-allows an in-window nonce: %+v", d)
+	}
+
+	// Restart again, but now the same attestation is outside the window: the
+	// freshness gate refuses it, bounding the cross-restart replay to ±maxAge.
+	v3, _ := newTestVerifier(t)
+	v3.now = func() time.Time { return mustParse(t, fixedNow).Add(2 * time.Hour) }
+	if d := v3.Check("a.b", args, att); d.Allowed || d.Code != "stale" {
+		t.Fatalf("post-restart, an aged-out nonce must be refused 'stale', got %+v", d)
+	}
+}
+
+// closes RSEC-002-T09: pruning runs on every consume, so over a window the cache
+// is bounded by the number of distinct in-window nonces, not by the total ever
+// seen. Drive many distinct nonces while advancing the clock past the window and
+// assert the cache never accumulates the aged-out ones.
+func TestNonceCacheBoundedByWindow(t *testing.T) {
+	v, priv := newTestVerifier(t)
+	args := map[string]any{}
+	base := mustParse(t, fixedNow)
+
+	// 200 dispatches, one every minute. maxAge is 1h, so at any consume at most
+	// ~60 prior nonces are still in-window.
+	const dispatches = 200
+	for i := 0; i < dispatches; i++ {
+		at := base.Add(time.Duration(i) * time.Minute)
+		v.now = func() time.Time { return at }
+		nonce := fmt.Sprintf("n%d", i)
+		att := sign(t, priv, "a.b", args, nonce, at.Format(time.RFC3339))
+		if d := v.Check("a.b", args, att); !d.Allowed {
+			t.Fatalf("dispatch %d must pass: %+v", i, d)
+		}
+		v.mu.Lock()
+		size := len(v.seen)
+		v.mu.Unlock()
+		// 1h / 1min = 60 entries within the window, plus the one just inserted.
+		if size > 62 {
+			t.Fatalf("after %d dispatches the cache holds %d entries; pruning is not bounding it", i+1, size)
+		}
+	}
+}
+
+// closes RSEC-002-T10: the cache key is the raw nonce string — no normalization.
+// Two nonces differing only by case or surrounding whitespace are distinct
+// entries, so neither replays the other.
+func TestNonceCacheKeyIsRawString(t *testing.T) {
+	args := map[string]any{"x": float64(1)}
+
+	variants := []struct{ a, b string }{
+		{"abc", "ABC"},  // case
+		{"abc", " abc"}, // leading whitespace
+		{"abc", "abc "}, // trailing whitespace
+		{"a\tb", "a b"}, // tab vs space
+	}
+	for _, vv := range variants {
+		t.Run(vv.a+" vs "+vv.b, func(t *testing.T) {
+			v, priv := newTestVerifier(t)
+			a := sign(t, priv, "a.b", args, vv.a, fixedNow)
+			b := sign(t, priv, "a.b", args, vv.b, fixedNow)
+			if d := v.Check("a.b", args, a); !d.Allowed {
+				t.Fatalf("first nonce must pass: %+v", d)
+			}
+			if d := v.Check("a.b", args, b); !d.Allowed {
+				t.Fatalf("a nonce differing only by case/whitespace must be distinct, got %+v", d)
+			}
+		})
+	}
+}
+
+// closes RSEC-001-T22: the enforcement gate's per-call cost is one Ed25519
+// verify plus a bounded prune — no unbounded growth across a window of distinct
+// nonces. This is the perf baseline for the dispatch hot path.
+func BenchmarkCheck(b *testing.B) {
+	seed, _ := hex.DecodeString("0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20")
+	priv := ed25519.NewKeyFromSeed(seed)
+	pub := priv.Public().(ed25519.PublicKey)
+	v, err := NewVerifier(true, []KeyConfig{{KeyID: "k1", PublicKeyHex: hex.EncodeToString(pub)}}, time.Hour)
+	if err != nil {
+		b.Fatalf("NewVerifier: %v", err)
+	}
+	// Pin the clock to the vectors' instant so the fixed issued_at stays in-window.
+	now, err := time.Parse(time.RFC3339, fixedNow)
+	if err != nil {
+		b.Fatalf("parse fixedNow: %v", err)
+	}
+	v.now = func() time.Time { return now }
+	args := map[string]any{"container": "web", "force": true}
+
+	// Pre-sign distinct-nonce attestations so each iteration is a fresh, valid
+	// dispatch (no replay short-circuit, no signing cost in the measured loop).
+	atts := make([]*Attestation, b.N)
+	for i := range atts {
+		sig, err := attest.Sign(priv, attest.Claim{ActionID: "docker.restart", Args: args, Nonce: fmt.Sprintf("n%d", i), IssuedAt: fixedNow})
+		if err != nil {
+			b.Fatalf("Sign: %v", err)
+		}
+		atts[i] = &Attestation{KeyID: "k1", Signature: sig, Nonce: fmt.Sprintf("n%d", i), IssuedAt: fixedNow}
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if d := v.Check("docker.restart", args, atts[i]); !d.Allowed {
+			b.Fatalf("benchmark dispatch refused: %+v", d)
+		}
 	}
 }

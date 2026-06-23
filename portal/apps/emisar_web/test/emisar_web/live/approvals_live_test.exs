@@ -178,4 +178,183 @@ defmodule EmisarWeb.ApprovalsLiveTest do
     # The grant survived.
     {:ok, [%{revoked_at: nil}], _meta} = Approvals.list_grants_for_account(subject)
   end
+
+  test "recent decisions list the decided requests but not the still-pending one", %{conn: conn} do
+    # closes GOV-001-T03 — "Recent decisions" = all_recent minus the rows already
+    # shown in Pending, so a decided request appears there while a pending one
+    # shows only at the top, never duplicated below.
+    {conn, user, account} = register_and_log_in(conn)
+    subject = subject_for(user, account)
+
+    decided = pending_request!(account, user.id, "decided-and-denied")
+    {:ok, _} = Approvals.deny_request(decided, subject, "not now")
+
+    _pending = pending_request!(account, user.id, "still-waiting")
+
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/approvals")
+
+    # The denied request carries its outcome badge in Recent; the pending one is
+    # the amber card up top, with the reassuring "Nothing waiting" copy absent.
+    assert html =~ "denied"
+    assert html =~ "still-waiting"
+    refute html =~ "Nothing waiting"
+  end
+
+  test "a viewer sees pending + recent but no standing-grants rows", %{conn: conn} do
+    # closes GOV-001-T06 — a viewer holds `view` (pending + recent render) but not
+    # `manage_grants`, so `list_grants_for_account` errors → collapsed to [] → the
+    # grants section shows its empty-state, never a grant row or a Revoke button.
+    {_owner_conn, owner, account} = register_and_log_in(conn)
+    subject = subject_for(owner, account)
+
+    # A real standing grant exists in the account…
+    request = pending_mcp_request!(account, owner, "owner-minted grant")
+    {:ok, _} = Approvals.approve_request(request, subject, "ok", duration: :one_day)
+    _pending = pending_request!(account, owner.id, "viewer can see this")
+
+    viewer = user_fixture()
+    _ = membership_fixture(account_id: account.id, user_id: viewer.id, role: "viewer")
+
+    {:ok, _lv, html} = build_conn() |> log_in_user(viewer) |> live(~p"/app/#{account}/approvals")
+
+    # …but it doesn't render for the viewer (no manage_grants).
+    assert html =~ "viewer can see this"
+    assert html =~ "No active grants."
+    refute html =~ "Revoke"
+  end
+
+  test "an operator sees no standing-grants rows either (manage_grants is admin+)", %{conn: conn} do
+    # closes GOV-001-T07 — operator holds `decide` (so the Revoke button's UI
+    # predicate would pass) but NOT `manage_grants`, and grant rows only load with
+    # manage_grants. The list errors → [], so the section is empty regardless of
+    # the predicate (the GOV-005 visibility/context split never collides).
+    {_owner_conn, owner, account} = register_and_log_in(conn)
+    subject = subject_for(owner, account)
+
+    request = pending_mcp_request!(account, owner, "owner-minted grant")
+    {:ok, _} = Approvals.approve_request(request, subject, "ok", duration: :one_day)
+
+    operator = user_fixture()
+    _ = membership_fixture(account_id: account.id, user_id: operator.id, role: "operator")
+
+    {:ok, _lv, html} =
+      build_conn() |> log_in_user(operator) |> live(~p"/app/#{account}/approvals")
+
+    assert html =~ "No active grants."
+    refute html =~ "Revoke"
+  end
+
+  test "another account's pending requests and grants never leak onto the page", %{conn: conn} do
+    # closes GOV-001-T08 — `for_subject` scopes pending / grants / decided to the
+    # subject's account, so a foreign account's held action and standing grant are
+    # invisible here even though they exist in the same DB.
+    {conn, _user, account} = register_and_log_in(conn)
+
+    {_b_conn, b_user, b_account} = register_and_log_in(build_conn())
+    b_subject = subject_for(b_user, b_account)
+
+    # B has a pending request AND a standing grant.
+    _b_pending = pending_request!(b_account, b_user.id, "account-B secret reboot")
+    b_grant_request = pending_mcp_request!(b_account, b_user, "account-B grant")
+    {:ok, _} = Approvals.approve_request(b_grant_request, b_subject, "ok", duration: :one_day)
+
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/approvals")
+
+    refute html =~ "account-B secret reboot"
+    refute html =~ "account-B grant"
+    # A's own page reads as genuinely empty, not as B's data.
+    assert html =~ "Nothing waiting."
+  end
+
+  test "a pending-load error renders the danger empty-state, not 'Nothing waiting'", %{conn: conn} do
+    # closes GOV-001-T09 — a crafted `?pending_after=` cursor makes
+    # `list_pending_approval_requests` → `Repo.list` return {:error,:invalid_cursor}.
+    # That collapses to [] but sets `pending_error?`, so the section must warn "a
+    # held action may be waiting", NOT reassure with "Nothing waiting".
+    {conn, _user, account} = register_and_log_in(conn)
+
+    {:ok, _lv, html} =
+      live(conn, ~p"/app/#{account}/approvals?pending_after=not-a-real-cursor")
+
+    assert html =~ "Couldn&#39;t load pending approvals."
+    assert html =~ "a held action may be waiting"
+    refute html =~ "Nothing waiting."
+  end
+
+  test "an empty queue shows the reassuring empty-state linking to policies", %{conn: conn} do
+    # closes GOV-001-T11 — zero pending and no load error: the Pending section
+    # renders the reassuring "Nothing waiting." empty-state (not the danger one),
+    # with the link to /policies that explains where approvals come from.
+    {conn, _user, account} = register_and_log_in(conn)
+
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/approvals")
+
+    assert html =~ "Nothing waiting."
+    refute html =~ "Couldn&#39;t load pending approvals."
+    # The empty-state points the operator at the policy that gates runs.
+    assert html =~ ~p"/app/#{account}/policies"
+  end
+
+  test "empty grants and empty decided sections each show their explanatory empty-state", %{
+    conn: conn
+  } do
+    # closes GOV-001-T12 — an owner (holds manage_grants, so grants DO load) with
+    # zero grants and zero decided requests sees the explanatory empty-state for
+    # each secondary section, not a blank gap.
+    {conn, _user, account} = register_and_log_in(conn)
+
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/approvals")
+
+    assert html =~ "No active grants."
+    assert html =~ "No decided approvals yet."
+  end
+
+  test "grants and decided load errors collapse to empty silently — no danger banner", %{
+    conn: conn
+  } do
+    # closes GOV-001-T10 — crafted `grants_after`/`decided_after` cursors make
+    # both reads return {:error,_}. Unlike Pending, these historical sections run
+    # through `list_or_empty/1`, so they render their normal empty-states with NO
+    # danger banner (a stale grant/decision isn't the held-action hazard pending is).
+    {conn, _user, account} = register_and_log_in(conn)
+
+    {:ok, _lv, html} =
+      live(
+        conn,
+        ~p"/app/#{account}/approvals?grants_after=not-a-cursor&decided_after=also-not"
+      )
+
+    assert html =~ "No active grants."
+    assert html =~ "No decided approvals yet."
+    # Only Pending escalates a load failure to a danger banner.
+    refute html =~ "Couldn&#39;t load pending approvals."
+  end
+
+  @tag skip: "BUG: operator crafted revoke_grant crashes the LV (GOV-005-T04)"
+  test "an operator's crafted revoke_grant is denied gracefully", %{conn: conn} do
+    # closes GOV-005-T04 — BUG. The Revoke button's UI predicate is
+    # `subject_can_decide_approval?` (operator+), but `fetch_grant_by_id` requires
+    # `manage_grants` (admin+) and returns {:error,:unauthorized} for an operator.
+    # `ApprovalsLive.handle_event("revoke_grant", …)` only matches {:error,:not_found}
+    # and {:ok, grant}, so the :unauthorized return raises CaseClauseError
+    # (approvals_live.ex:42) instead of flashing a denial. A crafted event must be
+    # refused, not crash the view.
+    {_owner_conn, owner, account} = register_and_log_in(conn)
+    subject = subject_for(owner, account)
+
+    request = pending_mcp_request!(account, owner, "standing grant")
+    {:ok, _} = Approvals.approve_request(request, subject, "ok", duration: :one_day)
+    {:ok, [grant], _meta} = Approvals.list_grants_for_account(subject)
+
+    operator = user_fixture()
+    _ = membership_fixture(account_id: account.id, user_id: operator.id, role: "operator")
+
+    {:ok, lv, _html} =
+      build_conn() |> log_in_user(operator) |> live(~p"/app/#{account}/approvals")
+
+    html = render_click(lv, "revoke_grant", %{"id" => grant.id})
+
+    assert html =~ "You don&#39;t have permission to do that."
+    {:ok, [%{revoked_at: nil}], _meta} = Approvals.list_grants_for_account(subject)
+  end
 end

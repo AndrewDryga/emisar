@@ -31,6 +31,17 @@ defmodule EmisarWeb.AgentsLiveTest do
       refute html =~ "EMISAR_API_KEY"
     end
 
+    # closes CON-008-T05 / CON-019-T05 — before any client is picked the connect
+    # body is the "Pick a client above" empty state (no mint, no snippet).
+    test "no client picked → 'Pick a client above' empty connect body", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/agents")
+
+      assert html =~ "Pick a client above to get started"
+      assert html =~ "won&#39;t mint a key until you do"
+      assert Repo.all(ApiKey) == []
+    end
+
     test "the list has status/name filters + the custom panel states the capability",
          %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
@@ -313,6 +324,165 @@ defmodule EmisarWeb.AgentsLiveTest do
       assert Repo.all(ApiKey) == []
     end
 
+    # closes CON-016-T01 (partial) — a custom create persists an MCP-shaped key
+    # (`actions:read` + `actions:execute`, nothing else), resets the form, and
+    # reloads the list so the new key is visible. (The "raw secret shown once"
+    # half of CON-016-T01 is broken on the custom tab — see the skipped test
+    # below and the agent report.)
+    test "custom create persists an MCP-shaped key and reloads the list", %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      {:ok, lv, _} = live(conn, ~p"/app/#{account}/settings/agents")
+
+      lv |> render_click("select_client", %{"client" => "custom"})
+
+      html =
+        lv
+        |> form("#api_key_form", %{
+          "api_key" => %{"name" => "my-custom-bot", "description" => "laptop bridge"}
+        })
+        |> render_submit()
+
+      # The key persisted with exactly the two MCP scopes (no audit:read).
+      [key] = Repo.all(ApiKey)
+      assert key.name == "my-custom-bot"
+      assert Enum.sort(key.scopes) == ["actions:execute", "actions:read"]
+      assert is_nil(key.auto_generated_at)
+
+      # It's a visible (non-auto) key → shows in the default live list, and the
+      # form reset (the name field is blank again).
+      assert html =~ "my-custom-bot"
+      assert {:ok, [_], _} = ApiKeys.list_api_keys_for_account(owner_subject(user, account))
+      refute html =~ ~s(value="my-custom-bot")
+    end
+
+    # closes CON-016-T03 — a `datetime-local` expiry on the custom-create form
+    # (no seconds, no zone) is stored as UTC: `parse_expires_at` appends ":00Z"
+    # before parsing, so "2030-12-25 at 10:30" persists as 10:30:00 UTC. (The
+    # auth-keys form has the parallel CON-021-T04; this is the agents path.)
+    test "a custom key's expires_at is parsed from datetime-local as UTC", %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      {:ok, lv, _} = live(conn, ~p"/app/#{account}/settings/agents")
+
+      lv |> render_click("select_client", %{"client" => "custom"})
+
+      lv
+      |> form("#api_key_form", %{
+        "api_key" => %{"name" => "expiring-bot", "expires_at" => "2030-12-25T10:30"}
+      })
+      |> render_submit()
+
+      {:ok, keys, _} = ApiKeys.list_api_keys_for_account(owner_subject(user, account))
+      key = Enum.find(keys, &(&1.name == "expiring-bot"))
+
+      # The column is :utc_datetime_usec, so the stored value carries
+      # microseconds — compare on the truncated instant.
+      assert DateTime.truncate(key.expires_at, :second) == ~U[2030-12-25 10:30:00Z]
+    end
+
+    # closes CON-016-T01 (the secret-reveal half) — BUG: the custom tab renders
+    # only the key-builder form, never the `@quick_secret` reveal, so a
+    # custom-created key's one-time raw secret is minted but never shown to the
+    # operator (no "New key minted", no emk- secret in the DOM). They can't copy
+    # it and must revoke + reissue. The per-client tabs show it correctly.
+    @tag skip: "BUG: custom-tab create never reveals the minted secret (CON-016-T01)"
+    test "custom create reveals the raw secret once", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, lv, _} = live(conn, ~p"/app/#{account}/settings/agents")
+
+      lv |> render_click("select_client", %{"client" => "custom"})
+
+      html =
+        lv
+        |> form("#api_key_form", %{"api_key" => %{"name" => "my-custom-bot"}})
+        |> render_submit()
+
+      assert html =~ "New key minted"
+      assert html =~ ~r/emk-[A-Za-z0-9_-]{10,}/
+    end
+
+    # closes CON-017-T02 — picking a real client mints + shows a quick_secret;
+    # switching to the Custom tab clears that shown secret (one-time-secret
+    # hygiene), and re-picking a real client re-enters the quick-mint clause.
+    test "switching to Custom clears a previously-shown quick secret", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, lv, _} = live(conn, ~p"/app/#{account}/settings/agents")
+
+      # Pick a local client → quick_secret shown in its snippet. Claude Code's
+      # snippet is the docker `-e EMISAR_API_KEY=emk-…` form (bare equals).
+      html = lv |> render_click("select_client", %{"client" => "claude_code"})
+      [_, raw] = Regex.run(~r/EMISAR_API_KEY=(emk-[A-Za-z0-9_-]+)/, html)
+
+      # Switch to Custom → the previously-revealed secret is gone from the page.
+      custom = lv |> render_click("select_client", %{"client" => "custom"})
+      refute custom =~ raw
+
+      # Re-picking a real client re-enters the quick-mint clause (a fresh secret).
+      again = lv |> render_click("select_client", %{"client" => "claude_code"})
+      assert again =~ ~r/EMISAR_API_KEY=emk-[A-Za-z0-9_-]+/
+    end
+
+    # closes CON-020-T03 — with no runners registered, the scope picker (rendered
+    # once a client is picked) shows its empty state.
+    test "scope picker shows an empty state when no runners are registered", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, lv, _} = live(conn, ~p"/app/#{account}/settings/agents")
+
+      html = lv |> render_click("select_client", %{"client" => "claude_code"})
+
+      assert html =~ "No runners registered yet."
+    end
+
+    # closes CON-020-T01 — ticking a runner adds its id to the scope selection,
+    # and the selection survives a client-tab switch (it's not reset by
+    # select_client), so the next mint carries it.
+    test "scope selection persists across client-tab switches", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      runner = Emisar.Fixtures.runner_fixture(account_id: account.id, connected?: false)
+
+      {:ok, lv, _} = live(conn, ~p"/app/#{account}/settings/agents")
+
+      # Open a client so the scope picker renders, then tick the runner.
+      lv |> render_click("select_client", %{"client" => "claude_code"})
+
+      render_change(
+        element(lv, "form[phx-change=\"update_scope\"]"),
+        %{"runner_filter" => %{runner.id => "true"}}
+      )
+
+      # Switch tabs — the selection must survive, then re-mint with it. The new
+      # quick key (auto-generated, so read it straight from the table) is scoped
+      # to the runner.
+      lv |> render_click("select_client", %{"client" => "cursor"})
+
+      scoped = Enum.find(Repo.all(ApiKey), &(&1.name == "Cursor"))
+      assert scoped.runner_filter == [runner.id]
+    end
+
+    # closes CON-020-T02 — a forged/foreign runner id in the scope post is
+    # allowlisted out (only the account's real runners pass), so it never reaches
+    # the mint.
+    test "a foreign runner id in the scope post is dropped", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+
+      {_user_b, account_b, _subject_b} = Emisar.Fixtures.owner_subject_fixture()
+      foreign = Emisar.Fixtures.runner_fixture(account_id: account_b.id, connected?: false)
+
+      {:ok, lv, _} = live(conn, ~p"/app/#{account}/settings/agents")
+
+      lv |> render_click("select_client", %{"client" => "claude_code"})
+
+      render_change(
+        element(lv, "form[phx-change=\"update_scope\"]"),
+        %{"runner_filter" => %{foreign.id => "true"}}
+      )
+
+      # Re-pick to mint — the foreign id was filtered out, so the key is unscoped.
+      lv |> render_click("select_client", %{"client" => "cursor"})
+
+      minted = Enum.find(Repo.all(ApiKey), &(&1.name == "Cursor"))
+      assert minted.runner_filter == []
+    end
+
     test "Claude Code setup offers the optional auto-permit step with the verified rule",
          %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
@@ -341,6 +511,206 @@ defmodule EmisarWeb.AgentsLiveTest do
       assert html =~ "Skip the per-tool prompts"
       assert html =~ "approval_policy"
       assert html =~ "globally, not per-server"
+    end
+
+    # closes CON-008-T09 — the agents list is account-scoped: A's admin sees A's
+    # keys and never B's, even with both present. (The foreign-slug 404 lives in
+    # account_slug_authz_test; this asserts the in-account data scoping.)
+    test "cross-account — A's admin sees only A's keys, never B's", %{conn: conn} do
+      {conn, user, account_a} = register_and_log_in(conn)
+
+      {:ok, _raw, _key_a} =
+        ApiKeys.create_key(
+          %{name: "alpha-bot", scopes: ["actions:read"], runner_filter: []},
+          owner_subject(user, account_a)
+        )
+
+      {_user_b, account_b, subject_b} = Emisar.Fixtures.owner_subject_fixture()
+
+      {:ok, _raw, _key_b} =
+        ApiKeys.create_key(
+          %{name: "bravo-bot", scopes: ["actions:read"], runner_filter: []},
+          subject_b
+        )
+
+      refute account_b.id == account_a.id
+
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account_a}/settings/agents")
+
+      assert html =~ "alpha-bot"
+      refute html =~ "bravo-bot"
+    end
+
+    # closes CON-018-T02 — quick-mint/create/revoke are manage-gated (admin+); an
+    # operator who forces the `revoke` event gets the gated flash and the key is
+    # NOT revoked.
+    test "an operator cannot revoke — forced event gated, key untouched", %{conn: conn} do
+      {_owner_conn, owner, account} = register_and_log_in(conn)
+
+      {:ok, _raw, key} =
+        ApiKeys.create_key(
+          %{name: "live-bot", scopes: ["actions:read"], runner_filter: []},
+          owner_subject(owner, account)
+        )
+
+      operator = Emisar.Fixtures.user_fixture()
+
+      _ =
+        Emisar.Fixtures.membership_fixture(
+          account_id: account.id,
+          user_id: operator.id,
+          role: "operator"
+        )
+
+      {:ok, lv, _html} =
+        build_conn()
+        |> log_in_user(operator)
+        |> live(~p"/app/#{account}/settings/agents")
+
+      assert render_click(lv, "revoke", %{"id" => key.id}) =~
+               "You don&#39;t have permission to do that."
+
+      assert is_nil(Repo.reload!(key).revoked_at)
+    end
+
+    # closes CON-018-T01 — the happy path: an admin clicks Revoke (the button
+    # carries a 401-warning data-confirm), the account-scoped fetch resolves the
+    # key, `revoke_api_key` retires it, a "API key revoked." flash shows, and the
+    # list reloads (the now-revoked key drops out of the default live view).
+    test "an admin revokes a key → flash + list reloads", %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+
+      {:ok, _raw, key} =
+        ApiKeys.create_key(
+          %{name: "doomed-bot", scopes: ["actions:read"], runner_filter: []},
+          owner_subject(user, account)
+        )
+
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/agents")
+      assert html =~ "doomed-bot"
+
+      html = render_click(lv, "revoke", %{"id" => key.id})
+
+      assert html =~ "API key revoked."
+      # The key is retired…
+      assert Repo.reload!(key).revoked_at != nil
+      # …and the default (live-only) list reloaded without it.
+      refute html =~ "doomed-bot"
+    end
+
+    # closes CON-008-T08 / CON-015-T03 / CON-016-T04 — an operator holds
+    # view_api_keys (the page renders) and issue_quick_key, but the agents page
+    # gates ALL mints + create + revoke on the stricter manage_api_keys (admin+).
+    # So every forced mutating event — select_client (quick-mint), create, revoke —
+    # gets the gated flash and writes nothing.
+    test "an operator can view but every mutating event is gated", %{conn: conn} do
+      {_owner_conn, owner, account} = register_and_log_in(conn)
+
+      {:ok, _raw, key} =
+        ApiKeys.create_key(
+          %{name: "view-me-bot", scopes: ["actions:read"], runner_filter: []},
+          owner_subject(owner, account)
+        )
+
+      operator = Emisar.Fixtures.user_fixture()
+
+      _ =
+        Emisar.Fixtures.membership_fixture(
+          account_id: account.id,
+          user_id: operator.id,
+          role: "operator"
+        )
+
+      {:ok, lv, html} =
+        build_conn() |> log_in_user(operator) |> live(~p"/app/#{account}/settings/agents")
+
+      # The page renders for the operator (they hold view_api_keys)…
+      assert html =~ "LLM agents"
+      assert html =~ "view-me-bot"
+      # …but the Revoke control isn't even rendered (manage-gated in the template).
+      refute html =~ "phx-click=\"revoke\""
+
+      denial = "You don&#39;t have permission to do that."
+
+      # quick-mint via a client tile → gated, no key minted.
+      assert render_click(lv, "select_client", %{"client" => "claude_code"}) =~ denial
+      # custom create → gated, no key.
+      assert render_click(lv, "create", %{"api_key" => %{"name" => "sneaky"}}) =~ denial
+      # revoke an existing key → gated, key untouched.
+      assert render_click(lv, "revoke", %{"id" => key.id}) =~ denial
+
+      # Only the owner-created key exists; no operator mint landed.
+      assert [%ApiKey{name: "view-me-bot"}] = Repo.all(ApiKey)
+      assert is_nil(Repo.reload!(key).revoked_at)
+    end
+
+    # closes CON-016-T05 — a forged/foreign runner id posted into the custom-create
+    # form's hidden scope inputs is allowlisted out (`selected_runner_ids/2` keeps
+    # only the account's real runners) before it reaches `create_key`, so the
+    # persisted key is unscoped rather than carrying a cross-account id.
+    test "a foreign runner id in a custom create is dropped before the key is made", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+
+      {_user_b, account_b, _subject_b} = Emisar.Fixtures.owner_subject_fixture()
+      foreign = Emisar.Fixtures.runner_fixture(account_id: account_b.id, connected?: false)
+
+      {:ok, lv, _} = live(conn, ~p"/app/#{account}/settings/agents")
+
+      lv |> render_click("select_client", %{"client" => "custom"})
+
+      # Push `create` with a forged runner_filter carrying B's runner id — the
+      # handler reads the scope back out of the submitted params and allowlists
+      # it (`selected_runner_ids/2`) before building the key, so a hand-rolled
+      # POST can't smuggle in a cross-account id.
+      render_click(lv, "create", %{
+        "api_key" => %{"name" => "scoped-bot"},
+        "runner_filter" => [foreign.id]
+      })
+
+      key = Enum.find(Repo.all(ApiKey), &(&1.name == "scoped-bot"))
+      assert key.account_id == account.id
+      # The foreign id was filtered out — the key is unscoped, not bound to B's runner.
+      assert key.runner_filter == []
+    end
+
+    # closes CON-017-T01 — picking the "Custom" pseudo-client swaps the per-client
+    # snippet for the key-builder form (selected_client="custom") and mints
+    # nothing: it's a pure UI-state toggle, so the DB stays empty until the form
+    # is actually submitted.
+    test "the Custom tile swaps the snippet for the key-builder form, no mint", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, lv, _} = live(conn, ~p"/app/#{account}/settings/agents")
+
+      html = render_click(lv, "select_client", %{"client" => "custom"})
+
+      # The key-builder form is now on the page (it only renders under "custom")…
+      assert has_element?(lv, "#api_key_form")
+      assert html =~ "read and execute every action"
+      # …and selecting Custom minted no key (no quick-mint on this tab).
+      assert Repo.all(ApiKey) == []
+    end
+
+    # closes CON-018-T03 — a forged/foreign key id revoke is a quiet no-op: the
+    # account-scoped `fetch_api_key_by_id` returns not-found, so nothing is
+    # revoked and no error leaks the foreign key's existence.
+    test "a forged/foreign key id revoke is a quiet no-op", %{conn: conn} do
+      {conn, _user, account_a} = register_and_log_in(conn)
+
+      {_user_b, _account_b, subject_b} = Emisar.Fixtures.owner_subject_fixture()
+
+      {:ok, _raw, foreign_key} =
+        ApiKeys.create_key(
+          %{name: "b-bot", scopes: ["actions:read"], runner_filter: []},
+          subject_b
+        )
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account_a}/settings/agents")
+
+      # A's admin pushes revoke for B's key id — scoped fetch misses → no-op.
+      render_click(lv, "revoke", %{"id" => foreign_key.id})
+
+      # The foreign key is untouched (never reachable from A's session).
+      assert is_nil(Repo.reload!(foreign_key).revoked_at)
     end
 
     test "survives an account-topic broadcast it doesn't render", %{conn: conn} do

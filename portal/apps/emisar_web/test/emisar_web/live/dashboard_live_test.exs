@@ -118,6 +118,83 @@ defmodule EmisarWeb.DashboardLiveTest do
       refute html2 =~ "Dispatch your first action"
     end
 
+    # closes CON-001-T08 — every sub-read on the dashboard flows through
+    # `current_subject`, so the board is account-scoped: A's operator sees A's
+    # recent run + pending approval and never B's, even though both accounts have
+    # both. (The foreign-slug 404 lives in account_slug_authz_test; this is the
+    # in-account data scoping of the dashboard's own reads.)
+    test "cross-account — the dashboard shows only this account's data", %{conn: conn} do
+      {conn, user_a, account_a} = register_and_log_in(conn)
+      runner_a = Emisar.Fixtures.runner_fixture(account_id: account_a.id)
+
+      {:ok, run_a} =
+        Emisar.Runs.create_run(%{
+          account_id: account_a.id,
+          runner_id: runner_a.id,
+          action_id: "linux.alpha_dash",
+          args: %{},
+          reason: "a's run",
+          source: "operator"
+        })
+
+      {:ok, _request_a} = Emisar.Approvals.create_request(run_a, user_a.id, "needs sign-off")
+
+      # Account B (a different owner) has its own runner, run, and approval.
+      {user_b, account_b, _subject_b} = Emisar.Fixtures.owner_subject_fixture()
+      runner_b = Emisar.Fixtures.runner_fixture(account_id: account_b.id)
+
+      {:ok, run_b} =
+        Emisar.Runs.create_run(%{
+          account_id: account_b.id,
+          runner_id: runner_b.id,
+          action_id: "linux.bravo_dash",
+          args: %{},
+          reason: "b's run",
+          source: "operator"
+        })
+
+      {:ok, _request_b} = Emisar.Approvals.create_request(run_b, user_b.id, "b's sign-off")
+
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account_a}")
+
+      # A's run (recent-runs row) + A's pending approval (the lead panel) show…
+      assert html =~ "linux.alpha_dash"
+      # …and nothing from B leaks onto A's board.
+      refute html =~ "linux.bravo_dash"
+    end
+
+    # closes CON-001-T09 — the dashboard is a read-only triage screen: its
+    # quick-action cards (onboarding checklist + the three stat tiles) are plain
+    # `<.link navigate>`s to real routes, not server-driven actions. A fresh
+    # account renders the two onboarding cards linking to install + agents; the
+    # LV defines no mutating `handle_event`, so there's nothing to abuse.
+    test "quick-action cards are plain navigation links to real routes (read-only)",
+         %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}")
+
+      # The onboarding cards link straight to the install wizard and the agents
+      # page — real routes, reached by navigation, not a phx-click handler.
+      assert has_element?(
+               lv,
+               "a[href='#{~p"/app/#{account}/runners/install"}']",
+               "Connect a runner"
+             )
+
+      assert has_element?(
+               lv,
+               "a[href='#{~p"/app/#{account}/settings/agents"}']",
+               "Connect an LLM"
+             )
+
+      # The three stat tiles are themselves links to their list pages (not
+      # buttons): runners, runs, team.
+      assert has_element?(lv, "a[href='#{~p"/app/#{account}/runners"}']")
+      assert has_element?(lv, "a[href='#{~p"/app/#{account}/runs"}']")
+      assert has_element?(lv, "a[href='#{~p"/app/#{account}/settings/team"}']")
+    end
+
     test "account broadcasts schedule a debounced stats reload", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
 
@@ -181,6 +258,67 @@ defmodule EmisarWeb.DashboardLiveTest do
       assert html =~ "Payment past due"
       # …but only an owner gets the manage affordance.
       refute has_element?(lv, "a[href='/app/settings/billing']", "Manage billing")
+    end
+  end
+
+  describe "plan / packs headroom banners" do
+    # closes CON-001-T06 — at the plan's runner cap the dashboard renders the
+    # rose at-limit banner (the next register would 402). The free plan caps at
+    # 3 runners; fill all three.
+    test "at the runner limit, the at-limit banner renders", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      for _ <- 1..3, do: Emisar.Fixtures.runner_fixture(account_id: account.id)
+
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}")
+
+      assert html =~ "You&#39;re at your runner limit (3 of 3)."
+    end
+
+    # closes CON-001-T06 (the near-limit half) — one slot short of the cap shows
+    # the softer amber "one slot left" variant, not the at-limit rose one.
+    test "near the runner limit, the amber 'one slot left' banner renders", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      for _ <- 1..2, do: Emisar.Fixtures.runner_fixture(account_id: account.id)
+
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}")
+
+      assert html =~ "One runner slot left"
+      refute html =~ "at your runner limit"
+    end
+
+    # closes CON-001-T07 — when a runner advertises a pack version no operator
+    # has trusted yet (`count_pending_pack_versions > 0`), the dashboard surfaces
+    # the amber packs-pending-trust banner linking to the Packs page (dispatch is
+    # blocked against those packs until an admin trusts the new hash).
+    test "a pending pack version surfaces the packs-pending-trust banner", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      runner = Emisar.Fixtures.runner_fixture(account_id: account.id)
+
+      # A custom (no-baseline) pack advertises an action and lands :pending — the
+      # runner reports a hash no operator has trusted.
+      {:ok, _} =
+        Emisar.Catalog.observe_state(runner, %{
+          "hostname" => "h",
+          "version" => "0.1",
+          "labels" => %{},
+          "packs" => %{"custom" => %{"version" => "1.0", "hash" => "sha256:PENDING"}},
+          "actions" => [
+            %{
+              "id" => "custom.do",
+              "pack_id" => "custom",
+              "title" => "Do",
+              "kind" => "exec",
+              "risk" => "low",
+              "args" => []
+            }
+          ]
+        })
+
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}")
+
+      assert html =~ "trust review"
+      # …and it links to the Packs page where the admin trusts/rejects the hash.
+      assert has_element?(lv, "a[href='#{~p"/app/#{account}/packs"}']")
     end
   end
 end

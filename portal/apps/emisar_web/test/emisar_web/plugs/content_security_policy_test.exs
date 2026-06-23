@@ -56,4 +56,36 @@ defmodule EmisarWeb.Plugs.ContentSecurityPolicyTest do
       assert nonce.(conn) != nonce.(conn)
     end
   end
+
+  describe "csp_extra opt-in" do
+    test "additively merges a page's extra directives onto the base policy", %{conn: conn} do
+      # closes CFG-003-T10
+      # A page that needs an extra origin (e.g. Paddle checkout) assigns
+      # conn.assigns[:csp_extra]; the plug appends those directives WITHOUT
+      # dropping any base directive. Driven through the plug directly so the
+      # test owns the assign (no marketing page sets csp_extra today).
+      conn =
+        conn
+        |> Plug.Conn.assign(:csp_extra, ["frame-src https://checkout.paddle.com"])
+        |> EmisarWeb.Plugs.ContentSecurityPolicy.call([])
+
+      [csp] = get_resp_header(conn, "content-security-policy")
+
+      # The extra directive is present...
+      assert csp =~ "frame-src https://checkout.paddle.com"
+      # ...and every base directive is still intact (additive, not replacing).
+      assert csp =~ "default-src 'self'"
+      assert csp =~ "script-src 'self' 'nonce-"
+      assert csp =~ "frame-ancestors 'none'"
+      assert csp =~ "object-src 'none'"
+    end
+
+    test "no csp_extra leaves the base policy unchanged", %{conn: conn} do
+      conn = EmisarWeb.Plugs.ContentSecurityPolicy.call(conn, [])
+      [csp] = get_resp_header(conn, "content-security-policy")
+
+      refute csp =~ "paddle.com"
+      assert String.ends_with?(csp, "object-src 'none'")
+    end
+  end
 end

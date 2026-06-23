@@ -242,6 +242,78 @@ func TestStateBuilder_AdmissionAllowlistKeepsMatching(t *testing.T) {
 	}
 }
 
+// An empty or nil registry yields an identity-only advertisement: the runner
+// still reports who it is (id/version/hostname/group/labels) with zero actions
+// and no packs, so the cloud sees a connected-but-empty runner rather than a
+// malformed or dropped state. Covers both no-GetRegistry and GetRegistry→nil.
+// closes RUN-035-T05.
+func TestStateBuilder_Build_EmptyRegistryIsIdentityOnly(t *testing.T) {
+	cases := map[string]*StateBuilder{
+		"nil GetRegistry": {
+			AgentID:  "agt_id",
+			Version:  "9.9.9",
+			Hostname: "host-a",
+			Group:    "g",
+			Labels:   map[string]string{"role": "edge"},
+		},
+		"GetRegistry returns nil": {
+			AgentID:     "agt_id",
+			Version:     "9.9.9",
+			Hostname:    "host-a",
+			Group:       "g",
+			Labels:      map[string]string{"role": "edge"},
+			GetRegistry: func() *packs.Registry { return nil },
+		},
+	}
+	for name, b := range cases {
+		t.Run(name, func(t *testing.T) {
+			msg := b.Build()
+			if msg.Type != MsgRunnerState || msg.ProtocolVersion != ProtocolVersion {
+				t.Fatalf("envelope wrong: type=%s pv=%d", msg.Type, msg.ProtocolVersion)
+			}
+			// Identity is fully populated.
+			if msg.AgentID != "agt_id" || msg.Version != "9.9.9" || msg.Hostname != "host-a" || msg.Group != "g" {
+				t.Fatalf("identity not advertised: %+v", msg)
+			}
+			if msg.Labels["role"] != "edge" {
+				t.Fatalf("labels not advertised: %v", msg.Labels)
+			}
+			// No catalog.
+			if len(msg.Actions) != 0 {
+				t.Fatalf("expected zero actions, got %d", len(msg.Actions))
+			}
+			if len(msg.Packs) != 0 {
+				t.Fatalf("expected no packs, got %d", len(msg.Packs))
+			}
+		})
+	}
+}
+
+// Hostname resolution: an explicit StateBuilder.Hostname is advertised verbatim
+// (the os.Hostname() fallback is only consulted when it's empty). When empty,
+// Build falls back to os.Hostname(); if that ever fails the field is simply
+// omitted (omitempty) rather than crashing the advertisement. closes RUN-035-T07.
+func TestStateBuilder_Build_HostnameFallback(t *testing.T) {
+	reg := setupRegistry(t)
+
+	// Explicit hostname wins, even if it differs from the machine's.
+	explicit := (&StateBuilder{AgentID: "a", Version: "v", Hostname: "pinned-host", GetRegistry: func() *packs.Registry { return reg }}).Build()
+	if explicit.Hostname != "pinned-host" {
+		t.Fatalf("explicit hostname not used: %q", explicit.Hostname)
+	}
+
+	// Empty hostname falls back to os.Hostname(). On a healthy host that is a
+	// non-empty value equal to what os.Hostname() reports.
+	want, err := os.Hostname()
+	if err != nil {
+		t.Skipf("os.Hostname() unavailable on this host: %v", err)
+	}
+	fell := (&StateBuilder{AgentID: "a", Version: "v", GetRegistry: func() *packs.Registry { return reg }}).Build()
+	if fell.Hostname != want {
+		t.Fatalf("empty hostname should fall back to os.Hostname() %q, got %q", want, fell.Hostname)
+	}
+}
+
 func TestPeekType_AndEnvelope(t *testing.T) {
 	m := RunActionMsg{
 		Envelope: Envelope{Type: MsgRunAction, ProtocolVersion: ProtocolVersion, RequestID: "r1"},

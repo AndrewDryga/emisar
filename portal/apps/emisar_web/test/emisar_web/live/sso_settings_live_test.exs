@@ -82,6 +82,10 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       conn: conn,
       account: account
     } do
+      # closes TEAM-025-T08
+      # No provider is seeded here, yet the branded sign-in link card still
+      # renders — it's unconditional (email sign-in works without SSO), not gated
+      # on having a connection.
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/sso")
 
       assert html =~ "sign-in link"
@@ -172,10 +176,56 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       refute html =~ "Old Name"
     end
 
+    test "the setup guide shows a FIXED callback URI, never an operator input", %{
+      conn: conn,
+      account: account
+    } do
+      # closes TEAM-026-T14
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/sso/new")
+
+      # The redirect/callback URI the operator registers at their IdP is a fixed,
+      # server-derived constant rendered for copy — it is NOT a form field the
+      # operator can set (an attacker-controlled redirect URI is the classic OIDC
+      # open-redirect hole, so it's never operator-supplied).
+      assert html =~ "/sign_in/sso/callback"
+      refute has_element?(lv, "input[name='provider[redirect_uri]']")
+      refute has_element?(lv, "input[name='provider[callback_url]']")
+    end
+
+    test "an edit leaving client_secret blank keeps the stored secret", %{
+      conn: conn,
+      account: account
+    } do
+      # closes TEAM-027-T03
+      provider = insert_provider(account, %{client_secret: "stored-secret-value"})
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso")
+      _ = render_hook(lv, "start_edit", %{"id" => provider.id})
+
+      # Submit the inline edit with a BLANK client_secret (the field is never
+      # pre-filled). strip_blank_secret drops it, so the stored value is kept.
+      lv
+      |> form("#edit-provider-#{provider.id}", %{
+        "provider_id" => provider.id,
+        "provider" => %{
+          "kind" => "okta",
+          "name" => "Renamed",
+          "issuer" => "https://idp.test",
+          "client_id" => "cid",
+          "client_secret" => ""
+        }
+      })
+      |> render_submit()
+
+      reloaded = Repo.reload!(provider)
+      assert reloaded.name == "Renamed"
+      assert reloaded.client_secret == "stored-secret-value"
+    end
+
     test "an invalid issuer renders inline on the field, not in a flash", %{
       conn: conn,
       account: account
     } do
+      # closes TEAM-026-T06
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/new")
 
       html =
@@ -191,6 +241,208 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
         |> render_submit()
 
       assert html =~ "must be an https URL"
+    end
+
+    test "creating with the minimum fields applies the safe defaults", %{
+      conn: conn,
+      account: account
+    } do
+      # closes TEAM-026-T02
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/new")
+
+      lv
+      |> form("#provider_form", %{
+        "provider" => %{
+          "kind" => "okta",
+          "name" => "Defaults Okta",
+          "issuer" => "https://defaults.okta.com",
+          "client_id" => "cid"
+        }
+      })
+      |> render_submit()
+
+      assert_redirect(lv, ~p"/app/#{account}/settings/sso")
+
+      provider =
+        IdentityProvider.Query.not_deleted()
+        |> IdentityProvider.Query.ordered_by_name()
+        |> Repo.all()
+        |> Enum.find(&(&1.name == "Defaults Okta"))
+
+      # The schema's documented defaults: stable identifier is `sub`, the
+      # provider satisfies the account MFA gate, and it's created DISABLED so it
+      # can't be signed in through until the admin explicitly turns it on.
+      assert provider.identifier_claim == "sub"
+      assert provider.satisfies_mfa == true
+      assert provider.enabled == false
+      assert provider.provisioner == :jit
+    end
+
+    test "a crafted create event is refused when the plan is downgraded mid-form", %{
+      conn: conn,
+      account: account
+    } do
+      # closes TEAM-026-T03
+      # Mount on Enterprise (can_configure? is true, cached at mount), then drop
+      # the account to the free tier by removing its subscription — exactly the
+      # mid-form downgrade the row describes. The cached gate lets the event
+      # through to the context, which re-checks the live plan and rejects it.
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/new")
+
+      {_deleted, _} =
+        Emisar.Billing.Subscription.Query.all()
+        |> Emisar.Billing.Subscription.Query.by_account_id(account.id)
+        |> Repo.delete_all()
+
+      refute Emisar.Billing.sso_available?(account)
+
+      html =
+        lv
+        |> form("#provider_form", %{
+          "provider" => %{
+            "kind" => "okta",
+            "name" => "Downgraded Okta",
+            "issuer" => "https://downgraded.okta.com",
+            "client_id" => "cid"
+          }
+        })
+        |> render_submit()
+
+      assert html =~ "Single sign-on requires an Enterprise plan."
+
+      refute IdentityProvider.Query.not_deleted()
+             |> Repo.all()
+             |> Enum.any?(&(&1.name == "Downgraded Okta"))
+    end
+
+    test "a crafted create event is refused for a non-admin viewer", %{
+      conn: conn,
+      account: account,
+      user: user
+    } do
+      # closes TEAM-026-T12
+      # The viewer never sees the form (locked upsell), but the create handler is
+      # gated server-side — a forged event is a no-op.
+      _ = make_viewer(user)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso")
+
+      _ =
+        render_submit(lv, "create", %{
+          "provider" => %{
+            "kind" => "okta",
+            "name" => "Forged Okta",
+            "issuer" => "https://forged.okta.com",
+            "client_id" => "cid"
+          }
+        })
+
+      refute IdentityProvider.Query.not_deleted()
+             |> Repo.all()
+             |> Enum.any?(&(&1.name == "Forged Okta"))
+    end
+
+    test "a crafted update event is refused for a non-admin viewer", %{
+      conn: conn,
+      account: account,
+      user: user
+    } do
+      # closes TEAM-027-T09
+      provider = insert_provider(account, %{name: "Untouchable"})
+      _ = make_viewer(user)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso")
+
+      _ =
+        render_submit(lv, "update", %{
+          "provider_id" => provider.id,
+          "provider" => %{
+            "kind" => "okta",
+            "name" => "Renamed By Viewer",
+            "issuer" => "https://idp.test",
+            "client_id" => "cid"
+          }
+        })
+
+      assert Repo.reload!(provider).name == "Untouchable"
+    end
+
+    test "delete's typed-confirm: Confirm won't fire until the connection name matches", %{
+      conn: conn,
+      account: account
+    } do
+      # closes TEAM-028-T03
+      # The delete dialog requires the operator to type the connection's exact
+      # name before Confirm activates — pure UX friction in front of the
+      # server-gated `delete`. A blank or wrong name keeps Confirm disabled, so
+      # the `delete` event is never dispatched and the provider survives.
+      provider = insert_provider(account, %{name: "Acme Okta"})
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso")
+
+      dialog = "delete-provider-#{provider.id}"
+
+      # Empty token → Confirm disabled.
+      assert_raise ArgumentError, ~r/disabled/, fn ->
+        confirm_dialog(lv, dialog, "Delete connection")
+      end
+
+      # Wrong name → still disabled.
+      type_confirm_token(lv, dialog, "Wrong Name")
+
+      assert_raise ArgumentError, ~r/disabled/, fn ->
+        confirm_dialog(lv, dialog, "Delete connection")
+      end
+
+      # The connection is untouched — no bypassing `delete` fired.
+      refute Repo.reload!(provider).deleted_at
+    end
+
+    test "approve/dismiss of an already-consumed request id is a graceful no-op", %{
+      conn: conn,
+      account: account
+    } do
+      # closes TEAM-031-T06
+      # A request the admin already actioned (or that a second tab consumed) is
+      # gone from the loaded list, so with_request finds nothing and both handlers
+      # short-circuit — no flash, no crash.
+      provider = insert_provider(account, %{name: "Manual Okta", provisioner: :manual})
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso")
+
+      ghost_id = Ecto.UUID.generate()
+
+      approve_html = render_click(lv, "approve_request", %{"id" => ghost_id})
+      refute approve_html =~ "approved"
+
+      dismiss_html = render_click(lv, "dismiss_request", %{"id" => ghost_id})
+      refute dismiss_html =~ "dismissed"
+
+      _ = provider
+    end
+  end
+
+  describe "group → role mapping forms gating" do
+    setup %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn, %{account: %{plan: "enterprise"}})
+      %{conn: conn, account: account}
+    end
+
+    test "a connection without directory sync shows no group→role mapping form", %{
+      conn: conn,
+      account: account
+    } do
+      # closes TEAM-030-T04
+      # Group→role mappings are a SCIM feature — the create/edit forms (and the
+      # "Group → role mapping" panel) render only when `scim_enabled`. A freshly
+      # created connection is SCIM-off (enable_scim turns it on), so it must not
+      # surface them.
+      provider = insert_provider(account, %{name: "No SCIM Okta"})
+      refute Repo.reload!(provider).scim_enabled
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/sso")
+
+      # The connection itself renders…
+      assert html =~ "No SCIM Okta"
+      # …but the mapping panel + its create form don't (the section is gated on
+      # scim_enabled).
+      refute html =~ "Group → role mapping"
+      refute has_element?(lv, "#create-mapping-#{provider.id}")
     end
   end
 
@@ -281,6 +533,32 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       _ = render_click(lv, "enable_scim", %{"id" => provider.id})
       refute Repo.reload!(provider).scim_enabled
     end
+
+    test "a non-admin viewer cannot rotate or disable a SCIM token (forged events)", %{
+      conn: conn,
+      account: account,
+      user: user,
+      provider: provider
+    } do
+      # closes TEAM-029-T06
+      # SCIM is enabled by an admin first, then the role is dropped to viewer —
+      # the rotate/disable handlers are Permissions.gated AND the context re-checks
+      # `manage_sso` + Enterprise, so a forged event leaves the token untouched.
+      owner = Emisar.Fixtures.subject_for(user, account)
+      {:ok, enabled, _raw} = SSO.enable_scim(provider, owner)
+      prefix = enabled.scim_token_prefix
+
+      _ = make_viewer(user)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso")
+
+      _ = render_click(lv, "rotate_scim", %{"id" => provider.id})
+      _ = render_click(lv, "disable_scim", %{"id" => provider.id})
+
+      # Still enabled, and the prefix is the admin-minted one (no rotation landed).
+      reloaded = Repo.reload!(provider)
+      assert reloaded.scim_enabled
+      assert reloaded.scim_token_prefix == prefix
+    end
   end
 
   describe "group → role mapping" do
@@ -324,6 +602,48 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       assert deleted =~ "Group mapping deleted."
 
       assert {:ok, [], _meta} = SSO.list_group_mappings(provider, owner)
+    end
+
+    test "edits a mapping's display + role through the inline edit form", %{
+      conn: conn,
+      account: account,
+      provider: provider,
+      owner: owner
+    } do
+      # closes TEAM-030-T02
+      {:ok, mapping} =
+        SSO.create_group_mapping(
+          provider,
+          %{
+            "external_group_id" => "00g-eng",
+            "external_group_display" => "Eng",
+            "role" => "operator"
+          },
+          owner
+        )
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso")
+
+      # Open the inline editor for this mapping (the externalId is the immutable
+      # key; only display + role are editable).
+      _ = render_click(lv, "start_edit_mapping", %{"id" => mapping.id})
+
+      html =
+        lv
+        |> form("#edit-mapping-#{mapping.id}", %{
+          "mapping_id" => mapping.id,
+          "mapping" => %{"external_group_display" => "Engineering", "role" => "admin"}
+        })
+        |> render_submit()
+
+      assert html =~ "Group mapping updated."
+
+      {:ok, [updated], _meta} = SSO.list_group_mappings(provider, owner)
+      assert updated.id == mapping.id
+      # The externalId (immutable key) is unchanged; display + role applied.
+      assert updated.external_group_id == "00g-eng"
+      assert updated.external_group_display == "Engineering"
+      assert updated.role == :admin
     end
 
     test "the role select never offers Owner; a forced owner mapping is rejected inline", %{
@@ -374,6 +694,41 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
 
       # No mapping was created (read it back through the pre-demotion owner subject).
       assert {:ok, [], _meta} = SSO.list_group_mappings(provider, owner)
+    end
+
+    test "a non-admin viewer cannot update or delete a group mapping (forged events)", %{
+      conn: conn,
+      account: account,
+      user: user,
+      provider: provider,
+      owner: owner
+    } do
+      # closes TEAM-030-T10
+      # The admin seeds a mapping; after the role drops to viewer the update and
+      # delete handlers (Permissions.gated + context `manage_sso`) refuse forged
+      # events — the mapping keeps its role and is never soft-deleted.
+      {:ok, mapping} =
+        SSO.create_group_mapping(
+          provider,
+          %{"external_group_id" => "00g-keep", "role" => "operator"},
+          owner
+        )
+
+      _ = make_viewer(user)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso")
+
+      _ =
+        render_submit(lv, "update_mapping", %{
+          "mapping_id" => mapping.id,
+          "mapping" => %{"role" => "admin"}
+        })
+
+      _ = render_click(lv, "delete_mapping", %{"id" => mapping.id})
+
+      # Unchanged and present — read back through the pre-demotion owner subject.
+      assert {:ok, [unchanged], _meta} = SSO.list_group_mappings(provider, owner)
+      assert unchanged.id == mapping.id
+      assert unchanged.role == :operator
     end
   end
 

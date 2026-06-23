@@ -1,8 +1,12 @@
 package attest
 
 import (
+	"bytes"
 	"crypto/ed25519"
 	"encoding/hex"
+	"go/parser"
+	"go/token"
+	"strings"
 	"testing"
 )
 
@@ -145,5 +149,128 @@ func TestVerifyMalformedSignature(t *testing.T) {
 	claim := Claim{ActionID: "a.b", Args: map[string]any{}, Nonce: "n", IssuedAt: "2026-06-17T12:00:00Z"}
 	if _, err := Verify(pub, claim, "not-hex!!"); err == nil {
 		t.Fatal("expected an error for a non-hex signature")
+	}
+}
+
+// BRG-005-T12 — numeric args normalize across the portal jsonb round-trip. The
+// portal stores args as jsonb and re-decodes JSON numbers as float64; the bridge
+// signs the same logical args as a Go int literal. Both must canonicalize to the
+// same JSON number form ("15") so the digest — and therefore the signature —
+// matches on both sides. (encoding/json renders int 15 and float64(15) identically.)
+func TestSigningBytes_NumericArgsNormalizeAcrossJSONBRoundTrip(t *testing.T) {
+	asInt := Claim{ActionID: "docker.restart", Args: map[string]any{"signal": 15}, Nonce: "n", IssuedAt: "2026-06-17T12:00:00Z"}
+	asFloat := Claim{ActionID: "docker.restart", Args: map[string]any{"signal": float64(15)}, Nonce: "n", IssuedAt: "2026-06-17T12:00:00Z"}
+
+	intBytes, err := SigningBytes(asInt)
+	if err != nil {
+		t.Fatalf("SigningBytes(int): %v", err)
+	}
+	floatBytes, err := SigningBytes(asFloat)
+	if err != nil {
+		t.Fatalf("SigningBytes(float64): %v", err)
+	}
+	if !bytes.Equal(intBytes, floatBytes) {
+		t.Fatalf("int 15 and float64(15) must canonicalize to the same digest:\n int:   %q\n float: %q", intBytes, floatBytes)
+	}
+
+	// And the signature itself must match — a runner that re-decoded the arg as
+	// float64 would otherwise reject a signature minted over the int form.
+	priv, pub := vectorKey(t)
+	sig, err := Sign(priv, asInt)
+	if err != nil {
+		t.Fatalf("Sign: %v", err)
+	}
+	ok, err := Verify(pub, asFloat, sig)
+	if err != nil {
+		t.Fatalf("Verify: %v", err)
+	}
+	if !ok {
+		t.Fatal("signature over int args did not verify against the float64-decoded form (jsonb round-trip would break dispatch)")
+	}
+}
+
+// BRG-005-T14 — the args digest defeats delimiter smuggling. SigningBytes is a
+// newline-delimited string; the args are reduced to a sha256 hex digest precisely
+// so a value containing a "\n" (or the whole "Version\nActionID\n…" framing)
+// cannot inject a fake field boundary into the signing string. We assert the
+// digest is hashed in (the raw newline never appears in the signing bytes) and
+// that two distinct smuggling-shaped values yield distinct signing bytes.
+func TestSigningBytes_ArgsDigestDefeatsDelimiterSmuggling(t *testing.T) {
+	smuggle := Claim{
+		ActionID: "x.y",
+		Args:     map[string]any{"note": "evil\nemisar-attestation-v1\nspoofed.action"},
+		Nonce:    "n",
+		IssuedAt: "2026-06-17T12:00:00Z",
+	}
+	got, err := SigningBytes(smuggle)
+	if err != nil {
+		t.Fatalf("SigningBytes: %v", err)
+	}
+
+	// The signing string has exactly four newlines (5 fields: Version, ActionID,
+	// digest, Nonce, IssuedAt). The arg value's embedded newline is hashed into
+	// the digest line, not spliced into the framing.
+	if n := bytes.Count(got, []byte("\n")); n != 4 {
+		t.Fatalf("smuggled newline leaked into the signing framing: want 4 delimiters, got %d in %q", n, got)
+	}
+	if bytes.Contains(got, []byte("spoofed.action")) {
+		t.Fatalf("arg value bytes appear verbatim in the signing string — digest did not contain them: %q", got)
+	}
+
+	// A different smuggled value must change the digest line (it is bound in).
+	other := smuggle
+	other.Args = map[string]any{"note": "evil\nemisar-attestation-v1\nDIFFERENT"}
+	otherBytes, err := SigningBytes(other)
+	if err != nil {
+		t.Fatalf("SigningBytes(other): %v", err)
+	}
+	if bytes.Equal(got, otherBytes) {
+		t.Fatal("two distinct arg values produced identical signing bytes — value not bound into the digest")
+	}
+}
+
+// BRG-005-T15 — an un-marshalable Args value is an error, not a partial encoding.
+// A channel cannot be JSON-marshaled; SigningBytes must surface that rather than
+// signing over a truncated/empty digest.
+func TestSigningBytes_MarshalFailureIsError(t *testing.T) {
+	claim := Claim{
+		ActionID: "x.y",
+		Args:     map[string]any{"bad": make(chan int)},
+		Nonce:    "n",
+		IssuedAt: "2026-06-17T12:00:00Z",
+	}
+	if _, err := SigningBytes(claim); err == nil {
+		t.Fatal("expected an error marshaling an un-marshalable args value, got nil")
+	}
+
+	// Sign threads SigningBytes' error out rather than returning a bogus signature.
+	priv, _ := vectorKey(t)
+	if _, err := Sign(priv, claim); err == nil {
+		t.Fatal("Sign must propagate the marshal error, got nil")
+	}
+}
+
+// BRG-005-T18 — the attest package is stdlib-only (no external deps). The
+// cross-impl contract relies on this: each module ships its own verbatim copy, so
+// a third-party import would couple them and is forbidden. Parse attest.go's own
+// import block and assert every import is one of the four expected stdlib paths.
+func TestAttestImportsAreStdlibOnly(t *testing.T) {
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, "attest.go", nil, parser.ImportsOnly)
+	if err != nil {
+		t.Fatalf("parse attest.go: %v", err)
+	}
+	allowed := map[string]bool{
+		"crypto/ed25519": true,
+		"crypto/sha256":  true,
+		"encoding/hex":   true,
+		"encoding/json":  true,
+		"fmt":            true,
+	}
+	for _, imp := range f.Imports {
+		path := strings.Trim(imp.Path.Value, `"`)
+		if !allowed[path] {
+			t.Errorf("unexpected import %q — attest must stay stdlib-only (no shared/external deps)", path)
+		}
 	}
 }

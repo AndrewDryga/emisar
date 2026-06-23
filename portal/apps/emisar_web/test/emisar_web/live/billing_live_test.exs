@@ -11,9 +11,9 @@ defmodule EmisarWeb.BillingLiveTest do
   """
   use EmisarWeb.ConnCase, async: true
 
-  defp downgrade_to_viewer(user) do
-    {:ok, m} = Emisar.Accounts.fetch_membership_for_session(user, nil)
-    Emisar.Fixtures.force_membership_role(m, "viewer")
+  defp downgrade_to(user, role) when is_binary(role) do
+    {:ok, membership} = Emisar.Accounts.fetch_membership_for_session(user, nil)
+    Emisar.Fixtures.force_membership_role(membership, role)
   end
 
   describe "as an owner" do
@@ -88,10 +88,192 @@ defmodule EmisarWeb.BillingLiveTest do
     end
   end
 
+  describe "usage meter + plan display" do
+    test "a Free account at the runner ceiling colours the meter rose (≥100%)", %{conn: conn} do
+      # closes BILL-001-T07
+      # 3/3 billable runners on Free is 100% utilisation → the runners bar uses
+      # the rose `usage_class`. (count_billable_runners is presence-agnostic, so
+      # unconnected fixtures still count toward the cap.)
+      {conn, _user, account} = register_and_log_in(conn)
+      for _ <- 1..3, do: Emisar.Fixtures.runner_fixture(account_id: account.id, connected?: false)
+
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
+
+      assert html =~ "/ 3"
+      # At/over 100% the meter bar (an `h-full transition-all` div) is rose; the
+      # brand/amber classes appear elsewhere on the page (the "Most popular"
+      # chip), so scope the assertion to the bar's own class combination.
+      assert html =~ ~s(class="h-full transition-all bg-rose-400")
+      refute html =~ ~s(class="h-full transition-all bg-amber-400")
+      refute html =~ ~s(class="h-full transition-all bg-brand-400")
+    end
+
+    test "a Team account at 80% of its runner cap colours the meter amber", %{conn: conn} do
+      # closes BILL-001-T06
+      # 80/100 billable runners on Team is 80% utilisation → the runners bar uses
+      # the amber `usage_class` (≥80% and <100%), the pre-ceiling warning colour.
+      {conn, _user, account} = register_and_log_in(conn)
+      insert_subscription(account, "active")
+
+      for _ <- 1..80,
+          do: Emisar.Fixtures.runner_fixture(account_id: account.id, connected?: false)
+
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
+
+      assert html =~ "/ 100"
+      assert html =~ ~s(class="h-full transition-all bg-amber-400")
+      refute html =~ ~s(class="h-full transition-all bg-rose-400")
+    end
+
+    test "the hero CTA offers only the next priced tier, never an enterprise upgrade", %{
+      conn: conn
+    } do
+      # closes BILL-002-T03
+      # On Free the only checkoutable step up is Team, so the hero CTA reads
+      # "Upgrade to Team" — never "Upgrade to Enterprise" (enterprise is
+      # contact-sales, surfaced by its own card, not a checkout CTA).
+      {conn, _user, account} = register_and_log_in(conn)
+
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
+
+      assert html =~ "Upgrade to Team"
+      refute html =~ "Upgrade to Enterprise"
+    end
+
+    test "a legacy/unknown plan name degrades to free-tier display", %{conn: conn} do
+      # closes BILL-001-T09
+      # `plan("legacy-pro")` is nil → plan_def falls back to plan("free"), so the
+      # strip shows the Free name + the three plan cards still render. A dropped
+      # plan must never 500 the billing page.
+      {conn, _user, account} = register_and_log_in(conn)
+      insert_subscription_with(account, %{plan: "legacy-pro", status: "active"})
+
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
+
+      # plan_def.name degrades to "Free"; the page renders, plans still listed.
+      assert html =~ "Current plan"
+      assert html =~ "Free"
+      assert html =~ "Team"
+      assert html =~ "Enterprise"
+      # No banner — "active" is healthy — and no crash on the unknown plan key.
+      refute html =~ "Payment past due"
+    end
+
+    test "an enterprise account shows a Custom total and Unlimited meters", %{conn: conn} do
+      # closes BILL-001-T03
+      # Enterprise has monthly_price_cents nil → monthly_total_cents nil →
+      # format_total(nil) renders "Custom" (not a cents figure). Runner + member
+      # limits are :unlimited → limit_label "Unlimited" and usage_pct nil, so the
+      # meters render the gradient placeholder bar with no width/percentage.
+      {conn, _user, account} = register_and_log_in(conn)
+      insert_subscription_with(account, %{plan: "enterprise", status: "active"})
+
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
+
+      assert html =~ "Enterprise"
+      # The plan strip shows "Custom/mo", never a "$…" total for the enterprise tier.
+      assert html =~ "Custom/mo"
+      # Both meters read "/ Unlimited" (no numeric ceiling).
+      assert html =~ "/ Unlimited"
+      # usage_pct is nil for an :unlimited limit → the gradient placeholder bar,
+      # and crucially NO filled bar carrying a width: percentage style.
+      assert html =~ "bg-gradient-to-r from-brand-900/30"
+      refute html =~ "style=\"width:"
+    end
+
+    test "dead cycle-note fields (cancel_at/trial_end) render nothing", %{conn: conn} do
+      # closes BILL-001-T10
+      # No prod path writes cancel_at_period_end/trial_end, and the apply path
+      # leaves current_period_start null. With status set but those columns at
+      # their defaults, none of the cycle-note chips render.
+      {conn, _user, account} = register_and_log_in(conn)
+      insert_subscription_with(account, %{plan: "team", status: "active"})
+
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
+
+      refute html =~ "Cancels on"
+      refute html =~ "Trial ends"
+      # current_period_end is also unset here, so even the "Next charge" note is absent.
+      refute html =~ "Next charge"
+    end
+  end
+
+  describe "manage subscription" do
+    test "an owner with a Paddle customer is redirected to the portal", %{conn: conn} do
+      # closes BILL-004-T01
+      # With a customer attached and no Paddle key configured (test default),
+      # open_billing_portal returns the stub portal URL and the LV redirects to it.
+      {conn, _user, account} = register_and_log_in(conn)
+      account = attach_customer(account, "ctm_portal_01")
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/billing")
+
+      # The "Manage subscription" control is present once a customer exists…
+      assert has_element?(lv, "button[phx-click='manage_billing']", "Manage subscription")
+
+      # …and clicking it redirects out to the (stub) portal URL.
+      assert {:error, {:redirect, redirect}} = render_click(lv, "manage_billing", %{})
+      url = redirect[:to] || redirect[:external]
+      assert is_binary(url) and url =~ "stub-portal"
+    end
+
+    test "a manage event on a no-customer account flashes :no_customer, no redirect", %{
+      conn: conn
+    } do
+      # closes BILL-004-T07
+      # On an account with no paddle_customer_id, open_billing_portal short-circuits
+      # to {:error, :no_customer} BEFORE any PaddleClient call, so the handler shows
+      # the "upgrade first" flash and stays on the page (no redirect). The flash —
+      # not a portal URL — is the proof the vendor was never reached.
+      {conn, _user, account} = register_and_log_in(conn)
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/billing")
+
+      # No customer attached → no Manage control rendered; push the event directly.
+      refute has_element?(lv, "button[phx-click='manage_billing']")
+
+      html = render_hook(lv, "manage_billing", %{})
+      assert html =~ "upgrade to a paid plan first"
+    end
+
+    test "an admin pushing a crafted manage event is refused — flash, no redirect", %{conn: conn} do
+      # closes BILL-004-T08
+      # manage_billing is owner-only. An admin (who can VIEW billing) crafting the
+      # manage_billing event is double-gated: Permissions.gated denies it in the LV
+      # before the context is even called, so the result is a permission flash and
+      # no portal redirect. (Customer attached, to prove the gate — not the
+      # no-customer branch — is what refuses.)
+      {conn, user, account} = register_and_log_in(conn)
+      downgrade_to(user, "admin")
+      account = attach_customer(account, "ctm_admin_manage_01")
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/billing")
+
+      html = render_hook(lv, "manage_billing", %{})
+      assert html =~ "have permission to do that."
+    end
+
+    test "the Manage control is hidden for a viewer even with a customer attached", %{conn: conn} do
+      # closes BILL-004-T10
+      # The Manage-subscription button is gated on subject_can_manage_billing? AND a
+      # customer being present. A viewer has a customer but not the permission, so
+      # the button is suppressed (the owner-only affordance never renders for them).
+      {conn, user, account} = register_and_log_in(conn)
+      downgrade_to(user, "viewer")
+      account = attach_customer(account, "ctm_viewer_manage_01")
+
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
+
+      # Page renders (a viewer can view billing) but the manage affordance is gone.
+      assert html =~ "Current plan"
+      refute has_element?(lv, "button[phx-click='manage_billing']")
+    end
+  end
+
   describe "as a viewer" do
     test "no upgrade controls render", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
-      downgrade_to_viewer(user)
+      downgrade_to(user, "viewer")
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
 
@@ -105,7 +287,7 @@ defmodule EmisarWeb.BillingLiveTest do
 
     test "a crafted upgrade event is refused — flash, no redirect", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
-      downgrade_to_viewer(user)
+      downgrade_to(user, "viewer")
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/billing")
 
@@ -152,6 +334,81 @@ defmodule EmisarWeb.BillingLiveTest do
       refute html =~ "Payment past due"
       refute html =~ "Subscription canceled"
     end
+
+    test "a paused subscription shows the amber paused banner", %{conn: conn} do
+      # closes BILL-008-T03
+      {conn, _user, account} = register_and_log_in(conn)
+      insert_subscription(account, "paused")
+
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
+
+      assert html =~ "Subscription paused"
+      assert html =~ "Resume it from the billing portal"
+      # Amber FYI, not the rose payment-failure tone.
+      refute html =~ "Payment past due"
+    end
+
+    test "an unknown/unmodeled status shows no banner (don't alarm)", %{conn: conn} do
+      # closes BILL-008-T07
+      # subscription_alert/1 only models past_due/paused/canceled; anything else
+      # → nil → no banner. Paddle owns the status value space, so a state we can't
+      # explain must not raise a scary banner.
+      {conn, _user, account} = register_and_log_in(conn)
+      insert_subscription(account, "some_unmodeled_status")
+
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
+
+      refute html =~ "Payment past due"
+      refute html =~ "Subscription paused"
+      refute html =~ "Subscription canceled"
+      # The page still renders fine for the unmodeled status.
+      assert html =~ "Current plan"
+    end
+
+    test "the banner copy nudges to fix payment, never implying lost access", %{conn: _conn} do
+      # closes BILL-008-T04
+      # emisar never gates features on subscription status, so each modeled status
+      # gets an advisory payment/resubscribe nudge ONLY — the copy must never imply
+      # access is lost (a promise the code doesn't keep). Assert the known advisory
+      # body for each status, plus the absence of the specific lost-access
+      # phrasings that would be a regression. (Scoped to multi-word phrases —
+      # single words like "lost" appear in unrelated page chrome.)
+      cases = [
+        {"past_due", "update your card so the next charge goes through"},
+        {"paused", "Resume it from the billing portal"},
+        {"canceled", "Resubscribe from billing to start a new subscription"}
+      ]
+
+      for {status, advisory_body} <- cases do
+        {conn, _user, account} = register_and_log_in(build_conn())
+        insert_subscription(account, status)
+
+        {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
+
+        # The banner shows its advisory body…
+        assert html =~ advisory_body
+        # …and never a lost-access / locked-out promise.
+        refute html =~ "no longer have access"
+        refute html =~ "access has been"
+        refute html =~ "paid features"
+        refute html =~ "lost access"
+      end
+    end
+
+    test "a viewer on a past_due account sees the banner without the manage CTA", %{conn: conn} do
+      # closes BILL-008-T08
+      # The banner renders for everyone who can view billing, but its :cta slot is
+      # gated on subject_can_manage_billing? — a viewer sees the nudge with no
+      # Manage-billing button to act on.
+      {conn, user, account} = register_and_log_in(conn)
+      downgrade_to(user, "viewer")
+      insert_subscription(account, "past_due")
+
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
+
+      assert html =~ "Payment past due"
+      refute has_element?(lv, "button[phx-click='manage_billing']")
+    end
   end
 
   defp insert_subscription(account, status) do
@@ -161,5 +418,26 @@ defmodule EmisarWeb.BillingLiveTest do
       |> Emisar.Repo.insert()
 
     subscription
+  end
+
+  # A subscription with arbitrary fields (plan/status/cycle-note columns), for
+  # the display-degradation + banner edge cases.
+  defp insert_subscription_with(account, attrs) do
+    {:ok, subscription} =
+      attrs
+      |> Map.put(:account_id, account.id)
+      |> Emisar.Billing.Subscription.Changeset.upsert()
+      |> Emisar.Repo.insert()
+
+    subscription
+  end
+
+  defp attach_customer(account, customer_id) do
+    {:ok, account} =
+      account
+      |> Ecto.Changeset.change(paddle_customer_id: customer_id)
+      |> Emisar.Repo.update()
+
+    account
   end
 end

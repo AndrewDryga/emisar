@@ -188,3 +188,66 @@ execution:
 		t.Errorf("cancel_grace: %s", cfg.Execution.CancelGrace)
 	}
 }
+
+// TestLoad_EMISAR_URLOverride covers RUN-031-T14: $EMISAR_URL overrides
+// cloud.url from the file (loader.go:36-40), so the same baked-in config can
+// target dev/prod control planes without re-templating. The override lands
+// before Validate, so the env value is the one that's transport-checked.
+func TestLoad_EMISAR_URLOverride(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.yaml")
+	writeYAML(t, cfgPath, minimalConfig) // file says wss://cloud/runner
+
+	const override = "wss://override-host/runner"
+	t.Setenv("EMISAR_URL", override)
+
+	cfg, err := Load(cfgPath)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if cfg.Cloud.URL != override {
+		t.Errorf("cloud.url = %q, want the EMISAR_URL override %q", cfg.Cloud.URL, override)
+	}
+}
+
+// TestLoad_EmptyEMISAR_URLLeavesConfig confirms the override is skipped when
+// the env var is empty, so an unset/blank EMISAR_URL never blanks a valid
+// configured cloud.url (loader.go:38).
+func TestLoad_EmptyEMISAR_URLLeavesConfig(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.yaml")
+	writeYAML(t, cfgPath, minimalConfig)
+
+	t.Setenv("EMISAR_URL", "")
+
+	cfg, err := Load(cfgPath)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if cfg.Cloud.URL != "wss://cloud/runner" {
+		t.Errorf("cloud.url = %q, want the file value (empty EMISAR_URL must not override)", cfg.Cloud.URL)
+	}
+}
+
+// TestLoad_MalformedAndUnreadable covers RUN-031-T15: a parse error on broken
+// YAML and a read error on a missing file are both surfaced as wrapped errors
+// (loader.go). No defaults are silently applied over a file that can't be read.
+func TestLoad_MalformedAndUnreadable(t *testing.T) {
+	t.Run("malformed yaml", func(t *testing.T) {
+		dir := t.TempDir()
+		cfgPath := filepath.Join(dir, "config.yaml")
+		// A mapping value that is obviously not valid YAML structure.
+		writeYAML(t, cfgPath, "schema_version: 1\nrunner: : : :\n  group: [\n")
+		if _, err := Load(cfgPath); err == nil {
+			t.Fatal("expected a parse error for malformed YAML")
+		}
+	})
+
+	t.Run("missing file", func(t *testing.T) {
+		dir := t.TempDir()
+		cfgPath := filepath.Join(dir, "does-not-exist.yaml")
+		if _, err := Load(cfgPath); err == nil {
+			t.Fatal("expected a read error for a missing config file")
+		}
+	})
+}

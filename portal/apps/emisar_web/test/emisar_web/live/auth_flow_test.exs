@@ -180,6 +180,30 @@ defmodule EmisarWeb.AuthFlowTest do
       assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "expired"
     end
 
+    test "an OTP posted against an EXPIRED pending marker falls to the expired branch", %{
+      conn: conn,
+      user: user
+    } do
+      # closes AUTH-003-T07 — the pending-MFA marker has a 5-min TTL. `get_pending_mfa`
+      # returns nil once `pending_mfa_expires_at <= now`, so an otp-only POST that
+      # arrives after the window (the operator stepped away) is no longer a valid
+      # step-up: it falls through to branch (c) — the pending state is cleared and
+      # the user is bounced to /sign_in with the "expired" flash, never finishing
+      # sign-in off a stale marker.
+      conn =
+        conn
+        |> Plug.Test.init_test_session(%{})
+        |> Plug.Conn.put_session(:pending_mfa_user_id, user.id)
+        |> Plug.Conn.put_session(:pending_mfa_expires_at, System.system_time(:second) - 1)
+        |> post(~p"/sign_in", %{"user" => %{"otp" => "123456"}})
+
+      assert redirected_to(conn) == ~p"/sign_in"
+      assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "expired"
+      # No session was established off the stale marker, and the marker is cleared.
+      refute get_session(conn, :user_token)
+      refute get_session(conn, :pending_mfa_user_id)
+    end
+
     test "the MFA challenge LV bounces visitors with no pending state back to /sign_in", %{
       conn: conn
     } do

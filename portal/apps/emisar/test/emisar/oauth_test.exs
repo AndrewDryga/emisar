@@ -9,7 +9,7 @@ defmodule Emisar.OAuthTest do
   import Emisar.Fixtures
 
   alias Emisar.OAuth
-  alias Emisar.OAuth.Client
+  alias Emisar.OAuth.{Client, Token}
 
   @redirect "https://claude.ai/api/mcp/auth_callback"
   @resource "https://emisar.dev/api/mcp/rpc"
@@ -362,6 +362,131 @@ defmodule Emisar.OAuthTest do
       assert {:error, :invalid} = OAuth.resolve_access_token("emo-not-a-real-token")
       assert {:error, :invalid} = OAuth.resolve_access_token("garbage")
       assert {:error, :invalid} = OAuth.resolve_access_token(nil)
+    end
+  end
+
+  describe "resolve_access_token/1 invalidation paths" do
+    setup do
+      {_user, account, subject} = owner_subject_fixture()
+      client = register!()
+      {verifier, challenge} = pkce()
+      code = issue!(subject, client, challenge)
+
+      {:ok, tokens} =
+        OAuth.exchange_code(%{
+          "code" => code,
+          "client_id" => client.id,
+          "redirect_uri" => @redirect,
+          "code_verifier" => verifier
+        })
+
+      %{account: account, client: client, tokens: tokens}
+    end
+
+    # closes OAUTH-008-T05
+    test "an expired access token (past its TTL) resolves to :invalid", %{tokens: tokens} do
+      # A live token resolves; backdating its access_expires_at past `now`
+      # makes `live?/1` false, so resolution must fail closed rather than
+      # hand back a subject for a token whose 1-hour window has elapsed.
+      assert {:ok, _} = OAuth.resolve_access_token(tokens.access_token)
+
+      token = Repo.get_by!(Token, access_token_hash: Emisar.Crypto.hash(tokens.access_token))
+      past = DateTime.add(DateTime.utc_now(), -60, :second)
+      Repo.update!(Ecto.Changeset.change(token, access_expires_at: past))
+
+      assert {:error, :invalid} = OAuth.resolve_access_token(tokens.access_token)
+    end
+
+    # closes OAUTH-008-T06
+    test "an access token whose pair was rotation-revoked by a refresh resolves to :invalid",
+         %{client: client, tokens: tokens} do
+      # Rotating the refresh token revokes the original token ROW (it holds
+      # both the original access + refresh hashes). The fresh access token
+      # resolves, but the rotated-away original must not — `not_revoked()`
+      # filters its row out, so resolving the old access token fails closed.
+      assert {:ok, fresh} =
+               OAuth.refresh(%{
+                 "refresh_token" => tokens.refresh_token,
+                 "client_id" => client.id
+               })
+
+      assert {:ok, _} = OAuth.resolve_access_token(fresh.access_token)
+      assert {:error, :invalid} = OAuth.resolve_access_token(tokens.access_token)
+    end
+
+    # closes OAUTH-008-T07
+    test "a token whose backing api-key is revoked after issuance resolves to :invalid",
+         %{tokens: tokens} do
+      # Revoking the backing key is the operator's OAuth off-switch. The
+      # exchange/refresh-time checks are tested elsewhere; this asserts the
+      # resolve path also fails closed — `peek_api_key_by_id` returns nil
+      # for a revoked key, so the live access token no longer resolves.
+      {:ok, %{api_key: key}} = OAuth.resolve_access_token(tokens.access_token)
+
+      key
+      |> Ecto.Changeset.change(revoked_at: DateTime.utc_now())
+      |> Repo.update!()
+
+      assert {:error, :invalid} = OAuth.resolve_access_token(tokens.access_token)
+    end
+
+    # closes OAUTH-008-T08
+    test "a token whose account is soft-deleted resolves to :invalid",
+         %{account: account, tokens: tokens} do
+      # `fetch_account_by_id` scopes by `not_deleted()`, so soft-deleting the
+      # account makes it `{:error, :not_found}` inside resolve's `with`, which
+      # falls through to `:invalid` — a token can't resolve into a dead tenant.
+      assert {:ok, _} = OAuth.resolve_access_token(tokens.access_token)
+
+      account
+      |> Ecto.Changeset.change(deleted_at: DateTime.utc_now())
+      |> Repo.update!()
+
+      assert {:error, :invalid} = OAuth.resolve_access_token(tokens.access_token)
+    end
+
+    # closes OAUTH-008-T09
+    test "cross-account isolation rides the backing key — a token only ever resolves to its own account",
+         %{account: account, tokens: tokens} do
+      # Stand up a SECOND account with its own consented token. Each token's
+      # account_id + api_key_id are fixed at mint, so resolving account A's
+      # token yields account A (never B), and vice versa — the backing-key
+      # binding is the isolation boundary, not anything in the presented bearer.
+      {_user_b, account_b, subject_b} = owner_subject_fixture()
+      client_b = register!("Other Tenant")
+      {verifier_b, challenge_b} = pkce()
+      code_b = issue!(subject_b, client_b, challenge_b)
+
+      {:ok, tokens_b} =
+        OAuth.exchange_code(%{
+          "code" => code_b,
+          "client_id" => client_b.id,
+          "redirect_uri" => @redirect,
+          "code_verifier" => verifier_b
+        })
+
+      assert {:ok, %{account: acct_a, api_key: key_a}} =
+               OAuth.resolve_access_token(tokens.access_token)
+
+      assert {:ok, %{account: acct_b, api_key: key_b}} =
+               OAuth.resolve_access_token(tokens_b.access_token)
+
+      assert acct_a.id == account.id
+      assert acct_b.id == account_b.id
+      refute acct_a.id == account_b.id
+      assert key_a.account_id == account.id
+      assert key_b.account_id == account_b.id
+    end
+
+    # closes OAUTH-008-T10
+    test "the stored `resource` is NOT enforced as an audience at resolve time", %{tokens: tokens} do
+      # Documented self-limit (OAuth moduledoc): the RFC 8707 `resource` is
+      # accepted + stored but not yet enforced as an audience binding — there
+      # is one protected resource today. Assert the CURRENT behavior: the
+      # token carries its consented `resource`, yet resolution succeeds with
+      # no audience check (resolve never looks at `token.resource`).
+      assert {:ok, %{token: token}} = OAuth.resolve_access_token(tokens.access_token)
+      assert token.resource == @resource
     end
   end
 

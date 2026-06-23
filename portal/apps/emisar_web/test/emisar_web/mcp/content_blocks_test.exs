@@ -120,4 +120,118 @@ defmodule EmisarWeb.MCP.ContentBlocksTest do
       refute text(blocks) =~ "✓ approved"
     end
   end
+
+  describe "from_runs/1 — policy denial" do
+    test "denied_by_policy renders the verbatim reason and flags isError" do
+      # closes MCP-021-T08
+      {blocks, is_error} =
+        ContentBlocks.from_runs([
+          %{
+            runner: "web-1",
+            status: "denied_by_policy",
+            reason: "high-risk actions are denied outside business hours"
+          }
+        ])
+
+      body = text(blocks)
+      assert body =~ "Denied by policy: high-risk actions are denied outside business hours"
+      assert is_error
+    end
+
+    test "a denial prefers the policy.reason over the top-level reason" do
+      # closes MCP-021-T08
+      {blocks, true} =
+        ContentBlocks.from_runs([
+          %{
+            status: "denied",
+            reason: "fallback",
+            policy: %{reason: "critical tier is always denied"}
+          }
+        ])
+
+      assert text(blocks) =~ "Denied by policy: critical tier is always denied"
+    end
+  end
+
+  describe "from_runs/1 — empty + multi-run" do
+    test "an empty runs list renders (no output)" do
+      # closes MCP-021-T09
+      {blocks, is_error} = ContentBlocks.from_runs([])
+
+      assert text(blocks) == "(no output)"
+      refute is_error
+    end
+
+    test "a fan-out prefixes each run's blocks with [runner_name]" do
+      # closes MCP-021-T10
+      {blocks, _} =
+        ContentBlocks.from_runs([
+          %{id: "run-a", status: "success", exit_code: 0, stdout: "alpha", runner: "web-1"},
+          %{id: "run-b", status: "success", exit_code: 0, stdout: "bravo", runner: "web-2"}
+        ])
+
+      body = text(blocks)
+      assert body =~ "[web-1]"
+      assert body =~ "[web-2]"
+    end
+
+    test "a single run is NOT prefixed (multi is false for one run)" do
+      # closes MCP-021-T10
+      {blocks, _} =
+        ContentBlocks.from_runs([
+          %{id: "run-a", status: "success", exit_code: 0, stdout: "alpha", runner: "web-1"}
+        ])
+
+      refute text(blocks) =~ "[web-1]"
+    end
+  end
+
+  describe "from_runs/1 — generic unknown-error payload (no internal leak)" do
+    test "the Service `error: \"unknown\"` payload renders a generic message + isError" do
+      # closes MCP-028-T12
+      # When Service.dispatch_tool can't map an internal error term, it emits a
+      # static `unknown` payload (the raw term is logged server-side, never put
+      # here). The renderer must surface only that human message and flag the
+      # error — no internal ids / struct fields to read because none are present.
+      {blocks, is_error} =
+        ContentBlocks.from_runs([
+          %{
+            runner: "web-1",
+            status: "error",
+            error: "unknown",
+            message:
+              "Unrecognized error from the cloud — the LLM can't recover from this on its " <>
+                "own. Report it to Emisar support."
+          }
+        ])
+
+      body = text(blocks)
+      assert is_error
+      assert body =~ "Error: unknown"
+      assert body =~ "Report it to Emisar support."
+      # Nothing resembling an internal term/struct leaked into the block.
+      refute body =~ "%{"
+      refute body =~ ":error"
+    end
+  end
+
+  describe "from_runs/1 — IL-14 unknown-key safety" do
+    test "a novel string key never raises and never grows the atom table" do
+      # closes MCP-021-T11
+      # A made-up key that has no existing atom — string_field/numeric_field
+      # resolve fields via String.to_existing_atom, which must be rescued so an
+      # attacker-influenced payload can't mint atoms or crash the renderer.
+      novel = "definitely-not-an-existing-atom-#{System.unique_integer([:positive])}"
+
+      {blocks, _is_error} =
+        ContentBlocks.from_runs([
+          %{"status" => "success", "stdout" => "ok", novel => "ignored"}
+        ])
+
+      # Rendered fine off the string keys; the novel key was simply not read.
+      assert text(blocks) =~ "ok"
+      # And it never became an atom.
+      assert_raise ArgumentError, fn -> String.to_existing_atom(novel) end
+    end
+  end
 end

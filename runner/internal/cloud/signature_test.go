@@ -151,3 +151,79 @@ func TestClient_SetVerifier_RevokesKeyLive(t *testing.T) {
 		t.Fatalf("post-revoke status=%v, want signature_invalid", res["status"])
 	}
 }
+
+// closes RSEC-001-T20
+//
+// The other half of a live key rotation: after SetVerifier swaps in a verifier
+// trusting a NEW key, a dispatch signed by that new key is ACCEPTED — rotation
+// isn't just revoking the old key, it's bringing the new one online without a
+// restart. And the Verifier() getter returns the swapped instance, which is how
+// the StateBuilder re-advertises the new key id set on the next Build() (the
+// readvertise after SIGHUP). TestClient_SetVerifier_RevokesKeyLive proves the
+// old key stops working; this proves the new key starts working and the swap is
+// observable through the getter the advertisement reads.
+func TestClient_SetVerifier_NewKeyAcceptedAndGetterReflectsSwap(t *testing.T) {
+	conn := newFakeConn()
+	d := &queuedDialer{conns: []*fakeConn{conn}}
+	cli, priv1 := enforcingClient(t, d) // initially trusts k1 (priv1)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- cli.Run(ctx) }()
+	t.Cleanup(func() { cancel(); <-done })
+
+	// Build the rotated-in verifier: trusts ONLY k2 (a different keypair).
+	seed2, _ := hex.DecodeString("2122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f40")
+	priv2 := ed25519.NewKeyFromSeed(seed2)
+	pub2 := priv2.Public().(ed25519.PublicKey)
+	v2, err := signing.NewVerifier(true, []signing.KeyConfig{{KeyID: "k2", PublicKeyHex: hex.EncodeToString(pub2)}}, time.Hour)
+	if err != nil {
+		t.Fatalf("NewVerifier: %v", err)
+	}
+
+	// Sanity: before the swap the getter reflects the original (k1) keyring.
+	if got := cli.Verifier().KeyIDs(); len(got) != 1 || got[0] != "k1" {
+		t.Fatalf("pre-swap getter KeyIDs=%v, want [k1]", got)
+	}
+
+	cli.SetVerifier(v2)
+
+	// The getter now returns the swapped verifier — the StateBuilder reads this
+	// to advertise the live key set after a SIGHUP, so the swap must be visible
+	// here, not just inside the gate.
+	if cli.Verifier() != v2 {
+		t.Fatal("Verifier() must return the swapped-in verifier")
+	}
+	if got := cli.Verifier().KeyIDs(); len(got) != 1 || got[0] != "k2" {
+		t.Fatalf("post-swap getter KeyIDs=%v, want [k2] (advertisement would be stale otherwise)", got)
+	}
+
+	// A dispatch signed with the NEW key (k2) is accepted by the swapped-in
+	// verifier — rotation brought the new key online live.
+	args := map[string]any{"msg": "ok"}
+	sendRunActionWithAttestation(t, conn, "req_newkey", "t.echo", args, attestationForKey(t, priv2, "k2", "t.echo", args))
+	if res := waitForResult(t, conn, "req_newkey", 3*time.Second); res["status"] != "success" {
+		t.Fatalf("a dispatch signed by the rotated-in key must pass; status=%v reason=%v error=%v",
+			res["status"], res["reason"], res["error"])
+	}
+
+	// And the OLD key (k1) is now rejected by the same swapped verifier — both
+	// directions of the rotation hold simultaneously.
+	sendRunActionWithAttestation(t, conn, "req_oldkey", "t.echo", args, attestationFor(t, priv1, "t.echo", args))
+	if res := waitForResult(t, conn, "req_oldkey", 3*time.Second); res["status"] != "signature_invalid" {
+		t.Fatalf("the rotated-out key must be refused; status=%v", res["status"])
+	}
+}
+
+// attestationForKey is attestationFor with an explicit key id, so a test can
+// sign under a key id other than the fixed "k1" the bare helper uses.
+func attestationForKey(t *testing.T, priv ed25519.PrivateKey, keyID, actionID string, args map[string]any) *Attestation {
+	t.Helper()
+	nonce := "nonce-" + keyID + "-" + actionID
+	issuedAt := time.Now().UTC().Format(time.RFC3339)
+	sig, err := attest.Sign(priv, attest.Claim{ActionID: actionID, Args: args, Nonce: nonce, IssuedAt: issuedAt})
+	if err != nil {
+		t.Fatalf("Sign: %v", err)
+	}
+	return &Attestation{KeyID: keyID, Signature: sig, Nonce: nonce, IssuedAt: issuedAt}
+}

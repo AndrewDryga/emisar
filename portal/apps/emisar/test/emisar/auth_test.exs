@@ -4,9 +4,22 @@ defmodule Emisar.AuthTest do
   import Emisar.Fixtures
 
   alias Emisar.Auth
+  alias Emisar.Auth.UserToken
   alias Emisar.Users.User
 
   @password "a-password-of-some-length"
+
+  # Backdate every user_token row so its `inserted_at` lands `minutes` in
+  # the past — the only lever on the validity window, since
+  # `UserToken.Query.not_expired/2` filters `inserted_at > ago(window)`.
+  # Lets a TTL test place a token just inside vs just past its window.
+  defp age_tokens(user_id, minutes) do
+    {n, _} =
+      UserToken.Query.by_user_id(user_id)
+      |> Repo.update_all(set: [inserted_at: DateTime.add(DateTime.utc_now(), -minutes, :minute)])
+
+    n
+  end
 
   describe "fetch_user_by_email_and_password/2" do
     test "returns the user with a correct password" do
@@ -91,6 +104,24 @@ defmodule Emisar.AuthTest do
 
       assert {:error, :invalid_or_expired} = Auth.consume_magic_link_token(raw)
     end
+
+    # closes AUTH-005-T05 / AUTH-006-T04 — 15-minute window (magic_link).
+    test "a link just inside 15 minutes still consumes" do
+      user = user_fixture()
+      raw = Auth.issue_magic_link_token!(user)
+      age_tokens(user.id, 14)
+
+      assert {:ok, %User{id: id}} = Auth.consume_magic_link_token(raw)
+      assert id == user.id
+    end
+
+    test "a link just past 15 minutes no longer consumes" do
+      user = user_fixture()
+      raw = Auth.issue_magic_link_token!(user)
+      age_tokens(user.id, 16)
+
+      assert {:error, :invalid_or_expired} = Auth.consume_magic_link_token(raw)
+    end
   end
 
   describe "password reset" do
@@ -114,6 +145,60 @@ defmodule Emisar.AuthTest do
     test "garbage token returns invalid_or_expired" do
       assert {:error, :invalid_or_expired} = Auth.reset_user_password("nope", "doesnt-matter-xx")
     end
+
+    # closes AUTH-008-T05 / AUTH-009-T05 — 1-day window (reset_password).
+    test "a reset token just inside 1 day still resets" do
+      user = user_fixture(password: @password)
+      raw = Auth.issue_password_reset_token!(user)
+      # 1 day minus 5 minutes still inside the window.
+      age_tokens(user.id, 24 * 60 - 5)
+
+      assert {:ok, %User{}} = Auth.reset_user_password(raw, "brand-new-password-y")
+    end
+
+    test "a reset token just past 1 day no longer resets" do
+      user = user_fixture(password: @password)
+      raw = Auth.issue_password_reset_token!(user)
+      # 1 day plus 5 minutes is past the window.
+      age_tokens(user.id, 24 * 60 + 5)
+
+      assert {:error, :invalid_or_expired} = Auth.reset_user_password(raw, "brand-new-password-y")
+    end
+
+    # closes AUTH-009-T04 / AUTH-009-T08 — the 12..128 password rule on the
+    # reset path (Users.reset_user_password -> User.Changeset.password).
+    test "accepts a 12-char and a 128-char new password" do
+      for length <- [12, 128] do
+        user = user_fixture(password: @password)
+        raw = Auth.issue_password_reset_token!(user)
+
+        assert {:ok, %User{}} = Auth.reset_user_password(raw, String.duplicate("a", length))
+      end
+    end
+
+    test "rejects an 11-char and a 129-char new password without consuming the token" do
+      for length <- [11, 129] do
+        user = user_fixture(password: @password)
+        raw = Auth.issue_password_reset_token!(user)
+
+        assert {:error, %Ecto.Changeset{} = changeset} =
+                 Auth.reset_user_password(raw, String.duplicate("a", length))
+
+        assert changeset.errors[:password]
+        # The token is not burnt — a valid-length retry on the SAME link works.
+        assert {:ok, %User{}} = Auth.reset_user_password(raw, "valid-length-pass-12")
+      end
+    end
+
+    # closes the remaining AUTH-009-T12 soft-delete row at the context.
+    test "a reset link whose user was soft-deleted no longer resets" do
+      user = user_fixture(password: @password)
+      raw = Auth.issue_password_reset_token!(user)
+
+      {:ok, _} = user |> User.Changeset.delete() |> Repo.update()
+
+      assert {:error, :invalid_or_expired} = Auth.reset_user_password(raw, "brand-new-password-y")
+    end
   end
 
   describe "email confirmation" do
@@ -128,6 +213,35 @@ defmodule Emisar.AuthTest do
 
     test "garbage token returns invalid_or_expired" do
       assert {:error, :invalid_or_expired} = Auth.confirm_user_by_token("not-a-real-token")
+    end
+
+    # closes AUTH-016-T03 — 7-day window (confirm).
+    test "a confirm token just inside 7 days still confirms" do
+      user = user_fixture(confirmed?: false)
+      raw = Auth.issue_confirmation_token!(user)
+      # 7 days minus an hour is still inside the window.
+      age_tokens(user.id, 7 * 24 * 60 - 60)
+
+      assert {:ok, %User{confirmed_at: %DateTime{}}} = Auth.confirm_user_by_token(raw)
+    end
+
+    test "a confirm token just past 7 days no longer confirms" do
+      user = user_fixture(confirmed?: false)
+      raw = Auth.issue_confirmation_token!(user)
+      # 7 days plus an hour is past the window.
+      age_tokens(user.id, 7 * 24 * 60 + 60)
+
+      assert {:error, :invalid_or_expired} = Auth.confirm_user_by_token(raw)
+    end
+
+    # closes the AUTH-016-T09 soft-delete row at the context.
+    test "a confirm link whose user was soft-deleted no longer confirms" do
+      user = user_fixture(confirmed?: false)
+      raw = Auth.issue_confirmation_token!(user)
+
+      {:ok, _} = user |> User.Changeset.delete() |> Repo.update()
+
+      assert {:error, :invalid_or_expired} = Auth.confirm_user_by_token(raw)
     end
   end
 
@@ -182,6 +296,20 @@ defmodule Emisar.AuthTest do
       assert {:error, :invalid} = Auth.verify_mfa(user, "000000")
     end
 
+    # closes AUTH-004-T11 — a non-numeric OTP is rejected, and because the
+    # replay guard only stamps on a *valid* code, the real code still works
+    # right after (the bad attempt didn't burn the current bucket).
+    test "verify_mfa rejects a non-numeric OTP without burning the live code" do
+      {_user, _account, subject} = owner_subject_fixture()
+      secret = Auth.generate_mfa_secret()
+      {user, _codes} = enable_mfa!(secret, subject)
+
+      assert {:error, :invalid} = Auth.verify_mfa(user, "abcdef")
+
+      # The genuine current code is untouched by the failed attempt.
+      assert :ok = Auth.verify_mfa(Repo.reload!(user), NimbleTOTP.verification_code(secret))
+    end
+
     test "an OTP can't complete sign-in after MFA was disabled mid-verify (MAJOR-4)" do
       {_user, _account, subject} = owner_subject_fixture()
       secret = Auth.generate_mfa_secret()
@@ -213,16 +341,35 @@ defmodule Emisar.AuthTest do
       assert {:error, :invalid} = Auth.verify_mfa(user, otp1)
     end
 
+    # closes AUTH-004-T14 (sequential single-use; true-concurrent is out of
+    # scope) — a recovery code consumes once; a second consume of the SAME
+    # code fails, while a sibling code from the set is unaffected.
     test "consume_mfa_recovery_code accepts a fresh code once, rejects reuse" do
       {_user, _account, subject} = owner_subject_fixture()
       secret = Auth.generate_mfa_secret()
 
-      {user, [code | _]} = enable_mfa!(secret, subject)
+      {user, [code, other_code | _]} = enable_mfa!(secret, subject)
 
       assert :ok = Auth.consume_mfa_recovery_code(user, code)
 
       user = Repo.reload!(user)
       assert {:error, :invalid} = Auth.consume_mfa_recovery_code(user, code)
+
+      # Consuming one code doesn't invalidate the rest of the set.
+      assert :ok = Auth.consume_mfa_recovery_code(user, other_code)
+    end
+
+    # closes AUTH-010-T11 — recovery codes are shown once in plaintext, and
+    # only their SHA-256 digests are persisted (never the plaintext).
+    test "recovery codes are stored as SHA-256 digests, never plaintext" do
+      {_user, _account, subject} = owner_subject_fixture()
+      secret = Auth.generate_mfa_secret()
+      {user, codes} = enable_mfa!(secret, subject)
+
+      # Each plaintext code's stored form is exactly its SHA-256 digest.
+      assert Enum.all?(codes, &(Emisar.Crypto.hash(&1) in user.mfa_recovery_codes))
+      # And no plaintext leaks into the at-rest set.
+      refute Enum.any?(codes, &(&1 in user.mfa_recovery_codes))
     end
 
     test "disable_mfa clears the secret, enabled-at, and recovery codes" do

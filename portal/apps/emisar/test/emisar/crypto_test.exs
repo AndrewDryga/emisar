@@ -19,6 +19,11 @@ defmodule Emisar.CryptoTest do
       assert {:ok, raw} = Base.url_decode64(Crypto.random_secret(16), padding: false)
       assert byte_size(raw) == 16
     end
+
+    # closes ENG-012-T10 — 32 random bytes, url-safe base64, NO padding.
+    test "is never padded" do
+      refute Crypto.random_secret() =~ "="
+    end
   end
 
   describe "hash/1" do
@@ -27,6 +32,51 @@ defmodule Emisar.CryptoTest do
       assert byte_size(Crypto.hash("emk-abc")) == 32
       refute Crypto.hash("emk-abc") == Crypto.hash("emk-abd")
       assert Crypto.hash("emk-abc") == :crypto.hash(:sha256, "emk-abc")
+    end
+  end
+
+  describe "hash_hex/1" do
+    # closes ENG-012-T04 — the content-addressing digest form is lowercase
+    # hex of the same sha256, so a stored output digest can be compared
+    # byte-for-byte against the hex digest a runner reports.
+    test "is lowercase-hex sha256 matching the runner-reported digest form" do
+      assert Crypto.hash_hex("output payload") ==
+               Base.encode16(Crypto.hash("output payload"), case: :lower)
+
+      assert Crypto.hash_hex("x") =~ ~r/\A[0-9a-f]{64}\z/
+    end
+  end
+
+  describe "email_token/0 + email_token_digest/1" do
+    # closes ENG-012-T05 — the emailed (magic-link/reset/confirm) token
+    # round-trips: the url-safe-base64 string in the link re-derives the
+    # stored digest, and a mangled or forged link returns :error rather
+    # than crashing or silently matching.
+    test "the emitted token re-derives its stored digest" do
+      {encoded, digest} = Crypto.email_token()
+
+      assert {:ok, ^digest} = Crypto.email_token_digest(encoded)
+      # url-safe alphabet only — it rides in a URL.
+      assert encoded =~ ~r/\A[A-Za-z0-9_-]+\z/
+    end
+
+    test "a non-base64 presented token is :error, not a crash or false match" do
+      assert :error = Crypto.email_token_digest("not valid base64 !!!")
+    end
+  end
+
+  describe "mfa_recovery_code/0" do
+    # closes ENG-012-T07 (recovery-code namespace) — codes are lowercased
+    # base32 (survive hand transcription), unique per call, and only the
+    # digest is the at-rest form.
+    test "is lowercased base32, unique, with a matching digest" do
+      {plain1, digest1} = Crypto.mfa_recovery_code()
+      {plain2, _digest2} = Crypto.mfa_recovery_code()
+
+      assert plain1 =~ ~r/\A[a-z2-7]+\z/
+      assert plain1 == String.downcase(plain1)
+      refute plain1 == plain2
+      assert digest1 == Crypto.hash(plain1)
     end
   end
 
@@ -61,6 +111,23 @@ defmodule Emisar.CryptoTest do
     test "rejects a prefix_size not larger than the tag" do
       assert_raise FunctionClauseError, fn -> Crypto.mint("emk-", 4) end
     end
+
+    # closes ENG-012-T07 — each credential type lives in its own prefix
+    # namespace, so a presented bearer is routed to the right lookup and no
+    # two credential kinds can collide on a stored prefix/hash.
+    test "the named per-credential minters produce distinct namespaces" do
+      {scim_raw, scim_prefix, scim_hash} = Crypto.scim_token()
+      assert String.starts_with?(scim_prefix, "ems-")
+      assert String.length(scim_prefix) == Crypto.scim_token_prefix_size()
+      assert scim_prefix == String.slice(scim_raw, 0, Crypto.scim_token_prefix_size())
+      assert scim_hash == Crypto.hash(scim_raw)
+
+      assert String.starts_with?(Crypto.run_request_id(), "req_")
+      assert String.starts_with?(Crypto.scim_token_namespace(), "ems-")
+      # A grab-bag of namespaces never shares a tag.
+      tags = ["emk-", "emkey-auth-", "rnrtok-", "ems-", "req_"]
+      assert tags == Enum.uniq(tags)
+    end
   end
 
   describe "secure_compare/2" do
@@ -72,6 +139,21 @@ defmodule Emisar.CryptoTest do
       # length mismatch must be false, never raise
       refute Crypto.secure_compare(<<1, 2, 3>>, <<1, 2>>)
       refute Crypto.secure_compare("x", :not_a_binary)
+    end
+  end
+
+  describe "valid_totp?/2" do
+    # closes ENG-012-T09 — replay defense is the CALLER's, not Crypto's: the
+    # same code validates as many times as it's presented within its window.
+    # Crypto only answers "is this a currently-valid code"; the stamped-bucket
+    # replay guard lives in Users.verify_and_consume_mfa under a row lock.
+    test "accepts the same code repeatedly — no replay guard here" do
+      secret = Crypto.totp_secret()
+      code = NimbleTOTP.verification_code(secret)
+
+      assert Crypto.valid_totp?(secret, code)
+      assert Crypto.valid_totp?(secret, code)
+      refute Crypto.valid_totp?(secret, "000000")
     end
   end
 end

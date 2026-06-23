@@ -10,6 +10,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
 
   alias Emisar.{Repo, Runs}
   alias Emisar.Runners.Runner
+  alias Emisar.Runs.RunEvent
 
   defp run_with(account, attrs) do
     {:ok, runner} =
@@ -177,6 +178,69 @@ defmodule EmisarWeb.RunDetailLiveTest do
     refute html =~ ~r/<div[^>]*whitespace-pre-wrap/
   end
 
+  # closes CON-006-T12 (IL-16) — runner output is attacker-influenced; a chunk
+  # carrying HTML must render ESCAPED via the `event_chunk` span interpolation,
+  # never `raw/1`. Asserting the literal `<script>` is absent and the escaped
+  # entity is present proves no stored XSS.
+  test "attacker-influenced output is HTML-escaped (no stored XSS)", %{conn: conn} do
+    {conn, _user, account} = register_and_log_in(conn)
+    run = run_with(account, %{status: "success"})
+
+    {:ok, _} =
+      Runs.append_event(run, %{
+        seq: 1,
+        kind: "progress",
+        stream: "stdout",
+        payload: %{"chunk" => "<script>alert('xss')</script>\n"}
+      })
+
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
+
+    # The raw tag never reaches the DOM…
+    refute html =~ "<script>alert('xss')</script>"
+    # …it's escaped (the renderer interpolates, it doesn't `raw/1`).
+    assert html =~ "&lt;script&gt;"
+  end
+
+  # closes CON-006-T07 — the output panel renders a BOUNDED, streamed slice
+  # (`phx-update="stream"`, IL-18), never an unbounded assign of every event. The
+  # mount requests `page: [limit: 500]`, but `Repo.list` hard-caps the page at
+  # @max_limit (100), so the effective render cap is the first 100 events: seq-100
+  # renders, seq-101 (the next page) does not. (The catalog's "capped at 500" is
+  # the requested limit; the paginator's max is the real ceiling — see the note in
+  # the agent report.)
+  test "the output panel renders a bounded, streamed event slice (not unbounded)", %{conn: conn} do
+    {conn, _user, account} = register_and_log_in(conn)
+    run = run_with(account, %{status: "success"})
+
+    now = DateTime.utc_now()
+
+    rows =
+      for seq <- 1..101 do
+        %{
+          id: Repo.generate_id(),
+          run_id: run.id,
+          account_id: account.id,
+          seq: seq,
+          kind: :progress,
+          stream: "stdout",
+          payload: %{"chunk" => "chunk-#{seq}\n"},
+          inserted_at: now
+        }
+      end
+
+    {101, _} = Repo.insert_all(RunEvent, rows)
+
+    {:ok, lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
+
+    # The output is a streamed <pre> (bounded), not a plain assign of all rows.
+    assert has_element?(lv, "pre#run-output[phx-update=\"stream\"]")
+
+    # The first page (oldest 100) renders; the 101st is over the page cap.
+    assert html =~ "chunk-100\n"
+    refute html =~ "chunk-101\n"
+  end
+
   test "an unknown run id bounces to the runs index", %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)
 
@@ -208,6 +272,23 @@ defmodule EmisarWeb.RunDetailLiveTest do
 
     html = render_click(lv, "cancel", %{})
     assert html =~ "Cancel sent to runner."
+  end
+
+  # closes CON-014-T02 — when cancel_run returns a non-:ok (here the run row
+  # vanished between render and the cancel click), the handler flashes "Unable
+  # to cancel." instead of crashing.
+  test "a cancel that fails surfaces an 'Unable to cancel.' flash", %{conn: conn} do
+    {conn, _user, account} = register_and_log_in(conn)
+    run = run_with(account, %{status: "pending"})
+
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
+
+    # The run is deleted out from under the page; cancel's locked re-read then
+    # finds no row → {:error, :not_found} → the failure flash.
+    Repo.delete!(run)
+
+    html = render_click(lv, "cancel", %{})
+    assert html =~ "Unable to cancel."
   end
 
   test "a viewer cannot cancel", %{conn: conn} do

@@ -544,6 +544,21 @@ defmodule Emisar.RunnersTest do
       assert Runners.connection_state(%Runner{online?: true, disabled_at: now}) == :disabled
     end
 
+    # closes ENG-003-T06 — there is NO heartbeat-age `:stale` state by design.
+    # Liveness is enforced only at the socket (the 90s heartbeat-timeout watcher),
+    # never re-derived from `last_heartbeat_at`: an `online?` runner reads :online
+    # no matter how old its last heartbeat looks. The binary stays honest because
+    # the socket would already have closed a genuinely silent runner to :offline.
+    test "connection_state/1 stays :online regardless of last_heartbeat_at age (no :stale)" do
+      ancient = DateTime.add(DateTime.utc_now(), -3600, :second)
+
+      assert Runners.connection_state(%Runner{online?: true, last_heartbeat_at: ancient}) ==
+               :online
+
+      # A nil heartbeat on a live socket is still :online, not a derived stale state.
+      assert Runners.connection_state(%Runner{online?: true, last_heartbeat_at: nil}) == :online
+    end
+
     test "list/fetch decorate online?, action_load + last heartbeat from presence" do
       {account, _user, subject} = account_with_owner_subject()
       runner = runner_fixture(account_id: account.id, connected?: true)
@@ -936,6 +951,84 @@ defmodule Emisar.RunnersTest do
 
       for _ <- 1..3, do: runner_fixture(account_id: account.id, connected?: false)
       assert {:error, :over_limit, "legacy-pro", 3} = Billing.check_limit(account, :runners)
+    end
+
+    test "a past_due account keeps full plan limits — status never gates registration" do
+      # closes BILL-006-T14
+      # account_plan/1 is status-agnostic, so a Team account whose subscription
+      # lapsed to past_due still resolves to the Team cap (100) and registers a
+      # runner under it. Billing status is advisory (banners), never an entitlement
+      # gate — register_via_auth_key only blocks on the runner cap.
+      account = account_fixture()
+      subscription_fixture(account, "team", status: "past_due")
+      user = user_fixture()
+
+      assert Billing.account_plan(account) == "team"
+      # Two runners on a Team plan is well under the cap → check_limit is :ok.
+      _ = runner_fixture(account_id: account.id)
+      _ = runner_fixture(account_id: account.id)
+      assert :ok = Billing.check_limit(account, :runners)
+
+      {raw, _key} =
+        auth_key_fixture(account_id: account.id, created_by_id: user.id, reusable: true)
+
+      assert {:ok, %Runner{}, _, _} =
+               Runners.register_via_auth_key(raw, %{external_id: "ext-pastdue", group: "g"})
+    end
+
+    test "member invites are uncapped — inviting past members_limit succeeds" do
+      # closes BILL-006-T13
+      # Free caps members at 1, but the invite path has NO Billing.check_limit(:members)
+      # (accounts.ex:1176) — seats are a deliberate growth lever, the meter is advisory.
+      # The account starts at its 1-member ceiling (the owner); inviting still succeeds.
+      {account, _owner, subject} = account_with_owner_subject()
+      assert Billing.account_plan(account) == "free"
+      assert Emisar.Accounts.count_memberships(account.id) == 1
+
+      assert {:ok, %{membership: %Emisar.Accounts.Membership{}}} =
+               Emisar.Accounts.invite_user_to_account("invitee@example.test", "operator", subject)
+
+      # Over the free members_limit of 1 now, yet a second invite still goes through.
+      assert {:ok, %{membership: %Emisar.Accounts.Membership{}}} =
+               Emisar.Accounts.invite_user_to_account(
+                 "invitee2@example.test",
+                 "operator",
+                 subject
+               )
+
+      assert Emisar.Accounts.count_memberships(account.id) == 3
+    end
+
+    test "check_limit/2 is account-scoped with no Subject (pre-auth bootstrap contract)" do
+      # closes BILL-006-T12
+      # The runner-bootstrap path (register_via_auth_key/2) calls check_limit
+      # BEFORE any Subject exists, so the contract is `(account, resource)` —
+      # account-scoped, no Subject argument. Driving it with just an account proves
+      # it needs no authz carrier; arity-2 (not 3) locks the no-Subject signature.
+      account = account_fixture()
+      refute function_exported?(Billing, :check_limit, 3)
+      assert function_exported?(Billing, :check_limit, 2)
+
+      assert :ok = Billing.check_limit(account, :runners)
+      assert :ok = Billing.check_limit(account, :members)
+    end
+
+    test "count_billable_runners/1 is a COUNT (an integer), not a fetch of rows" do
+      # closes BILL-006-T15
+      # count_billable_runners/1 (and count_memberships/1) return a single integer
+      # from a SELECT count(*) aggregate — never a list of loaded rows into memory.
+      # Adding a billable runner moves the count by exactly one.
+      account = account_fixture()
+
+      assert Runners.count_billable_runners(account.id) == 0
+      assert is_integer(Runners.count_billable_runners(account.id))
+
+      _ = runner_fixture(account_id: account.id, connected?: false)
+      assert Runners.count_billable_runners(account.id) == 1
+
+      # count_memberships/1 is likewise a COUNT — a fresh account has its owner only.
+      assert Emisar.Accounts.count_memberships(account.id) == 0
+      assert is_integer(Emisar.Accounts.count_memberships(account.id))
     end
   end
 

@@ -13,6 +13,7 @@ defmodule EmisarWeb.MCPControllerTest do
   alias Emisar.{Accounts, ApiKeys, Catalog, Policies, Repo, Runners, Users}
   alias Emisar.Catalog.RunnerAction
   alias Emisar.Runners.Runner
+  alias EmisarWeb.MCP.Service
 
   # -- Inline fixtures (Emisar.Fixtures isn't compiled into emisar_web's
   # test build; replicate the minimum we need) ------------------------
@@ -52,6 +53,13 @@ defmodule EmisarWeb.MCPControllerTest do
     end
 
     {account, user}
+  end
+
+  # A second, independent tenant so cross-account isolation tests can stage
+  # rows the calling key must never reach.
+  defp setup_other_account do
+    {account, user} = setup_account()
+    %{account: account, user: user}
   end
 
   defp make_runner!(account, opts) do
@@ -1130,6 +1138,853 @@ defmodule EmisarWeb.MCPControllerTest do
 
       assert body["error"] == "invalid_wait"
     end
+
+    test "403 when an execute-only key reads a run (needs actions:read)", %{
+      conn: conn,
+      account: account,
+      user: user
+    } do
+      # closes MCP-025-T02, MCP-002-T11
+      runner = make_runner!(account, name: "runner-1")
+      raw = make_api_key!(account, user, scopes: ["actions:execute"])
+
+      {:ok, run} =
+        Emisar.Runs.create_run(%{
+          account_id: account.id,
+          runner_id: runner.id,
+          action_id: "linux.uptime",
+          source: "mcp",
+          args: %{},
+          status: "pending"
+        })
+
+      body =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> get(~p"/api/mcp/runs/#{run.id}")
+        |> json_response(403)
+
+      assert body == %{"error" => "missing_scope", "required" => "actions:read"}
+    end
+
+    test "404 when fetching a run that belongs to another account", %{
+      conn: conn,
+      account: account,
+      user: user
+    } do
+      # closes MCP-025-T08
+      other = setup_other_account()
+      b_runner = make_runner!(other.account, name: "b-runner")
+
+      {:ok, b_run} =
+        Emisar.Runs.create_run(%{
+          account_id: other.account.id,
+          runner_id: b_runner.id,
+          action_id: "linux.uptime",
+          source: "mcp",
+          args: %{},
+          status: "pending"
+        })
+
+      raw = make_api_key!(account, user)
+
+      # Subject-scoped fetch_run_by_id never crosses the account boundary —
+      # the foreign id is indistinguishable from a non-existent one.
+      body =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> get(~p"/api/mcp/runs/#{b_run.id}")
+        |> json_response(404)
+
+      assert body == %{"error" => "not_found"}
+    end
+  end
+
+  describe "read-scope enforcement on the REST surface" do
+    test "GET /api/mcp/tools is denied without actions:read", %{
+      conn: conn,
+      account: account,
+      user: user
+    } do
+      # closes MCP-002-T09, MCP-023-T02
+      raw = make_api_key!(account, user, scopes: ["actions:execute"])
+
+      body =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> get(~p"/api/mcp/tools")
+        |> json_response(403)
+
+      assert body == %{"error" => "missing_scope", "required" => "actions:read"}
+    end
+
+    test "GET /api/mcp/runners is denied without actions:read", %{
+      conn: conn,
+      account: account,
+      user: user
+    } do
+      # closes MCP-002-T10, MCP-022-T02
+      raw = make_api_key!(account, user, scopes: ["actions:execute"])
+
+      body =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> get(~p"/api/mcp/runners")
+        |> json_response(403)
+
+      assert body == %{"error" => "missing_scope", "required" => "actions:read"}
+    end
+
+    test "an empty scopes:[] key fails closed on every REST endpoint", %{
+      conn: conn,
+      account: account,
+      user: user
+    } do
+      # closes MCP-002-T14
+      runner = make_runner!(account, name: "runner-1")
+      advertise_action!(runner, action_id: "linux.uptime")
+      raw = make_api_key!(account, user, scopes: [])
+
+      for path <- [~p"/api/mcp/tools", ~p"/api/mcp/runners"] do
+        body =
+          conn
+          |> put_req_header("authorization", "Bearer " <> raw)
+          |> get(path)
+          |> json_response(403)
+
+        assert body == %{"error" => "missing_scope", "required" => "actions:read"}
+      end
+
+      # Dispatch needs actions:execute — also denied for the empty-scope key.
+      dispatch =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> post(~p"/api/mcp/tools/linux.uptime", %{"reason" => "x"})
+        |> json_response(403)
+
+      assert dispatch == %{"error" => "missing_scope", "required" => "actions:execute"}
+    end
+  end
+
+  describe "GET /api/mcp/runners visibility omissions" do
+    test "a disabled runner is omitted from the list", %{
+      conn: conn,
+      account: account,
+      user: user
+    } do
+      # closes MCP-022-T08
+      active = make_runner!(account, name: "active-host")
+      disabled = make_runner!(account, name: "disabled-host")
+      advertise_action!(active, action_id: "x")
+      advertise_action!(disabled, action_id: "y")
+
+      subject = Emisar.Fixtures.subject_for(user, account, role: :owner)
+      {:ok, _} = Runners.disable_runner(disabled, subject)
+
+      raw = make_api_key!(account, user)
+
+      body =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> get(~p"/api/mcp/runners")
+        |> json_response(200)
+
+      names = Enum.map(body["runners"], & &1["name"])
+      assert "active-host" in names
+      refute "disabled-host" in names
+    end
+
+    test "another account's runner is never visible", %{
+      conn: conn,
+      account: account,
+      user: user
+    } do
+      # closes MCP-022-T12
+      mine = make_runner!(account, name: "mine-host")
+      advertise_action!(mine, action_id: "x")
+
+      other = setup_other_account()
+      theirs = make_runner!(other.account, name: "their-host")
+      advertise_action!(theirs, action_id: "y")
+
+      raw = make_api_key!(account, user)
+
+      body =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> get(~p"/api/mcp/runners")
+        |> json_response(200)
+
+      names = Enum.map(body["runners"], & &1["name"])
+      assert names == ["mine-host"]
+    end
+
+    test "a reachable runner advertising nothing is present with actions: []", %{
+      conn: conn,
+      account: account,
+      user: user
+    } do
+      # closes MCP-022-T10
+      _bare = make_runner!(account, name: "bare-host")
+      raw = make_api_key!(account, user)
+
+      body =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> get(~p"/api/mcp/runners")
+        |> json_response(200)
+
+      assert [%{"name" => "bare-host", "actions" => []}] = body["runners"]
+    end
+  end
+
+  describe "GET /api/mcp/tools cross-account omission" do
+    test "an action advertised only in another account is absent", %{
+      conn: conn,
+      account: account,
+      user: user
+    } do
+      # closes MCP-023-T04 (cross-account variant)
+      mine = make_runner!(account, name: "mine-host")
+      advertise_action!(mine, action_id: "mine.action")
+
+      other = setup_other_account()
+      theirs = make_runner!(other.account, name: "their-host")
+      advertise_action!(theirs, action_id: "their.secret.action")
+
+      raw = make_api_key!(account, user)
+
+      names =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> get(~p"/api/mcp/tools")
+        |> json_response(200)
+        |> Map.fetch!("tools")
+        |> Enum.map(& &1["name"])
+
+      assert "mine.action" in names
+      refute "their.secret.action" in names
+    end
+
+    test "the REST /tools list omits the four synthetic tools (RPC-only)", %{
+      conn: conn,
+      account: account,
+      user: user
+    } do
+      # closes MCP-023-T05
+      runner = make_runner!(account, name: "host-1")
+      advertise_action!(runner, action_id: "linux.uptime")
+      raw = make_api_key!(account, user)
+
+      names =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> get(~p"/api/mcp/tools")
+        |> json_response(200)
+        |> Map.fetch!("tools")
+        |> Enum.map(& &1["name"])
+
+      # The synthetic tools are appended only on the JSON-RPC tools/list path.
+      assert "linux.uptime" in names
+      refute "wait_for_run" in names
+      refute "list_runbooks" in names
+      refute "get_runbook" in names
+      refute "recent_runs" in names
+    end
+  end
+
+  describe "POST /api/mcp/tools/:action_id control-key handling" do
+    setup %{account: account} do
+      runner = make_runner!(account, name: "host-1")
+
+      advertise_action!(runner,
+        action_id: "linux.touch",
+        args_schema: %{
+          "args" => [%{"name" => "path", "type" => "string", "required" => true}]
+        }
+      )
+
+      {:ok, runner: runner}
+    end
+
+    test "reserved control keys are stripped from the recorded action args", %{
+      conn: conn,
+      account: account,
+      user: user,
+      runner: runner
+    } do
+      # closes MCP-024-T17
+      raw = make_api_key!(account, user)
+
+      body =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> post(~p"/api/mcp/tools/linux.touch", %{
+          "runners" => [runner.name],
+          "reason" => "x",
+          "wait" => "0",
+          "idempotency_key" => "k-#{unique()}",
+          "path" => "/tmp/marker"
+        })
+        |> json_response(202)
+
+      [entry] = body["runs"]
+
+      {:ok, run} =
+        Emisar.Runs.fetch_run_by_id(
+          run_id_of(entry),
+          Emisar.Fixtures.subject_for(user, account, role: :owner)
+        )
+
+      # Only the genuine action arg survives — action_id/reason/runners/wait/
+      # idempotency_key are all dropped before the runner sees the args.
+      assert run.args == %{"path" => "/tmp/marker"}
+      refute Map.has_key?(run.args, "idempotency_key")
+      refute Map.has_key?(run.args, "reason")
+      refute Map.has_key?(run.args, "runners")
+      refute Map.has_key?(run.args, "wait")
+    end
+
+    test "attestation is NOT a REST reserved key — it leaks through as an action arg", %{
+      conn: conn,
+      account: account,
+      user: user,
+      runner: runner
+    } do
+      # closes MCP-015-T08, MCP-024-T18
+      # F3 asymmetry: REST's Map.drop omits `attestation`, so (unlike JSON-RPC,
+      # which extracts it onto the run) it is forwarded as an ordinary action
+      # arg. The run row's `attestation` column stays nil; `attestation` lands
+      # in `args` instead. The runner rejects the unknown arg downstream, but
+      # the portal treats it as data, not a control key — confirm the asymmetry.
+      raw = make_api_key!(account, user)
+
+      attestation = %{
+        "key_id" => "k1",
+        "sig" => "deadbeef",
+        "nonce" => "n1",
+        "issued_at" => "2026-06-17T12:00:00Z"
+      }
+
+      body =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> post(~p"/api/mcp/tools/linux.touch", %{
+          "runners" => [runner.name],
+          "reason" => "x",
+          "wait" => "0",
+          "path" => "/tmp/marker",
+          "attestation" => attestation
+        })
+        |> json_response(202)
+
+      [entry] = body["runs"]
+
+      {:ok, run} =
+        Emisar.Runs.fetch_run_by_id(
+          run_id_of(entry),
+          Emisar.Fixtures.subject_for(user, account, role: :owner)
+        )
+
+      # NOT extracted onto the run (the JSON-RPC-only control path) ...
+      assert run.attestation == nil
+      # ... and instead carried in the args as a plain value.
+      assert run.args["attestation"] == attestation
+      assert run.args["path"] == "/tmp/marker"
+    end
+  end
+
+  describe "GET /api/mcp/runs/:id state edges" do
+    test "an unknown run id is a 404 not_found", %{conn: conn, account: account, user: user} do
+      # closes MCP-025-T09
+      raw = make_api_key!(account, user)
+
+      body =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> get(~p"/api/mcp/runs/#{Ecto.UUID.generate()}")
+        |> json_response(404)
+
+      assert body == %{"error" => "not_found"}
+    end
+
+    test "a non-terminal run with no wait param returns 200 (not 202)", %{
+      conn: conn,
+      account: account,
+      user: user
+    } do
+      # closes MCP-025-T10
+      runner = make_runner!(account, name: "runner-1")
+      raw = make_api_key!(account, user)
+
+      {:ok, run} =
+        Emisar.Runs.create_run(%{
+          account_id: account.id,
+          runner_id: runner.id,
+          action_id: "linux.uptime",
+          source: "mcp",
+          api_key_id: pick_key(account, raw).id,
+          args: %{},
+          status: "running"
+        })
+
+      # No `?wait=` → current state at 200, even though it's not terminal.
+      # The 202 "still waiting" envelope is reserved for a real long-poll.
+      body =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> get(~p"/api/mcp/runs/#{run.id}")
+        |> json_response(200)
+
+      assert body["status"] == "running"
+      refute Map.has_key?(body, "waiting")
+    end
+  end
+
+  describe "GET /api/mcp/runs/:id full payload shape" do
+    test "stdout over 64 KiB is tail-truncated + flagged, with full hash + byte count", %{
+      conn: conn,
+      account: account,
+      user: user
+    } do
+      # closes MCP-029-T02, MCP-029-T08
+      runner = make_runner!(account, name: "chatty-host")
+      raw = make_api_key!(account, user)
+
+      {:ok, run} =
+        Emisar.Runs.create_run(%{
+          account_id: account.id,
+          runner_id: runner.id,
+          action_id: "linux.cat",
+          source: "mcp",
+          api_key_id: pick_key(account, raw).id,
+          args: %{},
+          status: "pending"
+        })
+
+      # Emit > 64 KiB of stdout across the run's events. The payload caps the
+      # rendered stdout at 65_536 bytes (tail), so the END must survive and the
+      # head must be dropped — that's what the cap keeps for a `tail -f`-style read.
+      # The HEAD marker sits in the first 100 KiB, comfortably outside the 64 KiB
+      # tail window, so its absence proves the head was discarded (not just resized).
+      head = "HEAD-MARKER-DROPPED" <> String.duplicate("A", 100_000)
+      tail = "THE-VERY-END-OF-OUTPUT"
+      full_stdout = head <> tail
+      total_bytes = byte_size(full_stdout)
+
+      {:ok, _} =
+        Emisar.Runs.append_event(run, %{
+          seq: 1,
+          kind: "progress",
+          stream: "stdout",
+          payload: %{"chunk" => full_stdout}
+        })
+
+      # The runner reports the authoritative hash + byte count over the COMPLETE
+      # stream; finalize stores them on the row (set directly here).
+      digest = :crypto.hash(:sha256, full_stdout) |> Base.encode16(case: :lower)
+
+      Repo.update_all(
+        from(r in Emisar.Runs.ActionRun, where: r.id == ^run.id),
+        set: [
+          status: "success",
+          exit_code: 0,
+          stdout_sha256: digest,
+          stdout_bytes: total_bytes,
+          finished_at: DateTime.utc_now()
+        ]
+      )
+
+      body =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> get(~p"/api/mcp/runs/#{run.id}")
+        |> json_response(200)
+
+      # Tail kept, head dropped, and the truncation is flagged.
+      assert body["stdout_truncated"] == true
+      assert byte_size(body["stdout"]) == 65_536
+      assert String.ends_with?(body["stdout"], tail)
+      refute body["stdout"] =~ "HEAD-MARKER-DROPPED"
+
+      # Hash + byte count are the FULL values (cover the whole stream, not the tail).
+      assert body["stdout_sha256"] == digest
+      assert body["stdout_bytes"] == total_bytes
+      assert total_bytes > 65_536
+    end
+
+    test "the policy block carries decision, reason, and matched rules", %{
+      conn: conn,
+      account: account,
+      user: user
+    } do
+      # closes MCP-029-T10
+      runner = make_runner!(account, name: "policy-host")
+      raw = make_api_key!(account, user)
+
+      {:ok, run} =
+        Emisar.Runs.create_run(%{
+          account_id: account.id,
+          runner_id: runner.id,
+          action_id: "linux.uptime",
+          source: "mcp",
+          api_key_id: pick_key(account, raw).id,
+          args: %{},
+          status: "success",
+          policy_decision: "require_approval",
+          policy_reason: "high-risk tier requires approval",
+          matched_rules: ["default:high", "override:after-hours"]
+        })
+
+      body =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> get(~p"/api/mcp/runs/#{run.id}")
+        |> json_response(200)
+
+      assert body["policy"] == %{
+               "decision" => "require_approval",
+               "reason" => "high-risk tier requires approval",
+               "rules" => ["default:high", "override:after-hours"]
+             }
+    end
+  end
+
+  describe "POST /api/mcp/tools/:action_id pending-approval payload variant" do
+    test "a require-approval dispatch returns waiting_on:approval + policy + a wait tip", %{
+      conn: conn,
+      account: account,
+      user: user
+    } do
+      # closes MCP-029-T06
+      runner = make_runner!(account, name: "approval-host")
+      advertise_action!(runner, action_id: "linux.uptime", risk: "low")
+      subject = Emisar.Fixtures.subject_for(user, account, role: :owner)
+
+      # Flip the account policy so the dispatch parks for human approval.
+      {:ok, _} =
+        Policies.save_rules(
+          %{
+            "schema_version" => 2,
+            "defaults" => %{
+              "low" => "require_approval",
+              "medium" => "require_approval",
+              "high" => "require_approval",
+              "critical" => "require_approval"
+            },
+            "overrides" => []
+          },
+          subject
+        )
+
+      raw = make_api_key!(account, user)
+
+      body =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> post(~p"/api/mcp/tools/linux.uptime", %{
+          "runners" => [runner.name],
+          "reason" => "smoke"
+        })
+        |> json_response(202)
+
+      assert [entry] = body["runs"]
+      # The pending variant is distinct from a terminal/in-flight payload: it
+      # names the approval wait + carries the policy decision + a wait_for_run tip.
+      assert entry["status"] == "pending_approval"
+      assert entry["waiting_on"] == "approval"
+      assert is_binary(entry["run_id"])
+      assert is_map(entry["policy"])
+      assert entry["tip"] =~ "wait_for_run"
+    end
+  end
+
+  describe "GET /api/mcp/runners scope + visibility model" do
+    test "an unrestricted key (no filter, no creator scope) sees every account runner", %{
+      conn: conn,
+      account: account,
+      user: user
+    } do
+      # closes MCP-027-T01, MCP-027-T08
+      # A default-minted key has empty runner_filter/group_filter AND its creator
+      # membership holds no per-user runner-scope grants — so neither the key-filter
+      # layer nor the creator-scope layer narrows anything: all account runners show.
+      a = make_runner!(account, name: "host-a", group: "g1")
+      b = make_runner!(account, name: "host-b", group: "g2")
+      c = make_runner!(account, name: "host-c", group: "g3")
+      for r <- [a, b, c], do: advertise_action!(r, action_id: "linux.uptime")
+
+      raw = make_api_key!(account, user)
+
+      names =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> get(~p"/api/mcp/runners")
+        |> json_response(200)
+        |> Map.fetch!("runners")
+        |> Enum.map(& &1["name"])
+        |> Enum.sort()
+
+      assert names == ["host-a", "host-b", "host-c"]
+    end
+  end
+
+  describe "GET /api/mcp/runners wire status vocabulary" do
+    test "status uses the connected / disconnected / pending vocabulary", %{
+      conn: conn,
+      account: account,
+      user: user
+    } do
+      # closes MCP-022-T11
+      # Three reachable connection states map to the pre-presence wire words MCP
+      # clients expect. (`disabled` is omitted from /runners entirely — covered
+      # by MCP-022-T08 — so it can't appear here.)
+      _online = make_runner!(account, name: "online-host")
+
+      # Offline = was connected once but isn't tracked in Presence now. Create it
+      # OUT of presence (connected: false) and stamp last_connected_at so
+      # connection_state resolves :offline (not :pending) → wire "disconnected".
+      gone = make_runner!(account, name: "gone-host", connected: false)
+
+      {1, _} =
+        Repo.update_all(
+          from(r in Runner, where: r.id == ^gone.id),
+          set: [last_connected_at: DateTime.add(DateTime.utc_now(), -3600, :second)]
+        )
+
+      _never = make_runner!(account, name: "never-host", connected: false)
+
+      raw = make_api_key!(account, user)
+
+      by_name =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> get(~p"/api/mcp/runners")
+        |> json_response(200)
+        |> Map.fetch!("runners")
+        |> Map.new(&{&1["name"], &1["status"]})
+
+      assert by_name["online-host"] == "connected"
+      assert by_name["gone-host"] == "disconnected"
+      assert by_name["never-host"] == "pending"
+      # The wire word is always one of the documented four.
+      assert Map.values(by_name) -- ~w(connected disconnected disabled pending) == []
+    end
+  end
+
+  describe "long-poll wait caps (REST)" do
+    test "dispatch ?wait is capped at 60s; /runs/:id ?wait at 90s", %{
+      conn: conn,
+      account: account,
+      user: user
+    } do
+      # closes MCP-024-T15, MCP-025-T06
+      # The two REST long-poll budgets differ by endpoint and are both enforced via
+      # parse_wait's clamp (the descriptor copy's "300s"/"5m" never overrides them).
+      # Assert the clamp CONSTANTS (no sleeping):
+      #   - dispatch (POST /tools/:id) uses max_wait_ms (60s),
+      #   - get_run (GET /runs/:id) uses max_get_run_wait_ms (90s).
+      assert Service.parse_wait("5m", Service.max_wait_ms()) == {:ok, 60_000}
+      assert Service.parse_wait("600s", Service.max_get_run_wait_ms()) == {:ok, 90_000}
+
+      # And the get_run endpoint ACCEPTS an over-cap ?wait rather than rejecting it
+      # as invalid_wait — the clamp is silent. A terminal run returns 200 (the cap
+      # only bounds how long a non-terminal run would block; a finished one returns
+      # at once).
+      runner = make_runner!(account, name: "cap-host")
+      raw = make_api_key!(account, user)
+
+      {:ok, run} =
+        Emisar.Runs.create_run(%{
+          account_id: account.id,
+          runner_id: runner.id,
+          action_id: "linux.uptime",
+          source: "mcp",
+          api_key_id: pick_key(account, raw).id,
+          args: %{},
+          status: "success"
+        })
+
+      body =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> get(~p"/api/mcp/runs/#{run.id}?wait=600s")
+        |> json_response(200)
+
+      assert body["status"] == "success"
+      refute body["error"] == "invalid_wait"
+    end
+  end
+
+  describe "creator per-user scope layer (REST)" do
+    test "a runner inside the key filter but outside creator scope is still hidden", %{
+      conn: conn,
+      account: account,
+      user: user
+    } do
+      # closes MCP-027-T05
+      # Both layers are AND-combined: the key's runner_filter allows BOTH runners,
+      # but the key-creator's membership is scoped to only the `allowed` group, so
+      # the runner in `blocked` is hidden from /runners despite passing the filter.
+      allowed = make_runner!(account, name: "allowed-host", group: "allowed")
+      blocked = make_runner!(account, name: "blocked-host", group: "blocked")
+      advertise_action!(allowed, action_id: "x")
+      advertise_action!(blocked, action_id: "y")
+
+      raw = make_api_key!(account, user, runner_filter: [allowed.id, blocked.id])
+      restrict_creator_scope!(account, user, [{"group", "allowed"}])
+
+      names =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> get(~p"/api/mcp/runners")
+        |> json_response(200)
+        |> Map.fetch!("runners")
+        |> Enum.map(& &1["name"])
+
+      assert names == ["allowed-host"]
+    end
+
+    test "revoking the creator's scope shrinks every key that membership minted", %{
+      conn: conn,
+      account: account,
+      user: user
+    } do
+      # closes MCP-027-T06
+      # Mint the key first (unrestricted membership → sees both), then narrow the
+      # creator's scope and re-list on the SAME key: it loses the now-out-of-scope
+      # runner. The scope is resolved per-request via created_by_membership_id, so
+      # the live grant set gates the key — no re-mint needed.
+      a = make_runner!(account, name: "scope-a", group: "team-a")
+      b = make_runner!(account, name: "scope-b", group: "team-b")
+      advertise_action!(a, action_id: "x")
+      advertise_action!(b, action_id: "y")
+
+      raw = make_api_key!(account, user)
+
+      list = fn ->
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> get(~p"/api/mcp/runners")
+        |> json_response(200)
+        |> Map.fetch!("runners")
+        |> Enum.map(& &1["name"])
+        |> Enum.sort()
+      end
+
+      # Unrestricted: both visible.
+      assert list.() == ["scope-a", "scope-b"]
+
+      # Narrow the creator membership to team-a only — the same key now sees one.
+      restrict_creator_scope!(account, user, [{"group", "team-a"}])
+      assert list.() == ["scope-a"]
+    end
+
+    test "the runner_group_filter column is NOT NULL — the nil precondition can't exist", %{
+      account: account,
+      user: user
+    } do
+      # closes MCP-027-T11
+      # The spec row posits a key with NULL runner_group_filter hitting the
+      # `(api_key.runner_group_filter || [])` guards. That precondition is
+      # UNREACHABLE: the column is NOT NULL (default []), so the `|| []` is
+      # dead-but-defensive. Pin the real guarantee — the constraint rejects a NULL
+      # write; the reachable empty-filter case is the normal no-group-restriction
+      # path exercised throughout the filter tests above.
+      raw = make_api_key!(account, user, runner_filter: [])
+      %{id: id} = ApiKeys.peek_api_key_by_secret(raw)
+
+      assert_raise Postgrex.Error, ~r/not_null|null value/, fn ->
+        Repo.update_all(
+          from(k in ApiKeys.ApiKey, where: k.id == ^id),
+          set: [runner_group_filter: nil]
+        )
+      end
+    end
+  end
+
+  describe "REST/RPC dispatch share one gate (Service.dispatch_tool)" do
+    test "a read-only key is denied execute on BOTH surfaces, identically", %{
+      conn: conn,
+      account: account,
+      user: user
+    } do
+      # closes MCP-024-T21
+      # REST POST /tools/:id and RPC tools/call both route dispatch through the
+      # shared Service.dispatch_tool, so a scope denial lands the same way on each:
+      # the REST 403 missing_scope and the RPC -32002 both name actions:execute.
+      runner = make_runner!(account, name: "host-1")
+      advertise_action!(runner, action_id: "linux.uptime", risk: "low")
+      raw = make_api_key!(account, user, scopes: ["actions:read"])
+      auth = &put_req_header(&1, "authorization", "Bearer " <> raw)
+
+      rest =
+        conn
+        |> auth.()
+        |> post(~p"/api/mcp/tools/linux.uptime", %{"runner" => "host-1", "reason" => "x"})
+        |> json_response(403)
+
+      assert rest == %{"error" => "missing_scope", "required" => "actions:execute"}
+
+      rpc =
+        conn
+        |> auth.()
+        |> put_req_header("content-type", "application/json")
+        |> post(
+          ~p"/api/mcp/rpc",
+          Jason.encode!(%{
+            jsonrpc: "2.0",
+            id: 1,
+            method: "tools/call",
+            params: %{
+              "name" => "linux.uptime",
+              "arguments" => %{"runner" => "host-1", "reason" => "x", "wait" => "0"}
+            }
+          })
+        )
+        |> json_response(200)
+
+      # Same gate, same required scope — only the envelope shape differs by surface.
+      assert rpc["error"]["code"] == -32002
+      assert rpc["error"]["data"]["required"] == "actions:execute"
+    end
+  end
+
+  describe "cross-account never visible across the scope model (REST)" do
+    test "a foreign tenant's runner + action are absent from /runners and /tools", %{
+      conn: conn,
+      account: account,
+      user: user
+    } do
+      # closes MCP-027-T09
+      # The outermost gate is the Subject's account (IL-4): regardless of key
+      # filter or creator scope, another tenant's inventory is never reachable.
+      mine = make_runner!(account, name: "mine-host")
+      advertise_action!(mine, action_id: "mine.action")
+
+      other = setup_other_account()
+      theirs = make_runner!(other.account, name: "their-host")
+      advertise_action!(theirs, action_id: "their.action")
+
+      raw = make_api_key!(account, user)
+      auth = &put_req_header(&1, "authorization", "Bearer " <> raw)
+
+      runners =
+        conn
+        |> auth.()
+        |> get(~p"/api/mcp/runners")
+        |> json_response(200)
+        |> Map.fetch!("runners")
+
+      assert Enum.map(runners, & &1["name"]) == ["mine-host"]
+
+      tools =
+        conn |> auth.() |> get(~p"/api/mcp/tools") |> json_response(200) |> Map.fetch!("tools")
+
+      tool_names = Enum.map(tools, & &1["name"])
+      assert "mine.action" in tool_names
+      refute "their.action" in tool_names
+    end
   end
 
   # POST /tools/:id responses use different shapes per status. Running
@@ -1174,6 +2029,15 @@ defmodule EmisarWeb.MCPControllerTest do
       %{id: _} = k -> k
       _ -> raise "key not found for raw secret in account #{account.id}"
     end
+  end
+
+  # Narrow the key-creator's membership to the given scopes (string tuples, e.g.
+  # [{"group", "allowed"}]) so the per-user scope layer gates every key it minted.
+  defp restrict_creator_scope!(account, user, scopes) do
+    subject = Emisar.Fixtures.subject_for(user, account, role: :owner)
+    membership = Emisar.Fixtures.fetch_membership(account.id, user.id)
+    {:ok, :ok} = Runners.replace_runner_scopes(membership, scopes, subject)
+    :ok
   end
 
   # Recursively walks a JSON-decoded structure and asserts no nil

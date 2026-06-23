@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -98,6 +99,40 @@ func TestCheckPackDirs(t *testing.T) {
 				t.Fatalf("status = %v, want %v (%s)", got.status, tc.want, got.detail)
 			}
 		})
+	}
+}
+
+// checkPacks caps the pack sample at maxPackSample (12): with 13 packs loaded
+// it reports the true count, lists 12 `id@version` entries, and summarizes the
+// rest as "+1 more" so the doctor line stays scannable (`pack list` has the
+// full set). closes RUN-023-T06.
+func TestCheckPacks_SampleCappedAtTwelve(t *testing.T) {
+	// closes RUN-023-T06
+	root := t.TempDir()
+	const n = maxPackSample + 1 // 13
+	for i := 0; i < n; i++ {
+		// Distinct pack ids p00..p12; writePack makes a one-action pack per id.
+		writePack(t, root, fmt.Sprintf("p%02d", i))
+	}
+
+	reg, got := checkPacks([]string{root})
+	if reg == nil {
+		t.Fatal("checkPacks should return the loaded registry")
+	}
+	if got.status != checkOK {
+		t.Fatalf("status = %v, want ok (%s)", got.status, got.detail)
+	}
+	// The true count is reported even though the sample is capped.
+	if !strings.Contains(got.detail, fmt.Sprintf("%d loaded", n)) {
+		t.Fatalf("detail should report the true count %d: %q", n, got.detail)
+	}
+	// Exactly maxPackSample `id@version` entries are listed (count the "@0.0.1").
+	if c := strings.Count(got.detail, "@0.0.1"); c != maxPackSample {
+		t.Fatalf("expected %d sampled packs, got %d: %q", maxPackSample, c, got.detail)
+	}
+	// The overflow is summarized as "+1 more".
+	if !strings.Contains(got.detail, "+1 more") {
+		t.Fatalf("detail should summarize the overflow as +1 more: %q", got.detail)
 	}
 }
 
@@ -241,6 +276,116 @@ func TestCheckCloud(t *testing.T) {
 
 func hostOf(rawURL string) string {
 	return strings.TrimPrefix(strings.TrimPrefix(rawURL, "https://"), "http://")
+}
+
+// `emisar doctor` runs end-to-end and exits 0 when every check passes: a
+// loadable config, a present credential, packs that load, action binaries on
+// disk, and a reachable control plane. The cloud check HEADs cfg.Cloud.URL, so
+// we point it at a loopback httptest server (loopback cleartext is allowed).
+// The one-action pack runs /bin/true, which resolves. Driven through the real
+// command; RunE returns nil and reportDoctor prints to os.Stdout.
+// closes RUN-023-T01.
+func TestDoctorCmd_AllPassExitZero(t *testing.T) {
+	withFlags(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	dir := t.TempDir()
+	// Use /bin/sh (present on every supported host, and the canonical
+	// absolute-path binary the doctor stats on disk) so the action-tools check
+	// passes — /bin/true isn't at that path on macOS.
+	packDir := writeShPack(t, filepath.Join(dir, "packs"), "linux")
+	tokenPath := writeToken(t, "tok", 0o600)
+	flagConfig = writeDoctorConfig(t, dir, packDir, "ws://"+hostOf(srv.URL), tokenPath)
+
+	var execErr error
+	out := captureStdout(t, func() {
+		cmd := doctorCmd()
+		cmd.SilenceUsage, cmd.SilenceErrors = true, true
+		execErr = cmd.Execute()
+	})
+	if execErr != nil {
+		t.Fatalf("doctor should exit 0 when all checks pass: %v\n%s", execErr, out)
+	}
+	if !strings.Contains(out, "All checks passed") {
+		t.Fatalf("doctor summary should report all-clear:\n%s", out)
+	}
+	if strings.Contains(out, "✗") {
+		t.Fatalf("no check should fail:\n%s", out)
+	}
+}
+
+// When the config itself can't load, doctor short-circuits: only the config
+// check is reported (its dependents are skipped) and the command returns a
+// non-nil error so the exit status is non-zero. closes RUN-023-T02.
+func TestDoctorCmd_ConfigFailShortCircuits(t *testing.T) {
+	withFlags(t)
+	bad := filepath.Join(t.TempDir(), "broken.yaml")
+	if err := os.WriteFile(bad, []byte("schema_version: 1\nrunner: : :\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	flagConfig = bad
+
+	var execErr error
+	out := captureStdout(t, func() {
+		cmd := doctorCmd()
+		cmd.SilenceUsage, cmd.SilenceErrors = true, true
+		execErr = cmd.Execute()
+	})
+	if execErr == nil {
+		t.Fatalf("doctor must exit non-zero when config fails:\n%s", out)
+	}
+	// The config line is present; dependent checks (credential, packs, cloud)
+	// are not — they'd run against a zero config otherwise.
+	if !strings.Contains(out, "config") {
+		t.Fatalf("the config check should still be reported:\n%s", out)
+	}
+	for _, skipped := range []string{"credential", "cloud"} {
+		if strings.Contains(out, skipped) {
+			t.Fatalf("dependent check %q should be skipped on a config failure:\n%s", skipped, out)
+		}
+	}
+}
+
+// writeShPack drops a one-action pack whose exec binary is /bin/sh (which
+// resolves on disk on every supported host) under root/<id>/ and returns root.
+// Used where the doctor's action-binary check must pass.
+func writeShPack(t *testing.T, root, id string) string {
+	t.Helper()
+	dir := filepath.Join(root, id)
+	if err := os.MkdirAll(filepath.Join(dir, "actions"), 0o755); err != nil {
+		t.Fatalf("mkdir pack: %v", err)
+	}
+	manifest := "schema_version: 1\nid: " + id + "\nname: " + id + "\nversion: 0.0.1\ndescription: d\nactions:\n  - actions/ping.yaml\n"
+	action := "schema_version: 1\nid: " + id + ".ping\ntitle: Ping\nkind: exec\nrisk: low\ndescription: d\nside_effects: [none]\n" +
+		"execution:\n  command:\n    binary: /bin/sh\n    argv: [\"-c\", \"true\"]\n  timeout: 5s\n  timeout_min: 1s\n  timeout_max: 30s\n" +
+		"output:\n  parser: text\n  max_stdout_bytes: 1024\n  max_stderr_bytes: 1024\n"
+	if err := os.WriteFile(filepath.Join(dir, "pack.yaml"), []byte(manifest), 0o644); err != nil {
+		t.Fatalf("write pack.yaml: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "actions", "ping.yaml"), []byte(action), 0o644); err != nil {
+		t.Fatalf("write action: %v", err)
+	}
+	return root
+}
+
+// writeDoctorConfig writes a full config the doctor command can run every
+// check against: a packs dir, a cloud URL, a token-path credential, and the
+// journal/cursor under dir.
+func writeDoctorConfig(t *testing.T, dir, packDir, cloudURL, tokenPath string) string {
+	t.Helper()
+	cfgPath := filepath.Join(dir, "config.yaml")
+	yaml := "schema_version: 1\n" +
+		"runner:\n  group: test\n" +
+		"cloud:\n  url: " + cloudURL + "\n  auth_key_env: EMISAR_AUTH_KEY\n  token_path: " + tokenPath + "\n" +
+		"paths:\n  packs:\n    - " + packDir + "\n  data_dir: " + filepath.Join(dir, "data") + "\n" +
+		"events:\n  jsonl_path: " + filepath.Join(dir, "events.jsonl") + "\n"
+	if err := os.WriteFile(cfgPath, []byte(yaml), 0o600); err != nil {
+		t.Fatalf("write doctor config: %v", err)
+	}
+	return cfgPath
 }
 
 func TestReportDoctor(t *testing.T) {

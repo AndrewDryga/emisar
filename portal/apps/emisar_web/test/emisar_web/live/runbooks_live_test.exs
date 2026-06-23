@@ -142,4 +142,18 @@ defmodule EmisarWeb.RunbooksLiveTest do
 
     assert render(lv) =~ "Late arrival"
   end
+
+  test "a hand-edited bogus status filter is dropped, not crashed on", %{conn: conn} do
+    # closes RBK-001-T10
+    {conn, user, account} = register_and_log_in(conn)
+    published = create_runbook!(user, account, "Deploy check", published?: true)
+
+    # A status the whitelist doesn't know (never String.to_atom — IL-14). The
+    # filter is dropped on a clean retry rather than raising, so the list still
+    # renders the account's runbooks instead of a 500.
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runbooks?status=bogus")
+
+    assert html =~ "Deploy check"
+    assert html =~ ~p"/app/#{account}/runbooks/#{published.id}/run"
+  end
 end

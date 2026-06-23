@@ -130,6 +130,36 @@ defmodule Emisar.PoliciesScopesTest do
 
       refute account_reason =~ "policy override"
     end
+
+    # closes ENG-006-T12 — the catalog hands risk as an Ecto.Enum atom (:high),
+    # but the rules key their tiers by string ("high"). evaluate_with_policy
+    # bridges via to_string, so the atom and the string must reach the SAME tier.
+    test "an atom risk and its string form select the same tier decision" do
+      {_user, account, subject} = owner_subject_fixture()
+
+      # Distinct per-tier decisions so a mis-bridged risk would land on the wrong one.
+      tiered = %{
+        "schema_version" => 2,
+        "defaults" => %{
+          "low" => "allow",
+          "medium" => "allow",
+          "high" => "require_approval",
+          "critical" => "deny"
+        },
+        "overrides" => []
+      }
+
+      {:ok, _} = Policies.save_rules(tiered, subject)
+
+      atom_attrs = %{action_id: "linux.uptime", risk: :high, runner_id: "r1"}
+      string_attrs = %{action_id: "linux.uptime", risk: "high", runner_id: "r1"}
+
+      assert {:require_approval, _, _, _} =
+               Policies.evaluate_with_policy(account.id, atom_attrs, nil)
+
+      assert {:require_approval, _, _, _} =
+               Policies.evaluate_with_policy(account.id, string_attrs, nil)
+    end
   end
 
   describe "scoped CRUD (save / fetch / list / delete)" do
@@ -226,6 +256,108 @@ defmodule Emisar.PoliciesScopesTest do
 
       {:ok, scoped} = Policies.list_scoped_policies(subject)
       assert length(scoped) == 2
+    end
+
+    # closes GOV-008-T08 — deleting a runner ruleset SOFT-deletes it (`deleted_at`
+    # set), and the unique index is partial (`WHERE deleted_at IS NULL`). So the
+    # same scope can be claimed again by a fresh save: the upsert's conflict target
+    # repeats that predicate, the tombstoned row is invisible to it, and a NEW live
+    # row is created — never a unique violation, and `list_scoped_policies` (which
+    # filters `not_deleted`) shows exactly the new one.
+    test "soft-deleting a runner ruleset lets the same scope be saved again (new live row)" do
+      {_user, _account, subject} = owner_subject_fixture()
+
+      {:ok, original} = Policies.save_scoped_rules(@allow_all, :runner, "runner-1", subject)
+      {:ok, _deleted} = Policies.delete_scoped_policy(original, subject)
+
+      # The tombstoned row no longer lists.
+      {:ok, after_delete} = Policies.list_scoped_policies(subject)
+      refute Enum.any?(after_delete, &(&1.id == original.id))
+
+      # Re-claiming the freed scope succeeds (partial unique index ignores the
+      # tombstone) and produces a DISTINCT live row.
+      {:ok, reclaimed} = Policies.save_scoped_rules(@deny_all, :runner, "runner-1", subject)
+      refute reclaimed.id == original.id
+      assert reclaimed.rules["defaults"]["low"] == "deny"
+
+      {:ok, live} = Policies.list_scoped_policies(subject)
+      runner_1 = Enum.filter(live, &(&1.scope_type == :runner and &1.scope_value == "runner-1"))
+      assert [%{id: id}] = runner_1
+      assert id == reclaimed.id
+    end
+  end
+
+  describe "cross-account write isolation (a subject only ever writes its OWN account)" do
+    # closes GOV-007-T08 — the account/default policy WRITE derives account_id
+    # from the subject, so account B's owner saving rules lands on B's policy and
+    # can NEVER touch account A's. (Cross-account READ/DELETE return :not_found —
+    # see fetch/delete tests above; the WRITE path's isolation is the row scoping.)
+    test "account B's save_rules never mutates account A's default policy" do
+      {_user_a, account_a, subject_a} = owner_subject_fixture()
+      {:ok, policy_a} = Policies.save_rules(@deny_all, subject_a)
+
+      {_user_b, account_b, subject_b} = owner_subject_fixture()
+      {:ok, policy_b} = Policies.save_rules(@allow_all, subject_b)
+
+      # B's write created/updated B's own row, not A's.
+      assert policy_b.account_id == account_b.id
+      refute policy_b.id == policy_a.id
+
+      # A's policy is byte-for-byte unchanged — same row, same rules, same vsn.
+      reloaded_a = Policies.peek_policy_for_account(account_a.id)
+      assert reloaded_a.id == policy_a.id
+      assert reloaded_a.rules == policy_a.rules
+      assert reloaded_a.vsn == policy_a.vsn
+      assert reloaded_a.account_id == account_a.id
+    end
+
+    # closes GOV-018-T05 / GOV-019-T06 — a SCOPED (runner/group) ruleset WRITE is
+    # likewise account-bound. B saving a "runner-1" / "prod" override creates B's
+    # own scoped row; A's same-named override is untouched, even though the
+    # scope_value strings collide.
+    test "account B's save_scoped_rules never mutates account A's same-named override" do
+      {_user_a, _account_a, subject_a} = owner_subject_fixture()
+      {:ok, runner_a} = Policies.save_scoped_rules(@deny_all, :runner, "runner-1", subject_a)
+      {:ok, group_a} = Policies.save_scoped_rules(@deny_all, :group, "prod", subject_a)
+
+      {_user_b, account_b, subject_b} = owner_subject_fixture()
+      {:ok, runner_b} = Policies.save_scoped_rules(@allow_all, :runner, "runner-1", subject_b)
+      {:ok, group_b} = Policies.save_scoped_rules(@allow_all, :group, "prod", subject_b)
+
+      # B's scoped writes are distinct rows in B's account.
+      assert runner_b.account_id == account_b.id
+      assert group_b.account_id == account_b.id
+      refute runner_b.id == runner_a.id
+      refute group_b.id == group_a.id
+
+      # A still resolves its OWN (deny) overrides for the colliding scope names.
+      assert {:ok, fetched_runner_a} =
+               Policies.fetch_scoped_policy(:runner, "runner-1", subject_a)
+
+      assert fetched_runner_a.id == runner_a.id
+      assert fetched_runner_a.rules["defaults"]["low"] == "deny"
+      assert fetched_runner_a.vsn == runner_a.vsn
+
+      assert {:ok, fetched_group_a} = Policies.fetch_scoped_policy(:group, "prod", subject_a)
+      assert fetched_group_a.id == group_a.id
+      assert fetched_group_a.rules["defaults"]["low"] == "deny"
+
+      # Sanity: A sees exactly its two overrides, none of B's leaked in.
+      {:ok, a_scoped} = Policies.list_scoped_policies(subject_a)
+      assert Enum.map(a_scoped, & &1.id) |> Enum.sort() == Enum.sort([runner_a.id, group_a.id])
+    end
+
+    # A viewer of the account can't save the default OR a scoped ruleset — the
+    # denial (manage_policies) shape on the write path is :unauthorized, distinct
+    # from the cross-account :not_found above.
+    test "a viewer is denied both the default and the scoped write (:unauthorized)" do
+      {_user, account, _owner} = owner_subject_fixture()
+      viewer = subject_for(user_fixture(), account, role: :viewer)
+
+      assert {:error, :unauthorized} = Policies.save_rules(@deny_all, viewer)
+
+      assert {:error, :unauthorized} =
+               Policies.save_scoped_rules(@deny_all, :runner, "runner-1", viewer)
     end
   end
 

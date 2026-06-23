@@ -23,6 +23,18 @@ defmodule EmisarWeb.ResetPasswordLiveTest do
 
       assert html =~ "is registered, a reset link is on its way"
     end
+
+    test "the email field is required (a blank email is blocked client-side, no mint)", %{
+      conn: conn
+    } do
+      # closes AUTH-008-T06 — like the magic-link send, the reset-request handler has
+      # no `else` and never server-validates a blank email (it falls through to the
+      # same anti-enumeration panel). A blank submit is blocked by the `required` HTML
+      # attribute on the email input — the gate is the browser attr, not a changeset.
+      {:ok, _lv, html} = live(conn, ~p"/reset_password")
+
+      assert html =~ ~r/<input[^>]*name="user\[email\]"[^>]*required/
+    end
   end
 
   describe "reset form validation" do
@@ -107,6 +119,97 @@ defmodule EmisarWeb.ResetPasswordLiveTest do
         |> render_submit()
 
       assert {:error, {:live_redirect, %{to: "/sign_in"}}} = result
+    end
+  end
+
+  describe "token security" do
+    test "a reused reset token is uniformly invalid on the second use", %{conn: conn} do
+      # closes AUTH-009-T10 — the reset deletes the token in the same txn, so a
+      # replayed token (double-clicked link, reused link) finds no row and the
+      # second attempt fails with the same uniform invalid-or-expired error.
+      user = Emisar.Fixtures.user_fixture()
+      token = Emisar.Auth.issue_password_reset_token!(user, [], %Emisar.RequestContext{})
+
+      # First use consumes the token successfully.
+      assert {:ok, _user} =
+               Emisar.Auth.reset_user_password(
+                 token,
+                 "a-perfectly-long-password",
+                 %Emisar.RequestContext{}
+               )
+
+      # Second use of the same token: the row is gone, so the LiveView submit
+      # bounces back to the request page with the expired-link flash.
+      {:ok, lv, _html} = live(conn, ~p"/reset_password/#{token}")
+
+      result =
+        lv
+        |> form("#reset_form", %{
+          "user" => %{
+            "password" => "another-perfectly-long-password",
+            "password_confirmation" => "another-perfectly-long-password"
+          }
+        })
+        |> render_submit()
+
+      # A successful reset push_navigates to /sign_in; a uniformly-invalid token
+      # (reused, wrong-context, soft-deleted user) instead bounces back to
+      # /reset_password — the destination is the cause-neutral tell.
+      assert {:error, {:live_redirect, %{to: "/reset_password"}}} = result
+    end
+
+    test "a confirm/magic token presented at the reset endpoint is uniformly invalid (wrong context)",
+         %{conn: conn} do
+      # closes AUTH-009-T11 — tokens are bound to a `context`; the reset consumer
+      # matches `context == "reset_password"`. A valid (but wrong-context)
+      # confirmation token can't be used to rotate a password — same uniform
+      # error as an expired one.
+      user = Emisar.Fixtures.user_fixture()
+      confirm_token = Emisar.Auth.issue_confirmation_token!(user)
+
+      {:ok, lv, _html} = live(conn, ~p"/reset_password/#{confirm_token}")
+
+      result =
+        lv
+        |> form("#reset_form", %{
+          "user" => %{
+            "password" => "a-perfectly-long-password",
+            "password_confirmation" => "a-perfectly-long-password"
+          }
+        })
+        |> render_submit()
+
+      # A successful reset push_navigates to /sign_in; a uniformly-invalid token
+      # (reused, wrong-context, soft-deleted user) instead bounces back to
+      # /reset_password — the destination is the cause-neutral tell.
+      assert {:error, {:live_redirect, %{to: "/reset_password"}}} = result
+    end
+
+    test "a soft-deleted user can't reset their password", %{conn: conn} do
+      # closes AUTH-009-T12 — the reset token resolves to no LIVE user once the
+      # row is soft-deleted, so the consume returns the same uniform invalid
+      # error rather than rotating a tombstoned account's password.
+      user = Emisar.Fixtures.user_fixture()
+      token = Emisar.Auth.issue_password_reset_token!(user, [], %Emisar.RequestContext{})
+
+      {:ok, _} = user |> Emisar.Users.User.Changeset.delete() |> Emisar.Repo.update()
+
+      {:ok, lv, _html} = live(conn, ~p"/reset_password/#{token}")
+
+      result =
+        lv
+        |> form("#reset_form", %{
+          "user" => %{
+            "password" => "a-perfectly-long-password",
+            "password_confirmation" => "a-perfectly-long-password"
+          }
+        })
+        |> render_submit()
+
+      # A successful reset push_navigates to /sign_in; a uniformly-invalid token
+      # (reused, wrong-context, soft-deleted user) instead bounces back to
+      # /reset_password — the destination is the cause-neutral tell.
+      assert {:error, {:live_redirect, %{to: "/reset_password"}}} = result
     end
   end
 end

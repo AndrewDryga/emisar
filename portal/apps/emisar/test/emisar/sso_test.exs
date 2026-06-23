@@ -150,6 +150,159 @@ defmodule Emisar.SSOTest do
 
       assert "must be an https URL" in errors_on(changeset).issuer
     end
+
+    # closes TEAM-026-T07
+    test "an https issuer with no host is rejected" do
+      {_user, _account, subject} = enterprise_owner()
+
+      assert {:error, changeset} =
+               SSO.configure_provider(
+                 %{kind: :okta, name: "Okta", issuer: "https://", client_id: "cid"},
+                 subject
+               )
+
+      assert "must be an https URL" in errors_on(changeset).issuer
+    end
+
+    # closes TEAM-026-T05
+    test "allowed_email_domain is normalized — leading @ stripped, trimmed (casing kept for citext)" do
+      {_user, _account, subject} = enterprise_owner()
+
+      # Trimmed + leading-@ stripped; the casing is deliberately preserved (the
+      # column is citext, so it matches case-insensitively without an app-side
+      # downcase — §3).
+      assert {:ok, %IdentityProvider{allowed_email_domain: "Example.com"}} =
+               SSO.configure_provider(
+                 %{
+                   kind: :okta,
+                   name: "Okta",
+                   issuer: "https://idp.test",
+                   client_id: "cid",
+                   client_secret: "secret",
+                   allowed_email_domain: "  @Example.com "
+                 },
+                 subject
+               )
+    end
+
+    # closes TEAM-026-T05
+    test "a blank allowed_email_domain normalizes to nil (no domain gate)" do
+      {_user, _account, subject} = enterprise_owner()
+
+      assert {:ok, %IdentityProvider{allowed_email_domain: nil}} =
+               SSO.configure_provider(
+                 %{
+                   kind: :okta,
+                   name: "Okta",
+                   issuer: "https://idp.test",
+                   client_id: "cid",
+                   client_secret: "secret",
+                   allowed_email_domain: "   "
+                 },
+                 subject
+               )
+    end
+
+    # closes TEAM-026-T10
+    test "a second ENABLED provider of the same kind hits the unique (account, kind) index" do
+      {_user, account, subject} = enterprise_owner()
+      _first = provider_fixture(account, %{kind: :okta, enabled: true})
+
+      assert {:error, changeset} =
+               SSO.configure_provider(
+                 %{
+                   kind: :okta,
+                   name: "Second Okta",
+                   issuer: "https://idp2.test",
+                   client_id: "cid2",
+                   client_secret: "secret",
+                   enabled: true
+                 },
+                 subject
+               )
+
+      # The partial unique index (one enabled provider per (account, kind)) maps
+      # the violation onto the first constraint field, :account_id.
+      assert "has already been taken" in errors_on(changeset).account_id
+    end
+
+    # closes TEAM-026-T11
+    test "two ENABLED providers with the same allowed_email_domain hit the unique index" do
+      {_user, account, subject} = enterprise_owner()
+      _first = provider_fixture(account, %{kind: :okta, allowed_email_domain: "acme.test"})
+
+      assert {:error, changeset} =
+               SSO.configure_provider(
+                 %{
+                   kind: :keycloak,
+                   name: "Keycloak",
+                   issuer: "https://kc.test",
+                   client_id: "cid2",
+                   client_secret: "secret",
+                   enabled: true,
+                   allowed_email_domain: "acme.test"
+                 },
+                 subject
+               )
+
+      assert errors_on(changeset).allowed_email_domain != []
+    end
+
+    # closes TEAM-026-T08
+    test "omitting kind / name / issuer / client_id surfaces the required-field errors" do
+      {_user, _account, subject} = enterprise_owner()
+
+      assert {:error, changeset} = SSO.configure_provider(%{}, subject)
+
+      errors = errors_on(changeset)
+      assert "can't be blank" in errors.kind
+      assert "can't be blank" in errors.name
+      assert "can't be blank" in errors.issuer
+      assert "can't be blank" in errors.client_id
+    end
+
+    # closes TEAM-026-T04
+    test "a blank client_secret is not stored (an empty secret never persists)" do
+      {_user, _account, subject} = enterprise_owner()
+
+      # The LV strips a blank secret before it reaches the context; even passed
+      # through directly, `cast/3` treats "" as an empty value and never records
+      # it as a change — so the stored secret is nil, not a half-configured "".
+      assert {:ok, %IdentityProvider{client_secret: nil}} =
+               SSO.configure_provider(
+                 %{
+                   kind: :okta,
+                   name: "Okta",
+                   issuer: "https://idp.test",
+                   client_id: "cid",
+                   client_secret: ""
+                 },
+                 subject
+               )
+    end
+
+    # closes TEAM-026-T15
+    test "a create always lands in the SUBJECT's account — never a foreign one" do
+      {_ua, _account_a, _sa} = enterprise_owner()
+      {_ub, account_b, sb} = enterprise_owner()
+
+      # The created provider's account is read off the subject, so B's subject
+      # can only ever provision into B — there is no caller-supplied account to
+      # redirect into A.
+      assert {:ok, %IdentityProvider{account_id: account_id}} =
+               SSO.configure_provider(
+                 %{
+                   kind: :okta,
+                   name: "Okta",
+                   issuer: "https://idp.test",
+                   client_id: "cid",
+                   client_secret: "secret"
+                 },
+                 sb
+               )
+
+      assert account_id == account_b.id
+    end
   end
 
   describe "config cross-account isolation" do
@@ -208,6 +361,143 @@ defmodule Emisar.SSOTest do
       provider = provider_fixture(account)
 
       assert {:ok, _} = SSO.delete_provider(provider, subject)
+    end
+  end
+
+  describe "update_provider/3 edit-path validation + gating" do
+    # closes TEAM-027-T06
+    test "changing the issuer to a non-https URL is rejected on update" do
+      {_user, account, subject} = enterprise_owner()
+      provider = provider_fixture(account)
+
+      assert {:error, changeset} =
+               SSO.update_provider(provider, %{issuer: "http://idp.test"}, subject)
+
+      assert "must be an https URL" in errors_on(changeset).issuer
+      # The stored issuer is unchanged.
+      assert Repo.reload!(provider).issuer == "https://idp.test"
+    end
+
+    # closes TEAM-027-T07
+    test "setting :owner as the default_role is rejected on update" do
+      {_user, account, subject} = enterprise_owner()
+      provider = provider_fixture(account)
+
+      assert {:error, changeset} =
+               SSO.update_provider(provider, %{default_role: :owner}, subject)
+
+      assert "can't be owner" in errors_on(changeset).default_role
+      assert Repo.reload!(provider).default_role == :viewer
+    end
+
+    # closes TEAM-027-T02
+    test "a new client_secret rotates the stored value" do
+      {_user, account, subject} = enterprise_owner()
+      provider = provider_fixture(account, %{client_secret: "old-secret"})
+
+      assert {:ok, _} = SSO.update_provider(provider, %{client_secret: "rotated-secret"}, subject)
+      assert Repo.reload!(provider).client_secret == "rotated-secret"
+    end
+
+    # closes TEAM-027-T03
+    test "an update with no client_secret key keeps the stored secret (never wiped)" do
+      {_user, account, subject} = enterprise_owner()
+      provider = provider_fixture(account, %{client_secret: "keep-this-secret"})
+
+      # The LV strips a blank secret from the params before it reaches the
+      # context, so the changeset never casts client_secret — the stored value
+      # survives an otherwise-unrelated edit.
+      assert {:ok, _} = SSO.update_provider(provider, %{name: "Renamed"}, subject)
+
+      reloaded = Repo.reload!(provider)
+      assert reloaded.name == "Renamed"
+      assert reloaded.client_secret == "keep-this-secret"
+    end
+
+    # closes TEAM-027-T05
+    test "disabling one of two enabled providers is allowed (not the last)" do
+      {_user, account, subject} = enterprise_owner()
+      account |> Ecto.Changeset.change(require_sso: true) |> Repo.update!()
+
+      _keep = provider_fixture(account, %{name: "Keep", kind: :okta, enabled: true})
+      extra = provider_fixture(account, %{name: "Extra", kind: :keycloak, enabled: true})
+
+      # Even under require_sso, disabling a provider while another enabled one
+      # remains is fine — the last-provider guard only fires on the final one.
+      assert {:ok, %IdentityProvider{enabled: false}} =
+               SSO.update_provider(extra, %{enabled: false}, subject)
+    end
+
+    # closes TEAM-027-T08
+    test "kind is immutable on edit — a kind change in attrs is ignored" do
+      {_user, account, subject} = enterprise_owner()
+      provider = provider_fixture(account, %{kind: :okta})
+
+      # The update changeset casts only the config fields, not :kind, so an
+      # attempt to change it is silently dropped (the provider type is fixed at
+      # creation).
+      assert {:ok, _} =
+               SSO.update_provider(provider, %{kind: :keycloak, name: "Renamed"}, subject)
+
+      reloaded = Repo.reload!(provider)
+      assert reloaded.kind == :okta
+      assert reloaded.name == "Renamed"
+    end
+
+    # closes TEAM-027-T10
+    test "a non-Enterprise plan is denied on update (:sso_not_available)" do
+      # Downgrade an account that already has a provider so the row exists, but
+      # the plan gate (`ensure_can_configure_sso`) fires before any row touch.
+      {_user, account, subject} = owner_subject_fixture(%{plan: "team"})
+      provider = provider_fixture(account)
+
+      assert {:error, :sso_not_available} =
+               SSO.update_provider(provider, %{name: "Renamed"}, subject)
+
+      assert Repo.reload!(provider).name == "Okta"
+    end
+  end
+
+  describe "delete_provider/3 gating" do
+    # closes TEAM-028-T05
+    test "a non-Enterprise plan is denied on delete (:sso_not_available)" do
+      {_user, account, subject} = owner_subject_fixture(%{plan: "team"})
+      provider = provider_fixture(account)
+
+      assert {:error, :sso_not_available} = SSO.delete_provider(provider, subject)
+      refute Repo.reload!(provider).deleted_at
+    end
+  end
+
+  describe "enable_scim/2 gating" do
+    # closes TEAM-029-T07
+    test "a non-Enterprise plan is denied on SCIM enable (:sso_not_available)" do
+      {_user, account, subject} = owner_subject_fixture(%{plan: "team"})
+      provider = provider_fixture(account)
+
+      assert {:error, :sso_not_available} = SSO.enable_scim(provider, subject)
+      refute Repo.reload!(provider).scim_enabled
+    end
+
+    # closes TEAM-029-T05
+    test "the SCIM token prefix is unique across providers (partial index)" do
+      {_user, account, subject} = enterprise_owner()
+      first = provider_fixture(account, %{kind: :okta})
+      second = provider_fixture(account, %{kind: :keycloak})
+
+      {:ok, enabled_first, _raw} = SSO.enable_scim(first, subject)
+      prefix = enabled_first.scim_token_prefix
+      assert is_binary(prefix)
+
+      # Forcing the SAME prefix onto a second provider hits the partial unique
+      # index (`WHERE scim_token_prefix IS NOT NULL AND deleted_at IS NULL`), so
+      # a minted bearer's prefix can never collide and mis-route a token.
+      assert {:error, changeset} =
+               second
+               |> IdentityProvider.Changeset.scim_token(prefix, "a-different-hash", true)
+               |> Repo.update()
+
+      assert errors_on(changeset).scim_token_prefix != []
     end
   end
 
@@ -412,6 +702,20 @@ defmodule Emisar.SSOTest do
       request = capture_request(provider, %{"sub" => "okta|x", "email" => "x@acme.test"})
 
       assert {:error, :not_found} = SSO.approve_link_request(request, sb)
+      assert [_still_pending] = link_requests(provider.id)
+    end
+
+    # closes TEAM-031-T09
+    test "approve_link_request denies a non-Enterprise plan (:sso_not_available)", %{
+      provider: provider
+    } do
+      request = capture_request(provider, %{"sub" => "okta|ne", "email" => "ne@acme.test"})
+
+      # The plan gate (`ensure_can_configure_sso`) is the first check — before the
+      # request is even fetched — so a team-plan owner is denied outright.
+      {_u, _team_account, team_subject} = owner_subject_fixture(%{plan: "team"})
+
+      assert {:error, :sso_not_available} = SSO.approve_link_request(request, team_subject)
       assert [_still_pending] = link_requests(provider.id)
     end
 

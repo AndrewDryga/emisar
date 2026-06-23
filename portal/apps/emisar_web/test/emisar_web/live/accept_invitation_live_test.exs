@@ -42,6 +42,20 @@ defmodule EmisarWeb.AcceptInvitationLiveTest do
       assert flash["error"] =~ "isn't valid"
       refute flash["error"] =~ "expired"
     end
+
+    test "a blank (whitespace-only) token resolves to nothing and bounces to sign-in", %{
+      conn: _conn
+    } do
+      # closes AUTH-012-T08 — the route carries the token as a path segment, so the
+      # empty case is a whitespace-only token: `fetch_invitation_by_token` requires a
+      # real (non-empty) binary and never matches one, so the mount bounces to
+      # /sign_in with the same cause-neutral "isn't valid" copy — no invite is
+      # resolvable from a blank token.
+      assert {:error, {:live_redirect, %{to: "/sign_in", flash: flash}}} =
+               live(build_conn(), ~p"/accept_invitation/#{"   "}")
+
+      assert flash["error"] =~ "isn't valid"
+    end
   end
 
   describe "anonymous accept" do
@@ -70,6 +84,43 @@ defmodule EmisarWeb.AcceptInvitationLiveTest do
 
       user = Emisar.Repo.reload!(pending_membership.user)
       assert user.full_name == "New Person"
+      assert user.confirmed_at
+    end
+  end
+
+  describe "invited email is fixed" do
+    test "a tampered hidden email is ignored — the server keeps the invited address", %{
+      conn: conn
+    } do
+      # closes AUTH-012-T11 — the anonymous form shows the invited email as a
+      # read-only hidden field, but the `accept` handler builds its attrs from ONLY
+      # full_name + password (never `user[email]`), so a client that rewrites the
+      # hidden value can't redirect the invitation onto a different address: the
+      # registered/confirmed user still carries the membership's invited email.
+      {_conn, owner, account} = register_and_log_in(conn)
+      token = invitation_token(account, owner)
+
+      {:ok, invited} = Accounts.fetch_invitation_by_token(token, preload: [:user])
+      invited_email = invited.user.email
+
+      {:ok, lv, _html} = live(build_conn(), ~p"/accept_invitation/#{token}")
+
+      # Dispatch the `accept` event directly with a crafted payload whose
+      # `user[email]` is an attacker-chosen address — bypassing the form's own
+      # hidden-field guard to prove the SERVER (not just the client) ignores it.
+      params = %{
+        "user" => %{
+          "email" => "attacker@evil.test",
+          "full_name" => "New Person",
+          "password" => "a-long-enough-password"
+        }
+      }
+
+      render_submit(lv, "accept", params)
+
+      user = Emisar.Repo.reload!(invited.user)
+      assert user.email == invited_email
+      refute user.email == "attacker@evil.test"
       assert user.confirmed_at
     end
   end

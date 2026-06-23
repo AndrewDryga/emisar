@@ -247,6 +247,82 @@ func TestReadTokenRejectsSymlinkAndLoosePerms(t *testing.T) {
 	}
 }
 
+// readToken parses two backward-compatible on-disk shapes: a legacy JSON token
+// file using the old `agent_id` field (renamed to `runner_id`), and a token
+// file holding just the raw token bytes (an even earlier format). Both must
+// still load so a runner upgraded from an older build reuses its token instead
+// of needlessly re-registering. closes RUN-005-T09.
+func TestReadToken_LegacyAgentIDAndRawString(t *testing.T) {
+	// closes RUN-005-T09
+	dir := t.TempDir()
+
+	t.Run("legacy agent_id JSON", func(t *testing.T) {
+		p := filepath.Join(dir, "legacy.json")
+		// Old field name `agent_id`, no `runner_id`.
+		if err := os.WriteFile(p, []byte(`{"token":"tok-legacy","agent_id":"agt_old_42","key_fp":"abcd"}`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		tok, err := (&WebsocketDialer{TokenPath: p}).readToken()
+		if err != nil {
+			t.Fatalf("legacy agent_id token should parse: %v", err)
+		}
+		if tok.Raw != "tok-legacy" {
+			t.Errorf("Raw = %q, want tok-legacy", tok.Raw)
+		}
+		// The legacy agent_id is read into AgentID when runner_id is absent.
+		if tok.AgentID != "agt_old_42" {
+			t.Errorf("AgentID = %q, want the legacy agent_id agt_old_42", tok.AgentID)
+		}
+		if tok.KeyFP != "abcd" {
+			t.Errorf("KeyFP = %q, want abcd", tok.KeyFP)
+		}
+	})
+
+	t.Run("runner_id wins over legacy agent_id", func(t *testing.T) {
+		p := filepath.Join(dir, "both.json")
+		// Both fields present — the new runner_id must take precedence.
+		if err := os.WriteFile(p, []byte(`{"token":"t","runner_id":"new_id","agent_id":"old_id"}`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		tok, err := (&WebsocketDialer{TokenPath: p}).readToken()
+		if err != nil {
+			t.Fatalf("readToken: %v", err)
+		}
+		if tok.AgentID != "new_id" {
+			t.Errorf("AgentID = %q, want runner_id to win (new_id)", tok.AgentID)
+		}
+	})
+
+	t.Run("raw-string token", func(t *testing.T) {
+		p := filepath.Join(dir, "raw.token")
+		// Not JSON — an even older format stored the raw token bytes.
+		if err := os.WriteFile(p, []byte("  raw-token-bytes\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		tok, err := (&WebsocketDialer{TokenPath: p}).readToken()
+		if err != nil {
+			t.Fatalf("raw-string token should parse: %v", err)
+		}
+		// Trimmed, taken as the token; no id/fp.
+		if tok.Raw != "raw-token-bytes" {
+			t.Errorf("Raw = %q, want the trimmed raw bytes", tok.Raw)
+		}
+		if tok.AgentID != "" || tok.KeyFP != "" {
+			t.Errorf("raw-string token carries no id/fp, got AgentID=%q KeyFP=%q", tok.AgentID, tok.KeyFP)
+		}
+	})
+
+	t.Run("empty file is an error", func(t *testing.T) {
+		p := filepath.Join(dir, "empty.token")
+		if err := os.WriteFile(p, []byte("   \n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := (&WebsocketDialer{TokenPath: p}).readToken(); err == nil {
+			t.Error("an empty token file must error, not yield a blank token")
+		}
+	})
+}
+
 func TestWebsocketDialerReusesCachedToken(t *testing.T) {
 	fc, srv := newFakeCloud(t)
 

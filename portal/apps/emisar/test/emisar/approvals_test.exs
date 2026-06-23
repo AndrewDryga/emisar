@@ -340,6 +340,33 @@ defmodule Emisar.ApprovalsTest do
                Approvals.deny_request(request, viewer_subject, "no rights")
     end
 
+    # closes GOV-004-T11 (context half) — a finalizing deny writes BOTH a per-vote
+    # `approval.decision_recorded` (the running count) AND the finalizing
+    # `approval.denied` row, inside the same transaction as the run.cancelled. The
+    # decision_recorded step is decision-agnostic (not approve-only), so the deny
+    # path must land it too — pin the pair so a future approve-only guard can't drop
+    # the deny's running-count row.
+    test "a deny writes approval.decision_recorded AND approval.denied in the same decision" do
+      {account, run} = run_fixture()
+      subject = operator_subject(account)
+      {:ok, request} = Approvals.create_request(run, user_fixture().id, "x")
+
+      assert {:ok, {%Request{status: :denied}, %ActionRun{status: :cancelled}}} =
+               Approvals.deny_request(request, subject, "not now")
+
+      {:ok, events, _} = Audit.list_events(subject, page: [limit: 50])
+
+      assert Enum.any?(
+               events,
+               &(&1.event_type == "approval.decision_recorded" and &1.subject_id == request.id)
+             )
+
+      assert Enum.any?(
+               events,
+               &(&1.event_type == "approval.denied" and &1.subject_id == request.id)
+             )
+    end
+
     test "an owner of account B cannot deny account A's request (cross-account → :not_found)" do
       {account_a, run_a} = run_fixture()
       decider_a = operator_subject(account_a)
@@ -594,6 +621,50 @@ defmodule Emisar.ApprovalsTest do
 
       assert {:error, :not_found} = Approvals.revoke_grant(g_a, subject_b)
     end
+
+    # closes GOV-005-T03 — `manage_grants` = owner/admin, so an ADMIN (not just an
+    # owner) can revoke a grant. Mirrors the operator-denial test above with the
+    # laxest role that still holds the permission.
+    test "an admin (manage_grants holder) can revoke a grant" do
+      account = account_fixture()
+      user = user_fixture()
+      {_, key} = api_key_fixture(account_id: account.id, created_by_id: user.id)
+      grant = insert_grant(account, key, action_id: "x", granted_by_id: user.id)
+
+      admin = user_fixture()
+      _ = membership_fixture(account_id: account.id, user_id: admin.id, role: "admin")
+      admin_subject = subject_for(admin, account, role: :admin)
+
+      assert {:ok, %Grant{revoked_at: %DateTime{}, revoked_by_id: revoked_by}} =
+               Approvals.revoke_grant(grant, admin_subject)
+
+      assert revoked_by == admin.id
+    end
+
+    # closes GOV-005-T09 — re-revoking an already-revoked grant is benign. The
+    # revoke read is status-agnostic (`Grant.Query.all() |> by_id`, no
+    # `not_revoked` filter), so the revoked row is still fetchable and
+    # `Grant.Changeset.revoke` simply re-stamps `revoked_at`/`revoked_by_id`. No
+    # crash, no error — idempotent-ish (a double-click on Revoke can't fail).
+    test "revoking an already-revoked grant re-stamps without crashing (benign)" do
+      account = account_fixture()
+      user = user_fixture()
+      _ = membership_fixture(account_id: account.id, user_id: user.id, role: "owner")
+      subject = subject_for(user, account, role: :owner)
+      {_, key} = api_key_fixture(account_id: account.id, created_by_id: user.id)
+      grant = insert_grant(account, key, action_id: "x", granted_by_id: user.id)
+
+      assert {:ok, %Grant{revoked_at: first}} = Approvals.revoke_grant(grant, subject)
+      assert %DateTime{} = first
+
+      # A second revoke on the same (already-revoked) grant succeeds and re-stamps.
+      assert {:ok, %Grant{revoked_at: second, revoked_by_id: by}} =
+               Approvals.revoke_grant(grant, subject)
+
+      assert %DateTime{} = second
+      assert by == user.id
+      assert DateTime.compare(second, first) != :lt
+    end
   end
 
   describe "grant consumption is atomic with the run (MAJOR-3)" do
@@ -708,6 +779,26 @@ defmodule Emisar.ApprovalsTest do
       {:ok, _} = Approvals.approve_request(request, subject, "ok", duration: :once)
 
       assert [] = grants_for_api_key(key.id)
+    end
+
+    test "a windowed duration on an operator-sourced run mints no grant" do
+      # closes GOV-003-T06 — a grant only exists to let an LLM's IDENTICAL
+      # follow-up api-key call skip the gate. An operator-sourced run has no
+      # api_key (`api_key_id: nil`), so `mint_grant/4`'s nil-key clause returns
+      # `{:ok, nil}` even for a windowed duration: there's no key for a grant to
+      # cover. The run still dispatches; only the grant is absent.
+      {account, run} = run_fixture()
+      assert run.api_key_id == nil
+      subject = operator_subject(account)
+      {:ok, request} = Approvals.create_request(run, subject.actor.id, "x")
+
+      assert {:ok, {%Request{status: :approved}, %ActionRun{status: :sent}}} =
+               Approvals.approve_request(request, subject, "ok",
+                 duration: :one_day,
+                 scope: :exact_args
+               )
+
+      assert {:ok, [], _meta} = Approvals.list_grants_for_account(subject)
     end
 
     test ":one_day creates a grant with expires_at ~24h from now" do
@@ -1179,6 +1270,22 @@ defmodule Emisar.ApprovalsTest do
       assert grant.expires_at != nil
       assert DateTime.diff(grant.expires_at, DateTime.utc_now(), :day) in 29..30
     end
+
+    # closes GOV-003-T21 — there is deliberately NO indefinite grant. `expires_at_for/2`
+    # has no catch-all, so a duration atom outside the five whitelisted windows
+    # CRASHES on a finalizing api-key approve rather than minting a grant with a
+    # nil (never-expiring) horizon. The web layer parses operator input down to
+    # exactly these atoms; a value reaching mint outside them is a bug, and failing
+    # loud is the safe behavior. No grant is left behind.
+    test "an unknown duration atom crashes the mint instead of minting a never-expiring grant" do
+      {subject, key, request} = approvable_mcp_run()
+
+      assert_raise FunctionClauseError, fn ->
+        Approvals.approve_request(request, subject, nil, duration: :forever)
+      end
+
+      assert [] = grants_for_api_key(key.id)
+    end
   end
 
   # -- Configurable approval gate (GitHub-style) -----------------------
@@ -1294,6 +1401,46 @@ defmodule Emisar.ApprovalsTest do
       refute_receive {:cloud_to_runner, _}, 100
     end
 
+    # closes GOV-004-T03 — deny is `:decide`-gated only; it is NOT self-gated.
+    # `check_self_approval` blocks an APPROVE by the recorded requester (when the
+    # snapshot forbids self-approval) but lets a deny fall through. So the
+    # requester denying their OWN request is allowed even under
+    # allow_self_approval: false — denial can't sneak a run through, so there's
+    # nothing to guard against; an operator killing their own pending ask is
+    # legitimate (and the only way to retract it).
+    test "the requester CAN deny their own request even when self-approval is forbidden" do
+      requester = user_fixture()
+      account = account_fixture()
+      _ = membership_fixture(account_id: account.id, user_id: requester.id, role: "owner")
+      subject = subject_for(requester, account, role: :owner)
+      runner = runner_fixture(account_id: account.id)
+      Emisar.Runners.subscribe_runner_transport(runner)
+
+      {:ok, run} =
+        Runs.create_run(%{
+          account_id: account.id,
+          runner_id: runner.id,
+          action_id: "linux.uptime",
+          source: "operator",
+          args: %{},
+          status: :pending_approval
+        })
+
+      {:ok, request} =
+        Approvals.create_request(run, requester.id, "x",
+          min_approvals: 1,
+          allow_self_approval: false
+        )
+
+      # The same user who asked can retract by denying — no :self_approval_forbidden.
+      assert {:ok, {%Request{status: :denied}, %ActionRun{status: :cancelled}}} =
+               Approvals.deny_request(request, subject, "retracting my own ask")
+
+      # And the run never went anywhere.
+      refute_receive {:cloud_to_runner, _}, 100
+      assert %ActionRun{status: :cancelled} = Repo.reload!(run)
+    end
+
     test "a DIFFERENT operator can still approve when self-approval is forbidden" do
       %{account: account, request: request, requester_id: requester_id} =
         gated_request(min_approvals: 1, allow_self_approval: false)
@@ -1306,6 +1453,149 @@ defmodule Emisar.ApprovalsTest do
                Approvals.approve_request(request, other, "ok")
 
       assert_receive {:cloud_to_runner, %{"type" => "run_action"}}, 500
+    end
+
+    # closes ENG-007-T07 — a nil requester has no "self" to block (vacuous, not a
+    # bypass): even with allow_self_approval: false the self-check can't match, so
+    # the gate is min_approvals alone — N distinct deciders still required.
+    test "a nil requester is vacuously non-self; min_approvals still requires N distinct" do
+      account = account_fixture()
+      runner = runner_fixture(account_id: account.id)
+      Emisar.Runners.subscribe_runner_transport(runner)
+
+      # Operator-source run (no api_key) so effective_requester keeps the nil.
+      {:ok, run} =
+        Runs.create_run(%{
+          account_id: account.id,
+          runner_id: runner.id,
+          action_id: "linux.uptime",
+          source: "operator",
+          args: %{},
+          status: :pending_approval
+        })
+
+      {:ok, request} =
+        Approvals.create_request(run, nil, "x", min_approvals: 2, allow_self_approval: false)
+
+      assert is_nil(Repo.reload!(request).requested_by_id)
+
+      a = distinct_operator(account)
+      b = distinct_operator(account)
+
+      # First approve is sub-threshold (no self to short-circuit, no bypass either).
+      assert {:ok, {%Request{status: :pending}, :pending}} =
+               Approvals.approve_request(request, a, "lgtm-1")
+
+      refute_receive {:cloud_to_runner, _}, 100
+      assert approved_count(request.id) == 1
+
+      # Second distinct operator reaches the threshold.
+      assert {:ok, {%Request{status: :approved}, %ActionRun{status: :sent}}} =
+               Approvals.approve_request(request, b, "lgtm-2")
+
+      assert_receive {:cloud_to_runner, %{"type" => "run_action"}}, 500
+    end
+  end
+
+  describe "pack re-trust before approve (closes ENG-005-T12 at the approve gate)" do
+    # closes ENG-007-T14 — the approve path re-gates pack trust (recheck_trust)
+    # before re-dispatching. A pack that drifted to :pending while the run was
+    # parked makes the approve fail CLOSED — a tampered re-advertisement is never
+    # shipped just because an approval window was open.
+    test "approving a run whose pack drifted to :pending fails closed with :pack_untrusted" do
+      account = account_fixture()
+      runner = runner_fixture(account_id: account.id)
+      Emisar.Runners.subscribe_runner_transport(runner)
+
+      # A custom (no-baseline) pack lands :pending — the same untrusted state a
+      # tampered re-advertisement produces during the approval window.
+      {:ok, _} =
+        Emisar.Catalog.observe_state(runner, %{
+          "hostname" => "h",
+          "version" => "0.1",
+          "labels" => %{},
+          "packs" => %{"custom" => %{"version" => "1.0", "hash" => "sha256:DRIFT"}},
+          "actions" => [
+            %{
+              "id" => "custom.do",
+              "pack_id" => "custom",
+              "title" => "Do",
+              "kind" => "exec",
+              "risk" => "high",
+              "args" => []
+            }
+          ]
+        })
+
+      {:ok, run} =
+        Runs.create_run(%{
+          account_id: account.id,
+          runner_id: runner.id,
+          action_id: "custom.do",
+          source: "operator",
+          args: %{},
+          status: :pending_approval
+        })
+
+      {:ok, request} = Approvals.create_request(run, user_fixture().id, "needs review")
+      operator = distinct_operator(account)
+
+      assert {:error, :pack_untrusted} = Approvals.approve_request(request, operator, "ok")
+
+      # The run never reached the runner, and the request is left pending to retry.
+      refute_receive {:cloud_to_runner, _}, 100
+      assert %Request{status: :pending} = Repo.reload!(request)
+    end
+
+    # closes GOV-004-T06 — only APPROVE re-gates pack trust (recheck_trust(:approve)
+    # → recheck_run_pack_trust; recheck_trust(:deny) is a flat :ok). Deny cancels the
+    # run, it never ships bytes, so a drifted-to-:pending pack must NOT block the
+    # operator from denying — the same drift that fails the approve closed lets the
+    # deny through and cancels the held run.
+    test "denying a run whose pack drifted to :pending still succeeds — no trust re-check" do
+      account = account_fixture()
+      runner = runner_fixture(account_id: account.id)
+      Emisar.Runners.subscribe_runner_transport(runner)
+
+      # A custom (no-baseline) pack lands :pending — the same untrusted state that
+      # fails an approve closed.
+      {:ok, _} =
+        Emisar.Catalog.observe_state(runner, %{
+          "hostname" => "h",
+          "version" => "0.1",
+          "labels" => %{},
+          "packs" => %{"custom" => %{"version" => "1.0", "hash" => "sha256:DRIFT"}},
+          "actions" => [
+            %{
+              "id" => "custom.do",
+              "pack_id" => "custom",
+              "title" => "Do",
+              "kind" => "exec",
+              "risk" => "high",
+              "args" => []
+            }
+          ]
+        })
+
+      {:ok, run} =
+        Runs.create_run(%{
+          account_id: account.id,
+          runner_id: runner.id,
+          action_id: "custom.do",
+          source: "operator",
+          args: %{},
+          status: :pending_approval
+        })
+
+      {:ok, request} = Approvals.create_request(run, user_fixture().id, "needs review")
+      operator = distinct_operator(account)
+
+      # Deny needs no trust re-check — it finalizes denied and cancels the run.
+      assert {:ok, {%Request{status: :denied}, %ActionRun{status: :cancelled}}} =
+               Approvals.deny_request(request, operator, "not shipping drifted bytes")
+
+      refute_receive {:cloud_to_runner, _}, 100
+      assert %ActionRun{status: :cancelled} = Repo.reload!(run)
     end
   end
 
@@ -1409,9 +1699,73 @@ defmodule Emisar.ApprovalsTest do
       assert {:ok, {%Request{status: :approved}, %ActionRun{status: :sent}}} =
                Approvals.approve_request(request, b, "two")
     end
+
+    # closes GOV-003-T11 — the allow_self_approval posture is snapshotted onto the
+    # request at CREATION (mirrors the min_approvals snapshot above). Flipping the
+    # account policy to forbid self-approval AFTER the request exists must NOT
+    # retroactively block the requester from approving this in-flight run: the
+    # snapshot taken at dispatch time wins, never the live policy.
+    test "an in-flight request keeps its self-approval snapshot when the policy later forbids it" do
+      account = account_fixture()
+      runner = runner_fixture(account_id: account.id)
+      Emisar.Runners.subscribe_runner_transport(runner)
+
+      # The requester is also an owner, so they CAN decide — self-approval is the
+      # thing under test, not the permission.
+      requester = user_fixture()
+      _ = membership_fixture(account_id: account.id, user_id: requester.id, role: "owner")
+      requester_subject = subject_for(requester, account, role: :owner)
+
+      {:ok, run} =
+        Runs.create_run(%{
+          account_id: account.id,
+          runner_id: runner.id,
+          action_id: "linux.uptime",
+          source: "operator",
+          args: %{},
+          status: :pending_approval
+        })
+
+      # Snapshotted self-approval-ALLOWED (the policy's posture at dispatch time).
+      {:ok, request} =
+        Approvals.create_request(run, requester.id, "x",
+          min_approvals: 1,
+          allow_self_approval: true
+        )
+
+      assert request.allow_self_approval == true
+
+      # The account policy is tightened to forbid self-approval AFTER the request
+      # was filed — this must not reach back into the parked request.
+      _ =
+        policy_fixture(
+          account_id: account.id,
+          rules: %{
+            "schema_version" => 2,
+            "defaults" => %{"low" => "allow", "medium" => "allow"},
+            "overrides" => [],
+            "approval" => %{"min_approvals" => 1, "allow_self_approval" => false}
+          }
+        )
+
+      # The requester self-approves and it finalizes + dispatches — the snapshot,
+      # not the now-stricter live policy, governs.
+      assert {:ok, {%Request{status: :approved}, %ActionRun{status: :sent}}} =
+               Approvals.approve_request(
+                 request,
+                 requester_subject,
+                 "self, but snapshot allows it"
+               )
+
+      assert_receive {:cloud_to_runner, %{"type" => "run_action"}}, 500
+    end
   end
 
   describe "MCP self-approval (closes the api-key bypass)" do
+    # closes ENG-007-T06 — an MCP run's requested_by_id is nil, so
+    # effective_requester resolves "self" to the api-key OWNER; the owner can't
+    # launder a self-approval through their own key under allow_self_approval:
+    # false, while a different operator still approves.
     test "ABUSE: an MCP run (requested_by_id nil) attributes self to the api-key owner; the owner can't self-approve" do
       account = account_fixture()
       owner = user_fixture()
@@ -1572,6 +1926,10 @@ defmodule Emisar.ApprovalsTest do
       assert %Request{status: :cancelled} = Repo.reload!(request)
     end
 
+    # closes ENG-007-T09 — cancelling a :pending_approval run flips its request
+    # to :cancelled in the SAME transaction, so a stale approve that lands after
+    # finds a :cancelled request and is refused (:run_cancelled) — it can never
+    # resurrect + dispatch the cancelled run.
     test "approving after the run was cancelled is refused — nothing dispatches" do
       # gated_request already subscribes this process to the runner transport.
       %{account: account, run: run, request: request} = gated_request()

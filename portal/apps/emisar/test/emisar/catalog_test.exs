@@ -3,7 +3,7 @@ defmodule Emisar.CatalogTest do
 
   import Emisar.Fixtures
 
-  alias Emisar.Catalog
+  alias Emisar.{Audit, Catalog}
   alias Emisar.Catalog.{PackVersion, RunnerAction}
 
   defp state_payload(opts) do
@@ -294,6 +294,23 @@ defmodule Emisar.CatalogTest do
       assert reloaded.runner_version == "0.2.0"
       assert reloaded.labels == %{"env" => "prod"}
     end
+
+    # closes ENG-004-T05 — a descriptor naming a pack_id NOT in the packs map
+    # gets pack_version: nil defensively (vs. raising), and the row still upserts
+    # so one missing pack reference doesn't drop the action from the catalog.
+    test "an action referencing an unknown pack_id upserts with pack_version nil" do
+      runner = runner_fixture()
+      account = Emisar.Repo.preload(runner, :account).account
+      subject = subject_for(user_fixture(), account, role: :owner)
+
+      # The action's pack_id ("absent") is not a key in the (empty) packs map.
+      payload = state_payload(actions: [action("orphan.do", pack_id: "absent")])
+
+      assert {:ok, _runner} = Catalog.observe_state(runner, payload)
+
+      assert {:ok, [%RunnerAction{action_id: "orphan.do", pack_version: nil}], _} =
+               Catalog.list_actions_for_runner(runner.id, subject)
+    end
   end
 
   describe "observe_state/2 — runner_id variant" do
@@ -496,6 +513,27 @@ defmodule Emisar.CatalogTest do
       assert {:error, :not_found} =
                Catalog.fetch_action_by_id("linux.uptime", runner.id, subject_b)
     end
+
+    # closes ENG-005-T06 — fail-CLOSED on a MISSING pin row. `runner_actions`
+    # reference (pack_id, version) by string with no FK, so an action carrying a
+    # version that has no pack_versions pin row must read as untrusted (:no_pin),
+    # never fall open to trusted (the old design deleted the row on reject).
+    test "check_pack_trusted fails closed with :no_pin when no pin row exists" do
+      account = account_fixture()
+      runner = runner_fixture(account_id: account.id)
+
+      # A versioned action whose (pack_id, version) was never pinned — e.g. its
+      # pack pin row was reaped while the action descriptor lingered.
+      action = %RunnerAction{
+        account_id: account.id,
+        runner_id: runner.id,
+        action_id: "ghost.do",
+        pack_id: "ghost",
+        pack_version: "1.0"
+      }
+
+      assert {:error, :pack_untrusted, :no_pin} = Catalog.check_pack_trusted(action)
+    end
   end
 
   describe "trust_pack_version / reject_pack_version" do
@@ -643,6 +681,115 @@ defmodule Emisar.CatalogTest do
 
       assert {:error, :unauthorized} =
                Catalog.reject_pack_version(pack_version.id, viewer_subject)
+    end
+
+    # closes ENG-005-T11 — Trust/Reject serialize on the FOR-NO-KEY-UPDATE lock;
+    # once a row is no longer pending the loser gets :not_pending. Asserted
+    # sequentially: a second decision on an already-trusted row is the loser's view.
+    test "a second trust/reject on an already-decided row is :not_pending" do
+      {_user, account, subject} = owner_subject_fixture()
+      runner = runner_fixture(account_id: account.id)
+
+      _ =
+        Catalog.observe_state(
+          runner,
+          state_payload(packs: %{"custom" => %{"version" => "1.0", "hash" => "sha256:ONCE"}})
+        )
+
+      {:ok, [pack_version], _} = Catalog.list_pack_versions(subject)
+      assert {:ok, _} = Catalog.trust_pack_version(pack_version.id, subject)
+
+      # The row is now :trusted (not pending) — the locked re-read rejects the race loser.
+      assert {:error, :not_pending} = Catalog.trust_pack_version(pack_version.id, subject)
+      assert {:error, :not_pending} = Catalog.reject_pack_version(pack_version.id, subject)
+    end
+
+    # closes ENG-005-T16 — Trust/Reject are account-scoped via the locked re-read's
+    # Authorizer.for_subject; another account's owner can't touch this pin. The
+    # two-gate model resolves a cross-account id to :not_found (404), not :unauthorized.
+    test "trust/reject of another account's pin is :not_found (cross-account)" do
+      {_user, account, subject} = owner_subject_fixture()
+      runner = runner_fixture(account_id: account.id)
+
+      _ =
+        Catalog.observe_state(
+          runner,
+          state_payload(packs: %{"custom" => %{"version" => "1.0", "hash" => "sha256:A"}})
+        )
+
+      {:ok, [pack_version], _} = Catalog.list_pack_versions(subject)
+
+      {_user_b, _account_b, subject_b} = owner_subject_fixture()
+      assert {:error, :not_found} = Catalog.trust_pack_version(pack_version.id, subject_b)
+      assert {:error, :not_found} = Catalog.reject_pack_version(pack_version.id, subject_b)
+
+      # A's pin is untouched.
+      assert {:ok, [unchanged], _} = Catalog.list_pack_versions(subject)
+      assert unchanged.trust_state == :pending
+    end
+  end
+
+  describe "trust / reject write an audit row" do
+    # closes GOV-010-T10 — trusting a pending pack version writes a
+    # `pack_trust_adopted` audit event attributing the decision to the operator,
+    # subject-keyed to the pack_version, with the previous→new hash in the payload.
+    test "trust writes a pack_trust_adopted audit event (actor + subject + hashes)" do
+      {user, account, subject} = owner_subject_fixture()
+      runner = runner_fixture(account_id: account.id)
+
+      _ =
+        Catalog.observe_state(
+          runner,
+          state_payload(packs: %{"p" => %{"version" => "1.0", "hash" => "sha256:ADOPT"}})
+        )
+
+      {:ok, [pack_version], _} = Catalog.list_pack_versions(subject)
+      assert {:ok, _} = Catalog.trust_pack_version(pack_version.id, subject)
+
+      {:ok, events, _} = Audit.list_events(subject)
+      audit = Enum.find(events, &(&1.event_type == "pack_trust_adopted"))
+
+      assert audit, "expected a pack_trust_adopted audit row"
+      assert audit.subject_kind == "pack_version"
+      assert audit.subject_id == pack_version.id
+      assert audit.subject_label == "p@1.0"
+      assert audit.actor_kind == "user"
+      assert audit.actor_id == user.id
+      # The pre-trust row had no trusted hash; the pending bytes are what got adopted.
+      assert audit.payload["previous_hash"] == nil
+      assert audit.payload["new_hash"] == "sha256:ADOPT"
+      assert audit.payload["pack_id"] == "p"
+    end
+
+    # closes GOV-011-T10 — rejecting a pending pack version writes a
+    # `pack_trust_rejected` audit event, same operator attribution + pack_version
+    # subject, carrying the rejected hash.
+    test "reject writes a pack_trust_rejected audit event (actor + subject + hash)" do
+      {user, account, subject} = owner_subject_fixture()
+      runner = runner_fixture(account_id: account.id)
+
+      _ =
+        Catalog.observe_state(
+          runner,
+          state_payload(packs: %{"p" => %{"version" => "1.0", "hash" => "sha256:NOPE"}})
+        )
+
+      {:ok, [pack_version], _} = Catalog.list_pack_versions(subject)
+      assert {:ok, _} = Catalog.reject_pack_version(pack_version.id, subject)
+
+      {:ok, events, _} = Audit.list_events(subject)
+      audit = Enum.find(events, &(&1.event_type == "pack_trust_rejected"))
+
+      assert audit, "expected a pack_trust_rejected audit row"
+      assert audit.subject_kind == "pack_version"
+      assert audit.subject_id == pack_version.id
+      assert audit.subject_label == "p@1.0"
+      assert audit.actor_kind == "user"
+      assert audit.actor_id == user.id
+      # Never-trusted custom pack — no trusted hash, the advertised bytes were rejected.
+      assert audit.payload["trusted_hash"] == nil
+      assert audit.payload["rejected_hash"] == "sha256:NOPE"
+      assert audit.payload["pack_id"] == "p"
     end
   end
 

@@ -195,5 +195,37 @@ defmodule EmisarWeb.MCP.ToolSchemaTest do
       assert schema.additionalProperties == false
       assert schema[:"$schema"] == "https://json-schema.org/draft/2020-12/schema"
     end
+
+    test "the schema is a client-facing HINT, carried verbatim — not the dispatch gate" do
+      # closes MCP-010-T13
+      # The moduledoc's contract: emisar's own arg types are widened to a JSON
+      # primitive + a carried constraint, and "the runner re-validates with the
+      # original spec on dispatch — the schema is a hint to the LLM, not the
+      # security gate." Assert the generated shape matches that contract: the
+      # constraint travels on the property (so a well-behaved client self-checks)
+      # but the descriptor is pure data with no enforcement attached.
+      schema =
+        ToolSchema.build(
+          action(
+            args: [
+              %{
+                "name" => "tier",
+                "type" => "string",
+                "validation" => %{"enum" => ["bronze", "gold"]}
+              }
+            ]
+          ),
+          ["r"]
+        )
+
+      # The constraint is present as a hint the LLM can read…
+      assert schema.properties["tier"].enum == ["bronze", "gold"]
+      # …on a plain map (a descriptor), not a validator. A value OUTSIDE the
+      # enum is not rejected here — build/2 never inspects argument values, it
+      # only describes them; the runner makes the real allow/deny call.
+      assert is_map(schema.properties["tier"])
+      assert {:module, _} = Code.ensure_loaded(ToolSchema)
+      refute function_exported?(ToolSchema, :validate, 2)
+    end
   end
 end

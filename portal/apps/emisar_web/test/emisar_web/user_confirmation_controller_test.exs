@@ -39,6 +39,48 @@ defmodule EmisarWeb.UserConfirmationControllerTest do
       assert redirected_to(conn) == ~p"/sign_in"
       assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "expired or was already used"
     end
+
+    test "a non-decodable token is uniformly invalid (base64 decode fails first)", %{conn: conn} do
+      # closes AUTH-016-T05 — a token that isn't valid base64 can't resolve to a
+      # row, so `confirm_user_by_token` returns the same `:invalid_or_expired` as a
+      # bad/expired one: one cause-neutral message, no confirmation.
+      conn = get(conn, ~p"/confirm/!!!not-base64!!!")
+
+      assert redirected_to(conn) == ~p"/sign_in"
+      assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "expired or was already used"
+    end
+
+    test "a reset/magic token presented at the confirm endpoint is uniformly invalid", %{
+      conn: conn
+    } do
+      # closes AUTH-016-T06 — tokens carry a `context`; the confirm consumer
+      # matches `context == "confirm"`. A valid (but wrong-context) reset token
+      # confirms nothing — same uniform error as a bad token, and the user stays
+      # unconfirmed. No cross-endpoint token reuse.
+      user = unconfirmed_user()
+      reset_token = Auth.issue_password_reset_token!(user, [], %Emisar.RequestContext{})
+
+      conn = get(conn, ~p"/confirm/#{reset_token}")
+
+      assert redirected_to(conn) == ~p"/sign_in"
+      assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "expired or was already used"
+      refute Repo.reload!(user).confirmed_at
+    end
+
+    test "a soft-deleted user cannot confirm", %{conn: conn} do
+      # closes AUTH-016-T09 — the confirm token resolves to no LIVE user once the
+      # row is soft-deleted, so the link returns the same uniform invalid error
+      # rather than flipping `confirmed_at` on a tombstoned account.
+      user = unconfirmed_user()
+      token = Auth.issue_confirmation_token!(user)
+
+      {:ok, _} = user |> Users.User.Changeset.delete() |> Repo.update()
+
+      conn = get(conn, ~p"/confirm/#{token}")
+
+      assert redirected_to(conn) == ~p"/sign_in"
+      assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "expired or was already used"
+    end
   end
 
   defp unconfirmed_user do

@@ -179,6 +179,35 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
     end
   end
 
+  describe "GET /app/runbooks/:id/edit (open by id)" do
+    test "a non-existent (well-formed) id flashes not-found and redirects to the library", %{
+      conn: conn
+    } do
+      # closes RBK-004-T05
+      {conn, _user, account} = register_and_log_in(conn)
+
+      missing = Emisar.Repo.generate_id()
+      to = ~p"/app/#{account}/runbooks"
+
+      assert {:error, {:live_redirect, %{to: ^to, flash: flash}}} =
+               live(conn, ~p"/app/#{account}/runbooks/#{missing}/edit")
+
+      assert flash["error"] =~ "not found"
+    end
+
+    test "a garbage (non-uuid) id flashes not-found and redirects to the library", %{conn: conn} do
+      # closes RBK-002-T03
+      {conn, _user, account} = register_and_log_in(conn)
+
+      to = ~p"/app/#{account}/runbooks"
+
+      assert {:error, {:live_redirect, %{to: ^to, flash: flash}}} =
+               live(conn, ~p"/app/#{account}/runbooks/not-a-uuid/edit")
+
+      assert flash["error"] =~ "not found"
+    end
+  end
+
   describe "metadata validation" do
     test "blank title shows an inline field error on save, not a flash", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
@@ -233,6 +262,19 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       refute html =~ "has invalid format"
       refute html =~ "can&#39;t be blank"
       refute html =~ "can't be blank"
+    end
+
+    test "an 81-character title is rejected inline (length 1–80)", %{conn: conn} do
+      # closes RBK-003-T10 RBK-018-T06
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
+
+      # The form changeset bounds the title to 80 chars — an 81-char one surfaces
+      # the length violation inline on the Title field once validate runs (no flash).
+      html = render_change(lv, "meta_change", %{"title" => String.duplicate("a", 81)})
+
+      assert html =~ "should be at most 80 character(s)"
+      refute html =~ "Could not save runbook"
     end
   end
 
@@ -324,6 +366,139 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       assert render_click(lv, "save", %{}) =~ "You don&#39;t have permission to do that."
       assert Emisar.Repo.all(Emisar.Runbooks.Runbook) == []
     end
+
+    test "a structural definition error surfaces on the Steps panel, not as a flash", %{
+      conn: conn
+    } do
+      # closes RBK-003-T11
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
+
+      render_change(lv, "meta_change", %{"title" => "Too many targets", "slug" => ""})
+
+      # A step targeting 51 groups blows the changeset's per-step selector cap
+      # (max 50) — a `:definition` error with no metadata input to bind to. It
+      # must surface as one concise line on the Steps panel via
+      # save_error_message/1 (the error_banner), not a top flash.
+      targets = for n <- 1..51, do: "group#{n}"
+
+      render_change(lv, "step_change", %{
+        "index" => "0",
+        "step_id" => "fanout",
+        "action_id" => "linux.uptime",
+        "selector_kind" => "group",
+        "selector_values" => targets
+      })
+
+      html = render_click(lv, "save", %{})
+
+      assert html =~ "Steps: a step targets too many runners or groups (max 50)"
+      # Not a flash banner — the structural error lives on the Steps panel.
+      refute html =~ ~s(id="flash-error")
+      # Nothing persisted — the bound definition was rejected.
+      assert Emisar.Repo.all(Emisar.Runbooks.Runbook) == []
+    end
+
+    test "the success flash names the new version saved", %{conn: conn} do
+      # closes RBK-004-T03
+      {conn, user, account} = register_and_log_in(conn)
+      subject = Emisar.Fixtures.subject_for(user, account)
+
+      {:ok, v1} =
+        Emisar.Runbooks.create_runbook(
+          %{
+            "title" => "Patch night",
+            "name" => "Patch night",
+            "slug" => "patch-night",
+            "definition" => %{"steps" => [%{"id" => "s1", "action_id" => "linux.uptime"}]}
+          },
+          subject
+        )
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/#{v1.id}/edit")
+
+      render_change(lv, "meta_change", %{"title" => "Patch night v2", "slug" => "patch-night"})
+      render_click(lv, "save", %{})
+
+      # Saving an existing runbook bumps to v2 — the flash names that version so
+      # the operator knows a NEW draft version was created, not an overwrite.
+      flash = assert_redirect(lv, ~p"/app/#{account}/runbooks")
+      assert flash["info"] == "Draft v2 saved."
+    end
+
+    test "editing a published runbook shows the immutability note in the version aside", %{
+      conn: conn
+    } do
+      # closes RBK-004-T04
+      {conn, user, account} = register_and_log_in(conn)
+      subject = Emisar.Fixtures.subject_for(user, account)
+
+      {:ok, published} =
+        Emisar.Runbooks.create_runbook(
+          %{
+            "title" => "Locked",
+            "name" => "Locked",
+            "slug" => "locked",
+            "definition" => %{
+              "steps" => [
+                %{
+                  "id" => "s1",
+                  "action_id" => "linux.uptime",
+                  "runner_selector" => %{"group" => ["prod"]}
+                }
+              ]
+            }
+          },
+          subject
+        )
+
+      {:ok, published} = Emisar.Runbooks.publish(published, subject)
+
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runbooks/#{published.id}/edit")
+
+      # The Version aside states the copy-on-write model + that saving creates
+      # the next version — so the author isn't surprised the published row is left
+      # intact.
+      assert html =~ "Published runbooks are immutable — saving creates a new draft version."
+      assert html =~ "v#{published.version + 1}"
+    end
+
+    test "there is no unpublish — a published runbook offers only save/publish", %{conn: conn} do
+      # closes RBK-006-T10
+      {conn, user, account} = register_and_log_in(conn)
+      subject = Emisar.Fixtures.subject_for(user, account)
+
+      {:ok, published} =
+        Emisar.Runbooks.create_runbook(
+          %{
+            "title" => "No unpublish",
+            "name" => "No unpublish",
+            "slug" => "no-unpublish",
+            "definition" => %{
+              "steps" => [
+                %{
+                  "id" => "s1",
+                  "action_id" => "linux.uptime",
+                  "runner_selector" => %{"group" => ["prod"]}
+                }
+              ]
+            }
+          },
+          subject
+        )
+
+      {:ok, published} = Emisar.Runbooks.publish(published, subject)
+
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runbooks/#{published.id}/edit")
+
+      # Revising a published runbook is "save a new draft version", never an
+      # unpublish: the editor exposes Save draft + Publish and no unpublish
+      # control or handler.
+      refute html =~ "Unpublish"
+      refute html =~ ~s(phx-click="unpublish")
+      assert html =~ "Save draft"
+      assert html =~ "Publish"
+    end
   end
 
   describe "per-step risk" do
@@ -407,6 +582,625 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
 
       assert count_step_cards(render(lv)) == count_step_cards(before_html)
     end
+  end
+
+  describe "add a step (RBK-011)" do
+    test "add appends a BLANK card with an auto-derivable placeholder id", %{conn: conn} do
+      # closes RBK-011-T01 RBK-011-T02
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
+
+      before_count = count_step_cards(render(lv))
+      html = render_click(lv, "add_action_step", %{})
+      assert count_step_cards(html) == before_count + 1
+
+      # The newly appended card is empty: no action, no selected target, no args.
+      assert html =~ ~s(name="action_id" value="" )
+      # The "No args." resting line proves the new card carries an empty arg list.
+      assert html =~ "No args."
+
+      # Its id is the `step<digits>` placeholder example_action_step/0 emits, so
+      # RBK-015's auto-derive treats it as not-yet-customized.
+      assert [_ | _] = step_id_values(html)
+      assert Enum.all?(step_id_values(html), &(&1 =~ ~r/^step\d+$/))
+    end
+
+    test "two added steps never collide on id", %{conn: conn} do
+      # closes RBK-011-T03
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
+
+      render_click(lv, "add_action_step", %{})
+      html = render_click(lv, "add_action_step", %{})
+
+      ids = step_id_values(html)
+      # The seeded step + two added → three placeholder ids, all distinct
+      # (each from a fresh System.unique_integer([:positive])).
+      assert length(ids) == 3
+      assert ids == Enum.uniq(ids)
+    end
+
+    test "a blank added step saves as a draft (completeness deferred to publish)", %{conn: conn} do
+      # closes RBK-011-T04
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
+
+      # Title is required for any save; the steps stay blank (seeded + added).
+      render_change(lv, "meta_change", %{"title" => "Draft with blanks", "slug" => ""})
+      render_click(lv, "add_action_step", %{})
+
+      render_click(lv, "save", %{})
+      assert_redirect(lv, ~p"/app/#{account}/runbooks")
+
+      assert [runbook] = Emisar.Repo.all(Emisar.Runbooks.Runbook)
+      assert runbook.status == :draft
+      # Both blank steps persisted — only publish enforces a complete definition.
+      assert length(runbook.definition["steps"]) == 2
+    end
+
+    test "adding from an empty list replaces the empty-state", %{conn: conn} do
+      # closes RBK-011-T05
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
+
+      # Drop the single seeded step → the Steps panel shows its empty-state.
+      empty = render_click(lv, "remove_step", %{"index" => "0"})
+      assert count_step_cards(empty) == 0
+      assert empty =~ "No steps. Add an action step above to start."
+
+      # Adding one brings the first card back and clears the empty-state line.
+      filled = render_click(lv, "add_action_step", %{})
+      assert count_step_cards(filled) == 1
+      refute filled =~ "No steps. Add an action step above to start."
+    end
+  end
+
+  describe "remove a step (RBK-012)" do
+    test "the trash button carries a confirm", %{conn: conn} do
+      # closes RBK-012-T02
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runbooks/new")
+
+      assert html =~ ~s(data-confirm="Remove this step?")
+    end
+
+    test "removing the only step returns the empty-state", %{conn: conn} do
+      # closes RBK-012-T04
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
+
+      # A fresh :new editor seeds exactly one step; removing it leaves none.
+      html = render_click(lv, "remove_step", %{"index" => "0"})
+      assert count_step_cards(html) == 0
+      assert html =~ "No steps. Add an action step above to start."
+    end
+  end
+
+  describe "reorder a step (RBK-013)" do
+    test "move-up at the first / move-down at the last are no-ops with the end buttons disabled",
+         %{conn: conn} do
+      # closes RBK-013-T02
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
+
+      # Give the seeded step a stable id, then add a second so first/last differ.
+      render_change(lv, "step_change", %{
+        "index" => "0",
+        "step_id" => "first",
+        "action_id" => "",
+        "selector_kind" => "group",
+        "selector_values" => []
+      })
+
+      render_click(lv, "add_action_step", %{})
+
+      render_change(lv, "step_change", %{
+        "index" => "1",
+        "step_id" => "second",
+        "action_id" => "",
+        "selector_kind" => "group",
+        "selector_values" => []
+      })
+
+      before_html = render(lv)
+      before_order = step_id_values(before_html)
+
+      # Move-up on the first step and move-down on the last both target an
+      # out-of-range index → the order is unchanged.
+      render_click(lv, "move_step", %{"index" => "0", "dir" => "up"})
+      render_click(lv, "move_step", %{"index" => "1", "dir" => "down"})
+      assert step_id_values(render(lv)) == before_order
+
+      # The end buttons are also rendered `disabled`: up on the first card,
+      # down on the last card.
+      assert before_html =~
+               ~r/<button(?=[^>]*phx-value-dir="up")(?=[^>]*phx-value-index="0")(?=[^>]*\bdisabled)[^>]*>/
+
+      assert before_html =~
+               ~r/<button(?=[^>]*phx-value-dir="down")(?=[^>]*phx-value-index="1")(?=[^>]*\bdisabled)[^>]*>/
+    end
+
+    test "a single-step list disables both move buttons", %{conn: conn} do
+      # closes RBK-013-T03
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runbooks/new")
+
+      # The lone seeded step is both first (index 0) and last (total-1), so
+      # its up AND down buttons are disabled.
+      assert html =~
+               ~r/<button(?=[^>]*phx-value-dir="up")(?=[^>]*phx-value-index="0")(?=[^>]*\bdisabled)[^>]*>/
+
+      assert html =~
+               ~r/<button(?=[^>]*phx-value-dir="down")(?=[^>]*phx-value-index="0")(?=[^>]*\bdisabled)[^>]*>/
+    end
+  end
+
+  describe "edit a step's action (RBK-014)" do
+    test "the action datalist lists the COMPLETE catalog with no truncation", %{conn: conn} do
+      # closes RBK-014-T03
+      {conn, user, account} = register_and_log_in(conn)
+      subject = Emisar.Fixtures.subject_for(user, account)
+      runner = Emisar.Fixtures.runner_fixture(account_id: account.id)
+
+      # Advertise > 35 actions; the picker must offer every one (the same
+      # complete set MCP reads), never a paginated page.
+      action_ids = for n <- 1..40, do: "pack.action_#{String.pad_leading("#{n}", 3, "0")}"
+
+      for action_id <- action_ids do
+        Emisar.Fixtures.action_fixture(runner: runner, action_id: action_id)
+      end
+
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runbooks/new")
+      assert is_struct(subject, Emisar.Auth.Subject)
+
+      datalist = extract_datalist(html, "catalog-actions")
+
+      for action_id <- action_ids do
+        assert datalist =~ ~s(value="#{action_id}")
+      end
+    end
+
+    test "an uncataloged typed action shows no risk pill", %{conn: conn} do
+      # closes RBK-014-T04
+      {conn, user, account} = register_and_log_in(conn)
+      subject = Emisar.Fixtures.subject_for(user, account)
+      runner = Emisar.Fixtures.runner_fixture(account_id: account.id)
+      # A high-risk action IS cataloged, so a rose pill is what shows when it's
+      # the chosen action — proving the absence below is the unknown-action path.
+      Emisar.Fixtures.action_fixture(runner: runner, action_id: "linux.uptime", risk: "high")
+      assert is_struct(subject, Emisar.Auth.Subject)
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
+
+      # Type an action no runner advertises → @risk_by_action miss → @risk nil →
+      # the `:if={@risk}` risk pill never renders (no rose/amber/brand ring).
+      html =
+        render_change(lv, "step_change", %{
+          "index" => "0",
+          "step_id" => "mystery",
+          "action_id" => "totally.unknown_action",
+          "selector_kind" => "group",
+          "selector_values" => []
+        })
+
+      refute html =~ "ring-rose-500/30"
+      refute html =~ "ring-amber-500/30"
+      refute html =~ "ring-brand-500/30"
+    end
+
+    test "a blank/unknown action is allowed in a draft save", %{conn: conn} do
+      # closes RBK-014-T05
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
+
+      render_change(lv, "meta_change", %{"title" => "Blank action", "slug" => ""})
+
+      # Leave the seeded step's action blank, give it a target, Save draft.
+      render_change(lv, "step_change", %{
+        "index" => "0",
+        "step_id" => "noop",
+        "action_id" => "",
+        "selector_kind" => "group",
+        "selector_values" => ["linux"]
+      })
+
+      render_click(lv, "save", %{})
+      assert_redirect(lv, ~p"/app/#{account}/runbooks")
+
+      assert [runbook] = Emisar.Repo.all(Emisar.Runbooks.Runbook)
+      assert runbook.status == :draft
+      assert [%{"action_id" => ""} | _] = runbook.definition["steps"]
+    end
+  end
+
+  describe "edit a step's id (RBK-015)" do
+    test "a blank action does not auto-derive the step id", %{conn: conn} do
+      # closes RBK-015-T03
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
+
+      # Placeholder id is still in place, but the auto-derive guard requires a
+      # non-blank action_id — with a blank action the placeholder must stand.
+      [seeded_id] = step_id_values(render(lv))
+
+      html =
+        render_change(lv, "step_change", %{
+          "index" => "0",
+          "step_id" => seeded_id,
+          "action_id" => "",
+          "selector_kind" => "group",
+          "selector_values" => []
+        })
+
+      assert step_id_values(html) == [seeded_id]
+    end
+
+    test "the auto-derived step id is capped at 40 chars", %{conn: conn} do
+      # closes RBK-015-T04
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
+
+      [seeded_id] = step_id_values(render(lv))
+
+      # A very long action id (non-alnum → "_") derives a step id sliced to 40.
+      long_action = "pack." <> String.duplicate("very_long_segment.", 6)
+
+      html =
+        render_change(lv, "step_change", %{
+          "index" => "0",
+          "step_id" => seeded_id,
+          "action_id" => long_action,
+          "selector_kind" => "group",
+          "selector_values" => []
+        })
+
+      [derived] = step_id_values(html)
+      assert String.length(derived) == 40
+    end
+
+    test "typing `step5` is treated as not-customized and still auto-derives", %{conn: conn} do
+      # closes RBK-015-T05
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
+
+      # `step5` matches the `^step\d+$` placeholder regex, so picking an action
+      # overwrites it (acceptable — it reads like an auto id, not a deliberate name).
+      html =
+        render_change(lv, "step_change", %{
+          "index" => "0",
+          "step_id" => "step5",
+          "action_id" => "linux.df",
+          "selector_kind" => "group",
+          "selector_values" => []
+        })
+
+      assert step_id_values(html) == ["linux_df"]
+    end
+
+    test "the step_id form key remaps to the canonical id key", %{conn: conn} do
+      # closes RBK-015-T07
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
+
+      render_change(lv, "meta_change", %{"title" => "Remap", "slug" => ""})
+
+      # The form posts `step_id` (to avoid clashing with the HTML element id);
+      # step_change must store it under the canonical "id" key the engine reads.
+      render_change(lv, "step_change", %{
+        "index" => "0",
+        "step_id" => "custom_id",
+        "action_id" => "linux.df",
+        "selector_kind" => "group",
+        "selector_values" => ["linux"]
+      })
+
+      render_click(lv, "save", %{})
+      assert_redirect(lv, ~p"/app/#{account}/runbooks")
+
+      assert [runbook] = Emisar.Repo.all(Emisar.Runbooks.Runbook)
+      assert [%{"id" => "custom_id"} | _] = runbook.definition["steps"]
+    end
+  end
+
+  describe "edit a step's args (RBK-016)" do
+    test "per-action arg suggestions render in a datalist", %{conn: conn} do
+      # closes RBK-016-T02
+      {conn, user, account} = register_and_log_in(conn)
+      subject = Emisar.Fixtures.subject_for(user, account)
+      runner = Emisar.Fixtures.runner_fixture(account_id: account.id)
+
+      # The action advertises two args → the editor builds a per-action datalist
+      # (`args-{action}`) listing the union of advertised arg names.
+      Emisar.Fixtures.action_fixture(
+        runner: runner,
+        action_id: "linux.tail",
+        args_schema: %{"args" => [%{"name" => "path"}, %{"name" => "lines"}]}
+      )
+
+      assert is_struct(subject, Emisar.Auth.Subject)
+
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runbooks/new")
+
+      datalist = extract_datalist(html, "args-linux_tail")
+      assert datalist =~ ~s(value="path")
+      assert datalist =~ ~s(value="lines")
+    end
+
+    test "an action with no advertised args hides the \"Known for\" hint", %{conn: conn} do
+      # closes RBK-016-T04
+      {conn, user, account} = register_and_log_in(conn)
+      subject = Emisar.Fixtures.subject_for(user, account)
+      runner = Emisar.Fixtures.runner_fixture(account_id: account.id)
+
+      # linux.uptime is cataloged but advertises NO args (the default empty
+      # args_schema) → its args_by_action entry is [], so the arg editor's
+      # `:if={@known_args != []}` "Known for …" hint must not render.
+      Emisar.Fixtures.action_fixture(runner: runner, action_id: "linux.uptime")
+      assert is_struct(subject, Emisar.Auth.Subject)
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
+
+      html =
+        render_change(lv, "step_change", %{
+          "index" => "0",
+          "step_id" => "check",
+          "action_id" => "linux.uptime",
+          "selector_kind" => "group",
+          "selector_values" => []
+        })
+
+      # The Args section still renders (label + the "No args." resting line), but
+      # the per-action suggestion hint is absent — there's nothing to suggest.
+      assert html =~ "No args."
+      refute html =~ "Known for"
+    end
+
+    test "step add/remove are socket-only — nothing persists, no audit row, until Save", %{
+      conn: conn
+    } do
+      # closes RBK-011-T06 RBK-012-T05
+      {conn, user, account} = register_and_log_in(conn)
+      subject = Emisar.Fixtures.subject_for(user, account)
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
+
+      # Reshape the step list in the socket (add two, remove one) without ever
+      # clicking Save. All step state is socket-only until Save flattens it, so the
+      # DB must stay empty and no runbook.created audit row may be written.
+      render_click(lv, "add_action_step", %{})
+      render_click(lv, "add_action_step", %{})
+      render_click(lv, "remove_step", %{"index" => "0"})
+
+      assert Emisar.Repo.all(Emisar.Runbooks.Runbook) == []
+
+      {:ok, events, _} = Emisar.Audit.list_events(subject, page: [limit: 20])
+      refute Enum.any?(events, &(&1.event_type == "runbook.created"))
+    end
+
+    test "blank arg-key pairs are dropped on flatten; values are stored as strings", %{conn: conn} do
+      # closes RBK-005-T04 RBK-016-T03 RBK-016-T08
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
+
+      render_change(lv, "meta_change", %{"title" => "Arg flatten", "slug" => ""})
+
+      render_change(lv, "step_change", %{
+        "index" => "0",
+        "step_id" => "tail",
+        "action_id" => "linux.tail",
+        "selector_kind" => "group",
+        "selector_values" => ["linux"]
+      })
+
+      # One real pair (numeric-looking value) + one blank-key pair.
+      render_click(lv, "add_arg", %{"index" => "0"})
+      render_click(lv, "add_arg", %{"index" => "0"})
+
+      render_change(lv, "arg_change", %{
+        "index" => "0",
+        "arg" => "0",
+        "key" => "lines",
+        "value" => "200"
+      })
+
+      render_change(lv, "arg_change", %{
+        "index" => "0",
+        "arg" => "1",
+        "key" => "",
+        "value" => "orphaned"
+      })
+
+      render_click(lv, "save", %{})
+      assert_redirect(lv, ~p"/app/#{account}/runbooks")
+
+      assert [runbook] = Emisar.Repo.all(Emisar.Runbooks.Runbook)
+      [step] = runbook.definition["steps"]
+
+      # The blank-key pair is gone; the kept value persists as a STRING (the
+      # runner is responsible for any type coercion).
+      assert step["args"] == %{"lines" => "200"}
+    end
+  end
+
+  describe "set a step's target (RBK-017)" do
+    test "a kind switch clears stale selected values", %{conn: conn} do
+      # closes RBK-017-T03
+      {conn, _user, account} = register_and_log_in(conn)
+      Emisar.Fixtures.runner_fixture(account_id: account.id, group: "edge-eu")
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
+
+      # Pick a group target…
+      render_change(lv, "step_change", %{
+        "index" => "0",
+        "step_id" => "check",
+        "action_id" => "linux.uptime",
+        "selector_kind" => "group",
+        "selector_values" => ["edge-eu"]
+      })
+
+      # …then switch the kind to runner_id WITHOUT re-posting values. The old
+      # group value no longer applies to the runner option set, so it's dropped
+      # → the step is back to "no target set".
+      html =
+        render_change(lv, "step_change", %{
+          "index" => "0",
+          "step_id" => "check",
+          "action_id" => "linux.uptime",
+          "selector_kind" => "runner_id",
+          "selector_values" => ["edge-eu"]
+        })
+
+      refute html =~ ~r/<option(?=[^>]*\bvalue="edge-eu")(?=[^>]*\bselected)[^>]*>/
+    end
+
+    test "an empty multi-select posts nothing and defaults values to []", %{conn: conn} do
+      # closes RBK-017-T05
+      {conn, _user, account} = register_and_log_in(conn)
+      Emisar.Fixtures.runner_fixture(account_id: account.id, group: "edge-eu")
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
+      render_change(lv, "meta_change", %{"title" => "No target", "slug" => ""})
+
+      # Select a target, then a change that omits `selector_values` entirely
+      # (what a deselected <select multiple> posts) must reset it to [].
+      render_change(lv, "step_change", %{
+        "index" => "0",
+        "step_id" => "check",
+        "action_id" => "linux.uptime",
+        "selector_kind" => "group",
+        "selector_values" => ["edge-eu"]
+      })
+
+      html =
+        render_change(lv, "step_change", %{
+          "index" => "0",
+          "step_id" => "check",
+          "action_id" => "linux.uptime",
+          "selector_kind" => "group"
+        })
+
+      assert html =~ "No target set"
+
+      render_click(lv, "save", %{})
+      assert_redirect(lv, ~p"/app/#{account}/runbooks")
+
+      assert [runbook] = Emisar.Repo.all(Emisar.Runbooks.Runbook)
+      [step] = runbook.definition["steps"]
+      assert step["runner_selector"] == %{"group" => []}
+    end
+
+    test "no runners/groups yet → the picker shows guidance", %{conn: conn} do
+      # closes RBK-017-T07
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
+
+      # Default kind is "group" and the account has none yet.
+      assert render(lv) =~ "No runner groups yet."
+
+      # Switch to runner_id with no runners → the runner-specific guidance shows.
+      html =
+        render_change(lv, "step_change", %{
+          "index" => "0",
+          "step_id" => "check",
+          "action_id" => "linux.uptime",
+          "selector_kind" => "runner_id",
+          "selector_values" => []
+        })
+
+      assert html =~ "No runners connected yet."
+    end
+
+    test "a selected-but-now-absent target is preserved in the options", %{conn: conn} do
+      # closes RBK-017-T08
+      {conn, _user, account} = register_and_log_in(conn)
+      Emisar.Fixtures.runner_fixture(account_id: account.id, group: "edge-eu")
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
+      render_change(lv, "meta_change", %{"title" => "Ghost target", "slug" => ""})
+
+      # Select a group that the live set does NOT contain (e.g. a group whose
+      # runners all disconnected). selector_options/4 keeps it so the next save
+      # doesn't silently drop the operator's selection.
+      html =
+        render_change(lv, "step_change", %{
+          "index" => "0",
+          "step_id" => "check",
+          "action_id" => "linux.uptime",
+          "selector_kind" => "group",
+          "selector_values" => ["ghost-group"]
+        })
+
+      assert html =~ ~r/<option(?=[^>]*\bvalue="ghost-group")(?=[^>]*\bselected)[^>]*>/
+
+      render_click(lv, "save", %{})
+      assert_redirect(lv, ~p"/app/#{account}/runbooks")
+
+      assert [runbook] = Emisar.Repo.all(Emisar.Runbooks.Runbook)
+      [step] = runbook.definition["steps"]
+      assert step["runner_selector"] == %{"group" => ["ghost-group"]}
+    end
+  end
+
+  describe "edit metadata (RBK-018)" do
+    test "a blank slug surfaces no slug error (nilified for auto-derive)", %{conn: conn} do
+      # closes RBK-018-T05
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
+
+      # A valid title with a blank slug must not raise a format error — the
+      # changeset nilifies the empty slug; Save derives it from the title.
+      html = render_change(lv, "meta_change", %{"title" => "Rolling repair", "slug" => ""})
+
+      refute html =~ "has invalid format"
+      refute html =~ "can&#39;t be blank"
+      refute html =~ "can't be blank"
+    end
+
+    test "the metadata form posts FLAT keys, not runbook[...] keys", %{conn: conn} do
+      # closes RBK-018-T07
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runbooks/new")
+
+      # Each metadata <.input> carries an explicit flat name + id so meta_change
+      # reads top-level "title"/"slug"/"description" (no `runbook[title]` nesting).
+      assert html =~ ~s(name="title")
+      assert html =~ ~s(name="slug")
+      assert html =~ ~s(name="description")
+      assert html =~ ~s(id="runbook_title")
+      refute html =~ ~s(name="runbook[title]")
+    end
+
+    test "the metadata changeset never validates the step definition", %{conn: conn} do
+      # closes RBK-018-T08
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
+
+      # The step in socket state is blank (no action, no target) — a definition
+      # changeset would reject it — but the form-only changeset casts just
+      # title/slug/description, so meta_change surfaces no Steps error.
+      html = render_change(lv, "meta_change", %{"title" => "Form only", "slug" => "form-only"})
+
+      refute html =~ "Steps:"
+      refute html =~ "has invalid format"
+      refute html =~ "can&#39;t be blank"
+      refute html =~ "can't be blank"
+    end
+  end
+
+  # The value of every Step ID <input name="step_id">, in render order. The
+  # rendered input carries `id=` between `name=` and `value=`, so skip it.
+  defp step_id_values(html) do
+    ~r/name="step_id"[^>]*?\bvalue="([^"]*)"/
+    |> Regex.scan(html)
+    |> Enum.map(fn [_, value] -> value end)
+  end
+
+  # The `<datalist id="...">…</datalist>` fragment, so an option assertion can't
+  # accidentally match an identically-valued <option> elsewhere on the page.
+  defp extract_datalist(html, id) do
+    [_, body] = Regex.run(~r/<datalist id="#{id}">(.*?)<\/datalist>/s, html)
+    body
   end
 
   defp count_step_cards(html) do
