@@ -1,0 +1,137 @@
+<.guide_page
+  title="How to give an AI agent safe access to production"
+  dek="You don't hand it your SSH key. You give it a small, declared catalog of actions, gate the risky ones behind a human, and audit every call. Here's the pattern — and why it's the one that holds up."
+  date="June 2026"
+  read_time="8 min read"
+>
+  <p>
+    AI agents have gotten genuinely good at operations work. Point one at a misbehaving service
+    and it will read the logs, correlate the metrics, form a hypothesis, and tell you what it
+    thinks is wrong — often faster than you would. The hard part was never the reasoning. It's
+    the <strong>access</strong>: how do you let a model touch production without handing it the
+    keys to set the building on fire?
+  </p>
+  <p>
+    The tempting answer is to give it a shell. It's one line of config, and the agent already
+    knows how to use SSH. It's also the answer you'll regret. Below is the pattern that actually
+    holds up under a security review — and under a 3 a.m. incident.
+  </p>
+
+  <h2>Why a shell is the wrong door</h2>
+  <p>
+    A shell is unbounded by construction. The moment an agent has <code>ssh you@prod</code>, it can
+    run anything the account can run, and "anything" includes the commands you never meant it to
+    reach. A model that is even slightly wrong — or one that's been
+    <a
+      href="https://owasp.org/www-project-top-10-for-large-language-model-applications/"
+      target="_blank"
+      rel="noopener noreferrer"
+    >
+      prompt-injected
+    </a>
+    by a malicious log line it just read — can turn a request to "clean up old data" into a
+    <code>DROP</code>
+    on the wrong database. There is no gate before the action, and no trustworthy
+    record after it. We wrote a longer
+    <.link navigate={~p"/guides/ai-agents-and-ssh-the-risks"}>breakdown of the SSH risks</.link>
+    if you want the full version.
+  </p>
+  <p>
+    The fix isn't to make the agent "more careful." Careful is not a control. The fix is to change
+    the shape of what the agent can ask for in the first place.
+  </p>
+
+  <h2>The pattern that holds: a gated catalog</h2>
+  <p>
+    Borrow the idea from how you already ship code. You don't give your CI system a root shell on
+    prod; you give it a reviewed artifact, an explicit gate, and a durable history. Apply the same
+    three ideas to every operational command an agent is allowed to request. Concretely, that's
+    four properties working together.
+  </p>
+
+  <h3>1. A declared, typed catalog of actions</h3>
+  <p>
+    Instead of a shell, the agent gets a list of <em>declared</em>
+    actions: <code>read service
+    logs</code>, <code>check replication lag</code>, <code>revert this deploy</code>. Each one is
+    defined ahead of time with typed arguments and validation — a unit name must match a pattern, a
+    namespace must be in an allowed set. The agent literally cannot request a command that isn't in
+    the catalog, because it can't see one. This is the single most important property: it converts
+    "what could the model possibly do?" from an open question into a finite, reviewable list.
+  </p>
+
+  <h3>2. A policy gate in front of every call</h3>
+  <p>
+    Declaring an action doesn't mean auto-running it. Each call passes a policy that returns <strong>allow</strong>, <strong>require approval</strong>, or <strong>deny</strong>. The
+    obvious default is to tier by risk: reading logs and metrics runs freely, because a read can't
+    hurt you; a write that mutates state stops. You set this once, then add narrower overrides — a
+    specific destructive action denied outright, a whole family of actions routed to approval.
+  </p>
+
+  <h3>3. Human approval for the handful of risky writes</h3>
+  <p>
+    The reads are where the agent spends almost all its time, and they run without you. The rare
+    mutating action — restart this, revert that, terminate the wedged backend — is the one moment a
+    human steps in. A good approval shows the actor, the exact arguments, the target host, and the
+    policy rule that triggered the gate, so the decision takes one read and one click. That's the
+    whole trade: the agent moves fast on everything safe, and you stay in the loop for the few
+    things that aren't.
+  </p>
+
+  <h3>4. A tamper-evident audit of everything</h3>
+  <p>
+    Every call — allowed, approved, or denied — lands in an audit trail with its inputs, outputs,
+    exit code, and who asked. For this to be worth anything during an incident, it has to be hard
+    to quietly edit. A hash-chained journal on the host, mirrored to a searchable system of record
+    and streamable to your SIEM, means a missing or altered line is detectable rather than invisible.
+    The audit is what turns "the AI did something" into "here is exactly what it did, and why."
+  </p>
+
+  <h3>5. Don't trust the control plane either</h3>
+  <p>
+    The four properties above assume the thing issuing actions is trustworthy. A serious design
+    assumes it might not be. The strongest version of this pattern lets the host <strong>verify for itself</strong>: a local allow/deny list the host enforces regardless of
+    what the cloud says, and a signature on each dispatch that's minted on the operator's own
+    machine. A compromised control plane can then relay a signed request but never forge, alter, or
+    originate one. The host gets the last word. We go deep on this in the <.link navigate={
+      ~p"/security"
+    }>security model</.link>.
+  </p>
+
+  <h2>This is just Zero Trust, applied to agents</h2>
+  <p>
+    If this feels familiar, it should. It's the same control set Anthropic describes in <a
+      href="https://cdn.prod.website-files.com/6889473510b50328dbb70ae6/6a1611a04085d7cd3dadc924_Claude-eBook-Zero-Trust-for-AI-Agents-05182026.pdf"
+      target="_blank"
+      rel="noopener noreferrer"
+    >Zero Trust for AI Agents</a>:
+    least agency (the agent sees only declared tools), deny-by-default, human approval for high-risk
+    actions, and an immutable audit trail. The declared catalog is least agency. The policy gate is
+    deny-by-default. The approval step and the audit are the other two. See the
+    <.link navigate={~p"/zero-trust"}>control-by-control mapping</.link>
+    if you want to check the work.
+  </p>
+
+  <h2>Where emisar fits</h2>
+  <p>
+    emisar is one implementation of this pattern, built as an
+    <a href="https://modelcontextprotocol.io/" target="_blank" rel="noopener noreferrer">MCP</a>
+    server so any agent — Claude, Cursor, ChatGPT — connects to it the same way it connects to any
+    other tool. You install a small runner on each host, choose which packs of actions it exposes,
+    set your policy, and point your agent at it. The runner dials out (no inbound port on your
+    hosts), re-validates every argument, redacts secrets before output leaves the machine, and
+    writes the hash-chained journal. You don't have to use emisar to follow the pattern — but if you
+    don't want to build and maintain all five properties yourself, that's the trade it's making.
+  </p>
+
+  <h2>Start small</h2>
+  <p>
+    You don't have to hand over your whole fleet on day one. Start read-only: give an agent the
+    logs-and-metrics actions on one non-critical service and watch how it investigates. Add the
+    first gated write only when you trust the loop. The point of the pattern is that you can grow
+    the agent's reach one declared action at a time, with a gate and a record at every step —
+    instead of the all-or-nothing of a shell. When you're ready, the
+    <.link navigate={~p"/docs/quickstart"}>quickstart</.link>
+    takes about five minutes.
+  </p>
+</.guide_page>

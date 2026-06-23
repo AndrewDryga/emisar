@@ -299,4 +299,58 @@ defmodule EmisarWeb.MarketingHTML do
     </div>
     """
   end
+
+  attr :title, :string, required: true
+  attr :dek, :string, required: true, doc: "the standfirst / sub-headline"
+  attr :date, :string, required: true
+  attr :read_time, :string, required: true
+  slot :inner_block, required: true
+
+  @doc """
+  Shared layout for a /guides article — the top-of-funnel long-form pages.
+  Renders the marketing chrome, a header (back-link + title + dek + date and
+  read-time), the body as readable single-column prose, and a conversion CTA.
+  Same element-targeted styling as `legal_page` (the typography plugin isn't
+  installed), extended for h3 / ordered lists / blockquotes.
+  """
+  def guide_page(assigns) do
+    ~H"""
+    <div class="bg-zinc-950 text-zinc-100">
+      <.marketing_nav current={:guides} />
+
+      <header class="border-b border-zinc-900 bg-[#07080a]">
+        <div class="mx-auto max-w-3xl px-6 py-16 sm:py-20 lg:px-8">
+          <.link
+            navigate={~p"/guides"}
+            class="inline-flex items-center gap-1.5 text-sm font-medium text-brand-400 hover:text-brand-300"
+          >
+            <.icon name="hero-arrow-left" class="h-3.5 w-3.5" /> Guides
+          </.link>
+          <h1 class="mt-6 text-4xl font-bold tracking-tight text-zinc-50 text-balance sm:text-5xl">
+            {@title}
+          </h1>
+          <p class="mt-5 text-lg leading-relaxed text-zinc-300 text-pretty">{@dek}</p>
+          <p class="mt-6 text-sm text-zinc-500">{@date} &middot; {@read_time}</p>
+        </div>
+      </header>
+
+      <section class="py-14 sm:py-16">
+        <div class="mx-auto max-w-3xl px-6 lg:px-8">
+          <article class="text-base [&_blockquote]:my-6 [&_blockquote]:border-l-2 [&_blockquote]:border-brand-500/40 [&_blockquote]:pl-5 [&_blockquote]:text-zinc-300 [&_code]:rounded [&_code]:bg-zinc-900 [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:text-[0.85em] [&_code]:text-zinc-300 [&_h2]:mb-5 [&_h2]:mt-14 [&_h2]:scroll-mt-24 [&_h2]:border-t [&_h2]:border-zinc-900 [&_h2]:pt-12 [&_h2]:text-2xl [&_h2]:font-bold [&_h2]:tracking-tight [&_h2]:text-balance [&_h2]:text-zinc-50 [&>h2:first-of-type]:mt-0 [&>h2:first-of-type]:border-t-0 [&>h2:first-of-type]:pt-0 [&_h3]:mb-3 [&_h3]:mt-10 [&_h3]:text-lg [&_h3]:font-semibold [&_h3]:text-zinc-100 [&_p]:my-6 [&_p]:leading-8 [&_p]:text-zinc-400 [&_strong]:font-semibold [&_strong]:text-zinc-100 [&_ul]:my-6 [&_ul]:list-disc [&_ul]:space-y-2 [&_ul]:pl-5 [&_ol]:my-6 [&_ol]:list-decimal [&_ol]:space-y-2 [&_ol]:pl-5 [&_li]:text-zinc-400 [&_li]:marker:text-zinc-600 [&_a]:font-medium [&_a]:text-brand-300 [&_a:hover]:text-brand-200">
+            {render_slot(@inner_block)}
+          </article>
+        </div>
+      </section>
+
+      <.marketing_cta
+        headline="Give your AI agent production access — without the panic."
+        subcopy="Start free on the Free plan, or book a walkthrough on your own infrastructure."
+        secondary_label="Book a demo"
+        secondary_path={~p"/demo"}
+      />
+
+      <.marketing_footer />
+    </div>
+    """
+  end
 end

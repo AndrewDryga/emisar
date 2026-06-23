@@ -3692,6 +3692,9 @@ defmodule EmisarWeb.CoreComponents do
                   <.link href={~p"/docs"} class="text-zinc-400 hover:text-zinc-100">Docs</.link>
                 </li>
                 <li>
+                  <.link href={~p"/guides"} class="text-zinc-400 hover:text-zinc-100">Guides</.link>
+                </li>
+                <li>
                   <.link href={~p"/changelog"} class="text-zinc-400 hover:text-zinc-100">
                     Changelog
                   </.link>

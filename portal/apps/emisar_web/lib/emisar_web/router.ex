@@ -89,6 +89,8 @@ defmodule EmisarWeb.Router do
     get "/zero-trust", MarketingController, :zero_trust
     get "/demo", MarketingController, :demo
     get "/trust", MarketingController, :trust
+    get "/guides", MarketingController, :guides
+    get "/guides/:slug", MarketingController, :guide
     get "/packs", MarketingController, :packs
     # Machine-facing registry endpoints (consumed by `emisar pack install`).
     # Declared before "/packs/:id" so the literal segments win; Phoenix

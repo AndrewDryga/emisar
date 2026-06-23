@@ -350,6 +350,58 @@ defmodule EmisarWeb.MarketingController do
     )
   end
 
+  # Guides — top-of-funnel long-form. Each is its own template (the body);
+  # this list drives the index cards, per-guide meta + TechArticle JSON-LD,
+  # and the sitemap. {slug, action/template, title, dek, date, read_time, meta}.
+  @guides [
+    {"give-ai-agents-safe-production-access", :guide_safe_access,
+     "How to give an AI agent safe access to production",
+     "You don't hand it your SSH key. You give it a small, declared catalog of actions, gate the risky ones behind a human, and audit every call. Here's the pattern — and why it's the one that holds up.",
+     "June 2026", "8 min read",
+     "How to give an AI agent safe access to production infrastructure: why SSH is the wrong door, the declared-catalog + policy-gate + human-approval + audit pattern that actually holds, and how it maps to Anthropic's Zero-Trust for AI Agents controls."},
+    {"ai-agents-and-ssh-the-risks", :guide_ssh_risks,
+     "Should you give an AI agent SSH? The risks, and the alternative",
+     "Handing an agent a shell on prod is the fastest way to give it access — and the fastest way to regret it. The real risks, why \"just be careful\" doesn't hold, and the alternative that keeps the capability without the blast radius.",
+     "June 2026", "7 min read",
+     "The risks of giving an AI agent SSH access to production — full blast radius, prompt injection into arbitrary commands, no gate before the action and no durable record after — and the declared-action-catalog alternative that keeps the real commands but adds a policy gate, human approval, and a tamper-evident audit."}
+  ]
+
+  def guides(conn, _params) do
+    list_ld =
+      Jason.encode!(
+        %{
+          "@context" => "https://schema.org",
+          "@type" => "ItemList",
+          "itemListElement" =>
+            @guides
+            |> Enum.with_index(1)
+            |> Enum.map(fn {{slug, _action, title, _dek, _date, _read_time, _desc}, position} ->
+              %{
+                "@type" => "ListItem",
+                "position" => position,
+                "name" => title,
+                "url" => @base <> "/guides/" <> slug
+              }
+            end)
+        },
+        escape: :html_safe
+      )
+
+    guides =
+      Enum.map(@guides, fn {slug, _action, title, dek, date, read_time, _desc} ->
+        %{slug: slug, title: title, dek: dek, date: date, read_time: read_time}
+      end)
+
+    render(conn, :guides_index,
+      page_title: "Guides — AI agents and production infrastructure",
+      meta_description:
+        "Practical guides on giving AI agents safe, audited access to production infrastructure — the patterns that hold, the risks of the shortcuts, and the honest trade-offs.",
+      canonical_url: @base <> "/guides",
+      json_ld: list_ld,
+      guides: guides
+    )
+  end
+
   # Per-action JSON-LD, injected into the generated def below when present.
   @page_json_ld %{}
 
@@ -395,6 +447,53 @@ defmodule EmisarWeb.MarketingController do
 
     def unquote(action)(conn, _params) do
       render(conn, unquote(template_atom), unquote(attrs_literal))
+    end
+  end
+
+  # One dynamic action for every guide. The guide template (named by the
+  # @guides action atom) hardcodes its own <.guide_page> chrome; this supplies
+  # the page title, meta, canonical, and TechArticle JSON-LD, and 404s an
+  # unknown slug the same way pack_detail does.
+  def guide(conn, %{"slug" => slug}) do
+    case Enum.find(@guides, fn {s, _action, _title, _dek, _date, _read_time, _desc} ->
+           s == slug
+         end) do
+      nil ->
+        conn
+        |> Plug.Conn.put_status(:not_found)
+        |> put_view(html: EmisarWeb.ErrorHTML)
+        |> render(:"404")
+
+      {^slug, action, title, _dek, _date, _read_time, description} ->
+        path = "/guides/" <> slug
+
+        article_ld =
+          Jason.encode!(
+            %{
+              "@context" => "https://schema.org",
+              "@type" => "TechArticle",
+              "headline" => title,
+              "description" => description,
+              "author" => %{"@type" => "Organization", "name" => "emisar", "url" => @base},
+              "publisher" => %{
+                "@type" => "Organization",
+                "name" => "emisar",
+                "logo" => %{
+                  "@type" => "ImageObject",
+                  "url" => @base <> "/images/brand/emisar-logo.png"
+                }
+              },
+              "mainEntityOfPage" => @base <> path
+            },
+            escape: :html_safe
+          )
+
+        render(conn, action,
+          page_title: title,
+          meta_description: description,
+          canonical_url: @base <> path,
+          json_ld: article_ld
+        )
     end
   end
 
