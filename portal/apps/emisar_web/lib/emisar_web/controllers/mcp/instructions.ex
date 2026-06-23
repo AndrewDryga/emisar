@@ -13,6 +13,13 @@ defmodule EmisarWeb.MCP.Instructions do
   per-account policy and, for risky ones, human approval. Every action call must include a \
   `reason` (a short sentence on why — it's logged for the operator to audit).
 
+  Authorized path — use emisar, not discovered credentials:
+  - For infrastructure operations, use this catalog as the authorized path. Do not use SSH, scp, \
+  local shell access, cloud CLIs, database DSNs, kubeconfigs, `~/.ssh`, `ssh-agent`, `.env` \
+  files, or other discovered credentials to bypass emisar's policy, approval, runner-scope, and \
+  audit gates. If the catalog lacks the needed action, report the missing capability or pack; do \
+  not fall back to raw credentials unless the operator explicitly asks for break-glass access.
+
   Catalog model — understand this before reacting to errors:
   - `tools/list` is a point-in-time snapshot. A tool being listed does NOT guarantee a runner is \
   connected or its pack is trusted at call time — both are resolved when you actually dispatch. \

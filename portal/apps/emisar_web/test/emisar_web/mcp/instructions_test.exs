@@ -27,6 +27,26 @@ defmodule EmisarWeb.MCP.InstructionsTest do
     assert @text =~ "`reason`"
   end
 
+  test "states that infrastructure operations use emisar instead of raw credentials" do
+    for fragment <- [
+          "Authorized path",
+          "use this catalog as the authorized path",
+          "Do not use SSH",
+          "scp",
+          "cloud CLIs",
+          "database DSNs",
+          "kubeconfigs",
+          "`~/.ssh`",
+          "`ssh-agent`",
+          "`.env`",
+          "do not fall back to raw credentials",
+          "break-glass access"
+        ] do
+      assert @text =~ fragment,
+             "instructions are missing the raw-credential bypass guidance: #{fragment}"
+    end
+  end
+
   test "states the tools/list point-in-time snapshot caveat + re-list on error" do
     # closes MCP-008-T03
     assert @text =~ "point-in-time snapshot"
