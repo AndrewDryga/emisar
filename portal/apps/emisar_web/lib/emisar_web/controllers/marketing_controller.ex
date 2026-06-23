@@ -224,6 +224,7 @@ defmodule EmisarWeb.MarketingController do
       meta_description:
         "Install a runner, connect your LLM over MCP, and your AI can read logs, query metrics, and investigate incidents across your fleet — every action policy-gated, approved by a human when risky, and fully audited. No SSH, no standing access.",
       canonical_url: @base <> "/ai",
+      og_image: @base <> "/images/og/og-ai.png",
       faqs: @ai_faqs,
       pack_count: EmisarWeb.PacksRegistry.pack_count(),
       action_count: delimit_int(EmisarWeb.PacksRegistry.action_count()),
@@ -302,6 +303,7 @@ defmodule EmisarWeb.MarketingController do
       meta_description:
         "Per runner, not per seat. Free covers 3 runners and 1 user; Team is $20 per runner per month with unlimited users and 90-day audit retention; Enterprise is custom.",
       canonical_url: @base <> "/pricing",
+      og_image: @base <> "/images/og/og-pricing.png",
       faqs: @pricing_faqs,
       json_ld: @pricing_ld
     )
@@ -455,6 +457,7 @@ defmodule EmisarWeb.MarketingController do
       meta_description:
         "Practical guides on giving AI agents safe, audited access to production infrastructure — the patterns that hold, the risks of the shortcuts, and the honest trade-offs.",
       canonical_url: @base <> "/guides",
+      og_image: @base <> "/images/og/og-guides.png",
       json_ld: list_ld,
       guides: guides
     )
@@ -462,6 +465,11 @@ defmodule EmisarWeb.MarketingController do
 
   # Per-action JSON-LD, injected into the generated def below when present.
   @page_json_ld %{}
+
+  # Per-section OG card (in priv/static/images/og/) for the generated pages;
+  # everything else falls back to the default emisar-og.webp in the layout.
+  # Bespoke actions (ai, pricing, guides) set :og_image inline.
+  @og_images %{security: "og-security", trust: "og-security", zero_trust: "og-security"}
 
   # Generate one `def <action>(conn, _)` per row. Keeping this in module
   # body (not a macro) so the action names show up directly in routes,
@@ -528,6 +536,12 @@ defmodule EmisarWeb.MarketingController do
       end
 
     attrs = Keyword.put(attrs, :json_ld, Map.get(@page_json_ld, action, default_ld))
+
+    attrs =
+      case Map.get(@og_images, action) do
+        nil -> attrs
+        file -> Keyword.put(attrs, :og_image, @base <> "/images/og/" <> file <> ".png")
+      end
 
     template_atom = template
     attrs_literal = Macro.escape(attrs)
