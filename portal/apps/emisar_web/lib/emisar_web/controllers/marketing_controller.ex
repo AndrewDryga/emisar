@@ -478,22 +478,51 @@ defmodule EmisarWeb.MarketingController do
 
     crumbs = [{"Home", @base <> "/"}] ++ docs_crumb ++ [{title, @base <> path}]
 
-    breadcrumb_ld =
-      Jason.encode!(
-        %{
-          "@context" => "https://schema.org",
-          "@type" => "BreadcrumbList",
-          "itemListElement" =>
-            crumbs
-            |> Enum.with_index(1)
-            |> Enum.map(fn {{name, item}, position} ->
-              %{"@type" => "ListItem", "position" => position, "name" => name, "item" => item}
-            end)
-        },
-        escape: :html_safe
-      )
+    breadcrumb_node = %{
+      "@type" => "BreadcrumbList",
+      "itemListElement" =>
+        crumbs
+        |> Enum.with_index(1)
+        |> Enum.map(fn {{name, item}, position} ->
+          %{"@type" => "ListItem", "position" => position, "name" => name, "item" => item}
+        end)
+    }
 
-    attrs = Keyword.put(attrs, :json_ld, Map.get(@page_json_ld, action, breadcrumb_ld))
+    # Docs pages also carry TechArticle structured data (richer article
+    # results); every other page keeps the bare BreadcrumbList it always had.
+    default_ld =
+      if String.starts_with?(path, "/docs") do
+        Jason.encode!(
+          %{
+            "@context" => "https://schema.org",
+            "@graph" => [
+              breadcrumb_node,
+              %{
+                "@type" => "TechArticle",
+                "headline" => title,
+                "description" => description,
+                "author" => %{"@type" => "Organization", "name" => "emisar", "url" => @base},
+                "publisher" => %{
+                  "@type" => "Organization",
+                  "name" => "emisar",
+                  "logo" => %{
+                    "@type" => "ImageObject",
+                    "url" => @base <> "/images/brand/emisar-logo.png"
+                  }
+                },
+                "mainEntityOfPage" => @base <> path
+              }
+            ]
+          },
+          escape: :html_safe
+        )
+      else
+        Jason.encode!(Map.put(breadcrumb_node, "@context", "https://schema.org"),
+          escape: :html_safe
+        )
+      end
+
+    attrs = Keyword.put(attrs, :json_ld, Map.get(@page_json_ld, action, default_ld))
 
     template_atom = template
     attrs_literal = Macro.escape(attrs)
