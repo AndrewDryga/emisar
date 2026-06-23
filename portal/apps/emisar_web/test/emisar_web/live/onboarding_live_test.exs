@@ -169,8 +169,6 @@ defmodule EmisarWeb.OnboardingLiveTest do
       assert html =~ "can&#39;t be blank"
     end
 
-    @tag skip: "BUG: a 1-2 char name derives a too-short slug; the slug-format error \
-has no input to render on, so the create silently fails with NO visible feedback"
     test "a short name yielding an invalid slug surfaces the error on the name field", %{
       conn: conn
     } do

@@ -87,9 +87,23 @@ defmodule EmisarWeb.OnboardingLive do
          |> assign(:trigger_submit, true)}
 
       # A blank/invalid name renders inline on the name field; the slug is
-      # derived on submit, so its error (if any) has no input to attach to.
+      # derived from the name on submit, so surface its error on :name too —
+      # otherwise a too-short name fails silently on a field with no input.
       {:error, %Ecto.Changeset{} = changeset} ->
-        {:noreply, assign_form(socket, Map.put(changeset, :action, :insert))}
+        {:noreply, assign_form(socket, surface_slug_error_on_name(changeset))}
+    end
+  end
+
+  # The form has only a :name input, but the slug is derived from the name. When
+  # the name validated yet the derived slug didn't (a 1-2 char name yields a
+  # too-short slug), copy the slug error onto :name so the operator sees why the
+  # workspace wasn't created instead of a silent no-op.
+  defp surface_slug_error_on_name(%Ecto.Changeset{} = changeset) do
+    changeset = Map.put(changeset, :action, :insert)
+
+    case {changeset.errors[:name], changeset.errors[:slug]} do
+      {nil, {message, opts}} -> Ecto.Changeset.add_error(changeset, :name, message, opts)
+      _ -> changeset
     end
   end
 
