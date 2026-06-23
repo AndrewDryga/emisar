@@ -3706,6 +3706,12 @@ defmodule EmisarWeb.CoreComponents do
                 Notify me
               </.marketing_button>
             </div>
+            <p class="mt-2 text-xs text-zinc-600">
+              No spam, just launch news. See our <.link
+                navigate={~p"/privacy"}
+                class="text-zinc-500 underline decoration-zinc-700 underline-offset-2 hover:text-zinc-300"
+              >privacy policy</.link>.
+            </p>
           </.form>
         </div>
 
