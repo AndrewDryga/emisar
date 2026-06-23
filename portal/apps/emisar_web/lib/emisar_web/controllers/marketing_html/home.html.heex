@@ -261,6 +261,84 @@
     </div>
   </section>
 
+  <%!-- The differentiator competitors can't claim: defense in depth AT THE HOST.
+       Even a fully compromised control plane can't make a runner exceed its local
+       rules — the signed-dispatch + local-admission story from /security, condensed
+       to three beats. Both controls are opt-in per runner (stated, not implied — it
+       is a security product). Deliberately NOT the centered eyebrow→H2→grid shape:
+       a left-aligned, near-black, high-gravity panel so the page has a distinct beat
+       here and the strongest argument lands early, before the long mechanism. --%>
+  <section class="border-y border-zinc-900 bg-[#060708] py-24 sm:py-32">
+    <div data-reveal class="mx-auto max-w-7xl px-6 lg:px-8">
+      <div class="grid gap-10 lg:grid-cols-[0.95fr_1.05fr] lg:items-end">
+        <div>
+          <h2 class="font-mono text-xs font-semibold uppercase tracking-[0.2em] text-brand-400">
+            Assume breach
+          </h2>
+          <p class="mt-4 text-4xl font-bold tracking-tight text-white text-balance sm:text-5xl">
+            Even if our cloud is compromised, the host has the last word.
+          </p>
+        </div>
+        <p class="max-w-2xl text-lg leading-relaxed text-zinc-400 lg:justify-self-end">
+          A control plane is a tempting target — so emisar is built not to be trusted. The runner on
+          your host verifies every dispatch itself and refuses anything outside the rules you set
+          locally, even if the portal, a token, or the whole cloud ends up in the wrong hands.
+        </p>
+      </div>
+
+      <ol
+        class="mt-16 grid grid-cols-1 gap-4 lg:grid-cols-3"
+        aria-label="defense in depth at the host"
+      >
+        <li class="rounded-lg border border-zinc-800 bg-zinc-950/70 p-6">
+          <div class="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.18em] text-rose-300/80">
+            <.icon name="hero-exclamation-triangle" class="h-3.5 w-3.5" /> 01 &middot; breach
+          </div>
+          <h3 class="mt-5 text-base font-semibold text-zinc-50">
+            The control plane is compromised
+          </h3>
+          <p class="mt-3 text-sm leading-6 text-zinc-400">
+            Pick the nightmare: a leaked API token, a breached portal, a malicious insider in the
+            cloud. The attacker can now ask a runner to do something.
+          </p>
+        </li>
+        <li class="rounded-lg border border-zinc-800 bg-zinc-950/70 p-6">
+          <div class="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.18em] text-brand-300">
+            <.icon name="hero-finger-print" class="h-3.5 w-3.5" /> 02 &middot; verify
+          </div>
+          <h3 class="mt-5 text-base font-semibold text-zinc-50">The runner checks for itself</h3>
+          <p class="mt-3 text-sm leading-6 text-zinc-400">
+            It re-checks a local allow/deny list you control, and verifies the Ed25519 signature the
+            operator minted on their own machine — not in the cloud. The signature is the authority.
+          </p>
+        </li>
+        <li class="rounded-lg border border-brand-500/30 bg-zinc-950/70 p-6 ring-1 ring-brand-500/10">
+          <div class="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.18em] text-brand-300">
+            <.icon name="hero-shield-check" class="h-3.5 w-3.5" /> 03 &middot; refuse
+          </div>
+          <h3 class="mt-5 text-base font-semibold text-zinc-50">
+            Out-of-bounds stops at the host
+          </h3>
+          <p class="mt-3 text-sm leading-6 text-zinc-400">
+            A compromised cloud can relay a signed request — it can never forge, alter, replay, or
+            originate one. Both controls are opt-in per runner, and a runner can only ever make
+            itself stricter.
+          </p>
+        </li>
+      </ol>
+
+      <div class="mt-12">
+        <.link
+          navigate={~p"/security"}
+          class="inline-flex items-center gap-1.5 text-sm font-semibold text-brand-400 hover:text-brand-300"
+        >
+          See the full trust boundary — outbound-only runners, redaction, signed dispatch
+          <.icon name="hero-arrow-right" class="h-4 w-4" />
+        </.link>
+      </div>
+    </div>
+  </section>
+
   <%!-- Mechanism pipeline --%>
   <section id="mechanism" class="border-y border-zinc-900 bg-zinc-950/40 py-24 sm:py-32">
     <div data-reveal class="mx-auto max-w-7xl px-6 lg:px-8">
