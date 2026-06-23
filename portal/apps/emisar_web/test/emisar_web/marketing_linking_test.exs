@@ -9,7 +9,7 @@ defmodule EmisarWeb.MarketingLinkingTest do
   use EmisarWeb.ConnCase, async: true
 
   @paths ~w(
-    / /ai /use-cases /security /pricing /packs /docs /demo /trust /guides
+    / /ai /use-cases /security /pricing /packs /docs /trust /guides
     /how-it-works /about /changelog /privacy /terms /refund-policy /zero-trust
     /compare/raw-ssh-for-ai /compare/custom-mcp-server
   )
@@ -37,8 +37,7 @@ defmodule EmisarWeb.MarketingLinkingTest do
 
   test "the new conversion + content pages are linked, not just routable", %{conn: conn} do
     # Belt-and-suspenders for the pages most likely to be left dangling.
-    home = conn |> get(~p"/") |> html_response(200)
-    footer_pages = ~w(/trust /guides /demo /changelog /packs)
+    footer_pages = ~w(/trust /guides /how-it-works /changelog /packs)
 
     for path <- footer_pages do
       any_page_links? =
@@ -48,8 +47,5 @@ defmodule EmisarWeb.MarketingLinkingTest do
 
       assert any_page_links?, "#{path} is not linked from any marketing page"
     end
-
-    # /demo specifically must be reachable from the homepage's conversion path.
-    assert home =~ ~s(href="/demo")
   end
 end

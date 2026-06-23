@@ -58,8 +58,6 @@ defmodule EmisarWeb.MarketingController do
     {"/compare/custom-mcp-server", :compare_custom_mcp, :compare_custom_mcp,
      "Custom MCP server vs emisar",
      "Custom MCP server vs emisar, honestly: the arg validation, pack integrity, policy, approvals, per-user scopes, redaction, audit, and reconnect handling you'd build and own for production agent access — and emisar's real tradeoffs in return."},
-    {"/demo", :demo, :demo, "Book a demo",
-     "See emisar on your own infrastructure — a 30-minute walkthrough with the engineers who built it: connect a runner, gate a real action, and get straight answers on the trust model, SSO/SCIM, compliance, and per-runner pricing for your fleet."},
     {"/how-it-works", :how_it_works, :how_it_works, "How emisar works",
      "How emisar works: an agent calls one declared action; the control plane checks the pack hash and policy; a human approves anything risky; the outbound-only runner re-validates and executes on your host; and every step lands in a tamper-evident audit. The five-gate path from intent to receipt."},
     {"/trust", :trust, :trust, "Trust & compliance",

@@ -359,8 +359,8 @@ defmodule EmisarWeb.MarketingHTML do
       <.marketing_cta
         headline="Give your AI agent production access — without the panic."
         subcopy="Start free on the Free plan, or book a walkthrough on your own infrastructure."
-        secondary_label="Book a demo"
-        secondary_path={~p"/demo"}
+        secondary_label="Talk to sales"
+        secondary_path="mailto:sales@emisar.dev"
       />
 
       <.marketing_footer />

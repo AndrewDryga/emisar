@@ -88,7 +88,6 @@ defmodule EmisarWeb.Router do
     get "/compare/raw-ssh-for-ai", MarketingController, :compare_raw_ssh
     get "/compare/custom-mcp-server", MarketingController, :compare_custom_mcp
     get "/zero-trust", MarketingController, :zero_trust
-    get "/demo", MarketingController, :demo
     get "/trust", MarketingController, :trust
     get "/how-it-works", MarketingController, :how_it_works
     get "/guides", MarketingController, :guides
