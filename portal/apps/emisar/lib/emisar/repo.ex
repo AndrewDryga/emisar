@@ -3,7 +3,7 @@ defmodule Emisar.Repo do
     otp_app: :emisar,
     adapter: Ecto.Adapters.Postgres
 
-  alias Emisar.Repo.{Filter, Paginator, Preloader}
+  alias Emisar.Repo.{Broadcastable, Filter, Paginator, Preloader}
   require Ecto.Query
 
   @doc "True iff `binary` is a string-encoded UUID."
@@ -139,7 +139,7 @@ defmodule Emisar.Repo do
       |> transaction(repo_opts)
       |> case do
         {:ok, {{:ok, schema}, changeset, audit_event}} ->
-          :ok = fan_out_audit_events(%{audit: audit_event})
+          :ok = broadcast_committed_rows(%{audit: audit_event})
           :ok = execute_after_commit(schema, changeset, after_commit)
           {schema, ecto_preloads} = Preloader.preload(schema, preload, query_module)
           {:ok, __MODULE__.preload(schema, ecto_preloads)}
@@ -259,7 +259,7 @@ defmodule Emisar.Repo do
 
     case transaction(multi, repo_opts) do
       {:ok, changes} ->
-        :ok = fan_out_audit_events(changes)
+        :ok = broadcast_committed_rows(changes)
         :ok = execute_changes_after_commit(changes, after_commit)
         {:ok, changes}
 
@@ -280,26 +280,20 @@ defmodule Emisar.Repo do
     |> Enum.each(fn callback when is_function(callback, 1) -> :ok = callback.(changes) end)
   end
 
-  # Every Multi that includes an audit-event step (via `Audit.changeset`
-  # or `Audit.Multi.log_for_user`) auto-broadcasts each row to the account-wide
-  # `:audit` topic once the transaction commits. AuditLive subscribes
-  # there and reloads, so the live audit log stays current without each
-  # context having to remember to broadcast.
-  #
-  # Tolerates the case where Audit isn't compiled (test-only) by routing
-  # through `Code.ensure_loaded?` — keeps the data app's startup honest.
-  defp fan_out_audit_events(changes) when is_map(changes) do
-    if Code.ensure_loaded?(Emisar.Audit) and Code.ensure_loaded?(Emisar.Audit.Event) do
-      Enum.each(changes, fn
-        {_step, %Emisar.Audit.Event{} = event} -> Emisar.Audit.broadcast_event(event)
-        _ -> :ok
-      end)
-    end
+  # After a Multi commits, fan out any committed row that implements
+  # `Repo.Broadcastable` (e.g. an `Audit.Event` → the account-wide `:audit`
+  # topic that AuditLive subscribes to). The protocol inverts the dependency —
+  # the owning context implements it — so Repo never references a context
+  # module, and a row with no implementation is simply skipped.
+  defp broadcast_committed_rows(changes) when is_map(changes) do
+    Enum.each(changes, fn {_step, value} ->
+      if Broadcastable.impl_for(value), do: :ok = Broadcastable.broadcast(value)
+    end)
 
     :ok
   end
 
-  defp fan_out_audit_events(_), do: :ok
+  defp broadcast_committed_rows(_), do: :ok
 
   @doc """
   Paginated list with cursor metadata. Options:
