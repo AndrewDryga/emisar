@@ -338,17 +338,25 @@ defmodule Emisar.Billing do
       %Accounts.Account{} = account ->
         price_id = extract_price_id(subscription_data)
 
-        attrs = %{
-          paddle_subscription_id: subscription_data["id"],
-          paddle_price_id: price_id,
-          plan: plan_for_subscription(account, price_id),
-          status: subscription_data["status"],
-          current_period_end: extract_next_billed_at(subscription_data)
-        }
+        # A partial subscription.updated (status-only, no items / next_billed_at)
+        # must not null price/period — omit those keys so the peek-then-update
+        # preserves the stored values rather than casting them to nil. `plan`
+        # stays put: plan_for_subscription/2 falls back to account_plan/1.
+        attrs =
+          %{
+            paddle_subscription_id: subscription_data["id"],
+            plan: plan_for_subscription(account, price_id),
+            status: subscription_data["status"]
+          }
+          |> put_present(:paddle_price_id, price_id)
+          |> put_present(:current_period_end, extract_next_billed_at(subscription_data))
 
         upsert_subscription(account.id, attrs)
     end
   end
+
+  defp put_present(attrs, _key, nil), do: attrs
+  defp put_present(attrs, key, value), do: Map.put(attrs, key, value)
 
   # Paddle subscription payloads nest the price under `items[].price.id`.
   # We bill a single line item, so the first item's price id is the plan.

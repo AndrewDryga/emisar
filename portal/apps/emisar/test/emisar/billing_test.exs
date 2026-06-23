@@ -407,7 +407,7 @@ defmodule Emisar.BillingTest do
       # a full payload that re-sends items + next_billed_at carries price/period
       # through. Paddle sends the FULL subscription object on subscription.updated,
       # so this is the realistic shape. (A truly items-less payload is a separate,
-      # narrower case asserted below — the apply path nulls those columns.)
+      # narrower case asserted below — the apply path preserves those columns.)
       account = account_fixture(%{paddle_customer_id: "ctm_upd_full_01"})
 
       created =
@@ -445,21 +445,23 @@ defmodule Emisar.BillingTest do
       assert after_update.current_period_end
     end
 
-    test "FINDING: an items-less partial payload nulls paddle_price_id + current_period_end" do
-      # closes BILL-010-T04 (the documented-finding half)
-      # `upsert_from_subscription/1` ALWAYS builds attrs with
-      # `paddle_price_id: extract_price_id(data)` and
-      # `current_period_end: extract_next_billed_at(data)` — so a partial
-      # `subscription.updated` that omits `items` / `next_billed_at` casts those
-      # as explicit nil and clobbers them (the peek-then-update preserves only
-      # keys ABSENT from the attr map, and these are never absent). `plan` is
-      # preserved because it falls back to account_plan/1, not the payload.
+    test "an items-less partial payload preserves paddle_price_id + current_period_end" do
+      # closes BILL-010-T04 (the partial-payload half)
+      # A status-only `subscription.updated` (no `items` / `next_billed_at`) must
+      # NOT null price/period: `upsert_from_subscription/1` omits those keys when
+      # the payload doesn't carry them, so the peek-then-update preserves the
+      # stored values. `plan` is preserved via the account_plan/1 fallback.
       account = account_fixture(%{paddle_customer_id: "ctm_upd_partial_01"})
 
       created =
         subscription_created_event("evt_upd_partial_c", account.paddle_customer_id, "pri_team_01")
 
       assert {:ok, _} = Billing.apply_webhook_event(created)
+
+      before =
+        Subscription.Query.all()
+        |> Subscription.Query.by_account_id(account.id)
+        |> Repo.one()
 
       # Status-only payload: no items, no next_billed_at.
       partial = %{
@@ -479,11 +481,10 @@ defmodule Emisar.BillingTest do
         |> Repo.one()
 
       assert after_update.status == "past_due"
-      # plan survives via the account_plan/1 fallback...
       assert after_update.plan == "team"
-      # ...but price + period are nulled by the always-present attr keys.
-      assert is_nil(after_update.paddle_price_id)
-      assert is_nil(after_update.current_period_end)
+      # price + period are preserved, not clobbered by the partial payload.
+      assert after_update.paddle_price_id == before.paddle_price_id
+      assert after_update.current_period_end == before.current_period_end
     end
 
     test "an unknown/foreign customer is a no-op (no write, still :ok)" do
