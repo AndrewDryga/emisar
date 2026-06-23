@@ -66,6 +66,41 @@ defmodule EmisarWeb.MarketingStructuralTest do
   # derives a Home → [Docs →] page breadcrumb from its path.
   @breadcrumb_routes @indexable_routes -- ~w(/ /ai /pricing)
 
+  # MarketingController GET routes that are NOT indexable HTML pages (feeds), so
+  # they're excluded from the @indexable_routes parity guard below.
+  @non_indexable_marketing ~w(/changelog.xml)
+
+  describe "route coverage parity (no marketing page drifts out of the battery)" do
+    # The structural battery only protects pages listed in @indexable_routes, and
+    # that list is hand-synced with the router — so a page added to the router
+    # without being added here would silently escape every check (exactly how
+    # /dpa, /trust, /how-it-works, /docs/mcp-reference, /guides slipped through
+    # until Phase-6 discovery). This guard fails the moment it happens again.
+    test "every static marketing page is in @indexable_routes" do
+      router_pages =
+        EmisarWeb.Router.__routes__()
+        |> Enum.filter(&(&1.verb == :get and &1.plug == EmisarWeb.MarketingController))
+        |> Enum.map(& &1.path)
+        |> Enum.reject(&(String.contains?(&1, ":") or &1 in @non_indexable_marketing))
+        |> MapSet.new()
+
+      missing = MapSet.difference(router_pages, MapSet.new(@indexable_routes))
+
+      assert MapSet.size(missing) == 0,
+             "marketing pages live in the router but are missing from @indexable_routes — add " <>
+               "them so the structural + breadcrumb battery covers them: " <>
+               inspect(Enum.sort(MapSet.to_list(missing)))
+    end
+
+    test "each dynamic marketing page family has a concrete representative covered" do
+      for family <- ["/guides/", "/packs/"] do
+        assert Enum.any?(@indexable_routes, &String.starts_with?(&1, family)),
+               "no concrete #{family}:slug page in @indexable_routes — the structural battery " <>
+                 "never exercises an individual #{family} page"
+      end
+    end
+  end
+
   describe "lean JS bundle on every controller-rendered marketing page" do
     # The static marketing site has no LiveView socket, so it must load
     # only the lean `marketing.js` and never the full `app.js` (LiveSocket
