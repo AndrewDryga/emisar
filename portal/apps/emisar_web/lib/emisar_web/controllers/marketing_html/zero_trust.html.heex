@@ -112,7 +112,7 @@
                  "The runner re-validates every argument against the action schema and clamps options to their min/max before exec — argv arrays, never a shell string."},
                 {"Version-controlled, integrity-checked configuration", "Enterprise",
                  "Packs are versioned, content-addressed YAML. A changed hash blocks dispatch until an admin trusts it; the runner recomputes the hash and refuses a mismatch."},
-                {"Immutable audit trail", "Enterprise",
+                {"Tamper-evident audit trail", "Enterprise",
                  "Every action is recorded to the searchable portal audit — the cloud system of record — and to an append-only, hash-chained JSONL journal on the host, where each line carries the prior line's SHA-256 so emisar audit verify catches any edited entry or break in the chain."},
                 {"Human-in-the-loop approval for high-risk actions", "Advanced",
                  "Risk-tiered policy holds destructive actions for a person. The approver sees the actor, the args, the target host, and the rule that fired — one click to allow or deny, recorded forever."},

@@ -58,7 +58,7 @@ defmodule EmisarWeb.MCP.ToolSchema do
       type: "string",
       description:
         "Why you are running this action — a short freeform sentence. " <>
-          "Logged in the immutable audit trail. Required."
+          "Logged in the audit trail. Required."
     }
   end
 
