@@ -375,7 +375,7 @@
           {"02", "contract", "Pack hash and args are checked", "The control plane checks trusted pack contents. The runner later recomputes the hash and validates every argument again.", "pack nomad@8f34… trusted\nargs re-validated", "text-brand-300"},
           {"03", "gate", "Policy returns allow, approval, or deny", "Risk-tier defaults and action overrides decide whether the request can run, must wait, or is refused outright.", "risk: high\npolicy: require approval", "text-amber-300"},
           {"04", "execute", "Runner executes on the host", "The outbound-only runner owns execution. It clamps options, drops privileges where configured, streams output, and redacts before egress.", "nomad job revert …\nexit 0 · 2.1s", "text-brand-300"},
-          {"05", "receipt", "Audit makes the action recoverable", "The cloud audit is searchable and exportable. The host journal is hash-chained so edited or missing entries are visible.", "action_run.success\nprev 50c1… → 9a72…", "text-zinc-200"}
+          {"05", "receipt", "Audit makes the action recoverable", "The cloud audit is searchable and exportable. The host journal is hash-chained so edited or missing entries are visible.", "execution_completed\nprev 50c1… → 9a72…", "text-zinc-200"}
         ] do %>
           <li class="relative flex min-w-0 flex-col rounded-lg border border-zinc-800 bg-zinc-950/70 p-5">
             <div class="flex items-center justify-between gap-3">

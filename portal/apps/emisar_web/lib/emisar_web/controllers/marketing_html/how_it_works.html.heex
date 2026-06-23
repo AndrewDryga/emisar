@@ -87,13 +87,13 @@
            "pack    nomad@8f34c2e9…   trusted ✓\nalloc   \"a1b2c3d4\"         ✓  matches /^[a-z0-9-]+$/\nreason  present            ✓  required\nrunner  nomad-hvn03        ✓  in your scope"},
           {"03", "Policy returns allow, approval, or deny",
            "Risk-tier defaults plus ordered per-action overrides decide. Reads usually run free; this mutating action stops for a one-click human approval — recorded as its own audit event.",
-           "{\n  \"event_type\": \"policy.evaluated\",\n  \"action_id\": \"nomad.alloc_stop\",\n  \"risk\": \"high\",\n  \"decision\": \"require_approval\",\n  \"matched_rule\": \"nomad.* → require approval\"\n}"},
+           "{\n  \"event_type\": \"policy.evaluated\",\n  \"action_id\": \"nomad.alloc_stop\",\n  \"decision\": \"require_approval\",\n  \"matched_rules\": [\"nomad.* → require approval\"]\n}"},
           {"04", "The runner re-validates and executes",
            "The outbound-only runner owns execution. It recomputes the pack hash and re-validates the arguments on the host, then runs the command and redacts secrets before any output leaves the machine.",
-           "runner nomad-hvn03  receives run_action  seq=5\n  pack hash 8f34c2e9…   recomputed on the host  ✓\n  arguments             re-validated            ✓\n  exec  nomad alloc stop a1b2c3d4\n  exit 0  ·  0.38s  ·  stdout redacted before egress"},
+           "runner nomad-hvn03  receives run_action  request=7c2a9f…\n  pack hash 8f34c2e9…   recomputed on the host  ✓\n  arguments             re-validated            ✓\n  exec  nomad alloc stop a1b2c3d4\n  exit 0  ·  0.38s  ·  stdout redacted before egress"},
           {"05", "The audit makes it recoverable",
            "Every step lands in a SHA-256 hash-chained journal on the host (and the searchable cloud audit). Each line carries the previous line's hash, so any edit or gap is caught by emisar audit verify — and the whole thing streams to your SIEM as NDJSON.",
-           "{\n  \"event_id\": \"01JZ8F2K…\",\n  \"event_type\": \"action_run.success\",\n  \"action_id\": \"nomad.alloc_stop\",\n  \"reason\": \"CSI reformatted a live LUN — halt writes\",\n  \"args_sha256\": \"5e8c1f…\",\n  \"exit_code\": 0,\n  \"prev_hash\": \"9a72d4…\",\n  \"hash\": \"c41d0b…\"\n}"}
+           "{\n  \"event_id\": \"01JZ8F2K…\",\n  \"event_type\": \"execution_completed\",\n  \"action_id\": \"nomad.alloc_stop\",\n  \"request\": { \"reason\": \"CSI reformatted a live LUN — halt writes\", \"args_sha256\": \"5e8c1f…\" },\n  \"execution\": { \"exit_code\": 0 },\n  \"prev_hash\": \"9a72d4…\"\n}"}
         ] do %>
           <li class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-6">
             <div class="flex gap-5">
