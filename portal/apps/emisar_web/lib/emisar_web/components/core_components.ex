@@ -3408,6 +3408,31 @@ defmodule EmisarWeb.CoreComponents do
     """
   end
 
+  attr :items, :list,
+    required: true,
+    doc: "list of {label, path}; the last item is the current page (its path may be nil)"
+
+  @doc """
+  A visible breadcrumb trail for deep pages — the on-page companion to the
+  BreadcrumbList JSON-LD. Chevron-separated, the current page non-linked and
+  marked aria-current.
+  """
+  def breadcrumbs(assigns) do
+    ~H"""
+    <nav aria-label="Breadcrumb" class="text-sm">
+      <ol class="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-zinc-500">
+        <%= for {{label, path}, index} <- Enum.with_index(@items) do %>
+          <li class="flex items-center gap-x-1.5">
+            <.icon :if={index > 0} name="hero-chevron-right" class="h-3 w-3 text-zinc-700" />
+            <.link :if={path} navigate={path} class="transition hover:text-zinc-300">{label}</.link>
+            <span :if={is_nil(path)} class="text-zinc-300" aria-current="page">{label}</span>
+          </li>
+        <% end %>
+      </ol>
+    </nav>
+    """
+  end
+
   # ============================================================
   #  Marketing "gate" kit
   #
