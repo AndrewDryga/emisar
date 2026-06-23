@@ -364,7 +364,15 @@ defmodule EmisarWeb.MCP.ContentBlocks do
   defp string_field(map, keys) do
     Enum.find_value(keys, "", fn k ->
       v = Map.get(map, k) || Map.get(map, existing_atom(k))
-      if is_binary(v) and v != "", do: v
+
+      cond do
+        is_binary(v) and v != "" -> v
+        # An Ecto.Enum value (e.g. the run status :sent) arrives as an atom on
+        # the pre-JSON RPC render path; normalize it at the edge so the string
+        # comparisons in render/2 (status in ["sent", …]) see it.
+        is_atom(v) and v not in [nil, false] -> to_string(v)
+        true -> nil
+      end
     end) || ""
   end
 

@@ -2984,8 +2984,6 @@ defmodule EmisarWeb.MCPRpcControllerTest do
       {:ok, runner: runner}
     end
 
-    @tag skip:
-           "BUG: in-flight RPC dispatch renders \"(no output)\" instead of run_id + wait tip — full_run_payload's status is an Ecto.Enum atom (:sent), but ContentBlocks.string_field requires a binary, so render_in_flight (gated on status in [\"pending\",\"sent\",\"running\"]) never fires and it falls through to an empty render_terminal (MCP-017-T03, MCP-011-T08)"
     test ~s|an explicit wait:"0" is fire-and-forget — returns immediately with a run_id|,
          %{conn: conn, account: account, user: user} do
       # closes MCP-017-T03
