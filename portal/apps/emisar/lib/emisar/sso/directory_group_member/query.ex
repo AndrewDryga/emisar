@@ -24,4 +24,15 @@ defmodule Emisar.SSO.DirectoryGroupMember.Query do
 
   def by_ids(queryable, ids),
     do: where(queryable, [group_members: g], g.id in ^ids)
+
+  # The distinct external group ids a provider has seen via SCIM — the source
+  # for the mapping picker (map-after-first-sync), so an admin keys a role
+  # mapping on a group the IdP has actually synced rather than a guessed id.
+  def distinct_group_ids_for_provider(queryable \\ all(), provider_id) do
+    queryable
+    |> where([group_members: g], g.provider_id == ^provider_id)
+    |> distinct([group_members: g], g.external_group_id)
+    |> order_by([group_members: g], asc: g.external_group_id)
+    |> select([group_members: g], g.external_group_id)
+  end
 end

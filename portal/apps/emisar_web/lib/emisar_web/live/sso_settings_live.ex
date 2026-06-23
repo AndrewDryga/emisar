@@ -61,6 +61,7 @@ defmodule EmisarWeb.SSOSettingsLive do
       # single open inline edit (id + form). Keyed by provider id so each
       # provider's directory-sync panel owns its own mappings + form.
       |> assign(:group_mappings, %{})
+      |> assign(:synced_groups, %{})
       |> assign(:mapping_forms, %{})
       |> assign(:editing_mapping_id, nil)
       |> assign(:mapping_edit_form, nil)
@@ -127,11 +128,26 @@ defmodule EmisarWeb.SSOSettingsLive do
         {provider.id, list_mappings(socket, provider)}
       end)
 
+    # The external group ids the IdP has actually synced — the map-after-first-
+    # sync picker, so an admin keys a mapping on a real group, not a guessed id.
+    synced =
+      Map.new(scim_providers, fn provider ->
+        {provider.id, list_synced_groups(socket, provider)}
+      end)
+
     forms = Map.new(scim_providers, &{&1.id, mapping_form(&1)})
 
     socket
     |> assign(:group_mappings, mappings)
+    |> assign(:synced_groups, synced)
     |> assign(:mapping_forms, forms)
+  end
+
+  defp list_synced_groups(socket, provider) do
+    case SSO.list_synced_groups(provider, socket.assigns.current_subject) do
+      {:ok, groups} -> groups
+      {:error, _} -> []
+    end
   end
 
   defp list_mappings(socket, provider) do
@@ -838,6 +854,7 @@ defmodule EmisarWeb.SSOSettingsLive do
                   scim_base_url={@scim_base_url}
                   scim_token={@scim_token}
                   mappings={Map.get(@group_mappings, provider.id, [])}
+                  synced_groups={Map.get(@synced_groups, provider.id, [])}
                   mapping_form={Map.get(@mapping_forms, provider.id)}
                   mapping_role_options={@mapping_role_options}
                   editing_mapping_id={@editing_mapping_id}
@@ -1149,6 +1166,7 @@ defmodule EmisarWeb.SSOSettingsLive do
   attr :editing_mapping_id, :string, default: nil
   attr :mapping_edit_form, Phoenix.HTML.Form, default: nil
   attr :typed, :string, default: ""
+  attr :synced_groups, :list, default: []
 
   # Directory sync (SCIM) controls for one connection. The bearer is shown
   # ONCE on enable/rotate (write-only); after that only the base URL + the
@@ -1317,6 +1335,7 @@ defmodule EmisarWeb.SSOSettingsLive do
         :if={@provider.scim_enabled}
         provider={@provider}
         mappings={@mappings}
+        synced_groups={@synced_groups}
         mapping_form={@mapping_form}
         mapping_role_options={@mapping_role_options}
         editing_mapping_id={@editing_mapping_id}
@@ -1334,6 +1353,7 @@ defmodule EmisarWeb.SSOSettingsLive do
   attr :editing_mapping_id, :string, default: nil
   attr :mapping_edit_form, Phoenix.HTML.Form, default: nil
   attr :typed, :string, default: ""
+  attr :synced_groups, :list, default: []
 
   # The group→role mapping list + create form for one SCIM-enabled connection.
   # Each row maps a directory group (externalId + display) to an emisar role,
@@ -1445,11 +1465,22 @@ defmodule EmisarWeb.SSOSettingsLive do
         >
           <input type="hidden" name="provider_id" value={@provider.id} />
           <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <%!-- Map-after-first-sync: pick from the groups the IdP has actually
+                 synced; fall back to a free-text id only before the first sync. --%>
             <.input
+              :if={@synced_groups != []}
+              field={@mapping_form[:external_group_id]}
+              type="select"
+              label="IdP group"
+              options={@synced_groups}
+              prompt="Pick a synced group"
+            />
+            <.input
+              :if={@synced_groups == []}
               field={@mapping_form[:external_group_id]}
               type="text"
               label="IdP group ID"
-              placeholder="00g1abcd…"
+              placeholder="syncs first, then pick…"
               class="font-mono"
             />
             <.input

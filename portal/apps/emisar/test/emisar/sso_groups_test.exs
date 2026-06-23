@@ -233,6 +233,45 @@ defmodule Emisar.SSOGroupsTest do
 
   # -- Sync: role from groups ------------------------------------------
 
+  describe "list_synced_groups/2 — the map-after-first-sync picker source" do
+    test "returns the distinct external group ids seen via SCIM" do
+      %{provider: provider, subject: subject} = scim_provider()
+      %{identity: _} = provision(provider, "okta|u1")
+      %{identity: _} = provision(provider, "okta|u2")
+
+      {:ok, _} =
+        SSO.scim_upsert_group(provider, %{
+          external_id: "grp-ops",
+          display: "Ops",
+          member_external_ids: ["okta|u1"]
+        })
+
+      {:ok, _} =
+        SSO.scim_upsert_group(provider, %{
+          external_id: "grp-adm",
+          display: "Admins",
+          member_external_ids: ["okta|u2"]
+        })
+
+      assert {:ok, groups} = SSO.list_synced_groups(provider, subject)
+      assert Enum.sort(groups) == ["grp-adm", "grp-ops"]
+    end
+
+    test "denies a non-Enterprise plan (:directory_sync_not_available)" do
+      {_u, account, subject} = owner_subject_fixture(%{plan: "team"})
+      provider = provider_fixture(account, %{})
+
+      assert {:error, :directory_sync_not_available} = SSO.list_synced_groups(provider, subject)
+    end
+
+    test "is account-scoped — another account's enterprise owner can't read it" do
+      %{provider: provider} = scim_provider()
+      {_u, _account_b, subject_b} = enterprise_owner()
+
+      assert {:error, :not_found} = SSO.list_synced_groups(provider, subject_b)
+    end
+  end
+
   describe "scim_upsert_group / role recompute" do
     test "scim_upsert_group sets a member's role to the mapped role" do
       %{provider: provider, subject: subject, account: account} = scim_provider()
