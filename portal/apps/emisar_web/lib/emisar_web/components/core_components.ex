@@ -3764,7 +3764,7 @@ defmodule EmisarWeb.CoreComponents do
                     href={~p"/use-cases/csi-data-loss"}
                     class="text-zinc-400 hover:text-zinc-100"
                   >
-                    Case study: the 33-hour wipe
+                    The 33-hour wipe
                   </.link>
                 </li>
               </ul>

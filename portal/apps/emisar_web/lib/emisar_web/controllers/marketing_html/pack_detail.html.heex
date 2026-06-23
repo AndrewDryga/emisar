@@ -80,10 +80,17 @@
       >
         <.icon name="hero-information-circle" class="mt-0.5 h-5 w-5 flex-none text-amber-300" />
         <div class="text-sm text-amber-100/90">
-          <strong class="text-amber-100">Required binaries:</strong>
-          <span class="font-mono">{Enum.join(@pack.requires_binaries, ", ")}</span>.
-          Actions that call a missing binary fail at run time — install these on the host
-          before relying on the pack.
+          <strong class="text-amber-100">Required binaries.</strong>
+          Install these on the host before relying on the pack — an action that calls a missing
+          one fails at run time.
+          <div class="mt-2.5 flex flex-wrap gap-1.5">
+            <code
+              :for={bin <- @pack.requires_binaries}
+              class="rounded bg-amber-500/15 px-2 py-0.5 font-mono text-xs font-medium text-amber-200"
+            >
+              {bin}
+            </code>
+          </div>
         </div>
       </div>
 
