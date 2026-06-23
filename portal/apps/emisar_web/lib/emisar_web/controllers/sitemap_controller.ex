@@ -37,7 +37,8 @@ defmodule EmisarWeb.SitemapController do
     "/compare/raw-ssh-for-ai",
     "/compare/custom-mcp-server",
     "/zero-trust",
-    "/demo"
+    "/demo",
+    "/trust"
   ]
 
   def show(conn, _params) do

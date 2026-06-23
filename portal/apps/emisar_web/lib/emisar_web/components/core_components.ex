@@ -3782,6 +3782,11 @@ defmodule EmisarWeb.CoreComponents do
               <h2 class="text-xs font-semibold uppercase tracking-wider text-zinc-400">Legal</h2>
               <ul class="mt-4 space-y-3 text-sm">
                 <li>
+                  <.link href={~p"/trust"} class="text-zinc-400 hover:text-zinc-100">
+                    Trust &amp; compliance
+                  </.link>
+                </li>
+                <li>
                   <.link href={~p"/privacy"} class="text-zinc-400 hover:text-zinc-100">Privacy</.link>
                 </li>
                 <li>

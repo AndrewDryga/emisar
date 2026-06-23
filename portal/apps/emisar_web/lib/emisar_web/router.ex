@@ -88,6 +88,7 @@ defmodule EmisarWeb.Router do
     get "/compare/custom-mcp-server", MarketingController, :compare_custom_mcp
     get "/zero-trust", MarketingController, :zero_trust
     get "/demo", MarketingController, :demo
+    get "/trust", MarketingController, :trust
     get "/packs", MarketingController, :packs
     # Machine-facing registry endpoints (consumed by `emisar pack install`).
     # Declared before "/packs/:id" so the literal segments win; Phoenix
