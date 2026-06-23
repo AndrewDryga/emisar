@@ -766,7 +766,7 @@
         <%= for {tag, title, scenario, icon, href} <- [
           {"cassandra", "Cassandra ops", "Agent triages a slow read latency alert by running nodetool.status, then proposes nodetool.repair on the lagging keyspace — pending one approver click.", "hero-circle-stack", ~p"/use-cases/cassandra-ops"},
           {"postgres", "Postgres ops", "Replication lag spikes overnight. The model checks lag and slow queries, then requests approval before terminating the blocking backend.", "hero-server-stack", ~p"/use-cases/postgres-ops"},
-          {"incident", "Incident response", "A CSI driver reformats a live volume and wipes 33 hours of metrics. The agent investigates through declared actions, stops the bleed behind one approval, and writes the durable fix to Terraform.", "hero-bell-alert", ~p"/use-cases/csi-data-loss"}
+          {"incident", "Incident response", "A CSI driver reformats a live volume and wipes 33 hours of metrics. The agent reads the evidence, severs the bad path behind one approval, and lands a guard against a repeat as a Terraform PR.", "hero-bell-alert", ~p"/use-cases/csi-data-loss"}
         ] do %>
           <div class="group flex flex-col rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8 transition hover:-translate-y-0.5 hover:border-brand-500/40">
             <div class="flex items-center justify-between">
