@@ -65,6 +65,7 @@
           id="pack-search"
           type="search"
           autocomplete="off"
+          aria-label={"Search #{@pack_count} action packs"}
           placeholder={"Search #{@pack_count} packs — postgres, kubernetes, nginx…"}
           class="w-full rounded-lg border-0 bg-zinc-900/80 py-2 pl-9 pr-3 text-sm text-zinc-100 ring-1 ring-zinc-800 placeholder:text-zinc-500 focus:ring-2 focus:ring-brand-500"
         />
@@ -169,7 +170,13 @@
         </div>
       </div>
 
-      <p id="pack-search-empty" hidden class="mt-12 text-center text-sm text-zinc-500">
+      <p
+        id="pack-search-empty"
+        hidden
+        role="status"
+        aria-live="polite"
+        class="mt-12 text-center text-sm text-zinc-500"
+      >
         No packs match that search yet —
         <.link href={~p"/docs/publishing-packs"} class="text-brand-300 hover:text-brand-200">
           author your own

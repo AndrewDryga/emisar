@@ -3309,7 +3309,7 @@ defmodule EmisarWeb.CoreComponents do
   defp marketing_button_class(variant, size, block, extra) do
     [
       if(block, do: "flex w-full", else: "inline-flex"),
-      "group/btn items-center justify-center gap-2 whitespace-nowrap rounded-lg text-sm font-semibold transition active:scale-[0.96]",
+      "group/btn items-center justify-center gap-2 whitespace-nowrap rounded-lg text-sm font-semibold transition active:scale-[0.96] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950",
       marketing_button_size(size),
       marketing_button_variant(variant),
       extra
