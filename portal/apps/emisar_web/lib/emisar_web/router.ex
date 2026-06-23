@@ -89,6 +89,7 @@ defmodule EmisarWeb.Router do
     get "/zero-trust", MarketingController, :zero_trust
     get "/demo", MarketingController, :demo
     get "/trust", MarketingController, :trust
+    get "/how-it-works", MarketingController, :how_it_works
     get "/guides", MarketingController, :guides
     get "/guides/:slug", MarketingController, :guide
     get "/packs", MarketingController, :packs

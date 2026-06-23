@@ -3706,6 +3706,11 @@ defmodule EmisarWeb.CoreComponents do
                   <.link href={~p"/ai"} class="text-zinc-400 hover:text-zinc-100">For your AI</.link>
                 </li>
                 <li>
+                  <.link href={~p"/how-it-works"} class="text-zinc-400 hover:text-zinc-100">
+                    How it works
+                  </.link>
+                </li>
+                <li>
                   <.link href={~p"/packs"} class="text-zinc-400 hover:text-zinc-100">Packs</.link>
                 </li>
                 <li>

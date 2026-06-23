@@ -39,6 +39,7 @@ defmodule EmisarWeb.SitemapController do
     "/zero-trust",
     "/demo",
     "/trust",
+    "/how-it-works",
     "/guides",
     "/guides/give-ai-agents-safe-production-access",
     "/guides/ai-agents-and-ssh-the-risks"

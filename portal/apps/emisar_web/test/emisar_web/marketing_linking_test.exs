@@ -10,7 +10,7 @@ defmodule EmisarWeb.MarketingLinkingTest do
 
   @paths ~w(
     / /ai /use-cases /security /pricing /packs /docs /demo /trust /guides
-    /about /changelog /privacy /terms /refund-policy /zero-trust
+    /how-it-works /about /changelog /privacy /terms /refund-policy /zero-trust
     /compare/raw-ssh-for-ai /compare/custom-mcp-server
   )
 

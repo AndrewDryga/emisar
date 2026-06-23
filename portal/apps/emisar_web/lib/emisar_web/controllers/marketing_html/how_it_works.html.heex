@@ -1,0 +1,114 @@
+<%!-- ============================================================
+  How it works — the standalone, linkable explainer of the model.
+  The home page exercises this inline; this is the focused version
+  for the evaluator who wants the shape before the pitch.
+============================================================ --%>
+<div class="bg-zinc-950 text-zinc-100">
+  <.marketing_nav current_user={@current_user} current={:how_it_works} />
+
+  <%!-- Hero --%>
+  <section class="border-b border-zinc-900 bg-[#07080a]">
+    <div class="mx-auto max-w-4xl px-6 py-20 sm:py-24 lg:px-8">
+      <p class="text-base font-semibold text-brand-400">How it works</p>
+      <.marketing_heading
+        tag="h1"
+        scale={:display}
+        class="mt-2 !text-4xl/[1.1] sm:!text-5xl/[1.1] md:!text-6xl/[1.1]"
+      >
+        From intent to verified receipt.
+      </.marketing_heading>
+      <p class="mt-6 max-w-2xl text-lg leading-relaxed text-zinc-300">
+        An agent never gets a shell. It asks for one declared action, and that request passes five
+        gates before anything happens on your host — and lands in an audit you can verify after.
+      </p>
+    </div>
+  </section>
+
+  <%!-- The shape — a three-box flow --%>
+  <section class="py-20 sm:py-24">
+    <div class="mx-auto max-w-5xl px-6 lg:px-8">
+      <div class="mx-auto max-w-2xl text-center">
+        <h2 class="text-3xl font-bold tracking-tight text-white text-balance sm:text-4xl">
+          The shape: nothing listens on your hosts.
+        </h2>
+        <p class="mt-4 text-base leading-relaxed text-zinc-400">
+          The runner dials out to the control plane over an outbound connection. The cloud is the
+          control plane and the durable system of record; your hosts open no inbound port.
+        </p>
+      </div>
+
+      <div class="mx-auto mt-12 grid max-w-3xl grid-cols-1 items-stretch gap-3 sm:grid-cols-[1fr_auto_1fr_auto_1fr]">
+        <%= for {icon, label, sub} <- [
+          {"hero-cpu-chip", "Your AI agent", "Claude, Cursor, ChatGPT — over MCP"},
+          {"hero-cloud", "emisar cloud", "Catalog, policy, approvals, audit"},
+          {"hero-server", "Runner", "On your host, dials out"}
+        ] do %>
+          <div class="flex flex-col items-center rounded-2xl border border-zinc-900 bg-zinc-950/60 p-6 text-center">
+            <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-brand-500/10 text-brand-400">
+              <.icon name={icon} class="h-5 w-5" />
+            </div>
+            <h3 class="mt-4 text-sm font-semibold text-zinc-50">{label}</h3>
+            <p class="mt-1 text-xs leading-5 text-zinc-500">{sub}</p>
+          </div>
+          <div :if={label != "Runner"} class="flex items-center justify-center text-zinc-700">
+            <.icon name="hero-arrow-right" class="hidden h-5 w-5 sm:block" />
+            <.icon name="hero-arrow-down" class="h-5 w-5 sm:hidden" />
+          </div>
+        <% end %>
+      </div>
+    </div>
+  </section>
+
+  <%!-- The five gates --%>
+  <section class="border-y border-zinc-900 bg-zinc-950/40 py-20 sm:py-28">
+    <div class="mx-auto max-w-3xl px-6 lg:px-8">
+      <div class="text-center">
+        <h2 class="text-3xl font-bold tracking-tight text-white text-balance sm:text-4xl">
+          Every request passes five gates.
+        </h2>
+      </div>
+
+      <ol class="mt-14 space-y-4">
+        <%= for {step, title, desc} <- [
+          {"01", "The agent asks for one declared action",
+           "No shell, ever. The model calls a single MCP tool with typed arguments, a target scope, and a required reason. It can only request what's in the catalog, because that's all it can see."},
+          {"02", "The pack hash and arguments are checked",
+           "The control plane confirms the action comes from a trusted, content-addressed pack — a changed hash blocks dispatch until an admin re-trusts it — and every argument is validated against the action's declared schema."},
+          {"03", "Policy returns allow, approval, or deny",
+           "Risk-tier defaults plus ordered per-action overrides decide whether the request runs, waits for a human, or is refused. Reads usually run free; mutating actions stop for a one-click approval that shows the actor, arguments, and target."},
+          {"04", "The runner re-validates and executes",
+           "The outbound-only runner owns execution. It recomputes the pack hash, re-validates the arguments, drops privileges where configured, streams output, and redacts secrets before anything leaves the host."},
+          {"05", "The audit makes it recoverable",
+           "Every step lands in a SHA-256 hash-chained journal on the host and the searchable cloud audit. Any edited or missing line is caught by emisar audit verify, and you can stream the whole thing to your SIEM as NDJSON."}
+        ] do %>
+          <li class="flex gap-5 rounded-2xl border border-zinc-900 bg-zinc-950/60 p-6">
+            <span class="font-mono text-sm font-semibold text-brand-400">{step}</span>
+            <div>
+              <h3 class="text-base font-semibold text-zinc-50">{title}</h3>
+              <p class="mt-2 text-sm leading-relaxed text-zinc-400">{desc}</p>
+            </div>
+          </li>
+        <% end %>
+      </ol>
+
+      <p class="mt-10 text-center text-sm">
+        <.link
+          navigate={~p"/security"}
+          class="inline-flex items-center gap-1 font-medium text-brand-400 hover:text-brand-300"
+        >
+          And the host keeps the last word, even against a compromised cloud
+          <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
+        </.link>
+      </p>
+    </div>
+  </section>
+
+  <.marketing_cta
+    headline="Run your first gated action in five minutes."
+    subcopy="Install the runner, point your agent at the catalog, and watch a request walk the five gates."
+    secondary_label="Book a demo"
+    secondary_path={~p"/demo"}
+  />
+
+  <.marketing_footer />
+</div>
