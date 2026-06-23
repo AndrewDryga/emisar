@@ -3870,6 +3870,9 @@ defmodule EmisarWeb.CoreComponents do
                   <.link href={~p"/terms"} class="text-zinc-400 hover:text-zinc-100">Terms</.link>
                 </li>
                 <li>
+                  <.link href={~p"/dpa"} class="text-zinc-400 hover:text-zinc-100">DPA</.link>
+                </li>
+                <li>
                   <.link href={~p"/refund-policy"} class="text-zinc-400 hover:text-zinc-100">
                     Refund Policy
                   </.link>

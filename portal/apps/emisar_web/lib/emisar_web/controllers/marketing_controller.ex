@@ -28,6 +28,8 @@ defmodule EmisarWeb.MarketingController do
      "How emisar handles your data: what the control plane stores (account info, runner metadata, redacted audit events), what it never sees (raw secrets, full card numbers), where it lives, retention windows, and your export/delete rights."},
     {"/terms", :terms, :terms, "Terms of Service",
      "The terms for using emisar — the control plane that gives AI agents and humans approved infrastructure actions instead of SSH. Plans and billing, acceptable use, confidentiality, disclaimers, and account terms."},
+    {"/dpa", :dpa, :dpa, "Data Processing Addendum",
+     "emisar's standard Data Processing Addendum (DPA): the Article 28 terms we sign as your processor — roles, processing scope, our named subprocessors, security measures, US data residency with SCCs for EU/UK transfers, breach notification, and deletion on termination."},
     {"/refund-policy", :refund, :refund, "Refund Policy",
      "emisar's refund policy: Free is free; Team is billed monthly via Paddle and cancellable any time with access through the paid period; duplicate charges and billing errors are refunded in full."},
     {"/docs/mcp-reference", :docs_mcp_reference, :docs_mcp_reference,

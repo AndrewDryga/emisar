@@ -75,12 +75,14 @@ defmodule EmisarWeb.Router do
     get "/about", MarketingController, :about
     get "/privacy", MarketingController, :privacy
     get "/terms", MarketingController, :terms
+    get "/dpa", MarketingController, :dpa
     get "/refund-policy", MarketingController, :refund
     get "/docs/connect-an-llm", MarketingController, :connect_llm
     get "/docs/mcp-reference", MarketingController, :docs_mcp_reference
     get "/docs/quickstart", MarketingController, :docs_quickstart
     get "/docs/action-packs", MarketingController, :docs_action_packs
     get "/docs/security-model", MarketingController, :docs_security_model
+    get "/docs/signed-dispatch", MarketingController, :docs_signed_dispatch
     get "/use-cases", MarketingController, :use_cases
     get "/use-cases/cassandra-ops", MarketingController, :usecase_cassandra
     get "/use-cases/postgres-ops", MarketingController, :usecase_postgres

@@ -1,0 +1,178 @@
+<%!-- ============================================================
+  Data Processing Addendum — chrome + layout via <.legal_page>. The standard
+  Art. 28 terms emisar offers; grounded in the real /privacy facts
+  (subprocessors, US region, deletion windows, redaction).
+============================================================ --%>
+<.legal_page
+  title="Data Processing Addendum"
+  updated="June 23, 2026"
+  summary="The plain version: when emisar processes personal data on your behalf, we act only on your instructions, we never sell it or train on it, our subprocessors are a short named list, and we delete it when you leave. This is the standard DPA we'll sign — email support@emisar.dev for an executable copy."
+  toc={[
+    {"roles", "1. Roles and scope"},
+    {"processing", "2. Details of processing"},
+    {"obligations", "3. Our obligations as processor"},
+    {"subprocessors", "4. Subprocessors"},
+    {"security", "5. Security measures"},
+    {"breach", "6. Personal-data breach"},
+    {"rights", "7. Assisting you"},
+    {"transfers", "8. International transfers"},
+    {"deletion", "9. Return and deletion"},
+    {"audits", "10. Audits"},
+    {"general", "11. General"}
+  ]}
+>
+  <p>
+    This Data Processing Addendum (<strong>"DPA"</strong>) forms part of the
+    <.link navigate={~p"/terms"}>Terms of Service</.link>
+    between you (<strong>"Customer"</strong>, the data controller) and emisar, operated by
+    Andrii Dryga (<strong>"we"</strong>, <strong>"us"</strong>, the data processor). It governs
+    our processing of personal data on your behalf and reflects Article 28 of the GDPR and the
+    equivalent UK and California requirements. Where this DPA conflicts with the Terms, this DPA
+    controls for matters of data protection. It is the standard form we will execute — email
+    <a href="mailto:support@emisar.dev">support@emisar.dev</a>
+    for a signable copy.
+  </p>
+
+  <h2 id="roles">1. Roles and scope</h2>
+  <p>
+    You are the controller of the personal data you and your authorized users put into emisar;
+    we are your processor. We process that data only to provide the emisar service to you and
+    only on your documented instructions — the Terms, this DPA, and your use of the product are
+    those instructions. We will tell you if we believe an instruction breaches data-protection
+    law. We do not sell your data, share it with advertisers, enrich it with data brokers, or use
+    it to train AI models — ours or anyone else's.
+  </p>
+
+  <h2 id="processing">2. Details of processing</h2>
+  <ul>
+    <li>
+      <strong>Subject matter and duration.</strong> Processing for the term of your account.
+    </li>
+    <li>
+      <strong>Nature and purpose.</strong>
+      Operating the control plane: authenticating users, routing actions to your runners,
+      enforcing your policies, and producing your audit trail.
+    </li>
+    <li>
+      <strong>Categories of data.</strong>
+      Account information (email, optional name, authentication metadata, request IP) and product
+      telemetry (runner metadata, the actions your operators or AI agents trigger, approvals,
+      policy decisions, and the resulting audit events). Secrets are <strong>redacted on the host before they leave it</strong>, and we never receive full card
+      numbers. We do not ask for, and you should not send, special-category data.
+    </li>
+    <li>
+      <strong>Data subjects.</strong>
+      Your authorized operators, administrators, and any individuals referenced in the actions or
+      audit records your team generates.
+    </li>
+  </ul>
+
+  <h2 id="obligations">3. Our obligations as processor</h2>
+  <p>
+    We will: process personal data only on your instructions; ensure the people who process it
+    are bound by confidentiality; implement the security measures in §5; engage subprocessors only
+    under §4; assist you with data-subject requests and with your own security, breach-notification,
+    and impact-assessment obligations (§7); and, at the end of the service, return or delete the
+    data (§9). We make available the information needed to demonstrate compliance with these
+    obligations (§10).
+  </p>
+
+  <h2 id="subprocessors">4. Subprocessors</h2>
+  <p>
+    You authorize us to engage the subprocessors below, each contractually bound to confidentiality
+    and to processing data only on our instructions, under terms no less protective than this DPA:
+  </p>
+  <ul>
+    <li>
+      <strong>Fly.io</strong> — application hosting and managed PostgreSQL (United States region).
+    </li>
+    <li>
+      <strong>Paddle</strong> — payment processing; we never see or store full card numbers.
+    </li>
+    <li>
+      <strong>Postmark</strong> — transactional email (confirmations, approvals, magic links).
+    </li>
+  </ul>
+  <p>
+    We will give you advance notice before adding or replacing a subprocessor — the current list
+    lives on the <.link navigate={~p"/privacy"}>privacy policy</.link> — and you may object on
+    reasonable data-protection grounds, in which case we will work with you in good faith or you
+    may terminate.
+  </p>
+
+  <h2 id="security">5. Security measures</h2>
+  <p>
+    The technical and organizational measures we maintain include, at minimum:
+  </p>
+  <ul>
+    <li>
+      Encryption in transit (TLS 1.2+, 1.3 where supported) and AES-256 at rest for backups.
+    </li>
+    <li>
+      Least-privilege access, enforced multi-factor authentication, and role-based access control.
+    </li>
+    <li>
+      A tamper-evident, hash-chained audit trail on each host, mirrored to the searchable cloud record.
+    </li>
+    <li>
+      Secrets redacted on the host before egress; outbound-only runners with no inbound port.
+    </li>
+    <li>
+      Signed dispatch and local admission control — a compromised control plane cannot forge an action.
+    </li>
+  </ul>
+  <p>
+    The <.link navigate={~p"/trust"}>trust center</.link>
+    and <.link navigate={~p"/security"}>security model</.link>
+    describe these in depth; they reflect
+    the controls actually in the product, not aspirations.
+  </p>
+
+  <h2 id="breach">6. Personal-data breach</h2>
+  <p>
+    If we become aware of a personal-data breach affecting your data, we will notify you without
+    undue delay, with the information you need to meet your own notification obligations, and we
+    will cooperate on investigation and remediation.
+  </p>
+
+  <h2 id="rights">7. Assisting you</h2>
+  <p>
+    Taking into account the nature of the processing, we will help you respond to data-subject
+    requests (access, rectification, erasure, portability, restriction, objection). Much of this
+    you can do yourself: audit events stream out as NDJSON from <code>/api/audit</code>, and a full
+    account snapshot or deletion is available by emailing <a href="mailto:support@emisar.dev">support@emisar.dev</a>.
+  </p>
+
+  <h2 id="transfers">8. International transfers</h2>
+  <p>
+    Production data is processed in the United States. Where you are in the EU, UK, or another
+    region whose law restricts transfers, the EU Standard Contractual Clauses (and the UK
+    International Data Transfer Addendum) are incorporated into this DPA by reference and govern
+    those transfers, with us as the data importer.
+  </p>
+
+  <h2 id="deletion">9. Return and deletion</h2>
+  <p>
+    On termination, or on your request, we delete your personal data from the primary database
+    within 24 hours and from encrypted backups within 30 days (after which the backups themselves
+    expire), except where we are legally required to retain specific records (e.g. tax records for
+    invoices) for the minimum statutory period. We can provide a deletion certificate or a copy of
+    the data first if you ask.
+  </p>
+
+  <h2 id="audits">10. Audits</h2>
+  <p>
+    We make available the information reasonably necessary to demonstrate compliance with this DPA,
+    including our security documentation and, when available, third-party attestations. Where an
+    on-site or independent audit is required, we will agree the scope, timing, and cost with you in
+    advance so it doesn't compromise other customers' security.
+  </p>
+
+  <h2 id="general">11. General</h2>
+  <p>
+    This DPA supplements and does not replace the <.link navigate={~p"/terms"}>Terms</.link>; the
+    liability limits in the Terms apply to it. We may update it to reflect new legal requirements or
+    subprocessors; material changes will be communicated as described in the Terms. Questions, or to
+    receive an executable copy: <a href="mailto:support@emisar.dev">support@emisar.dev</a>.
+  </p>
+</.legal_page>
