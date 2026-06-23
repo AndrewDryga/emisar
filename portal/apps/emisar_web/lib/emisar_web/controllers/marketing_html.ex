@@ -334,12 +334,7 @@ defmodule EmisarWeb.MarketingHTML do
 
       <header class="border-b border-zinc-900 bg-[#07080a]">
         <div class="mx-auto max-w-3xl px-6 py-16 sm:py-20 lg:px-8">
-          <.link
-            navigate={~p"/guides"}
-            class="inline-flex items-center gap-1.5 text-sm font-medium text-brand-400 hover:text-brand-300"
-          >
-            <.icon name="hero-arrow-left" class="h-3.5 w-3.5" /> Guides
-          </.link>
+          <.breadcrumbs items={[{"Guides", ~p"/guides"}, {@title, nil}]} />
           <h1 class="mt-6 text-4xl font-bold tracking-tight text-zinc-50 text-balance sm:text-5xl">
             {@title}
           </h1>
