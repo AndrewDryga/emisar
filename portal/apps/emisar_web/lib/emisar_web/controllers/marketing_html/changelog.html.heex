@@ -1,7 +1,8 @@
 <%!-- ============================================================
-  Changelog
+  Changelog — data-driven from EmisarWeb.Changelog (the same source as
+  the /changelog.xml RSS feed). Newest first; the latest entry is
+  highlighted. Add a release by adding one entry to that module.
 ============================================================ --%>
-
 <div class="bg-zinc-950 text-zinc-100">
   <.marketing_nav current_user={@current_user} current={:changelog} />
 
@@ -14,9 +15,9 @@
       </.marketing_heading>
       <p class="mt-8 max-w-2xl text-lg leading-8 text-zinc-400">
         Shipping notes from the emisar team. Subscribe via
-        <.external_link href="https://github.com/andrewdryga/emisar/releases.atom">
+        <a href={~p"/changelog.xml"} class="font-medium text-brand-300 hover:text-brand-200">
           RSS
-        </.external_link>
+        </a>
         or watch the <.external_link href="https://github.com/andrewdryga/emisar">GitHub repo</.external_link>.
       </p>
     </div>
@@ -26,75 +27,30 @@
   <section class="pb-24 sm:pb-32">
     <div class="mx-auto max-w-4xl px-6 lg:px-8">
       <div class="space-y-8">
-        <article class="rounded-2xl border border-brand-500/30 bg-zinc-950/60 p-8">
-          <div class="flex flex-wrap items-baseline justify-between gap-3">
-            <h2 class="text-2xl font-bold tracking-tight text-zinc-50 text-balance">
-              Since the beta: runner 0.7, per-user runner scopes
-            </h2>
-            <time class="text-sm text-zinc-500" datetime="2026-06-11">June 11, 2026</time>
-          </div>
-          <p class="mt-3 text-sm leading-relaxed text-zinc-400">
-            Runner 0.7 ships the pack registry CLI —
-            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar pack install</code>
-            with hash-pinned installs, host-matched <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">pack suggest</code>,
-            and one-command updates. Admins can now scope an operator or API key to specific
-            runners or runner groups. Invitation tokens joined the everything-hashed-at-rest
-            sweep, and MCP's
-            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">wait_for_run</code>
-            now wakes on the run's own broadcast instead of polling.
-          </p>
-        </article>
-
-        <article class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8">
-          <div class="flex flex-wrap items-baseline justify-between gap-3">
-            <h2 class="text-2xl font-bold tracking-tight text-zinc-50 text-balance">
-              Public beta control plane
-            </h2>
-            <time class="text-sm text-zinc-500" datetime="2026-06-04">June 4, 2026</time>
-          </div>
-          <p class="mt-3 text-sm leading-relaxed text-zinc-400">
-            Remote MCP with OAuth, scoped LLM connections, pack-trust review, contextual
-            approvals with standing grants, live run output, team MFA controls, runbooks,
-            and read-only SIEM audit export.
-          </p>
-        </article>
-
-        <article class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8">
-          <div class="flex flex-wrap items-baseline justify-between gap-3">
-            <h2 class="text-2xl font-bold tracking-tight text-zinc-50 text-balance">
-              v0.2.0
-            </h2>
-            <time class="text-sm text-zinc-500" datetime="2026-05-21">May 21, 2026</time>
-          </div>
-          <p class="mt-3 text-sm text-zinc-400">
-            Per-host action catalogs, content-addressed packs, dashboard online-status.
-          </p>
-        </article>
-
-        <article class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8">
-          <div class="flex flex-wrap items-baseline justify-between gap-3">
-            <h2 class="text-2xl font-bold tracking-tight text-zinc-50 text-balance">
-              v0.1.5
-            </h2>
-            <time class="text-sm text-zinc-500" datetime="2026-04-03">April 3, 2026</time>
-          </div>
-          <p class="mt-3 text-sm text-zinc-400">
-            PR_SET_PDEATHSIG zombie prevention, a graceful SIGTERM shutdown window, JSONL log rotation.
-          </p>
-        </article>
-
-        <article class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8">
-          <div class="flex flex-wrap items-baseline justify-between gap-3">
-            <h2 class="text-2xl font-bold tracking-tight text-zinc-50 text-balance">
-              v0.1.0
-            </h2>
-            <time class="text-sm text-zinc-500" datetime="2026-02-18">February 18, 2026</time>
-          </div>
-          <p class="mt-3 text-sm text-zinc-400">
-            Initial public release. Runner binary, YAML action packs, argument validation,
-            policy engine, JSONL audit, example packs.
-          </p>
-        </article>
+        <%= for {entry, index} <- Enum.with_index(@entries) do %>
+          <article
+            id={entry.slug}
+            class={[
+              "scroll-mt-24 rounded-2xl border bg-zinc-950/60 p-8",
+              if(index == 0, do: "border-brand-500/30", else: "border-zinc-900")
+            ]}
+          >
+            <div class="flex flex-wrap items-baseline justify-between gap-3">
+              <h2 class="text-2xl font-bold tracking-tight text-zinc-50 text-balance">
+                {entry.title}
+              </h2>
+              <time class="text-sm text-zinc-500" datetime={Date.to_iso8601(entry.date)}>
+                {EmisarWeb.Changelog.display_date(entry.date)}
+              </time>
+            </div>
+            <p :if={entry.tag} class="mt-3">
+              <span class="inline-flex items-center rounded-full border border-zinc-800 bg-zinc-900/60 px-2.5 py-0.5 font-mono text-[11px] text-zinc-400">
+                {entry.tag}
+              </span>
+            </p>
+            <p class="mt-3 text-sm leading-relaxed text-zinc-400">{entry.summary}</p>
+          </article>
+        <% end %>
       </div>
 
       <div class="mt-16 text-center">

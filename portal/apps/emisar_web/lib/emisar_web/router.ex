@@ -107,6 +107,7 @@ defmodule EmisarWeb.Router do
     get "/docs/runners", MarketingController, :docs_runners
     get "/docs/audit-and-siem", MarketingController, :docs_audit
     get "/sitemap.xml", SitemapController, :show
+    get "/changelog.xml", MarketingController, :changelog_feed
     get "/install.sh", InstallController, :show
     get "/install-mcp.sh", InstallMCPController, :show
   end

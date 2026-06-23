@@ -23,8 +23,6 @@ defmodule EmisarWeb.MarketingController do
      "emisar's security model: pre-approved actions, redacted output, searchable audit, a hash-chained runner journal, and no SSH."},
     {"/docs", :docs, :docs, "Docs",
      "Documentation, action pack format, security model, and integration guides for emisar."},
-    {"/changelog", :changelog, :changelog, "Changelog",
-     "Release notes for emisar — the control plane that gives AI tools approved infrastructure actions instead of SSH. Pack trust, policy gates, approvals, and audit."},
     {"/about", :about, :about, "About", "Why emisar exists and how we built it."},
     {"/privacy", :privacy, :privacy, "Privacy Policy",
      "How emisar handles your data: what the control plane stores (account info, runner metadata, redacted audit events), what it never sees (raw secrets, full card numbers), where it lives, retention windows, and your export/delete rights."},
@@ -302,6 +300,61 @@ defmodule EmisarWeb.MarketingController do
       faqs: @pricing_faqs,
       json_ld: @pricing_ld
     )
+  end
+
+  # Changelog — data-driven from EmisarWeb.Changelog so the page and the
+  # /changelog.xml RSS feed render from one source and never drift.
+  def changelog(conn, _params) do
+    render(conn, :changelog,
+      page_title: "Changelog",
+      meta_description:
+        "Shipping notes for emisar — the control plane that gives AI agents approved infrastructure actions instead of SSH. The redesigned site, the new identity, runner releases, SSO/SCIM, approvals, and audit.",
+      canonical_url: @base <> "/changelog",
+      entries: EmisarWeb.Changelog.entries()
+    )
+  end
+
+  # GET /changelog.xml — RSS 2.0 from the same EmisarWeb.Changelog source.
+  def changelog_feed(conn, _params) do
+    items =
+      Enum.map_join(EmisarWeb.Changelog.entries(), "\n", fn entry ->
+        url = EmisarWeb.Changelog.entry_url(entry)
+
+        """
+          <item>
+            <title>#{xml_escape(entry.title)}</title>
+            <link>#{url}</link>
+            <guid isPermaLink="true">#{url}</guid>
+            <pubDate>#{EmisarWeb.Changelog.rss_date(entry.date)}</pubDate>
+            <description>#{xml_escape(entry.summary)}</description>
+          </item>\
+        """
+      end)
+
+    body = """
+    <?xml version="1.0" encoding="UTF-8"?>
+    <rss version="2.0">
+      <channel>
+        <title>emisar changelog</title>
+        <link>#{@base}/changelog</link>
+        <description>Shipping notes from the emisar team.</description>
+        <language>en-us</language>
+    #{items}
+      </channel>
+    </rss>
+    """
+
+    conn
+    |> put_resp_content_type("application/rss+xml")
+    |> send_resp(200, body)
+  end
+
+  # Minimal XML text-content escape (&, <, > — the three required in element text).
+  defp xml_escape(text) do
+    text
+    |> String.replace("&", "&amp;")
+    |> String.replace("<", "&lt;")
+    |> String.replace(">", "&gt;")
   end
 
   # The /use-cases index — a hub linking the real-incident case studies, which
