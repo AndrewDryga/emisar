@@ -929,6 +929,27 @@ defmodule EmisarWeb.AgentsLive do
           </div>
         <% @selected_client == "custom" -> %>
           <div class="space-y-5 px-6 py-5">
+            <%= if @quick_secret do %>
+              <.notice variant={:warning}>
+                <span class="font-semibold">New key minted — it's live now.</span>
+                Copy the bearer token below before you leave this page; we won't show it
+                again. If you lose it, create another key.
+              </.notice>
+
+              <div class="overflow-hidden rounded-lg border border-zinc-800 bg-black/80">
+                <div class="flex items-center justify-between gap-3 border-b border-zinc-800 px-4 py-2.5">
+                  <p class="font-mono text-[11px] text-zinc-500">API key (bearer token)</p>
+                  <.copy_button id="copy-custom-secret" target="#custom-secret">
+                    Copy key
+                  </.copy_button>
+                </div>
+                <pre
+                  id="custom-secret"
+                  class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-200"
+                ><%= @quick_secret %></pre>
+              </div>
+            <% end %>
+
             <.custom_key_panel
               form={@form}
               runners={@runners}

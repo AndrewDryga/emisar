@@ -384,7 +384,6 @@ defmodule EmisarWeb.AgentsLiveTest do
     # custom-created key's one-time raw secret is minted but never shown to the
     # operator (no "New key minted", no emk- secret in the DOM). They can't copy
     # it and must revoke + reissue. The per-client tabs show it correctly.
-    @tag skip: "BUG: custom-tab create never reveals the minted secret (CON-016-T01)"
     test "custom create reveals the raw secret once", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
       {:ok, lv, _} = live(conn, ~p"/app/#{account}/settings/agents")
