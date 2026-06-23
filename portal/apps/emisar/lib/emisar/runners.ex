@@ -871,6 +871,21 @@ defmodule Emisar.Runners do
     |> Repo.delete_all()
   end
 
+  # Revoking an already-revoked key is an idempotent no-op — re-stamping
+  # revoked_at (plus a fresh audit row + broadcast) would move the revocation
+  # time and pollute the trail. Still permission-gated so an unauthorized
+  # caller is rejected, not silently OK'd.
+  def revoke_auth_key(%AuthKey{revoked_at: revoked_at} = key, %Subject{} = subject)
+      when not is_nil(revoked_at) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.manage_auth_keys_permission()
+           ) do
+      {:ok, key}
+    end
+  end
+
   def revoke_auth_key(%AuthKey{} = key, %Subject{} = subject) do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(

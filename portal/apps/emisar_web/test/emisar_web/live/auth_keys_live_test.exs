@@ -435,8 +435,6 @@ defmodule EmisarWeb.AuthKeysLiveTest do
   # low severity, but it contradicts the "no-op" claim and pollutes the audit
   # trail with a duplicate revocation. Fix: guard the changeset on
   # `is_nil(key.revoked_at)` (skip when already revoked).
-  @tag skip:
-         "BUG: re-revoking a revoked key re-stamps revoked_at instead of a no-op (CON-022-T05)"
   test "re-revoking an already-revoked key is idempotent (no timestamp change)", %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
     subject = Emisar.Fixtures.subject_for(user, account)

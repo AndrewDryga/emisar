@@ -81,6 +81,11 @@ defmodule Emisar.Runners.AuthKey.Changeset do
     )
   end
 
+  # Idempotent: re-revoking an already-revoked key is a no-op (no re-stamp), so
+  # the lock-race path (caller passed a stale-active key) can't move revoked_at.
+  def revoke(%AuthKey{revoked_at: revoked_at} = key, _by_user_id) when not is_nil(revoked_at),
+    do: change(key)
+
   def revoke(%AuthKey{} = key, by_user_id) do
     change(key, revoked_at: DateTime.utc_now(), revoked_by_id: by_user_id)
   end
