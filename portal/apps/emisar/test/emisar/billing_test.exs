@@ -42,29 +42,32 @@ defmodule Emisar.BillingTest do
     end
   end
 
-  describe "account_plan/1 + sso_available?/1 — plan is derived from the subscription" do
-    test "no subscription → free, SSO locked" do
+  describe "account_plan/1 + sso_available?/1 + directory_sync_available?/1 — derived from the subscription" do
+    test "no subscription → free, SSO + directory sync locked" do
       account = account_fixture()
 
       assert Billing.account_plan(account) == "free"
       refute Billing.sso_available?(account)
+      refute Billing.directory_sync_available?(account)
     end
 
-    test "the subscription's plan is the account's plan" do
+    test "Team unlocks OIDC SSO but not SCIM directory sync" do
       account = account_fixture()
       subscription_fixture(account, "team")
 
       assert Billing.account_plan(account) == "team"
-      # Team is not enterprise, so SSO stays locked.
-      refute Billing.sso_available?(account)
+      assert Billing.sso_available?(account)
+      # SCIM directory sync stays Enterprise-only.
+      refute Billing.directory_sync_available?(account)
     end
 
-    test "an enterprise subscription unlocks SSO" do
+    test "an enterprise subscription unlocks SSO + SCIM directory sync" do
       account = account_fixture()
       subscription_fixture(account, "enterprise")
 
       assert Billing.account_plan(account) == "enterprise"
       assert Billing.sso_available?(account)
+      assert Billing.directory_sync_available?(account)
     end
 
     test "status-agnostic: a canceled subscription still grants its plan" do

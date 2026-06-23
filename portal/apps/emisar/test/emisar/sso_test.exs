@@ -84,11 +84,27 @@ defmodule Emisar.SSOTest do
   # -- Config gating ---------------------------------------------------
 
   describe "configure_provider/2 gating" do
-    test "a non-enterprise account cannot configure SSO" do
-      {_user, _account, subject} = owner_subject_fixture(%{plan: "team"})
+    test "a free account cannot configure SSO" do
+      {_user, _account, subject} = owner_subject_fixture(%{})
 
       assert {:error, :sso_not_available} =
                SSO.configure_provider(%{kind: :okta, name: "Okta"}, subject)
+    end
+
+    test "a Team account can configure an OIDC provider — SSO is Team and up" do
+      {_user, _account, subject} = owner_subject_fixture(%{plan: "team"})
+
+      assert {:ok, %IdentityProvider{}} =
+               SSO.configure_provider(
+                 %{
+                   kind: :okta,
+                   name: "Okta",
+                   issuer: "https://idp.test",
+                   client_id: "cid",
+                   client_secret: "secret"
+                 },
+                 subject
+               )
     end
 
     test "a non-admin (no manage_sso) cannot configure SSO" do
@@ -445,10 +461,10 @@ defmodule Emisar.SSOTest do
     end
 
     # closes TEAM-027-T10
-    test "a non-Enterprise plan is denied on update (:sso_not_available)" do
-      # Downgrade an account that already has a provider so the row exists, but
-      # the plan gate (`ensure_can_configure_sso`) fires before any row touch.
-      {_user, account, subject} = owner_subject_fixture(%{plan: "team"})
+    test "a free plan is denied on update (:sso_not_available)" do
+      # The row exists (built via the fixture, bypassing the gate), but the plan
+      # gate (`ensure_can_configure_sso`) fires before any row touch.
+      {_user, account, subject} = owner_subject_fixture(%{})
       provider = provider_fixture(account)
 
       assert {:error, :sso_not_available} =
@@ -460,8 +476,8 @@ defmodule Emisar.SSOTest do
 
   describe "delete_provider/3 gating" do
     # closes TEAM-028-T05
-    test "a non-Enterprise plan is denied on delete (:sso_not_available)" do
-      {_user, account, subject} = owner_subject_fixture(%{plan: "team"})
+    test "a free plan is denied on delete (:sso_not_available)" do
+      {_user, account, subject} = owner_subject_fixture(%{})
       provider = provider_fixture(account)
 
       assert {:error, :sso_not_available} = SSO.delete_provider(provider, subject)
@@ -470,12 +486,12 @@ defmodule Emisar.SSOTest do
   end
 
   describe "enable_scim/2 gating" do
-    # closes TEAM-029-T07
-    test "a non-Enterprise plan is denied on SCIM enable (:sso_not_available)" do
+    # closes TEAM-029-T07 — SCIM is Enterprise-only, even though OIDC is Team+.
+    test "a Team plan can configure OIDC but is denied SCIM enable (:directory_sync_not_available)" do
       {_user, account, subject} = owner_subject_fixture(%{plan: "team"})
       provider = provider_fixture(account)
 
-      assert {:error, :sso_not_available} = SSO.enable_scim(provider, subject)
+      assert {:error, :directory_sync_not_available} = SSO.enable_scim(provider, subject)
       refute Repo.reload!(provider).scim_enabled
     end
 
@@ -706,16 +722,16 @@ defmodule Emisar.SSOTest do
     end
 
     # closes TEAM-031-T09
-    test "approve_link_request denies a non-Enterprise plan (:sso_not_available)", %{
+    test "approve_link_request denies a free plan (:sso_not_available)", %{
       provider: provider
     } do
       request = capture_request(provider, %{"sub" => "okta|ne", "email" => "ne@acme.test"})
 
       # The plan gate (`ensure_can_configure_sso`) is the first check — before the
-      # request is even fetched — so a team-plan owner is denied outright.
-      {_u, _team_account, team_subject} = owner_subject_fixture(%{plan: "team"})
+      # request is even fetched — so a free-plan owner is denied outright.
+      {_u, _free_account, free_subject} = owner_subject_fixture(%{})
 
-      assert {:error, :sso_not_available} = SSO.approve_link_request(request, team_subject)
+      assert {:error, :sso_not_available} = SSO.approve_link_request(request, free_subject)
       assert [_still_pending] = link_requests(provider.id)
     end
 

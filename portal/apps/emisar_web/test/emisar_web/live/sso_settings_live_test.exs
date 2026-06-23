@@ -855,15 +855,26 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
     end
   end
 
-  describe "as a non-enterprise account" do
-    test "shows the Enterprise upsell instead of the config", %{conn: conn} do
+  describe "as a free account" do
+    test "shows the paid-plan upsell instead of the config", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn, %{account: %{plan: "free"}})
+
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/sso")
+
+      assert html =~ "Single sign-on is a paid feature"
+      assert html =~ "See plans"
+      refute html =~ "Connect your organization"
+    end
+  end
+
+  describe "as a Team account" do
+    test "shows the OIDC config but gates SCIM behind Enterprise", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn, %{account: %{plan: "team"}})
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/sso")
 
-      assert html =~ "Single sign-on is an Enterprise feature"
-      assert html =~ "See plans"
-      refute html =~ "Add an identity provider"
+      refute html =~ "Single sign-on is a paid feature"
+      assert html =~ "Connect your organization"
     end
   end
 
@@ -874,7 +885,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/sso")
 
-      assert html =~ "Single sign-on is an Enterprise feature"
+      assert html =~ "Single sign-on is a paid feature"
       refute html =~ "Add an identity provider"
     end
   end

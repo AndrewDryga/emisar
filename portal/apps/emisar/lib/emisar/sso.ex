@@ -5,8 +5,9 @@ defmodule Emisar.SSO do
   authorization boundary for SSO — distinct from `Emisar.OAuth`, which is
   emisar-as-an-OAuth-*provider* for the MCP bridge.
 
-  Config reads/writes are `%Subject{}`-gated (`manage_sso` + the enterprise
-  plan). The login flow (`begin_auth`/`complete_auth`) is pre-Subject — it IS
+  Config reads/writes are `%Subject{}`-gated (`manage_sso`): OIDC provider
+  config needs the Team or Enterprise plan, SCIM directory sync needs
+  Enterprise. The login flow (`begin_auth`/`complete_auth`) is pre-Subject — it IS
   the authentication — and resolves an identity strictly by `(provider, sub)`,
   **never by email** (the account-takeover guard). An unknown `sub`
   JIT-provisions a fresh user + identity + membership when the provider's
@@ -65,7 +66,7 @@ defmodule Emisar.SSO do
 
   # -- Config mutations ------------------------------------------------
 
-  @doc "Create an SSO connection. `manage_sso` + the Enterprise plan. `{:ok, provider} | {:error, reason}`."
+  @doc "Create an SSO connection. `manage_sso` + the Team or Enterprise plan. `{:ok, provider} | {:error, reason}`."
   def configure_provider(attrs, %Subject{account: account} = subject) do
     with :ok <- ensure_can_configure_sso(subject) do
       multi = configure_multi(account.id, attrs, subject)
@@ -77,7 +78,7 @@ defmodule Emisar.SSO do
     end
   end
 
-  @doc "Update a connection's config (locked re-read). `manage_sso` + Enterprise. `{:ok, provider} | {:error, reason}`."
+  @doc "Update a connection's config (locked re-read). `manage_sso` + Team or Enterprise. `{:ok, provider} | {:error, reason}`."
   def update_provider(%IdentityProvider{id: id}, attrs, %Subject{} = subject) do
     with :ok <- ensure_can_configure_sso(subject) do
       IdentityProvider.Query.not_deleted()
@@ -96,7 +97,7 @@ defmodule Emisar.SSO do
     end
   end
 
-  @doc "Soft-delete a connection. `manage_sso` + Enterprise. `{:ok, provider} | {:error, reason}`."
+  @doc "Soft-delete a connection. `manage_sso` + Team or Enterprise. `{:ok, provider} | {:error, reason}`."
   def delete_provider(%IdentityProvider{id: id}, %Subject{} = subject) do
     with :ok <- ensure_can_configure_sso(subject) do
       IdentityProvider.Query.not_deleted()
@@ -945,7 +946,7 @@ defmodule Emisar.SSO do
     do: write_scim_token(provider, subject, enabled: true)
 
   defp write_scim_token(%IdentityProvider{id: id}, %Subject{} = subject, enabled: enabled) do
-    with :ok <- ensure_can_configure_sso(subject) do
+    with :ok <- ensure_can_configure_directory_sync(subject) do
       {raw, prefix, hash} = Crypto.scim_token()
 
       IdentityProvider.Query.not_deleted()
@@ -964,7 +965,7 @@ defmodule Emisar.SSO do
 
   @doc "Disable directory sync: clear the SCIM token + `scim_enabled: false`. `manage_sso` + enterprise."
   def disable_scim(%IdentityProvider{id: id}, %Subject{} = subject) do
-    with :ok <- ensure_can_configure_sso(subject) do
+    with :ok <- ensure_can_configure_directory_sync(subject) do
       IdentityProvider.Query.not_deleted()
       |> IdentityProvider.Query.by_id(id)
       |> Authorizer.for_subject(subject)
@@ -979,7 +980,7 @@ defmodule Emisar.SSO do
 
   @doc "List a provider's group→role mappings. `manage_sso` + enterprise; account-scoped."
   def list_group_mappings(%IdentityProvider{id: provider_id}, %Subject{} = subject, opts \\ []) do
-    with :ok <- ensure_can_configure_sso(subject) do
+    with :ok <- ensure_can_configure_directory_sync(subject) do
       # No pre-ordering: the query module's cursor (external_group_id, id) drives
       # the ORDER BY so it matches the keyset WHERE. `external_group_display` is
       # nullable, so it can't be a keyset field (this paginator can't compare
@@ -997,7 +998,8 @@ defmodule Emisar.SSO do
   sync can never grant owner (decision 7). `{:ok, mapping}`.
   """
   def create_group_mapping(%IdentityProvider{} = provider, attrs, %Subject{} = subject) do
-    with {:ok, provider} <- fetch_provider_by_id(provider.id, subject) do
+    with :ok <- ensure_can_configure_directory_sync(subject),
+         {:ok, provider} <- fetch_provider_by_id(provider.id, subject) do
       multi = create_group_mapping_multi(provider, attrs, subject)
 
       case Repo.commit_multi(multi) do
@@ -1019,7 +1021,7 @@ defmodule Emisar.SSO do
 
   @doc "Update a group→role mapping (its role / display). `manage_sso` + enterprise; account-scoped. Rejects `:owner`."
   def update_group_mapping(%GroupRoleMapping{id: id}, attrs, %Subject{} = subject) do
-    with :ok <- ensure_can_configure_sso(subject) do
+    with :ok <- ensure_can_configure_directory_sync(subject) do
       GroupRoleMapping.Query.not_deleted()
       |> GroupRoleMapping.Query.by_id(id)
       |> Authorizer.for_subject(subject)
@@ -1032,7 +1034,7 @@ defmodule Emisar.SSO do
 
   @doc "Soft-delete a group→role mapping. `manage_sso` + enterprise; account-scoped."
   def delete_group_mapping(%GroupRoleMapping{id: id}, %Subject{} = subject) do
-    with :ok <- ensure_can_configure_sso(subject) do
+    with :ok <- ensure_can_configure_directory_sync(subject) do
       GroupRoleMapping.Query.not_deleted()
       |> GroupRoleMapping.Query.by_id(id)
       |> Authorizer.for_subject(subject)
@@ -1045,7 +1047,7 @@ defmodule Emisar.SSO do
 
   # -- Manual link requests (Subject-gated) ----------------------------
 
-  @doc "List a provider's pending manual-link requests. `manage_sso` + enterprise; account-scoped."
+  @doc "List a provider's pending manual-link requests. `manage_sso` + Team or Enterprise; account-scoped."
   def list_link_requests(%IdentityProvider{id: provider_id}, %Subject{} = subject, opts \\ []) do
     with :ok <- ensure_can_configure_sso(subject) do
       LinkRequest.Query.all()
@@ -1059,7 +1061,7 @@ defmodule Emisar.SSO do
   @doc """
   Approve a pending manual-link request: provision the captured identity at the
   provider's `default_role` and delete the request, atomically. `manage_sso` +
-  enterprise; account-scoped. Binds the captured `sub` (never email — H1).
+  Team or Enterprise; account-scoped. Binds the captured `sub` (never email — H1).
   `{:ok, %{user: user, identity: identity}}`.
   """
   def approve_link_request(%LinkRequest{id: id}, %Subject{} = subject) do
@@ -1075,7 +1077,7 @@ defmodule Emisar.SSO do
     end
   end
 
-  @doc "Dismiss a pending manual-link request without provisioning. `manage_sso` + enterprise; account-scoped. `{:ok, request}`."
+  @doc "Dismiss a pending manual-link request without provisioning. `manage_sso` + Team or Enterprise; account-scoped. `{:ok, request}`."
   def dismiss_link_request(%LinkRequest{id: id}, %Subject{} = subject) do
     with :ok <- ensure_can_configure_sso(subject),
          {:ok, request} <- fetch_link_request(id, subject) do
@@ -1230,16 +1232,31 @@ defmodule Emisar.SSO do
 
   # -- Authorization ---------------------------------------------------
 
-  @doc "True when the subject may configure SSO — `manage_sso` on the enterprise plan."
+  @doc "True when the subject may configure OIDC SSO — `manage_sso` on the Team or Enterprise plan."
   def subject_can_configure_sso?(%Subject{account: account} = subject) do
     Auth.Authorizer.has_permission?(subject, Authorizer.manage_sso_permission()) and
       Billing.sso_available?(account)
+  end
+
+  @doc "True when the subject may configure SCIM directory sync — `manage_sso` on the Enterprise plan."
+  def subject_can_configure_directory_sync?(%Subject{account: account} = subject) do
+    Auth.Authorizer.has_permission?(subject, Authorizer.manage_sso_permission()) and
+      Billing.directory_sync_available?(account)
   end
 
   defp ensure_can_configure_sso(%Subject{account: account} = subject) do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(subject, Authorizer.manage_sso_permission()) do
       if Billing.sso_available?(account), do: :ok, else: {:error, :sso_not_available}
+    end
+  end
+
+  defp ensure_can_configure_directory_sync(%Subject{account: account} = subject) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.manage_sso_permission()) do
+      if Billing.directory_sync_available?(account),
+        do: :ok,
+        else: {:error, :directory_sync_not_available}
     end
   end
 end

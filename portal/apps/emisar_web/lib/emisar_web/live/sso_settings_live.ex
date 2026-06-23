@@ -44,6 +44,10 @@ defmodule EmisarWeb.SSOSettingsLive do
       socket
       |> assign(:page_title, "Single sign-on")
       |> assign(:can_configure?, SSO.subject_can_configure_sso?(socket.assigns.current_subject))
+      |> assign(
+        :can_configure_directory_sync?,
+        SSO.subject_can_configure_directory_sync?(socket.assigns.current_subject)
+      )
       |> assign(:kind_options, @kind_options)
       |> assign(:role_options, @role_options)
       |> assign(:mapping_role_options, @mapping_role_options)
@@ -201,15 +205,27 @@ defmodule EmisarWeb.SSOSettingsLive do
   # -- Directory sync (SCIM) ------------------------------------------
 
   def handle_event("enable_scim", %{"id" => id}, socket) do
-    Permissions.gated(socket, socket.assigns.can_configure?, &do_enable_scim(&1, id))
+    Permissions.gated(
+      socket,
+      socket.assigns.can_configure_directory_sync?,
+      &do_enable_scim(&1, id)
+    )
   end
 
   def handle_event("rotate_scim", %{"id" => id}, socket) do
-    Permissions.gated(socket, socket.assigns.can_configure?, &do_rotate_scim(&1, id))
+    Permissions.gated(
+      socket,
+      socket.assigns.can_configure_directory_sync?,
+      &do_rotate_scim(&1, id)
+    )
   end
 
   def handle_event("disable_scim", %{"id" => id}, socket) do
-    Permissions.gated(socket, socket.assigns.can_configure?, &do_disable_scim(&1, id))
+    Permissions.gated(
+      socket,
+      socket.assigns.can_configure_directory_sync?,
+      &do_disable_scim(&1, id)
+    )
   end
 
   def handle_event("dismiss_scim_token", _params, socket) do
@@ -230,7 +246,11 @@ defmodule EmisarWeb.SSOSettingsLive do
   end
 
   def handle_event("create_mapping", %{"provider_id" => id, "mapping" => params}, socket) do
-    Permissions.gated(socket, socket.assigns.can_configure?, &do_create_mapping(&1, id, params))
+    Permissions.gated(
+      socket,
+      socket.assigns.can_configure_directory_sync?,
+      &do_create_mapping(&1, id, params)
+    )
   end
 
   def handle_event("start_edit_mapping", %{"id" => id}, socket) do
@@ -261,11 +281,19 @@ defmodule EmisarWeb.SSOSettingsLive do
   end
 
   def handle_event("update_mapping", %{"mapping_id" => id, "mapping" => params}, socket) do
-    Permissions.gated(socket, socket.assigns.can_configure?, &do_update_mapping(&1, id, params))
+    Permissions.gated(
+      socket,
+      socket.assigns.can_configure_directory_sync?,
+      &do_update_mapping(&1, id, params)
+    )
   end
 
   def handle_event("delete_mapping", %{"id" => id}, socket) do
-    Permissions.gated(socket, socket.assigns.can_configure?, &do_delete_mapping(&1, id))
+    Permissions.gated(
+      socket,
+      socket.assigns.can_configure_directory_sync?,
+      &do_delete_mapping(&1, id)
+    )
   end
 
   # -- Manual link requests -------------------------------------------
@@ -805,6 +833,7 @@ defmodule EmisarWeb.SSOSettingsLive do
                      bearer (shown once), rotate, or disable. Authz is re-checked
                      server-side in every handler. --%>
                 <.scim_panel
+                  :if={@can_configure_directory_sync?}
                   provider={provider}
                   scim_base_url={@scim_base_url}
                   scim_token={@scim_token}
@@ -815,6 +844,24 @@ defmodule EmisarWeb.SSOSettingsLive do
                   mapping_edit_form={@mapping_edit_form}
                   typed={@typed}
                 />
+                <div
+                  :if={!@can_configure_directory_sync?}
+                  class="mt-4 rounded-lg border border-zinc-800 bg-zinc-950/40 p-4 text-sm leading-relaxed text-zinc-400"
+                >
+                  <span class="font-medium text-zinc-200">SCIM directory sync</span>
+                  — automatic provisioning and offboarding from your IdP, plus group→role
+                  mapping — is available on the Enterprise plan.
+                  <.link
+                    navigate={~p"/pricing"}
+                    class="font-medium text-brand-400 hover:text-brand-300"
+                  >
+                    See plans
+                  </.link>
+                  or <a
+                    href="mailto:sales@emisar.dev"
+                    class="font-medium text-brand-400 hover:text-brand-300"
+                  >talk to us</a>.
+                </div>
 
                 <%!-- IRREVERSIBLE — typed-confirm modal. The button only OPENS
                      the dialog; `delete` still fires from Confirm and stays
@@ -859,10 +906,10 @@ defmodule EmisarWeb.SSOSettingsLive do
 
   defp locked(assigns) do
     ~H"""
-    <.empty_state icon="hero-lock-closed" title="Single sign-on is an Enterprise feature">
+    <.empty_state icon="hero-lock-closed" title="Single sign-on is a paid feature">
       Connect Okta, Google Workspace, Keycloak, or any OIDC provider so your team signs in
       through it — with just-in-time provisioning and per-provider MFA. Available on the
-      Enterprise plan.
+      Team and Enterprise plans (SCIM directory sync is Enterprise).
       <:cta navigate={~p"/app/#{@current_account}/settings/billing"}>See plans</:cta>
     </.empty_state>
     """
