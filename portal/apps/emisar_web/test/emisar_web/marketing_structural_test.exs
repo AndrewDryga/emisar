@@ -101,6 +101,36 @@ defmodule EmisarWeb.MarketingStructuralTest do
     end
   end
 
+  describe "UX & accessibility baseline on every marketing page" do
+    # A visitor, a screen reader, and a crawler all need: exactly one h1 (heading
+    # hierarchy), a skip-to-content link, a lang attribute, navigable chrome (nav +
+    # footer), and alt text on every image. This is the testable UX/a11y floor — it
+    # catches the regressions that hurt real users and SEO (not a substitute for
+    # design review, which is the marketing loop's + ux-designer's domain).
+    for route <- @indexable_routes do
+      test "GET #{route} meets the UX/a11y baseline", %{conn: conn} do
+        html = conn |> get(unquote(route)) |> html_response(200)
+
+        h1s = length(String.split(html, "<h1")) - 1
+        assert h1s == 1, "#{unquote(route)} has #{h1s} <h1> (need exactly one)"
+
+        assert html =~ "#main-content", "#{unquote(route)}: no skip-to-content link"
+        assert html =~ ~r/<html[^>]*\slang=/, "#{unquote(route)}: no <html lang=>"
+        assert html =~ "<nav", "#{unquote(route)}: no <nav>"
+        assert html =~ "<footer", "#{unquote(route)}: no <footer>"
+
+        assert html =~ ~r/<meta[^>]+name="viewport"/,
+               "#{unquote(route)}: no viewport meta (mobile)"
+
+        imgs = List.flatten(Regex.scan(~r/<img\b[^>]*>/, html))
+        without_alt = Enum.reject(imgs, &(&1 =~ ~r/\salt=/))
+
+        assert without_alt == [],
+               "#{unquote(route)}: <img> without alt (decorative → alt=\"\"): #{inspect(without_alt)}"
+      end
+    end
+  end
+
   describe "lean JS bundle on every controller-rendered marketing page" do
     # The static marketing site has no LiveView socket, so it must load
     # only the lean `marketing.js` and never the full `app.js` (LiveSocket
