@@ -3046,6 +3046,9 @@ defmodule EmisarWeb.CoreComponents do
           <.marketing_nav_link href={~p"/pricing"} active={@current == :pricing}>
             Pricing
           </.marketing_nav_link>
+          <.marketing_nav_link href={~p"/packs"} active={@current == :packs}>
+            Packs
+          </.marketing_nav_link>
           <.marketing_nav_link href={~p"/docs"} active={@current == :docs}>Docs</.marketing_nav_link>
         </nav>
 
@@ -3132,6 +3135,9 @@ defmodule EmisarWeb.CoreComponents do
             </.marketing_mobile_link>
             <.marketing_mobile_link href={~p"/pricing"} active={@current == :pricing}>
               Pricing
+            </.marketing_mobile_link>
+            <.marketing_mobile_link href={~p"/packs"} active={@current == :packs}>
+              Packs
             </.marketing_mobile_link>
             <.marketing_mobile_link href={~p"/docs"} active={@current == :docs}>
               Docs
