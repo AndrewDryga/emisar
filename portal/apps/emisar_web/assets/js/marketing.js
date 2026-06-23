@@ -17,11 +17,13 @@
 import {setupCopyToClipboardDelegation} from "./copy.js"
 import {initEmisarDemo} from "./emisar_demo.js"
 import {initLegalToc} from "./legal_toc.js"
+import {initMobileNav} from "./mobile_nav.js"
 import {initPackSearch} from "./pack_search.js"
 import {initReveal} from "./reveal.js"
 
 setupCopyToClipboardDelegation()
 initEmisarDemo()
 initLegalToc()
+initMobileNav()
 initPackSearch()
 initReveal()

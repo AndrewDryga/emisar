@@ -3076,11 +3076,10 @@ defmodule EmisarWeb.CoreComponents do
         <button
           type="button"
           aria-label="Open menu"
+          aria-controls="marketing-mobile-nav"
+          aria-expanded="false"
+          data-mobile-nav-open
           class="-mr-1.5 rounded-md p-2 text-zinc-300 hover:bg-zinc-900 hover:text-zinc-100 md:hidden"
-          phx-click={
-            JS.show(to: "#marketing-mobile-nav", display: "block")
-            |> JS.add_class("overflow-hidden", to: "body")
-          }
         >
           <.icon name="hero-bars-3" class="h-5 w-5" />
         </button>
@@ -3093,31 +3092,16 @@ defmodule EmisarWeb.CoreComponents do
         class="fixed inset-0 z-50 hidden md:hidden"
         role="dialog"
         aria-modal="true"
-        phx-window-keydown={
-          JS.hide(to: "#marketing-mobile-nav")
-          |> JS.remove_class("overflow-hidden", to: "body")
-        }
-        phx-key="escape"
       >
-        <div
-          class="absolute inset-0 bg-black/60"
-          phx-click={
-            JS.hide(to: "#marketing-mobile-nav")
-            |> JS.remove_class("overflow-hidden", to: "body")
-          }
-        >
-        </div>
+        <div class="absolute inset-0 bg-black/60" data-mobile-nav-close></div>
         <aside class="relative ml-auto flex h-full w-80 max-w-[85vw] flex-col bg-zinc-950 shadow-2xl">
           <div class="flex items-center justify-between border-b border-zinc-900 px-5 py-4">
             <.brand size={:sm} />
             <button
               type="button"
               aria-label="Close menu"
+              data-mobile-nav-close
               class="rounded-md p-1.5 text-zinc-400 hover:bg-zinc-900 hover:text-zinc-100"
-              phx-click={
-                JS.hide(to: "#marketing-mobile-nav")
-                |> JS.remove_class("overflow-hidden", to: "body")
-              }
             >
               <.icon name="hero-x-mark" class="h-5 w-5" />
             </button>
