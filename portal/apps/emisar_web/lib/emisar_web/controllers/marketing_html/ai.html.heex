@@ -7,24 +7,24 @@
   <.marketing_nav current_user={@current_user} current={:ai} sticky />
 
   <%!-- Hero --%>
-  <section class="relative flex min-h-[600px] items-center overflow-hidden border-b border-zinc-900 bg-zinc-950">
+  <section class="relative overflow-hidden border-b border-zinc-900 bg-zinc-950">
     <div class="hero-grid absolute inset-0" aria-hidden="true"></div>
 
-    <div class="relative mx-auto w-full max-w-7xl px-6 py-24 lg:px-8">
-      <div class="mx-auto max-w-4xl text-center">
+    <div class="relative mx-auto w-full max-w-7xl px-6 py-20 sm:py-28 lg:px-8">
+      <div class="max-w-4xl">
         <p class="mb-8 inline-flex items-center gap-2 rounded-full border border-brand-500/30 bg-zinc-950/80 px-4 py-1 text-xs font-semibold text-brand-300">
           <.icon name="hero-sparkles" class="h-3.5 w-3.5" /> For your AI assistant
         </p>
         <.marketing_heading tag="h1" scale={:display}>
           Your AI is brilliant. And blind.
         </.marketing_heading>
-        <p class="mx-auto mt-8 max-w-2xl text-lg leading-relaxed text-zinc-300">
+        <p class="mt-8 max-w-2xl text-lg leading-relaxed text-zinc-300">
           Claude, Cursor, and ChatGPT reason about your code all day — but they can't see your
           running systems. emisar gives your assistant safe, gated eyes on production: read logs,
           query metrics, and investigate an incident, right alongside you. You stay in control of
           anything that changes — no SSH, no pasting Grafana screenshots into a chat box at 2&nbsp;a.m.
         </p>
-        <div class="mt-10 flex flex-wrap items-center justify-center gap-4">
+        <div class="mt-10 flex flex-wrap items-center gap-4">
           <.marketing_button href={~p"/sign_up"} icon="hero-arrow-right">
             Start free
           </.marketing_button>
@@ -32,7 +32,7 @@
             See it run an incident
           </.marketing_button>
         </div>
-        <div class="mt-10 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-xs text-zinc-400">
+        <div class="mt-10 flex flex-wrap items-center gap-x-6 gap-y-2 text-xs text-zinc-400">
           <span class="inline-flex items-center gap-1.5">
             <.icon name="hero-shield-check" class="h-4 w-4 text-brand-400" />
             No SSH, no standing access
