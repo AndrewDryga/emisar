@@ -33,21 +33,22 @@
         </p>
         <p class="mt-4 text-base leading-relaxed text-zinc-400 text-pretty">
           The boring wins compound: questions answered in a minute, drift caught before it bites,
-          a migration that doesn't roll back at 2 a.m. This is what the same gated catalog does on
-          an ordinary Tuesday.
+          a migration that doesn't roll back at 2 a.m. These are representative of an ordinary
+          Tuesday; the war stories below are real incidents, logged with the command output to
+          prove it.
         </p>
       </div>
 
       <div class="mx-auto mt-14 grid max-w-6xl grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
         <%= for {icon, tag, title, story} <- [
           {"hero-paper-airplane", "Pre-flight", "Pre-migration go / no-go",
-           "Before you cut prod to the new cluster, you ask: is the target ready? The agent checks disk and memory headroom, confirms the replicas are caught up, validates every TLS cert, and diffs the configs against prod — across every node — and hands back a go/no-go in a minute. The migration that doesn't roll back at 2 a.m. is the one nobody remembers."},
+           "Before you cut prod to the new cluster, you ask: is the target ready? The agent checks disk and memory headroom, confirms the replicas are caught up, validates every TLS cert, and diffs the configs against prod across every node, then hands back a go/no-go in a minute. The migration that doesn't roll back at 2 a.m. is the one nobody remembers."},
           {"hero-magnifying-glass", "Investigate", "\"Why is checkout slow?\"",
-           "You ask in plain English. The agent correlates nginx access logs, Prometheus p99, the database's lock and slow-query state, and the upstream's health — across services — and narrows it to a wedged connection pool. Minutes, not an hour of greps and tails across six SSH sessions."},
+           "You ask in plain English. The agent correlates nginx access logs, Prometheus p99, the database's lock and slow-query state, and the upstream's health across services, then narrows it to a wedged connection pool. Minutes, not an hour of greps and tails across six SSH sessions."},
           {"hero-bug-ant", "Self-debug", "It debugs what it shipped",
            "Your coding agent deploys and error rates tick up. Instead of waiting for a human to gather context, it reads its own deploy's logs and metrics, spots the env var it got wrong, and opens the fix as a reviewed PR — no round-trip just to find out what happened."},
           {"hero-shield-check", "Sweep", "Cert expiry, before the pager",
-           "\"Which certs expire in the next 30 days?\" The agent walks every host and ingress, checks expiry, and hands you the three about to lapse — with days remaining — before an outage finds them for you."},
+           "\"Which certs expire in the next 30 days?\" The agent walks every host and ingress, checks expiry, and hands you the three about to lapse, days remaining and all, before an outage finds them for you."},
           {"hero-bell-alert", "Triage", "First response at 3 a.m.",
            "The page fires. The agent triages first — the failing service's logs, the last three deploys, the resource pressure, the dependency that's actually down — so you wake to a diagnosis and a remediation waiting on your approval, not a blank alert and a cold terminal."},
           {"hero-arrow-trending-up", "Capacity", "Ready for the launch?",
