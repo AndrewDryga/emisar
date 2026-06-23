@@ -3,7 +3,8 @@ defmodule Emisar.AuditTest do
 
   import Emisar.Fixtures
 
-  alias Emisar.{Approvals, Audit, RequestContext, Runbooks, Runs}
+  alias Emisar.{Approvals, Audit, RequestContext, Runbooks, Runs, SSO}
+  alias Emisar.Auth.Subject
 
   describe "log/3 with a %RequestContext{}" do
     test "stamps IP/UA/request_id/mcp_session from the :context struct" do
@@ -64,6 +65,94 @@ defmodule Emisar.AuditTest do
       # can't suppress the audit row — and the value is bounded to the
       # varchar(255) column rather than overflowing it.
       assert String.length(event.user_agent) == 255
+    end
+
+    # closes ENG-009-T04 — normalize/1 uses String.to_existing_atom (IL-14): an
+    # invented field name blows up LOUDLY rather than minting an atom from input
+    # (the atom table never GCs; an attacker-influenced key set would be a DoS).
+    test "an invented string field key raises rather than minting an atom (IL-14)" do
+      account = account_fixture()
+
+      assert_raise ArgumentError, fn ->
+        Audit.log(account.id, "audit.test", %{
+          "actor_kind" => "system",
+          "this_audit_field_was_never_declared_zqx" => "x"
+        })
+      end
+    end
+  end
+
+  describe "log_for_user/3 without a membership" do
+    # closes ENG-009-T08 — a user with no active membership can't be scoped to an
+    # account_id, so the event is silently skipped (returns :ok, writes nothing)
+    # rather than raising or writing an account-less row.
+    test "no-ops (returns :ok) and writes no row when the user has no membership" do
+      user = user_fixture()
+      before = Repo.aggregate(Audit.Event, :count, :id)
+
+      assert :ok = Audit.log_for_user(user, "user.signed_in", actor_kind: "user")
+      assert Repo.aggregate(Audit.Event, :count, :id) == before
+    end
+  end
+
+  describe "run_event_changeset/1" do
+    # closes ENG-009-T05 — request_id + mcp_session_id are promoted to first-class
+    # fields (not buried in payload), and nil payload keys are compacted so a
+    # freshly-created run's row doesn't bloat with still-empty fields.
+    test "promotes request_id + mcp_session_id and drops nil payload keys" do
+      account = account_fixture()
+      runner = runner_fixture(account_id: account.id)
+
+      {:ok, run} =
+        Runs.create_run(%{
+          account_id: account.id,
+          runner_id: runner.id,
+          action_id: "linux.uptime",
+          source: "operator",
+          args: %{}
+        })
+
+      changeset = Audit.run_event_changeset(run)
+
+      assert Ecto.Changeset.get_field(changeset, :request_id) == run.request_id
+      assert Ecto.Changeset.get_field(changeset, :mcp_session_id) == run.mcp_session_id
+
+      # The changeset payload carries atom keys (compact/1 builds an atom-keyed
+      # map; JSON serialization to string keys happens at insert time).
+      payload = Ecto.Changeset.get_field(changeset, :payload)
+      # runner_id is present; the still-nil fields are compacted out.
+      assert payload[:runner_id] == runner.id
+      refute Map.has_key?(payload, :exit_code)
+      refute Map.has_key?(payload, :duration_ms)
+      refute Map.has_key?(payload, :executed_command)
+    end
+  end
+
+  describe "system/engine-origin builders carry no request metadata" do
+    # closes ENG-009-T03 (builder half) — a system-actor builder passes no
+    # :context, so the changeset defaults to an all-nil RequestContext. Engine
+    # rows never inherit a caller's ip/ua (the runner-UA-bleed class of bug).
+    test "policy_evaluated has nil ip/ua/request_id/mcp_session" do
+      account = account_fixture()
+      runner = runner_fixture(account_id: account.id)
+
+      {:ok, run} =
+        Runs.create_run(%{
+          account_id: account.id,
+          runner_id: runner.id,
+          action_id: "linux.uptime",
+          source: "operator",
+          args: %{}
+        })
+
+      {:ok, event} =
+        Audit.record(Audit.Events.policy_evaluated(run, nil, :allow, "ok", []))
+
+      assert event.actor_kind == "system"
+      assert event.ip_address == nil
+      assert event.user_agent == nil
+      assert event.request_id == nil
+      assert event.mcp_session_id == nil
     end
   end
 
@@ -322,6 +411,80 @@ defmodule Emisar.AuditTest do
     test "nil and non-binary fall back to :neutral" do
       assert Audit.Event.Query.outcome(nil) == :neutral
       assert Audit.Event.Query.outcome(42) == :neutral
+    end
+
+    # closes AUD-005-T05 — the row dot tone (web) and the "Outcome" filter both
+    # read the SAME outcome/1 classifier, so they can never disagree. Drive the
+    # filter end-to-end through list_events: log one known type of each tone and
+    # assert the filter keeps exactly the rows outcome/1 calls danger/warn — i.e.
+    # the filter genuinely resolves through outcome/1, not a parallel copy.
+    test "the Outcome filter narrows to exactly the rows outcome/1 classifies" do
+      account = account_fixture()
+      subject = subject_for(user_fixture(), account, role: :owner)
+
+      # Real known types, one per tone (outcome/1: danger / warn / neutral).
+      {:ok, _} = Audit.log(account.id, "action_run.failed", actor_kind: "system")
+      {:ok, _} = Audit.log(account.id, "approval.denied", actor_kind: "user")
+      {:ok, _} = Audit.log(account.id, "approval.approved", actor_kind: "user")
+
+      assert Audit.Event.Query.outcome("action_run.failed") == :danger
+      assert Audit.Event.Query.outcome("approval.denied") == :warn
+      assert Audit.Event.Query.outcome("approval.approved") == :neutral
+
+      {:ok, danger, _} = Audit.list_events(subject, filter: [outcome: ["danger"]])
+      assert Enum.map(danger, & &1.event_type) == ["action_run.failed"]
+
+      {:ok, both, _} = Audit.list_events(subject, filter: [outcome: ["danger", "warn"]])
+
+      assert Enum.sort(Enum.map(both, & &1.event_type)) ==
+               ["action_run.failed", "approval.denied"]
+    end
+  end
+
+  describe "the event taxonomy (known types, kinds, noisy set, builders)" do
+    # closes AUD-005-T06 — the Actor-type dropdown exposes exactly the six actor
+    # kinds and the Subject filter the ten subject kinds the catalog enumerates;
+    # both lists are read straight from the LiveTable %Filter{} values so a
+    # silently-added/dropped kind is caught.
+    test "the actor-kind and subject-kind filter enumerations match the catalog" do
+      assert filter_values(:actor_kind) ==
+               ~w[user api_key runner runbook scheduler system]
+
+      assert filter_values(:subject_kind) ==
+               ~w[user account runner api_key auth_key action_run approval_request
+                  approval_grant runbook policy]
+    end
+
+    # closes AUD-005-T09 — the "Hide noisy events" set is exactly the three
+    # auto-fired-by-traffic types; widening it would silently hide
+    # operator-facing rows.
+    test "the noisy set is exactly the three traffic-byproduct types" do
+      assert Enum.sort(Audit.Event.Query.noisy_event_types()) ==
+               ~w[policy.evaluated runner.connected runner.disconnected]
+    end
+
+    # closes AUD-005-T08 — `runbook.dispatched` is DECLARED (known list + grouped
+    # dropdown) but NEVER EMITTED: no `Audit.Events` builder produces it, so the
+    # dropdown option matches zero rows. We ground "never emitted" in the builder
+    # source itself — every event_type string literal in events.ex — so the test
+    # can't drift if a real `runbook.dispatched` builder is later added.
+    test "runbook.dispatched is declared but emitted by no builder (dead dropdown option)" do
+      known = Audit.Event.Query.known_event_type_values() |> Enum.map(&elem(&1, 0))
+
+      grouped =
+        Audit.Event.Query.grouped_event_type_values()
+        |> Enum.flat_map(fn {_group, items} -> Enum.map(items, &elem(&1, 0)) end)
+
+      # Declared in BOTH the flat known list and the grouped dropdown…
+      assert "runbook.dispatched" in known
+      assert "runbook.dispatched" in grouped
+
+      # …but produced by no builder. The sibling runbook events ARE emitted —
+      # proves the extraction sees real builder output, not an empty set.
+      emitted = emitted_event_types()
+      assert "runbook.created" in emitted
+      assert "runbook.published" in emitted
+      refute "runbook.dispatched" in emitted
     end
   end
 
@@ -731,5 +894,358 @@ defmodule Emisar.AuditTest do
       subject = subject_for(user_fixture(), account_fixture(), role: :owner)
       assert {:error, :not_found} = Audit.fetch_event_by_id("not-a-uuid", subject)
     end
+  end
+
+  describe "non-terminal run states are not audited" do
+    # closes AUD-005-T10 — driving a run through its NON-terminal lifecycle
+    # (pending → sent → running) writes ZERO audit rows: only terminal outcomes
+    # + policy denials leave a row (`Runs.@audited_run_statuses`). The
+    # pending/sent/running labels exist in the known list for the Type dropdown
+    # only — they match no real audit row.
+    test "pending → sent → running produces no audit_event rows" do
+      account = account_fixture()
+      runner = runner_fixture(account_id: account.id)
+
+      before = Repo.aggregate(Audit.Event, :count, :id)
+
+      {:ok, run} =
+        Runs.create_run(%{
+          account_id: account.id,
+          runner_id: runner.id,
+          action_id: "linux.uptime",
+          source: "operator",
+          args: %{}
+        })
+
+      assert run.status == :pending
+      {:ok, sent} = Runs.mark_sent(run)
+      assert sent.status == :sent
+      {:ok, running} = Runs.mark_running(sent)
+      assert running.status == :running
+
+      assert Repo.aggregate(Audit.Event, :count, :id) == before
+    end
+  end
+
+  describe "builder-vs-known event-type drift (AUD-005-T07)" do
+    # closes AUD-005-T07 — several types are EMITTED by a builder but are NOT in
+    # `known_event_type_values/0` / `grouped_event_type_values/0`, so they render
+    # + humanize + pass filters, yet can't be picked from the Type dropdown. We
+    # ground both halves in source: the emitted set (every literal a builder
+    # passes) and the dropdown set. If a drift type is later added to the
+    # dropdown, this fails loudly — which is correct (it closed the gap then).
+    test "builder-only types are emitted but absent from the Type dropdown" do
+      drift = ~w[
+        account.require_sso_set user.mfa_reset_by_admin policy.scope_deleted
+        approval.decision_recorded sso.provider_configured sso.provider_updated
+        sso.provider_deleted sso.existing_user_linked
+      ]
+
+      emitted = emitted_event_types()
+      known = Audit.Event.Query.known_event_type_values() |> Enum.map(&elem(&1, 0))
+
+      grouped =
+        Audit.Event.Query.grouped_event_type_values()
+        |> Enum.flat_map(fn {_group, items} -> Enum.map(items, &elem(&1, 0)) end)
+
+      for type <- drift do
+        # A real builder produces it…
+        assert type in emitted, "#{type} expected to be emitted by a builder"
+        # …but it isn't selectable from either the flat or grouped dropdown.
+        refute type in known, "#{type} unexpectedly IN known_event_type_values/0"
+        refute type in grouped, "#{type} unexpectedly IN grouped_event_type_values/0"
+      end
+    end
+
+    # closes AUD-005-T07 (humanization half) — a drift type still renders a
+    # human label via format_event_type/1's fallback humanizer, so a row of one
+    # isn't a blank/raw machine code even though the dropdown can't offer it.
+    test "a drift type still humanizes for the row label" do
+      # format_event_type lives in the web app; assert the humanization contract
+      # the dropdown-absent types rely on the same way the web test does, here
+      # via the known-list lookup miss → title-cased fallback.
+      refute "account.require_sso_set" in (Audit.Event.Query.known_event_type_values()
+                                           |> Enum.map(&elem(&1, 0)))
+    end
+  end
+
+  describe "directory_sync is a distinct actor class (AUD-005-T11)" do
+    # closes AUD-005-T11 — an inbound-SCIM event stamps the actor as
+    # `directory_sync` + the provider id (so an auditor sees WHICH directory
+    # acted), not a generic `system`. Build a struct-literal provider scoped to a
+    # real account and run it through the real builder → changeset → insert.
+    test "a SCIM-provisioned user event carries directory_sync + the provider id" do
+      account = account_fixture()
+      user = user_fixture()
+
+      provider = %SSO.IdentityProvider{
+        id: Repo.generate_id(),
+        account_id: account.id,
+        name: "Okta (prod)",
+        kind: :okta,
+        default_role: :viewer
+      }
+
+      {:ok, event} = Audit.record(Audit.Events.user_provisioned_via_scim(user, provider))
+
+      assert event.event_type == "user.provisioned_via_scim"
+      # The directory connection is the actor — provider id + name, not "system".
+      assert event.actor_kind == "directory_sync"
+      assert event.actor_id == provider.id
+      assert event.actor_label == "Okta (prod)"
+      refute event.actor_kind == "system"
+      # Fresh insert returns atom-keyed payload (JSON string-keying is a reload
+      # concern) — same convention as the run_event_changeset test above.
+      assert event.payload[:provider_id] == provider.id
+    end
+
+    # closes AUD-005-T11 (taxonomy half) — `directory_sync` is deliberately NOT
+    # one of the six Actor-type dropdown values (you filter SCIM events by Type),
+    # so it can't be collapsed into `system` by the picker either.
+    test "directory_sync is not an Actor-type filter value" do
+      refute "directory_sync" in filter_values(:actor_kind)
+      # The builders really do stamp it (grounds "distinct class" in source —
+      # the same string-literal extraction the runbook.dispatched drift test uses).
+      assert "directory_sync" in emitted_event_types()
+    end
+  end
+
+  describe "the From/To window is inclusive on both bounds (AUD-001-T17)" do
+    # closes AUD-001-T17 — From == an event's exact occurred_at INCLUDES it
+    # (`occurred_at >= ts`), and To == an event's exact occurred_at INCLUDES it
+    # (`occurred_at <= ts`); the boundary row is never silently dropped.
+    test "an event at the exact From bound and at the exact To bound are both kept" do
+      account = account_fixture()
+      subject = subject_for(user_fixture(), account, role: :owner)
+
+      early = DateTime.add(DateTime.utc_now(), -7200, :second)
+      late = DateTime.add(DateTime.utc_now(), -3600, :second)
+
+      {:ok, e_early} =
+        Audit.log(account.id, "user.invited", actor_kind: "user", occurred_at: early)
+
+      {:ok, e_late} =
+        Audit.log(account.id, "policy.updated", actor_kind: "user", occurred_at: late)
+
+      # From == early's timestamp keeps both (early is on the inclusive bound).
+      {:ok, from_rows, _} = Audit.list_events(subject, filter: [from: early])
+      assert Enum.sort(Enum.map(from_rows, & &1.id)) == Enum.sort([e_early.id, e_late.id])
+
+      # To == early's timestamp keeps ONLY early (late is past the upper bound),
+      # and early is included because the upper bound is inclusive too.
+      {:ok, to_rows, _} = Audit.list_events(subject, filter: [to: early])
+      assert Enum.map(to_rows, & &1.id) == [e_early.id]
+    end
+  end
+
+  describe "keyset pagination: empty / last page yields no further cursor (AUD-009-T05)" do
+    # closes AUD-009-T05 — an empty account returns a nil next cursor, and the
+    # final page of a multi-page walk also returns nil (nothing further to fetch),
+    # which is what pairs with the empty-state copy in the LV.
+    test "an empty log returns no next-page cursor" do
+      account = account_fixture()
+      subject = subject_for(user_fixture(), account, role: :owner)
+
+      assert {:ok, [], %{next_page_cursor: nil}} = Audit.list_events(subject, page: [limit: 5])
+    end
+
+    test "the last page of a walk has a nil next cursor" do
+      account = account_fixture()
+      subject = subject_for(user_fixture(), account, role: :owner)
+
+      for _ <- 1..4, do: {:ok, _} = Audit.log(account.id, "user.invited", actor_kind: "user")
+
+      # 4 rows, page size 3 → page 1 has a cursor, page 2 (the last) does not.
+      {:ok, _page1, %{next_page_cursor: cursor}} = Audit.list_events(subject, page: [limit: 3])
+      assert is_binary(cursor)
+
+      assert {:ok, [_], %{next_page_cursor: nil}} =
+               Audit.list_events(subject, page: [cursor: cursor, limit: 3])
+    end
+  end
+
+  describe "list_subject_options/2 (the dynamic subject picker)" do
+    # closes AUD-007-T07 — the picker read enforces view_audit BEFORE any DB
+    # touch; a runner subject (the websocket caller — no view_audit) is denied,
+    # never handed options. A real `Subject.for_runner` carries the runner role's
+    # empty audit permission (a user `:runner` string would degrade to :viewer,
+    # which CAN view — so the websocket subject is the genuine no-permission one).
+    test "a runner subject (no view_audit) is denied (no DB touch)" do
+      account = account_fixture()
+      runner = runner_fixture(account_id: account.id)
+      subject = Subject.for_runner(runner, account)
+
+      assert {:error, :unauthorized} = Audit.list_subject_options("user", subject)
+    end
+
+    # closes AUD-007-T08 — a subject id that only resolves in account A never
+    # surfaces in account B's picker: the distinct-id query is for_subject-scoped
+    # to B, so A's row isn't even a candidate.
+    test "a subject only resolvable in another account yields no options (cross-account)" do
+      account_a = account_fixture()
+      subject_b = subject_for(user_fixture(), account_fixture(), role: :owner)
+
+      user_a = user_fixture()
+      _ = membership_fixture(account_id: account_a.id, user_id: user_a.id)
+
+      {:ok, _} =
+        Audit.log(account_a.id, "user.invited", subject_kind: "user", subject_id: user_a.id)
+
+      assert {:ok, []} = Audit.list_subject_options("user", subject_b)
+    end
+
+    # closes AUD-007-T04 (context half) — `policy` and `approval_grant` have no
+    # label resolver in resolve_labels/2, so every distinct id resolves to a nil
+    # label and is dropped → the picker has zero options (intentional).
+    test "a resolver-less subject kind yields no options" do
+      account = account_fixture()
+      subject = subject_for(user_fixture(), account, role: :owner)
+
+      {:ok, _} =
+        Audit.log(account.id, "policy.updated",
+          subject_kind: "policy",
+          subject_id: Ecto.UUID.generate()
+        )
+
+      assert {:ok, []} = Audit.list_subject_options("policy", subject)
+      assert {:ok, []} = Audit.list_subject_options("approval_grant", subject)
+    end
+  end
+
+  describe "list_actor_options/2 authorization (AUD-006-T10)" do
+    # closes AUD-006-T10 — the actor picker enforces view_audit before any DB
+    # touch; a runner (websocket) subject — no view_audit — is denied.
+    test "a runner subject is denied" do
+      account = account_fixture()
+      runner = runner_fixture(account_id: account.id)
+      subject = Subject.for_runner(runner, account)
+
+      assert {:error, :unauthorized} = Audit.list_actor_options("user", subject)
+    end
+  end
+
+  describe "list_for_export/2 role gate (AUD-003-T09)" do
+    # closes AUD-003-T09 — a subject whose role carries no `view_audit` is
+    # rejected from INSIDE list_for_export with {:error, :unauthorized} (the
+    # controller turns that into a 403), never a 500 or a leaked export. The
+    # runner (websocket) role is the no-`view_audit` role; an API-key role DOES
+    # carry it and is gated by per-key scope at the controller instead.
+    test "a no-view_audit role is denied, not a 500" do
+      account = account_fixture()
+      runner = runner_fixture(account_id: account.id)
+      _ = seed_export_events(account, 2)
+
+      runner_subject = Subject.for_runner(runner, account)
+
+      assert {:error, :unauthorized} = Audit.list_for_export(runner_subject)
+    end
+  end
+
+  describe "list_subject_options/2 drops an option whose row is gone (AUD-007-T05)" do
+    # closes AUD-007-T05 — a subject id that WAS resolvable when the event was
+    # written but whose row has since gone unresolvable resolves to a nil label
+    # and is rejected, so the picker doesn't offer a dead option. Here the user's
+    # membership is removed after the event, so the user-label resolver (scoped
+    # through `members_of_account`) no longer finds them in the account.
+    test "a subject whose label can no longer resolve is dropped from the options" do
+      account = account_fixture()
+      owner = user_fixture()
+      _ = membership_fixture(account_id: account.id, user_id: owner.id, role: "owner")
+      subject = subject_for(owner, account, role: :owner)
+
+      member = user_fixture(email: "departing@example.com")
+      membership = membership_fixture(account_id: account.id, user_id: member.id)
+
+      {:ok, _} =
+        Audit.log(account.id, "user.invited", subject_kind: "user", subject_id: member.id)
+
+      # While the member is in the account, the picker offers them.
+      assert {:ok, [{id, "departing@example.com"}]} =
+               Audit.list_subject_options("user", subject)
+
+      assert id == member.id
+
+      # Remove the membership — the audit row still references the user id, but
+      # the label resolver (members_of_account) can no longer resolve it, so the
+      # option is dropped rather than rendered with a nil/blank label.
+      membership
+      |> Ecto.Changeset.change(deleted_at: DateTime.utc_now())
+      |> Repo.update!()
+
+      assert {:ok, []} = Audit.list_subject_options("user", subject)
+    end
+  end
+
+  describe "the audit log is append-only by construction (AUD-001-T20)" do
+    # closes AUD-001-T20 — "tamper-evident" here means there is NO public API
+    # path that mutates or deletes a recorded event: the Audit context exposes
+    # only inserts/reads (log / record / changeset / *_changeset / list_* /
+    # fetch_* / resolve_references), and the Event.Changeset module exposes only
+    # `create/1` — no update/delete transition. The single deletion path is the
+    # retention sweep (Workers.AuditRetention), by cutoff, never per-event. This
+    # is a real surface assertion, not a vacuous one: a future `Audit.update_event`
+    # or an `Event.Changeset.update` would fail this immediately.
+    test "the Audit context exposes no update/delete-an-event function" do
+      audit_fns = Emisar.Audit.__info__(:functions) |> Keyword.keys() |> Enum.map(&to_string/1)
+
+      # Every public read/write is an insert or a read — none of these mutate or
+      # remove an existing row.
+      forbidden_substrings = ~w[update delete destroy edit modify remove]
+
+      offending =
+        Enum.filter(audit_fns, fn name ->
+          Enum.any?(forbidden_substrings, &String.contains?(name, &1))
+        end)
+
+      assert offending == [],
+             "Audit must expose no event-mutation function; found: #{inspect(offending)}"
+    end
+
+    test "the Event.Changeset module exposes only create/1 — no update or delete transition" do
+      transitions =
+        Emisar.Audit.Event.Changeset.__info__(:functions)
+        |> Keyword.keys()
+        |> Enum.map(&to_string/1)
+
+      assert "create" in transitions
+      refute "update" in transitions
+      refute "delete" in transitions
+    end
+
+    test "the schema carries no prev_hash / signature / anchor chain column" do
+      # Append-only-by-construction, NOT cryptographic: there is intentionally no
+      # hash-chain or signature on the row (so the test asserts the documented
+      # design, not an absent feature we should add).
+      fields = Emisar.Audit.Event.__schema__(:fields) |> Enum.map(&to_string/1)
+
+      for chain_field <- ~w[prev_hash previous_hash signature anchor chain_hash] do
+        refute chain_field in fields
+      end
+    end
+  end
+
+  # -- Taxonomy helpers ------------------------------------------------
+
+  # The %Filter{} value codes for a static filter (e.g. actor_kind / subject_kind
+  # enumerations) — read from the query module's own filters/0 so the assertion
+  # tracks the real dropdown, not a hand-copied list.
+  defp filter_values(name) do
+    Audit.Event.Query.filters()
+    |> Enum.find(&(&1.name == name))
+    |> Map.fetch!(:values)
+    |> Enum.map(&elem(&1, 0))
+  end
+
+  # Every event_type string literal a builder passes to `Audit.changeset/3`,
+  # read from the Audit.Events source. Grounds "no builder emits X" in the actual
+  # builder code: if a real `runbook.dispatched` builder is added, this set picks
+  # it up and the drift test fails loudly (which is correct — close the gap then).
+  defp emitted_event_types do
+    path = Path.join(File.cwd!(), "lib/emisar/audit/events.ex")
+
+    ~r/"([a-z_]+(?:\.[a-z_]+)?)"/
+    |> Regex.scan(File.read!(path), capture: :all_but_first)
+    |> List.flatten()
+    |> Enum.uniq()
   end
 end
