@@ -111,6 +111,8 @@ defmodule EmisarWeb.Router do
     get "/changelog.xml", MarketingController, :changelog_feed
     get "/install.sh", InstallController, :show
     get "/install-mcp.sh", InstallMCPController, :show
+    # Footer "get launch updates" capture — CSRF-protected by the :browser pipeline.
+    post "/early-access", MarketingController, :subscribe
   end
 
   # -- Auth surface (only when signed-out) ----------------------------

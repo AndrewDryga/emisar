@@ -3669,6 +3669,46 @@ defmodule EmisarWeb.CoreComponents do
     ~H"""
     <footer class="border-t border-zinc-900 bg-zinc-950">
       <div class="mx-auto max-w-7xl px-6 py-16 lg:px-8">
+        <%!-- Early-access capture — the considered buyer's low-commitment path
+             (pre-GA, so "launch updates", not a newsletter). A server-rendered
+             POST: marketing has no LiveView, so the flash renders via the app
+             layout. Honeypot + CSRF + a citext-unique idempotent guard back it. --%>
+        <div class="mb-12 flex flex-col gap-6 border-b border-zinc-900 pb-12 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 class="text-sm font-semibold text-zinc-100">Get launch updates</h2>
+            <p class="mt-1 max-w-md text-sm text-zinc-500">
+              One email when emisar is generally available, plus the occasional note on a major
+              release. No noise.
+            </p>
+          </div>
+          <.form for={%{}} action={~p"/early-access"} class="w-full sm:w-auto">
+            <input type="hidden" name="source" value="footer" />
+            <%!-- Honeypot — hidden from people, tempting to bots. --%>
+            <input
+              type="text"
+              name="company"
+              tabindex="-1"
+              autocomplete="off"
+              aria-hidden="true"
+              class="hidden"
+            />
+            <div class="flex max-w-sm gap-2">
+              <label for="early-access-email" class="sr-only">Email address</label>
+              <input
+                type="email"
+                id="early-access-email"
+                name="email"
+                required
+                placeholder="you@company.com"
+                class="min-w-0 flex-1 rounded-md border border-zinc-800 bg-zinc-900/60 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600 focus-visible:border-brand-500 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-brand-500"
+              />
+              <.marketing_button type="submit" variant={:secondary} size={:sm}>
+                Notify me
+              </.marketing_button>
+            </div>
+          </.form>
+        </div>
+
         <div class="grid grid-cols-1 gap-12 lg:grid-cols-4">
           <div>
             <.link href={~p"/"}>

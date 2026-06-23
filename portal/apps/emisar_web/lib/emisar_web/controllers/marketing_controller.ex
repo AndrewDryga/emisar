@@ -719,4 +719,46 @@ defmodule EmisarWeb.MarketingController do
     |> Integer.to_string()
     |> String.replace(~r/(\d)(?=(\d{3})+$)/, "\\1,")
   end
+
+  # POST /early-access — captures an email from the footer's launch-updates form.
+  # Public + unauthenticated; CSRF-protected by the :browser pipeline.
+  def subscribe(conn, params), do: capture_early_access(conn, params)
+
+  # Honeypot: bots fill the hidden "company" field; real users never see it, so a
+  # non-blank value is a bot — accept silently and store nothing.
+  defp capture_early_access(conn, %{"company" => filled}) when filled not in [nil, ""],
+    do: thank_subscriber(conn)
+
+  defp capture_early_access(conn, params) do
+    case Emisar.Marketing.capture_signup(%{email: params["email"], source: params["source"]}) do
+      {:ok, _signup} ->
+        thank_subscriber(conn)
+
+      {:error, _changeset} ->
+        conn
+        |> put_flash(:error, "That doesn't look like a valid email — mind trying again?")
+        |> redirect(to: return_path(conn))
+    end
+  end
+
+  defp thank_subscriber(conn) do
+    conn
+    |> put_flash(
+      :info,
+      "You're on the list — we'll email you when emisar is generally available."
+    )
+    |> redirect(to: return_path(conn))
+  end
+
+  # Back to the page the form was posted from, but only ever a local path — the
+  # referer's host is discarded, so it can't become an open redirect.
+  defp return_path(conn) do
+    case List.first(get_req_header(conn, "referer")) do
+      "http" <> _ = referer -> referer |> URI.parse() |> local_path()
+      _ -> "/"
+    end
+  end
+
+  defp local_path(%URI{path: "/" <> _ = path}), do: path
+  defp local_path(_), do: "/"
 end
