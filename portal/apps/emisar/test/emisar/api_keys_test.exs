@@ -3,7 +3,7 @@ defmodule Emisar.ApiKeysTest do
 
   import Emisar.Fixtures
 
-  alias Emisar.{ApiKeys, Repo}
+  alias Emisar.{ApiKeys, Audit, Repo}
   alias Emisar.ApiKeys.ApiKey
 
   defp owner_subject_pair do
@@ -162,6 +162,28 @@ defmodule Emisar.ApiKeysTest do
       assert {:error, :unauthorized} =
                ApiKeys.create_key(%{name: "ci", scopes: ["actions:read"]}, subject)
     end
+
+    # closes AUD-004-T01 (audit half), AUD-010-T01 (audit half) — minting a SIEM
+    # export token (the audit:read bucket) writes an `api_key.created` audit row
+    # in the SAME transaction (create_key's Multi.insert(:audit, …)), stamped with
+    # the new key as subject + its scopes in the payload. The mint of a
+    # log-shipping credential is itself part of the log it ships.
+    test "minting an audit:read export token writes an api_key.created audit row" do
+      {_user, _account, subject} = owner_subject_pair()
+
+      assert {:ok, _raw, key} =
+               ApiKeys.create_key(%{name: "SIEM export", scopes: ["audit:read"]}, subject)
+
+      {:ok, events, _meta} =
+        Audit.list_events(subject, filter: [event_type: ["api_key.created"]])
+
+      assert [event] = Enum.filter(events, &(&1.subject_id == key.id))
+      assert event.subject_kind == "api_key"
+      assert event.subject_label == "SIEM export"
+      # Persisted payload is string-keyed (reloaded through JSON); the minted
+      # scopes are recorded so an auditor sees exactly what the token can do.
+      assert event.payload["scopes"] == ["audit:read"]
+    end
   end
 
   describe "mint_quick_key/1" do
@@ -315,6 +337,26 @@ defmodule Emisar.ApiKeysTest do
 
       assert {:error, :not_found} = ApiKeys.revoke_api_key(key_a, subject_b)
       refute Repo.reload!(key_a).revoked_at
+    end
+
+    # closes AUD-011-T02 (context half) — revoking an already-revoked key
+    # succeeds again rather than erroring: the fetch_and_update re-reads the
+    # (still not_deleted) row and re-stamps revoked_at. The affordance is gated
+    # in the UI (the Revoke button only renders for non-revoked keys), but a
+    # double-fire (race / stale page) is a safe idempotent no-op, never a crash.
+    test "revoking an already-revoked key is idempotent (re-revoke succeeds)" do
+      {_user, account, subject} = owner_subject_pair()
+      {_raw, key} = api_key_fixture(account_id: account.id)
+
+      assert {:ok, %ApiKey{revoked_at: %DateTime{} = first}} =
+               ApiKeys.revoke_api_key(key, subject)
+
+      # Fire again on the now-revoked key — still {:ok, …}, still revoked.
+      assert {:ok, %ApiKey{revoked_at: %DateTime{} = second}} =
+               ApiKeys.revoke_api_key(Repo.reload!(key), subject)
+
+      assert DateTime.compare(second, first) in [:eq, :gt]
+      assert Repo.reload!(key).revoked_at
     end
   end
 
