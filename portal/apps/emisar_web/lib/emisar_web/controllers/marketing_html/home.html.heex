@@ -120,6 +120,44 @@
     </div>
   </section>
 
+  <%!-- Proof strip — pre-GA, so no logo wall yet; the trust bar is concrete
+       instead: the catalog's real scale, the framework emisar is built to, the
+       audit guarantee, and the open license. Sits on the hero's own dark ground
+       (a strip, not an eyebrow→H2 section) so it reads as the hero's footing and
+       adds substance above the fold without adding to the page's section rhythm. --%>
+  <section class="border-b border-zinc-900 bg-[#07080a]" aria-label="emisar at a glance">
+    <div class="mx-auto grid max-w-7xl grid-cols-2 px-6 sm:grid-cols-4 sm:divide-x sm:divide-zinc-900 lg:px-8">
+      <div class="border-b border-zinc-900 px-4 py-6 text-center sm:border-b-0 sm:py-7">
+        <div class="font-mono text-2xl font-bold tabular-nums text-zinc-50">{@action_count}</div>
+        <div class="mt-1 text-xs text-zinc-500">audited actions &middot; {@pack_count} packs</div>
+      </div>
+      <.link
+        navigate={~p"/zero-trust"}
+        class="group border-b border-zinc-900 px-4 py-6 text-center sm:border-b-0 sm:py-7"
+      >
+        <div class="text-base font-semibold text-zinc-100 transition group-hover:text-brand-300">
+          Zero-Trust for AI
+        </div>
+        <div class="mt-1 text-xs text-zinc-500">built to Anthropic's control set</div>
+      </.link>
+      <div class="px-4 py-6 text-center sm:py-7">
+        <div class="text-base font-semibold text-zinc-100">Hash-chained audit</div>
+        <div class="mt-1 text-xs text-zinc-500">every action, tamper-evident</div>
+      </div>
+      <a
+        href="https://github.com/andrewdryga/emisar/blob/main/LICENSE.md"
+        target="_blank"
+        rel="noopener noreferrer"
+        class="group px-4 py-6 text-center sm:py-7"
+      >
+        <div class="text-base font-semibold text-zinc-100 transition group-hover:text-brand-300">
+          Source-available
+        </div>
+        <div class="mt-1 text-xs text-zinc-500">read the whole control plane</div>
+      </a>
+    </div>
+  </section>
+
   <%!-- The magic — why production access makes the agent far more useful.
        Reads dominate (context, self-debug, incidents); the gated write is the
        exception. The value the user feels, stated before the mechanics. --%>
