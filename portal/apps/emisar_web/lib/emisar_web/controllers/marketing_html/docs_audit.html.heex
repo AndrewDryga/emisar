@@ -19,7 +19,7 @@
         Events are named
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">domain.action</code>
         — <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">policy.evaluated</code>
-        (one per dispatch, with the decision), <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">approval.approved</code>, <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">policy.updated</code>, <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">membership.role_changed</code>, <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">user.sign_in_failed</code>, …
+        (one per dispatch, with the decision), <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">approval.approved</code>, <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">policy.updated</code>, <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">membership.role_changed</code>, <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">user.sessions_revoked</code>, …
         about fifty types across runs, approvals, policies, packs, runners, credentials, team,
         and account changes. Each carries the actor (operator, API key, or runner), the
         affected entity, a structured payload (a policy edit records its exact diff), and an
@@ -107,9 +107,8 @@
 
       <div class="mt-8 rounded-xl border border-zinc-800 bg-zinc-950/60 p-5 text-sm leading-6 text-zinc-400">
         <strong class="text-zinc-100">Worth alerting on.</strong>
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">user.sign_in_failed</code>
-        spikes
-        (someone probing your team),
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">user.mfa_reset_by_admin</code>
+        on an account you didn't expect,
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">policy.updated</code>
         (the rules
         changed), pack-trust transitions (new bytes were approved), and on the runner side
