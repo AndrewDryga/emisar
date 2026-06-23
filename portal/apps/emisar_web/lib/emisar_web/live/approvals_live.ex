@@ -43,6 +43,9 @@ defmodule EmisarWeb.ApprovalsLive do
           {:error, :not_found} ->
             {:noreply, put_flash(socket, :error, "Grant not found.")}
 
+          {:error, :unauthorized} ->
+            {:noreply, put_flash(socket, :error, "You don't have permission to do that.")}
+
           {:ok, grant} ->
             # Audit logging lives inside `Approvals.revoke_grant/2` so the
             # transaction is atomic and other callers (future scripts /

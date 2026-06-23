@@ -330,7 +330,6 @@ defmodule EmisarWeb.ApprovalsLiveTest do
     refute html =~ "Couldn&#39;t load pending approvals."
   end
 
-  @tag skip: "BUG: operator crafted revoke_grant crashes the LV (GOV-005-T04)"
   test "an operator's crafted revoke_grant is denied gracefully", %{conn: conn} do
     # closes GOV-005-T04 — BUG. The Revoke button's UI predicate is
     # `subject_can_decide_approval?` (operator+), but `fetch_grant_by_id` requires
