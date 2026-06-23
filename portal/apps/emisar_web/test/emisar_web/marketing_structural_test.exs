@@ -56,13 +56,9 @@ defmodule EmisarWeb.MarketingStructuralTest do
   # bespoke JSON-LD graphs (Organization / SoftwareApplication / Product /
   # FAQPage) with NO breadcrumb, so they're excluded — asserting a tag a
   # page doesn't emit would be a false failure. Everything else (every
-  # @pages-generated page + the use-cases hub + the packs pages) derives a
-  # Home → [Docs →] page breadcrumb from its path.
-  # /changelog is also excluded: its data-driven rewrite (render from
-  # EmisarWeb.Changelog) dropped the `json_ld:` breadcrumb, regressing the
-  # controller's own "every generated page" invariant — see the skip-tagged
-  # contract test below + FINDINGS (MKT-006-T04).
-  @breadcrumb_routes @indexable_routes -- ~w(/ /ai /pricing /changelog)
+  # @pages-generated page + the use-cases hub + the packs + changelog pages)
+  # derives a Home → [Docs →] page breadcrumb from its path.
+  @breadcrumb_routes @indexable_routes -- ~w(/ /ai /pricing)
 
   describe "lean JS bundle on every controller-rendered marketing page" do
     # The static marketing site has no LiveView socket, so it must load
@@ -138,27 +134,11 @@ defmodule EmisarWeb.MarketingStructuralTest do
     # string) is what proves it's valid structured data, not just the
     # literal token in some unrelated copy.
     #
-    # closes MKT-004-T04 MKT-005-T03 MKT-007-T04 MKT-009-T04
+    # closes MKT-004-T04 MKT-005-T03 MKT-006-T04 MKT-007-T04 MKT-009-T04
     # closes MKT-010-T04 MKT-011-T04 MKT-012-T04 MKT-013-T05 MKT-014-T04
     # closes MKT-015-T04 MKT-016-T04 MKT-017-T06 MKT-019-T04 MKT-020-T04
     # closes MKT-021-T04 MKT-022-T03 MKT-024-T04 MKT-025-T06 MKT-034-T07
     # closes MKT-035-T08 MKT-036-T08
-    # BUG (skip — see FINDINGS): closes MKT-006-T04. The /changelog action lost
-    # its BreadcrumbList when it was rewritten to render from EmisarWeb.Changelog
-    # — it sets no `json_ld:`, so the data-driven page silently regressed the
-    # site-wide "every generated page carries a breadcrumb" invariant
-    # (marketing_controller.ex:477). Asserts the correct contract.
-    @tag skip:
-           "BUG: /changelog dropped its BreadcrumbList in the data-driven refactor (FINDINGS, MKT-006-T04)"
-    test "GET /changelog carries a valid BreadcrumbList", %{conn: conn} do
-      html = conn |> get("/changelog") |> html_response(200)
-      breadcrumb = find_breadcrumb(html)
-
-      assert breadcrumb, "no BreadcrumbList JSON-LD on /changelog"
-      items = breadcrumb["itemListElement"]
-      assert is_list(items) and length(items) >= 2
-    end
-
     for route <- @breadcrumb_routes do
       test "GET #{route} carries a valid BreadcrumbList", %{conn: conn} do
         html = conn |> get(unquote(route)) |> html_response(200)

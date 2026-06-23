@@ -313,12 +313,30 @@ defmodule EmisarWeb.MarketingController do
   # Changelog — data-driven from EmisarWeb.Changelog so the page and the
   # /changelog.xml RSS feed render from one source and never drift.
   def changelog(conn, _params) do
+    # Home → Changelog breadcrumb — the data-driven rewrite dropped it; this
+    # restores the BreadcrumbList every other generated/bespoke page emits.
+    json_ld =
+      Jason.encode!(
+        %{
+          "@context" => "https://schema.org",
+          "@graph" => [
+            %{
+              "@type" => "BreadcrumbList",
+              "itemListElement" =>
+                breadcrumb_items([{"Home", @base <> "/"}, {"Changelog", @base <> "/changelog"}])
+            }
+          ]
+        },
+        escape: :html_safe
+      )
+
     render(conn, :changelog,
       page_title: "Changelog",
       meta_description:
         "Shipping notes for emisar — the control plane that gives AI agents approved infrastructure actions instead of SSH. The redesigned site, the new identity, runner releases, SSO/SCIM, approvals, and audit.",
       canonical_url: @base <> "/changelog",
-      entries: EmisarWeb.Changelog.entries()
+      entries: EmisarWeb.Changelog.entries(),
+      json_ld: json_ld
     )
   end
 
