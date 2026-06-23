@@ -49,7 +49,7 @@
            "Your coding agent deploys and error rates tick up. Instead of waiting for a human to gather context, it reads its own deploy's logs and metrics, spots the env var it got wrong, and opens the fix as a reviewed PR — no round-trip just to find out what happened."},
           {"hero-shield-check", "Sweep", "Cert expiry, before the pager",
            "\"Which certs expire in the next 30 days?\" The agent walks every host and ingress, checks expiry, and hands you the three about to lapse, days remaining and all, before an outage finds them for you."},
-          {"hero-bell-alert", "Triage", "First response at 3 a.m.",
+          {"hero-bell-alert", "Triage", "First response, before you're awake",
            "The page fires. The agent triages first — the failing service's logs, the last three deploys, the resource pressure, the dependency that's actually down — so you wake to a diagnosis and a remediation waiting on your approval, not a blank alert and a cold terminal."},
           {"hero-arrow-trending-up", "Capacity", "Ready for the launch?",
            "Before the campaign goes live, you ask whether the fleet can take it. The agent reports current headroom, connection-pool limits, and the slowest dependency across every service — so you scale the one thing that matters instead of over-provisioning everything."}
@@ -140,7 +140,7 @@
         emisar doesn't claim to prevent the failure — it changes everything a human or an agent
         does <em class="text-zinc-400">around</em>
         it: a finite catalog instead of a shell, one
-        approval instead of standing access, and a searchable record instead of a 3 a.m. guess.
+        approval instead of standing access, and a searchable record instead of a guess.
         See exactly how the boundary holds on the <.link
           navigate={~p"/security"}
           class="text-brand-300 hover:text-brand-200"
